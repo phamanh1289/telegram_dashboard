@@ -1,0 +1,165 @@
+import asyncio
+
+from conftest import G1, G2, A, B, msg
+
+from telegram_dashboard.models import GroupInfo
+from telegram_dashboard.telegram import LoginRequired
+
+
+def kinds(store, cursor=None):
+    items, *_ = store.changes_since(cursor or f"{store.db_epoch()}:0")
+    return [(i.chat_id, i.message_id, i.kind) for i in items]
+
+
+def test_untracked_chat_not_persisted(env):
+    env.store.upsert_chat_info(A, "a", "supergroup")
+    assert env.store.apply_message(msg(A, 1)) is False
+    assert env.store.get_message(A, 1) is None
+
+
+def test_same_message_id_in_two_chats(env):
+    env.track(A)
+    env.track(B)
+    env.store.apply_message(msg(A, 5, "from A"))
+    env.store.apply_message(msg(B, 5, "from B"))
+    assert env.store.get_message(A, 5).text == "from A"
+    assert env.store.get_message(B, 5).text == "from B"
+
+
+def test_replay_is_idempotent(env):
+    env.track(A)
+    assert env.store.apply_message(msg(A, 1)) is True
+    assert env.store.apply_message(msg(A, 1)) is False
+    assert kinds(env.store).count((A, "1", "new")) == 1
+
+
+def test_stale_edit_does_not_overwrite_newer(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "v2", edit=200))
+    env.store.apply_message(msg(A, 1, "v1", edit=100))
+    env.store.apply_message(msg(A, 1, "v0"))
+    assert env.store.get_message(A, 1).text == "v2"
+
+
+def test_old_history_does_not_resurrect_deleted(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "secret"))
+    env.store.apply_deletion(A, ["1"])
+    gen = env.store.history_checkpoint(A)[1]
+    env.store.apply_history_batch(A, gen, [msg(A, 1, "secret"), msg(A, 2, "secret2")], 2)
+    m = env.store.get_message(A, 1)
+    assert m.deleted and m.text == ""
+    # deletion seen before the message itself also leaves a tombstone
+    env.store.apply_deletion(A, ["3"])
+    env.store.apply_message(msg(A, 3, "late"))
+    assert env.store.get_message(A, 3).deleted
+
+
+def test_ambiguous_delete_does_not_touch_other_chat(env):
+    env.track(G1, "group")
+    env.track(G2, "group")
+    env.track(A)
+    env.store.apply_message(msg(G1, 9))
+    env.store.apply_message(msg(G2, 9))
+    env.store.apply_message(msg(A, 10))
+    env.store.apply_deletion(None, ["9", "10"])
+    assert not env.store.get_message(G1, 9).deleted
+    assert not env.store.get_message(G2, 9).deleted
+    assert not env.store.get_message(A, 10).deleted  # supergroups are never matched by bare id
+
+
+def test_basic_group_and_channel_ids_do_not_collide(env):
+    # raw id 123 as basic group (-123) and as supergroup (-100123) are different chats
+    env.track("-123", "group")
+    env.track("-100123")
+    env.store.apply_message(msg("-123", 4, "basic"))
+    env.store.apply_message(msg("-100123", 4, "super"))
+    env.store.apply_deletion(None, ["4"])  # unique among basic groups => basic one only
+    assert env.store.get_message("-123", 4).deleted
+    assert env.store.get_message("-100123", 4).text == "super"
+
+
+async def test_migrated_group_stops_ingest(env):
+    env.track(G1, "group")
+    await env.bridge.on_migrated(G1, "-1009")
+    assert env.store.apply_message(msg(G1, 1)) is False
+    chat = env.store.get_chat(G1)
+    assert chat["migrated_to"] == "-1009" and not chat["tracking"]
+
+
+async def test_history_live_overlap(env):
+    env.track(A)
+    env.fake.history[A] = [msg(A, i) for i in range(1, 61)]
+    await env.bridge.on_message(msg(A, 60))  # live arrives before initial load
+    await env.bridge.sync_chat(A)
+    items, _, _ = env.store.query_messages(A, limit=100)
+    assert [int(m.message_id) for m in items] == list(range(11, 61))  # 50 newest, no dupes
+    assert env.store.history_checkpoint(A)[0] == 60
+
+
+async def test_recovery_more_than_one_page(env):
+    env.track(A)
+    await env.bridge.sync_chat(A)  # empty chat initialises checkpoint 0
+    env.fake.history[A] = [msg(A, i) for i in range(1, 251)]
+    await env.bridge.sync_chat(A)
+    items, _, _ = env.store.query_messages(A, after=0, limit=100)
+    assert len(items) == 100
+    assert env.store.get_message(A, 250) is not None
+    assert env.store.history_checkpoint(A)[0] == 250
+
+
+async def test_live_event_does_not_skip_history_gap(env):
+    env.track(A)
+    await env.bridge.sync_chat(A)
+    await env.bridge.on_message(msg(A, 200))
+    assert env.store.history_checkpoint(A)[0] == 0
+    env.fake.history[A] = [msg(A, i) for i in (150, 200)]
+    await env.bridge.sync_chat(A)
+    assert env.store.get_message(A, 150) is not None
+
+
+async def test_failed_batch_does_not_advance_checkpoint(env):
+    env.track(A)
+    await env.bridge.sync_chat(A)
+    env.fake.history[A] = [msg(A, i) for i in range(1, 11)]
+    env.fake.fail_fetch_after = 1
+    env.bridge.schedule_sync(A)
+    await asyncio.sleep(0)
+    assert env.store.history_checkpoint(A)[0] == 0
+    await env.settle()
+    assert env.store.history_checkpoint(A)[0] == 10
+    assert env.bridge.sync_state.get(A) is None
+
+
+def test_purge_clears_outbox_content_and_blocks_late_callback(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1))
+    gen = env.store.history_checkpoint(A)[1]
+    env.store.outbox_create("r1", A, 1, "my reply", 42)
+    env.store.purge_chat(A)
+    assert env.store.get_message(A, 1) is None
+    assert env.store.outbox_get("r1").status == "failed"
+    assert env.store.outbox_claim("r1") is None  # no content left to resend
+    env.store.set_tracking(A, True)
+    assert env.store.apply_history_batch(A, gen, [msg(A, 1, "late")], 1) is False
+    assert env.store.get_message(A, 1) is None
+
+
+async def test_revoked_session_becomes_login_required(env):
+    async def revoked():
+        raise LoginRequired()
+
+    env.fake.connect_impl = revoked
+    env.bridge.state = "stopped"
+    await env.bridge.start()
+    await env.bridge._main
+    assert env.bridge.state == "login_required"
+
+
+async def test_tracking_via_api_flow(env):
+    env.fake.groups = [GroupInfo(chat_id=A, title="A", kind="supergroup")]
+    env.store.upsert_chat_info(A, "A", "supergroup")
+    env.store.set_tracking(A, True)
+    env.store.set_tracking(A, False)
+    assert env.store.apply_message(msg(A, 1)) is False
+    assert [k for *_, k in kinds(env.store)] == ["tracking", "untrack"]

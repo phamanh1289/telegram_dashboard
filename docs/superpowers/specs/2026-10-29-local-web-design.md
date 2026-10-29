@@ -1,6 +1,6 @@
 # Telegram Dashboard — Thiết kế web local
 
-Ngày: 2026-10-29. Trạng thái: đã cập nhật lựa chọn Next.js và rà stack; chưa có product code.
+Ngày: 2026-10-29. Trạng thái: đã triển khai trên nhánh `feat/local-web`; kiểm chứng bằng dữ liệu giả, chưa live test (xem [nghiệm thu](../../verification/local-web-smoke.md)).
 
 ## Mục tiêu và quyết định đã thống nhất
 
