@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronsLeft, ChevronsRight, MessageSquare, Moon, Bot, Pin, Search, Send, Sun, X, Inbox as InboxIcon } from "lucide-react";
+import { BarChart3, ChevronsLeft, ChevronsRight, MessageSquare, Moon, Bot, Pin, Search, Send, Sun, X, Inbox as InboxIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChatList } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
@@ -145,6 +145,9 @@ function Inbox({ status }: { status: Status }) {
         <h1 className="flex items-center gap-2 text-sm font-semibold">
           <Send className="size-4 text-primary" aria-hidden /> Telegram Dashboard
         </h1>
+        <a href="/yt/" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Chuyển sang YouTrack Dashboard">
+          <BarChart3 className="size-3.5" aria-hidden /> YouTrack
+        </a>
         <span
           data-testid="tg-state"
           title={STATE_LABEL[status.state]}

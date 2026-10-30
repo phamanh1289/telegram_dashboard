@@ -148,3 +148,7 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@view-transition {
+  navigation: auto; /* crossfade when switching module (Telegram Inbox <-> YouTrack) */
+}

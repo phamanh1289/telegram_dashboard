@@ -6,6 +6,11 @@ Web local để tập trung tin nhắn nhóm, trả lời bằng tài khoản Te
 - Backend: FastAPI + Telethon + SQLite (WAL) trong một Python process; REST + SSE.
 - Bản build: FastAPI phục vụ cả UI tĩnh và `/api` tại `http://127.0.0.1:8765`. Static export vẫn là app Next/React tương tác, chỉ là không có Next server lúc chạy; API, cookie và Telegram đều thuộc Python.
 
+Hai module độc lập, chuyển qua lại bằng link trên header (crossfade bằng View Transitions):
+
+- **Telegram Inbox** tại `/`.
+- **YouTrack Dashboard** tại `/yt/`: UI vanilla JS tĩnh (`web/public/yt/`, không đi qua bundle Next nên không ảnh hưởng tốc độ Inbox) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song). Dùng chung `YOUTRACK_URL` / `YOUTRACK_TOKEN` (không cần `YOUTRACK_PROJECT`); tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`. Thiếu token thì UI báo chưa cấu hình; `/yt/?mock=1` xem dữ liệu mẫu.
+
 Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.md) · [thiết kế](docs/superpowers/specs/2026-10-29-local-web-design.md) · [rà stack](docs/decisions/2026-10-29-stack-review.md) · [nghiệm thu](docs/verification/local-web-smoke.md).
 
 ## Cài đặt từ clone sạch

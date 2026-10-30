@@ -61,6 +61,7 @@ from .storage import Db, Store, parse_cursor
 from .telegram import TelegramBridge, Transport
 from .youtrack import create_issue
 
+from .yt_dashboard import YouTrackDashboard, YtError, build_router
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
 
 
@@ -101,9 +102,11 @@ def create_app(
             yield
         finally:
             await app.state.agent.stop_all()
+            await yt_dashboard.aclose()
             await bridge.stop()
 
     app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
+    yt_dashboard = YouTrackDashboard(settings)
     app.add_middleware(
         LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin
     )
@@ -115,6 +118,12 @@ def create_app(
         return JSONResponse({"error": body}, status_code=e.status, headers=headers)
 
     def S(request: Request):
+    @app.exception_handler(YtError)
+    async def yt_error(_: Request, e: YtError):
+        return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
+
+    app.include_router(build_router(yt_dashboard), include_in_schema=False)
+
         return request.app.state
 
     @app.get("/health")
