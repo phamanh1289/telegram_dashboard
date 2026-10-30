@@ -6,22 +6,17 @@ import { QUICK, stateColor } from '../ticket.js';
 import { AGE, dashStats } from '../stats.js';
 import { morph, syncMix } from '../morph.js';
 import { dlt, person, stateSelect } from './cells.js';
+import { ALERT } from './active.js';
 
-const KPI_ICONS = [ // total · doing · with QC · done rate
-  '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
-  '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/><path d="M9 12l2 2 4-4"/>',
-  '<path d="M21 12A9 9 0 1 1 12 3v9h9z"/>',
-];
 const kpiPrev = []; // last value shown per KPI card, so numbers count from there
 
 function renderKpis(d) {
-  const sub = `${dlt(d.total, d.prevTotal, null)}<small class="sub">${esc(d.per.label)}${d.per.prev ? ` · trước: ${esc(shortSp(d.per.prev))} (${fmt(d.prevTotal)})` : ''}</small>`;
-  const cards = [ // label, value, unit, colour, detail key, extra html
-    ['Ticket trong sprint', d.total, '', 'var(--acc)', 'total', sub], ['Đang làm', d.doing, '', 'var(--open)', 'doing'],
-    ['Chờ QC', d.qc, '', 'var(--qc)', 'qc'], ['Tỉ lệ xong · sprint', d.doneRate, '%', 'var(--ok)', 'rate'],
+  const sub = `<small class="sub"><span>${esc(d.per.label)}</span>${d.per.prev ? `<span>trước: ${esc(shortSp(d.per.prev))} (${fmt(d.prevTotal)})</span>` : ''}${dlt(d.total, d.prevTotal, null)}</small>`;
+  const cards = [ // label, value, unit, detail key, extra html
+    ['Ticket trong sprint', d.total, '', 'total', sub], ['Đang làm', d.doing, '', 'doing'],
+    ['Chờ QC', d.qc, '', 'qc'], ['Tỉ lệ xong sprint', d.doneRate, '%', 'rate'],
   ];
-  morph($('kpis'), cards.map(([l, v, s, c, b, extra], k) => `<div class="kpi" style="--c:${c}" role="button" tabindex="0" data-dd="${b}" title="Xem danh sách ticket"><div class="ki"><svg viewBox="0 0 24 24">${KPI_ICONS[k]}</svg></div><div><span>${l}</span><b${v == null ? '>—' : ` data-n="${v}" data-s="${s}">0${s}`}</b>${extra || ''}</div></div>`).join(''));
+  morph($('kpis'), cards.map(([l, v, s, b, extra]) => `<div class="kpi" role="button" tabindex="0" data-dd="${b}" title="Xem danh sách ticket"><span class="kl">${l}</span><b${v == null ? '>—' : ` data-n="${v}" data-s="${s}">0${s}`}</b>${extra || ''}</div>`).join(''));
   document.querySelectorAll('#kpis b[data-n]').forEach(countUp);
 }
 
@@ -43,25 +38,27 @@ function renderSprints(d) {
     const st = p === 100 && r.t ? ['ok', 'Hoàn thành'] : diff == null ? null : diff >= 0 ? ['ok', 'Đúng tiến độ'] : diff > -15 ? ['warn', 'Hơi chậm'] : ['bad', 'Chậm tiến độ'];
     const time = r.time == null ? '' : `<u class="tm" style="left:${r.time}%" title="Thời gian sprint đã qua ${r.time}%"></u>`;
     return `<div class="spr" role="button" tabindex="0" data-sp="${esc(r.name)}" data-dd="sp:${esc(r.name)}" title="Xem danh sách ticket của sprint này">` +
-      `<div class="row"><span>${esc(r.name)}</span><em>${r.d}/${r.t} · ${p}%</em></div>` +
+      `<div class="row"><span>${esc(r.name)}</span><em><span>${r.d}/${r.t}</span><span>${p}%</span></em></div>` +
       `<div class="stack">${time}<i style="width:${w(r.d)}%;background:var(--ok)"></i><i style="width:${w(r.qc)}%;background:var(--qc)"></i><i style="width:${w(r.doing)}%;background:var(--open)"></i></div>` +
-      `<div class="row leg"><span><u style="background:var(--ok)"></u>Xong ${r.d} <u style="background:var(--qc)"></u>QC ${r.qc} <u style="background:var(--open)"></u>Đang làm ${r.doing} <u style="background:var(--line)"></u>Todo ${r.todo}</span>` +
-      `<span>${r.left != null ? (r.left ? `còn ${r.left} ngày · ` : 'đã kết thúc · ') : ''}${r.time != null ? `thời gian ${r.time}% ` : ''}${st ? `<span class="pill ${st[0]}">${st[1]}</span>` : ''}</span></div></div>`;
+      `<div class="row leg"><span><span><u style="--sc:var(--ok)"></u>Xong ${r.d}</span><span><u style="--sc:var(--qc)"></u>QC ${r.qc}</span><span><u style="--sc:var(--open)"></u>Đang làm ${r.doing}</span><span><u style="--sc:var(--chart-soft)"></u>Todo ${r.todo}</span></span>` +
+      `<span>${r.left != null ? `<span>${r.left ? `còn ${r.left} ngày` : 'đã kết thúc'}</span>` : ''}${r.time != null ? `<span>thời gian ${r.time}%</span>` : ''}${st ? `<span class="pill ${st[0]}">${st[1]}</span>` : ''}</span></div></div>`;
   }).join('') || '<em class="mut">Không có dữ liệu sprint</em>', { key: (el, i) => el.dataset.sp ?? 'i' + i });
 }
 
-// needs attention: tiles in the overview row, neutral at 0, coloured only for exceptions
+// needs attention: a ranked list (anything above 0 first, the red ones before amber, then by count), neutral at 0
+const SEV = { bad: 0, warn: 1 };
 function renderAttn(d) {
-  morph($('attn'), d.attn.map(({ q, sev, n }) =>
-    `<button class="att${n ? ' hot ' + sev : ''}" data-dd="q:${q}" title="Xem danh sách ticket"><b>${fmt(n)}</b><span>Cần chú ý · ${esc(QUICK[q].label)}</span></button>`).join(''), { key: (el) => el.dataset.dd });
+  const ranked = [...d.attn].sort((a, b) => !a.n - !b.n || SEV[a.sev] - SEV[b.sev] || b.n - a.n);
+  morph($('attn'), ranked.map(({ q, sev, n }) =>
+    `<button type="button" class="att${n ? ' hot ' + sev : ''}" data-dd="q:${q}" title="Xem danh sách ticket"><span>${esc(QUICK[q].label)}</span><b>${fmt(n)}</b></button>`).join(''), { key: (el) => el.dataset.dd });
 }
 
 function renderWip(d) {
   $('wipSel').value = T.wip;
   morph($('wip'), '<tr><th>Người</th><th>Đang làm</th><th>Blocked</th></tr>' +
     (d.wip.map(([p, r]) =>
-      `<tr class="wr" tabindex="0" data-who="${esc(p)}" data-dd="wip:${esc(p)}"><td>${p === 'Chưa assign' ? p : person(p)}</td><td><span class="wip${r[0] > T.wip ? ' bad' : ''}">${r[0]}${r[0] > T.wip ? ' ⚠ vượt ngưỡng' : ''}</span></td><td>${r[1] ? `<span class="wip bad">${r[1]}</span>` : 0}</td></tr>`).join('')
-      || '<tr><td colspan="3">Không có ticket đang làm.</td></tr>'));
+      `<tr class="wr" tabindex="0" data-who="${esc(p)}" data-dd="wip:${esc(p)}"><td>${p === 'Chưa assign' ? p : person(p)}</td><td><span class="wip${r[0] > T.wip ? ' bad' : ''}">${r[0]}${r[0] > T.wip ? ` <span class="wo">${ALERT}vượt ngưỡng</span>` : ''}</span></td><td>${r[1] ? `<span class="wip bad">${r[1]}</span>` : 0}</td></tr>`).join('')
+      || '<tr><td colspan="3" class="mut">Không có ticket đang làm.</td></tr>'));
 }
 
 // tickets sitting in a watched state: amber from AGE.warn days, red above AGE.bad, counted from the last State change
@@ -76,21 +73,21 @@ function renderAging(d) {
   morph($('aging'), '<tr><th>Ticket</th><th>State</th><th>Ở state</th></tr>' +
     (rows.slice(0, SHOW).map(({ i, d: age }) => {
       const lv = age > AGE.bad ? 'bad' : 'warn';
-      return `<tr class="ag ${lv}" tabindex="0" data-id="${esc(i.id)}"><td class="agt"><b>${esc(i.id)}</b><span>${esc(i.assignee ? shortName(i.assignee) : 'Chưa assign')}</span></td><td>${stateSelect(i)}</td><td><span class="age ${lv}">${lv === 'bad' ? '⚠ ' : ''}${age.toFixed(1)} ngày</span></td></tr>`;
-    }).join('') + (rows.length > SHOW ? `<tr class="more" data-dd="aging"><td colspan="3" class="mut">… và ${rows.length - SHOW} ticket nữa · xem tất cả</td></tr>` : '') + (need.length && sinceLoading() ? '<tr><td colspan="3" class="mut">Đang tải thời gian đổi state…</td></tr>' : '')
-      || '<tr><td colspan="3">Không có ticket nào ở state này quá ngưỡng 👍</td></tr>'));
+      return `<tr class="ag ${lv}" tabindex="0" data-id="${esc(i.id)}"><td class="agt"><b>${esc(i.id)}</b><span>${esc(i.assignee ? shortName(i.assignee) : 'Chưa assign')}</span></td><td>${stateSelect(i)}</td><td><span class="age ${lv}">${lv === 'bad' ? ALERT : ''}${age.toFixed(1)} ngày</span></td></tr>`;
+    }).join('') + (rows.length > SHOW ? `<tr class="more" data-dd="aging"><td colspan="3" class="mut">… và ${rows.length - SHOW} ticket nữa, xem tất cả</td></tr>` : '') + (need.length && sinceLoading() ? '<tr><td colspan="3" class="mut">Đang tải thời gian đổi state…</td></tr>' : '')
+      || '<tr><td colspan="3" class="mut">Không có ticket nào ở state này quá ngưỡng.</td></tr>'));
 }
 
 // horizontal bars per person: [[name, open, done]] (done is 0 for the open-only chart)
 function bars(rows, empty) {
   const max = Math.max(1, ...rows.map(([, [o, x]]) => o + x));
-  return rows.map(([n, [o, x]]) => `<div class="hb" data-k="${esc(n)}" data-dd="bugu:${esc(n)}" tabindex="0" role="button"><span class="hn">${n === 'Chưa assign' ? n : person(n)}</span><div class="stack"><i style="width:${o / max * 100}%;background:var(--bad)"></i><i style="width:${x / max * 100}%;background:var(--fixed)"></i></div><em>${o}${x ? ` · ${x}` : ''}</em></div>`).join('') || `<span class="mut">${empty}</span>`;
+  return rows.map(([n, [o, x]]) => `<div class="hb" data-k="${esc(n)}" data-dd="bugu:${esc(n)}" tabindex="0" role="button"><span class="hn">${n === 'Chưa assign' ? n : person(n)}</span><div class="stack"><i style="width:${o / max * 100}%;background:var(--bad)"></i><i style="width:${x / max * 100}%;background:var(--fixed)"></i></div><em>${o}${x ? ` / ${x}` : ''}</em></div>`).join('') || `<span class="mut">${empty}</span>`;
 }
 
 function renderBugs(d) {
   const b = d.bug;
   $('bugTot').innerHTML = `<div class="big"><b>${fmt(b.sp)}</b><span>bug trong sprint</span></div>` +
-    `<div class="mixleg"><span><u style="background:var(--bad)"></u>Đang mở <b>${fmt(b.spOpen)}</b></span><span><u style="background:var(--fixed)"></u>Đã xong <b>${fmt(b.sp - b.spOpen)}</b></span><span class="mut">${esc(d.per.label)} · mở toàn project: ${fmt(b.open)}</span></div>`;
+    `<div class="mixleg"><span><u style="--sc:var(--bad)"></u>Đang mở <b>${fmt(b.spOpen)}</b></span><span><u style="--sc:var(--fixed)"></u>Đã xong <b>${fmt(b.sp - b.spOpen)}</b></span><span class="mut">${esc(d.per.label)}</span><span class="mut">Mở toàn project: ${fmt(b.open)}</span></div>`;
   morph($('bugSp'), bars(b.spUser, 'Sprint này chưa có bug.'));
 }
 
@@ -99,7 +96,7 @@ function renderMix({ mix: mx, mixPrev: mp }) {
   const seg = [['bug', 'Bug', 'var(--bad)'], ['feat', 'Feature', 'var(--feat)'], ['task', 'Task khác', 'var(--mut)']];
   morph($('mix'), mx.n
     ? `<div class="mixbar" data-k="bar">${seg.map(([k, , c]) => `<i style="width:${pc(mx.m[k])}%;background:${c}"></i>`).join('')}</div>` +
-      `<div class="mixleg" data-k="leg">${seg.map(([k, l, c]) => `<span data-dd="mix:${k}" tabindex="0" role="button"><u style="background:${c}"></u>${l} <b>${fmt(mx.m[k])}</b> · ${pc(mx.m[k])}%${k === 'bug' ? dlt(mx.m.bug / mx.n, mp.n ? mp.m.bug / mp.n : 0, false) : ''}</span>`).join('')}</div>`
+      `<div class="mixleg" data-k="leg">${seg.map(([k, l, c]) => `<span data-dd="mix:${k}" tabindex="0" role="button"><u style="--sc:${c}"></u>${l} <b>${fmt(mx.m[k])}</b><span class="mut">${pc(mx.m[k])}%</span>${k === 'bug' ? dlt(mx.m.bug / mx.n, mp.n ? mp.m.bug / mp.n : 0, false) : ''}</span>`).join('')}</div>`
     : '<span class="mut">Chưa có ticket xong trong sprint.</span>', { sync: syncMix });
 }
 
@@ -125,7 +122,7 @@ function renderBurn({ burn: b }) {
   const proj = pk != null && last >= 0 && last < end && left > 0 ? `<line class="proj" x1="${x(last)}" y1="${y(left)}" x2="${x(pk)}" y2="${y(Math.max(0, left - b.rate * (pk - last)))}"/>` : '';
   const note = last < 0 || !left ? (left === 0 && last >= 0 ? '<span><b>Đã xong hết</b> ticket của sprint</span>' : '')
     : b.proj == null ? '<span>Chưa đóng được ticket nào — <b>chưa dự báo được</b></span>'
-    : b.proj <= end ? `<span>Dự báo xong: <b>${dm(b.start + Math.ceil(b.proj) * 864e5)}</b> · kịp sprint</span>`
+    : b.proj <= end ? `<span>Dự báo xong: <b>${dm(b.start + Math.ceil(b.proj) * 864e5)}</b>, kịp sprint</span>`
     : `<span>Cuối sprint dự kiến còn <b>~${Math.round(left - b.rate * (end - last))} ticket</b></span>`;
   $('burn').innerHTML = `<svg class="ch" viewBox="0 0 ${W} ${H}" role="img" aria-label="Burndown: còn ${left} / ${b.total} ticket"><line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}"/><line x1="${L}" x2="${L}" y1="${T}" y2="${y(0)}"/>` + proj +
     `<text x="${L - 4}" y="${T + 4}" text-anchor="end">${b.total}</text><text x="${L - 4}" y="${y(0) + 4}" text-anchor="end">0</text>` +
@@ -139,7 +136,7 @@ function renderBurn({ burn: b }) {
 function renderVel({ vel: v }) {
   $('veln').textContent = v.avg == null ? '' : `TB ${fmt(v.avg)} ticket / sprint`;
   const max = Math.max(0, ...v.rows.map((r) => r.n));
-  $('vel').innerHTML = hbar(v.rows.map((r) => [esc(shortSp(r.name)) + (r.running ? ' <span class="mut">· đang chạy</span>' : ''), r.n, r.running ? 'color-mix(in srgb,var(--acc2) 45%,transparent)' : 'var(--acc2)', 'vel:' + r.name]), max, 'Chưa có sprint có ngày bắt đầu / kết thúc.');
+  $('vel').innerHTML = hbar(v.rows.map((r) => [esc(shortSp(r.name)) + (r.running ? ' <span class="mut">(đang chạy)</span>' : ''), r.n, r.running ? 'var(--chart-ref)' : 'var(--chart-main)', 'vel:' + r.name]), max, 'Chưa có sprint có ngày bắt đầu / kết thúc.');
 }
 
 const KIND = { bug: ['Bug', 'var(--bad)'], feat: ['Feature', 'var(--feat)'], task: ['Task khác', 'var(--mut)'] };
@@ -148,10 +145,10 @@ const dd = (n) => (n == null ? '—' : n < 1 ? '< 1 ngày' : `${n.toFixed(n < 10
 const bulkNote = (b) => (b.length ? `<div class="bnote">Bỏ qua ${b.map(([t, n]) => `<b>${fmt(n)}</b> ticket đóng hàng loạt ngày ${dm(t)}`).join(', ')}</div>` : '');
 
 function renderLead({ lead: l, days, bulk }) {
-  $('leadn').textContent = `${fmt(l.n)} ticket · ${days.length} ngày qua`;
+  $('leadn').textContent = `${fmt(l.n)} ticket, ${days.length} ngày qua`;
   if (!l.n) { $('lead').innerHTML = '<span class="mut">Chưa có ticket xong trong khoảng này.</span>' + bulkNote(bulk); return; }
   const max = Math.max(0, ...l.kinds.map((k) => k[1] || 0));
-  $('lead').innerHTML = `<div class="lt"><div><b>${dd(l.med)}</b><span> trung vị</span></div><div><span>85% xong trong </span><b style="font-size:20px">${dd(l.p85)}</b></div></div>` +
+  $('lead').innerHTML = `<div class="lt"><div><b>${dd(l.med)}</b><span> trung vị</span></div><div><span>85% xong trong </span><b class="p85">${dd(l.p85)}</b></div></div>` +
     '<div class="hbs">' + l.kinds.filter((k) => k[2]).map(([k, m, n]) => `<div class="hb" data-dd="lead" tabindex="0" role="button"><span class="hn">${KIND[k][0]} <span class="mut">(${n})</span></span><div class="stack"><i style="width:${max ? m / max * 100 : 0}%;background:${KIND[k][1]}"></i></div><em>${dd(m)}</em></div>`).join('') + '</div>' + bulkNote(bulk);
 }
 
@@ -159,16 +156,16 @@ function renderLead({ lead: l, days, bulk }) {
 const hbar = (rows, max, empty) => rows.map(([l, v, c, dd]) => `<div class="hb" data-dd="${esc(dd)}" tabindex="0" role="button"><span class="hn">${l}</span><div class="stack"><i style="width:${max ? v / max * 100 : 0}%;background:${c}"></i></div><em>${v}</em></div>`).join('') || `<span class="mut">${empty}</span>`;
 
 function renderMore(d) {
-  $('thru').innerHTML = colChart(d.days, [[d.thru, 'var(--ok)', 'thru']]) + bulkNote(d.bulk);
+  $('thru').innerHTML = colChart(d.days, [[d.thru, 'var(--chart-main)', 'thru']]) + bulkNote(d.bulk);
   $('flow').innerHTML = colChart(d.days, [[d.bugNew, 'var(--bad)', 'bugnew'], [d.bugFix, 'var(--fixed)', 'bugfix']]);
   $('dist').innerHTML = hbar(d.dist.map(([s, n]) => [esc(s), n, stateColor(s), 'dist:' + s]), Math.max(0, ...d.dist.map((x) => x[1])), 'Không có ticket mở.');
-  $('qcl').innerHTML = hbar(d.qcLoad.map(([n, c]) => [n === 'Chưa có QC' ? n : person(n), c, 'var(--qc)', 'qcl:' + n]), Math.max(0, ...d.qcLoad.map((x) => x[1])), 'Không có ticket chờ QC.');
+  $('qcl').innerHTML = hbar(d.qcLoad.map(([n, c]) => [n === 'Chưa có QC' ? n : person(n), c, 'var(--chart-main)', 'qcl:' + n]), Math.max(0, ...d.qcLoad.map((x) => x[1])), 'Không có ticket chờ QC.');
   $('rdn').textContent = `${fmt(d.ready.n)} ticket mở`;
   $('ready').innerHTML = hbar(d.ready.rows.map(([l, n]) => [l, n, n ? 'var(--warn)' : 'var(--ok)', 'ready:' + l]), d.ready.n, '');
   $('cn').textContent = `${fmt(d.carry.length)} ticket`;
   morph($('carry'), '<tr><th>Ticket</th><th>State</th><th>Sprint đã qua</th></tr>' +
-    (d.carry.slice(0, 8).map((i) => `<tr class="ag${i.sprints.length > 2 ? ' bad' : ' warn'}" tabindex="0" data-id="${esc(i.id)}"><td class="agt"><b>${esc(i.id)}</b><span>${esc(i.assignee ? shortName(i.assignee) : 'Chưa assign')}</span></td><td>${stateSelect(i)}</td><td><span class="age ${i.sprints.length > 2 ? 'bad' : 'warn'}">${i.sprints.length} sprints</span></td></tr>`).join('') + (d.carry.length > 8 ? `<tr class="more" data-dd="carry"><td colspan="3" class="mut">… và ${d.carry.length - 8} ticket nữa · xem tất cả</td></tr>` : '')
-      || '<tr><td colspan="3">Không có ticket nào bị chuyển sprint nhiều lần 👍</td></tr>'));
+    (d.carry.slice(0, 8).map((i) => `<tr class="ag${i.sprints.length > 2 ? ' bad' : ' warn'}" tabindex="0" data-id="${esc(i.id)}"><td class="agt"><b>${esc(i.id)}</b><span>${esc(i.assignee ? shortName(i.assignee) : 'Chưa assign')}</span></td><td>${stateSelect(i)}</td><td><span class="age ${i.sprints.length > 2 ? 'bad' : 'warn'}">${i.sprints.length > 2 ? ALERT : ''}${i.sprints.length} sprints</span></td></tr>`).join('') + (d.carry.length > 8 ? `<tr class="more" data-dd="carry"><td colspan="3" class="mut">… và ${d.carry.length - 8} ticket nữa, xem tất cả</td></tr>` : '')
+      || '<tr><td colspan="3" class="mut">Không có ticket nào bị chuyển sprint nhiều lần.</td></tr>'));
 }
 
 export function renderDashboard(now) {

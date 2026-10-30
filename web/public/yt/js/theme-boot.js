@@ -1,2 +1,2 @@
-/* theme before first paint: saved choice, else the OS preference (no flash) */
-{ let t = null; try { t = localStorage.theme; } catch {} document.documentElement.dataset.theme = t || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'); }
+/* theme before first paint: saved choice (key shared with the Telegram module), else the OS preference (no flash). The root carries both data-theme and class="dark"; "js" lets CSS hide hover-only controls only when a script runs */
+{ const r = document.documentElement; let t = null; try { t = localStorage.theme; } catch {} if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; r.dataset.theme = t; r.classList.toggle('dark', t === 'dark'); r.classList.add('js'); }

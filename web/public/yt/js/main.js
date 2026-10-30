@@ -19,7 +19,7 @@ import { initStateChange } from './ui/stateChange.js';
 const wireUi = () => [initTheme, initSidebar, initMultiSelects, initFilterBar, initTable, initTooltip, initDrawer, initDetail, initGlobalFind, initKeyboard, initStateChange].forEach((f) => f());
 
 const fillProjects = (ps, wanted) => {
-  $('project').innerHTML = ps.map((p) => `<option value="${esc(p.shortName)}" title="${esc(p.name)}">${esc(p.shortName)} · ${esc(p.name)}</option>`).join('');
+  $('project').innerHTML = ps.map((p) => `<option value="${esc(p.shortName)}" title="${esc(p.name)}">${esc(p.shortName)} (${esc(p.name)})</option>`).join('');
   $('project').value = ps.some((p) => p.shortName === wanted) ? wanted : (ps.find((p) => p.shortName === 'VA') ? 'VA' : ps[0]?.shortName);
 };
 

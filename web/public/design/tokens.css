@@ -1,0 +1,80 @@
+/* Hallmark · shared system for both modules (Telegram Inbox at /, YouTrack at /yt/) · theme: Coral (deal 1/3, seed work-dashboards-telegram-mention-2a6a·68faf1b3·2026-10-30·r0) · redesign: full · scope: app · modes: light+dark
+ * One source: Next imports this file (web/src/app/globals.css), the YouTrack page links it. Spec: DESIGN.md.
+ * Renamed against shadcn: Coral's --color-accent is --color-signal, its --color-muted is --color-ink-3.
+ * waive: fonts · General Sans has no Vietnamese diacritics; Be Vietnam Pro (a grotesk built for Vietnamese) takes its role, Geist Mono keeps the figures. */
+:root {
+  color-scheme: light;
+  /* scale (app range: 1.2 ratio, no fluid heads) */
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
+  --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem; --text-3xl: 2.074rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
+  --z-raised: 10; --z-dropdown: 100; --z-sticky: 200; --z-modal: 400; --z-toast: 500; --z-tooltip: 600;
+  --control-h: 36px; --control-h-sm: 30px; --hit: 44px;
+
+  /* faces */
+  --font-body: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-body);
+  --font-figure: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --tracking-display: -0.02em; --display-weight: 600;
+
+  /* paper and ink: warm grey stationery, one light from the left */
+  --color-paper: oklch(97% 0.006 55); --color-paper-2: oklch(94.5% 0.007 55); --color-paper-3: oklch(91.5% 0.009 55);
+  --color-cotton: oklch(98.8% 0.0045 80); /* records: cards, rows, sheets */
+  --color-ink: oklch(21% 0.012 38); --color-ink-2: oklch(29% 0.013 40); --color-ink-3: oklch(47% 0.013 45);
+  --color-rule: oklch(87% 0.009 55); --color-rule-2: oklch(78% 0.011 55);
+  --color-board: oklch(22% 0.011 40); --color-board-type: oklch(96.5% 0.006 70); /* the primary action */
+  /* the one signal: coral = needs you (overdue, waiting long, unread) and focus */
+  --color-signal: oklch(74% 0.125 30); --color-signal-ink: oklch(21% 0.012 38);
+  --color-signal-2: oklch(52% 0.165 29); /* coral as text or a thin mark */
+  --color-signal-wash: oklch(94% 0.03 35);
+  --color-focus: oklch(54% 0.17 30);
+
+  /* state, for data only (never chrome) */
+  --color-ok: oklch(50% 0.11 150); --color-ok-wash: oklch(94% 0.03 150);
+  --color-warn: oklch(52% 0.11 70); --color-warn-wash: oklch(95% 0.045 85);
+  --color-error: oklch(50% 0.18 25); --color-error-wash: oklch(94% 0.035 25);
+  --color-info: oklch(46% 0.07 255); --color-info-wash: oklch(94% 0.02 255);
+  /* workflow tiers and kinds (categorical marks, low chroma, warm-leaning) */
+  --cat-1: oklch(55% 0.02 55);  /* todo / sub-task / lowest */
+  --cat-2: oklch(50% 0.08 255); /* in progress */
+  --cat-3: oklch(50% 0.10 320); /* QC / epic */
+  --cat-4: oklch(50% 0.08 190); /* on dev / feature */
+  --cat-5: oklch(55% 0.12 0);   /* design */
+  --cat-6: oklch(58% 0.11 95);  /* improvement */
+
+  /* depth (light: stock edges and a cast falling right) */
+  --shade: 32% 0.03 50; --lit: 100% 0.005 80;
+  --edge-stock: inset 0 1px 0 oklch(var(--lit) / 0.9), 0 0 0 0.5px oklch(var(--shade) / 0.22), 0 1px 0 oklch(var(--shade) / 0.10);
+  --cast-stock: 6px 5px 10px -6px oklch(var(--shade) / 0.28);
+  --cast-pop: 12px 14px 32px -12px oklch(var(--shade) / 0.35);
+  --press-groove: inset 1px 1.5px 2px oklch(var(--shade) / 0.14), inset -1px -1px 0 oklch(var(--lit) / 0.9), 0 0 0 0.5px oklch(var(--shade) / 0.2);
+  --scrim: oklch(21% 0.012 38 / 0.38);
+
+  --radius-card: 8px; --radius-input: 6px; --radius-pill: 999px; --rule-hair: 1px;
+}
+
+/* dark: parity, never inversion. Elevation is lightness; shadows become hairline rings. Hue never moves. */
+.dark, [data-theme="dark"] {
+  color-scheme: dark;
+  --color-paper: oklch(17% 0.01 55); --color-paper-2: oklch(20.5% 0.011 55); --color-paper-3: oklch(24% 0.012 55);
+  --color-cotton: oklch(21.5% 0.011 60);
+  --color-ink: oklch(94% 0.008 60); --color-ink-2: oklch(85% 0.01 55); --color-ink-3: oklch(70% 0.012 50);
+  --color-rule: oklch(30% 0.011 50); --color-rule-2: oklch(40% 0.012 50);
+  --color-board: oklch(92% 0.008 60); --color-board-type: oklch(19% 0.011 40);
+  --color-signal: oklch(77% 0.105 30); --color-signal-ink: oklch(19% 0.011 40);
+  --color-signal-2: oklch(76% 0.11 30);
+  --color-signal-wash: oklch(28% 0.04 30);
+  --color-focus: oklch(74% 0.13 30);
+  --color-ok: oklch(74% 0.1 150); --color-ok-wash: oklch(27% 0.035 150);
+  --color-warn: oklch(80% 0.11 80); --color-warn-wash: oklch(28% 0.04 80);
+  --color-error: oklch(72% 0.14 25); --color-error-wash: oklch(28% 0.05 25);
+  --color-info: oklch(76% 0.07 255); --color-info-wash: oklch(27% 0.03 255);
+  --cat-1: oklch(72% 0.015 55); --cat-2: oklch(74% 0.08 255); --cat-3: oklch(74% 0.09 320);
+  --cat-4: oklch(74% 0.07 190); --cat-5: oklch(76% 0.09 0); --cat-6: oklch(80% 0.09 95);
+  --edge-stock: inset 0 0 0 1px var(--color-rule);
+  --cast-stock: 0 0 0 0 transparent;
+  --cast-pop: 0 0 0 1px var(--color-rule-2);
+  --press-groove: inset 0 0 0 1px var(--color-rule);
+  --scrim: oklch(8% 0.01 40 / 0.6);
+}

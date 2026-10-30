@@ -1,27 +1,32 @@
 /* ---------- Ticket active page: state chips, quick filters, ticket table (flat or grouped, columns chosen by the user), empty state ---------- */
-import { $, DAY, ago, esc, fmt, hue, shortSp, swap } from '../util.js';
+import { $, DAY, ago, esc, fmt, shortSp, swap } from '../util.js';
 import { CAP, S, flt, folded, hiddenCols, picked, stateSel } from '../state.js';
-import { COLS, PCOL, TINT, isFresh, lastSp, rank, stateColor, stateIcon, titleOf, typeColor } from '../ticket.js';
+import { COLS, PCOL, TINT, isFresh, lastSp, rank, stateColor, titleOf, typeColor } from '../ticket.js';
 import { activePool, fltCount, groupRows, hasFilters, stateCounts, visibleRows } from '../query.js';
 import { morph } from '../morph.js';
 import { person, stateSelect } from './cells.js';
 import { renderBulk } from '../ui/stateChange.js';
 
-const dueCell = (t, now) => { // overdue = red, due within 2 days = amber
+export const ALERT = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
+const ICO_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
+const ICO_LINK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>';
+const PLVL = { Critical: 4, Highest: 4, High: 3, Medium: 2, Low: 1, Lowest: 0 }; // filled bars of the priority mark
+
+const dueCell = (t, now) => { // overdue = red + icon, due within 2 days = amber
   if (!t) return '<td class="mut">—</td>';
   const lv = t < now ? 'bad' : t - now < 2 * DAY ? 'warn' : '';
-  return `<td><span class="due ${lv}" title="${esc(new Date(t).toLocaleString('vi-VN'))}">${lv === 'bad' ? '⚠ ' : ''}${new Date(t).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span></td>`;
+  return `<td><span class="due ${lv}" title="${esc(new Date(t).toLocaleString('vi-VN'))}">${lv === 'bad' ? ALERT : ''}${new Date(t).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span></td>`;
 };
 
 // one renderer per column key (id and summary are always shown)
 const CELL = {
-  id: (i) => `<td class="idc"><a target="_blank" href="${esc(S.cfg.base)}/issue/${esc(i.id)}">${esc(i.id)}</a>${isFresh(i) ? '<span class="nw" title="Cập nhật sau lần bạn xem trước"></span>' : ''}<span class="cp"><button data-cp="id" title="Copy ID" aria-label="Copy ID">⧉</button><button data-cp="link" title="Copy link" aria-label="Copy link">🔗</button></span></td>`,
-  summary: (i) => { const t = titleOf(i); return `<td class="sm">${t.tags.length ? `<div class="tags">${t.tags.map((x) => `<span class="tag" style="--h:${hue(x)}">${esc(x)}</span>`).join('')}</div>` : ''}<div class="ttl" title="${esc(i.summary)}">${esc(t.rest)}</div></td>`; },
+  id: (i) => `<td class="idc"><a target="_blank" href="${esc(S.cfg.base)}/issue/${esc(i.id)}">${esc(i.id)}</a>${isFresh(i) ? '<span class="nw" title="Cập nhật sau lần bạn xem trước">mới</span>' : ''}<span class="cp"><button type="button" data-cp="id" title="Copy ID" aria-label="Copy ID">${ICO_COPY}</button><button type="button" data-cp="link" title="Copy link" aria-label="Copy link">${ICO_LINK}</button></span></td>`,
+  summary: (i) => { const t = titleOf(i); return `<td class="sm">${t.tags.length ? `<div class="tags">${t.tags.map((x) => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}<div class="ttl" title="${esc(i.summary)}">${esc(t.rest)}</div></td>`; },
   type: (i) => `<td><span class="tyc${i.type === 'Bug' ? ' bug' : ''}" style="--sc:${typeColor(i.type)}"><i></i>${esc(i.type || '—')}</span></td>`,
   due: (i, now) => dueCell(i.due, now),
   updated: (i) => `<td class="upd" title="${esc(new Date(i.updated).toLocaleString('vi-VN'))}">${ago(i.updated)}</td>`,
   state: (i) => `<td>${stateSelect(i)}</td>`,
-  priority: (i) => { const col = PCOL[i.priority], r = rank(i); return `<td>${col ? `<span class="pr-t${r < 3 ? ' hi' : ''}${r === 0 ? ' c0' : ''}" style="--c:${col}" aria-label="${esc(i.priority)} ưu tiên"><span class="pdot" style="--c:${col}"></span>${esc(i.priority)}</span>` : '—'}</td>`; },
+  priority: (i) => { const col = PCOL[i.priority], r = rank(i); return `<td>${col ? `<span class="prio${r < 3 ? ' hi' : ''}" style="--c:${col}" aria-label="${esc(i.priority)} ưu tiên"><span class="pm" data-l="${PLVL[i.priority]}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>${esc(i.priority)}</span>` : '—'}</td>`; },
   assignee: (i) => `<td>${person(i.assignee)}</td>`,
   qc: (i) => `<td>${person(i.qc)}</td>`,
   sprint: (i) => `<td>${i.sprints.length ? `<span class="sp" title="${esc(i.sprints.join(', '))}">${esc(shortSp(lastSp(i)))}${i.sprints.length > 1 ? `<small>+${i.sprints.length - 1}</small>` : ''}</span>` : '—'}</td>`,
@@ -42,7 +47,7 @@ const groupHtml = (k, items, now, cols) => `<tr class="grp${folded.has(k) ? ' fo
   (folded.has(k) ? '' : items.map((i) => rowHtml(i, now, cols)).join(''));
 
 const chipsHtml = (pool) => `<button class="chip${stateSel.size ? '' : ' on'}" aria-pressed="${!stateSel.size}" data-s="">Tất cả <b>${fmt(pool.length)}</b></button>` +
-  stateCounts(pool).map(([s, c]) => `<button class="chip${stateSel.has(s) ? ' on' : ''}" aria-pressed="${stateSel.has(s)}" data-s="${esc(s)}"><span class="sc" style="--sc:${stateColor(s)}">${stateIcon(s)}</span>${esc(s)}<b>${fmt(c)}</b></button>`).join('');
+  stateCounts(pool).map(([s, c]) => `<button class="chip${stateSel.has(s) ? ' on' : ''}" aria-pressed="${stateSel.has(s)}" data-s="${esc(s)}"><i style="--sc:${stateColor(s)}"></i>${esc(s)}<b>${fmt(c)}</b></button>`).join('');
 
 // priority / type chips (like State): options come from the loaded open tickets (selected ones stay listed), "Tất cả" clears
 function fillFlt(id, key, colorOf, sortFn) {
@@ -73,7 +78,7 @@ export function renderActive(now) {
   const act = S.shown = visibleRows(pool), g = $('grp').value;
   const ids = new Set(act.map((i) => i.id)); for (const id of picked) if (!ids.has(id)) picked.delete(id); // a ticket filtered out is no longer ticked
   renderBulk();
-  $('acount').textContent = `(${fmt(act.length)})${act.length > S.cap ? ` · hiện ${fmt(S.cap)} đầu` : ''}`;
+  $('acount').textContent = `${fmt(act.length)} ticket${act.length > S.cap ? `, hiện ${fmt(S.cap)} đầu` : ''}`;
   $('more').hidden = act.length <= S.cap; $('more').textContent = `Hiện thêm ${fmt(Math.min(CAP, act.length - S.cap))} ticket`;
   const shown = act.slice(0, S.cap);
   const body = g === 'none' ? shown.map((i) => rowHtml(i, now, cols)).join('') : groupRows(shown, g).map(([k, items]) => groupHtml(k, items, now, cols)).join('');

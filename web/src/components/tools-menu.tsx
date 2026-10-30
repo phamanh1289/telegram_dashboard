@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Filter, Newspaper, Trash2 } from "lucide-react";
+import { Filter, Loader2, Newspaper, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, type AiResult, type Rule, type RuleAdded } from "@/lib/api";
 
 /** Rules that mark matching tags handled automatically (bots, announcements…). */
@@ -55,16 +56,24 @@ export function RulesButton() {
           >
             <Input aria-label="Từ khóa" placeholder="Từ khóa, ví dụ #TB" value={keyword} maxLength={200}
               onChange={(e) => setKeyword(e.target.value)} />
-            <Button type="submit" disabled={!keyword.trim() || add.isPending}>Thêm</Button>
+            <Button type="submit" variant="outline" aria-busy={add.isPending} disabled={!keyword.trim() || add.isPending}>Thêm</Button>
           </form>
-          {add.data && <p className="text-xs text-emerald-600">Đã thêm, dọn {add.data.handled} tin đang chờ.</p>}
-          <ul className="grid gap-1 text-sm">
-            {rules.data?.length === 0 && <li className="text-muted-foreground">Chưa có quy tắc nào.</li>}
+          {add.data && <p role="status" className="text-sm text-ok">Đã thêm, dọn <span className="font-mono">{add.data.handled}</span> tin đang chờ.</p>}
+          {add.isError && <p role="alert" className="text-sm text-error">Không thêm được quy tắc.</p>}
+          <ul className="grid divide-y divide-rule border-y border-rule text-sm">
+            {rules.isPending && <li className="grid gap-2 py-2.5" aria-label="Đang tải…"><Skeleton className="h-3.5 w-2/3" /><Skeleton className="h-3.5 w-1/2" /></li>}
+            {rules.isError && (
+              <li role="alert" className="flex items-center gap-2 py-2.5 text-error">
+                Không tải được quy tắc.
+                <Button size="xs" variant="outline" className="ml-auto" onClick={() => void rules.refetch()}>Thử lại</Button>
+              </li>
+            )}
+            {rules.data?.length === 0 && <li className="py-2.5 text-ink-3">Chưa có quy tắc nào.</li>}
             {rules.data?.map((r) => (
-              <li key={r.id} className="flex items-center gap-2 rounded-md border px-2 py-1">
-                <span className="text-xs text-muted-foreground">{r.kind === "sender" ? "Người gửi" : "Từ khóa"}</span>
-                <span className="min-w-0 flex-1 truncate">{r.kind === "sender" ? (r.label || r.value) : r.value}</span>
-                <Button size="icon-xs" variant="ghost" aria-label="Xóa quy tắc" disabled={remove.isPending}
+              <li key={r.id} className="flex h-10 items-center gap-3">
+                <span className="w-20 shrink-0 text-xs text-ink-3">{r.kind === "sender" ? "Người gửi" : "Từ khóa"}</span>
+                <span className="min-w-0 flex-1 truncate text-ink">{r.kind === "sender" ? (r.label || r.value) : r.value}</span>
+                <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Xóa quy tắc" disabled={remove.isPending}
                   onClick={() => remove.mutate(r.id)}>
                   <Trash2 />
                 </Button>
@@ -100,17 +109,22 @@ export function DigestButton({ range, aiConfigured }: { range: string; aiConfigu
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogTitle>Tóm tắt việc cần xử lý</DialogTitle>
-          {run.isPending && <p className="animate-pulse text-sm text-muted-foreground">AI đang đọc các tin tag…</p>}
+          {run.isPending && (
+            <div className="grid gap-2" aria-label="AI đang đọc các tin tag…">
+              <p className="flex items-center gap-1.5 text-sm text-ink-3"><Loader2 className="size-3.5 animate-spin" aria-hidden /> AI đang đọc các tin tag…</p>
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-3.5" style={{ width: `${90 - i * 18}%` }} />)}
+            </div>
+          )}
           {run.isError && (
-            <p className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-error">
               {run.error instanceof ApiError && run.error.code === "ai_scope_not_allowed"
                 ? "Cần AI_REQUIRE_CONSENT=0 để AI đọc toàn bộ tin."
                 : "AI lỗi hoặc quá thời gian."}
             </p>
           )}
-          {run.data && <p className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap text-sm">{run.data.text}</p>}
+          {run.data && <p className="max-h-[60vh] max-w-[70ch] overflow-y-auto whitespace-pre-wrap text-[0.9375rem] leading-[1.55] text-ink">{run.data.text}</p>}
           <DialogFooter>
-            <Button variant="outline" disabled={run.isPending} onClick={() => run.mutate()}>Làm lại</Button>
+            <Button variant="outline" aria-busy={run.isPending} disabled={run.isPending} onClick={() => run.mutate()}>Làm lại</Button>
             <DialogClose render={<Button />}>Đóng</DialogClose>
           </DialogFooter>
         </DialogContent>

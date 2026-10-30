@@ -18,7 +18,7 @@ export function initDetail() {
     const [key, ...arg] = el.dataset.dd.split(':'), d = detail(key, arg.join(':'));
     if (!d) return;
     listed = d.rows.slice(0, MAX);
-    openPanel(d.title, `<div class="mut dcount">${fmt(d.rows.length)} ticket${d.rows.length > MAX ? ` · hiện ${MAX} đầu` : ''}</div>` + (d.rows.length
+    openPanel(d.title, `<div class="mut dcount">${fmt(d.rows.length)} ticket${d.rows.length > MAX ? `, hiện ${MAX} đầu` : ''}</div>` + (d.rows.length
       ? `<div class="scroll"><table class="dl2"><tr><th>Ticket</th><th>Tiêu đề</th><th>State</th><th>Priority</th><th>Cập nhật</th></tr>${d.rows.slice(0, MAX).map(row).join('')}</table></div>`
       : '<i>Không có ticket nào.</i>'));
   });

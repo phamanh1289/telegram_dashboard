@@ -37,8 +37,8 @@ export function useNow() {
 
 export function waitLabel(date: string, now: number) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
-  const text = mins < 60 ? `${mins} phút` : mins < 1440 ? `${Math.floor(mins / 60)} giờ` : `${Math.floor(mins / 1440)} ngày`;
-  return { text: `chờ ${text}`, overdue: mins >= OVERDUE_HOURS * 60 };
+  const [n, unit] = mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
+  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= OVERDUE_HOURS * 60 };
 }
 
 /**

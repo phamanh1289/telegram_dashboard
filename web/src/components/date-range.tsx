@@ -74,29 +74,30 @@ export function DateRangePicker({ value, onChange }: { value: DayRange; onChange
 
   return (
     <div ref={box} className="relative">
-      <div className={cn("flex h-8 items-center rounded-md border text-xs transition-colors", active ? "border-primary/50 bg-primary/10 text-foreground" : "bg-background text-muted-foreground hover:text-foreground")}>
-        <button type="button" className="flex h-full items-center gap-1.5 px-2.5" aria-expanded={open} aria-haspopup="dialog"
+      <div className={cn("flex h-9 items-center rounded-md text-[0.8125rem] transition-[background-color,color] duration-(--dur-micro)", active ? "bg-ink-2 text-paper" : "text-ink-2 hover:bg-paper-3 hover:text-ink")}>
+        <button type="button" className="flex h-full items-center gap-1.5 rounded-md px-2.5" aria-expanded={open} aria-haspopup="dialog"
+          aria-label={`Khoảng ngày: ${rangeLabel(value)}`}
           onClick={() => setOpen((v) => !v)} title="Chọn khoảng ngày của tin tag">
-          <CalendarDays className="size-3.5" />
-          <span className="font-medium">{rangeLabel(value)}</span>
-          <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} />
+          <CalendarDays className="size-4 shrink-0" aria-hidden />
+          <span className={cn("whitespace-nowrap", !active && "hidden md:inline", active && "font-medium")}>{rangeLabel(value)}</span>
+          <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-(--dur-short)", open && "rotate-180")} aria-hidden />
         </button>
         {active && (
-          <button type="button" aria-label="Bỏ lọc ngày" title="Bỏ lọc ngày" className="grid h-full place-items-center border-l px-1.5 hover:text-destructive"
+          <button type="button" aria-label="Bỏ lọc ngày" title="Bỏ lọc ngày" className="grid h-full place-items-center rounded-r-md border-l border-paper/25 px-2 opacity-80 hover:opacity-100"
             onClick={() => onChange({ from: "", to: "" })}>
-            <X className="size-3.5" />
+            <X className="size-3.5" aria-hidden />
           </button>
         )}
       </div>
       {open && (
         <div role="dialog" aria-label="Chọn khoảng ngày"
-          className="absolute right-0 top-10 z-40 grid w-80 gap-3 rounded-xl border bg-popover p-3 text-sm shadow-xl animate-in fade-in-0 zoom-in-95 duration-150">
-          <div className="grid grid-cols-3 gap-1.5">
+          className="absolute right-0 top-11 z-40 grid w-80 gap-3 rounded-lg bg-cotton p-3 text-sm shadow-pop animate-in fade-in-0 zoom-in-[0.98] duration-(--dur-short)">
+          <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Khoảng có sẵn">
             {presets().map((p) => {
               const on = p.range.from === value.from && p.range.to === value.to;
               return (
-                <button key={p.label} type="button"
-                  className={cn("whitespace-nowrap rounded-md border px-2 py-1.5 text-xs transition-colors", on ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}
+                <button key={p.label} type="button" aria-pressed={on}
+                  className={cn("h-7 whitespace-nowrap rounded-md border px-2 text-xs transition-[background-color,border-color,color] duration-(--dur-micro)", on ? "border-ink-2 bg-ink-2 font-medium text-paper" : "border-rule text-ink-2 hover:border-rule-2 hover:bg-paper-2 hover:text-ink")}
                   onClick={() => {
                     onChange(p.range);
                     setOpen(false);
@@ -106,9 +107,9 @@ export function DateRangePicker({ value, onChange }: { value: DayRange; onChange
               );
             })}
           </div>
-          <div className="grid grid-cols-2 gap-2 border-t pt-3">
+          <div className="grid grid-cols-2 gap-2 border-t border-rule pt-3">
             {(["from", "to"] as const).map((k) => (
-              <label key={k} className="grid gap-1 text-xs text-muted-foreground">
+              <label key={k} className="grid gap-1 text-xs font-medium text-ink-3">
                 {k === "from" ? "Từ ngày" : "Đến ngày"}
                 <input
                   type="date"
@@ -119,13 +120,13 @@ export function DateRangePicker({ value, onChange }: { value: DayRange; onChange
                   onClick={(e) => {
                     try { e.currentTarget.showPicker(); } catch {}
                   }}
-                  className="h-8 rounded-md border bg-background px-2 text-foreground [color-scheme:light] dark:[color-scheme:dark]"
+                  className="h-9 rounded-md border border-rule-2 bg-cotton px-2 font-mono text-[0.8125rem] font-normal text-ink hover:border-ink-3 focus-visible:-outline-offset-1"
                 />
               </label>
             ))}
           </div>
           <div className="flex justify-end">
-            <Button size="xs" onClick={() => setOpen(false)}>Xong</Button>
+            <Button size="sm" onClick={() => setOpen(false)}>Xong</Button>
           </div>
         </div>
       )}

@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3, ChevronsLeft, ChevronsRight, MessageSquare, Moon, Bot, Pin, Search, Send, Sun, X, Inbox as InboxIcon } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, MessageSquare, Moon, RotateCw, Search, Sun, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ChatList } from "@/components/chat-list";
+import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
@@ -40,16 +40,38 @@ export function App() {
 
   if (status.isPending) {
     return (
-      <main className="grid min-h-dvh place-items-center p-4">
-        <Skeleton className="h-10 w-64" />
+      <main aria-busy className="grid h-dvh grid-rows-[3.5rem_1fr]">
+        <span className="sr-only">Đang tải…</span>
+        <div className="flex items-center gap-4 border-b px-4">
+          <Skeleton className="h-8 w-44 rounded-md" />
+          <Skeleton className="ml-auto h-9 w-full max-w-sm rounded-md" />
+        </div>
+        <div className="grid min-h-0 md:grid-cols-[18rem_minmax(0,1fr)]">
+          <div className="hidden gap-3 border-r bg-paper-2 p-5 md:grid md:content-start">
+            {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-4" style={{ width: `${80 - i * 12}%` }} />)}
+          </div>
+          <div className="grid content-start gap-5 p-6">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-4">
+                <Skeleton className="h-4 w-16" />
+                <div className="grid gap-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3.5 w-full max-w-xl" /></div>
+              </div>
+            ))}
+          </div>
+        </div>
       </main>
     );
   }
   if (!status.data) {
     return (
-      <main className="grid min-h-dvh place-items-center gap-2 p-4 text-sm">
-        <p>Không liên lạc được backend local (127.0.0.1:8765).</p>
-        <Button size="sm" onClick={() => void status.refetch()}>Thử lại</Button>
+      <main className="grid min-h-dvh place-items-center p-4">
+        <div role="alert" className="grid max-w-sm justify-items-start gap-3">
+          <h1 className="text-base">Không liên lạc được backend</h1>
+          <p className="text-sm leading-relaxed text-ink-2">Không liên lạc được backend local (127.0.0.1:8765).</p>
+          <Button size="sm" variant="outline" aria-busy={status.isFetching} disabled={status.isFetching} onClick={() => void status.refetch()}>
+            <RotateCw /> Thử lại
+          </Button>
+        </div>
       </main>
     );
   }
@@ -66,6 +88,7 @@ function Inbox({ status }: { status: Status }) {
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
   const range = rangeQuery(days);
+  const pendingTotal = (useChats(range).data?.items ?? []).reduce((n, c) => n + c.pending_count, 0);
   const [search, setSearch] = useState("");
   function onSearch(q: string) {
     setSearch(q);
@@ -102,7 +125,9 @@ function Inbox({ status }: { status: Status }) {
   function toggleTheme() {
     const next = !dark;
     setDark(next);
-    document.documentElement.classList.toggle("dark", next);
+    const root = document.documentElement;
+    root.classList.toggle("dark", next);
+    root.dataset.theme = next ? "dark" : "light"; // the YouTrack module reads the same key and attribute
     try { localStorage.theme = next ? "dark" : "light"; } catch {}
   }
 
@@ -139,87 +164,101 @@ function Inbox({ status }: { status: Status }) {
 
   const connected = status.state === "connected";
 
+  const tabs = [
+    [ALL, "Việc cần xử lý", pendingTotal],
+    [PINNED, "Tag đã ghim", 0],
+    [TASKS, "Phiên AI", runningTasks],
+  ] as const;
+
   return (
-    <div className="grid h-dvh grid-rows-[auto_1fr]">
-      <header className="flex items-center gap-3 border-b bg-card px-4 py-2.5">
-        <h1 className="flex items-center gap-2 text-sm font-semibold">
-          <Send className="size-4 text-primary" aria-hidden /> Telegram Dashboard
-        </h1>
-        <a href="/yt/" className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" title="Chuyển sang YouTrack Dashboard">
-          <BarChart3 className="size-3.5" aria-hidden /> YouTrack
-        </a>
+    <div className="grid h-dvh grid-rows-[auto_1fr] bg-paper">
+      <header className="flex h-14 items-center gap-3 border-b bg-paper px-3 sm:px-4">
+        <h1 className="sr-only">Telegram Dashboard</h1>
+        <nav aria-label="Chuyển module" className="flex shrink-0 rounded-md bg-paper-2 p-0.5 shadow-groove">
+          <span aria-current="page" className="inline-flex h-[30px] items-center rounded-[5px] bg-cotton px-3 text-[0.8125rem] font-medium text-ink shadow-edge">
+            Telegram
+          </span>
+          <a href="/yt/" title="Chuyển sang YouTrack Dashboard"
+            className="inline-flex h-[30px] items-center rounded-[5px] px-3 text-[0.8125rem] text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
+            YouTrack
+          </a>
+        </nav>
         <span
           data-testid="tg-state"
           title={STATE_LABEL[status.state]}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground"
+          className={cn("flex min-w-0 items-center gap-1.5 text-xs", connected ? "text-ink-3" : "text-warn")}
         >
-          <span className={cn("size-2 rounded-full", connected ? "bg-emerald-500" : "bg-amber-500")} />
-          <span className="hidden sm:inline">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
+          {connected ? <Wifi className="size-3.5 shrink-0" aria-hidden /> : <WifiOff className="size-3.5 shrink-0" aria-hidden />}
+          <span className="hidden truncate lg:inline">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
         </span>
-        <span data-testid="stream-state" className="hidden text-xs text-muted-foreground md:inline">
+        <span data-testid="stream-state" className={cn("hidden whitespace-nowrap text-xs xl:inline", stream === "open" ? "text-ink-3" : "text-warn")}>
           {STREAM_LABEL[stream]}
         </span>
         <label className="relative ml-auto hidden w-full max-w-sm sm:block">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
           <input
             type="search"
             value={search}
             onChange={(e) => onSearch(e.target.value)}
             placeholder="Tìm người gửi, nhóm, tin nhắn…"
             aria-label="Tìm kiếm tất cả"
-            className="h-8 w-full rounded-md border bg-background pl-8 pr-7 text-xs outline-none placeholder:text-muted-foreground focus:border-primary [&::-webkit-search-cancel-button]:hidden"
+            className="h-9 w-full rounded-md border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
           />
           {search && (
             <button type="button" aria-label="Xóa tìm kiếm" onClick={() => onSearch("")}
-              className="absolute right-1.5 top-1/2 grid size-5 -translate-y-1/2 place-items-center rounded text-muted-foreground hover:text-foreground">
-              <X className="size-3.5" />
+              className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
+              <X className="size-3.5" aria-hidden />
             </button>
           )}
         </label>
-        <DateRangePicker value={days} onChange={setDays} />
-        <Button size="icon-sm" variant="ghost" onClick={toggleTheme} aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
-          {dark ? <Sun /> : <Moon />}
-        </Button>
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
+          <DateRangePicker value={days} onChange={setDays} />
+          <Button size="icon-sm" variant="ghost" onClick={toggleTheme} aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
+            {dark ? <Sun /> : <Moon />}
+          </Button>
+        </div>
       </header>
       <div className={cn(
-        "grid min-h-0 grid-cols-1",
+        "grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)]",
         collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[18rem_minmax(0,1fr)]",
         rightPanel && (collapsed ? "xl:grid-cols-[4rem_minmax(0,1fr)_30rem]" : "xl:grid-cols-[18rem_minmax(0,1fr)_30rem]"),
       )}>
-        <div className={cn("relative min-h-0", chatId && "hidden md:block")}>
-          {/* Collapsed: a 4rem rail that slides open over the content on hover/focus. */}
+        <div className={cn("relative min-h-0 border-r bg-paper-2", chatId && "hidden md:block")}>
+          {/* Collapsed: a 4rem rail; the full list opens over the content on hover/focus by clip-path, never by width. */}
           <div className={cn(
-            "group/side h-full overflow-clip border-r bg-card transition-[width,box-shadow] duration-200",
-            collapsed && "md:absolute md:inset-y-0 md:left-0 md:z-20 md:w-16 md:hover:w-72 md:hover:shadow-2xl md:focus-within:w-72",
+            "group/side h-full bg-paper-2",
+            collapsed && "md:absolute md:inset-y-0 md:left-0 md:z-20 md:w-72 md:[clip-path:inset(0_calc(14rem+1px)_0_0)] md:transition-[clip-path,box-shadow] md:duration-(--dur-short) md:ease-out md:hover:shadow-pop md:hover:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)]",
           )}>
             <div className="h-full md:w-72">
               <ChatList selected={chatId} onSelect={selectChat} range={range} search={search} collapsed={collapsed} />
             </div>
           </div>
           <Button size="icon-xs" variant="outline" onClick={(e) => { e.currentTarget.blur(); toggleCollapsed(); }}
-            className="absolute -right-3 top-3 z-40 hidden rounded-full bg-card shadow-sm md:inline-flex"
+            className="absolute -right-3 top-2.5 z-40 hidden size-6 rounded-full md:inline-flex"
             aria-label={collapsed ? "Ghim mở rộng thanh bên" : "Thu gọn thanh bên"}
             title={collapsed ? "Ghim mở rộng (đang thu gọn, rê chuột vào thanh bên để xem)" : "Thu gọn thanh bên"}>
             {collapsed ? <ChevronsRight /> : <ChevronsLeft />}
           </Button>
         </div>
-        <div className={cn("min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-background", chatId ? "grid" : "hidden md:grid")}>
-        <div role="tablist" aria-label="Danh sách tag" className="flex gap-1 border-b bg-card px-3 pt-2">
-          {([[ALL, "Việc cần xử lý", InboxIcon], [PINNED, "Tag đã ghim", Pin], [TASKS, "Phiên AI", Bot]] as const).map(([id, label, Icon]) => (
+        <div className={cn("min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-paper", chatId ? "grid" : "hidden md:grid")}>
+        <div role="tablist" aria-label="Danh sách tag" className="no-scrollbar flex h-11 items-stretch gap-6 overflow-x-auto border-b px-4 md:px-6">
+          {tabs.map(([id, label, count]) => (
             <button key={id} type="button" role="tab" aria-selected={chatId === id} onClick={() => selectChat(id)}
               className={cn(
-                "-mb-px flex items-center gap-1.5 rounded-t-md border-b-2 px-3 py-2 text-sm transition-colors hover:bg-primary/10",
-                chatId === id ? "border-primary font-medium text-foreground" : "border-transparent text-muted-foreground",
+                "relative flex shrink-0 items-center gap-2 whitespace-nowrap text-sm transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:origin-left after:scale-x-0 after:bg-ink after:transition-transform after:duration-(--dur-short) after:ease-out hover:text-ink",
+                chatId === id ? "font-medium text-ink after:scale-x-100" : "text-ink-3",
               )}>
-              <Icon className="size-4" aria-hidden /> {label}
-              {id === TASKS && runningTasks > 0 && (
-                <span className="rounded-full bg-sky-500 px-1.5 text-xs font-semibold text-white tabular-nums">{runningTasks}</span>
+              {label}
+              {count > 0 && (
+                <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs font-normal leading-5 text-ink-2 tabular-nums">
+                  <span className="sr-only">(</span>{count}<span className="sr-only">{id === TASKS ? " đang chạy)" : ")"}</span>
+                </span>
               )}
             </button>
           ))}
         </div>
         {chatId ? (
-          <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 duration-300">
+          <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 duration-(--dur-short)">
             {chatId === TASKS ? (
               <TasksPage onBack={() => selectChat(null)} onOpenGroup={selectChat} onUseText={useText} />
             ) : chatId === ALL || chatId === PINNED ? (
@@ -247,25 +286,26 @@ function Inbox({ status }: { status: Status }) {
             )}
           </div>
         ) : (
-          <div className="grid place-items-center">
-            <div className="grid justify-items-center gap-2 text-center text-muted-foreground">
-              <MessageSquare className="size-10 opacity-40" aria-hidden />
-              <p className="text-sm">Chọn một nhóm để xem tin bạn được tag</p>
+          <div className="grid place-items-center p-6">
+            <div className="grid max-w-xs justify-items-center gap-3 text-center">
+              <MessageSquare className="size-6 text-ink-3" aria-hidden />
+              <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
+              <Button size="sm" variant="outline" onClick={() => selectChat(ALL)}>Việc cần xử lý</Button>
             </div>
           </div>
         )}
         </div>
         {replyTo ? (
           <div key={`${replyTo.chat_id}:${replyTo.message_id}`}
-            className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-card shadow-2xl animate-in fade-in-0 slide-in-from-right-12 duration-300 xl:static xl:max-w-none xl:shadow-none">
+            className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:max-w-none xl:shadow-none">
             <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)} onSent={() => flashMessage("Đã gửi trả lời ✓")} onTaskCreated={() => flashMessage("Đã giao việc cho AI — theo dõi ở tab “Phiên AI”")} draft={draft}
+              onClearReply={() => setReplyTo(null)} onSent={() => flashMessage("Đã gửi trả lời ✓")} onTaskCreated={() => flashMessage("Đã giao việc cho AI. Theo dõi ở tab “Phiên AI”")} draft={draft}
               aiConfigured={status.ai_configured} />
           </div>
         ) : null}
       </div>
       {flash && (
-        <div role="status" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-lg animate-in fade-in-0 slide-in-from-bottom-4">
+        <div role="status" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-md bg-board px-4 py-2.5 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
           {flash}
         </div>
       )}

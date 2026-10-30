@@ -3,9 +3,10 @@ import { $, EASE, esc, lsGet, lsSet, reduce, swap, toast } from '../util.js';
 import { MOCK, S } from '../state.js';
 import { filtersChanged } from '../data.js';
 import { avatar } from '../views/cells.js';
+import { setTheme } from './theme.js';
 
 const body = document.body;
-const phone = () => matchMedia('(max-width:760px)').matches; // same test as the CSS, so JS and layout never disagree
+const phone = () => matchMedia('(max-width: 60rem)').matches; // same test as the CSS, so JS and layout never disagree
 const syncInert = () => { $('side').inert = phone() && body.classList.contains('collapsed'); }; // off-canvas menu: keep it out of the tab order
 
 export function setView(v) {
@@ -43,12 +44,12 @@ export function initSidebar() {
   $('tvBtn').onclick = () => {
     body.classList.add('tv');
     document.documentElement.requestFullscreen?.().catch(() => {});
-    toast('Chế độ TV · nhấn Esc để thoát');
+    toast('Chế độ TV, nhấn Esc để thoát');
   };
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) body.classList.remove('tv'); });
   // print / PDF always on the light theme (ink, readability), then back to the user's theme
   let theme = null;
-  addEventListener('beforeprint', () => { theme = document.documentElement.dataset.theme; document.documentElement.dataset.theme = 'light'; });
-  addEventListener('afterprint', () => { if (theme) document.documentElement.dataset.theme = theme; });
+  addEventListener('beforeprint', () => { theme = document.documentElement.dataset.theme; setTheme('light'); });
+  addEventListener('afterprint', () => { if (theme) setTheme(theme); });
   $('printBtn').onclick = () => print();
 }

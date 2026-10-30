@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>YouTrack Dashboard</title>
+<meta name="description" content="Ticket active và tiến độ sprint của project YouTrack: việc cần xử lý trước, rồi tiến độ, tốc độ và bug.">
 <script src="js/theme-boot.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600&amp;family=Geist+Mono:wght@400;500&amp;display=swap">
+<link rel="stylesheet" href="/design/tokens.css">
+<link rel="stylesheet" href="/design/base.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="modulepreload" href="js/main.js">
 </head>
@@ -15,106 +18,122 @@
 <div id="msg" role="alert"></div>
 <div class="app">
 <aside class="side" id="side">
-  <div class="brand" id="brand" title="Bấm để làm mới dữ liệu"><span class="logo" id="logo"></span><div class="bt">YouTrack<small>Dashboard</small></div></div>
-  <nav class="nav" aria-label="Module">
-    <span class="navh">Module</span>
-    <a class="nbtn" href="/" title="Chuyển sang Telegram Inbox"><svg viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span class="t">Telegram Inbox</span></a>
+  <nav class="modsw" aria-label="Chuyển module">
+    <a href="/" title="Telegram Inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span class="t">Telegram</span></a>
+    <a href="/yt/" aria-current="page" title="YouTrack"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="t">YouTrack</span></a>
   </nav>
-  <nav class="nav" id="view">
-    <span class="navh">Menu</span>
-    <button data-v="active" title="Ticket active"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="t">Ticket active</span></button>
-    <button data-v="dash" title="Dashboard"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="t">Dashboard</span></button>
+  <div class="brand" id="brand" title="Bấm để làm mới dữ liệu"><span class="logo" id="logo"></span><div class="bt">YouTrack<small>Dashboard</small></div></div>
+  <nav class="nav" id="view" aria-label="Trang">
+    <button type="button" data-v="active" title="Ticket active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="t">Ticket active</span></button>
+    <button type="button" data-v="dash" title="Dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="t">Dashboard</span></button>
   </nav>
   <div class="sfoot">
-    <button class="nbtn" id="tvBtn" title="Toàn màn hình, chữ lớn, ẩn menu (Esc để thoát)"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="t">Chế độ TV</span></button>
-    <button class="nbtn" id="printBtn" title="In hoặc lưu PDF trang đang xem"><svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg><span class="t">In / PDF</span></button>
-    <button class="nbtn" id="csv" title="Xuất danh sách đang lọc (các cột đang hiện) ra CSV"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="t">Xuất CSV</span></button>
-    <button class="nbtn" id="mockBtn" title="Chuyển qua lại giữa dữ liệu mẫu và dữ liệu thật"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span class="t" id="mockT"></span></button>
-    <button class="nbtn" id="theme" title="Đổi giao diện sáng/tối"><span id="ticon"></span><span class="t">Sáng / Tối</span></button>
+    <button type="button" class="nbtn" id="tvBtn" title="Toàn màn hình, chữ lớn, ẩn menu (Esc để thoát)"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span class="t">Chế độ TV</span></button>
+    <button type="button" class="nbtn" id="printBtn" title="In hoặc lưu PDF trang đang xem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg><span class="t">In / PDF</span></button>
+    <button type="button" class="nbtn" id="csv" title="Xuất danh sách đang lọc (các cột đang hiện) ra CSV"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="t">Xuất CSV</span></button>
+    <button type="button" class="nbtn" id="mockBtn" title="Chuyển qua lại giữa dữ liệu mẫu và dữ liệu thật"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span class="t" id="mockT"></span></button>
+    <button type="button" class="nbtn" id="theme" title="Đổi giao diện sáng/tối"><span id="ticon" aria-hidden="true"></span><span class="t">Sáng / Tối</span></button>
     <div class="me" id="me" hidden></div>
   </div>
 </aside>
 <div class="content">
-<header>
-  <button class="ibtn" id="burger" title="Thu gọn / mở rộng menu" aria-label="Thu gọn / mở rộng menu"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+<header class="top">
+  <button type="button" class="ibtn" id="burger" title="Thu gọn / mở rộng menu" aria-label="Thu gọn / mở rộng menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <h1 id="ptitle">Ticket active</h1>
   <div class="ctl">
-    <div class="seg2" id="scope" role="group" aria-label="Phạm vi" title="Xem việc của riêng bạn, của Android team hoặc tất cả"><button data-s="me">My task</button><span class="sd"></span><button data-s="android">Android team</button><span class="sd"></span><button data-s="team">All</button></div>
+    <div class="seg2" id="scope" role="group" aria-label="Phạm vi" title="Xem việc của riêng bạn, của Android team hoặc tất cả"><button type="button" data-s="me">My task</button><span class="sd"></span><button type="button" data-s="android">Android team</button><span class="sd"></span><button type="button" data-s="team">All</button></div>
     <select id="project" title="Project" aria-label="Project"></select>
     <details class="ms" id="sprint"><summary></summary><div class="opts"><input class="msq fld" type="search" placeholder="Tìm sprint…" aria-label="Tìm sprint" autocomplete="off"><div class="list"></div></div></details>
     <details class="ms" id="assignee"><summary></summary><div class="opts"><input class="msq fld" type="search" placeholder="Tìm người…" aria-label="Tìm người" autocomplete="off"><div class="list"></div></div></details>
-    <span id="upd" class="run" role="button" tabindex="0" title="Bấm để làm mới ngay"><svg aria-hidden="true"><rect class="tr" pathLength="100"/><rect class="pg" pathLength="100"/></svg><span id="uic">↻</span><span id="updt">Đang tải…</span></span>
+    <span id="upd" class="run" role="button" tabindex="0" title="Bấm để làm mới ngay"><svg aria-hidden="true"><rect class="tr" pathLength="100"/><rect class="pg" pathLength="100"/></svg><span id="uic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg></span><span id="updt">Đang tải…</span></span>
   </div>
 </header>
 <main>
   <div class="fchips" id="fchips"></div>
+
   <div class="bento vd" hidden>
-    <h2 class="bh">Tổng quan &amp; cần xử lý</h2>
-    <div class="kpis" id="kpis"></div>
-    <div class="attn" id="attn"></div>
-    <div class="card b7" style="--i:1"><h2>Tiến độ sprint <em>xong / QC / đang làm · vạch = thời gian đã qua</em></h2><div id="sprints"></div></div>
-    <div class="card b5 r2 ovis" style="--i:2"><h2>Cảnh báo ticket kéo dài <em id="agn" class="dd" data-dd="aging" title="Xem tất cả ticket"></em></h2><div class="agh"><details class="ms" id="agst"><summary></summary><div class="opts"><div class="list" id="agList"></div></div></details><span class="mut">ở cùng state ≥ 2 ngày = vàng, &gt; 3 ngày = đỏ (từ lần đổi state gần nhất)</span></div><div class="scroll"><table id="aging"></table></div></div>
-    <div class="card b7" style="--i:3"><h2>Burndown sprint <em><u class="lg" style="background:var(--acc2)"></u>thực tế <u class="lg" style="background:var(--mut)"></u>lý tưởng <u class="lg lgd"></u>dự báo</em></h2><div id="burn"></div></div>
-    <h2 class="bh">Tốc độ</h2>
-    <div class="card b6" style="--i:4"><h2>Velocity <em id="veln"></em></h2><div class="hbs" id="vel"></div></div>
-    <div class="card b6" style="--i:5"><h2>Lead time <em id="leadn" class="dd" data-dd="lead" title="Xem danh sách ticket"></em></h2><div id="lead"></div></div>
-    <h2 class="bh">Tải công việc &amp; luồng làm việc</h2>
-    <div class="card b4" style="--i:6"><h2>Công việc đang làm <em>ngưỡng WIP <select class="fld" id="wipSel" title="Ngưỡng WIP mỗi người" aria-label="Ngưỡng WIP mỗi người"><option>2</option><option>3</option><option>4</option><option>5</option></select></em></h2><div class="scroll"><table id="wip"></table></div></div>
-    <div class="card b4" style="--i:7"><h2>Chờ QC theo người</h2><div class="hbs" id="qcl"></div></div>
-    <div class="card b4" style="--i:8"><h2>Ticket đang mở theo state</h2><div class="hbs" id="dist"></div></div>
-    <div class="card b6" style="--i:9"><h2>Ticket xong mỗi ngày <em><select class="fld" id="rangeSel" title="Khoảng thời gian biểu đồ" aria-label="Khoảng thời gian biểu đồ"><option value="7">7 ngày</option><option value="14" selected>14 ngày</option><option value="30">30 ngày</option></select></em></h2><div id="thru"></div></div>
-    <div class="card b6" style="--i:10"><h2>Ticket chuyển sprint nhiều lần <em id="cn" class="dd" data-dd="carry" title="Xem tất cả ticket"></em></h2><div class="scroll"><table id="carry"></table></div></div>
-    <h2 class="bh">Bug</h2>
-    <div class="card b4" style="--i:11"><h2>Bug trong sprint</h2><div id="bugTot" class="dd" data-dd="bugs" title="Xem danh sách bug"></div></div>
-    <div class="card b8" style="--i:12"><h2>Bug mới vs đã sửa <em><u class="lg" style="background:var(--bad)"></u>mới <u class="lg" style="background:var(--fixed)"></u>đã sửa</em></h2><div id="flow"></div></div>
-    <div class="card b12" style="--i:13"><h2>Bug của user <em><u class="lg" style="background:var(--bad)"></u>mở <u class="lg" style="background:var(--fixed)"></u>xong</em></h2><div class="hbs" id="bugSp"></div></div>
-    <h2 class="bh">Khác</h2>
-    <div class="card b6" style="--i:14"><h2>Chưa sẵn sàng vào sprint <em id="rdn"></em></h2><div class="hbs" id="ready"></div></div>
-    <div class="card b6" style="--i:15"><h2>Bug so với Feature <em>xong trong sprint</em></h2><div id="mix"></div></div>
-  </div>
-  <div class="grid">
-    <div class="card wide va" style="--i:0">
-      <div class="va-head">
-        <h2><span>Ticket active <em id="acount"></em></span></h2>
-        <input class="fld qs" id="qs" type="search" placeholder="Tìm ID, tiêu đề, người…  ( / hoặc Ctrl/⌘ K)" aria-label="Tìm ticket" autocomplete="off">
+    <h2 class="bh">Cần xử lý</h2>
+    <section class="card b12 need" style="--i:1">
+      <div class="need-a">
+        <div class="hd"><h3>Cần chú ý</h3><span class="hm">ticket đang mở</span></div>
+        <div class="attn" id="attn"></div>
       </div>
-      <div class="frow"><span class="fl">Priority</span><div class="chips" id="fpri"></div></div>
-      <div class="frow"><span class="fl">Type</span><div class="chips" id="ftype"></div></div>
-      <div class="frow"><span class="fl">State</span><div class="chips" id="chips"></div></div>
-      <div class="frow">
-        <span class="fl">Style</span>
+      <div class="need-b">
+        <div class="hd"><h3>Cảnh báo ticket kéo dài</h3><span id="agn" class="hm dd" data-dd="aging" title="Xem tất cả ticket"></span></div>
+        <div class="agh"><details class="ms" id="agst"><summary></summary><div class="opts"><div class="list" id="agList"></div></div></details><span class="mut">Ở cùng state từ 2 ngày: vàng, quá 3 ngày: đỏ (tính từ lần đổi state gần nhất)</span></div>
+        <div class="scroll"><table id="aging"></table></div>
+      </div>
+    </section>
+
+    <h2 class="bh">Tổng quan sprint</h2>
+    <div class="card b12 kpis" id="kpis"></div>
+    <section class="card b6" style="--i:3"><div class="hd"><h3>Tiến độ sprint</h3><span class="hm">vạch dọc = thời gian đã qua</span></div><div id="sprints"></div></section>
+    <section class="card b6" style="--i:4"><div class="hd"><h3>Burndown sprint</h3><span class="hm lgnd"><span><u class="lg" style="--sc:var(--chart-main)"></u>thực tế</span><span><u class="lg lgi"></u>lý tưởng</span><span><u class="lg lgd"></u>dự báo</span></span></div><div id="burn"></div></section>
+
+    <h2 class="bh">Tốc độ</h2>
+    <section class="card b6" style="--i:5"><div class="hd"><h3>Velocity</h3><span id="veln" class="hm"></span></div><div class="hbs" id="vel"></div></section>
+    <section class="card b6" style="--i:6"><div class="hd"><h3>Lead time</h3><span id="leadn" class="hm dd" data-dd="lead" title="Xem danh sách ticket"></span></div><div id="lead"></div></section>
+
+    <h2 class="bh">Tải công việc &amp; luồng làm việc</h2>
+    <section class="card b4" style="--i:7"><div class="hd"><h3>Công việc đang làm</h3><label class="hm">ngưỡng WIP <select class="fld" id="wipSel" title="Ngưỡng WIP mỗi người" aria-label="Ngưỡng WIP mỗi người"><option>2</option><option>3</option><option>4</option><option>5</option></select></label></div><div class="scroll"><table id="wip"></table></div></section>
+    <section class="card b4" style="--i:8"><div class="hd"><h3>Chờ QC theo người</h3></div><div class="hbs" id="qcl"></div></section>
+    <section class="card b4" style="--i:9"><div class="hd"><h3>Ticket đang mở theo state</h3></div><div class="hbs" id="dist"></div></section>
+    <section class="card b6" style="--i:10"><div class="hd"><h3>Ticket xong mỗi ngày</h3><span class="hm"><select class="fld" id="rangeSel" title="Khoảng thời gian biểu đồ" aria-label="Khoảng thời gian biểu đồ"><option value="7">7 ngày</option><option value="14" selected>14 ngày</option><option value="30">30 ngày</option></select></span></div><div id="thru"></div></section>
+    <section class="card b6" style="--i:11"><div class="hd"><h3>Ticket chuyển sprint nhiều lần</h3><span id="cn" class="hm dd" data-dd="carry" title="Xem tất cả ticket"></span></div><div class="scroll"><table id="carry"></table></div></section>
+
+    <h2 class="bh">Bug</h2>
+    <section class="card b4" style="--i:12"><div class="hd"><h3>Bug trong sprint</h3></div><div id="bugTot" class="dd" data-dd="bugs" title="Xem danh sách bug"></div></section>
+    <section class="card b8" style="--i:13"><div class="hd"><h3>Bug mới và đã sửa</h3><span class="hm lgnd"><span><u class="lg" style="--sc:var(--bad)"></u>mới</span><span><u class="lg" style="--sc:var(--fixed)"></u>đã sửa</span></span></div><div id="flow"></div></section>
+    <section class="card b12" style="--i:14"><div class="hd"><h3>Bug của user</h3><span class="hm lgnd"><span><u class="lg" style="--sc:var(--bad)"></u>mở</span><span><u class="lg" style="--sc:var(--fixed)"></u>xong</span></span></div><div class="hbs" id="bugSp"></div></section>
+
+    <h2 class="bh">Khác</h2>
+    <section class="card b6" style="--i:15"><div class="hd"><h3>Chưa sẵn sàng vào sprint</h3><span id="rdn" class="hm"></span></div><div class="hbs" id="ready"></div></section>
+    <section class="card b6" style="--i:16"><div class="hd"><h3>Bug so với Feature</h3><span class="hm">xong trong sprint</span></div><div id="mix"></div></section>
+  </div>
+
+  <section class="va" aria-labelledby="vah">
+    <div class="va-head">
+      <h2 id="vah" class="visually-hidden">Ticket active</h2>
+      <input class="fld qs" id="qs" type="search" placeholder="Tìm ID, tiêu đề, người…  ( / hoặc Ctrl/⌘ K)" aria-label="Tìm ticket" autocomplete="off">
+      <span id="acount" class="acount" aria-live="polite"></span>
+      <div class="vopts">
         <select class="fld" id="grp" title="Gom nhóm" aria-label="Gom nhóm">
           <option value="none">Không gom nhóm</option><option value="assignee">Gom theo Assignee</option>
           <option value="sprint" selected>Gom theo Sprint</option><option value="module">Gom theo Module / App</option>
         </select>
         <details class="ms" id="fcols"><summary>Cột</summary><div class="opts"><div class="list" id="fcolsList"></div></div></details>
-        <button class="chip" id="dense" title="Hàng thấp hơn, tiêu đề 1 dòng">Gọn</button>
-        <button class="chip" id="res" title="Hiện ticket đã resolved (chữ xám, gạch ngang)">Hiện resolved</button>
-        <button class="chip" id="hi" title="Tô nền các ticket từ High trở lên (High, Highest, Critical)">Highlight High+</button>
-      </div>
-      <div class="bulk" id="bulk" hidden role="region" aria-label="Thao tác hàng loạt">
-        <b id="bn"></b>
-        <select class="fld" id="bas" aria-label="Đổi assignee cho các ticket đã chọn"></select>
-        <button class="chip on" id="bapply">Áp dụng</button>
-        <button class="chip" id="bclr">Bỏ chọn</button>
-      </div>
-      <div class="scroll"><table id="atable"></table></div>
-      <button class="chip" id="more" hidden></button>
-      <div class="empty" id="empty" hidden>
-        <p id="emsg"></p>
-        <button class="chip" id="eclr">Xóa bộ lọc</button>
-        <div class="gs"><input class="fld" id="gid" type="search" placeholder="Tìm toàn cục theo ID  (vd. 123 hoặc VA-123)" autocomplete="off" aria-label="Tìm toàn cục theo ID"><button class="chip on" id="gbtn">Tìm toàn cục</button></div>
-        <p class="mut" id="gerr" role="status"></p>
+        <button type="button" class="chip" id="dense" title="Hàng thấp hơn, tiêu đề 1 dòng">Gọn</button>
+        <button type="button" class="chip" id="res" title="Hiện ticket đã resolved (chữ xám, gạch ngang)">Hiện resolved</button>
+        <button type="button" class="chip" id="hi" title="Tô nền các ticket từ High trở lên (High, Highest, Critical)">Highlight High+</button>
       </div>
     </div>
-  </div>
+    <div class="fbar" role="group" aria-label="Bộ lọc">
+      <div class="frow"><span class="fl">Priority</span><div class="chips" id="fpri"></div></div>
+      <div class="frow"><span class="fl">Type</span><div class="chips" id="ftype"></div></div>
+      <div class="frow wide"><span class="fl">State</span><div class="chips" id="chips"></div></div>
+    </div>
+    <div class="bulk" id="bulk" hidden role="region" aria-label="Thao tác hàng loạt">
+      <b id="bn"></b>
+      <select class="fld" id="bas" aria-label="Đổi assignee cho các ticket đã chọn"></select>
+      <button type="button" class="btn pri" id="bapply">Áp dụng</button>
+      <button type="button" class="btn ghost" id="bclr">Bỏ chọn</button>
+    </div>
+    <div class="sheet"><div class="scroll"><table id="atable"></table></div></div>
+    <button type="button" class="btn" id="more" hidden></button>
+    <div class="empty" id="empty" hidden>
+      <p id="emsg"></p>
+      <button type="button" class="btn" id="eclr">Xóa bộ lọc</button>
+      <div class="gs"><input class="fld" id="gid" type="search" placeholder="Tìm toàn cục theo ID  (vd. 123 hoặc VA-123)" autocomplete="off" aria-label="Tìm toàn cục theo ID"><button type="button" class="btn pri" id="gbtn">Tìm toàn cục</button></div>
+      <p class="mut" id="gerr" role="status"></p>
+    </div>
+  </section>
 </main>
 </div>
 </div>
 <div id="tip" hidden></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="dim"></div>
-<aside id="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết ticket" aria-hidden="true" inert><div class="dh"><span id="dtitle"></span><span class="dnav"><button class="x" id="dprev" title="Ticket trước (k)" aria-label="Ticket trước">‹</button><button class="x" id="dnext" title="Ticket sau (j)" aria-label="Ticket sau">›</button></span><button class="x" id="dclose" title="Đóng (Esc)" aria-label="Đóng">✕</button></div><div class="db" id="dbody"></div></aside>
+<aside id="drawer" role="dialog" aria-modal="true" aria-label="Chi tiết ticket" aria-hidden="true" inert><div class="dh"><span id="dtitle"></span><span class="dnav"><button type="button" class="x" id="dprev" title="Ticket trước (k)" aria-label="Ticket trước"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button><button type="button" class="x" id="dnext" title="Ticket sau (j)" aria-label="Ticket sau"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg></button></span><button type="button" class="x" id="dclose" title="Đóng (Esc)" aria-label="Đóng"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div><div class="db" id="dbody"></div></aside>
 <script type="module">import { boot } from "./js/main.js"; boot();</script>
 </body>
 </html>

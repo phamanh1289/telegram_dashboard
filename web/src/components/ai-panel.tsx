@@ -64,12 +64,12 @@ export function AiPanel({
         <h2 className="text-sm font-semibold">Trợ lý AI</h2>
         <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Đóng"><X /></Button>
       </div>
-      {!aiConfigured && <p className="text-xs text-muted-foreground">{ERRORS.ai_not_configured}</p>}
-      <p className="text-xs text-muted-foreground">
+      {!aiConfigured && <p className="text-xs text-ink-3">{ERRORS.ai_not_configured}</p>}
+      <p className="text-xs leading-relaxed text-ink-3">
         Tick các tin trong khung chat (tối đa 30) rồi nhờ AI soạn nháp hoặc tóm tắt. AI chỉ trả văn bản, không tự gửi.
       </p>
-      <p className="text-xs font-medium">
-        Đã chọn {selected.length}/30 tin.{" "}
+      <p className="text-xs font-medium text-ink-2">
+        Đã chọn <span className="font-mono">{selected.length}/30</span> tin.{" "}
         {selected.length > 0 && (
           <Button size="xs" variant="link" onClick={onClear}>Bỏ chọn</Button>
         )}
@@ -97,9 +97,9 @@ export function AiPanel({
           </Button>
         )}
       </div>
-      {run.isPending && <p className="animate-pulse text-xs text-muted-foreground">Đang xử lý…</p>}
+      {run.isPending && <p className="text-xs text-ink-3">Đang xử lý…</p>}
       {run.isError && (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className="text-xs text-error">
           {!requireConsent && run.error instanceof ApiError && run.error.code === "ai_scope_not_allowed"
             ? "Có tin là media hoặc đã bị xóa, AI chỉ đọc được tin chữ. Bỏ chọn các tin đó rồi thử lại."
             : errText(run.error)}
@@ -112,9 +112,9 @@ export function AiPanel({
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            className="grid gap-2 rounded-md border p-2"
+            className="grid gap-2 rounded-md bg-paper-2 p-3"
           >
-            <p className="whitespace-pre-wrap text-sm">{result.r.text}</p>
+            <p className="whitespace-pre-wrap text-[0.9375rem] leading-[1.55] text-ink">{result.r.text}</p>
             {result.kind === "draft" && (
               <Button size="sm" onClick={() => onUseDraft(result.r)}>Đưa vào khung soạn</Button>
             )}
@@ -165,7 +165,7 @@ function GrantForm({ chatId, selected }: { chatId: string; selected: Message[] }
 
   return (
     <form
-      className="grid gap-2 rounded-md border p-2 text-xs"
+      className="grid gap-2 rounded-md bg-paper-2 p-3 text-xs text-ink-2"
       onSubmit={(e) => {
         e.preventDefault();
         save.mutate(false);
@@ -193,7 +193,7 @@ function GrantForm({ chatId, selected }: { chatId: string; selected: Message[] }
         ))}
         <label className="flex items-center gap-1">
           Hiệu lực
-          <Input type="number" min={1} max={90} value={days} className="h-7 w-16"
+          <Input type="number" min={1} max={90} value={days} className="h-[30px] w-16 font-mono"
             onChange={(e) => setDays(Math.max(1, Math.min(90, Number(e.target.value) || 1)))} />
           ngày
         </label>
@@ -211,7 +211,7 @@ function GrantForm({ chatId, selected }: { chatId: string; selected: Message[] }
             `, từ chối: ${Object.entries(save.data.rejected).map(([id, why]) => `#${id} (${why})`).join(", ")}`}
         </p>
       )}
-      {save.isError && <p role="alert" className="text-destructive">{errText(save.error)}</p>}
+      {save.isError && <p role="alert" className="text-error">{errText(save.error)}</p>}
     </form>
   );
 }

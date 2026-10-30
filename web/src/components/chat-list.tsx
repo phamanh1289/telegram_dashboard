@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { RotateCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,26 +17,40 @@ import { api, type Chat, type ChatsResponse } from "@/lib/api";
 import { fold } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
+/** 24px initial on a wash of one of the six categorical hues, picked from the name (fixed L/C via tokens). */
 export function Avatar({ name, className }: { name: string; className?: string }) {
-  const hue = [...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0);
+  const hue = ([...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0) % 6) + 1;
   return (
     <span
       aria-hidden
-      style={{ background: `oklch(0.6 0.1 ${hue} / 0.22)`, color: `oklch(var(--av-l) 0.12 ${hue})` }}
-      className={cn("grid size-9 shrink-0 place-items-center rounded-full text-sm font-semibold uppercase", className)}
+      style={{ background: `color-mix(in oklch, var(--cat-${hue}) 24%, var(--color-cotton))` }}
+      className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[0.6875rem] font-semibold text-ink-2", className)}
     >
-      {[...(name.trim().split(/\s+/).pop() ?? "?")][0]}
+      {([...(name.trim().split(/\s+/).pop() ?? "?")][0] ?? "?").toLocaleUpperCase("vi")}
     </span>
   );
 }
 
+/** While collapsed to a rail, text beyond the avatars waits for the rail to open (hover or focus). */
+const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
+
 /** Count on the avatar while the list is a narrow rail. */
 function RailBadge({ n }: { n: number }) {
   return (
-    <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[0.6rem] font-semibold leading-4 text-white tabular-nums md:group-hover/side:hidden">
+    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-ink-2 px-1 text-center font-mono text-[0.625rem] leading-4 text-paper tabular-nums md:group-hover/side:opacity-0 md:group-focus-within/side:opacity-0">
       {n > 99 ? "99+" : n}
     </span>
   );
+}
+
+/** Groups with tags for the active day range (shared by the rail and the tab counts). */
+export function useChats(range: string) {
+  return useQuery({
+    queryKey: ["chats", range],
+    refetchInterval: 60_000, // snoozed tags come back on their own
+    queryFn: ({ signal }) =>
+      api<ChatsResponse>(`/chats${range ? `?${range}` : ""}`, { signal }),
+  });
 }
 
 export function ChatList({
@@ -54,12 +68,7 @@ export function ChatList({
 }) {
   const qc = useQueryClient();
   const [purging, setPurging] = useState<Chat | null>(null);
-  const chats = useQuery({
-    queryKey: ["chats", range],
-    refetchInterval: 60_000, // snoozed tags come back on their own
-    queryFn: ({ signal }) =>
-      api<ChatsResponse>(`/chats${range ? `?${range}` : ""}`, { signal }),
-  });
+  const chats = useChats(range);
   const purge = useMutation({
     mutationFn: (id: string) =>
       api<void>(`/chats/${encodeURIComponent(id)}/data`, { method: "DELETE" }),
@@ -79,43 +88,66 @@ export function ChatList({
   }, [pendingTotal]);
 
   return (
-    <nav aria-label="Nhóm có tag" className="flex h-full min-h-0 flex-col gap-2 p-2">
-      <h2 className="flex items-center gap-2 whitespace-nowrap px-1 py-1 text-xs font-medium uppercase text-muted-foreground">
-        Bạn được tag
-        {pendingTotal > 0 && <span className="ml-auto pr-1 normal-case text-amber-600 dark:text-amber-400">{pendingTotal} chưa xử lý</span>}
-      </h2>
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
-        {chats.isPending && <Skeleton className="h-12 w-full" />}
-        {chats.isError && <p className="px-2 text-sm text-destructive">Không tải được danh sách nhóm.</p>}
-        {chats.isSuccess && allItems.length === 0 && (
-          <p className="px-2 text-sm text-muted-foreground">Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.</p>
+    <nav aria-label="Nhóm có tag" className="flex h-full min-h-0 flex-col">
+      <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && cn("md:pl-20", railHide))}>
+        Nhóm có tag
+        {pendingTotal > 0 && (
+          <span className="ml-auto font-normal text-ink-3">
+            <span className="font-mono text-ink-2 tabular-nums">{pendingTotal}</span> chưa xử lý
+          </span>
         )}
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
+      </h2>
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        {chats.isPending && (
+          <ul aria-label="Đang tải nhóm" className="grid gap-1 px-3 pt-1">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <li key={i} className="flex h-10 items-center gap-3">
+                <Skeleton className="size-6 rounded-full" />
+                <Skeleton className="h-3 flex-1" style={{ maxWidth: `${70 - i * 8}%` }} />
+              </li>
+            ))}
+          </ul>
+        )}
+        {chats.isError && (
+          <div role="alert" className="grid justify-items-start gap-2 px-3 py-2 text-sm">
+            <p className="text-error">Không tải được danh sách nhóm.</p>
+            <Button size="sm" variant="outline" onClick={() => void chats.refetch()}>
+              <RotateCw /> Thử lại
+            </Button>
+          </div>
+        )}
+        {chats.isSuccess && allItems.length === 0 && (
+          <p className="px-3 py-2 text-sm leading-relaxed text-ink-3">Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.</p>
+        )}
+        {chats.isSuccess && allItems.length > 0 && items.length === 0 && (
+          <p className="px-3 py-2 text-sm text-ink-3">Không có nhóm nào khớp “{search.trim()}”.</p>
+        )}
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
           {items.map((c) => (
-            <li key={c.chat_id} className="group relative animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+            <li key={c.chat_id} className="group relative">
               <button
                 type="button"
                 onClick={() => onSelect(c.chat_id)}
                 aria-current={selected === c.chat_id}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-2 py-2 pr-10 text-left text-sm transition-colors hover:bg-primary/10",
-                  selected === c.chat_id && "bg-primary/15 font-medium",
+                  "flex h-10 w-full items-center gap-3 rounded-md px-3 pr-10 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
+                  selected === c.chat_id && "bg-cotton text-ink shadow-edge hover:bg-cotton",
                 )}
               >
                 <span className="relative shrink-0">
                   <Avatar name={c.title} />
                   {collapsed && c.pending_count > 0 && <RailBadge n={c.pending_count} />}
                 </span>
-                <span className={cn("block min-w-0 flex-1 truncate", c.pending_count > 0 && "font-semibold")}>{c.title}</span>
+                <span className={cn("block min-w-0 flex-1 truncate", c.pending_count > 0 && "font-medium text-ink", collapsed && railHide)}>{c.title}</span>
                 {c.pending_count > 0 && (
                   <span title={`${c.pending_count} tin chưa xử lý`}
-                    className="shrink-0 rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white tabular-nums">
+                    className={cn("shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums group-hover:bg-cotton", collapsed && railHide)}>
                     {c.pending_count}
                   </span>
                 )}
               </button>
               <Button size="icon-xs" variant="ghost" aria-label="Xóa dữ liệu" title="Xóa dữ liệu"
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-destructive opacity-40 transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-ink-3 opacity-0 transition-opacity hover:bg-error-wash hover:text-error focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100 active:-translate-y-1/2"
                 onClick={() => setPurging(c)}>
                 <Trash2 />
               </Button>
@@ -130,9 +162,10 @@ export function ChatList({
             Xóa tin đã lưu của “{purging?.title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.
             Tin đang gửi có thể đã tới Telegram và không thu hồi được.
           </DialogDescription>
+          {purge.isError && <p role="alert" className="text-sm text-error">Không xóa được dữ liệu nhóm. Thử lại.</p>}
           <DialogFooter>
             <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
-            <Button variant="destructive" disabled={purge.isPending}
+            <Button variant="destructive" className="bg-error-wash hover:bg-error-wash" aria-busy={purge.isPending} disabled={purge.isPending}
               onClick={() => purging && purge.mutate(purging.chat_id)}>
               Xóa dữ liệu
             </Button>

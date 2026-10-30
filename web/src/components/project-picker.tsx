@@ -49,14 +49,14 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
   const current = items.some((p) => p.path === value) ? value : "";
 
   return (
-    <span className="flex items-center gap-1 text-xs text-muted-foreground">
-      <FolderGit2 className="size-4" aria-hidden />
+    <span className="flex items-center gap-1 text-xs text-ink-3">
+      <FolderGit2 className="size-4 shrink-0" aria-hidden />
       <select
         aria-label="Dự án tham chiếu cho AI"
         title={current || "AI không đọc dự án nào"}
         value={current}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 max-w-40 rounded-md border bg-background px-2 text-foreground"
+        className="h-7 max-w-40 rounded-md border border-rule-2 bg-cotton px-2 text-ink transition-[border-color] duration-(--dur-micro) hover:border-ink-3"
       >
         <option value="">Không dùng dự án</option>
         {items.map((p) => (
@@ -64,17 +64,17 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
         ))}
       </select>
       {current && (
-        <Button size="icon-xs" variant="ghost" aria-label="Gỡ dự án khỏi danh sách" title="Gỡ dự án khỏi danh sách"
+        <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Gỡ dự án khỏi danh sách" title="Gỡ dự án khỏi danh sách"
           disabled={remove.isPending} onClick={() => remove.mutate(current)}>
           <X />
         </Button>
       )}
-      <Button size="xs" variant="ghost" title="Chọn thư mục dự án trong Finder" disabled={pick.isPending}
+      <Button size="xs" variant="ghost" title="Chọn thư mục dự án trong Finder" aria-busy={pick.isPending} disabled={pick.isPending}
         onClick={() => pick.mutate()}>
         <Plus /> {pick.isPending ? "Đang chọn…" : "Thêm"}
       </Button>
       {pick.isError && (
-        <Button size="xs" variant="link" className="text-destructive" onClick={() => setAdding(true)}>
+        <Button size="xs" variant="link" className="whitespace-normal text-left text-error" onClick={() => setAdding(true)}>
           {pick.error instanceof ApiError && pick.error.code === "not_found"
             ? "Backend cũ: khởi động lại dashboard (hoặc nhập đường dẫn)"
             : "Không mở được hộp chọn thư mục, nhập đường dẫn"}
@@ -97,7 +97,7 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
             <Input autoFocus aria-label="Đường dẫn dự án" placeholder="/Users/…/my-app" value={path}
               onChange={(e) => setPath(e.target.value)} maxLength={1000} />
             {add.isError && (
-              <p role="alert" className="text-xs text-destructive">
+              <p role="alert" className="text-sm text-error">
                 {add.error instanceof ApiError && add.error.code === "project_not_a_directory"
                   ? "Không tìm thấy thư mục này."
                   : "Không thêm được dự án."}
@@ -105,7 +105,7 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
             )}
             <DialogFooter>
               <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
-              <Button type="submit" disabled={!path.trim() || add.isPending}>Thêm</Button>
+              <Button type="submit" aria-busy={add.isPending} disabled={!path.trim() || add.isPending}>Thêm</Button>
             </DialogFooter>
           </form>
         </DialogContent>

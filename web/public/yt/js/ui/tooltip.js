@@ -17,7 +17,7 @@ function placeTip() {
 
 async function showTip(id) {
   const i = findIssue(id); if (!i) return;
-  const head = `<div class="tt">${esc(id)} · ${esc(i.summary)}</div><div class="tm">${esc(i.state || '—')} · ${esc(i.priority || '—')} · ${esc(i.assignee || 'Chưa assign')}</div>`;
+  const head = `<div class="tt"><span>${esc(id)}</span>${esc(i.summary)}</div><div class="tm"><span>${esc(i.state || '—')}</span><span>${esc(i.priority || '—')}</span><span>${esc(i.assignee || 'Chưa assign')}</span></div>`;
   tip.innerHTML = head + '<div class="ts">Đang tải mô tả…</div>'; tip.hidden = false; placeTip();
   try {
     const d = await detail(id);

@@ -40,10 +40,10 @@ export async function openDrawer(id, list = null, keep = false) {
   cur = id; paintNav();
   let i = findIssue(id); const ext = !i; // ext = found by the global ID search, not in the loaded data: /api/issue returns the full row too
   if (ext) { try { const d = await detail(id); if (d.summary) i = d; } catch {} }
-  $('dtitle').innerHTML = `<a target="_blank" href="${esc(S.cfg.base)}/issue/${esc(id)}">${esc(id)} ↗</a>`;
+  $('dtitle').innerHTML = `<a target="_blank" href="${esc(S.cfg.base)}/issue/${esc(id)}" title="Mở trên YouTrack">${esc(id)}<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></a>`;
   const meta = !i ? [] : [['State', stateSelect(i)], ['Assignee', assigneeSelect(i)], ['Priority', esc(i.priority || '—')],
     ['QC', esc(i.qc || '—')], ['Sprint', esc(i.sprints.join(', ') || '—')], ...(i.due ? [['Hạn', when(i.due)]] : []), ['Tạo', when(i.created)], ['Cập nhật', when(i.updated)]];
-  const top = (ext ? `<div class="mut">Ticket ngoài dữ liệu đã tải${i ? '' : ' · hiển thị rút gọn, mở YouTrack để xem đầy đủ'}</div>` : '') +
+  const top = (ext ? `<div class="mut">Ticket ngoài dữ liệu đã tải${i ? '' : ', hiển thị rút gọn, mở YouTrack để xem đầy đủ'}</div>` : '') +
     `<h3>${esc(i ? i.summary : id)}</h3><div class="meta">${meta.map(([k, v]) => `<span>${k}</span><div>${v}</div>`).join('')}`;
   $('dbody').innerHTML = top + '<span>Reporter</span><div>…</div></div><h4>Mô tả</h4><div class="desc">Đang tải…</div>';
   $('drawer').classList.remove('wide');
@@ -54,7 +54,7 @@ export async function openDrawer(id, list = null, keep = false) {
     $('dbody').innerHTML = top + `<span>Reporter</span><div>${esc(d.reporter || '—')}</div></div>` +
       `<h4>Mô tả</h4><div class="desc">${d.description ? md(d.description) : '<i>Không có mô tả</i>'}</div>` + linksHtml(d.links) +
       `<h4>Bình luận (${d.comments.length})</h4>` +
-      (d.comments.map((c) => `<div class="cm"><small>${esc(c.author || '—')} · ${when(c.created)}</small>${md(c.text)}</div>`).join('') || '<i>Chưa có bình luận</i>');
+      (d.comments.map((c) => `<div class="cm"><small><span>${esc(c.author || '—')}</span><time>${when(c.created)}</time></small>${md(c.text)}</div>`).join('') || '<i>Chưa có bình luận</i>');
     if (!reduce) [...$('dbody').children].forEach((el, k) => el.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 300, delay: Math.min(k, 8) * 30, easing: EASE, fill: 'backwards' }));
   } catch (e) { $('dbody').querySelector('.desc').textContent = 'Không tải được chi tiết: ' + e.message; }
 }
