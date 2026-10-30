@@ -37,7 +37,7 @@ const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:grou
 /** Count on the avatar while the list is a narrow rail. */
 function RailBadge({ n }: { n: number }) {
   return (
-    <span className="absolute -right-1.5 -top-1.5 min-w-4 rounded-full bg-ink-2 px-1 text-center font-mono text-[0.625rem] leading-4 text-paper tabular-nums md:group-hover/side:opacity-0 md:group-focus-within/side:opacity-0">
+    <span className="absolute -right-1.5 -top-1.5 hidden min-w-4 rounded-full bg-signal px-1 text-center font-mono text-[0.625rem] leading-4 text-signal-ink tabular-nums md:block md:group-hover/side:opacity-0 md:group-focus-within/side:opacity-0">
       {n > 99 ? "99+" : n}
     </span>
   );
@@ -89,7 +89,7 @@ export function ChatList({
 
   return (
     <nav aria-label="Nhóm có tag" className="flex h-full min-h-0 flex-col">
-      <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && cn("md:pl-20", railHide))}>
+      <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && railHide)}>
         Nhóm có tag
         {pendingTotal > 0 && (
           <span className="ml-auto font-normal text-ink-3">
@@ -131,7 +131,7 @@ export function ChatList({
                 aria-current={selected === c.chat_id}
                 className={cn(
                   "flex h-10 w-full items-center gap-3 rounded-md px-3 pr-10 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
-                  selected === c.chat_id && "bg-cotton text-ink shadow-edge hover:bg-cotton",
+                  selected === c.chat_id && "bg-hl-wash font-medium text-hl-2 hover:bg-hl-wash",
                 )}
               >
                 <span className="relative shrink-0">

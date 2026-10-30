@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronsLeft, ChevronsRight, MessageSquare, Moon, RotateCw, Search, Sun, Wifi, WifiOff, X } from "lucide-react";
+import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Moon, Pin, RotateCw, Search, Send, Sun, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
@@ -163,141 +163,166 @@ function Inbox({ status }: { status: Status }) {
   }
 
   const connected = status.state === "connected";
+  const chatsData = useChats(range).data?.items ?? [];
+  // Phones: the sidebar is an off-canvas sheet; desktop: pinned open or a 64px rail that opens on hover/focus.
+  const [menuOpen, setMenuOpen] = useState(false);
+  function toggleMenu() {
+    if (matchMedia("(min-width: 48rem)").matches) toggleCollapsed();
+    else setMenuOpen((v) => !v);
+  }
+  function go(id: string | null) {
+    selectChat(id);
+    setMenuOpen(false);
+  }
 
-  const tabs = [
-    [ALL, "Việc cần xử lý", pendingTotal],
-    [PINNED, "Tag đã ghim", 0],
-    [TASKS, "Phiên AI", runningTasks],
+  const views = [
+    [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
+    [PINNED, "Tag đã ghim", 0, Pin],
+    [TASKS, "Phiên AI", runningTasks, Bot],
   ] as const;
+  const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? "Telegram";
+  // Rail: labels wait for the rail to open (hover or focus); phones always show them.
+  const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
   return (
-    <div className="grid h-dvh grid-rows-[auto_1fr] bg-paper">
-      <header className="flex h-14 items-center gap-3 border-b bg-paper px-3 sm:px-4">
+    <div className={cn("grid h-dvh bg-paper", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
+      {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
+      {/* Sidebar, the YouTrack recipe: module switch, brand, views, groups, footer. */}
+      <aside className={cn(
+        "group/side fixed inset-y-0 left-0 z-50 flex w-[15.5rem] flex-col gap-1 border-r bg-paper-2 p-3 transition-[translate,clip-path,box-shadow] duration-(--dur-short) ease-out",
+        menuOpen ? "translate-x-0 shadow-pop" : "-translate-x-full",
+        "md:translate-x-0 md:shadow-none",
+        collapsed && "md:[clip-path:inset(0_calc(100%-4rem)_0_0)] md:hover:[clip-path:inset(0_-3rem_0_0)] md:hover:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop",
+      )}>
         <h1 className="sr-only">Telegram Dashboard</h1>
-        <nav aria-label="Chuyển module" className="flex shrink-0 rounded-md bg-paper-2 p-0.5 shadow-groove">
-          <span aria-current="page" className="inline-flex h-[30px] items-center rounded-[5px] bg-cotton px-3 text-[0.8125rem] font-medium text-ink shadow-edge">
-            Telegram
+        <nav aria-label="Chuyển module" className={cn("mb-2 flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove", collapsed && "md:flex-col md:group-hover/side:flex-row md:group-focus-within/side:flex-row")}>
+          <span aria-current="page" className="flex min-h-8 flex-1 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2 text-sm font-medium text-hl-ink">
+            <Send className="size-5 shrink-0" aria-hidden /><span className={cn("whitespace-nowrap", t)}>Telegram</span>
           </span>
           <a href="/yt/" title="Chuyển sang YouTrack Dashboard"
-            className="inline-flex h-[30px] items-center rounded-[5px] px-3 text-[0.8125rem] text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
-            YouTrack
+            className="flex min-h-8 flex-1 items-center gap-2 rounded-[var(--radius-input)] px-2 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
+            <ListChecks className="size-5 shrink-0" aria-hidden /><span className={cn("whitespace-nowrap", t)}>YouTrack</span>
           </a>
         </nav>
-        <span
-          data-testid="tg-state"
-          title={STATE_LABEL[status.state]}
-          className={cn("flex min-w-0 items-center gap-1.5 text-xs", connected ? "text-ink-3" : "text-warn")}
-        >
-          {connected ? <Wifi className="size-3.5 shrink-0" aria-hidden /> : <WifiOff className="size-3.5 shrink-0" aria-hidden />}
-          <span className="hidden truncate lg:inline">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
-        </span>
-        <span data-testid="stream-state" className={cn("hidden whitespace-nowrap text-xs xl:inline", stream === "open" ? "text-ink-3" : "text-warn")}>
-          {STREAM_LABEL[stream]}
-        </span>
-        <label className="relative ml-auto hidden w-full max-w-sm sm:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder="Tìm người gửi, nhóm, tin nhắn…"
-            aria-label="Tìm kiếm tất cả"
-            className="h-9 w-full rounded-md border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
-          />
-          {search && (
-            <button type="button" aria-label="Xóa tìm kiếm" onClick={() => onSearch("")}
-              className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
-              <X className="size-3.5" aria-hidden />
-            </button>
-          )}
-        </label>
-        <div className="ml-auto flex shrink-0 items-center gap-1 sm:ml-0">
-          <DateRangePicker value={days} onChange={setDays} />
-          <Button size="icon-sm" variant="ghost" onClick={toggleTheme} aria-label="Đổi giao diện sáng/tối" title="Đổi giao diện sáng/tối">
-            {dark ? <Sun /> : <Moon />}
-          </Button>
+        <div className="mb-2 flex min-h-10 items-center gap-3 px-1.5">
+          <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-board text-board-type"><Send className="size-4" aria-hidden /></span>
+          <span className={cn("grid whitespace-nowrap leading-tight", t)}>
+            <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox</span>
+          </span>
         </div>
-      </header>
-      <div className={cn(
-        "grid min-h-0 grid-cols-1 grid-rows-[minmax(0,1fr)]",
-        collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[18rem_minmax(0,1fr)]",
-        rightPanel && (collapsed ? "xl:grid-cols-[4rem_minmax(0,1fr)_30rem]" : "xl:grid-cols-[18rem_minmax(0,1fr)_30rem]"),
-      )}>
-        <div className={cn("relative min-h-0 border-r bg-paper-2", chatId && "hidden md:block")}>
-          {/* Collapsed: a 4rem rail; the full list opens over the content on hover/focus by clip-path, never by width. */}
-          <div className={cn(
-            "group/side h-full bg-paper-2",
-            collapsed && "md:absolute md:inset-y-0 md:left-0 md:z-20 md:w-72 md:[clip-path:inset(0_calc(14rem+1px)_0_0)] md:transition-[clip-path,box-shadow] md:duration-(--dur-short) md:ease-out md:hover:shadow-pop md:hover:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)]",
-          )}>
-            <div className="h-full md:w-72">
-              <ChatList selected={chatId} onSelect={selectChat} range={range} search={search} collapsed={collapsed} />
-            </div>
-          </div>
-          <Button size="icon-xs" variant="outline" onClick={(e) => { e.currentTarget.blur(); toggleCollapsed(); }}
-            className="absolute -right-3 top-2.5 z-40 hidden size-6 rounded-full md:inline-flex"
-            aria-label={collapsed ? "Ghim mở rộng thanh bên" : "Thu gọn thanh bên"}
-            title={collapsed ? "Ghim mở rộng (đang thu gọn, rê chuột vào thanh bên để xem)" : "Thu gọn thanh bên"}>
-            {collapsed ? <ChevronsRight /> : <ChevronsLeft />}
-          </Button>
-        </div>
-        <div className={cn("min-h-0 grid-rows-[auto_minmax(0,1fr)] bg-paper", chatId ? "grid" : "hidden md:grid")}>
-        <div role="tablist" aria-label="Danh sách tag" className="no-scrollbar flex h-11 items-stretch gap-6 overflow-x-auto border-b px-4 md:px-6">
-          {tabs.map(([id, label, count]) => (
-            <button key={id} type="button" role="tab" aria-selected={chatId === id} onClick={() => selectChat(id)}
+        <nav aria-label="Trang" className="grid gap-0.5">
+          {views.map(([id, label, count, Icon]) => (
+            <button key={id} type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} title={label}
               className={cn(
-                "relative flex shrink-0 items-center gap-2 whitespace-nowrap text-sm transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:origin-left after:scale-x-0 after:bg-ink after:transition-transform after:duration-(--dur-short) after:ease-out hover:text-ink",
-                chatId === id ? "font-medium text-ink after:scale-x-100" : "text-ink-3",
+                "flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
+                chatId === id ? "bg-hl-wash font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
               )}>
-              {label}
+              <Icon className="size-5 shrink-0" aria-hidden />
+              <span className={cn("flex-1 whitespace-nowrap", t)}>{label}</span>
               {count > 0 && (
-                <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs font-normal leading-5 text-ink-2 tabular-nums">
+                <span className={cn("rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2")}>
                   <span className="sr-only">(</span>{count}<span className="sr-only">{id === TASKS ? " đang chạy)" : ")"}</span>
                 </span>
               )}
             </button>
           ))}
+        </nav>
+        <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
+          <ChatList selected={chatId} onSelect={go} range={range} search={search} collapsed={collapsed} />
         </div>
-        {chatId ? (
-          <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 duration-(--dur-short)">
-            {chatId === TASKS ? (
-              <TasksPage onBack={() => selectChat(null)} onOpenGroup={selectChat} onUseText={useText} />
-            ) : chatId === ALL || chatId === PINNED ? (
-              <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
-                onBack={() => selectChat(null)} onUseText={useText} />
+        <div className="-mx-3 grid gap-0.5 border-t px-3 pt-2">
+          <button type="button" onClick={toggleTheme} title="Đổi giao diện sáng/tối"
+            className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+            {dark ? <Sun className="size-5 shrink-0" aria-hidden /> : <Moon className="size-5 shrink-0" aria-hidden />}
+            <span className={cn("whitespace-nowrap", t)}>Sáng / Tối</span>
+          </button>
+          <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
+            <span data-testid="tg-state" title={STATE_LABEL[status.state]} className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
+              {connected ? <Wifi className="size-5" aria-hidden /> : <WifiOff className="size-5" aria-hidden />}
+              <span className="sr-only">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
+            </span>
+            <span className={cn("grid min-w-0 leading-tight", t)}>
+              <span className={cn("truncate font-medium", connected ? "text-ink-2" : "text-warn")}>{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
+              <span data-testid="stream-state" className={cn("truncate", stream === "open" ? "text-ink-3" : "text-warn")}>{STREAM_LABEL[stream]}</span>
+            </span>
+          </div>
+        </div>
+      </aside>
+      <div className="hidden md:block" aria-hidden />
+
+      <div className={cn("grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]", rightPanel && "xl:grid-cols-[minmax(0,1fr)_30rem]")}>
+        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-paper px-3 py-2 sm:px-6 xl:col-span-2">
+          <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
+            aria-label="Thu gọn / mở rộng menu" title="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
+            <Menu />
+          </Button>
+          <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.01em] sm:flex-none">{title}</h2>
+          <div className="ml-auto flex min-w-0 items-center gap-2">
+            <label className="relative hidden w-72 sm:block lg:w-80">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => onSearch(e.target.value)}
+                placeholder="Tìm người gửi, nhóm, tin nhắn…"
+                aria-label="Tìm kiếm tất cả"
+                className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
+              />
+              {search && (
+                <button type="button" aria-label="Xóa tìm kiếm" onClick={() => onSearch("")}
+                  className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
+                  <X className="size-3.5" aria-hidden />
+                </button>
+              )}
+            </label>
+            <DateRangePicker value={days} onChange={setDays} />
+          </div>
+        </header>
+        {/* The page sits in one card, like the YouTrack ledger. */}
+        <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
+          <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
+            {chatId ? (
+              <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 duration-(--dur-short)">
+                {chatId === TASKS ? (
+                  <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
+                ) : chatId === ALL || chatId === PINNED ? (
+                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
+                    onBack={() => setMenuOpen(true)} onUseText={useText} />
+                ) : (
+                <MessageList
+                  onUseText={useText}
+                  chatId={chatId}
+                  range={range}
+                  onBack={() => go(ALL)}
+                  replyTo={replyTo?.message_id ?? null}
+                  onReply={setReplyTo}
+                  selectMode={false}
+                  selected={selected}
+                  onToggle={(m) =>
+                    setSelected((prev) => {
+                      const next = new Map(prev);
+                      if (next.has(m.message_id)) next.delete(m.message_id);
+                      else next.set(m.message_id, m);
+                      return next;
+                    })
+                  }
+                />
+                )}
+              </div>
             ) : (
-            <MessageList
-              onUseText={useText}
-              chatId={chatId}
-              range={range}
-              onBack={() => selectChat(null)}
-              replyTo={replyTo?.message_id ?? null}
-              onReply={setReplyTo}
-              selectMode={false}
-              selected={selected}
-              onToggle={(m) =>
-                setSelected((prev) => {
-                  const next = new Map(prev);
-                  if (next.has(m.message_id)) next.delete(m.message_id);
-                  else next.set(m.message_id, m);
-                  return next;
-                })
-              }
-            />
+              <div className="grid place-items-center p-6">
+                <div className="grid max-w-xs justify-items-center gap-3 text-center">
+                  <MessageSquare className="size-6 text-ink-3" aria-hidden />
+                  <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
+                  <Button size="sm" variant="outline" onClick={() => go(ALL)}>Việc cần xử lý</Button>
+                </div>
+              </div>
             )}
           </div>
-        ) : (
-          <div className="grid place-items-center p-6">
-            <div className="grid max-w-xs justify-items-center gap-3 text-center">
-              <MessageSquare className="size-6 text-ink-3" aria-hidden />
-              <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
-              <Button size="sm" variant="outline" onClick={() => selectChat(ALL)}>Việc cần xử lý</Button>
-            </div>
-          </div>
-        )}
         </div>
         {replyTo ? (
           <div key={`${replyTo.chat_id}:${replyTo.message_id}`}
-            className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:max-w-none xl:shadow-none">
+            className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:row-start-2 xl:col-start-2 xl:max-w-none xl:shadow-none">
             <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
               onClearReply={() => setReplyTo(null)} onSent={() => flashMessage("Đã gửi trả lời ✓")} onTaskCreated={() => flashMessage("Đã giao việc cho AI. Theo dõi ở tab “Phiên AI”")} draft={draft}
               aiConfigured={status.ai_configured} />

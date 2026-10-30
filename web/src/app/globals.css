@@ -1,6 +1,6 @@
-/* Hallmark · shape: app screen · genre: modern-minimal · theme: Coral (deal 1/3, seed work-dashboards-telegram-mention-2a6a·68faf1b3·2026-10-30·r0) · redesign: full
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: custom (by request: dễ nhìn, highlight rõ, tương phản tốt; restyle of the Coral build) · redesign: restyle
  * nav: module switch top-left (Telegram pressed, YouTrack a link), group rail at left collapsing by clip, text tabs with an ink underline over the main column · signature: the waiting queue, oldest first, each wait set in mono, coral only past 4h, selected row a coral left mark · states: loading skeletons shaped like rows, empty with one action, error with retry
- * axes: light/grotesk-sans/warm · posture: restrained · contrast: pass · modes: light+dark · v2.0.0 */
+ * axes: light/grotesk-sans/cool · posture: restrained · contrast: pass · modes: light+dark · v2.0.0 */
 /* Hallmark · pre-emit critique: the old inbox was chat bubbles in a stock blue with amber pills on every row, so nothing led; now the queue is a ruled ledger on cotton where the wait figure is the first thing read, coral is spent only on overdue waits, the focus ring and the selected mark, actions stay quiet until hover, focus or selection, and the composer ends on one ink "Gửi". */
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -23,6 +23,10 @@
     --color-rule-2: var(--color-rule-2);
     --color-board: var(--color-board);
     --color-board-type: var(--color-board-type);
+    --color-hl: var(--color-hl);
+    --color-hl-2: var(--color-hl-2);
+    --color-hl-wash: var(--color-hl-wash);
+    --color-hl-ink: var(--color-hl-ink);
     --color-signal: var(--color-signal);
     --color-signal-2: var(--color-signal-2);
     --color-signal-wash: var(--color-signal-wash);

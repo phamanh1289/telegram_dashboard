@@ -12,14 +12,14 @@ const buttonVariants = cva(
       variant: {
         default: "bg-board text-board-type hover:-translate-y-px hover:bg-ink-2",
         outline:
-          "bg-cotton text-ink shadow-edge hover:bg-paper-2 aria-expanded:bg-paper-2 aria-pressed:bg-paper-3",
+          "bg-cotton text-ink shadow-edge hover:bg-paper-2 aria-expanded:bg-paper-2 aria-pressed:bg-hl-wash aria-pressed:text-hl-2",
         secondary:
-          "bg-cotton text-ink shadow-edge hover:bg-paper-2 aria-expanded:bg-paper-2 aria-pressed:bg-paper-3",
+          "bg-cotton text-ink shadow-edge hover:bg-paper-2 aria-expanded:bg-paper-2 aria-pressed:bg-hl-wash aria-pressed:text-hl-2",
         ghost:
-          "text-ink-2 hover:bg-paper-3 hover:text-ink aria-expanded:bg-paper-3 aria-expanded:text-ink aria-pressed:bg-paper-3 aria-pressed:text-ink",
+          "text-ink-2 hover:bg-paper-3 hover:text-ink aria-expanded:bg-paper-3 aria-expanded:text-ink aria-pressed:bg-hl-wash aria-pressed:text-hl-2",
         destructive:
           "text-error hover:bg-error-wash",
-        link: "h-auto px-0 text-ink underline decoration-rule-2 underline-offset-4 hover:decoration-signal-2",
+        link: "h-auto px-0 text-ink underline decoration-rule-2 underline-offset-4 hover:decoration-hl",
       },
       size: {
         default:

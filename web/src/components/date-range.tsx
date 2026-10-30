@@ -97,7 +97,7 @@ export function DateRangePicker({ value, onChange }: { value: DayRange; onChange
               const on = p.range.from === value.from && p.range.to === value.to;
               return (
                 <button key={p.label} type="button" aria-pressed={on}
-                  className={cn("h-7 whitespace-nowrap rounded-md border px-2 text-xs transition-[background-color,border-color,color] duration-(--dur-micro)", on ? "border-ink-2 bg-ink-2 font-medium text-paper" : "border-rule text-ink-2 hover:border-rule-2 hover:bg-paper-2 hover:text-ink")}
+                  className={cn("h-7 whitespace-nowrap rounded-md border px-2 text-xs transition-[background-color,border-color,color] duration-(--dur-micro)", on ? "border-hl bg-hl font-medium text-hl-ink" : "border-rule text-ink-2 hover:border-rule-2 hover:bg-paper-2 hover:text-ink")}
                   onClick={() => {
                     onChange(p.range);
                     setOpen(false);

@@ -313,7 +313,7 @@ export function TasksPage({ onBack, onOpenGroup, onUseText }: {
           {FILTERS.map(([id, label]) => (
             <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}
               className={cn("h-7 whitespace-nowrap rounded-md border px-2.5 text-xs transition-[background-color,border-color,color] duration-(--dur-micro)",
-                filter === id ? "border-ink-2 bg-ink-2 font-medium text-paper" : "border-rule text-ink-2 hover:border-rule-2 hover:bg-paper-2 hover:text-ink")}>
+                filter === id ? "border-hl bg-hl font-medium text-hl-ink" : "border-rule text-ink-2 hover:border-rule-2 hover:bg-paper-2 hover:text-ink")}>
               {label}
             </button>
           ))}

@@ -2,12 +2,12 @@
 
 Two modules, one product: **Telegram Inbox** (`/`, Next + Tailwind 4 + shadcn) and **YouTrack** (`/yt/`, vanilla ES modules). Both read the same tokens: [`web/public/design/tokens.css`](web/public/design/tokens.css) and [`web/public/design/base.css`](web/public/design/base.css). Change a value there, never a literal in a component.
 
-Theme: Hallmark **Coral** in app scope. Warm grey stationery on a desk, one light from the left, one coral signal. Light and dark ship with equal care (parity, never inversion).
+Palette: custom, cool neutral. A soft blue-grey ground with white cards (light) or a deep blue-grey with lifted cards (dark), and two signals that never share a job: **blue highlight** for where you are and what you act on, **orange signal** for what needs you. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
 ## Principles
 
 1. **The task, not the tool.** Someone triaging mentions or chasing tickets should see what needs them first: the oldest waiting message, the ticket stuck longest. Everything else is one step away.
-2. **Coral means "needs you".** Overdue, waiting > 4h, critical, unread, the focus ring. Never a fill behind chrome, never a decoration. Primary actions are **ink** (the board), not coral.
+2. **Blue = here / act, orange = needs you.** Highlight (`--color-hl`) marks the selection, the current tab, module and filter, the primary button, links and focus. Signal (`--color-signal`) marks overdue, waiting > 4h, new since last visit. Neither is decoration.
 3. **Density is the design.** Controls 30–36px tall with a 44px hit area; tables before cards; one card recipe.
 4. **Figures are set, not decorated.** IDs, times, counts, ages, percentages in Geist Mono tabular. No icon tiles on stats, no trend arrows nobody measured, no gradients.
 5. **Motion is state.** `--dur-micro` / `--dur-short`, `transform` + `opacity` only, `prefers-reduced-motion` respected. Never `transition: all`; never animate width/height/top/left.
@@ -20,7 +20,8 @@ Theme: Hallmark **Coral** in app scope. Warm grey stationery on a desk, one ligh
 | Records (cards, rows, sheets, popovers) | `--color-cotton` |
 | Text strong / body / quiet | `--color-ink`, `--color-ink-2`, `--color-ink-3` |
 | Hairline / control border | `--color-rule`, `--color-rule-2` |
-| Primary action fill / its label | `--color-board`, `--color-board-type` |
+| Highlight: fill / as text / selected background / text on fill | `--color-hl`, `--color-hl-2`, `--color-hl-wash`, `--color-hl-ink` |
+| Primary action fill / its label | `--color-board`, `--color-board-type` (= highlight) |
 | Signal (needs you) / as text / wash | `--color-signal`, `--color-signal-2`, `--color-signal-wash` |
 | Focus ring | `--color-focus` (2px, offset 2px, instant) |
 | Data state | `--color-ok`, `--color-warn`, `--color-error`, `--color-info` and their `-wash` |
@@ -43,13 +44,13 @@ In the Next app these map onto shadcn names in `globals.css` (`--background`, `-
 
 ## Components
 
-- **Button** — primary: board fill, board-type label, 36px (30px small), radius 6, lifts 1px on hover, presses 1px on active. Secondary: cotton with `--edge-stock`. Ghost: transparent, paper-3 on hover. Destructive: error text, error-wash on hover. All eight states: default, hover, focus-visible, active, disabled (opacity .5, no pointer), loading (spinner replaces icon, label stays), error, success.
+- **Button** — primary: highlight fill, white label, 36px (30px small), radius 6, lifts 1px on hover, presses 1px on active. Secondary: cotton with `--edge-stock`. Ghost: transparent, paper-3 on hover. Destructive: error text, error-wash on hover. All eight states: default, hover, focus-visible, active, disabled (opacity .5, no pointer), loading (spinner replaces icon, label stays), error, success.
 - **Segmented control** (2–4 options: scope, tabs inside a card): a groove (`--press-groove`, paper-2) with a cotton card riding in it to the chosen stop.
 - **Tabs** (page-level): text tabs with a 2px ink underline on the current one; count in a mono pill.
-- **Input / select** — 36px, radius 6, 1px `--color-rule-2`, cotton fill; focus ring coral.
-- **Chip / filter** — 28px, radius 6, rule border; selected = ink-2 fill, paper label (not coral). A count inside is mono.
+- **Input / select** — 36px, radius 6, 1px `--color-rule-2`, cotton fill; focus ring highlight.
+- **Chip / filter** — 28px, radius 8, rule-2 border; selected = highlight fill, white label. A count inside is mono.
 - **Card** — cotton, radius 8, `--edge-stock` + `--cast-stock`, 16px padding, head row 600 + quiet meta at right. Never a card inside a card (use a rule or a paper-2 well).
-- **Table** — sticky head in paper-2, heads ink-3 `--text-xs` 500 sentence case, rows 40px (compact 32px), hairline rules, hover paper-2, selected row a 2px coral left mark. Numbers right-aligned mono.
+- **Table** — sticky head in paper-2, heads ink-3 `--text-xs` 500 sentence case, rows 40px (compact 32px), hairline rules, hover paper-2, selected row hl-wash with a 3px highlight left mark. Numbers right-aligned mono.
 - **Badge / state** — text + a small square swatch of its category colour (not colour alone); `-wash` background only for error/warn/ok states.
 - **Avatar** — 24px circle, initials on a hue derived from the name at fixed L/C.
 - **Popover / menu / dialog / drawer** — cotton, `--cast-pop`, radius 8; scrim `--scrim`; drawer slides with `transform`.

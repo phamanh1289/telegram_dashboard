@@ -111,7 +111,7 @@ export function MessageList({
           <div role="tablist" aria-label="Lọc tin" className="flex rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
             {([[true, "Chưa xử lý"], [false, "Tất cả"]] as const).map(([v, label]) => (
               <button key={label} type="button" role="tab" aria-selected={pendingOnly === v} onClick={() => setPendingOnly(v)}
-                className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", pendingOnly === v ? "bg-cotton font-medium text-ink shadow-edge" : "text-ink-3 hover:text-ink")}>
+                className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", pendingOnly === v ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
                 {label}
               </button>
             ))}
