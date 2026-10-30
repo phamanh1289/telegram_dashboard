@@ -9,6 +9,12 @@ OutboxStatus = Literal["pending", "sending", "sent", "failed", "unknown"]
 ChatKind = Literal["group", "supergroup"]
 
 
+class LinkSpan(BaseModel):
+    offset: int  # UTF-16 code units, like Telegram entities and JS strings
+    length: int
+    url: str
+
+
 class StoredMessage(BaseModel):
     """Internal message record; ids are ints here and strings on the wire."""
 
@@ -24,6 +30,10 @@ class StoredMessage(BaseModel):
     outgoing: bool = False
     media_kind: str | None = None
     deleted: bool = False
+    handled: bool = False  # answered (any reply from us) or marked done by hand
+    snoozed_until: datetime | None = None  # hidden from pending until then
+    pinned: bool = False  # sticks to the top of the pending list
+    links: list[LinkSpan] = []  # hyperlinks hidden behind text (UTF-16 offsets)
 
 
 class GroupInfo(BaseModel):
@@ -51,6 +61,10 @@ class MessageDTO(BaseModel):
     outgoing: bool
     media_kind: str | None
     deleted: bool
+    handled: bool = False
+    snoozed_until: datetime | None = None
+    pinned: bool = False
+    links: list[LinkSpan] = []
 
 
 class ChatDTO(BaseModel):
@@ -65,15 +79,12 @@ class ChatDTO(BaseModel):
     generation: int = 0
     sync_state: Literal["idle", "syncing", "degraded"] = "idle"
     initial_history_limit: int = 50
+    pending_count: int = 0  # tags not handled yet
 
 
 class ChatsResponse(BaseModel):
     items: list[ChatDTO]
     snapshot_cursor: str
-
-
-class TrackingRequest(BaseModel):
-    enabled: bool
 
 
 class MessagesPage(BaseModel):
@@ -104,12 +115,10 @@ class StatusDTO(BaseModel):
     ]
     detail: str | None = None
     ai_configured: bool
+    ai_require_consent: bool
+    youtrack_configured: bool = False
     db_epoch: str
     cursor: str
-
-
-class UnlockRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=128)
 
 
 class ReplyRequest(BaseModel):
@@ -162,6 +171,98 @@ class AiDraftRequest(BaseModel):
     chat_id: str
     message_ids: list[str] = Field(min_length=1, max_length=30)
     instruction: str = Field(max_length=2000)
+    project: str | None = None  # path of a registered project the agent may read
+    with_context: bool = True  # add nearby group messages (fetched live, not stored)
+
+
+class HandledRequest(BaseModel):
+    handled: bool
+
+
+class PinRequest(BaseModel):
+    pinned: bool
+
+
+class SnoozeRequest(BaseModel):
+    until: datetime | None  # None = wake now
+
+
+class PendingItem(BaseModel):
+    chat_title: str
+    message: MessageDTO
+
+
+class RuleDTO(BaseModel):
+    id: int
+    kind: Literal["sender", "keyword"]
+    value: str
+    label: str
+
+
+class RuleRequest(BaseModel):
+    kind: Literal["sender", "keyword"]
+    value: str = Field(min_length=1, max_length=200)
+    label: str = Field(default="", max_length=200)
+
+
+class RuleAdded(BaseModel):
+    rule: RuleDTO
+    handled: int  # existing pending tags the rule cleared
+
+
+class TaskDTO(BaseModel):
+    id: str
+    chat_id: str | None
+    message_id: str | None
+    project: str
+    created_at: datetime
+    result: str | None = None  # what the agent wrote back when done
+    prompt: str = ""
+    mode: str = "terminal"  # terminal | plan | edit (headless, driven from the dashboard)
+    running: bool = False
+    interactive: bool = False  # its Terminal tab is known, so input can be sent
+    chat_title: str | None = None
+    sender_name: str | None = None
+    message_text: str | None = None
+
+
+class YouTrackRequest(BaseModel):
+    summary: str = Field(min_length=1, max_length=300)
+    description: str = Field(default="", max_length=20000)
+
+
+class YouTrackIssue(BaseModel):
+    id: str
+    url: str
+
+
+class HandledAllResponse(BaseModel):
+    count: int
+
+
+class ProjectDTO(BaseModel):
+    path: str
+    name: str
+
+
+class ProjectRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=1000)
+
+
+class TaskRequest(BaseModel):
+    project: str
+    mode: Literal["terminal", "plan", "edit"] = "terminal"
+    prompt: str = Field(min_length=1, max_length=8000)
+    chat_id: str | None = None
+    message_id: str | None = None
+
+
+class TaskMessage(BaseModel):
+    text: str = Field(min_length=1, max_length=8000)
+
+
+class TaskInput(BaseModel):
+    text: str = Field(max_length=2000)  # empty = press Enter
 
 
 class AiSummaryRequest(BaseModel):
@@ -171,6 +272,7 @@ class AiSummaryRequest(BaseModel):
 
 class AiResult(BaseModel):
     text: str
+    options: list[str] = []  # alternative drafts; text == options[0] when present
     source_message_ids: list[str]
     context_revision: str
 
@@ -199,4 +301,8 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         outgoing=m.outgoing,
         media_kind=m.media_kind,
         deleted=m.deleted,
+        handled=m.handled,
+        snoozed_until=m.snoozed_until,
+        pinned=m.pinned,
+        links=m.links,
     )

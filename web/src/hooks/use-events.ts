@@ -48,10 +48,13 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
         (d) => upsert(d, m),
       );
     }
+    // Searches and the "not handled" view can gain or lose rows: refetch those.
     void qc.invalidateQueries({
       queryKey: ["messages", it.chat_id],
-      predicate: (q) => q.queryKey[2] !== "",
+      predicate: (q) => q.queryKey[2] !== "" || q.queryKey[4] === true,
     });
+    void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
+    void qc.invalidateQueries({ queryKey: ["pending"] });
   }
   if (items.length) listeners.forEach((cb) => cb(items));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import { api, ApiError, type AiPermissionResponse, type AiResult, type Message }
 
 const ERRORS: Record<string, string> = {
   ai_not_configured: "AI chưa được cấu hình (AI_BASE_URL/AI_MODEL/AI_API_KEY ở backend).",
-  ai_scope_not_allowed: "Có tin chưa đủ điều kiện dùng AI (thiếu quyền, đã sửa/xóa, hết hạn hoặc là media).",
+  ai_scope_not_allowed: "Có tin chưa được cấp quyền dùng AI. Cấp quyền cho các tin đã chọn ở form bên dưới rồi thử lại (tin media hoặc đã xóa không dùng được).",
   ai_context_too_large: "Ngữ cảnh quá lớn. Chọn ít tin hơn (tối đa 30 tin, 16.000 ký tự).",
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý nên kết quả bị bỏ. Dữ liệu đã gửi provider không thu hồi được.",
   ai_timeout: "Provider quá thời gian. Bạn vẫn có thể trả lời thủ công.",
@@ -24,14 +25,18 @@ export function AiPanel({
   chatId,
   selected,
   aiConfigured,
+  requireConsent,
   onUseDraft,
   onClear,
+  onClose,
 }: {
   chatId: string;
   selected: Message[];
   aiConfigured: boolean;
+  requireConsent: boolean;
   onUseDraft: (r: AiResult) => void;
   onClear: () => void;
+  onClose: () => void;
 }) {
   const [instruction, setInstruction] = useState("");
   const [result, setResult] = useState<{ kind: "draft" | "summary"; r: AiResult } | null>(null);
@@ -48,17 +53,22 @@ export function AiPanel({
     networkMode: "always",
     onMutate: () => setResult(null),
     onSuccess: setResult,
+    onError: (e) => {
+      if (requireConsent && e instanceof ApiError && e.code === "ai_scope_not_allowed") setShowGrant(true);
+    },
   });
 
   return (
-    <aside aria-label="Trợ lý AI" className="flex min-h-0 flex-col gap-3 overflow-y-auto p-3">
-      <h2 className="text-sm font-semibold">AI soạn nháp / tóm tắt</h2>
+    <aside aria-label="Trợ lý AI" className="no-scrollbar flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">Trợ lý AI</h2>
+        <Button size="icon-xs" variant="ghost" onClick={onClose} aria-label="Đóng"><X /></Button>
+      </div>
       {!aiConfigured && <p className="text-xs text-muted-foreground">{ERRORS.ai_not_configured}</p>}
       <p className="text-xs text-muted-foreground">
-        AI chỉ trả về văn bản, không gửi tin. Chỉ dùng tin có quyền rõ ràng của từng người liên quan
-        (Telegram API Terms); đây là guard kỹ thuật, không phải chứng nhận pháp lý.
+        Tick các tin trong khung chat (tối đa 30) rồi nhờ AI soạn nháp hoặc tóm tắt. AI chỉ trả văn bản, không tự gửi.
       </p>
-      <p className="text-xs">
+      <p className="text-xs font-medium">
         Đã chọn {selected.length}/30 tin.{" "}
         {selected.length > 0 && (
           <Button size="xs" variant="link" onClick={onClear}>Bỏ chọn</Button>
@@ -80,13 +90,21 @@ export function AiPanel({
           onClick={() => run.mutate("summary")}>
           Tóm tắt
         </Button>
-        <Button size="sm" variant="ghost" disabled={!ids.length} onClick={() => setShowGrant((s) => !s)}
-          aria-expanded={showGrant}>
-          Quyền dữ liệu
-        </Button>
+        {requireConsent && (
+          <Button size="sm" variant="ghost" disabled={!ids.length} onClick={() => setShowGrant((s) => !s)}
+            aria-expanded={showGrant}>
+            Quyền dữ liệu
+          </Button>
+        )}
       </div>
       {run.isPending && <p className="animate-pulse text-xs text-muted-foreground">Đang xử lý…</p>}
-      {run.isError && <p role="alert" className="text-xs text-destructive">{errText(run.error)}</p>}
+      {run.isError && (
+        <p role="alert" className="text-xs text-destructive">
+          {!requireConsent && run.error instanceof ApiError && run.error.code === "ai_scope_not_allowed"
+            ? "Có tin là media hoặc đã bị xóa, AI chỉ đọc được tin chữ. Bỏ chọn các tin đó rồi thử lại."
+            : errText(run.error)}
+        </p>
+      )}
       <AnimatePresence initial={false}>
         {result && (
           <motion.div
@@ -102,7 +120,7 @@ export function AiPanel({
             )}
           </motion.div>
         )}
-        {showGrant && (
+        {requireConsent && showGrant && (
           <motion.div
             key="grant"
             initial={{ opacity: 0, height: 0 }}

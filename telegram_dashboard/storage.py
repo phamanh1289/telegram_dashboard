@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS messages (
   outgoing INTEGER NOT NULL DEFAULT 0,
   media_kind TEXT,
   deleted INTEGER NOT NULL DEFAULT 0,
+  handled INTEGER NOT NULL DEFAULT 0,
+  snoozed_until INTEGER,
+  pinned INTEGER NOT NULL DEFAULT 0,
+  links TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS outbox (
@@ -74,6 +78,28 @@ CREATE TABLE IF NOT EXISTS ai_permissions (
   revoked INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   PRIMARY KEY (chat_id, message_id)
+);
+CREATE TABLE IF NOT EXISTS rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,   -- sender | keyword
+  value TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  UNIQUE (kind, value)
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  chat_id TEXT,
+  message_id INTEGER,
+  project TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  prompt TEXT,
+  tty TEXT,
+  mode TEXT NOT NULL DEFAULT 'terminal',
+  session_id TEXT
+);
+CREATE TABLE IF NOT EXISTS projects (
+  path TEXT PRIMARY KEY,
+  name TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS changes (
   revision INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -136,11 +162,24 @@ def _row_to_message(r: sqlite3.Row) -> StoredMessage:
         outgoing=bool(r["outgoing"]),
         media_kind=r["media_kind"],
         deleted=bool(r["deleted"]),
+        handled=bool(r["handled"]),
+        snoozed_until=_dt(r["snoozed_until"]),
+        pinned=bool(r["pinned"]),
+        links=json.loads(r["links"]),
     )
 
 
 def _is_basic_group(chat_id: str) -> bool:
     return not chat_id.startswith("-100")
+
+
+def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
+    text = m.text.lower()
+    return any(
+        (r["kind"] == "sender" and m.sender_id == r["value"])
+        or (r["kind"] == "keyword" and r["value"] in text)
+        for r in rules
+    )
 
 
 class Store:
@@ -183,6 +222,24 @@ class Store:
                 (str(SCHEMA_VERSION),),
             )
             c.execute("INSERT OR IGNORE INTO metadata VALUES ('db_epoch', ?)", (str(uuid.uuid4()),))
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(messages)")}
+            if "handled" not in cols:  # databases created before the flag existed
+                c.execute("ALTER TABLE messages ADD COLUMN handled INTEGER NOT NULL DEFAULT 0")
+            if "links" not in cols:
+                c.execute("ALTER TABLE messages ADD COLUMN links TEXT NOT NULL DEFAULT '[]'")
+            if "snoozed_until" not in cols:
+                c.execute("ALTER TABLE messages ADD COLUMN snoozed_until INTEGER")
+            if "prompt" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
+                c.execute("ALTER TABLE tasks ADD COLUMN prompt TEXT")
+            tcols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}
+            if "mode" not in tcols:
+                c.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'terminal'")
+            if "session_id" not in tcols:
+                c.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
+            if "tty" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
+                c.execute("ALTER TABLE tasks ADD COLUMN tty TEXT")
+            if "pinned" not in cols:
+                c.execute("ALTER TABLE messages ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(self.path) + suffix)
             if p.exists():
@@ -289,6 +346,16 @@ class Store:
                 self._record(c, chat_id, None, "untrack", gen)
             return gen
 
+    def track_mention(self, chat_id: str, title: str, kind: str) -> None:
+        """A chat exists here only because it tagged us; checkpoint 0 means no history backfill."""
+        self.set_tracking(chat_id, True, title, kind)
+        with self._conn(write=True) as c:
+            c.execute(
+                "UPDATE chats SET history_checkpoint=0, title=? "
+                "WHERE chat_id=? AND history_checkpoint IS NULL",
+                (title, chat_id),
+            )
+
     def mark_migrated(self, old_chat_id: str, new_chat_id: str) -> None:
         with self._conn(write=True) as c:
             row = self._chat(c, old_chat_id)
@@ -339,9 +406,22 @@ class Store:
         with self._conn() as c:
             return [r[0] for r in c.execute("SELECT chat_id FROM chats WHERE tracking=1")]
 
-    def list_chats(self) -> tuple[list[ChatDTO], str]:
+    def list_chats(
+        self, since: datetime | None = None, until: datetime | None = None
+    ) -> tuple[list[ChatDTO], str]:
+        """With a range, only chats that have a kept message in [since, until)."""
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM chats ORDER BY title COLLATE NOCASE").fetchall()
+            rows = c.execute(
+                "SELECT *, (SELECT COUNT(*) FROM messages m WHERE m.chat_id=chats.chat_id "
+                "AND m.outgoing=0 AND m.handled=0 AND m.deleted=0 "
+                "AND COALESCE(m.snoozed_until,0)<=?2 "
+                "AND (?1 IS NULL OR m.date>=?1) AND (?3 IS NULL OR m.date<?3)) AS pending "
+                "FROM chats WHERE (?1 IS NULL AND ?3 IS NULL) OR EXISTS (SELECT 1 FROM messages m "
+                "WHERE m.chat_id=chats.chat_id AND m.deleted=0 "
+                "AND (?1 IS NULL OR m.date>=?1) AND (?3 IS NULL OR m.date<?3)) "
+                "ORDER BY pending=0, title COLLATE NOCASE",
+                (_ts(since), now_ts(), _ts(until)),
+            ).fetchall()
             cursor = self._cursor(c)
         return [
             ChatDTO(
@@ -353,6 +433,7 @@ class Store:
                 migrated_to=r["migrated_to"],
                 tracked_at=_dt(r["tracked_at"]),
                 generation=r["generation"],
+                pending_count=r["pending"],
             )
             for r in rows
         ], cursor
@@ -364,12 +445,12 @@ class Store:
         ).fetchone()
         values = (
             m.sender_id, m.sender_name, m.text, _ts(m.date), _ts(m.edit_date), m.reply_to_id,
-            m.topic_id, int(m.outgoing), m.media_kind,
+            m.topic_id, int(m.outgoing), m.media_kind, json.dumps([x.model_dump() for x in m.links]),
         )  # fmt: skip
         if existing is None:
             c.execute(
                 "INSERT INTO messages (sender_id,sender_name,text,date,edit_date,reply_to_id,"
-                "topic_id,outgoing,media_kind,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "topic_id,outgoing,media_kind,links,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (*values, m.chat_id, m.message_id),
             )
             self._record(c, m.chat_id, m.message_id, "new", chat["generation"])
@@ -380,7 +461,7 @@ class Store:
             return False  # replay or stale version
         c.execute(
             "UPDATE messages SET sender_id=?,sender_name=?,text=?,date=?,edit_date=?,reply_to_id=?,"
-            "topic_id=?,outgoing=?,media_kind=? WHERE chat_id=? AND message_id=?",
+            "topic_id=?,outgoing=?,media_kind=?,links=? WHERE chat_id=? AND message_id=?",
             (*values, m.chat_id, m.message_id),
         )
         self._revoke_grants(c, m.chat_id, [m.message_id])
@@ -468,6 +549,81 @@ class Store:
                 touched.append(cid)
         return touched
 
+    def set_handled(self, chat_id: str, message_id: int, handled: bool) -> bool:
+        """Mark a kept message handled or not; emits an edit change when it flips."""
+        with self._conn(write=True) as c:
+            return self._set_handled(c, chat_id, message_id, handled)
+
+    def set_snooze(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
+        with self._conn(write=True) as c:
+            chat = self._chat(c, chat_id)
+            cur = c.execute(
+                "UPDATE messages SET snoozed_until=? "
+                "WHERE chat_id=? AND message_id=? AND deleted=0",
+                (_ts(until), chat_id, message_id),
+            )
+            if cur.rowcount and chat is not None:
+                self._record(c, chat_id, message_id, "edit", chat["generation"])
+            return bool(cur.rowcount)
+
+    def set_pinned(self, chat_id: str, message_id: int, pinned: bool) -> bool:
+        with self._conn(write=True) as c:
+            chat = self._chat(c, chat_id)
+            cur = c.execute(
+                "UPDATE messages SET pinned=? WHERE chat_id=? AND message_id=? AND deleted=0",
+                (int(pinned), chat_id, message_id),
+            )
+            if cur.rowcount and chat is not None:
+                self._record(c, chat_id, message_id, "edit", chat["generation"])
+            return bool(cur.rowcount)
+
+    def list_pinned(self, limit: int = 300) -> list[tuple[str, MessageDTO]]:
+        """Every pinned message, handled or not, newest first: (chat title, message)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.*, c.title AS chat_title FROM messages m JOIN chats c USING (chat_id) "
+                "WHERE m.pinned=1 AND m.deleted=0 ORDER BY m.date DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
+
+    def list_pending(
+        self, since: datetime | None = None, until: datetime | None = None, limit: int = 300
+    ) -> list[tuple[str, MessageDTO]]:
+        """Pending tags across all chats, pinned first then oldest: (chat title, message)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.*, c.title AS chat_title FROM messages m JOIN chats c USING (chat_id) "
+                "WHERE c.tracking=1 AND m.outgoing=0 AND m.handled=0 AND m.deleted=0 "
+                "AND COALESCE(m.snoozed_until,0)<=?1 AND (?2 IS NULL OR m.date>=?2) "
+                "AND (?3 IS NULL OR m.date<?3) ORDER BY m.pinned DESC, m.date LIMIT ?4",
+                (now_ts(), _ts(since), _ts(until), limit),
+            ).fetchall()
+        return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
+
+    def mark_all_handled(
+        self, chat_id: str, since: datetime | None = None, until: datetime | None = None
+    ) -> int:
+        """Mark every pending tag in a chat (within [since, until)) handled; returns how many."""
+        with self._conn(write=True) as c:
+            ids = [r[0] for r in c.execute(
+                "SELECT message_id FROM messages WHERE chat_id=?1 AND outgoing=0 AND handled=0 "
+                "AND deleted=0 AND (?2 IS NULL OR date>=?2) AND (?3 IS NULL OR date<?3)",
+                (chat_id, _ts(since), _ts(until)),
+            )]  # fmt: skip
+            return sum(self._set_handled(c, chat_id, i, True) for i in ids)
+
+    def _set_handled(self, c: sqlite3.Connection, chat_id: str, message_id: int, handled: bool):
+        chat = self._chat(c, chat_id)
+        cur = c.execute(
+            "UPDATE messages SET handled=? WHERE chat_id=? AND message_id=? AND handled<>? "
+            "AND deleted=0",
+            (int(handled), chat_id, message_id, int(handled)),
+        )
+        if cur.rowcount and chat is not None:
+            self._record(c, chat_id, message_id, "edit", chat["generation"])
+        return bool(cur.rowcount)
+
     def get_message(self, chat_id: str, message_id: int) -> StoredMessage | None:
         with self._conn() as c:
             r = c.execute(
@@ -493,6 +649,9 @@ class Store:
         after: int | None = None,
         limit: int = 50,
         q: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        pending: bool = False,
     ) -> tuple[list[MessageDTO], str, bool]:
         limit = max(1, min(limit, 100))
         where, args = ["chat_id=?"], [chat_id]
@@ -500,6 +659,15 @@ class Store:
             where.append("deleted=0 AND text LIKE ? ESCAPE '\\'")
             esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             args.append(f"%{esc}%")
+        if pending:
+            where.append("deleted=0 AND outgoing=0 AND handled=0 AND COALESCE(snoozed_until,0)<=?")
+            args.append(now_ts())
+        if since is not None:
+            where.append("deleted=0 AND date>=?")
+            args.append(_ts(since))
+        if until is not None:
+            where.append("deleted=0 AND date<?")
+            args.append(_ts(until))
         if before is not None:
             where.append("message_id<?")
             args.append(before)
@@ -665,6 +833,8 @@ class Store:
                 chat = self._chat(c, sent.chat_id)
                 if chat is not None and chat["tracking"]:
                     self._upsert_message(c, sent, chat)
+            if status == "sent" and r is not None:  # replying from the dashboard handles the tag
+                self._set_handled(c, r["chat_id"], r["reply_to_message_id"], True)
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             )
@@ -683,6 +853,112 @@ class Store:
                 "WHERE status='sending'",
                 (ts,),
             )
+
+    # ---- auto-handle rules ---------------------------------------------
+    @staticmethod
+    def _rule_dict(r: sqlite3.Row) -> dict:
+        return {"id": r["id"], "kind": r["kind"], "value": r["value"], "label": r["label"]}
+
+    def list_rules(self) -> list[dict]:
+        with self._conn() as c:
+            return [self._rule_dict(r) for r in c.execute("SELECT * FROM rules ORDER BY id")]
+
+    def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, int]:
+        """Save a rule and clear the pending tags it already matches."""
+        value = value.strip() if kind == "sender" else value.strip().lower()
+        with self._conn(write=True) as c:
+            c.execute(
+                "INSERT INTO rules (kind,value,label) VALUES (?,?,?) "
+                "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label",
+                (kind, value, label),
+            )
+            rule = self._rule_dict(
+                c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
+            )
+            rows = c.execute(
+                "SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0"
+            ).fetchall()
+            n = sum(
+                self._set_handled(c, r["chat_id"], r["message_id"], True)
+                for r in rows
+                if _rule_matches([rule], _row_to_message(r))
+            )
+        return rule, n
+
+    def remove_rule(self, rule_id: int) -> None:
+        with self._conn(write=True) as c:
+            c.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+
+    def auto_handle(self, chat_id: str, message_id: int) -> bool:
+        """Mark a just-stored tag handled when a rule matches it."""
+        with self._conn(write=True) as c:
+            r = c.execute(
+                "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
+            ).fetchone()
+            if r is None or r["handled"] or r["outgoing"]:
+                return False
+            rules = [self._rule_dict(x) for x in c.execute("SELECT * FROM rules")]
+            if not _rule_matches(rules, _row_to_message(r)):
+                return False
+            return self._set_handled(c, chat_id, message_id, True)
+
+    # ---- tasks ---------------------------------------------------------
+    def add_task(
+        self, task_id: str, chat_id: str | None, message_id: int | None, project: str,
+        prompt: str, tty: str | None = None, mode: str = "terminal", session_id: str | None = None,
+    ):  # fmt: skip
+        with self._conn(write=True) as c:
+            c.execute(
+                "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, tty, "
+                "mode, session_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                (task_id, chat_id, message_id, project, now_ts(), prompt, tty, mode, session_id),
+            )
+
+    def set_task_session(self, task_id: str, session_id: str) -> None:
+        with self._conn(write=True) as c:
+            c.execute("UPDATE tasks SET session_id=? WHERE id=?", (session_id, task_id))
+
+    def set_task_tty(self, task_id: str, tty: str | None) -> None:
+        with self._conn(write=True) as c:
+            c.execute("UPDATE tasks SET tty=? WHERE id=?", (tty, task_id))
+
+    def list_tasks(self, chat_id: str | None = None) -> list[dict]:
+        """Newest first, with a peek at the tagged message so the task list stands alone."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text "
+                "FROM tasks t LEFT JOIN chats c ON c.chat_id=t.chat_id "
+                "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
+                "WHERE ?1 IS NULL OR t.chat_id=?1 ORDER BY t.created_at DESC LIMIT 200",
+                (chat_id,),
+            ).fetchall()
+        return [dict(r) | {"created_at": _dt(r["created_at"])} for r in rows]
+
+    def get_task(self, task_id: str) -> dict | None:
+        with self._conn() as c:
+            r = c.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        return dict(r) if r else None
+
+    def delete_task(self, task_id: str) -> bool:
+        with self._conn(write=True) as c:
+            return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
+
+    # ---- projects ------------------------------------------------------
+    def list_projects(self) -> list[dict]:
+        with self._conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM projects ORDER BY name")]
+
+    def add_project(self, path: str, name: str) -> None:
+        with self._conn(write=True) as c:
+            c.execute("INSERT OR REPLACE INTO projects VALUES (?,?)", (path, name))
+
+    def remove_project(self, path: str) -> None:
+        with self._conn(write=True) as c:
+            c.execute("DELETE FROM projects WHERE path=?", (path,))
+
+    def has_project(self, path: str) -> bool:
+        with self._conn() as c:
+            return c.execute("SELECT 1 FROM projects WHERE path=?", (path,)).fetchone() is not None
 
     # ---- AI grants -----------------------------------------------------
     def put_grant(

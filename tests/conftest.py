@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from telegram_dashboard.app import create_app
-from telegram_dashboard.auth import LocalAuth
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import Hub
 from telegram_dashboard.models import GroupInfo, SentMessage, StoredMessage
@@ -18,7 +17,6 @@ B = "-1002"  # supergroup
 G1 = "-11"  # basic group
 G2 = "-12"  # basic group
 ORIGIN = "http://127.0.0.1:8765"
-CODE = "test-code"
 
 
 def msg(chat: str, mid: int, text: str = "hi", *, edit: int | None = None, sender: str = "7",
@@ -64,6 +62,18 @@ class FakeTransport:
 
     async def list_groups(self):
         return list(self.groups)
+
+    async def fetch_context(self, chat_id, message_id, before, after):
+        ms = sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)
+        older = [m for m in ms if m.message_id < message_id][-before:]
+        newer = [m for m in ms if m.message_id > message_id][:after]
+        return older + [m for m in ms if m.message_id == message_id] + newer
+
+    async def download_photo(self, chat_id, message_id, dest):
+        return False
+
+    async def fetch_mentions(self, cutoff):
+        return []
 
     async def latest_id(self, chat_id):
         return max((m.message_id for m in self.history.get(chat_id, [])), default=0)
@@ -118,11 +128,6 @@ def settings(tmp_path):
 
 @pytest.fixture
 def client(settings):
-    app = create_app(settings, transport=FakeTransport(), auth=LocalAuth(CODE))
+    app = create_app(settings, transport=FakeTransport())
     with TestClient(app, base_url=ORIGIN) as c:
         yield c
-
-
-def unlock(c: TestClient) -> None:
-    r = c.post("/api/unlock", json={"code": CODE}, headers={"Origin": ORIGIN})
-    assert r.status_code == 204, r.text

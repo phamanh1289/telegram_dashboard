@@ -35,14 +35,11 @@ def _serve(settings: Settings) -> int:
     import uvicorn
 
     from .app import create_app
-    from .auth import LocalAuth
 
     if not settings.static_dir.is_dir():
         print("Chưa có web/out — chạy `npm run build` (UI sẽ trả 503).", file=sys.stderr)
-    auth = LocalAuth()
-    print(f"Mã mở khóa: {auth.code}", flush=True)
     print(f"Mở {settings.app_origin}", flush=True)
-    app = create_app(settings, auth=auth)
+    app = create_app(settings)
     # SSE streams never finish on their own; bound the graceful wait so Ctrl+C cannot hang.
     uvicorn.run(
         app, host=settings.host, port=settings.port, workers=1, access_log=False,

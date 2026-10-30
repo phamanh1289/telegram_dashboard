@@ -42,6 +42,8 @@ async def test_concurrent_same_uuid_one_rpc(ready):
     assert {a.status, b.status} == {"sent", "sending"}
     assert (await ready.bridge.submit_reply(r)).status == "sent"
     assert len(ready.fake.send_calls) == 1
+    target = ready.store.get_message(r.chat_id, int(r.reply_to_message_id))
+    assert target.handled  # a reply sent from the dashboard handles the tag
 
 
 async def test_same_uuid_changed_payload_conflicts(ready):

@@ -8,10 +8,9 @@ import uuid
 import httpx
 import pytest
 import uvicorn
-from conftest import CODE, A, FakeTransport, msg
+from conftest import A, FakeTransport, msg
 
 from telegram_dashboard.app import create_app
-from telegram_dashboard.auth import LocalAuth
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import event_stream
 
@@ -84,10 +83,6 @@ async def test_heartbeat_recovers_missed_wakeup(env):
     assert [e.data["message_id"] for e in evs] == ["1"]
 
 
-def test_sse_requires_cookie(client):
-    assert client.get("/api/events").status_code == 401
-
-
 # ---- real server: streaming over HTTP ----------------------------------------
 
 
@@ -101,7 +96,7 @@ def _free_port() -> int:
 def server(tmp_path):
     port = _free_port()
     settings = Settings(root=tmp_path, port=port, app_origin=f"http://127.0.0.1:{port}")
-    app = create_app(settings, transport=FakeTransport(), auth=LocalAuth(CODE))
+    app = create_app(settings, transport=FakeTransport())
     srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
     th = threading.Thread(target=srv.run, daemon=True)
     th.start()
@@ -109,7 +104,6 @@ def server(tmp_path):
         time.sleep(0.01)
     base = f"http://127.0.0.1:{port}"
     with httpx.Client(base_url=base, headers={"Origin": base}, timeout=5) as c:
-        assert c.post("/api/unlock", json={"code": CODE}).status_code == 204
         yield app, c
     srv.should_exit = True
     th.join(5)

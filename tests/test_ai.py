@@ -140,3 +140,114 @@ async def test_provider_timeout_keeps_manual_reply_available(ai):
         ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="1", text="manual")
     )
     assert rec.status == "sent"
+
+
+async def test_consent_off_allows_text_but_not_deleted_or_media(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hello", sender="7"))
+    env.store.apply_message(msg(A, 2, "bye", sender="8"))
+    provider = Provider()
+    client = httpx.AsyncClient(transport=httpx.MockTransport(provider.handler))
+    svc = AiService(Settings(root=tmp_path, ai_require_consent=False, **AI), env.store, env.db, client)
+    assert (await svc.run("summary", A, ["1", "2"])).text == "draft text"
+    env.store.apply_deletion(A, ["2"])
+    await expect("ai_scope_not_allowed", svc.run("summary", A, ["1", "2"]))
+    await expect("ai_scope_not_allowed", svc.run("summary", B, ["3"]))
+    assert len(provider.calls) == 1
+
+
+async def test_agent_command_gets_prompt_on_stdin(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hello", sender="7"))
+    s = Settings(root=tmp_path, ai_agent_command="cat", ai_require_consent=False)
+    r = await AiService(s, env.store, env.db).run("draft", A, ["1"], "be brief")
+    assert "hello" in r.text and "be brief" in r.text
+
+
+async def test_agent_command_failure_is_provider_error(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hello", sender="7"))
+    s = Settings(root=tmp_path, ai_agent_command="false", ai_require_consent=False)
+    with pytest.raises(ApiError) as e:
+        await AiService(s, env.store, env.db).run("draft", A, ["1"])
+    assert e.value.code == "ai_provider_error"
+
+
+def test_track_mention_skips_history_backfill(env):
+    env.store.track_mention(A, "Team", "supergroup")
+    assert env.store.history_checkpoint(A) == (0, 0)
+
+
+async def test_draft_splits_options(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hello", sender="7"))
+    script = tmp_path / "agent.sh"
+    script.write_text("#!/bin/sh\ncat >/dev/null\nprintf 'Ok anh\\n---\\nDạ em nhận\\n---\\n'\n")
+    script.chmod(0o755)
+    s = Settings(root=tmp_path, ai_agent_command=str(script), ai_require_consent=False)
+    r = await AiService(s, env.store, env.db).run("draft", A, ["1"])
+    assert r.options == ["Ok anh", "Dạ em nhận"] and r.text == "Ok anh"
+
+
+async def test_project_agent_runs_inside_registered_project(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "how does login work?", sender="7"))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    s = Settings(
+        root=tmp_path, ai_agent_command="cat", ai_agent_project_command="pwd",
+        ai_require_consent=False,
+    )  # fmt: skip
+    svc = AiService(s, env.store, env.db)
+    with pytest.raises(ApiError) as e:
+        await svc.run("draft", A, ["1"], project=str(proj))
+    assert e.value.code == "project_not_found"
+    env.store.add_project(str(proj), "proj")
+    r = await svc.run("draft", A, ["1"], project=str(proj))
+    assert r.text == str(proj.resolve())
+
+
+async def test_http_provider_reads_project_with_readonly_tools(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "how does login work?", sender="7"))
+    proj = tmp_path / "proj"
+    (proj / "src").mkdir(parents=True)
+    (proj / "src" / "auth.py").write_text("def login(user):\n    return check_otp(user)\n")
+    (proj / ".env").write_text("SECRET=1")
+    env.store.add_project(str(proj), "proj")
+    replies = iter([
+        {"tool_calls": [{"id": "c1", "type": "function",
+                         "function": {"name": "search", "arguments": '{"query": "def login"}'}}]},
+        {"tool_calls": [{"id": "c2", "type": "function",
+                         "function": {"name": "read_file",
+                                      "arguments": '{"path": "../outside"}'}}]},
+        None,  # final answer echoes what the tools returned
+    ])  # fmt: skip
+    seen = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        seen.append(body)
+        nxt = next(replies)
+        if nxt is None:
+            tool_out = [m["content"] for m in body["messages"] if m["role"] == "tool"]
+            nxt = {"content": " | ".join(tool_out)}
+        return httpx.Response(200, json={"choices": [{"message": nxt}]})
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    s = Settings(root=tmp_path, **AI, ai_require_consent=False)
+    r = await AiService(s, env.store, env.db, client).run("draft", A, ["1"], project=str(proj))
+    assert "src/auth.py:1: def login(user):" in r.text
+    assert "path not allowed" in r.text
+    assert "tools" in seen[0] and all("SECRET" not in json.dumps(b) for b in seen)
+
+
+def test_project_tools_hide_secrets(tmp_path):
+    from telegram_dashboard.ai import project_tool
+
+    (tmp_path / ".env").write_text("TOKEN=x")
+    (tmp_path / "app.py").write_text("TOKEN = load()")
+    assert "app.py" in project_tool(tmp_path, "list_files", {})
+    assert ".env" not in project_tool(tmp_path, "list_files", {})
+    assert project_tool(tmp_path, "read_file", {"path": ".env"}) == "error: path not allowed"
+    assert "TOKEN=x" not in project_tool(tmp_path, "search", {"query": "token"})

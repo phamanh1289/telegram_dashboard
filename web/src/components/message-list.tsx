@@ -1,46 +1,74 @@
 "use client";
 
+import { useMutation } from "@tanstack/react-query";
+import { ArrowLeft, CheckCheck, Search, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChatMessages } from "@/hooks/use-chat-messages";
-import { ApiError, type Message } from "@/lib/api";
+import { api, ApiError, type Message } from "@/lib/api";
+import { useListShortcuts, useNow, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-
-const MEDIA: Record<string, string> = {
-  photo: "Ảnh", video: "Video", voice: "Tin thoại", audio: "Âm thanh", sticker: "Sticker",
-  gif: "GIF", video_note: "Video tròn", document: "Tệp",
-};
 
 export const MAX_AI_MESSAGES = 30;
 
 export function MessageList({
   chatId,
+  onBack,
   replyTo,
   onReply,
+  selectMode,
   selected,
   onToggle,
+  range,
+  onUseText,
 }: {
+  onUseText: (m: Message, text: string) => void;
+  range: string;
   chatId: string;
+  onBack: () => void;
+  selectMode: boolean;
   replyTo: string | null;
   onReply: (m: Message) => void;
   selected: Map<string, Message>;
   onToggle: (m: Message) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
   const [q, setQ] = useState("");
+  const [pendingOnly, setPendingOnly] = useState(true);
+  const [confirmAll, setConfirmAll] = useState(false);
+  const markAll = useMutation({
+    mutationFn: () =>
+      api<{ count: number }>(
+        `/chats/${encodeURIComponent(chatId)}/handled-all${range ? `?${range}` : ""}`,
+        { method: "POST" },
+      ),
+    onSuccess: () => setConfirmAll(false),
+  });
   useEffect(() => {
     const t = setTimeout(() => setQ(search.trim()), 300);
     return () => clearTimeout(t);
   }, [search]);
 
-  const query = useChatMessages(chatId, q);
+  const query = useChatMessages(chatId, q, range, pendingOnly && !q);
   const items = useMemo(
     () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : []),
     [query.data],
   );
+  const now = useNow();
+  const tasks = useTasks();
+  const focused = useListShortcuts(items, onReply);
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
   const box = useRef<HTMLDivElement>(null);
@@ -64,20 +92,53 @@ export function MessageList({
 
   return (
     <section aria-label="Tin nhắn" className="flex min-h-0 flex-col">
-      <div className="border-b p-2">
-        <Input
-          type="search"
-          aria-label="Tìm trong nhóm"
-          placeholder="Tìm trong tin đã lưu…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          maxLength={200}
-        />
+      <div className="flex items-center gap-2 border-b bg-card px-3 py-2">
+        <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại">
+          <ArrowLeft />
+        </Button>
+        {searching ? (
+          <Input
+            type="search"
+            autoFocus
+            aria-label="Tìm trong nhóm"
+            placeholder="Tìm trong tin đã lưu…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            maxLength={200}
+          />
+        ) : (
+          <div role="tablist" aria-label="Lọc tin" className="flex gap-0.5 rounded-lg bg-muted p-0.5 text-xs">
+            {([[true, "Chưa xử lý"], [false, "Tất cả"]] as const).map(([v, label]) => (
+              <button key={label} type="button" role="tab" aria-selected={pendingOnly === v} onClick={() => setPendingOnly(v)}
+                className={cn("rounded-md px-2.5 py-1 transition-colors", pendingOnly === v ? "bg-card font-medium shadow-xs" : "text-muted-foreground hover:text-foreground")}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {!searching && pendingOnly && items.length > 0 && (
+          <Button size="xs" variant="outline" className="ml-auto" onClick={() => setConfirmAll(true)}
+            title="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý">
+            <CheckCheck /> Xong tất cả
+          </Button>
+        )}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className={cn(!(!searching && pendingOnly && items.length > 0) && "ml-auto")}
+          aria-label={searching ? "Đóng tìm kiếm" : "Tìm kiếm"}
+          onClick={() => {
+            setSearching((v) => !v);
+            setSearch("");
+          }}
+        >
+          {searching ? <X /> : <Search />}
+        </Button>
       </div>
       <div
         ref={box}
         data-testid="timeline"
-        className="min-h-0 flex-1 overflow-y-auto p-3"
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
         onScroll={(e) => {
           const el = e.currentTarget;
           atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -92,79 +153,53 @@ export function MessageList({
         )}
         {!q && !query.hasNextPage && query.isSuccess && (
           <p className="mb-2 text-center text-xs text-muted-foreground">
-            Lịch sử khởi tạo giới hạn 50 tin; không phải archive đầy đủ.
+            Chỉ lưu tin tag/reply bạn (nạp lại 14 ngày gần nhất mỗi lần kết nối).
           </p>
         )}
         {query.isPending && <Skeleton className="h-16 w-full" />}
         {error === "not_tracking" && <p className="text-sm text-muted-foreground">Nhóm không còn được theo dõi.</p>}
         {error && error !== "not_tracking" && <p className="text-sm text-destructive">Không tải được tin nhắn.</p>}
         {query.isSuccess && items.length === 0 && (
-          <p className="text-sm text-muted-foreground">{q ? "Không có kết quả." : "Chưa có tin nào."}</p>
+          <p className="text-sm text-muted-foreground">
+            {q ? "Không có kết quả." : pendingOnly ? "🎉 Đã xử lý hết tin tag trong nhóm này." : "Chưa có tin nào."}
+          </p>
         )}
-        <ol className="grid gap-2">
-          {items.map((m) => (
+        <ol className="grid gap-1.5">
+          {items.map((m, i) => (
             <MessageItem
               key={m.message_id}
+              head={items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
               m={m}
               isReplyTarget={replyTo === m.message_id}
               checked={selected.has(m.message_id)}
+              selectMode={selectMode}
               canCheck={selected.size < MAX_AI_MESSAGES}
+              now={now}
+              focused={focused === m.message_id}
+              tasks={tasks.get(`${m.chat_id}:${m.message_id}`)}
               onReply={onReply}
               onToggle={onToggle}
+              onUseText={onUseText}
             />
           ))}
         </ol>
       </div>
+      <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
+        <DialogContent>
+          <DialogTitle>Đánh dấu tất cả là đã xử lý?</DialogTitle>
+          <DialogDescription>
+            {query.hasNextPage ? "Mọi" : `${items.length}`} tin chưa xử lý trong nhóm này
+            {range ? " (trong khoảng ngày đang lọc)" : ""} sẽ chuyển sang “Đã xử lý”. Có thể mở lại từng tin ở tab Tất cả.
+          </DialogDescription>
+          {markAll.isError && <p role="alert" className="text-xs text-destructive">Không cập nhật được.</p>}
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
+            <Button disabled={markAll.isPending} onClick={() => markAll.mutate()}>
+              <CheckCheck /> Xong tất cả
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
-  );
-}
-
-function MessageItem({
-  m, isReplyTarget, checked, canCheck, onReply, onToggle,
-}: {
-  m: Message;
-  isReplyTarget: boolean;
-  checked: boolean;
-  canCheck: boolean;
-  onReply: (m: Message) => void;
-  onToggle: (m: Message) => void;
-}) {
-  if (m.deleted) {
-    return (
-      <li data-testid="message" data-id={m.message_id} className="text-xs italic text-muted-foreground">
-        Tin #{m.message_id} đã bị xóa.
-      </li>
-    );
-  }
-  return (
-    <li
-      data-testid="message"
-      data-id={m.message_id}
-      className={cn(
-        "group rounded-lg border p-2 text-sm transition-colors hover:bg-muted/40",
-        m.outgoing && "ml-8 bg-muted/30",
-        isReplyTarget && "ring-2 ring-primary/40",
-      )}
-    >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        <Checkbox
-          aria-label={`Chọn tin #${m.message_id} cho AI`}
-          checked={checked}
-          disabled={!checked && !canCheck}
-          onCheckedChange={() => onToggle(m)}
-        />
-        <span className="font-medium text-foreground">{m.outgoing ? "Bạn" : (m.sender_name ?? "Không rõ")}</span>
-        <time dateTime={m.date}>{new Date(m.date).toLocaleString()}</time>
-        {m.edit_date && <span>(đã sửa)</span>}
-        {m.reply_to_id && <span>↪ #{m.reply_to_id}</span>}
-        <Button size="xs" variant="ghost" className="ml-auto" onClick={() => onReply(m)}>
-          Trả lời
-        </Button>
-      </div>
-      {m.media_kind && (
-        <p className="mt-1 text-xs text-muted-foreground">[{MEDIA[m.media_kind] ?? "Tệp đính kèm"} — chưa tải]</p>
-      )}
-      {m.text && <p className="mt-1 whitespace-pre-wrap break-words">{m.text}</p>}
-    </li>
   );
 }

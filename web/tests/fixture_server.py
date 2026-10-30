@@ -20,13 +20,11 @@ sys.path.insert(0, str(ROOT))
 from conftest import FakeTransport, msg  # noqa: E402
 
 from telegram_dashboard.app import create_app  # noqa: E402
-from telegram_dashboard.auth import LocalAuth  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.telegram import SendRejected  # noqa: E402
 
 A, B = "-1001", "-1002"
-CODE = "e2e-code"
 CONTROL = "http://127.0.0.1:8799"
 
 tmp = Path(tempfile.mkdtemp(prefix="td-e2e-"))
@@ -63,7 +61,7 @@ async def send_impl(call):
 
 
 fake.send_impl = send_impl
-app = create_app(settings, transport=fake, auth=LocalAuth(CODE))
+app = create_app(settings, transport=fake)
 
 
 class Faults:

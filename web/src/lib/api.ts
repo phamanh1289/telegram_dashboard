@@ -10,6 +10,12 @@ export type ChangesPage = S["ChangesPage"];
 export type Status = S["StatusDTO"];
 export type Outbox = S["OutboxDTO"];
 export type AiResult = S["AiResult"];
+export type Project = S["ProjectDTO"];
+export type Task = S["TaskDTO"];
+export type PendingItem = S["PendingItem"];
+export type Rule = S["RuleDTO"];
+export type RuleAdded = S["RuleAdded"];
+export type YouTrackIssue = S["YouTrackIssue"];
 export type AiPermissionResponse = S["AiPermissionResponse"];
 
 export class ApiError extends Error {

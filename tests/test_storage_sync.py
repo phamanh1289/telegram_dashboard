@@ -163,3 +163,51 @@ async def test_tracking_via_api_flow(env):
     env.store.set_tracking(A, False)
     assert env.store.apply_message(msg(A, 1)) is False
     assert [k for *_, k in kinds(env.store)] == ["tracking", "untrack"]
+
+
+async def _async(v):
+    return v
+
+
+async def test_backfill_mentions_stores_only_tagged(env):
+    tagged = [
+        ("Team A", "supergroup", msg(A, 5, "@me hi", sender="7"), False),
+        ("Team A", "supergroup", msg(A, 6, "@me done?", sender="7"), True),
+    ]
+    env.fake.fetch_mentions = lambda cutoff: _async(tagged)
+    await env.bridge.backfill_mentions()
+    assert env.store.is_tracking(A)
+    assert env.store.get_message(A, 5).text == "@me hi"
+    assert not env.store.get_message(A, 5).handled and env.store.get_message(A, 6).handled
+    assert env.store.list_chats()[0][0].pending_count == 1
+    assert not env.store.is_tracking(B)
+
+
+def test_since_filters_messages_and_chats(env):
+    from datetime import UTC, datetime
+
+    env.track(A)
+    env.track(B)
+    old, new = msg(A, 1, "old", sender="7"), msg(A, 2, "new", sender="7")
+    old.date = datetime(2026, 10, 1, tzinfo=UTC)
+    new.date = datetime(2026, 10, 29, 9, tzinfo=UTC)
+    env.store.apply_message(old)
+    env.store.apply_message(new)
+    env.store.apply_message(msg(B, 3, "b", sender="7"))  # msg() dates are older than `since`
+    since = datetime(2026, 10, 29, 8, tzinfo=UTC)
+    assert [m.message_id for m in env.store.query_messages(A, since=since)[0]] == ["2"]
+    assert [c.chat_id for c in env.store.list_chats(since)[0]] == [A]
+    assert len(env.store.list_chats()[0]) == 2
+
+
+async def test_any_reply_from_us_handles_the_tag(env):
+    env.store.track_mention(A, "Team", "supergroup")
+    env.store.apply_message(msg(A, 10, "@me pls", sender="7"))
+    mine = msg(A, 11, "on it", sender="1", outgoing=True)
+    mine.reply_to_id = 10
+    await env.bridge.on_my_reply(mine)
+    assert env.store.get_message(A, 10).handled
+    assert [m.message_id for m in env.store.query_messages(A, pending=True)[0]] == []
+    assert env.store.set_handled(A, 10, False)  # manual undo emits a change
+    assert not env.store.set_handled(A, 10, False)  # no-op when unchanged
+    assert [m.message_id for m in env.store.query_messages(A, pending=True)[0]] == ["10"]

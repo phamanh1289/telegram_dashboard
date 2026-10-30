@@ -15,8 +15,6 @@ async function ctl(path: string, body?: object) {
 
 async function open(page: Page, chat = A) {
   await page.goto("/");
-  await page.getByLabel("Mã mở khóa").fill("e2e-code"); // fresh context per test
-  await page.getByRole("button", { name: "Mở khóa" }).click();
   await page.getByRole("button", { name: chat === A ? "Nhóm Dự án" : "Nhóm Bạn bè" }).click();
   await expect(page.getByTestId("message").first()).toBeVisible();
   await expect(page.getByTestId("stream-state")).toHaveText("Cập nhật trực tiếp");
@@ -149,14 +147,12 @@ test("dialog focus, reduced motion and scroll position", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await open(page);
   // focus returns to the trigger after closing the confirm dialog
-  await page.getByRole("button", { name: "Quản lý" }).click();
   const trigger = page.getByRole("button", { name: "Xóa dữ liệu" }).first();
   await trigger.click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(trigger).toBeFocused();
-  await page.getByRole("button", { name: "Xong" }).click();
 
   // loading older messages keeps the visible message in place
   const timeline = page.getByTestId("timeline");

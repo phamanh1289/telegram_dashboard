@@ -21,40 +21,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/unlock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Unlock */
-        post: operations["unlock_api_unlock_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/logout": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Logout */
-        post: operations["logout_api_logout_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -82,23 +48,6 @@ export interface paths {
         /** Chats */
         get: operations["chats_api_chats_get"];
         put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chats/{chat_id}/tracking": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Tracking */
-        put: operations["tracking_api_chats__chat_id__tracking_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -134,6 +83,40 @@ export interface paths {
         get: operations["messages_api_chats__chat_id__messages_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/handled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Handled */
+        put: operations["handled_api_chats__chat_id__messages__message_id__handled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/handled-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Handled All */
+        post: operations["handled_all_api_chats__chat_id__handled_all_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -242,6 +225,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ai Digest */
+        post: operations["ai_digest_api_ai_digest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/summary": {
         parameters: {
             query?: never;
@@ -253,6 +253,180 @@ export interface paths {
         put?: never;
         /** Ai Summary */
         post: operations["ai_summary_api_ai_summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Projects */
+        get: operations["projects_api_projects_get"];
+        put?: never;
+        /** Add Project */
+        post: operations["add_project_api_projects_post"];
+        /** Remove Project */
+        delete: operations["remove_project_api_projects_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick Project */
+        post: operations["pick_project_api_projects_pick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tasks */
+        get: operations["tasks_api_tasks_get"];
+        put?: never;
+        /** Task */
+        post: operations["task_api_tasks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Pending */
+        get: operations["pending_api_pending_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Snooze */
+        put: operations["snooze_api_chats__chat_id__messages__message_id__snooze_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Context */
+        get: operations["context_api_chats__chat_id__messages__message_id__context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/photo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Photo */
+        get: operations["photo_api_chats__chat_id__messages__message_id__photo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Rules */
+        get: operations["rules_api_rules_get"];
+        put?: never;
+        /** Add Rule */
+        post: operations["add_rule_api_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Rule */
+        delete: operations["remove_rule_api_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/youtrack/issues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Youtrack Issue */
+        post: operations["youtrack_issue_api_youtrack_issues_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -271,6 +445,13 @@ export interface components {
             message_ids: string[];
             /** Instruction */
             instruction: string;
+            /** Project */
+            project?: string | null;
+            /**
+             * With Context
+             * @default true
+             */
+            with_context: boolean;
         };
         /** AiPermissionRequest */
         AiPermissionRequest: {
@@ -300,6 +481,11 @@ export interface components {
         AiResult: {
             /** Text */
             text: string;
+            /**
+             * Options
+             * @default []
+             */
+            options: string[];
             /** Source Message Ids */
             source_message_ids: string[];
             /** Context Revision */
@@ -386,6 +572,11 @@ export interface components {
              * @default 50
              */
             initial_history_limit: number;
+            /**
+             * Pending Count
+             * @default 0
+             */
+            pending_count: number;
         };
         /** ChatsResponse */
         ChatsResponse: {
@@ -398,6 +589,16 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HandledAllResponse */
+        HandledAllResponse: {
+            /** Count */
+            count: number;
+        };
+        /** HandledRequest */
+        HandledRequest: {
+            /** Handled */
+            handled: boolean;
         };
         /** MessageDTO */
         MessageDTO: {
@@ -428,6 +629,29 @@ export interface components {
             media_kind: string | null;
             /** Deleted */
             deleted: boolean;
+            /**
+             * Handled
+             * @default false
+             */
+            handled: boolean;
+            /** Snoozed Until */
+            snoozed_until?: string | null;
+            /**
+             * Pinned
+             * @default false
+             */
+            pinned: boolean;
+            /** Links */
+            links?: components["schemas"]["LinkSpan"][];
+        };
+        /** LinkSpan */
+        LinkSpan: {
+            /** Offset */
+            offset: number;
+            /** Length */
+            length: number;
+            /** Url */
+            url: string;
         };
         /** MessagesPage */
         MessagesPage: {
@@ -458,6 +682,12 @@ export interface components {
             /** Retry After */
             retry_after?: number | null;
         };
+        /** PendingItem */
+        PendingItem: {
+            /** Chat Title */
+            chat_title: string;
+            message: components["schemas"]["MessageDTO"];
+        };
         /** PermissionGrant */
         PermissionGrant: {
             /** Message Id */
@@ -476,6 +706,18 @@ export interface components {
             participants: {
                 [key: string]: string;
             };
+        };
+        /** ProjectDTO */
+        ProjectDTO: {
+            /** Path */
+            path: string;
+            /** Name */
+            name: string;
+        };
+        /** ProjectRequest */
+        ProjectRequest: {
+            /** Path */
+            path: string;
         };
         /** ReplyRequest */
         ReplyRequest: {
@@ -496,6 +738,46 @@ export interface components {
              */
             retry_unknown: boolean;
         };
+        /** RuleAdded */
+        RuleAdded: {
+            rule: components["schemas"]["RuleDTO"];
+            /** Handled */
+            handled: number;
+        };
+        /** RuleDTO */
+        RuleDTO: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "sender" | "keyword";
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** RuleRequest */
+        RuleRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "sender" | "keyword";
+            /** Value */
+            value: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+        };
+        /** SnoozeRequest */
+        SnoozeRequest: {
+            /** Until */
+            until: string | null;
+        };
         /** StatusDTO */
         StatusDTO: {
             /**
@@ -507,20 +789,62 @@ export interface components {
             detail?: string | null;
             /** Ai Configured */
             ai_configured: boolean;
+            /** Ai Require Consent */
+            ai_require_consent: boolean;
+            /**
+             * Youtrack Configured
+             * @default false
+             */
+            youtrack_configured: boolean;
             /** Db Epoch */
             db_epoch: string;
             /** Cursor */
             cursor: string;
         };
-        /** TrackingRequest */
-        TrackingRequest: {
-            /** Enabled */
-            enabled: boolean;
+        /** TaskDTO */
+        TaskDTO: {
+            /** Id */
+            id: string;
+            /** Chat Id */
+            chat_id: string | null;
+            /** Message Id */
+            message_id: string | null;
+            /** Project */
+            project: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Result */
+            result?: string | null;
+            /** Prompt */
+            prompt?: string;
+            /** Mode */
+            mode?: string;
+            /** Running */
+            running?: boolean;
+            /** Interactive */
+            interactive?: boolean;
+            /** Chat Title */
+            chat_title?: string | null;
+            /** Sender Name */
+            sender_name?: string | null;
+            /** Message Text */
+            message_text?: string | null;
         };
-        /** UnlockRequest */
-        UnlockRequest: {
-            /** Code */
-            code: string;
+        /** TaskRequest */
+        TaskRequest: {
+            /** Project */
+            project: string;
+            /** Prompt */
+            prompt: string;
+            /** Chat Id */
+            chat_id?: string | null;
+            /** Message Id */
+            message_id?: string | null;
+            /** Mode */
+            mode?: "terminal" | "plan" | "edit";
         };
         /** ValidationError */
         ValidationError: {
@@ -534,6 +858,23 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** YouTrackIssue */
+        YouTrackIssue: {
+            /** Id */
+            id: string;
+            /** Url */
+            url: string;
+        };
+        /** YouTrackRequest */
+        YouTrackRequest: {
+            /** Summary */
+            summary: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
         };
     };
     responses: never;
@@ -566,55 +907,6 @@ export interface operations {
             };
         };
     };
-    unlock_api_unlock_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UnlockRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    logout_api_logout_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     status_api_status_get: {
         parameters: {
             query?: never;
@@ -637,7 +929,10 @@ export interface operations {
     };
     chats_api_chats_get: {
         parameters: {
-            query?: never;
+            query?: {
+                since?: string | null;
+                until?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -651,32 +946,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatsResponse"];
-                };
-            };
-        };
-    };
-    tracking_api_chats__chat_id__tracking_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TrackingRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatDTO"];
                 };
             };
             /** @description Validation Error */
@@ -726,6 +995,9 @@ export interface operations {
                 after?: string | null;
                 limit?: number;
                 q?: string | null;
+                since?: string | null;
+                until?: string | null;
+                pending?: boolean;
             };
             header?: never;
             path: {
@@ -742,6 +1014,74 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handled_api_chats__chat_id__messages__message_id__handled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandledRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    handled_all_api_chats__chat_id__handled_all_post: {
+        parameters: {
+            query?: {
+                since?: string | null;
+                until?: string | null;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandledAllResponse"];
                 };
             };
             /** @description Validation Error */
@@ -961,6 +1301,38 @@ export interface operations {
             };
         };
     };
+    ai_digest_api_ai_digest_post: {
+        parameters: {
+            query?: {
+                since?: string | null;
+                until?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_summary_api_ai_summary_post: {
         parameters: {
             query?: never;
@@ -981,6 +1353,420 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    projects_api_projects_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDTO"][];
+                };
+            };
+        };
+    };
+    add_project_api_projects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_project_api_projects_delete: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pick_project_api_projects_pick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDTO"] | null;
+                };
+            };
+            /** @description Cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    tasks_api_tasks_get: {
+        parameters: {
+            query?: {
+                chat_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_api_tasks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pending_api_pending_get: {
+        parameters: {
+            query?: {
+                since?: string | null;
+                until?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_api_chats__chat_id__messages__message_id__snooze_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    context_api_chats__chat_id__messages__message_id__context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    photo_api_chats__chat_id__messages__message_id__photo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rules_api_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleDTO"][];
+                };
+            };
+        };
+    };
+    add_rule_api_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleAdded"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_rule_api_rules__rule_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    youtrack_issue_api_youtrack_issues_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YouTrackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YouTrackIssue"];
                 };
             };
             /** @description Validation Error */

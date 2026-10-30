@@ -3,11 +3,13 @@
 import asyncio
 import logging
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Protocol
 
+from .ai import _applescript_str
 from .errors import ApiError
-from .models import GroupInfo, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
+from .models import GroupInfo, LinkSpan, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
 from .storage import INITIAL_HISTORY_LIMIT, Db, Store
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -16,6 +18,8 @@ RECOVERY_BATCH = 100
 SEND_TIMEOUT = 30.0
 RETRY_DELAY = 5.0
 WATCH_INTERVAL = 20.0
+# ponytail: fixed look-back for tags on connect; make it a setting if 14 days is not enough.
+BACKFILL_DAYS = 14
 
 
 class LoginRequired(Exception):
@@ -37,7 +41,15 @@ class Transport(Protocol):
     async def disconnect(self) -> None: ...
     def is_connected(self) -> bool: ...
     async def list_groups(self) -> list[GroupInfo]: ...
+    # (title, kind, message, we_replied) for tags/replies to us since `cutoff`, read or not
+    async def fetch_mentions(
+        self, cutoff: datetime
+    ) -> list[tuple[str, str, StoredMessage, bool]]: ...
     async def latest_id(self, chat_id: str) -> int: ...
+    async def fetch_context(
+        self, chat_id: str, message_id: int, before: int, after: int
+    ) -> list[StoredMessage]: ...
+    async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool: ...
     async def fetch_latest(self, chat_id: str, limit: int) -> list[StoredMessage]: ...
     async def fetch_after(self, chat_id: str, after_id: int, limit: int) -> list[StoredMessage]: ...
     async def send_reply(
@@ -47,12 +59,14 @@ class Transport(Protocol):
 
 class TelegramBridge:
     def __init__(
-        self, store: Store, db: Db, transport: Transport | None, *, retry_delay=RETRY_DELAY
+        self, store: Store, db: Db, transport: Transport | None, *, retry_delay=RETRY_DELAY,
+        notify: bool = False,
     ):
         self.store = store
         self.db = db
         self.transport = transport
         self.retry_delay = retry_delay
+        self.notify = notify  # macOS notification for live tags
         self.state = "setup_required" if transport is None else "stopped"
         self.detail: str | None = None
         self.sync_state: dict[str, str] = {}
@@ -104,7 +118,7 @@ class TelegramBridge:
                 self._set_state("degraded", type(e).__name__)
                 await asyncio.sleep(self.retry_delay)
         self._set_state("connected")
-        await self.recover_all()
+        await self.backfill_mentions()
         # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
         was_connected = True
         while True:
@@ -121,7 +135,7 @@ class TelegramBridge:
                     now_connected = False
             if now_connected and not was_connected:
                 self._set_state("connected")
-                await self.recover_all()
+                await self.backfill_mentions()
             was_connected = now_connected
 
     def ensure_connected(self) -> Transport:
@@ -132,10 +146,6 @@ class TelegramBridge:
     # ---- groups / tracking --------------------------------------------
     async def list_groups(self) -> list[GroupInfo]:
         return await self.ensure_connected().list_groups()
-
-    async def recover_all(self) -> None:
-        for chat_id in await self.db.read(self.store.tracked_chat_ids):
-            self.schedule_sync(chat_id)
 
     def schedule_sync(self, chat_id: str, delay: float = 0) -> None:
         task = self._tasks.get(chat_id)
@@ -190,7 +200,45 @@ class TelegramBridge:
             await self.db.write(self.store.apply_message, m)
         except Exception as e:
             log.warning("live message not stored: %s", type(e).__name__)
-            self.schedule_sync(m.chat_id, self.retry_delay)
+
+    async def backfill_mentions(self) -> None:
+        """Pull recent tags/replies to us (read or unread); nothing else is fetched."""
+        cutoff = datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)
+        try:
+            found = await self.ensure_connected().fetch_mentions(cutoff)
+        except Exception as e:
+            log.warning("mention backfill failed: %s", type(e).__name__)
+            return
+        for title, kind, m, replied in found:
+            await self.on_mention(m, title, kind)
+            if replied:
+                await self.db.write(self.store.set_handled, m.chat_id, m.message_id, True)
+
+    async def on_my_reply(self, m: StoredMessage) -> None:
+        """Our own reply (from any device) to a kept tag: keep it and mark the tag handled."""
+        await self.on_message(m)
+        if m.reply_to_id is not None:
+            await self.db.write(self.store.set_handled, m.chat_id, m.reply_to_id, True)
+
+    async def on_mention(
+        self, m: StoredMessage, title: str, kind: str, *, live: bool = False
+    ) -> None:
+        try:
+            await self.db.write(self.store.track_mention, m.chat_id, title, kind)
+        except ApiError:
+            return  # migrated chat
+        await self.on_message(m)
+        if await self.db.write(self.store.auto_handle, m.chat_id, m.message_id):
+            return  # matched an ignore rule: no notification
+        if live and self.notify:
+            asyncio.create_task(notify_mac(f"Tag mới · {title}", m.sender_name or "", m.text))
+
+    # ---- live reads (not stored) ---------------------------------------
+    async def fetch_context(self, chat_id: str, message_id: int) -> list[StoredMessage]:
+        return await self.ensure_connected().fetch_context(chat_id, message_id, 10, 5)
+
+    async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
+        return await self.ensure_connected().download_photo(chat_id, message_id, dest)
 
     async def on_deleted(self, chat_id: str | None, message_ids: list[int]) -> None:
         try:
@@ -299,6 +347,11 @@ def raw_to_stored(msg, chat_id: str, sender_name: str | None = None) -> StoredMe
         topic_id=topic,
         outgoing=bool(getattr(msg, "out", False)),
         media_kind=_media_kind(msg),
+        links=[
+            LinkSpan(offset=e.offset, length=e.length, url=e.url)
+            for e in getattr(msg, "entities", None) or []
+            if getattr(e, "url", None)  # MessageEntityTextUrl
+        ],
     )
 
 
@@ -346,9 +399,27 @@ class TelethonTransport:
             new_id = utils.get_peer_id(types.PeerChannel(msg.action.channel_id))
             await self.bridge.on_migrated(str(event.chat_id), str(new_id))
             return
-        if not await asyncio.to_thread(self.bridge.store.is_tracking, str(event.chat_id)):
-            return  # never fetch sender/convert for untracked chats
-        await self.bridge.on_message(await self._convert(msg))
+        chat_id = str(event.chat_id)
+        if not event.is_group:
+            return
+        if getattr(msg, "out", False):
+            reply_to = getattr(msg.reply_to, "reply_to_msg_id", None) if msg.is_reply else None
+            if reply_to and await asyncio.to_thread(
+                self.bridge.store.get_message, chat_id, reply_to
+            ):
+                await self.bridge.on_my_reply(await self._convert(msg))
+            return
+        stored = await asyncio.to_thread(self.bridge.store.get_message, chat_id, msg.id)
+        mine = msg.mentioned  # @username, text mention (Telegram also flags replies to us)
+        if not mine and msg.is_reply:
+            mine = bool((r := await msg.get_reply_message()) and r.out)
+        if mine:
+            chat = await event.get_chat()
+            title = getattr(chat, "title", None) or chat_id
+            kind = "supergroup" if event.is_channel else "group"
+            await self.bridge.on_mention(await self._convert(msg), title, kind, live=True)
+        elif stored is not None:  # edit of a message we already keep
+            await self.bridge.on_message(await self._convert(msg))
 
     _on_edit = _on_new
 
@@ -396,6 +467,57 @@ class TelethonTransport:
                 )
             )
         return out
+
+    async def fetch_mentions(
+        self, cutoff: datetime
+    ) -> list[tuple[str, str, StoredMessage, bool]]:
+        from telethon.tl.types import InputMessagesFilterMyMentions
+
+        out = []
+        async for d in self.client.iter_dialogs():
+            if not d.is_group or (d.date and d.date < cutoff):
+                continue  # dialogs come newest-activity first, but pinned ones break the order
+            kind = "supergroup" if d.is_channel else "group"
+            tags = []
+            async for m in self.client.iter_messages(d.id, filter=InputMessagesFilterMyMentions):
+                if m.date < cutoff:
+                    break  # newest first
+                tags.append(m)
+            if not tags:
+                continue
+            # Which tags we already answered: our own messages replying to them since the oldest.
+            oldest = min(m.date for m in tags)
+            replied: set[int] = set()
+            async for m in self.client.iter_messages(d.id, from_user="me"):
+                if m.date < oldest:
+                    break
+                if (rid := getattr(m.reply_to, "reply_to_msg_id", None)) is not None:
+                    replied.add(rid)
+            title = d.name or str(d.id)
+            out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
+        return out
+
+    async def fetch_context(
+        self, chat_id: str, message_id: int, before: int, after: int
+    ) -> list[StoredMessage]:
+        peer = int(chat_id)
+        it = self.client.iter_messages(peer, offset_id=message_id, limit=before)
+        older = [m async for m in it]
+        newer = [
+            m
+            async for m in self.client.iter_messages(
+                peer, min_id=message_id, reverse=True, limit=after
+            )
+        ]
+        target = await self.client.get_messages(peer, ids=message_id)
+        msgs = [*reversed(older), *([target] if target else []), *newer]
+        return [await self._convert(m) for m in msgs]
+
+    async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
+        msg = await self.client.get_messages(int(chat_id), ids=message_id)
+        if msg is None or not getattr(msg, "photo", None):
+            return False
+        return await self.client.download_media(msg, file=str(dest)) is not None
 
     async def latest_id(self, chat_id: str) -> int:
         msgs = await self.client.get_messages(int(chat_id), limit=1)
@@ -465,3 +587,20 @@ class TelethonTransport:
         if msg_id is not None:
             return SentMessage(message_id=msg_id)
         raise RuntimeError("send result without message id")
+
+
+async def notify_mac(title: str, subtitle: str, body: str) -> None:
+    """Best-effort macOS banner; failures (other OS, no permission) are ignored."""
+    q = _applescript_str
+    script = (
+        f"display notification {q(body[:200])} with title {q(title[:80])} "
+        f'subtitle {q(subtitle[:80])} sound name "Glass"'
+    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "osascript", "-e", script,
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )  # fmt: skip
+        await asyncio.wait_for(proc.wait(), 10)
+    except Exception:
+        pass
