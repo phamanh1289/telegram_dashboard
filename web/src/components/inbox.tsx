@@ -185,7 +185,7 @@ function Inbox({ status }: { status: Status }) {
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
   return (
-    <div className={cn("grid h-dvh bg-paper", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
+    <div className={cn("grid h-dvh", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
       {/* Sidebar, the YouTrack recipe: module switch, brand, views, groups, footer. */}
       <aside className={cn(
@@ -251,7 +251,7 @@ function Inbox({ status }: { status: Status }) {
       <div className="hidden md:block" aria-hidden />
 
       <div className={cn("grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]", rightPanel && "xl:grid-cols-[minmax(0,1fr)_30rem]")}>
-        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b bg-paper px-3 py-2 sm:px-6 xl:col-span-2">
+        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6 xl:col-span-2">
           <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
             aria-label="Thu gọn / mở rộng menu" title="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
             <Menu />

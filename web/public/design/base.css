@@ -2,7 +2,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { overflow-x: clip; }
 html { scrollbar-color: var(--color-rule-2) transparent; scrollbar-width: thin; }
-body { margin: 0; background: var(--color-paper); color: var(--color-ink); font-family: var(--font-body); font-size: var(--text-sm); line-height: 1.5; -webkit-font-smoothing: antialiased; caret-color: var(--color-focus); }
+body { margin: 0; background: var(--color-paper) var(--ground-wash) fixed; color: var(--color-ink); font-family: var(--font-body); font-size: var(--text-sm); line-height: 1.5; -webkit-font-smoothing: antialiased; caret-color: var(--color-focus); }
 .dark body, [data-theme="dark"] body { font-weight: 350; }
 ::selection { background: color-mix(in oklab, var(--color-signal) 30%, transparent); color: var(--color-ink); }
 :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }

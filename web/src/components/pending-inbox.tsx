@@ -59,7 +59,7 @@ export function PendingInbox({
 
   return (
     <section aria-label="Việc cần xử lý" className="flex min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-paper px-3 md:px-5">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại">
           <ArrowLeft />
         </Button>

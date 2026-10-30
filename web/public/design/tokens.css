@@ -1,7 +1,7 @@
-/* Hallmark · shared system for both modules (Telegram Inbox at /, YouTrack at /yt/) · theme: custom (by request: "dễ nhìn, sáng tối, highlight rõ ràng, tương phản tốt"; replaces Coral's warm paper) · redesign: restyle · scope: app · modes: light+dark
+/* Hallmark · shared system for both modules (Telegram Inbox at /, YouTrack at /yt/) · theme: custom warm (by request: "tông màu ấm, dễ nhìn, gradient nhẹ, đối lập màu tốt, đừng quá chói") · redesign: restyle · scope: app · modes: light+dark
  * One source: Next imports this file (web/src/app/globals.css), the YouTrack page links it. Spec: DESIGN.md.
- * Two signals that never share a job: --color-hl (blue) = where you are and what you act on (selection, current tab, primary button, focus);
- * --color-signal (orange) = what needs you (overdue, waiting long, new). Contrast: text ≥ 4.5:1, marks and borders ≥ 3:1, in both modes.
+ * Two signals that never share a job: --color-hl (terracotta) = where you are and what you act on (selection, current tab, primary button, focus);
+ * --color-signal (honey amber) = what needs you (overdue, waiting long, new). Primary button is espresso ink (--color-board). Contrast: text ≥ 4.5:1, marks and borders ≥ 3:1, in both modes.
  * waive: fonts · Be Vietnam Pro (Vietnamese-native grotesk) for text, Geist Mono for figures. */
 :root {
   color-scheme: light;
@@ -19,83 +19,86 @@
   --font-figure: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --tracking-display: -0.02em; --display-weight: 600;
 
-  /* surfaces: a soft cool-grey ground so white cards and panels separate clearly */
-  --color-paper: oklch(96.4% 0.005 255);   /* app ground */
-  --color-paper-2: oklch(94% 0.007 255);   /* hover, table head, wells */
-  --color-paper-3: oklch(90.5% 0.01 255);  /* pressed, groove, chips */
-  --color-cotton: oklch(99.4% 0.002 255);  /* cards, rows, popovers */
-  /* text */
-  --color-ink: oklch(21% 0.025 262);   /* headings, body */
-  --color-ink-2: oklch(33% 0.022 262); /* secondary text */
-  --color-ink-3: oklch(46% 0.02 262);  /* labels, meta (≥ 4.5:1 on paper-3) */
+  /* surfaces: a warm cream ground (never pure white) so cotton cards still separate; --ground-wash is a faint top-to-bottom warm gradient on the ground only */
+  --color-paper: oklch(96.4% 0.012 75);    /* app ground */
+  --color-paper-2: oklch(93.8% 0.015 72);  /* hover, table head, wells */
+  --color-paper-3: oklch(90.4% 0.019 68);  /* pressed, groove, chips */
+  --color-cotton: oklch(99.1% 0.006 85);   /* cards, rows, popovers */
+  --ground-wash: linear-gradient(180deg, oklch(95.2% 0.022 62) 0%, var(--color-paper) 45%, oklch(96.8% 0.014 88) 100%);
+  /* text: warm brown-black, not grey */
+  --color-ink: oklch(22% 0.02 50);    /* headings, body */
+  --color-ink-2: oklch(34% 0.02 50);  /* secondary text */
+  --color-ink-3: oklch(46% 0.022 55); /* labels, meta (≥ 4.5:1 on paper-3) */
   /* lines */
-  --color-rule: oklch(89.5% 0.008 255);   /* hairline dividers */
-  --color-rule-2: oklch(64% 0.015 258);   /* control borders (≥ 3:1) */
+  --color-rule: oklch(89.2% 0.015 70);   /* hairline dividers */
+  --color-rule-2: oklch(63% 0.022 60);   /* control borders (≥ 3:1) */
 
-  /* highlight: selection, current, primary action, focus */
-  --color-hl: oklch(52% 0.2 262);         /* fills, marks, underlines */
-  --color-hl-2: oklch(47% 0.2 263);       /* as text on cotton/paper and on hl-wash */
-  --color-hl-wash: oklch(93.5% 0.04 262); /* selected row / item background */
-  --color-hl-ink: oklch(99% 0.004 262);   /* text on hl */
-  --color-board: var(--color-hl); --color-board-type: var(--color-hl-ink); /* primary button */
-  --color-focus: oklch(55% 0.2 262);
+  /* highlight: terracotta. selection, current, focus */
+  --color-hl: oklch(53% 0.135 40);         /* fills, marks, underlines */
+  --color-hl-2: oklch(48% 0.13 38);        /* as text on cotton/paper and on hl-wash */
+  --color-hl-wash: oklch(93.6% 0.032 52);  /* selected row / item background */
+  --color-hl-ink: oklch(99% 0.006 80);     /* text on hl */
+  --color-board: oklch(27% 0.025 45); --color-board-type: oklch(97% 0.012 80); /* primary button: espresso ink */
+  --color-focus: oklch(55% 0.14 40);
 
-  /* signal: needs you (overdue, waiting long, new since last visit) */
-  --color-signal: oklch(64% 0.18 48);       /* marks and fills */
-  --color-signal-ink: oklch(20% 0.03 48);   /* text on signal fill */
-  --color-signal-2: oklch(50% 0.16 42);     /* as text */
-  --color-signal-wash: oklch(95% 0.04 60);
+  /* signal: honey amber. needs you (overdue, waiting long, new since last visit) */
+  --color-signal: oklch(65% 0.14 66);       /* marks and fills */
+  --color-signal-ink: oklch(20% 0.04 60);   /* text on signal fill */
+  --color-signal-2: oklch(50% 0.11 62);     /* as text */
+  --color-signal-wash: oklch(95% 0.05 85);
 
   /* state, for data only */
-  --color-ok: oklch(48% 0.13 152); --color-ok-wash: oklch(94.5% 0.04 152);
-  --color-warn: oklch(50% 0.12 75); --color-warn-wash: oklch(95.5% 0.06 90);
-  --color-error: oklch(51% 0.2 27); --color-error-wash: oklch(94.5% 0.035 22);
-  --color-info: oklch(48% 0.12 240); --color-info-wash: oklch(94.5% 0.03 240);
+  --color-ok: oklch(48% 0.11 150); --color-ok-wash: oklch(94.5% 0.035 145);
+  --color-warn: oklch(50% 0.1 95); --color-warn-wash: oklch(95.5% 0.05 100);
+  --color-error: oklch(50% 0.17 22); --color-error-wash: oklch(94.5% 0.03 22);
+  --color-info: oklch(48% 0.09 225); --color-info-wash: oklch(94.5% 0.025 225);
   /* workflow tiers and kinds (categorical marks, ≥ 3:1 on cotton) */
-  --cat-1: oklch(55% 0.02 258);  /* todo / sub-task / lowest */
-  --cat-2: oklch(52% 0.17 262);  /* in progress */
-  --cat-3: oklch(50% 0.17 310);  /* QC / epic */
-  --cat-4: oklch(52% 0.1 195);   /* on dev / feature */
-  --cat-5: oklch(55% 0.18 355);  /* design */
-  --cat-6: oklch(56% 0.13 120);  /* improvement */
+  --cat-1: oklch(55% 0.02 60);   /* todo / sub-task / lowest */
+  --cat-2: oklch(52% 0.13 40);   /* in progress */
+  --cat-3: oklch(50% 0.13 330);  /* QC / epic */
+  --cat-4: oklch(52% 0.09 190);  /* on dev / feature */
+  --cat-5: oklch(54% 0.15 10);   /* design */
+  --cat-6: oklch(54% 0.12 120);  /* improvement */
 
   /* depth (light: a defined edge plus a soft, short shadow) */
-  --shade: 30% 0.03 262; --lit: 100% 0 0;
+  --shade: 30% 0.03 50; --lit: 100% 0 0;
   --edge-stock: 0 0 0 1px var(--color-rule);
   --cast-stock: 0 1px 2px oklch(var(--shade) / 0.06), 0 2px 6px -2px oklch(var(--shade) / 0.08);
   --cast-pop: 0 0 0 1px var(--color-rule), 0 12px 32px -8px oklch(var(--shade) / 0.22);
   --press-groove: inset 0 0 0 1px var(--color-rule);
-  --scrim: oklch(21% 0.025 262 / 0.42);
+  --scrim: oklch(22% 0.02 50 / 0.42);
 
   --radius-card: 10px; --radius-input: 8px; --radius-pill: 999px; --rule-hair: 1px;
 }
 
-/* dark: a deep blue-grey (never black), cards lighter than the ground, the same two signals lifted for dark. */
+/* dark: warm charcoal (never black), cards lighter than the ground, the same two signals lifted for dark. */
 .dark, [data-theme="dark"] {
   color-scheme: dark;
-  --color-paper: oklch(17.5% 0.014 262);
-  --color-paper-2: oklch(22.5% 0.016 262);
-  --color-paper-3: oklch(27% 0.018 262);
-  --color-cotton: oklch(20.5% 0.015 262);
-  --color-ink: oklch(95% 0.006 255); --color-ink-2: oklch(85% 0.01 255); --color-ink-3: oklch(72% 0.014 255);
-  --color-rule: oklch(30% 0.016 262); --color-rule-2: oklch(52% 0.018 262);
-  --color-hl: oklch(70% 0.15 258);
-  --color-hl-2: oklch(80% 0.11 258);
-  --color-hl-wash: oklch(30% 0.07 262);
-  --color-hl-ink: oklch(17% 0.03 262);
-  --color-focus: oklch(74% 0.14 258);
-  --color-signal: oklch(76% 0.15 55); --color-signal-ink: oklch(18% 0.03 55);
-  --color-signal-2: oklch(80% 0.14 60);
-  --color-signal-wash: oklch(30% 0.06 50);
-  --color-ok: oklch(78% 0.13 152); --color-ok-wash: oklch(29% 0.05 152);
-  --color-warn: oklch(84% 0.13 85); --color-warn-wash: oklch(30% 0.05 85);
-  --color-error: oklch(73% 0.15 25); --color-error-wash: oklch(30% 0.07 25);
-  --color-info: oklch(78% 0.1 240); --color-info-wash: oklch(29% 0.05 240);
-  --cat-1: oklch(72% 0.015 258); --cat-2: oklch(72% 0.13 262); --cat-3: oklch(74% 0.13 310);
-  --cat-4: oklch(76% 0.1 195); --cat-5: oklch(76% 0.13 355); --cat-6: oklch(80% 0.12 120);
+  --color-paper: oklch(19% 0.012 55);
+  --color-paper-2: oklch(23.5% 0.014 55);
+  --color-paper-3: oklch(28% 0.016 55);
+  --color-cotton: oklch(22% 0.013 55);
+  --ground-wash: linear-gradient(180deg, oklch(22.5% 0.022 45) 0%, var(--color-paper) 45%, oklch(18.5% 0.012 70) 100%);
+  --color-ink: oklch(94% 0.012 80); --color-ink-2: oklch(84% 0.014 75); --color-ink-3: oklch(72% 0.018 70);
+  --color-rule: oklch(31% 0.014 55); --color-rule-2: oklch(53% 0.02 60);
+  --color-hl: oklch(72% 0.12 45);
+  --color-hl-2: oklch(79% 0.1 50);
+  --color-hl-wash: oklch(31% 0.05 45);
+  --color-hl-ink: oklch(18% 0.03 45);
+  --color-board: oklch(90% 0.02 75); --color-board-type: oklch(20% 0.02 50);
+  --color-focus: oklch(75% 0.12 45);
+  --color-signal: oklch(80% 0.13 78); --color-signal-ink: oklch(20% 0.03 70);
+  --color-signal-2: oklch(83% 0.12 80);
+  --color-signal-wash: oklch(31% 0.05 70);
+  --color-ok: oklch(78% 0.11 150); --color-ok-wash: oklch(29% 0.045 150);
+  --color-warn: oklch(84% 0.11 95); --color-warn-wash: oklch(30% 0.045 95);
+  --color-error: oklch(73% 0.14 22); --color-error-wash: oklch(30% 0.06 22);
+  --color-info: oklch(78% 0.08 225); --color-info-wash: oklch(29% 0.04 225);
+  --cat-1: oklch(72% 0.018 60); --cat-2: oklch(74% 0.11 45); --cat-3: oklch(74% 0.11 330);
+  --cat-4: oklch(76% 0.08 190); --cat-5: oklch(75% 0.12 10); --cat-6: oklch(80% 0.11 120);
   --edge-stock: 0 0 0 1px var(--color-rule);
   --cast-stock: 0 0 0 0 transparent;
-  --cast-pop: 0 0 0 1px var(--color-rule-2), 0 16px 40px -12px oklch(5% 0.01 262 / 0.6);
+  --cast-pop: 0 0 0 1px var(--color-rule-2), 0 16px 40px -12px oklch(6% 0.01 50 / 0.6);
   --press-groove: inset 0 0 0 1px var(--color-rule);
-  --scrim: oklch(8% 0.01 262 / 0.62);
+  --scrim: oklch(8% 0.01 50 / 0.62);
 }

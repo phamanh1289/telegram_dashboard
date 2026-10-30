@@ -2,12 +2,12 @@
 
 Two modules, one product: **Telegram Inbox** (`/`, Next + Tailwind 4 + shadcn) and **YouTrack** (`/yt/`, vanilla ES modules). Both read the same tokens: [`web/public/design/tokens.css`](web/public/design/tokens.css) and [`web/public/design/base.css`](web/public/design/base.css). Change a value there, never a literal in a component.
 
-Palette: custom, cool neutral. A soft blue-grey ground with white cards (light) or a deep blue-grey with lifted cards (dark), and two signals that never share a job: **blue highlight** for where you are and what you act on, **orange signal** for what needs you. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
+Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a warm charcoal with lifted cards (dark); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
 ## Principles
 
 1. **The task, not the tool.** Someone triaging mentions or chasing tickets should see what needs them first: the oldest waiting message, the ticket stuck longest. Everything else is one step away.
-2. **Blue = here / act, orange = needs you.** Highlight (`--color-hl`) marks the selection, the current tab, module and filter, the primary button, links and focus. Signal (`--color-signal`) marks overdue, waiting > 4h, new since last visit. Neither is decoration.
+2. **Terracotta = here / act, amber = needs you.** Highlight (`--color-hl`) marks the selection, the current tab, module and filter, the primary button, links and focus. Signal (`--color-signal`) marks overdue, waiting > 4h, new since last visit. Neither is decoration.
 3. **Density is the design.** Controls 30–36px tall with a 44px hit area; tables before cards; one card recipe.
 4. **Figures are set, not decorated.** IDs, times, counts, ages, percentages in Geist Mono tabular. No icon tiles on stats, no trend arrows nobody measured, no gradients.
 5. **Motion is state.** `--dur-micro` / `--dur-short`, `transform` + `opacity` only, `prefers-reduced-motion` respected. Never `transition: all`; never animate width/height/top/left.
@@ -70,4 +70,4 @@ Contrast ≥ 4.5:1 body, 3:1 large text and UI; focus visible instantly; status 
 
 ## Don'ts
 
-Purple/blue gradients, glow, radial background blobs, emoji as icons, uppercase tracked labels, middle-dot meta strings, decorative status dots, KPI walls with icon tiles, card-in-card, `transition: all`, `overflow-x: hidden`, `100vw`, colour literals outside the token files.
+Purple/blue gradients, glow, radial background blobs (the one allowed gradient is the faint linear `--ground-wash` on the ground, plus the selected-row wash fade), emoji as icons, uppercase tracked labels, middle-dot meta strings, decorative status dots, KPI walls with icon tiles, card-in-card, `transition: all`, `overflow-x: hidden`, `100vw`, colour literals outside the token files.

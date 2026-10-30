@@ -303,7 +303,7 @@ export function TasksPage({ onBack, onOpenGroup, onUseText }: {
 
   return (
     <section aria-label="Phiên AI" className="flex min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b bg-paper px-3 md:px-5">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại"><ArrowLeft /></Button>
         <p className="min-w-0 truncate text-[0.8125rem] text-ink-2">
           <span className="font-mono text-ink tabular-nums">{all.length}</span> phiên
