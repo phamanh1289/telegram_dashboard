@@ -199,13 +199,13 @@ class PendingItem(BaseModel):
 
 class RuleDTO(BaseModel):
     id: int
-    kind: Literal["sender", "keyword"]
+    kind: Literal["keyword"]
     value: str
     label: str
 
 
 class RuleRequest(BaseModel):
-    kind: Literal["sender", "keyword"]
+    kind: Literal["keyword"]
     value: str = Field(min_length=1, max_length=200)
     label: str = Field(default="", max_length=200)
 
@@ -333,6 +333,13 @@ class DigestResult(BaseModel):
     source_count: int
     since: datetime | None = None
     until: datetime | None = None
+
+
+class SavedDigest(BaseModel):
+    result: DigestResult
+    created_at: datetime
+    last_message_id: str  # newest message any digest of this chat covered
+    last_date: datetime
 
 
 class ApiErrorBody(BaseModel):

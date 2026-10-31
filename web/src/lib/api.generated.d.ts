@@ -280,6 +280,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Digest
+         * @description Latest digest of this chat and how far digests have read (null when none).
+         */
+        get: operations["saved_digest_api_chats__chat_id__digest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/digest": {
         parameters: {
             query?: never;
@@ -1140,9 +1160,9 @@ export interface components {
             id: number;
             /**
              * Kind
-             * @enum {string}
+             * @constant
              */
-            kind: "sender" | "keyword";
+            kind: "keyword";
             /** Value */
             value: string;
             /** Label */
@@ -1152,9 +1172,9 @@ export interface components {
         RuleRequest: {
             /**
              * Kind
-             * @enum {string}
+             * @constant
              */
-            kind: "sender" | "keyword";
+            kind: "keyword";
             /** Value */
             value: string;
             /**
@@ -1162,6 +1182,22 @@ export interface components {
              * @default
              */
             label: string;
+        };
+        /** SavedDigest */
+        SavedDigest: {
+            result: components["schemas"]["DigestResult"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Message Id */
+            last_message_id: string;
+            /**
+             * Last Date
+             * Format: date-time
+             */
+            last_date: string;
         };
         /** SnoozeRequest */
         SnoozeRequest: {
@@ -1838,6 +1874,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_digest_api_chats__chat_id__digest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDigest"] | null;
                 };
             };
             /** @description Validation Error */

@@ -140,10 +140,16 @@ class DigestService:
                 "Dữ liệu đã gửi provider không thể thu hồi.",
             )  # fmt: skip
         parsed = parse_result(text, {c["id"] for c in context})
-        return DigestResult(
+        result = DigestResult(
             **(parsed or {}),
             raw="" if parsed is not None else text,
             source_count=len(msgs),
             since=since,
             until=until,
         )
+        newest = max(msgs, key=lambda m: m.message_id)
+        await self.db.write(
+            self.store.save_digest, req.chat_id, newest.message_id, newest.date,
+            result.model_dump_json(),
+        )  # fmt: skip
+        return result

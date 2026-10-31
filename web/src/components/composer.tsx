@@ -289,8 +289,10 @@ export function Composer({
         <h2 className="min-w-0 flex-1 truncate text-sm font-normal tracking-normal text-ink-3">
           Trả lời <span className="font-semibold text-ink">{replyTo?.sender_name ?? `#${replyTo?.message_id}`}</span>
         </h2>
-        {replyTo && telegramLink(replyTo) && (
-          <a href={telegramLink(replyTo)!.app} title="Mở tin này trong app Telegram" aria-label="Mở Telegram"
+        {replyTo && (
+          <a href={telegramLink(replyTo).app} {...(!telegramLink(replyTo).exact && { target: "_blank", rel: "noreferrer" })}
+            title={telegramLink(replyTo).exact ? "Mở tin này trong app Telegram" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
+            aria-label="Mở Telegram"
             className="grid size-[30px] place-items-center rounded-[var(--radius-input)] text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <ExternalLink className="size-4" aria-hidden />
           </a>

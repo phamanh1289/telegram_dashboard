@@ -1,15 +1,14 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlarmClock, Ban, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
+import { AlarmClock, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { Avatar, hueOf } from "@/components/chat-list";
+import { hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Message, type RuleAdded, type Task } from "@/lib/api";
-import { pin, setHandled, telegramLink, timeLabel, waitLabel } from "@/lib/inbox";
+import { api, type Message, type Task } from "@/lib/api";
+import { dbId, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -170,16 +169,18 @@ function MessageRow({
         ))}
         <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap text-ink-3 tabular-nums">{timeLabel(m.date)}</time>
         {m.edit_date && <span className="text-ink-3">đã sửa</span>}
+        <button type="button" title="ID trong database local (bấm để chép, dùng khi báo lỗi)"
+          onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
+          className="whitespace-nowrap rounded-sm font-mono text-[0.6875rem] text-ink-3 tabular-nums hover:bg-paper-3 hover:text-ink">
+          {dbId(m)}
+        </button>
       </div>
 
       <div className="min-w-0">
         {(head || groupTitle) && (
           <p className="mb-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-            <span className="inline-flex min-w-0 items-center gap-2">
-              <Avatar name={name} className="size-5 text-[0.625rem]" />
-              <span className={cn("truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
-                style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
-            </span>
+            <span className={cn("min-w-0 truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
+              style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
             {m.pinned && <Pin className="size-3.5 fill-current text-ink-2" aria-label="Đã ghim" />}
             {groupTitle && (
               <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-3">
@@ -229,19 +230,17 @@ function MessageRow({
           on the row. */}
       <div className="row-actions mt-1.5 flex flex-wrap items-center gap-0.5 @xl:col-start-2 @3xl:col-start-3 @3xl:row-start-1 @3xl:mt-0 @3xl:flex-nowrap @3xl:self-start">
         {!m.outgoing && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-        {!m.outgoing && m.sender_id && <IgnoreSender m={m} />}
-        {link && (
-          <a href={link.app} title="Mở tin này trong app Telegram (Alt+bấm: mở bản web)"
-            onClick={(e) => {
-              if (e.altKey) {
-                e.preventDefault();
-                window.open(link.web, "_blank", "noreferrer");
-              }
-            }}
-            className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-            <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
-          </a>
-        )}
+        <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
+          title={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
+          onClick={(e) => {
+            if (e.altKey && link.exact) {
+              e.preventDefault();
+              window.open(link.web, "_blank", "noreferrer");
+            }
+          }}
+          className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+          <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
+        </a>
       </div>
     </li>
   );
@@ -316,38 +315,6 @@ export function MessageActions({
         aria-label="Ngữ cảnh" aria-expanded={showContext} title="Xem các tin trước/sau trong nhóm" onClick={onToggleContext}>
         <MessagesSquare />
       </Button>
-    </>
-  );
-}
-
-/** Adds an auto-handle rule for this sender (bots, announcement accounts…); listed in Settings. */
-function IgnoreSender({ m }: { m: Message }) {
-  const ignore = useMutation({
-    mutationFn: () =>
-      api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: m.sender_name ?? "" } }),
-  });
-  const [asking, setAsking] = useState(false);
-  const who = m.sender_name ?? "người này";
-  return (
-    <>
-      <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={ignore.isPending || ignore.isSuccess}
-        aria-label="Luôn bỏ qua người gửi" title={ignore.isSuccess ? `Đã bỏ qua tin từ ${who}` : `Luôn bỏ qua tin từ ${who}`}
-        onClick={() => setAsking(true)}>
-        <Ban />
-      </Button>
-      <Dialog open={asking} onOpenChange={setAsking}>
-        <DialogContent>
-          <DialogTitle>Luôn bỏ qua tin từ {who}?</DialogTitle>
-          <DialogDescription>Các tag đang chờ và tag mới từ người này sẽ tự đánh dấu xong. Bỏ quy tắc này trong Cài đặt.</DialogDescription>
-          {ignore.isError && <p role="alert" className="text-sm text-error">Không lưu được quy tắc. Thử lại.</p>}
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
-            <Button aria-busy={ignore.isPending} disabled={ignore.isPending} onClick={() => ignore.mutate(undefined, { onSuccess: () => setAsking(false) })}>
-              Bỏ qua
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

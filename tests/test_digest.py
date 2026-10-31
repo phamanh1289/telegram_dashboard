@@ -204,3 +204,52 @@ async def test_out_of_range_ids_rejected(dg):
     for bad in ("99999999999", "-3", "0"):
         await expect("digest_empty", svc.run(DigestRequest(chat_id=A, message_ids=[bad])))
     assert provider.calls == []
+
+
+# ---- saved digest + cursor ---------------------------------------------------------
+
+
+async def test_run_saves_result_and_cursor(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = '{"decisions": [{"text": "Dùng uuid", "message_ids": ["2"]}]}'
+    await svc.run(req())
+    saved = env.store.get_digest(A)
+    assert saved["last_message_id"] == 3
+    assert json.loads(saved["result"])["decisions"][0]["text"] == "Dùng uuid"
+    # an older stretch replaces the result but never moves the cursor back
+    provider.reply = '{"changes": [{"text": "cũ"}]}'
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"]))
+    saved = env.store.get_digest(A)
+    assert saved["last_message_id"] == 3
+    assert json.loads(saved["result"])["changes"][0]["text"] == "cũ"
+
+
+async def test_failed_run_saves_nothing(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.on_call = lambda: env.store.set_digest_consent(A, None)
+    await expect("ai_permission_changed", svc.run(req()))
+    assert env.store.get_digest(A) is None
+
+
+def test_revoke_and_purge_drop_saved_digest(env):
+    env.track(A)
+    for drop in (lambda: env.store.set_digest_consent(A, None), lambda: env.store.purge_chat(A)):
+        env.store.set_digest_consent(A, datetime.now(UTC) + timedelta(days=1))
+        env.store.save_digest(A, 5, T0, "{}")
+        drop()
+        assert env.store.get_digest(A) is None
+
+
+def test_saved_digest_api(settings):
+    app = create_app(settings, transport=FakeTransport())
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        st = app.state.store
+        st.set_tracking(A, True, title="a", kind="supergroup")
+        assert c.get(f"/api/chats/{A}/digest").json() is None
+        st.save_digest(A, 7, T0, '{"source_count": 2, "topics": []}')
+        r = c.get(f"/api/chats/{A}/digest").json()
+        assert r["last_message_id"] == "7" and r["result"]["source_count"] == 2
+        assert datetime.fromisoformat(r["last_date"]) == T0
+        assert c.get("/api/chats/-999/digest").status_code == 404

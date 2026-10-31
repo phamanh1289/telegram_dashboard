@@ -57,10 +57,7 @@ def test_rules_clear_existing_and_new_tags(client):
     assert [i["message"]["message_id"] for i in client.get("/api/pending").json()] == ["1"]
     store.apply_message(msg(B, 3, "#tb lần 2", sender="9"))
     assert store.auto_handle(B, 3)
-    sender = client.post("/api/rules", json={"kind": "sender", "value": "5", "label": "Bot"},
-                         headers=H).json()  # fmt: skip
-    assert sender["handled"] == 1 and client.get("/api/pending").json() == []
-    client.delete(f"/api/rules/{sender['rule']['id']}", headers=H)
+    assert client.post("/api/rules", json={"kind": "sender", "value": "5"}, headers=H).status_code == 422
     assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword"]
 
 

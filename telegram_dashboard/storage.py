@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS ai_permissions (
 );
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,   -- sender | keyword
+  kind TEXT NOT NULL,   -- keyword
   value TEXT NOT NULL,
   label TEXT NOT NULL DEFAULT '',
   UNIQUE (kind, value)
@@ -114,6 +114,13 @@ CREATE TABLE IF NOT EXISTS changes (
 CREATE TABLE IF NOT EXISTS digest_consents (
   chat_id TEXT PRIMARY KEY,
   expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS digests (
+  chat_id TEXT PRIMARY KEY,
+  last_message_id INTEGER NOT NULL,  -- newest message any digest covered, only moves forward
+  last_date INTEGER NOT NULL,
+  result TEXT NOT NULL,              -- latest DigestResult JSON (dropped with the consent)
   created_at INTEGER NOT NULL
 );
 """
@@ -188,11 +195,7 @@ def _is_basic_group(chat_id: str) -> bool:
 
 def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
     text = m.text.lower()
-    return any(
-        (r["kind"] == "sender" and m.sender_id == r["value"])
-        or (r["kind"] == "keyword" and r["value"] in text)
-        for r in rules
-    )
+    return any(r["kind"] == "keyword" and r["value"] in text for r in rules)
 
 
 class Store:
@@ -416,6 +419,7 @@ class Store:
             self._clear_outbox_text(c, chat_id, None)
             self._revoke_grants(c, chat_id)
             c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
+            c.execute("DELETE FROM digests WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
             self._record(c, chat_id, None, "purge", gen)
 
@@ -903,7 +907,7 @@ class Store:
 
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
-            return [self._rule_dict(r) for r in c.execute("SELECT * FROM rules ORDER BY id")]
+            return [self._rule_dict(r) for r in c.execute("SELECT * FROM rules WHERE kind = 'keyword' ORDER BY id")]
 
     def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, int]:
         """Save a rule and clear the pending tags it already matches."""
@@ -1049,11 +1053,30 @@ class Store:
         with self._conn(write=True) as c:
             if expires_at is None:
                 c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
+                c.execute("DELETE FROM digests WHERE chat_id=?", (chat_id,))
             else:
                 c.execute(
                     "INSERT OR REPLACE INTO digest_consents VALUES (?,?,?)",
                     (chat_id, _ts(expires_at), now_ts()),
                 )
+
+    def save_digest(self, chat_id: str, last_id: int, last_date: datetime, result: str) -> None:
+        with self._conn(write=True) as c:
+            old = c.execute(
+                "SELECT last_message_id, last_date FROM digests WHERE chat_id=?", (chat_id,)
+            ).fetchone()
+            last_ts = _ts(last_date)
+            if old and old["last_message_id"] > last_id:  # an older stretch: keep the cursor
+                last_id, last_ts = old["last_message_id"], old["last_date"]
+            c.execute(
+                "INSERT OR REPLACE INTO digests VALUES (?,?,?,?,?)",
+                (chat_id, last_id, last_ts, result, now_ts()),
+            )
+
+    def get_digest(self, chat_id: str) -> dict | None:
+        with self._conn() as c:
+            r = c.execute("SELECT * FROM digests WHERE chat_id=?", (chat_id,)).fetchone()
+            return None if r is None else dict(r)
 
 
 class Db:

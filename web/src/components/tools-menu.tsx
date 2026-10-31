@@ -29,7 +29,7 @@ export function RulesSection() {
   return (
     <div className="grid gap-3">
       <p className="text-xs leading-relaxed text-ink-3">
-        Tin tag khớp quy tắc sẽ tự chuyển sang “Đã xử lý”, không báo. Bỏ qua người gửi bằng nút ⊘ trên từng tin.
+        Tin tag khớp quy tắc sẽ tự chuyển sang “Đã xử lý”, không báo.
       </p>
       <form
         className="flex gap-2"
@@ -55,8 +55,8 @@ export function RulesSection() {
         {rules.data?.length === 0 && <li className="py-2.5 text-ink-3">Chưa có quy tắc nào.</li>}
         {rules.data?.map((r) => (
           <li key={r.id} className="flex h-10 items-center gap-3 animate-in fade-in-0 duration-(--dur-short)">
-            <span className="w-20 shrink-0 text-xs text-ink-3">{r.kind === "sender" ? "Người gửi" : "Từ khóa"}</span>
-            <span className="min-w-0 flex-1 truncate text-ink">{r.kind === "sender" ? (r.label || r.value) : r.value}</span>
+            <span className="w-20 shrink-0 text-xs text-ink-3">Từ khóa</span>
+            <span className="min-w-0 flex-1 truncate text-ink">{r.value}</span>
             <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Xóa quy tắc" disabled={remove.isPending}
               onClick={() => remove.mutate(r.id)}>
               <Trash2 />

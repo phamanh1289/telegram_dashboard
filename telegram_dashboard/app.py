@@ -39,6 +39,7 @@ from .models import (
     DigestRequest,
     DigestResult,
     HistoryPage,
+    SavedDigest,
     ChatsResponse,
     HandledAllResponse,
     HandledRequest,
@@ -363,6 +364,21 @@ def create_app(
             chat_id, aware(since), aware(until) if until else datetime.now(UTC), limit + 1
         )
         return HistoryPage(items=[to_dto(m) for m in msgs[-limit:]], truncated=len(msgs) > limit)
+
+    @app.get("/api/chats/{chat_id}/digest")
+    async def saved_digest(chat_id: str, request: Request) -> SavedDigest | None:
+        """Latest digest of this chat and how far digests have read (null when none)."""
+        s = S(request)
+        await _known_chat(s, chat_id)
+        d = await s.db.read(s.store.get_digest, chat_id)
+        if d is None:
+            return None
+        return SavedDigest(
+            result=DigestResult.model_validate_json(d["result"]),
+            created_at=datetime.fromtimestamp(d["created_at"], UTC),
+            last_message_id=str(d["last_message_id"]),
+            last_date=datetime.fromtimestamp(d["last_date"], UTC),
+        )
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:

@@ -69,17 +69,24 @@ export function waitLabel(date: string, now: number) {
 }
 
 /**
- * Deep link that opens the message straight in the Telegram app (tg://), with the t.me
- * web link as fallback. Only supergroups have message links; basic groups return null.
+ * Supergroups: tg:// opens the message straight in the Telegram app, t.me as the web fallback. Basic groups have no
+ * message links in any Telegram app, so they open the group in Telegram Web instead (`exact` false).
  */
 export function telegramLink(m: Message) {
-  if (!m.chat_id.startsWith("-100")) return null;
+  if (!m.chat_id.startsWith("-100")) {
+    const web = `https://web.telegram.org/a/#${m.chat_id}`;
+    return { app: web, web, exact: false };
+  }
   const channel = m.chat_id.slice(4);
   return {
     app: `tg://privatepost?channel=${channel}&post=${m.message_id}`,
     web: `https://t.me/c/${channel}/${m.message_id}`,
+    exact: true,
   };
 }
+
+/** Local database key of a message, for bug reports. */
+export const dbId = (m: Message) => `${m.chat_id}/${m.message_id}`;
 
 export const markHandled = (m: Message, handled: boolean) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/handled`, {
