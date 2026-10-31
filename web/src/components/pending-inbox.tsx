@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCheck, ListChecks, Pin, RotateCw, X } from "lucide-react";
-import { useEffect, useMemo } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +19,7 @@ export function PendingInbox({
   onBack,
   onUseText,
   itemsRef,
+  jump,
 }: {
   pinned?: boolean;
   range: string;
@@ -28,13 +29,27 @@ export function PendingInbox({
   onBack: () => void;
   onUseText: (m: Message, text: string) => void;
   itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
+  jump?: number; // bumps on every sidebar click, to scroll back to the newest tag
 }) {
   const q = useQuery({
     ...pendingQuery(range, pinned),
     refetchInterval: 60_000, // snoozed tags come back on their own
   });
   const now = useNow();
-  // A queue, not a chat: opens at the top, where pinned and then the longest-waiting tags are.
+  // Pinned, then oldest to newest: opens at the bottom, on the newest tag. Not on refetch, which would yank the reader.
+  // Photos load late and the frame settles, so stay pinned to the bottom until the reader scrolls away.
+  const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLOListElement>(null);
+  const stick = useRef(false);
+  const lastTop = useRef(0);
+  useLayoutEffect(() => {
+    if (q.isSuccess && box.current) { stick.current = true; box.current.scrollTop = box.current.scrollHeight; }
+  }, [q.isSuccess, jump]);
+  useEffect(() => {
+    const ro = new ResizeObserver(() => { if (stick.current && box.current) box.current.scrollTop = box.current.scrollHeight; });
+    for (const el of [box.current, list.current]) if (el) ro.observe(el); // the list grows, or the box shrinks
+    return () => ro.disconnect();
+  }, []);
   const tasks = useTasks();
   // Search tag text only, ignoring case and Vietnamese accents.
   const rows = useMemo(() => {
@@ -61,7 +76,14 @@ export function PendingInbox({
         </p>
         {!pinned && <div className="ml-auto shrink-0"><BulkBar sel={sel} items={items} /></div>}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto bg-cotton">
+      <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-cotton"
+        onScroll={(e) => {
+          // Growth never lowers scrollTop, so only a scroll up unpins; reaching the bottom pins again.
+          const el = e.currentTarget;
+          if (el.scrollTop < lastTop.current) stick.current = false;
+          else if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) stick.current = true;
+          lastTop.current = el.scrollTop;
+        }}>
         {q.isPending && <RowsSkeleton />}
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">
@@ -89,7 +111,7 @@ export function PendingInbox({
             )}
           </div>
         )}
-        <ol className="@container divide-y divide-rule">
+        <ol ref={list} className="@container divide-y divide-rule">
           {rows.map(({ chat_title, message: m }) => (
             <MessageItem
               key={`${m.chat_id}:${m.message_id}`}

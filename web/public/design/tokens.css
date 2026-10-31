@@ -52,6 +52,8 @@
   --color-warn: oklch(50% 0.1 95); --color-warn-wash: oklch(95.5% 0.05 100);
   --color-error: oklch(50% 0.17 22); --color-error-wash: oklch(94.5% 0.03 22);
   --color-info: oklch(48% 0.09 225); --color-info-wash: oklch(94.5% 0.025 225);
+  /* code / key chips in messages: the one cool hue in the text, so keys never read as body copy or as the highlight */
+  --color-code: oklch(45% 0.11 258); --color-code-wash: oklch(94.5% 0.028 255);
   /* workflow tiers and kinds (categorical marks, ≥ 3:1 on cotton) */
   --cat-1: oklch(55% 0.02 60);   /* todo / sub-task / lowest */
   --cat-2: oklch(52% 0.13 40);   /* in progress */
@@ -73,7 +75,7 @@
 
 /* dark: near-neutral warm graphite (low chroma so it never reads as muddy brown), clear steps ground < sidebar < card < raised,
  * a faint warm glow at the top, cards lit by a 1px top highlight instead of shadows. Signals are lifted, softer versions of light;
- * the highlight switches to blue (and info to violet) so selection never reads as the amber "needs you". */
+ * the highlight stays warm but goes deeper and redder (copper) so selection never reads as the amber "needs you". */
 .dark, [data-theme="dark"] {
   color-scheme: dark;
   --color-paper: oklch(15.5% 0.006 60);   /* ground */
@@ -83,20 +85,21 @@
   --ground-wash: linear-gradient(180deg, oklch(19.5% 0.018 48) 0%, var(--color-paper) 40%, var(--color-paper) 100%);
   --color-ink: oklch(93.5% 0.01 80); --color-ink-2: oklch(81% 0.012 75); --color-ink-3: oklch(67% 0.014 70);
   --color-rule: oklch(27% 0.008 60); --color-rule-2: oklch(52% 0.012 60);
-  /* dark highlight is blue, not terracotta: lifted terracotta sat too close to the amber signal (washes ~identical) */
-  --color-hl: oklch(72% 0.12 250);
-  --color-hl-2: oklch(81% 0.085 250);
-  --color-hl-wash: oklch(27.5% 0.045 252);
-  --color-hl-ink: oklch(17% 0.02 255);
+  /* dark highlight is a deeper, redder copper than light's terracotta: lifted terracotta sat too close to the amber signal */
+  --color-hl: oklch(65% 0.115 35);
+  --color-hl-2: oklch(77% 0.09 38);
+  --color-hl-wash: oklch(28% 0.05 33);
+  --color-hl-ink: oklch(16% 0.02 35);
   --color-board: oklch(91% 0.015 75); --color-board-type: oklch(18% 0.01 60);
-  --color-focus: oklch(75% 0.11 250);
+  --color-focus: oklch(70% 0.11 35);
   --color-signal: oklch(79% 0.13 76); --color-signal-ink: oklch(19% 0.03 70);
   --color-signal-2: oklch(84% 0.11 80);
   --color-signal-wash: oklch(27.5% 0.045 72);
   --color-ok: oklch(78% 0.11 150); --color-ok-wash: oklch(26% 0.04 150);
   --color-warn: oklch(84% 0.1 95); --color-warn-wash: oklch(27% 0.04 95);
   --color-error: oklch(73% 0.14 22); --color-error-wash: oklch(27% 0.055 22);
-  --color-info: oklch(78% 0.08 300); --color-info-wash: oklch(26% 0.035 300); /* violet: blue is the highlight here */
+  --color-info: oklch(78% 0.08 225); --color-info-wash: oklch(26% 0.035 225);
+  --color-code: oklch(83% 0.085 255); --color-code-wash: oklch(27% 0.045 258);
   --cat-1: oklch(70% 0.014 60); --cat-2: oklch(74% 0.11 45); --cat-3: oklch(74% 0.11 330);
   --cat-4: oklch(76% 0.08 190); --cat-5: oklch(75% 0.12 10); --cat-6: oklch(80% 0.11 120);
   --edge-stock: 0 0 0 1px var(--color-rule);

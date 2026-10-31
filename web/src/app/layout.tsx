@@ -3,8 +3,9 @@ import "./globals.css";
 
 export const metadata: Metadata = { title: "Telegram Dashboard" };
 
-// One key shared with the YouTrack module: localStorage.theme = light | dark, else the OS preference.
-const THEME_BOOT = `try{var t=localStorage.theme;if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.classList.toggle("dark",t==="dark");r.dataset.theme=t}catch(e){}`;
+// One key shared with the YouTrack module: localStorage.theme = light | dark, else the OS preference. Row actions
+// (Settings) set here too, so the first paint already shows or tucks them.
+const THEME_BOOT = `try{var t=localStorage.theme;if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.classList.toggle("dark",t==="dark");r.dataset.theme=t;if(localStorage.rowActions==="always")r.dataset.rowActions="always"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

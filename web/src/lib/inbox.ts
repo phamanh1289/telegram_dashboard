@@ -15,18 +15,19 @@ export function pendingQuery(range: string, pinned = false) {
 }
 
 const VN_PARTS = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit",
+  timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
 });
 const vnParts = (d: Date) => Object.fromEntries(VN_PARTS.formatToParts(d).map((p) => [p.type, p.value]));
 
-/** Vietnam time, 12h with buổi: "9:05 sáng", "31/10 2:40 chiều"; `full` adds the year ("2:40 chiều, 31/10/2026"). */
+/** Vietnam time, 24h: "16:12, hôm nay", "09:05, hôm qua" (snoozes: "ngày mai"), else "16:12, 28/10/2026" (also `full`). */
 export function timeLabel(date: string, full = false) {
   const p = vnParts(new Date(date));
-  const h = Number(p.hour);
-  const time = `${h % 12 || 12}:${p.minute} ${h < 12 ? "sáng" : h < 18 ? "chiều" : "tối"}`;
-  if (full) return `${time}, ${p.day}/${p.month}/${p.year}`;
+  const time = `${p.hour}:${p.minute}`;
+  const ymd = `${p.day}/${p.month}/${p.year}`;
+  if (full) return `${time}, ${ymd}`;
   const t = vnParts(new Date());
-  return p.day === t.day && p.month === t.month && p.year === t.year ? time : `${p.day}/${p.month} ${time}`;
+  const dayNo = (x: typeof p) => Date.UTC(+x.year, +x.month - 1, +x.day) / 86_400_000;
+  return `${time}, ${{ [-1]: "hôm qua", 0: "hôm nay", 1: "ngày mai" }[dayNo(p) - dayNo(t)] ?? ymd}`;
 }
 
 /** Lowercase without accents ("Luận" -> "luan") for forgiving name search. */

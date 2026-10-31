@@ -39,6 +39,8 @@
     --color-error-wash: var(--color-error-wash);
     --color-info: var(--color-info);
     --color-info-wash: var(--color-info-wash);
+    --color-code: var(--color-code);
+    --color-code-wash: var(--color-code-wash);
     --shadow-edge: var(--edge-stock);
     --shadow-stock: var(--edge-stock), var(--cast-stock);
     --shadow-pop: var(--cast-pop);
@@ -136,8 +138,29 @@
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* Rows of the waiting queue: actions stay quiet until the row is hovered, focused or selected. */
+/* Row actions sit right to left (flex-row-reverse): the first one (Xong; the Telegram link on your own messages)
+   stays at the edge, the rest tuck behind it and slide out leftwards on a card when it is hovered or focused.
+   Hidden ones take no pointer (pointer-events inherit from the strip), so only the first wakes them; once out, the
+   whole strip keeps them. Settings can keep them shown (data-row-actions="always"); touch screens always show them.
+   Transform + opacity only. */
 @media (hover: hover) {
-  .row-actions { opacity: 0; transition: opacity var(--dur-micro) var(--ease-out); }
-  .group\/row:hover .row-actions, .row-actions:focus-within, [data-selected="true"] .row-actions { opacity: 1; }
+  :root:not([data-row-actions="always"]) .row-actions { position: relative; isolation: isolate; pointer-events: none; }
+  :root:not([data-row-actions="always"]) .row-actions > :first-child,
+  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within) { pointer-events: auto; }
+  :root:not([data-row-actions="always"]) .row-actions::before {
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: var(--radius-input);
+    background: var(--color-cotton); box-shadow: var(--edge-stock);
+    opacity: 0; transform: scaleX(0.2); transform-origin: right;
+    transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-short) var(--ease-out);
+  }
+  :root:not([data-row-actions="always"]) .row-actions > :not(:first-child) {
+    opacity: 0; transform: translateX(0.75rem) scale(0.9);
+    transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-short) var(--ease-out);
+  }
+  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within)::before { opacity: 1; transform: none; }
+  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within) > * { opacity: 1; transform: none; }
+  /* Out from the edge: nearest first. Tucking back has no delay. */
+  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within) > :nth-child(3) { transition-delay: 30ms; }
+  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within) > :nth-child(4) { transition-delay: 60ms; }
 }
+

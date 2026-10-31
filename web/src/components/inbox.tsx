@@ -215,8 +215,10 @@ function Inbox({ status }: { status: Status }) {
     if (matchMedia("(min-width: 48rem)").matches) toggleCollapsed();
     else setMenuOpen((v) => !v);
   }
+  const [jump, setJump] = useState(0);
   function go(id: string | null) {
     selectChat(id);
+    setJump((n) => n + 1);
     setMenuOpen(false);
   }
 
@@ -337,7 +339,7 @@ function Inbox({ status }: { status: Status }) {
                   <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
-                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} />
+                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => setDigest(false)} />
                 ) : (

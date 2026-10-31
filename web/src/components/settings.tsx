@@ -9,7 +9,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from "@/components/ui/input";
 import type { StreamState } from "@/hooks/use-events";
 import type { Status } from "@/lib/api";
-import { applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
+import { applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
@@ -24,6 +24,7 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
   // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [theme, setTheme] = useState<ThemePref>(readTheme);
   const [overdue, setOverdue] = useState(readOverdueHours);
+  const [rowActions, setRowActions] = useState(readRowActions);
   const [aiOpen, setAiOpen] = useState(readComposerAiOpen);
   const [platform, setPlatform] = useState(readPlatform);
   const save = (key: string, value: string) => {
@@ -65,16 +66,24 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
             <Switch label="Thông báo khi có tag mới" checked={notify} onChange={(v) => void toggleNotify(v)} />
           </label>
           {notifyNote && <p role="alert" className="text-xs text-warn">{notifyNote}</p>}
+          <span className="mt-1 grid gap-1.5 text-sm">
+            <span className="grid gap-0.5">
+              <span>Nút thao tác trên tin</span>
+              <span className="text-xs text-ink-3">Ghim, ngữ cảnh, mở Telegram. Màn hình cảm ứng luôn hiện.</span>
+            </span>
+            <Segmented label="Nút thao tác trên tin" value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
+              options={[{ value: "hover", label: "Khi rê vào nút Xong" }, { value: "always", label: "Luôn hiện" }]} />
+          </span>
         </Section>
 
         <Section title="Trả lời">
           <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
-            <span>Mở sẵn Trợ lý khi soạn trả lời</span>
-            <Switch label="Mở sẵn Trợ lý khi soạn trả lời" checked={aiOpen} onChange={(v) => { setAiOpen(v); save("composerAiOpen", v ? "1" : "0"); }} />
+            <span>Mở sẵn Tóm tắt khi soạn trả lời</span>
+            <Switch label="Mở sẵn Tóm tắt khi soạn trả lời" checked={aiOpen} onChange={(v) => { setAiOpen(v); save("composerAiOpen", v ? "1" : "0"); }} />
           </label>
           <span className="mt-1 grid gap-1.5 text-sm">
-            <span>Trợ lý phân tích theo nền tảng</span>
-            <Segmented label="Trợ lý phân tích theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); save("aiPlatform", v); }}
+            <span>Tóm tắt theo nền tảng</span>
+            <Segmented label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); save("aiPlatform", v); }}
               options={PLATFORMS.map(([value, label]) => ({ value, label }))} />
           </span>
         </Section>

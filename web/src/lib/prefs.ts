@@ -43,6 +43,21 @@ export function readOverdueHours() {
   }
 }
 
+/** Row actions (ghim, ngữ cảnh, mở Telegram): tucked behind Xong until it is hovered, or always shown. */
+export type RowActionsPref = "hover" | "always";
+export function readRowActions(): RowActionsPref {
+  try {
+    return localStorage.rowActions === "always" ? "always" : "hover";
+  } catch {
+    return "hover";
+  }
+}
+export function applyRowActions(pref: RowActionsPref) {
+  try { localStorage.rowActions = pref; } catch {}
+  if (pref === "always") document.documentElement.dataset.rowActions = "always";
+  else delete document.documentElement.dataset.rowActions;
+}
+
 /** The composer opens its AI block by default (the composer also flips this when toggled). */
 export function readComposerAiOpen() {
   try {

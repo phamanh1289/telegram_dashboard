@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlarmClock, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { hueOf } from "@/components/chat-list";
+import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,9 +17,11 @@ const MEDIA: Record<string, string> = {
   gif: "GIF", video_note: "Video tròn", document: "Tệp",
 };
 
-const linkCls = "text-hl-2 underline decoration-hl/50 underline-offset-2 transition-[text-decoration-color] duration-(--dur-micro) hover:decoration-hl";
-const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline";
-const codeCls = "rounded-sm bg-paper-3 px-1 py-px font-mono text-[0.875em] text-ink";
+// Three looks so they never blur: links are underlined copper text, @mentions an outlined copper chip, keys/code a
+// slate-blue mono chip (the one cool hue, so it stands off body text and the paper-2 quote well too).
+const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
+const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline ring-1 ring-inset ring-hl/30";
+const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] text-code ring-1 ring-inset ring-code/30";
 
 // Bare URLs, @username mentions (not inside e-mails) and `code` the sender typed literally.
 const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`/g;
@@ -45,8 +47,8 @@ type Span = Message["links"][number];
 const STYLE: Partial<Record<Span["kind"], string>> = {
   bold: "font-semibold", italic: "italic", underline: "underline underline-offset-2", strike: "line-through",
   spoiler: "rounded-sm bg-ink-3 text-transparent transition-colors duration-(--dur-micro) hover:bg-transparent hover:text-inherit",
-  blockquote: "my-1 block rounded-r-sm border-l-[3px] border-hl bg-hl-wash/60 py-1 pr-2 pl-2.5",
-  pre: "my-1 block overflow-x-auto rounded-sm bg-paper-3 px-2 py-1.5 font-mono text-[0.875em]",
+  blockquote: "my-1 block rounded-r-sm border-l-[3px] border-rule-2 bg-paper-2 py-1 pr-2 pl-2.5", // neutral: copper stays for links/mentions
+  pre: "my-1 block overflow-x-auto rounded-sm bg-paper-3 px-2 py-1.5 font-mono text-[0.875em] ring-1 ring-inset ring-rule-2/40",
 };
 
 // Telegram entities nest (bold inside a quote, a link inside bold); offsets are UTF-16, like JS strings. Spans are
@@ -99,7 +101,7 @@ export function MessageItem(props: MessageItemProps) {
   const { m } = props;
   if (m.deleted) {
     return (
-      <li data-testid="message" data-id={m.message_id} className="px-4 py-2 text-xs text-ink-3 @xl:pl-[calc(6.5rem+2.25rem)]">
+      <li data-testid="message" data-id={m.message_id} className="py-2 pr-4 pl-[calc(1rem+2.25rem)] text-xs text-ink-3 @xl:pl-[calc(1.25rem+2.25rem)]">
         Tin #{m.message_id} đã bị xóa.
       </li>
     );
@@ -128,10 +130,10 @@ function MessageRow({
       data-id={m.message_id}
       data-selected={selected}
       className={cn(
-        "group/row relative grid grid-cols-[minmax(0,1fr)] gap-x-4 px-4 py-3 transition-colors duration-(--dur-micro) animate-in fade-in-0 duration-(--dur-short) hover:bg-paper-2 @xl:grid-cols-[6.5rem_minmax(0,1fr)] @xl:px-5 @3xl:grid-cols-[6.5rem_minmax(0,1fr)_auto]",
+        "group/row relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3 px-4 py-3 transition-colors duration-(--dur-micro) animate-in fade-in-0 duration-(--dur-short) hover:bg-paper-2 @xl:px-5",
         selected && "bg-linear-to-r from-hl-wash to-hl-wash/35 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-hl",
         selectMode && checked && "bg-hl-wash/60",
-        !head && !groupTitle && "pt-0.5",
+        !head && !groupTitle && "pt-1.5",
         "cursor-pointer",
       )}
       onClick={(e) => {
@@ -143,52 +145,76 @@ function MessageRow({
         else onReply(m);
       }}
     >
-      {/* Wait first: how long this has been waiting, set in mono; coral only past the overdue line. */}
-      <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs leading-5 @xl:mb-0 @xl:grid @xl:content-start @xl:justify-items-start @xl:pt-0.5">
-        {selectMode && onToggle && (
+      {/* Gutter: the sender's avatar opens a run of their messages; the checkbox takes its place while selecting. */}
+      <div className="pt-px">
+        {selectMode && onToggle ? (
           <Checkbox
             aria-label={`Chọn tin #${m.message_id}`}
             checked={!!checked}
             disabled={!checked && !canCheck}
             onCheckedChange={() => onToggle(m)}
-            className="mb-1"
+            className="mt-0.5"
           />
-        )}
-        {!m.outgoing && (done ? (
-          <span className="inline-flex items-center gap-1 font-medium text-ok"><CheckCheck className="size-3.5" aria-hidden /> Đã xử lý</span>
-        ) : snoozed ? (
-          <span className="inline-flex items-center gap-1 text-info" title={`Nhắc lại lúc ${timeLabel(m.snoozed_until!, true)}`}>
-            <AlarmClock className="size-3.5 shrink-0" aria-hidden /> nhắc <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
-          </span>
-        ) : wait && (
-          <span className={cn("whitespace-nowrap text-[0.8125rem]", wait.overdue ? "font-semibold text-signal-2" : "text-ink-2")}
-            title={wait.overdue ? `Chưa xử lý, đã chờ quá ${readOverdueHours()} giờ` : "Chưa xử lý"}>
-            chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}
-            {wait.overdue && <span className="sr-only"> (quá hạn)</span>}
-          </span>
-        ))}
-        <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap text-ink-3 tabular-nums">{timeLabel(m.date)}</time>
-        {m.edit_date && <span className="text-ink-3">đã sửa</span>}
-        <button type="button" title="ID trong database local (bấm để chép, dùng khi báo lỗi)"
-          onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
-          className="whitespace-nowrap rounded-sm font-mono text-[0.6875rem] text-ink-3 tabular-nums hover:bg-paper-3 hover:text-ink">
-          {dbId(m)}
-        </button>
+        ) : (head || groupTitle) && <Avatar name={name} />}
       </div>
 
       <div className="min-w-0">
-        {(head || groupTitle) && (
-          <p className="mb-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-            <span className={cn("min-w-0 truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
-              style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
-            {m.pinned && <Pin className="size-3.5 fill-current text-ink-2" aria-label="Đã ghim" />}
-            {groupTitle && (
-              <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-3">
-                <Users className="size-3 shrink-0" aria-hidden /> <span className="truncate">{groupTitle}</span>
-              </span>
-            )}
-          </p>
-        )}
+        {/* One line: who, where, when and the wait on the left; ID and actions on the right. */}
+        <div className="mb-1 flex min-h-6 flex-wrap items-center gap-x-2.5 gap-y-0.5">
+          {(head || groupTitle) && (
+            <>
+              <span className={cn("min-w-0 truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
+                style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
+              {m.pinned && <Pin className="size-3.5 shrink-0 fill-current text-ink-2" aria-label="Đã ghim" />}
+              {groupTitle && (
+                <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-3">
+                  <Users className="size-3 shrink-0" aria-hidden /> <span className="truncate">{groupTitle}</span>
+                </span>
+              )}
+            </>
+          )}
+          <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap text-xs text-ink-3 tabular-nums">
+            {timeLabel(m.date)}{m.edit_date && " (đã sửa)"}
+          </time>
+          {!m.outgoing && (done ? (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-ok"><CheckCheck className="size-3.5" aria-hidden /> Đã xử lý</span>
+          ) : snoozed ? (
+            <span className="inline-flex items-center gap-1 text-xs text-info" title={`Nhắc lại lúc ${timeLabel(m.snoozed_until!, true)}`}>
+              <AlarmClock className="size-3.5 shrink-0" aria-hidden /> nhắc <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
+            </span>
+          ) : wait && (
+            <span className={cn("whitespace-nowrap text-xs", wait.overdue ? "font-semibold text-signal-2" : "font-medium text-ink-2")}
+              title={wait.overdue ? `Chưa xử lý, đã chờ quá ${readOverdueHours()} giờ` : "Chưa xử lý"}>
+              (chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit})
+              {wait.overdue && <span className="sr-only"> quá hạn</span>}
+            </span>
+          ))}
+          <div className="ml-auto flex flex-wrap items-center gap-x-2.5 text-xs leading-5">
+            <button type="button" title={`ID ${dbId(m)} (bấm để chép, dùng khi báo lỗi)`}
+              onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
+              className="whitespace-nowrap rounded-sm px-0.5 font-mono text-[0.6875rem] text-ink-3 tabular-nums hover:bg-paper-3 hover:text-ink">
+              #{m.message_id}
+            </button>
+            {/* Actions, laid out right to left: the first (Xong, or the Telegram link on your own messages) sits at the
+                edge and the rest tuck behind it until it is hovered (globals.css, or always shown per Settings); always
+                in the tab order. Replying is a click on the row. Wide rows: negative margin so the 30px targets don't
+                make the line taller. */}
+            <div className="row-actions ml-auto flex flex-row-reverse items-center gap-0.5 @xl:-my-1.5">
+              {!m.outgoing && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
+              <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
+                title={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
+                onClick={(e) => {
+                  if (e.altKey && link.exact) {
+                    e.preventDefault();
+                    window.open(link.web, "_blank", "noreferrer");
+                  }
+                }}
+                className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+                <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
+              </a>
+            </div>
+          </div>
+        </div>
         {m.reply_to_id && (
           <p className="mb-0.5 inline-flex items-center gap-1 text-xs text-ink-3">
             <CornerDownRight className="size-3" aria-hidden /> trả lời <span className="font-mono">#{m.reply_to_id}</span>
@@ -226,22 +252,6 @@ function MessageRow({
         {showContext && <ContextPanel m={m} />}
       </div>
 
-      {/* Actions: quiet until the row is hovered, focused or selected; always in the tab order. Replying is a click
-          on the row. */}
-      <div className="row-actions mt-1.5 flex flex-wrap items-center gap-0.5 @xl:col-start-2 @3xl:col-start-3 @3xl:row-start-1 @3xl:mt-0 @3xl:flex-nowrap @3xl:self-start">
-        {!m.outgoing && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-        <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
-          title={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
-          onClick={(e) => {
-            if (e.altKey && link.exact) {
-              e.preventDefault();
-              window.open(link.web, "_blank", "noreferrer");
-            }
-          }}
-          className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-          <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
-        </a>
-      </div>
     </li>
   );
 }
