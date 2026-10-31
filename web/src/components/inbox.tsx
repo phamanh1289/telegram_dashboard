@@ -272,7 +272,7 @@ function Inbox({ status }: { status: Status }) {
           ))}
         </nav>
         <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
-          <ChatList selected={chatId} onSelect={go} range={range} search={search} collapsed={collapsed} />
+          <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
           <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt"
@@ -309,8 +309,8 @@ function Inbox({ status }: { status: Status }) {
                 type="search"
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
-                placeholder="Tìm tin, người gửi, nhóm…"
-                aria-label="Tìm kiếm tất cả"
+                placeholder="Tìm nội dung tin tag…"
+                aria-label="Tìm nội dung tin tag"
                 className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
               />
               {!search && <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" aria-hidden><Kbd>/</Kbd></span>}

@@ -36,12 +36,12 @@ export function PendingInbox({
   const now = useNow();
   // A queue, not a chat: opens at the top, where pinned and then the longest-waiting tags are.
   const tasks = useTasks();
-  // Name search: sender, group or text, ignoring case and Vietnamese accents.
+  // Search tag text only, ignoring case and Vietnamese accents.
   const rows = useMemo(() => {
     const needle = fold(search.trim());
     const all = q.data ?? [];
     return needle
-      ? all.filter((p) => fold(`${p.message.sender_name ?? ""} ${p.chat_title} ${p.message.text}`).includes(needle))
+      ? all.filter((p) => fold(p.message.text).includes(needle))
       : all;
   }, [q.data, search]);
   const items = useMemo(() => rows.map((p) => p.message), [rows]);

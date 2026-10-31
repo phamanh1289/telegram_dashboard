@@ -247,7 +247,7 @@ function MessageRow({
   );
 }
 
-/** Message body; in the cross-group queue it is cut to 3 lines so the list stays scannable (the reply panel shows it
+/** Message body; in the cross-group queue it is cut to 10 lines so the list stays scannable (the reply panel shows it
  *  all). "Xem thêm" only appears when the text actually overflows. */
 function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boolean }) {
   const [open, setOpen] = useState(false);
@@ -259,7 +259,7 @@ function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boole
   }, [clamp, open, m.text]);
   return (
     <>
-      <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-3")}>
+      <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-10")}>
         {richText(m)}
       </p>
       {clamp && (long || open) && (

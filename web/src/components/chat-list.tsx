@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Chat, type ChatsResponse } from "@/lib/api";
-import { fold, pendingQuery } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 /** 24px initial on a wash of one of the six categorical hues, picked from the name (fixed L/C via tokens). */
@@ -59,11 +58,9 @@ export function ChatList({
   selected,
   onSelect,
   range,
-  search,
   collapsed,
 }: {
   range: string;
-  search: string;
   collapsed: boolean;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -81,15 +78,8 @@ export function ChatList({
     },
     onSettled: () => qc.invalidateQueries({ queryKey: ["chats"] }),
   });
-  const allItems = chats.data?.items ?? [];
-  const pendingTotal = allItems.reduce((n, c) => n + c.pending_count, 0);
-  const needle = fold(search.trim());
-  // A group matches by its title or by a sender of one of its pending tags.
-  const pending = useQuery({ ...pendingQuery(range), enabled: !!needle });
-  const senderChats = new Set(
-    (pending.data ?? []).filter((p) => fold(p.message.sender_name ?? "").includes(needle)).map((p) => p.message.chat_id),
-  );
-  const items = needle ? allItems.filter((c) => fold(c.title).includes(needle) || senderChats.has(c.chat_id)) : allItems;
+  const items = chats.data?.items ?? [];
+  const pendingTotal = items.reduce((n, c) => n + c.pending_count, 0);
   useEffect(() => {
     document.title = pendingTotal ? `(${pendingTotal}) Telegram Dashboard` : "Telegram Dashboard";
   }, [pendingTotal]);
@@ -123,11 +113,8 @@ export function ChatList({
             </Button>
           </div>
         )}
-        {chats.isSuccess && allItems.length === 0 && (
+        {chats.isSuccess && items.length === 0 && (
           <p className="px-3 py-2 text-sm leading-relaxed text-ink-3">Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.</p>
-        )}
-        {chats.isSuccess && allItems.length > 0 && items.length === 0 && (
-          <p className="px-3 py-2 text-sm text-ink-3">Không có nhóm nào khớp “{search.trim()}”.</p>
         )}
         <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
           {items.map((c) => (
