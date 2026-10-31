@@ -21,6 +21,7 @@ export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
 export type DigestItem = S["DigestItem"];
 export type HistoryPage = S["HistoryPage"];
+export type SavedDigest = S["SavedDigest"];
 
 export class ApiError extends Error {
   constructor(

@@ -2,11 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Copy, RotateCw, ShieldCheck, Sparkles } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message } from "@/lib/api";
+import { api, ApiError, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
 import { timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -76,7 +76,7 @@ function toMarkdown(r: DigestResult, title: string) {
 export function DigestPage({ chatId, title, onBack }: { chatId: string; title: string; onBack: () => void }) {
   const qc = useQueryClient();
   const enc = encodeURIComponent(chatId);
-  const [preset, setPreset] = useState<number | null>(24);
+  const [preset, setPreset] = useState<number | "last" | null>(24);
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
   const [win, setWin] = useState<Window>(() => hoursAgo(24));
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -89,8 +89,25 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   });
   const setConsent = useMutation({
     mutationFn: (enabled: boolean) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { method: "PUT", json: { enabled, days: 30 } }),
-    onSuccess: (d) => qc.setQueryData(["digest-consent", chatId], d),
+    onSuccess: (d) => {
+      qc.setQueryData(["digest-consent", chatId], d);
+      void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }); // revoking drops the saved digest
+    },
   });
+  // Latest digest of this chat and how far digests have read.
+  const saved = useQuery({
+    queryKey: ["digest-saved", chatId],
+    queryFn: ({ signal }) => api<SavedDigest | null>(`/chats/${enc}/digest`, { signal }),
+  });
+  const last = saved.data ?? null;
+  // Once a chat has a cursor, open on "since last time" (unless the user already picked a range).
+  const touched = useRef(false);
+  useEffect(() => {
+    if (!last || touched.current) return;
+    touched.current = true;
+    setPreset("last");
+    setWin({ since: last.last_date });
+  }, [last]);
   const history = useQuery({
     queryKey: ["digest-history", chatId, win.since, win.until],
     queryFn: ({ signal }) =>
@@ -104,18 +121,21 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         method: "POST",
         json: { chat_id: chatId, since: win.since, until: win.until ?? null, message_ids: [...picked], teams: readDigestTeams() },
       }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }),
   });
 
   function choose(next: Window) {
+    touched.current = true;
     setWin(next);
     setPicked(new Set());
     anchor.current = null;
     run.reset();
   }
-  function onPreset(h: number) {
+  function onPreset(h: number | "last") {
+    if (h === "last" && !last) return;
     setPreset(h);
     setDays({ from: "", to: "" });
-    choose(hoursAgo(h));
+    choose(h === "last" ? { since: last!.last_date } : hoursAgo(h));
   }
   function onDays(r: DayRange) {
     setDays(r);
@@ -145,9 +165,9 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     document.querySelector(`[data-digest-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }
   async function copy() {
-    if (!run.data) return;
+    if (!shown) return;
     try {
-      await navigator.clipboard.writeText(toMarkdown(run.data, title));
+      await navigator.clipboard.writeText(toMarkdown(shown, title));
       toast({ text: "Đã copy markdown" });
     } catch {
       toast({ text: "Không copy được" });
@@ -157,7 +177,11 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   const enabled = consent.data?.enabled ?? false;
   const tooMany = !!history.data?.truncated && !picked.size; // the server would refuse the whole range
   const count = picked.size || items.length;
-  const label = preset ? `${PRESETS.find(([, h]) => h === preset)?.[0]} qua` : rangeLabel(days);
+  const label = preset === "last" ? "từ lần tóm tắt trước" : preset ? `${PRESETS.find(([, h]) => h === preset)?.[0]} qua` : rangeLabel(days);
+  // A fresh run wins; otherwise the saved one (also after the range changes).
+  const shown = run.data ?? (run.isIdle ? last?.result : undefined);
+  const cut = last ? Number(last.last_message_id) : 0; // messages up to here were already summarized
+  const isOld = (m: Message) => Number(m.message_id) <= cut;
 
   return (
     <section aria-label="Tóm tắt nhóm" className="flex min-h-0 flex-col">
@@ -167,6 +191,13 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         </Button>
         <span className="text-sm font-semibold">Tóm tắt</span>
         <div role="tablist" aria-label="Khoảng thời gian" className="flex rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
+          {last && (
+            <button type="button" role="tab" aria-selected={preset === "last"} onClick={() => onPreset("last")}
+              title={`Tin mới từ lần tóm tắt trước (${timeLabel(last.last_date)})`}
+              className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === "last" ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
+              Từ lần trước
+            </button>
+          )}
           {PRESETS.map(([l, h]) => (
             <button key={h} type="button" role="tab" aria-selected={preset === h} onClick={() => onPreset(h)}
               className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === h ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
@@ -206,8 +237,8 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
             </div>
           ) : run.isError ? (
             <p role="alert" className="text-sm text-error">{errorText(run.error)}</p>
-          ) : run.data ? (
-            <Result r={run.data} lit={lit} onJump={jump} onCopy={() => void copy()} />
+          ) : shown ? (
+            <Result r={shown} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
           ) : (
             <p className="text-sm leading-relaxed text-ink-3">
               Tóm tắt {label}: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần PO/PM confirm gì. Chọn tin bên dưới (Shift+click để chọn cả đoạn) nếu chỉ muốn tóm tắt một phần.
@@ -230,8 +261,15 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           )}
           {history.data && !items.length && <li className="px-3 py-6 text-sm text-ink-3 md:px-5">Không có tin nào trong {label.toLowerCase()}.</li>}
           {items.map((m, i) => (
-            <Row key={m.message_id} m={m} checked={picked.has(m.message_id)} lit={lit === m.message_id}
-              onToggle={(shift) => toggle(i, shift)} />
+            <Fragment key={m.message_id}>
+              <Row m={m} checked={picked.has(m.message_id)} lit={lit === m.message_id} old={isOld(m)}
+                onToggle={(shift) => toggle(i, shift)} />
+              {isOld(m) && items[i + 1] && !isOld(items[i + 1]) && (
+                <li role="separator" className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-hl-2 md:px-5">
+                  <span className="h-px flex-1 bg-hl/40" />Đã tóm tắt đến đây · {timeLabel(last!.created_at)}<span className="h-px flex-1 bg-hl/40" />
+                </li>
+              )}
+            </Fragment>
           ))}
         </ol>
       </div>
@@ -245,11 +283,12 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   );
 }
 
-function Row({ m, checked, lit, onToggle }: { m: Message; checked: boolean; lit: boolean; onToggle: (shift: boolean) => void }) {
+function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean; lit: boolean; old: boolean; onToggle: (shift: boolean) => void }) {
   const text = m.text || (m.media_kind ? `[${m.media_kind === "photo" ? "ảnh" : "file"}]` : "");
   return (
     <li data-digest-id={m.message_id}
-      className={cn("flex cursor-pointer gap-3 px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2 md:px-5", checked && "bg-hl-wash/60", lit && "bg-hl-wash")}
+      title={old ? "Đã nằm trong lần tóm tắt trước" : undefined}
+      className={cn("flex cursor-pointer gap-3 px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2 md:px-5", old && !checked && !lit && "opacity-60", checked && "bg-hl-wash/60", lit && "bg-hl-wash")}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a,input") || getSelection()?.toString()) return;
         onToggle(e.shiftKey);
@@ -277,12 +316,12 @@ function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump:
   ));
 }
 
-function Result({ r, lit, onJump, onCopy }: { r: DigestResult; lit: string | null; onJump: (id: string) => void; onCopy: () => void }) {
+function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void }) {
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">
       <div className="flex items-center gap-2 text-xs text-ink-3">
-        Từ {r.source_count} tin
+        {when ? <>Bản tóm tắt lúc {timeLabel(when)} · {r.source_count} tin</> : <>Vừa tóm tắt · {r.source_count} tin</>}
         <Button size="xs" variant="outline" className="ml-auto" onClick={onCopy}><Copy /> Copy markdown</Button>
       </div>
       {empty && <p className="text-sm text-ink-3">AI không tìm thấy nội dung đáng chú ý.</p>}
