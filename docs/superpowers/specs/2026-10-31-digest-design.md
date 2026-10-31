@@ -61,7 +61,7 @@ Thu hồi = xoá dòng. Hợp lệ khi có dòng và `expires_at > now`. Không 
 | GET | `/api/chats/{chat_id}/history` | `since`, `until` (ISO), `limit≤400` | `MessageDTO[]` (live) |
 | POST | `/api/digest` | `DigestRequest` | `DigestResult` |
 
-`history` chỉ để xem/chọn tin, không gửi gì cho AI → không cần consent, chỉ cần chat có trong danh sách và Telegram đang kết nối. Server đọc `limit+1` tin; nếu nhiều hơn `limit` thì trả kèm header `X-Truncated: 1`, UI báo "Hơn 400 tin — thu hẹp khoảng thời gian".
+`history` chỉ để xem/chọn tin, không gửi gì cho AI → không cần consent, chỉ cần chat có trong danh sách và Telegram đang kết nối. Server đọc `limit+1` tin và trả `{items, truncated}`; khi `truncated`, UI khoá nút chạy và báo "Hơn 400 tin — thu hẹp khoảng thời gian".
 
 `teams` rỗng = AI tự đặt tên team. `until` rỗng = hiện tại.
 
@@ -109,12 +109,12 @@ class DigestResult(BaseModel):
 
 ### Frontend
 
-**Lối vào:** nút "Tóm tắt" ở header của chat đang mở (và trong tools menu). Mở **Digest view** thay chỗ message list, giống cách `TasksPage` thay chỗ; nút back quay lại chat.
+**Lối vào:** nút "Tóm tắt" ở header của chat đang mở (chỉ hiện khi AI đã cấu hình). Mở **Digest view** thay chỗ message list, giống cách `TasksPage` thay chỗ; nút back quay lại chat.
 
 **Digest view** (`web/src/components/digest-page.tsx`, 1 file):
 
 - **Thanh trên:** preset `Hôm nay` · `24h` · `3 ngày` · `7 ngày` · tuỳ chọn (dùng lại `date-range.tsx`). Đổi khoảng → gọi `history`.
-- **Banner consent** khi chưa bật: "Cho phép AI đọc nhóm này trong [30] ngày" + nút Bật. Đã bật: dòng nhỏ "AI được đọc đến dd/MM · Thu hồi".
+- **Banner consent** khi chưa bật: "Cho phép AI đọc nhóm này" + chọn thời hạn 7 / 30 / 90 ngày + nút Cho phép. Đã bật: dòng nhỏ "AI được đọc đến dd/MM · Thu hồi".
 - **Cột trái — hội thoại live:** danh sách tin trong khoảng, mỗi tin có checkbox. Click = chọn/bỏ; Shift+click = chọn cả đoạn (tóm tắt "đoạn hội thoại"). Không chọn gì = tóm tắt cả khoảng. Nút chính: "Tóm tắt N tin".
 - **Cột phải — kết quả**, theo thứ tự ưu tiên đọc: **Cần confirm** → **Đã chốt** → **Thay đổi** → **Ảnh hưởng team** (nhóm theo team) → **Việc cần làm** → **Chủ đề** (badge trạng thái). Mỗi mục có chip `#id`; bấm → cuộn tới và highlight tin đó ở cột trái.
 - **Copy markdown** cho toàn bộ kết quả.
@@ -122,11 +122,11 @@ class DigestResult(BaseModel):
 
 **Settings:** ô "Team cho Digest" (danh sách cách nhau bằng dấu phẩy), mặc định `Web, Mobile, Backend, QA, Design`, lưu ở `prefs.ts` (localStorage `digestTeams`), gửi kèm mỗi request.
 
-Kết quả chỉ nằm trong cache TanStack Query của phiên; reload là mất (lưu digest thuộc P2).
+Mỗi chat lưu bản kết quả gần nhất và mốc tin mới nhất đã tóm tắt (bảng `digests`, mốc chỉ tiến lên; xoá cùng consent). Mở Digest view: hiện bản đã lưu, mặc định preset "Từ lần trước", tin đã tóm tắt làm mờ, có vạch "Đã tóm tắt đến đây". Mọi khoảng đều chốt `until` lúc chọn để danh sách và bản tóm tắt khớp nhau.
 
 ## Lỗi & bảo mật
 
-- Mọi nội dung tin chỉ đi: Telegram → RAM server → AI provider. Không ghi tin hay kết quả Digest xuống đĩa, không log nội dung.
+- Mọi nội dung tin chỉ đi: Telegram → RAM server → AI provider. Không ghi tin xuống đĩa, không log nội dung; chỉ lưu bản kết quả gần nhất (xoá khi thu hồi consent hoặc xoá dữ liệu chat).
 - Consent kiểm 2 lần (trước và sau khi gọi AI). Banner nói rõ dữ liệu gửi provider không thu hồi được.
 - Tin nhóm là dữ liệu không tin cậy: giữ `SYSTEM_PROMPT`, AI không có tool, kết quả chỉ hiển thị.
 - Telegram mất kết nối → 503 `not_connected` (mã đang dùng, qua `bridge.ensure_connected()`).
@@ -145,7 +145,7 @@ Frontend: kiểm bằng preview (bật consent, chọn khoảng, shift-chọn đ
 
 ## Ngoài phạm vi P1
 
-- **P2:** briefing đa group (mỗi group 1 card), lưu digest vào SQLite, mốc "từ lần digest trước", preset "từ lần đọc cuối".
+- **P2:** briefing đa group (mỗi group 1 card), preset "từ lần đọc cuối". (Lưu digest + mốc "từ lần trước" đã làm.)
 - **P3:** tạo YouTrack issue từ mục "Việc cần làm"/"Cần confirm"; đánh dấu mục confirm đã xử lý.
 - Chia chunk / map-reduce cho khoảng > 400 tin — chỉ làm khi giới hạn này thực sự chật.
 - Ảnh: chỉ đánh dấu `[ảnh]`, AI không đọc nội dung ảnh.

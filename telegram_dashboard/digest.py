@@ -1,11 +1,13 @@
 """Digest: structured AI summary of a group conversation, read live from Telegram.
 
-Separate from tag drafts: it needs a chat-wide consent (digest_consents), never touches
-per-message grants or handled state, and stores neither the messages nor the result.
+Separate from tag drafts: it needs a chat-wide consent (digest_consents) and never touches
+per-message grants or handled state. Messages are never stored; only the latest result and
+how far digests have read (digests), both dropped with the consent.
 """
 
 import json
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
 from .ai import AiService
 from .errors import ApiError
@@ -17,6 +19,7 @@ MAX_CHARS = 80_000
 TIMEOUT = 120.0
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 STATUSES = ("decided", "open", "dropped")
+VN = ZoneInfo("Asia/Ho_Chi_Minh")  # what the UI shows; the server's own zone may be UTC
 
 TASK = """Analyze the group conversation in <messages>: a work chat where several subjects are \
 mixed together without topics.
@@ -45,9 +48,17 @@ def _text(m: StoredMessage) -> str:
     return f"{tag} {m.text}".strip()
 
 
+def _num(n: int) -> str:
+    return f"{n:,}".replace(",", ".")  # Vietnamese grouping: 80.000
+
+
+def _field(v) -> str:
+    return ", ".join(str(x) for x in v) if isinstance(v, list) else str(v)
+
+
 def parse_result(text: str, ids: set[str]) -> dict | None:
     """The model's JSON object, cleaned: unknown ids dropped, fields coerced to strings.
-    None when no JSON object can be read."""
+    None (show it raw) when no JSON object can be read or it uses none of our keys."""
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end < start:
         return None
@@ -55,7 +66,7 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
         data = json.loads(text[start : end + 1])
     except ValueError:
         return None
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) or (data and not set(data) & set(KEYS)):
         return None
     out: dict = {}
     for key in KEYS:
@@ -64,7 +75,7 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
         for it in items if isinstance(items, list) else []:
             if not isinstance(it, dict):
                 continue
-            row = {k: str(v) for k, v in it.items() if k != "message_ids" and v is not None}
+            row = {k: _field(v) for k, v in it.items() if k != "message_ids" and v is not None}
             refs = it.get("message_ids")
             refs = [str(i) for i in refs] if isinstance(refs, list) else []
             row["message_ids"] = list(dict.fromkeys(i for i in refs if i in ids))
@@ -112,16 +123,18 @@ class DigestService:
         msgs = [m for m in msgs if m.chat_id == req.chat_id and not m.deleted and _text(m)]
         if not msgs:
             raise ApiError(422, "digest_empty")
-        if too_many or sum(len(_text(m)) for m in msgs) > MAX_CHARS:
+        chars = sum(len(_text(m)) for m in msgs)
+        if too_many or chars > MAX_CHARS:
+            why = f"hơn {MAX_MESSAGES} tin" if too_many else f"{_num(chars)} ký tự"
             raise ApiError(
                 422, "digest_too_large",
-                detail=f"Tối đa {MAX_MESSAGES} tin / {MAX_CHARS:,} ký tự; "
-                "hãy thu hẹp khoảng thời gian.",
+                detail=f"Khoảng này có {why} (tối đa {MAX_MESSAGES} tin / {_num(MAX_CHARS)} "
+                "ký tự); hãy thu hẹp khoảng thời gian hoặc chọn bớt tin.",
             )  # fmt: skip
         context = [
             {
                 "id": str(m.message_id),
-                "at": m.date.astimezone().strftime("%d/%m %H:%M"),
+                "at": m.date.astimezone(VN).strftime("%d/%m %H:%M"),
                 "from": "me" if m.outgoing else (m.sender_name or "?"),
                 **({"reply_to": str(m.reply_to_id)} if m.reply_to_id else {}),
                 "text": _text(m),
@@ -131,7 +144,9 @@ class DigestService:
         prompt = TASK
         if teams := [t.strip() for t in req.teams if t.strip()]:
             prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
-        prompt += f"\n<messages>\n{json.dumps(context, ensure_ascii=False)}\n</messages>"
+        # Escaped "<": a message cannot close the data block and pose as instructions.
+        data = json.dumps(context, ensure_ascii=False).replace("<", "\\u003c")
+        prompt += f"\n<messages>\n{data}\n</messages>"
         text = await self.ai._call(prompt, timeout=TIMEOUT)
         if not await self._consented(req.chat_id):
             raise ApiError(

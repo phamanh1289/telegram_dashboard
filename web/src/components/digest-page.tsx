@@ -41,8 +41,18 @@ const STATUS: Record<string, [string, string]> = {
   dropped: ["Bỏ ngỏ", "bg-paper-3 text-ink-3"],
 };
 
-type Window = { since: string; until?: string };
-const hoursAgo = (h: number): Window => ({ since: new Date(Date.now() - h * 3_600_000).toISOString() });
+// `until` is always set when a range is chosen, so the list and the digest cover the same messages.
+type Span = { since: string; until: string };
+const span = (since: string, until?: string | null): Span => ({ since, until: until ?? new Date().toISOString() });
+const hoursAgo = (h: number) => span(new Date(Date.now() - h * 3_600_000).toISOString());
+const CONSENT_DAYS = [7, 30, 90] as const;
+
+/** Impacts grouped by team, in first-seen order. */
+function byTeam(list: DigestItem[]): [string, DigestItem[]][] {
+  const out = new Map<string, DigestItem[]>();
+  for (const it of list) out.set(it.who || "Khác", [...(out.get(it.who || "Khác") ?? []), it]);
+  return [...out];
+}
 
 function meta(key: string, it: DigestItem) {
   if (key === "decisions" && it.who) return `chốt bởi ${it.who}`;
@@ -78,20 +88,22 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   const enc = encodeURIComponent(chatId);
   const [preset, setPreset] = useState<number | "last" | null>(24);
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
-  const [win, setWin] = useState<Window>(() => hoursAgo(24));
+  const [win, setWin] = useState<Span>(() => hoursAgo(24));
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const anchor = useRef<number | null>(null);
+  const anchor = useRef<string | null>(null); // message id: indices shift when the list reloads
   const [lit, setLit] = useState<string | null>(null);
 
   const consent = useQuery({
     queryKey: ["digest-consent", chatId],
     queryFn: ({ signal }) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { signal }),
   });
+  const [consentDays, setConsentDays] = useState<number>(30);
   const setConsent = useMutation({
-    mutationFn: (enabled: boolean) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { method: "PUT", json: { enabled, days: 30 } }),
+    mutationFn: (enabled: boolean) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { method: "PUT", json: { enabled, days: consentDays } }),
     onSuccess: (d) => {
       qc.setQueryData(["digest-consent", chatId], d);
       void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }); // revoking drops the saved digest
+      if (!d.enabled && preset === "last") onPreset(24); // …and with it the "since last time" range
     },
   });
   // Latest digest of this chat and how far digests have read.
@@ -106,12 +118,12 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     if (!last || touched.current) return;
     touched.current = true;
     setPreset("last");
-    setWin({ since: last.last_date });
+    setWin(span(last.last_date));
   }, [last]);
   const history = useQuery({
     queryKey: ["digest-history", chatId, win.since, win.until],
     queryFn: ({ signal }) =>
-      api<HistoryPage>(`/chats/${enc}/history?${new URLSearchParams({ since: win.since, ...(win.until ? { until: win.until } : {}) })}`, { signal }),
+      api<HistoryPage>(`/chats/${enc}/history?${new URLSearchParams(win)}`, { signal }),
     staleTime: 60_000,
   });
   const items = useMemo(() => history.data?.items ?? [], [history.data]);
@@ -119,12 +131,12 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     mutationFn: () =>
       api<DigestResult>("/digest", {
         method: "POST",
-        json: { chat_id: chatId, since: win.since, until: win.until ?? null, message_ids: [...picked], teams: readDigestTeams() },
+        json: { chat_id: chatId, since: win.since, until: win.until, message_ids: [...picked], teams: readDigestTeams() },
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }),
   });
 
-  function choose(next: Window) {
+  function choose(next: Span) {
     touched.current = true;
     setWin(next);
     setPicked(new Set());
@@ -135,7 +147,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     if (h === "last" && !last) return;
     setPreset(h);
     setDays({ from: "", to: "" });
-    choose(h === "last" ? { since: last!.last_date } : hoursAgo(h));
+    choose(h === "last" ? span(last!.last_date) : hoursAgo(h)); // re-clicking refreshes "now"
   }
   function onDays(r: DayRange) {
     setDays(r);
@@ -143,22 +155,22 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     const since = q.get("since");
     if (!since) return onPreset(24); // "Tất cả" makes no sense for a digest: back to the default
     setPreset(null);
-    choose({ since, until: q.get("until") ?? undefined });
+    choose(span(since, q.get("until")));
   }
   // Click toggles one; Shift+click selects the whole stretch from the last click (a conversation segment).
   function toggle(i: number, shift: boolean) {
     const id = items[i].message_id;
-    const from = anchor.current; // read now: the updater runs after the ref moves on
+    const from = items.findIndex((m) => m.message_id === anchor.current); // read now, not in the updater
     setPicked((prev) => {
       const next = new Set(prev);
-      if (shift && from !== null) {
+      if (shift && from >= 0) {
         const [a, b] = [from, i].sort((x, y) => x - y);
         for (const m of items.slice(a, b + 1)) next.add(m.message_id);
       } else if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-    anchor.current = i;
+    anchor.current = id;
   }
   function jump(id: string) {
     setLit(id);
@@ -176,7 +188,6 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
 
   const enabled = consent.data?.enabled ?? false;
   const tooMany = !!history.data?.truncated && !picked.size; // the server would refuse the whole range
-  const count = picked.size || items.length;
   const label = preset === "last" ? "từ lần tóm tắt trước" : preset ? `${PRESETS.find(([, h]) => h === preset)?.[0]} qua` : rangeLabel(days);
   // A fresh run wins; otherwise the saved one (also after the range changes).
   const shown = run.data ?? (run.isIdle ? last?.result : undefined);
@@ -217,9 +228,22 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
       {consent.data && !enabled && (
         <div role="note" className="flex flex-wrap items-center gap-3 border-b bg-hl-wash/50 px-3 py-2.5 text-sm md:px-5">
           <ShieldCheck className="size-4 shrink-0 text-hl-2" aria-hidden />
-          <span className="min-w-0 flex-1">Cho phép AI đọc tin của nhóm này trong 30 ngày để tóm tắt. Nội dung đã gửi cho AI provider không thu hồi được.</span>
+          <span className="min-w-0 flex-1">Cho phép AI đọc tin của nhóm này để tóm tắt. Nội dung đã gửi cho AI provider không thu hồi được.</span>
+          <select aria-label="Thời hạn cho phép" value={consentDays} onChange={(e) => setConsentDays(Number(e.target.value))}
+            className="h-[30px] rounded-[var(--radius-input)] border border-rule-2 bg-cotton px-2 text-xs text-ink">
+            {CONSENT_DAYS.map((d) => <option key={d} value={d}>{d} ngày</option>)}
+          </select>
           <Button size="xs" aria-busy={setConsent.isPending} disabled={setConsent.isPending} onClick={() => setConsent.mutate(true)}>Cho phép</Button>
         </div>
+      )}
+      {consent.isError && (
+        <p role="alert" className="flex items-center gap-2 border-b px-3 py-1.5 text-xs text-error md:px-5">
+          Không tải được quyền AI của nhóm này.
+          <button type="button" className="underline underline-offset-2" onClick={() => void consent.refetch()}>Thử lại</button>
+        </p>
+      )}
+      {setConsent.isError && (
+        <p role="alert" className="border-b px-3 py-1.5 text-xs text-error md:px-5">Không đổi được quyền AI: {errorText(setConsent.error)}</p>
       )}
       {enabled && consent.data?.expires_at && (
         <p className="flex items-center gap-2 border-b px-3 py-1 text-xs text-ink-3 md:px-5">
@@ -275,7 +299,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
       </div>
       {picked.size > 0 && (
         <div className="flex items-center gap-3 border-t px-3 py-1.5 text-xs text-ink-2 md:px-5">
-          Đã chọn {picked.size}/{count === picked.size ? items.length : count} tin
+          Đã chọn {picked.size}/{items.length} tin
           <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => setPicked(new Set())}>Bỏ chọn</button>
         </div>
       )}
@@ -336,8 +360,8 @@ function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: strin
         if (!list.length) return null;
         // Impacts read best grouped by team.
         const groups = key === "impacts"
-          ? Object.entries(Object.groupBy(list, (it) => it.who || "Khác"))
-          : [["", list] as const];
+          ? byTeam(list)
+          : [["", list] as [string, DigestItem[]]];
         return (
           <section key={key} className="grid gap-2">
             <h3 className={cn("text-xs font-semibold uppercase tracking-wide", key === "confirmations" ? "text-hl-2" : "text-ink-3")}>
@@ -347,7 +371,7 @@ function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: strin
               <div key={team} className="grid gap-1.5">
                 {team && <span className="text-sm font-semibold">{team}</span>}
                 <ul className="grid gap-1.5">
-                  {(its ?? []).map((it, i) => {
+                  {its.map((it, i) => {
                     const extra = meta(key, it);
                     return (
                       <li key={i} className="text-sm leading-relaxed">
