@@ -182,11 +182,12 @@ async def test_draft_splits_options(env, tmp_path):
     env.track(A)
     env.store.apply_message(msg(A, 1, "hello", sender="7"))
     script = tmp_path / "agent.sh"
-    script.write_text("#!/bin/sh\ncat >/dev/null\nprintf 'Ok anh\\n---\\nDạ em nhận\\n---\\n'\n")
+    script.write_text("#!/bin/sh\ncat >/dev/null\nprintf 'Hỏi lịch họp\\n1. Xem lịch\\n===\\nOk anh\\n---\\nDạ em nhận\\n---\\n'\n")
     script.chmod(0o755)
     s = Settings(root=tmp_path, ai_agent_command=str(script), ai_require_consent=False)
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"])
     assert r.options == ["Ok anh", "Dạ em nhận"] and r.text == "Ok anh"
+    assert r.analysis == "Hỏi lịch họp\n1. Xem lịch"
 
 
 async def test_project_agent_runs_inside_registered_project(env, tmp_path):

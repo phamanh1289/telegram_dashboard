@@ -14,16 +14,18 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Chat, type ChatsResponse } from "@/lib/api";
-import { fold } from "@/lib/inbox";
+import { fold, pendingQuery } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 /** 24px initial on a wash of one of the six categorical hues, picked from the name (fixed L/C via tokens). */
+/** One of the six categorical hues (1-6), fixed per name: the avatar wash and the sender's name share it. */
+export const hueOf = (name: string) => ([...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0) % 6) + 1;
+
 export function Avatar({ name, className }: { name: string; className?: string }) {
-  const hue = ([...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0) % 6) + 1;
   return (
     <span
       aria-hidden
-      style={{ background: `color-mix(in oklch, var(--cat-${hue}) 24%, var(--color-cotton))` }}
+      style={{ background: `color-mix(in oklch, var(--cat-${hueOf(name)}) 24%, var(--color-cotton))` }}
       className={cn("grid size-6 shrink-0 place-items-center rounded-full text-[0.6875rem] font-semibold text-ink-2", className)}
     >
       {([...(name.trim().split(/\s+/).pop() ?? "?")][0] ?? "?").toLocaleUpperCase("vi")}
@@ -82,7 +84,12 @@ export function ChatList({
   const allItems = chats.data?.items ?? [];
   const pendingTotal = allItems.reduce((n, c) => n + c.pending_count, 0);
   const needle = fold(search.trim());
-  const items = needle ? allItems.filter((c) => fold(c.title).includes(needle)) : allItems;
+  // A group matches by its title or by a sender of one of its pending tags.
+  const pending = useQuery({ ...pendingQuery(range), enabled: !!needle });
+  const senderChats = new Set(
+    (pending.data ?? []).filter((p) => fold(p.message.sender_name ?? "").includes(needle)).map((p) => p.message.chat_id),
+  );
+  const items = needle ? allItems.filter((c) => fold(c.title).includes(needle) || senderChats.has(c.chat_id)) : allItems;
   useEffect(() => {
     document.title = pendingTotal ? `(${pendingTotal}) Telegram Dashboard` : "Telegram Dashboard";
   }, [pendingTotal]);

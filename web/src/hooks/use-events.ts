@@ -3,6 +3,7 @@
 import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type Status } from "@/lib/api";
+import { readNotify } from "@/lib/prefs";
 
 type Listener = (items: ChangeItem[]) => void;
 const listeners = new Set<Listener>();
@@ -33,6 +34,30 @@ function upsert(data: InfiniteData<MessagesPage> | undefined, m: Message) {
   return { ...data, pages };
 }
 
+/**
+ * Desktop notification for fresh incoming tags while the tab is hidden. Stored messages are only tags/replies
+ * to you, so "new" + not outgoing = a new tag. The age check skips the 14-day backfill after a reconnect.
+ */
+function notifyNew(items: ChangeItem[]) {
+  if (!document.hidden || !readNotify()) return;
+  const fresh = items.flatMap((it) =>
+    it.kind === "new" && it.message && !it.message.outgoing && !it.message.handled && Date.now() - new Date(it.message.date).getTime() < 10 * 60_000
+      ? [it.message]
+      : [],
+  );
+  for (const m of fresh.slice(0, 3)) {
+    const n = new Notification(m.sender_name ?? "Tag mới", {
+      body: m.text.slice(0, 200) || "[tệp đính kèm]",
+      tag: `${m.chat_id}:${m.message_id}`,
+    });
+    n.onclick = () => {
+      focus();
+      n.close();
+    };
+  }
+  if (fresh.length > 3) new Notification(`Còn ${fresh.length - 3} tag mới khác`, { tag: "more" });
+}
+
 export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   for (const it of items) {
     if (it.message_id === null) {
@@ -57,10 +82,11 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
     void qc.invalidateQueries({ queryKey: ["pending"] });
   }
   if (items.length) listeners.forEach((cb) => cb(items));
+  notifyNew(items);
 }
 
 /**
- * One EventSource while unlocked and visible. SSE only wakes us up; data comes from
+ * One EventSource while unlocked and visible (or always, when tag notifications are on). SSE only wakes us up; data comes from
  * /api/changes and lastApplied only advances after a page was applied.
  */
 export function useSync(baseline: string) {
@@ -111,7 +137,7 @@ export function useSync(baseline: string) {
   useEffect(() => {
     let es: EventSource | null = null;
     const open = () => {
-      if (es || document.visibilityState !== "visible") return;
+      if (es || (document.visibilityState !== "visible" && !readNotify())) return;
       setStream("connecting");
       es = new EventSource(`/api/events?cursor=${encodeURIComponent(lastApplied.current)}`);
       es.onopen = () => {
@@ -142,7 +168,7 @@ export function useSync(baseline: string) {
       if (document.visibilityState === "visible") {
         open();
         void drain();
-      } else close();
+      } else if (!readNotify()) close();
     };
     open();
     document.addEventListener("visibilitychange", onVisibility);

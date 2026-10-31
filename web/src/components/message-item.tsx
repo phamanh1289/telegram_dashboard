@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Ban, CheckCheck, ClipboardList, ExternalLink, MessagesSquare, Pin, Reply, RotateCcw } from "lucide-react";
+import { AlarmClock, Ban, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useState } from "react";
-import { Avatar } from "@/components/chat-list";
+import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type RuleAdded, type Task } from "@/lib/api";
-import { markHandled, pin, telegramLink, waitLabel } from "@/lib/inbox";
+import { pin, setHandled, telegramLink, timeLabel, waitLabel } from "@/lib/inbox";
+import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const MEDIA: Record<string, string> = {
@@ -15,28 +17,66 @@ const MEDIA: Record<string, string> = {
   gif: "GIF", video_note: "Video tròn", document: "Tệp",
 };
 
-function timeLabel(date: string) {
-  const d = new Date(date);
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString([], { day: "2-digit", month: "2-digit" })} ${time}`;
-}
+const linkCls = "text-hl-2 underline decoration-hl/50 underline-offset-2 transition-[text-decoration-color] duration-(--dur-micro) hover:decoration-hl";
+const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline";
+const codeCls = "rounded-sm bg-paper-3 px-1 py-px font-mono text-[0.875em] text-ink";
 
-// Telegram hides URLs behind text (text_url entities); offsets are UTF-16, like JS strings.
-function withLinks({ text, links = [] }: Message) {
+// Bare URLs, @username mentions (not inside e-mails) and `code` the sender typed literally.
+const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`/g;
+
+function inline(text: string, key: number) {
   const out: React.ReactNode[] = [];
   let at = 0;
-  for (const l of [...links].sort((a, b) => a.offset - b.offset)) {
-    if (l.offset < at) continue;
-    out.push(text.slice(at, l.offset));
-    out.push(
-      <a key={l.offset} href={l.url} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2">
-        {text.slice(l.offset, l.offset + l.length)}
-      </a>,
-    );
-    at = l.offset + l.length;
+  for (const x of text.matchAll(INLINE)) {
+    out.push(text.slice(at, x.index));
+    const k = `${key}-${x.index}`;
+    if (x[1]) out.push(<a key={k} href={x[1]} target="_blank" rel="noreferrer" className={cn(linkCls, "break-all")}>{x[1]}</a>);
+    else if (x[2]) out.push(<a key={k} href={`https://t.me/${x[2].slice(1)}`} target="_blank" rel="noreferrer" className={mentionCls}>{x[2]}</a>);
+    else out.push(<code key={k} className={codeCls}>{x[3]}</code>);
+    at = x.index + x[0].length;
   }
   out.push(text.slice(at));
   return out;
+}
+
+type Span = Message["links"][number];
+
+// Spans, not divs, so formatted text can sit inside <p>.
+const STYLE: Partial<Record<Span["kind"], string>> = {
+  bold: "font-semibold", italic: "italic", underline: "underline underline-offset-2", strike: "line-through",
+  spoiler: "rounded-sm bg-ink-3 text-transparent transition-colors duration-(--dur-micro) hover:bg-transparent hover:text-inherit",
+  blockquote: "my-1 block rounded-r-sm border-l-[3px] border-hl bg-hl-wash/60 py-1 pr-2 pl-2.5",
+  pre: "my-1 block overflow-x-auto rounded-sm bg-paper-3 px-2 py-1.5 font-mono text-[0.875em]",
+};
+
+// Telegram entities nest (bold inside a quote, a link inside bold); offsets are UTF-16, like JS strings. Spans are
+// sorted outer-first, so each one's children are among the spans after it. Plain text between them still gets bare
+// URLs, @mentions and `code` picked out, except inside links and code.
+function render(text: string, spans: Span[], from: number, to: number, plain: boolean): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let at = from;
+  spans.forEach((l, i) => {
+    const end = l.offset + l.length;
+    if (l.offset < at || end > to) return; // a child already rendered, or overlapping its parent
+    out.push(...(plain ? inline(text.slice(at, l.offset), at) : [text.slice(at, l.offset)]));
+    const kids = render(text, spans.slice(i + 1), l.offset, end, plain && !["code", "pre", "link", "mention"].includes(l.kind));
+    const k = `${l.kind}-${l.offset}`;
+    out.push(
+      l.kind === "code" ? <code key={k} className={codeCls}>{kids}</code>
+        : l.kind === "link" || l.kind === "mention"
+          ? <a key={k} href={l.url} target="_blank" rel="noreferrer" className={l.kind === "mention" ? mentionCls : linkCls}>{kids}</a>
+          : <span key={k} className={STYLE[l.kind]}>{kids}</span>,
+    );
+    at = end;
+    if ((l.kind === "blockquote" || l.kind === "pre") && text[at] === "\n" && at < to) at++; // the block already breaks
+  });
+  out.push(...(plain ? inline(text.slice(at, to), at) : [text.slice(at, to)]));
+  return out;
+}
+
+export function richText({ text, links = [] }: Message) {
+  const spans = [...links].sort((a, b) => a.offset - b.offset || b.length - a.length);
+  return render(text, spans, 0, text.length, true);
 }
 
 export type MessageItemProps = {
@@ -59,7 +99,7 @@ export function MessageItem(props: MessageItemProps) {
   const { m } = props;
   if (m.deleted) {
     return (
-      <li data-testid="message" data-id={m.message_id} className="text-center text-xs italic text-muted-foreground">
+      <li data-testid="message" data-id={m.message_id} className="px-4 py-2 text-xs text-ink-3 @xl:pl-[calc(6.5rem+2.25rem)]">
         Tin #{m.message_id} đã bị xóa.
       </li>
     );
@@ -68,7 +108,7 @@ export function MessageItem(props: MessageItemProps) {
 }
 
 function MessageRow({
-  m, head, now, focused, groupTitle, isReplyTarget, checked, selectMode, canCheck, tasks, onReply, onToggle, onUseText,
+  m, head, now, focused, groupTitle, isReplyTarget, checked, selectMode, canCheck = true, tasks, onReply, onToggle, onUseText,
 }: MessageItemProps) {
   const [showContext, setShowContext] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -79,83 +119,106 @@ function MessageRow({
   const link = telegramLink(m);
   const photo = `/api/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/photo`;
 
+  const selected = !!focused || isReplyTarget;
+  const quiet = !m.outgoing && (done || snoozed);
+
   return (
     <li
       data-testid="message"
       data-id={m.message_id}
+      data-selected={selected}
       className={cn(
-        "group flex items-end gap-2 rounded-xl animate-in fade-in-0 slide-in-from-bottom-1 duration-200",
-        m.outgoing && "flex-row-reverse",
-        focused && "bg-primary/5 ring-1 ring-primary/30",
+        "group/row relative grid grid-cols-[minmax(0,1fr)] gap-x-4 px-4 py-3 transition-colors duration-(--dur-micro) animate-in fade-in-0 duration-(--dur-short) hover:bg-paper-2 @xl:grid-cols-[6.5rem_minmax(0,1fr)] @xl:px-5 @3xl:grid-cols-[6.5rem_minmax(0,1fr)_auto]",
+        selected && "bg-linear-to-r from-hl-wash to-hl-wash/35 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-hl",
+        selectMode && checked && "bg-hl-wash/60",
+        !head && !groupTitle && "pt-0.5",
+        "cursor-pointer",
       )}
+      onClick={(e) => {
+        // Click anywhere on the row opens the reply panel (not on links/buttons or while selecting text).
+        const sel = window.getSelection();
+        const selecting = !!sel?.toString() && !!sel.anchorNode && e.currentTarget.contains(sel.anchorNode);
+        if (selecting || (e.target as HTMLElement).closest("a,button,select,input,label")) return;
+        if (selectMode) onToggle?.(m); // selecting: the whole row toggles the checkbox
+        else onReply(m);
+      }}
     >
-      {selectMode && onToggle && (
-        <Checkbox
-          aria-label={`Chọn tin #${m.message_id} cho AI`}
-          checked={!!checked}
-          disabled={!checked && !canCheck}
-          onCheckedChange={() => onToggle(m)}
-          className="mb-2"
-        />
-      )}
-      {!m.outgoing && (head ? <Avatar name={name} className="size-8 text-xs" /> : <span className="size-8 shrink-0" />)}
-      <div
-        className={cn(
-          "max-w-[min(32rem,80%)] rounded-2xl px-3 py-2 text-sm shadow-xs",
-          m.outgoing ? "rounded-br-sm bg-primary/15" : "rounded-bl-sm bg-card",
-          !m.outgoing && !done && !snoozed && "border-l-2 border-amber-500",
-          m.pinned && "ring-1 ring-amber-500/60",
-          !m.outgoing && (done || snoozed) && "opacity-60",
-          isReplyTarget && "ring-2 ring-primary/50",
-          !selectMode && "cursor-pointer",
+      {/* Wait first: how long this has been waiting, set in mono; coral only past the overdue line. */}
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs leading-5 @xl:mb-0 @xl:grid @xl:content-start @xl:justify-items-start @xl:pt-0.5">
+        {selectMode && onToggle && (
+          <Checkbox
+            aria-label={`Chọn tin #${m.message_id}`}
+            checked={!!checked}
+            disabled={!checked && !canCheck}
+            onCheckedChange={() => onToggle(m)}
+            className="mb-1"
+          />
         )}
-        onClick={(e) => {
-          // Click anywhere on the bubble opens the reply panel (not on links/buttons or while selecting text).
-          const sel = window.getSelection();
-          const selecting = !!sel?.toString() && !!sel.anchorNode && e.currentTarget.contains(sel.anchorNode);
-          if (selectMode || selecting || (e.target as HTMLElement).closest("a,button,select,input,label")) return;
-          onReply(m);
-        }}
-      >
-        {groupTitle && <p className="mb-0.5 text-[0.7rem] font-medium uppercase tracking-wide text-muted-foreground">{groupTitle}</p>}
-        {!m.outgoing && (
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-primary">
-            {name}
-            {m.pinned && <Pin className="size-3 fill-amber-500 text-amber-500" aria-label="Đã ghim" />}
-            {done ? (
-              <span className="rounded-full bg-emerald-500/15 px-1.5 font-medium text-emerald-600 dark:text-emerald-400">✓ Đã xử lý</span>
-            ) : snoozed ? (
-              <span className="rounded-full bg-sky-500/15 px-1.5 font-medium text-sky-600 dark:text-sky-400">
-                ⏰ nhắc lúc {timeLabel(m.snoozed_until!)}
-              </span>
-            ) : (
-              <span className={cn("rounded-full px-1.5 font-medium", wait?.overdue ? "bg-red-500/15 text-red-600 dark:text-red-400" : "bg-amber-500/15 text-amber-600 dark:text-amber-400")}>
-                Chưa xử lý · {wait?.text}
+        {!m.outgoing && (done ? (
+          <span className="inline-flex items-center gap-1 font-medium text-ok"><CheckCheck className="size-3.5" aria-hidden /> Đã xử lý</span>
+        ) : snoozed ? (
+          <span className="inline-flex items-center gap-1 text-info" title={`Nhắc lại lúc ${timeLabel(m.snoozed_until!, true)}`}>
+            <AlarmClock className="size-3.5 shrink-0" aria-hidden /> nhắc <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
+          </span>
+        ) : wait && (
+          <span className={cn("whitespace-nowrap text-[0.8125rem]", wait.overdue ? "font-semibold text-signal-2" : "text-ink-2")}
+            title={wait.overdue ? `Chưa xử lý, đã chờ quá ${readOverdueHours()} giờ` : "Chưa xử lý"}>
+            chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}
+            {wait.overdue && <span className="sr-only"> (quá hạn)</span>}
+          </span>
+        ))}
+        <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap text-ink-3 tabular-nums">{timeLabel(m.date)}</time>
+        {m.edit_date && <span className="text-ink-3">đã sửa</span>}
+      </div>
+
+      <div className="min-w-0">
+        {(head || groupTitle) && (
+          <p className="mb-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <Avatar name={name} className="size-5 text-[0.625rem]" />
+              <span className={cn("truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
+                style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
+            </span>
+            {m.pinned && <Pin className="size-3.5 fill-current text-ink-2" aria-label="Đã ghim" />}
+            {groupTitle && (
+              <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-3">
+                <Users className="size-3 shrink-0" aria-hidden /> <span className="truncate">{groupTitle}</span>
               </span>
             )}
           </p>
         )}
-        {m.reply_to_id && <p className="text-xs text-muted-foreground">↪ trả lời #{m.reply_to_id}</p>}
+        {m.reply_to_id && (
+          <p className="mb-0.5 inline-flex items-center gap-1 text-xs text-ink-3">
+            <CornerDownRight className="size-3" aria-hidden /> trả lời <span className="font-mono">#{m.reply_to_id}</span>
+          </p>
+        )}
         {m.media_kind === "photo" && !photoFailed ? (
-          <a href={photo} target="_blank" rel="noreferrer" className="my-1 block">
+          <a href={photo} target="_blank" rel="noreferrer" className="my-1.5 block w-fit">
             {/* eslint-disable-next-line @next/next/no-img-element -- local API image, static export */}
             <img src={photo} alt="Ảnh trong tin" loading="lazy" onError={() => setPhotoFailed(true)}
-              className="max-h-64 rounded-lg border object-contain" />
+              className="max-h-64 rounded-md border border-rule object-contain" />
           </a>
         ) : (
-          m.media_kind && <p className="text-xs italic text-muted-foreground">[{MEDIA[m.media_kind] ?? "Tệp đính kèm"} — chưa tải]</p>
+          m.media_kind && <p className="text-xs text-ink-3">[{MEDIA[m.media_kind] ?? "Tệp đính kèm"}, chưa tải]</p>
         )}
-        {m.text && <p className="whitespace-pre-wrap break-words">{withLinks(m)}</p>}
+        {m.text && (
+          <p className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", quiet || m.outgoing ? "text-ink-2" : "text-ink")}>
+            {richText(m)}
+          </p>
+        )}
         {tasks?.map((t) => (
-          <div key={t.id} className="mt-1.5 rounded-md border border-dashed p-1.5 text-xs">
-            <p className="flex items-center gap-1 font-medium">
-              <ClipboardList className="size-3.5" /> Task {t.result ? "đã có kết quả" : "đang làm…"}
-              <span className="font-normal text-muted-foreground">· {t.project.split("/").pop()}</span>
+          <div key={t.id} className="mt-2 rounded-md bg-paper-3/60 px-3 py-2 text-xs">
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-medium text-ink-2">
+              <span className="inline-flex items-center gap-1">
+                {t.result ? <ClipboardList className="size-3.5" aria-hidden /> : <Loader2 className="size-3.5 animate-spin" aria-hidden />}
+                Task {t.result ? "đã có kết quả" : "đang làm…"}
+              </span>
+              <span className="inline-flex items-center gap-1 font-normal text-ink-3"><FolderGit2 className="size-3" aria-hidden /> {t.project.split("/").pop()}</span>
             </p>
             {t.result && (
               <>
-                <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-muted-foreground">{t.result}</p>
-                <Button size="xs" variant="link" className="h-auto px-0" onClick={() => onUseText(m, t.result!)}>
+                <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-ink-2">{t.result}</p>
+                <Button size="xs" variant="link" className="mt-0.5 h-auto px-0" onClick={() => onUseText(m, t.result!)}>
                   Dùng kết quả làm nháp trả lời
                 </Button>
               </>
@@ -163,83 +226,92 @@ function MessageRow({
           </div>
         ))}
         {showContext && <ContextPanel m={m} />}
-        <p className="mt-0.5 flex items-center justify-end gap-2 text-[0.7rem] text-muted-foreground">
-          {link && (
-            <a href={link.app} title="Mở tin này trong app Telegram (Alt+bấm: mở bản web)"
-              onClick={(e) => {
-                if (e.altKey) {
-                  e.preventDefault();
-                  window.open(link.web, "_blank", "noreferrer");
-                }
-              }}
-              className="inline-flex items-center gap-0.5 hover:text-foreground">
-              <ExternalLink className="size-3" /> Mở Telegram
-            </a>
-          )}
-          <span>
-            {m.edit_date && "đã sửa · "}
-            <time dateTime={m.date} title={new Date(m.date).toLocaleString()}>{timeLabel(m.date)}</time>
-          </span>
-        </p>
       </div>
-      <span className="mb-1 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
-        <Button size="xs" variant="ghost" className="text-muted-foreground" onClick={() => onReply(m)} title="Trả lời (r)">
-          <Reply /> Trả lời
-        </Button>
+
+      {/* Actions: quiet until the row is hovered, focused or selected; always in the tab order. Replying is a click
+          on the row. */}
+      <div className="row-actions mt-1.5 flex flex-wrap items-center gap-0.5 @xl:col-start-2 @3xl:col-start-3 @3xl:row-start-1 @3xl:mt-0 @3xl:flex-nowrap @3xl:self-start">
         {!m.outgoing && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-      </span>
+        {!m.outgoing && m.sender_id && <IgnoreSender m={m} />}
+        {link && (
+          <a href={link.app} title="Mở tin này trong app Telegram (Alt+bấm: mở bản web)"
+            onClick={(e) => {
+              if (e.altKey) {
+                e.preventDefault();
+                window.open(link.web, "_blank", "noreferrer");
+              }
+            }}
+            className="inline-flex size-[30px] items-center justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+            <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
+          </a>
+        )}
+      </div>
     </li>
   );
 }
 
-/** Xong / ghim / ngữ cảnh / bỏ qua người gửi: shared by the hover row and the reply panel. */
+/** Xong / ghim / ngữ cảnh, on the hover row and in the reply panel header. */
 export function MessageActions({
-  m, showContext, onToggleContext,
-}: { m: Message; showContext: boolean; onToggleContext: () => void }) {
-  // Local overrides keep the buttons right when `m` is a stale snapshot (reply panel).
-  const [over, setOver] = useState<{ handled?: boolean; pinned?: boolean }>({});
-  const done = over.handled ?? m.handled;
+  m, showContext, onToggleContext, onDone,
+}: {
+  m: Message;
+  showContext: boolean;
+  onToggleContext: () => void;
+  onDone?: () => void;
+}) {
+  // Local overrides keep the buttons right when `m` is a stale snapshot (reply panel). The handled override
+  // only holds while m.handled is still what it was when we clicked, so an undo from the toast shows through.
+  const [over, setOver] = useState<{ handled?: boolean; from?: boolean; pinned?: boolean }>({});
+  const done = over.handled !== undefined && over.from === m.handled ? over.handled : m.handled;
   const pinned = over.pinned ?? m.pinned;
   // Other changes come back through SSE, which refreshes lists and counts.
   const mark = useMutation({
-    mutationFn: (handled: boolean) => markHandled(m, handled),
-    onSuccess: (_, handled) => setOver((o) => ({ ...o, handled })),
+    mutationFn: (handled: boolean) => setHandled([m], handled),
+    onSuccess: (_, handled) => {
+      setOver((o) => ({ ...o, handled, from: m.handled }));
+      if (handled) onDone?.();
+    },
   });
   const togglePin = useMutation({
     mutationFn: () => pin(m, !pinned),
     onSuccess: () => setOver((o) => ({ ...o, pinned: !pinned })),
   });
-  const ignore = useMutation({
-    mutationFn: () =>
-      api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: m.sender_name ?? "" } }),
-  });
   return (
     <>
-      <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground" disabled={mark.isPending}
+      <Button type="button" size="icon-xs" variant="ghost" className={cn(!done && "hover:bg-ok-wash hover:text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
         aria-label={done ? "Mở lại" : "Xong"}
         title={done ? "Mở lại: đánh dấu chưa xử lý (x)" : "Xong: không cần trả lời / đã xử lý nơi khác (x)"}
         onClick={() => mark.mutate(!done)}>
         {done ? <RotateCcw /> : <CheckCheck />}
       </Button>
       {(!done || pinned) && (
-        <Button type="button" size="icon-xs" variant="ghost" className={cn("text-muted-foreground", pinned && "text-amber-500")}
+        <Button type="button" size="icon-xs" variant="ghost" className={cn(pinned && "text-ink")}
           disabled={togglePin.isPending} aria-label={pinned ? "Bỏ ghim" : "Ghim"} aria-pressed={pinned}
           title={pinned ? "Bỏ ghim" : "Ghim lên đầu danh sách"} onClick={() => togglePin.mutate()}>
           <Pin className={cn(pinned && "fill-current")} />
         </Button>
       )}
-      <Button type="button" size="icon-xs" variant="ghost" className={cn("text-muted-foreground", showContext && "bg-muted text-foreground")}
+      <Button type="button" size="icon-xs" variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
         aria-label="Ngữ cảnh" aria-expanded={showContext} title="Xem các tin trước/sau trong nhóm" onClick={onToggleContext}>
         <MessagesSquare />
       </Button>
-      {m.sender_id && (
-        <Button type="button" size="icon-xs" variant="ghost" className="text-muted-foreground" disabled={ignore.isPending || ignore.isSuccess}
-          aria-label="Luôn bỏ qua người gửi" title={`Luôn bỏ qua tin từ ${m.sender_name ?? "người này"}`}
-          onClick={() => confirm(`Luôn bỏ qua tin từ ${m.sender_name ?? "người này"}?`) && ignore.mutate()}>
-          <Ban />
-        </Button>
-      )}
     </>
+  );
+}
+
+/** Adds an auto-handle rule for this sender (bots, announcement accounts…); listed in Settings. */
+function IgnoreSender({ m }: { m: Message }) {
+  const ignore = useMutation({
+    mutationFn: () =>
+      api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: m.sender_name ?? "" } }),
+  });
+  const who = m.sender_name ?? "người này";
+  return (
+    <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={ignore.isPending || ignore.isSuccess}
+      aria-label="Luôn bỏ qua người gửi" title={ignore.isSuccess ? `Đã bỏ qua tin từ ${who}` : `Luôn bỏ qua tin từ ${who}`}
+      onClick={() => confirm(`Luôn bỏ qua tin từ ${who}?`) && ignore.mutate()}>
+      <Ban />
+    </Button>
   );
 }
 
@@ -252,13 +324,19 @@ export function ContextPanel({ m }: { m: Message }) {
     staleTime: 60_000,
   });
   return (
-    <div className="mt-2 grid max-h-72 gap-1 overflow-y-auto rounded-md bg-muted/50 p-2 text-xs">
-      {q.isPending && <p className="animate-pulse text-muted-foreground">Đang lấy tin xung quanh từ Telegram…</p>}
-      {q.isError && <p className="text-destructive">Không lấy được (cần đang kết nối Telegram).</p>}
+    <div aria-label="Ngữ cảnh" className="mt-2 grid max-h-72 gap-1.5 overflow-y-auto rounded-md bg-paper-3/60 p-3 text-[0.8125rem] leading-relaxed">
+      {q.isPending && (
+        <div className="grid gap-2" aria-label="Đang lấy tin xung quanh từ Telegram…">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-3" style={{ width: `${90 - i * 20}%` }} />)}
+        </div>
+      )}
+      {q.isError && <p className="text-error">Không lấy được (cần đang kết nối Telegram).</p>}
       {q.data?.map((c) => (
-        <p key={c.message_id} className={cn("whitespace-pre-wrap break-words", c.message_id === m.message_id ? "rounded bg-amber-500/15 px-1 font-medium" : "text-muted-foreground")}>
-          <span className="font-semibold text-foreground">{c.outgoing ? "Bạn" : (c.sender_name ?? "?")}:</span>{" "}
-          {c.text || (c.media_kind ? `[${MEDIA[c.media_kind] ?? "tệp"}]` : "")}
+        <p key={c.message_id} className={cn("whitespace-pre-wrap break-words", c.message_id === m.message_id ? "-mx-1.5 rounded-sm bg-hl-wash px-1.5 text-ink" : "text-ink-2")}>
+          <span className="font-semibold" style={c.outgoing ? undefined : { color: `var(--cat-${hueOf(c.sender_name ?? "?")})` }}>
+            {c.outgoing ? "Bạn" : (c.sender_name ?? "?")}:
+          </span>{" "}
+          {c.text ? richText(c) : (c.media_kind ? `[${MEDIA[c.media_kind] ?? "tệp"}]` : "")}
         </p>
       ))}
     </div>

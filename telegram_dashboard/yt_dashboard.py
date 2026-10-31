@@ -96,8 +96,8 @@ def _who_clause(who: list[str] | None) -> str:
 class YouTrackDashboard:
     def __init__(self, settings):
         env = os.environ
-        self.base = (settings.youtrack_url or env.get("YT_URL") or "").rstrip("/")
-        self.token = settings.youtrack_token or env.get("YT_TOKEN") or ""
+        self.base = (settings.youtrack_url or "").rstrip("/")
+        self.token = settings.youtrack_token or ""
         self.mock = not (self.base and self.token)
         self.hist = (
             0 if env.get("YT_HISTORY_DAYS") == "0" else int(env.get("YT_HISTORY_DAYS") or 120)

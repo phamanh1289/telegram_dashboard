@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, type Message, type Task } from "@/lib/api";
-import { ALL, useNow, useTaskList } from "@/lib/inbox";
+import { ALL, timeLabel, useNow, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 type TaskEvent = { kind: string; text: string; error?: boolean };
@@ -206,7 +206,7 @@ function TaskCard({ t, now, onOpenGroup, onUseText }: {
         <span className="inline-flex items-center gap-1 text-ink-2" title={t.project}>
           <FolderGit2 className="size-3.5" aria-hidden /> {t.project.split("/").pop()}
         </span>
-        <time className="ml-auto text-ink-3" dateTime={t.created_at} title={new Date(t.created_at).toLocaleString()}>
+        <time className="ml-auto text-ink-3" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>
           {ago(t.created_at, now)}
         </time>
       </div>
@@ -302,7 +302,7 @@ export function TasksPage({ onBack, onOpenGroup, onUseText }: {
   const rows = all.filter((t) => filter === "all" || (filter === "running") === !!t.running);
 
   return (
-    <section aria-label="Phiên AI" className="flex min-h-0 flex-col">
+    <section aria-label="AI Agent" className="flex min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại"><ArrowLeft /></Button>
         <p className="min-w-0 truncate text-[0.8125rem] text-ink-2">

@@ -2,7 +2,7 @@
 
 Two modules, one product: **Telegram Inbox** (`/`, Next + Tailwind 4 + shadcn) and **YouTrack** (`/yt/`, vanilla ES modules). Both read the same tokens: [`web/public/design/tokens.css`](web/public/design/tokens.css) and [`web/public/design/base.css`](web/public/design/base.css). Change a value there, never a literal in a component.
 
-Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a warm charcoal with lifted cards (dark); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
+Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a near-neutral warm graphite (dark: low chroma so it never reads as muddy brown; ground < sidebar < card in clear steps, cards lit by a 1px top highlight); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
 ## Principles
 

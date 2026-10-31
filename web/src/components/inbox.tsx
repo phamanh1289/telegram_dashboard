@@ -1,19 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Moon, Pin, RotateCw, Search, Send, Sun, Wifi, WifiOff, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Pin, RotateCw, Search, Send, Settings, Wifi, WifiOff, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { PendingInbox } from "@/components/pending-inbox";
+import { SettingsDialog, ShortcutsDialog } from "@/components/settings";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, PINNED, TASKS, useTaskList } from "@/lib/inbox";
+import { ALL, PINNED, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
+import { applyTheme, readTheme } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const STATE_LABEL: Record<Status["state"], string> = {
@@ -83,7 +85,6 @@ function Inbox({ status }: { status: Status }) {
   const runningTasks = (useTaskList().data ?? []).filter((t) => t.running).length;
   const [chatId, setChatId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [selected, setSelected] = useState<Map<string, Message>>(new Map());
   const [draft, setDraft] = useState<DraftInjection | null>(null);
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
@@ -94,7 +95,8 @@ function Inbox({ status }: { status: Status }) {
     setSearch(q);
     if (q.trim() && chatId !== ALL && chatId !== PINNED) selectChat(ALL); // results live in the cross-group list
   }
-  const [dark, setDark] = useState(true);
+  // Settings remount on each open (key) so they read fresh values.
+  const [settings, setSettings] = useState({ open: false, key: 0 });
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
@@ -107,29 +109,70 @@ function Inbox({ status }: { status: Status }) {
       return !v;
     });
   }
-  const [flash, setFlash] = useState<string | null>(null);
-  function flashMessage(text: string) {
-    setFlash(text);
-    setTimeout(() => setFlash(null), 3000);
+  // One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z.
+  const [flash, setFlash] = useState<(ToastMsg & { id: number }) | null>(null);
+  useEffect(() => {
+    const onToast = (e: Event) => setFlash({ ...(e as CustomEvent<ToastMsg>).detail, id: Date.now() });
+    addEventListener("toast", onToast);
+    return () => removeEventListener("toast", onToast);
+  }, []);
+  useEffect(() => {
+    if (!flash) return;
+    const t = setTimeout(() => setFlash(null), flash.undo ? 6000 : 3000);
+    return () => clearTimeout(t);
+  }, [flash]);
+  const flashMessage = (text: string) => toast({ text });
+  function undo() {
+    const run = flash?.undo;
+    if (!run) return;
+    setFlash(null);
+    Promise.resolve(run()).then(() => toast({ text: "Đã hoàn tác" }), () => toast({ text: "Không hoàn tác được" }));
   }
+  const [shortcuts, setShortcuts] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  // Global keys outside text fields: ? shortcuts, / search, z undo.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
+      if (e.key === "?") setShortcuts(true);
+      else if (e.key === "/") searchRef.current?.focus();
+      else if (e.key === "z" && flash?.undo) undo();
+      else return;
+      e.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
   const rightPanel = !!replyTo;
+
+  // After a tag is answered or marked done, open the next open one below it (or above, at the end of the list).
+  const listItems = useRef<Message[]>([]);
+  function advance() {
+    const all = listItems.current;
+    const i = all.findIndex((m) => m.chat_id === replyTo?.chat_id && m.message_id === replyTo?.message_id);
+    const open = (m: Message, j: number) => j !== i && !m.outgoing && !m.deleted && !m.handled;
+    const next = all.find((m, j) => j > i && open(m, j)) ?? all.findLast((m, j) => open(m, j)) ?? null;
+    setReplyTo(next);
+    setDraft(null);
+    if (next) {
+      requestAnimationFrame(() =>
+        document.querySelector(`[data-id="${next.message_id}"]`)?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }),
+      );
+    }
+  }
 
   function useText(m: Message, text: string) {
     setReplyTo(m);
-    setDraft({ result: { text, options: [], source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
+    setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
   }
+  // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read theme set by the layout script
-    setDark(document.documentElement.classList.contains("dark"));
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => { if (readTheme() === "system") applyTheme("system", false); };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, []);
-  function toggleTheme() {
-    const next = !dark;
-    setDark(next);
-    const root = document.documentElement;
-    root.classList.toggle("dark", next);
-    root.dataset.theme = next ? "dark" : "light"; // the YouTrack module reads the same key and attribute
-    try { localStorage.theme = next ? "dark" : "light"; } catch {}
-  }
 
   // Selected chat lives in the query string (static export: no dynamic routes).
   useEffect(() => {
@@ -142,7 +185,6 @@ function Inbox({ status }: { status: Status }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("[role=dialog]")) return;
       setReplyTo(null);
-      setSelected(new Map());
       setDraft(null);
       setSearch("");
       (document.activeElement as HTMLElement | null)?.blur();
@@ -154,7 +196,6 @@ function Inbox({ status }: { status: Status }) {
   function selectChat(id: string | null) {
     setChatId(id);
     setReplyTo(null);
-    setSelected(new Map());
     setDraft(null);
     const url = new URL(location.href);
     if (id) url.searchParams.set("chat", id);
@@ -178,14 +219,14 @@ function Inbox({ status }: { status: Status }) {
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
     [PINNED, "Tag đã ghim", 0, Pin],
-    [TASKS, "Phiên AI", runningTasks, Bot],
+    [TASKS, "AI Agent", runningTasks, Bot],
   ] as const;
   const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? "Telegram";
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
   return (
-    <div className={cn("grid h-dvh", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
+    <div className={cn("grid h-dvh transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
       {/* Sidebar, the YouTrack recipe: module switch, brand, views, groups, footer. */}
       <aside className={cn(
@@ -231,10 +272,10 @@ function Inbox({ status }: { status: Status }) {
           <ChatList selected={chatId} onSelect={go} range={range} search={search} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-0.5 border-t px-3 pt-2">
-          <button type="button" onClick={toggleTheme} title="Đổi giao diện sáng/tối"
+          <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt"
             className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-            {dark ? <Sun className="size-5 shrink-0" aria-hidden /> : <Moon className="size-5 shrink-0" aria-hidden />}
-            <span className={cn("whitespace-nowrap", t)}>Sáng / Tối</span>
+            <Settings className="size-5 shrink-0" aria-hidden />
+            <span className={cn("whitespace-nowrap", t)}>Cài đặt</span>
           </button>
           <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
             <span data-testid="tg-state" title={STATE_LABEL[status.state]} className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
@@ -251,7 +292,7 @@ function Inbox({ status }: { status: Status }) {
       <div className="hidden md:block" aria-hidden />
 
       <div className={cn("grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]", rightPanel && "xl:grid-cols-[minmax(0,1fr)_30rem]")}>
-        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6 xl:col-span-2">
+        <header className={cn("flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6", rightPanel && "xl:col-span-2")}>
           <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
             aria-label="Thu gọn / mở rộng menu" title="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
             <Menu />
@@ -261,10 +302,11 @@ function Inbox({ status }: { status: Status }) {
             <label className="relative hidden w-72 sm:block lg:w-80">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
               <input
+                ref={searchRef}
                 type="search"
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
-                placeholder="Tìm người gửi, nhóm, tin nhắn…"
+                placeholder="Tìm người gửi, nhóm, tin nhắn… ( / )"
                 aria-label="Tìm kiếm tất cả"
                 className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
               />
@@ -282,12 +324,12 @@ function Inbox({ status }: { status: Status }) {
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
             {chatId ? (
-              <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 duration-(--dur-short)">
+              <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out)">
                 {chatId === TASKS ? (
                   <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
-                    onBack={() => setMenuOpen(true)} onUseText={useText} />
+                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} />
                 ) : (
                 <MessageList
                   onUseText={useText}
@@ -296,16 +338,7 @@ function Inbox({ status }: { status: Status }) {
                   onBack={() => go(ALL)}
                   replyTo={replyTo?.message_id ?? null}
                   onReply={setReplyTo}
-                  selectMode={false}
-                  selected={selected}
-                  onToggle={(m) =>
-                    setSelected((prev) => {
-                      const next = new Map(prev);
-                      if (next.has(m.message_id)) next.delete(m.message_id);
-                      else next.set(m.message_id, m);
-                      return next;
-                    })
-                  }
+                  itemsRef={listItems}
                 />
                 )}
               </div>
@@ -324,14 +357,22 @@ function Inbox({ status }: { status: Status }) {
           <div key={`${replyTo.chat_id}:${replyTo.message_id}`}
             className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:row-start-2 xl:col-start-2 xl:max-w-none xl:shadow-none">
             <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)} onSent={() => flashMessage("Đã gửi trả lời ✓")} onTaskCreated={() => flashMessage("Đã giao việc cho AI. Theo dõi ở tab “Phiên AI”")} draft={draft}
+              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời ✓"); advance(); }} onDone={advance} onTaskCreated={() => flashMessage("Đã giao việc cho AI. Theo dõi ở tab “AI Agent”")} draft={draft}
               aiConfigured={status.ai_configured} />
           </div>
         ) : null}
       </div>
+      <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} status={status} stream={stream} />
+      <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       {flash && (
-        <div role="status" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-md bg-board px-4 py-2.5 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
-          {flash}
+        <div key={flash.id} role="status" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)">
+          <span className="py-1">{flash.text}</span>
+          {flash.undo && (
+            <button type="button" onClick={undo} title="Hoàn tác (z)"
+              className="rounded-[var(--radius-input)] px-2.5 py-1 font-semibold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
+              Hoàn tác
+            </button>
+          )}
         </div>
       )}
     </div>

@@ -66,7 +66,10 @@ CREATE TABLE IF NOT EXISTS outbox (
   error_code TEXT,
   retry_after INTEGER,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  code TEXT,                       -- short trace code shown to the user, e.g. R-1A2B3C4D
+  sent_text TEXT NOT NULL DEFAULT '',  -- no longer written, cleared on startup
+  sent_at INTEGER
 );
 CREATE TABLE IF NOT EXISTS ai_permissions (
   chat_id TEXT NOT NULL,
@@ -129,6 +132,11 @@ def _ts(dt: datetime | None) -> int | None:
 
 def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
+
+
+def reply_code(request_id: str) -> str:
+    """Stable short code for an outbox row, derived so retries keep the same code."""
+    return "R-" + hashlib.sha256(request_id.encode()).hexdigest()[:8].upper()
 
 
 def format_cursor(epoch: str, revision: int) -> str:
@@ -240,6 +248,21 @@ class Store:
                 c.execute("ALTER TABLE tasks ADD COLUMN tty TEXT")
             if "pinned" not in cols:
                 c.execute("ALTER TABLE messages ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+            ocols = {r["name"] for r in c.execute("PRAGMA table_info(outbox)")}
+            for col, ddl in (
+                ("code", "TEXT"),
+                ("sent_text", "TEXT NOT NULL DEFAULT ''"),
+                ("sent_at", "INTEGER"),
+            ):
+                if col not in ocols:
+                    c.execute(f"ALTER TABLE outbox ADD COLUMN {col} {ddl}")
+            for r in c.execute("SELECT request_id FROM outbox WHERE code IS NULL").fetchall():
+                c.execute(
+                    "UPDATE outbox SET code=? WHERE request_id=?",
+                    (reply_code(r["request_id"]), r["request_id"]),
+                )
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS outbox_code ON outbox(code)")
+            c.execute("UPDATE outbox SET sent_text='' WHERE sent_text!=''")  # no longer kept
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(self.path) + suffix)
             if p.exists():
@@ -283,7 +306,8 @@ class Store:
     @staticmethod
     def _clear_outbox_text(c: sqlite3.Connection, chat_id: str, reply_ids: list[int] | None):
         if reply_ids is None:
-            c.execute("UPDATE outbox SET text='' WHERE chat_id=?", (chat_id,))
+            # purge = user asked to forget the chat: drop the trace copy too
+            c.execute("UPDATE outbox SET text='', sent_text='' WHERE chat_id=?", (chat_id,))
         else:
             c.executemany(
                 "UPDATE outbox SET text='' WHERE chat_id=? AND reply_to_message_id=?",
@@ -458,7 +482,15 @@ class Store:
         if existing["deleted"]:
             return False  # tombstones are never resurrected
         if (_ts(m.edit_date) or 0) <= (existing["edit_date"] or 0):
-            return False  # replay or stale version
+            # Same version refetched (e.g. mention backfill): pick up entities stored before we kept them all.
+            if m.text != existing["text"] or values[-1] == existing["links"]:
+                return False  # replay or stale version
+            c.execute(
+                "UPDATE messages SET links=? WHERE chat_id=? AND message_id=?",
+                (values[-1], m.chat_id, m.message_id),
+            )
+            self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
+            return True
         c.execute(
             "UPDATE messages SET sender_id=?,sender_name=?,text=?,date=?,edit_date=?,reply_to_id=?,"
             "topic_id=?,outgoing=?,media_kind=?,links=? WHERE chat_id=? AND message_id=?",
@@ -740,6 +772,7 @@ class Store:
     def _outbox_dto(r: sqlite3.Row) -> OutboxDTO:
         return OutboxDTO(
             request_id=r["request_id"],
+            code=r["code"],
             chat_id=r["chat_id"],
             reply_to_message_id=str(r["reply_to_message_id"]),
             status=r["status"],
@@ -769,8 +802,9 @@ class Store:
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
             c.execute(
-                "INSERT INTO outbox VALUES (?,?,?,?,?,?,'pending',NULL,NULL,NULL,?,?)",
-                (request_id, chat_id, reply_to, text, h, random_id, ts, ts),
+                "INSERT INTO outbox (request_id,chat_id,reply_to_message_id,text,text_hash,"
+                "random_id,status,created_at,updated_at,code) VALUES (?,?,?,?,?,?,'pending',?,?,?)",
+                (request_id, chat_id, reply_to, text, h, random_id, ts, ts, reply_code(request_id)),
             )
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
@@ -826,8 +860,10 @@ class Store:
             r = c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             c.execute(
                 "UPDATE outbox SET status=?, message_id=?, error_code=?, retry_after=?, "
-                "updated_at=?, text=CASE WHEN ?='sent' THEN '' ELSE text END WHERE request_id=?",
-                (status, message_id, error_code, retry_after, now_ts(), status, request_id),
+                "updated_at=?, text=CASE WHEN ?='sent' THEN '' ELSE text END, "
+                "sent_at=CASE WHEN ?='sent' THEN ? ELSE sent_at END WHERE request_id=?",
+                (status, message_id, error_code, retry_after, now_ts(), status, status,
+                 now_ts(), request_id),
             )
             if sent is not None and r is not None:
                 chat = self._chat(c, sent.chat_id)

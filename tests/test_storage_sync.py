@@ -33,6 +33,18 @@ def test_replay_is_idempotent(env):
     assert kinds(env.store).count((A, "1", "new")) == 1
 
 
+def test_refetch_fills_in_entities_of_same_version(env):
+    from telegram_dashboard.models import LinkSpan
+
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hi there"))
+    m = msg(A, 1, "hi there")
+    m.links = [LinkSpan(offset=0, length=2, kind="bold")]
+    assert env.store.apply_message(m) is True
+    assert env.store.get_message(A, 1).links[0].kind == "bold"
+    assert env.store.apply_message(m) is False  # unchanged replay stays a no-op
+
+
 def test_stale_edit_does_not_overwrite_newer(env):
     env.track(A)
     env.store.apply_message(msg(A, 1, "v2", edit=200))
@@ -211,3 +223,19 @@ async def test_any_reply_from_us_handles_the_tag(env):
     assert env.store.set_handled(A, 10, False)  # manual undo emits a change
     assert not env.store.set_handled(A, 10, False)  # no-op when unchanged
     assert [m.message_id for m in env.store.query_messages(A, pending=True)[0]] == ["10"]
+
+
+def test_entity_spans_keep_links_mentions_and_code():
+    from types import SimpleNamespace as NS
+
+    from telegram_dashboard.telegram import _span
+
+    class MessageEntityCode(NS): ...
+
+    assert _span(NS(offset=0, length=3, url="https://x.y")).kind == "link"
+    assert _span(NS(offset=4, length=4, user_id=42)).url == "tg://user?id=42"
+    assert _span(MessageEntityCode(offset=9, length=3)).kind == "code"
+    class MessageEntityBlockquote(NS): ...
+
+    assert _span(MessageEntityBlockquote(offset=0, length=9)).kind == "blockquote"
+    assert _span(NS(offset=0, length=1)) is None  # hashtag, cashtag… render as plain text

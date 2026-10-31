@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowLeft, CheckCheck, RotateCw, Search, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem } from "@/components/message-item";
-import { RowsSkeleton } from "@/components/pending-inbox";
+import { BulkBar, RowsSkeleton } from "@/components/pending-inbox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,31 +17,25 @@ import {
 import { Input } from "@/components/ui/input";
 import { useChatMessages } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
-import { useListShortcuts, useNow, useTasks } from "@/lib/inbox";
+import { useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-
-export const MAX_AI_MESSAGES = 30;
 
 export function MessageList({
   chatId,
   onBack,
   replyTo,
   onReply,
-  selectMode,
-  selected,
-  onToggle,
   range,
   onUseText,
+  itemsRef,
 }: {
   onUseText: (m: Message, text: string) => void;
   range: string;
   chatId: string;
   onBack: () => void;
-  selectMode: boolean;
   replyTo: string | null;
   onReply: (m: Message) => void;
-  selected: Map<string, Message>;
-  onToggle: (m: Message) => void;
+  itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
 }) {
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
@@ -69,6 +63,8 @@ export function MessageList({
   const now = useNow();
   const tasks = useTasks();
   const focused = useListShortcuts(items, onReply);
+  useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
+  const sel = useSelection();
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
   const box = useRef<HTMLDivElement>(null);
@@ -117,16 +113,17 @@ export function MessageList({
             ))}
           </div>
         )}
-        {!searching && pendingOnly && items.length > 0 && (
-          <Button size="xs" variant="outline" className="ml-auto" onClick={() => setConfirmAll(true)}
+        <div className="ml-auto flex items-center gap-1">
+        {!searching && !sel.on && pendingOnly && items.length > 0 && (
+          <Button size="xs" variant="outline" onClick={() => setConfirmAll(true)}
             title="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý">
             <CheckCheck /> Xong tất cả
           </Button>
         )}
-        <Button
+        {!searching && <BulkBar sel={sel} items={items} />}
+        {!sel.on && <Button
           size="icon-sm"
           variant="ghost"
-          className={cn(!(!searching && pendingOnly && items.length > 0) && "ml-auto")}
           aria-label={searching ? "Đóng tìm kiếm" : "Tìm kiếm"}
           onClick={() => {
             setSearching((v) => !v);
@@ -134,7 +131,8 @@ export function MessageList({
           }}
         >
           {searching ? <X /> : <Search />}
-        </Button>
+        </Button>}
+        </div>
       </div>
       <div
         ref={box}
@@ -181,14 +179,13 @@ export function MessageList({
               head={items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
               m={m}
               isReplyTarget={replyTo === m.message_id}
-              checked={selected.has(m.message_id)}
-              selectMode={selectMode}
-              canCheck={selected.size < MAX_AI_MESSAGES}
+              checked={sel.has(m)}
+              selectMode={sel.on}
               now={now}
               focused={focused === m.message_id}
               tasks={tasks.get(`${m.chat_id}:${m.message_id}`)}
               onReply={onReply}
-              onToggle={onToggle}
+              onToggle={sel.toggle}
               onUseText={onUseText}
             />
           ))}

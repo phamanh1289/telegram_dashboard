@@ -150,3 +150,9 @@ def test_change_feed_contains_edits_and_deletions(ready):
     assert [(i.kind, i.message_id) for i in items] == [("edit", "5"), ("delete", "5")]
     assert items[-1].message.deleted and items[-1].message.text == ""
     assert nxt == items[-1].cursor and not has_more and not reset
+
+
+async def test_sent_reply_gets_trace_code(ready):
+    rec = await ready.bridge.submit_reply(req(text="hello there"))
+    assert rec.status == "sent" and rec.code and rec.code.startswith("R-")
+    assert ready.store.outbox_claim(str(rec.request_id)) is None  # send payload still blanked

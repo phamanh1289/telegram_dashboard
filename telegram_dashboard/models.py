@@ -12,7 +12,10 @@ ChatKind = Literal["group", "supergroup"]
 class LinkSpan(BaseModel):
     offset: int  # UTF-16 code units, like Telegram entities and JS strings
     length: int
-    url: str
+    url: str = ""
+    kind: Literal[
+        "link", "mention", "code", "pre", "bold", "italic", "underline", "strike", "spoiler", "blockquote"
+    ] = "link"
 
 
 class StoredMessage(BaseModel):
@@ -33,7 +36,7 @@ class StoredMessage(BaseModel):
     handled: bool = False  # answered (any reply from us) or marked done by hand
     snoozed_until: datetime | None = None  # hidden from pending until then
     pinned: bool = False  # sticks to the top of the pending list
-    links: list[LinkSpan] = []  # hyperlinks hidden behind text (UTF-16 offsets)
+    links: list[LinkSpan] = []  # Telegram formatting entities (UTF-16 offsets)
 
 
 class GroupInfo(BaseModel):
@@ -139,6 +142,7 @@ class ReplyRequest(BaseModel):
 
 class OutboxDTO(BaseModel):
     request_id: str
+    code: str | None = None
     chat_id: str
     reply_to_message_id: str
     status: OutboxStatus
@@ -173,6 +177,7 @@ class AiDraftRequest(BaseModel):
     instruction: str = Field(max_length=2000)
     project: str | None = None  # path of a registered project the agent may read
     with_context: bool = True  # add nearby group messages (fetched live, not stored)
+    platform: Literal["android", "ios", "mobile", "any"] = "android"  # angle of the analysis
 
 
 class HandledRequest(BaseModel):
@@ -273,6 +278,7 @@ class AiSummaryRequest(BaseModel):
 class AiResult(BaseModel):
     text: str
     options: list[str] = []  # alternative drafts; text == options[0] when present
+    analysis: str = ""  # draft only: summary of the ask + suggested next steps
     source_message_ids: list[str]
     context_revision: str
 

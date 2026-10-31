@@ -60,8 +60,8 @@ from .models import (
 from .storage import Db, Store, parse_cursor
 from .telegram import TelegramBridge, Transport
 from .youtrack import create_issue
-
 from .yt_dashboard import YouTrackDashboard, YtError, build_router
+
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
 
 
@@ -101,12 +101,12 @@ def create_app(
         try:
             yield
         finally:
-            await app.state.agent.stop_all()
             await yt_dashboard.aclose()
+            await app.state.agent.stop_all()
             await bridge.stop()
 
-    app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
     yt_dashboard = YouTrackDashboard(settings)
+    app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
     app.add_middleware(
         LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin
     )
@@ -117,13 +117,13 @@ def create_app(
         body = {"code": e.code, "retry_after": e.retry_after, "detail": e.detail}
         return JSONResponse({"error": body}, status_code=e.status, headers=headers)
 
-    def S(request: Request):
     @app.exception_handler(YtError)
     async def yt_error(_: Request, e: YtError):
         return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
 
     app.include_router(build_router(yt_dashboard), include_in_schema=False)
 
+    def S(request: Request):
         return request.app.state
 
     @app.get("/health")
@@ -307,17 +307,8 @@ def create_app(
                     nearby = None  # context is a bonus; draft from the tag alone
         return await s.ai.run(
             "draft", body.chat_id, body.message_ids, body.instruction, body.project,
-            nearby=nearby, images=images,
+            nearby=nearby, images=images, platform=body.platform,
         )  # fmt: skip
-
-    @app.post("/api/ai/digest")
-    async def ai_digest(
-        request: Request, since: datetime | None = None, until: datetime | None = None
-    ) -> AiResult:
-        s = S(request)
-        items = await s.db.read(s.store.list_pending, since, until)
-        text = await s.ai.digest(items)
-        return AiResult(text=text, source_message_ids=[], context_revision="")
 
     @app.post("/api/ai/summary")
     async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:

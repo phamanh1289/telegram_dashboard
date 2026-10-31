@@ -2,7 +2,32 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { api, type Message, type Task } from "@/lib/api";
+import { api, type Message, type PendingItem, type Task } from "@/lib/api";
+import { readOverdueHours } from "@/lib/prefs";
+
+/** Pending tags across groups (or the pinned archive); one cache shared by the inbox and the sidebar. */
+export function pendingQuery(range: string, pinned = false) {
+  return {
+    queryKey: pinned ? ["pending", "pinned"] : ["pending", range],
+    queryFn: ({ signal }: { signal: AbortSignal }) =>
+      api<PendingItem[]>(pinned ? "/pinned" : `/pending${range ? `?${range}` : ""}`, { signal }),
+  };
+}
+
+const VN_PARTS = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "numeric", minute: "2-digit",
+});
+const vnParts = (d: Date) => Object.fromEntries(VN_PARTS.formatToParts(d).map((p) => [p.type, p.value]));
+
+/** Vietnam time, 12h with buổi: "9:05 sáng", "31/10 2:40 chiều"; `full` adds the year ("2:40 chiều, 31/10/2026"). */
+export function timeLabel(date: string, full = false) {
+  const p = vnParts(new Date(date));
+  const h = Number(p.hour);
+  const time = `${h % 12 || 12}:${p.minute} ${h < 12 ? "sáng" : h < 18 ? "chiều" : "tối"}`;
+  if (full) return `${time}, ${p.day}/${p.month}/${p.year}`;
+  const t = vnParts(new Date());
+  return p.day === t.day && p.month === t.month && p.year === t.year ? time : `${p.day}/${p.month} ${time}`;
+}
 
 /** Lowercase without accents ("Luận" -> "luan") for forgiving name search. */
 export function fold(s: string) {
@@ -22,15 +47,17 @@ export const PINNED = "__pinned__";
 /** Pseudo chat id for the AI sessions page. */
 export const TASKS = "__tasks__";
 
-/** A tag still waiting longer than this is shown in red. */
-export const OVERDUE_HOURS = 4;
-
-/** Current time, refreshed every minute (keeps render pure). */
+/** Current time, refreshed every minute and when a preference changes (keeps render pure). */
 export function useNow() {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 60_000);
-    return () => clearInterval(t);
+    const tick = () => setNow(Date.now());
+    const t = setInterval(tick, 60_000);
+    addEventListener("prefs", tick);
+    return () => {
+      clearInterval(t);
+      removeEventListener("prefs", tick);
+    };
   }, []);
   return now;
 }
@@ -38,7 +65,7 @@ export function useNow() {
 export function waitLabel(date: string, now: number) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
   const [n, unit] = mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
-  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= OVERDUE_HOURS * 60 };
+  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= readOverdueHours() * 60 };
 }
 
 /**
@@ -60,11 +87,59 @@ export const markHandled = (m: Message, handled: boolean) =>
     json: { handled },
   });
 
-export const snooze = (m: Message, until: Date | null) =>
-  api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, {
-    method: "PUT",
-    json: { until: until?.toISOString() ?? null },
-  });
+export type ToastMsg = { text: string; undo?: () => unknown };
+/** Show a toast (rendered by the inbox shell); `undo` adds a "Hoàn tác" button and the z shortcut. */
+export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("toast", { detail: t }));
+
+/** Mark done or reopen; marking done offers an undo. */
+export async function setHandled(ms: Message[], handled: boolean) {
+  try {
+    await Promise.all(ms.map((m) => markHandled(m, handled)));
+  } catch (e) {
+    toast({ text: "Không cập nhật được, thử lại sau" });
+    throw e;
+  }
+  if (handled) {
+    toast({
+      text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong",
+      undo: () => Promise.all(ms.map((m) => markHandled(m, false))),
+    });
+  }
+}
+
+/** Multi-select for bulk "xong"; keys are "chat:message" so it works across groups. */
+export function useSelection() {
+  const [on, setOn] = useState(false);
+  const [picked, setPicked] = useState<Map<string, Message>>(new Map());
+  const key = (m: Message) => `${m.chat_id}:${m.message_id}`;
+  const stop = () => {
+    setOn(false);
+    setPicked(new Map());
+  };
+  useEffect(() => {
+    if (!on) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector("[role=dialog]")) stop();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [on]);
+  return {
+    on,
+    picked: [...picked.values()],
+    has: (m: Message) => picked.has(key(m)),
+    start: () => setOn(true),
+    stop,
+    toggle: (m: Message) =>
+      setPicked((prev) => {
+        const next = new Map(prev);
+        if (!next.delete(key(m))) next.set(key(m), m);
+        return next;
+      }),
+    setAll: (ms: Message[]) => setPicked(new Map(ms.map((m) => [key(m), m]))),
+  };
+}
+export type Selection = ReturnType<typeof useSelection>;
 
 export const pin = (m: Message, pinned: boolean) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/pin`, {
@@ -93,7 +168,7 @@ export function useTasks() {
   return byMessage;
 }
 
-/** j/k move, r reply, x done/undo, a focus the AI prompt. Ignored while typing. */
+/** j/k move, r reply, x done/reopen, a focus the AI prompt. Ignored while typing. */
 export function useListShortcuts(
   items: Message[],
   onReply: (m: Message) => void,
@@ -110,10 +185,10 @@ export function useListShortcuts(
         const next = actionable[e.key === "j" ? Math.min(actionable.length - 1, i + 1) : Math.max(0, i < 0 ? actionable.length - 1 : i - 1)];
         if (next) {
           setFocused(next.message_id);
-          document.querySelector(`[data-id="${next.message_id}"]`)?.scrollIntoView({ block: "nearest" });
+          document.querySelector(`[data-id="${next.message_id}"]`)?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
         }
       } else if (e.key === "r" && cur) onReply(cur);
-      else if (e.key === "x" && cur && !cur.outgoing) void markHandled(cur, !cur.handled);
+      else if (e.key === "x" && cur && !cur.outgoing) setHandled([cur], !cur.handled).catch(() => {}); // the toast already reported it
       else if (e.key === "a") (document.getElementById("ai-prompt") as HTMLTextAreaElement | null)?.focus();
       else return;
       e.preventDefault();

@@ -347,12 +347,27 @@ def raw_to_stored(msg, chat_id: str, sender_name: str | None = None) -> StoredMe
         topic_id=topic,
         outgoing=bool(getattr(msg, "out", False)),
         media_kind=_media_kind(msg),
-        links=[
-            LinkSpan(offset=e.offset, length=e.length, url=e.url)
-            for e in getattr(msg, "entities", None) or []
-            if getattr(e, "url", None)  # MessageEntityTextUrl
-        ],
+        links=[s for e in getattr(msg, "entities", None) or [] if (s := _span(e))],
     )
+
+
+def _span(e) -> LinkSpan | None:
+    """Entities the UI renders: hidden links, name mentions, code and text formatting."""
+    at = {"offset": e.offset, "length": e.length}
+    if getattr(e, "url", None):  # MessageEntityTextUrl
+        return LinkSpan(**at, url=e.url)
+    if isinstance(getattr(e, "user_id", None), int):  # MessageEntityMentionName
+        return LinkSpan(**at, url=f"tg://user?id={e.user_id}", kind="mention")
+    if kind := _STYLE.get(type(e).__name__):
+        return LinkSpan(**at, kind=kind)
+    return None
+
+
+_STYLE = {
+    "MessageEntityCode": "code", "MessageEntityPre": "pre", "MessageEntityBold": "bold",
+    "MessageEntityItalic": "italic", "MessageEntityUnderline": "underline", "MessageEntityStrike": "strike",
+    "MessageEntitySpoiler": "spoiler", "MessageEntityBlockquote": "blockquote",
+}  # fmt: skip
 
 
 class TelethonTransport:

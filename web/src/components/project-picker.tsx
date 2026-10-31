@@ -56,7 +56,7 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
         title={current || "AI không đọc dự án nào"}
         value={current}
         onChange={(e) => onChange(e.target.value)}
-        className="h-7 max-w-40 rounded-md border border-rule-2 bg-cotton px-2 text-ink transition-[border-color] duration-(--dur-micro) hover:border-ink-3"
+        className="h-[30px] max-w-40 rounded-md border border-rule-2 bg-cotton px-2 text-ink transition-[border-color] duration-(--dur-micro) hover:border-ink-3"
       >
         <option value="">Không dùng dự án</option>
         {items.map((p) => (
