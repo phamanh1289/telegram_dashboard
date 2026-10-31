@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { ContextPanel, MessageActions, richText } from "@/components/message-item";
 import { ProjectPicker } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -89,7 +88,6 @@ export function Composer({
   const [taskNote, setTaskNote] = useState<string | null>(null); // AI Agent dialog: only the user's extra prompt
   const [taskMode, setTaskMode] = useState<"plan" | "edit" | "terminal">("plan");
   const [aiPrompt, setAiPrompt] = useState("");
-  const [withContext, setWithContext] = useState(true);
   // Panel layout: the assistant block remembers open/closed per browser; a long quote starts folded.
   const [aiOpen, setAiOpen] = useState(false);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -98,11 +96,12 @@ export function Composer({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore after mount
     try { setAiOpen(localStorage.composerAiOpen === "1"); } catch {}
   }, []);
+  // "Tóm tắt" summarizes only on click: an open panel without a summary for this tag runs instead of closing.
   function toggleAi() {
-    setAiOpen((v) => {
-      try { localStorage.composerAiOpen = v ? "0" : "1"; } catch {}
-      return !v;
-    });
+    const run = !aiOpen || (!analysis && !ask.isPending);
+    setAiOpen(run);
+    try { localStorage.setItem("composerAiOpen", run ? "1" : "0"); } catch {}
+    if (run && !analysis && !ask.isPending && !targetDeleted) ask.mutate();
   }
   const [issue, setIssue] = useState<{ summary: string; description: string } | null>(null);
   const qc = useQueryClient();
@@ -176,7 +175,7 @@ export function Composer({
     mutationFn: () =>
       api<AiResult>("/ai/draft", {
         method: "POST",
-        json: { chat_id: chatId, message_ids: [replyTo!.message_id], instruction: aiPrompt, project: null, with_context: withContext, platform: readPlatform() },
+        json: { chat_id: chatId, message_ids: [replyTo!.message_id], instruction: aiPrompt, project: null, with_context: true, platform: readPlatform() },
       }),
     retry: false,
     networkMode: "always",
@@ -331,8 +330,8 @@ export function Composer({
           {aiConfigured && (
             <Button type="button" variant="outline" aria-expanded={aiOpen} aria-controls="ai-panel" onClick={() => toggleAi()}
               className={cn(aiOpen && "border-hl bg-hl-wash text-hl-2 hover:bg-hl-wash")}
-              title="Trợ lý tóm tắt tin được tag, đề xuất bước tiếp theo và mẫu trả lời (mặc định góc nhìn mobile, chủ yếu Android)">
-              <Sparkles /> Trợ lý
+              title="AI tóm tắt tin được tag (kèm ngữ cảnh nhóm), đề xuất bước tiếp theo và mẫu trả lời (góc nhìn mobile, chủ yếu Android)">
+              <Sparkles /> Tóm tắt
             </Button>
           )}
           {aiConfigured && (
@@ -351,7 +350,7 @@ export function Composer({
       )}
       {replyTo && aiConfigured && (
         <Collapse open={aiOpen} id="ai-panel">
-          <section aria-label="Trợ lý" aria-busy={ask.isPending} className="rounded-[var(--radius-card)] border">
+          <section aria-label="Tóm tắt" aria-busy={ask.isPending} className="rounded-[var(--radius-card)] border">
             <div className="grid gap-3 p-3">
               <Textarea
                 id="ai-prompt"
@@ -380,13 +379,8 @@ export function Composer({
                   onClick={() => ask.mutate()}
                 >
                   {ask.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
-                  {ask.isPending ? "Đang phân tích…" : "Phân tích & gợi ý"}
+                  {ask.isPending ? "Đang tóm tắt…" : analysis ? "Tóm tắt lại" : "Tóm tắt & gợi ý"}
                 </Button>
-                <label title="Gửi kèm ~15 tin trước/sau trong nhóm để AI hiểu ngữ cảnh"
-                  className="inline-flex h-[30px] cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-input)] px-1.5 text-xs text-ink-2 transition-colors duration-(--dur-micro) hover:text-ink">
-                  <Checkbox checked={withContext} onCheckedChange={(v) => setWithContext(v === true)} />
-                  Kèm ngữ cảnh
-                </label>
               </div>
               {ask.isPending ? (
                 <div aria-label="AI đang phân tích…" className="grid gap-2 rounded-[var(--radius-input)] bg-paper-2 px-3 py-3">
