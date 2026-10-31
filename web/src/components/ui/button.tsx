@@ -6,7 +6,7 @@ import { cn } from "cn"
 // Focus is the shared coral ring from base.css (instant, never animated). Disabled: opacity .5, no pointer.
 // On coarse pointers an invisible ::after grows every button to a 44px hit area.
 const buttonVariants = cva(
-  "group/button relative inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap select-none transition-[background-color,border-color,color,opacity,transform] duration-(--dur-micro) ease-out active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress aria-invalid:border-error pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button relative inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap select-none transition-[background-color,border-color,color,opacity,translate] duration-(--dur-micro) ease-out active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-busy:cursor-progress aria-invalid:border-error pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

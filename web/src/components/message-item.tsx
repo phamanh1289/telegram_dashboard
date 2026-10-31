@@ -2,10 +2,11 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlarmClock, Ban, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type RuleAdded, type Task } from "@/lib/api";
 import { pin, setHandled, telegramLink, timeLabel, waitLabel } from "@/lib/inbox";
@@ -201,11 +202,7 @@ function MessageRow({
         ) : (
           m.media_kind && <p className="text-xs text-ink-3">[{MEDIA[m.media_kind] ?? "Tệp đính kèm"}, chưa tải]</p>
         )}
-        {m.text && (
-          <p className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", quiet || m.outgoing ? "text-ink-2" : "text-ink")}>
-            {richText(m)}
-          </p>
-        )}
+        {m.text && <MessageText m={m} clamp={!!groupTitle} dim={quiet || m.outgoing} />}
         {tasks?.map((t) => (
           <div key={t.id} className="mt-2 rounded-md bg-paper-3/60 px-3 py-2 text-xs">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-medium text-ink-2">
@@ -241,12 +238,36 @@ function MessageRow({
                 window.open(link.web, "_blank", "noreferrer");
               }
             }}
-            className="inline-flex size-[30px] items-center justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+            className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
           </a>
         )}
       </div>
     </li>
+  );
+}
+
+/** Message body; in the cross-group queue it is cut to 3 lines so the list stays scannable (the reply panel shows it
+ *  all). "Xem thêm" only appears when the text actually overflows. */
+function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [long, setLong] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (clamp && el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
+  }, [clamp, open, m.text]);
+  return (
+    <>
+      <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-3")}>
+        {richText(m)}
+      </p>
+      {clamp && (long || open) && (
+        <Button type="button" size="xs" variant="link" className="h-7 px-0 text-ink-2" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? "Thu gọn" : "Xem thêm"}
+        </Button>
+      )}
+    </>
   );
 }
 
@@ -305,13 +326,29 @@ function IgnoreSender({ m }: { m: Message }) {
     mutationFn: () =>
       api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: m.sender_name ?? "" } }),
   });
+  const [asking, setAsking] = useState(false);
   const who = m.sender_name ?? "người này";
   return (
-    <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={ignore.isPending || ignore.isSuccess}
-      aria-label="Luôn bỏ qua người gửi" title={ignore.isSuccess ? `Đã bỏ qua tin từ ${who}` : `Luôn bỏ qua tin từ ${who}`}
-      onClick={() => confirm(`Luôn bỏ qua tin từ ${who}?`) && ignore.mutate()}>
-      <Ban />
-    </Button>
+    <>
+      <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={ignore.isPending || ignore.isSuccess}
+        aria-label="Luôn bỏ qua người gửi" title={ignore.isSuccess ? `Đã bỏ qua tin từ ${who}` : `Luôn bỏ qua tin từ ${who}`}
+        onClick={() => setAsking(true)}>
+        <Ban />
+      </Button>
+      <Dialog open={asking} onOpenChange={setAsking}>
+        <DialogContent>
+          <DialogTitle>Luôn bỏ qua tin từ {who}?</DialogTitle>
+          <DialogDescription>Các tag đang chờ và tag mới từ người này sẽ tự đánh dấu xong. Bỏ quy tắc này trong Cài đặt.</DialogDescription>
+          {ignore.isError && <p role="alert" className="text-sm text-error">Không lưu được quy tắc. Thử lại.</p>}
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
+            <Button aria-busy={ignore.isPending} disabled={ignore.isPending} onClick={() => ignore.mutate(undefined, { onSuccess: () => setAsking(false) })}>
+              Bỏ qua
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

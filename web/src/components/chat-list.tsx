@@ -129,7 +129,7 @@ export function ChatList({
         {chats.isSuccess && allItems.length > 0 && items.length === 0 && (
           <p className="px-3 py-2 text-sm text-ink-3">Không có nhóm nào khớp “{search.trim()}”.</p>
         )}
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-px">
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
           {items.map((c) => (
             <li key={c.chat_id} className="group relative">
               <button

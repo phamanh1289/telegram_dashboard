@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCheck, ListChecks, Pin, RotateCw, X } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,17 +34,7 @@ export function PendingInbox({
     refetchInterval: 60_000, // snoozed tags come back on their own
   });
   const now = useNow();
-  // Oldest first, so open at the bottom (newest tags) once; later refreshes keep the scroll position.
-  const scroller = useRef<HTMLDivElement>(null);
-  const scrolled = useRef(false);
-  useEffect(() => {
-    if (pinned || !q.isSuccess || scrolled.current) return;
-    scrolled.current = true;
-    const down = () => scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-    down();
-    const t = setTimeout(down, 500); // photos load late and grow the list
-    return () => clearTimeout(t);
-  }, [pinned, q.isSuccess]);
+  // A queue, not a chat: opens at the top, where pinned and then the longest-waiting tags are.
   const tasks = useTasks();
   // Name search: sender, group or text, ignoring case and Vietnamese accents.
   const rows = useMemo(() => {
@@ -71,7 +61,7 @@ export function PendingInbox({
         </p>
         {!pinned && <div className="ml-auto shrink-0"><BulkBar sel={sel} items={items} /></div>}
       </div>
-      <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto bg-cotton">
+      <div className="min-h-0 flex-1 overflow-y-auto bg-cotton">
         {q.isPending && <RowsSkeleton />}
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">

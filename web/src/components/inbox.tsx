@@ -8,7 +8,7 @@ import { Composer, type DraftInjection } from "@/components/composer";
 import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
-import { PendingInbox } from "@/components/pending-inbox";
+import { Kbd, PendingInbox } from "@/components/pending-inbox";
 import { SettingsDialog, ShortcutsDialog } from "@/components/settings";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
@@ -254,7 +254,7 @@ function Inbox({ status }: { status: Status }) {
             <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox</span>
           </span>
         </div>
-        <nav aria-label="Trang" className="grid gap-0.5">
+        <nav aria-label="Trang" className="grid gap-1">
           {views.map(([id, label, count, Icon]) => (
             <button key={id} type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} title={label}
               className={cn(
@@ -274,7 +274,7 @@ function Inbox({ status }: { status: Status }) {
         <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
           <ChatList selected={chatId} onSelect={go} range={range} search={search} collapsed={collapsed} />
         </div>
-        <div className="-mx-3 grid gap-0.5 border-t px-3 pt-2">
+        <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
           <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt"
             className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <Settings className="size-5 shrink-0" aria-hidden />
@@ -301,18 +301,19 @@ function Inbox({ status }: { status: Status }) {
             <Menu />
           </Button>
           <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.01em] sm:flex-none">{title}</h2>
-          <div className="ml-auto flex min-w-0 items-center gap-2">
-            <label className="relative hidden w-72 sm:block lg:w-80">
+          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+            <label className="relative hidden w-full min-w-40 max-w-80 sm:block">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
               <input
                 ref={searchRef}
                 type="search"
                 value={search}
                 onChange={(e) => onSearch(e.target.value)}
-                placeholder="Tìm người gửi, nhóm, tin nhắn… ( / )"
+                placeholder="Tìm tin, người gửi, nhóm…"
                 aria-label="Tìm kiếm tất cả"
                 className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
               />
+              {!search && <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" aria-hidden><Kbd>/</Kbd></span>}
               {search && (
                 <button type="button" aria-label="Xóa tìm kiếm" onClick={() => onSearch("")}
                   className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">

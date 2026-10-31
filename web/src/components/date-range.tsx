@@ -75,12 +75,14 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
 
   return (
     <div ref={box} className="relative">
-      <div className={cn("flex h-9 items-center rounded-md text-[0.8125rem] transition-[background-color,color] duration-(--dur-micro)", active ? "bg-ink-2 text-paper" : "text-ink-2 hover:bg-paper-3 hover:text-ink")}>
-        <button type="button" className="flex h-full items-center gap-1.5 rounded-md px-2.5" aria-expanded={open} aria-haspopup="dialog"
+      {/* Hover lives on the button, not the pill: the pill only carries the active fill. */}
+      <div className={cn("flex h-9 items-center rounded-md text-[0.8125rem]", active ? "bg-ink-2 text-paper" : "text-ink-2")}>
+        <button type="button" aria-expanded={open} aria-haspopup="dialog"
+          className={cn("flex h-full items-center gap-1.5 rounded-md px-2.5 transition-[background-color,color] duration-(--dur-micro)", !active && "hover:bg-paper-3 hover:text-ink aria-expanded:bg-paper-3 aria-expanded:text-ink")}
           aria-label={`Khoảng ngày: ${label}`}
           onClick={() => setOpen((v) => !v)} title="Chọn khoảng ngày của tin tag">
           <CalendarDays className="size-4 shrink-0" aria-hidden />
-          <span className={cn("whitespace-nowrap", !active && "hidden md:inline", active && "font-medium")}>{label}</span>
+          <span className={cn("whitespace-nowrap", !active && "hidden lg:inline", active && "font-medium")}>{label}</span>
           <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-(--dur-short)", open && "rotate-180")} aria-hidden />
         </button>
         {active && (
