@@ -342,6 +342,14 @@ class SavedDigest(BaseModel):
     last_date: datetime
 
 
+class BriefingItem(BaseModel):
+    chat_id: str
+    title: str
+    consent: bool
+    saved: SavedDigest | None = None
+    latest_id: str | None = None  # newest message on Telegram; None if unknown or no consent
+
+
 class ApiErrorBody(BaseModel):
     code: str
     retry_after: int | None = None

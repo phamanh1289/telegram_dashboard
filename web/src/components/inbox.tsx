@@ -1,10 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Pin, RotateCw, Search, Send, Settings, Wifi, WifiOff, X } from "lucide-react";
+import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, Settings, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
+import { BriefingPage } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
@@ -15,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, PINNED, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
+import { ALL, BRIEFING, PINNED, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
 import { applyTheme, readTheme } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -223,6 +224,7 @@ function Inbox({ status }: { status: Status }) {
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
     [PINNED, "Tag đã ghim", 0, Pin],
     [TASKS, "AI Agent", runningTasks, Bot],
+    ...(status.ai_configured ? [[BRIEFING, "Briefing", 0, Newspaper] as const] : []),
   ] as const;
   const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? "Telegram";
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
@@ -329,7 +331,9 @@ function Inbox({ status }: { status: Status }) {
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
             {chatId ? (
               <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out)">
-                {chatId === TASKS ? (
+                {chatId === BRIEFING ? (
+                  <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id) => { go(id); setDigest(true); }} />
+                ) : chatId === TASKS ? (
                   <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}

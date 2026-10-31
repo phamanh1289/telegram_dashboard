@@ -145,7 +145,7 @@ Frontend: kiểm bằng preview (bật consent, chọn khoảng, shift-chọn đ
 
 ## Ngoài phạm vi P1
 
-- **P2:** briefing đa group (mỗi group 1 card), preset "từ lần đọc cuối". (Lưu digest + mốc "từ lần trước" đã làm.)
+- **P2:** preset "từ lần đọc cuối". (Đã làm: lưu digest + mốc "từ lần trước"; trang Briefing: mọi group đang theo dõi, tóm tắt tuần tự các group có tin mới từ mốc, gom "Cần confirm" lên đầu.)
 - **P3:** tạo YouTrack issue từ mục "Việc cần làm"/"Cần confirm"; đánh dấu mục confirm đã xử lý.
 - Chia chunk / map-reduce cho khoảng > 400 tin — chỉ làm khi giới hạn này thực sự chật.
 - Ảnh: chỉ đánh dấu `[ảnh]`, AI không đọc nội dung ảnh.

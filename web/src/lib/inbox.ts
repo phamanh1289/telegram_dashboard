@@ -46,6 +46,8 @@ export const ALL = "__all__";
 export const PINNED = "__pinned__";
 /** Pseudo chat id for the AI sessions page. */
 export const TASKS = "__tasks__";
+/** Pseudo chat id for the cross-group Digest briefing. */
+export const BRIEFING = "__briefing__";
 
 /** Current time, refreshed every minute and when a preference changes (keeps render pure). */
 export function useNow() {

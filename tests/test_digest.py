@@ -286,3 +286,31 @@ async def test_too_large_detail_says_why(dg):
     with pytest.raises(ApiError) as e:
         await svc.run(req())
     assert "80.001" in e.value.detail and "80.000" in e.value.detail
+
+
+# ---- briefing ----------------------------------------------------------------------
+
+
+def test_briefing_lists_tracked_groups(settings):
+    fake = FakeTransport()
+    fake.history[A] = [at(A, 1, "a", 0), at(A, 8, "b", 5)]
+    fake.history[B] = [at(B, 3, "c", 0)]
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        st = app.state.store
+        app.state.bridge.state = "connected"
+        st.set_tracking(A, True, title="Orders", kind="supergroup")
+        st.set_tracking(B, True, title="Payments", kind="supergroup")
+        st.set_tracking("-1003", True, title="Old", kind="supergroup")
+        st.set_tracking("-1003", False)  # untracked: not listed
+        st.set_digest_consent(A, datetime.now(UTC) + timedelta(days=1))
+        st.save_digest(A, 1, T0, '{"source_count": 1}')
+        items = {i["chat_id"]: i for i in c.get("/api/briefing").json()}
+        assert set(items) == {A, B}
+        a, b = items[A], items[B]
+        assert a["title"] == "Orders" and a["consent"] is True
+        assert a["saved"]["last_message_id"] == "1" and a["latest_id"] == "8"  # 8 > 1: new messages
+        assert b["consent"] is False and b["saved"] is None
+        assert b["latest_id"] is None  # no consent: Telegram is not even asked
+        app.state.bridge.state = "degraded"
+        assert c.get("/api/briefing").json()[0]["latest_id"] is None  # offline: still lists

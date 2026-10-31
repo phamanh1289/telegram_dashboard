@@ -24,7 +24,7 @@ const ERRORS: Record<string, string> = {
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
   chat_not_found: "Không tìm thấy nhóm.",
 };
-const errorText = (e: unknown) =>
+export const errorText = (e: unknown) =>
   e instanceof ApiError ? (e.detail && e.code !== "not_connected" ? e.detail : ERRORS[e.code] ?? "Có lỗi xảy ra.") : "Có lỗi xảy ra.";
 
 // Reading order: what needs me first, the record after.
@@ -61,7 +61,7 @@ function meta(key: string, it: DigestItem) {
   return "";
 }
 
-function toMarkdown(r: DigestResult, title: string) {
+export function toMarkdown(r: DigestResult, title: string) {
   const refs = (ids: string[]) => (ids.length ? ` (${ids.map((i) => `#${i}`).join(", ")})` : "");
   const out = [`# Tóm tắt: ${title}`];
   for (const [key, label] of SECTIONS) {
@@ -340,7 +340,7 @@ function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump:
   ));
 }
 
-function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void }) {
+export function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void }) {
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">

@@ -300,6 +300,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Briefing
+         * @description Every tracked group with its Digest state; latest_id tells whether there is news.
+         */
+        get: operations["briefing_api_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/digest": {
         parameters: {
             query?: never;
@@ -754,6 +774,18 @@ export interface components {
             chat_id: string;
             /** Message Ids */
             message_ids: string[];
+        };
+        /** BriefingItem */
+        BriefingItem: {
+            /** Chat Id */
+            chat_id: string;
+            /** Title */
+            title: string;
+            /** Consent */
+            consent: boolean;
+            saved?: components["schemas"]["SavedDigest"] | null;
+            /** Latest Id */
+            latest_id?: string | null;
         };
         /** ChangeItem */
         ChangeItem: {
@@ -1914,6 +1946,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    briefing_api_briefing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingItem"][];
                 };
             };
         };

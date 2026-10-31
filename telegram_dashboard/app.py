@@ -39,6 +39,7 @@ from .models import (
     DigestRequest,
     DigestResult,
     HistoryPage,
+    BriefingItem,
     SavedDigest,
     ChatsResponse,
     HandledAllResponse,
@@ -370,7 +371,9 @@ def create_app(
         """Latest digest of this chat and how far digests have read (null when none)."""
         s = S(request)
         await _known_chat(s, chat_id)
-        d = await s.db.read(s.store.get_digest, chat_id)
+        return _saved(await s.db.read(s.store.get_digest, chat_id))
+
+    def _saved(d: dict | None) -> SavedDigest | None:
         if d is None:
             return None
         return SavedDigest(
@@ -379,6 +382,26 @@ def create_app(
             last_message_id=str(d["last_message_id"]),
             last_date=datetime.fromtimestamp(d["last_date"], UTC),
         )
+
+    @app.get("/api/briefing")
+    async def briefing(request: Request) -> list[BriefingItem]:
+        """Every tracked group with its Digest state; latest_id tells whether there is news."""
+        s = S(request)
+        out = []
+        for chat_id in await s.db.read(s.store.tracked_chat_ids):
+            chat = await s.db.read(s.store.get_chat, chat_id)
+            consent = await s.db.read(s.store.get_digest_consent, chat_id) is not None
+            latest = None
+            if consent and s.bridge.state == "connected":  # only groups the AI may read
+                try:
+                    latest = str(await s.bridge.transport.latest_id(chat_id))
+                except Exception:
+                    pass  # one unreachable group must not hide the others
+            out.append(BriefingItem(
+                chat_id=chat_id, title=chat["title"], consent=consent, latest_id=latest,
+                saved=_saved(await s.db.read(s.store.get_digest, chat_id)),
+            ))  # fmt: skip
+        return out
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:
