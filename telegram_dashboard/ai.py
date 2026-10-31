@@ -261,8 +261,9 @@ class AiService:
         return text
 
     async def _call(
-        self, user_prompt: str, project: str | None = None, read_dir: str | None = None
-    ) -> str:
+        self, user_prompt: str, project: str | None = None, read_dir: str | None = None,
+        timeout: float | None = None,  # HTTP provider, no project; agents keep their own
+    ) -> str:  # fmt: skip
         if self.settings.ai_agent_command:  # local CLI agent configured: it does everything
             return await self._run_agent(user_prompt, project, read_dir)
         if project:  # HTTP provider reads the project through our read-only tools
@@ -272,7 +273,7 @@ class AiService:
                 )
             except TimeoutError:
                 raise ApiError(504, "ai_timeout") from None
-        msg = await self._post([{"role": "user", "content": user_prompt}])
+        msg = await self._post([{"role": "user", "content": user_prompt}], timeout=timeout)
         return str(msg.get("content") or "").strip()
 
     async def _http_project(self, user_prompt: str, root: Path) -> str:
@@ -298,7 +299,9 @@ class AiService:
         msg = await self._post(messages)
         return str(msg.get("content") or "").strip()
 
-    async def _post(self, messages: list[dict], tools: list | None = None) -> dict:
+    async def _post(
+        self, messages: list[dict], tools: list | None = None, timeout: float | None = None
+    ) -> dict:
         s = self.settings
         body: dict = {
             "model": s.ai_model,
@@ -312,7 +315,7 @@ class AiService:
                 s.ai_base_url.rstrip("/").removesuffix("/chat/completions") + "/chat/completions",
                 headers={"Authorization": f"Bearer {s.ai_api_key}"},
                 json=body,
-                timeout=TIMEOUT if not tools else 90.0,
+                timeout=timeout or (TIMEOUT if not tools else 90.0),
             )
         except httpx.TimeoutException:
             raise ApiError(504, "ai_timeout") from None

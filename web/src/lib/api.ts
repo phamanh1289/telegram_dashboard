@@ -17,6 +17,10 @@ export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
 export type YouTrackIssue = S["YouTrackIssue"];
 export type AiPermissionResponse = S["AiPermissionResponse"];
+export type DigestConsent = S["DigestConsent"];
+export type DigestResult = S["DigestResult"];
+export type DigestItem = S["DigestItem"];
+export type HistoryPage = S["HistoryPage"];
 
 export class ApiError extends Error {
   constructor(

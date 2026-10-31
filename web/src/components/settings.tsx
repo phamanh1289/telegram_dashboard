@@ -9,7 +9,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from "@/components/ui/input";
 import type { StreamState } from "@/hooks/use-events";
 import type { Status } from "@/lib/api";
-import { applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readPlatform, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
+import { applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
@@ -77,6 +77,11 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
             <Segmented label="Trợ lý phân tích theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); save("aiPlatform", v); }}
               options={PLATFORMS.map(([value, label]) => ({ value, label }))} />
           </span>
+        </Section>
+
+        <Section title="Tóm tắt nhóm" hint="Team mà Digest xét ảnh hưởng, cách nhau bằng dấu phẩy (tối đa 10).">
+          <Input aria-label="Team cho Digest" defaultValue={readDigestTeams().join(", ")} maxLength={330}
+            onChange={(e) => saveDigestTeams(e.target.value.split(",").map((t) => t.trim().slice(0, 30)).filter(Boolean).slice(0, 10))} />
         </Section>
 
         <Section title="Mẫu trả lời nhanh" hint="Hiện dưới ô trả lời; bấm để chèn vào nội dung.">

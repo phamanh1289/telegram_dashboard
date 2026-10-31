@@ -94,3 +94,17 @@ export function readPlatform(): Platform {
     return "android";
   }
 }
+
+/** Teams Digest checks for impact; sent with every /digest. */
+export const DEFAULT_DIGEST_TEAMS = ["Web", "Mobile", "Backend", "QA", "Design"];
+export function readDigestTeams(): string[] {
+  try {
+    const v = JSON.parse(localStorage.digestTeams ?? "null");
+    return Array.isArray(v) ? v.filter((t) => typeof t === "string") : DEFAULT_DIGEST_TEAMS;
+  } catch {
+    return DEFAULT_DIGEST_TEAMS;
+  }
+}
+export function saveDigestTeams(list: string[]) {
+  try { localStorage.digestTeams = JSON.stringify(list); } catch {}
+}

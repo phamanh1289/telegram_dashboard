@@ -88,6 +88,13 @@ class FakeTransport:
         ms = sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)
         return [m for m in ms if m.message_id > after_id][:limit]
 
+    async def fetch_range(self, chat_id, since, until, limit):
+        ms = sorted(self.history.get(chat_id, []), key=lambda m: (m.date, m.message_id))
+        return [m for m in ms if since <= m.date < until][-limit:]
+
+    async def fetch_ids(self, chat_id, ids):
+        return [m for m in self.history.get(chat_id, []) if m.message_id in ids]
+
     async def send_reply(self, chat_id, reply_to, text, random_id, topic_id):
         call = dict(chat_id=chat_id, reply_to=reply_to, text=text, random_id=random_id,
                     topic_id=topic_id)  # fmt: skip

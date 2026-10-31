@@ -1,6 +1,6 @@
 import uuid
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -24,6 +24,7 @@ from .ai import (
 )
 from .auth import LocalGuardMiddleware
 from .config import Settings
+from .digest import DigestService
 from .errors import ApiError
 from .events import Hub, event_stream
 from .models import (
@@ -33,6 +34,11 @@ from .models import (
     AiResult,
     AiSummaryRequest,
     ChangesPage,
+    DigestConsent,
+    DigestConsentRequest,
+    DigestRequest,
+    DigestResult,
+    HistoryPage,
     ChatsResponse,
     HandledAllResponse,
     HandledRequest,
@@ -96,6 +102,7 @@ def create_app(
         bridge = TelegramBridge(st, db, t, notify=settings.notify)
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
         app.state.ai = AiService(settings, st, db, ai_client)
+        app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
         await bridge.start()
         try:
@@ -313,6 +320,53 @@ def create_app(
     @app.post("/api/ai/summary")
     async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:
         return await S(request).ai.run("summary", body.chat_id, body.message_ids)
+
+    # ---- Digest: chat-wide consent, live history, structured summary ------------
+    async def _known_chat(s, chat_id: str) -> None:
+        if await s.db.read(s.store.get_chat, chat_id) is None:
+            raise ApiError(404, "chat_not_found")
+
+    async def _consent(s, chat_id: str) -> DigestConsent:
+        exp = await s.db.read(s.store.get_digest_consent, chat_id)
+        at = None if exp is None else datetime.fromtimestamp(exp, UTC)
+        return DigestConsent(enabled=at is not None, expires_at=at)
+
+    @app.get("/api/chats/{chat_id}/digest-consent")
+    async def get_digest_consent(chat_id: str, request: Request) -> DigestConsent:
+        s = S(request)
+        await _known_chat(s, chat_id)
+        return await _consent(s, chat_id)
+
+    @app.put("/api/chats/{chat_id}/digest-consent")
+    async def put_digest_consent(
+        chat_id: str, body: DigestConsentRequest, request: Request
+    ) -> DigestConsent:
+        s = S(request)
+        await _known_chat(s, chat_id)
+        exp = datetime.now(UTC) + timedelta(days=body.days) if body.enabled else None
+        await s.db.write(s.store.set_digest_consent, chat_id, exp)
+        return await _consent(s, chat_id)
+
+    @app.get("/api/chats/{chat_id}/history")
+    async def history(
+        chat_id: str,
+        request: Request,
+        since: datetime,
+        until: datetime | None = None,
+        limit: Annotated[int, Query(ge=1, le=400)] = 400,
+    ) -> HistoryPage:
+        """Live from Telegram, not stored: the Digest view reads and picks from this."""
+        s = S(request)
+        await _known_chat(s, chat_id)
+        aware = lambda d: d if d.tzinfo else d.replace(tzinfo=UTC)  # noqa: E731
+        msgs = await s.bridge.fetch_range(
+            chat_id, aware(since), aware(until) if until else datetime.now(UTC), limit + 1
+        )
+        return HistoryPage(items=[to_dto(m) for m in msgs[-limit:]], truncated=len(msgs) > limit)
+
+    @app.post("/api/digest")
+    async def digest(body: DigestRequest, request: Request) -> DigestResult:
+        return await S(request).digest.run(body)
 
     @app.get("/api/projects")
     async def projects(request: Request) -> list[ProjectDTO]:

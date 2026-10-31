@@ -52,6 +52,10 @@ class Transport(Protocol):
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool: ...
     async def fetch_latest(self, chat_id: str, limit: int) -> list[StoredMessage]: ...
     async def fetch_after(self, chat_id: str, after_id: int, limit: int) -> list[StoredMessage]: ...
+    async def fetch_range(
+        self, chat_id: str, since: datetime, until: datetime, limit: int
+    ) -> list[StoredMessage]: ...  # newest `limit` in [since, until), oldest first
+    async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]: ...
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage: ...
@@ -239,6 +243,14 @@ class TelegramBridge:
 
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
         return await self.ensure_connected().download_photo(chat_id, message_id, dest)
+
+    async def fetch_range(
+        self, chat_id: str, since: datetime, until: datetime, limit: int
+    ) -> list[StoredMessage]:
+        return await self.ensure_connected().fetch_range(chat_id, since, until, limit)
+
+    async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]:
+        return await self.ensure_connected().fetch_ids(chat_id, ids)
 
     async def on_deleted(self, chat_id: str | None, message_ids: list[int]) -> None:
         try:
@@ -549,6 +561,25 @@ class TelethonTransport:
     async def fetch_after(self, chat_id: str, after_id: int, limit: int) -> list[StoredMessage]:
         it = self.client.iter_messages(int(chat_id), min_id=after_id, reverse=True, limit=limit)
         return [await self._convert(m) async for m in it]
+
+    async def fetch_range(
+        self, chat_id: str, since: datetime, until: datetime, limit: int
+    ) -> list[StoredMessage]:
+        out = []
+        # wait_time=0: no 1s pause per 100-message chunk (the loop stops itself at `since`/limit)
+        it = self.client.iter_messages(int(chat_id), offset_date=until, wait_time=0)
+        async for m in it:
+            if m.date < since or len(out) >= limit:
+                break
+            if not getattr(m, "action", None):  # skip service messages (joins, pins…)
+                out.append(await self._convert(m))
+        out.reverse()
+        return out
+
+    async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]:
+        msgs = await self.client.get_messages(int(chat_id), ids=ids, wait_time=0)  # ≤4 chunks
+        keep = [m for m in msgs if m is not None and not getattr(m, "action", None)]
+        return [await self._convert(m) for m in keep]
 
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None

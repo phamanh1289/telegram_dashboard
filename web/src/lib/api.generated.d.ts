@@ -242,6 +242,61 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/digest-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Digest Consent */
+        get: operations["get_digest_consent_api_chats__chat_id__digest_consent_get"];
+        /** Put Digest Consent */
+        put: operations["put_digest_consent_api_chats__chat_id__digest_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History
+         * @description Live from Telegram, not stored: the Digest view reads and picks from this.
+         */
+        get: operations["history_api_chats__chat_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Digest */
+        post: operations["digest_api_digest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/projects": {
         parameters: {
             query?: never;
@@ -767,6 +822,133 @@ export interface components {
             /** Snapshot Cursor */
             snapshot_cursor: string;
         };
+        /** DigestConsent */
+        DigestConsent: {
+            /** Enabled */
+            enabled: boolean;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** DigestConsentRequest */
+        DigestConsentRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Days
+             * @default 30
+             */
+            days: number;
+        };
+        /** DigestItem */
+        DigestItem: {
+            /**
+             * Message Ids
+             * @default []
+             */
+            message_ids: string[];
+            /**
+             * Text
+             * @default
+             */
+            text: string;
+            /**
+             * Who
+             * @default
+             */
+            who: string;
+            /**
+             * Due
+             * @default
+             */
+            due: string;
+        };
+        /** DigestRequest */
+        DigestRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+            /**
+             * Message Ids
+             * @default []
+             */
+            message_ids: string[];
+            /**
+             * Teams
+             * @default []
+             */
+            teams: string[];
+        };
+        /** DigestResult */
+        DigestResult: {
+            /**
+             * Topics
+             * @default []
+             */
+            topics: components["schemas"]["DigestTopic"][];
+            /**
+             * Decisions
+             * @default []
+             */
+            decisions: components["schemas"]["DigestItem"][];
+            /**
+             * Changes
+             * @default []
+             */
+            changes: components["schemas"]["DigestItem"][];
+            /**
+             * Impacts
+             * @default []
+             */
+            impacts: components["schemas"]["DigestItem"][];
+            /**
+             * Confirmations
+             * @default []
+             */
+            confirmations: components["schemas"]["DigestItem"][];
+            /**
+             * Actions
+             * @default []
+             */
+            actions: components["schemas"]["DigestItem"][];
+            /**
+             * Raw
+             * @default
+             */
+            raw: string;
+            /** Source Count */
+            source_count: number;
+            /** Since */
+            since?: string | null;
+            /** Until */
+            until?: string | null;
+        };
+        /** DigestTopic */
+        DigestTopic: {
+            /**
+             * Message Ids
+             * @default []
+             */
+            message_ids: string[];
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+            /**
+             * Status
+             * @default open
+             * @enum {string}
+             */
+            status: "decided" | "open" | "dropped";
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -781,6 +963,13 @@ export interface components {
         HandledRequest: {
             /** Handled */
             handled: boolean;
+        };
+        /** HistoryPage */
+        HistoryPage: {
+            /** Items */
+            items: components["schemas"]["MessageDTO"][];
+            /** Truncated */
+            truncated: boolean;
         };
         /** LinkSpan */
         LinkSpan: {
@@ -1548,6 +1737,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_digest_consent_api_chats__chat_id__digest_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestConsent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_digest_consent_api_chats__chat_id__digest_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestConsent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_chats__chat_id__history_get: {
+        parameters: {
+            query: {
+                since: string;
+                until?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    digest_api_digest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestResult"];
                 };
             };
             /** @description Validation Error */

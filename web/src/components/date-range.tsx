@@ -54,7 +54,7 @@ export function rangeLabel({ from, to }: DayRange) {
   return `${dm(from)} – ${dm(to)}`;
 }
 
-export function DateRangePicker({ value, onChange }: { value: DayRange; onChange: (r: DayRange) => void }) {
+export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRange; onChange: (r: DayRange) => void; emptyLabel?: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -70,16 +70,17 @@ export function DateRangePicker({ value, onChange }: { value: DayRange; onChange
     };
   }, [open]);
   const active = !!(value.from || value.to);
+  const label = !active && emptyLabel ? emptyLabel : rangeLabel(value);
   const today = ymd(new Date());
 
   return (
     <div ref={box} className="relative">
       <div className={cn("flex h-9 items-center rounded-md text-[0.8125rem] transition-[background-color,color] duration-(--dur-micro)", active ? "bg-ink-2 text-paper" : "text-ink-2 hover:bg-paper-3 hover:text-ink")}>
         <button type="button" className="flex h-full items-center gap-1.5 rounded-md px-2.5" aria-expanded={open} aria-haspopup="dialog"
-          aria-label={`Khoảng ngày: ${rangeLabel(value)}`}
+          aria-label={`Khoảng ngày: ${label}`}
           onClick={() => setOpen((v) => !v)} title="Chọn khoảng ngày của tin tag">
           <CalendarDays className="size-4 shrink-0" aria-hidden />
-          <span className={cn("whitespace-nowrap", !active && "hidden md:inline", active && "font-medium")}>{rangeLabel(value)}</span>
+          <span className={cn("whitespace-nowrap", !active && "hidden md:inline", active && "font-medium")}>{label}</span>
           <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-(--dur-short)", open && "rotate-180")} aria-hidden />
         </button>
         {active && (

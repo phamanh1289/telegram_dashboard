@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS changes (
   kind TEXT NOT NULL,
   generation INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS digest_consents (
+  chat_id TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
 """
 
 
@@ -410,6 +415,7 @@ class Store:
             )
             self._clear_outbox_text(c, chat_id, None)
             self._revoke_grants(c, chat_id)
+            c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
             self._record(c, chat_id, None, "purge", gen)
 
@@ -1028,6 +1034,26 @@ class Store:
             d = dict(r)
             d["participants"] = json.loads(d["participants"])
             return d
+
+    def get_digest_consent(self, chat_id: str) -> int | None:
+        """Expiry (epoch seconds) of the chat-wide Digest consent, or None when absent/expired."""
+        with self._conn() as c:
+            r = c.execute(
+                "SELECT expires_at FROM digest_consents WHERE chat_id=? AND expires_at>?",
+                (chat_id, now_ts()),
+            ).fetchone()
+            return None if r is None else r["expires_at"]
+
+    def set_digest_consent(self, chat_id: str, expires_at: datetime | None) -> None:
+        """None revokes."""
+        with self._conn(write=True) as c:
+            if expires_at is None:
+                c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
+            else:
+                c.execute(
+                    "INSERT OR REPLACE INTO digest_consents VALUES (?,?,?)",
+                    (chat_id, _ts(expires_at), now_ts()),
+                )
 
 
 class Db:

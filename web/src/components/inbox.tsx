@@ -5,6 +5,7 @@ import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Pin, RotateCw
 import { useEffect, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
+import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { PendingInbox } from "@/components/pending-inbox";
@@ -85,6 +86,7 @@ function Inbox({ status }: { status: Status }) {
   const runningTasks = (useTaskList().data ?? []).filter((t) => t.running).length;
   const [chatId, setChatId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
@@ -195,6 +197,7 @@ function Inbox({ status }: { status: Status }) {
 
   function selectChat(id: string | null) {
     setChatId(id);
+    setDigest(false);
     setReplyTo(null);
     setDraft(null);
     const url = new URL(location.href);
@@ -330,8 +333,11 @@ function Inbox({ status }: { status: Status }) {
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} />
+                ) : digest ? (
+                  <DigestPage chatId={chatId} title={title} onBack={() => setDigest(false)} />
                 ) : (
                 <MessageList
+                  onDigest={status.ai_configured ? () => { setReplyTo(null); setDigest(true); } : undefined}
                   onUseText={useText}
                   chatId={chatId}
                   range={range}

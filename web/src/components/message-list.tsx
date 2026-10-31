@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, RotateCw, Search, X } from "lucide-react";
+import { ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem } from "@/components/message-item";
 import { BulkBar, RowsSkeleton } from "@/components/pending-inbox";
@@ -28,8 +28,10 @@ export function MessageList({
   range,
   onUseText,
   itemsRef,
+  onDigest,
 }: {
   onUseText: (m: Message, text: string) => void;
+  onDigest?: () => void; // open the AI summary of the whole conversation
   range: string;
   chatId: string;
   onBack: () => void;
@@ -118,6 +120,11 @@ export function MessageList({
           <Button size="xs" variant="outline" onClick={() => setConfirmAll(true)}
             title="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý">
             <CheckCheck /> Xong tất cả
+          </Button>
+        )}
+        {!searching && !sel.on && onDigest && (
+          <Button size="xs" variant="outline" onClick={onDigest} title="AI tóm tắt hội thoại của nhóm: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần confirm gì">
+            <Sparkles /> Tóm tắt
           </Button>
         )}
         {!searching && <BulkBar sel={sel} items={items} />}

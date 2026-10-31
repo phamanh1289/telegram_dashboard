@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -281,6 +281,58 @@ class AiResult(BaseModel):
     analysis: str = ""  # draft only: summary of the ask + suggested next steps
     source_message_ids: list[str]
     context_revision: str
+
+
+class DigestConsent(BaseModel):
+    enabled: bool
+    expires_at: datetime | None = None
+
+
+class DigestConsentRequest(BaseModel):
+    enabled: bool
+    days: int = Field(30, ge=1, le=90)
+
+
+class HistoryPage(BaseModel):
+    items: list[MessageDTO]
+    truncated: bool  # more messages in the range than `limit`
+
+
+class DigestRequest(BaseModel):
+    chat_id: str
+    since: datetime | None = None  # used when message_ids is empty
+    until: datetime | None = None  # default: now
+    message_ids: list[str] = Field(default=[], max_length=400)  # wins over the range
+    teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
+
+
+class DigestRef(BaseModel):
+    message_ids: list[str] = []
+
+
+class DigestTopic(DigestRef):
+    title: str = ""
+    summary: str = ""
+    status: Literal["decided", "open", "dropped"] = "open"
+
+
+class DigestItem(DigestRef):
+    text: str = ""
+    who: str = ""  # decided by / owner / who must confirm / team name
+    due: str = ""  # actions only
+
+
+class DigestResult(BaseModel):
+    topics: list[DigestTopic] = []
+    decisions: list[DigestItem] = []
+    changes: list[DigestItem] = []
+    impacts: list[DigestItem] = []
+    confirmations: list[DigestItem] = []
+    actions: list[DigestItem] = []
+    raw: str = ""  # set only when the model's JSON could not be read
+    source_count: int
+    since: datetime | None = None
+    until: datetime | None = None
 
 
 class ApiErrorBody(BaseModel):
