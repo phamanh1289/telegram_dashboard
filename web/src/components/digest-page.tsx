@@ -131,7 +131,14 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     mutationFn: () =>
       api<DigestResult>("/digest", {
         method: "POST",
-        json: { chat_id: chatId, since: win.since, until: win.until, message_ids: [...picked], teams: readDigestTeams() },
+        json: {
+          chat_id: chatId,
+          since: win.since,
+          until: win.until,
+          message_ids: [...picked],
+          after_id: preset === "last" && last ? Number(last.last_message_id) : null,
+          teams: readDigestTeams(),
+        },
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }),
   });

@@ -303,6 +303,7 @@ class DigestRequest(BaseModel):
     since: datetime | None = None  # used when message_ids is empty
     until: datetime | None = None  # default: now
     message_ids: list[str] = Field(default=[], max_length=400)  # wins over the range
+    after_id: int | None = None  # range only: skip messages a previous digest already read
     teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
 
 

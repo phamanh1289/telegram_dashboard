@@ -225,6 +225,15 @@ async def test_run_saves_result_and_cursor(dg):
     assert json.loads(saved["result"])["changes"][0]["text"] == "cũ"
 
 
+async def test_after_id_skips_already_read(dg):
+    env, svc, provider = dg
+    consent(env)
+    await svc.run(req(after_id=2))
+    sent = json.loads(provider.calls[0].read())["messages"][-1]["content"]
+    assert "PO confirm" in sent and "chốt dùng uuid" not in sent
+    await expect("digest_empty", svc.run(req(after_id=3)))
+
+
 async def test_failed_run_saves_nothing(dg):
     env, svc, provider = dg
     consent(env)

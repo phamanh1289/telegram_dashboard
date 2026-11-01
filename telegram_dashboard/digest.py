@@ -117,6 +117,8 @@ class DigestService:
             since = until = None
         elif since is not None:
             msgs = await self.bridge.fetch_range(req.chat_id, since, until, MAX_MESSAGES + 1)
+            if req.after_id is not None:  # `since` has 1s precision: the boundary would repeat
+                msgs = [m for m in msgs if m.message_id > req.after_id]
         else:
             msgs = []
         too_many = len(msgs) > MAX_MESSAGES  # before filtering: the range itself is too long

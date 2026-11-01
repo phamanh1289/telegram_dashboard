@@ -927,6 +927,8 @@ export interface components {
              * @default []
              */
             message_ids: string[];
+            /** After Id */
+            after_id?: number | null;
             /**
              * Teams
              * @default []

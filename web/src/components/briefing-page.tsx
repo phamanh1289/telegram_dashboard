@@ -62,6 +62,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
             since: it.saved?.last_date ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
             until,
             message_ids: [],
+            after_id: it.saved ? Number(it.saved.last_message_id) : null,
             teams,
           },
         });
