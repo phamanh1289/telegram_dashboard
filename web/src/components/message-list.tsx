@@ -1,8 +1,8 @@
 "use client";
 
 import { useMutation } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem } from "@/components/message-item";
 import { BulkBar, RowsSkeleton } from "@/components/pending-inbox";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useChatMessages } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
-import { useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { dayLabel, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 export function MessageList({
@@ -71,6 +71,7 @@ export function MessageList({
   // Scroll: stick to bottom only when already there; keep position when older pages load.
   const box = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+  const [far, setFar] = useState(false); // scrolled up more than a screen: offer the jump back down
   const anchor = useRef<number | null>(null);
   useLayoutEffect(() => {
     const el = box.current;
@@ -141,13 +142,16 @@ export function MessageList({
         </Button>}
         </div>
       </div>
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={box}
         data-testid="timeline"
         className="min-h-0 flex-1 overflow-y-auto bg-cotton"
         onScroll={(e) => {
           const el = e.currentTarget;
-          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+          atBottom.current = gap < 40;
+          setFar(gap > el.clientHeight);
         }}
       >
         {query.hasNextPage && (
@@ -180,10 +184,20 @@ export function MessageList({
           </div>
         )}
         <ol className="@container divide-y divide-rule">
-          {items.map((m, i) => (
+          {items.map((m, i) => {
+            const day = dayLabel(m.date);
+            const newDay = i === 0 || dayLabel(items[i - 1].date) !== day;
+            return (
+            <Fragment key={m.message_id}>
+            {/* Telegram's day pill: rides at the top while you scroll through that day. */}
+            {newDay && (
+              <li role="separator" aria-label={day} className="pointer-events-none sticky top-0 z-10 flex justify-center border-none! py-1.5">
+                <span className="rounded-full bg-paper-2 px-2.5 text-xs leading-6 font-medium text-ink-2 shadow-pop">{day}</span>
+              </li>
+            )}
             <MessageItem
-              key={m.message_id}
-              head={items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
+              head={newDay || items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
+              clock
               m={m}
               isReplyTarget={replyTo === m.message_id}
               checked={sel.has(m)}
@@ -195,8 +209,18 @@ export function MessageList({
               onToggle={sel.toggle}
               onUseText={onUseText}
             />
-          ))}
+            </Fragment>
+            );
+          })}
         </ol>
+      </div>
+      {far && (
+        <Button size="icon" variant="outline" aria-label="Xuống tin mới nhất" title="Xuống tin mới nhất"
+          className="absolute right-4 bottom-4 rounded-full shadow-pop animate-in fade-in-0 duration-(--dur-short)"
+          onClick={() => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}>
+          <ArrowDown />
+        </Button>
+      )}
       </div>
       <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
         <DialogContent>

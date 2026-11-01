@@ -23,12 +23,22 @@ const vnParts = (d: Date) => Object.fromEntries(VN_PARTS.formatToParts(d).map((p
 export function timeLabel(date: string, full = false) {
   const p = vnParts(new Date(date));
   const time = `${p.hour}:${p.minute}`;
-  const ymd = `${p.day}/${p.month}/${p.year}`;
-  if (full) return `${time}, ${ymd}`;
-  const t = vnParts(new Date());
-  const dayNo = (x: typeof p) => Date.UTC(+x.year, +x.month - 1, +x.day) / 86_400_000;
-  return `${time}, ${{ [-1]: "hôm qua", 0: "hôm nay", 1: "ngày mai" }[dayNo(p) - dayNo(t)] ?? ymd}`;
+  return full ? `${time}, ${p.day}/${p.month}/${p.year}` : `${time}, ${dayLabel(date).toLocaleLowerCase("vi")}`;
 }
+
+const dayNo = (x: Record<string, string>) => Date.UTC(+x.year, +x.month - 1, +x.day) / 86_400_000;
+
+/** Vietnam calendar day: "Hôm nay", "Hôm qua", "Ngày mai", else "28/10/2026". Also the key for day separators. */
+export function dayLabel(date: string) {
+  const p = vnParts(new Date(date));
+  return { [-1]: "Hôm qua", 0: "Hôm nay", 1: "Ngày mai" }[dayNo(p) - dayNo(vnParts(new Date()))] ?? `${p.day}/${p.month}/${p.year}`;
+}
+
+/** "16:12" in Vietnam time, for rows under a day separator. */
+export const clockLabel = (date: string) => {
+  const p = vnParts(new Date(date));
+  return `${p.hour}:${p.minute}`;
+};
 
 /** Lowercase without accents ("Luận" -> "luan") for forgiving name search. */
 export function fold(s: string) {

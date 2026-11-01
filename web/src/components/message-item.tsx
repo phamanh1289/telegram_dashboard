@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
-import { dbId, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
+import { clockLabel, dbId, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -84,6 +84,7 @@ export function richText({ text, links = [] }: Message) {
 export type MessageItemProps = {
   m: Message;
   head: boolean;
+  clock?: boolean; // a day separator above already says the day: show just "16:12"
   now: number;
   focused?: boolean;
   groupTitle?: string; // shown in the cross-group inbox
@@ -110,7 +111,7 @@ export function MessageItem(props: MessageItemProps) {
 }
 
 function MessageRow({
-  m, head, now, focused, groupTitle, isReplyTarget, checked, selectMode, canCheck = true, tasks, onReply, onToggle, onUseText,
+  m, head, clock, now, focused, groupTitle, isReplyTarget, checked, selectMode, canCheck = true, tasks, onReply, onToggle, onUseText,
 }: MessageItemProps) {
   const [showContext, setShowContext] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -174,7 +175,7 @@ function MessageRow({
             </>
           )}
           <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap text-xs text-ink-3 tabular-nums">
-            {timeLabel(m.date)}{m.edit_date && " (đã sửa)"}
+            {clock ? clockLabel(m.date) : timeLabel(m.date)}{m.edit_date && " (đã sửa)"}
           </time>
           {!m.outgoing && (done ? (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-ok"><CheckCheck className="size-3.5" aria-hidden /> Đã xử lý</span>
@@ -216,9 +217,10 @@ function MessageRow({
           </div>
         </div>
         {m.reply_to_id && (
-          <p className="mb-0.5 inline-flex items-center gap-1 text-xs text-ink-3">
+          <button type="button" title="Tới tin gốc" onClick={(e) => jumpTo(e.currentTarget, m.reply_to_id!)}
+            className="mb-0.5 inline-flex items-center gap-1 rounded-sm text-xs text-ink-3 hover:text-hl-2">
             <CornerDownRight className="size-3" aria-hidden /> trả lời <span className="font-mono">#{m.reply_to_id}</span>
-          </p>
+          </button>
         )}
         {m.media_kind === "photo" && !photoFailed ? (
           <a href={photo} target="_blank" rel="noreferrer" className="my-1.5 block w-fit">
@@ -254,6 +256,15 @@ function MessageRow({
 
     </li>
   );
+}
+
+/** Like Telegram's reply header: scroll to the quoted message when it is in this list and flash it. */
+function jumpTo(from: Element, id: string) {
+  const el = from.closest("ol")?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
+  if (!el) return toast({ text: `Tin #${id} không có trong danh sách (chỉ lưu tin tag/reply bạn)` });
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  el.animate([{ backgroundColor: "var(--color-hl-wash)" }, { backgroundColor: "transparent" }], { duration: 1600, easing: "ease-out" });
 }
 
 /** Message body; in the cross-group queue it is cut to 10 lines so the list stays scannable (the reply panel shows it
