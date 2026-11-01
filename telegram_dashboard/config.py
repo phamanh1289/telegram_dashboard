@@ -1,4 +1,6 @@
 import os
+import shlex
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,6 +20,14 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
+def _on_path(command: str) -> bool:
+    """Is the command's executable installed?"""
+    try:
+        return shutil.which(shlex.split(command)[0]) is not None
+    except (ValueError, IndexError):
+        return False
+
+
 @dataclass(frozen=True)
 class Settings:
     root: Path = ROOT
@@ -26,11 +36,10 @@ class Settings:
     app_origin: str = f"http://{HOST}:{PORT}"
     telegram_api_id: int | None = None
     telegram_api_hash: str | None = None
-    ai_base_url: str | None = None
-    ai_model: str | None = None
-    ai_api_key: str | None = field(default=None, repr=False)
-    # Local agent CLI (prompt on stdin, draft on stdout), e.g. `claude -p --tools ""`.
-    ai_agent_command: str | None = None
+    # All AI runs through the Claude Code CLI on this machine (its own claude.ai login).
+    # Drafts/summaries/digests: prompt on stdin, text on stdout, tools off.
+    ai_agent_command: str = 'claude -p --tools ""'
+    ai_model: str = "claude-haiku-5-5"  # model for drafts/summaries/digests ("" = the CLI default)
     # Agent used when a project is selected: read-only tools, run with cwd = project.
     ai_agent_project_command: str = (
         "claude -p --tools Read,Grep,Glob --allowedTools Read,Grep,Glob"
@@ -77,9 +86,7 @@ class Settings:
 
     @property
     def ai_configured(self) -> bool:
-        return bool(self.ai_agent_command) or bool(
-            self.ai_base_url and self.ai_model and self.ai_api_key
-        )
+        return _on_path(self.ai_agent_command)
 
     def ensure_data_dir(self) -> None:
         self.data_dir.mkdir(mode=0o700, exist_ok=True)
@@ -95,10 +102,8 @@ class Settings:
             app_origin=env.get("APP_ORIGIN") or f"http://{HOST}:{PORT}",
             telegram_api_id=int(api_id) if api_id.isdigit() else None,
             telegram_api_hash=env.get("TELEGRAM_API_HASH") or None,
-            ai_base_url=env.get("AI_BASE_URL") or None,
-            ai_model=env.get("AI_MODEL") or None,
-            ai_api_key=env.get("AI_API_KEY") or None,
-            ai_agent_command=env.get("AI_AGENT_COMMAND") or None,
+            ai_agent_command=env.get("AI_AGENT_COMMAND") or Settings.ai_agent_command,
+            ai_model=env["AI_MODEL"].strip() if "AI_MODEL" in env else Settings.ai_model,
             ai_agent_project_command=env.get("AI_AGENT_PROJECT_COMMAND")
             or Settings.ai_agent_project_command,
             ai_task_command=env.get("AI_TASK_COMMAND") or Settings.ai_task_command,

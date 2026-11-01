@@ -3,14 +3,11 @@
 import asyncio
 import json
 import logging
-import os
 import re
 import shlex
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
-
-import httpx
 
 from .errors import ApiError
 from .models import AiResult, PermissionGrant, StoredMessage
@@ -21,7 +18,6 @@ log = logging.getLogger("telegram_dashboard.ai")
 MAX_MESSAGES = 30
 MAX_CONTEXT_CHARS = 16_000
 MAX_INSTRUCTION_CHARS = 2_000
-TIMEOUT = 30.0
 AGENT_TIMEOUT = 180.0
 PROJECT_AGENT_TIMEOUT = 600.0  # reading a codebase takes longer
 SCOPES = ("draft", "summary")
@@ -90,11 +86,10 @@ def _links(m) -> dict:
 
 
 class AiService:
-    def __init__(self, settings, store: Store, db: Db, client: httpx.AsyncClient | None = None):
+    def __init__(self, settings, store: Store, db: Db):
         self.settings = settings
         self.store = store
         self.db = db
-        self.client = client
 
     @property
     def configured(self) -> bool:
@@ -102,10 +97,7 @@ class AiService:
 
     @property
     def reader_available(self) -> bool:
-        """Can drafts read a project? HTTP providers use our read-only tools (no CLI needed);
-        a configured local agent needs its read-only command on PATH."""
-        if not self.settings.ai_agent_command:
-            return self.settings.ai_configured
+        """Can drafts read a project / photos? Needs the read-only agent command on PATH."""
         try:
             exe = shlex.split(self.settings.ai_agent_project_command)[0]
         except (ValueError, IndexError):
@@ -208,10 +200,10 @@ class AiService:
                 f"\n<context>\n{json.dumps(around, ensure_ascii=False)[:8000]}\n</context>"
             )
         read_dir = None
-        if images and self.settings.ai_agent_command:  # photos need an agent that opens files
+        if images and self.reader_available:  # photos need the agent that can open files
             read_dir = str(images[0].parent)
-            names = ", ".join(p.name for p in images)
-            user += f"\nAttached photos in the current directory (open them with Read): {names}"
+            paths = ", ".join(str(p) for p in images)
+            user += f"\nAttached photos (open them with Read): {paths}"
         text = await self._call(user, project, read_dir)
         ok_after, _, _ = await self.db.read(self._check, chat_id, ids, kind)
         if not ok_after:
@@ -237,21 +229,29 @@ class AiService:
             context_revision=cursor,
         )
 
-    async def _run_agent(
+    async def _call(
         self, user_prompt: str, project: str | None = None, read_dir: str | None = None
     ) -> str:
+        """One `claude -p` run: prompt on stdin, answer on stdout."""
         s = self.settings
         cwd = project or read_dir  # anything to read => the read-only tool command
-        cmd = s.ai_agent_project_command if cwd else s.ai_agent_command
+        try:
+            cmd = shlex.split(s.ai_agent_project_command if cwd else s.ai_agent_command)
+        except ValueError:
+            raise ApiError(502, "ai_provider_error") from None
+        if s.ai_model:
+            cmd += ["--model", s.ai_model]
+        if project and read_dir:
+            cmd += ["--add-dir", read_dir]  # photos live outside the project
         try:
             proc = await asyncio.create_subprocess_exec(
-                *shlex.split(cmd),
+                *cmd,
                 cwd=cwd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
-        except (OSError, ValueError) as e:
+        except OSError as e:
             log.warning("AI agent not started: %s", type(e).__name__)
             raise ApiError(502, "ai_provider_error") from None
         try:
@@ -268,198 +268,6 @@ class AiService:
             log.warning("AI agent exit code %s", proc.returncode)
             raise ApiError(502, "ai_provider_error")
         return text
-
-    async def _call(
-        self, user_prompt: str, project: str | None = None, read_dir: str | None = None,
-        timeout: float | None = None,  # HTTP provider, no project; agents keep their own
-    ) -> str:  # fmt: skip
-        if self.settings.ai_agent_command:  # local CLI agent configured: it does everything
-            return await self._run_agent(user_prompt, project, read_dir)
-        if project:  # HTTP provider reads the project through our read-only tools
-            try:
-                return await asyncio.wait_for(
-                    self._http_project(user_prompt, Path(project)), PROJECT_AGENT_TIMEOUT
-                )
-            except TimeoutError:
-                raise ApiError(504, "ai_timeout") from None
-        msg = await self._post([{"role": "user", "content": user_prompt}], timeout=timeout)
-        return str(msg.get("content") or "").strip()
-
-    async def _http_project(self, user_prompt: str, root: Path) -> str:
-        """Tool loop: the model may list, search and read files under `root`, nothing else."""
-        messages: list[dict] = [{"role": "user", "content": user_prompt}]
-        for _ in range(MAX_TOOL_STEPS):
-            msg = await self._post(messages, tools=PROJECT_TOOLS)
-            calls = msg.get("tool_calls") or []
-            if not calls:
-                return str(msg.get("content") or "").strip()
-            messages.append(
-                {"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls}
-            )
-            for call in calls:
-                fn = call.get("function") or {}
-                try:
-                    args = json.loads(fn.get("arguments") or "{}")
-                except ValueError:
-                    args = {}
-                result = await asyncio.to_thread(project_tool, root, fn.get("name", ""), args)
-                messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": result})
-        messages.append({"role": "user", "content": "Stop reading files and answer now."})
-        msg = await self._post(messages)
-        return str(msg.get("content") or "").strip()
-
-    async def _post(
-        self, messages: list[dict], tools: list | None = None, timeout: float | None = None
-    ) -> dict:
-        s = self.settings
-        body: dict = {
-            "model": s.ai_model,
-            "messages": [{"role": "system", "content": SYSTEM_PROMPT}, *messages],
-        }
-        if tools:
-            body["tools"] = tools
-        client = self.client or httpx.AsyncClient()
-        try:
-            resp = await client.post(
-                s.ai_base_url.rstrip("/").removesuffix("/chat/completions") + "/chat/completions",
-                headers={"Authorization": f"Bearer {s.ai_api_key}"},
-                json=body,
-                timeout=timeout or (TIMEOUT if not tools else 90.0),
-            )
-        except httpx.TimeoutException:
-            raise ApiError(504, "ai_timeout") from None
-        except httpx.HTTPError as e:
-            log.warning("AI provider request failed: %s", type(e).__name__)
-            raise ApiError(502, "ai_provider_error") from None
-        finally:
-            if self.client is None:
-                await client.aclose()
-        if resp.status_code != 200:
-            log.warning("AI provider status %s", resp.status_code)
-            raise ApiError(502, "ai_provider_error")
-        try:
-            msg = resp.json()["choices"][0]["message"]
-        except ValueError, KeyError, IndexError, TypeError:
-            raise ApiError(502, "ai_provider_error") from None
-        if not isinstance(msg, dict):
-            raise ApiError(502, "ai_provider_error")
-        return msg
-
-
-# ---- read-only project tools for HTTP providers ---------------------------------
-
-MAX_TOOL_STEPS = 12
-TOOL_OUTPUT_CHARS = 12_000
-SKIP_DIRS = {
-    ".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build", "out", ".next",
-    ".gradle", ".idea", "Pods", "DerivedData", ".pytest_cache", ".ruff_cache", "target",
-}  # fmt: skip
-SECRET_GLOBS = ("*.env", ".env*", "*.pem", "*.key", "*.p12", "*.keystore", "*.jks", "id_rsa*",
-                "secrets.*", "credentials*.json", "*.session", "google-services.json",
-                "GoogleService-Info.plist", "local.properties")  # fmt: skip
-
-PROJECT_TOOLS = [
-    {"type": "function", "function": {
-        "name": "list_files",
-        "description": "List entries of a directory in the project (dirs end with /).",
-        "parameters": {"type": "object", "properties": {
-            "path": {"type": "string", "description": "Dir relative to project root; '' = root"},
-        }},
-    }},
-    {"type": "function", "function": {
-        "name": "search",
-        "description": "Case-insensitive text search in project files; returns path:line: text.",
-        "parameters": {"type": "object", "properties": {
-            "query": {"type": "string"},
-            "path": {"type": "string", "description": "Optional sub-directory"},
-        }, "required": ["query"]},
-    }},
-    {"type": "function", "function": {
-        "name": "read_file",
-        "description": "Read a text file (up to 400 lines from start_line).",
-        "parameters": {"type": "object", "properties": {
-            "path": {"type": "string"},
-            "start_line": {"type": "integer", "description": "1-based, default 1"},
-        }, "required": ["path"]},
-    }},
-]  # fmt: skip
-
-
-def _is_secret(p: Path) -> bool:
-    return any(p.match(g) for g in SECRET_GLOBS)
-
-
-def _resolve(root: Path, rel: str) -> Path | None:
-    """Path inside the project, or None for anything outside it or secret-looking."""
-    root = root.resolve()
-    p = (root / (rel or "").lstrip("/")).resolve()
-    if p != root and not p.is_relative_to(root):
-        return None
-    rel = p.relative_to(root)  # only judge names inside the project, not the root's own name
-    if rel.parts and (_is_secret(rel) or any(part in SKIP_DIRS for part in rel.parts)):
-        return None
-    return p
-
-
-def _walk(base: Path):
-    for dirpath, dirnames, filenames in os.walk(base):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
-        for name in sorted(filenames):
-            p = Path(dirpath) / name
-            if not _is_secret(p):
-                yield p
-
-
-def project_tool(root: Path, name: str, args: dict) -> str:
-    try:
-        out = _project_tool(root.resolve(), name, args)
-    except OSError as e:
-        out = f"error: {type(e).__name__}"
-    return out[:TOOL_OUTPUT_CHARS]
-
-
-def _project_tool(root: Path, name: str, args: dict) -> str:
-    p = _resolve(root, str(args.get("path") or ""))
-    if p is None:
-        return "error: path not allowed"
-    if name == "list_files":
-        if not p.is_dir():
-            return "error: not a directory"
-        rows = [
-            f"{c.name}/" if c.is_dir() else c.name
-            for c in sorted(p.iterdir())
-            if not (c.is_dir() and c.name in SKIP_DIRS) and not _is_secret(c)
-        ]
-        return "\n".join(rows[:300]) or "(empty)"
-    if name == "read_file":
-        if not p.is_file():
-            return "error: not a file"
-        if p.stat().st_size > 2_000_000:
-            return "error: file too large"
-        lines = p.read_text(errors="replace").splitlines()
-        start = max(1, int(args.get("start_line") or 1))
-        chunk = lines[start - 1 : start - 1 + 400]
-        body = "\n".join(f"{start + i}: {line}" for i, line in enumerate(chunk))
-        return f"{p.relative_to(root)} ({len(lines)} lines)\n{body}"
-    if name == "search":
-        q = str(args.get("query") or "").lower()
-        if not q:
-            return "error: empty query"
-        hits: list[str] = []
-        for f in _walk(p if p.is_dir() else root):
-            if f.stat().st_size > 1_000_000:
-                continue
-            try:
-                text = f.read_text()
-            except (UnicodeDecodeError, OSError):
-                continue
-            for n, line in enumerate(text.splitlines(), 1):
-                if q in line.lower():
-                    hits.append(f"{f.relative_to(root)}:{n}: {line.strip()[:200]}")
-                    if len(hits) >= 60:
-                        return "\n".join(hits)
-        return "\n".join(hits) or "(no matches)"
-    return "error: unknown tool"
 
 
 def _applescript_str(s: str) -> str:

@@ -84,7 +84,6 @@ def create_app(
     settings: Settings,
     *,
     transport: Transport | None = None,
-    ai_client=None,
     store: Store | None = None,
 ) -> FastAPI:
     """Build the app. Nothing here touches Telegram; the lifespan starts the bridge."""
@@ -103,7 +102,7 @@ def create_app(
             t = TelethonTransport(settings)
         bridge = TelegramBridge(st, db, t, notify=settings.notify)
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
-        app.state.ai = AiService(settings, st, db, ai_client)
+        app.state.ai = AiService(settings, st, db)
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
         await bridge.start()

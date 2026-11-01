@@ -18,7 +18,7 @@ const ERRORS: Record<string, string> = {
   digest_empty: "Không có tin nào để tóm tắt.",
   digest_too_large: "Quá nhiều tin cho một lần tóm tắt; hãy thu hẹp khoảng thời gian.",
   not_connected: "Telegram chưa kết nối.",
-  ai_not_configured: "Chưa cấu hình AI (AI_BASE_URL/AI_MODEL/AI_API_KEY hoặc AI_AGENT_COMMAND).",
+  ai_not_configured: "Chưa có Claude Code CLI (`claude`) trên máy.",
   ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
   ai_provider_error: "AI gặp lỗi; thử lại.",
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",

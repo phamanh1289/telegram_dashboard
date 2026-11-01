@@ -74,7 +74,7 @@ start() {
   if running; then warn "Server đã chạy rồi — ${URL}"; return; fi
   build_if_stale
   mkdir -p data
-  # Don't leak a gateway exported in an old shell into AI task sessions; set them in .env if wanted.
+  # Don't leak a gateway exported in an old shell into the claude CLI: all AI uses its claude.ai login.
   env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_MODEL \
     .venv/bin/python -m telegram_dashboard serve >>"$LOG" 2>&1 &
   PID=$!

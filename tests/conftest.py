@@ -138,3 +138,19 @@ def client(settings):
     app = create_app(settings, transport=FakeTransport())
     with TestClient(app, base_url=ORIGIN) as c:
         yield c
+
+
+class FakeAgent:
+    """Stands in for AiService._call (the claude CLI): records prompts, returns `reply`."""
+
+    def __init__(self, reply="draft text", on_call=None, exc=None):
+        self.calls: list[str] = []
+        self.reply, self.on_call, self.exc = reply, on_call, exc
+
+    async def __call__(self, prompt, project=None, read_dir=None):
+        self.calls.append(prompt)
+        if self.on_call:
+            self.on_call()
+        if self.exc:
+            raise self.exc
+        return self.reply

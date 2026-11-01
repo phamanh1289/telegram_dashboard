@@ -4,7 +4,6 @@ Never part of the live app. Data lives in a temp dir; nothing touches Telegram o
 """
 
 import asyncio
-import json
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -30,7 +29,8 @@ CONTROL = "http://127.0.0.1:8799"
 tmp = Path(tempfile.mkdtemp(prefix="td-e2e-"))
 (tmp / "web").mkdir()
 (tmp / "web" / "out").symlink_to(ROOT / "web" / "out")
-settings = Settings(root=tmp, ai_base_url=f"{CONTROL}/v1", ai_model="fake", ai_api_key="fake-key")
+AGENT = "sh -c \"cat >/dev/null; echo 'Bản nháp AI: cảm ơn mọi người!'\""  # fake claude CLI
+settings = Settings(root=tmp, ai_agent_command=AGENT, ai_model="")
 
 fake = FakeTransport(
     groups=[
@@ -110,14 +110,6 @@ async def delete(request: Request):
     b = await request.json()
     await app.state.bridge.on_deleted(b["chat"], [b["id"]])
     return {"ok": True}
-
-
-@ctl.post("/v1/chat/completions")
-async def completions(request: Request):
-    body = await request.json()
-    control["ai_calls"] = control.get("ai_calls", 0) + 1
-    control["ai_last"] = json.dumps(body)[:2000]
-    return {"choices": [{"message": {"content": "Bản nháp AI: cảm ơn mọi người!"}}]}
 
 
 async def main():

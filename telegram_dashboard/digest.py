@@ -16,7 +16,6 @@ from .storage import Db, Store
 
 MAX_MESSAGES = 400
 MAX_CHARS = 80_000
-TIMEOUT = 120.0
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 STATUSES = ("decided", "open", "dropped")
 VN = ZoneInfo("Asia/Ho_Chi_Minh")  # what the UI shows; the server's own zone may be UTC
@@ -149,7 +148,7 @@ class DigestService:
         # Escaped "<": a message cannot close the data block and pose as instructions.
         data = json.dumps(context, ensure_ascii=False).replace("<", "\\u003c")
         prompt += f"\n<messages>\n{data}\n</messages>"
-        text = await self.ai._call(prompt, timeout=TIMEOUT)
+        text = await self.ai._call(prompt)
         if not await self._consented(req.chat_id):
             raise ApiError(
                 409, "ai_permission_changed",

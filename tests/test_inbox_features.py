@@ -76,7 +76,7 @@ def test_context_is_live_and_only_around_kept_tags(client):
 async def test_draft_includes_context(env, tmp_path):
     env.store.track_mention(A, "Alpha", "supergroup")
     env.store.apply_message(msg(A, 1, "@me what about this?", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="cat", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_require_consent=False)
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], nearby=nearby)
     assert "login page crashes" in r.text and "<context>" in r.text
