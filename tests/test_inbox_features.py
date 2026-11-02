@@ -195,3 +195,12 @@ def test_headless_task_runs_and_resumes(tmp_path):
                 break
             time.sleep(0.05)
         assert ev["items"][3] == {"kind": "user", "text": "tiếp"} and "--resume" in ev["items"][-1]["text"]
+        assert "--permission-mode plan" in ev["items"][-1]["text"]
+        # Accept edit: the plan task's next turn resumes the same session allowed to edit
+        assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "làm đi", "edit": True}, headers=H).status_code == 204
+        for _ in range(100):
+            ev = c.get(f"/api/tasks/{task['id']}/events").json()
+            if len(ev["items"]) == 9 and not ev["running"]:
+                break
+            time.sleep(0.05)
+        assert "--permission-mode acceptEdits" in ev["items"][-1]["text"] and "--resume" in ev["items"][-1]["text"]

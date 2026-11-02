@@ -548,7 +548,8 @@ def create_app(
             raise ApiError(404, "task_not_found")
         if s.agent.running(task_id):
             raise ApiError(409, "task_busy")
-        await s.agent.start(task_id, row["project"], body.text, row["mode"], row["session_id"], True)
+        mode = "edit" if body.edit else row["mode"]  # permission mode is per turn, so a plan can be approved
+        await s.agent.start(task_id, row["project"], body.text, mode, row["session_id"], True)
 
     @app.post("/api/tasks/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

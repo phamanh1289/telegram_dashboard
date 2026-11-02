@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Bot, CheckCircle2, ChevronDown, CornerDownLeft, FolderGit2, Square, Loader2, MessageSquare, RotateCcw, RotateCw, SquareTerminal, Trash2, Users, Wrench } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ModelEffortPicker } from "@/components/settings";
 import { api, ApiError, type Message, type Task } from "@/lib/api";
@@ -79,11 +80,12 @@ function Feed({ follow, children, footer }: { follow: unknown; children: ReactNo
 }
 
 /** Headless session: conversation log with the follow-up input pinned below it. */
-function ChatPanel({ id, running, head }: { id: string; running: boolean; head: ReactNode }) {
+function ChatPanel({ id, running, plan, head }: { id: string; running: boolean; plan: boolean; head: ReactNode }) {
   const qc = useQueryClient();
   const [items, setItems] = useState<TaskEvent[]>([]);
   const next = useRef(0);
   const [text, setText] = useState("");
+  const [edit, setEdit] = useState(false); // plan task: let the next turns edit files (approve the plan)
   const q = useQuery({
     queryKey: ["task-events", id],
     queryFn: async ({ signal }) => {
@@ -104,7 +106,7 @@ function ChatPanel({ id, running, head }: { id: string; running: boolean; head: 
     void qc.invalidateQueries({ queryKey: ["tasks"] });
   };
   const send = useMutation({
-    mutationFn: (line: string) => api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line } }),
+    mutationFn: (line: string) => api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, edit: plan && edit } }),
     onSuccess: () => { setText(""); refresh(); },
   });
   const busy = send.error instanceof ApiError && send.error.code === "task_busy";
@@ -126,6 +128,12 @@ function ChatPanel({ id, running, head }: { id: string; running: boolean; head: 
         />
         <Button type="submit" aria-busy={send.isPending} disabled={running || !text.trim() || send.isPending}>Gửi</Button>
       </form>
+      {plan && (
+        <label className="flex w-fit items-center gap-2 text-xs text-ink-2" title="Phiên đang ở chế độ Chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.">
+          <Checkbox checked={edit} onCheckedChange={(v) => setEdit(!!v)} disabled={running} />
+          Accept edit: lượt nhắn tiếp được sửa file
+        </label>
+      )}
       {send.isError && <p role="alert" className="text-xs text-error">{busy ? "AI đang làm lượt trước." : "Gửi thất bại."}</p>}
     </>}>
       {head}
@@ -313,7 +321,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
         {(reopen.isError || remove.isError || capture.isError || stop.isError) && <p role="alert" className="text-xs text-error">Thao tác thất bại (không mở được Terminal?).</p>}
       </div>
 
-      {headless ? <ChatPanel id={t.id} running={running} head={head} />
+      {headless ? <ChatPanel id={t.id} running={running} plan={t.mode === "plan"} head={head} />
         : t.interactive ? <TerminalPanel id={t.id} head={head} tail={result} />
         : <Feed follow={t.result}>{head}{result}</Feed>}
     </div>

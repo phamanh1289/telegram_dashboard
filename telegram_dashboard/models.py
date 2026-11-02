@@ -323,6 +323,7 @@ class TaskRequest(BaseModel):
 
 class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
+    edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
 
 
 class TaskInput(BaseModel):

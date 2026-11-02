@@ -1568,6 +1568,11 @@ export interface components {
         TaskMessage: {
             /** Text */
             text: string;
+            /**
+             * Edit
+             * @default false
+             */
+            edit?: boolean;
         };
         /** TaskRequest */
         TaskRequest: {
