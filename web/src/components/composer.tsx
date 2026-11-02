@@ -1,10 +1,11 @@
 "use client";
 
-import { Bot, Bug, Check, ChevronDown, ExternalLink, Loader2, Send, Sparkles, X } from "lucide-react";
+import { Bot, Bug, Check, ChevronDown, ExternalLink, Loader2, Send, Sparkles, Square, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
 import { ProjectPicker } from "@/components/project-picker";
+import { ModelEffortPicker } from "@/components/settings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -170,12 +171,17 @@ export function Composer({
   });
 
   // Tagged message (+ nearby context) + the user's prompt -> AI summary, next steps and reply options.
+  // Aborting the request is the cancel: the server sees the browser go and kills the claude run.
+  const askAbort = useRef<AbortController | null>(null);
   const ask = useMutation({
-    mutationFn: () =>
-      api<AiResult>("/ai/draft", {
+    mutationFn: () => {
+      askAbort.current = new AbortController();
+      return api<AiResult>("/ai/draft", {
         method: "POST",
         json: { chat_id: chatId, message_ids: [replyTo!.message_id], instruction: aiPrompt, project: null, with_context: true, platform: readPlatform() },
-      }),
+        signal: askAbort.current.signal,
+      });
+    },
     retry: false,
     networkMode: "always",
     onSuccess: (r) => {
@@ -380,6 +386,13 @@ export function Composer({
                   {ask.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
                   {ask.isPending ? "Đang tóm tắt…" : analysis ? "Tóm tắt lại" : "Tóm tắt & gợi ý"}
                 </Button>
+                {ask.isPending && (
+                  <Button type="button" size="sm" variant="ghost" className="hover:bg-error-wash hover:text-error animate-in fade-in-0 duration-(--dur-short)"
+                    title="Dừng AI đang tóm tắt" onClick={() => askAbort.current?.abort()}>
+                    <Square className="fill-current" aria-hidden /> Hủy
+                  </Button>
+                )}
+                <ModelEffortPicker className="ml-auto" />
               </div>
               {ask.isPending ? (
                 <AiThinking />
@@ -476,7 +489,8 @@ export function Composer({
           {draftStale && (
             <span role="status" className="text-warn">Tin nguồn của bản nháp AI đã đổi; bản nháp có thể đã cũ. </span>
           )}
-          {ask.isError && (
+          {ask.isError && ask.error.name === "AbortError" && <span role="status" className="text-ink-3">Đã hủy tóm tắt. </span>}
+          {ask.isError && ask.error.name !== "AbortError" && (
             <span role="alert" className="text-error">
               {ask.error instanceof ApiError && ask.error.code === "ai_scope_not_allowed"
                 ? "AI bị chặn do chưa cấp quyền dữ liệu (đặt AI_REQUIRE_CONSENT=0 cho dùng cá nhân). "
@@ -540,6 +554,10 @@ export function Composer({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-ink-3">Dự án</span>
             <ProjectPicker value={project} onChange={onProjectChange} />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-ink-3">Model</span>
+            <ModelEffortPicker task />
           </div>
           <div className="flex min-h-40 flex-1 flex-col gap-2">
             <label htmlFor="task-note" className="text-xs font-medium text-ink-3">

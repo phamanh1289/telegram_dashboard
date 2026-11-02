@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown, ExternalLink, Gauge, Monitor, Moon, Sun, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
 import { Button } from "@/components/ui/button";
@@ -17,8 +17,13 @@ import { cn } from "@/lib/utils";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
-/** Every per-browser preference plus the auto-handle rules and the connection state, in one dialog. */
-export function SettingsDialog({ open, onOpenChange, status, stream }: {
+const save = (key: string, value: string) => {
+  try { localStorage[key] = value; } catch {}
+  dispatchEvent(new Event("prefs")); // wait labels re-render with the new threshold
+};
+
+/** Settings both modules use (theme, Claude, YouTrack token, connections); YouTrack opens it via /?settings=shared. */
+export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   status: Status;
@@ -26,14 +31,53 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
 }) {
   // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [theme, setTheme] = useState<ThemePref>(readTheme);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogTitle>Cài đặt chung</DialogTitle>
+        <DialogDescription className="-mt-2">Dùng chung cho Telegram và YouTrack.</DialogDescription>
+
+        <Section title="Giao diện">
+          <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
+            options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
+        </Section>
+
+        <Section title="Tài khoản Claude" hint="Tài khoản, hạn mức, model và effort cho mọi tính năng AI.">
+          <ClaudeSection />
+        </Section>
+
+        <Section title="YouTrack" hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
+          <YouTrackSection />
+        </Section>
+
+        <Section title="Kết nối">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
+            <dt className="text-ink-3">Telegram</dt>
+            <dd className={status.state === "connected" ? "text-ok" : "text-warn"}>{status.state === "connected" ? "Đã kết nối" : status.detail || status.state}</dd>
+            <dt className="text-ink-3">Cập nhật trực tiếp</dt>
+            <dd className={stream === "open" ? "text-ok" : "text-warn"}>{stream === "open" ? "Đang chạy" : stream === "connecting" ? "Đang nối lại…" : "Tạm dừng"}</dd>
+            <dt className="text-ink-3">AI</dt>
+            <dd className={status.ai_configured ? "text-ok" : "text-ink-3"}>{status.ai_configured ? "Đã cấu hình" : "Chưa cấu hình"}</dd>
+            <dt className="text-ink-3">YouTrack</dt>
+            <dd className={status.youtrack_configured ? "text-ok" : "text-ink-3"}>{status.youtrack_configured ? "Đã cấu hình" : "Chưa cấu hình (dán token ở mục YouTrack; tạo issue cần thêm YOUTRACK_PROJECT)"}</dd>
+          </dl>
+        </Section>
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Telegram-only preferences (queue, replies, digest, templates, auto-handle rules). */
+export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [overdue, setOverdue] = useState(readOverdueHours);
   const [rowActions, setRowActions] = useState(readRowActions);
   const [aiOpen, setAiOpen] = useState(readComposerAiOpen);
   const [platform, setPlatform] = useState(readPlatform);
-  const save = (key: string, value: string) => {
-    try { localStorage[key] = value; } catch {}
-    dispatchEvent(new Event("prefs")); // wait labels re-render with the new threshold
-  };
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
   async function toggleNotify(on: boolean) {
@@ -50,13 +94,8 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        <DialogTitle>Cài đặt</DialogTitle>
-        <DialogDescription className="-mt-2">Lưu trên trình duyệt này; giao diện dùng chung với YouTrack.</DialogDescription>
-
-        <Section title="Giao diện">
-          <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
-            options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
-        </Section>
+        <DialogTitle>Cài đặt Telegram</DialogTitle>
+        <DialogDescription className="-mt-2">Chỉ cho Telegram, lưu trên trình duyệt này. Giao diện, Claude, YouTrack ở Cài đặt chung (góc trên phải).</DialogDescription>
 
         <Section title="Hàng chờ" hint="Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách (quá hạn).">
           <Segmented label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); save("overdueHours", String(v)); }}
@@ -104,27 +143,6 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
           <RulesSection />
         </Section>
 
-        <Section title="Tài khoản Claude" hint="Tài khoản, hạn mức, model và effort cho mọi tính năng AI.">
-          <ClaudeSection />
-        </Section>
-
-        <Section title="YouTrack" hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
-          <YouTrackSection />
-        </Section>
-
-        <Section title="Kết nối">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
-            <dt className="text-ink-3">Telegram</dt>
-            <dd className={status.state === "connected" ? "text-ok" : "text-warn"}>{status.state === "connected" ? "Đã kết nối" : status.detail || status.state}</dd>
-            <dt className="text-ink-3">Cập nhật trực tiếp</dt>
-            <dd className={stream === "open" ? "text-ok" : "text-warn"}>{stream === "open" ? "Đang chạy" : stream === "connecting" ? "Đang nối lại…" : "Tạm dừng"}</dd>
-            <dt className="text-ink-3">AI</dt>
-            <dd className={status.ai_configured ? "text-ok" : "text-ink-3"}>{status.ai_configured ? "Đã cấu hình" : "Chưa cấu hình"}</dd>
-            <dt className="text-ink-3">YouTrack</dt>
-            <dd className={status.youtrack_configured ? "text-ok" : "text-ink-3"}>{status.youtrack_configured ? "Đã cấu hình" : "Chưa cấu hình (dán token ở mục YouTrack; tạo issue cần thêm YOUTRACK_PROJECT)"}</dd>
-          </dl>
-        </Section>
-
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
         </DialogFooter>
@@ -154,34 +172,51 @@ function useClaudeAccount(every: number | false = false) {
 
 const meterTone = (pct: number) => (pct >= 90 ? "bg-error" : pct >= 70 ? "bg-warn" : "bg-hl");
 
-/** Sidebar row: quota left at a glance, refreshed every 5 minutes; opens the Claude dialog. */
-export function ClaudeQuota({ textClass }: { textClass?: string }) {
+/** Time until a window resets: a day or more in days, under a day in hours, under an hour in minutes. */
+function resetIn(iso: string | null | undefined, now: number) {
+  if (!iso) return null;
+  const min = Math.max(0, (Date.parse(iso) - now) / 60_000);
+  return min >= 1440 ? `${Math.floor(min / 1440)} ngày` : min >= 60 ? `${Math.floor(min / 60)} giờ` : `${Math.ceil(min)} phút`;
+}
+
+/** Wall clock that ticks each minute, so countdowns move between polls. */
+function useNow() {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+/** Top-bar pill: % used and time to reset per window, refreshed every 5 minutes; opens the Claude page. */
+export function ClaudeQuota() {
   const [open, setOpen] = useState(false);
   const { data: a } = useClaudeAccount(5 * 60_000);
+  const now = useNow();
   if (!a) return null;
   const top = Math.max(0, ...a.usage.map((u) => u.percent));
   const summary = a.loggedIn
-    ? a.usage.map((u) => `${u.label}: ${Math.round(u.percent)}%${when(u.resets_at) ? `, đặt lại ${when(u.resets_at)}` : ""}`).join("\n") || "Claude: đã đăng nhập"
+    ? a.usage.map((u) => `${u.label}: ${Math.round(u.percent)}%${u.resets_at ? `, đặt lại sau ${resetIn(u.resets_at, now)} (${when(u.resets_at)})` : ""}`).join("\n") || "Claude: đã đăng nhập"
     : "Claude chưa đăng nhập";
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} title={summary} aria-label={`Hạn mức Claude. ${summary}`}
-        className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-xs text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-        <Gauge aria-hidden className={cn("size-5 shrink-0", !a.loggedIn || top >= 90 ? "text-error" : top >= 70 ? "text-warn" : "text-ok")} />
+        className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2 text-xs text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+        <Gauge aria-hidden className={cn("size-4 shrink-0", !a.loggedIn || top >= 90 ? "text-error" : top >= 70 ? "text-warn" : "text-ok")} />
         {a.loggedIn && a.usage.length ? (
-          <span className={cn("grid min-w-0 flex-1 gap-1", textClass)}>
-            {a.usage.slice(0, 2).map((u) => (
-              <span key={u.label} className="grid grid-cols-[3rem_minmax(0,1fr)_2.25rem] items-center gap-2 whitespace-nowrap">
-                <span>{u.label}</span>
-                <span aria-hidden className="h-1 overflow-hidden rounded-full bg-paper-3">
-                  <span className={cn("block h-full rounded-full", meterTone(u.percent))} style={{ width: `${Math.min(100, u.percent)}%` }} />
-                </span>
-                <span className="text-right font-mono tabular-nums text-ink-2">{Math.round(u.percent)}%</span>
+          a.usage.slice(0, 2).map((u) => (
+            <span key={u.label} className="hidden items-center gap-1.5 whitespace-nowrap sm:flex">
+              <span className="font-medium text-ink-2">{u.label}</span>
+              <span aria-hidden className="h-1 w-8 overflow-hidden rounded-full bg-paper-3">
+                <span className={cn("block h-full rounded-full", meterTone(u.percent))} style={{ width: `${Math.min(100, u.percent)}%` }} />
               </span>
-            ))}
-          </span>
+              <span className="font-mono tabular-nums text-ink-2">{Math.round(u.percent)}%</span>
+              {u.resets_at && <span>· {resetIn(u.resets_at, now)}</span>}
+            </span>
+          ))
         ) : (
-          <span className={cn("truncate whitespace-nowrap font-medium", !a.loggedIn && "text-warn", textClass)}>{a.loggedIn ? "Claude" : "Claude chưa đăng nhập"}</span>
+          <span className={cn("hidden whitespace-nowrap font-medium sm:inline", !a.loggedIn && "text-warn")}>{a.loggedIn ? "Claude" : "Claude chưa đăng nhập"}</span>
         )}
       </button>
       {open && <ClaudeDialog open={open} onOpenChange={setOpen} />}
@@ -210,7 +245,8 @@ function ClaudeSection() {
 /** `claude auth login` opens Anthropic's sign-in in the browser; the CLI keeps the token, never this page. */
 function ClaudeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const qc = useQueryClient();
-  const acc = useClaudeAccount(60_000); // live while the dialog is open
+  const acc = useClaudeAccount(60_000); // live while the page is open
+  const now = useNow();
   const refresh = () => void qc.invalidateQueries({ queryKey: ["claude-account"] });
   const login = useMutation({ mutationFn: () => api<{ url: string | null }>("/claude/login", { method: "POST" }), onSettled: refresh });
   const logout = useMutation({ mutationFn: () => api("/claude/logout", { method: "POST" }), onSettled: refresh });
@@ -233,8 +269,8 @@ function ClaudeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Head and foot stay put; only the body scrolls. */}
-      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+      {/* A detail page sliding in from the right; head and foot stay put, only the body scrolls. */}
+      <DialogContent className="top-0 right-0 left-auto flex h-dvh max-h-none max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 ease-(--ease-out) sm:max-w-md data-open:zoom-in-100 data-open:slide-in-from-right data-closed:zoom-out-100 data-closed:slide-out-to-right">
         <header className="grid gap-1 border-b border-rule px-5 pt-5 pb-4">
           <DialogTitle>Tài khoản Claude</DialogTitle>
           <DialogDescription className="text-xs text-ink-3">Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI chạy bằng tài khoản này.</DialogDescription>
@@ -274,18 +310,23 @@ function ClaudeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
                 )}
 
                 {a.usage.length > 0 && (
-                  <ul aria-label="Hạn mức đã dùng" className="grid gap-3">
+                  <ul aria-label="Hạn mức đã dùng" className="grid grid-cols-2 gap-3">
                     {a.usage.map((u) => {
                       const pct = Math.min(100, Math.max(0, u.percent));
                       return (
-                        <li key={u.label} className="grid gap-1.5 text-sm">
-                          <span className="flex items-baseline justify-between gap-3">
-                            <span className="text-ink-2">{u.label}</span>
-                            <span className="text-xs text-ink-3">{when(u.resets_at) && `đặt lại ${when(u.resets_at)} `}<span className="ml-1 font-mono text-sm font-medium text-ink tabular-nums">{Math.round(pct)}%</span></span>
+                        <li key={u.label} className="grid content-start gap-2 rounded-md bg-paper-2 p-3">
+                          <span className="flex items-baseline justify-between gap-2">
+                            <span className="text-xs font-medium text-ink-2">{u.label}</span>
+                            <span className="font-mono text-xl font-semibold text-ink tabular-nums">{Math.round(pct)}%</span>
                           </span>
                           <span role="meter" aria-label={`Hạn mức ${u.label}`} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}
-                            className="h-2 overflow-hidden rounded-full bg-paper-2 shadow-groove">
+                            className="h-1.5 overflow-hidden rounded-full bg-paper-3">
                             <span className={cn("block h-full origin-left rounded-full transition-transform duration-500 ease-(--ease-out)", meterTone(pct))} style={{ transform: `scaleX(${pct / 100})` }} />
+                          </span>
+                          <span className="grid gap-0.5 text-xs text-ink-3">
+                            <span>Còn <span className="font-medium text-ink-2 tabular-nums">{100 - Math.round(pct)}%</span></span>
+                            {u.resets_at && <span>Đặt lại sau <span className="font-medium text-ink-2">{resetIn(u.resets_at, now)}</span></span>}
+                            {u.resets_at && <span>lúc {when(u.resets_at)}</span>}
                           </span>
                         </li>
                       );
@@ -348,7 +389,7 @@ const EFFORTS = [
 ];
 
 /** Model + effort for each kind of claude run; saved on the server (data/claude.json), used from the next run. */
-function ClaudePrefsSection() {
+function useClaudePrefs() {
   const qc = useQueryClient();
   const prefs = useQuery({ queryKey: ["claude-prefs"], queryFn: ({ signal }) => api<ClaudePrefs>("/claude/prefs", { signal }) });
   const save = useMutation({
@@ -357,8 +398,26 @@ function ClaudePrefsSection() {
     onError: () => void qc.invalidateQueries({ queryKey: ["claude-prefs"] }),
   });
   const p = prefs.data;
+  return { p, save, set: (patch: Partial<ClaudePrefs>) => p && save.mutate({ ...p, ...patch }) };
+}
+
+/** Model + effort dropdowns inline (reply panel, AI Agent); the same saved prefs as the Claude dialog. */
+export function ModelEffortPicker({ task = false, className }: { task?: boolean; className?: string }) {
+  const { p, set } = useClaudePrefs();
   if (!p) return null;
-  const set = (patch: Partial<ClaudePrefs>) => save.mutate({ ...p, ...patch });
+  const [m, e, what] = task ? (["task_model", "task_effort", "Task và AI Agent"] as const) : (["model", "effort", "tóm tắt và soạn nháp"] as const);
+  return (
+    <span role="group" aria-label={`Model và effort cho ${what}`} title={`Model và effort cho ${what} (lưu chung với Cài đặt → Tài khoản Claude)`}
+      className={cn("grid w-56 grid-cols-2 gap-1.5", className)}>
+      <Dropdown label={`Model cho ${what}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={MODELS} />
+      <Dropdown label={`Effort cho ${what}`} value={p[e]} onChange={(v) => set({ [e]: v as ClaudePrefs["effort"] })} options={EFFORTS} />
+    </span>
+  );
+}
+
+function ClaudePrefsSection() {
+  const { p, save, set } = useClaudePrefs();
+  if (!p) return null;
   const groups = [
     ["Tóm tắt, soạn nháp, Digest", "Chạy thường xuyên, nên chọn model nhanh.", "model", "effort"],
     ["Task và AI Agent", "Đọc code và lập kế hoạch, cần model mạnh hơn.", "task_model", "task_effort"],

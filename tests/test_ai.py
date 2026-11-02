@@ -1,4 +1,5 @@
 import shlex
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -128,6 +129,24 @@ async def test_provider_timeout_keeps_manual_reply_available(env, tmp_path, monk
         ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="1", text="manual")
     )
     assert rec.status == "sent"
+
+
+async def test_cancelled_request_kills_the_claude_run(env, tmp_path):
+    from telegram_dashboard.ai import client_gone
+
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "hello", sender="7"))
+    s = Settings(
+        root=tmp_path, ai_agent_command="sleep 30", ai_model="", ai_effort="", ai_require_consent=False
+    )
+
+    async def gone():
+        return True
+
+    client_gone.set(gone)
+    t0 = time.monotonic()
+    await expect("ai_cancelled", AiService(s, env.store, env.db).run("draft", A, ["1"], ""))
+    assert time.monotonic() - t0 < 5
 
 
 async def test_consent_off_allows_text_but_not_deleted_or_media(env, tmp_path):
@@ -291,9 +310,15 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
     acc = asyncio.run(mod.claude_account(s))
     assert acc["name"] == "Me" and acc["rate_tier"] == "default_claude_max_5x" and acc["extra_usage"]
     assert acc["usage"] == [
-        {"label": "5 giờ", "percent": 2.0, "resets_at": "r1"},
-        {"label": "7 ngày", "percent": 50, "resets_at": "r2"},
+        {"label": "5h", "percent": 2.0, "resets_at": "r1"},
+        {"label": "1w", "percent": 50, "resets_at": "r2"},
     ]
+
+    async def limited(_client, _tok, path):  # usage API answers 429 -> _oauth_get gives {}
+        return {} if path == "usage" else await get(_client, "tok", path)
+
+    monkeypatch.setattr(mod, "_oauth_get", limited)
+    assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]  # last good reading
 
 
 def test_claude_prefs_drive_every_claude_run(client, settings):

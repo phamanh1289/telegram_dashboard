@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, Settings, Wifi, WifiOff, X } from "lucide-react";
+import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Moon, Newspaper, Pin, RotateCw, Search, Send, Settings, SlidersHorizontal, Sun, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
@@ -10,7 +10,7 @@ import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
-import { ClaudeQuota, SettingsDialog, ShortcutsDialog } from "@/components/settings";
+import { ClaudeQuota, SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -101,6 +101,7 @@ function Inbox({ status }: { status: Status }) {
   }
   // Settings remount on each open (key) so they read fresh values.
   const [settings, setSettings] = useState({ open: false, key: 0 });
+  const [shared, setShared] = useState({ open: false, key: 0 });
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
   const [collapsed, setCollapsed] = useState(false);
   useEffect(() => {
@@ -182,6 +183,13 @@ function Inbox({ status }: { status: Status }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- read URL once after mount
     setChatId(new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
+    // YouTrack's gear lands here with ?settings=shared: open the shared dialog once, then drop the flag.
+    const url = new URL(location.href);
+    if (url.searchParams.get("settings") === "shared") {
+      setShared((s) => ({ open: true, key: s.key + 1 }));
+      url.searchParams.delete("settings");
+      history.replaceState(null, "", url);
+    }
   }, []);
 
   // Esc: leave reply mode and clear every selection (dialogs close themselves first).
@@ -234,25 +242,39 @@ function Inbox({ status }: { status: Status }) {
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
   return (
-    <div className={cn("grid h-dvh transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
+    <div className={cn("grid h-dvh grid-rows-[2.75rem_minmax(0,1fr)] transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
+      {/* Top bar shared with YouTrack (public/yt/index.html .tbar): module switch left, shared settings right. */}
+      <div className="col-span-full flex items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
+        <nav aria-label="Chuyển module" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
+          <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
+            <Send className="size-4 shrink-0" aria-hidden />Telegram
+          </span>
+          <a href="/yt/" title="Chuyển sang YouTrack Dashboard"
+            className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
+            <ListChecks className="size-4 shrink-0" aria-hidden />YouTrack
+          </a>
+        </nav>
+        <div className="ml-auto flex items-center gap-1">
+          <ClaudeQuota />
+          <Button size="icon-sm" variant="ghost" aria-label="Đổi giao diện sáng / tối" title="Đổi giao diện sáng / tối"
+            onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
+            <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
+          </Button>
+          <Button size="icon-sm" variant="ghost" aria-label="Cài đặt chung" title="Cài đặt chung: giao diện, Claude, YouTrack, kết nối"
+            onClick={() => setShared((s) => ({ open: true, key: s.key + 1 }))}>
+            <Settings />
+          </Button>
+        </div>
+      </div>
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
-      {/* Sidebar, the YouTrack recipe: module switch, brand, views, groups, footer. */}
+      {/* Sidebar, the YouTrack recipe: brand, views, groups, footer (the module switch lives in the top bar). */}
       <aside className={cn(
-        "group/side fixed inset-y-0 left-0 z-50 flex w-[15.5rem] flex-col gap-1 border-r bg-paper-2 p-3 transition-[translate,clip-path,box-shadow] duration-(--dur-short) ease-out",
+        "group/side fixed bottom-0 top-0 left-0 z-50 md:top-11 flex w-[15.5rem] flex-col gap-1 border-r bg-paper-2 p-3 transition-[translate,clip-path,box-shadow] duration-(--dur-short) ease-out",
         menuOpen ? "translate-x-0 shadow-pop" : "-translate-x-full",
         "md:translate-x-0 md:shadow-none",
         collapsed && "md:[clip-path:inset(0_calc(100%-4rem)_0_0)] md:hover:[clip-path:inset(0_-3rem_0_0)] md:hover:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop",
       )}>
         <h1 className="sr-only">Telegram Dashboard</h1>
-        <nav aria-label="Chuyển module" className={cn("mb-2 flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove", collapsed && "md:flex-col md:group-hover/side:flex-row md:group-focus-within/side:flex-row")}>
-          <span aria-current="page" className="flex min-h-8 flex-1 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2 text-sm font-medium text-hl-ink">
-            <Send className="size-5 shrink-0" aria-hidden /><span className={cn("whitespace-nowrap", t)}>Telegram</span>
-          </span>
-          <a href="/yt/" title="Chuyển sang YouTrack Dashboard"
-            className="flex min-h-8 flex-1 items-center gap-2 rounded-[var(--radius-input)] px-2 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
-            <ListChecks className="size-5 shrink-0" aria-hidden /><span className={cn("whitespace-nowrap", t)}>YouTrack</span>
-          </a>
-        </nav>
         <div className="mb-2 flex min-h-10 items-center gap-3 px-1.5">
           <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-board text-board-type"><Send className="size-4" aria-hidden /></span>
           <span className={cn("grid whitespace-nowrap leading-tight", t)}>
@@ -280,11 +302,10 @@ function Inbox({ status }: { status: Status }) {
           <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
-          <ClaudeQuota textClass={t} />
-          <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt"
+          <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt Telegram"
             className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-            <Settings className="size-5 shrink-0" aria-hidden />
-            <span className={cn("whitespace-nowrap", t)}>Cài đặt</span>
+            <SlidersHorizontal className="size-5 shrink-0" aria-hidden />
+            <span className={cn("whitespace-nowrap", t)}>Cài đặt Telegram</span>
           </button>
           <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
             <span data-testid="tg-state" title={STATE_LABEL[status.state]} className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
@@ -377,7 +398,8 @@ function Inbox({ status }: { status: Status }) {
           </div>
         ) : null}
       </div>
-      <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} status={status} stream={stream} />
+      <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} />
+      <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} status={status} stream={stream} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       {flash && (
         <div key={flash.id} role="status" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)">

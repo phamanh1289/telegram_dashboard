@@ -1,6 +1,7 @@
 """Optional AI drafts/summaries. Returns text only; it has no way to send messages."""
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -9,6 +10,7 @@ import shlex
 import shutil
 import sys
 import time
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -24,6 +26,10 @@ log = logging.getLogger("telegram_dashboard.ai")
 MAX_MESSAGES = 30
 MAX_CONTEXT_CHARS = 16_000
 MAX_INSTRUCTION_CHARS = 2_000
+# Set per request: an async "has the browser gone?" check; a gone caller kills its claude run.
+client_gone: contextvars.ContextVar[Callable[[], Awaitable[bool]] | None] = contextvars.ContextVar(
+    "client_gone", default=None
+)
 AGENT_TIMEOUT = 180.0
 PROJECT_AGENT_TIMEOUT = 600.0  # reading a codebase takes longer
 SCOPES = ("draft", "summary")
@@ -266,15 +272,25 @@ class AiService:
         except OSError as e:
             log.warning("AI agent not started: %s", type(e).__name__)
             raise ApiError(502, "ai_provider_error") from None
+        gone = client_gone.get()
+        comm = asyncio.ensure_future(proc.communicate(f"{SYSTEM_PROMPT}\n\n{user_prompt}".encode()))
+        deadline = time.monotonic() + (PROJECT_AGENT_TIMEOUT if project else AGENT_TIMEOUT)
         try:
-            out, _ = await asyncio.wait_for(
-                proc.communicate(f"{SYSTEM_PROMPT}\n\n{user_prompt}".encode()),
-                PROJECT_AGENT_TIMEOUT if project else AGENT_TIMEOUT,
-            )
-        except TimeoutError:
-            proc.kill()
+            while not comm.done():
+                await asyncio.wait({comm}, timeout=min(1.0, max(0.0, deadline - time.monotonic())))
+                if comm.done():
+                    break
+                if gone is not None and await gone():  # the user pressed Hủy: stop burning quota
+                    raise ApiError(499, "ai_cancelled")
+                if time.monotonic() >= deadline:
+                    raise ApiError(504, "ai_timeout")
+        except BaseException:
+            comm.cancel()
+            if proc.returncode is None:
+                proc.kill()
             await proc.wait()
-            raise ApiError(504, "ai_timeout") from None
+            raise
+        out, _ = comm.result()
         text = out.decode(errors="replace").strip()
         if proc.returncode != 0 or not text:
             log.warning("AI agent exit code %s", proc.returncode)
@@ -457,9 +473,12 @@ async def _oauth_get(client: httpx.AsyncClient, token: str, path: str) -> dict:
 
 
 USAGE_WINDOWS = {
-    "five_hour": "5 giờ", "seven_day": "7 ngày",
-    "seven_day_opus": "7 ngày · Opus", "seven_day_sonnet": "7 ngày · Sonnet",
+    "five_hour": "5h", "seven_day": "1w",
+    "seven_day_opus": "1w · Opus", "seven_day_sonnet": "1w · Sonnet",
 }  # fmt: skip
+# The usage API rate-limits hard (429); show the last good reading instead of an empty quota.
+# ponytail: process memory only, lost on restart until the next good reading.
+_last_usage: dict = {}
 
 
 async def _claude_details() -> dict:
@@ -472,6 +491,10 @@ async def _claude_details() -> dict:
             _oauth_get(c, token, "profile"), _oauth_get(c, token, "usage")
         )
     acc, org = profile.get("account") or {}, profile.get("organization") or {}
+    if usage:
+        _last_usage.clear()
+        _last_usage.update(usage)
+    usage = _last_usage
     windows = [
         {"label": label, "percent": w["utilization"], "resets_at": w.get("resets_at")}
         for key, label in USAGE_WINDOWS.items()

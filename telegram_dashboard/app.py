@@ -20,6 +20,7 @@ from .ai import (
     claude_login_code,
     claude_logout,
     claude_prefs,
+    client_gone,
     delete_task_files,
     grant_problem,
     open_task,
@@ -316,6 +317,7 @@ def create_app(
     @app.post("/api/ai/draft")
     async def ai_draft(body: AiDraftRequest, request: Request) -> AiResult:
         s = S(request)
+        client_gone.set(request.is_disconnected)
         nearby, images = None, []
         if not settings.ai_require_consent:  # extras carry no consent grants
             ids = [_int_or_404(i, "message_not_found") for i in body.message_ids]
@@ -336,6 +338,7 @@ def create_app(
 
     @app.post("/api/ai/summary")
     async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:
+        client_gone.set(request.is_disconnected)
         return await S(request).ai.run("summary", body.chat_id, body.message_ids)
 
     # ---- Digest: chat-wide consent, live history, structured summary ------------

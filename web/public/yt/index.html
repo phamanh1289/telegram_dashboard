@@ -16,12 +16,17 @@
 </head>
 <body class="loading boot">
 <div id="msg" role="alert"></div>
+<!-- top bar shared with the Telegram module (src/components/inbox.tsx): module switch left, shared settings right -->
+<div class="tbar">
+  <nav class="modsw" aria-label="Chuyển module">
+    <a href="/" title="Chuyển sang Telegram Inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>Telegram</a>
+    <a href="/yt/" aria-current="page" title="YouTrack"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>YouTrack</a>
+  </nav>
+  <button type="button" class="ibtn" id="theme" title="Đổi giao diện sáng / tối" aria-label="Đổi giao diện sáng / tối"><span id="ticon" aria-hidden="true"></span></button>
+  <a class="ibtn" href="/?settings=shared" title="Cài đặt chung: giao diện, Claude, YouTrack, kết nối" aria-label="Cài đặt chung"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></a>
+</div>
 <div class="app">
 <aside class="side" id="side">
-  <nav class="modsw" aria-label="Chuyển module">
-    <a href="/" title="Telegram Inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg><span class="t">Telegram</span></a>
-    <a href="/yt/" aria-current="page" title="YouTrack"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="t">YouTrack</span></a>
-  </nav>
   <div class="brand" id="brand" title="Bấm để làm mới dữ liệu"><span class="logo" id="logo"></span><div class="bt">YouTrack<small>Dashboard</small></div></div>
   <nav class="nav" id="view" aria-label="Trang">
     <button type="button" data-v="active" title="Ticket active"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span class="t">Ticket active</span></button>
@@ -32,7 +37,6 @@
     <button type="button" class="nbtn" id="printBtn" title="In hoặc lưu PDF trang đang xem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9V3h12v6M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg><span class="t">In / PDF</span></button>
     <button type="button" class="nbtn" id="csv" title="Xuất danh sách đang lọc (các cột đang hiện) ra CSV"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span class="t">Xuất CSV</span></button>
     <button type="button" class="nbtn" id="mockBtn" title="Chuyển qua lại giữa dữ liệu mẫu và dữ liệu thật"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg><span class="t" id="mockT"></span></button>
-    <button type="button" class="nbtn" id="theme" title="Đổi giao diện sáng/tối"><span id="ticon" aria-hidden="true"></span><span class="t">Sáng / Tối</span></button>
     <div class="me" id="me" hidden></div>
   </div>
 </aside>

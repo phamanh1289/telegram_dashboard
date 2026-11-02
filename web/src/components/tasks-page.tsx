@@ -5,6 +5,7 @@ import { ArrowLeft, Bot, CheckCircle2, ChevronDown, CornerDownLeft, FolderGit2, 
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ModelEffortPicker } from "@/components/settings";
 import { api, ApiError, type Message, type Task } from "@/lib/api";
 import { ALL, timeLabel, useNow, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
@@ -180,6 +181,7 @@ function TaskCard({ t, now, onOpenGroup, onUseText }: {
   const reopen = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/reopen`, { method: "POST" }), onSettled: refresh });
   const capture = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/capture`, { method: "POST" }), onSettled: refresh });
   const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: refresh });
+  const stop = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/stop`, { method: "POST" }), onSettled: refresh });
   const canReply = !!t.chat_id && !!t.message_id;
 
   const toggle = "flex w-fit items-center gap-1 rounded-sm text-left text-xs font-medium text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink";
@@ -260,6 +262,12 @@ function TaskCard({ t, now, onOpenGroup, onUseText }: {
       </section>
 
       <div className="flex flex-wrap gap-2 border-t pt-4">
+        {running && headless && (
+          <Button size="sm" variant="outline" className="hover:bg-error-wash hover:text-error" aria-busy={stop.isPending} disabled={stop.isPending}
+            title="Dừng AI đang chạy phiên này (giữ hội thoại, có thể nhắn tiếp hoặc chạy lại)" onClick={() => stop.mutate()}>
+            {stop.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Square className="fill-current" aria-hidden />} {stop.isPending ? "Đang dừng…" : "Dừng"}
+          </Button>
+        )}
         {!t.result && t.interactive && (
           <Button size="sm" aria-busy={capture.isPending} disabled={capture.isPending}
             title="AI không ghi báo cáo? Lấy phần chữ cuối trong Terminal làm kết quả"
@@ -285,7 +293,7 @@ function TaskCard({ t, now, onOpenGroup, onUseText }: {
           <Trash2 /> Xóa
         </Button>
       </div>
-      {(reopen.isError || remove.isError || capture.isError) && <p role="alert" className="text-xs text-error">Thao tác thất bại (không mở được Terminal?).</p>}
+      {(reopen.isError || remove.isError || capture.isError || stop.isError) && <p role="alert" className="text-xs text-error">Thao tác thất bại (không mở được Terminal?).</p>}
     </li>
   );
 }
@@ -309,7 +317,8 @@ export function TasksPage({ onBack, onOpenGroup, onUseText }: {
           <span className="font-mono text-ink tabular-nums">{all.length}</span> phiên
           {running > 0 && <>, <span className="font-mono text-ink tabular-nums">{running}</span> đang chạy</>}
         </p>
-        <div className="ml-auto flex gap-1" role="group" aria-label="Lọc phiên">
+        <ModelEffortPicker task className="ml-auto hidden sm:grid" />
+        <div className="ml-auto flex gap-1 sm:ml-0" role="group" aria-label="Lọc phiên">
           {FILTERS.map(([id, label]) => (
             <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}
               className={cn("h-7 whitespace-nowrap rounded-md border px-2.5 text-xs transition-[background-color,border-color,color] duration-(--dur-micro)",
