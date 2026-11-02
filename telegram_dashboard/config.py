@@ -61,6 +61,8 @@ class Settings:
     ai_task_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # macOS banner for each live tag (NOTIFY=0 turns it off).
     notify: bool = True
+    # Reaction sent on Telegram when a tag is marked done (removed on reopen); empty = off.
+    done_reaction: str = "👍"
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
@@ -131,6 +133,7 @@ class Settings:
             ai_task_model=env["AI_TASK_MODEL"].strip() if "AI_TASK_MODEL" in env else Settings.ai_task_model,
             ai_task_effort=env["AI_TASK_EFFORT"].strip() if "AI_TASK_EFFORT" in env else Settings.ai_task_effort,
             notify=env.get("NOTIFY", "1").strip() != "0",
+            done_reaction=env.get("DONE_REACTION", Settings.done_reaction).strip(),
             youtrack_url=saved.get("url") or env.get("YOUTRACK_URL") or env.get("YT_URL") or None,
             youtrack_token=saved.get("token")
             or env.get("YOUTRACK_TOKEN")

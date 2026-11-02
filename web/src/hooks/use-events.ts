@@ -2,7 +2,7 @@
 
 import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type Status } from "@/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type Status, type Task } from "@/lib/api";
 import { readNotify } from "@/lib/prefs";
 
 type Listener = (items: ChangeItem[]) => void;
@@ -80,6 +80,10 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
     });
     void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
     void qc.invalidateQueries({ queryKey: ["pending"] });
+    // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
+    if (qc.getQueryData<Task[]>(["tasks"])?.some((t) => t.chat_id === it.chat_id && t.message_id === it.message_id)) {
+      void qc.invalidateQueries({ queryKey: ["tasks"] });
+    }
   }
   if (items.length) listeners.forEach((cb) => cb(items));
   notifyNew(items);

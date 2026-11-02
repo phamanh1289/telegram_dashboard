@@ -225,11 +225,19 @@ function Inbox({ status }: { status: Status }) {
     else setMenuOpen((v) => !v);
   }
   const [jump, setJump] = useState(0);
-  function go(id: string | null) {
+  const [focus, setFocus] = useState<string | null>(null); // item to show in the opened view: a message, or a task on AI Agent
+  function go(id: string | null, focusId?: string) {
     selectChat(id);
+    setFocus(focusId ?? null);
     setJump((n) => n + 1);
     setMenuOpen(false);
   }
+  // "Mở phiên" on a tagged message (lib/inbox `openTask`)
+  useEffect(() => {
+    const onOpen = (e: Event) => go(TASKS, (e as CustomEvent<string>).detail);
+    addEventListener("open-task", onOpen);
+    return () => removeEventListener("open-task", onOpen);
+  });
 
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
@@ -359,7 +367,7 @@ function Inbox({ status }: { status: Status }) {
                 {chatId === BRIEFING ? (
                   <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
-                  <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
+                  <TasksPage focus={focus} onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
@@ -370,6 +378,7 @@ function Inbox({ status }: { status: Status }) {
                   onDigest={status.ai_configured ? () => { setReplyTo(null); setDigest(true); } : undefined}
                   onUseText={useText}
                   chatId={chatId}
+                  focus={focus}
                   range={range}
                   onBack={() => go(ALL)}
                   replyTo={replyTo?.message_id ?? null}

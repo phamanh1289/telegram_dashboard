@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { MessageItem } from "@/components/message-item";
+import { MessageItem, revealMessage } from "@/components/message-item";
 import { BulkBar, RowsSkeleton } from "@/components/pending-inbox";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useChatMessages } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
-import { dayLabel, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { dayLabel, toast, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 export function MessageList({
@@ -29,7 +29,9 @@ export function MessageList({
   onUseText,
   itemsRef,
   onDigest,
+  focus,
 }: {
+  focus?: string | null; // message id to scroll to and flash once loaded (e.g. "Mở nhóm" from an AI task)
   onUseText: (m: Message, text: string) => void;
   onDigest?: () => void; // open the AI summary of the whole conversation
   range: string;
@@ -42,7 +44,7 @@ export function MessageList({
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState("");
-  const [pendingOnly, setPendingOnly] = useState(true);
+  const [pendingOnly, setPendingOnly] = useState(!focus); // the focused message may already be handled
   const [confirmAll, setConfirmAll] = useState(false);
   const markAll = useMutation({
     mutationFn: () =>
@@ -86,6 +88,22 @@ export function MessageList({
     if (box.current) anchor.current = box.current.scrollHeight - box.current.scrollTop;
     void query.fetchNextPage();
   };
+
+  // Focus: page back until the message is loaded, then center and flash it (once).
+  const sought = useRef(focus);
+  useEffect(() => {
+    const id = sought.current;
+    if (!id || !query.isSuccess || query.isFetchingNextPage) return;
+    const el = box.current?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
+    if (el) {
+      sought.current = null;
+      revealMessage(el);
+    } else if (query.hasNextPage) loadOlder();
+    else {
+      sought.current = null;
+      toast({ text: `Không thấy tin #${id} trong nhóm (ngoài khoảng thời gian đang lọc?)` });
+    }
+  });
 
   const error = query.error instanceof ApiError ? query.error.code : query.error ? "error" : null;
 

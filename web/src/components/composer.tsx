@@ -1,9 +1,9 @@
 "use client";
 
-import { Bot, Bug, Check, ChevronDown, ExternalLink, Loader2, Send, Sparkles, Square, X } from "lucide-react";
+import { Bot, Bug, Check, ExternalLink, Loader2, Send, Sparkles, Square, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
+import { ContextPanel, inline, MessageActions } from "@/components/message-item";
 import { ProjectPicker } from "@/components/project-picker";
 import { ModelEffortPicker } from "@/components/settings";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,11 @@ const ERRORS: Record<string, string> = {
   not_connected: "Chưa kết nối Telegram. Bản nháp vẫn được giữ.",
   forbidden: "Không có quyền gửi trong nhóm này.",
   request_payload_mismatch: "Nội dung đã đổi so với yêu cầu đang chờ.",
+};
+
+const TASK_MODE_NOTE = {
+  plan: "AI đọc dự án và lập phương án, không sửa gì. Chạy ngầm, nhắn tiếp ngay trong tab AI Agent.",
+  edit: "Như Chỉ đọc nhưng AI được tự sửa file trong dự án. Lệnh shell vẫn bị chặn.",
 };
 
 export function Composer({
@@ -86,12 +91,10 @@ export function Composer({
   const [analysis, setAnalysis] = useState("");
   const [picked, setPicked] = useState(0); // which AI option is in the textarea
   const [taskNote, setTaskNote] = useState<string | null>(null); // AI Agent dialog: only the user's extra prompt
-  const [taskMode, setTaskMode] = useState<"plan" | "edit" | "terminal">("plan");
+  const [taskMode, setTaskMode] = useState<"plan" | "edit">("plan");
   const [aiPrompt, setAiPrompt] = useState("");
-  // Panel layout: the assistant block remembers open/closed per browser; a long quote starts folded.
+  // Panel layout: the assistant block remembers open/closed per browser.
   const [aiOpen, setAiOpen] = useState(false);
-  const [quoteOpen, setQuoteOpen] = useState(false);
-  const quoteLong = (replyTo?.text.length ?? 0) > 280 || (replyTo?.text.split("\n").length ?? 0) > 4;
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore after mount
     try { setAiOpen(localStorage.composerAiOpen === "1"); } catch {}
@@ -174,6 +177,7 @@ export function Composer({
   // Tagged message (+ nearby context) + the user's prompt -> AI summary, next steps and reply options.
   // Aborting the request is the cancel: the server sees the browser go and kills the claude run.
   const askAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => askAbort.current?.abort(), []); // Esc / closing the reply unmounts: stop its run
   const ask = useMutation({
     mutationFn: () => {
       askAbort.current = new AbortController();
@@ -319,26 +323,9 @@ export function Composer({
           <X />
         </Button>
       </div>
-      {/* Flex column: an expanded quote shrinks to the leftover height and scrolls itself, so tools/AI stay visible below. */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 *:shrink-0">
-      {replyTo && (
-        <section aria-label="Tin được tag" className="grid min-h-28 shrink! content-start gap-1.5 overflow-y-auto">
-          <div className="rounded-[var(--radius-card)] bg-paper-2 px-3 py-2.5">
-            <p id="reply-quote" className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55] text-ink", !quoteOpen && "line-clamp-4")}>
-              {replyTo.text ? richText(replyTo) : "[không có chữ]"}
-            </p>
-            {quoteLong && (
-              <button type="button" aria-expanded={quoteOpen} aria-controls="reply-quote" onClick={() => setQuoteOpen((v) => !v)}
-                className="mt-1 inline-flex items-center gap-1 rounded-sm text-xs font-medium text-hl-2 hover:underline">
-                {quoteOpen ? "Thu gọn" : "Xem đầy đủ"}
-                <ChevronDown className={cn("size-3.5 transition-transform duration-(--dur-short) ease-out", quoteOpen && "rotate-180")} aria-hidden />
-              </button>
-            )}
-          </div>
-          {targetDeleted && <p role="alert" className="text-xs text-error">Tin đích đã bị xóa.</p>}
-          <Collapse open={showContext}>{showContext && <ContextPanel m={replyTo} />}</Collapse>
-        </section>
-      )}
+      {targetDeleted && <p role="alert" className="text-xs text-error">Tin đích đã bị xóa.</p>}
+      {replyTo && <Collapse open={showContext}>{showContext && <ContextPanel m={replyTo} />}</Collapse>}
       {replyTo && (aiConfigured || youtrackConfigured) && (
         <div aria-label="Công cụ" role="group" className="grid grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))] gap-2">
           {aiConfigured && (
@@ -401,7 +388,7 @@ export function Composer({
                     <Square className="fill-current" aria-hidden /> Hủy
                   </Button>
                 )}
-                <ModelEffortPicker className="ml-auto" />
+                <ModelEffortPicker slider />
               </div>
               {ask.isPending ? (
                 <AiThinking />
@@ -541,32 +528,9 @@ export function Composer({
           <DialogDescription render={<div />}>
             Dùng khi tin tag là <b className="font-semibold text-ink">việc cần làm trong code</b> (sửa bug, thêm tính năng…), không chỉ cần trả lời.
           </DialogDescription>
-          <fieldset className="grid gap-2 sm:grid-cols-3">
-            <legend className="sr-only">Cách chạy</legend>
-            {([
-              ["plan", "Chỉ đọc", "AI đọc dự án và lập phương án, không sửa gì. Chạy ngầm, nhắn tiếp ngay trong tab AI Agent."],
-              ["edit", "Được sửa file", "Như trên nhưng AI được tự sửa file trong dự án. Lệnh shell vẫn bị chặn."],
-              ["terminal", "Terminal", "Mở Terminal, bạn duyệt từng bước (sửa file, chạy lệnh) ở đó."],
-            ] as const).map(([id, title, note]) => (
-              <label key={id} className={cn(
-                "grid cursor-pointer grid-cols-[auto_1fr] content-start gap-x-2 gap-y-1 rounded-md border p-3 transition-[border-color,background-color] duration-(--dur-micro) has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus",
-                taskMode === id ? "border-ink-2 bg-cotton shadow-edge" : "border-rule hover:border-rule-2 hover:bg-paper-2",
-              )}>
-                <input type="radio" name="task-mode" className="mt-[3px] size-3.5 accent-(--color-board)" checked={taskMode === id} onChange={() => setTaskMode(id)} />
-                <span className="flex flex-wrap items-baseline gap-x-1.5 text-sm font-medium leading-5 text-ink">
-                  {title}{id === "plan" && <span className="text-xs font-normal text-ok">khuyên dùng</span>}
-                </span>
-                <span className="col-start-2 text-xs leading-relaxed text-ink-2">{note}</span>
-              </label>
-            ))}
-          </fieldset>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-ink-3">Dự án</span>
             <ProjectPicker value={project} onChange={onProjectChange} />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-ink-3">Model</span>
-            <ModelEffortPicker task />
           </div>
           <div className="flex min-h-40 flex-1 flex-col gap-2">
             <label htmlFor="task-note" className="text-xs font-medium text-ink-3">
@@ -576,6 +540,16 @@ export function Composer({
               value={taskNote ?? ""} onChange={(e) => setTaskNote(e.target.value)}
               placeholder="Ví dụ: chỉ sửa màn hình đăng nhập, ưu tiên Android" />
           </div>
+          <fieldset className="flex flex-wrap gap-x-4 gap-y-1.5">
+            <legend className="sr-only">Cách chạy</legend>
+            {([["plan", "Chỉ đọc"], ["edit", "Được sửa file"]] as const).map(([id, title]) => (
+              <label key={id} className="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
+                <input type="radio" name="task-mode" className="size-3.5 accent-(--color-board)" checked={taskMode === id} onChange={() => setTaskMode(id)} />
+                {title}{id === "plan" && <span className="text-xs text-ok">khuyên dùng</span>}
+              </label>
+            ))}
+            <p className="w-full text-xs text-ink-3">{TASK_MODE_NOTE[taskMode]}</p>
+          </fieldset>
           {task.isError && (
             <p role="alert" className="text-sm text-error">
               {task.error instanceof ApiError && task.error.code === "project_not_found"
@@ -586,10 +560,11 @@ export function Composer({
             </p>
           )}
           <DialogFooter>
+            <ModelEffortPicker task slider className="sm:mr-auto" />
             <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
             <Button type="button" aria-busy={task.isPending} disabled={!projectOk || !replyTo || task.isPending}
               onClick={() => replyTo && task.mutate(taskPrompt(replyTo, taskNote ?? ""))}>
-              {task.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Bot />} {task.isPending ? "Đang khởi động…" : taskMode === "terminal" ? "Mở Terminal" : "Bắt đầu"}
+              {task.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Bot />} {task.isPending ? "Đang khởi động…" : "Bắt đầu"}
             </Button>
           </DialogFooter>
         </DialogContent>

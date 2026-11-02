@@ -39,6 +39,7 @@ class FakeTransport:
     groups: list[GroupInfo] = field(default_factory=list)
     history: dict[str, list[StoredMessage]] = field(default_factory=dict)
     send_calls: list[dict] = field(default_factory=list)
+    reactions: list[tuple] = field(default_factory=list)
     send_impl: object = None
     connect_impl: object = None
     fail_fetch_after: int = 0
@@ -102,6 +103,9 @@ class FakeTransport:
         if self.send_impl:
             return await self.send_impl(call)
         return SentMessage(message_id=1000 + len(self.send_calls))
+
+    async def send_reaction(self, chat_id, message_id, emoji):
+        self.reactions.append((chat_id, message_id, emoji))
 
 
 class Env:

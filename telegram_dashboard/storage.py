@@ -650,15 +650,15 @@ class Store:
 
     def mark_all_handled(
         self, chat_id: str, since: datetime | None = None, until: datetime | None = None
-    ) -> int:
-        """Mark every pending tag in a chat (within [since, until)) handled; returns how many."""
+    ) -> list[int]:
+        """Mark every pending tag in a chat (within [since, until)) handled; returns their ids."""
         with self._conn(write=True) as c:
             ids = [r[0] for r in c.execute(
                 "SELECT message_id FROM messages WHERE chat_id=?1 AND outgoing=0 AND handled=0 "
                 "AND deleted=0 AND (?2 IS NULL OR date>=?2) AND (?3 IS NULL OR date<?3)",
                 (chat_id, _ts(since), _ts(until)),
             )]  # fmt: skip
-            return sum(self._set_handled(c, chat_id, i, True) for i in ids)
+            return [i for i in ids if self._set_handled(c, chat_id, i, True)]
 
     def _set_handled(self, c: sqlite3.Connection, chat_id: str, message_id: int, handled: bool):
         chat = self._chat(c, chat_id)
@@ -977,7 +977,8 @@ class Store:
         """Newest first, with a peek at the tagged message so the task list stands alone."""
         with self._conn() as c:
             rows = c.execute(
-                "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text "
+                "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, "
+                "COALESCE(m.handled, 0) AS handled "
                 "FROM tasks t LEFT JOIN chats c ON c.chat_id=t.chat_id "
                 "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
                 "WHERE ?1 IS NULL OR t.chat_id=?1 ORDER BY t.created_at DESC LIMIT 200",

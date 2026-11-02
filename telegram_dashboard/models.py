@@ -229,6 +229,7 @@ class TaskDTO(BaseModel):
     chat_title: str | None = None
     sender_name: str | None = None
     message_text: str | None = None
+    handled: bool = False  # the tagged message was marked done
 
 
 class YouTrackRequest(BaseModel):

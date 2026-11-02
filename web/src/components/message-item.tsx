@@ -1,14 +1,14 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlarmClock, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
+import { AlarmClock, Bot, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
-import { clockLabel, dbId, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
+import { clockLabel, dbId, openTask, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -240,6 +240,10 @@ function MessageRow({
                 Task {t.result ? "đã có kết quả" : "đang làm…"}
               </span>
               <span className="inline-flex items-center gap-1 font-normal text-ink-3"><FolderGit2 className="size-3" aria-hidden /> {t.project.split("/").pop()}</span>
+              <button type="button" onClick={() => openTask(t.id)} title="Mở lại phiên AI này ở trang AI Agent"
+                className="ml-auto inline-flex items-center gap-1 rounded-sm font-normal text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
+                <Bot className="size-3.5" aria-hidden /> Mở phiên
+              </button>
             </p>
             {t.result && (
               <>
@@ -262,8 +266,13 @@ function MessageRow({
 function jumpTo(from: Element, id: string) {
   const el = from.closest("ol")?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
   if (!el) return toast({ text: `Tin #${id} không có trong danh sách (chỉ lưu tin tag/reply bạn)` });
+  revealMessage(el);
+}
+
+/** Center a message row (a long one from its top) and flash it. */
+export function revealMessage(el: HTMLElement) {
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ block: "center", behavior: still ? "auto" : "smooth" });
+  el.scrollIntoView({ block: el.offsetHeight > innerHeight / 2 ? "start" : "center", behavior: still ? "auto" : "smooth" });
   el.animate([{ backgroundColor: "var(--color-hl-wash)" }, { backgroundColor: "transparent" }], { duration: 1600, easing: "ease-out" });
 }
 

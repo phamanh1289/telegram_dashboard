@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, CheckCircle2, ChevronDown, CornerDownLeft, FolderGit2, Square, Loader2, MessageSquare, RotateCcw, RotateCw, SquareTerminal, Trash2, Users, Wrench } from "lucide-react";
+import { ArrowLeft, Bot, CheckCheck, CheckCircle2, ChevronDown, CornerDownLeft, FolderGit2, Square, Loader2, MessageSquare, RotateCcw, RotateCw, SquareTerminal, Trash2, Users, Wrench } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -212,9 +212,10 @@ function TaskRow({ t, now, active, onSelect }: { t: Task; now: number; active: b
           {s === "running" && <span className="absolute inset-0 animate-ping rounded-full bg-info/25" aria-hidden />}
           <StatusIcon s={s} className="size-4" />
         </span>
-        <span className="truncate text-sm font-medium text-ink">{t.message_text || t.prompt}</span>
+        <span className={cn("truncate text-sm font-medium", t.handled ? "text-ink-3" : "text-ink")}>{t.message_text || t.prompt}</span>
         <span className="flex min-w-0 gap-1.5 text-xs text-ink-3">
           <span className={cn("shrink-0", s === "running" && "text-info")}>{STATUS_LABEL[s]}</span>·
+          {t.handled && <><span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-ok" title="Tin tag đã đánh dấu xử lý"><CheckCheck className="size-3" aria-hidden /> Đã xử lý</span>·</>}
           <span className="truncate">{t.chat_title || t.project.split("/").pop()}</span>·
           <time className="shrink-0" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>{ago(t.created_at, now)}</time>
         </span>
@@ -225,7 +226,7 @@ function TaskRow({ t, now, active, onSelect }: { t: Task; now: number; active: b
 
 /** The selected session: status and actions on top, scrolling content, input pinned at the bottom. */
 function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
-  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string) => void; onUseText: (m: Message, text: string) => void;
+  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string) => void; onUseText: (m: Message, text: string) => void;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -276,6 +277,11 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           <Button size="icon-sm" variant="ghost" className="-ml-2 md:hidden" onClick={onBack} aria-label="Về danh sách phiên"><ArrowLeft /></Button>
           <StatusBadge s={statusOf(t)} />
+          {t.handled && (
+            <span className="inline-flex items-center gap-1 font-medium text-ok" title="Tin tag của phiên này đã đánh dấu xử lý">
+              <CheckCheck className="size-3.5" aria-hidden /> Tin đã xử lý
+            </span>
+          )}
           <span className="rounded-sm border border-rule px-1.5 py-0.5 text-ink-2">
             {{ plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal" }[t.mode ?? "terminal"]}
           </span>
@@ -306,7 +312,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
             </Button>
           )}
           {t.chat_id && (
-            <Button size="sm" variant="outline" onClick={() => onOpenGroup(t.chat_id!)}>Mở nhóm</Button>
+            <Button size="sm" variant="outline" title="Mở nhóm và cuộn tới tin đã giao việc" onClick={() => onOpenGroup(t.chat_id!, t.message_id ?? undefined)}>Mở nhóm</Button>
           )}
           <Button size="sm" variant="outline" aria-busy={reopen.isPending} disabled={reopen.isPending}
             title="Chạy lại từ đầu cùng yêu cầu (xóa hội thoại và kết quả cũ)"
@@ -329,13 +335,14 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
 }
 
 /** Every task handed to the AI: the list on the left, the selected session on the right. */
-export function TasksPage({ onBack, onOpenGroup, onUseText }: {
-  onBack: () => void; onOpenGroup: (chatId: string) => void; onUseText: (m: Message, text: string) => void;
+export function TasksPage({ focus, onBack, onOpenGroup, onUseText }: {
+  focus?: string | null; // task to select on open ("Mở phiên" from a tagged message)
+  onBack: () => void; onOpenGroup: (chatId: string, messageId?: string) => void; onUseText: (m: Message, text: string) => void;
 }) {
   const q = useTaskList();
   const now = useNow();
   const [filter, setFilter] = useState<Filter>("all");
-  const [sel, setSel] = useState<string | null>(null); // null on phones = show the list
+  const [sel, setSel] = useState<string | null>(focus ?? null); // null on phones = show the list
   const all = q.data ?? [];
   const running = all.filter((t) => t.running).length;
   const rows = all.filter((t) => filter === "all" || (filter === "running") === !!t.running);

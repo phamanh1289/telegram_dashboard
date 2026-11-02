@@ -110,6 +110,8 @@ export const markHandled = (m: Message, handled: boolean) =>
 export type ToastMsg = { text: string; undo?: () => unknown };
 /** Show a toast (rendered by the inbox shell); `undo` adds a "Hoàn tác" button and the z shortcut. */
 export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("toast", { detail: t }));
+/** Open the AI Agent page on this task (handled by the inbox shell). */
+export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
 
 /** Mark done or reopen; marking done offers an undo. */
 export async function setHandled(ms: Message[], handled: boolean) {

@@ -118,7 +118,7 @@ def create_app(
             from .telegram import TelethonTransport
 
             t = TelethonTransport(settings)
-        bridge = TelegramBridge(st, db, t, notify=settings.notify)
+        bridge = TelegramBridge(st, db, t, notify=settings.notify, reaction=settings.done_reaction)
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
         app.state.ai = AiService(settings, st, db)
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
@@ -226,7 +226,8 @@ def create_app(
         mid = _int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")
-        await s.db.write(s.store.set_handled, chat_id, mid, body.handled)
+        if await s.db.write(s.store.set_handled, chat_id, mid, body.handled):
+            s.bridge.react(chat_id, [mid], body.handled)
 
     @app.post("/api/chats/{chat_id}/handled-all")
     async def handled_all(
@@ -236,8 +237,9 @@ def create_app(
         until: datetime | None = None,
     ) -> HandledAllResponse:
         s = S(request)
-        n = await s.db.write(s.store.mark_all_handled, chat_id, since, until)
-        return HandledAllResponse(count=n)
+        ids = await s.db.write(s.store.mark_all_handled, chat_id, since, until)
+        s.bridge.react(chat_id, ids, True)
+        return HandledAllResponse(count=len(ids))
 
     @app.get("/api/changes")
     async def changes(
@@ -503,7 +505,7 @@ def create_app(
                 running=S(request).agent.running(r["id"]) if r["mode"] != "terminal"
                 else read_task_result(settings, r["id"]) is None,
                 chat_title=r["chat_title"], sender_name=r["sender_name"],
-                message_text=r["message_text"],
+                message_text=r["message_text"], handled=bool(r["handled"]),
             )
             for r in rows
         ]  # fmt: skip

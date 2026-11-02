@@ -1558,6 +1558,11 @@ export interface components {
             sender_name?: string | null;
             /** Message Text */
             message_text?: string | null;
+            /**
+             * Handled
+             * @default false
+             */
+            handled?: boolean;
         };
         /** TaskInput */
         TaskInput: {

@@ -59,12 +59,13 @@ class Transport(Protocol):
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage: ...
+    async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
 
 
 class TelegramBridge:
     def __init__(
         self, store: Store, db: Db, transport: Transport | None, *, retry_delay=RETRY_DELAY,
-        notify: bool = False,
+        notify: bool = False, reaction: str = "",
     ):
         self.store = store
         self.db = db
@@ -77,6 +78,9 @@ class TelegramBridge:
         self._tasks: dict[str, asyncio.Task] = {}
         self._main: asyncio.Task | None = None
         self._send_lock = asyncio.Lock()
+        self.reaction = reaction  # emoji mirrored on Telegram when a tag is marked done ("" = off)
+        self._react_lock = asyncio.Lock()
+        self._bg: set[asyncio.Task] = set()
         if transport is not None:
             transport.attach(self)
 
@@ -251,6 +255,24 @@ class TelegramBridge:
 
     async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]:
         return await self.ensure_connected().fetch_ids(chat_id, ids)
+
+    def react(self, chat_id: str, message_ids: list[int], done: bool) -> None:
+        """Mirror "done" on Telegram as a reaction (reopen removes it). Background, best effort:
+        a group that forbids reactions or a dropped connection never fails the mark itself."""
+        if not (self.reaction and message_ids and self.transport) or self.state != "connected":
+            return
+        emoji = self.reaction if done else None
+        task = asyncio.create_task(self._react(chat_id, message_ids, emoji))
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
+    async def _react(self, chat_id: str, message_ids: list[int], emoji: str | None) -> None:
+        async with self._react_lock:  # in click order, so a quick undo ends with no reaction
+            for mid in message_ids:
+                try:
+                    await self.transport.send_reaction(chat_id, mid, emoji)
+                except Exception as e:
+                    log.warning("reaction not sent: %s", type(e).__name__)
 
     async def on_deleted(self, chat_id: str | None, message_ids: list[int]) -> None:
         try:
@@ -580,6 +602,15 @@ class TelethonTransport:
         msgs = await self.client.get_messages(int(chat_id), ids=ids, wait_time=0)  # ≤4 chunks
         keep = [m for m in msgs if m is not None and not getattr(m, "action", None)]
         return [await self._convert(m) for m in keep]
+
+    async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None:
+        from telethon.tl import functions, types
+
+        peer = await self.client.get_input_entity(int(chat_id))
+        reaction = [types.ReactionEmoji(emoticon=emoji)] if emoji else []  # [] removes ours
+        await self.client(
+            functions.messages.SendReactionRequest(peer=peer, msg_id=message_id, reaction=reaction)
+        )
 
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None

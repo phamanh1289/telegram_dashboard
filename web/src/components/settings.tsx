@@ -464,10 +464,18 @@ function useClaudePrefs() {
 }
 
 /** Model + effort dropdowns inline (reply panel, AI Agent); the same saved prefs as the Claude dialog. */
-export function ModelEffortPicker({ task = false, className }: { task?: boolean; className?: string }) {
+export function ModelEffortPicker({ task = false, slider = false, className }: { task?: boolean; slider?: boolean; className?: string }) {
   const { p, set } = useClaudePrefs();
   if (!p) return null;
   const [m, e, what] = task ? (["task_model", "task_effort", "Task và AI Agent"] as const) : (["model", "effort", "tóm tắt và soạn nháp"] as const);
+  if (slider) {
+    return (
+      <span role="group" aria-label={`Model và effort cho ${what}`} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
+        <span className="w-32"><Dropdown label={`Model cho ${what}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={MODELS} /></span>
+        <EffortSlider label={`Effort cho ${what}`} value={p[e]} onChange={(v) => set({ [e]: v })} className="w-28" />
+      </span>
+    );
+  }
   return (
     <span role="group" aria-label={`Model và effort cho ${what}`} title={`Model và effort cho ${what} (lưu chung với Cài đặt → Tài khoản Claude)`}
       className={cn("grid w-56 grid-cols-2 gap-1.5", className)}>
@@ -494,9 +502,9 @@ function ClaudePrefsSection() {
               <span className="text-sm font-medium text-ink">{title}</span>
               <span className="text-xs text-ink-3">{hint}</span>
             </span>
-            <span className="grid grid-cols-2 gap-2">
+            <span className="grid items-center gap-2 sm:grid-cols-2">
               <Dropdown label={`Model cho ${title}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={MODELS} />
-              <Dropdown label={`Effort cho ${title}`} value={p[e]} onChange={(v) => set({ [e]: v as ClaudePrefs["effort"] })} options={EFFORTS} />
+              <EffortSlider label={`Effort cho ${title}`} value={p[e]} onChange={(v) => set({ [e]: v })} className="flex-1" />
             </span>
           </li>
         ))}
@@ -504,6 +512,29 @@ function ClaudePrefsSection() {
       <p className="text-xs text-ink-3">Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn. Áp dụng từ lần chạy kế tiếp.</p>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được lựa chọn. Thử lại.</p>}
     </section>
+  );
+}
+
+// Effort steps tint green (fast, cheap) → amber → red (slow, costly); the track past the thumb is dimmed.
+const EFFORT_TINT = ["var(--color-ok)", "color-mix(in oklch, var(--color-ok), var(--color-warn))", "var(--color-warn)",
+  "color-mix(in oklch, var(--color-warn), var(--color-error))", "var(--color-error)"];
+
+function EffortSlider({ label, value, onChange, className }: {
+  label: string; value: string; onChange: (v: ClaudePrefs["effort"]) => void; className?: string;
+}) {
+  const i = Math.max(0, EFFORTS.findIndex((o) => o.value === value));
+  const pct = (i / (EFFORTS.length - 1)) * 100;
+  return (
+    <label className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
+      Effort
+      <input type="range" min={0} max={EFFORTS.length - 1} step={1} value={i} aria-label={label} aria-valuetext={EFFORTS[i].label}
+        onChange={(ev) => onChange(EFFORTS[Number(ev.target.value)].value as ClaudePrefs["effort"])}
+        className={cn("hue-range", className)} style={{
+          "--track": `linear-gradient(to right, transparent ${pct}%, color-mix(in oklch, var(--color-paper-2) 80%, transparent) ${pct}%), linear-gradient(to right, ${EFFORT_TINT.join(", ")})`,
+          "--thumb": EFFORT_TINT[i],
+        } as React.CSSProperties} />
+      <span className="w-16 shrink-0 font-medium text-ink">{EFFORTS[i].label}</span>
+    </label>
   );
 }
 

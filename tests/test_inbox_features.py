@@ -118,6 +118,10 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     store.track_mention(A, "Alpha", "supergroup")
     store.add_task("t1", A, 4, "/tmp/proj", "sửa bug login")
     assert client.get("/api/tasks").json()[0]["result"] is None
+    assert client.get("/api/tasks").json()[0]["handled"] is False  # message not stored yet
+    store.apply_message(msg(A, 4, "@me login crash"))
+    client.put(f"/api/chats/{A}/messages/4/handled", json={"handled": True}, headers=H)
+    assert client.get("/api/tasks").json()[0]["handled"] is True  # the task follows its tag
     p = task_result_path(settings, "t1")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("Đã sửa crash login iOS, PR #42")
@@ -137,6 +141,34 @@ def test_date_range_filters_lists(client):
     assert msgs == []
     r = client.post(f"/api/chats/{B}/handled-all?{day}", headers=H).json()
     assert r == {"count": 1}
+
+
+def test_done_mirrors_as_telegram_reaction(client):
+    import time
+
+    _seed(client.app.state.store)
+    bridge = client.app.state.bridge
+    fake = bridge.transport
+
+    def reactions(n):
+        for _ in range(100):  # sent in the background
+            if len(fake.reactions) >= n:
+                return fake.reactions
+            time.sleep(0.02)
+        return fake.reactions
+
+    for _ in range(100):
+        if bridge.state == "connected":
+            break
+        time.sleep(0.02)
+    url = f"/api/chats/{A}/messages/1/handled"
+    client.put(url, json={"handled": True}, headers=H)
+    assert reactions(1) == [(A, 1, "👍")]
+    client.put(url, json={"handled": True}, headers=H)  # unchanged: nothing sent
+    client.put(url, json={"handled": False}, headers=H)  # reopened: reaction removed
+    assert reactions(2) == [(A, 1, "👍"), (A, 1, None)]
+    assert client.post(f"/api/chats/{B}/handled-all", headers=H).json() == {"count": 1}
+    assert reactions(3)[-1] == (B, 2, "👍")
 
 
 def test_task_terminal_needs_known_tab(client):
