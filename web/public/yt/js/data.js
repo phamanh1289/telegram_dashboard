@@ -89,7 +89,7 @@ export async function load(silent, pre) {
     render();
     stamp = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
     if (MOCK) say('Đang xem dữ liệu MẪU để kiểm tra màu — bỏ ?mock=1 trên URL để quay lại dữ liệu thật.');
-    else if (S.cfg.mock) say('Đang dùng dữ liệu MOCK. Đặt YT_TOKEN trong .env rồi chạy lại server để xem dữ liệu thật.');
+    else if (S.cfg.mock) say('Đang dùng dữ liệu MOCK. Dán token YouTrack trong Cài đặt (Telegram Inbox) để xem dữ liệu thật.');
   } catch (e) { ok = false; say('Lỗi: ' + e.message); }
   finally {
     busy = false; next = Date.now() + PERIOD * 1000;

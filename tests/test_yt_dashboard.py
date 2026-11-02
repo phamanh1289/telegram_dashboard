@@ -65,6 +65,6 @@ async def test_upstream_401_maps_to_message():
     try:
         await svc.yt("/api/users/me")
     except YtError as e:
-        assert e.status == 401 and "YOUTRACK_TOKEN" in e.message
+        assert e.status == 401 and "Cài đặt" in e.message
     else:
         raise AssertionError("expected YtError")

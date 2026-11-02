@@ -26,7 +26,7 @@ const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] tex
 // Bare URLs, @username mentions (not inside e-mails) and `code` the sender typed literally.
 const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`/g;
 
-function inline(text: string, key: number) {
+export function inline(text: string, key: number) {
   const out: React.ReactNode[] = [];
   let at = 0;
   for (const x of text.matchAll(INLINE)) {

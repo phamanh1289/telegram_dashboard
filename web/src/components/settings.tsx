@@ -1,6 +1,7 @@
 "use client";
 
-import { Monitor, Moon, Sun, Trash2 } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ExternalLink, Monitor, Moon, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
@@ -8,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { StreamState } from "@/hooks/use-events";
-import type { Status } from "@/lib/api";
+import { api, ApiError, type ClaudeAccount, type Status } from "@/lib/api";
 import { applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -101,6 +102,14 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
           <RulesSection />
         </Section>
 
+        <Section title="Tài khoản Claude" hint="Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI dùng tài khoản này.">
+          <ClaudeSection />
+        </Section>
+
+        <Section title="YouTrack" hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
+          <YouTrackSection />
+        </Section>
+
         <Section title="Kết nối">
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
             <dt className="text-ink-3">Telegram</dt>
@@ -110,7 +119,7 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
             <dt className="text-ink-3">AI</dt>
             <dd className={status.ai_configured ? "text-ok" : "text-ink-3"}>{status.ai_configured ? "Đã cấu hình" : "Chưa cấu hình"}</dd>
             <dt className="text-ink-3">YouTrack</dt>
-            <dd className={status.youtrack_configured ? "text-ok" : "text-ink-3"}>{status.youtrack_configured ? "Đã cấu hình" : "Chưa cấu hình (cần YOUTRACK_URL, YOUTRACK_TOKEN, YOUTRACK_PROJECT)"}</dd>
+            <dd className={status.youtrack_configured ? "text-ok" : "text-ink-3"}>{status.youtrack_configured ? "Đã cấu hình" : "Chưa cấu hình (dán token ở mục YouTrack; tạo issue cần thêm YOUTRACK_PROJECT)"}</dd>
           </dl>
         </Section>
 
@@ -119,6 +128,115 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const PLANS: Record<string, string> = { pro: "Pro", max: "Max", team: "Team", enterprise: "Enterprise", free: "Free" };
+
+/** `claude auth login` opens Anthropic's sign-in in the browser; the CLI keeps the token, never this page. */
+function ClaudeSection() {
+  const qc = useQueryClient();
+  const acc = useQuery({
+    queryKey: ["claude-account"],
+    queryFn: ({ signal }) => api<ClaudeAccount>("/claude/account", { signal }),
+    refetchInterval: (q) => (q.state.data?.login_pending ? 2000 : false), // until the browser finishes
+  });
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["claude-account"] });
+  const login = useMutation({ mutationFn: () => api<{ url: string | null }>("/claude/login", { method: "POST" }), onSettled: refresh });
+  const logout = useMutation({ mutationFn: () => api("/claude/logout", { method: "POST" }), onSettled: refresh });
+  const [code, setCode] = useState("");
+  const paste = useMutation({
+    mutationFn: () => api("/claude/login/code", { method: "POST", json: { code: code.trim() } }),
+    onSuccess: () => setCode(""),
+    onSettled: refresh,
+  });
+  const a = acc.data;
+  const url = a?.login_url ?? login.data?.url;
+  if (acc.isError) return <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>;
+  if (!a) return <p className="text-sm text-ink-3">Đang kiểm tra…</p>;
+  return (
+    <div className="grid gap-2">
+      {a.loggedIn ? (
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
+          <dt className="text-ink-3">Email</dt><dd className="truncate text-ok">{a.email ?? "—"}</dd>
+          <dt className="text-ink-3">Tổ chức</dt><dd className="truncate">{a.orgName ?? "—"}</dd>
+          <dt className="text-ink-3">Gói</dt><dd>{PLANS[a.subscriptionType ?? ""] ?? a.subscriptionType ?? a.authMethod ?? "—"}</dd>
+        </dl>
+      ) : (
+        <p className="text-sm text-ink-3">Chưa đăng nhập, các tính năng AI sẽ không chạy.</p>
+      )}
+      <div className="flex gap-2">
+        <Button variant="outline" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
+          {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
+        </Button>
+        {a.loggedIn && (
+          <Button variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending} onClick={() => logout.mutate()}>Đăng xuất</Button>
+        )}
+      </div>
+      {a.login_pending && (
+        <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
+          <p className="text-xs text-ink-3">
+            Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
+          </p>
+          <div className="flex gap-2">
+            <Input aria-label="Mã đăng nhập Claude" autoComplete="off" placeholder="Mã dạng code#state" maxLength={1000}
+              value={code} onChange={(e) => setCode(e.target.value)} />
+            <Button type="submit" variant="outline" disabled={paste.isPending || code.trim().length < 8}>{paste.isPending ? "Đang xác nhận…" : "Xác nhận"}</Button>
+          </div>
+        </form>
+      )}
+      {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
+      {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
+    </div>
+  );
+}
+
+const YT_ERRORS: Record<string, string> = {
+  youtrack_unauthorized: "Token sai, đã thu hồi hoặc không đủ quyền.",
+  youtrack_unreachable: "Không kết nối được YouTrack ở URL này.",
+};
+
+/** Paste a permanent token (made on the YouTrack profile page); the server checks it before keeping it. */
+function YouTrackSection() {
+  const qc = useQueryClient();
+  const cfg = useQuery({
+    queryKey: ["yt-config"],
+    queryFn: ({ signal }) => api<{ base: string; mock: boolean }>("/yt/config", { signal }),
+  });
+  const [url, setUrl] = useState<string | null>(null); // null: still showing the server's URL
+  const [token, setToken] = useState("");
+  const base = (url ?? cfg.data?.base ?? "").trim().replace(/\/+$/, "");
+  const save = useMutation({
+    mutationFn: () => api<{ login: string; name: string }>("/youtrack/auth", { method: "PUT", json: { url: base, token: token.trim() } }),
+    onSuccess: () => {
+      setToken("");
+      void qc.invalidateQueries({ queryKey: ["yt-config"] });
+      void qc.invalidateQueries({ queryKey: ["status"] });
+    },
+  });
+  const err = save.error instanceof ApiError ? YT_ERRORS[save.error.code] : null;
+  return (
+    <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+      <p className={cn("text-sm", save.isSuccess || cfg.data?.mock === false ? "text-ok" : "text-ink-3")}>
+        {save.isSuccess ? `Đã kết nối: ${save.data.name}` : cfg.data?.mock === false ? `Đang dùng ${cfg.data.base}` : "Chưa có token, trang YouTrack đang hiện dữ liệu mẫu."}
+      </p>
+      <Input aria-label="URL YouTrack" placeholder="https://youtrack.example.com" inputMode="url" maxLength={200}
+        value={url ?? cfg.data?.base ?? ""} onChange={(e) => setUrl(e.target.value)} />
+      <div className="flex gap-2">
+        <Input aria-label="Token YouTrack" type="password" autoComplete="off" placeholder="perm-…" maxLength={500}
+          value={token} onChange={(e) => setToken(e.target.value)} />
+        <Button type="submit" variant="outline" aria-busy={save.isPending} disabled={save.isPending || !/^https?:\/\/\S+$/.test(base) || token.trim().length < 8}>
+          {save.isPending ? "Đang kiểm tra…" : "Lưu"}
+        </Button>
+      </div>
+      {/^https?:\/\/\S+$/.test(base) && (
+        <a href={`${base}/users/me?tab=account-security`} target="_blank" rel="noreferrer"
+          className="inline-flex w-fit items-center gap-1 text-xs text-hl-2 underline decoration-hl underline-offset-[3px]">
+          Tạo token trên YouTrack (Hồ sơ → Account Security → New token) <ExternalLink className="size-3" aria-hidden />
+        </a>
+      )}
+      {save.isError && <p role="alert" className="text-xs text-error">{err ?? "Không lưu được. Kiểm tra URL (bắt đầu bằng https://) và token."}</p>}
+    </form>
   );
 }
 

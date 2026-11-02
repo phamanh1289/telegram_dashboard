@@ -165,9 +165,16 @@ class AiService:
             "given: keep it short, but never drop anything important (the actual request, "
             "affected screens/features, devices/OS versions, app versions, errors, numbers, "
             "deadlines, people, links). Then give the concrete next steps for the user as a short "
-            "numbered list. Then output a line containing just === and after it "
-            "3 alternative short reply drafts (different tone or length), separated by a line "
-            "containing just ---. Plain text, no preamble."
+            "numbered list. Write this part in Markdown so it scans fast: short bullets led by a "
+            "bold label (e.g. **Yêu cầu:**, **Ảnh hưởng:**, **Deadline:**), **bold** the key facts "
+            "(asks, decisions, blockers, dates, people), `code` for screen/API/error names and "
+            "versions; no tables. Then output a line containing just === and after it "
+            "3 short reply drafts, one per relationship, in this order: 1) the user as the "
+            "recipient's leader/manager (clear, decisive, assigns owners and deadlines); 2) the "
+            "user as a peer (friendly, collaborative); 3) the user replying to their own "
+            "leader/manager (respectful, concise, reports status and asks for a decision when "
+            "needed). Separate the drafts by a line containing just ---. The drafts are plain "
+            "text (no Markdown, no labels). No preamble."
             if kind == "draft"
             else "Summarize these messages briefly."
         )
@@ -371,6 +378,99 @@ async def terminal_send(tty: str, text: str) -> None:
     """Type one line into the task tab (what you would type there; empty = just Enter)."""
     line = " ".join(text.split())  # a newline would submit the line early
     await _in_tab(tty, f"do script {_applescript_str(line)} in t\nreturn \"ok\"")
+
+
+# ---- Claude account: the CLI's own login (the same one every AI call above uses) ----
+# The CLI owns the OAuth flow and the token (Keychain); the dashboard never sees a token.
+_login: dict = {"proc": None, "url": None}
+_LOGIN_URL = re.compile(r"https://\S+/oauth/authorize\S+")
+
+
+def _claude_exe(settings) -> str:
+    try:
+        return shlex.split(settings.ai_agent_command)[0]
+    except (ValueError, IndexError):
+        return "claude"
+
+
+def _login_pending() -> bool:
+    p = _login["proc"]
+    return p is not None and p.returncode is None
+
+
+async def claude_account(settings) -> dict:
+    """`claude auth status --json` plus whether a dashboard-started login is still waiting."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _claude_exe(settings), "auth", "status", "--json",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+        )  # fmt: skip
+        out, _ = await asyncio.wait_for(proc.communicate(), 15)
+        data = json.loads(out)
+    except (OSError, TimeoutError, ValueError):
+        raise ApiError(502, "claude_cli_unavailable") from None
+    return {**data, "login_pending": _login_pending(), "login_url": _login["url"] if _login_pending() else None}
+
+
+async def claude_login(settings) -> str | None:
+    """Start `claude auth login` (it opens the browser itself); returns the fallback URL.
+
+    The browser normally finishes on its own; if it can't, the page shows a code that
+    `claude_login_code` types into the waiting CLI.
+    """
+    if _login_pending():
+        return _login["url"]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _claude_exe(settings), "auth", "login",
+            stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )  # fmt: skip
+    except OSError:
+        raise ApiError(502, "claude_cli_unavailable") from None
+    _login.update(proc=proc, url=None)
+
+    async def read_url() -> None:
+        async for line in proc.stdout:
+            if m := _LOGIN_URL.search(line.decode(errors="replace")):
+                _login["url"] = m.group(0)
+                return
+
+    try:
+        await asyncio.wait_for(read_url(), 10)
+    except TimeoutError:
+        pass
+    # ponytail: an abandoned login keeps the CLI waiting until the next login/logout kills it.
+    asyncio.get_running_loop().create_task(proc.wait())  # reap it when it finishes
+    return _login["url"]
+
+
+async def claude_login_code(code: str) -> None:
+    """Paste the code shown by Anthropic's page into the waiting `claude auth login`."""
+    proc = _login["proc"]
+    if not _login_pending():
+        raise ApiError(409, "claude_login_not_started")
+    proc.stdin.write(code.strip().encode() + b"\n")
+    await proc.stdin.drain()
+    try:
+        await asyncio.wait_for(proc.wait(), 30)
+    except TimeoutError:
+        raise ApiError(504, "claude_login_timeout") from None
+    if proc.returncode != 0:
+        raise ApiError(422, "claude_login_failed")
+
+
+async def claude_logout(settings) -> None:
+    if _login_pending():
+        _login["proc"].kill()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _claude_exe(settings), "auth", "logout",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+        )  # fmt: skip
+        await asyncio.wait_for(proc.wait(), 15)
+    except (OSError, TimeoutError):
+        raise ApiError(502, "claude_cli_unavailable") from None
 
 
 # osascript shows the dialog itself (no Finder automation permission); `activate` brings it front.

@@ -111,6 +111,16 @@ class YouTrackDashboard:
         self._inflight: dict[str, asyncio.Future] = {}
         self._since: dict[str, int] = {}
 
+    def set_auth(self, base: str, token: str) -> None:
+        """New URL/token from Settings: next call opens a fresh client, nothing cached survives."""
+        old, self._client = self._client, None
+        if old:
+            asyncio.ensure_future(old.aclose())
+        self.base, self.token = base.rstrip("/"), token
+        self.mock = not (self.base and self.token)
+        self._cache.clear()
+        self._since.clear()
+
     async def aclose(self) -> None:
         if self._client:
             await self._client.aclose()
@@ -130,7 +140,7 @@ class YouTrackDashboard:
             raise YtError(502, "Không kết nối được YouTrack") from None
         if r.status_code >= 400:
             msg = {
-                401: "Token YouTrack không hợp lệ hoặc hết hạn — kiểm tra YOUTRACK_TOKEN",
+                401: "Token YouTrack hết hạn hoặc sai — dán token mới trong Cài đặt",
                 403: "Token YouTrack không có quyền cho thao tác này",
                 404: "ticket not found",
             }.get(r.status_code, f"YouTrack {r.status_code}: {r.text[:200]}")
@@ -271,9 +281,11 @@ class YouTrackDashboard:
 
     async def people(self, project: str):
         try:
-            team = await self.yt(
-                f"/api/admin/projects/{project}/team", fields="login,fullName", **{"$top": 1000}
+            # The team is a UserGroup object; its members are under "users".
+            group = await self.yt(
+                f"/api/admin/projects/{project}/team", fields="users(login,fullName)"
             )
+            team = group.get("users") if isinstance(group, dict) else None
             if team:
                 return [
                     {"login": u["login"], "name": u.get("fullName") or u["login"]} for u in team
@@ -387,7 +399,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         if body.login is not None and not re.match(r"^[\w.@-]{1,100}$", body.login):
             raise YtError(400, "bad login")
         if svc.mock:
-            raise YtError(503, "Chưa cấu hình YOUTRACK_URL / YOUTRACK_TOKEN")
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         field = {
             "name": "Assignee",
             "$type": "SingleUserIssueCustomField",

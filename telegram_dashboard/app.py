@@ -1,5 +1,8 @@
+import json
+import os
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -12,6 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from .agent import AgentRunner
 from .ai import (
     AiService,
+    claude_account,
+    claude_login,
+    claude_login_code,
+    claude_logout,
     delete_task_files,
     grant_problem,
     open_task,
@@ -34,6 +41,9 @@ from .models import (
     AiResult,
     AiSummaryRequest,
     ChangesPage,
+    ClaudeAccount,
+    ClaudeLoginCode,
+    ClaudeLoginStarted,
     DigestConsent,
     DigestConsentRequest,
     DigestRequest,
@@ -61,13 +71,15 @@ from .models import (
     TaskInput,
     TaskMessage,
     TaskRequest,
+    YouTrackAuth,
     YouTrackIssue,
     YouTrackRequest,
+    YouTrackUser,
     to_dto,
 )
 from .storage import Db, Store, parse_cursor
 from .telegram import TelegramBridge, Transport
-from .youtrack import create_issue
+from .youtrack import create_issue, whoami
 from .yt_dashboard import YouTrackDashboard, YtError, build_router
 
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
@@ -634,7 +646,39 @@ def create_app(
         s = S(request)
         await s.db.write(s.store.remove_rule, rule_id)
 
+    # ---- Claude account (the CLI's login) --------------------------------------
+    @app.get("/api/claude/account")
+    async def claude_status() -> ClaudeAccount:
+        return ClaudeAccount(**await claude_account(settings))
+
+    @app.post("/api/claude/login")
+    async def claude_start_login() -> ClaudeLoginStarted:
+        return ClaudeLoginStarted(url=await claude_login(settings))
+
+    @app.post("/api/claude/login/code", status_code=204)
+    async def claude_finish_login(body: ClaudeLoginCode) -> None:
+        await claude_login_code(body.code)
+
+    @app.post("/api/claude/logout", status_code=204)
+    async def claude_sign_out() -> None:
+        await claude_logout(settings)
+
     # ---- YouTrack ------------------------------------------------------------
+    @app.put("/api/youtrack/auth")
+    async def youtrack_auth(body: YouTrackAuth) -> YouTrackUser:
+        """Check a pasted URL + token with YouTrack, keep it in data/ (0600), use it now."""
+        nonlocal settings
+        url = body.url.rstrip("/")
+        user = await whoami(url, body.token)
+        settings.ensure_data_dir()
+        tmp = settings.youtrack_path.with_suffix(".tmp")
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+            json.dump({"url": url, "token": body.token}, f)
+        tmp.replace(settings.youtrack_path)
+        settings = replace(settings, youtrack_url=url, youtrack_token=body.token)
+        yt_dashboard.set_auth(url, body.token)
+        return YouTrackUser(**user)
+
     @app.post("/api/youtrack/issues")
     async def youtrack_issue(body: YouTrackRequest) -> YouTrackIssue:
         if not settings.youtrack_configured:

@@ -3,7 +3,7 @@
 import { Bot, Bug, Check, ChevronDown, ExternalLink, Loader2, Send, Sparkles, X } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { ContextPanel, MessageActions, richText } from "@/components/message-item";
+import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
 import { ProjectPicker } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +15,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, type AiResult, type Message, type Outbox, type Project, type YouTrackIssue } from "@/lib/api";
@@ -383,12 +382,10 @@ export function Composer({
                 </Button>
               </div>
               {ask.isPending ? (
-                <div aria-label="AI đang phân tích…" className="grid gap-2 rounded-[var(--radius-input)] bg-paper-2 px-3 py-3">
-                  {[85, 60, 72, 45].map((w, i) => <Skeleton key={i} className="h-3" style={{ width: `${w}%` }} />)}
-                </div>
+                <AiThinking />
               ) : analysis && (
-                <div aria-label="Tóm tắt và bước tiếp theo" className="whitespace-pre-wrap break-words rounded-[var(--radius-input)] bg-paper-2 px-3 py-2.5 text-sm leading-[1.55] text-ink animate-in fade-in-0 duration-(--dur-short)">
-                  {analysis}
+                <div aria-label="Tóm tắt và bước tiếp theo" className="grid gap-1.5 break-words rounded-[var(--radius-input)] bg-paper-2 px-3 py-2.5 text-sm leading-[1.55] text-ink-2 animate-in fade-in-0 duration-(--dur-short)">
+                  <Md text={analysis} />
                 </div>
               )}
             </div>
@@ -420,7 +417,8 @@ export function Composer({
                 }}
               />
               <span className={cn("flex items-center gap-1.5 text-xs font-medium", picked === i ? "text-hl-2" : "text-ink-3")}>
-                {picked === i && <Check className="size-3.5" aria-hidden />}Mẫu <span className="font-mono">{i + 1}</span>
+                {picked === i && <Check className="size-3.5" aria-hidden />}
+                {options.length === LEVELS.length ? LEVELS[i] : <>Mẫu <span className="font-mono">{i + 1}</span></>}
               </span>
               <span className="block min-w-0 whitespace-pre-wrap break-words text-ink">{o}</span>
             </label>
@@ -570,12 +568,12 @@ export function Composer({
         </DialogContent>
       </Dialog>
       <Dialog open={issue !== null} onOpenChange={(o) => !o && setIssue(null)}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="flex flex-col sm:max-w-xl">
           <DialogTitle>Tạo ticket YouTrack</DialogTitle>
           <DialogDescription>Tạo xong, link ticket được thêm vào khung trả lời để bạn gửi lại nhóm.</DialogDescription>
           <Input aria-label="Tiêu đề ticket" maxLength={300} value={issue?.summary ?? ""}
             onChange={(e) => setIssue((v) => v && { ...v, summary: e.target.value })} />
-          <Textarea aria-label="Mô tả ticket" rows={8} maxLength={20000} value={issue?.description ?? ""}
+          <Textarea aria-label="Mô tả ticket" className="min-h-24 flex-auto resize-none overflow-y-auto" rows={8} maxLength={20000} value={issue?.description ?? ""}
             onChange={(e) => setIssue((v) => v && { ...v, description: e.target.value })} />
           {createIssue.isError && (
             <p role="alert" className="text-sm text-error">
@@ -600,6 +598,71 @@ export function Composer({
 }
 
 /** Folds content open and closed: the row track grows from 0fr to 1fr and the content fades, so siblings below glide instead of jumping. */
+// The AI summary's Markdown: headings, -/1. lists and **bold** on top of the message look (links, @mentions, `code`).
+// React nodes only, never HTML: the text comes from the model.
+function Md({ text }: { text: string }) {
+  const out: React.ReactNode[] = [];
+  let items: React.ReactNode[] = [];
+  let ordered = false;
+  const flush = (k: number) => {
+    if (!items.length) return;
+    out.push(ordered
+      ? <ol key={`l${k}`} className="grid list-decimal gap-1 pl-5 marker:text-ink-3">{items}</ol>
+      : <ul key={`l${k}`} className="grid list-disc gap-1 pl-5 marker:text-ink-3">{items}</ul>);
+    items = [];
+  };
+  text.split("\n").forEach((line, i) => {
+    const li = /^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)/.exec(line);
+    if (li) {
+      if (items.length && ordered !== !!li[2]) flush(i);
+      ordered = !!li[2];
+      items.push(<li key={i} className={li[1].length >= 2 ? "ml-4" : undefined}>{bold(li[3], i)}</li>);
+      return;
+    }
+    flush(i);
+    const h = /^#{1,6}\s+(.*)/.exec(line);
+    if (h) out.push(<p key={i} className="mt-1 font-semibold text-ink first:mt-0">{bold(h[1], i)}</p>);
+    else if (line.trim()) out.push(<p key={i}>{bold(line, i)}</p>);
+  });
+  flush(-1);
+  return out;
+}
+
+function bold(s: string, key: number) {
+  return s.split(/\*\*(.+?)\*\*/g).map((t, i) =>
+    i % 2 ? <strong key={i} className="font-semibold text-ink">{inline(t, key * 100 + i)}</strong> : inline(t, key * 100 + i));
+}
+
+// The AI drafts come in this order (prompt in ai.py): who the user is to the person they answer.
+const LEVELS = ["Tôi là cấp trên", "Ngang cấp", "Trả lời cấp trên"];
+
+const THINKING = [
+  "Đang đọc tin nhắn…",
+  "Đang lục lại ngữ cảnh nhóm…",
+  "Đang hỏi ý kiến con Android 🤖",
+  "Đang pha cà phê cho AI ☕",
+  "Đang gọt câu trả lời cho lịch sự…",
+  "Sắp xong rồi, đợi xíu nha…",
+];
+
+// Waiting on the AI: a bouncing sparkle, a dot wave and a rotating status line (motion stops under reduced motion).
+function AiThinking() {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setI((n) => (n + 1) % THINKING.length), 2200);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <div role="status" className="flex items-center gap-3 rounded-[var(--radius-input)] bg-paper-2 px-3 py-3 text-sm text-ink-2">
+      <Sparkles aria-hidden className="ai-hop size-5 shrink-0 text-hl" />
+      <span key={i} className="min-w-0 flex-1 truncate animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">{THINKING[i]}</span>
+      <span aria-hidden className="flex shrink-0 gap-1">
+        {[0, 1, 2].map((d) => <span key={d} className="ai-dot size-1.5 rounded-full bg-hl" style={{ animationDelay: `${d * 150}ms` }} />)}
+      </span>
+    </div>
+  );
+}
+
 function Collapse({ open, id, children }: { open: boolean; id?: string; children: React.ReactNode }) {
   return (
     <div id={id} inert={!open}

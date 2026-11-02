@@ -216,3 +216,44 @@ async def test_photos_reach_the_reading_agent(env, tmp_path):
     assert str(photo) in r.text and f"\n{media}\n--model m" in r.text  # read-only, in photo dir
     r = await svc.run("summary", A, ["1"], project=str(proj), images=[photo])
     assert f"\n{proj}\n--model m --add-dir {media}" in r.text
+
+
+FAKE_CLAUDE = """#!/bin/sh
+# Stand-in `claude auth ...`: login prints the fallback URL, then waits for a pasted code.
+case "$2" in
+  status) echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "me@x.io", "subscriptionType": "max"}' ;;
+  login) echo "If the browser didn't open, visit: https://claude.com/cai/oauth/authorize?code=true&state=s"
+         read code; [ "$code" = "good-code#s" ] ;;
+  logout) exit 0 ;;
+esac
+"""
+
+
+def test_claude_account_login_with_pasted_code(tmp_path):
+    import asyncio
+
+    from telegram_dashboard import ai as mod
+
+    exe = tmp_path / "claude"
+    exe.write_text(FAKE_CLAUDE)
+    exe.chmod(0o755)
+    s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)))
+
+    async def flow():
+        acc = await mod.claude_account(s)
+        assert acc["email"] == "me@x.io" and acc["subscriptionType"] == "max"
+        assert not acc["login_pending"]
+        with pytest.raises(ApiError, match="claude_login_not_started"):
+            await mod.claude_login_code("good-code#s")
+        url = await mod.claude_login(s)
+        assert url == "https://claude.com/cai/oauth/authorize?code=true&state=s"
+        assert (await mod.claude_account(s))["login_url"] == url
+        assert await mod.claude_login(s) == url  # a second click reuses the waiting login
+        await mod.claude_login_code("good-code#s")
+        assert not (await mod.claude_account(s))["login_pending"]
+        await mod.claude_login(s)
+        with pytest.raises(ApiError, match="claude_login_failed"):
+            await mod.claude_login_code("bad-code#s")
+        await mod.claude_logout(s)
+
+    asyncio.run(flow())

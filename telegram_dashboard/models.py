@@ -236,6 +236,36 @@ class YouTrackRequest(BaseModel):
     description: str = Field(default="", max_length=20000)
 
 
+class YouTrackAuth(BaseModel):
+    url: str = Field(pattern=r"^https?://[^\s/]+(/[^\s]*)?$", max_length=200)
+    token: str = Field(min_length=8, max_length=500, pattern=r"^\S+$")
+
+
+class YouTrackUser(BaseModel):
+    login: str
+    name: str
+
+
+class ClaudeAccount(BaseModel):
+    """`claude auth status --json`, as the CLI reports it."""
+
+    loggedIn: bool = False
+    authMethod: str | None = None
+    email: str | None = None
+    orgName: str | None = None
+    subscriptionType: str | None = None
+    login_pending: bool = False
+    login_url: str | None = None
+
+
+class ClaudeLoginStarted(BaseModel):
+    url: str | None = None
+
+
+class ClaudeLoginCode(BaseModel):
+    code: str = Field(min_length=8, max_length=1000, pattern=r"^[\w\-.~#]+$")
+
+
 class YouTrackIssue(BaseModel):
     id: str
     url: str

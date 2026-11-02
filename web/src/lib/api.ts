@@ -16,6 +16,7 @@ export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
 export type YouTrackIssue = S["YouTrackIssue"];
+export type ClaudeAccount = S["ClaudeAccount"];
 export type AiPermissionResponse = S["AiPermissionResponse"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];

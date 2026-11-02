@@ -1,3 +1,4 @@
+import json
 import os
 import shlex
 import shutil
@@ -26,6 +27,14 @@ def _on_path(command: str) -> bool:
         return shutil.which(shlex.split(command)[0]) is not None
     except (ValueError, IndexError):
         return False
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 @dataclass(frozen=True)
@@ -59,6 +68,10 @@ class Settings:
     @property
     def data_dir(self) -> Path:
         return self.root / "data"
+
+    @property
+    def youtrack_path(self) -> Path:
+        return self.data_dir / "youtrack.json"  # URL + token pasted in Settings; wins over .env
 
     @property
     def db_path(self) -> Path:
@@ -97,6 +110,7 @@ class Settings:
         _load_dotenv(root / ".env")
         env = os.environ
         api_id = env.get("TELEGRAM_API_ID", "").strip()
+        saved = _read_json(root / "data" / "youtrack.json")
         return cls(
             root=root,
             app_origin=env.get("APP_ORIGIN") or f"http://{HOST}:{PORT}",
@@ -110,8 +124,11 @@ class Settings:
             ai_task_model=env["AI_TASK_MODEL"].strip() if "AI_TASK_MODEL" in env else Settings.ai_task_model,
             ai_task_effort=env["AI_TASK_EFFORT"].strip() if "AI_TASK_EFFORT" in env else Settings.ai_task_effort,
             notify=env.get("NOTIFY", "1").strip() != "0",
-            youtrack_url=env.get("YOUTRACK_URL") or env.get("YT_URL") or None,
-            youtrack_token=env.get("YOUTRACK_TOKEN") or env.get("YT_TOKEN") or None,
+            youtrack_url=saved.get("url") or env.get("YOUTRACK_URL") or env.get("YT_URL") or None,
+            youtrack_token=saved.get("token")
+            or env.get("YOUTRACK_TOKEN")
+            or env.get("YT_TOKEN")
+            or None,
             youtrack_project=env.get("YOUTRACK_PROJECT") or None,
             ai_require_consent=env.get("AI_REQUIRE_CONSENT", "1").strip() != "0",
         )

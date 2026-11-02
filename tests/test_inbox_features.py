@@ -87,6 +87,30 @@ def test_youtrack_not_configured(client):
     assert r.status_code == 503 and r.json()["error"]["code"] == "youtrack_not_configured"
 
 
+def test_youtrack_auth_checks_then_saves(client, settings, monkeypatch):
+    from telegram_dashboard import app as app_mod
+    from telegram_dashboard.errors import ApiError
+
+    async def whoami(url, token):
+        if token != "perm-good":
+            raise ApiError(400, "youtrack_unauthorized")
+        return {"login": "me", "name": "Me"}
+
+    monkeypatch.setattr(app_mod, "whoami", whoami)
+    body = {"url": "https://yt.example/", "token": "perm-bad1"}
+    r = client.put("/api/youtrack/auth", json=body, headers=H)
+    assert r.status_code == 400 and not settings.youtrack_path.exists()
+    assert client.get("/api/yt/config", headers=H).json()["mock"] is True
+
+    r = client.put("/api/youtrack/auth", json={**body, "token": "perm-good"}, headers=H)
+    assert r.json() == {"login": "me", "name": "Me"}
+    assert settings.youtrack_path.stat().st_mode & 0o777 == 0o600
+    cfg = client.get("/api/yt/config", headers=H).json()
+    assert cfg["mock"] is False and cfg["base"] == "https://yt.example"
+    saved = Settings.from_env(root=settings.root)  # survives a restart, over .env
+    assert (saved.youtrack_url, saved.youtrack_token) == ("https://yt.example", "perm-good")
+
+
 def test_task_result_shows_next_to_its_tag(client, settings):
     from telegram_dashboard.ai import task_result_path
 

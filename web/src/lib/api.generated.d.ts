@@ -682,6 +682,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/claude/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Claude Status */
+        get: operations["claude_status_api_claude_account_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claude/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude Start Login */
+        post: operations["claude_start_login_api_claude_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claude/login/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude Finish Login */
+        post: operations["claude_finish_login_api_claude_login_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/claude/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claude Sign Out */
+        post: operations["claude_sign_out_api_claude_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/youtrack/auth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Youtrack Auth
+         * @description Check a pasted URL + token with YouTrack, keep it in data/ (0600), use it now.
+         */
+        put: operations["youtrack_auth_api_youtrack_auth_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/youtrack/issues": {
         parameters: {
             query?: never;
@@ -873,6 +961,42 @@ export interface components {
             items: components["schemas"]["ChatDTO"][];
             /** Snapshot Cursor */
             snapshot_cursor: string;
+        };
+        /**
+         * ClaudeAccount
+         * @description `claude auth status --json`, as the CLI reports it.
+         */
+        ClaudeAccount: {
+            /**
+             * Loggedin
+             * @default false
+             */
+            loggedIn: boolean;
+            /** Authmethod */
+            authMethod?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Orgname */
+            orgName?: string | null;
+            /** Subscriptiontype */
+            subscriptionType?: string | null;
+            /**
+             * Login Pending
+             * @default false
+             */
+            login_pending: boolean;
+            /** Login Url */
+            login_url?: string | null;
+        };
+        /** ClaudeLoginCode */
+        ClaudeLoginCode: {
+            /** Code */
+            code: string;
+        };
+        /** ClaudeLoginStarted */
+        ClaudeLoginStarted: {
+            /** Url */
+            url?: string | null;
         };
         /** DigestConsent */
         DigestConsent: {
@@ -1345,6 +1469,13 @@ export interface components {
             /** Context */
             ctx?: Record<string, never>;
         };
+        /** YouTrackAuth */
+        YouTrackAuth: {
+            /** Url */
+            url: string;
+            /** Token */
+            token: string;
+        };
         /** YouTrackIssue */
         YouTrackIssue: {
             /** Id */
@@ -1361,6 +1492,13 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** YouTrackUser */
+        YouTrackUser: {
+            /** Login */
+            login: string;
+            /** Name */
+            name: string;
         };
     };
     responses: never;
@@ -2678,6 +2816,128 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claude_status_api_claude_account_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeAccount"];
+                };
+            };
+        };
+    };
+    claude_start_login_api_claude_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudeLoginStarted"];
+                };
+            };
+        };
+    };
+    claude_finish_login_api_claude_login_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaudeLoginCode"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    claude_sign_out_api_claude_logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    youtrack_auth_api_youtrack_auth_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["YouTrackAuth"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YouTrackUser"];
+                };
             };
             /** @description Validation Error */
             422: {

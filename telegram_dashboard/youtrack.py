@@ -7,6 +7,26 @@ from .errors import ApiError
 TIMEOUT = 20.0
 
 
+async def whoami(url: str, token: str) -> dict:
+    """Check a URL + token pair before saving it: {login, name} or ApiError."""
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+            r = await c.get(
+                f"{url}/api/users/me",
+                params={"fields": "login,fullName"},
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            )
+        if r.status_code in (401, 403):
+            raise ApiError(400, "youtrack_unauthorized")
+        r.raise_for_status()
+        u = r.json()
+        return {"login": u["login"], "name": u.get("fullName") or u["login"]}
+    except httpx.HTTPError:
+        raise ApiError(502, "youtrack_unreachable") from None
+    except (KeyError, ValueError, TypeError):
+        raise ApiError(502, "youtrack_unreachable") from None  # not a YouTrack answer
+
+
 async def create_issue(settings, summary: str, description: str) -> tuple[str, str]:
     """Returns (idReadable, browser URL)."""
     base = settings.youtrack_url.rstrip("/")
