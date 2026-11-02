@@ -5,7 +5,7 @@ import type { NextConfig } from "next";
 const isBuild = process.env.NODE_ENV === "production";
 
 const config: NextConfig = isBuild
-  ? { output: "export", images: { unoptimized: true } }
+  ? { output: "export", images: { unoptimized: true }, trailingSlash: true } // /youtrack/ -> out/youtrack/index.html
   : {
       async rewrites() {
         return [{ source: "/api/:path*", destination: "http://127.0.0.1:8765/api/:path*" }];

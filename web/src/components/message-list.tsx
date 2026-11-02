@@ -4,7 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem, revealMessage } from "@/components/message-item";
-import { BulkBar, RowsSkeleton } from "@/components/pending-inbox";
+import { RowsSkeleton } from "@/components/pending-inbox";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useChatMessages } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
-import { dayLabel, msgKey, smooth, toast, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { dayLabel, msgKey, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 export function MessageList({
@@ -69,7 +69,6 @@ export function MessageList({
   const tasks = useTasks();
   const focused = useListShortcuts(items, onReply);
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
-  const sel = useSelection();
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
   const box = useRef<HTMLDivElement>(null);
@@ -137,19 +136,18 @@ export function MessageList({
           </div>
         )}
         <div className="ml-auto flex items-center gap-1">
-        {!searching && !sel.on && pendingOnly && items.length > 0 && (
+        {!searching && pendingOnly && items.length > 0 && (
           <Button size="xs" variant="outline" onClick={() => setConfirmAll(true)}
             title="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý">
             <CheckCheck /> Xong tất cả
           </Button>
         )}
-        {!searching && !sel.on && onDigest && (
+        {!searching && onDigest && (
           <Button size="xs" variant="outline" onClick={onDigest} title="AI tóm tắt hội thoại của nhóm: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần confirm gì">
             <Sparkles /> Tóm tắt
           </Button>
         )}
-        {!searching && <BulkBar sel={sel} items={items} />}
-        {!sel.on && <Button
+        <Button
           size="icon-sm"
           variant="ghost"
           aria-label={searching ? "Đóng tìm kiếm" : "Tìm kiếm"}
@@ -159,7 +157,7 @@ export function MessageList({
           }}
         >
           {searching ? <X /> : <Search />}
-        </Button>}
+        </Button>
         </div>
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -220,13 +218,10 @@ export function MessageList({
               clock
               m={m}
               isReplyTarget={replyTo === msgKey(m)}
-              checked={sel.has(m)}
-              selectMode={sel.on}
               now={now}
               focused={focused === msgKey(m)}
               tasks={tasks.get(msgKey(m))}
               onReply={onReply}
-              onToggle={sel.toggle}
               onUseText={onUseText}
             />
             </Fragment>

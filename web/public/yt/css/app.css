@@ -61,6 +61,19 @@ html, body { overflow-x: clip; } /* also in base.css; restated so this sheet sta
 /* the shared module switch: a groove with the current module pressed in */
 .modsw { display: flex; gap: var(--space-3xs); padding: var(--space-3xs); margin-right: auto; border-radius: var(--radius-card); background: var(--color-paper-3); box-shadow: var(--press-groove); }
 .modsw a { display: flex; align-items: center; gap: var(--space-xs); min-height: 32px; padding-inline: 10px; font-size: var(--text-sm); border-radius: var(--radius-input); color: var(--color-ink-3); font-weight: 500; text-decoration: none; white-space: nowrap; transition: color var(--dur-micro) var(--ease-out); }
+/* Claude quota pill: mirrors ClaudeQuota in src/components/claude.tsx */
+.cq { display: flex; align-items: center; gap: var(--space-xs); height: 32px; padding-inline: 8px; border-radius: var(--radius-input); font-size: var(--text-xs); color: var(--color-ink-3); text-decoration: none; transition: background-color var(--dur-micro), color var(--dur-micro); }
+.cq[hidden] { display: none; }
+.cq:hover { background: var(--color-paper-3); color: var(--color-ink); }
+.cq.ok > svg { color: var(--color-ok); } .cq.warn > svg { color: var(--color-warn); } .cq.bad > svg { color: var(--color-error); }
+.cq .u { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cq .u.off { color: var(--color-warn); font-weight: 500; }
+.cq b { font-weight: 500; color: var(--color-ink-2); }
+.cq .u > i { display: block; width: 32px; height: 4px; overflow: hidden; border-radius: 99px; background: var(--color-paper-3); }
+.cq .u > i > i { display: block; height: 100%; border-radius: 99px; background: var(--color-hl); }
+.cq .u > i.warn > i { background: var(--color-warn); } .cq .u > i.bad > i { background: var(--color-error); }
+.cq .n { font-family: var(--font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; color: var(--color-ink-2); }
+@media (max-width: 639px) { .cq .u { display: none; } }
 .modsw a[aria-current] { background: var(--hl-fill); box-shadow: var(--hl-glow); animation: var(--hl-flow); color: var(--color-hl-ink); }
 .modsw a:not([aria-current]):hover { color: var(--color-ink); }
 

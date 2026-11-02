@@ -107,6 +107,17 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         assert '"id": "VA-1"' in p and '"id": "VA-2"' in p and p.count('"id": "VA-1"') == 1
         assert "Phạm vi: Sprint 3" in p
         assert '"telegram": []' in p  # consent required: no Telegram text reaches the AI
+        r = await c.post("/api/yt/ai/tickets", json={**body, "kind": "today"})
+        assert "kế hoạch hôm nay" in agent.calls[1]  # Dev mode: a day plan, not the lead review
+        ask = {"kind": "ask", "data": {"wip": 3}, "question": "ai quá tải?"}
+        r = await c.post("/api/yt/ai/data", json=ask)
+        assert "<ask>ai quá tải?</ask>" in agent.calls[2] and '"wip": 3' in agent.calls[2]
+        try:  # this bare app has no YtError handler: the error surfaces as is
+            await c.post("/api/yt/ai/data", json={"kind": "ask", "data": {}})
+        except YtError as e:
+            assert e.status == 400
+        else:
+            raise AssertionError("expected YtError")
 
 
 async def test_qc_query_failure_other_than_400_is_not_hidden():

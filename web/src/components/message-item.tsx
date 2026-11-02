@@ -5,7 +5,6 @@ import { AlarmClock, Bot, CheckCheck, ClipboardList, CornerDownRight, ExternalLi
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
 import { clockLabel, dbId, msgKey, openTask, pin, setHandled, smooth, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
@@ -94,12 +93,8 @@ export type MessageItemProps = {
   focused?: boolean;
   groupTitle?: string; // shown in the cross-group inbox
   isReplyTarget: boolean;
-  checked?: boolean;
-  selectMode?: boolean;
-  canCheck?: boolean;
   tasks?: Task[];
   onReply: (m: Message) => void;
-  onToggle?: (m: Message) => void;
   onUseText: (m: Message, text: string) => void; // put a task result into the composer
 };
 
@@ -116,7 +111,7 @@ export function MessageItem(props: MessageItemProps) {
 }
 
 function MessageRow({
-  m, head, clock, now, focused, groupTitle, isReplyTarget, checked, selectMode, canCheck = true, tasks, onReply, onToggle, onUseText,
+  m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, onUseText,
 }: MessageItemProps) {
   const [showContext, setShowContext] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -139,7 +134,6 @@ function MessageRow({
       className={cn(
         "group/row relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3 px-4 py-3 transition-colors duration-(--dur-micro) animate-in fade-in-0 duration-(--dur-short) hover:bg-paper-2 @xl:px-5",
         selected && "bg-linear-to-r from-hl-wash to-hl-wash/35 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-hl",
-        selectMode && checked && "bg-hl-wash/60",
         !head && !groupTitle && "pt-1.5",
         "cursor-pointer",
       )}
@@ -148,22 +142,11 @@ function MessageRow({
         const sel = window.getSelection();
         const selecting = !!sel?.toString() && !!sel.anchorNode && e.currentTarget.contains(sel.anchorNode);
         if (selecting || (e.target as HTMLElement).closest("a,button,select,input,label")) return;
-        if (selectMode) onToggle?.(m); // selecting: the whole row toggles the checkbox
-        else onReply(m);
+        onReply(m);
       }}
     >
-      {/* Gutter: the sender's avatar opens a run of their messages; the checkbox takes its place while selecting. */}
-      <div className="pt-px">
-        {selectMode && onToggle ? (
-          <Checkbox
-            aria-label={`Chọn tin #${m.message_id}`}
-            checked={!!checked}
-            disabled={!checked && !canCheck}
-            onCheckedChange={() => onToggle(m)}
-            className="mt-0.5"
-          />
-        ) : (head || groupTitle) && <Avatar name={name} />}
-      </div>
+      {/* Gutter: the sender's avatar opens a run of their messages. */}
+      <div className="pt-px">{(head || groupTitle) && <Avatar name={name} />}</div>
 
       <div className="min-w-0">
         {/* One line: who, where, when and the wait on the left; ID and actions on the right. */}

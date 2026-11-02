@@ -6,6 +6,7 @@ import { fetchRows, load, loadPeople, refreshMs, switchProject, tick } from './d
 import { restoreFilters, savedFilters } from './persist.js';
 import { say } from './ui/status.js';
 import { initTheme } from './ui/theme.js';
+import { initClaudeQuota } from './ui/claudeQuota.js';
 import { initSidebar, setView, showUser } from './ui/sidebar.js';
 import { initFilterBar, initMultiSelects } from './ui/filters.js';
 import { initTable } from './ui/table.js';
@@ -18,7 +19,7 @@ import { initStateChange } from './ui/stateChange.js';
 import { initDashAi } from './views/dashboard.js';
 import { initAiFilter } from './ui/aiFilter.js';
 
-const wireUi = () => [initTheme, initSidebar, initMultiSelects, initFilterBar, initTable, initTooltip, initDrawer, initDetail, initGlobalFind, initKeyboard, initStateChange, initDashAi, initAiFilter].forEach((f) => f());
+const wireUi = () => [initTheme, initClaudeQuota, initSidebar, initMultiSelects, initFilterBar, initTable, initTooltip, initDrawer, initDetail, initGlobalFind, initKeyboard, initStateChange, initDashAi, initAiFilter].forEach((f) => f());
 
 const fillProjects = (ps, wanted) => {
   $('project').innerHTML = ps.map((p) => `<option value="${esc(p.shortName)}" title="${esc(p.name)}">${esc(p.shortName)} (${esc(p.name)})</option>`).join('');

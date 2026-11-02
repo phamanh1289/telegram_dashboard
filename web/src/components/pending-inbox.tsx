@@ -1,13 +1,13 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, ListChecks, Pin, RotateCw, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowLeft, CheckCheck, Pin, RotateCw } from "lucide-react";
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Message } from "@/lib/api";
-import { fold, msgKey, pendingQuery, type Selection, setHandled, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { fold, msgKey, pendingQuery, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
 
 /** Every pending tag across groups, pinned first then oldest; or (pinned) the pinned archive. */
 export function PendingInbox({
@@ -62,7 +62,6 @@ export function PendingInbox({
   const items = useMemo(() => rows.map((p) => p.message), [rows]);
   const focused = useListShortcuts(items, onReply);
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
-  const sel = useSelection();
 
   return (
     <section aria-label="Việc cần xử lý" className="flex min-h-0 flex-col">
@@ -74,7 +73,6 @@ export function PendingInbox({
           {pinned ? "Tag đã ghim" : "Việc cần xử lý trong mọi nhóm"}
           {q.data && <span className="ml-2 font-mono text-ink-3 tabular-nums">{items.length}</span>}
         </p>
-        {!pinned && <div className="ml-auto shrink-0"><BulkBar sel={sel} items={items} /></div>}
       </div>
       <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-cotton"
         onScroll={(e) => {
@@ -121,9 +119,6 @@ export function PendingInbox({
               groupTitle={chat_title}
               focused={focused === msgKey(m)}
               isReplyTarget={replyTo === msgKey(m)}
-              selectMode={sel.on}
-              checked={sel.has(m)}
-              onToggle={sel.toggle}
               tasks={tasks.get(msgKey(m))}
               onReply={onReply}
               onUseText={onUseText}
@@ -132,35 +127,6 @@ export function PendingInbox({
         </ol>
       </div>
     </section>
-  );
-}
-
-/** Multi-select in a list toolbar: "Chọn" until on, then the count, select all, bulk "Xong" and exit. */
-export function BulkBar({ sel, items }: { sel: Selection; items: Message[] }) {
-  const open = items.filter((m) => !m.outgoing && !m.deleted && !m.handled);
-  const picked = sel.picked.filter((m) => !m.outgoing && !m.handled);
-  const done = useMutation({ mutationFn: () => setHandled(picked, true), onSuccess: sel.stop });
-  if (!sel.on) {
-    return (
-      <Button size="xs" variant="ghost" onClick={sel.start} disabled={!open.length} title="Chọn nhiều tin để đánh dấu xong cùng lúc">
-        <ListChecks /> Chọn
-      </Button>
-    );
-  }
-  const all = open.length > 0 && picked.length === open.length;
-  return (
-    <div role="toolbar" aria-label="Đang chọn nhiều tin" className="flex items-center gap-1 animate-in fade-in-0 slide-in-from-right-2 duration-(--dur-short) ease-(--ease-out)">
-      <span role="status" className="mr-1 whitespace-nowrap text-xs text-ink-2">
-        <span className="font-mono tabular-nums">{picked.length}</span> đã chọn
-      </span>
-      <Button size="xs" variant="ghost" onClick={() => sel.setAll(all ? [] : open)}>{all ? "Bỏ chọn" : "Chọn tất cả"}</Button>
-      <Button size="xs" disabled={!picked.length || done.isPending} aria-busy={done.isPending} onClick={() => done.mutate()}>
-        <CheckCheck /> Xong
-      </Button>
-      <Button size="icon-xs" variant="ghost" aria-label="Thoát chế độ chọn (Esc)" title="Thoát chế độ chọn (Esc)" onClick={sel.stop}>
-        <X />
-      </Button>
-    </div>
   );
 }
 

@@ -21,7 +21,7 @@ export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   status: Status;
-  stream: StreamState;
+  stream?: StreamState; // the YouTrack page has no live stream
 }) {
   // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [theme, setTheme] = useState<ThemePref>(readTheme);
@@ -49,8 +49,10 @@ export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
             <dt className="text-ink-3">Telegram</dt>
             <dd className={status.state === "connected" ? "text-ok" : "text-warn"}>{status.state === "connected" ? "Đã kết nối" : status.detail || status.state}</dd>
-            <dt className="text-ink-3">Cập nhật trực tiếp</dt>
-            <dd className={stream === "open" ? "text-ok" : "text-warn"}>{stream === "open" ? "Đang chạy" : stream === "connecting" ? "Đang nối lại…" : "Tạm dừng"}</dd>
+            {stream && <>
+              <dt className="text-ink-3">Cập nhật trực tiếp</dt>
+              <dd className={stream === "open" ? "text-ok" : "text-warn"}>{stream === "open" ? "Đang chạy" : stream === "connecting" ? "Đang nối lại…" : "Tạm dừng"}</dd>
+            </>}
             <dt className="text-ink-3">AI</dt>
             <dd className={status.ai_configured ? "text-ok" : "text-ink-3"}>{status.ai_configured ? "Đã cấu hình" : "Chưa cấu hình"}</dd>
             <dt className="text-ink-3">YouTrack</dt>

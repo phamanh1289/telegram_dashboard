@@ -181,3 +181,13 @@
 .ai-hop { animation: ai-hop 1.2s ease-in-out infinite; }
 .ai-dot { animation: ai-dot 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ai-hop, .ai-dot { animation: none; } }
+
+/* YouTrack module (components/yt): workflow tiers, ticket types, avatars; same mapping as public/yt/css/app.css */
+:root {
+    --st-todo: var(--cat-1); --st-doing: var(--cat-2); --st-qc: var(--cat-3); --st-dev: var(--cat-4); --st-design: var(--cat-5);
+    --st-done: var(--color-ok); --st-block: var(--color-error);
+    --ty-epic: var(--cat-3); --ty-feat: var(--cat-4); --ty-impr: var(--cat-6); --ty-task: var(--cat-2); --ty-sub: var(--cat-1);
+    --av-l: 89%; --av-c: 0.045;
+}
+.dark { --av-l: 36%; --av-c: 0.05; }
+@media print { .yt-noprint { display: none !important; } }

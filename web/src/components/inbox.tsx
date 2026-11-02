@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Moon, Newspaper, Pin, RotateCw, Search, Send, Settings, SlidersHorizontal, Sun, Wifi, WifiOff, X } from "lucide-react";
+import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
-import { ClaudeQuota } from "@/components/claude";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { BriefingPage } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
@@ -12,13 +11,14 @@ import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
 import { SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
+import { Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, BRIEFING, msgKey, PINNED, scrollToRow, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
-import { applyTheme, getPref, readTheme, setPref } from "@/lib/prefs";
+import { ALL, BRIEFING, msgKey, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
+import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const STATE_LABEL: Record<Status["state"], string> = {
@@ -113,35 +113,16 @@ function Inbox({ status }: { status: Status }) {
     setPref("sidebarCollapsed", collapsed ? "0" : "1");
     setCollapsed(!collapsed);
   }
-  // One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z.
-  const [flash, setFlash] = useState<(ToastMsg & { id: number }) | null>(null);
-  useEffect(() => {
-    const onToast = (e: Event) => setFlash({ ...(e as CustomEvent<ToastMsg>).detail, id: Date.now() });
-    addEventListener("toast", onToast);
-    return () => removeEventListener("toast", onToast);
-  }, []);
-  useEffect(() => {
-    if (!flash) return;
-    const t = setTimeout(() => setFlash(null), flash.undo ? 6000 : 3000);
-    return () => clearTimeout(t);
-  }, [flash]);
   const flashMessage = (text: string) => toast({ text });
-  function undo() {
-    const run = flash?.undo;
-    if (!run) return;
-    setFlash(null);
-    Promise.resolve(run()).then(() => toast({ text: "Đã hoàn tác" }), () => toast({ text: "Không hoàn tác được" }));
-  }
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
-  // Global keys outside text fields: ? shortcuts, / search, z undo.
+  // Global keys outside text fields: ? shortcuts, / search (z undo lives in the Toaster).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
       if (e.key === "?") setShortcuts(true);
       else if (e.key === "/") searchRef.current?.focus();
-      else if (e.key === "z" && flash?.undo) undo();
       else return;
       e.preventDefault();
     };
@@ -166,13 +147,6 @@ function Inbox({ status }: { status: Status }) {
     setReplyTo(m);
     setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
   }
-  // "Theo hệ thống": follow the OS when it flips while the page is open.
-  useEffect(() => {
-    const mq = matchMedia("(prefers-color-scheme: dark)");
-    const onChange = () => { if (readTheme() === "system") applyTheme("system", false); };
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
-  }, []);
 
   useEffect(() => {
     const url = new URL(location.href);
@@ -240,29 +214,7 @@ function Inbox({ status }: { status: Status }) {
 
   return (
     <div className={cn("grid h-dvh grid-rows-[2.75rem_minmax(0,1fr)] transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
-      {/* Top bar shared with YouTrack (public/yt/index.html .tbar): module switch left, shared settings right. */}
-      <div className="col-span-full flex items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
-        <nav aria-label="Chuyển module" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
-          <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-            <Send className="size-4 shrink-0" aria-hidden />Telegram
-          </span>
-          <a href="/yt/" title="Chuyển sang YouTrack Dashboard"
-            className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
-            <ListChecks className="size-4 shrink-0" aria-hidden />YouTrack
-          </a>
-        </nav>
-        <div className="ml-auto flex items-center gap-1">
-          <ClaudeQuota />
-          <Button size="icon-sm" variant="ghost" aria-label="Đổi giao diện sáng / tối" title="Đổi giao diện sáng / tối"
-            onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
-            <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
-          </Button>
-          <Button size="icon-sm" variant="ghost" aria-label="Cài đặt chung" title="Cài đặt chung: giao diện, Claude, YouTrack, kết nối"
-            onClick={() => setShared((s) => ({ open: true, key: s.key + 1 }))}>
-            <Settings />
-          </Button>
-        </div>
-      </div>
+      <TopBar module="telegram" onSettings={() => setShared((s) => ({ open: true, key: s.key + 1 }))} />
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
       {/* Sidebar, the YouTrack recipe: brand, views, groups, footer (the module switch lives in the top bar). */}
       <aside className={cn(
@@ -399,17 +351,7 @@ function Inbox({ status }: { status: Status }) {
       <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} />
       <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} status={status} stream={stream} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
-      {flash && (
-        <div key={flash.id} role="status" className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-50 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)">
-          <span className="py-1">{flash.text}</span>
-          {flash.undo && (
-            <button type="button" onClick={undo} title="Hoàn tác (z)"
-              className="rounded-[var(--radius-input)] px-2.5 py-1 font-semibold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
-              Hoàn tác
-            </button>
-          )}
-        </div>
-      )}
+      <Toaster />
     </div>
   );
 }

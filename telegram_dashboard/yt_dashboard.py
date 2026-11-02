@@ -51,17 +51,19 @@ class Comment(BaseModel):
 
 class AiTicket(BaseModel):
     id: str
-    kind: Literal["brief", "ready", "stuck"]
+    kind: Literal["brief", "ready", "stuck", "reply"]
 
 
 class AiData(BaseModel):
-    kind: Literal["report", "notes"]
+    kind: Literal["report", "notes", "ask"]
     data: Any
+    question: str = Field("", max_length=500)  # kind "ask" only
 
 
 class AiTickets(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=40)
     scope: str = Field("", max_length=200)  # what the user picked, e.g. "Sprint 12"
+    kind: Literal["review", "today"] = "review"
 
 
 class AiFilter(BaseModel):
@@ -89,6 +91,10 @@ AI_TICKET = {
     "stuck": "Ticket này đang kẹt (đứng lâu ở cùng state hoặc Blocked). Dựa vào bình luận và liên "
     "kết, trả lời ngắn: **Vì sao kẹt:**, **Đang chờ ai:**, **Nên làm gì để gỡ:** (1-3 việc cụ thể, "
     "nêu người cần ping). Không bịa; thiếu dữ liệu thì nói rõ.",
+    "reply": "Soạn câu trả lời cho bình luận / câu hỏi mới nhất trên ticket, từ phía người đang xử lý. "
+    "Trước tiên 1-3 dòng: **Họ đang hỏi / cần:** và **Nên trả lời:** (ý chính). Sau đó một dòng chỉ "
+    "có === rồi bản nháp bình luận ngắn, lịch sự, đúng trọng tâm (văn bản thường, không Markdown). "
+    "Chỗ chưa biết thì để [cần điền]. Không có gì cần trả lời thì nói rõ và để trống phần sau ===.",
 }
 AI_DATA = {
     "report": "Viết báo cáo sprint ngắn cho PM / team lead từ số liệu trong <data> (tính sẵn từ "
@@ -98,6 +104,8 @@ AI_DATA = {
     "notes": "Viết release notes từ các ticket đã xong trong <data>. Hai phần: **Cho người dùng:** "
     "gạch đầu dòng dễ hiểu, gom theo Tính năng mới / Cải thiện / Sửa lỗi, bỏ việc nội bộ (refactor, "
     "CI, task kỹ thuật); **Nội bộ:** đủ danh sách, mỗi dòng 'ID: mô tả ngắn'. Không bịa.",
+    "ask": "Trả lời câu hỏi trong <ask> chỉ từ số liệu dashboard trong <data>. Ngắn gọn, nêu số và ID "
+    "cụ thể; data không đủ để trả lời thì nói rõ thiếu gì.",
 }
 AI_TICKETS = (
     "Rà soát các ticket trong <tickets> (kèm tin nhắn Telegram có nhắc tới ticket, trường "
@@ -124,6 +132,17 @@ AI_TICKETS = (
     "standup được.\n"
     "Mọi ý phải kèm ID. Một ticket có thể ở nhiều mục. Không bịa; ý suy luận thì ghi '(có vẻ)'. "
     "Ngắn gọn, ưu tiên bình luận / tin nhắn mới nhất."
+)
+AI_TODAY = (
+    "Lập kế hoạch hôm nay cho một developer từ các ticket của họ trong <tickets> (kèm tin nhắn "
+    "Telegram nhắc tới ticket, trường \"telegram\"). Các nhãn in đậm, theo thứ tự, CHỈ in mục "
+    "có nội dung:\n"
+    "**Làm ngay:** tối đa 3 ticket, mỗi dòng '- ID: việc cụ thể cần làm (vì sao trước: hạn, chặn "
+    "người khác, priority, đang chờ mình trả lời)'.\n"
+    "**Trả lời / phản hồi:** '- ID: ai đang chờ, cần trả lời gì'.\n"
+    "**Đang kẹt, cần gỡ:** '- ID: kẹt vì gì → ping ai'.\n"
+    "**Để sau:** gom ngắn các ticket còn lại, mỗi dòng một ID.\n"
+    "Mọi ý phải kèm ID. Không bịa; ý suy luận thì ghi '(có vẻ)'. Ngắn, đọc trong 1 phút."
 )
 AI_FILTER = (
     "Chuyển câu của người dùng trong <ask> thành bộ lọc cho bảng ticket. <options> liệt kê giá trị "
@@ -613,7 +632,10 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         data = json.dumps(body.data, ensure_ascii=False)
         if len(data) > 60_000:
             raise YtError(413, "Quá nhiều dữ liệu cho AI, lọc bớt sprint / người")
-        return {"text": await _ai(request, f"{AI_DATA[body.kind]}\n<data>\n{data}\n</data>")}
+        ask = f"\n<ask>{body.question}</ask>" if body.kind == "ask" else ""
+        if body.kind == "ask" and not body.question.strip():
+            raise YtError(400, "Nhập câu hỏi")
+        return {"text": await _ai(request, f"{AI_DATA[body.kind]}{ask}\n<data>\n{data}\n</data>")}
 
     @r.post("/ai/tickets")
     async def ai_tickets(body: AiTickets, request: Request):
@@ -637,7 +659,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
 
         data = ",\n".join(await asyncio.gather(*map(one, ids)))
         scope = f"Phạm vi: {body.scope}\n" if body.scope else ""
-        return {"text": await _ai(request, f"{AI_TICKETS}\n{scope}<tickets>\n[{data}]\n</tickets>")}
+        head = AI_TODAY if body.kind == "today" else AI_TICKETS
+        return {"text": await _ai(request, f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>")}
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):

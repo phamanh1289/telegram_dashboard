@@ -141,39 +141,6 @@ export async function setHandled(ms: Message[], handled: boolean) {
   if (handled) toast({ text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong", undo });
 }
 
-/** Multi-select for bulk "xong"; keys are "chat:message" so it works across groups. */
-export function useSelection() {
-  const [on, setOn] = useState(false);
-  const [picked, setPicked] = useState<Map<string, Message>>(new Map());
-  const key = msgKey;
-  const stop = () => {
-    setOn(false);
-    setPicked(new Map());
-  };
-  useEffect(() => {
-    if (!on) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector("[role=dialog]")) stop();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [on]);
-  return {
-    on,
-    picked: [...picked.values()],
-    has: (m: Message) => picked.has(key(m)),
-    start: () => setOn(true),
-    stop,
-    toggle: (m: Message) =>
-      setPicked((prev) => {
-        const next = new Map(prev);
-        if (!next.delete(key(m))) next.set(key(m), m);
-        return next;
-      }),
-    setAll: (ms: Message[]) => setPicked(new Map(ms.map((m) => [key(m), m]))),
-  };
-}
-export type Selection = ReturnType<typeof useSelection>;
 
 export const pin = (m: Message, pinned: boolean) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/pin`, {
