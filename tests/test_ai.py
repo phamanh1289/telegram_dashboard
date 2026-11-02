@@ -11,7 +11,7 @@ from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import ReplyRequest
 
 FUTURE = datetime.now(UTC) + timedelta(days=1)
-AI = dict(ai_agent_command="cat", ai_model="")  # `cat` echoes the prompt back
+AI = dict(ai_agent_command="cat", ai_model="", ai_effort="")  # `cat` echoes the prompt back
 
 
 @pytest.fixture
@@ -122,7 +122,7 @@ async def test_provider_timeout_keeps_manual_reply_available(env, tmp_path, monk
     monkeypatch.setattr("telegram_dashboard.ai.AGENT_TIMEOUT", 0.2)
     env.track(A)
     env.store.apply_message(msg(A, 1, "hello", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="sleep 5", ai_model="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="sleep 5", ai_model="", ai_effort="", ai_require_consent=False)
     await expect("ai_timeout", AiService(s, env.store, env.db).run("draft", A, ["1"], ""))
     rec = await env.bridge.submit_reply(
         ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="1", text="manual")
@@ -147,7 +147,7 @@ async def test_consent_off_allows_text_but_not_deleted_or_media(env, tmp_path):
 async def test_agent_command_gets_prompt_on_stdin(env, tmp_path):
     env.track(A)
     env.store.apply_message(msg(A, 1, "hello", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="", ai_require_consent=False)
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], "be brief")
     assert "hello" in r.text and "be brief" in r.text
 
@@ -155,7 +155,7 @@ async def test_agent_command_gets_prompt_on_stdin(env, tmp_path):
 async def test_agent_command_failure_is_provider_error(env, tmp_path):
     env.track(A)
     env.store.apply_message(msg(A, 1, "hello", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="false", ai_model="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="false", ai_model="", ai_effort="", ai_require_consent=False)
     with pytest.raises(ApiError) as e:
         await AiService(s, env.store, env.db).run("draft", A, ["1"])
     assert e.value.code == "ai_provider_error"
@@ -172,7 +172,7 @@ async def test_draft_splits_options(env, tmp_path):
     script = tmp_path / "agent.sh"
     script.write_text("#!/bin/sh\ncat >/dev/null\nprintf 'Hỏi lịch họp\\n1. Xem lịch\\n===\\nOk anh\\n---\\nDạ em nhận\\n---\\n'\n")
     script.chmod(0o755)
-    s = Settings(root=tmp_path, ai_agent_command=str(script), ai_model="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command=str(script), ai_model="", ai_effort="", ai_require_consent=False)
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"])
     assert r.options == ["Ok anh", "Dạ em nhận"] and r.text == "Ok anh"
     assert r.analysis == "Hỏi lịch họp\n1. Xem lịch"
@@ -184,7 +184,7 @@ async def test_project_agent_runs_inside_registered_project(env, tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()
     s = Settings(
-        root=tmp_path, ai_agent_command="cat", ai_agent_project_command="pwd", ai_model="",
+        root=tmp_path, ai_agent_command="cat", ai_agent_project_command="pwd", ai_model="", ai_effort="",
         ai_require_consent=False,
     )  # fmt: skip
     svc = AiService(s, env.store, env.db)
@@ -208,7 +208,7 @@ async def test_photos_reach_the_reading_agent(env, tmp_path):
     env.store.add_project(str(proj), "proj")
     echo = "sh -c 'cat; echo; pwd; echo \"$@\"' agent"  # prompt, cwd, then the extra CLI args
     s = Settings(
-        root=tmp_path, ai_agent_command="false", ai_agent_project_command=echo, ai_model="m",
+        root=tmp_path, ai_agent_command="false", ai_agent_project_command=echo, ai_model="m", ai_effort="",
         ai_require_consent=False,
     )  # fmt: skip
     svc = AiService(s, env.store, env.db)
@@ -303,8 +303,11 @@ def test_claude_prefs_drive_every_claude_run(client, settings):
 
     H = {"Origin": ORIGIN}
 
-    assert model_flags(settings) == ["--model", "haiku"]  # .env defaults
-    assert model_flags(settings, task=True) == ["--model", "haiku", "--effort", "medium"]
+    assert model_flags(settings) == ["--model", "haiku", "--effort", "medium"]  # .env defaults
+    assert model_flags(settings, task=True) == ["--model", "sonnet", "--effort", "medium"]
+    settings.claude_prefs_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.claude_prefs_path.write_text('{"model": "claude-haiku-5-5"}')
+    assert model_flags(settings)[:2] == ["--model", "haiku"]  # full id -> the CLI's alias
     body = {"model": "opus", "effort": "high", "task_model": "", "task_effort": "max"}
     assert client.put("/api/claude/prefs", json=body, headers=H).json() == body
     assert client.get("/api/claude/prefs", headers=H).json() == body

@@ -50,13 +50,14 @@ class Settings:
     ai_agent_command: str = 'claude -p --tools ""'
     # Defaults below; the model/effort picked in the dashboard (data/claude.json) win over them.
     ai_model: str = "haiku"  # model for drafts/summaries/digests ("" = the CLI default)
+    ai_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # Agent used when a project is selected: read-only tools, run with cwd = project.
     ai_agent_project_command: str = (
         "claude -p --tools Read,Grep,Glob --allowedTools Read,Grep,Glob"
     )
     # Interactive agent opened in Terminal for "Tạo task" (you approve each tool there).
     ai_task_command: str = "claude"
-    ai_task_model: str = "haiku"  # model for tasks and the AI Agent ("" = the CLI default)
+    ai_task_model: str = "sonnet"  # model for tasks and the AI Agent ("" = the CLI default)
     ai_task_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # macOS banner for each live tag (NOTIFY=0 turns it off).
     notify: bool = True
@@ -123,6 +124,7 @@ class Settings:
             telegram_api_hash=env.get("TELEGRAM_API_HASH") or None,
             ai_agent_command=env.get("AI_AGENT_COMMAND") or Settings.ai_agent_command,
             ai_model=env["AI_MODEL"].strip() if "AI_MODEL" in env else Settings.ai_model,
+            ai_effort=env["AI_EFFORT"].strip() if "AI_EFFORT" in env else Settings.ai_effort,
             ai_agent_project_command=env.get("AI_AGENT_PROJECT_COMMAND")
             or Settings.ai_agent_project_command,
             ai_task_command=env.get("AI_TASK_COMMAND") or Settings.ai_task_command,

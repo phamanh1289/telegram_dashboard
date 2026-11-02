@@ -12,7 +12,7 @@ from telegram_dashboard.digest import DigestService, parse_result
 from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import DigestRequest, GroupInfo, StoredMessage
 
-AI = dict(ai_agent_command="cat", ai_model="")
+AI = dict(ai_agent_command="cat", ai_model="", ai_effort="")
 T0 = datetime(2026, 10, 30, 9, 0, tzinfo=UTC)
 
 

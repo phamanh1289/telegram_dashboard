@@ -396,10 +396,13 @@ def claude_prefs(settings) -> dict:
     """Model/effort picked in the dashboard, over the .env defaults ("" = the CLI default)."""
     saved = _read_json(settings.claude_prefs_path)
     defaults = {
-        "model": settings.ai_model, "effort": "",
+        "model": settings.ai_model, "effort": settings.ai_effort,
         "task_model": settings.ai_task_model, "task_effort": settings.ai_task_effort,
     }  # fmt: skip
-    return {k: saved[k] if isinstance(saved.get(k), str) else v for k, v in defaults.items()}
+    p = {k: saved[k] if isinstance(saved.get(k), str) else v for k, v in defaults.items()}
+    for k in ("model", "task_model"):  # full ids (claude-haiku-5-5) -> the alias the CLI knows
+        p[k] = re.sub(r"^claude-(haiku|sonnet|opus|fable)\b.*", r"\1", p[k])
+    return p
 
 
 def save_claude_prefs(settings, prefs: dict) -> None:

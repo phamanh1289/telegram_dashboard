@@ -76,7 +76,7 @@ def test_context_is_live_and_only_around_kept_tags(client):
 async def test_draft_includes_context(env, tmp_path):
     env.store.track_mention(A, "Alpha", "supergroup")
     env.store.apply_message(msg(A, 1, "@me what about this?", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="", ai_require_consent=False)
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], nearby=nearby)
     assert "login page crashes" in r.text and "<context>" in r.text
@@ -186,7 +186,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
         assert task["mode"] == "plan" and task["interactive"] is False
         ev = wait_idle(task["id"])
         assert [i["kind"] for i in ev["items"]] == ["user", "assistant", "result"]
-        assert "--model haiku --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]
+        assert "--model sonnet --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]
         assert c.get("/api/tasks").json()[0]["running"] is False
         assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "tiếp"}, headers=H).status_code == 204
         for _ in range(100):

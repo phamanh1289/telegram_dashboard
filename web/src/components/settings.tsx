@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Gauge, Monitor, Moon, Sun, Trash2 } from "lucide-react";
+import { Select } from "@base-ui/react/select";
+import { Check, ChevronDown, ExternalLink, Gauge, Monitor, Moon, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { StreamState } from "@/hooks/use-events";
 import { api, ApiError, type ClaudeAccount, type ClaudePrefs, type Status } from "@/lib/api";
 import { applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
@@ -132,8 +134,6 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
 }
 
 const PLANS: Record<string, string> = { pro: "Pro", max: "Max", team: "Team", enterprise: "Enterprise", free: "Free" };
-const MODELS: [string, string][] = [["", "Mặc định"], ["haiku", "Haiku"], ["sonnet", "Sonnet"], ["opus", "Opus"], ["fable", "Fable"]];
-const EFFORTS: [ClaudePrefs["effort"], string][] = [["", "Mặc định"], ["low", "Thấp"], ["medium", "Vừa"], ["high", "Cao"], ["xhigh", "Rất cao"], ["max", "Tối đa"]];
 
 function planLabel(a: ClaudeAccount) {
   const plan = PLANS[a.subscriptionType ?? ""] ?? a.subscriptionType ?? a.authMethod ?? "—";
@@ -226,101 +226,126 @@ function ClaudeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
   const rows: [string, React.ReactNode][] = a?.loggedIn ? [
     ["Tổ chức", a.orgName],
     ["Loại tổ chức", a.org_type?.replace(/^claude_/, "")],
-    ["Gói", planLabel(a)],
-    ["Thuê bao", a.subscription_status === "active" ? <span className="text-ok">Đang hoạt động</span> : a.subscription_status],
-    ["Dùng thêm (extra usage)", a.extra_usage == null ? null : a.extra_usage ? "Bật" : "Tắt"],
+    ["Dùng thêm", a.extra_usage == null ? null : a.extra_usage ? "Bật" : "Tắt"],
     ["Đăng nhập qua", a.authMethod],
     ["Tạo tài khoản", a.created_at && new Date(a.created_at).toLocaleDateString("vi-VN")],
   ] : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogTitle>Tài khoản Claude</DialogTitle>
-        <DialogDescription className="-mt-2">Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI chạy bằng tài khoản này.</DialogDescription>
+      {/* Head and foot stay put; only the body scrolls. */}
+      <DialogContent className="flex flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <header className="grid gap-1 border-b border-rule px-5 pt-5 pb-4">
+          <DialogTitle>Tài khoản Claude</DialogTitle>
+          <DialogDescription className="text-xs text-ink-3">Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI chạy bằng tài khoản này.</DialogDescription>
+        </header>
 
-        {acc.isError ? <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>
-          : !a ? <p className="text-sm text-ink-3">Đang kiểm tra…</p> : (
-          <>
-            {a.loggedIn ? (
-              <div className="flex items-center gap-3">
-                <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-hl-wash text-base font-semibold text-hl-ink">
-                  {(a.name ?? a.email ?? "?").trim()[0]?.toUpperCase()}
-                </span>
-                <span className="grid min-w-0">
-                  <span className="truncate font-medium text-ink">{a.name ?? a.email}</span>
-                  {a.name && <span className="truncate text-xs text-ink-3">{a.email}</span>}
-                </span>
-              </div>
-            ) : <p className="text-sm text-warn">Chưa đăng nhập, các tính năng AI sẽ không chạy.</p>}
-
-            {rows.some(([, v]) => v) && (
-              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
-                {rows.filter(([, v]) => v).map(([k, v]) => (
-                  <div key={k} className="contents"><dt className="text-ink-3">{k}</dt><dd className="truncate">{v}</dd></div>
-                ))}
-              </dl>
-            )}
-
-            {a.usage.length > 0 && (
-              <Section title="Hạn mức đã dùng">
-                <ul className="grid gap-3">
-                  {a.usage.map((u) => {
-                    const pct = Math.min(100, Math.max(0, u.percent));
-                    return (
-                      <li key={u.label} className="grid gap-1 text-sm">
-                        <span className="flex items-baseline justify-between gap-3">
-                          <span>{u.label}</span>
-                          <span className="text-xs text-ink-3"><span className="font-mono text-ink">{Math.round(pct)}%</span>{when(u.resets_at) && ` · đặt lại ${when(u.resets_at)}`}</span>
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto overscroll-contain px-5 py-5">
+          {acc.isError ? <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>
+            : !a ? <div role="status" aria-label="Đang kiểm tra…" className="grid gap-3"><Skeleton className="h-14" /><Skeleton className="h-20" /></div> : (
+            <div className="grid gap-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
+              <div className="grid gap-4 rounded-lg bg-cotton p-4 shadow-stock">
+                {a.loggedIn ? (
+                  <div className="flex items-center gap-3">
+                    <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-full bg-hl-wash text-lg font-semibold text-hl-ink">
+                      {(a.name ?? a.email ?? "?").trim()[0]?.toUpperCase()}
+                    </span>
+                    <span className="grid min-w-0 flex-1">
+                      <span className="truncate font-semibold text-ink">{a.name ?? a.email}</span>
+                      {a.name && <span className="truncate text-xs text-ink-3">{a.email}</span>}
+                    </span>
+                    <span className="grid shrink-0 justify-items-end gap-0.5 text-xs">
+                      <span className="rounded-full bg-hl-wash px-2 py-0.5 font-medium text-hl-ink">{planLabel(a)}</span>
+                      {a.subscription_status && (
+                        <span className={a.subscription_status === "active" ? "text-ok" : "text-ink-3"}>
+                          {a.subscription_status === "active" ? "Đang hoạt động" : a.subscription_status}
                         </span>
-                        <span role="meter" aria-label={`Hạn mức ${u.label}`} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}
-                          className="h-1.5 overflow-hidden rounded-full bg-paper-2 shadow-groove">
-                          <span className={cn("block h-full rounded-full", meterTone(pct))} style={{ width: `${pct}%` }} />
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </Section>
-            )}
+                      )}
+                    </span>
+                  </div>
+                ) : <p className="text-sm text-warn">Chưa đăng nhập, các tính năng AI sẽ không chạy.</p>}
 
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
-                {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
-              </Button>
-              {a.loggedIn && (
-                <Button variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending}
-                  onClick={() => (confirmOut ? logout.mutate() : setConfirmOut(true))} onBlur={() => setConfirmOut(false)}>
-                  {confirmOut ? "Bấm lần nữa để đăng xuất" : "Đăng xuất"}
-                </Button>
-              )}
-            </div>
-            {a.login_pending && (
-              <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
-                <p className="text-xs text-ink-3">
-                  Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
-                </p>
-                <div className="flex gap-2">
-                  <Input aria-label="Mã đăng nhập Claude" autoComplete="off" placeholder="Mã dạng code#state" maxLength={1000}
-                    value={code} onChange={(e) => setCode(e.target.value)} />
-                  <Button type="submit" variant="outline" disabled={paste.isPending || code.trim().length < 8}>{paste.isPending ? "Đang xác nhận…" : "Xác nhận"}</Button>
+                {rows.some(([, v]) => v) && (
+                  <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 rounded-md bg-paper-2 p-3 text-xs">
+                    {rows.filter(([, v]) => v).map(([k, v]) => (
+                      <div key={k} className="grid min-w-0 gap-0.5"><dt className="text-ink-3">{k}</dt><dd className="truncate text-ink">{v}</dd></div>
+                    ))}
+                  </dl>
+                )}
+
+                {a.usage.length > 0 && (
+                  <ul aria-label="Hạn mức đã dùng" className="grid gap-3">
+                    {a.usage.map((u) => {
+                      const pct = Math.min(100, Math.max(0, u.percent));
+                      return (
+                        <li key={u.label} className="grid gap-1.5 text-sm">
+                          <span className="flex items-baseline justify-between gap-3">
+                            <span className="text-ink-2">{u.label}</span>
+                            <span className="text-xs text-ink-3">{when(u.resets_at) && `đặt lại ${when(u.resets_at)} `}<span className="ml-1 font-mono text-sm font-medium text-ink tabular-nums">{Math.round(pct)}%</span></span>
+                          </span>
+                          <span role="meter" aria-label={`Hạn mức ${u.label}`} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}
+                            className="h-2 overflow-hidden rounded-full bg-paper-2 shadow-groove">
+                            <span className={cn("block h-full origin-left rounded-full transition-transform duration-500 ease-(--ease-out)", meterTone(pct))} style={{ transform: `scaleX(${pct / 100})` }} />
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" size="sm" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
+                    {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
+                  </Button>
+                  {a.loggedIn && (
+                    <Button variant="ghost" size="sm" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending}
+                      onClick={() => (confirmOut ? logout.mutate() : setConfirmOut(true))} onBlur={() => setConfirmOut(false)}>
+                      {confirmOut ? "Bấm lần nữa để đăng xuất" : "Đăng xuất"}
+                    </Button>
+                  )}
                 </div>
-              </form>
-            )}
-            {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
-            {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
-          </>
-        )}
+                {a.login_pending && (
+                  <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
+                    <p className="text-xs text-ink-3">
+                      Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
+                    </p>
+                    <div className="flex gap-2">
+                      <Input aria-label="Mã đăng nhập Claude" autoComplete="off" placeholder="Mã dạng code#state" maxLength={1000}
+                        value={code} onChange={(e) => setCode(e.target.value)} />
+                      <Button type="submit" variant="outline" disabled={paste.isPending || code.trim().length < 8}>{paste.isPending ? "Đang xác nhận…" : "Xác nhận"}</Button>
+                    </div>
+                  </form>
+                )}
+                {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
+                {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
+              </div>
+            </div>
+          )}
 
-        <ClaudePrefsSection />
+          <ClaudePrefsSection />
+        </div>
 
-        <DialogFooter>
+        <DialogFooter className="mx-0 mb-0">
           <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
+
+const MODELS = [
+  { value: "haiku", label: "Haiku", hint: "Nhanh, tiết kiệm hạn mức" },
+  { value: "sonnet", label: "Sonnet", hint: "Cân bằng tốc độ và chất lượng" },
+  { value: "opus", label: "Opus", hint: "Suy luận sâu, chậm hơn" },
+  { value: "fable", label: "Fable", hint: "Mạnh nhất, tốn hạn mức nhất" },
+];
+const EFFORTS = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "Extra high" },
+  { value: "max", label: "Max" },
+];
 
 /** Model + effort for each kind of claude run; saved on the server (data/claude.json), used from the next run. */
 function ClaudePrefsSection() {
@@ -334,23 +359,64 @@ function ClaudePrefsSection() {
   const p = prefs.data;
   if (!p) return null;
   const set = (patch: Partial<ClaudePrefs>) => save.mutate({ ...p, ...patch });
-  const models = (v: string) => (MODELS.some(([m]) => m === v) ? MODELS : [...MODELS, [v, v] as [string, string]]).map(([value, label]) => ({ value, label }));
-  const efforts = EFFORTS.map(([value, label]) => ({ value, label }));
   const groups = [
-    ["Tóm tắt, soạn nháp, Digest", "model", "effort"],
-    ["Task và AI Agent", "task_model", "task_effort"],
+    ["Tóm tắt, soạn nháp, Digest", "Chạy thường xuyên, nên chọn model nhanh.", "model", "effort"],
+    ["Task và AI Agent", "Đọc code và lập kế hoạch, cần model mạnh hơn.", "task_model", "task_effort"],
   ] as const;
   return (
-    <Section title="Model và mức suy nghĩ" hint="“Mặc định” để Claude Code tự chọn. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
-      {groups.map(([title, m, e]) => (
-        <div key={m} className="grid gap-1.5 text-sm">
-          <span>{title}</span>
-          <Segmented label={`Model cho ${title}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={models(p[m])} />
-          <Segmented label={`Effort cho ${title}`} value={p[e]} onChange={(v) => set({ [e]: v })} options={efforts} />
-        </div>
-      ))}
+    <section className="grid gap-2.5">
+      <h3 className="text-[0.8125rem] font-semibold text-ink-2">Model và effort</h3>
+      <ul className="grid divide-y divide-rule rounded-lg bg-cotton shadow-stock">
+        {groups.map(([title, hint, m, e]) => (
+          <li key={m} className="grid gap-3 p-4">
+            <span className="grid gap-0.5">
+              <span className="text-sm font-medium text-ink">{title}</span>
+              <span className="text-xs text-ink-3">{hint}</span>
+            </span>
+            <span className="grid grid-cols-2 gap-2">
+              <Dropdown label={`Model cho ${title}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={MODELS} />
+              <Dropdown label={`Effort cho ${title}`} value={p[e]} onChange={(v) => set({ [e]: v as ClaudePrefs["effort"] })} options={EFFORTS} />
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-ink-3">Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn. Áp dụng từ lần chạy kế tiếp.</p>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được lựa chọn. Thử lại.</p>}
-    </Section>
+    </section>
+  );
+}
+
+/** Compact select: the popup scales in from the trigger, the chosen item carries a check. */
+function Dropdown({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; hint?: string }[];
+}) {
+  return (
+    <Select.Root items={options} value={value} onValueChange={(v) => v != null && onChange(v)}>
+      <Select.Trigger aria-label={label}
+        className="group flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-2.5 text-xs font-medium text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus) data-popup-open:border-hl">
+        <Select.Value className="truncate" placeholder="Chọn" />
+        <Select.Icon><ChevronDown aria-hidden className="size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out) group-data-popup-open:rotate-180" /></Select.Icon>
+      </Select.Trigger>
+      <Select.Portal>
+        <Select.Positioner sideOffset={6} alignItemWithTrigger={false} className="z-50 outline-none">
+          <Select.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+            {options.map((o) => (
+              <Select.Item key={o.value} value={o.value}
+                className="grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2">
+                <span className="grid">
+                  <Select.ItemText className="font-medium">{o.label}</Select.ItemText>
+                  {o.hint && <span className="text-xs whitespace-nowrap text-ink-3">{o.hint}</span>}
+                </span>
+                <Select.ItemIndicator><Check aria-hidden className="size-4 text-hl" /></Select.ItemIndicator>
+              </Select.Item>
+            ))}
+          </Select.Popup>
+        </Select.Positioner>
+      </Select.Portal>
+    </Select.Root>
   );
 }
 
