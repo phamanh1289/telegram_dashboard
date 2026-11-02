@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Monitor, Moon, Sun, Trash2 } from "lucide-react";
+import { ExternalLink, Gauge, Monitor, Moon, Sun, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { StreamState } from "@/hooks/use-events";
-import { api, ApiError, type ClaudeAccount, type Status } from "@/lib/api";
+import { api, ApiError, type ClaudeAccount, type ClaudePrefs, type Status } from "@/lib/api";
 import { applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -102,7 +102,7 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
           <RulesSection />
         </Section>
 
-        <Section title="Tài khoản Claude" hint="Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI dùng tài khoản này.">
+        <Section title="Tài khoản Claude" hint="Tài khoản, hạn mức, model và effort cho mọi tính năng AI.">
           <ClaudeSection />
         </Section>
 
@@ -132,18 +132,89 @@ export function SettingsDialog({ open, onOpenChange, status, stream }: {
 }
 
 const PLANS: Record<string, string> = { pro: "Pro", max: "Max", team: "Team", enterprise: "Enterprise", free: "Free" };
+const MODELS: [string, string][] = [["", "Mặc định"], ["haiku", "Haiku"], ["sonnet", "Sonnet"], ["opus", "Opus"], ["fable", "Fable"]];
+const EFFORTS: [ClaudePrefs["effort"], string][] = [["", "Mặc định"], ["low", "Thấp"], ["medium", "Vừa"], ["high", "Cao"], ["xhigh", "Rất cao"], ["max", "Tối đa"]];
 
-/** `claude auth login` opens Anthropic's sign-in in the browser; the CLI keeps the token, never this page. */
-function ClaudeSection() {
-  const qc = useQueryClient();
-  const acc = useQuery({
+function planLabel(a: ClaudeAccount) {
+  const plan = PLANS[a.subscriptionType ?? ""] ?? a.subscriptionType ?? a.authMethod ?? "—";
+  const tier = /max_(\d+x)/.exec(a.rate_tier ?? "")?.[1];
+  return tier ? `${plan} · hạn mức Max ${tier}` : plan;
+}
+
+const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", hour12: false }) : null;
+
+/** One shared query; each viewer sets its own poll (react-query runs the shortest). Paused in hidden tabs. */
+function useClaudeAccount(every: number | false = false) {
+  return useQuery({
     queryKey: ["claude-account"],
     queryFn: ({ signal }) => api<ClaudeAccount>("/claude/account", { signal }),
-    refetchInterval: (q) => (q.state.data?.login_pending ? 2000 : false), // until the browser finishes
+    refetchInterval: (q) => (q.state.data?.login_pending ? 2000 : every), // 2s until the browser finishes
   });
+}
+
+const meterTone = (pct: number) => (pct >= 90 ? "bg-error" : pct >= 70 ? "bg-warn" : "bg-hl");
+
+/** Sidebar row: quota left at a glance, refreshed every 5 minutes; opens the Claude dialog. */
+export function ClaudeQuota({ textClass }: { textClass?: string }) {
+  const [open, setOpen] = useState(false);
+  const { data: a } = useClaudeAccount(5 * 60_000);
+  if (!a) return null;
+  const top = Math.max(0, ...a.usage.map((u) => u.percent));
+  const summary = a.loggedIn
+    ? a.usage.map((u) => `${u.label}: ${Math.round(u.percent)}%${when(u.resets_at) ? `, đặt lại ${when(u.resets_at)}` : ""}`).join("\n") || "Claude: đã đăng nhập"
+    : "Claude chưa đăng nhập";
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} title={summary} aria-label={`Hạn mức Claude. ${summary}`}
+        className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-xs text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+        <Gauge aria-hidden className={cn("size-5 shrink-0", !a.loggedIn || top >= 90 ? "text-error" : top >= 70 ? "text-warn" : "text-ok")} />
+        {a.loggedIn && a.usage.length ? (
+          <span className={cn("grid min-w-0 flex-1 gap-1", textClass)}>
+            {a.usage.slice(0, 2).map((u) => (
+              <span key={u.label} className="grid grid-cols-[3rem_minmax(0,1fr)_2.25rem] items-center gap-2 whitespace-nowrap">
+                <span>{u.label}</span>
+                <span aria-hidden className="h-1 overflow-hidden rounded-full bg-paper-3">
+                  <span className={cn("block h-full rounded-full", meterTone(u.percent))} style={{ width: `${Math.min(100, u.percent)}%` }} />
+                </span>
+                <span className="text-right font-mono tabular-nums text-ink-2">{Math.round(u.percent)}%</span>
+              </span>
+            ))}
+          </span>
+        ) : (
+          <span className={cn("truncate whitespace-nowrap font-medium", !a.loggedIn && "text-warn", textClass)}>{a.loggedIn ? "Claude" : "Claude chưa đăng nhập"}</span>
+        )}
+      </button>
+      {open && <ClaudeDialog open={open} onOpenChange={setOpen} />}
+    </>
+  );
+}
+
+/** One line in Settings; the full account, quota, login and model/effort live in the dialog. */
+function ClaudeSection() {
+  const [open, setOpen] = useState(false);
+  const { data: a, isError } = useClaudeAccount();
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="min-w-0 truncate">
+        {isError ? <span className="text-error">Không chạy được lệnh <code>claude</code></span>
+          : !a ? <span className="text-ink-3">Đang kiểm tra…</span>
+          : a.loggedIn ? <><span className="text-ok">{a.email ?? "Đã đăng nhập"}</span><span className="text-ink-3"> · {planLabel(a)}</span></>
+          : <span className="text-warn">Chưa đăng nhập</span>}
+      </span>
+      <Button variant="outline" onClick={() => setOpen(true)}>Chi tiết</Button>
+      {open && <ClaudeDialog open={open} onOpenChange={setOpen} />}
+    </div>
+  );
+}
+
+/** `claude auth login` opens Anthropic's sign-in in the browser; the CLI keeps the token, never this page. */
+function ClaudeDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const qc = useQueryClient();
+  const acc = useClaudeAccount(60_000); // live while the dialog is open
   const refresh = () => void qc.invalidateQueries({ queryKey: ["claude-account"] });
   const login = useMutation({ mutationFn: () => api<{ url: string | null }>("/claude/login", { method: "POST" }), onSettled: refresh });
   const logout = useMutation({ mutationFn: () => api("/claude/logout", { method: "POST" }), onSettled: refresh });
+  const [confirmOut, setConfirmOut] = useState(false);
   const [code, setCode] = useState("");
   const paste = useMutation({
     mutationFn: () => api("/claude/login/code", { method: "POST", json: { code: code.trim() } }),
@@ -152,42 +223,134 @@ function ClaudeSection() {
   });
   const a = acc.data;
   const url = a?.login_url ?? login.data?.url;
-  if (acc.isError) return <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>;
-  if (!a) return <p className="text-sm text-ink-3">Đang kiểm tra…</p>;
+  const rows: [string, React.ReactNode][] = a?.loggedIn ? [
+    ["Tổ chức", a.orgName],
+    ["Loại tổ chức", a.org_type?.replace(/^claude_/, "")],
+    ["Gói", planLabel(a)],
+    ["Thuê bao", a.subscription_status === "active" ? <span className="text-ok">Đang hoạt động</span> : a.subscription_status],
+    ["Dùng thêm (extra usage)", a.extra_usage == null ? null : a.extra_usage ? "Bật" : "Tắt"],
+    ["Đăng nhập qua", a.authMethod],
+    ["Tạo tài khoản", a.created_at && new Date(a.created_at).toLocaleDateString("vi-VN")],
+  ] : [];
+
   return (
-    <div className="grid gap-2">
-      {a.loggedIn ? (
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
-          <dt className="text-ink-3">Email</dt><dd className="truncate text-ok">{a.email ?? "—"}</dd>
-          <dt className="text-ink-3">Tổ chức</dt><dd className="truncate">{a.orgName ?? "—"}</dd>
-          <dt className="text-ink-3">Gói</dt><dd>{PLANS[a.subscriptionType ?? ""] ?? a.subscriptionType ?? a.authMethod ?? "—"}</dd>
-        </dl>
-      ) : (
-        <p className="text-sm text-ink-3">Chưa đăng nhập, các tính năng AI sẽ không chạy.</p>
-      )}
-      <div className="flex gap-2">
-        <Button variant="outline" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
-          {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
-        </Button>
-        {a.loggedIn && (
-          <Button variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending} onClick={() => logout.mutate()}>Đăng xuất</Button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogTitle>Tài khoản Claude</DialogTitle>
+        <DialogDescription className="-mt-2">Đăng nhập của Claude Code CLI trên máy này; mọi tính năng AI chạy bằng tài khoản này.</DialogDescription>
+
+        {acc.isError ? <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>
+          : !a ? <p className="text-sm text-ink-3">Đang kiểm tra…</p> : (
+          <>
+            {a.loggedIn ? (
+              <div className="flex items-center gap-3">
+                <span aria-hidden className="grid size-10 shrink-0 place-items-center rounded-full bg-hl-wash text-base font-semibold text-hl-ink">
+                  {(a.name ?? a.email ?? "?").trim()[0]?.toUpperCase()}
+                </span>
+                <span className="grid min-w-0">
+                  <span className="truncate font-medium text-ink">{a.name ?? a.email}</span>
+                  {a.name && <span className="truncate text-xs text-ink-3">{a.email}</span>}
+                </span>
+              </div>
+            ) : <p className="text-sm text-warn">Chưa đăng nhập, các tính năng AI sẽ không chạy.</p>}
+
+            {rows.some(([, v]) => v) && (
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
+                {rows.filter(([, v]) => v).map(([k, v]) => (
+                  <div key={k} className="contents"><dt className="text-ink-3">{k}</dt><dd className="truncate">{v}</dd></div>
+                ))}
+              </dl>
+            )}
+
+            {a.usage.length > 0 && (
+              <Section title="Hạn mức đã dùng">
+                <ul className="grid gap-3">
+                  {a.usage.map((u) => {
+                    const pct = Math.min(100, Math.max(0, u.percent));
+                    return (
+                      <li key={u.label} className="grid gap-1 text-sm">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span>{u.label}</span>
+                          <span className="text-xs text-ink-3"><span className="font-mono text-ink">{Math.round(pct)}%</span>{when(u.resets_at) && ` · đặt lại ${when(u.resets_at)}`}</span>
+                        </span>
+                        <span role="meter" aria-label={`Hạn mức ${u.label}`} aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}
+                          className="h-1.5 overflow-hidden rounded-full bg-paper-2 shadow-groove">
+                          <span className={cn("block h-full rounded-full", meterTone(pct))} style={{ width: `${pct}%` }} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Section>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
+                {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
+              </Button>
+              {a.loggedIn && (
+                <Button variant="ghost" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending}
+                  onClick={() => (confirmOut ? logout.mutate() : setConfirmOut(true))} onBlur={() => setConfirmOut(false)}>
+                  {confirmOut ? "Bấm lần nữa để đăng xuất" : "Đăng xuất"}
+                </Button>
+              )}
+            </div>
+            {a.login_pending && (
+              <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
+                <p className="text-xs text-ink-3">
+                  Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
+                </p>
+                <div className="flex gap-2">
+                  <Input aria-label="Mã đăng nhập Claude" autoComplete="off" placeholder="Mã dạng code#state" maxLength={1000}
+                    value={code} onChange={(e) => setCode(e.target.value)} />
+                  <Button type="submit" variant="outline" disabled={paste.isPending || code.trim().length < 8}>{paste.isPending ? "Đang xác nhận…" : "Xác nhận"}</Button>
+                </div>
+              </form>
+            )}
+            {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
+            {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
+          </>
         )}
-      </div>
-      {a.login_pending && (
-        <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
-          <p className="text-xs text-ink-3">
-            Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
-          </p>
-          <div className="flex gap-2">
-            <Input aria-label="Mã đăng nhập Claude" autoComplete="off" placeholder="Mã dạng code#state" maxLength={1000}
-              value={code} onChange={(e) => setCode(e.target.value)} />
-            <Button type="submit" variant="outline" disabled={paste.isPending || code.trim().length < 8}>{paste.isPending ? "Đang xác nhận…" : "Xác nhận"}</Button>
-          </div>
-        </form>
-      )}
-      {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
-      {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
-    </div>
+
+        <ClaudePrefsSection />
+
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Model + effort for each kind of claude run; saved on the server (data/claude.json), used from the next run. */
+function ClaudePrefsSection() {
+  const qc = useQueryClient();
+  const prefs = useQuery({ queryKey: ["claude-prefs"], queryFn: ({ signal }) => api<ClaudePrefs>("/claude/prefs", { signal }) });
+  const save = useMutation({
+    mutationFn: (next: ClaudePrefs) => api<ClaudePrefs>("/claude/prefs", { method: "PUT", json: next }),
+    onMutate: (next) => qc.setQueryData(["claude-prefs"], next),
+    onError: () => void qc.invalidateQueries({ queryKey: ["claude-prefs"] }),
+  });
+  const p = prefs.data;
+  if (!p) return null;
+  const set = (patch: Partial<ClaudePrefs>) => save.mutate({ ...p, ...patch });
+  const models = (v: string) => (MODELS.some(([m]) => m === v) ? MODELS : [...MODELS, [v, v] as [string, string]]).map(([value, label]) => ({ value, label }));
+  const efforts = EFFORTS.map(([value, label]) => ({ value, label }));
+  const groups = [
+    ["Tóm tắt, soạn nháp, Digest", "model", "effort"],
+    ["Task và AI Agent", "task_model", "task_effort"],
+  ] as const;
+  return (
+    <Section title="Model và mức suy nghĩ" hint="“Mặc định” để Claude Code tự chọn. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
+      {groups.map(([title, m, e]) => (
+        <div key={m} className="grid gap-1.5 text-sm">
+          <span>{title}</span>
+          <Segmented label={`Model cho ${title}`} value={p[m]} onChange={(v) => set({ [m]: v })} options={models(p[m])} />
+          <Segmented label={`Effort cho ${title}`} value={p[e]} onChange={(v) => set({ [e]: v })} options={efforts} />
+        </div>
+      ))}
+      {save.isError && <p role="alert" className="text-xs text-error">Không lưu được lựa chọn. Thử lại.</p>}
+    </Section>
   );
 }
 

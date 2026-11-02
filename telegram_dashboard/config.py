@@ -48,14 +48,15 @@ class Settings:
     # All AI runs through the Claude Code CLI on this machine (its own claude.ai login).
     # Drafts/summaries/digests: prompt on stdin, text on stdout, tools off.
     ai_agent_command: str = 'claude -p --tools ""'
-    ai_model: str = "claude-haiku-5-5"  # model for drafts/summaries/digests ("" = the CLI default)
+    # Defaults below; the model/effort picked in the dashboard (data/claude.json) win over them.
+    ai_model: str = "haiku"  # model for drafts/summaries/digests ("" = the CLI default)
     # Agent used when a project is selected: read-only tools, run with cwd = project.
     ai_agent_project_command: str = (
         "claude -p --tools Read,Grep,Glob --allowedTools Read,Grep,Glob"
     )
     # Interactive agent opened in Terminal for "Tạo task" (you approve each tool there).
     ai_task_command: str = "claude"
-    ai_task_model: str = "claude-haiku-5-5"  # model for task sessions ("" = the CLI default)
+    ai_task_model: str = "haiku"  # model for tasks and the AI Agent ("" = the CLI default)
     ai_task_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # macOS banner for each live tag (NOTIFY=0 turns it off).
     notify: bool = True
@@ -72,6 +73,10 @@ class Settings:
     @property
     def youtrack_path(self) -> Path:
         return self.data_dir / "youtrack.json"  # URL + token pasted in Settings; wins over .env
+
+    @property
+    def claude_prefs_path(self) -> Path:
+        return self.data_dir / "claude.json"  # model/effort picked in the Claude dialog
 
     @property
     def db_path(self) -> Path:

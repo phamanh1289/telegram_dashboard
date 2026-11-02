@@ -19,10 +19,12 @@ from .ai import (
     claude_login,
     claude_login_code,
     claude_logout,
+    claude_prefs,
     delete_task_files,
     grant_problem,
     open_task,
     pick_folder,
+    save_claude_prefs,
     read_task_prompt,
     read_task_result,
     task_result_path,
@@ -44,10 +46,12 @@ from .models import (
     ClaudeAccount,
     ClaudeLoginCode,
     ClaudeLoginStarted,
+    ClaudePrefs,
     DigestConsent,
     DigestConsentRequest,
     DigestRequest,
     DigestResult,
+    GroupInfo,
     HistoryPage,
     BriefingItem,
     SavedDigest,
@@ -336,8 +340,19 @@ def create_app(
 
     # ---- Digest: chat-wide consent, live history, structured summary ------------
     async def _known_chat(s, chat_id: str) -> None:
-        if await s.db.read(s.store.get_chat, chat_id) is None:
+        """Tagged or not: any group the account is in may be digested. An untagged one is
+        registered untracked, so it stays out of the inbox and its messages are never kept."""
+        if await s.db.read(s.store.get_chat, chat_id) is not None:
+            return
+        g = next((g for g in await s.bridge.list_groups() if g.chat_id == chat_id), None)
+        if g is None or g.migrated:
             raise ApiError(404, "chat_not_found")
+        await s.db.write(s.store.upsert_chat_info, g.chat_id, g.title, g.kind)
+
+    @app.get("/api/groups")
+    async def groups(request: Request) -> list[GroupInfo]:
+        """Every Telegram group the account is in, live: Briefing adds untagged ones from here."""
+        return [g for g in await S(request).bridge.list_groups() if not g.migrated]
 
     async def _consent(s, chat_id: str) -> DigestConsent:
         exp = await s.db.read(s.store.get_digest_consent, chat_id)
@@ -396,10 +411,11 @@ def create_app(
 
     @app.get("/api/briefing")
     async def briefing(request: Request) -> list[BriefingItem]:
-        """Every tracked group with its Digest state; latest_id tells whether there is news."""
+        """Tracked groups and digest-only ones, with their Digest state; latest_id tells
+        whether there is news."""
         s = S(request)
         out = []
-        for chat_id in await s.db.read(s.store.tracked_chat_ids):
+        for chat_id in await s.db.read(s.store.briefing_chat_ids):
             chat = await s.db.read(s.store.get_chat, chat_id)
             consent = await s.db.read(s.store.get_digest_consent, chat_id) is not None
             latest = None
@@ -658,6 +674,15 @@ def create_app(
     @app.post("/api/claude/login/code", status_code=204)
     async def claude_finish_login(body: ClaudeLoginCode) -> None:
         await claude_login_code(body.code)
+
+    @app.get("/api/claude/prefs")
+    async def get_claude_prefs() -> ClaudePrefs:
+        return ClaudePrefs(**claude_prefs(settings))
+
+    @app.put("/api/claude/prefs")
+    async def put_claude_prefs(body: ClaudePrefs) -> ClaudePrefs:
+        save_claude_prefs(settings, body.model_dump())
+        return body
 
     @app.post("/api/claude/logout", status_code=204)
     async def claude_sign_out() -> None:

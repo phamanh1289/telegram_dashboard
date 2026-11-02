@@ -10,7 +10,7 @@ import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
-import { SettingsDialog, ShortcutsDialog } from "@/components/settings";
+import { ClaudeQuota, SettingsDialog, ShortcutsDialog } from "@/components/settings";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -88,6 +88,7 @@ function Inbox({ status }: { status: Status }) {
   const [chatId, setChatId] = useState<string | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
+  const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
@@ -228,7 +229,7 @@ function Inbox({ status }: { status: Status }) {
     [TASKS, "AI Agent", runningTasks, Bot],
     ...(status.ai_configured ? [[BRIEFING, "Briefing", 0, Newspaper] as const] : []),
   ] as const;
-  const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? "Telegram";
+  const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
@@ -279,6 +280,7 @@ function Inbox({ status }: { status: Status }) {
           <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
+          <ClaudeQuota textClass={t} />
           <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt"
             className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <Settings className="size-5 shrink-0" aria-hidden />
@@ -334,14 +336,14 @@ function Inbox({ status }: { status: Status }) {
             {chatId ? (
               <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out)">
                 {chatId === BRIEFING ? (
-                  <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id) => { go(id); setDigest(true); }} />
+                  <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
                   <TasksPage onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
                 ) : digest ? (
-                  <DigestPage chatId={chatId} title={title} onBack={() => setDigest(false)} />
+                  <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
                 ) : (
                 <MessageList
                   onDigest={status.ai_configured ? () => { setReplyTo(null); setDigest(true); } : undefined}

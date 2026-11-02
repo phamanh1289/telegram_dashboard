@@ -186,7 +186,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
         assert task["mode"] == "plan" and task["interactive"] is False
         ev = wait_idle(task["id"])
         assert [i["kind"] for i in ev["items"]] == ["user", "assistant", "result"]
-        assert "--model claude-haiku-5-5 --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]
+        assert "--model haiku --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]
         assert c.get("/api/tasks").json()[0]["running"] is False
         assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "tiếp"}, headers=H).status_code == 204
         for _ in range(100):

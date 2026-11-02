@@ -79,7 +79,7 @@ Next dev ở `http://127.0.0.1:3000` (proxy `/api` sang Python `:8765`), Python 
 
 Mọi tính năng AI (nháp, tóm tắt, Digest, Tạo task) đều chạy qua **Claude Code CLI** (`claude`) trên máy, dùng tài khoản claude.ai đã đăng nhập (`claude auth status`); không cần API key hay gateway. Thiếu `claude` trên PATH thì inbox vẫn chạy, chỉ tắt AI.
 
-- Nháp/tóm tắt/Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `claude-haiku-5-5`).
+- Nháp/tóm tắt/Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`; model/effort chọn trong Cài đặt → Tài khoản Claude sẽ được ưu tiên).
 - Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read/Grep/Glob).
 - Tạo task: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`.
 

@@ -17,6 +17,7 @@ export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
 export type YouTrackIssue = S["YouTrackIssue"];
 export type ClaudeAccount = S["ClaudeAccount"];
+export type ClaudePrefs = S["ClaudePrefs"];
 export type AiPermissionResponse = S["AiPermissionResponse"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
@@ -24,6 +25,7 @@ export type DigestItem = S["DigestItem"];
 export type HistoryPage = S["HistoryPage"];
 export type BriefingItem = S["BriefingItem"];
 export type SavedDigest = S["SavedDigest"];
+export type GroupInfo = S["GroupInfo"];
 
 export class ApiError extends Error {
   constructor(

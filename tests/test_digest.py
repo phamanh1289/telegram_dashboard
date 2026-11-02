@@ -10,7 +10,7 @@ from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.digest import DigestService, parse_result
 from telegram_dashboard.errors import ApiError
-from telegram_dashboard.models import DigestRequest, StoredMessage
+from telegram_dashboard.models import DigestRequest, GroupInfo, StoredMessage
 
 AI = dict(ai_agent_command="cat", ai_model="")
 T0 = datetime(2026, 10, 30, 9, 0, tzinfo=UTC)
@@ -310,3 +310,25 @@ def test_briefing_lists_tracked_groups(settings):
         assert b["latest_id"] is None  # no consent: Telegram is not even asked
         app.state.bridge.state = "degraded"
         assert c.get("/api/briefing").json()[0]["latest_id"] is None  # offline: still lists
+
+
+def test_untagged_group_digest_and_briefing(settings):
+    old = GroupInfo(chat_id="-1003", title="Old", kind="group", migrated=True)
+    fake = FakeTransport(groups=[GroupInfo(chat_id=B, title="Ops", kind="supergroup"), old])
+    fake.history[B] = [at(B, 3, "c", 0), at(B, 7, "d", 5)]
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.bridge.state = "connected"
+        assert [g["chat_id"] for g in c.get("/api/groups").json()] == [B]  # migrated hidden
+        assert c.get("/api/briefing").json() == []  # browsing groups registers nothing
+        assert c.get("/api/chats/-1003/digest-consent").status_code == 404
+        assert c.put(f"/api/chats/{B}/digest-consent", json={"enabled": True}).json()["enabled"]
+        st = app.state.store
+        assert not st.is_tracking(B)  # digest-only: out of the inbox
+        assert c.get("/api/chats").json()["items"] == []
+        st.save_digest(B, 3, T0, '{"source_count": 1}')
+        (item,) = c.get("/api/briefing").json()
+        assert item["title"] == "Ops" and item["saved"]["last_message_id"] == "3"
+        assert item["latest_id"] == "7"
+        c.put(f"/api/chats/{B}/digest-consent", json={"enabled": False})
+        assert c.get("/api/briefing").json() == []  # revoked: gone with its saved digest

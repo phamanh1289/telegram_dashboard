@@ -242,6 +242,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Groups
+         * @description Every Telegram group the account is in, live: Briefing adds untagged ones from here.
+         */
+        get: operations["groups_api_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chats/{chat_id}/digest-consent": {
         parameters: {
             query?: never;
@@ -309,7 +329,8 @@ export interface paths {
         };
         /**
          * Briefing
-         * @description Every tracked group with its Digest state; latest_id tells whether there is news.
+         * @description Tracked groups and digest-only ones, with their Digest state; latest_id tells
+         *     whether there is news.
          */
         get: operations["briefing_api_briefing_get"];
         put?: never;
@@ -733,6 +754,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/claude/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Claude Prefs */
+        get: operations["get_claude_prefs_api_claude_prefs_get"];
+        /** Put Claude Prefs */
+        put: operations["put_claude_prefs_api_claude_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/claude/logout": {
         parameters: {
             query?: never;
@@ -980,6 +1019,23 @@ export interface components {
             orgName?: string | null;
             /** Subscriptiontype */
             subscriptionType?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Org Type */
+            org_type?: string | null;
+            /** Rate Tier */
+            rate_tier?: string | null;
+            /** Subscription Status */
+            subscription_status?: string | null;
+            /** Extra Usage */
+            extra_usage?: boolean | null;
+            /**
+             * Usage
+             * @default []
+             */
+            usage: components["schemas"]["ClaudeUsage"][];
             /**
              * Login Pending
              * @default false
@@ -997,6 +1053,43 @@ export interface components {
         ClaudeLoginStarted: {
             /** Url */
             url?: string | null;
+        };
+        /**
+         * ClaudePrefs
+         * @description "" = the CLI default. task_* apply to tasks and the AI Agent.
+         */
+        ClaudePrefs: {
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Effort
+             * @default
+             * @enum {string}
+             */
+            effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Task Model
+             * @default
+             */
+            task_model: string;
+            /**
+             * Task Effort
+             * @default
+             * @enum {string}
+             */
+            task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+        };
+        /** ClaudeUsage */
+        ClaudeUsage: {
+            /** Label */
+            label: string;
+            /** Percent */
+            percent: number;
+            /** Resets At */
+            resets_at?: string | null;
         };
         /** DigestConsent */
         DigestConsent: {
@@ -1126,6 +1219,23 @@ export interface components {
              * @enum {string}
              */
             status: "decided" | "open" | "dropped";
+        };
+        /** GroupInfo */
+        GroupInfo: {
+            /** Chat Id */
+            chat_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "group" | "supergroup";
+            /**
+             * Migrated
+             * @default false
+             */
+            migrated: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1954,6 +2064,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    groups_api_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupInfo"][];
                 };
             };
         };
@@ -2887,6 +3017,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_claude_prefs_api_claude_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudePrefs"];
+                };
+            };
+        };
+    };
+    put_claude_prefs_api_claude_prefs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClaudePrefs"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClaudePrefs"];
+                };
             };
             /** @description Validation Error */
             422: {

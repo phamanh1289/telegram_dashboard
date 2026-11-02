@@ -3,12 +3,18 @@
 import asyncio
 import json
 import logging
+import os
 import re
 import shlex
 import shutil
+import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
+
+from .config import _read_json
 from .errors import ApiError
 from .models import AiResult, PermissionGrant, StoredMessage
 from .storage import Db, Store, _ts, content_hash
@@ -246,8 +252,7 @@ class AiService:
             cmd = shlex.split(s.ai_agent_project_command if cwd else s.ai_agent_command)
         except ValueError:
             raise ApiError(502, "ai_provider_error") from None
-        if s.ai_model:
-            cmd += ["--model", s.ai_model]
+        cmd += model_flags(s)
         if project and read_dir:
             cmd += ["--add-dir", read_dir]  # photos live outside the project
         try:
@@ -331,12 +336,11 @@ async def open_task(settings, project: str, prompt: str, task_id: str) -> str:
     )
     f.chmod(0o600)
     q = shlex.quote
-    model = f" --model {q(settings.ai_task_model)}" if settings.ai_task_model else ""
-    effort = f" --effort {q(settings.ai_task_effort)}" if settings.ai_task_effort else ""
+    flags = "".join(f" {q(f)}" for f in model_flags(settings, task=True))
     # --add-dir (variadic, so last) lets the agent write the result file outside the project.
     shell = (
         f'cd {q(project)} && {settings.ai_task_command} "$(cat {q(str(f))})"'
-        f"{model}{effort} --add-dir {q(str(tasks))}"
+        f"{flags} --add-dir {q(str(tasks))}"
     )
     script = (
         'tell application "Terminal"\nactivate\n'
@@ -381,8 +385,105 @@ async def terminal_send(tty: str, text: str) -> None:
 
 
 # ---- Claude account: the CLI's own login (the same one every AI call above uses) ----
-# The CLI owns the OAuth flow and the token (Keychain); the dashboard never sees a token.
+# The CLI owns the OAuth flow and the token (Keychain). The dashboard only reads the token to
+# show the account's profile and quota; it never refreshes, stores or sends it to the browser.
 _login: dict = {"proc": None, "url": None}
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+OAUTH_API = "https://api.anthropic.com/api/oauth"
+
+
+def claude_prefs(settings) -> dict:
+    """Model/effort picked in the dashboard, over the .env defaults ("" = the CLI default)."""
+    saved = _read_json(settings.claude_prefs_path)
+    defaults = {
+        "model": settings.ai_model, "effort": "",
+        "task_model": settings.ai_task_model, "task_effort": settings.ai_task_effort,
+    }  # fmt: skip
+    return {k: saved[k] if isinstance(saved.get(k), str) else v for k, v in defaults.items()}
+
+
+def save_claude_prefs(settings, prefs: dict) -> None:
+    settings.ensure_data_dir()
+    tmp = settings.claude_prefs_path.with_suffix(".tmp")
+    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(prefs, f)
+    tmp.replace(settings.claude_prefs_path)
+
+
+def model_flags(settings, task: bool = False) -> list[str]:
+    """`--model/--effort` for a claude run: drafts/summaries/digests, or tasks/AI Agent."""
+    p = claude_prefs(settings)
+    model, effort = (p["task_model"], p["task_effort"]) if task else (p["model"], p["effort"])
+    return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
+
+
+async def _oauth_token() -> str | None:
+    """The CLI's current claude.ai access token: Keychain on macOS, else .credentials.json."""
+    raw = ""
+    if sys.platform == "darwin":
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "security", "find-generic-password", "-s", "Claude Code-credentials", "-w",
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+            )  # fmt: skip
+            raw = (await asyncio.wait_for(proc.communicate(), 5))[0].decode()
+        except (OSError, TimeoutError):
+            pass
+    if not raw:
+        home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+        raw = json.dumps(_read_json(home / ".credentials.json"))
+    try:
+        o = json.loads(raw)["claudeAiOauth"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(o, dict) or o.get("expiresAt", 0) <= time.time() * 1000:
+        return None  # expired: the CLI refreshes it on its next run
+    return o.get("accessToken")
+
+
+async def _oauth_get(client: httpx.AsyncClient, token: str, path: str) -> dict:
+    try:
+        r = await client.get(
+            f"{OAUTH_API}/{path}",
+            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
+        )
+        data = r.json() if r.is_success else {}
+    except (httpx.HTTPError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+USAGE_WINDOWS = {
+    "five_hour": "5 giờ", "seven_day": "7 ngày",
+    "seven_day_opus": "7 ngày · Opus", "seven_day_sonnet": "7 ngày · Sonnet",
+}  # fmt: skip
+
+
+async def _claude_details() -> dict:
+    """Profile + quota from Anthropic's account API; {} when the token or the API is unavailable."""
+    token = await _oauth_token()
+    if not token:
+        return {}
+    async with httpx.AsyncClient(timeout=10) as c:
+        profile, usage = await asyncio.gather(
+            _oauth_get(c, token, "profile"), _oauth_get(c, token, "usage")
+        )
+    acc, org = profile.get("account") or {}, profile.get("organization") or {}
+    windows = [
+        {"label": label, "percent": w["utilization"], "resets_at": w.get("resets_at")}
+        for key, label in USAGE_WINDOWS.items()
+        if isinstance(w := usage.get(key), dict) and isinstance(w.get("utilization"), int | float)
+    ]
+    extra = usage.get("extra_usage")
+    return {
+        "name": acc.get("full_name") or acc.get("display_name"),
+        "created_at": acc.get("created_at"),
+        "org_type": org.get("organization_type"),
+        "rate_tier": org.get("rate_limit_tier"),
+        "subscription_status": org.get("subscription_status"),
+        "extra_usage": extra.get("is_enabled") if isinstance(extra, dict) else None,
+        "usage": windows,
+    }
 _LOGIN_URL = re.compile(r"https://\S+/oauth/authorize\S+")
 
 
@@ -409,6 +510,8 @@ async def claude_account(settings) -> dict:
         data = json.loads(out)
     except (OSError, TimeoutError, ValueError):
         raise ApiError(502, "claude_cli_unavailable") from None
+    if data.get("loggedIn") and data.get("authMethod") == "claude.ai":
+        data |= await _claude_details()
     return {**data, "login_pending": _login_pending(), "login_url": _login["url"] if _login_pending() else None}
 
 

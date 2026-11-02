@@ -229,11 +229,15 @@ esac
 """
 
 
-def test_claude_account_login_with_pasted_code(tmp_path):
+def test_claude_account_login_with_pasted_code(tmp_path, monkeypatch):
     import asyncio
 
     from telegram_dashboard import ai as mod
 
+    async def no_token():
+        return None
+
+    monkeypatch.setattr(mod, "_oauth_token", no_token)  # never the real Keychain
     exe = tmp_path / "claude"
     exe.write_text(FAKE_CLAUDE)
     exe.chmod(0o755)
@@ -257,3 +261,55 @@ def test_claude_account_login_with_pasted_code(tmp_path):
         await mod.claude_logout(s)
 
     asyncio.run(flow())
+
+
+def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
+    import asyncio
+
+    from telegram_dashboard import ai as mod
+
+    exe = tmp_path / "claude"
+    exe.write_text(FAKE_CLAUDE)
+    exe.chmod(0o755)
+
+    async def token():
+        return "tok"
+
+    async def get(_client, tok, path):
+        assert tok == "tok"
+        return {
+            "profile": {"account": {"full_name": "Me", "created_at": "2025-01-01"},
+                        "organization": {"rate_limit_tier": "default_claude_max_5x"}},
+            "usage": {"five_hour": {"utilization": 2.0, "resets_at": "r1"},
+                      "seven_day": {"utilization": 50, "resets_at": "r2"},
+                      "seven_day_opus": None, "extra_usage": {"is_enabled": True}},
+        }[path]  # fmt: skip
+
+    monkeypatch.setattr(mod, "_oauth_token", token)
+    monkeypatch.setattr(mod, "_oauth_get", get)
+    s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)))
+    acc = asyncio.run(mod.claude_account(s))
+    assert acc["name"] == "Me" and acc["rate_tier"] == "default_claude_max_5x" and acc["extra_usage"]
+    assert acc["usage"] == [
+        {"label": "5 giờ", "percent": 2.0, "resets_at": "r1"},
+        {"label": "7 ngày", "percent": 50, "resets_at": "r2"},
+    ]
+
+
+def test_claude_prefs_drive_every_claude_run(client, settings):
+    from conftest import ORIGIN
+
+    from telegram_dashboard.ai import model_flags
+
+    H = {"Origin": ORIGIN}
+
+    assert model_flags(settings) == ["--model", "haiku"]  # .env defaults
+    assert model_flags(settings, task=True) == ["--model", "haiku", "--effort", "medium"]
+    body = {"model": "opus", "effort": "high", "task_model": "", "task_effort": "max"}
+    assert client.put("/api/claude/prefs", json=body, headers=H).json() == body
+    assert client.get("/api/claude/prefs", headers=H).json() == body
+    assert model_flags(settings) == ["--model", "opus", "--effort", "high"]
+    assert model_flags(settings, task=True) == ["--effort", "max"]
+    assert settings.claude_prefs_path.stat().st_mode & 0o777 == 0o600
+    for bad in ({**body, "model": "--dangerously-skip-permissions"}, {**body, "effort": "huge"}):
+        assert client.put("/api/claude/prefs", json=bad, headers=H).status_code == 422

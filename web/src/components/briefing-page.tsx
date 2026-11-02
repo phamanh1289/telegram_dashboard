@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Copy, Loader2, RotateCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Copy, Loader2, Plus, RotateCw, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { errorText, Result, toMarkdown } from "@/components/digest-page";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type BriefingItem, type DigestResult } from "@/lib/api";
+import { api, type BriefingItem, type DigestResult, type GroupInfo } from "@/lib/api";
 import { timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -29,8 +30,45 @@ function counts(r: DigestResult) {
     .join(" · ");
 }
 
+/** Any Telegram group, tagged or not: opening one goes to its Digest, where "Cho phép" adds it here. */
+function AddGroup({ known, onPick }: { known: Set<string>; onPick: (chatId: string, title: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const groups = useQuery({
+    queryKey: ["groups"],
+    queryFn: ({ signal }) => api<GroupInfo[]>("/groups", { signal }),
+    enabled: open,
+    staleTime: 60_000,
+  });
+  const needle = q.trim().toLowerCase();
+  const list = (groups.data ?? []).filter((g) => !known.has(g.chat_id) && g.title.toLowerCase().includes(needle));
+  return (
+    <details className="mt-6 text-sm" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer text-ink-3"><Plus className="inline size-3.5" aria-hidden /> Tóm tắt nhóm chưa tag</summary>
+      <div className="mt-2 grid max-w-md gap-2 pl-4">
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhóm…" aria-label="Tìm nhóm" />
+        {groups.isPending && <Skeleton className="h-16 w-full" />}
+        {groups.isError && <p role="alert" className="text-error">{errorText(groups.error)}</p>}
+        {groups.data && (
+          <ul className="grid max-h-72 gap-0.5 overflow-y-auto">
+            {list.map((g) => (
+              <li key={g.chat_id}>
+                <button type="button" onClick={() => onPick(g.chat_id, g.title)}
+                  className="w-full truncate rounded-md px-2 py-1 text-left text-ink-2 hover:bg-paper-3 hover:text-ink">
+                  {g.title}
+                </button>
+              </li>
+            ))}
+            {!list.length && <li className="px-2 text-ink-3">Không có nhóm nào khác.</li>}
+          </ul>
+        )}
+      </div>
+    </details>
+  );
+}
+
 /** Every group at a glance: summarize all groups with news in one go, open questions first. */
-export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onOpenDigest: (chatId: string) => void }) {
+export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onOpenDigest: (chatId: string, title: string) => void }) {
   const qc = useQueryClient();
   const list = useQuery({
     queryKey: ["briefing"],
@@ -87,7 +125,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
   }
 
   const groupButton = (i: BriefingItem) => (
-    <button type="button" onClick={() => onOpenDigest(i.chat_id)} title="Mở tóm tắt của nhóm"
+    <button type="button" onClick={() => onOpenDigest(i.chat_id, i.title)} title="Mở tóm tắt của nhóm"
       className="truncate font-semibold text-ink underline-offset-2 hover:underline">
       {i.title}
     </button>
@@ -144,7 +182,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
                   <span className="text-ink">{a.text}</span>
                   {a.who && <span className="text-ink-3"> — hỏi {a.who}</span>}
                   <span className="text-ink-3"> · </span>
-                  <button type="button" className="text-xs text-ink-2 underline underline-offset-2 hover:text-ink" onClick={() => onOpenDigest(a.chat.chat_id)}>
+                  <button type="button" className="text-xs text-ink-2 underline underline-offset-2 hover:text-ink" onClick={() => onOpenDigest(a.chat.chat_id, a.chat.title)}>
                     {a.chat.title}
                   </button>
                 </li>
@@ -177,7 +215,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
                       {counts(i.saved.result) || "Không có gì đáng chú ý"}
                     </summary>
                     <div className="mt-3 border-t border-rule pt-3">
-                      <Result r={i.saved.result} when={i.saved.created_at} lit={null} onJump={() => onOpenDigest(i.chat_id)}
+                      <Result r={i.saved.result} when={i.saved.created_at} lit={null} onJump={() => onOpenDigest(i.chat_id, i.title)}
                         onCopy={() => void navigator.clipboard.writeText(toMarkdown(i.saved!.result, i.title)).then(() => toast({ text: "Đã copy markdown" }), () => toast({ text: "Không copy được" }))} />
                     </div>
                   </details>
@@ -202,6 +240,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
             </ul>
           </details>
         )}
+        {list.data && <AddGroup known={new Set(items.map((i) => i.chat_id))} onPick={onOpenDigest} />}
       </div>
     </section>
   );

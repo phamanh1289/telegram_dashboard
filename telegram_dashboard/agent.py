@@ -12,7 +12,7 @@ import shutil
 import uuid
 from pathlib import Path
 
-from .ai import task_result_path
+from .ai import model_flags, task_result_path
 
 PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 
@@ -82,9 +82,7 @@ class AgentRunner:
         """Run one turn. Returns once the process is spawned; output streams into the log."""
         (self.settings.data_dir / "tasks").mkdir(mode=0o700, exist_ok=True)
         flag = ["--resume", session_id] if resume else ["--session-id", session_id]
-        model = ["--model", self.settings.ai_task_model] if self.settings.ai_task_model else []
-        effort = ["--effort", self.settings.ai_task_effort] if self.settings.ai_task_effort else []
-        cmd = [*self.executable, "-p", *model, *effort, "--output-format", "stream-json", "--verbose",
+        cmd = [*self.executable, "-p", *model_flags(self.settings, task=True), "--output-format", "stream-json", "--verbose",
                "--permission-mode", PERMISSION[mode], *flag]  # fmt: skip
         proc = await asyncio.create_subprocess_exec(
             *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,

@@ -436,9 +436,13 @@ class Store:
         row = self.get_chat(chat_id)
         return bool(row and row["tracking"])
 
-    def tracked_chat_ids(self) -> list[str]:
+    def briefing_chat_ids(self) -> list[str]:
+        """Tracked chats plus untagged ones opened to Digest (any consent row, even expired)."""
         with self._conn() as c:
-            return [r[0] for r in c.execute("SELECT chat_id FROM chats WHERE tracking=1")]
+            return [r[0] for r in c.execute(
+                "SELECT chat_id FROM chats WHERE tracking=1 "
+                "OR chat_id IN (SELECT chat_id FROM digest_consents)"
+            )]  # fmt: skip
 
     def list_chats(
         self, since: datetime | None = None, until: datetime | None = None

@@ -246,6 +246,12 @@ class YouTrackUser(BaseModel):
     name: str
 
 
+class ClaudeUsage(BaseModel):
+    label: str
+    percent: float
+    resets_at: str | None = None
+
+
 class ClaudeAccount(BaseModel):
     """`claude auth status --json`, as the CLI reports it."""
 
@@ -254,8 +260,30 @@ class ClaudeAccount(BaseModel):
     email: str | None = None
     orgName: str | None = None
     subscriptionType: str | None = None
+    # From Anthropic's account API (absent when the token can't be read).
+    name: str | None = None
+    created_at: str | None = None
+    org_type: str | None = None
+    rate_tier: str | None = None
+    subscription_status: str | None = None
+    extra_usage: bool | None = None
+    usage: list[ClaudeUsage] = []
     login_pending: bool = False
     login_url: str | None = None
+
+
+ClaudeEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
+# A CLI model alias or id; never starts with "-" so it can't pass for a flag.
+ClaudeModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
+
+
+class ClaudePrefs(BaseModel):
+    """"" = the CLI default. task_* apply to tasks and the AI Agent."""
+
+    model: ClaudeModel = ""
+    effort: ClaudeEffort = ""
+    task_model: ClaudeModel = ""
+    task_effort: ClaudeEffort = ""
 
 
 class ClaudeLoginStarted(BaseModel):
