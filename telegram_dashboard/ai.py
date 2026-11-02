@@ -468,7 +468,12 @@ async def _oauth_get(client: httpx.AsyncClient, token: str, path: str) -> dict:
     try:
         r = await client.get(
             f"{OAUTH_API}/{path}",
-            headers={"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20"},
+            # Without a Claude Code user agent the usage API answers 429 to every call.
+            headers={
+                "Authorization": f"Bearer {token}",
+                "anthropic-beta": "oauth-2025-04-20",
+                "User-Agent": "claude-code/1.0.0",
+            },
         )
         data = r.json() if r.is_success else {}
     except (httpx.HTTPError, ValueError):
@@ -480,25 +485,30 @@ USAGE_WINDOWS = {
     "five_hour": "5h", "seven_day": "1w",
     "seven_day_opus": "1w · Opus", "seven_day_sonnet": "1w · Sonnet",
 }  # fmt: skip
-# The usage API rate-limits hard (429); show the last good reading instead of an empty quota.
-# ponytail: process memory only, lost on restart until the next good reading.
-_last_usage: dict = {}
+# The usage API rate-limits hard (429) when polled often: ask at most every USAGE_EVERY seconds
+# (also after a failure) and serve the last good reading, kept on disk so a restart keeps it.
+USAGE_EVERY = 180.0
+_usage: dict = {"at": 0.0, "data": None}
 
 
-async def _claude_details() -> dict:
+async def _claude_details(settings) -> dict:
     """Profile + quota from Anthropic's account API; {} when the token or the API is unavailable."""
     token = await _oauth_token()
     if not token:
         return {}
+    cache = settings.data_dir / "claude_usage.json"
+    if _usage["data"] is None:
+        _usage["data"] = _read_json(cache)
     async with httpx.AsyncClient(timeout=10) as c:
-        profile, usage = await asyncio.gather(
-            _oauth_get(c, token, "profile"), _oauth_get(c, token, "usage")
-        )
+        profile = await _oauth_get(c, token, "profile")
+        if time.monotonic() - _usage["at"] >= USAGE_EVERY:
+            _usage["at"] = time.monotonic()
+            if fresh := await _oauth_get(c, token, "usage"):
+                _usage["data"] = fresh
+                settings.ensure_data_dir()
+                cache.write_text(json.dumps(fresh))
     acc, org = profile.get("account") or {}, profile.get("organization") or {}
-    if usage:
-        _last_usage.clear()
-        _last_usage.update(usage)
-    usage = _last_usage
+    usage = _usage["data"]
     windows = [
         {"label": label, "percent": w["utilization"], "resets_at": w.get("resets_at")}
         for key, label in USAGE_WINDOWS.items()
@@ -541,7 +551,7 @@ async def claude_account(settings) -> dict:
     except (OSError, TimeoutError, ValueError):
         raise ApiError(502, "claude_cli_unavailable") from None
     if data.get("loggedIn") and data.get("authMethod") == "claude.ai":
-        data |= await _claude_details()
+        data |= await _claude_details(settings)
     return {**data, "login_pending": _login_pending(), "login_url": _login["url"] if _login_pending() else None}
 
 

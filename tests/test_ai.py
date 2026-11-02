@@ -306,6 +306,7 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "_oauth_token", token)
     monkeypatch.setattr(mod, "_oauth_get", get)
+    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})
     s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)))
     acc = asyncio.run(mod.claude_account(s))
     assert acc["name"] == "Me" and acc["rate_tier"] == "default_claude_max_5x" and acc["extra_usage"]
@@ -314,11 +315,18 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
         {"label": "1w", "percent": 50, "resets_at": "r2"},
     ]
 
+    calls = []
+
     async def limited(_client, _tok, path):  # usage API answers 429 -> _oauth_get gives {}
+        calls.append(path)
         return {} if path == "usage" else await get(_client, "tok", path)
 
     monkeypatch.setattr(mod, "_oauth_get", limited)
-    assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]  # last good reading
+    assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]
+    assert "usage" not in calls  # polled again within USAGE_EVERY: no call
+    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})  # restart, interval over
+    assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]  # 429: reading from disk
+    assert "usage" in calls
 
 
 def test_claude_prefs_drive_every_claude_run(client, settings):
