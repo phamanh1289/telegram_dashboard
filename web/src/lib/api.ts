@@ -66,3 +66,7 @@ export async function api<T>(
 }
 
 export const isAuthError = (e: unknown) => e instanceof ApiError && e.status === 401;
+
+/** Vietnamese text for a failed call: the error code's entry in `map`, else `fallback`. */
+export const errorText = (e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") =>
+  (e instanceof ApiError && map[e.code]) || fallback;

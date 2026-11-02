@@ -2,12 +2,12 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CheckCheck, ListChecks, Pin, RotateCw, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Message } from "@/lib/api";
-import { fold, pendingQuery, type Selection, setHandled, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { fold, msgKey, pendingQuery, type Selection, setHandled, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
 
 /** Every pending tag across groups, pinned first then oldest; or (pinned) the pinned archive. */
 export function PendingInbox({
@@ -24,7 +24,7 @@ export function PendingInbox({
   pinned?: boolean;
   range: string;
   search: string;
-  replyTo: string | null;
+  replyTo: string | null; // msgKey of the message being answered
   onReply: (m: Message) => void;
   onBack: () => void;
   onUseText: (m: Message, text: string) => void;
@@ -51,14 +51,14 @@ export function PendingInbox({
     return () => ro.disconnect();
   }, []);
   const tasks = useTasks();
-  // Search tag text only, ignoring case and Vietnamese accents.
+  // Search tag text only, ignoring case and Vietnamese accents. Deferred: typing stays responsive over 300 rows.
+  const needle = fold(useDeferredValue(search).trim());
   const rows = useMemo(() => {
-    const needle = fold(search.trim());
     const all = q.data ?? [];
     return needle
       ? all.filter((p) => fold(p.message.text).includes(needle))
       : all;
-  }, [q.data, search]);
+  }, [q.data, needle]);
   const items = useMemo(() => rows.map((p) => p.message), [rows]);
   const focused = useListShortcuts(items, onReply);
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
@@ -114,17 +114,17 @@ export function PendingInbox({
         <ol ref={list} className="@container divide-y divide-rule">
           {rows.map(({ chat_title, message: m }) => (
             <MessageItem
-              key={`${m.chat_id}:${m.message_id}`}
+              key={msgKey(m)}
               m={m}
               head
               now={now}
               groupTitle={chat_title}
-              focused={focused === m.message_id}
-              isReplyTarget={replyTo === m.message_id}
+              focused={focused === msgKey(m)}
+              isReplyTarget={replyTo === msgKey(m)}
               selectMode={sel.on}
               checked={sel.has(m)}
               onToggle={sel.toggle}
-              tasks={tasks.get(`${m.chat_id}:${m.message_id}`)}
+              tasks={tasks.get(msgKey(m))}
               onReply={onReply}
               onUseText={onUseText}
             />

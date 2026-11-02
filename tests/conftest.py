@@ -42,7 +42,6 @@ class FakeTransport:
     reactions: list[tuple] = field(default_factory=list)
     send_impl: object = None
     connect_impl: object = None
-    fail_fetch_after: int = 0
     bridge: object = None
     connected: bool = False
 
@@ -79,16 +78,6 @@ class FakeTransport:
     async def latest_id(self, chat_id):
         return max((m.message_id for m in self.history.get(chat_id, [])), default=0)
 
-    async def fetch_latest(self, chat_id, limit):
-        return sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)[-limit:]
-
-    async def fetch_after(self, chat_id, after_id, limit):
-        if self.fail_fetch_after:
-            self.fail_fetch_after -= 1
-            raise ConnectionError("boom")
-        ms = sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)
-        return [m for m in ms if m.message_id > after_id][:limit]
-
     async def fetch_range(self, chat_id, since, until, limit):
         ms = sorted(self.history.get(chat_id, []), key=lambda m: (m.date, m.message_id))
         return [m for m in ms if since <= m.date < until][-limit:]
@@ -121,7 +110,7 @@ class Env:
         self.store.set_tracking(chat, True, title=f"chat {chat}", kind=kind)
 
     async def settle(self):
-        await asyncio.gather(*self.bridge._tasks.values(), return_exceptions=True)
+        await asyncio.gather(*self.bridge._bg, return_exceptions=True)
 
 
 @pytest.fixture
@@ -145,7 +134,7 @@ def client(settings):
 
 
 class FakeAgent:
-    """Stands in for AiService._call (the claude CLI): records prompts, returns `reply`."""
+    """Stands in for AiService.ask (the claude CLI): records prompts, returns `reply`."""
 
     def __init__(self, reply="draft text", on_call=None, exc=None):
         self.calls: list[str] = []

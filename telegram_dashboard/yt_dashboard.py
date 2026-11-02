@@ -3,10 +3,10 @@
 Reuses YOUTRACK_URL / YOUTRACK_TOKEN. Without a token the endpoints answer empty so the UI can
 explain what to configure. Writes: the assignee of one ticket, a comment the user typed.
 AI (/api/yt/ai/*): one `claude -p` run per click, text back only; it never writes to YouTrack.
+Also `whoami` (check a pasted token) and `create_issue` (a ticket from a tagged message).
 """
 
 import asyncio
-import contextlib
 import json
 import os
 import re
@@ -209,23 +209,29 @@ class YouTrackDashboard:
             for k, d in (("wip", 4), ("stale", 7), ("dead", 30))
         }
         self._client: httpx.AsyncClient | None = None
+        self._retired: list[httpx.AsyncClient] = []
+        self._auth = 0  # bumped by set_auth: answers fetched with an older token are not cached
         self._cache: dict[str, tuple[float, object]] = {}
         self._inflight: dict[str, asyncio.Future] = {}
         self._since: dict[str, int] = {}
 
     def set_auth(self, base: str, token: str) -> None:
-        """New URL/token from Settings: next call opens a fresh client, nothing cached survives."""
-        old, self._client = self._client, None
-        if old:
-            asyncio.ensure_future(old.aclose())
+        """New URL/token from Settings: next call opens a fresh client, nothing cached survives.
+        Requests in flight finish on the old client."""
+        if self._client:  # ponytail: kept open till shutdown; token changes are rare
+            self._retired.append(self._client)
+        self._client = None
+        self._auth += 1
         self.base, self.token = base.rstrip("/"), token
         self.mock = not (self.base and self.token)
         self._cache.clear()
+        self._inflight.clear()
         self._since.clear()
 
     async def aclose(self) -> None:
-        if self._client:
-            await self._client.aclose()
+        for c in [*self._retired, self._client]:
+            if c:
+                await c.aclose()
 
     async def yt(self, path: str, *, post: dict | None = None, **params):
         if self._client is None:
@@ -253,11 +259,16 @@ class YouTrackDashboard:
         hit = self._cache.get(key)
         if hit and time.monotonic() - hit[0] < TTL:
             return hit[1]
+        auth = self._auth
         task = self._inflight.get(key)  # concurrent identical requests share one YouTrack call
         if task is None:
             task = self._inflight[key] = asyncio.ensure_future(fn())
-            task.add_done_callback(lambda _: self._inflight.pop(key, None))
+            task.add_done_callback(  # only our own entry: set_auth may have replaced it
+                lambda t: self._inflight.get(key) is t and self._inflight.pop(key)
+            )
         value = await asyncio.shield(task)
+        if auth != self._auth:
+            return value  # token changed meanwhile: don't cache what the old one saw
         if len(self._cache) > 200:
             now = time.monotonic()
             self._cache = {k: e for k, e in self._cache.items() if now - e[0] < TTL}
@@ -276,32 +287,32 @@ class YouTrackDashboard:
         else:
             sc = ""
         out = await self._all(f"project: {{{project}}}{sc}{_who_clause(who)}")
-        if who and "me" in who:  # "My task" also covers tickets the user tests (QC); best effort
-            with contextlib.suppress(YtError):  # no QC user field in this project
-                ids = {i["id"] for i in out}
+        if who and "me" in who:  # "My task" also covers tickets the user tests (QC)
+            try:
                 qc = await self._all(f"project: {{{project}}}{sc} and QC: me")
+            except YtError as e:
+                if e.status != 400:  # 400: this project has no QC user field
+                    raise
+            else:
+                ids = {i["id"] for i in out}
                 out += [i for i in qc if i["id"] not in ids]
         return out
 
     async def _all(self, query: str) -> list[dict]:
-        out: list[dict] = []
-        for skip in range(0, 50000, PAGE * WAVE):
-            pages = await asyncio.gather(
-                *(
-                    self.yt(
-                        "/api/issues",
-                        query=query,
-                        fields=FIELDS,
-                        **{"$top": PAGE, "$skip": skip + k * PAGE},
-                    )
-                    for k in range(WAVE)
-                )
+        def page(skip: int):
+            return self.yt(
+                "/api/issues", query=query, fields=FIELDS, **{"$top": PAGE, "$skip": skip}
             )
+
+        out: list[dict] = []
+        pages, skip = [await page(0)], PAGE  # most projects fit one page: no wave for them
+        while True:
             for p in pages:
                 out += map(_normalize, p)
-            if any(len(p) < PAGE for p in pages):
-                break
-        return out
+            if any(len(p) < PAGE for p in pages) or skip >= 50000:
+                return out
+            pages = await asyncio.gather(*(page(skip + k * PAGE) for k in range(WAVE)))
+            skip += PAGE * WAVE
 
     async def issues_or_whole(self, project, scope, who):
         try:
@@ -362,20 +373,24 @@ class YouTrackDashboard:
     async def state_since(self, issue_id: str, updated: str) -> int:
         """Latest State change in the activity log (0 = never changed). Cached per id@updated."""
         k = f"{issue_id}@{updated}"
-        if k not in self._since:
-            acts = await self.yt(
-                f"/api/issues/{issue_id}/activities",
-                categories="CustomFieldCategory",
-                fields="timestamp,field(name)",
-                **{"$top": 200},
-            )
+        if k in self._since:
+            return self._since[k]
+        auth = self._auth
+        acts = await self.yt(
+            f"/api/issues/{issue_id}/activities",
+            categories="CustomFieldCategory",
+            fields="timestamp,field(name)",
+            **{"$top": 200},
+        )
+        v = max(
+            (a["timestamp"] for a in acts if (a.get("field") or {}).get("name") == "State"),
+            default=0,
+        )
+        if auth == self._auth:
             if len(self._since) > 5000:
                 self._since.clear()
-            self._since[k] = max(
-                (a["timestamp"] for a in acts if (a.get("field") or {}).get("name") == "State"),
-                default=0,
-            )
-        return self._since[k]
+            self._since[k] = v
+        return v
 
     async def since_all(self, items: list[str]) -> dict[str, int]:
         sem, out = asyncio.Semaphore(8), {}
@@ -383,8 +398,11 @@ class YouTrackDashboard:
         async def one(it: str):
             issue_id, updated = it.split("@")
             async with sem:
-                with contextlib.suppress(YtError):  # skipped: the UI keeps its last known value
+                try:
                     out[issue_id] = await self.state_since(issue_id, updated)
+                except YtError as e:  # skipped: the UI keeps its last known value
+                    if e.status in (401, 403):  # but a bad token must show, not look like "no data"
+                        raise
 
         await asyncio.gather(*map(one, items))
         return out
@@ -474,7 +492,7 @@ async def _ai(request: Request, prompt: str) -> str:
         raise YtError(503, "Chưa cài Claude CLI, xem Cài đặt › Claude")
     client_gone.set(request.is_disconnected)  # closing the drawer / Hủy stops the run
     try:
-        return await ai._call(f"Hôm nay: {datetime.now(UTC).date()}\n{prompt}", system=AI_SYSTEM)
+        return await ai.ask(f"Hôm nay: {datetime.now(UTC).date()}\n{prompt}", system=AI_SYSTEM)
     except ApiError as e:
         raise YtError(min(e.status, 502), AI_ERR.get(e.code, f"Claude lỗi ({e.code})")) from None
 
@@ -605,11 +623,13 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         gate = asyncio.Semaphore(WAVE * 2)
         st = request.app.state
+        # Telegram text goes to the AI only without per-message consent (AI_REQUIRE_CONSENT=0).
+        with_tg = not st.ai.settings.ai_require_consent
 
         async def one(i: str) -> str:
             async with gate:
                 d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-            tg = await st.db.read(st.store.find_mentions, i, 5) if hasattr(st, "db") else []
+            tg = await st.db.read(st.store.find_mentions, i, 5) if with_tg else []
             return _ticket_json(d, 1200, 6, 500, telegram=[
                 {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                 for m in tg
@@ -643,3 +663,59 @@ async def _projects(svc: YouTrackDashboard):
 async def _me(svc: YouTrackDashboard):
     u = await svc.yt("/api/users/me", fields="login,fullName")
     return {"login": u["login"], "name": u.get("fullName") or u["login"]}
+
+
+# ---- token check + ticket creation (app.py's /api/youtrack/*, ApiError codes) ----------------
+TIMEOUT = 20.0
+
+
+async def whoami(url: str, token: str) -> dict:
+    """Check a URL + token pair before saving it: {login, name} or ApiError."""
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as c:
+            r = await c.get(
+                f"{url}/api/users/me",
+                params={"fields": "login,fullName"},
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            )
+        if r.status_code in (401, 403):
+            raise ApiError(400, "youtrack_unauthorized")
+        r.raise_for_status()
+        u = r.json()
+        return {"login": u["login"], "name": u.get("fullName") or u["login"]}
+    except httpx.HTTPError:
+        raise ApiError(502, "youtrack_unreachable") from None
+    except (KeyError, ValueError, TypeError):
+        raise ApiError(502, "youtrack_unreachable") from None  # not a YouTrack answer
+
+
+async def create_issue(settings, summary: str, description: str) -> tuple[str, str]:
+    """Returns (idReadable, browser URL)."""
+    base = settings.youtrack_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {settings.youtrack_token}", "Accept": "application/json"}
+    try:
+        async with httpx.AsyncClient(base_url=base, headers=headers, timeout=TIMEOUT) as c:
+            r = await c.get(
+                "/api/admin/projects",
+                params={"fields": "id,shortName", "query": settings.youtrack_project},
+            )
+            r.raise_for_status()
+            project = next(
+                (p for p in r.json() if p["shortName"] == settings.youtrack_project), None
+            )
+            if project is None:
+                raise ApiError(422, "youtrack_project_not_found")
+            r = await c.post(
+                "/api/issues",
+                params={"fields": "idReadable"},
+                json={"project": {"id": project["id"]}, "summary": summary,
+                      "description": description},
+            )  # fmt: skip
+            r.raise_for_status()
+            issue_id = r.json()["idReadable"]
+    except httpx.HTTPStatusError as e:
+        code = "youtrack_unauthorized" if e.response.status_code in (401, 403) else "youtrack_error"
+        raise ApiError(502, code) from None
+    except (httpx.HTTPError, KeyError, ValueError):
+        raise ApiError(502, "youtrack_error") from None
+    return issue_id, f"{base}/issue/{issue_id}"

@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Copy, Loader2, Plus, RotateCw, Sparkles } from "lucide-react";
-import { useState } from "react";
-import { errorText, Result, toMarkdown } from "@/components/digest-page";
+import { ArrowLeft, Copy, Loader2, Plus, RotateCw, Sparkles, Square } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { digestError, Result, toMarkdown } from "@/components/digest-page";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,7 +48,7 @@ function AddGroup({ known, onPick }: { known: Set<string>; onPick: (chatId: stri
       <div className="mt-2 grid max-w-md gap-2 pl-4">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhóm…" aria-label="Tìm nhóm" />
         {groups.isPending && <Skeleton className="h-16 w-full" />}
-        {groups.isError && <p role="alert" className="text-error">{errorText(groups.error)}</p>}
+        {groups.isError && <p role="alert" className="text-error">{digestError(groups.error)}</p>}
         {groups.data && (
           <ul className="grid max-h-72 gap-0.5 overflow-y-auto">
             {list.map((g) => (
@@ -76,6 +76,9 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
   });
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [running, setRunning] = useState(false);
+  // Aborting the request is the stop: the server sees the browser go and kills that claude run. Leaving the page stops too.
+  const abort = useRef<AbortController | null>(null);
+  useEffect(() => () => abort.current?.abort(), []);
 
   const items = list.data ?? [];
   const allowed = items.filter((i) => i.consent);
@@ -87,10 +90,12 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
 
   // One group at a time: keeps the AI provider and Telegram calm, and each result lands as it comes.
   async function runAll() {
+    const stop = (abort.current = new AbortController()).signal;
     setRunning(true);
     const until = new Date().toISOString();
     const teams = readDigestTeams();
     for (const it of todo) {
+      if (stop.aborted) break;
       setRuns((s) => ({ ...s, [it.chat_id]: { status: "running" } }));
       try {
         await api<DigestResult>("/digest", {
@@ -103,14 +108,15 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
             after_id: it.saved ? Number(it.saved.last_message_id) : null,
             teams,
           },
+          signal: stop,
         });
         setRuns((s) => ({ ...s, [it.chat_id]: { status: "done" } }));
       } catch (e) {
-        setRuns((s) => ({ ...s, [it.chat_id]: { status: "error", error: errorText(e) } }));
+        setRuns((s) => ({ ...s, [it.chat_id]: { status: "error", error: stop.aborted ? "Đã dừng." : digestError(e) } }));
       }
-      await qc.invalidateQueries({ queryKey: ["briefing"] });
       void qc.invalidateQueries({ queryKey: ["digest-saved", it.chat_id] });
     }
+    void qc.invalidateQueries({ queryKey: ["briefing"] });
     setRunning(false);
   }
 
@@ -148,9 +154,16 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
           <Button size="xs" variant="outline" disabled={!allowed.some((i) => i.saved)} onClick={() => void copyAll()}>
             <Copy /> Copy tất cả
           </Button>
-          <Button size="sm" aria-busy={running} disabled={running || !todo.length} onClick={() => void runAll()}>
-            <Sparkles /> {running ? "Đang tóm tắt…" : todo.length ? `Tóm tắt ${todo.length} nhóm` : "Không có tin mới"}
-          </Button>
+          {running ? (
+            <Button size="sm" variant="outline" className="hover:bg-error-wash hover:text-error" title="Dừng tóm tắt (nhóm đang chạy bị hủy)"
+              onClick={() => abort.current?.abort()}>
+              <Square className="fill-current" aria-hidden /> Dừng
+            </Button>
+          ) : (
+            <Button size="sm" disabled={!todo.length} onClick={() => void runAll()}>
+              <Sparkles /> {todo.length ? `Tóm tắt ${todo.length} nhóm` : "Không có tin mới"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -160,7 +173,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
         )}
         {list.isError && (
           <p role="alert" className="flex items-center gap-2 text-sm text-error">
-            {errorText(list.error)}
+            {digestError(list.error)}
             <Button size="xs" variant="outline" onClick={() => void list.refetch()}><RotateCw /> Thử lại</Button>
           </p>
         )}

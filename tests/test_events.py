@@ -149,3 +149,20 @@ def test_disconnect_releases_subscriber(server):
     while hub.subscribers and time.time() < deadline:
         time.sleep(0.02)
     assert hub.subscribers == 0
+
+
+async def test_one_wakeup_reaches_every_subscriber():
+    from telegram_dashboard.events import Hub
+
+    hub = Hub()
+    a_seen = b_seen = hub.version
+    a = asyncio.create_task(hub.wait(a_seen, 5))
+    await asyncio.sleep(0)
+    hub.notify()  # while B is still querying, not yet waiting
+    await asyncio.wait_for(a, 1)
+    await asyncio.wait_for(hub.wait(b_seen, 5), 1)  # B must not sleep through it
+    c = asyncio.create_task(hub.wait(hub.version, 5))  # nothing new: C keeps waiting
+    await asyncio.sleep(0.05)
+    assert not c.done()
+    hub.notify()
+    await asyncio.wait_for(c, 1)

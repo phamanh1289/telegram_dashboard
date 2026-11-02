@@ -7,3 +7,10 @@ class ApiError(Exception):
         self.code = code
         self.retry_after = retry_after
         self.detail = detail
+
+
+def int_or_404(value: str, code: str = "reply_not_found") -> int:
+    try:
+        return int(value)
+    except ValueError:
+        raise ApiError(404, code) from None

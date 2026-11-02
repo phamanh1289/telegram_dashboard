@@ -1,5 +1,3 @@
-import asyncio
-
 from conftest import G1, G2, A, B, msg
 
 from telegram_dashboard.models import GroupInfo
@@ -53,12 +51,11 @@ def test_stale_edit_does_not_overwrite_newer(env):
     assert env.store.get_message(A, 1).text == "v2"
 
 
-def test_old_history_does_not_resurrect_deleted(env):
+def test_refetch_does_not_resurrect_deleted(env):
     env.track(A)
     env.store.apply_message(msg(A, 1, "secret"))
     env.store.apply_deletion(A, ["1"])
-    gen = env.store.history_checkpoint(A)[1]
-    env.store.apply_history_batch(A, gen, [msg(A, 1, "secret"), msg(A, 2, "secret2")], 2)
+    env.store.apply_message(msg(A, 1, "secret"))
     m = env.store.get_message(A, 1)
     assert m.deleted and m.text == ""
     # deletion seen before the message itself also leaves a tombstone
@@ -99,61 +96,15 @@ async def test_migrated_group_stops_ingest(env):
     assert chat["migrated_to"] == "-1009" and not chat["tracking"]
 
 
-async def test_history_live_overlap(env):
-    env.track(A)
-    env.fake.history[A] = [msg(A, i) for i in range(1, 61)]
-    await env.bridge.on_message(msg(A, 60))  # live arrives before initial load
-    await env.bridge.sync_chat(A)
-    items, _, _ = env.store.query_messages(A, limit=100)
-    assert [int(m.message_id) for m in items] == list(range(11, 61))  # 50 newest, no dupes
-    assert env.store.history_checkpoint(A)[0] == 60
-
-
-async def test_recovery_more_than_one_page(env):
-    env.track(A)
-    await env.bridge.sync_chat(A)  # empty chat initialises checkpoint 0
-    env.fake.history[A] = [msg(A, i) for i in range(1, 251)]
-    await env.bridge.sync_chat(A)
-    items, _, _ = env.store.query_messages(A, after=0, limit=100)
-    assert len(items) == 100
-    assert env.store.get_message(A, 250) is not None
-    assert env.store.history_checkpoint(A)[0] == 250
-
-
-async def test_live_event_does_not_skip_history_gap(env):
-    env.track(A)
-    await env.bridge.sync_chat(A)
-    await env.bridge.on_message(msg(A, 200))
-    assert env.store.history_checkpoint(A)[0] == 0
-    env.fake.history[A] = [msg(A, i) for i in (150, 200)]
-    await env.bridge.sync_chat(A)
-    assert env.store.get_message(A, 150) is not None
-
-
-async def test_failed_batch_does_not_advance_checkpoint(env):
-    env.track(A)
-    await env.bridge.sync_chat(A)
-    env.fake.history[A] = [msg(A, i) for i in range(1, 11)]
-    env.fake.fail_fetch_after = 1
-    env.bridge.schedule_sync(A)
-    await asyncio.sleep(0)
-    assert env.store.history_checkpoint(A)[0] == 0
-    await env.settle()
-    assert env.store.history_checkpoint(A)[0] == 10
-    assert env.bridge.sync_state.get(A) is None
-
-
 def test_purge_clears_outbox_content_and_blocks_late_callback(env):
     env.track(A)
     env.store.apply_message(msg(A, 1))
-    gen = env.store.history_checkpoint(A)[1]
     env.store.outbox_create("r1", A, 1, "my reply", 42)
     env.store.purge_chat(A)
     assert env.store.get_message(A, 1) is None
     assert env.store.outbox_get("r1").status == "failed"
     assert env.store.outbox_claim("r1") is None  # no content left to resend
-    env.store.set_tracking(A, True)
-    assert env.store.apply_history_batch(A, gen, [msg(A, 1, "late")], 1) is False
+    assert env.store.apply_message(msg(A, 1, "late")) is False  # untracked by the purge
     assert env.store.get_message(A, 1) is None
 
 
@@ -246,3 +197,67 @@ def test_find_mentions_matches_whole_ticket_id(env):
     for mid, text in ((1, "xem VA-12 nhé"), (2, "VA-123 lỗi"), (3, "XVA-12"), (4, "va-12, done")):
         env.store.apply_message(msg(A, mid, text, sender="7"))
     assert sorted(m["message_id"] for m in env.store.find_mentions("VA-12")) == [1, 4]
+
+
+def test_store_mentions_reports_only_new_pending_tags(env):
+    env.store.add_rule("keyword", "#tb")
+    tags = [("A", "supergroup", msg(A, 1, "@me hi"), False),
+            ("A", "supergroup", msg(A, 2, "@me #TB"), False),  # ignore rule
+            ("A", "supergroup", msg(A, 3, "@me ok?"), True)]  # fmt: skip
+    assert env.store.store_mentions(tags) == [1]
+    edited = msg(A, 1, "@me hi!", edit=100)
+    assert env.store.store_mentions([("A", "supergroup", edited, False)]) == []  # no 2nd notify
+    assert env.store.get_message(A, 1).text == "@me hi!"
+    assert [env.store.get_message(A, i).handled for i in (1, 2, 3)] == [False, True, True]
+
+
+def test_mark_all_handled_matches_pending_count(env):
+    from datetime import UTC, datetime, timedelta
+
+    env.track(A)
+    for i in (1, 2):
+        env.store.apply_message(msg(A, i))
+    env.store.set_snooze(A, 2, datetime.now(UTC) + timedelta(hours=1))
+    assert env.store.mark_all_handled(A) == [1]  # the snoozed tag stays hidden and open
+    assert not env.store.get_message(A, 2).handled
+    env.store.set_tracking(A, False)
+    env.store.set_snooze(A, 2, None)
+    assert env.store.mark_all_handled(A) == []  # untracked chat
+
+
+def test_pruned_change_log_resets_old_cursors(env, monkeypatch):
+    from telegram_dashboard import storage
+
+    env.track(A)
+    old = env.store.current_cursor()
+    for i in range(1, 6):
+        env.store.apply_message(msg(A, i))
+    recent = env.store.current_cursor()
+    monkeypatch.setattr(storage, "KEEP_CHANGES", 2)
+    store = storage.Store(env.store.path)  # prunes on startup
+    assert store.changes_since(old)[3] is True  # its changes are gone: reset
+    assert store.changes_since(recent)[3] is False
+
+
+def test_old_database_is_migrated_once(tmp_path):
+    import sqlite3
+
+    from telegram_dashboard.storage import MIGRATIONS, Store
+
+    path = tmp_path / "old.sqlite3"
+    c = sqlite3.connect(path)
+    c.executescript(
+        "CREATE TABLE messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, "
+        "text TEXT NOT NULL DEFAULT '', date INTEGER NOT NULL, PRIMARY KEY (chat_id, message_id));"
+        "CREATE TABLE tasks (id TEXT PRIMARY KEY, chat_id TEXT, message_id INTEGER, "
+        "project TEXT NOT NULL, created_at INTEGER NOT NULL);"
+        "INSERT INTO messages (chat_id, message_id, text, date) VALUES ('-1001', 1, 'hi', 0);"
+    )
+    c.close()
+    Store(path)
+    Store(path)  # second start: nothing left to run
+    c = sqlite3.connect(path)
+    assert c.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
+    cols = {r[1] for r in c.execute("PRAGMA table_info(messages)")}
+    assert {"handled", "links", "snoozed_until", "pinned"} <= cols
+    assert c.execute("SELECT handled, links FROM messages").fetchone() == (0, "[]")

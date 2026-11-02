@@ -21,7 +21,15 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
-def _on_path(command: str) -> bool:
+SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # .env lands in os.environ (yt_dashboard reads it)
+
+
+def child_env() -> dict[str, str]:
+    """os.environ minus this app's secrets (Telegram API, YouTrack token): for claude runs."""
+    return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+
+
+def on_path(command: str) -> bool:
     """Is the command's executable installed?"""
     try:
         return shutil.which(shlex.split(command)[0]) is not None
@@ -35,6 +43,15 @@ def _read_json(path: Path) -> dict:
     except (OSError, ValueError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def write_private_json(path: Path, data) -> None:
+    """Atomic, owner-only (0600) JSON write for tokens/prefs kept in data/."""
+    path.parent.mkdir(mode=0o700, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        json.dump(data, f)
+    tmp.replace(path)
 
 
 @dataclass(frozen=True)
@@ -55,14 +72,16 @@ class Settings:
     ai_agent_project_command: str = (
         "claude -p --tools Read,Grep,Glob --allowedTools Read,Grep,Glob"
     )
-    # Interactive agent opened in Terminal for "Tạo task" (you approve each tool there).
+    # Headless agent for tasks / AI Agent (`claude -p` per turn, run with cwd = project).
     ai_task_command: str = "claude"
     ai_task_model: str = "sonnet"  # model for tasks and the AI Agent ("" = the CLI default)
     ai_task_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # macOS banner for each live tag (NOTIFY=0 turns it off).
     notify: bool = True
     # Reaction sent on Telegram when a tag is marked done (removed on reopen); empty = off.
-    done_reaction: str = "👍"
+    done_reaction: str = ""
+    # Your Telegram @username, so drafts know which mentions are you (optional).
+    telegram_me: str = ""
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
@@ -107,7 +126,7 @@ class Settings:
 
     @property
     def ai_configured(self) -> bool:
-        return _on_path(self.ai_agent_command)
+        return on_path(self.ai_agent_command)
 
     def ensure_data_dir(self) -> None:
         self.data_dir.mkdir(mode=0o700, exist_ok=True)
@@ -134,6 +153,7 @@ class Settings:
             ai_task_effort=env["AI_TASK_EFFORT"].strip() if "AI_TASK_EFFORT" in env else Settings.ai_task_effort,
             notify=env.get("NOTIFY", "1").strip() != "0",
             done_reaction=env.get("DONE_REACTION", Settings.done_reaction).strip(),
+            telegram_me=env.get("TELEGRAM_ME", "").strip(),
             youtrack_url=saved.get("url") or env.get("YOUTRACK_URL") or env.get("YT_URL") or None,
             youtrack_token=saved.get("token")
             or env.get("YOUTRACK_TOKEN")

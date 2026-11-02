@@ -2,13 +2,13 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlarmClock, Bot, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
-import { clockLabel, dbId, openTask, pin, setHandled, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
+import { clockLabel, dbId, msgKey, openTask, pin, setHandled, smooth, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +22,9 @@ const MEDIA: Record<string, string> = {
 const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
 const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline ring-1 ring-inset ring-hl/30";
 const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] text-code ring-1 ring-inset ring-code/30";
+
+// Entity links only open these schemes; anything else (file:, data:, app handlers) stays plain text.
+const SAFE_URL = /^(https?|tg|mailto):/i;
 
 // Bare URLs, @username mentions (not inside e-mails) and `code` the sender typed literally.
 const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`/g;
@@ -66,7 +69,9 @@ function render(text: string, spans: Span[], from: number, to: number, plain: bo
     out.push(
       l.kind === "code" ? <code key={k} className={codeCls}>{kids}</code>
         : l.kind === "link" || l.kind === "mention"
-          ? <a key={k} href={l.url} target="_blank" rel="noreferrer" className={l.kind === "mention" ? mentionCls : linkCls}>{kids}</a>
+          ? SAFE_URL.test(l.url)
+            ? <a key={k} href={l.url} target="_blank" rel="noreferrer" title={l.url} className={l.kind === "mention" ? mentionCls : linkCls}>{kids}</a>
+            : <span key={k}>{kids}</span>
           : <span key={k} className={STYLE[l.kind]}>{kids}</span>,
     );
     at = end;
@@ -102,7 +107,7 @@ export function MessageItem(props: MessageItemProps) {
   const { m } = props;
   if (m.deleted) {
     return (
-      <li data-testid="message" data-id={m.message_id} className="py-2 pr-4 pl-[calc(1rem+2.25rem)] text-xs text-ink-3 @xl:pl-[calc(1.25rem+2.25rem)]">
+      <li data-testid="message" data-id={m.message_id} data-key={msgKey(m)} className="py-2 pr-4 pl-[calc(1rem+2.25rem)] text-xs text-ink-3 @xl:pl-[calc(1.25rem+2.25rem)]">
         Tin #{m.message_id} đã bị xóa.
       </li>
     );
@@ -129,6 +134,7 @@ function MessageRow({
     <li
       data-testid="message"
       data-id={m.message_id}
+      data-key={msgKey(m)}
       data-selected={selected}
       className={cn(
         "group/row relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3 px-4 py-3 transition-colors duration-(--dur-micro) animate-in fade-in-0 duration-(--dur-short) hover:bg-paper-2 @xl:px-5",
@@ -264,16 +270,16 @@ function MessageRow({
 
 /** Like Telegram's reply header: scroll to the quoted message when it is in this list and flash it. */
 function jumpTo(from: Element, id: string) {
-  const el = from.closest("ol")?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
-  if (!el) return toast({ text: `Tin #${id} không có trong danh sách (chỉ lưu tin tag/reply bạn)` });
-  revealMessage(el);
+  if (!revealMessage(from.closest("ol"), id)) toast({ text: `Tin #${id} không có trong danh sách (chỉ lưu tin tag/reply bạn)` });
 }
 
-/** Center a message row (a long one from its top) and flash it. */
-export function revealMessage(el: HTMLElement) {
-  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  el.scrollIntoView({ block: el.offsetHeight > innerHeight / 2 ? "start" : "center", behavior: still ? "auto" : "smooth" });
+/** Center message `id` under `root` (a long one from its top) and flash it; false when it is not rendered there. */
+export function revealMessage(root: ParentNode | null | undefined, id: string) {
+  const el = root?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
+  if (!el) return false;
+  el.scrollIntoView({ block: el.offsetHeight > innerHeight / 2 ? "start" : "center", behavior: smooth() });
   el.animate([{ backgroundColor: "var(--color-hl-wash)" }, { backgroundColor: "transparent" }], { duration: 1600, easing: "ease-out" });
+  return true;
 }
 
 /** Message body; in the cross-group queue it is cut to 10 lines so the list stays scannable (the reply panel shows it
@@ -282,6 +288,7 @@ function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boole
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
+  const body = useMemo(() => richText(m), [m]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (clamp && el && !open) setLong(el.scrollHeight > el.clientHeight + 1);
@@ -289,7 +296,7 @@ function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boole
   return (
     <>
       <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-10")}>
-        {richText(m)}
+        {body}
       </p>
       {clamp && (long || open) && (
         <Button type="button" size="xs" variant="link" className="h-7 px-0 text-ink-2" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
@@ -325,6 +332,7 @@ export function MessageActions({
   const togglePin = useMutation({
     mutationFn: () => pin(m, !pinned),
     onSuccess: () => setOver((o) => ({ ...o, pinned: !pinned })),
+    onError: () => toast({ text: pinned ? "Không bỏ ghim được, thử lại" : "Không ghim được, thử lại" }),
   });
   return (
     <>

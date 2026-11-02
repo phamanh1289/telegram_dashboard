@@ -23,8 +23,11 @@ from .models import (
 
 log = logging.getLogger("telegram_dashboard.storage")
 
-SCHEMA_VERSION = 1
-INITIAL_HISTORY_LIMIT = 50
+KEEP_CHANGES = 50_000  # change-log rows kept on startup; older cursors get a reset
+# A tag still waiting for the user (messages aliased `m`); snoozed ones come back on their own.
+PENDING = (
+    "m.outgoing=0 AND m.handled=0 AND m.deleted=0 AND COALESCE(m.snoozed_until,0)<=unixepoch()"
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -35,7 +38,6 @@ CREATE TABLE IF NOT EXISTS chats (
   tracking INTEGER NOT NULL DEFAULT 0,
   tracked_at INTEGER,
   generation INTEGER NOT NULL DEFAULT 0,
-  history_checkpoint INTEGER,  -- NULL until the initial history batch is stored
   migrated_to TEXT
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -55,6 +57,7 @@ CREATE TABLE IF NOT EXISTS messages (
   links TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (chat_id, message_id)
 );
+CREATE INDEX IF NOT EXISTS messages_mid ON messages(message_id);  -- deletions without a chat id
 CREATE TABLE IF NOT EXISTS outbox (
   request_id TEXT PRIMARY KEY,
   chat_id TEXT NOT NULL,
@@ -199,6 +202,38 @@ def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
     return any(r["kind"] == "keyword" and r["value"] in text for r in rules)
 
 
+def _like(text: str) -> str:
+    """`%text%` for LIKE ... ESCAPE '\\'."""
+    return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _add_missing_columns(c: sqlite3.Connection) -> None:
+    """Databases from before versioning may lack these columns; a no-op on new ones."""
+    for table, col, ddl in (
+        ("messages", "handled", "INTEGER NOT NULL DEFAULT 0"),
+        ("messages", "links", "TEXT NOT NULL DEFAULT '[]'"),
+        ("messages", "snoozed_until", "INTEGER"),
+        ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
+        ("tasks", "prompt", "TEXT"),
+        ("tasks", "mode", "TEXT NOT NULL DEFAULT 'terminal'"),
+        ("tasks", "session_id", "TEXT"),
+        ("tasks", "tty", "TEXT"),
+        ("outbox", "code", "TEXT"),
+        ("outbox", "sent_text", "TEXT NOT NULL DEFAULT ''"),
+        ("outbox", "sent_at", "INTEGER"),
+    ):
+        if col not in {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    for (rid,) in c.execute("SELECT request_id FROM outbox WHERE code IS NULL").fetchall():
+        c.execute("UPDATE outbox SET code=? WHERE request_id=?", (reply_code(rid), rid))
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS outbox_code ON outbox(code)")
+    c.execute("UPDATE outbox SET sent_text='' WHERE sent_text!=''")  # no longer kept
+
+
+# Run once each, in order; PRAGMA user_version = how many ran. Append only, never edit.
+MIGRATIONS = [_add_missing_columns]
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -208,7 +243,6 @@ class Store:
     def _conn(self, write: bool = False):
         conn = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
         try:
@@ -227,51 +261,17 @@ class Store:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         c = sqlite3.connect(self.path, isolation_level=None)
         try:
-            c.execute("PRAGMA journal_mode=WAL")
+            c.execute("PRAGMA journal_mode=WAL")  # persistent: set once here
+            c.executescript(SCHEMA)  # idempotent CREATE ... IF NOT EXISTS
         finally:
             c.close()
         with self._conn(write=True) as c:
-            for stmt in SCHEMA.split(";"):
-                if stmt.strip():
-                    c.execute(stmt)
-            c.execute(
-                "INSERT OR IGNORE INTO metadata VALUES ('schema_version', ?)",
-                (str(SCHEMA_VERSION),),
-            )
+            done = c.execute("PRAGMA user_version").fetchone()[0]
+            for n, step in enumerate(MIGRATIONS[done:], done + 1):
+                step(c)
+                c.execute(f"PRAGMA user_version={n}")
             c.execute("INSERT OR IGNORE INTO metadata VALUES ('db_epoch', ?)", (str(uuid.uuid4()),))
-            cols = {r["name"] for r in c.execute("PRAGMA table_info(messages)")}
-            if "handled" not in cols:  # databases created before the flag existed
-                c.execute("ALTER TABLE messages ADD COLUMN handled INTEGER NOT NULL DEFAULT 0")
-            if "links" not in cols:
-                c.execute("ALTER TABLE messages ADD COLUMN links TEXT NOT NULL DEFAULT '[]'")
-            if "snoozed_until" not in cols:
-                c.execute("ALTER TABLE messages ADD COLUMN snoozed_until INTEGER")
-            if "prompt" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
-                c.execute("ALTER TABLE tasks ADD COLUMN prompt TEXT")
-            tcols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}
-            if "mode" not in tcols:
-                c.execute("ALTER TABLE tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'terminal'")
-            if "session_id" not in tcols:
-                c.execute("ALTER TABLE tasks ADD COLUMN session_id TEXT")
-            if "tty" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
-                c.execute("ALTER TABLE tasks ADD COLUMN tty TEXT")
-            if "pinned" not in cols:
-                c.execute("ALTER TABLE messages ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
-            ocols = {r["name"] for r in c.execute("PRAGMA table_info(outbox)")}
-            for col, ddl in (
-                ("code", "TEXT"),
-                ("sent_text", "TEXT NOT NULL DEFAULT ''"),
-                ("sent_at", "INTEGER"),
-            ):
-                if col not in ocols:
-                    c.execute(f"ALTER TABLE outbox ADD COLUMN {col} {ddl}")
-            for r in c.execute("SELECT request_id FROM outbox WHERE code IS NULL").fetchall():
-                c.execute(
-                    "UPDATE outbox SET code=? WHERE request_id=?",
-                    (reply_code(r["request_id"]), r["request_id"]),
-                )
-            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS outbox_code ON outbox(code)")
-            c.execute("UPDATE outbox SET sent_text='' WHERE sent_text!=''")  # no longer kept
+            c.execute("DELETE FROM changes WHERE revision<=?", (self._rev(c) - KEEP_CHANGES,))
         for suffix in ("", "-wal", "-shm"):
             p = Path(str(self.path) + suffix)
             if p.exists():
@@ -285,6 +285,12 @@ class Store:
     @staticmethod
     def _rev(c: sqlite3.Connection) -> int:
         return c.execute("SELECT COALESCE(MAX(revision),0) FROM changes").fetchone()[0] or 0
+
+    @staticmethod
+    def _msg(c: sqlite3.Connection, chat_id: str, message_id: int) -> sqlite3.Row | None:
+        return c.execute(
+            "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
+        ).fetchone()
 
     def _cursor(self, c: sqlite3.Connection) -> str:
         return format_cursor(self._epoch(c), self._rev(c))
@@ -301,6 +307,19 @@ class Store:
     @staticmethod
     def _chat(c: sqlite3.Connection, chat_id: str) -> sqlite3.Row | None:
         return c.execute("SELECT * FROM chats WHERE chat_id=?", (chat_id,)).fetchone()
+
+    def _set_col(
+        self, c: sqlite3.Connection, chat_id: str, message_id: int, col: str, value,
+        only_change: bool = False,
+    ) -> bool:  # fmt: skip
+        """Set one column of a kept message and emit an edit change. True when the message
+        exists (with only_change: when the value actually changed)."""
+        sql = f"UPDATE messages SET {col}=?1 WHERE chat_id=?2 AND message_id=?3 AND deleted=0"
+        cur = c.execute(sql + (f" AND {col} IS NOT ?1" if only_change else ""),
+                        (value, chat_id, message_id))  # fmt: skip
+        if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
+            self._record(c, chat_id, message_id, "edit", chat["generation"])
+        return bool(cur.rowcount)
 
     @staticmethod
     def _revoke_grants(c: sqlite3.Connection, chat_id: str, message_ids: list[int] | None = None):
@@ -346,48 +365,46 @@ class Store:
     ) -> int:
         """Returns the chat's current generation. Disabling bumps it so late work is dropped."""
         with self._conn(write=True) as c:
+            return self._set_tracking(c, chat_id, enabled, title, kind)
+
+    def _set_tracking(
+        self, c: sqlite3.Connection, chat_id: str, enabled: bool, title: str | None,
+        kind: str | None,
+    ) -> int:  # fmt: skip
+        row = self._chat(c, chat_id)
+        if row is None:
+            if title is None or kind is None:
+                raise ApiError(404, "unknown_chat")
+            c.execute(
+                "INSERT INTO chats (chat_id,title,kind) VALUES (?,?,?)", (chat_id, title, kind)
+            )
             row = self._chat(c, chat_id)
-            if row is None:
-                if title is None or kind is None:
-                    raise ApiError(404, "unknown_chat")
+        if enabled:
+            if row["migrated_to"]:
+                raise ApiError(409, "chat_migrated")
+            if not row["tracking"]:
                 c.execute(
-                    "INSERT INTO chats (chat_id,title,kind) VALUES (?,?,?)", (chat_id, title, kind)
+                    "UPDATE chats SET tracking=1, tracked_at=?, title=COALESCE(?,title) "
+                    "WHERE chat_id=?",
+                    (now_ts(), title, chat_id),
                 )
-                row = self._chat(c, chat_id)
-            if enabled:
-                if row["migrated_to"]:
-                    raise ApiError(409, "chat_migrated")
-                if not row["tracking"]:
-                    c.execute(
-                        "UPDATE chats SET tracking=1, tracked_at=?, history_checkpoint=NULL, "
-                        "title=COALESCE(?,title) WHERE chat_id=?",
-                        (now_ts(), title, chat_id),
-                    )
-                    self._record(c, chat_id, None, "tracking", row["generation"])
-                return row["generation"]
-            gen = row["generation"]
-            if row["tracking"]:
-                gen += 1
-                c.execute(
-                    "UPDATE chats SET tracking=0, generation=? WHERE chat_id=?", (gen, chat_id)
-                )
-                c.execute(
-                    "UPDATE outbox SET status='failed', error_code='untracked', text='', "
-                    "updated_at=? WHERE chat_id=? AND status='pending'",
-                    (now_ts(), chat_id),
-                )
-                self._record(c, chat_id, None, "untrack", gen)
-            return gen
+                self._record(c, chat_id, None, "tracking", row["generation"])
+            return row["generation"]
+        gen = row["generation"]
+        if row["tracking"]:
+            gen += 1
+            c.execute("UPDATE chats SET tracking=0, generation=? WHERE chat_id=?", (gen, chat_id))
+            c.execute(
+                "UPDATE outbox SET status='failed', error_code='untracked', text='', "
+                "updated_at=? WHERE chat_id=? AND status='pending'",
+                (now_ts(), chat_id),
+            )
+            self._record(c, chat_id, None, "untrack", gen)
+        return gen
 
     def track_mention(self, chat_id: str, title: str, kind: str) -> None:
-        """A chat exists here only because it tagged us; checkpoint 0 means no history backfill."""
+        """A chat exists here only because it tagged us."""
         self.set_tracking(chat_id, True, title, kind)
-        with self._conn(write=True) as c:
-            c.execute(
-                "UPDATE chats SET history_checkpoint=0, title=? "
-                "WHERE chat_id=? AND history_checkpoint IS NULL",
-                (title, chat_id),
-            )
 
     def mark_migrated(self, old_chat_id: str, new_chat_id: str) -> None:
         with self._conn(write=True) as c:
@@ -408,8 +425,7 @@ class Store:
                 raise ApiError(404, "unknown_chat")
             gen = row["generation"] + 1
             c.execute(
-                "UPDATE chats SET tracking=0, generation=?, history_checkpoint=NULL, "
-                "tracked_at=NULL WHERE chat_id=?",
+                "UPDATE chats SET tracking=0, generation=?, tracked_at=NULL WHERE chat_id=?",
                 (gen, chat_id),
             )
             c.execute(
@@ -428,10 +444,6 @@ class Store:
         with self._conn() as c:
             r = self._chat(c, chat_id)
             return None if r is None else dict(r)
-
-    def chat_generation(self, chat_id: str) -> int | None:
-        row = self.get_chat(chat_id)
-        return None if row is None else row["generation"]
 
     def is_tracking(self, chat_id: str) -> bool:
         row = self.get_chat(chat_id)
@@ -452,14 +464,12 @@ class Store:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT *, (SELECT COUNT(*) FROM messages m WHERE m.chat_id=chats.chat_id "
-                "AND m.outgoing=0 AND m.handled=0 AND m.deleted=0 "
-                "AND COALESCE(m.snoozed_until,0)<=?2 "
-                "AND (?1 IS NULL OR m.date>=?1) AND (?3 IS NULL OR m.date<?3)) AS pending "
-                "FROM chats WHERE (?1 IS NULL AND ?3 IS NULL) OR EXISTS (SELECT 1 FROM messages m "
-                "WHERE m.chat_id=chats.chat_id AND m.deleted=0 "
-                "AND (?1 IS NULL OR m.date>=?1) AND (?3 IS NULL OR m.date<?3)) "
+                f"AND {PENDING} AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)) "
+                "AS pending FROM chats WHERE (?1 IS NULL AND ?2 IS NULL) OR EXISTS (SELECT 1 "
+                "FROM messages m WHERE m.chat_id=chats.chat_id AND m.deleted=0 "
+                "AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)) "
                 "ORDER BY pending=0, title COLLATE NOCASE",
-                (_ts(since), now_ts(), _ts(until)),
+                (_ts(since), _ts(until)),
             ).fetchall()
             cursor = self._cursor(c)
         return [
@@ -479,9 +489,7 @@ class Store:
 
     # ---- messages ------------------------------------------------------
     def _upsert_message(self, c: sqlite3.Connection, m: StoredMessage, chat: sqlite3.Row) -> bool:
-        existing = c.execute(
-            "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (m.chat_id, m.message_id)
-        ).fetchone()
+        existing = self._msg(c, m.chat_id, m.message_id)
         values = (
             m.sender_id, m.sender_name, m.text, _ts(m.date), _ts(m.edit_date), m.reply_to_id,
             m.topic_id, int(m.outgoing), m.media_kind, json.dumps([x.model_dump() for x in m.links]),
@@ -515,38 +523,32 @@ class Store:
         self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
         return True
 
-    def apply_message(self, m: StoredMessage, generation: int | None = None) -> bool:
+    def apply_message(self, m: StoredMessage) -> bool:
         with self._conn(write=True) as c:
             chat = self._chat(c, m.chat_id)
             if chat is None or not chat["tracking"]:
                 return False
-            if generation is not None and generation != chat["generation"]:
-                return False
             return self._upsert_message(c, m, chat)
 
-    def apply_history_batch(
-        self, chat_id: str, generation: int, messages: list[StoredMessage], checkpoint: int
-    ) -> bool:
-        """Store a history batch and advance the checkpoint in one transaction."""
+    def store_mentions(self, found: list[tuple[str, str, StoredMessage, bool]]) -> list[int]:
+        """Keep tags/replies to us, (title, kind, message, we_replied) each, in one transaction:
+        track the chat, store the message, apply ignore rules, mark answered ones handled.
+        Returns ids of tags seen for the first time and still pending (to notify about)."""
+        fresh = []
         with self._conn(write=True) as c:
-            chat = self._chat(c, chat_id)
-            if chat is None or not chat["tracking"] or chat["generation"] != generation:
-                return False
-            for m in messages:
-                if m.chat_id == chat_id:
-                    self._upsert_message(c, m, chat)
-            if chat["history_checkpoint"] is None or checkpoint > chat["history_checkpoint"]:
-                c.execute(
-                    "UPDATE chats SET history_checkpoint=? WHERE chat_id=?", (checkpoint, chat_id)
-                )
-            return True
-
-    def history_checkpoint(self, chat_id: str) -> tuple[int | None, int] | None:
-        """(checkpoint or None if uninitialized, generation) when tracked, else None."""
-        row = self.get_chat(chat_id)
-        if not row or not row["tracking"]:
-            return None
-        return row["history_checkpoint"], row["generation"]
+            rules = [dict(r) for r in c.execute("SELECT * FROM rules")]
+            for title, kind, m, replied in found:
+                try:
+                    self._set_tracking(c, m.chat_id, True, title, kind)
+                except ApiError:
+                    continue  # migrated chat
+                new = self._msg(c, m.chat_id, m.message_id) is None
+                self._upsert_message(c, m, self._chat(c, m.chat_id))
+                if replied or _rule_matches(rules, m):
+                    self._set_col(c, m.chat_id, m.message_id, "handled", 1, only_change=True)
+                elif new:
+                    fresh.append(m.message_id)
+        return fresh
 
     def apply_deletion(self, chat_id: str | None, message_ids: list[str]) -> list[str]:
         """Returns chat ids that changed. chat_id None => ambiguous basic-group deletion."""
@@ -573,9 +575,7 @@ class Store:
                         log.warning("ambiguous delete skipped (matches=%d)", len(rows))
             for chat, mid in targets:
                 cid = chat["chat_id"]
-                existing = c.execute(
-                    "SELECT deleted FROM messages WHERE chat_id=? AND message_id=?", (cid, mid)
-                ).fetchone()
+                existing = self._msg(c, cid, mid)
                 if existing is not None and existing["deleted"]:
                     continue
                 if existing is None:
@@ -599,30 +599,15 @@ class Store:
     def set_handled(self, chat_id: str, message_id: int, handled: bool) -> bool:
         """Mark a kept message handled or not; emits an edit change when it flips."""
         with self._conn(write=True) as c:
-            return self._set_handled(c, chat_id, message_id, handled)
+            return self._set_col(c, chat_id, message_id, "handled", int(handled), only_change=True)
 
     def set_snooze(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
         with self._conn(write=True) as c:
-            chat = self._chat(c, chat_id)
-            cur = c.execute(
-                "UPDATE messages SET snoozed_until=? "
-                "WHERE chat_id=? AND message_id=? AND deleted=0",
-                (_ts(until), chat_id, message_id),
-            )
-            if cur.rowcount and chat is not None:
-                self._record(c, chat_id, message_id, "edit", chat["generation"])
-            return bool(cur.rowcount)
+            return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
 
     def set_pinned(self, chat_id: str, message_id: int, pinned: bool) -> bool:
         with self._conn(write=True) as c:
-            chat = self._chat(c, chat_id)
-            cur = c.execute(
-                "UPDATE messages SET pinned=? WHERE chat_id=? AND message_id=? AND deleted=0",
-                (int(pinned), chat_id, message_id),
-            )
-            if cur.rowcount and chat is not None:
-                self._record(c, chat_id, message_id, "edit", chat["generation"])
-            return bool(cur.rowcount)
+            return self._set_col(c, chat_id, message_id, "pinned", int(pinned))
 
     def list_pinned(self, limit: int = 300) -> list[tuple[str, MessageDTO]]:
         """Every pinned message, handled or not, newest first: (chat title, message)."""
@@ -641,41 +626,33 @@ class Store:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT m.*, c.title AS chat_title FROM messages m JOIN chats c USING (chat_id) "
-                "WHERE c.tracking=1 AND m.outgoing=0 AND m.handled=0 AND m.deleted=0 "
-                "AND COALESCE(m.snoozed_until,0)<=?1 AND (?2 IS NULL OR m.date>=?2) "
-                "AND (?3 IS NULL OR m.date<?3) ORDER BY m.pinned DESC, m.date LIMIT ?4",
-                (now_ts(), _ts(since), _ts(until), limit),
+                f"WHERE c.tracking=1 AND {PENDING} AND (?1 IS NULL OR m.date>=?1) "
+                "AND (?2 IS NULL OR m.date<?2) ORDER BY m.pinned DESC, m.date LIMIT ?3",
+                (_ts(since), _ts(until), limit),
             ).fetchall()
         return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
 
     def mark_all_handled(
         self, chat_id: str, since: datetime | None = None, until: datetime | None = None
     ) -> list[int]:
-        """Mark every pending tag in a chat (within [since, until)) handled; returns their ids."""
+        """Mark every pending tag of a tracked chat (within [since, until)) handled, the same
+        ones the pending count shows; returns their ids."""
         with self._conn(write=True) as c:
-            ids = [r[0] for r in c.execute(
-                "SELECT message_id FROM messages WHERE chat_id=?1 AND outgoing=0 AND handled=0 "
-                "AND deleted=0 AND (?2 IS NULL OR date>=?2) AND (?3 IS NULL OR date<?3)",
+            chat = self._chat(c, chat_id)
+            if chat is None or not chat["tracking"]:
+                return []
+            ids = sorted(r[0] for r in c.execute(
+                f"UPDATE messages AS m SET handled=1 WHERE m.chat_id=?1 AND {PENDING} "
+                "AND (?2 IS NULL OR m.date>=?2) AND (?3 IS NULL OR m.date<?3) RETURNING message_id",
                 (chat_id, _ts(since), _ts(until)),
-            )]  # fmt: skip
-            return [i for i in ids if self._set_handled(c, chat_id, i, True)]
-
-    def _set_handled(self, c: sqlite3.Connection, chat_id: str, message_id: int, handled: bool):
-        chat = self._chat(c, chat_id)
-        cur = c.execute(
-            "UPDATE messages SET handled=? WHERE chat_id=? AND message_id=? AND handled<>? "
-            "AND deleted=0",
-            (int(handled), chat_id, message_id, int(handled)),
-        )
-        if cur.rowcount and chat is not None:
-            self._record(c, chat_id, message_id, "edit", chat["generation"])
-        return bool(cur.rowcount)
+            ).fetchall())  # fmt: skip
+            for i in ids:
+                self._record(c, chat_id, i, "edit", chat["generation"])
+            return ids
 
     def get_message(self, chat_id: str, message_id: int) -> StoredMessage | None:
         with self._conn() as c:
-            r = c.execute(
-                "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
-            ).fetchone()
+            r = self._msg(c, chat_id, message_id)
             return None if r is None else _row_to_message(r)
 
     def get_messages_by_ids(self, chat_id: str, ids: list[int]) -> tuple[list[StoredMessage], str]:
@@ -704,11 +681,9 @@ class Store:
         where, args = ["chat_id=?"], [chat_id]
         if q:
             where.append("deleted=0 AND text LIKE ? ESCAPE '\\'")
-            esc = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            args.append(f"%{esc}%")
+            args.append(_like(q))
         if pending:
-            where.append("deleted=0 AND outgoing=0 AND handled=0 AND COALESCE(snoozed_until,0)<=?")
-            args.append(now_ts())
+            where.append(PENDING)
         if since is not None:
             where.append("deleted=0 AND date>=?")
             args.append(_ts(since))
@@ -723,7 +698,7 @@ class Store:
             args.append(after)
         order = "ASC" if after is not None else "DESC"
         sql = (
-            f"SELECT * FROM messages WHERE {' AND '.join(where)} "
+            f"SELECT * FROM messages m WHERE {' AND '.join(where)} "
             f"ORDER BY message_id {order} LIMIT ?"
         )
         with self._conn() as c:
@@ -747,38 +722,33 @@ class Store:
         limit = max(1, min(limit, 500))
         parsed = parse_cursor(cursor)
         with self._conn() as c:
-            epoch, head = self._epoch(c), self._rev(c)
-            if parsed is None or parsed[0] != epoch or parsed[1] > head:
+            epoch = self._epoch(c)
+            first, head = c.execute(
+                "SELECT COALESCE(MIN(revision),1), COALESCE(MAX(revision),0) FROM changes"
+            ).fetchone()
+            # Unusable: other database, from the future, or older than the pruned log.
+            if parsed is None or parsed[0] != epoch or not first - 1 <= parsed[1] <= head:
                 return [], format_cursor(epoch, head), False, True
             rows = c.execute(
-                "SELECT * FROM changes WHERE revision>? ORDER BY revision LIMIT ?",
-                (parsed[1], limit + 1),
+                "SELECT ch.revision, ch.chat_id AS ch_chat, ch.message_id AS ch_mid, "
+                "ch.kind AS ch_kind, ch.generation AS ch_gen, m.* FROM changes ch "
+                "LEFT JOIN messages m ON ?3 AND ch.kind IN ('new','edit','delete') "
+                "AND m.chat_id=ch.chat_id AND m.message_id=ch.message_id "
+                "WHERE ch.revision>?1 ORDER BY ch.revision LIMIT ?2",
+                (parsed[1], limit + 1, with_messages),
             ).fetchall()
             has_more = len(rows) > limit
-            rows = rows[:limit]
-            items = []
-            for r in rows:
-                msg = None
-                if (
-                    with_messages
-                    and r["message_id"] is not None
-                    and r["kind"] in ("new", "edit", "delete")
-                ):
-                    mr = c.execute(
-                        "SELECT * FROM messages WHERE chat_id=? AND message_id=?",
-                        (r["chat_id"], r["message_id"]),
-                    ).fetchone()
-                    msg = None if mr is None else to_dto(_row_to_message(mr))
-                items.append(
-                    ChangeItem(
-                        cursor=format_cursor(epoch, r["revision"]),
-                        chat_id=r["chat_id"],
-                        message_id=None if r["message_id"] is None else str(r["message_id"]),
-                        kind=r["kind"],
-                        generation=r["generation"],
-                        message=msg,
-                    )
+            items = [
+                ChangeItem(
+                    cursor=format_cursor(epoch, r["revision"]),
+                    chat_id=r["ch_chat"],
+                    message_id=None if r["ch_mid"] is None else str(r["ch_mid"]),
+                    kind=r["ch_kind"],
+                    generation=r["ch_gen"],
+                    message=None if r["message_id"] is None else to_dto(_row_to_message(r)),
                 )
+                for r in rows[:limit]
+            ]
             nxt = items[-1].cursor if items else format_cursor(epoch, parsed[1])
             return items, nxt, has_more, False
 
@@ -810,9 +780,7 @@ class Store:
             chat = self._chat(c, chat_id)
             if chat is None or not chat["tracking"]:
                 raise ApiError(409, "not_tracking")
-            target = c.execute(
-                "SELECT deleted FROM messages WHERE chat_id=? AND message_id=?", (chat_id, reply_to)
-            ).fetchone()
+            target = self._msg(c, chat_id, reply_to)
             if target is None or target["deleted"]:
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
@@ -848,10 +816,7 @@ class Store:
                 "updated_at=? WHERE request_id=?",
                 (now_ts(), request_id),
             )
-            topic = c.execute(
-                "SELECT topic_id FROM messages WHERE chat_id=? AND message_id=?",
-                (r["chat_id"], r["reply_to_message_id"]),
-            ).fetchone()
+            topic = self._msg(c, r["chat_id"], r["reply_to_message_id"])
             return {
                 "chat_id": r["chat_id"],
                 "reply_to": r["reply_to_message_id"],
@@ -873,6 +838,8 @@ class Store:
         """Record the result; a sent message is upserted in the same transaction."""
         with self._conn(write=True) as c:
             r = c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
+            if r is None:
+                raise ApiError(404, "request_not_found")
             c.execute(
                 "UPDATE outbox SET status=?, message_id=?, error_code=?, retry_after=?, "
                 "updated_at=?, text=CASE WHEN ?='sent' THEN '' ELSE text END, "
@@ -880,12 +847,12 @@ class Store:
                 (status, message_id, error_code, retry_after, now_ts(), status, status,
                  now_ts(), request_id),
             )
-            if sent is not None and r is not None:
+            if sent is not None:
                 chat = self._chat(c, sent.chat_id)
                 if chat is not None and chat["tracking"]:
                     self._upsert_message(c, sent, chat)
-            if status == "sent" and r is not None:  # replying from the dashboard handles the tag
-                self._set_handled(c, r["chat_id"], r["reply_to_message_id"], True)
+            if status == "sent":  # replying from the dashboard handles the tag
+                self._set_col(c, r["chat_id"], r["reply_to_message_id"], "handled", 1, True)
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             )
@@ -906,31 +873,28 @@ class Store:
             )
 
     # ---- auto-handle rules ---------------------------------------------
-    @staticmethod
-    def _rule_dict(r: sqlite3.Row) -> dict:
-        return {"id": r["id"], "kind": r["kind"], "value": r["value"], "label": r["label"]}
-
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
-            return [self._rule_dict(r) for r in c.execute("SELECT * FROM rules WHERE kind = 'keyword' ORDER BY id")]
+            rows = c.execute("SELECT * FROM rules WHERE kind='keyword' ORDER BY id")
+            return [dict(r) for r in rows]
 
     def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, int]:
         """Save a rule and clear the pending tags it already matches."""
-        value = value.strip() if kind == "sender" else value.strip().lower()
+        value = value.strip().lower()
         with self._conn(write=True) as c:
             c.execute(
                 "INSERT INTO rules (kind,value,label) VALUES (?,?,?) "
                 "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label",
                 (kind, value, label),
             )
-            rule = self._rule_dict(
+            rule = dict(
                 c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
             )
             rows = c.execute(
                 "SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0"
             ).fetchall()
             n = sum(
-                self._set_handled(c, r["chat_id"], r["message_id"], True)
+                self._set_col(c, r["chat_id"], r["message_id"], "handled", 1, True)
                 for r in rows
                 if _rule_matches([rule], _row_to_message(r))
             )
@@ -940,38 +904,21 @@ class Store:
         with self._conn(write=True) as c:
             c.execute("DELETE FROM rules WHERE id=?", (rule_id,))
 
-    def auto_handle(self, chat_id: str, message_id: int) -> bool:
-        """Mark a just-stored tag handled when a rule matches it."""
-        with self._conn(write=True) as c:
-            r = c.execute(
-                "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
-            ).fetchone()
-            if r is None or r["handled"] or r["outgoing"]:
-                return False
-            rules = [self._rule_dict(x) for x in c.execute("SELECT * FROM rules")]
-            if not _rule_matches(rules, _row_to_message(r)):
-                return False
-            return self._set_handled(c, chat_id, message_id, True)
-
     # ---- tasks ---------------------------------------------------------
     def add_task(
         self, task_id: str, chat_id: str | None, message_id: int | None, project: str,
-        prompt: str, tty: str | None = None, mode: str = "terminal", session_id: str | None = None,
+        prompt: str, mode: str = "plan", session_id: str | None = None,
     ):  # fmt: skip
         with self._conn(write=True) as c:
             c.execute(
-                "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, tty, "
-                "mode, session_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                (task_id, chat_id, message_id, project, now_ts(), prompt, tty, mode, session_id),
+                "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, "
+                "mode, session_id) VALUES (?,?,?,?,?,?,?,?)",
+                (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id),
             )
 
     def set_task_session(self, task_id: str, session_id: str) -> None:
         with self._conn(write=True) as c:
             c.execute("UPDATE tasks SET session_id=? WHERE id=?", (session_id, task_id))
-
-    def set_task_tty(self, task_id: str, tty: str | None) -> None:
-        with self._conn(write=True) as c:
-            c.execute("UPDATE tasks SET tty=? WHERE id=?", (tty, task_id))
 
     def list_tasks(self, chat_id: str | None = None) -> list[dict]:
         """Newest first, with a peek at the tagged message so the task list stands alone."""
@@ -998,14 +945,13 @@ class Store:
     # ---- projects ------------------------------------------------------
     def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:
         """Stored messages of tracked chats that mention `needle` (a ticket ID), newest first."""
-        esc = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         word = re.compile(rf"(?<![\w-]){re.escape(needle)}(?!\d)", re.I)  # VA-12 must not match VA-123
         with self._conn() as c:
             rows = c.execute(
                 "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, c.title "
                 "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
                 "AND m.text LIKE ? ESCAPE '\\' ORDER BY m.date DESC LIMIT ?",
-                (f"%{esc}%", limit * 3),
+                (_like(needle), limit * 3),
             ).fetchall()
         return [dict(r) for r in rows if word.search(r["text"])][:limit]
 
@@ -1031,9 +977,7 @@ class Store:
         participants: dict[str, str],
     ) -> None:  # fmt: skip
         with self._conn(write=True) as c:
-            m = c.execute(
-                "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
-            ).fetchone()
+            m = self._msg(c, chat_id, message_id)
             if m is None or m["deleted"]:
                 raise ApiError(404, "message_not_found")
             c.execute(

@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useChatMessages } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
-import { dayLabel, toast, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
+import { dayLabel, msgKey, smooth, toast, useListShortcuts, useNow, useSelection, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 export function MessageList({
@@ -37,7 +37,7 @@ export function MessageList({
   range: string;
   chatId: string;
   onBack: () => void;
-  replyTo: string | null;
+  replyTo: string | null; // msgKey of the message being answered
   onReply: (m: Message) => void;
   itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
 }) {
@@ -64,6 +64,7 @@ export function MessageList({
     () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : []),
     [query.data],
   );
+  const days = useMemo(() => items.map((m) => dayLabel(m.date)), [items]); // day pills: Intl is too slow to run per row per render
   const now = useNow();
   const tasks = useTasks();
   const focused = useListShortcuts(items, onReply);
@@ -89,16 +90,17 @@ export function MessageList({
     void query.fetchNextPage();
   };
 
-  // Focus: page back until the message is loaded, then center and flash it (once).
+  // Focus: page back until the message is loaded (at most 20 pages), then center and flash it (once).
   const sought = useRef(focus);
+  const soughtPages = useRef(0);
   useEffect(() => {
     const id = sought.current;
-    if (!id || !query.isSuccess || query.isFetchingNextPage) return;
-    const el = box.current?.querySelector<HTMLElement>(`[data-testid="message"][data-id="${CSS.escape(id)}"]`);
-    if (el) {
+    if (!id || query.isPending || query.isFetchingNextPage) return;
+    if (query.isError) {
       sought.current = null;
-      revealMessage(el);
-    } else if (query.hasNextPage) loadOlder();
+      toast({ text: `Không tải được tin để tìm #${id}, thử lại sau` });
+    } else if (revealMessage(box.current, id)) sought.current = null;
+    else if (query.hasNextPage && soughtPages.current++ < 20) loadOlder();
     else {
       sought.current = null;
       toast({ text: `Không thấy tin #${id} trong nhóm (ngoài khoảng thời gian đang lọc?)` });
@@ -203,8 +205,8 @@ export function MessageList({
         )}
         <ol className="@container divide-y divide-rule">
           {items.map((m, i) => {
-            const day = dayLabel(m.date);
-            const newDay = i === 0 || dayLabel(items[i - 1].date) !== day;
+            const day = days[i];
+            const newDay = i === 0 || days[i - 1] !== day;
             return (
             <Fragment key={m.message_id}>
             {/* Telegram's day pill: rides at the top while you scroll through that day. */}
@@ -217,12 +219,12 @@ export function MessageList({
               head={newDay || items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
               clock
               m={m}
-              isReplyTarget={replyTo === m.message_id}
+              isReplyTarget={replyTo === msgKey(m)}
               checked={sel.has(m)}
               selectMode={sel.on}
               now={now}
-              focused={focused === m.message_id}
-              tasks={tasks.get(`${m.chat_id}:${m.message_id}`)}
+              focused={focused === msgKey(m)}
+              tasks={tasks.get(msgKey(m))}
               onReply={onReply}
               onToggle={sel.toggle}
               onUseText={onUseText}
@@ -235,7 +237,7 @@ export function MessageList({
       {far && (
         <Button size="icon" variant="outline" aria-label="Xuống tin mới nhất" title="Xuống tin mới nhất"
           className="absolute right-4 bottom-4 rounded-full shadow-pop animate-in fade-in-0 duration-(--dur-short)"
-          onClick={() => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}>
+          onClick={() => box.current?.scrollTo({ top: box.current.scrollHeight, behavior: smooth() })}>
           <ArrowDown />
         </Button>
       )}

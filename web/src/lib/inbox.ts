@@ -75,9 +75,13 @@ export function useNow() {
   return now;
 }
 
+/** Minutes in the largest whole unit: [12, "phút"], [3, "giờ"], [2, "ngày"]. */
+export const byUnit = (mins: number): [number, string] =>
+  mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
+
 export function waitLabel(date: string, now: number) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
-  const [n, unit] = mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
+  const [n, unit] = byUnit(mins);
   return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= readOverdueHours() * 60 };
 }
 
@@ -100,6 +104,17 @@ export function telegramLink(m: Message) {
 
 /** Local database key of a message, for bug reports. */
 export const dbId = (m: Message) => `${m.chat_id}/${m.message_id}`;
+/** Row identity across groups ("chat:message"): message ids only count up per chat. Also a row's `data-key`. */
+export const msgKey = (m: { chat_id: string | null; message_id: string | null }) => `${m.chat_id}:${m.message_id}`;
+
+/** Scroll behaviour that respects reduced motion. */
+export const smooth = (): ScrollBehavior => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+/** Bring a list row (by `msgKey`) into view. */
+export const scrollToRow = (key: string) =>
+  document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", behavior: smooth() });
+
+/** How an AI Agent task runs; "terminal" only on old tasks (shown, no longer started). */
+export const TASK_MODES: Record<string, string> = { plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal (cũ)" };
 
 export const markHandled = (m: Message, handled: boolean) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/handled`, {
@@ -113,27 +128,24 @@ export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("t
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
 
-/** Mark done or reopen; marking done offers an undo. */
+/** Mark done or reopen; marking done offers an undo (for the ones that went through, if some failed). */
 export async function setHandled(ms: Message[], handled: boolean) {
-  try {
-    await Promise.all(ms.map((m) => markHandled(m, handled)));
-  } catch (e) {
-    toast({ text: "Không cập nhật được, thử lại sau" });
-    throw e;
+  const res = await Promise.allSettled(ms.map((m) => markHandled(m, handled)));
+  const ok = ms.filter((_, i) => res[i].status === "fulfilled");
+  const undo = handled && ok.length ? () => Promise.all(ok.map((m) => markHandled(m, false))) : undefined;
+  const failed = res.find((r) => r.status === "rejected");
+  if (failed) {
+    toast({ text: ok.length ? `Chỉ cập nhật được ${ok.length}/${ms.length} tin, thử lại phần còn lại` : "Không cập nhật được, thử lại sau", undo });
+    throw failed.reason;
   }
-  if (handled) {
-    toast({
-      text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong",
-      undo: () => Promise.all(ms.map((m) => markHandled(m, false))),
-    });
-  }
+  if (handled) toast({ text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong", undo });
 }
 
 /** Multi-select for bulk "xong"; keys are "chat:message" so it works across groups. */
 export function useSelection() {
   const [on, setOn] = useState(false);
   const [picked, setPicked] = useState<Map<string, Message>>(new Map());
-  const key = (m: Message) => `${m.chat_id}:${m.message_id}`;
+  const key = msgKey;
   const stop = () => {
     setOn(false);
     setPicked(new Map());
@@ -184,13 +196,13 @@ export function useTasks() {
   const byMessage = new Map<string, Task[]>();
   for (const t of q.data ?? []) {
     if (!t.chat_id || !t.message_id) continue;
-    const k = `${t.chat_id}:${t.message_id}`;
+    const k = msgKey(t);
     byMessage.set(k, [...(byMessage.get(k) ?? []), t]);
   }
   return byMessage;
 }
 
-/** j/k move, r reply, x done/reopen, a focus the AI prompt. Ignored while typing. */
+/** j/k move, r reply, x done/reopen, a focus the AI prompt. Ignored while typing. Returns the focused row's `msgKey`. */
 export function useListShortcuts(
   items: Message[],
   onReply: (m: Message) => void,
@@ -201,13 +213,13 @@ export function useListShortcuts(
       const el = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
       const actionable = items.filter((m) => !m.deleted);
-      const i = actionable.findIndex((m) => m.message_id === focused);
+      const i = actionable.findIndex((m) => msgKey(m) === focused);
       const cur = actionable[i];
       if (e.key === "j" || e.key === "k") {
         const next = actionable[e.key === "j" ? Math.min(actionable.length - 1, i + 1) : Math.max(0, i < 0 ? actionable.length - 1 : i - 1)];
         if (next) {
-          setFocused(next.message_id);
-          document.querySelector(`[data-id="${next.message_id}"]`)?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+          setFocused(msgKey(next));
+          scrollToRow(msgKey(next));
         }
       } else if (e.key === "r" && cur) onReply(cur);
       else if (e.key === "x" && cur && !cur.outgoing) setHandled([cur], !cur.handled).catch(() => {}); // the toast already reported it

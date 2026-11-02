@@ -21,12 +21,15 @@ class Hub:
 
     def notify(self) -> None:
         self.version += 1
-        self._event.set()
+        self._event.set()  # wakes everyone waiting on it; it is never cleared, only replaced
+        self._event = asyncio.Event()
 
-    async def wait(self, timeout: float) -> None:
+    async def wait(self, version: int, timeout: float) -> None:
+        """Until a notify after `version` (read before the caller's DB query), or timeout."""
+        if self.version != version:
+            return
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._event.wait(), timeout)
-        self._event.clear()
 
 
 async def event_stream(
@@ -46,6 +49,7 @@ async def event_stream(
         last_status = None
         sent = 0
         while await alive():
+            seen = hub.version  # before the query: a commit landing during it still wakes us
             items, nxt, has_more, reset = await asyncio.to_thread(
                 store.changes_since, pos, 500, False
             )
@@ -76,9 +80,8 @@ async def event_stream(
                 return
             if has_more:
                 continue
-            before = hub.version
-            await hub.wait(heartbeat)
-            if hub.version == before:
+            await hub.wait(seen, heartbeat)
+            if hub.version == seen:
                 yield ServerSentEvent(comment="keepalive")
     finally:
         hub.subscribers -= 1

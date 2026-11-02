@@ -56,3 +56,13 @@ def test_mark_all_handled_respects_since(client):
     assert r.json() == {"count": 1}
     assert client.get("/api/chats").json()["items"][0]["pending_count"] == 1
     assert client.post("/api/chats/-1001/handled-all", headers=h).json() == {"count": 1}
+
+
+def test_cross_site_and_forwarded_host_rejected(client):
+    for site in ("cross-site", "same-site"):  # e.g. <img src=…/api/…> from another page
+        assert client.get("/api/status", headers={"Sec-Fetch-Site": site}).status_code == 403
+    for site in ("same-origin", "none"):
+        assert client.get("/api/status", headers={"Sec-Fetch-Site": site}).status_code == 200
+    # Dev proxy: Host is rewritten, the browser's Host comes as X-Forwarded-Host (DNS rebinding).
+    for fwd, code in (("evil.test:3000", 400), ("127.0.0.1:8765", 200)):
+        assert client.get("/api/status", headers={"X-Forwarded-Host": fwd}).status_code == code

@@ -1,7 +1,6 @@
-import json
-import os
+import asyncio
+import logging
 import re
-import uuid
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -14,29 +13,19 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 
 from .agent import AgentRunner
-from .ai import (
-    AiService,
+from .ai import AiService, client_gone, grant_problem, pick_folder
+from .auth import LocalGuardMiddleware
+from .claude import (
     claude_account,
     claude_login,
     claude_login_code,
     claude_logout,
     claude_prefs,
-    client_gone,
-    delete_task_files,
-    grant_problem,
-    open_task,
-    pick_folder,
     save_claude_prefs,
-    read_task_prompt,
-    read_task_result,
-    task_result_path,
-    terminal_read,
-    terminal_send,
 )
-from .auth import LocalGuardMiddleware
-from .config import Settings
-from .digest import DigestService
-from .errors import ApiError
+from .config import Settings, write_private_json
+from .digest import DigestService, aware
+from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
 from .models import (
     AiDraftRequest,
@@ -44,7 +33,9 @@ from .models import (
     AiPermissionResponse,
     AiResult,
     AiSummaryRequest,
+    BriefingItem,
     ChangesPage,
+    ChatsResponse,
     ClaudeAccount,
     ClaudeLoginCode,
     ClaudeLoginStarted,
@@ -54,48 +45,37 @@ from .models import (
     DigestRequest,
     DigestResult,
     GroupInfo,
-    HistoryPage,
-    BriefingItem,
-    SavedDigest,
-    ChatsResponse,
     HandledAllResponse,
     HandledRequest,
+    HistoryPage,
     MessageDTO,
     MessagesPage,
     OutboxDTO,
     PendingItem,
+    PinRequest,
     ProjectDTO,
     ProjectRequest,
     ReplyRequest,
     RuleAdded,
     RuleDTO,
     RuleRequest,
-    PinRequest,
+    SavedDigest,
     SnoozeRequest,
     StatusDTO,
-    TaskDTO,
-    TaskInput,
-    TaskMessage,
-    TaskRequest,
     YouTrackAuth,
     YouTrackIssue,
     YouTrackRequest,
     YouTrackUser,
     to_dto,
 )
-from .storage import Db, Store, parse_cursor
+from .storage import Db, Store, _dt, parse_cursor
+from .tasks import build_router as build_task_router
 from .telegram import TelegramBridge, Transport
-from .youtrack import create_issue, whoami
-from .yt_dashboard import YouTrackDashboard, YtError, build_router
+from .yt_dashboard import YouTrackDashboard, YtError, build_router, create_issue, whoami
 
+log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
-
-
-def _int_or_404(value: str, code: str = "reply_not_found") -> int:
-    try:
-        return int(value)
-    except ValueError:
-        raise ApiError(404, code) from None
+LIVE_READS = 4  # parallel Telegram calls in /api/briefing
 
 
 def create_app(
@@ -148,6 +128,7 @@ def create_app(
         return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
 
     app.include_router(build_router(yt_dashboard), include_in_schema=False)
+    app.include_router(build_task_router(settings))
 
     def S(request: Request):
         return request.app.state
@@ -179,17 +160,11 @@ def create_app(
     ) -> ChatsResponse:
         s = S(request)
         items, cursor = await s.db.read(s.store.list_chats, since, until)
-        out = [c for c in items if c.tracking]
-        for c in out:
-            c.sync_state = s.bridge.sync_state.get(c.chat_id, "idle")
-        return ChatsResponse(items=out, snapshot_cursor=cursor)
+        return ChatsResponse(items=[c for c in items if c.tracking], snapshot_cursor=cursor)
 
     @app.delete("/api/chats/{chat_id}/data", status_code=204)
     async def purge(chat_id: str, request: Request) -> None:
         s = S(request)
-        task = s.bridge._tasks.pop(chat_id, None)
-        if task:
-            task.cancel()
         await s.db.write(s.store.purge_chat, chat_id)
 
     @app.get("/api/chats/{chat_id}/messages")
@@ -208,8 +183,8 @@ def create_app(
         items, cursor, has_more = await s.db.read(
             s.store.query_messages,
             chat_id,
-            before=None if before is None else _int_or_404(before, "invalid_cursor"),
-            after=None if after is None else _int_or_404(after, "invalid_cursor"),
+            before=None if before is None else int_or_404(before, "invalid_cursor"),
+            after=None if after is None else int_or_404(after, "invalid_cursor"),
             limit=limit,
             q=q or None,
             since=since,
@@ -223,7 +198,7 @@ def create_app(
         chat_id: str, message_id: str, body: HandledRequest, request: Request
     ) -> None:
         s = S(request)
-        mid = _int_or_404(message_id, "message_not_found")
+        mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")
         if await s.db.write(s.store.set_handled, chat_id, mid, body.handled):
@@ -238,8 +213,7 @@ def create_app(
     ) -> HandledAllResponse:
         s = S(request)
         ids = await s.db.write(s.store.mark_all_handled, chat_id, since, until)
-        s.bridge.react(chat_id, ids, True)
-        return HandledAllResponse(count=len(ids))
+        return HandledAllResponse(count=len(ids))  # no reactions: a bulk mark would flood Telegram
 
     @app.get("/api/changes")
     async def changes(
@@ -266,7 +240,7 @@ def create_app(
             return not await request.is_disconnected()
 
         def bridge_status() -> dict:
-            return {"state": s.bridge.state, "sync": dict(sorted(s.bridge.sync_state.items()))}
+            return {"state": s.bridge.state}
 
         yield ServerSentEvent(retry=3000, comment="open")
         async for ev in event_stream(s.store, s.hub, start, alive=alive, status=bridge_status):
@@ -302,7 +276,7 @@ def create_app(
         now = datetime.now(UTC)
         granted, rejected = [], {}
         for g in body.grants:
-            mid = _int_or_404(g.message_id, "message_not_found")
+            mid = int_or_404(g.message_id, "message_not_found")
             msg = await s.db.read(s.store.get_message, chat_id, mid)
             problem = grant_problem(msg, g, now)
             if problem:
@@ -310,7 +284,7 @@ def create_app(
                 continue
             await s.db.write(s.store.put_grant, chat_id, mid, g.scope, g.expires_at, g.participants)
             granted.append(g.message_id)
-        revoke = [_int_or_404(i, "message_not_found") for i in body.revoke_message_ids]
+        revoke = [int_or_404(i, "message_not_found") for i in body.revoke_message_ids]
         if revoke:
             await s.db.write(s.store.revoke_grants, chat_id, revoke)
         return AiPermissionResponse(
@@ -323,17 +297,20 @@ def create_app(
         client_gone.set(request.is_disconnected)
         nearby, images = None, []
         if not settings.ai_require_consent:  # extras carry no consent grants
-            ids = [_int_or_404(i, "message_not_found") for i in body.message_ids]
+            ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
             msgs, _c = await s.db.read(s.store.get_messages_by_ids, body.chat_id, ids)
             for m in msgs:
-                photo = m.media_kind == "photo" and await _photo(request, m.chat_id, m.message_id)
-                if photo:
+                if m.media_kind != "photo":
+                    continue
+                if photo := await _photo(request, m.chat_id, m.message_id):
                     images.append(photo)
+                else:
+                    log.warning("draft without photo %s/%s: not available", m.chat_id, m.message_id)
             if body.with_context and len(ids) == 1 and s.bridge.state == "connected":
                 try:
                     nearby = await s.bridge.fetch_context(body.chat_id, ids[0])
-                except Exception:
-                    nearby = None  # context is a bonus; draft from the tag alone
+                except Exception as e:  # context is a bonus; draft from the tag alone
+                    log.warning("draft without context for %s: %r", body.chat_id, e)
         return await s.ai.run(
             "draft", body.chat_id, body.message_ids, body.instruction, body.project,
             nearby=nearby, images=images, platform=body.platform,
@@ -362,8 +339,7 @@ def create_app(
 
     async def _consent(s, chat_id: str) -> DigestConsent:
         exp = await s.db.read(s.store.get_digest_consent, chat_id)
-        at = None if exp is None else datetime.fromtimestamp(exp, UTC)
-        return DigestConsent(enabled=at is not None, expires_at=at)
+        return DigestConsent(enabled=exp is not None, expires_at=_dt(exp))
 
     @app.get("/api/chats/{chat_id}/digest-consent")
     async def get_digest_consent(chat_id: str, request: Request) -> DigestConsent:
@@ -392,7 +368,6 @@ def create_app(
         """Live from Telegram, not stored: the Digest view reads and picks from this."""
         s = S(request)
         await _known_chat(s, chat_id)
-        aware = lambda d: d if d.tzinfo else d.replace(tzinfo=UTC)  # noqa: E731
         msgs = await s.bridge.fetch_range(
             chat_id, aware(since), aware(until) if until else datetime.now(UTC), limit + 1
         )
@@ -410,9 +385,9 @@ def create_app(
             return None
         return SavedDigest(
             result=DigestResult.model_validate_json(d["result"]),
-            created_at=datetime.fromtimestamp(d["created_at"], UTC),
+            created_at=_dt(d["created_at"]),
             last_message_id=str(d["last_message_id"]),
-            last_date=datetime.fromtimestamp(d["last_date"], UTC),
+            last_date=_dt(d["last_date"]),
         )
 
     @app.get("/api/briefing")
@@ -420,21 +395,25 @@ def create_app(
         """Tracked groups and digest-only ones, with their Digest state; latest_id tells
         whether there is news."""
         s = S(request)
-        out = []
-        for chat_id in await s.db.read(s.store.briefing_chat_ids):
+        live = asyncio.Semaphore(LIVE_READS)
+
+        async def item(chat_id: str) -> BriefingItem:
             chat = await s.db.read(s.store.get_chat, chat_id)
             consent = await s.db.read(s.store.get_digest_consent, chat_id) is not None
             latest = None
             if consent and s.bridge.state == "connected":  # only groups the AI may read
                 try:
-                    latest = str(await s.bridge.transport.latest_id(chat_id))
-                except Exception:
-                    pass  # one unreachable group must not hide the others
-            out.append(BriefingItem(
+                    async with live:
+                        latest = str(await s.bridge.transport.latest_id(chat_id))
+                except Exception as e:  # one unreachable group must not hide the others
+                    log.warning("briefing: latest id of %s unknown: %r", chat_id, e)
+            return BriefingItem(
                 chat_id=chat_id, title=chat["title"], consent=consent, latest_id=latest,
                 saved=_saved(await s.db.read(s.store.get_digest, chat_id)),
-            ))  # fmt: skip
-        return out
+            )  # fmt: skip
+
+        ids = await s.db.read(s.store.briefing_chat_ids)
+        return list(await asyncio.gather(*(item(c) for c in ids)))
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:
@@ -470,126 +449,6 @@ def create_app(
         s = S(request)
         await s.db.write(s.store.remove_project, path)
 
-    @app.post("/api/tasks", status_code=204)
-    async def task(body: TaskRequest, request: Request) -> None:
-        s = S(request)
-        if not await s.db.read(s.store.has_project, body.project):
-            raise ApiError(404, "project_not_found")
-        task_id = f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
-        mid = None if body.message_id is None else _int_or_404(body.message_id, "message_not_found")
-        tty = session = None
-        if body.mode == "terminal":
-            tty = await open_task(settings, body.project, body.prompt, task_id)
-        else:
-            if not s.agent.available:
-                raise ApiError(422, "ai_agent_missing")
-            session = s.agent.new_session()
-            await s.agent.start(task_id, body.project, body.prompt, body.mode, session, False)
-        await s.db.write(
-            s.store.add_task, task_id, body.chat_id, mid, body.project, body.prompt, tty,
-            body.mode, session,
-        )  # fmt: skip
-
-    @app.get("/api/tasks")
-    async def tasks(request: Request, chat_id: str | None = None) -> list[TaskDTO]:
-        s = S(request)
-        rows = await s.db.read(s.store.list_tasks, chat_id)
-        return [
-            TaskDTO(
-                id=r["id"], chat_id=r["chat_id"],
-                message_id=None if r["message_id"] is None else str(r["message_id"]),
-                project=r["project"], created_at=r["created_at"],
-                result=read_task_result(settings, r["id"]),
-                prompt=r["prompt"] or read_task_prompt(settings, r["id"]),
-                interactive=bool(r["tty"]), mode=r["mode"],
-                running=S(request).agent.running(r["id"]) if r["mode"] != "terminal"
-                else read_task_result(settings, r["id"]) is None,
-                chat_title=r["chat_title"], sender_name=r["sender_name"],
-                message_text=r["message_text"], handled=bool(r["handled"]),
-            )
-            for r in rows
-        ]  # fmt: skip
-
-    @app.post("/api/tasks/{task_id}/reopen", status_code=204)
-    async def reopen_task(task_id: str, request: Request) -> None:
-        """Run the same task again in a fresh Terminal; clears the old result."""
-        s = S(request)
-        row = await s.db.read(s.store.get_task, task_id)
-        if row is None:
-            raise ApiError(404, "task_not_found")
-        prompt = row["prompt"] or read_task_prompt(settings, task_id)
-        if not prompt:
-            raise ApiError(404, "task_not_found")
-        await s.agent.stop(task_id)
-        delete_task_files(settings, task_id)
-        s.agent.log_path(task_id).unlink(missing_ok=True)
-        if row["mode"] == "terminal":
-            tty = await open_task(settings, row["project"], prompt, task_id)
-            await s.db.write(s.store.set_task_tty, task_id, tty)
-        else:
-            session = s.agent.new_session()
-            await s.agent.start(task_id, row["project"], prompt, row["mode"], session, False)
-            await s.db.write(s.store.set_task_session, task_id, session)
-
-    @app.get("/api/tasks/{task_id}/events")
-    async def task_events(task_id: str, request: Request, after: int = 0) -> dict:
-        """Conversation log of a headless task; poll with the returned `next`."""
-        s = S(request)
-        row = await s.db.read(s.store.get_task, task_id)
-        if row is None:
-            raise ApiError(404, "task_not_found")
-        items, total = s.agent.read(task_id, after)
-        return {"items": items, "next": total, "total": total, "running": s.agent.running(task_id)}
-
-    @app.post("/api/tasks/{task_id}/message", status_code=204)
-    async def task_message(task_id: str, body: TaskMessage, request: Request) -> None:
-        """Follow-up turn in a headless task (resumes the same session)."""
-        s = S(request)
-        row = await s.db.read(s.store.get_task, task_id)
-        if row is None or row["mode"] == "terminal" or not row["session_id"]:
-            raise ApiError(404, "task_not_found")
-        if s.agent.running(task_id):
-            raise ApiError(409, "task_busy")
-        mode = "edit" if body.edit else row["mode"]  # permission mode is per turn, so a plan can be approved
-        await s.agent.start(task_id, row["project"], body.text, mode, row["session_id"], True)
-
-    @app.post("/api/tasks/{task_id}/stop", status_code=204)
-    async def task_stop(task_id: str, request: Request) -> None:
-        await S(request).agent.stop(task_id)
-
-    async def _task_tty(s, task_id: str) -> str:
-        row = await s.db.read(s.store.get_task, task_id)
-        if row is None:
-            raise ApiError(404, "task_not_found")
-        return row["tty"] or ""
-
-    @app.get("/api/tasks/{task_id}/terminal")
-    async def task_terminal(task_id: str, request: Request) -> dict[str, str]:
-        """Live text of the task's Terminal tab."""
-        return {"text": await terminal_read(await _task_tty(S(request), task_id))}
-
-    @app.post("/api/tasks/{task_id}/capture", status_code=204)
-    async def task_capture(task_id: str, request: Request) -> None:
-        """No result file (the agent never wrote one): use the Terminal's output as the report."""
-        text = await terminal_read(await _task_tty(S(request), task_id), 8000)
-        path = task_result_path(settings, task_id)
-        path.write_text("(Trích từ Terminal)\n" + text)
-        path.chmod(0o600)
-
-    @app.post("/api/tasks/{task_id}/input", status_code=204)
-    async def task_input(task_id: str, body: TaskInput, request: Request) -> None:
-        """Type a line into the task's Terminal tab (answer a prompt, give a follow-up)."""
-        await terminal_send(await _task_tty(S(request), task_id), body.text)
-
-    @app.delete("/api/tasks/{task_id}", status_code=204)
-    async def delete_task(task_id: str, request: Request) -> None:
-        s = S(request)
-        await s.agent.stop(task_id)
-        if not await s.db.write(s.store.delete_task, task_id):
-            raise ApiError(404, "task_not_found")
-        delete_task_files(settings, task_id)
-        s.agent.log_path(task_id).unlink(missing_ok=True)
-
     # ---- inbox helpers -----------------------------------------------------
     @app.get("/api/pending")
     async def pending(
@@ -607,21 +466,21 @@ def create_app(
     @app.put("/api/chats/{chat_id}/messages/{message_id}/snooze", status_code=204)
     async def snooze(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:
         s = S(request)
-        mid = _int_or_404(message_id, "message_not_found")
+        mid = int_or_404(message_id, "message_not_found")
         if not await s.db.write(s.store.set_snooze, chat_id, mid, body.until):
             raise ApiError(404, "message_not_found")
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/pin", status_code=204)
     async def pin(chat_id: str, message_id: str, body: PinRequest, request: Request) -> None:
         s = S(request)
-        mid = _int_or_404(message_id, "message_not_found")
+        mid = int_or_404(message_id, "message_not_found")
         if not await s.db.write(s.store.set_pinned, chat_id, mid, body.pinned):
             raise ApiError(404, "message_not_found")
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}/context")
     async def context(chat_id: str, message_id: str, request: Request) -> list[MessageDTO]:
         s = S(request)
-        mid = _int_or_404(message_id, "message_not_found")
+        mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")  # only around tags we keep
         return [to_dto(m) for m in await s.bridge.fetch_context(chat_id, mid)]
@@ -641,13 +500,14 @@ def create_app(
             try:
                 if not await s.bridge.download_photo(chat_id, mid, dest):
                     return None
-            except Exception:
+            except Exception as e:
+                log.warning("photo %s/%s not downloaded: %r", chat_id, mid, e)
                 return None
         return dest
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}/photo", response_class=FileResponse)
     async def photo(chat_id: str, message_id: str, request: Request):
-        p = await _photo(request, chat_id, _int_or_404(message_id, "message_not_found"))
+        p = await _photo(request, chat_id, int_or_404(message_id, "message_not_found"))
         if p is None:
             raise ApiError(404, "photo_not_available")
         return FileResponse(p, media_type="image/jpeg")
@@ -703,10 +563,7 @@ def create_app(
         url = body.url.rstrip("/")
         user = await whoami(url, body.token)
         settings.ensure_data_dir()
-        tmp = settings.youtrack_path.with_suffix(".tmp")
-        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
-            json.dump({"url": url, "token": body.token}, f)
-        tmp.replace(settings.youtrack_path)
+        write_private_json(settings.youtrack_path, {"url": url, "token": body.token})
         settings = replace(settings, youtrack_url=url, youtrack_token=body.token)
         yt_dashboard.set_auth(url, body.token)
         return YouTrackUser(**user)
@@ -729,7 +586,8 @@ def create_app(
             rows = await yt_dashboard.yt(
                 "/api/issues", query=query, fields="idReadable,summary", **{"$top": 5}
             )
-        except YtError:
+        except YtError as e:
+            log.warning("similar tickets not checked: %s %s", e.status, e.message)
             return []  # a hint only; never blocks creating the ticket
         base = settings.youtrack_url.rstrip("/")
         return [

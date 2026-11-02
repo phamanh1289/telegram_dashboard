@@ -80,7 +80,6 @@ class ChatDTO(BaseModel):
     migrated_to: str | None = None
     tracked_at: datetime | None = None
     generation: int = 0
-    sync_state: Literal["idle", "syncing", "degraded"] = "idle"
     initial_history_limit: int = 50
     pending_count: int = 0  # tags not handled yet
 
@@ -223,9 +222,9 @@ class TaskDTO(BaseModel):
     created_at: datetime
     result: str | None = None  # what the agent wrote back when done
     prompt: str = ""
-    mode: str = "terminal"  # terminal | plan | edit (headless, driven from the dashboard)
+    # plan | edit: headless, driven from the dashboard; terminal: an old Terminal task (read-only)
+    mode: Literal["terminal", "plan", "edit"] = "plan"
     running: bool = False
-    interactive: bool = False  # its Terminal tab is known, so input can be sent
     chat_title: str | None = None
     sender_name: str | None = None
     message_text: str | None = None
@@ -316,7 +315,7 @@ class ProjectRequest(BaseModel):
 
 class TaskRequest(BaseModel):
     project: str
-    mode: Literal["terminal", "plan", "edit"] = "terminal"
+    mode: Literal["plan", "edit"] = "plan"
     prompt: str = Field(min_length=1, max_length=8000)
     chat_id: str | None = None
     message_id: str | None = None
@@ -325,10 +324,6 @@ class TaskRequest(BaseModel):
 class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
-
-
-class TaskInput(BaseModel):
-    text: str = Field(max_length=2000)  # empty = press Enter
 
 
 class AiSummaryRequest(BaseModel):

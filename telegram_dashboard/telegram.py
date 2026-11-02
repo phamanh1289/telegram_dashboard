@@ -10,11 +10,10 @@ from typing import Protocol
 from .ai import _applescript_str
 from .errors import ApiError
 from .models import GroupInfo, LinkSpan, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
-from .storage import INITIAL_HISTORY_LIMIT, Db, Store
+from .storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.telegram")
 
-RECOVERY_BATCH = 100
 SEND_TIMEOUT = 30.0
 RETRY_DELAY = 5.0
 WATCH_INTERVAL = 20.0
@@ -50,8 +49,6 @@ class Transport(Protocol):
         self, chat_id: str, message_id: int, before: int, after: int
     ) -> list[StoredMessage]: ...
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool: ...
-    async def fetch_latest(self, chat_id: str, limit: int) -> list[StoredMessage]: ...
-    async def fetch_after(self, chat_id: str, after_id: int, limit: int) -> list[StoredMessage]: ...
     async def fetch_range(
         self, chat_id: str, since: datetime, until: datetime, limit: int
     ) -> list[StoredMessage]: ...  # newest `limit` in [since, until), oldest first
@@ -59,6 +56,8 @@ class Transport(Protocol):
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage: ...
+    # Add `emoji` unless we already reacted; None takes back only the bridge's own reaction.
+    # Raises SendRejected("retry_after") on a flood wait.
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
 
 
@@ -74,13 +73,11 @@ class TelegramBridge:
         self.notify = notify  # macOS notification for live tags
         self.state = "setup_required" if transport is None else "stopped"
         self.detail: str | None = None
-        self.sync_state: dict[str, str] = {}
-        self._tasks: dict[str, asyncio.Task] = {}
         self._main: asyncio.Task | None = None
         self._send_lock = asyncio.Lock()
         self.reaction = reaction  # emoji mirrored on Telegram when a tag is marked done ("" = off)
         self._react_lock = asyncio.Lock()
-        self._bg: set[asyncio.Task] = set()
+        self._bg: set[asyncio.Task] = set()  # reactions, notifications
         if transport is not None:
             transport.attach(self)
 
@@ -95,11 +92,10 @@ class TelegramBridge:
             self._main = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
-        tasks = [t for t in [self._main, *self._tasks.values()] if t]
+        tasks = [t for t in [self._main, *self._bg] if t]
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        self._tasks.clear()
         self._main = None
         if self.transport is not None:
             try:
@@ -109,42 +105,37 @@ class TelegramBridge:
         if self.state != "setup_required":
             self._set_state("stopped")
 
+    def _spawn(self, coro) -> None:
+        """Background work the bridge owns: kept referenced, cancelled by stop()."""
+        task = asyncio.create_task(coro)
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
+
     async def _run(self) -> None:
         assert self.transport is not None
         self._set_state("connecting")
+        up = False  # connected and backfilled
         while True:
-            try:
-                if not await self.transport.connect():
-                    self._set_state("login_required")
-                    return
-                await self.transport.list_groups()  # warms the entity cache for tracked ids
-                break
-            except LoginRequired:
-                self._set_state("login_required")
-                return
-            except Exception as e:
-                self._set_state("degraded", type(e).__name__)
-                await asyncio.sleep(self.retry_delay)
-        self._set_state("connected")
-        await self.backfill_mentions()
-        # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
-        was_connected = True
-        while True:
-            await asyncio.sleep(WATCH_INTERVAL)
-            now_connected = self.transport.is_connected()
-            if not now_connected:
+            if up and not self.transport.is_connected():
+                up = False
                 self._set_state("degraded", "disconnected")
+            if not up:
                 try:
-                    now_connected = await self.transport.connect()
+                    if not await self.transport.connect():
+                        self._set_state("login_required")
+                        return
                 except LoginRequired:
                     self._set_state("login_required")
                     return
-                except Exception:
-                    now_connected = False
-            if now_connected and not was_connected:
-                self._set_state("connected")
-                await self.backfill_mentions()
-            was_connected = now_connected
+                except Exception as e:
+                    log.warning("telegram connect failed: %s: %s", type(e).__name__, e)
+                    self._set_state("degraded", type(e).__name__)
+                else:
+                    up = True
+                    self._set_state("connected")
+                    await self.backfill_mentions()  # its dialog scan also warms the entity cache
+            # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
+            await asyncio.sleep(WATCH_INTERVAL if up else self.retry_delay)
 
     def ensure_connected(self) -> Transport:
         if self.transport is None or self.state != "connected":
@@ -155,72 +146,22 @@ class TelegramBridge:
     async def list_groups(self) -> list[GroupInfo]:
         return await self.ensure_connected().list_groups()
 
-    def schedule_sync(self, chat_id: str, delay: float = 0) -> None:
-        task = self._tasks.get(chat_id)
-        if task is not None and not task.done():
-            return
-        self._tasks[chat_id] = asyncio.create_task(self._sync_loop(chat_id, delay))
-
-    async def _sync_loop(self, chat_id: str, delay: float) -> None:
-        if delay:
-            await asyncio.sleep(delay)
-        self.sync_state[chat_id] = "syncing"
-        self.db.hub.notify()
-        while True:
-            try:
-                await self.sync_chat(chat_id)
-                self.sync_state.pop(chat_id, None)
-                self.db.hub.notify()
-                return
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                log.warning("sync failed for a tracked chat: %s", type(e).__name__)
-                self.sync_state[chat_id] = "degraded"
-                self.db.hub.notify()
-                await asyncio.sleep(self.retry_delay)
-
-    async def sync_chat(self, chat_id: str) -> None:
-        """Initial (<=50) load, then ascending recovery from the history checkpoint."""
-        transport = self.ensure_connected()
-        state = await self.db.read(self.store.history_checkpoint, chat_id)
-        if state is None:
-            return
-        checkpoint, gen = state
-        if checkpoint is None:
-            latest = await transport.fetch_latest(chat_id, INITIAL_HISTORY_LIMIT)
-            top = max((m.message_id for m in latest), default=0)
-            if not await self.db.write(self.store.apply_history_batch, chat_id, gen, latest, top):
-                return
-            return
-        upper = await transport.latest_id(chat_id)  # bound captured before scanning
-        while checkpoint < upper:
-            batch = await transport.fetch_after(chat_id, checkpoint, RECOVERY_BATCH)
-            batch = [m for m in batch if checkpoint < m.message_id <= upper]
-            nxt = batch[-1].message_id if batch else upper
-            if not await self.db.write(self.store.apply_history_batch, chat_id, gen, batch, nxt):
-                return
-            checkpoint = nxt
-
     # ---- live updates (called by transport) ----------------------------
     async def on_message(self, m: StoredMessage) -> None:
         try:
             await self.db.write(self.store.apply_message, m)
         except Exception as e:
-            log.warning("live message not stored: %s", type(e).__name__)
+            log.warning("live message not stored (chat %s, message %s): %s", m.chat_id,
+                        m.message_id, type(e).__name__)  # fmt: skip
 
     async def backfill_mentions(self) -> None:
         """Pull recent tags/replies to us (read or unread); nothing else is fetched."""
         cutoff = datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)
         try:
             found = await self.ensure_connected().fetch_mentions(cutoff)
+            await self.db.write(self.store.store_mentions, found)
         except Exception as e:
-            log.warning("mention backfill failed: %s", type(e).__name__)
-            return
-        for title, kind, m, replied in found:
-            await self.on_mention(m, title, kind)
-            if replied:
-                await self.db.write(self.store.set_handled, m.chat_id, m.message_id, True)
+            log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
 
     async def on_my_reply(self, m: StoredMessage) -> None:
         """Our own reply (from any device) to a kept tag: keep it and mark the tag handled."""
@@ -228,18 +169,18 @@ class TelegramBridge:
         if m.reply_to_id is not None:
             await self.db.write(self.store.set_handled, m.chat_id, m.reply_to_id, True)
 
-    async def on_mention(
-        self, m: StoredMessage, title: str, kind: str, *, live: bool = False
-    ) -> None:
+    async def on_mention(self, m: StoredMessage, title: str, kind: str) -> None:
+        """A live tag (new or edited). Notifies only for a tag not seen before and still pending."""
         try:
-            await self.db.write(self.store.track_mention, m.chat_id, title, kind)
-        except ApiError:
-            return  # migrated chat
-        await self.on_message(m)
-        if await self.db.write(self.store.auto_handle, m.chat_id, m.message_id):
-            return  # matched an ignore rule: no notification
-        if live and self.notify:
-            asyncio.create_task(notify_mac(f"Tag mới · {title}", m.sender_name or "", m.text))
+            fresh = await self.db.write(self.store.store_mentions, [(title, kind, m, False)])
+        except Exception as e:
+            log.warning(
+                "live tag not stored (chat %s, message %s): %s", m.chat_id, m.message_id,
+                type(e).__name__,
+            )  # fmt: skip
+            return
+        if fresh and self.notify:
+            self._spawn(notify_mac(f"Tag mới · {title}", m.sender_name or "", m.text))
 
     # ---- live reads (not stored) ---------------------------------------
     async def fetch_context(self, chat_id: str, message_id: int) -> list[StoredMessage]:
@@ -259,20 +200,30 @@ class TelegramBridge:
     def react(self, chat_id: str, message_ids: list[int], done: bool) -> None:
         """Mirror "done" on Telegram as a reaction (reopen removes it). Background, best effort:
         a group that forbids reactions or a dropped connection never fails the mark itself."""
-        if not (self.reaction and message_ids and self.transport) or self.state != "connected":
+        if not (self.reaction and message_ids and self.transport):
+            return
+        if self.state != "connected":
+            log.info("reaction skipped while %s (chat %s, %d tags)", self.state, chat_id,
+                     len(message_ids))  # fmt: skip
             return
         emoji = self.reaction if done else None
-        task = asyncio.create_task(self._react(chat_id, message_ids, emoji))
-        self._bg.add(task)
-        task.add_done_callback(self._bg.discard)
+        self._spawn(self._react(self.transport, chat_id, message_ids, emoji))
 
-    async def _react(self, chat_id: str, message_ids: list[int], emoji: str | None) -> None:
-        async with self._react_lock:  # in click order, so a quick undo ends with no reaction
-            for mid in message_ids:
+    async def _react(
+        self, t: Transport, chat_id: str, message_ids: list[int], emoji: str | None
+    ) -> None:
+        async with self._react_lock:  # in commit order, so a quick undo ends with no reaction
+            for n, mid in enumerate(message_ids):
                 try:
-                    await self.transport.send_reaction(chat_id, mid, emoji)
+                    await asyncio.wait_for(t.send_reaction(chat_id, mid, emoji), SEND_TIMEOUT)
+                except SendRejected as e:  # flood wait: every further call would fail too
+                    left = len(message_ids) - n
+                    log.warning("reactions stopped (chat %s): flood wait %ss, %d of %d not sent",
+                                chat_id, e.retry_after, left, len(message_ids))  # fmt: skip
+                    return
                 except Exception as e:
-                    log.warning("reaction not sent: %s", type(e).__name__)
+                    log.warning("reaction not sent (chat %s, message %s): %s", chat_id, mid,
+                                type(e).__name__)  # fmt: skip
 
     async def on_deleted(self, chat_id: str | None, message_ids: list[int]) -> None:
         try:
@@ -434,8 +385,8 @@ class TelethonTransport:
         try:
             sender = await msg.get_sender()
             name = utils.get_display_name(sender) if sender else None
-        except Exception:
-            pass
+        except Exception as e:  # stored without a sender name
+            log.debug("sender of message %s not resolved: %s", msg.id, type(e).__name__)
         return raw_to_stored(msg, str(msg.chat_id), name)
 
     async def _on_new(self, event) -> None:
@@ -451,26 +402,21 @@ class TelethonTransport:
         chat_id = str(event.chat_id)
         if not event.is_group:
             return
+        b = self.bridge
         if getattr(msg, "out", False):
             reply_to = getattr(msg.reply_to, "reply_to_msg_id", None) if msg.is_reply else None
-            if reply_to and await asyncio.to_thread(
-                self.bridge.store.get_message, chat_id, reply_to
-            ):
-                await self.bridge.on_my_reply(await self._convert(msg))
+            if reply_to and await b.db.read(b.store.get_message, chat_id, reply_to):
+                await b.on_my_reply(await self._convert(msg))
             return
-        stored = await asyncio.to_thread(self.bridge.store.get_message, chat_id, msg.id)
-        mine = msg.mentioned  # @username, text mention (Telegram also flags replies to us)
-        if not mine and msg.is_reply:
-            mine = bool((r := await msg.get_reply_message()) and r.out)
-        if mine:
+        if msg.mentioned:  # @username, text mention or a reply to us (Telegram flags all three)
             chat = await event.get_chat()
             title = getattr(chat, "title", None) or chat_id
             kind = "supergroup" if event.is_channel else "group"
-            await self.bridge.on_mention(await self._convert(msg), title, kind, live=True)
-        elif stored is not None:  # edit of a message we already keep
-            await self.bridge.on_message(await self._convert(msg))
+            await b.on_mention(await self._convert(msg), title, kind)
+        elif await b.db.read(b.store.get_message, chat_id, msg.id):  # edit of a kept message
+            await b.on_message(await self._convert(msg))
 
-    _on_edit = _on_new
+    _on_edit = _on_new  # on_mention notifies only for tags it has not seen before
 
     async def _on_deleted(self, event) -> None:
         assert self.bridge is not None
@@ -520,30 +466,34 @@ class TelethonTransport:
     async def fetch_mentions(
         self, cutoff: datetime
     ) -> list[tuple[str, str, StoredMessage, bool]]:
+        from telethon import errors
         from telethon.tl.types import InputMessagesFilterMyMentions
 
         out = []
-        async for d in self.client.iter_dialogs():
-            if not d.is_group or (d.date and d.date < cutoff):
-                continue  # dialogs come newest-activity first, but pinned ones break the order
-            kind = "supergroup" if d.is_channel else "group"
-            tags = []
-            async for m in self.client.iter_messages(d.id, filter=InputMessagesFilterMyMentions):
-                if m.date < cutoff:
-                    break  # newest first
-                tags.append(m)
-            if not tags:
-                continue
-            # Which tags we already answered: our own messages replying to them since the oldest.
-            oldest = min(m.date for m in tags)
-            replied: set[int] = set()
-            async for m in self.client.iter_messages(d.id, from_user="me"):
-                if m.date < oldest:
-                    break
-                if (rid := getattr(m.reply_to, "reply_to_msg_id", None)) is not None:
-                    replied.add(rid)
-            title = d.name or str(d.id)
-            out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
+        try:
+            async for d in self.client.iter_dialogs():
+                if not d.is_group or (d.date and d.date < cutoff):
+                    continue  # dialogs come newest-activity first, but pinned ones break the order
+                tags = []
+                it = self.client.iter_messages(d.id, filter=InputMessagesFilterMyMentions)
+                async for m in it:
+                    if m.date < cutoff:
+                        break  # newest first
+                    tags.append(m)
+                if not tags:
+                    continue
+                # Which tags we already answered: our own replies to them since the oldest.
+                oldest = min(m.date for m in tags)
+                replied: set[int] = set()
+                async for m in self.client.iter_messages(d.id, from_user="me"):
+                    if m.date < oldest:
+                        break
+                    if (rid := getattr(m.reply_to, "reply_to_msg_id", None)) is not None:
+                        replied.add(rid)
+                title, kind = d.name or str(d.id), "supergroup" if d.is_channel else "group"
+                out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
+        except errors.FloodWaitError as e:  # keep what we have; the next connect tries again
+            log.warning("mention backfill cut short by a %ss flood wait", e.seconds)
         return out
 
     async def fetch_context(
@@ -572,18 +522,6 @@ class TelethonTransport:
         msgs = await self.client.get_messages(int(chat_id), limit=1)
         return msgs[0].id if msgs else 0
 
-    async def fetch_latest(self, chat_id: str, limit: int) -> list[StoredMessage]:
-        out = [
-            await self._convert(m)
-            async for m in self.client.iter_messages(int(chat_id), limit=limit)
-        ]
-        out.reverse()
-        return out
-
-    async def fetch_after(self, chat_id: str, after_id: int, limit: int) -> list[StoredMessage]:
-        it = self.client.iter_messages(int(chat_id), min_id=after_id, reverse=True, limit=limit)
-        return [await self._convert(m) async for m in it]
-
     async def fetch_range(
         self, chat_id: str, since: datetime, until: datetime, limit: int
     ) -> list[StoredMessage]:
@@ -604,13 +542,34 @@ class TelethonTransport:
         return [await self._convert(m) for m in keep]
 
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None:
+        from telethon import errors
         from telethon.tl import functions, types
 
-        peer = await self.client.get_input_entity(int(chat_id))
-        reaction = [types.ReactionEmoji(emoticon=emoji)] if emoji else []  # [] removes ours
-        await self.client(
-            functions.messages.SendReactionRequest(peer=peer, msg_id=message_id, reaction=reaction)
-        )
+        assert self.bridge is not None
+        ours = types.ReactionEmoji(emoticon=emoji or self.bridge.reaction)
+        try:
+            peer = await self.client.get_input_entity(int(chat_id))
+            # SendReaction replaces our whole set: read what we picked so the user's own stays.
+            msg = await self.client.get_messages(peer, ids=message_id)
+            if msg is None:
+                return
+            results = getattr(msg.reactions, "results", None) or []
+            chosen = [r.reaction for r in sorted(
+                (r for r in results if r.chosen_order is not None), key=lambda r: r.chosen_order
+            )]  # fmt: skip
+            if emoji:
+                if chosen:
+                    return  # already reacted (ours or the user's): leave it
+                new = [ours]
+            elif ours in chosen:
+                new = [r for r in chosen if r != ours]
+            else:
+                return  # nothing of ours to take back
+            await self.client(
+                functions.messages.SendReactionRequest(peer=peer, msg_id=message_id, reaction=new)
+            )
+        except (errors.FloodWaitError, errors.SlowModeWaitError) as e:
+            raise SendRejected("retry_after", int(e.seconds)) from e
 
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None

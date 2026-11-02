@@ -2,22 +2,23 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Inbox as InboxIcon, ListChecks, Menu, MessageSquare, Moon, Newspaper, Pin, RotateCw, Search, Send, Settings, SlidersHorizontal, Sun, Wifi, WifiOff, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
+import { ClaudeQuota } from "@/components/claude";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { BriefingPage } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
-import { ClaudeQuota, SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
+import { SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, BRIEFING, PINNED, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
-import { applyTheme, readTheme } from "@/lib/prefs";
+import { ALL, BRIEFING, msgKey, PINNED, scrollToRow, TASKS, toast, type ToastMsg, useTaskList } from "@/lib/inbox";
+import { applyTheme, getPref, readTheme, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const STATE_LABEL: Record<Status["state"], string> = {
@@ -85,8 +86,11 @@ export function App() {
 function Inbox({ status }: { status: Status }) {
   const stream = useSync(status.cursor);
   const runningTasks = (useTaskList().data ?? []).filter((t) => t.running).length;
-  const [chatId, setChatId] = useState<string | null>(null);
+  // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
+  // (after /status), so state starts from the URL and prefs directly, with no first paint on defaults.
+  const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [focus, setFocus] = useState<string | null>(null); // item to show in the opened view: a message, or a task on AI Agent
   const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
@@ -101,18 +105,13 @@ function Inbox({ status }: { status: Status }) {
   }
   // Settings remount on each open (key) so they read fresh values.
   const [settings, setSettings] = useState({ open: false, key: 0 });
-  const [shared, setShared] = useState({ open: false, key: 0 });
+  // YouTrack's gear lands here with ?settings=shared: open the shared dialog once (the flag is dropped below).
+  const [shared, setShared] = useState(() => ({ open: new URLSearchParams(location.search).get("settings") === "shared", key: 0 }));
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
-  const [collapsed, setCollapsed] = useState(false);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- restore after mount
-    try { setCollapsed(localStorage.getItem("sidebarCollapsed") === "1"); } catch {}
-  }, []);
+  const [collapsed, setCollapsed] = useState(() => getPref("sidebarCollapsed") === "1");
   function toggleCollapsed() {
-    setCollapsed((v) => {
-      try { localStorage.setItem("sidebarCollapsed", v ? "0" : "1"); } catch {}
-      return !v;
-    });
+    setPref("sidebarCollapsed", collapsed ? "0" : "1");
+    setCollapsed(!collapsed);
   }
   // One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z.
   const [flash, setFlash] = useState<(ToastMsg & { id: number }) | null>(null);
@@ -160,11 +159,7 @@ function Inbox({ status }: { status: Status }) {
     const next = all.find((m, j) => j > i && open(m, j)) ?? all.findLast((m, j) => open(m, j)) ?? null;
     setReplyTo(next);
     setDraft(null);
-    if (next) {
-      requestAnimationFrame(() =>
-        document.querySelector(`[data-id="${next.message_id}"]`)?.scrollIntoView({ block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }),
-      );
-    }
+    if (next) requestAnimationFrame(() => scrollToRow(msgKey(next)));
   }
 
   function useText(m: Message, text: string) {
@@ -179,17 +174,11 @@ function Inbox({ status }: { status: Status }) {
     return () => mq.removeEventListener("change", onChange);
   }, []);
 
-  // Selected chat lives in the query string (static export: no dynamic routes).
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- read URL once after mount
-    setChatId(new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
-    // YouTrack's gear lands here with ?settings=shared: open the shared dialog once, then drop the flag.
     const url = new URL(location.href);
-    if (url.searchParams.get("settings") === "shared") {
-      setShared((s) => ({ open: true, key: s.key + 1 }));
-      url.searchParams.delete("settings");
-      history.replaceState(null, "", url);
-    }
+    if (url.searchParams.get("settings") !== "shared") return;
+    url.searchParams.delete("settings");
+    history.replaceState(null, "", url);
   }, []);
 
   // Esc: leave reply mode and clear every selection (dialogs close themselves first).
@@ -207,6 +196,7 @@ function Inbox({ status }: { status: Status }) {
 
   function selectChat(id: string | null) {
     setChatId(id);
+    setFocus(null); // one-shot: only `go` with a focus id sets it again
     setDigest(false);
     setReplyTo(null);
     setDraft(null);
@@ -225,7 +215,6 @@ function Inbox({ status }: { status: Status }) {
     else setMenuOpen((v) => !v);
   }
   const [jump, setJump] = useState(0);
-  const [focus, setFocus] = useState<string | null>(null); // item to show in the opened view: a message, or a task on AI Agent
   function go(id: string | null, focusId?: string) {
     selectChat(id);
     setFocus(focusId ?? null);
@@ -233,11 +222,11 @@ function Inbox({ status }: { status: Status }) {
     setMenuOpen(false);
   }
   // "Mở phiên" on a tagged message (lib/inbox `openTask`)
+  const onOpenTask = useEffectEvent((e: Event) => go(TASKS, (e as CustomEvent<string>).detail));
   useEffect(() => {
-    const onOpen = (e: Event) => go(TASKS, (e as CustomEvent<string>).detail);
-    addEventListener("open-task", onOpen);
-    return () => removeEventListener("open-task", onOpen);
-  });
+    addEventListener("open-task", onOpenTask);
+    return () => removeEventListener("open-task", onOpenTask);
+  }, []);
 
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
@@ -369,19 +358,19 @@ function Inbox({ status }: { status: Status }) {
                 ) : chatId === TASKS ? (
                   <TasksPage focus={focus} onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
-                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo?.message_id ?? null} onReply={setReplyTo}
+                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo && msgKey(replyTo)} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
                 ) : (
                 <MessageList
-                  onDigest={status.ai_configured ? () => { setReplyTo(null); setDigest(true); } : undefined}
+                  onDigest={status.ai_configured ? () => { setReplyTo(null); setFocus(null); setDigest(true); } : undefined}
                   onUseText={useText}
                   chatId={chatId}
                   focus={focus}
                   range={range}
                   onBack={() => go(ALL)}
-                  replyTo={replyTo?.message_id ?? null}
+                  replyTo={replyTo && msgKey(replyTo)}
                   onReply={setReplyTo}
                   itemsRef={listItems}
                 />

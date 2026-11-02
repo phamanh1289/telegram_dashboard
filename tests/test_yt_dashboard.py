@@ -43,7 +43,7 @@ async def test_issues_paginate_and_normalize():
 
     svc = make(handler)
     out = await svc.issues("VA", "active", ["me"])
-    assert sorted(k for k, qc in seen if not qc) == [0, 500, 1000, 1500]  # one wave of 4 pages
+    assert sorted(k for k, qc in seen if not qc) == [0, 500, 1000, 1500, 2000]  # page 0, a wave
     assert any(qc for _, qc in seen)  # "me" also fetches the tickets the user tests
     assert len(out) == 1000  # QC rows already listed are not added twice
     assert (out[0]["state"], out[0]["assigneeLogin"], out[0]["sprints"]) == ("Open", "a", ["S1"])
@@ -81,7 +81,7 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
     agent = FakeAgent("✅ Bước tái hiện\n===\nCho mình xin OS nhé")
     app = FastAPI()
     app.include_router(build_router(svc))
-    app.state.ai = types.SimpleNamespace(configured=True, _call=agent)
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "ready"})
         assert r.json() == {"text": "✅ Bước tái hiện", "draft": "Cho mình xin OS nhé"}
@@ -97,7 +97,8 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
     agent = FakeAgent("**Đang nghẽn:**\n- VA-2: chờ API")
     app = FastAPI()
     app.include_router(build_router(svc))
-    app.state.ai = types.SimpleNamespace(configured=True, _call=agent)
+    consent = types.SimpleNamespace(ai_require_consent=True)
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=consent)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
         r = await c.post("/api/yt/ai/tickets", json=body)
@@ -105,3 +106,35 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[0]
         assert '"id": "VA-1"' in p and '"id": "VA-2"' in p and p.count('"id": "VA-1"') == 1
         assert "Phạm vi: Sprint 3" in p
+        assert '"telegram": []' in p  # consent required: no Telegram text reaches the AI
+
+
+async def test_qc_query_failure_other_than_400_is_not_hidden():
+    def handler(req):
+        if "QC: me" in parse_qs(req.url.query.decode())["query"][0]:
+            return httpx.Response(401, text="no")
+        return httpx.Response(200, json=[issue(1)])
+
+    try:
+        await make(handler).issues("VA", "active", ["me"])
+    except YtError as e:
+        assert e.status == 401
+    else:
+        raise AssertionError("expected YtError")
+
+
+async def test_answer_fetched_before_set_auth_is_not_cached():
+    gate = asyncio.Event()
+
+    async def slow():
+        await gate.wait()
+        return "old"
+
+    svc = make(lambda req: httpx.Response(200, json=[]))
+    task = asyncio.create_task(svc.cached("me", slow))
+    await asyncio.sleep(0)
+    svc.set_auth("http://yt2", "t2")
+    gate.set()
+    assert await task == "old"
+    assert "me" not in svc._cache and "me" not in svc._inflight
+    await svc.aclose()

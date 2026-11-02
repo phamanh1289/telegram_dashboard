@@ -36,7 +36,7 @@ or drop the item when unsure; empty lists are fine. Write every text in Vietname
 concrete."""
 
 
-def _aware(d: datetime | None) -> datetime | None:
+def aware(d: datetime | None) -> datetime | None:
     return None if d is None else d if d.tzinfo else d.replace(tzinfo=UTC)
 
 
@@ -103,7 +103,7 @@ class DigestService:
             raise ApiError(404, "chat_not_found")
         if not await self._consented(req.chat_id):
             raise ApiError(403, "digest_consent_required")
-        since, until = _aware(req.since), _aware(req.until) or datetime.now(UTC)
+        since, until = aware(req.since), aware(req.until) or datetime.now(UTC)
         # Messages always come from Telegram here, never from text the client sent.
         if req.message_ids:
             try:
@@ -148,7 +148,7 @@ class DigestService:
         # Escaped "<": a message cannot close the data block and pose as instructions.
         data = json.dumps(context, ensure_ascii=False).replace("<", "\\u003c")
         prompt += f"\n<messages>\n{data}\n</messages>"
-        text = await self.ai._call(prompt)
+        text = await self.ai.ask(prompt)
         if not await self._consented(req.chat_id):
             raise ApiError(
                 409, "ai_permission_changed",

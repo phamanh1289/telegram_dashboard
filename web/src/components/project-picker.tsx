@@ -13,17 +13,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { api, ApiError, type Project } from "@/lib/api";
+import { api, errorText, type Project } from "@/lib/api";
+
+/** Projects registered for the AI agent; one cache for the picker and the AI Agent dialog. */
+export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: ({ signal }) => api<Project[]>("/projects", { signal }) });
 
 /** Project the AI agent may read when drafting; "" = none. */
 export function ProjectPicker({ value, onChange }: { value: string; onChange: (path: string) => void }) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [path, setPath] = useState("");
-  const projects = useQuery({
-    queryKey: ["projects"],
-    queryFn: ({ signal }) => api<Project[]>("/projects", { signal }),
-  });
+  const projects = useProjects();
   const add = useMutation({
     mutationFn: (p: string) => api<Project>("/projects", { method: "POST", json: { path: p } }),
     onSuccess: (p) => {
@@ -75,9 +75,7 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
       </Button>
       {pick.isError && (
         <Button size="xs" variant="link" className="whitespace-normal text-left text-error" onClick={() => setAdding(true)}>
-          {pick.error instanceof ApiError && pick.error.code === "not_found"
-            ? "Backend cũ: khởi động lại dashboard (hoặc nhập đường dẫn)"
-            : "Không mở được hộp chọn thư mục, nhập đường dẫn"}
+          {errorText(pick.error, { not_found: "Backend cũ: khởi động lại dashboard (hoặc nhập đường dẫn)" }, "Không mở được hộp chọn thư mục, nhập đường dẫn")}
         </Button>
       )}
       <Dialog open={adding} onOpenChange={setAdding}>
@@ -98,9 +96,7 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
               onChange={(e) => setPath(e.target.value)} maxLength={1000} />
             {add.isError && (
               <p role="alert" className="text-sm text-error">
-                {add.error instanceof ApiError && add.error.code === "project_not_a_directory"
-                  ? "Không tìm thấy thư mục này."
-                  : "Không thêm được dự án."}
+                {errorText(add.error, { project_not_a_directory: "Không tìm thấy thư mục này." }, "Không thêm được dự án.")}
               </p>
             )}
             <DialogFooter>

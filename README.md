@@ -67,7 +67,7 @@ Next dev ở `http://127.0.0.1:3000` (proxy `/api` sang Python `:8765`), Python 
 2. **Trả lời** một tin → soạn → **Gửi** hoặc Ctrl/Cmd+Enter (Enter xuống dòng). Nếu kết quả "chưa rõ", dùng **Kiểm tra** hoặc **Thử lại cùng yêu cầu** (dùng lại cùng `random_id`, Telegram không tạo tin thứ hai). Ứng dụng không bao giờ tự gửi lại.
 3. **Nhờ AI** (khi đã bật AI): bấm **Trả lời** một tin → khung "Nhờ AI" hiện ra → chọn **dự án** (nút **Thêm** mở Finder để chọn thư mục) → nhập **prompt** → Enter hoặc **AI xử lý**. AI trả 3 mẫu: bấm mẫu để đưa vào khung soạn, hoặc ➤ để gửi ngay.
    - Có dự án: agent chạy trong thư mục đó với quyền **chỉ đọc** (Read/Grep/Glob).
-   - **Tạo task**: mở phiên agent tương tác trong Terminal tại dự án (tin được tag + prompt, sửa được trước khi mở); agent hỏi bạn trước mỗi thao tác sửa file/chạy lệnh. Chỉ macOS.
+   - **Tạo task** (AI Agent): chạy `claude -p` không giao diện trong dự án, xem và nhắn tiếp ngay trên dashboard. Chế độ **plan** chỉ đọc; **edit** được sửa file (trừ `.claude/`, `.git/`, `.github/`). Luôn tắt shell, web và MCP.
 4. **Việc cần xử lý** (mục đầu danh sách, mặc định khi mở): mọi tin tag chưa xử lý của mọi nhóm, chờ lâu nhất lên đầu, nhãn "chờ X giờ" (đỏ khi quá 4 giờ). Tiêu đề tab hiện số tin chờ; tag mới có thông báo macOS (`NOTIFY=0` để tắt).
    - Tin được coi là **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm ✓. Mỗi tin còn có: 💬 **ngữ cảnh** (~15 tin trước/sau, lấy trực tiếp từ Telegram), ⏰ **nhắc lại sau** (1 giờ / 3 giờ / 9:00 sáng mai) hoặc **luôn bỏ qua người gửi**, link **Telegram**, ảnh trong tin.
    - **Quy tắc tự bỏ qua** (biểu tượng phễu): từ khóa như `#TB` hoặc người gửi; tin khớp tự chuyển "đã xử lý", không báo.
@@ -82,6 +82,8 @@ Mọi tính năng AI (nháp, tóm tắt, Digest, Tạo task) đều chạy qua *
 - Nháp/tóm tắt/Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`, effort `AI_EFFORT` mặc định `medium`; Task/AI Agent mặc định `sonnet`; model/effort chọn trong Cài đặt → Tài khoản Claude sẽ được ưu tiên).
 - Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read/Grep/Glob).
 - Tạo task: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`.
+- `TELEGRAM_ME=@username` (tùy chọn): để nháp AI biết mention nào là bạn.
+- Các lệnh `claude` không nhận biến môi trường `TELEGRAM_*`, `YOUTRACK_*`, `YT_*`.
 
 Đặt `AI_REQUIRE_CONSENT=0` để bỏ bước cấp quyền từng tin (chỉ dùng cá nhân).
 

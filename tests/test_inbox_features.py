@@ -55,8 +55,8 @@ def test_rules_clear_existing_and_new_tags(client):
     r = client.post("/api/rules", json={"kind": "keyword", "value": "#TB"}, headers=H).json()
     assert r["handled"] == 1 and r["rule"]["value"] == "#tb"
     assert [i["message"]["message_id"] for i in client.get("/api/pending").json()] == ["1"]
-    store.apply_message(msg(B, 3, "#tb lần 2", sender="9"))
-    assert store.auto_handle(B, 3)
+    assert store.store_mentions([("Beta", "supergroup", msg(B, 3, "#tb lần 2"), False)]) == []
+    assert store.get_message(B, 3).handled
     assert client.post("/api/rules", json={"kind": "sender", "value": "5"}, headers=H).status_code == 422
     assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword"]
 
@@ -112,7 +112,7 @@ def test_youtrack_auth_checks_then_saves(client, settings, monkeypatch):
 
 
 def test_task_result_shows_next_to_its_tag(client, settings):
-    from telegram_dashboard.ai import task_result_path
+    from telegram_dashboard.agent import task_result_path
 
     store = client.app.state.store
     store.track_mention(A, "Alpha", "supergroup")
@@ -143,7 +143,17 @@ def test_date_range_filters_lists(client):
     assert r == {"count": 1}
 
 
-def test_done_mirrors_as_telegram_reaction(client):
+def test_done_mirrors_as_telegram_reaction(settings):
+    import dataclasses
+
+    from conftest import FakeTransport, TestClient, create_app
+
+    app = create_app(dataclasses.replace(settings, done_reaction="👍"), transport=FakeTransport())
+    with TestClient(app, base_url=ORIGIN) as client:
+        _reaction_flow(client)
+
+
+def _reaction_flow(client):
     import time
 
     _seed(client.app.state.store)
@@ -168,15 +178,53 @@ def test_done_mirrors_as_telegram_reaction(client):
     client.put(url, json={"handled": False}, headers=H)  # reopened: reaction removed
     assert reactions(2) == [(A, 1, "👍"), (A, 1, None)]
     assert client.post(f"/api/chats/{B}/handled-all", headers=H).json() == {"count": 1}
-    assert reactions(3)[-1] == (B, 2, "👍")
+    assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]  # bulk marks stay private
 
 
-def test_task_terminal_needs_known_tab(client):
-    client.app.state.store.add_task("t9", A, 4, "/tmp/proj", "x")  # old task: no tty recorded
-    assert client.get("/api/tasks").json()[0]["interactive"] is False
-    r = client.post("/api/tasks/t9/input", json={"text": "hi"}, headers=H)
-    assert r.status_code == 404 and r.json()["error"]["code"] == "terminal_gone"
-    assert client.get("/api/tasks/nope/terminal").status_code == 404
+async def test_reaction_never_replaces_or_removes_the_users_own():
+    from types import SimpleNamespace as NS
+
+    from telethon.tl import types
+
+    from telegram_dashboard.telegram import TelethonTransport
+
+    def r(e, order=None):
+        return types.ReactionCount(reaction=types.ReactionEmoji(emoticon=e), count=1,
+                                   chosen_order=order)  # fmt: skip
+
+    class Client:
+        results: list = []
+        sent: list = []
+
+        async def get_input_entity(self, peer):
+            return peer
+
+        async def get_messages(self, peer, ids):
+            return NS(reactions=NS(results=self.results))
+
+        async def __call__(self, req):
+            self.sent.append([x.emoticon for x in req.reaction])
+
+    t = TelethonTransport.__new__(TelethonTransport)
+    t.client, t.bridge = Client(), NS(reaction="👍")
+    for results, emoji, sent in (
+        ([], "👍", [["👍"]]),  # nothing chosen: add ours
+        ([r("❤", 0)], "👍", []),  # the user's own heart stays
+        ([r("👍", 0)], None, [[]]),  # reopen takes ours back
+        ([r("❤", 0), r("👍", 1)], None, [["❤"]]),  # ...and only ours
+        ([r("❤", 0), r("👍")], None, []),  # someone else's 👍: not ours to remove
+    ):
+        t.client.results, t.client.sent = results, []
+        await t.send_reaction(A, 1, emoji)
+        assert t.client.sent == sent, (results, emoji)
+
+
+def test_old_terminal_task_lists_but_is_read_only(client):
+    client.app.state.store.add_task("t9", A, 4, "/tmp/proj", "x", mode="terminal")
+    assert client.get("/api/tasks").json()[0]["mode"] == "terminal"
+    for path in ("message", "reopen"):
+        r = client.post(f"/api/tasks/t9/{path}", json={"text": "hi"}, headers=H)
+        assert r.status_code == 409 and r.json()["error"]["code"] == "terminal_task_unsupported"
 
 
 def test_headless_task_runs_and_resumes(tmp_path):
@@ -215,7 +263,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
         r = c.post("/api/tasks", json={"project": str(proj), "prompt": "làm A", "mode": "plan"}, headers=H)
         assert r.status_code == 204, r.text
         task = c.get("/api/tasks").json()[0]
-        assert task["mode"] == "plan" and task["interactive"] is False
+        assert task["mode"] == "plan"
         ev = wait_idle(task["id"])
         assert [i["kind"] for i in ev["items"]] == ["user", "assistant", "result"]
         assert "--model sonnet --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]

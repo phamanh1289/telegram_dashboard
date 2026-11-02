@@ -2,6 +2,7 @@ import shlex
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 from conftest import A, B, FakeAgent, msg
@@ -24,7 +25,7 @@ def ai(env, tmp_path):
     env.store.apply_message(msg(B, 3, "other chat", sender="7"))
     provider = FakeAgent()
     svc = AiService(Settings(root=tmp_path, **AI), env.store, env.db)
-    svc._call = provider
+    svc.ask = provider
 
     def grant(chat, mid, participants=None, scope="draft,summary", expires=FUTURE):
         env.store.put_grant(chat, mid, scope, expires, participants or {"7": "ev-7", "8": "ev-8"})
@@ -155,7 +156,7 @@ async def test_consent_off_allows_text_but_not_deleted_or_media(env, tmp_path):
     env.store.apply_message(msg(A, 2, "bye", sender="8"))
     provider = FakeAgent()
     svc = AiService(Settings(root=tmp_path, ai_require_consent=False, **AI), env.store, env.db)
-    svc._call = provider
+    svc.ask = provider
     assert (await svc.run("summary", A, ["1", "2"])).text == "draft text"
     env.store.apply_deletion(A, ["2"])
     await expect("ai_scope_not_allowed", svc.run("summary", A, ["1", "2"]))
@@ -178,11 +179,6 @@ async def test_agent_command_failure_is_provider_error(env, tmp_path):
     with pytest.raises(ApiError) as e:
         await AiService(s, env.store, env.db).run("draft", A, ["1"])
     assert e.value.code == "ai_provider_error"
-
-
-def test_track_mention_skips_history_backfill(env):
-    env.store.track_mention(A, "Team", "supergroup")
-    assert env.store.history_checkpoint(A) == (0, 0)
 
 
 async def test_draft_splits_options(env, tmp_path):
@@ -232,9 +228,14 @@ async def test_photos_reach_the_reading_agent(env, tmp_path):
     )  # fmt: skip
     svc = AiService(s, env.store, env.db)
     r = await svc.run("summary", A, ["1"], images=[photo])
-    assert str(photo) in r.text and f"\n{media}\n--model m" in r.text  # read-only, in photo dir
+    prompt, cwd, args = r.text.rsplit("\n", 2)
+    # read-only, in a temp dir holding only the photo (never data/media, next to the session)
+    assert Path(cwd).name.startswith("tgd-photos-") and f"{Path(cwd).name}/1.jpg" in prompt
+    assert args == "--model m" and not Path(cwd).exists()  # removed after the run
     r = await svc.run("summary", A, ["1"], project=str(proj), images=[photo])
-    assert f"\n{proj}\n--model m --add-dir {media}" in r.text
+    prompt, cwd, args = r.text.rsplit("\n", 2)
+    assert cwd == str(proj) and args.startswith("--model m --add-dir ")
+    assert f"{args.split()[-1]}/1.jpg" in prompt
 
 
 FAKE_CLAUDE = """#!/bin/sh
@@ -251,7 +252,7 @@ esac
 def test_claude_account_login_with_pasted_code(tmp_path, monkeypatch):
     import asyncio
 
-    from telegram_dashboard import ai as mod
+    from telegram_dashboard import claude as mod
 
     async def no_token():
         return None
@@ -285,7 +286,7 @@ def test_claude_account_login_with_pasted_code(tmp_path, monkeypatch):
 def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
     import asyncio
 
-    from telegram_dashboard import ai as mod
+    from telegram_dashboard import claude as mod
 
     exe = tmp_path / "claude"
     exe.write_text(FAKE_CLAUDE)
@@ -307,6 +308,7 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "_oauth_token", token)
     monkeypatch.setattr(mod, "_oauth_get", get)
     monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})
+    monkeypatch.setattr(mod, "_profile", {"at": 0.0, "data": {}})
     s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)))
     acc = asyncio.run(mod.claude_account(s))
     assert acc["name"] == "Me" and acc["rate_tier"] == "default_claude_max_5x" and acc["extra_usage"]
@@ -323,7 +325,7 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "_oauth_get", limited)
     assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]
-    assert "usage" not in calls  # polled again within USAGE_EVERY: no call
+    assert calls == []  # polled again within USAGE_EVERY: no profile/usage call
     monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})  # restart, interval over
     assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]  # 429: reading from disk
     assert "usage" in calls
@@ -332,7 +334,7 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
 def test_claude_prefs_drive_every_claude_run(client, settings):
     from conftest import ORIGIN
 
-    from telegram_dashboard.ai import model_flags
+    from telegram_dashboard.claude import model_flags
 
     H = {"Origin": ORIGIN}
 

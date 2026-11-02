@@ -6,8 +6,8 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
-import { timeLabel, toast } from "@/lib/inbox";
+import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
+import { smooth, timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -24,8 +24,9 @@ const ERRORS: Record<string, string> = {
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
   chat_not_found: "Không tìm thấy nhóm.",
 };
-export const errorText = (e: unknown) =>
-  e instanceof ApiError ? (e.detail && e.code !== "not_connected" ? e.detail : ERRORS[e.code] ?? "Có lỗi xảy ra.") : "Có lỗi xảy ra.";
+/** The server's own explanation when it gives one, else the code's text. */
+export const digestError = (e: unknown) =>
+  e instanceof ApiError && e.detail && e.code !== "not_connected" ? e.detail : errorText(e, ERRORS);
 
 // Reading order: what needs me first, the record after.
 const SECTIONS = [
@@ -181,7 +182,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   }
   function jump(id: string) {
     setLit(id);
-    document.querySelector(`[data-digest-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    document.querySelector(`[data-digest-id="${id}"]`)?.scrollIntoView({ block: "center", behavior: smooth() });
   }
   async function copy() {
     if (!shown) return;
@@ -250,7 +251,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         </p>
       )}
       {setConsent.isError && (
-        <p role="alert" className="border-b px-3 py-1.5 text-xs text-error md:px-5">Không đổi được quyền AI: {errorText(setConsent.error)}</p>
+        <p role="alert" className="border-b px-3 py-1.5 text-xs text-error md:px-5">Không đổi được quyền AI: {digestError(setConsent.error)}</p>
       )}
       {enabled && consent.data?.expires_at && (
         <p className="flex items-center gap-2 border-b px-3 py-1 text-xs text-ink-3 md:px-5">
@@ -267,7 +268,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
               {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-4" style={{ width: `${90 - i * 15}%` }} />)}
             </div>
           ) : run.isError ? (
-            <p role="alert" className="text-sm text-error">{errorText(run.error)}</p>
+            <p role="alert" className="text-sm text-error">{digestError(run.error)}</p>
           ) : shown ? (
             <Result r={shown} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
           ) : (
@@ -283,7 +284,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           ))}
           {history.isError && (
             <li role="alert" className="flex items-center gap-2 px-3 py-3 text-sm text-error md:px-5">
-              {errorText(history.error)}
+              {digestError(history.error)}
               <Button size="xs" variant="outline" className="ml-auto" onClick={() => void history.refetch()}><RotateCw /> Thử lại</Button>
             </li>
           )}

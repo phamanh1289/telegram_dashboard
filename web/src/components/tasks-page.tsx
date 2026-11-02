@@ -1,23 +1,24 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, CheckCheck, CheckCircle2, ChevronDown, CornerDownLeft, FolderGit2, Square, Loader2, MessageSquare, RotateCcw, RotateCw, SquareTerminal, Trash2, Users, Wrench } from "lucide-react";
+import { ArrowLeft, Bot, CheckCheck, CheckCircle2, ChevronDown, FolderGit2, Square, Loader2, MessageSquare, RotateCcw, RotateCw, Trash2, Users, Wrench } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ModelEffortPicker } from "@/components/claude";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ModelEffortPicker } from "@/components/settings";
 import { api, ApiError, type Message, type Task } from "@/lib/api";
-import { ALL, timeLabel, useNow, useTaskList } from "@/lib/inbox";
+import { ALL, byUnit, TASK_MODES, timeLabel, useNow, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 type TaskEvent = { kind: string; text: string; error?: boolean };
+type TaskLog = { items: TaskEvent[]; next: number };
 type Filter = "all" | "running" | "done";
 const FILTERS: [Filter, string][] = [["all", "Tất cả"], ["running", "Đang chạy"], ["done", "Đã xong"]];
 
 function ago(date: string, now: number) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
-  return mins < 1 ? "vừa xong" : mins < 60 ? `${mins} phút trước` : mins < 1440 ? `${Math.floor(mins / 60)} giờ trước` : `${Math.floor(mins / 1440)} ngày trước`;
+  return mins < 1 ? "vừa xong" : `${byUnit(mins).join(" ")} trước`;
 }
 
 const atBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -25,9 +26,10 @@ const atBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.client
 /** The tagged message as the reply panel needs it (the task row only keeps a snapshot). */
 function asMessage(t: Task): Message {
   return {
-    chat_id: t.chat_id!, message_id: t.message_id!, sender_id: null, sender_name: t.sender_name ?? null,
-    text: t.message_text ?? "", date: t.created_at, outgoing: false, deleted: false, handled: false, pinned: false,
-  } as unknown as Message;
+    chat_id: t.chat_id!, message_id: t.message_id!, sender_id: null, sender_name: t.sender_name ?? null, text: t.message_text ?? "", date: t.created_at,
+    edit_date: null, reply_to_id: null, topic_id: null, outgoing: false, media_kind: null, deleted: false,
+    handled: t.handled ?? false, pinned: false, links: [],
+  };
 }
 
 const KIND_STYLE: Record<string, string> = {
@@ -40,13 +42,21 @@ const KIND_STYLE: Record<string, string> = {
 
 type Status = "running" | "stopped" | "done";
 const statusOf = (t: Task): Status =>
-  t.running ? "running" : !t.result && (t.mode ?? "terminal") !== "terminal" ? "stopped" : "done";
+  t.running ? "running" : !t.result && t.mode !== "terminal" ? "stopped" : "done";
 const STATUS_LABEL: Record<Status, string> = { running: "Đang chạy", stopped: "Đã dừng", done: "Đã xong" };
 
 function StatusIcon({ s, className }: { s: Status; className?: string }) {
   if (s === "running") return <Loader2 className={cn("animate-spin text-info", className)} aria-hidden />;
   if (s === "stopped") return <Square className={cn("fill-current text-warn", className)} aria-hidden />;
   return <CheckCircle2 className={cn("text-ok", className)} aria-hidden />;
+}
+
+function HandledBadge() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-ok" title="Tin tag đã đánh dấu xử lý">
+      <CheckCheck className="size-3" aria-hidden /> Đã xử lý
+    </span>
+  );
 }
 
 function StatusBadge({ s }: { s: Status }) {
@@ -82,25 +92,23 @@ function Feed({ follow, children, footer }: { follow: unknown; children: ReactNo
 /** Headless session: conversation log with the follow-up input pinned below it. */
 function ChatPanel({ id, running, plan, head }: { id: string; running: boolean; plan: boolean; head: ReactNode }) {
   const qc = useQueryClient();
-  const [items, setItems] = useState<TaskEvent[]>([]);
-  const next = useRef(0);
   const [text, setText] = useState("");
   const [edit, setEdit] = useState(false); // plan task: let the next turns edit files (approve the plan)
+  // The log grows in the cache (each poll appends the new lines), so coming back to a session shows it at once.
   const q = useQuery({
     queryKey: ["task-events", id],
-    queryFn: async ({ signal }) => {
-      const r = await api<{ items: TaskEvent[]; next: number; total: number; running: boolean }>(`/tasks/${id}/events?after=${next.current}`, { signal });
-      if (r.total < next.current) { // the task was re-run: start over
-        next.current = 0;
-        setItems([]);
-      } else if (r.items.length) {
-        next.current = r.next;
-        setItems((prev) => [...prev, ...r.items]);
-      }
-      return r;
+    queryFn: async ({ signal }): Promise<TaskLog> => {
+      const prev = qc.getQueryData<TaskLog>(["task-events", id]);
+      const read = (after: number) =>
+        api<{ items: TaskEvent[]; next: number; total: number }>(`/tasks/${id}/events?after=${after}`, { signal });
+      let after = prev?.next ?? 0;
+      let r = await read(after);
+      if (r.total < after) r = await read((after = 0)); // the task was re-run: start over
+      return { items: after ? [...prev!.items, ...r.items] : r.items, next: r.items.length ? r.next : after };
     },
-    refetchInterval: running ? 1500 : 6000,
+    refetchInterval: running ? 1500 : false, // a finished turn only changes after a send, which refetches
   });
+  const items = q.data?.items ?? [];
   const refresh = () => {
     void q.refetch();
     void qc.invalidateQueries({ queryKey: ["tasks"] });
@@ -109,18 +117,19 @@ function ChatPanel({ id, running, plan, head }: { id: string; running: boolean; 
     mutationFn: (line: string) => api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, edit: plan && edit } }),
     onSuccess: () => { setText(""); refresh(); },
   });
+  const submit = () => { if (text.trim() && !running && !send.isPending) send.mutate(text.trim()); };
   const busy = send.error instanceof ApiError && send.error.code === "task_busy";
 
   return (
     <Feed follow={items.length + (running ? 0.5 : 0)} footer={<>
-      <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) send.mutate(text.trim()); }}>
+      <form className="flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
         <textarea
           aria-label="Nhắn tiếp cho AI" rows={2} maxLength={8000} value={text} disabled={running}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              if (text.trim() && !running) send.mutate(text.trim());
+              submit();
             }
           }}
           placeholder={running ? "AI đang làm, đợi xong lượt này hoặc bấm Dừng…" : "Nhắn tiếp cho AI (Enter gửi, Shift+Enter xuống dòng)"}
@@ -145,57 +154,14 @@ function ChatPanel({ id, running, plan, head }: { id: string; running: boolean; 
           </li>
         ))}
         {q.isPending && <li><Skeleton className="h-8 w-2/3" /></li>}
+        {q.isError && (
+          <li role="alert" className="flex items-center gap-2 px-1 text-xs text-error">
+            Không đọc được hội thoại.
+            <Button size="xs" variant="outline" disabled={q.isFetching} onClick={() => void q.refetch()}><RotateCw /> Thử lại</Button>
+          </li>
+        )}
         {running && <li className="flex items-center gap-1.5 px-1 text-xs text-ink-3"><Loader2 className="size-3 animate-spin" aria-hidden /> AI đang làm…</li>}
       </ul>
-    </Feed>
-  );
-}
-
-/** Live view of the task's Terminal tab with a line input pinned below, so the session can be driven from here. */
-function TerminalPanel({ id, head, tail }: { id: string; head: ReactNode; tail: ReactNode }) {
-  const [text, setText] = useState("");
-  const q = useQuery({
-    queryKey: ["task-terminal", id],
-    queryFn: ({ signal }) => api<{ text: string }>(`/tasks/${id}/terminal`, { signal }),
-    refetchInterval: 3000,
-    retry: false,
-  });
-  const send = useMutation({
-    mutationFn: (line: string) => api<void>(`/tasks/${id}/input`, { method: "POST", json: { text: line } }),
-    onSuccess: () => {
-      setText("");
-      setTimeout(() => void q.refetch(), 700); // let the agent react before re-reading
-    },
-  });
-  const gone = q.error instanceof ApiError && q.error.code === "terminal_gone";
-
-  return (
-    <Feed follow={q.data?.text} footer={!gone && <>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); send.mutate(text); }}>
-        <input
-          aria-label="Nhập vào Terminal"
-          value={text}
-          maxLength={2000}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Gõ phản hồi cho AI rồi Enter, ví dụ: tiếp tục / làm theo cách 2…"
-          className="h-[30px] min-w-0 flex-1 rounded-md border border-rule-2 bg-cotton px-3 text-sm text-ink placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1"
-        />
-        <Button type="submit" size="sm" disabled={!text.trim() || send.isPending}>Gửi</Button>
-        <Button type="button" size="sm" variant="outline" disabled={send.isPending}
-          title="Gửi phím Enter (đồng ý lựa chọn đang chọn khi AI hỏi duyệt)" onClick={() => send.mutate("")}>
-          <CornerDownLeft /> Enter
-        </Button>
-      </form>
-      {send.isError && <p role="alert" className="text-xs text-error">Không gửi được vào Terminal.</p>}
-    </>}>
-      {head}
-      <pre aria-label="Màn hình Terminal"
-        className="whitespace-pre-wrap break-all rounded-md bg-board p-3 font-mono text-xs leading-relaxed text-board-type">
-        {gone ? "Cửa sổ Terminal của phiên này đã đóng. Bấm “Chạy lại” để mở phiên mới."
-          : q.isError ? "Không đọc được Terminal (macOS có thể đang chặn quyền Automation cho Terminal)."
-          : (q.data?.text ?? "Đang đọc Terminal…")}
-      </pre>
-      {tail}
     </Feed>
   );
 }
@@ -215,7 +181,7 @@ function TaskRow({ t, now, active, onSelect }: { t: Task; now: number; active: b
         <span className={cn("truncate text-sm font-medium", t.handled ? "text-ink-3" : "text-ink")}>{t.message_text || t.prompt}</span>
         <span className="flex min-w-0 gap-1.5 text-xs text-ink-3">
           <span className={cn("shrink-0", s === "running" && "text-info")}>{STATUS_LABEL[s]}</span>·
-          {t.handled && <><span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-ok" title="Tin tag đã đánh dấu xử lý"><CheckCheck className="size-3" aria-hidden /> Đã xử lý</span>·</>}
+          {t.handled && <><HandledBadge />·</>}
           <span className="truncate">{t.chat_title || t.project.split("/").pop()}</span>·
           <time className="shrink-0" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>{ago(t.created_at, now)}</time>
         </span>
@@ -231,13 +197,11 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const running = !!t.running;
-  const headless = (t.mode ?? "terminal") !== "terminal";
+  const headless = t.mode !== "terminal"; // old Terminal tasks: prompt and result only
   const refresh = () => qc.invalidateQueries({ queryKey: ["tasks"] });
   const reopen = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/reopen`, { method: "POST" }), onSettled: refresh });
-  const capture = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/capture`, { method: "POST" }), onSettled: refresh });
   const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: refresh });
   const stop = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}/stop`, { method: "POST" }), onSettled: refresh });
-  const canReply = !!t.chat_id && !!t.message_id;
 
   const head = <>
     {(t.message_text || t.chat_title) && (
@@ -265,7 +229,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
         <p className="whitespace-pre-wrap break-words rounded-md bg-ok-wash p-3 text-[0.9375rem] leading-[1.55] text-ink">{t.result}</p>
       ) : (
         <p className="rounded-md bg-paper-2 p-3 text-sm leading-relaxed text-ink-3">
-          {running ? "AI đang làm trong Terminal. Khi xong, báo cáo tự hiện ở đây (~10 giây). Nếu AI đã xong mà chưa thấy báo cáo, bấm “Lấy kết quả từ Terminal”." : "Chưa có kết quả (phiên đã dừng hoặc lỗi). Bấm “Chạy lại”."}
+          Phiên Terminal cũ chưa có kết quả. Bấm “Chạy lại” để chạy lại.
         </p>
       )}
     </section>
@@ -277,14 +241,8 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           <Button size="icon-sm" variant="ghost" className="-ml-2 md:hidden" onClick={onBack} aria-label="Về danh sách phiên"><ArrowLeft /></Button>
           <StatusBadge s={statusOf(t)} />
-          {t.handled && (
-            <span className="inline-flex items-center gap-1 font-medium text-ok" title="Tin tag của phiên này đã đánh dấu xử lý">
-              <CheckCheck className="size-3.5" aria-hidden /> Tin đã xử lý
-            </span>
-          )}
-          <span className="rounded-sm border border-rule px-1.5 py-0.5 text-ink-2">
-            {{ plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal" }[t.mode ?? "terminal"]}
-          </span>
+          {t.handled && <HandledBadge />}
+          <span className="rounded-sm border border-rule px-1.5 py-0.5 text-ink-2">{TASK_MODES[t.mode] ?? t.mode}</span>
           <span className="inline-flex items-center gap-1 text-ink-2" title={t.project}>
             <FolderGit2 className="size-3.5" aria-hidden /> {t.project.split("/").pop()}
           </span>
@@ -299,14 +257,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
               {stop.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Square className="fill-current" aria-hidden />} {stop.isPending ? "Đang dừng…" : "Dừng"}
             </Button>
           )}
-          {!t.result && t.interactive && (
-            <Button size="sm" aria-busy={capture.isPending} disabled={capture.isPending}
-              title="AI không ghi báo cáo? Lấy phần chữ cuối trong Terminal làm kết quả"
-              onClick={() => capture.mutate()}>
-              <SquareTerminal /> Lấy kết quả từ Terminal
-            </Button>
-          )}
-          {t.result && canReply && (
+          {t.result && t.chat_id && t.message_id && (
             <Button size="sm" onClick={() => onUseText(asMessage(t), t.result!)}>
               <MessageSquare /> Dùng kết quả làm nháp trả lời
             </Button>
@@ -317,18 +268,17 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
           <Button size="sm" variant="outline" aria-busy={reopen.isPending} disabled={reopen.isPending}
             title="Chạy lại từ đầu cùng yêu cầu (xóa hội thoại và kết quả cũ)"
             onClick={() => confirm("Chạy lại phiên này từ đầu? Hội thoại và kết quả cũ sẽ bị xóa.") && reopen.mutate()}>
-            <RotateCcw /> {running && !headless ? "Mở lại Terminal" : "Chạy lại"}
+            <RotateCcw /> Chạy lại
           </Button>
           <Button size="sm" variant="destructive" className="ml-auto" aria-busy={remove.isPending} disabled={remove.isPending}
             onClick={() => confirm("Xóa phiên này khỏi danh sách?") && remove.mutate()}>
             <Trash2 /> Xóa
           </Button>
         </div>
-        {(reopen.isError || remove.isError || capture.isError || stop.isError) && <p role="alert" className="text-xs text-error">Thao tác thất bại (không mở được Terminal?).</p>}
+        {(reopen.isError || remove.isError || stop.isError) && <p role="alert" className="text-xs text-error">Thao tác thất bại, thử lại.</p>}
       </div>
 
       {headless ? <ChatPanel id={t.id} running={running} plan={t.mode === "plan"} head={head} />
-        : t.interactive ? <TerminalPanel id={t.id} head={head} tail={result} />
         : <Feed follow={t.result}>{head}{result}</Feed>}
     </div>
   );
@@ -346,7 +296,9 @@ export function TasksPage({ focus, onBack, onOpenGroup, onUseText }: {
   const all = q.data ?? [];
   const running = all.filter((t) => t.running).length;
   const rows = all.filter((t) => filter === "all" || (filter === "running") === !!t.running);
-  const cur = rows.find((t) => t.id === sel) ?? rows[0];
+  // "Mở phiên" on a session that is gone: say so rather than open another one.
+  const gone = !!focus && sel === focus && q.isSuccess && !all.some((t) => t.id === focus);
+  const cur = gone ? undefined : (rows.find((t) => t.id === sel) ?? rows[0]);
 
   return (
     <section aria-label="AI Agent" className="flex min-h-0 flex-col">
@@ -356,7 +308,7 @@ export function TasksPage({ focus, onBack, onOpenGroup, onUseText }: {
           <span className="font-mono text-ink tabular-nums">{all.length}</span> phiên
           {running > 0 && <>, <span className="inline-flex items-center gap-1 text-info"><Loader2 className="size-3 animate-spin" aria-hidden /><span className="font-mono tabular-nums">{running}</span> đang chạy</span></>}
         </p>
-        <ModelEffortPicker task className="ml-auto hidden sm:grid" />
+        <ModelEffortPicker task className="ml-auto hidden sm:flex" />
         <div className="ml-auto flex gap-1 sm:ml-0" role="group" aria-label="Lọc phiên">
           {FILTERS.map(([id, label]) => (
             <button key={id} type="button" aria-pressed={filter === id} onClick={() => setFilter(id)}
@@ -395,13 +347,18 @@ export function TasksPage({ focus, onBack, onOpenGroup, onUseText }: {
             : <Button size="sm" variant="outline" onClick={() => setFilter("all")}>Xem tất cả phiên</Button>}
         </div>
       )}
-      {cur && (
+      {(cur || gone) && (
         <div className="flex min-h-0 flex-1">
           <ul aria-label="Danh sách phiên" className={cn("min-h-0 w-full overflow-y-auto md:block md:w-72 md:shrink-0 md:border-r", sel && "hidden")}>
-            {rows.map((t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur.id} onSelect={() => setSel(t.id)} />)}
+            {rows.map((t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur?.id} onSelect={() => setSel(t.id)} />)}
           </ul>
           <div className={cn("min-h-0 min-w-0 flex-1 flex-col", sel ? "flex" : "hidden md:flex")}>
-            <TaskDetail key={cur.id} t={cur} now={now} onBack={() => setSel(null)} onOpenGroup={onOpenGroup} onUseText={onUseText} />
+            {cur ? <TaskDetail key={cur.id} t={cur} now={now} onBack={() => setSel(null)} onOpenGroup={onOpenGroup} onUseText={onUseText} /> : (
+              <div role="status" className="grid justify-items-start gap-2 p-5 text-sm text-ink-2">
+                <p>Phiên này không còn (có thể đã bị xóa).</p>
+                <Button size="sm" variant="outline" onClick={() => setSel(null)}>Xem danh sách phiên</Button>
+              </div>
+            )}
           </div>
         </div>
       )}

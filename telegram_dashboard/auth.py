@@ -1,7 +1,10 @@
+from urllib.parse import urlsplit
+
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+CROSS_SITE = {"cross-site", "same-site"}  # Sec-Fetch-Site of a request another page made
 
 
 class LocalGuardMiddleware:
@@ -11,14 +14,21 @@ class LocalGuardMiddleware:
         self.app = app
         self.host_header = host_header
         self.app_origin = app_origin
+        # The dev proxy (Next) rewrites Host; the browser's Host arrives as X-Forwarded-Host.
+        self.forwarded_hosts = {host_header, urlsplit(app_origin).netloc}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         headers = {k.decode().lower(): v.decode() for k, v in scope["headers"]}
         problem = None
-        if headers.get("host") != self.host_header:
-            problem = (400, "invalid_host")
+        fwd = headers.get("x-forwarded-host")
+        if headers.get("host") != self.host_header or (
+            fwd is not None and fwd not in self.forwarded_hosts
+        ):
+            problem = (400, "invalid_host")  # DNS rebinding, also through the dev proxy
+        elif headers.get("sec-fetch-site") in CROSS_SITE:  # <img>/no-cors GETs send no Origin
+            problem = (403, "invalid_origin")
         else:
             origin = headers.get("origin")
             if scope["method"] not in SAFE_METHODS:

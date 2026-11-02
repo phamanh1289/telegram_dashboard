@@ -31,7 +31,7 @@ def dg(env, tmp_path):
     provider = FakeAgent(reply="{}")
     settings = Settings(root=tmp_path, **AI)
     ai = AiService(settings, env.store, env.db)
-    ai._call = provider
+    ai.ask = provider
     svc = DigestService(settings, env.store, env.db, env.bridge, ai)
     return env, svc, provider
 
