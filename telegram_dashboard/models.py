@@ -297,6 +297,7 @@ class ClaudeLoginCode(BaseModel):
 class YouTrackIssue(BaseModel):
     id: str
     url: str
+    summary: str = ""
 
 
 class HandledAllResponse(BaseModel):

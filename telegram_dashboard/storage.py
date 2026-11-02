@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -994,6 +995,19 @@ class Store:
             return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
 
     # ---- projects ------------------------------------------------------
+    def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:
+        """Stored messages of tracked chats that mention `needle` (a ticket ID), newest first."""
+        esc = needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        word = re.compile(rf"(?<![\w-]){re.escape(needle)}(?!\d)", re.I)  # VA-12 must not match VA-123
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, c.title "
+                "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
+                "AND m.text LIKE ? ESCAPE '\\' ORDER BY m.date DESC LIMIT ?",
+                (f"%{esc}%", limit * 3),
+            ).fetchall()
+        return [dict(r) for r in rows if word.search(r["text"])][:limit]
+
     def list_projects(self) -> list[dict]:
         with self._conn() as c:
             return [dict(r) for r in c.execute("SELECT * FROM projects ORDER BY name")]

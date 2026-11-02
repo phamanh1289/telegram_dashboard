@@ -104,6 +104,7 @@ export function Composer({
     if (run && !analysis && !ask.isPending && !targetDeleted) ask.mutate();
   }
   const [issue, setIssue] = useState<{ summary: string; description: string } | null>(null);
+  const [issueQ, setIssueQ] = useState(""); // text the duplicate check searched for (the title as first proposed)
   const qc = useQueryClient();
 
   // Adjust state while rendering when inputs change (no effect round-trip).
@@ -229,9 +230,17 @@ export function Composer({
       setIssue(null);
     },
   });
+  // open tickets that already look like this one, so a duplicate is caught before it is created
+  const similar = useQuery({
+    queryKey: ["youtrack-similar", issueQ],
+    queryFn: ({ signal }) => api<YouTrackIssue[]>(`/youtrack/similar?q=${encodeURIComponent(issueQ)}`, { signal }),
+    enabled: issue !== null && issueQ.length > 0,
+    staleTime: 60_000,
+  });
   function openIssue() {
     if (!replyTo) return;
     const first = replyTo.text.split("\n")[0].slice(0, 120);
+    setIssueQ(replyTo.text.slice(0, 300));
     setIssue({
       summary: first || "Yêu cầu từ Telegram",
       description: `Từ Telegram (${replyTo.sender_name ?? "không rõ"}):\n\n${textWithLinks(replyTo)}${aiPrompt.trim() ? `\n\nGhi chú: ${aiPrompt.trim()}` : ""}`,
@@ -593,6 +602,16 @@ export function Composer({
             onChange={(e) => setIssue((v) => v && { ...v, summary: e.target.value })} />
           <Textarea aria-label="Mô tả ticket" className="min-h-24 flex-auto resize-none overflow-y-auto" rows={8} maxLength={20000} value={issue?.description ?? ""}
             onChange={(e) => setIssue((v) => v && { ...v, description: e.target.value })} />
+          {!!similar.data?.length && (
+            <section aria-label="Ticket có thể trùng" className="grid gap-1 rounded-[var(--radius-card)] bg-warn-wash p-2 text-sm">
+              <p className="text-xs text-ink-2">Có thể đã có ticket tương tự đang mở, xem trước khi tạo:</p>
+              {similar.data.map((t) => (
+                <a key={t.id} href={t.url} target="_blank" rel="noreferrer" className="truncate hover:underline">
+                  <b className="font-medium">{t.id}</b> <span className="text-ink-2">{t.summary}</span>
+                </a>
+              ))}
+            </section>
+          )}
           {createIssue.isError && (
             <p role="alert" className="text-sm text-error">
               {createIssue.error instanceof ApiError && createIssue.error.code === "youtrack_unauthorized"

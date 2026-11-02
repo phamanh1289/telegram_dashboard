@@ -249,7 +249,11 @@ class AiService:
         )
 
     async def _call(
-        self, user_prompt: str, project: str | None = None, read_dir: str | None = None
+        self,
+        user_prompt: str,
+        project: str | None = None,
+        read_dir: str | None = None,
+        system: str = SYSTEM_PROMPT,
     ) -> str:
         """One `claude -p` run: prompt on stdin, answer on stdout."""
         s = self.settings
@@ -273,7 +277,7 @@ class AiService:
             log.warning("AI agent not started: %s", type(e).__name__)
             raise ApiError(502, "ai_provider_error") from None
         gone = client_gone.get()
-        comm = asyncio.ensure_future(proc.communicate(f"{SYSTEM_PROMPT}\n\n{user_prompt}".encode()))
+        comm = asyncio.ensure_future(proc.communicate(f"{system}\n\n{user_prompt}".encode()))
         deadline = time.monotonic() + (PROJECT_AGENT_TIMEOUT if project else AGENT_TIMEOUT)
         try:
             while not comm.done():

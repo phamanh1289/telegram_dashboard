@@ -15,8 +15,10 @@ import { initDetail } from './ui/detail.js';
 import { initGlobalFind } from './ui/globalFind.js';
 import { initKeyboard } from './ui/keyboard.js';
 import { initStateChange } from './ui/stateChange.js';
+import { initDashAi } from './views/dashboard.js';
+import { initAiFilter } from './ui/aiFilter.js';
 
-const wireUi = () => [initTheme, initSidebar, initMultiSelects, initFilterBar, initTable, initTooltip, initDrawer, initDetail, initGlobalFind, initKeyboard, initStateChange].forEach((f) => f());
+const wireUi = () => [initTheme, initSidebar, initMultiSelects, initFilterBar, initTable, initTooltip, initDrawer, initDetail, initGlobalFind, initKeyboard, initStateChange, initDashAi, initAiFilter].forEach((f) => f());
 
 const fillProjects = (ps, wanted) => {
   $('project').innerHTML = ps.map((p) => `<option value="${esc(p.shortName)}" title="${esc(p.name)}">${esc(p.shortName)} (${esc(p.name)})</option>`).join('');

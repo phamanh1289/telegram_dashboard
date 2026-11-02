@@ -147,7 +147,7 @@ class FakeAgent:
         self.calls: list[str] = []
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
-    async def __call__(self, prompt, project=None, read_dir=None):
+    async def __call__(self, prompt, project=None, read_dir=None, system=None):
         self.calls.append(prompt)
         if self.on_call:
             self.on_call()

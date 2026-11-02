@@ -47,7 +47,9 @@ export const rank = (i) => RANK[i.priority] ?? 6;
 export const QUICK = {
   blocked: { label: 'Blocked', fn: (i) => up(i.state) === 'BLOCKED' },
   critical: { label: 'Critical / Highest', fn: (i) => rank(i) <= 1 },
+  overdue: { label: 'Quá hạn', fn: (i, now) => !!i.due && i.due < now },
   unassigned: { label: 'Chưa assign', fn: (i) => !i.assignee },
+  noest: { label: 'Trong sprint, chưa estimate', fn: (i) => i.sprints.length > 0 && i.estimate == null },
 };
 export const isFresh = (i) => seen.t > 0 && i.updated > seen.t;
 

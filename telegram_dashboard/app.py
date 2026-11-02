@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -713,6 +714,26 @@ def create_app(
             raise ApiError(503, "youtrack_not_configured")
         issue_id, url = await create_issue(settings, body.summary, body.description)
         return YouTrackIssue(id=issue_id, url=url)
+
+    @app.get("/api/youtrack/similar")
+    async def youtrack_similar(q: str) -> list[YouTrackIssue]:
+        """Open tickets whose text matches q (YouTrack's own relevance), to spot a duplicate."""
+        words = re.findall(r"\w{3,}", q)[:8]  # plain words only: query syntax chars never reach YQL
+        if not settings.youtrack_configured or not words:
+            return []
+        query = f"project: {settings.youtrack_project} #Unresolved {' '.join(words)}"  # shortName: no braces
+        try:
+            rows = await yt_dashboard.yt(
+                "/api/issues", query=query, fields="idReadable,summary", **{"$top": 5}
+            )
+        except YtError:
+            return []  # a hint only; never blocks creating the ticket
+        base = settings.youtrack_url.rstrip("/")
+        return [
+            YouTrackIssue(id=i["idReadable"], url=f"{base}/issue/{i['idReadable']}",
+                          summary=i.get("summary") or "")
+            for i in rows
+        ]  # fmt: skip
 
     @app.api_route(
         "/api/{rest:path}",

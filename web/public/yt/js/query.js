@@ -1,6 +1,6 @@
 /* ---------- filtering / sorting / grouping of the Ticket active table (pure over state, no DOM) ---------- */
 import { norm } from './util.js';
-import { S, flt, sel, sprintDates, stateSel } from './state.js';
+import { ME, S, flt, sel, sprintDates, stateSel } from './state.js';
 import { BUCKET, GROUPS, cmp } from './ticket.js';
 
 export const byAs = (i) => !sel.assignee.size || sel.assignee.has(i.assignee || 'Unassigned');
@@ -13,10 +13,13 @@ export const findIssue = (id) => S.all.find((x) => x.id === id);
 
 const hit = (i, terms) => { i._s ??= norm(`${i.id} ${i.summary} ${i.assignee || ''} ${i.qc || ''} ${i.state || ''}`); return terms.every((t) => i._s.includes(t)); };
 
+// "My task" in Ticket active also lists the tickets the user tests (the server loads them with the user's own)
+const myQc = (i) => !!ME.name && i.qc === ME.name && sel.assignee.has(ME.name);
+
 // tickets matching sprint / assignee / priority / type / search text / tier filters (+ resolved ones when shown)
 export function activePool(text, skip = null) {
   const terms = norm(text).split(/\s+/).filter(Boolean);
-  return S.all.filter((i) => (S.showRes || !i.resolved) && bySp(i) && byAs(i) && byFlt(i, skip) && hit(i, terms) && (S.tier == null || BUCKET(i) === S.tier));
+  return S.all.filter((i) => (S.showRes || !i.resolved) && bySp(i) && (byAs(i) || myQc(i)) && byFlt(i, skip) && hit(i, terms) && (S.tier == null || BUCKET(i) === S.tier));
 }
 
 // state chips: count per state (selected states stay listed even at 0), biggest first

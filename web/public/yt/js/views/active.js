@@ -6,6 +6,7 @@ import { activePool, fltCount, groupRows, hasFilters, stateCounts, visibleRows }
 import { morph } from '../morph.js';
 import { person, stateSelect } from './cells.js';
 import { renderBulk } from '../ui/stateChange.js';
+import { showAiFilter } from '../ui/aiFilter.js';
 
 export const ALERT = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
 const ICO_COPY = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>';
@@ -72,6 +73,7 @@ function renderEmpty(isEmpty) {
 
 export function renderActive(now) {
   const pool = activePool($('qs').value), cols = colsNow();
+  showAiFilter();
   morph($('chips'), chipsHtml(pool), { key: (el) => el.dataset.s });
   fillFlt('fpri', 'priority', (n) => PCOL[n] || 'var(--mut)', () => (a, b) => rank({ priority: a }) - rank({ priority: b }) || a.localeCompare(b));
   fillFlt('ftype', 'type', (n) => typeColor(n), (cnt) => (a, b) => (cnt[b] || 0) - (cnt[a] || 0));

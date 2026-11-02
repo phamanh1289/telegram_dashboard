@@ -1,12 +1,15 @@
 /* ---------- Dashboard page (bento): KPIs, attention strip, sprint progress, aging alerts, work in progress, bugs, bug/feature mix ---------- */
-import { $, esc, fmt, shortName, shortSp, reduce } from '../util.js';
+import { $, esc, fmt, shortName, shortSp, reduce, toast } from '../util.js';
 import { T, aging } from '../state.js';
 import { loadSince, sinceLoading } from '../since.js';
 import { QUICK, stateColor } from '../ticket.js';
 import { AGE, dashStats } from '../stats.js';
 import { morph, syncMix } from '../morph.js';
+import { yt } from '../api.js';
 import { dlt, person, stateSelect } from './cells.js';
 import { ALERT } from './active.js';
+import { openPanel } from '../ui/drawer.js';
+import { aiInto, aiOn } from '../ui/ai.js';
 
 const kpiPrev = []; // last value shown per KPI card, so numbers count from there
 
@@ -168,7 +171,35 @@ function renderMore(d) {
       || '<tr><td colspan="3" class="mut">Không có ticket nào bị chuyển sprint nhiều lần.</td></tr>'));
 }
 
+// ---- AI over the dashboard: a sprint report from the computed numbers (no ticket text), release notes from the tickets done
+let lastD = null;
+const brief = (i) => ({ id: i.id, summary: i.summary, state: i.state, assignee: i.assignee });
+const reportData = (d) => ({
+  sprint: d.per.label, previousSprint: d.per.prev, tickets: d.total, doing: d.doing, waitingQc: d.qc, doneRatePct: d.doneRate,
+  sprints: d.prog.map((r) => ({ name: r.name, total: r.t, todo: r.todo, doing: r.doing, qc: r.qc, done: r.d, timeElapsedPct: r.time, daysLeft: r.left })),
+  burndown: d.burn && { total: d.burn.total, left: d.burn.actual.at(-1), closedPerDay: +d.burn.rate.toFixed(2), sprintDays: d.burn.n, dayAllDone: d.burn.proj == null ? null : Math.ceil(d.burn.proj), addedAfterStart: d.burn.added },
+  attention: Object.fromEntries(d.attn.map((a) => [QUICK[a.q].label, a.n])),
+  wipLimit: T.wip, wip: d.wip.map(([p, [n, b]]) => ({ person: p, doing: n, blocked: b })),
+  aging: d.aging.rows.slice(0, 15).map(({ i, d: days }) => ({ ...brief(i), daysInState: +days.toFixed(1) })),
+  carriedOver: d.carry.slice(0, 15).map((i) => ({ ...brief(i), sprints: i.sprints.length })),
+  bugs: { inSprint: d.bug.sp, openInSprint: d.bug.spOpen, openInProject: d.bug.open },
+  velocityAvgPerSprint: d.vel.avg, leadTimeDays: { median: d.lead.med, p85: d.lead.p85 },
+});
+function aiPanel(title, label, kind, data) {
+  openPanel(title, '<div id="dai"></div>');
+  aiInto($('dai'), label, (sig) => yt.aiData(kind, data, sig));
+}
+export function initDashAi() {
+  $('aiRep').onclick = () => lastD && aiPanel(`Báo cáo sprint · ${lastD.per.label}`, 'AI đang viết báo cáo', 'report', reportData(lastD));
+  $('aiNotes').onclick = () => {
+    if (!lastD) return;
+    if (!lastD.doneRows.length) { toast('Sprint đang xem chưa có ticket xong'); return; }
+    aiPanel(`Release notes · ${lastD.per.label}`, 'AI đang viết release notes', 'notes', lastD.doneRows.slice(0, 300).map((i) => ({ id: i.id, type: i.type, summary: i.summary })));
+  };
+}
+
 export function renderDashboard(now) {
-  const d = dashStats(now);
+  const d = lastD = dashStats(now);
+  $('aibar').hidden = !aiOn();
   renderKpis(d); renderSprints(d); renderAttn(d); renderWip(d); renderAging(d); renderBugs(d); renderMix(d); renderBurn(d); renderVel(d); renderLead(d); renderMore(d);
 }

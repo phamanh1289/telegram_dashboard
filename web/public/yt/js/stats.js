@@ -4,7 +4,7 @@ import { S, aging, sel, msItems, sprintDates } from './state.js';
 import { BUCKET, QUICK } from './ticket.js';
 import { byAs, bySp } from './query.js';
 
-const ATTN = [['blocked', 'bad'], ['critical', 'bad'], ['unassigned', 'warn']];
+const ATTN = [['blocked', 'bad'], ['critical', 'bad'], ['overdue', 'bad'], ['unassigned', 'warn'], ['noest', 'warn']];
 export const AGE = { warn: 2, bad: 3 }; // days a ticket may sit untouched while being worked / tested: > warn = amber, > bad = red
 const inSet = (set) => (i) => i.sprints.some((s) => set.has(s));
 const isBug = (i) => i.type === 'Bug';
@@ -189,8 +189,10 @@ export function dashStats(now) {
     doing: work.filter((i) => BUCKET(i) === 1).length,
     qc: work.filter((i) => BUCKET(i) === 2).length,
     doneRate: cohort.length ? Math.round(done.length / cohort.length * 100) : null,
+    doneRows: done, // AI release notes
     prog: progressRows(cohort, per, now),
-    attn: ATTN.map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length })),
+    attn: ATTN.filter(([q]) => q !== 'noest' || S.full.some((i) => i.estimate != null)) // project without an Estimation field: the tile would flag everything
+      .map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length })),
     wip: wipRows(openL),
     aging: aging_,
     bug: { sp: spBugs.length, spOpen: spBugs.filter((i) => !i.resolved).length, open: bugs.filter((i) => !i.resolved).length, spUser: bugsByUser(spBugs) },

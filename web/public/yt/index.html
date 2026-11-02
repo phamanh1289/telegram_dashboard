@@ -45,7 +45,7 @@
   <button type="button" class="ibtn" id="burger" title="Thu gọn / mở rộng menu" aria-label="Thu gọn / mở rộng menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <h1 id="ptitle">Ticket active</h1>
   <div class="ctl">
-    <div class="seg2" id="scope" role="group" aria-label="Phạm vi" title="Xem việc của riêng bạn, của Android team hoặc tất cả"><button type="button" data-s="me">My task</button><span class="sd"></span><button type="button" data-s="android">Android team</button><span class="sd"></span><button type="button" data-s="team">All</button></div>
+    <div class="seg2" id="scope" role="group" aria-label="Phạm vi" title="My task: ticket bạn được assign hoặc làm QC · Android team · tất cả"><button type="button" data-s="me">My task</button><span class="sd"></span><button type="button" data-s="android">Android team</button><span class="sd"></span><button type="button" data-s="team">All</button></div>
     <select id="project" title="Project" aria-label="Project"></select>
     <details class="ms" id="sprint"><summary></summary><div class="opts"><input class="msq fld" type="search" placeholder="Tìm sprint…" aria-label="Tìm sprint" autocomplete="off"><div class="list"></div></div></details>
     <details class="ms" id="assignee"><summary></summary><div class="opts"><input class="msq fld" type="search" placeholder="Tìm người…" aria-label="Tìm người" autocomplete="off"><div class="list"></div></div></details>
@@ -70,6 +70,7 @@
     </section>
 
     <h2 class="bh">Tổng quan sprint</h2>
+    <div class="aibar b12" id="aibar" hidden><button type="button" class="btn" id="aiRep" title="AI viết báo cáo tiến độ, rủi ro, đề xuất từ số liệu dashboard (không gửi nội dung ticket)">AI báo cáo sprint</button><button type="button" class="btn" id="aiNotes" title="AI viết release notes từ các ticket đã xong trong sprint đang xem">AI release notes</button></div>
     <div class="card b12 kpis" id="kpis"></div>
     <section class="card b6" style="--i:3"><div class="hd"><h3>Tiến độ sprint</h3><span class="hm">vạch dọc = thời gian đã qua</span></div><div id="sprints"></div></section>
     <section class="card b6" style="--i:4"><div class="hd"><h3>Burndown sprint</h3><span class="hm lgnd"><span><u class="lg" style="--sc:var(--chart-main)"></u>thực tế</span><span><u class="lg lgi"></u>lý tưởng</span><span><u class="lg lgd"></u>dự báo</span></span></div><div id="burn"></div></section>
@@ -99,6 +100,7 @@
     <div class="va-head">
       <h2 id="vah" class="visually-hidden">Ticket active</h2>
       <input class="fld qs" id="qs" type="search" placeholder="Tìm ID, tiêu đề, người…  ( / hoặc Ctrl/⌘ K)" aria-label="Tìm ticket" autocomplete="off">
+      <input class="fld qs aiq" id="aiq" type="search" hidden placeholder="AI lọc: vd. bug critical của tôi sprint này ↵" aria-label="Lọc bằng câu, AI chuyển thành bộ lọc" autocomplete="off" maxlength="500">
       <span id="acount" class="acount" aria-live="polite"></span>
       <div class="vopts">
         <select class="fld" id="grp" title="Gom nhóm" aria-label="Gom nhóm">

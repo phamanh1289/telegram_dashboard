@@ -474,8 +474,28 @@ body.loading :is(table, #sprints, #burn, #vel, #lead, #thru, #flow, .hbs, .kpis,
 .enter { animation: rise var(--dur-short) var(--ease-out) var(--d, 0ms) both; }
 .leave { animation: leave var(--dur-micro) var(--ease-in) forwards; pointer-events: none; }
 tr.flash td { animation: flash calc(var(--dur-long) * 3) var(--ease-out); }
+/* AI: tool row + answer box (drawer, dashboard panel), NL filter, new comment, Telegram mentions */
+.aitools, .aibar { display: flex; flex-wrap: wrap; gap: var(--space-xs); }
+.aitools { margin-bottom: var(--space-sm); }
+.va-head .aiq { flex-basis: 260px; max-width: 360px; background-image: none; padding-left: var(--space-sm); }
+.aib { margin-bottom: var(--space-sm); padding: var(--space-sm) var(--space-md); border: 1px solid var(--color-rule); border-radius: var(--radius-input); background: var(--color-paper-2); line-height: 1.55; word-break: break-word; }
+.aib.busy { display: flex; align-items: center; gap: var(--space-xs); color: var(--color-ink-2); }
+.aib.busy .btn { margin-left: auto; }
+.aib.err { border-color: var(--bad); color: var(--bad); }
+.aidot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-ink-2); animation: breathe 0.8s ease-in-out infinite alternate; }
+.aia { display: flex; justify-content: flex-end; gap: var(--space-xs); margin-top: var(--space-xs); }
+.ccf { display: grid; gap: var(--space-xs); }
+.ccf label { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: var(--space-xs); font-size: var(--text-xs); color: var(--color-ink-3); }
+.ccf textarea, .dcf textarea { width: 100%; height: auto; padding-block: var(--space-xs); resize: vertical; font: inherit; }
+.dcf { display: grid; justify-items: end; gap: var(--space-xs); margin-top: var(--space-md); }
+.tgm { display: flex; flex-direction: column; gap: var(--space-2xs); }
+.tgm a { display: grid; gap: 2px; padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-input); color: inherit; text-decoration: none; }
+.tgm a:hover { background: var(--color-paper-3); }
+.tgm small { display: flex; flex-wrap: wrap; gap: var(--space-xs); color: var(--color-ink-3); font-size: var(--text-xs); }
+.tgm a > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
 @media (prefers-reduced-motion: reduce) { /* base.css shortens every animation; the loops here stop outright and show their end state */
-  .spin, #upd.run .pg, body.loading .sheet:not(:has(tr)), .swap, .enter, .ms .opts, #tip { animation: none; }
+  .aidot, .spin, #upd.run .pg, body.loading .sheet:not(:has(tr)), .swap, .enter, .ms .opts, #tip { animation: none; }
   .side, #drawer, #toast, #dim { transition: none; }
 }
 
@@ -536,7 +556,7 @@ body.tv main { max-width: none; zoom: 1.15; }
 /* print / PDF: content only (sidebar.js switches to the light theme first), cards never split */
 @media print {
   body { --sw: 0px; --tb: 0px; background: var(--color-cotton); }
-  .tbar, .side, .top .ctl, #burger, .vopts, .fbar, .bulk, #more, #fchips, #toast, #tip, #dim, #drawer, .cp, select { display: none !important; }
+  .tbar, .side, .top .ctl, #burger, .vopts, .fbar, .bulk, .aibar, #aiq, #more, #fchips, #toast, #tip, #dim, #drawer, .cp, select { display: none !important; }
   .top { position: static; border: 0; }
   .card, .sheet { break-inside: avoid; box-shadow: none; border: 1px solid var(--color-rule); }
   #atable th, #atable tr.grp td { position: static; }

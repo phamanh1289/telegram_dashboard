@@ -239,3 +239,10 @@ def test_entity_spans_keep_links_mentions_and_code():
 
     assert _span(MessageEntityBlockquote(offset=0, length=9)).kind == "blockquote"
     assert _span(NS(offset=0, length=1)) is None  # hashtag, cashtag… render as plain text
+
+
+def test_find_mentions_matches_whole_ticket_id(env):
+    env.track(A)
+    for mid, text in ((1, "xem VA-12 nhé"), (2, "VA-123 lỗi"), (3, "XVA-12"), (4, "va-12, done")):
+        env.store.apply_message(msg(A, mid, text, sender="7"))
+    assert sorted(m["message_id"] for m in env.store.find_mentions("VA-12")) == [1, 4]
