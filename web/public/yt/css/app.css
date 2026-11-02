@@ -61,7 +61,7 @@ html, body { overflow-x: clip; } /* also in base.css; restated so this sheet sta
 /* the shared module switch: a groove with the current module pressed in */
 .modsw { display: flex; gap: var(--space-3xs); padding: var(--space-3xs); margin-right: auto; border-radius: var(--radius-card); background: var(--color-paper-3); box-shadow: var(--press-groove); }
 .modsw a { display: flex; align-items: center; gap: var(--space-xs); min-height: 32px; padding-inline: 10px; font-size: var(--text-sm); border-radius: var(--radius-input); color: var(--color-ink-3); font-weight: 500; text-decoration: none; white-space: nowrap; transition: color var(--dur-micro) var(--ease-out); }
-.modsw a[aria-current] { background: var(--color-hl); color: var(--color-hl-ink); }
+.modsw a[aria-current] { background: var(--hl-fill); box-shadow: var(--hl-glow); animation: var(--hl-flow); color: var(--color-hl-ink); }
 .modsw a:not([aria-current]):hover { color: var(--color-ink); }
 
 .brand { display: flex; align-items: center; gap: var(--space-sm); min-height: 40px; padding-inline: 6px; margin-bottom: var(--space-xs); cursor: pointer; user-select: none; }
@@ -117,7 +117,7 @@ html, body { overflow-x: clip; } /* also in base.css; restated so this sheet sta
 .seg2 .sd { display: none; }
 .seg2 button { padding: 0 var(--space-sm); border: 0; border-radius: var(--radius-input); background: transparent; color: var(--color-ink-3); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer; transition: color var(--dur-micro) var(--ease-out); }
 .seg2 button:hover { color: var(--color-ink); }
-.seg2 button.on { background: var(--color-hl); color: var(--color-hl-ink); }
+.seg2 button.on { background: var(--hl-fill); box-shadow: var(--hl-glow); animation: var(--hl-flow); color: var(--color-hl-ink); }
 
 /* refresh ring: its outline is the time left before the next auto refresh */
 #upd { position: relative; display: inline-flex; align-items: center; gap: var(--space-2xs); height: var(--control-h); padding: 0 var(--space-sm); border-radius: var(--radius-input); color: var(--color-ink-3); font-size: var(--text-xs); font-weight: 500; white-space: nowrap; cursor: pointer; user-select: none; transition: color var(--dur-micro) var(--ease-out); }
@@ -159,7 +159,7 @@ html, body { overflow-x: clip; } /* also in base.css; restated so this sheet sta
 .chip { display: inline-flex; align-items: center; gap: var(--space-2xs); min-height: 28px; padding: 0 var(--space-xs); border: 1px solid var(--color-rule-2); border-radius: var(--radius-input); background: var(--color-cotton); color: var(--color-ink-2); font: inherit; font-size: var(--text-xs); font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color var(--dur-micro) var(--ease-out), border-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out); }
 .chip:hover { background: var(--color-paper-2); border-color: var(--color-ink-3); color: var(--color-ink); }
 .chip:active { transform: translateY(1px); }
-.chip.on, .chip[aria-pressed="true"] { background: var(--color-hl); border-color: var(--color-hl); color: var(--color-hl-ink); }
+.chip.on, .chip[aria-pressed="true"] { background: var(--hl-fill); box-shadow: var(--hl-glow); border-color: var(--color-hl); color: var(--color-hl-ink); }
 .chip b { font-family: var(--font-figure); font-variant-numeric: tabular-nums; font-weight: 400; color: var(--color-ink-3); }
 .chip.on b, .chip[aria-pressed="true"] b { color: var(--color-hl-ink); }
 .chip i { flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--sc); }

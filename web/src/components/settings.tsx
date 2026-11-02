@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { StreamState } from "@/hooks/use-events";
 import { api, ApiError, type ClaudeAccount, type ClaudePrefs, type Status } from "@/lib/api";
-import { applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readTheme, saveTemplates, type ThemePref } from "@/lib/prefs";
+import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readLook, readTheme, saveLook, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
@@ -40,6 +40,7 @@ export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
         <Section title="Giao diện">
           <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
             options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
+          <LookSection />
         </Section>
 
         <Section title="Tài khoản Claude" hint="Tài khoản, hạn mức, model và effort cho mọi tính năng AI.">
@@ -68,6 +69,67 @@ export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+const STYLES: { value: UiStyle; label: React.ReactNode; hint: string }[] = [
+  { value: "simple", label: "Đơn giản", hint: "Phẳng, màu dịu, không gradient, chuyển động nhanh gọn." },
+  { value: "default", label: "Mặc định", hint: "Cân bằng: nền ấm nhẹ, bóng mềm, màu nhấn rõ." },
+  { value: "vivid", label: <>Rực rỡ <span className="rounded-sm bg-hl-wash px-1 text-[10px] font-semibold text-hl-2">Pro</span></>,
+    hint: "Màu đậm hơn, nền loang theo màu của bạn, nút phát sáng, chuyển động nảy; bật gradient thì màu chạy chậm." },
+];
+const WHEEL = `linear-gradient(to right, ${Array.from({ length: 13 }, (_, i) => `oklch(62% 0.14 ${i * 30})`).join()})`;
+const swatch = (h: number) => `oklch(58% 0.13 ${h})`;
+
+/** Each member's look, saved in this browser and applied in every open tab (public/design/look.js). */
+function LookSection() {
+  const [look, setLook] = useState<Look>(readLook);
+  const set = (patch: Partial<Look>) => { const next = { ...look, ...patch }; setLook(next); saveLook(next); };
+  const simple = look.style === "simple";
+  return (
+    <>
+      <Segmented label="Phong cách" value={look.style} onChange={(style) => set({ style })} options={STYLES} />
+      <p className="-mt-1 text-xs text-ink-3">{STYLES.find((o) => o.value === look.style)?.hint}</p>
+
+      <div className="mt-1 grid gap-2 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <span>Màu chủ đạo</span>
+          <div role="radiogroup" aria-label="Màu có sẵn" className="flex gap-1.5">
+            {ACCENTS.map(([h, label]) => (
+              <button key={h} type="button" role="radio" aria-checked={look.hue === h} aria-label={label} title={label} onClick={() => set({ hue: h })}
+                className={cn("grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
+                  look.hue === h ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-rule-2")}
+                style={{ background: swatch(h) }}>
+                {look.hue === h && <Check className="size-3.5 text-white" aria-hidden />}
+              </button>
+            ))}
+          </div>
+        </div>
+        <HueSlider label="Kéo để chọn màu chủ đạo" value={look.hue} onChange={(hue) => set({ hue })} />
+        {look.hue >= 60 && look.hue <= 100 && <p className="text-xs text-warn">Gần màu hổ phách dùng cho tin “cần bạn” (quá hạn), dễ lẫn.</p>}
+      </div>
+
+      <div className="mt-1 grid gap-2 text-sm">
+        <label className="flex cursor-pointer items-center justify-between gap-4">
+          <span className="grid gap-0.5">
+            <span>Gradient</span>
+            <span className="text-xs text-ink-3">{simple ? "Phong cách Đơn giản không dùng gradient." : "Nút, tab đang mở, chip chọn phối từ màu chủ đạo sang màu thứ hai."}</span>
+          </span>
+          <Switch label="Gradient" checked={look.gradient && !simple} disabled={simple} onChange={(gradient) => set({ gradient })} />
+        </label>
+        {look.gradient && !simple && <>
+          <HueSlider label="Kéo để chọn màu thứ hai của gradient" value={look.hue2} onChange={(hue2) => set({ hue2 })} />
+          <div aria-hidden className="h-7 rounded-md" style={{ background: `linear-gradient(120deg, ${swatch(look.hue)}, ${swatch(look.hue2)})` }} />
+        </>}
+      </div>
+    </>
+  );
+}
+
+function HueSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <input type="range" min={0} max={359} step={1} value={value} aria-label={label} onChange={(e) => onChange(Number(e.target.value))}
+      className="hue-range" style={{ "--track": WHEEL, "--thumb": swatch(value) } as React.CSSProperties} />
   );
 }
 
@@ -627,10 +689,10 @@ function Segmented<T extends string | number>({ label, value, onChange, options 
   );
 }
 
-function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function Switch({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
   return (
-    <button type="button" role="switch" aria-label={label} aria-checked={checked} onClick={() => onChange(!checked)}
-      className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors duration-(--dur-short)", checked ? "bg-hl" : "bg-paper-3 shadow-groove")}>
+    <button type="button" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} onClick={() => onChange(!checked)}
+      className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors duration-(--dur-short) disabled:cursor-not-allowed disabled:opacity-40", checked ? "bg-hl" : "bg-paper-3 shadow-groove")}>
       <span aria-hidden className={cn("absolute top-0.5 left-0.5 size-4 rounded-full bg-cotton shadow-stock transition-transform duration-(--dur-short) ease-(--ease-out)", checked && "translate-x-4")} />
     </button>
   );

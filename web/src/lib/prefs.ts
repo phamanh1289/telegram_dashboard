@@ -32,6 +32,32 @@ export function applyTheme(pref: ThemePref, save = true) {
   vt.ready.catch(() => {}); // skipped when another transition starts; the swap still runs
 }
 
+/** Each member's look (Cài đặt chung), saved per browser; public/design/look.js applies it before first paint and in every open tab. */
+export type UiStyle = "simple" | "default" | "vivid";
+export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean };
+/** Preset highlight hues; the slider reaches the rest. */
+export const ACCENTS = [[40, "Đất nung"], [355, "Hồng"], [305, "Tím"], [255, "Xanh dương"], [195, "Xanh ngọc"], [145, "Xanh lá"]] as const;
+const hue = (v: unknown, d: number) => { const n = parseFloat(String(v)); return n >= 0 && n < 360 ? n : d; };
+export function readLook(): Look {
+  try {
+    const s = localStorage.uiStyle;
+    return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(localStorage.accent, 40), hue2: hue(localStorage.accent2, 355), gradient: localStorage.gradient === "1" };
+  } catch {
+    return { style: "default", hue: 40, hue2: 355, gradient: false };
+  }
+}
+export function saveLook(l: Look) {
+  try {
+    if (l.style === "default") localStorage.removeItem("uiStyle");
+    else localStorage.uiStyle = l.style;
+    localStorage.accent = String(l.hue);
+    localStorage.accent2 = String(l.hue2);
+    localStorage.gradient = l.gradient ? "1" : "0";
+  } catch {}
+  window.applyLook?.();
+}
+declare global { interface Window { applyLook?: () => void } }
+
 /** Hours a tag may wait before it turns overdue (amber). */
 export const OVERDUE_CHOICES = [1, 2, 4, 8, 24] as const;
 export function readOverdueHours() {

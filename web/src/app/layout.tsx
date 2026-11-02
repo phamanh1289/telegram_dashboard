@@ -3,8 +3,8 @@ import "./globals.css";
 
 export const metadata: Metadata = { title: "Telegram Dashboard" };
 
-// One key shared with the YouTrack module: localStorage.theme = light | dark, else the OS preference. Row actions
-// (Settings) set here too, so the first paint already shows or tucks them.
+// Keys shared with the YouTrack module: localStorage.theme = light | dark, else the OS preference. Row actions
+// (Settings) set here too, so the first paint already shows or tucks them. Each member's look: /design/look.js.
 const THEME_BOOT = `try{var t=localStorage.theme;if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.classList.toggle("dark",t==="dark");r.dataset.theme=t;if(localStorage.rowActions==="always")r.dataset.rowActions="always"}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -12,6 +12,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="vi" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        {/* eslint-disable-next-line @next/next/no-sync-scripts -- must run before first paint; shared with the YouTrack page */}
+        <script src="/design/look.js" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font -- static export, one shared font link for both modules */}
