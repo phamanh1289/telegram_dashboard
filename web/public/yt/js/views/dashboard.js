@@ -8,8 +8,7 @@ import { morph, syncMix } from '../morph.js';
 import { yt } from '../api.js';
 import { dlt, person, stateSelect } from './cells.js';
 import { ALERT } from './active.js';
-import { openPanel } from '../ui/drawer.js';
-import { aiInto, aiOn } from '../ui/ai.js';
+import { aiOn, aiPanel, aiTickets } from '../ui/ai.js';
 
 const kpiPrev = []; // last value shown per KPI card, so numbers count from there
 
@@ -185,16 +184,14 @@ const reportData = (d) => ({
   bugs: { inSprint: d.bug.sp, openInSprint: d.bug.spOpen, openInProject: d.bug.open },
   velocityAvgPerSprint: d.vel.avg, leadTimeDays: { median: d.lead.med, p85: d.lead.p85 },
 });
-function aiPanel(title, label, kind, data) {
-  openPanel(title, '<div id="dai"></div>');
-  aiInto($('dai'), label, (sig) => yt.aiData(kind, data, sig));
-}
+const aiData = (title, label, kind, data) => aiPanel(title, label, (sig) => yt.aiData(kind, data, sig));
 export function initDashAi() {
-  $('aiRep').onclick = () => lastD && aiPanel(`Báo cáo sprint · ${lastD.per.label}`, 'AI đang viết báo cáo', 'report', reportData(lastD));
+  $('aiRep').onclick = () => lastD && aiData(`Báo cáo sprint · ${lastD.per.label}`, 'AI đang viết báo cáo', 'report', reportData(lastD));
+  $('aiRev').onclick = () => lastD && aiTickets(lastD.sprintOpen.map((i) => i.id), `${lastD.per.label} (ticket đang mở)`);
   $('aiNotes').onclick = () => {
     if (!lastD) return;
     if (!lastD.doneRows.length) { toast('Sprint đang xem chưa có ticket xong'); return; }
-    aiPanel(`Release notes · ${lastD.per.label}`, 'AI đang viết release notes', 'notes', lastD.doneRows.slice(0, 300).map((i) => ({ id: i.id, type: i.type, summary: i.summary })));
+    aiData(`Release notes · ${lastD.per.label}`, 'AI đang viết release notes', 'notes', lastD.doneRows.slice(0, 300).map((i) => ({ id: i.id, type: i.type, summary: i.summary })));
   };
 }
 

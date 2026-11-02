@@ -71,7 +71,7 @@
     </section>
 
     <h2 class="bh">Tổng quan sprint</h2>
-    <div class="aibar b12" id="aibar" hidden><button type="button" class="btn" id="aiRep" title="AI viết báo cáo tiến độ, rủi ro, đề xuất từ số liệu dashboard (không gửi nội dung ticket)">AI báo cáo sprint</button><button type="button" class="btn" id="aiNotes" title="AI viết release notes từ các ticket đã xong trong sprint đang xem">AI release notes</button></div>
+    <div class="aibar b12" id="aibar" hidden><button type="button" class="btn" id="aiRep" title="AI viết báo cáo tiến độ, rủi ro, đề xuất từ số liệu dashboard (không gửi nội dung ticket)">AI báo cáo sprint</button><button type="button" class="btn" id="aiRev" title="AI đọc chi tiết + bình luận + tin Telegram của các ticket đang mở trong sprint: việc cần làm, nghẽn, cần chốt, thiếu design / thông tin, cần ping ai">AI rà soát ticket</button><button type="button" class="btn" id="aiNotes" title="AI viết release notes từ các ticket đã xong trong sprint đang xem">AI release notes</button></div>
     <div class="card b12 kpis" id="kpis"></div>
     <section class="card b6" style="--i:3"><div class="hd"><h3>Tiến độ sprint</h3><span class="hm">vạch dọc = thời gian đã qua</span></div><div id="sprints"></div></section>
     <section class="card b6" style="--i:4"><div class="hd"><h3>Burndown sprint</h3><span class="hm lgnd"><span><u class="lg" style="--sc:var(--chart-main)"></u>thực tế</span><span><u class="lg lgi"></u>lý tưởng</span><span><u class="lg lgd"></u>dự báo</span></span></div><div id="burn"></div></section>
@@ -123,6 +123,7 @@
       <b id="bn"></b>
       <select class="fld" id="bas" aria-label="Đổi assignee cho các ticket đã chọn"></select>
       <button type="button" class="btn pri" id="bapply">Áp dụng</button>
+      <button type="button" class="btn" id="bai" hidden title="AI đọc chi tiết + bình luận + tin Telegram của các ticket đã chọn: việc cần làm, nghẽn, cần chốt, thiếu design / thông tin, cần ping ai">AI tổng hợp</button>
       <button type="button" class="btn ghost" id="bclr">Bỏ chọn</button>
     </div>
     <div class="sheet"><div class="scroll"><table id="atable"></table></div></div>

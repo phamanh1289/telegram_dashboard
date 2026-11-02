@@ -29,6 +29,7 @@ export const yt = {
   // AI: text back only, never writes; the signal aborts the run (the server kills claude when the request goes away)
   aiTicket: (id, kind, signal) => postJson('/api/yt/ai/ticket', { id, kind }, signal),
   aiData: (kind, data, signal) => postJson('/api/yt/ai/data', { kind, data }, signal),
+  aiTickets: (ids, scope, signal) => postJson('/api/yt/ai/tickets', { ids, scope }, signal), // one review over many tickets
   aiFilter: (text, options, signal) => postJson('/api/yt/ai/filter', { text, options }, signal),
 };
 

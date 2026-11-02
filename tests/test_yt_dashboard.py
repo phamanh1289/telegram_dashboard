@@ -89,3 +89,19 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
         agent.reply = 'Bộ lọc: {"state": ["Open"], "q": ""}'
         r = await c.post("/api/yt/ai/filter", json={"text": "ticket open", "options": {}})
         assert r.json() == {"state": ["Open"], "q": ""}
+
+
+async def test_ai_tickets_reviews_many_tickets_in_one_run():
+    extra = {"description": "d", "comments": [], "links": []}
+    svc = make(lambda req: httpx.Response(200, json={**issue(int(req.url.path[-1])), **extra}))
+    agent = FakeAgent("**Đang nghẽn:**\n- VA-2: chờ API")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, _call=agent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
+        r = await c.post("/api/yt/ai/tickets", json=body)
+        assert r.json() == {"text": "**Đang nghẽn:**\n- VA-2: chờ API"}
+        p = agent.calls[0]
+        assert '"id": "VA-1"' in p and '"id": "VA-2"' in p and p.count('"id": "VA-1"') == 1
+        assert "Phạm vi: Sprint 3" in p

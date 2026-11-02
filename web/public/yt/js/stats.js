@@ -190,6 +190,7 @@ export function dashStats(now) {
     qc: work.filter((i) => BUCKET(i) === 2).length,
     doneRate: cohort.length ? Math.round(done.length / cohort.length * 100) : null,
     doneRows: done, // AI release notes
+    sprintOpen: cohort.filter((i) => !i.resolved), // AI review
     prog: progressRows(cohort, per, now),
     attn: ATTN.filter(([q]) => q !== 'noest' || S.full.some((i) => i.estimate != null)) // project without an Estimation field: the tile would flag everything
       .map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length })),

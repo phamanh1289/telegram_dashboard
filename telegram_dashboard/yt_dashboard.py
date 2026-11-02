@@ -59,6 +59,11 @@ class AiData(BaseModel):
     data: Any
 
 
+class AiTickets(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=40)
+    scope: str = Field("", max_length=200)  # what the user picked, e.g. "Sprint 12"
+
+
 class AiFilter(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     options: dict
@@ -94,6 +99,32 @@ AI_DATA = {
     "gạch đầu dòng dễ hiểu, gom theo Tính năng mới / Cải thiện / Sửa lỗi, bỏ việc nội bộ (refactor, "
     "CI, task kỹ thuật); **Nội bộ:** đủ danh sách, mỗi dòng 'ID: mô tả ngắn'. Không bịa.",
 }
+AI_TICKETS = (
+    "Rà soát các ticket trong <tickets> (kèm tin nhắn Telegram có nhắc tới ticket, trường "
+    "\"telegram\") cho team lead / PM, mục tiêu: biết ngay việc gì cần làm, cái gì đang kẹt, ai "
+    "cần chốt gì. Các nhãn in đậm, theo thứ tự, CHỈ in mục có nội dung:\n"
+    "**Tổng quan:** 2-3 câu: số ticket, phân bổ theo state, nhận định chung (ổn / đáng lo, "
+    "vì sao).\n"
+    "**Việc cần làm tiếp:** gom theo người phụ trách (tên in đậm, 'Chưa assign' nếu trống), mỗi "
+    "dòng '- ID: bước tiếp theo cụ thể'.\n"
+    "**Đang nghẽn:** '- ID: kẹt vì gì, đang chờ ai / cái gì' (ticket khác, API / backend, môi "
+    "trường, build, khách hàng, quyết định).\n"
+    "**Cần confirm / chốt:** '- ID: câu hỏi cụ thể cần chốt → ai nên chốt' (PM, BA, design, "
+    "backend, QC, khách hàng; nêu tên nếu thấy trong bình luận / tin nhắn).\n"
+    "**Thiếu design / spec:** '- ID: thiếu gì' (màn hình, flow, trạng thái lỗi / empty / loading, "
+    "text, asset, link Figma).\n"
+    "**Thiếu thông tin để làm:** bug thiếu bước tái hiện / log / thiết bị / bản build; task thiếu "
+    "tiêu chí nghiệm thu, API, phạm vi.\n"
+    "**Phụ thuộc:** ticket chờ ticket chưa xong (nêu chuỗi), chờ team khác.\n"
+    "**Rủi ro trễ:** quá hoặc sắp tới due, lâu không cập nhật (so với Hôm nay), chưa assign, chưa "
+    "estimate, chuyển sprint nhiều lần, việc lớn còn nhiều.\n"
+    "**Chờ review / QC / release:** gom ngắn các ticket chỉ còn chờ kiểm tra hoặc phát hành.\n"
+    "**Trùng / nên gộp / nên tách:** nếu thấy.\n"
+    "**Cần ping:** danh sách '- Tên: hỏi / nhắc việc gì (ID)', dán thẳng vào Telegram hoặc buổi "
+    "standup được.\n"
+    "Mọi ý phải kèm ID. Một ticket có thể ở nhiều mục. Không bịa; ý suy luận thì ghi '(có vẻ)'. "
+    "Ngắn gọn, ưu tiên bình luận / tin nhắn mới nhất."
+)
 AI_FILTER = (
     "Chuyển câu của người dùng trong <ask> thành bộ lọc cho bảng ticket. <options> liệt kê giá trị "
     "hợp lệ. Trả về DUY NHẤT một JSON object (không prose, không code fence): "
@@ -412,7 +443,7 @@ def _day(ms) -> str | None:
     return datetime.fromtimestamp(ms / 1000, UTC).date().isoformat() if ms else None
 
 
-def _ticket_json(d: dict) -> str:
+def _ticket_json(d: dict, desc: int = 8000, ncom: int = 30, clen: int = 1500, **extra) -> str:
     """Ticket detail as compact JSON for the AI: dates as days, long texts cut."""
     keys = ("id", "summary", "type", "state", "priority", "assignee", "qc", "reporter", "sprints",
             "estimate")  # fmt: skip
@@ -420,16 +451,18 @@ def _ticket_json(d: dict) -> str:
         {
             **{k: d.get(k) for k in keys},
             **{k: _day(d.get(k)) for k in ("created", "updated", "resolved", "due")},
-            "description": d["description"][:8000],
+            "description": d["description"][:desc],
             "links": [
                 f"{x['rel']}: " + ", ".join(i["id"] + (" (xong)" if i["resolved"] else "")
                                            for i in x["issues"])  # fmt: skip
                 for x in d["links"]
             ],
             "comments": [
-                {"author": c["author"], "date": _day(c["created"]), "text": (c["text"] or "")[:1500]}
-                for c in d["comments"][-30:]
+                {"author": c["author"], "date": _day(c["created"]),
+                 "text": (c["text"] or "")[:clen]}
+                for c in d["comments"][-ncom:]  # fmt: skip
             ],
+            **extra,
         },
         ensure_ascii=False,
     )
@@ -563,6 +596,28 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         if len(data) > 60_000:
             raise YtError(413, "Quá nhiều dữ liệu cho AI, lọc bớt sprint / người")
         return {"text": await _ai(request, f"{AI_DATA[body.kind]}\n<data>\n{data}\n</data>")}
+
+    @r.post("/ai/tickets")
+    async def ai_tickets(body: AiTickets, request: Request):
+        """One review over many tickets: details + comments + Telegram mentions, cut short."""
+        ids = list(dict.fromkeys(map(_issue_id, body.ids)))
+        if svc.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        gate = asyncio.Semaphore(WAVE * 2)
+        st = request.app.state
+
+        async def one(i: str) -> str:
+            async with gate:
+                d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
+            tg = await st.db.read(st.store.find_mentions, i, 5) if hasattr(st, "db") else []
+            return _ticket_json(d, 1200, 6, 500, telegram=[
+                {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
+                for m in tg
+            ])  # fmt: skip
+
+        data = ",\n".join(await asyncio.gather(*map(one, ids)))
+        scope = f"Phạm vi: {body.scope}\n" if body.scope else ""
+        return {"text": await _ai(request, f"{AI_TICKETS}\n{scope}<tickets>\n[{data}]\n</tickets>")}
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):

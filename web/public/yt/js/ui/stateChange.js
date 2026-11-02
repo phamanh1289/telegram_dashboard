@@ -5,6 +5,7 @@ import { forgetDetail, yt } from '../api.js';
 import { render } from '../render.js';
 import { getPeople } from '../data.js';
 import { findIssue } from '../query.js';
+import { aiOn, aiTickets } from './ai.js';
 
 const UNASSIGNED = ''; // option value for "Chưa assign"
 
@@ -67,6 +68,7 @@ export function renderBulk() {
   $('bulk').hidden = !n;
   if (!n) return;
   $('bn').textContent = `${n} ticket đã chọn`;
+  $('bai').hidden = !aiOn();
   const as = '<option value="-">Assignee: giữ nguyên</option>' + peopleOptions('-');
   if ($('bas')._h !== as) { $('bas').innerHTML = as; $('bas')._h = as; $('bas').value = '-'; }
 }
@@ -76,6 +78,7 @@ export function initStateChange() {
   document.addEventListener('focusin', (e) => { if (e.target.classList?.contains('asel')) fillAsel(e.target); });
   document.addEventListener('change', (e) => { if (e.target.classList?.contains('asel')) onSelect(e.target); });
 
+  $('bai').onclick = () => aiTickets([...picked], `${picked.size} ticket đã chọn`);
   $('bclr').onclick = () => { picked.clear(); render(); };
   $('bapply').onclick = async () => {
     const as = $('bas').value;
