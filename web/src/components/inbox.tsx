@@ -78,7 +78,7 @@ export function App() {
       <main className="grid min-h-dvh place-items-center p-4">
         <div role="alert" className="grid max-w-sm justify-items-start gap-3">
           <h1 className="text-base">Không liên lạc được backend</h1>
-          <p className="text-sm leading-relaxed text-ink-2">Không liên lạc được backend local (127.0.0.1:8765).</p>
+          <p className="text-sm leading-relaxed text-ink-2">Không liên lạc được backend local.</p>
           <Button size="sm" variant="outline" aria-busy={status.isFetching} disabled={status.isFetching} onClick={() => void status.refetch()}>
             <RotateCw /> Thử lại
           </Button>

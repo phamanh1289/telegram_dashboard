@@ -30,6 +30,7 @@ mở `Start Dashboard Telegram.bat` trong thư mục vừa giải nén.
 Lưu ý Windows:
 - Đừng click/bôi đen chữ trong cửa sổ đen lúc đang chạy (app đã tắt chế độ này, nhưng nếu thấy tiêu đề cửa sổ có
   chữ *Select* thì bấm **Esc** để server chạy tiếp).
+- Port 8765 bị app khác chiếm thì app tự dùng port trống kế tiếp (8766…) và tự mở đúng địa chỉ; mở app lần nữa khi đang chạy chỉ mở lại trang, không chạy thêm server.
 - Firewall sẽ không hỏi: app chỉ nghe trên máy (127.0.0.1), không mở ra mạng ngoài.
 - Thông báo khi có tin tag mới (banner) hiện chỉ có trên macOS; Windows xem số tin chờ trên tiêu đề tab.
 

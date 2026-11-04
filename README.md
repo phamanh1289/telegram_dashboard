@@ -46,7 +46,7 @@ npm start
 
 Trên macOS có thể double-click `Start Dashboard Telegram.command`: script tự cài dependencies nếu thiếu, build lại UI khi cần, chạy server nền và mở trình duyệt. Trong cửa sổ đó bấm một số (không cần Enter; Esc thoát): **1** start · **2** stop · **3** restart (tự build lại UI nếu code đổi) · **4** mở trình duyệt · **5** xem log (`data/server.log`) · **0** thoát. Đóng cửa sổ cũng dừng server.
 
-Mở `http://127.0.0.1:8765` (không cần mã; chỉ loopback, Host/Origin được kiểm tra). Phải dùng `127.0.0.1`; mở bằng `localhost` sẽ sai Origin nên mọi thao tác bị từ chối.
+Mở `http://127.0.0.1:8765` (bị chiếm thì server tự dùng port trống kế tiếp và in ra địa chỉ; dev mode thì không đổi; không cần mã; chỉ loopback, Host/Origin được kiểm tra). Phải dùng `127.0.0.1`; mở bằng `localhost` sẽ sai Origin nên mọi thao tác bị từ chối.
 
 ## Chạy chế độ dev
 

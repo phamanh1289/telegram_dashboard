@@ -8,7 +8,9 @@
   $ProgressPreference = 'SilentlyContinue'  # Invoke-WebRequest is very slow with the progress bar
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-  if (Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue) {
+  $dir = Join-Path $env:LOCALAPPDATA 'Programs\Telegram Dashboard'
+  # its port may not be 8765 (next free one when taken): look for its python.exe instead
+  if (Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Path -like "$dir\*" }) {
     Write-Host 'Telegram Dashboard dang chay: dong cua so den cua no roi chay lai lenh nay.' -ForegroundColor Yellow
     return
   }
@@ -25,7 +27,6 @@
   Start-Process $exe -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=desktopicon' -Wait
   Remove-Item $exe -ErrorAction SilentlyContinue
 
-  $dir = Join-Path $env:LOCALAPPDATA 'Programs\Telegram Dashboard'
   Write-Host "Da cai vao $dir (shortcut 'Telegram Dashboard' o Start Menu va Desktop)." -ForegroundColor Green
   Start-Process (Join-Path $dir 'Start Dashboard Telegram.bat') -WorkingDirectory $dir
 }

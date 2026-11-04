@@ -13,16 +13,17 @@ set ANTHROPIC_API_KEY=
 set ANTHROPIC_AUTH_TOKEN=
 set ANTHROPIC_MODEL=
 
-start "" cmd /c "timeout /t 4 >nul & start http://127.0.0.1:8765"
+rem The server opens the browser itself (on 8765, or the next free port when it is taken).
+set TD_OPEN=1
 echo.
-echo  Telegram Dashboard: http://127.0.0.1:8765
-echo  Dong cua so nay de tat.
+echo  Telegram Dashboard - dong cua so nay de tat.
 echo.
 :run
 set /p V=<current
 pushd "versions\%V%\app"
 "..\python\python.exe" -m telegram_dashboard serve
 set CODE=%errorlevel%
+set TD_OPEN=
 popd
 rem 75 = updated from Settings: start the new version.
 if "%CODE%"=="75" goto run

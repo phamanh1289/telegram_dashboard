@@ -43,11 +43,73 @@ def _no_quickedit() -> None:
         k.SetConsoleMode(h, (mode.value & ~0x0040) | 0x0080)  # -QUICK_EDIT_MODE +EXTENDED_FLAGS
 
 
+_lock = None  # data/server.lock, held while this server runs
+
+
+def _claim(settings: Settings) -> Settings | None:
+    """One server per data dir: if this install's server already runs, open it and return None.
+    Else take PORT, or the next free one when another app (or another install) holds it."""
+    import dataclasses
+    import socket
+    import time
+    import webbrowser
+
+    global _lock
+    settings.ensure_data_dir()
+    port_file = settings.data_dir / "server.port"
+    _lock = open(settings.data_dir / "server.lock", "a")  # noqa: SIM115 (held until exit)
+    for _ in range(25):  # a restarting server may still be exiting
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                msvcrt.locking(_lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            time.sleep(0.2)
+    else:
+        port = port_file.read_text().strip() if port_file.is_file() else str(settings.port)
+        url = f"http://{settings.host}:{port}"
+        print(f"Dashboard đã chạy ở {url} — mở trình duyệt tới đó.", flush=True)
+        webbrowser.open(url)
+        return None
+    if not os.environ.get("APP_ORIGIN"):  # dev sets it: Next proxies /api to the fixed port
+        for port in range(settings.port, settings.port + 20):
+            with socket.socket() as s:
+                if sys.platform != "win32":  # as uvicorn: TIME_WAIT from a restart is not "in use"
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind((settings.host, port))
+                except OSError:
+                    continue
+            if port != settings.port:
+                print(f"Port {settings.port} đang bận, dùng {port}.", flush=True)
+                settings = dataclasses.replace(
+                    settings, port=port, app_origin=f"http://{settings.host}:{port}"
+                )
+            break
+    port_file.write_text(str(settings.port))
+    return settings
+
+
 def _serve(settings: Settings) -> int:
     import uvicorn
 
     from .app import create_app
 
+    claimed = _claim(settings)
+    if claimed is None:
+        return 0
+    settings = claimed
+    if os.environ.get("TD_OPEN"):  # packaged launcher, first start: open the page once it serves
+        import threading
+        import webbrowser
+
+        threading.Timer(2, webbrowser.open, [settings.app_origin]).start()
     if not settings.static_dir.is_dir():
         print("Chưa có web/out — chạy `npm run build` (UI sẽ trả 503).", file=sys.stderr)
     print(f"Mở {settings.app_origin}", flush=True)
