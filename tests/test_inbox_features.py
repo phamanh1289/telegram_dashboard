@@ -263,8 +263,9 @@ def test_headless_task_runs_and_resumes(tmp_path):
             raise AssertionError("task did not finish")
 
         r = c.post("/api/tasks", json={"project": str(proj), "prompt": "làm A", "mode": "plan"}, headers=H)
-        assert r.status_code == 204, r.text
+        assert r.status_code == 200, r.text
         task = c.get("/api/tasks").json()[0]
+        assert r.json()["id"] == task["id"]
         assert task["mode"] == "plan"
         ev = wait_idle(task["id"])
         assert [i["kind"] for i in ev["items"]] == ["user", "assistant", "result"]

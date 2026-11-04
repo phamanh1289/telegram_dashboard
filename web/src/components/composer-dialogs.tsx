@@ -42,7 +42,7 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
   analysis: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreated: () => void;
+  onCreated: (id: string) => void;
 }) {
   const qc = useQueryClient();
   const [note, setNote] = useState(""); // only the user's extra prompt
@@ -53,14 +53,14 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
   const projectOk = !!useProjects().data?.some((p) => p.path === project);
   const task = useMutation({
     mutationFn: () =>
-      api<void>("/tasks", {
+      api<{ id: string }>("/tasks", {
         method: "POST",
         json: { project, prompt: taskPrompt(m, analysis, note), mode, chat_id: m.chat_id, message_id: m.message_id },
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
-    onSuccess: () => {
+    onSuccess: (r) => {
       setNote("");
-      onCreated();
+      onCreated(r.id);
     },
   });
   return (

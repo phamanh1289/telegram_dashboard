@@ -122,7 +122,7 @@ export const markHandled = (m: Message, handled: boolean, react = true) =>
     json: { handled, react },
   });
 
-export type ToastMsg = { text: string; undo?: () => unknown };
+export type ToastMsg = { text: string; undo?: () => unknown; action?: { label: string; run: () => unknown } };
 /** Show a toast (rendered by the inbox shell); `undo` adds a "Hoàn tác" button and the z shortcut. */
 export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("toast", { detail: t }));
 /** Open the AI Agent page on this task (handled by the inbox shell). */

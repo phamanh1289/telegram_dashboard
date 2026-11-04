@@ -53,7 +53,7 @@ export function Composer({
   chatId: string;
   replyTo: Message; // the inbox remounts the composer (key) for each reply
   onClearReply: () => void;
-  onTaskCreated?: () => void;
+  onTaskCreated?: (id: string) => void;
   draft: DraftInjection | null;
   onSent?: () => void;
   onDone?: () => void; // marked "Xong" here
@@ -474,7 +474,7 @@ export function Composer({
       </div>
       </div>
       {usesCode(role) && <TaskDialog m={replyTo} analysis={analysis} open={taskOpen} onOpenChange={setTaskOpen}
-        onCreated={() => { setTaskOpen(false); onTaskCreated?.(); }} />}
+        onCreated={(id) => { setTaskOpen(false); onTaskCreated?.(id); }} />}
       <IssueDialog m={replyTo} note={aiPrompt} ai={aiConfigured} open={issueOpen} onOpenChange={setIssueOpen}
         onCreated={(line) => { setText((t) => (t.trim() ? `${t}\n${line}` : line)); setIssueOpen(false); }} />
     </form>

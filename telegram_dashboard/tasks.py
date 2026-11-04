@@ -22,8 +22,8 @@ def build_router(settings) -> APIRouter:
             raise ApiError(409, "terminal_task_unsupported")
         return row
 
-    @r.post("", status_code=204)
-    async def task(body: TaskRequest, request: Request) -> None:
+    @r.post("")
+    async def task(body: TaskRequest, request: Request) -> dict:
         s = request.app.state
         if not await s.db.read(s.store.has_project, body.project):
             raise ApiError(404, "project_not_found")
@@ -36,6 +36,7 @@ def build_router(settings) -> APIRouter:
             s.store.add_task, task_id, body.chat_id, mid, body.project, body.prompt,
             mode=body.mode, session_id=session,
         )  # fmt: skip
+        return {"id": task_id}
 
     @r.get("")
     async def tasks(request: Request, chat_id: str | None = None) -> list[TaskDTO]:

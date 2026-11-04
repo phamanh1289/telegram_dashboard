@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, BRIEFING, msgKey, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
+import { ALL, BRIEFING, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -121,6 +121,7 @@ function Inbox({ status }: { status: Status }) {
     setPref("sidebarCollapsed", collapsed ? "0" : "1");
     setCollapsed(!collapsed);
   }
+  const qc = useQueryClient();
   const flashMessage = (text: string) => toast({ text });
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -347,7 +348,9 @@ function Inbox({ status }: { status: Status }) {
           <div key={`${replyTo.chat_id}:${replyTo.message_id}`}
             className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:row-start-2 xl:col-start-2 xl:max-w-none xl:shadow-none">
             <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời ✓"); advance(); }} onDone={advance} onTaskCreated={() => flashMessage("Đã giao việc cho AI. Theo dõi ở tab “AI Agent”")} draft={draft}
+              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời ✓"); advance(); }} onDone={advance} onTaskCreated={(id) => toast({ text: "Đã giao việc cho AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
+                // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
+                undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) })} draft={draft}
               aiConfigured={status.ai_configured} />
           </div>
         ) : null}

@@ -1,8 +1,9 @@
 "use client";
 
-import { ListChecks, Moon, Send, Settings, Sun } from "lucide-react";
+import { ExternalLink, ListChecks, Moon, Send, Settings, Sun } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/components/ai";
@@ -48,6 +49,7 @@ function useUpdateState() {
 export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
   const behind = useUpdateState();
+  const router = useRouter();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -81,6 +83,8 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
           <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
         </Button>
         <Link href={behind ? "/settings/#github" : "/settings/"} aria-current={module === "settings" ? "page" : undefined}
+          // A second click closes Settings, like its "Quay lại".
+          onClick={module === "settings" ? (e) => { e.preventDefault(); if (history.length > 1) router.back(); else router.push("/"); } : undefined}
           className={buttonVariants({ size: "icon-sm", variant: module === "settings" ? "secondary" : "ghost", className: "relative" })}
           aria-label={behind ? `Cài đặt (có ${behind} bản cập nhật)` : "Cài đặt"}
           title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → GitHub` : "Cài đặt: Telegram, YouTrack, AI, giao diện, cập nhật"}>
@@ -107,7 +111,7 @@ export function Toaster() {
   }, []);
   useEffect(() => {
     if (!flash) return;
-    const t = setTimeout(() => setFlash(null), flash.undo ? 6000 : 3000);
+    const t = setTimeout(() => setFlash(null), flash.undo || flash.action ? 6000 : 3000);
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.key !== "z" || !flash.undo || e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
@@ -125,12 +129,18 @@ export function Toaster() {
   }
   if (!flash) return null;
   return (
-    <div key={flash.id} role="status" className={cn("fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)", !flash.undo && "pr-4")}>
+    <div key={flash.id} role="status" className={cn("fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)", !flash.undo && !flash.action && "pr-4")}>
       <span className="py-1">{flash.text}</span>
       {flash.undo && (
         <button type="button" onClick={undo} title="Hoàn tác (z)"
           className="rounded-[var(--radius-input)] px-2.5 py-1 font-semibold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
           Hoàn tác
+        </button>
+      )}
+      {flash.action && (
+        <button type="button" onClick={() => { setFlash(null); flash.action!.run(); }}
+          className="flex items-center gap-1 rounded-[var(--radius-input)] px-2.5 py-1 font-semibold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
+          <ExternalLink className="size-3.5" aria-hidden /> {flash.action.label}
         </button>
       )}
     </div>

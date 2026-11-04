@@ -45,7 +45,8 @@ export function LinkedTasks({ ids, onComment }: { ids: string[]; onComment?: (te
   const tasks = useTaskList();
   const key = ids.join();
   const res = useMemo(() => key.split(",").map((id) => new RegExp(`(^|[^A-Z0-9-])${id.replace(/[-]/g, "\\-")}(?![0-9])`)), [key]);
-  const mine = (tasks.data ?? []).filter((t) => res.every((re) => re.test(t.prompt))).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  // no ticket (a session about figures): "" would match every Telegram AI Agent run, so nothing is linked
+  const mine = !ids.length ? [] : (tasks.data ?? []).filter((t) => res.every((re) => re.test(t.prompt))).sort((a, b) => b.created_at.localeCompare(a.created_at));
   const [open, setOpen] = useState<string | null>(null);
   if (!mine.length) return null;
   return (
