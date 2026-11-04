@@ -490,3 +490,27 @@ def test_import_transcripts_backfills_dashboard_runs_once(settings, tmp_path):
     assert import_transcripts(settings, tmp_path / "projects") == 0  # already there
     [r] = claude_runs(settings, 1)
     assert (r["feature"], r["output_tokens"], r["cost"], r["ms"], r["imported"]) == ("draft", 100, 0.5, 4000, True)
+
+
+async def test_deep_traces_question_and_confirm_in_the_project(env, tmp_path):
+    env.track(A)
+    env.store.apply_message(msg(A, 5, "BE confirm: field is `status`", sender="8"))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    env.store.add_project(str(proj), "proj")
+    s = Settings(root=tmp_path, ai_agent_project_command="pwd", ai_require_consent=False, **AI)
+    svc = AiService(s, env.store, env.db)
+    svc.ask = provider = FakeAgent()
+    fetched = []
+
+    async def fetch(chat, ids):  # the question was never stored (not a tag): read live
+        fetched.append(ids)
+        return [msg(A, 4, "BE ơi API trả field gì?", outgoing=True)]
+
+    r = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
+    assert r.text == "draft text" and fetched == [[4]] and provider.projects == [str(proj)]
+    p = provider.calls[0]
+    assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.index("BE confirm")
+    await expect("ai_scope_not_allowed", svc.deep(A, "5", "5", str(proj)))
+    await expect("message_not_found", svc.deep(A, "4", "5", str(proj)))  # offline: no fetch
+    await expect("project_not_found", svc.deep(A, "4", "5", str(tmp_path / "nope")))

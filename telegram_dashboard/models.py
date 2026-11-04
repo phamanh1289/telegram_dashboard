@@ -182,6 +182,17 @@ class AiDraftRequest(BaseModel):
     role: Literal["dev", "qa", "po"] = "dev"  # who reads it (Cài đặt chung › Vai trò)
 
 
+class AiDeepRequest(BaseModel):
+    """Deep thinking: a question to BE + BE's confirmation, traced through a project's code."""
+
+    chat_id: str
+    question_id: str
+    confirm_id: str
+    project: str
+    instruction: str = Field("", max_length=2000)
+    platform: Literal["android", "ios", "mobile", "any"] = "android"
+
+
 class AiTicketRequest(AiDraftRequest):
     instruction: str = Field("", max_length=2000)  # the user's note for the ticket
     types: list[str] = Field([], max_length=50)  # the YouTrack project's Type values

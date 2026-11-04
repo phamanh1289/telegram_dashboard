@@ -91,6 +91,20 @@ TICKET_TASK = (
 )
 
 
+DEEP_TASK = (
+    "<question> is a message asking the backend (BE) team something; <confirm> is the BE's "
+    "confirmation / answer to it. The current directory is the user's project. Read its code and "
+    "trace everything the question and the BE's answer touch (API endpoints, request/response "
+    "models and parsing, screens, state, validation, error handling). Never quote secrets (.env, "
+    "keys, tokens); never claim code you did not read, say so when you could not find it. Answer "
+    "in Markdown, no preamble, no tables, with these sections: **Tóm tắt**: what was asked and "
+    "exactly what BE confirmed (fields, values, behaviour); **Hiện trạng code**: how it works now, "
+    "with `path:line` references; **Chênh lệch**: where the code differs from what BE confirmed; "
+    "**Đề xuất xử lý**: a numbered list of concrete changes (file, what to change and why); "
+    "**Rủi ro & cần hỏi lại BE**: edge cases, regressions and points still unclear."
+)
+
+
 def parse_ticket(text: str, fields: dict[str, list[str]]) -> dict:
     """The model's ticket JSON, with Type / Priority kept only when the project has them.
     Unreadable JSON: the whole answer becomes the description, so nothing is lost."""
@@ -337,6 +351,67 @@ class AiService:
             source_message_ids=[str(i) for i in ids],
             context_revision=cursor,
         )
+
+    async def deep(
+        self,
+        chat_id: str,
+        question_id: str,
+        confirm_id: str,
+        project: str,
+        instruction: str = "",
+        platform: str = "android",
+        fetch=None,
+        on_text=None,
+    ) -> AiResult:
+        """Deep thinking on a combo: a question to BE + BE's confirmation, traced through `project`.
+        `fetch(chat_id, ids)`: reads messages not stored (no consent mode only: they carry no grant)."""
+        if not self.configured:
+            raise ApiError(503, "ai_not_configured")
+        if not self.reader_available:
+            raise ApiError(422, "ai_agent_missing")
+        if not await self.db.read(self.store.has_project, project):
+            raise ApiError(404, "project_not_found")
+        try:
+            q, c = int(question_id), int(confirm_id)
+        except ValueError:
+            raise ApiError(422, "ai_scope_not_allowed") from None
+        if q == c:
+            raise ApiError(422, "ai_scope_not_allowed")
+        ids = sorted({q, c})
+        consent = self.settings.ai_require_consent
+        if consent:
+            ok, msgs, cursor = await self.db.read(self._check, chat_id, ids, "draft")
+            if not ok:
+                raise ApiError(403, "ai_scope_not_allowed")
+        else:
+            if not await self.db.read(self.store.is_tracking, chat_id):
+                raise ApiError(403, "ai_scope_not_allowed")
+            msgs, cursor = await self.db.read(self.store.get_messages_by_ids, chat_id, ids)
+            have = {m.message_id for m in msgs if not m.deleted}
+            missing = [i for i in ids if i not in have]
+            if missing and fetch is not None:
+                msgs = [m for m in msgs if not m.deleted] + await fetch(chat_id, missing)
+        by_id = {m.message_id: m for m in msgs}
+        if q not in by_id or c not in by_id:
+            raise ApiError(404, "message_not_found")
+        if len(by_id[q].text) + len(by_id[c].text) > MAX_CONTEXT_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        one = lambda m: {"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}  # noqa: E731
+        task = DEEP_TASK
+        if platform in PLATFORM_FOCUS:
+            task += f"\nUnless the messages clearly concern something else, analyze from {PLATFORM_FOCUS[platform]}."
+        if instruction:
+            task += f"\nUser instruction: {instruction}"
+        user = (
+            f"{task}\n<question>\n{data_json(one(by_id[q]))}\n</question>"
+            f"\n<confirm>\n{data_json(one(by_id[c]))}\n</confirm>"
+        )
+        text = await self.ask(user, project, on_text=on_text, feature="deep")
+        if consent and not (await self.db.read(self._check, chat_id, ids, "draft"))[0]:
+            raise ApiError(409, "ai_permission_changed")
+        return AiResult(text=text, source_message_ids=[str(q), str(c)], context_revision=cursor or "")
 
     async def ask(
         self,

@@ -32,6 +32,7 @@ from .events import Hub, event_stream
 from .models import (
     AiAccount,
     AiCatalogEntry,
+    AiDeepRequest,
     AiDraftRequest,
     AiLoginStarted,
     AiPermissionRequest,
@@ -345,6 +346,21 @@ def create_app(
                 "draft", body.chat_id, body.message_ids, body.instruction, body.project,
                 nearby=nearby, images=images, platform=body.platform, role=body.role, on_text=on_text,
             )  # fmt: skip
+            return r.model_dump()
+
+        return stream_answer(work)
+
+    @app.post("/api/ai/deep", responses={200: {
+        "model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}})
+    async def ai_deep(body: AiDeepRequest, request: Request) -> StreamingResponse:
+        """Deep thinking on a combo (question to BE + BE's confirmation), traced through a project."""
+        client_gone.set(request.is_disconnected)
+        s = S(request)
+        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+
+        async def work(on_text):
+            r = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project, body.instruction,
+                                body.platform, fetch=fetch, on_text=on_text)  # fmt: skip
             return r.model_dump()
 
         return stream_answer(work)

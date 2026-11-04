@@ -3,7 +3,7 @@
 #   curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 # Files fetched by curl carry no quarantine flag, so Gatekeeper does not block the unsigned app
 # (a zip downloaded in a browser does). Re-running updates in place; data/ is kept.
-set -euo pipefail
+set -euo pipefail  # macOS bash 3.2: write ${var} before non-ASCII text ("$tag…" breaks in UTF-8)
 REPO=phamanh1289/telegram_dashboard
 DEST="${TD_DEST:-$HOME/Applications/Telegram Dashboard}"
 
@@ -14,7 +14,7 @@ ver=${tag#v}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-echo "Tải Telegram Dashboard $tag…"
+echo "Tải Telegram Dashboard ${tag}…"
 curl -fL --progress-bar -o "$tmp/td.zip" \
   "https://github.com/$REPO/releases/download/$tag/TelegramDashboard-$ver-macos-arm64.zip"
 ditto -x -k "$tmp/td.zip" "$tmp/x"
