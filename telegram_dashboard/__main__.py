@@ -32,6 +32,17 @@ def _login(settings: Settings) -> int:
     return 0
 
 
+def _no_quickedit() -> None:
+    """Windows console: a click starts a QuickEdit selection that pauses the server until Esc."""
+    import ctypes
+
+    k = ctypes.windll.kernel32
+    h = k.GetStdHandle(-10)  # STD_INPUT_HANDLE
+    mode = ctypes.c_uint32()
+    if k.GetConsoleMode(h, ctypes.byref(mode)):
+        k.SetConsoleMode(h, (mode.value & ~0x0040) | 0x0080)  # -QUICK_EDIT_MODE +EXTENDED_FLAGS
+
+
 def _serve(settings: Settings) -> int:
     import uvicorn
 
@@ -43,6 +54,8 @@ def _serve(settings: Settings) -> int:
     from . import updater
 
     updater.prune_versions()
+    if sys.platform == "win32":
+        _no_quickedit()
     app = create_app(settings)
     # SSE streams never finish on their own; bound the graceful wait so Ctrl+C cannot hang.
     uvicorn.run(

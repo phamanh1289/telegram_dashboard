@@ -6,6 +6,8 @@ cd /d "%~dp0"
 title Telegram Dashboard
 set "TD_HOME=%~dp0"
 rem All AI uses the CLIs' own logins: don't leak a gateway from the environment.
+rem Python defaults to cp1252 for files on Windows; Vietnamese text needs UTF-8.
+set PYTHONUTF8=1
 set ANTHROPIC_BASE_URL=
 set ANTHROPIC_API_KEY=
 set ANTHROPIC_AUTH_TOKEN=

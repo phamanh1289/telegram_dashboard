@@ -26,6 +26,8 @@ if not "%HEAD%"=="%BUILT%" (
 )
 
 rem All AI uses the claude CLI's own claude.ai login: don't leak a gateway from the shell.
+rem Python defaults to cp1252 for files on Windows; Vietnamese text needs UTF-8.
+set PYTHONUTF8=1
 set ANTHROPIC_BASE_URL=
 set ANTHROPIC_API_KEY=
 set ANTHROPIC_AUTH_TOKEN=

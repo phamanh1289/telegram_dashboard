@@ -16,6 +16,8 @@ import os
 import re
 import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 import time
 import uuid
@@ -531,6 +533,10 @@ async def login(settings, p: str) -> str | None:
     Antigravity: open Terminal on an interactive `agy`, which signs in with Google on first run."""
     if not installed(settings, p):
         raise ApiError(422, "ai_cli_missing")
+    if p == "antigravity" and sys.platform == "win32":
+        subprocess.Popen(["cmd", "/k", *exe(settings, p)], env=child_env(),
+                         creationflags=subprocess.CREATE_NEW_CONSOLE)  # fmt: skip
+        return None
     if p == "antigravity":
         from .ai import _applescript_str, _osascript  # ai imports this module
 

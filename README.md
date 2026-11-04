@@ -16,7 +16,7 @@ Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.m
 
 ## Bản cài cho người dùng
 
-Người dùng cuối tải bộ cài ở [GitHub Releases](https://github.com/phamanh1289/telegram_dashboard/releases/latest) (Windows `…-setup.exe`, macOS: lệnh `curl … install-macos.sh | bash`), không cần Python/Node/git: **[docs/INSTALL.md](docs/INSTALL.md)**. Cập nhật ngay trong Cài đặt › GitHub. Phát hành bản mới: skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`).
+Người dùng cuối tải bộ cài ở [GitHub Releases](https://github.com/phamanh1289/telegram_dashboard/releases/latest) (Windows: lệnh `irm … install-windows.ps1 | iex` hoặc `…-setup.exe`; macOS: lệnh `curl … install-macos.sh | bash`), không cần Python/Node/git: **[docs/INSTALL.md](docs/INSTALL.md)**. Cập nhật ngay trong Cài đặt › GitHub. Phát hành bản mới: skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`).
 
 ## Cài đặt từ clone sạch
 
