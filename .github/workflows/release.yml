@@ -30,12 +30,16 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
           & $iscc "/DVersion=$('${{ github.ref_name }}'.TrimStart('v'))" packaging\windows\setup.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: macOS install script (curl | bash avoids Gatekeeper's quarantine block)
+        if: runner.os == 'macOS'
+        run: cp packaging/macos/install.sh dist/install-macos.sh
       - uses: actions/upload-artifact@v4
         with:
           name: pkg-${{ matrix.os }}
           path: |
             dist/*.zip
             dist/*.exe
+            dist/*.sh
 
   release:
     needs: build

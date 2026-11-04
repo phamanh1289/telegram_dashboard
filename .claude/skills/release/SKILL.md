@@ -11,6 +11,8 @@ Tag `vX.Y.Z` được push → `.github/workflows/release.yml` build trên `wind
 - `TelegramDashboard-X.Y.Z-windows-x64-setup.exe` — bộ cài cho người dùng Windows mới
 - `TelegramDashboard-X.Y.Z-windows-x64.zip` — bản portable + nguồn cho cập nhật trong app (Windows)
 - `TelegramDashboard-X.Y.Z-macos-arm64.zip` — bản macOS (Apple Silicon) + nguồn cập nhật (macOS)
+- `install-macos.sh` — cách cài macOS cho người dùng (`curl -fsSL …/releases/latest/download/install-macos.sh | bash`);
+  tải bằng curl nên không bị Gatekeeper chặn như zip tải bằng trình duyệt (app chưa notarize)
 
 App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`telegram_dashboard/updater.py`,
 `REPO`): Cài đặt › Cập nhật hiện "Có N bản mới trên GitHub Releases" → bấm Cập nhật (hoặc bật tự động).
@@ -41,7 +43,7 @@ App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`te
 5. **Push** (hỏi user trước — đây là thao tác công khai): `git push origin HEAD` rồi `git push origin vX.Y.Z`.
 6. **Theo dõi CI**: `gh run list --workflow release.yml -L 1`, `gh run watch <id>` (cần `gh auth login`;
    không có thì đưa user link `https://github.com/phamanh1289/telegram_dashboard/actions`).
-7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 3 file ở trên.
+7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 4 file ở trên.
    Báo user link release `https://github.com/phamanh1289/telegram_dashboard/releases/tag/vX.Y.Z`.
 
 ## Khi CI lỗi

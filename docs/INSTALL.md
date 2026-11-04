@@ -20,11 +20,20 @@ Không muốn dùng bộ cài: tải `…-windows-x64.zip`, *Extract All*, mở 
 
 ## macOS (Apple Silicon)
 
-1. Tải **`TelegramDashboard-X.Y.Z-macos-arm64.zip`**, mở để giải nén, kéo thư mục **Telegram Dashboard**
-   vào nơi cố định (ví dụ `Applications` hoặc `Documents`).
-2. Double-click `Start Dashboard Telegram.command`. Lần đầu macOS chặn (chưa notarize):
-   **System Settings › Privacy & Security** → kéo xuống → **Open Anyway** → mở lại file.
-3. Terminal mở (để nguyên), trình duyệt mở `http://127.0.0.1:8765`. Đăng nhập như bước 5 của Windows.
+Mở **Terminal** (Spotlight: gõ "Terminal"), dán lệnh này rồi Enter:
+
+```bash
+curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
+```
+
+Lệnh tải bản mới nhất vào `~/Applications/Telegram Dashboard`, mở thư mục đó và chạy app: một cửa sổ
+Terminal mở (để nguyên, đóng = tắt app), trình duyệt mở `http://127.0.0.1:8765`. Đăng nhập như bước 5 của Windows.
+Lần sau: double-click `Start Dashboard Telegram.command` trong thư mục đó (kéo vào Dock cho tiện).
+
+> Vì sao không tải zip bằng trình duyệt? App chưa được Apple notarize nên file tải qua trình duyệt bị chặn
+> (*"Apple could not verify… Not Opened"*). Nếu đã lỡ tải zip: bấm **Done**, mở **System Settings ›
+> Privacy & Security**, kéo xuống bấm **Open Anyway** (hoặc chạy
+> `xattr -dr com.apple.quarantine "<thư mục Telegram Dashboard>"`) rồi mở lại.
 
 ## Cập nhật
 
@@ -42,5 +51,5 @@ hoặc Antigravity (`agy`). Không có thì inbox vẫn chạy, chỉ ẩn AI.
 
 - Windows: Settings › Apps › **Telegram Dashboard** › Uninstall. Dữ liệu (`data\` trong thư mục cài, gồm session
   Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn.
-- macOS: xóa thư mục **Telegram Dashboard**.
+- macOS: xóa thư mục `~/Applications/Telegram Dashboard`.
 - Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của dashboard.
