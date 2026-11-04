@@ -199,6 +199,10 @@
 /* AI "thinking" loader in the composer: the sparkle hops and tilts, the dots ride a wave. */
 /* Module switch (TopBar): crossfade the page, morph the active pill */
 ::view-transition-group(*) { animation-duration: var(--dur-short); animation-timing-function: var(--ease-out); }
+/* Page body entering (Settings): a short delay (held hidden by `both`) lets the mount's first busy frames pass, so the fade starts from 0 instead of popping in midway; a soft deceleration, not the expo --ease-out that spends itself in the first frames. */
+.page-in { animation: page-in var(--dur-long) cubic-bezier(0.2, 0, 0, 1) 40ms both; }
+@keyframes page-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .page-in { animation: none; } }
 @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; } }
 
 @keyframes ai-hop { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-4px) rotate(-15deg) scale(1.1); } 60% { transform: translateY(0) rotate(12deg); } }

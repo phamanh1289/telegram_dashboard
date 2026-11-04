@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, ExternalLink, GitBranch, Keyboard, ListChecks, Monitor, Moon, Send, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { AiAccounts, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
@@ -33,20 +33,22 @@ const GROUPS: [GroupId, string, typeof Send, string][] = [
 /** The settings page (/settings/#group): every module's settings, one group at a time. */
 export function SettingsPage() {
   const [tab, setTab] = useState<GroupId | null>(null); // null until the hash is read (static export: no location on the server)
-  useEffect(() => {
+  // Layout effect, not effect: runs after Next has pushed the new URL and re-renders before paint, so neither the first frame nor the module crossfade shows an empty page.
+  useLayoutEffect(() => {
     const read = () => setTab((GROUPS.find(([id]) => `#${id}` === location.hash)?.[0]) ?? "general");
     read();
     addEventListener("hashchange", read);
     return () => removeEventListener("hashchange", read);
   }, []);
   const cur = GROUPS.find(([id]) => id === (tab ?? "general"))!;
-  const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); scrollTo({ top: 0 }); };
+  const [switched, setSwitched] = useState(false); // group switches get their own quick rise; opening the page uses .page-in on the whole body
+  const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); setSwitched(true); scrollTo({ top: 0 }); };
   const router = useRouter();
   const back = () => (history.length > 1 ? router.back() : router.push("/"));
   return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
       <div className="sticky top-0 z-30"><TopBar module="settings" /></div>
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:py-10">
+      <div className="page-in mx-auto grid w-full max-w-5xl grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:py-10">
         <nav aria-label="Mục cài đặt" className="grid min-w-0 content-start gap-3 md:sticky md:top-[calc(2.75rem+2.5rem)]">
           <button type="button" onClick={back} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
             <ArrowLeft className="size-4" aria-hidden /> Quay lại
@@ -63,7 +65,7 @@ export function SettingsPage() {
           </div>
         </nav>
 
-        <main className="grid min-w-0 content-start gap-4">
+        <main key={tab ?? ""} className={cn("grid min-w-0 content-start gap-4", switched && "animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out) motion-reduce:animate-none")}>
           <header className={cn("grid gap-1", !tab && "invisible")}>
             <h2 className="text-lg font-semibold">{cur[1]}</h2>
             <p className="text-sm text-ink-3">{cur[3]}</p>
