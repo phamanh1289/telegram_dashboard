@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Select } from "@base-ui/react/select";
-import { Check, ChevronDown, Copy, Download, ExternalLink, Gauge, RefreshCw } from "lucide-react";
+import { ChartColumn, Check, ChevronDown, CircleAlert, Copy, Download, ExternalLink, Gauge, History, RefreshCw, Search, UserRound } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -207,26 +207,36 @@ export function InstallCmd({ cmd }: { cmd: string }) {
   );
 }
 
-/** One CLI's page: its account, its model/effort, and the log of every run. */
+const TABS = [["account", "Tài khoản", UserRound], ["usage", "Usage", ChartColumn], ["history", "History", History]] as const;
+type Tab = (typeof TABS)[number][0];
+
+/** One CLI's page: its account and model/effort, its quota and run report, and the history of every run. */
 function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { provider: picked, info } = useAiPrefs();
-  const [tab, setTab] = useState<"account" | "log">("account");
+  const [tab, setTab] = useState<Tab>("account");
+  const [days, setDays] = useState<number>(7); // shared by Usage and History
   const name = info(provider)?.name ?? "AI";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* A detail page sliding in from the right; head and foot stay put, only the body scrolls. */}
-      <DialogContent className="top-0 right-0 left-auto flex h-dvh max-h-none max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-paper p-0 ease-(--ease-out) sm:max-w-xl data-open:zoom-in-100 data-open:slide-in-from-right data-closed:zoom-out-100 data-closed:slide-out-to-right">
-        <header className="grid gap-1 border-b border-rule px-5 pt-5 pb-4">
-          <DialogTitle>Tài khoản {name}</DialogTitle>
-          <DialogDescription className="text-xs text-ink-2">
-            {provider === picked ? `Đăng nhập của ${name} CLI trên máy này; mọi tính năng AI đang chạy bằng ${name}.`
-              : `Đăng nhập của ${name} CLI trên máy này. Đang dùng ${info(picked)?.name ?? "AI khác"}; đổi ở Cài đặt › AI › Dùng AI nào.`}
-          </DialogDescription>
-          <span role="tablist" aria-label="Mục" className="-mb-4 mt-2 flex gap-4 text-sm">
-            {([["account", "Thông tin tài khoản"], ["log", "Log & Usage"]] as const).map(([k, label]) => (
+      <DialogContent className="top-0 right-0 left-auto flex h-dvh max-h-none max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-paper p-0 ease-(--ease-out) sm:max-w-2xl data-open:zoom-in-100 data-open:slide-in-from-right data-closed:zoom-out-100 data-closed:slide-out-to-right">
+        <header className="grid gap-3 border-b border-rule bg-paper-2 px-5 pt-5">
+          <span className="grid gap-1 pr-8">
+            <DialogTitle className="flex items-center gap-2">
+              Tài khoản {name}
+              {provider === picked && <span className="rounded-full bg-ok/15 px-2 py-0.5 text-xs font-medium text-ok">Đang dùng</span>}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-ink-2">
+              {provider === picked ? `Đăng nhập của ${name} CLI trên máy này; mọi tính năng AI đang chạy bằng ${name}.`
+                : `Đăng nhập của ${name} CLI trên máy này. Đang dùng ${info(picked)?.name ?? "AI khác"}; đổi ở Cài đặt › AI › Dùng AI nào.`}
+            </DialogDescription>
+          </span>
+          <span role="tablist" aria-label="Mục" className="flex gap-5 text-sm">
+            {TABS.map(([k, label, Icon]) => (
               <button key={k} type="button" role="tab" id={`ai-tab-${k}`} aria-selected={tab === k} aria-controls="ai-tabpanel" onClick={() => setTab(k)}
-                className={cn("relative pb-2.5 font-medium transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-center after:rounded-full after:bg-hl after:transition-transform after:duration-(--dur-short) after:ease-(--ease-out)",
+                className={cn("relative flex items-center gap-1.5 pb-2.5 font-medium transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-center after:rounded-full after:bg-hl after:transition-transform after:duration-(--dur-short) after:ease-(--ease-out)",
                   tab === k ? "text-ink after:scale-x-100" : "text-ink-3 after:scale-x-0 hover:text-ink")}>
+                <Icon aria-hidden className="size-4" />
                 {label}
               </button>
             ))}
@@ -235,11 +245,13 @@ function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: 
 
         <div key={tab} role="tabpanel" id="ai-tabpanel" aria-labelledby={`ai-tab-${tab}`}
           className="grid min-h-0 flex-1 content-start gap-6 overflow-y-auto overscroll-contain px-5 py-5 animate-in fade-in-0 duration-(--dur-short)">
-          {tab === "log" ? <RunsSection /> : <>
-            {provider === "claude" ? <ClaudeAccountCard /> : <CliAccountCard provider={provider} />}
-            <PrefsSection provider={provider} />
-            {provider === "claude" && <ClaudeDetails />}
-          </>}
+          {tab === "usage" ? <UsageTab provider={provider} days={days} setDays={setDays} />
+            : tab === "history" ? <HistoryTab days={days} setDays={setDays} />
+            : <>
+              {provider === "claude" ? <ClaudeAccountCard /> : <CliAccountCard provider={provider} />}
+              <PrefsSection provider={provider} />
+              {provider === "claude" && <ClaudeDetails />}
+            </>}
         </div>
       </DialogContent>
     </Dialog>
@@ -332,8 +344,6 @@ function ClaudeAccountCard() {
         {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
         {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
       </section>
-
-      {a.loggedIn && a.usage.length > 0 && <QuotaSection usage={a.usage} at={a.usage_at} />}
     </div>
   );
 }
@@ -380,7 +390,6 @@ function CliAccountCard({ provider }: { provider: Provider }) {
       {provider === "antigravity" && a.loggedIn && <p className="text-xs text-ink-3">Đổi tài khoản: gõ <code>/logout</code> trong <code>agy</code> rồi đăng nhập lại.</p>}
       {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh {provider}. Thử lại sau.</p>}
     </section>
-    {a.loggedIn && a.usage.length > 0 && <QuotaSection usage={a.usage} at={a.usage_at} provider={provider} />}
     </div>
   );
 }
@@ -640,7 +649,7 @@ function TestRun({ task }: { task: boolean }) {
     <span className="flex items-center gap-2 text-xs">
       <Button variant="outline" size="sm" aria-busy={t.isPending} disabled={t.isPending} onClick={() => t.mutate()}>{t.isPending ? "Đang thử…" : "Thử model"}</Button>
       <span aria-live="polite">
-        {t.isError ? <span className="text-error">{errorText(t.error, {}, "Không chạy được, xem tab Log & Usage.")}</span>
+        {t.isError ? <span className="text-error">{errorText(t.error, {}, "Không chạy được, xem tab History.")}</span>
           : t.data && <span className="text-ok">Trả lời sau <span className="font-mono tabular-nums">{secs(t.data.ms)}</span></span>}
       </span>
     </span>
@@ -669,105 +678,249 @@ function groupBy(rows: AiRun[], key: (r: AiRun) => string) {
   return [...m].map(([k, rs]) => [k, totals(rs)] as const).sort((a, b) => b[1].cost - a[1].cost || b[1].n - a[1].n);
 }
 
-/** Every AI run the dashboard made (any CLI): a report for the period, then each request with its tokens, cost and quota. */
-function RunsSection() {
-  const [days, setDays] = useState<number>(7);
-  const runs = useQuery({
+function useRuns(days: number) {
+  return useQuery({
     queryKey: ["ai-runs", days],
     queryFn: ({ signal }) => api<AiRun[]>(`/ai/runs?days=${days}`, { signal }),
     refetchInterval: 60_000,
   });
+}
+
+/** Section head with the period switch (and any extra tools) on the right. */
+function PeriodHead({ title, days, setDays, children }: { title: string; days: number; setDays: (d: number) => void; children?: React.ReactNode }) {
+  return (
+    <span className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className={sectionHead}>{title}</h3>
+      <span className="flex items-center gap-1">
+        <span role="group" aria-label="Khoảng thời gian" className="flex rounded-[var(--radius-input)] bg-paper-3 p-0.5 text-xs">
+          {PERIODS.map(([d, label]) => (
+            <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
+              className={cn("rounded-[calc(var(--radius-input)-2px)] px-2 py-1 font-medium text-ink-2 transition-colors duration-(--dur-micro)", days === d ? "bg-cotton text-ink shadow-stock" : "hover:text-ink")}>
+              {label}
+            </button>
+          ))}
+        </span>
+        {children}
+      </span>
+    </span>
+  );
+}
+
+const emptyRuns = (days: number) => (
+  <p className="rounded-lg bg-cotton p-4 text-sm text-ink-2 shadow-stock">
+    Chưa có lần chạy nào trong {PERIODS.find(([d]) => d === days)?.[1]}. Mỗi lần tóm tắt, soạn nháp, Digest, YouTrack AI hay AI Agent chạy sẽ được ghi ở đây.
+  </p>
+);
+
+/** This CLI's live quota (Claude: from its account API; others: from their CLI). */
+function LiveQuota({ provider }: { provider: Provider }) {
+  const a = useAccounts(60_000)[provider];
+  if (a.checking) return <Skeleton className="h-32" />;
+  if (!a.loggedIn || !a.usage.length) return null;
+  return <QuotaSection usage={a.usage} at={a.usage_at} provider={provider} />;
+}
+
+/** Quota on top, then the report of every AI run in the period (any CLI). */
+function UsageTab({ provider, days, setDays }: { provider: Provider; days: number; setDays: (d: number) => void }) {
+  const runs = useRuns(days);
   const rows = runs.data ?? [];
   const sum = totals(rows);
+  return (
+    <>
+      <LiveQuota provider={provider} />
+      <section className="grid gap-2.5">
+        <PeriodHead title="Báo cáo" days={days} setDays={setDays} />
+        {runs.isError ? <p role="alert" className="text-sm text-error">Không đọc được lịch sử chạy.</p>
+          : !runs.data ? <Skeleton className="h-40" />
+          : !rows.length ? emptyRuns(days)
+          : (
+            <>
+              <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {([
+                  ["Request", String(sum.n), sum.failed ? `${sum.failed} lỗi` : "không lỗi"],
+                  ["Token", kilo(sum.tokens), `TB ${kilo(Math.round(sum.tokens / sum.n))}/request`],
+                  ["Chi phí quy đổi", usd(sum.cost), "nếu trả theo API"],
+                  ["Thời gian TB", secs(sum.ms / sum.n), `tổng ${byUnit(Math.round(sum.ms / 60_000)).join(" ")}`],
+                ] as const).map(([k, v, hint]) => (
+                  <div key={k} className="grid gap-0.5 rounded-lg bg-cotton p-3 shadow-stock">
+                    <dt className="text-xs text-ink-2">{k}</dt>
+                    <dd className="font-mono text-lg font-semibold text-ink tabular-nums">{v}</dd>
+                    <dd className={cn("text-xs", k === "Request" && sum.failed ? "text-error" : "text-ink-3")}>{hint}</dd>
+                  </div>
+                ))}
+              </dl>
+              {days > 1 && <DayBars rows={rows} days={days} />}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Breakdown title="Theo tính năng" groups={groupBy(rows, (r) => FEATURES[r.feature] ?? r.feature)} total={sum} />
+                <Breakdown title="Theo model" groups={groupBy(rows, (r) => r.model)} total={sum} />
+              </div>
+              <p className="text-xs text-ink-2">Chi phí quy đổi là giá token nếu trả theo API, không phải tiền bị trừ: gói Pro/Max tính theo hạn mức.</p>
+            </>
+          )}
+      </section>
+    </>
+  );
+}
+
+const PAGE = 50;
+
+/** Each request in the period, newest first: search and filter, grouped by Vietnam day, a row opens its full detail. CSV exports what the filter shows. */
+function HistoryTab({ days, setDays }: { days: number; setDays: (d: number) => void }) {
+  const runs = useRuns(days);
+  const [feature, setFeature] = useState<string | null>(null);
+  const [failedOnly, setFailedOnly] = useState(false);
+  const [q, setQ] = useState("");
+  const [limit, setLimit] = useState(PAGE);
+  const [open, setOpen] = useState<string | null>(null);
+  const all = runs.data ?? [];
+  const needle = q.trim().toLowerCase();
+  const rows = all.filter((r) => (!feature || r.feature === feature) && (!failedOnly || !r.ok)
+    && (!needle || [r.model, r.effort, FEATURES[r.feature] ?? r.feature, r.error ?? ""].some((v) => v.toLowerCase().includes(needle))));
+  const counts = groupBy(all, (r) => r.feature);
+  const failed = all.filter((r) => !r.ok).length;
+  const sum = totals(rows);
   const today = vnDay(useNow());
+  const filter = <T,>(set: (v: T) => void) => (v: T) => { set(v); setLimit(PAGE); setOpen(null); };
   const exportRows = () => downloadCsv([
     ["Thời gian", "Tính năng", "Model", "Effort", "Tự hạ model", "Thành công", "Lỗi", "Thời gian chạy (ms)", "Input", "Output", "Đọc cache", "Ghi cache", "Chi phí quy đổi (USD)", "5h % sau", "7 ngày % sau"],
     ...rows.map((r) => [r.at, FEATURES[r.feature] ?? r.feature, r.model, r.effort, r.fallback ? "có" : "", r.ok ? "có" : "không", r.error ?? "", r.ms,
       r.input_tokens, r.output_tokens, r.cache_read, r.cache_write, r.cost ?? "", r.quota["5h"] ?? "", r.quota["1w"] ?? ""]),
   ], `ai-runs-${days}d.csv`);
+  const chip = (on: boolean, tone = "bg-ink text-paper") => cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-medium transition-colors duration-(--dur-micro) focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus)",
+    on ? tone : "bg-paper-3 text-ink-2 hover:text-ink");
 
   return (
-    <section className="grid gap-2.5">
-      <span className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className={sectionHead}>Lịch sử và báo cáo</h3>
-        <span className="flex items-center gap-1">
-          <span role="group" aria-label="Khoảng thời gian" className="flex rounded-[var(--radius-input)] bg-paper-3 p-0.5 text-xs">
-            {PERIODS.map(([d, label]) => (
-              <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
-                className={cn("rounded-[calc(var(--radius-input)-2px)] px-2 py-1 font-medium text-ink-2 transition-colors duration-(--dur-micro)", days === d ? "bg-cotton text-ink shadow-stock" : "hover:text-ink")}>
-                {label}
-              </button>
-            ))}
-          </span>
-          <Button variant="ghost" size="sm" aria-label="Xuất CSV" title="Xuất CSV" disabled={!rows.length} onClick={exportRows}><Download aria-hidden className="size-3.5" /></Button>
-        </span>
-      </span>
+    <section className="grid gap-3">
+      <PeriodHead title="Lịch sử chạy" days={days} setDays={filter(setDays)}>
+        <Button variant="ghost" size="sm" aria-label="Xuất CSV những dòng đang hiện" title="Xuất CSV những dòng đang hiện" disabled={!rows.length} onClick={exportRows}><Download aria-hidden className="size-3.5" /></Button>
+      </PeriodHead>
 
       {runs.isError ? <p role="alert" className="text-sm text-error">Không đọc được lịch sử chạy.</p>
-        : !runs.data ? <Skeleton className="h-40" />
-        : !rows.length ? <p className="rounded-lg bg-cotton p-4 text-sm text-ink-2 shadow-stock">Chưa có lần chạy nào trong {PERIODS.find(([d]) => d === days)?.[1]}. Mỗi lần tóm tắt, soạn nháp, Digest, YouTrack AI hay AI Agent chạy sẽ được ghi ở đây.</p>
+        : !runs.data ? <div role="status" aria-label="Đang tải…" className="grid gap-2"><Skeleton className="h-9" /><Skeleton className="h-60" /></div>
+        : !all.length ? emptyRuns(days)
         : (
           <>
-            <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {([
-                ["Request", String(sum.n), sum.failed ? `${sum.failed} lỗi` : "không lỗi"],
-                ["Token", kilo(sum.tokens), `TB ${kilo(Math.round(sum.tokens / sum.n))}/request`],
-                ["Chi phí quy đổi", usd(sum.cost), "nếu trả theo API"],
-                ["Thời gian TB", secs(sum.ms / sum.n), `tổng ${byUnit(Math.round(sum.ms / 60_000)).join(" ")}`],
-              ] as const).map(([k, v, hint]) => (
-                <div key={k} className="grid gap-0.5 rounded-lg bg-cotton p-3 shadow-stock">
-                  <dt className="text-xs text-ink-2">{k}</dt>
-                  <dd className="font-mono text-lg font-semibold text-ink tabular-nums">{v}</dd>
-                  <dd className={cn("text-xs", k === "Request" && sum.failed ? "text-error" : "text-ink-3")}>{hint}</dd>
-                </div>
-              ))}
-            </dl>
-
-            {days > 1 && <DayBars rows={rows} days={days} />}
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Breakdown title="Theo tính năng" groups={groupBy(rows, (r) => FEATURES[r.feature] ?? r.feature)} total={sum} />
-              <Breakdown title="Theo model" groups={groupBy(rows, (r) => r.model)} total={sum} />
+            <div className="grid gap-2">
+              <label className="relative block">
+                <span className="sr-only">Tìm request</span>
+                <Search aria-hidden className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-3" />
+                <Input type="search" placeholder="Tìm theo model, tính năng, lỗi…" className="pl-8" value={q} onChange={(e) => filter(setQ)(e.target.value)} />
+              </label>
+              <span role="group" aria-label="Lọc theo tính năng" className="flex flex-wrap gap-1.5 text-xs">
+                <button type="button" aria-pressed={!feature} className={chip(!feature)} onClick={() => filter(setFeature)(null)}>
+                  Tất cả <span className="font-mono tabular-nums opacity-70">{all.length}</span>
+                </button>
+                {counts.map(([f, t]) => (
+                  <button key={f} type="button" aria-pressed={feature === f} className={chip(feature === f)} onClick={() => filter(setFeature)(feature === f ? null : f)}>
+                    {FEATURES[f] ?? f} <span className="font-mono tabular-nums opacity-70">{t.n}</span>
+                  </button>
+                ))}
+                {failed > 0 && (
+                  <button type="button" aria-pressed={failedOnly} className={cn(chip(failedOnly, "bg-error text-paper"), !failedOnly && "bg-error-wash text-error")} onClick={() => filter(setFailedOnly)(!failedOnly)}>
+                    <CircleAlert aria-hidden className="size-3.5" />Chỉ lỗi <span className="font-mono tabular-nums opacity-70">{failed}</span>
+                  </button>
+                )}
+              </span>
             </div>
 
-            <div className="overflow-x-auto rounded-lg bg-cotton shadow-stock">
-              <table className="w-full text-xs">
-                <caption className="sr-only">Từng request</caption>
-                <thead className="text-left text-ink-2">
-                  <tr className="border-b border-rule">
-                    <th className="px-3 py-2 font-medium">Lúc</th><th className="px-2 py-2 font-medium">Model</th>
-                    <th className="px-2 py-2 text-right font-medium">Token</th><th className="px-2 py-2 text-right font-medium">Chi phí</th>
-                    <th className="px-3 py-2 text-right font-medium">Chạy</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-rule">
-                  {rows.slice(0, 100).map((r, i) => (
-                    <tr key={r.at + i} className={cn(!r.ok && "bg-error-wash/50")}>
-                      <td className="px-3 py-1.5 font-mono whitespace-nowrap text-ink-2 tabular-nums" title={timeLabel(r.at, true)}>
-                        {clockLabel(r.at)}{vnDay(r.at) !== today && <span className="text-ink-3"> {dm(vnDay(r.at))}</span>}
-                      </td>
-                      <td className="px-2 py-1.5 whitespace-nowrap text-ink-2" title={r.effort ? `Effort ${r.effort}` : undefined}>
-                        {r.model.replace(/^claude-/, "")}
-                        {r.fallback && <span className="ml-1 rounded bg-warn/15 px-1 text-ink" title="Đã tự hạ model vì gần hết hạn mức">hạ</span>}
-                        {r.imported && <span className="ml-1 rounded bg-paper-3 px-1 text-ink-3" title="Nhập lại từ transcript của Claude CLI: không có hạn mức lúc chạy, chi phí chia theo token">nhập lại</span>}
-                        {!r.ok && <span className="ml-1 text-error" title={r.error ?? undefined}>lỗi</span>}
-                      </td>
-                      <td className="px-2 py-1.5 text-right font-mono tabular-nums" title={`Input ${r.input_tokens}, output ${r.output_tokens}, đọc cache ${r.cache_read}, ghi cache ${r.cache_write}`}>{kilo(tokens(r))}</td>
-                      <td className="px-2 py-1.5 text-right font-mono tabular-nums">{r.cost == null ? "—" : usd(r.cost)}</td>
-                      <td className="px-3 py-1.5 text-right font-mono whitespace-nowrap tabular-nums">{(r.ms / 1000).toFixed(1)}s</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-xs text-ink-2">
-              Chi phí quy đổi là giá token nếu trả theo API, không phải tiền bị trừ: gói Pro/Max tính theo hạn mức. Dòng “nhập lại” lấy từ transcript của Claude CLI, trước khi có log này.
-              {rows.length > 100 && " Bảng hiện 100 request mới nhất; CSV có đủ."}
+            <p aria-live="polite" className="text-xs text-ink-2">
+              {rows.length === all.length ? `${all.length} request` : `${rows.length} / ${all.length} request khớp`}
+              {rows.length > 0 && <> · <span className="font-mono tabular-nums">{kilo(sum.tokens)}</span> token · <span className="font-mono tabular-nums">{usd(sum.cost)}</span></>}
             </p>
+
+            {!rows.length ? (
+              <div className="grid justify-items-start gap-2 rounded-lg bg-cotton p-4 text-sm text-ink-2 shadow-stock">
+                Không có request nào khớp bộ lọc.
+                <Button variant="outline" size="sm" onClick={() => { setQ(""); setFeature(null); setFailedOnly(false); }}>Xoá bộ lọc</Button>
+              </div>
+            ) : (
+              <div className="grid gap-4">
+                {groupRows(rows.slice(0, limit)).map(([d, rs]) => {
+                  const t = totals(rows.filter((r) => vnDay(r.at) === d));
+                  return (
+                    <section key={d} aria-label={`${weekday(d)} ${dm(d)}`} className="grid gap-1.5">
+                      <h4 className="sticky -top-5 z-10 -mx-5 flex items-baseline justify-between gap-3 bg-paper/95 px-5 py-1.5 text-xs backdrop-blur-sm">
+                        <span className="font-semibold text-ink first-letter:uppercase">{d === today ? "Hôm nay" : weekday(d)}, {dm(d)}</span>
+                        <span className="font-mono text-ink-3 tabular-nums">{t.n} · {kilo(t.tokens)} · {usd(t.cost)}</span>
+                      </h4>
+                      <ul className="grid divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
+                        {rs.map((r, i) => {
+                          const id = r.at + i;
+                          return <RunRow key={id} r={r} open={open === id} onToggle={() => setOpen(open === id ? null : id)} />;
+                        })}
+                      </ul>
+                    </section>
+                  );
+                })}
+                {rows.length > limit && (
+                  <Button variant="outline" size="sm" className="justify-self-center" onClick={() => setLimit(limit + PAGE)}>
+                    Xem thêm {Math.min(PAGE, rows.length - limit)} request <span className="text-ink-3">(còn {rows.length - limit})</span>
+                  </Button>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-ink-3">Chi phí quy đổi là giá token nếu trả theo API, không phải tiền bị trừ. “Nhập lại”: lấy từ transcript của Claude CLI, trước khi có log này.</p>
           </>
         )}
     </section>
   );
+}
+
+/** One request: a summary line that opens its tokens, quota after the run and the error, if any. */
+function RunRow({ r, open, onToggle }: { r: AiRun; open: boolean; onToggle: () => void }) {
+  const detail = ([
+    ["Input", kilo(r.input_tokens)], ["Output", kilo(r.output_tokens)], ["Đọc cache", kilo(r.cache_read)], ["Ghi cache", kilo(r.cache_write)],
+    ["Effort", r.effort ? EFFORT_LABELS[r.effort as Effort] ?? r.effort : null], ["Lượt", r.turns ? String(r.turns) : null],
+    ["Hạn mức 5h sau", r.quota["5h"] != null ? `${Math.round(r.quota["5h"])}%` : null], ["Hạn mức 7 ngày sau", r.quota["1w"] != null ? `${Math.round(r.quota["1w"])}%` : null],
+  ] as [string, string | null][]).filter((x): x is [string, string] => x[1] != null);
+  return (
+    <li className={cn(!r.ok && "bg-error-wash/40")}>
+      <button type="button" aria-expanded={open} onClick={onToggle}
+        className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-x-3 px-3 py-2 text-left text-xs transition-colors duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--color-focus)">
+        <span className="flex items-center gap-2">
+          <span aria-label={r.ok ? "Thành công" : "Lỗi"} className={cn("size-2 rounded-full", r.ok ? "bg-ok" : "bg-error")} />
+          <span className="font-mono text-ink-2 tabular-nums" title={timeLabel(r.at, true)}>{clockLabel(r.at)}</span>
+        </span>
+        <span className="grid min-w-0">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate font-medium text-ink">{FEATURES[r.feature] ?? r.feature}</span>
+            {r.fallback && <span className="shrink-0 rounded bg-warn/15 px-1 text-ink">hạ model</span>}
+            {r.imported && <span className="shrink-0 rounded bg-paper-3 px-1 text-ink-3">nhập lại</span>}
+          </span>
+          <span className="truncate text-ink-3">{r.model.replace(/^claude-/, "")}{!r.ok && r.error && <span className="text-error"> · {r.error}</span>}</span>
+        </span>
+        <span className="grid text-right font-mono tabular-nums">
+          <span className="text-ink">{kilo(tokens(r))}</span>
+          <span className="text-ink-3">{r.cost == null ? "—" : usd(r.cost)}</span>
+        </span>
+        <span className="flex items-center gap-1.5 font-mono text-ink-2 tabular-nums">
+          {(r.ms / 1000).toFixed(1)}s
+          <ChevronDown aria-hidden className={cn("size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", open && "rotate-180")} />
+        </span>
+      </button>
+      {open && (
+        <div className="grid gap-3 border-t border-rule bg-paper-2/60 px-3 py-3 text-xs animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short)">
+          {!r.ok && r.error && <p role="alert" className="rounded-md bg-error-wash px-2.5 py-2 break-words text-error">{r.error}</p>}
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+            {detail.map(([k, v]) => (
+              <div key={k} className="grid gap-0.5">
+                <dt className="text-ink-3">{k}</dt>
+                <dd className="font-mono font-medium text-ink tabular-nums">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <p className="text-ink-3">{timeLabel(r.at, true)} · model <span className="font-mono">{r.model}</span></p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Rows (newest first) into Vietnam days, keeping order. */
+function groupRows(rows: AiRun[]) {
+  const m = new Map<string, AiRun[]>();
+  for (const r of rows) m.set(vnDay(r.at), [...(m.get(vnDay(r.at)) ?? []), r]);
+  return [...m];
 }
 
 /** Requests and cost per Vietnam day across the period, oldest on the left. */
