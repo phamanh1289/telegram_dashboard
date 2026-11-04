@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -11,7 +13,7 @@ import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
-import { SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
+import { ShortcutsDialog } from "@/components/settings";
 import { NavPill, Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
@@ -109,11 +111,10 @@ function Inbox({ status }: { status: Status }) {
     setSearch(q);
     if (q.trim() && chatId !== ALL && chatId !== PINNED) selectChat(ALL); // results live in the cross-group list
   }
-  // Settings remount on each open (key) so they read fresh values.
-  // First run: open straight on the Telegram setup (API ID/Hash, then login).
-  const [settings, setSettings] = useState(() => ({ open: status.state === "setup_required" || status.state === "login_required", key: 0 }));
-  // YouTrack's gear lands here with ?settings=shared: open the shared dialog once (the flag is dropped below).
-  const [shared, setShared] = useState(() => ({ open: new URLSearchParams(location.search).get("settings") === "shared", key: 0 }));
+  // First run: go straight to the Telegram setup (API ID/Hash, then login) on the settings page.
+  const router = useRouter();
+  const [firstRun] = useState(() => status.state === "setup_required" || status.state === "login_required");
+  useEffect(() => { if (firstRun) router.replace("/settings/#telegram"); }, [firstRun, router]);
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
   const [collapsed, setCollapsed] = useState(() => getPref("sidebarCollapsed") === "1");
   function toggleCollapsed() {
@@ -154,13 +155,6 @@ function Inbox({ status }: { status: Status }) {
     setReplyTo(m);
     setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
   }
-
-  useEffect(() => {
-    const url = new URL(location.href);
-    if (url.searchParams.get("settings") !== "shared") return;
-    url.searchParams.delete("settings");
-    history.replaceState(null, "", url);
-  }, []);
 
   // Esc: leave reply mode and clear every selection (dialogs close themselves first).
   useEffect(() => {
@@ -221,7 +215,7 @@ function Inbox({ status }: { status: Status }) {
 
   return (
     <div className={cn("grid h-dvh grid-rows-[2.75rem_minmax(0,1fr)] transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
-      <TopBar module="telegram" onSettings={() => setShared((s) => ({ open: true, key: s.key + 1 }))} />
+      <TopBar module="telegram" />
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
       {/* Sidebar, the YouTrack recipe: brand, views, groups, footer (the module switch lives in the top bar). */}
       <aside className={cn(
@@ -259,11 +253,11 @@ function Inbox({ status }: { status: Status }) {
           <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
-          <button type="button" onClick={() => setSettings((s) => ({ open: true, key: s.key + 1 }))} title="Cài đặt Telegram"
+          <Link href="/settings/#telegram" title="Cài đặt Telegram"
             className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <SlidersHorizontal className="size-5 shrink-0" aria-hidden />
             <span className={cn("whitespace-nowrap", t)}>Cài đặt Telegram</span>
-          </button>
+          </Link>
           <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
             <span data-testid="tg-state" title={STATE_LABEL[status.state]} className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
               {connected ? <Wifi className="size-5" aria-hidden /> : <WifiOff className="size-5" aria-hidden />}
@@ -358,8 +352,6 @@ function Inbox({ status }: { status: Status }) {
           </div>
         ) : null}
       </div>
-      <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} />
-      <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <Toaster />
     </div>

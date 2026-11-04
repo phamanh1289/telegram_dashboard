@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, Monitor, Moon, Sun, Trash2 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { ArrowLeft, Check, ExternalLink, GitBranch, Keyboard, ListChecks, Monitor, Moon, Send, SlidersHorizontal, Sparkles, Sun, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AiAccounts, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { TopBar } from "@/components/shell";
 import { Input } from "@/components/ui/input";
 import { api, ApiError, errorText, type Status } from "@/lib/api";
 import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, onPrefs, readOverdueHours, readReportAt, readTemplates, type ReportAt, saveReportAt, readLook, readTheme, readYtRole, saveLook, saveYtRole, setPref, YT_ROLES, type YtRole, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
@@ -18,77 +20,101 @@ import { PromptManager } from "@/components/yt/prompts";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
-const SHARED_TABS = [["system", "Hệ thống"], ["youtrack", "YouTrack"], ["ai", "AI"], ["github", "GitHub"]] as const;
+type GroupId = "general" | "telegram" | "youtrack" | "ai" | "github" | "shortcuts";
+const GROUPS: [GroupId, string, typeof Send, string][] = [
+  ["general", "Chung", SlidersHorizontal, "Vai trò và giao diện, dùng cho cả Telegram lẫn YouTrack. Lưu trên trình duyệt này."],
+  ["telegram", "Telegram", Send, "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này."],
+  ["youtrack", "YouTrack", ListChecks, "Kết nối, hướng dẫn cho AI, kho prompt và báo cáo release."],
+  ["ai", "AI", Sparkles, "CLI nào chạy các tính năng AI, tài khoản của từng CLI và quyền đọc tin."],
+  ["github", "GitHub", GitBranch, "Cập nhật app từ repo GitHub."],
+  ["shortcuts", "Phím tắt", Keyboard, "Phím tắt trong Telegram Inbox."],
+];
 
-/** Settings both modules use (app look, YouTrack token, AI accounts); YouTrack opens it via /?settings=shared. */
-export function SharedSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
-  const [theme, setTheme] = useState<ThemePref>(readTheme);
-  const qc = useQueryClient();
-  // Opened from the update badge (new commits known): land on the GitHub tab.
-  const [tab, setTab] = useState<(typeof SHARED_TABS)[number][0]>(() => qc.getQueryData<{ behind: number }>(["update-state"])?.behind ? "github" : "system");
+/** The settings page (/settings/#group): every module's settings, one group at a time. */
+export function SettingsPage() {
+  const [tab, setTab] = useState<GroupId | null>(null); // null until the hash is read (static export: no location on the server)
+  useEffect(() => {
+    const read = () => setTab((GROUPS.find(([id]) => `#${id}` === location.hash)?.[0]) ?? "general");
+    read();
+    addEventListener("hashchange", read);
+    return () => removeEventListener("hashchange", read);
+  }, []);
+  const cur = GROUPS.find(([id]) => id === (tab ?? "general"))!;
+  const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); scrollTo({ top: 0 }); };
+  const router = useRouter();
+  const back = () => (history.length > 1 ? router.back() : router.push("/"));
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Fixed full height so switching tabs doesn't resize the dialog; only the tab body scrolls. */}
-      <DialogContent className="flex h-[min(88dvh,48rem)] flex-col sm:max-w-lg">
-        <DialogTitle>Cài đặt chung</DialogTitle>
-        <DialogDescription className="-mt-2">Dùng chung cho Telegram và YouTrack.</DialogDescription>
+    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
+      <div className="sticky top-0 z-30"><TopBar module="settings" /></div>
+      <div className="mx-auto grid w-full max-w-5xl grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:py-10">
+        <nav aria-label="Mục cài đặt" className="grid min-w-0 content-start gap-3 md:sticky md:top-[calc(2.75rem+2.5rem)]">
+          <button type="button" onClick={back} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
+            <ArrowLeft className="size-4" aria-hidden /> Quay lại
+          </button>
+          <h1 className="text-xl font-semibold tracking-tight">Cài đặt</h1>
+          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 md:mx-0 md:grid md:overflow-visible md:px-0">
+            {GROUPS.map(([id, label, Icon]) => (
+              <a key={id} href={`#${id}`} aria-current={tab === id ? "page" : undefined} onClick={(e) => { e.preventDefault(); pick(id); }}
+                className={cn("flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-input)] px-2.5 text-sm font-medium no-underline transition-[background-color,color] duration-(--dur-micro)",
+                  tab === id ? "bg-hl-wash font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink")}>
+                <Icon className="size-4 shrink-0" aria-hidden />{label}
+              </a>
+            ))}
+          </div>
+        </nav>
 
-        <span role="tablist" aria-label="Mục cài đặt" className="flex gap-4 border-b border-rule text-sm">
-          {SHARED_TABS.map(([k, label]) => (
-            <button key={k} type="button" role="tab" id={`shared-tab-${k}`} aria-selected={tab === k} aria-controls="shared-tabpanel" onClick={() => setTab(k)}
-              className={cn("relative pb-2.5 font-medium transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-center after:rounded-full after:bg-hl after:transition-transform after:duration-(--dur-short) after:ease-(--ease-out)",
-                tab === k ? "text-ink after:scale-x-100" : "text-ink-3 after:scale-x-0 hover:text-ink")}>
-              {label}
-            </button>
-          ))}
-        </span>
-
-        <div role="tabpanel" id="shared-tabpanel" aria-labelledby={`shared-tab-${tab}`} className="-mx-5 grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain px-5">
-          {tab === "system" && <>
-            <Section title="Vai trò" hint="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code. Lưu trên trình duyệt này." first>
-              <RoleSection />
-            </Section>
-            <Section title="Giao diện">
-              <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
-                options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
-              <LookSection />
-            </Section>
-          </>}
+        <main className="grid min-w-0 content-start gap-4">
+          <header className={cn("grid gap-1", !tab && "invisible")}>
+            <h2 className="text-lg font-semibold">{cur[1]}</h2>
+            <p className="text-sm text-ink-3">{cur[3]}</p>
+          </header>
+          {tab === "general" && <GeneralGroup />}
+          {tab === "telegram" && <TelegramGroup />}
           {tab === "youtrack" && <>
-            <Section title="Tài khoản YouTrack" first hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
+            <Section title="Tài khoản YouTrack" hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
               <YouTrackSection />
             </Section>
-            <Section title="Instructions cho AI" hint="Hướng dẫn riêng của team cho vai trò đang chọn, AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
+            <Section title="Instructions cho AI" hint="Hướng dẫn riêng của team cho vai trò đang chọn (mục Chung), AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
               <NotesSection />
             </Section>
             <Section title="Kho prompt" hint="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
               <PromptManager role={readYtRole() ?? "dev"} />
             </Section>
-            <Section title="Báo cáo release" hint="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò ở trên và project đang chọn bên trái. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
+            <Section title="Báo cáo release" hint="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
               <ReportSection />
             </Section>
           </>}
           {tab === "ai" && <>
-            <Section title="Tài khoản" hint="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập." first>
+            <Section title="Tài khoản" hint="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập.">
               <AiAccounts />
             </Section>
             <ProviderSection />
             <ConsentSection />
           </>}
           {tab === "github" && (
-            <Section title="Cập nhật" first hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
+            <Section title="Cập nhật" hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
               <UpdateSection />
             </Section>
           )}
-        </div>
-
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {tab === "shortcuts" && <Section title="Telegram Inbox" hint="Bấm ? trong Inbox để mở nhanh bảng này."><ShortcutList /></Section>}
+        </main>
+      </div>
+    </div>
   );
+}
+
+function GeneralGroup() {
+  const [theme, setTheme] = useState<ThemePref>(readTheme);
+  return <>
+    <Section title="Vai trò" hint="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code.">
+      <RoleSection />
+    </Section>
+    <Section title="Giao diện">
+      <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
+        options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
+      <LookSection />
+    </Section>
+  </>;
 }
 
 /** Which CLI runs every AI feature (drafts, summaries, Digest, YouTrack, tasks, AI Agent); saved in data/claude.json. */
@@ -229,9 +255,8 @@ function HueSlider({ label, value, onChange }: { label: string; value: number; o
   );
 }
 
-/** Telegram-only preferences (queue, replies, digest, templates, auto-handle rules). */
-export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
+/** Telegram-only preferences (account, queue, replies, digest, templates, auto-handle rules). */
+function TelegramGroup() {
   const [overdue, setOverdue] = useState(readOverdueHours);
   const [rowActions, setRowActions] = useState(readRowActions);
   const [aiOpen, setAiOpen] = useState(readComposerAiOpen);
@@ -250,12 +275,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogTitle>Cài đặt Telegram</DialogTitle>
-        <DialogDescription className="-mt-2">Chỉ cho Telegram. Tài khoản lưu trên máy này, các mục khác lưu trên trình duyệt này. Giao diện, AI, YouTrack ở Cài đặt chung (góc trên phải).</DialogDescription>
+    <>
 
-        <Section title="Tài khoản Telegram" first hint="API ID/Hash và phiên đăng nhập chỉ lưu trên máy này (thư mục data/).">
+        <Section title="Tài khoản Telegram" hint="API ID/Hash và phiên đăng nhập chỉ lưu trên máy này (thư mục data/).">
           <TelegramSection />
         </Section>
         <Section title="Hàng chờ" hint="Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách (quá hạn).">
@@ -304,11 +326,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           <RulesSection />
         </Section>
 
-        <DialogFooter>
-          <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    </>
   );
 }
 
@@ -615,24 +633,32 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogTitle>Phím tắt</DialogTitle>
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-6 gap-y-2.5 text-sm">
-          {SHORTCUTS.map(([keys, what]) => (
-            <div key={what} className="contents">
-              <dt className="whitespace-nowrap text-ink-3">{keys}</dt>
-              <dd className="text-ink-2">{what}</dd>
-            </div>
-          ))}
-        </dl>
+        <ShortcutList />
       </DialogContent>
     </Dialog>
   );
 }
 
-function Section({ title, hint, first, children }: { title: string; hint?: string; first?: boolean; children: React.ReactNode }) {
+function ShortcutList() {
   return (
-    <section className={cn("grid gap-2.5", !first && "border-t border-rule pt-4")}>
-      <h3 className="text-[0.8125rem] font-semibold text-ink-2">{title}</h3>
-      {hint && <p className="-mt-1.5 text-xs text-ink-3">{hint}</p>}
+    <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-6 gap-y-2.5 text-sm">
+      {SHORTCUTS.map(([keys, what]) => (
+        <div key={what} className="contents">
+          <dt className="whitespace-nowrap text-ink-3">{keys}</dt>
+          <dd className="text-ink-2">{what}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-3 rounded-[var(--radius-card)] border border-rule bg-cotton p-4 shadow-stock sm:p-5">
+      <div className="grid gap-0.5">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {hint && <p className="text-xs text-ink-3">{hint}</p>}
+      </div>
       {children}
     </section>
   );

@@ -6,9 +6,9 @@ import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Fragment, useEffect, useMemo } from "react";
 import { useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { byAs, bySp, DAY, dm, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
-import { AGE, dashStats, type Stats } from "@/lib/yt-stats";
-import { Card, MultiSelect, Person, StatePill } from "./bits";
+import { AI_MAX, byAs, bySp, DAY, dm, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
+import { AGE, dashStats, reportData, type Stats } from "@/lib/yt-stats";
+import { Card, CardAi, MultiSelect, Person, StatePill } from "./bits";
 import { type Mode, useYt } from "./state";
 
 // The bento dashboard, laid out per role (LAYOUT): what needs that role first, then its figures. Every number opens its tickets.
@@ -118,8 +118,17 @@ export function DashboardPage() {
       <HBars rows={d.bugMod.slice(0, 10).map(([m, n]) => ({ label: m, v: n, c: "var(--color-error)", on: () => drill("bugm", m) }))} empty="Không có bug đang mở." />
     </Card>,
   };
+  const qc = useQc();
+  /** A chat about one report: the dashboard's figures (+ QC verdicts when read), then follow-ups in the sheet. */
+  const ask = (title: string) => y.setSheet({ kind: "work", title: `AI · ${title}`, ids: [], auto: { label: `AI đang phân tích “${title}”`, run: (sig) => yt.aiData("ask", {
+    focusReport: title, role: y.mode, rangeDays: y.range, ...reportData(d, y.wip),
+    qc: qc.q.data && { tests: qc.pass.length + qc.fail.length, ticketsTested: qc.tested, firstPass: qc.firstPass, returned: qc.fail.length, reopened: qc.reopen.length,
+      byTester: Object.fromEntries(qc.who), returnedByDev: Object.fromEntries(qc.dev.map(([n, [, f]]) => [n, f])),
+      pingPong: qc.pong.slice(0, AI_MAX).map(({ i, n, re }) => ({ id: i.id, summary: i.summary, returned: n, reopened: re })) },
+  }, sig, `Phân tích sâu báo cáo “${title}” trên dashboard: số liệu đang nói gì, điểm bất thường hay rủi ro, nguyên nhân có thể (nêu ID ticket), và việc nên làm tiếp.`) } });
   const layout = LAYOUT[y.mode];
   return (
+    <CardAi value={y.aiOn ? ask : null}>
     <div className="grid grid-cols-12 gap-3">
       <JumpNav items={layout.map(([id, title]) => [id, title])} />
       {layout.map(([id, title, blocks]) => (
@@ -129,6 +138,7 @@ export function DashboardPage() {
         </Fragment>
       ))}
     </div>
+    </CardAi>
   );
 }
 

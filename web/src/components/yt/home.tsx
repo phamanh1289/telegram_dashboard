@@ -119,7 +119,7 @@ export function DevHome() {
     return { since, ids: [...new Set([...done, ...list.map((x) => x.i)].map((i) => i.id))].slice(0, AI_MAX) };
   }, [y.rows, y.me, list, now]);
   const risky = mine.map((i) => [i, riskOf(i, now)] as const).filter((x): x is readonly [Ticket, string] => !!x[1]);
-  if (!y.me) return <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong Cài đặt chung › YouTrack, hoặc đổi vai trò trong Cài đặt chung › YouTrack.</p>;
+  if (!y.me) return <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong Cài đặt › YouTrack, hoặc đổi vai trò trong Cài đặt › Chung.</p>;
   const recent = [...mine].sort((a, b) => b.updated - a.updated).slice(0, 5);
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">

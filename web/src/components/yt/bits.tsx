@@ -2,7 +2,7 @@
 
 import { Check, ChevronDown, Copy, MessageSquareText, SendHorizontal, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { createContext, use, useEffect, useRef, useState } from "react";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -268,12 +268,19 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, ask = true }:
   );
 }
 
+/** Set by the dashboard: a card there gets an AI button that opens a chat about that one report. */
+export const CardAi = createContext<((title: string) => void) | null>(null);
+
 /** A dashboard / home card. */
 export function Card({ title, meta, children, className, onMeta }: { title: React.ReactNode; meta?: React.ReactNode; children: React.ReactNode; className?: string; onMeta?: () => void }) {
+  const ai = use(CardAi);
   return (
     <section className={cn("grid min-w-0 content-start gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock", className)}>
       <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        <h3 className="flex items-center gap-1 text-sm font-semibold text-ink">{title}
+          {ai && typeof title === "string" && <button type="button" onClick={() => ai(title)} aria-label={`Hỏi AI về ${title}`} title="Hỏi AI sâu hơn về báo cáo này"
+            className="yt-noprint grid size-6 place-items-center rounded text-ink-3 hover:bg-paper-2 hover:text-hl-2"><Sparkles className="size-3.5" /></button>}
+        </h3>
         {meta && (onMeta ? <button type="button" onClick={onMeta} className="text-xs text-ink-3 hover:text-ink">{meta}</button> : <span className="text-xs text-ink-3">{meta}</span>)}
       </div>
       {children}

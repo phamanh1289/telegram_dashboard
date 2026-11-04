@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/components/ai";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import { toast, type ToastMsg, useNow } from "@/lib/inbox";
 import { applyTheme, readTheme, useRole } from "@/lib/prefs";
@@ -45,7 +45,7 @@ function useUpdateState() {
   return q.data?.behind ?? 0;
 }
 
-export function TopBar({ module, onSettings, children }: { module: "telegram" | "youtrack"; onSettings: () => void; children?: React.ReactNode }) {
+export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
   const behind = useUpdateState();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
@@ -80,12 +80,13 @@ export function TopBar({ module, onSettings, children }: { module: "telegram" | 
           onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
           <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
         </Button>
-        <Button size="icon-sm" variant="ghost" className="relative" onClick={onSettings}
-          aria-label={behind ? `Cài đặt chung (có ${behind} bản cập nhật)` : "Cài đặt chung"}
-          title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → GitHub` : "Cài đặt chung: giao diện, AI, YouTrack, kết nối"}>
+        <Link href={behind ? "/settings/#github" : "/settings/"} aria-current={module === "settings" ? "page" : undefined}
+          className={buttonVariants({ size: "icon-sm", variant: module === "settings" ? "secondary" : "ghost", className: "relative" })}
+          aria-label={behind ? `Cài đặt (có ${behind} bản cập nhật)` : "Cài đặt"}
+          title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → GitHub` : "Cài đặt: Telegram, YouTrack, AI, giao diện, cập nhật"}>
           <Settings />
           {behind > 0 && <span aria-hidden className="absolute top-1 right-1 size-2 rounded-full bg-hl ring-2 ring-paper-2" />}
-        </Button>
+        </Link>
       </div>
     </div>
   );

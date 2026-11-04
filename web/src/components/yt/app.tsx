@@ -3,7 +3,6 @@
 import { Plus, CalendarCheck, History,ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, Monitor, Printer, RotateCw, Search, Settings2, Sparkles, UserSearch, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { SharedSettingsDialog } from "@/components/settings";
 import { Toaster, TopBar } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/inbox";
@@ -37,8 +36,6 @@ const PAGES: Record<Mode, [Page, string, typeof ListChecks][]> = {
 
 function Shell() {
   const y = useYt();
-  const [shared, setShared] = useState({ open: false, key: 0 });
-  const openShared = () => setShared((s) => ({ open: true, key: s.key + 1 }));
   const [collapsed, setCollapsed] = useState(() => getPref("ytSide") === "1");
   const { asideRef, mainRef, markSlide } = useSideSlide(collapsed);
   const [menu, setMenu] = useState(false);
@@ -69,14 +66,12 @@ function Shell() {
   const go = (p: Page) => { y.setPage(p); setMenu(false); };
   // collapsing keeps the labels: the narrowing aside clips them while they fade, so nothing pops or jumps
   const fade = cn("whitespace-nowrap transition-opacity duration-(--dur-short)", collapsed && "md:opacity-0");
-  const settings = <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} />;
 
   // no role yet: ask first (nothing is loaded until then)
   if (!y.role) return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
-      <div className="sticky top-0 z-30"><TopBar module="youtrack" onSettings={() => openShared()} /></div>
+      <div className="sticky top-0 z-30"><TopBar module="youtrack" /></div>
       <RolePicker />
-      {settings}
     </div>
   );
 
@@ -84,7 +79,7 @@ function Shell() {
     <div className={cn("grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]", y.dense && "yt-dense")}>
       {!y.tv && (
         <div className="yt-noprint sticky top-0 z-30">
-          <TopBar module="youtrack" onSettings={() => openShared()}>
+          <TopBar module="youtrack">
             <Button size="icon-sm" variant="ghost" className="md:hidden" aria-label="Menu" onClick={() => setMenu(true)}><Menu /></Button>
           </TopBar>
         </div>
@@ -142,7 +137,7 @@ function Shell() {
         <main ref={mainRef} className="min-w-0 px-3 pb-10 sm:px-5">
           <Header title={title} onPalette={() => setPal(true)} />
           {y.config?.mock && (
-            <p role="alert" className="mb-3 rounded-md bg-warn-wash px-3 py-2 text-sm">Đang dùng dữ liệu MOCK. Dán token YouTrack trong Cài đặt chung › YouTrack để xem dữ liệu thật.</p>
+            <p role="alert" className="mb-3 rounded-md bg-warn-wash px-3 py-2 text-sm">Đang dùng dữ liệu MOCK. Dán token YouTrack trong Cài đặt › YouTrack để xem dữ liệu thật.</p>
           )}
           {(y.configError || y.issues.isError) && (
             <div role="alert" className="mb-3 flex items-center gap-3 rounded-md bg-error-wash px-3 py-2 text-sm text-error">
@@ -170,7 +165,6 @@ function Shell() {
       <Palette open={pal} onClose={() => setPal(false)} />
       <CreateTicket />
       <Toaster />
-      {settings}
     </div>
   );
 }
@@ -203,7 +197,7 @@ function RolePicker() {
       <div className="grid w-full max-w-3xl gap-5">
         <div className="grid gap-1 text-center">
           <h1 className="text-xl font-semibold">Bạn dùng YouTrack với vai trò nào?</h1>
-          <p className="text-sm text-ink-2">Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi hoặc xóa bất cứ lúc nào trong Cài đặt chung › Hệ thống.</p>
+          <p className="text-sm text-ink-2">Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi hoặc xóa bất cứ lúc nào trong Cài đặt › Chung.</p>
         </div>
         <div role="radiogroup" aria-label="Vai trò" className="grid gap-3 sm:grid-cols-3">
           {YT_ROLES.map(([r, name, what]) => {
