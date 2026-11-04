@@ -94,7 +94,7 @@ export function SettingsPage() {
             <ConsentSection />
           </>}
           {tab === "github" && (
-            <Section title="Cập nhật" hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
+            <Section title="Cập nhật" hint="Lấy bản mới từ GitHub rồi khởi động lại server. Bản cài: tải gói mới từ GitHub Releases. Bản git: git pull, build lại giao diện (cần quyền đọc repo).">
               <UpdateSection />
             </Section>
           )}

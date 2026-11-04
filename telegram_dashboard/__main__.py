@@ -40,14 +40,17 @@ def _serve(settings: Settings) -> int:
     if not settings.static_dir.is_dir():
         print("Chưa có web/out — chạy `npm run build` (UI sẽ trả 503).", file=sys.stderr)
     print(f"Mở {settings.app_origin}", flush=True)
+    from . import updater
+
+    updater.prune_versions()
     app = create_app(settings)
     # SSE streams never finish on their own; bound the graceful wait so Ctrl+C cannot hang.
     uvicorn.run(
         app, host=settings.host, port=settings.port, workers=1, access_log=False,
         timeout_graceful_shutdown=3,
     )  # fmt: skip
-    from . import updater
-
+    if updater.restart_requested and updater.home():  # packaged: launcher starts versions/<current>
+        return updater.RESTART_CODE
     if updater.restart_requested:  # Settings → Cập nhật pulled new code: start it in place (same PID)
         argv = [sys.executable, "-m", "telegram_dashboard", "serve"]
         if sys.platform == "win32":  # execv doesn't quote paths with spaces on Windows

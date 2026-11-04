@@ -10,6 +10,12 @@ HOST = "127.0.0.1"
 PORT = 8765
 
 
+def data_root(root: Path) -> Path:
+    """Packaged install: the launcher sets TD_HOME (outside versions/, so updates keep the data)."""
+    home = os.environ.get("TD_HOME")
+    return Path(home) / "data" if home else root / "data"
+
+
 def _load_dotenv(path: Path) -> None:
     if not path.is_file():
         return
@@ -93,7 +99,7 @@ class Settings:
 
     @property
     def data_dir(self) -> Path:
-        return self.root / "data"
+        return data_root(self.root)
 
     @property
     def youtrack_path(self) -> Path:
@@ -146,10 +152,10 @@ class Settings:
     def from_env(cls, root: Path = ROOT) -> Settings:
         _load_dotenv(root / ".env")
         env = os.environ
-        conf = _read_json(root / "data" / "config.json")
+        conf = _read_json(data_root(root) / "config.json")
         api_id = str(conf.get("telegram_api_id") or env.get("TELEGRAM_API_ID", "")).strip()
         consent = conf.get("ai_require_consent", env.get("AI_REQUIRE_CONSENT", "1").strip() != "0")
-        saved = _read_json(root / "data" / "youtrack.json")
+        saved = _read_json(data_root(root) / "youtrack.json")
         return cls(
             root=root,
             app_origin=env.get("APP_ORIGIN") or f"http://{HOST}:{PORT}",

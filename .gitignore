@@ -21,3 +21,4 @@ test-results/
 *.tsbuildinfo
 .hallmark/
 .codegraph/
+dist/
