@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -45,6 +46,16 @@ def _serve(settings: Settings) -> int:
         app, host=settings.host, port=settings.port, workers=1, access_log=False,
         timeout_graceful_shutdown=3,
     )  # fmt: skip
+    from . import updater
+
+    if updater.restart_requested:  # Settings → Cập nhật pulled new code: start it in place (same PID)
+        argv = [sys.executable, "-m", "telegram_dashboard", "serve"]
+        if sys.platform == "win32":  # execv doesn't quote paths with spaces on Windows
+            import subprocess
+
+            subprocess.Popen(argv)
+            return 0
+        os.execv(sys.executable, argv)
     return 0
 
 
@@ -65,8 +76,14 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve")
     ex = sub.add_parser("export-openapi")
     ex.add_argument("--output", default="work/openapi.json")
+    sub.add_parser("import-claude-runs", help="backfill the Claude run log from the CLI's transcripts")
     args = p.parse_args(argv)
     settings = Settings.from_env()
+    if args.cmd == "import-claude-runs":
+        from .claude import import_transcripts
+
+        print(f"Đã nhập {import_transcripts(settings)} lần chạy.")
+        return 0
     if args.cmd == "login":
         return _login(settings)
     if args.cmd == "serve":

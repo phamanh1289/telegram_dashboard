@@ -43,7 +43,7 @@ async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):
         r.start("t1", str(tmp_path), "again", "plan", "s1", True),
         return_exceptions=True,
     )
-    assert first is None and isinstance(second, ApiError) and second.code == "task_busy"
+    assert first == "s1" and isinstance(second, ApiError) and second.code == "task_busy"
     await r.stop("t1")
     assert not r.running("t1") and r.pumps == {}  # nothing left to write into a reopened log
     items, _ = r.read("t1")
@@ -57,3 +57,13 @@ async def test_failed_spawn_and_corrupt_log(tmp_path):
     assert e.value.code == "task_launch_failed" and not r.running("t1")
     r.log_path("t2").write_text('{"kind":"user","text":"a"}\n{broken\n{"kind":"res')
     assert r.read("t2") == ([{"kind": "user", "text": "a"}], 2)  # half-written tail not counted
+
+
+async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch):
+    monkeypatch.setattr("telegram_dashboard.agent.AFTER_RESULT_IDLE", 0.2)
+    r = runner(tmp_path, '#!/bin/sh\ncat >/dev/null\necho \'{"type":"result","result":"ok"}\'\nexec sleep 30\n')
+    await r.start("t1", str(tmp_path), "hi", "plan", "s1", False)
+    await asyncio.wait_for(r.pumps["t1"], 5)
+    items, _ = r.read("t1")
+    assert [i["kind"] for i in items] == ["user", "result"] and not items[1]["error"]
+    assert not r.running("t1") and read_task_result(r.settings, "t1") == "ok"

@@ -15,6 +15,8 @@ Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.m
 
 ## Cài đặt từ clone sạch
 
+> Hướng dẫn chi tiết từng bước cho macOS và Windows: **[docs/SETUP.md](docs/SETUP.md)**. Windows: double-click `Start Dashboard Telegram.bat`.
+
 Yêu cầu: Python 3.14 + [uv](https://docs.astral.sh/uv/), Node 24 LTS (khuyến nghị ≥ 24.22.1, xem `.node-version`).
 
 ```bash
@@ -25,19 +27,7 @@ uv sync --locked
 npm ci
 ```
 
-```bash
-cp .env.example .env
-```
-
-Điền `TELEGRAM_API_ID` và `TELEGRAM_API_HASH` (lấy tại https://my.telegram.org). Biến chỉ dùng ở backend, không bao giờ có tiền tố `NEXT_PUBLIC`.
-
-## Đăng nhập Telegram (CLI, một lần)
-
-```bash
-uv run python -m telegram_dashboard login
-```
-
-Nhập số điện thoại, mã xác nhận và mật khẩu 2FA **trực tiếp trong terminal**. Session lưu ở `data/account.session` (quyền 0600, thư mục `data/` 0700, đã gitignore). Không gửi mã/2FA cho ai, kể cả agent.
+Không cần `.env`: lần đầu mở dashboard, **Cài đặt Telegram** tự bật để dán API ID/Hash (https://my.telegram.org/apps) rồi đăng nhập (số điện thoại → mã → 2FA). Lưu ở `data/config.json` (0600), thắng `.env`. `.env` (từ `.env.example`) chỉ cho tùy chỉnh nâng cao. Vẫn đăng nhập được bằng terminal: `uv run python -m telegram_dashboard login`. Session lưu ở `data/account.session` (quyền 0600, thư mục `data/` 0700, đã gitignore). Không gửi mã/2FA cho ai, kể cả agent.
 
 ## Chạy bản build (một process)
 
@@ -49,7 +39,7 @@ npm run build
 npm start
 ```
 
-Trên macOS có thể double-click `Start Dashboard Telegram.command`: script tự cài dependencies nếu thiếu, tạo `.env`, chạy login nếu chưa có session, build lại UI khi cần, chạy server nền và mở trình duyệt. Trong cửa sổ đó gõ số rồi Enter: **1** start · **2** stop · **3** restart (tự build lại UI nếu code đổi) · **4** mở trình duyệt · **5** xem log (`data/server.log`) · **0** thoát. Đóng cửa sổ cũng dừng server.
+Trên macOS có thể double-click `Start Dashboard Telegram.command`: script tự cài dependencies nếu thiếu, build lại UI khi cần, chạy server nền và mở trình duyệt. Trong cửa sổ đó gõ số rồi Enter: **1** start · **2** stop · **3** restart (tự build lại UI nếu code đổi) · **4** mở trình duyệt · **5** xem log (`data/server.log`) · **0** thoát. Đóng cửa sổ cũng dừng server.
 
 Mở `http://127.0.0.1:8765` (không cần mã; chỉ loopback, Host/Origin được kiểm tra). Phải dùng `127.0.0.1`; mở bằng `localhost` sẽ sai Origin nên mọi thao tác bị từ chối.
 
@@ -72,7 +62,7 @@ Next dev ở `http://127.0.0.1:3000` (proxy `/api` sang Python `:8765`), Python 
    - Tin được coi là **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm ✓. Mỗi tin còn có: 💬 **ngữ cảnh** (~15 tin trước/sau, lấy trực tiếp từ Telegram), ⏰ **nhắc lại sau** (1 giờ / 3 giờ / 9:00 sáng mai) hoặc **luôn bỏ qua người gửi**, link **Telegram**, ảnh trong tin.
    - **Quy tắc tự bỏ qua** (biểu tượng phễu): từ khóa như `#TB` hoặc người gửi; tin khớp tự chuyển "đã xử lý", không báo.
    - **Tóm tắt**: AI liệt kê việc tồn theo mức gấp. **Phím tắt**: `j`/`k` chọn tin, `r` trả lời, `x` xong, `a` nhờ AI, `Esc` thoát.
-   - Khi nhờ AI: mỗi nhóm nhớ dự án riêng; có **prompt mẫu** (lưu thêm được); **Kèm ngữ cảnh nhóm** gửi thêm tin xung quanh; ảnh trong tin được AI đọc. **Tạo task** gắn với tin: agent ghi kết quả vào file, dashboard hiện ngay dưới tin kèm nút "Dùng kết quả làm nháp trả lời". **YouTrack** (nếu cấu hình `YOUTRACK_*`) tạo ticket rồi chèn link vào khung trả lời.
+   - Khi nhờ AI: mỗi nhóm nhớ dự án riêng; có **prompt mẫu** (lưu thêm được); **Kèm ngữ cảnh nhóm** gửi thêm tin xung quanh; ảnh trong tin được AI đọc. **Tạo task** gắn với tin: agent ghi kết quả vào file, dashboard hiện ngay dưới tin kèm nút "Dùng kết quả làm nháp trả lời". **YouTrack** (nếu cấu hình `YOUTRACK_*`) tạo ticket rồi chèn link vào khung trả lời; **AI soạn** điền sẵn tiêu đề, Type / Priority và mô tả theo mẫu. Tin không có mã ticket hiện các ticket đang mở có vẻ liên quan (+ chèn link). Nháp AI nhớ bạn là cấp gì với từng người gửi và bắt chước giọng các tin bạn từng gửi trong nhóm (khi `AI_REQUIRE_CONSENT=0`).
 5. Muốn thu hồi session Telegram: Telegram → Settings → Devices → kết thúc phiên, rồi xóa `data/account.session`; app sẽ báo `login_required`.
 
 ## AI (tùy chọn)
@@ -81,11 +71,14 @@ Mọi tính năng AI (nháp, tóm tắt, Digest, Tạo task) đều chạy qua *
 
 - Nháp/tóm tắt/Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`, effort `AI_EFFORT` mặc định `medium`; Task/AI Agent mặc định `sonnet`; model/effort chọn trong Cài đặt → Tài khoản Claude sẽ được ưu tiên).
 - Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read/Grep/Glob).
-- Tạo task: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`.
-- `TELEGRAM_ME=@username` (tùy chọn): để nháp AI biết mention nào là bạn.
+- Tạo task: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`. AI YouTrack đọc trên 10 ticket cũng chạy bằng model này.
+- Nháp và AI YouTrack hiện chữ dần trong lúc Claude viết (stream-json, chỉ khi lệnh là `claude`).
+- YouTrack Dev › **AI: việc tôi đã nhận**: các việc bạn đã hứa trong tin Telegram 7 ngày qua (cần `AI_REQUIRE_CONSENT=0`). Lead › AI brief nói thêm phần thay đổi từ lần brief trước.
+- Nháp AI biết mention nào là bạn: tự lấy @username của tài khoản đang đăng nhập (`TELEGRAM_ME` để ghi đè).
+- **Codex / Antigravity** thay cho Claude: Cài đặt chung › AI › *Dùng AI nào* — một lựa chọn cho mọi tính năng AI (nháp, tóm tắt, Digest, YouTrack, Task, AI Agent). Mỗi AI giữ model/effort riêng (`data/claude.json` › `by`), đổi qua lại không mất; danh sách model lấy từ CLI (Claude: haiku/sonnet/opus/fable; Codex: `~/.codex/models_cache.json`; Antigravity: danh sách `agy models`, mức suy luận nằm trong tên model nên không có effort). Cần CLI trên PATH (`npm i -g @openai/codex`; Antigravity CLI `agy`; đổi lệnh bằng `CODEX_COMMAND` / `ANTIGRAVITY_COMMAND`) và đã đăng nhập (Codex: nút Đăng nhập mở trình duyệt; Antigravity: mở Terminal chạy `agy`, đăng nhập Google). Gemini CLI không còn dùng vì Google đã khóa đăng nhập bằng tài khoản cá nhân cho nó. Codex chạy sandbox `read-only` (Task sửa file: `workspace-write`), nháp thì tắt shell; Antigravity chạy custom agent `telegram-dashboard-read` / `-edit` (app tự ghi vào `~/.gemini/antigravity-cli/agents/`) chỉ có tool đọc/sửa file, cộng luật `--settings` chặn shell, MCP và web (Task sửa file: `--mode accept-edits`). Hạn mức và tự hạ model chỉ có ở Claude. Task đang dở tiếp tục bằng CLI và lựa chọn của AI đã bắt đầu nó.
 - Các lệnh `claude` không nhận biến môi trường `TELEGRAM_*`, `YOUTRACK_*`, `YT_*`.
 
-Đặt `AI_REQUIRE_CONSENT=0` để bỏ bước cấp quyền từng tin (chỉ dùng cá nhân).
+Tắt *Hỏi trước khi AI đọc tin Telegram* (Cài đặt chung › AI) hoặc `AI_REQUIRE_CONSENT=0` để bỏ bước cấp quyền từng tin (chỉ dùng cá nhân).
 
 Telegram API Terms hạn chế dùng dữ liệu Telegram với AI. App chỉ gửi những tin có **quyền dữ liệu** hợp lệ: đúng chat/tin/nội dung hiện tại, còn hạn, có phạm vi (draft/summary), và mỗi người gửi có tham chiếu bằng chứng đồng ý. Tin sửa/xóa tự mất quyền; không hỗ trợ media/forward. Đây là guard kỹ thuật, không phải chứng nhận pháp lý. AI chỉ trả văn bản; người dùng tự đưa vào khung soạn và bấm gửi.
 

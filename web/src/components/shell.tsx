@@ -1,13 +1,15 @@
 "use client";
 
 import { ListChecks, Moon, Send, Settings, Sun } from "lucide-react";
+import { motion } from "motion/react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ClaudeQuota } from "@/components/claude";
+import { useEffect, useState, ViewTransition } from "react";
+import { AiQuota } from "@/components/ai";
 import { Button } from "@/components/ui/button";
-import { toast, type ToastMsg } from "@/lib/inbox";
-import { applyTheme, readTheme } from "@/lib/prefs";
+import { toast, type ToastMsg, useNow } from "@/lib/inbox";
+import { applyTheme, readTheme, useRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { riskOf, useMyTickets } from "@/lib/yt";
 
 // Chrome shared by the Telegram and YouTrack modules: the top bar and the toast.
 
@@ -17,7 +19,16 @@ const MODULES = [
 ] as const;
 
 /** Module switch left; Claude quota, theme and the shared settings right. */
+/** My YouTrack tickets that need attention now, for a badge on the YouTrack switch while on Telegram (same cache key as the YouTrack page). */
+function useYtRisk(on: boolean) {
+  const { me, rows } = useMyTickets(on);
+  const now = useNow();
+  const role = useRole(); // "me" = my tickets + those I QC; QA counts the QC ones, PO all of them, Dev the assigned ones
+  return rows.flatMap((i) => { const r = (role === "po" || (role === "qa" ? i.qc : i.assignee) === me) ? riskOf(i, now) : null; return r ? [`${i.id}: ${r}`] : []; });
+}
+
 export function TopBar({ module, onSettings, children }: { module: "telegram" | "youtrack"; onSettings: () => void; children?: React.ReactNode }) {
+  const risk = useYtRisk(module === "telegram");
   // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -30,28 +41,37 @@ export function TopBar({ module, onSettings, children }: { module: "telegram" | 
       {children}
       <nav aria-label="Chuyển module" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
         {MODULES.map(([id, href, label, Icon, title]) => id === module ? (
-          <span key={id} aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-            <Icon className="size-4 shrink-0" aria-hidden />{label}
-          </span>
+          // Shared across both pages: on a module switch React morphs the pill and crossfades the rest (globals.css sets the timing).
+          <ViewTransition key={id} name="module-pill">
+            <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
+              <Icon className="size-4 shrink-0" aria-hidden />{label}
+            </span>
+          </ViewTransition>
         ) : (
-          <Link key={id} href={href} title={title}
+          <Link key={id} href={href} title={id === "youtrack" && risk.length ? `${title}\n${risk.length} ticket cần xử lý ngay:\n${risk.join("\n")}` : title}
             className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
             <Icon className="size-4 shrink-0" aria-hidden />{label}
+            {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-error px-1.5 font-mono text-[11px] leading-[18px] text-white tabular-nums" aria-label={`${risk.length} ticket cần xử lý ngay`}>{risk.length}</span>}
           </Link>
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">
-        <ClaudeQuota />
+        <AiQuota />
         <Button size="icon-sm" variant="ghost" aria-label="Đổi giao diện sáng / tối" title="Đổi giao diện sáng / tối"
           onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
           <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
         </Button>
-        <Button size="icon-sm" variant="ghost" aria-label="Cài đặt chung" title="Cài đặt chung: giao diện, Claude, YouTrack, kết nối" onClick={onSettings}>
+        <Button size="icon-sm" variant="ghost" aria-label="Cài đặt chung" title="Cài đặt chung: giao diện, AI, YouTrack, kết nối" onClick={onSettings}>
           <Settings />
         </Button>
       </div>
     </div>
   );
+}
+
+/** Sliding highlight behind the active Telegram sidebar item (views and groups share it), the same spring as YouTrack's nav. */
+export function NavPill() {
+  return <motion.span layoutId="tg-nav" className="absolute inset-0 rounded-[var(--radius-input)] bg-hl-wash" transition={{ type: "spring", stiffness: 500, damping: 40 }} />;
 }
 
 /** One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z. */
@@ -73,7 +93,7 @@ export function Toaster() {
     };
     document.addEventListener("keydown", onKey);
     return () => { clearTimeout(t); document.removeEventListener("keydown", onKey); };
-  });
+  }, [flash]); // eslint-disable-line react-hooks/exhaustive-deps
   function undo() {
     const run = flash?.undo;
     if (!run) return;

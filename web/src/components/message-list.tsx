@@ -2,6 +2,7 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
+import { motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem, revealMessage } from "@/components/message-item";
 import { RowsSkeleton } from "@/components/pending-inbox";
@@ -129,8 +130,9 @@ export function MessageList({
           <div role="tablist" aria-label="Lọc tin" className="flex rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
             {([[true, "Chưa xử lý"], [false, "Tất cả"]] as const).map(([v, label]) => (
               <button key={label} type="button" role="tab" aria-selected={pendingOnly === v} onClick={() => setPendingOnly(v)}
-                className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", pendingOnly === v ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-                {label}
+                className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", pendingOnly === v ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
+                {pendingOnly === v && <motion.span layoutId="tg-pending" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                <span className="relative">{label}</span>
               </button>
             ))}
           </div>

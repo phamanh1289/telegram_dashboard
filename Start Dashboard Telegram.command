@@ -33,20 +33,7 @@ done
 [ -d .venv ] || { info "Cài Python dependencies…"; uv sync --locked; }
 [ -d node_modules ] || { info "Cài Node dependencies…"; npm ci; }
 
-if [ ! -f .env ]; then
-  warn "Chưa có .env — đã tạo từ .env.example. Điền TELEGRAM_API_ID/HASH rồi chạy lại."
-  cp .env.example .env
-  open -e .env
-  pause_close
-  exit 1
-fi
-ok ".env"
-
-if [ ! -f data/account.session ]; then
-  warn "Chưa đăng nhập Telegram. Nhập số điện thoại, mã và 2FA bên dưới:"
-  uv run --no-sync python -m telegram_dashboard login
-fi
-ok "Phiên Telegram"
+# Telegram API ID/Hash and login are set in the dashboard (Cài đặt Telegram); .env is optional.
 
 set +e  # interactive loop below: a failed kill/curl must not close the window
 URL="http://127.0.0.1:8765"
@@ -109,18 +96,16 @@ stop() {
 
 trap 'stop >/dev/null; printf "\n"; exit 0' EXIT INT TERM HUP
 
-# Digits + Enter choose; Esc quits. Sets $key ("esc" for Esc).
+# One digit chooses at once (every option is a single digit); Esc quits. Sets $key ("esc" for Esc).
 read_choice() {
   key=""
-  printf "  ${B}›${R} Chọn số rồi Enter ${D}(Esc: thoát)${R}: "
+  printf "  ${B}›${R} Bấm số để chọn ${D}(Esc: thoát)${R}: "
   while IFS= read -r -s -n 1 c; do
     case "$c" in
       $'\e')
         rest=""; IFS= read -r -s -n 2 -t 1 rest  # arrow keys also start with Esc: ignore them (bash 3.2: whole seconds)
         [ -z "$rest" ] && { echo; key="esc"; return; } ;;
-      "") echo; return ;;  # Enter
-      $'\x7f' | $'\b') [ -n "$key" ] && { key=${key%?}; printf '\b \b'; } ;;
-      [0-9]) key+=$c; printf '%s' "$c" ;;
+      [0-9]) key=$c; echo "$c"; return ;;
     esac
   done
   exit 0  # stdin closed
@@ -150,7 +135,6 @@ while true; do
     4) open "$URL"; ok "Đã mở ${URL}" ;;
     5) step "Log gần nhất (${LOG})"; tail -n 40 "$LOG" | sed "s/^/    ${D}│${R} /" ;;
     0 | esc) step "Thoát"; stop; ok "Tạm biệt!"; exit 0 ;;
-    "") ;;
     *) err "Không có lựa chọn \"$key\"." ;;
   esac
 done

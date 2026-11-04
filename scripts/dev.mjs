@@ -7,7 +7,12 @@ const procs = [
     stdio: "inherit",
     env,
   }),
-  spawn("npm", ["run", "dev", "-w", "web"], { stdio: "inherit", env }),
+  // Windows: npm is npm.cmd, which only runs through a shell.
+  spawn("npm", ["run", "dev", "-w", "web"], {
+    stdio: "inherit",
+    env,
+    shell: process.platform === "win32",
+  }),
 ];
 
 let stopping = false;

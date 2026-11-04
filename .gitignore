@@ -19,3 +19,4 @@ test-results/
 *.sqlite3*
 .DS_Store
 *.tsbuildinfo
+.hallmark/

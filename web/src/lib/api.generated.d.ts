@@ -337,6 +337,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/ticket": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Ticket
+         * @description A YouTrack ticket proposal (summary, Type, Priority, templated description) of a tag.
+         */
+        post: operations["ai_ticket_api_ai_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/summary": {
         parameters: {
             query?: never;
@@ -694,18 +714,20 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/claude/prefs": {
+    "/api/claude/refresh": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Claude Prefs */
-        get: operations["get_claude_prefs_api_claude_prefs_get"];
-        /** Put Claude Prefs */
-        put: operations["put_claude_prefs_api_claude_prefs_put"];
-        post?: never;
+        get?: never;
+        put?: never;
+        /**
+         * Claude Refresh
+         * @description Read the quota again now instead of from the 3-minute cache.
+         */
+        post: operations["claude_refresh_api_claude_refresh_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -723,6 +745,204 @@ export interface paths {
         put?: never;
         /** Claude Sign Out */
         post: operations["claude_sign_out_api_claude_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/prefs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Prefs */
+        get: operations["get_ai_prefs_api_ai_prefs_get"];
+        /** Put Ai Prefs */
+        put: operations["put_ai_prefs_api_ai_prefs_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Catalog */
+        get: operations["ai_catalog_api_ai_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Runs */
+        get: operations["get_ai_runs_api_ai_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Test
+         * @description One tiny run on the picked CLI and model: does it answer, and how fast.
+         */
+        post: operations["ai_test_api_ai_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Accounts
+         * @description Codex and Antigravity logins and quotas (Claude has its own /api/claude/account); `fresh`
+         *     reads the quotas now instead of from the last few minutes.
+         */
+        get: operations["ai_accounts_api_ai_accounts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/{provider}/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ai Login */
+        post: operations["ai_login_api_ai__provider__login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/{provider}/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ai Logout */
+        post: operations["ai_logout_api_ai__provider__logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/telegram/app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Telegram App
+         * @description Save the API ID/hash from my.telegram.org and reconnect with them.
+         */
+        put: operations["telegram_app_api_telegram_app_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/telegram/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telegram Code */
+        post: operations["telegram_code_api_telegram_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/telegram/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Telegram Sign In */
+        post: operations["telegram_sign_in_api_telegram_sign_in_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Set Consent */
+        put: operations["set_consent_api_settings_consent_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -790,6 +1010,67 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AiAccount
+         * @description Another agent CLI's login, as far as the dashboard can tell (see providers.account).
+         */
+        AiAccount: {
+            /**
+             * Provider
+             * @enum {string}
+             */
+            provider: "claude" | "codex" | "antigravity";
+            /** Installed */
+            installed: boolean;
+            /** Install */
+            install: string;
+            /**
+             * Loggedin
+             * @default false
+             */
+            loggedIn: boolean;
+            /** Method */
+            method?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Plan */
+            plan?: string | null;
+            /**
+             * Login Pending
+             * @default false
+             */
+            login_pending: boolean;
+            /** Login Url */
+            login_url?: string | null;
+            /**
+             * Usage
+             * @default []
+             */
+            usage: components["schemas"]["ClaudeUsage"][];
+            /** Usage At */
+            usage_at?: string | null;
+        };
+        /**
+         * AiCatalogEntry
+         * @description What one CLI offers (providers.catalog). efforts: [] = the CLI takes none.
+         */
+        AiCatalogEntry: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "claude" | "codex" | "antigravity";
+            /** Name */
+            name: string;
+            /** Models */
+            models: components["schemas"]["AiOption"][];
+            /** Efforts */
+            efforts: ("" | "low" | "medium" | "high" | "xhigh" | "max")[];
+            /** Quota */
+            quota: boolean;
+            /** Install */
+            install: string;
+        };
         /** AiDraftRequest */
         AiDraftRequest: {
             /** Chat Id */
@@ -811,6 +1092,29 @@ export interface components {
              * @enum {string}
              */
             platform: "android" | "ios" | "mobile" | "any";
+            /**
+             * Role
+             * @default dev
+             * @enum {string}
+             */
+            role: "dev" | "qa" | "po";
+        };
+        /** AiLoginStarted */
+        AiLoginStarted: {
+            /** Url */
+            url?: string | null;
+        };
+        /** AiOption */
+        AiOption: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /**
+             * Hint
+             * @default
+             */
+            hint: string;
         };
         /** AiPermissionRequest */
         AiPermissionRequest: {
@@ -836,6 +1140,63 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /**
+         * AiPicks
+         * @description One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent.
+         */
+        AiPicks: {
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Effort
+             * @default
+             * @enum {string}
+             */
+            effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Task Model
+             * @default
+             */
+            task_model: string;
+            /**
+             * Task Effort
+             * @default
+             * @enum {string}
+             */
+            task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+        };
+        /**
+         * AiPrefs
+         * @description provider: the CLI every AI feature runs on; by: each CLI's own picks (see providers.prefs).
+         */
+        AiPrefs: {
+            /**
+             * Provider
+             * @default claude
+             * @enum {string}
+             */
+            provider: "claude" | "codex" | "antigravity";
+            /**
+             * By
+             * @default {}
+             */
+            by: {
+                [key: string]: components["schemas"]["AiPicks"];
+            };
+            /**
+             * Fallback
+             * @default false
+             */
+            fallback: boolean;
+            /**
+             * Fallback At
+             * @default 90
+             */
+            fallback_at: number;
+        };
         /** AiResult */
         AiResult: {
             /** Text */
@@ -855,12 +1216,150 @@ export interface components {
             /** Context Revision */
             context_revision: string;
         };
+        /**
+         * AiRun
+         * @description One logged AI run (any CLI). cost: what the tokens would cost on the API, in USD;
+         *     quota: % used per window right after the run (as fresh as the 3-minute quota cache).
+         */
+        AiRun: {
+            /** At */
+            at: string;
+            /** Feature */
+            feature: string;
+            /** Model */
+            model: string;
+            /**
+             * Effort
+             * @default
+             */
+            effort: string;
+            /**
+             * Fallback
+             * @default false
+             */
+            fallback: boolean;
+            /** Ok */
+            ok: boolean;
+            /** Error */
+            error?: string | null;
+            /**
+             * Ms
+             * @default 0
+             */
+            ms: number;
+            /** Cost */
+            cost?: number | null;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens: number;
+            /**
+             * Cache Read
+             * @default 0
+             */
+            cache_read: number;
+            /**
+             * Cache Write
+             * @default 0
+             */
+            cache_write: number;
+            /**
+             * Turns
+             * @default 0
+             */
+            turns: number;
+            /**
+             * Quota
+             * @default {}
+             */
+            quota: {
+                [key: string]: number;
+            };
+            /**
+             * Imported
+             * @default false
+             */
+            imported: boolean;
+        };
         /** AiSummaryRequest */
         AiSummaryRequest: {
             /** Chat Id */
             chat_id: string;
             /** Message Ids */
             message_ids: string[];
+        };
+        /** AiTestRequest */
+        AiTestRequest: {
+            /**
+             * Task
+             * @default false
+             */
+            task: boolean;
+        };
+        /** AiTestResult */
+        AiTestResult: {
+            /** Text */
+            text: string;
+            /** Ms */
+            ms: number;
+        };
+        /** AiTicketDraft */
+        AiTicketDraft: {
+            /** Summary */
+            summary: string;
+            /** Type */
+            type: string;
+            /** Priority */
+            priority: string;
+            /** Description */
+            description: string;
+        };
+        /** AiTicketRequest */
+        AiTicketRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Ids */
+            message_ids: string[];
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            /** Project */
+            project?: string | null;
+            /**
+             * With Context
+             * @default true
+             */
+            with_context: boolean;
+            /**
+             * Platform
+             * @default android
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "mobile" | "any";
+            /**
+             * Role
+             * @default dev
+             * @enum {string}
+             */
+            role: "dev" | "qa" | "po";
+            /**
+             * Types
+             * @default []
+             */
+            types: string[];
+            /**
+             * Priorities
+             * @default []
+             */
+            priorities: string[];
         };
         /** BriefingItem */
         BriefingItem: {
@@ -990,6 +1489,8 @@ export interface components {
              * @default []
              */
             usage: components["schemas"]["ClaudeUsage"][];
+            /** Usage At */
+            usage_at?: string | null;
             /**
              * Login Pending
              * @default false
@@ -1008,34 +1509,6 @@ export interface components {
             /** Url */
             url?: string | null;
         };
-        /**
-         * ClaudePrefs
-         * @description "" = the CLI default. task_* apply to tasks and the AI Agent.
-         */
-        ClaudePrefs: {
-            /**
-             * Model
-             * @default
-             */
-            model: string;
-            /**
-             * Effort
-             * @default
-             * @enum {string}
-             */
-            effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
-            /**
-             * Task Model
-             * @default
-             */
-            task_model: string;
-            /**
-             * Task Effort
-             * @default
-             * @enum {string}
-             */
-            task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
-        };
         /** ClaudeUsage */
         ClaudeUsage: {
             /** Label */
@@ -1044,6 +1517,11 @@ export interface components {
             percent: number;
             /** Resets At */
             resets_at?: string | null;
+        };
+        /** ConsentPref */
+        ConsentPref: {
+            /** Ai Require Consent */
+            ai_require_consent: boolean;
         };
         /** DigestConsent */
         DigestConsent: {
@@ -1069,6 +1547,11 @@ export interface components {
              * @default []
              */
             message_ids: string[];
+            /**
+             * Tickets
+             * @default []
+             */
+            tickets: string[];
             /**
              * Text
              * @default
@@ -1158,6 +1641,11 @@ export interface components {
              */
             message_ids: string[];
             /**
+             * Tickets
+             * @default []
+             */
+            tickets: string[];
+            /**
              * Title
              * @default
              */
@@ -1205,6 +1693,11 @@ export interface components {
         HandledRequest: {
             /** Handled */
             handled: boolean;
+            /**
+             * React
+             * @default true
+             */
+            react: boolean;
         };
         /** HistoryPage */
         HistoryPage: {
@@ -1444,6 +1937,10 @@ export interface components {
              * @default false
              */
             youtrack_configured: boolean;
+            /** Telegram Api Id */
+            telegram_api_id?: number | null;
+            /** Telegram Me */
+            telegram_me?: string | null;
             /** Db Epoch */
             db_epoch: string;
             /** Cursor */
@@ -1521,6 +2018,30 @@ export interface components {
             /** Message Id */
             message_id?: string | null;
         };
+        /** TelegramApp */
+        TelegramApp: {
+            /** Api Id */
+            api_id: number;
+            /** Api Hash */
+            api_hash: string;
+        };
+        /** TelegramPhone */
+        TelegramPhone: {
+            /** Phone */
+            phone: string;
+        };
+        /** TelegramSignIn */
+        TelegramSignIn: {
+            /** Code */
+            code?: string | null;
+            /** Password */
+            password?: string | null;
+        };
+        /** TelegramSignInResult */
+        TelegramSignInResult: {
+            /** Password Required */
+            password_required: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1552,6 +2073,11 @@ export interface components {
              * @default
              */
             summary: string;
+            /**
+             * Warning
+             * @default
+             */
+            warning: string;
         };
         /** YouTrackRequest */
         YouTrackRequest: {
@@ -1562,6 +2088,18 @@ export interface components {
              * @default
              */
             description: string;
+            /** Project */
+            project?: string | null;
+            /** Type */
+            type?: string | null;
+            /** Priority */
+            priority?: string | null;
+            /** Assignee */
+            assignee?: string | null;
+            /** Chat Id */
+            chat_id?: string | null;
+            /** Message Id */
+            message_id?: string | null;
         };
         /** YouTrackUser */
         YouTrackUser: {
@@ -2192,13 +2730,46 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Successful Response */
+            /** @description NDJSON: delta / reset lines, then {done: AiResult} */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["AiResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_ticket_api_ai_ticket_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTicketDraft"];
                 };
             };
             /** @description Validation Error */
@@ -2894,7 +3465,7 @@ export interface operations {
             };
         };
     };
-    get_claude_prefs_api_claude_prefs_get: {
+    claude_refresh_api_claude_refresh_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -2909,40 +3480,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ClaudePrefs"];
-                };
-            };
-        };
-    };
-    put_claude_prefs_api_claude_prefs_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ClaudePrefs"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ClaudePrefs"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ClaudeAccount"];
                 };
             };
         };
@@ -2962,6 +3500,360 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_ai_prefs_api_ai_prefs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPrefs"];
+                };
+            };
+        };
+    };
+    put_ai_prefs_api_ai_prefs_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPrefs"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPrefs"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_catalog_api_ai_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiCatalogEntry"][];
+                };
+            };
+        };
+    };
+    get_ai_runs_api_ai_runs_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiRun"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_test_api_ai_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_accounts_api_ai_accounts_get: {
+        parameters: {
+            query?: {
+                fresh?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiAccount"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_login_api_ai__provider__login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "claude" | "codex" | "antigravity";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiLoginStarted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_logout_api_ai__provider__logout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "claude" | "codex" | "antigravity";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telegram_app_api_telegram_app_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramApp"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telegram_code_api_telegram_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramPhone"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    telegram_sign_in_api_telegram_sign_in_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TelegramSignIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelegramSignInResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_consent_api_settings_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentPref"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };
@@ -3035,6 +3927,7 @@ export interface operations {
         parameters: {
             query: {
                 q: string;
+                project?: string;
             };
             header?: never;
             path?: never;

@@ -1,4 +1,5 @@
-"""Headless Claude Code sessions for tasks: no Terminal, driven and shown from the dashboard.
+"""Headless Claude Code (or Codex/Antigravity, see providers.py) sessions for tasks: no Terminal, driven
+and shown from the dashboard.
 
 Each turn is one `claude -p` process (the prompt goes in via stdin); follow-ups resume the same
 session id. Output is normalized to a small JSONL log the UI polls. Nothing needs approval here,
@@ -6,13 +7,15 @@ so a task runs with a fixed permission mode: `plan` (read-only) or `acceptEdits`
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import shlex
-import uuid
+import time
 from pathlib import Path
 
-from .claude import model_flags
+from . import providers
+from .claude import flags_for, note_run
 from .config import child_env, on_path
 from .errors import ApiError
 
@@ -21,8 +24,12 @@ log = logging.getLogger("telegram_dashboard.agent")
 PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 # Enforced here, not left to ~/.claude settings: no shell or web, no MCP servers, and no edits to
 # files that run code later (hooks, git hooks, CI). An Edit(path) rule also covers Write.
-DENY = "Bash,WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**)"
+DENY = ("Bash,WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
+        # files that run code later (on folder open, commit, cd) or load tools into the next session
+        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json)")
 STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file read
+# After a result the CLI can linger (background agents, hooks): quiet this long = the turn is over.
+AFTER_RESULT_IDLE = 20.0
 
 
 def tasks_dir(settings) -> Path:
@@ -92,7 +99,8 @@ class AgentRunner:
 
     @property
     def available(self) -> bool:
-        return on_path(self.settings.ai_task_command)
+        p = providers.chosen(self.settings)
+        return on_path(self.settings.ai_task_command) if p == "claude" else providers.installed(self.settings, p)
 
     def log_path(self, task_id: str) -> Path:
         return tasks_dir(self.settings) / f"{task_id}.log.jsonl"
@@ -117,19 +125,25 @@ class AgentRunner:
         with self.log_path(task_id).open("a") as f:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    async def start(self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool):
+    async def start(self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool) -> str:
         """Run one turn. Returns once the process has the prompt; output streams into the log.
-        A new session (not `resume`) replaces the old log and result, once it is running."""
+        A new session (not `resume`) replaces the old log and result, once it is running.
+        Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out)."""
         if self.running(task_id):
             raise ApiError(409, "task_busy")
         self._starting.add(task_id)
+        provider, sid = providers.split_session(session_id)
         try:
             tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
-            flag = ["--resume", session_id] if resume else ["--session-id", session_id]
-            cmd = [*self.executable, "-p", *model_flags(self.settings, task=True),
-                   "--output-format", "stream-json", "--verbose",
-                   "--permission-mode", PERMISSION[mode], "--strict-mcp-config",
-                   "--disallowedTools", DENY, *flag]  # fmt: skip
+            choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
+            if provider == "claude":
+                flag = ["--resume", sid] if resume else ["--session-id", sid]
+                cmd = [*self.executable, "-p", *flags_for(*choice[:2]),
+                       "--output-format", "stream-json", "--verbose",
+                       "--permission-mode", PERMISSION[mode], "--strict-mcp-config",
+                       "--disallowedTools", DENY, *flag]  # fmt: skip
+            else:
+                cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2])
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,
@@ -140,7 +154,7 @@ class AgentRunner:
                 log.warning("agent for task %s not started: %s", task_id, e)
                 raise ApiError(502, "task_launch_failed", detail=type(e).__name__) from None
             try:
-                proc.stdin.write(text.encode())
+                proc.stdin.write(providers.stdin(provider, text))
                 await proc.stdin.drain()
                 proc.stdin.close()
             except OSError:  # the CLI quit at once (bad flag, unknown session): stderr says why
@@ -149,26 +163,72 @@ class AgentRunner:
                 err = (await proc.communicate())[1].decode(errors="replace")[-300:]
                 log.warning("agent for task %s exited: %s", task_id, err)
                 raise ApiError(502, "task_launch_failed") from None
+            if provider in providers.OTHERS and not resume:  # its first event names the new session
+                session_id = await self._new_thread(task_id, proc, provider)
             self.procs[task_id] = proc
         finally:
             self._starting.discard(task_id)
         # The pump owns the process from here; it first runs after these sync lines.
-        self.pumps[task_id] = asyncio.create_task(self._pump(task_id, proc))
+        self.pumps[task_id] = asyncio.create_task(self._pump(task_id, proc, choice, provider))
         if not resume:
             task_result_path(self.settings, task_id).unlink(missing_ok=True)
             self.log_path(task_id).unlink(missing_ok=True)
         self._append(task_id, {"kind": "user", "text": text})
+        return session_id
 
-    async def _pump(self, task_id: str, proc: asyncio.subprocess.Process) -> None:
-        got_result = False
+    @staticmethod
+    async def _new_thread(task_id: str, proc, provider: str) -> str:
+        async def first() -> str:
+            async for raw in proc.stdout:
+                with contextlib.suppress(ValueError):
+                    ev = json.loads(raw)
+                    for i in providers.items(provider, ev if isinstance(ev, dict) else {}, {}):
+                        if i["kind"] == "session" and i["id"]:
+                            return i["id"]
+            return ""
+
+        try:
+            thread = await asyncio.wait_for(first(), 30)
+        except TimeoutError:
+            thread = ""
+        if not thread:
+            if proc.returncode is None:
+                proc.kill()
+            err = (await proc.communicate())[1].decode(errors="replace")[-300:]
+            log.warning("%s for task %s gave no session: %s", provider, task_id, err)
+            raise ApiError(502, "task_launch_failed")
+        return f"{provider}:{thread}"
+
+    async def _pump(self, task_id: str, proc: asyncio.subprocess.Process, choice=("", "", False), provider="claude") -> None:
+        got_result, t0, st = False, time.monotonic(), {}
         err = asyncio.create_task(proc.stderr.read())
         try:
-            async for raw in proc.stdout:
+            while True:
+                try:  # once a result is in, a CLI that stays alive but silent is done, not "running"
+                    raw = await asyncio.wait_for(proc.stdout.readline(), AFTER_RESULT_IDLE if got_result else None)
+                except TimeoutError:
+                    log.info("task %s: no output %ss after its result, ending the run", task_id, AFTER_RESULT_IDLE)
+                    proc.kill()
+                    break
+                if not raw:
+                    break
                 try:
                     ev = json.loads(raw)
                 except ValueError:
                     continue
-                for item in _items(ev):
+                if not isinstance(ev, dict):
+                    continue
+                if provider == "claude":
+                    found = _items(ev)
+                    if ev.get("type") == "result":
+                        note_run(self.settings, "agent", choice, ev, time.monotonic() - t0, None)
+                else:
+                    found = [i for i in providers.items(provider, ev, st) if i["kind"] not in ("session", "reset", "delta")]
+                    for i in found:
+                        if i["kind"] == "result":
+                            run = (st.get("model") or provider, *choice[1:])
+                            note_run(self.settings, "agent", run, i.pop("final"), time.monotonic() - t0, None)
+                for item in found:
                     self._append(task_id, item)
                     if item["kind"] == "result":
                         got_result = True
@@ -176,6 +236,7 @@ class AgentRunner:
                             task_result_path(self.settings, task_id).write_text(item["text"])
             code = await proc.wait()
             if not got_result:
+                note_run(self.settings, "agent", choice, None, time.monotonic() - t0, f"exit_{code}")
                 tail = (await err).decode(errors="replace").strip()[-400:]
                 self._append(task_id, {"kind": "result", "error": True,
                                        "text": tail or f"Tiến trình dừng (mã {code})."})  # fmt: skip
@@ -208,6 +269,5 @@ class AgentRunner:
     async def stop_all(self) -> None:
         await asyncio.gather(*(self.stop(t) for t in list(self.procs)))
 
-    @staticmethod
-    def new_session() -> str:
-        return str(uuid.uuid4())
+    def new_session(self) -> str:
+        return providers.new_session(self.settings)

@@ -955,6 +955,19 @@ class Store:
             ).fetchall()
         return [dict(r) for r in rows if word.search(r["text"])][:limit]
 
+    def my_replies(self, since: int, limit: int = 40, chat_id: str | None = None) -> list[dict]:
+        """What the user sent in tracked groups (or one group) since a unix time, oldest first:
+        a standup, the promises list, the drafts' tone."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT c.title, m.text, m.date FROM messages m JOIN chats c USING(chat_id) "
+                "WHERE m.outgoing=1 AND m.deleted=0 AND c.tracking=1 AND m.date>=? "
+                "AND m.text!='' AND (? IS NULL OR m.chat_id=?) "
+                "ORDER BY m.date DESC LIMIT ?",  # the newest ones when there are more
+                (since, chat_id, chat_id, limit),
+            ).fetchall()
+        return [dict(r) for r in reversed(rows)]
+
     def list_projects(self) -> list[dict]:
         with self._conn() as c:
             return [dict(r) for r in c.execute("SELECT * FROM projects ORDER BY name")]

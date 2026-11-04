@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -8,38 +9,49 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, Header, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 
+from . import providers, updater
 from .agent import AgentRunner
-from .ai import AiService, client_gone, grant_problem, pick_folder
+from .ai import AiService, client_gone, grant_problem, parse_ticket, pick_folder, stream_answer
 from .auth import LocalGuardMiddleware
 from .claude import (
     claude_account,
     claude_login,
     claude_login_code,
     claude_logout,
-    claude_prefs,
-    save_claude_prefs,
+    claude_runs,
+    refresh_usage,
 )
 from .config import Settings, write_private_json
 from .digest import DigestService, aware
 from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
 from .models import (
+    AiAccount,
+    AiCatalogEntry,
     AiDraftRequest,
+    AiLoginStarted,
     AiPermissionRequest,
     AiPermissionResponse,
+    AiPrefs,
+    AiProvider,
     AiResult,
+    AiRun,
     AiSummaryRequest,
+    AiTestRequest,
+    AiTestResult,
+    AiTicketDraft,
+    AiTicketRequest,
     BriefingItem,
     ChangesPage,
     ChatsResponse,
     ClaudeAccount,
     ClaudeLoginCode,
     ClaudeLoginStarted,
-    ClaudePrefs,
+    ConsentPref,
     DigestConsent,
     DigestConsentRequest,
     DigestRequest,
@@ -62,6 +74,10 @@ from .models import (
     SavedDigest,
     SnoozeRequest,
     StatusDTO,
+    TelegramApp,
+    TelegramPhone,
+    TelegramSignIn,
+    TelegramSignInResult,
     YouTrackAuth,
     YouTrackIssue,
     YouTrackRequest,
@@ -101,12 +117,15 @@ def create_app(
         bridge = TelegramBridge(st, db, t, notify=settings.notify, reaction=settings.done_reaction)
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
         app.state.ai = AiService(settings, st, db)
+        app.state.ai.me = lambda: bridge.me
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
         await bridge.start()
+        auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
         try:
             yield
         finally:
+            auto.cancel()
             await yt_dashboard.aclose()
             await app.state.agent.stop_all()
             await bridge.stop()
@@ -129,6 +148,7 @@ def create_app(
 
     app.include_router(build_router(yt_dashboard), include_in_schema=False)
     app.include_router(build_task_router(settings))
+    app.include_router(updater.build_router(settings))
 
     def S(request: Request):
         return request.app.state
@@ -147,9 +167,11 @@ def create_app(
         return StatusDTO(
             state=state,
             detail=s.bridge.detail,
-            ai_configured=settings.ai_configured,
+            ai_configured=s.ai.configured,
             ai_require_consent=settings.ai_require_consent,
             youtrack_configured=settings.youtrack_configured,
+            telegram_api_id=settings.telegram_api_id,
+            telegram_me=s.bridge.me or None,
             db_epoch=cursor.rpartition(":")[0],
             cursor=cursor,
         )
@@ -201,7 +223,7 @@ def create_app(
         mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")
-        if await s.db.write(s.store.set_handled, chat_id, mid, body.handled):
+        if await s.db.write(s.store.set_handled, chat_id, mid, body.handled) and body.react:
             s.bridge.react(chat_id, [mid], body.handled)
 
     @app.post("/api/chats/{chat_id}/handled-all")
@@ -291,10 +313,9 @@ def create_app(
             granted=granted, revoked=body.revoke_message_ids, rejected=rejected
         )
 
-    @app.post("/api/ai/draft")
-    async def ai_draft(body: AiDraftRequest, request: Request) -> AiResult:
+    async def _draft_extras(request: Request, body: AiDraftRequest):
+        """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
         s = S(request)
-        client_gone.set(request.is_disconnected)
         nearby, images = None, []
         if not settings.ai_require_consent:  # extras carry no consent grants
             ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
@@ -311,10 +332,34 @@ def create_app(
                     nearby = await s.bridge.fetch_context(body.chat_id, ids[0])
                 except Exception as e:  # context is a bonus; draft from the tag alone
                     log.warning("draft without context for %s: %r", body.chat_id, e)
-        return await s.ai.run(
-            "draft", body.chat_id, body.message_ids, body.instruction, body.project,
-            nearby=nearby, images=images, platform=body.platform,
+        return nearby, images
+
+    @app.post("/api/ai/draft", responses={200: {
+        "model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}})
+    async def ai_draft(body: AiDraftRequest, request: Request) -> StreamingResponse:
+        client_gone.set(request.is_disconnected)
+        nearby, images = await _draft_extras(request, body)
+
+        async def work(on_text):
+            r = await S(request).ai.run(
+                "draft", body.chat_id, body.message_ids, body.instruction, body.project,
+                nearby=nearby, images=images, platform=body.platform, role=body.role, on_text=on_text,
+            )  # fmt: skip
+            return r.model_dump()
+
+        return stream_answer(work)
+
+    @app.post("/api/ai/ticket")
+    async def ai_ticket(body: AiTicketRequest, request: Request) -> AiTicketDraft:
+        """A YouTrack ticket proposal (summary, Type, Priority, templated description) of a tag."""
+        client_gone.set(request.is_disconnected)
+        nearby, images = await _draft_extras(request, body)
+        fields = {"Type": body.types, "Priority": body.priorities}
+        r = await S(request).ai.run(
+            "ticket", body.chat_id, body.message_ids, body.instruction, None,
+            nearby=nearby, images=images, platform=body.platform, role=body.role, fields=fields,
         )  # fmt: skip
+        return AiTicketDraft(**parse_ticket(r.text, fields))
 
     @app.post("/api/ai/summary")
     async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:
@@ -417,6 +462,7 @@ def create_app(
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:
+        client_gone.set(request.is_disconnected)  # "Dừng" / leaving the page stops the claude run
         return await S(request).digest.run(body)
 
     @app.get("/api/projects")
@@ -542,18 +588,99 @@ def create_app(
     async def claude_finish_login(body: ClaudeLoginCode) -> None:
         await claude_login_code(body.code)
 
-    @app.get("/api/claude/prefs")
-    async def get_claude_prefs() -> ClaudePrefs:
-        return ClaudePrefs(**claude_prefs(settings))
-
-    @app.put("/api/claude/prefs")
-    async def put_claude_prefs(body: ClaudePrefs) -> ClaudePrefs:
-        save_claude_prefs(settings, body.model_dump())
-        return body
+    @app.post("/api/claude/refresh")
+    async def claude_refresh() -> ClaudeAccount:
+        """Read the quota again now instead of from the 3-minute cache."""
+        refresh_usage()
+        return ClaudeAccount(**await claude_account(settings))
 
     @app.post("/api/claude/logout", status_code=204)
     async def claude_sign_out() -> None:
         await claude_logout(settings)
+
+    # ---- AI: the picked CLI, each CLI's picks and catalog, the run log ----------
+    @app.get("/api/ai/prefs")
+    async def get_ai_prefs() -> AiPrefs:
+        return AiPrefs(**providers.prefs(settings))
+
+    @app.put("/api/ai/prefs")
+    async def put_ai_prefs(body: AiPrefs) -> AiPrefs:
+        providers.save_prefs(settings, body.model_dump())
+        return AiPrefs(**providers.prefs(settings))
+
+    @app.get("/api/ai/catalog")
+    async def ai_catalog() -> list[AiCatalogEntry]:
+        return [AiCatalogEntry(**c) for c in providers.catalog(settings)]
+
+    @app.get("/api/ai/runs")
+    async def get_ai_runs(days: Annotated[int, Query(ge=1, le=90)] = 30) -> list[AiRun]:
+        return [AiRun(**r) for r in await asyncio.to_thread(claude_runs, settings, days)]
+
+    @app.post("/api/ai/test")
+    async def ai_test(body: AiTestRequest, request: Request) -> AiTestResult:
+        """One tiny run on the picked CLI and model: does it answer, and how fast."""
+        t0 = time.monotonic()
+        text = await S(request).ai.ask("Reply with exactly: OK", system="", heavy=body.task, feature="test")
+        return AiTestResult(text=text[:200], ms=round((time.monotonic() - t0) * 1000))
+
+    @app.get("/api/ai/accounts")
+    async def ai_accounts(fresh: bool = False) -> list[AiAccount]:
+        """Codex and Antigravity logins and quotas (Claude has its own /api/claude/account); `fresh`
+        reads the quotas now instead of from the last few minutes."""
+        return [AiAccount(**a) for a in await asyncio.gather(*(providers.account(settings, p, fresh) for p in providers.OTHERS))]
+
+    @app.post("/api/ai/{provider}/login")
+    async def ai_login(provider: AiProvider) -> AiLoginStarted:
+        if provider == "claude":
+            raise ApiError(404, "not_found")
+        return AiLoginStarted(url=await providers.login(settings, provider))
+
+    @app.post("/api/ai/{provider}/logout", status_code=204)
+    async def ai_logout(provider: AiProvider) -> None:
+        if provider == "claude":
+            raise ApiError(404, "not_found")
+        await providers.logout(settings, provider)
+
+    # ---- Settings: Telegram account + consent (data/config.json, wins over .env) ----
+    @app.put("/api/telegram/app", status_code=204)
+    async def telegram_app(body: TelegramApp, request: Request) -> None:
+        """Save the API ID/hash from my.telegram.org and reconnect with them."""
+        nonlocal settings
+        from .telegram import TelethonTransport
+
+        settings.ensure_data_dir()
+        settings.save_config(telegram_api_id=body.api_id, telegram_api_hash=body.api_hash)
+        settings = replace(settings, telegram_api_id=body.api_id, telegram_api_hash=body.api_hash)
+        await S(request).bridge.set_transport(TelethonTransport(settings))
+
+    def _login_transport(request: Request):
+        t = S(request).bridge.transport
+        if t is None or not hasattr(t, "sign_in"):
+            raise ApiError(409, "telegram_not_configured")
+        return t
+
+    @app.post("/api/telegram/code", status_code=204)
+    async def telegram_code(body: TelegramPhone, request: Request) -> None:
+        await _login_transport(request).send_code(body.phone.replace(" ", ""))
+
+    @app.post("/api/telegram/sign-in")
+    async def telegram_sign_in(body: TelegramSignIn, request: Request) -> TelegramSignInResult:
+        if not await _login_transport(request).sign_in(body.code, body.password):
+            return TelegramSignInResult(password_required=True)
+        session = Path(f"{settings.session_path}.session")
+        if session.exists():
+            session.chmod(0o600)
+        await S(request).bridge.start()  # the run loop stopped at login_required
+        return TelegramSignInResult(password_required=False)
+
+    @app.put("/api/settings/consent", status_code=204)
+    async def set_consent(body: ConsentPref, request: Request) -> None:
+        nonlocal settings
+        settings.ensure_data_dir()
+        settings.save_config(ai_require_consent=body.ai_require_consent)
+        settings = replace(settings, ai_require_consent=body.ai_require_consent)
+        ai = S(request).ai
+        ai.settings = replace(ai.settings, ai_require_consent=body.ai_require_consent)
 
     # ---- YouTrack ------------------------------------------------------------
     @app.put("/api/youtrack/auth")
@@ -569,19 +696,42 @@ def create_app(
         return YouTrackUser(**user)
 
     @app.post("/api/youtrack/issues")
-    async def youtrack_issue(body: YouTrackRequest) -> YouTrackIssue:
+    async def youtrack_issue(body: YouTrackRequest, request: Request) -> YouTrackIssue:
         if not settings.youtrack_configured:
             raise ApiError(503, "youtrack_not_configured")
-        issue_id, url = await create_issue(settings, body.summary, body.description)
-        return YouTrackIssue(id=issue_id, url=url)
+        project = body.project or settings.youtrack_project
+        if not project:
+            raise ApiError(422, "youtrack_project_not_found")
+        issue_id, url = await create_issue(settings, body.summary, body.description, project)
+        sets = (("Type", body.type), ("Priority", body.priority), ("Assignee", body.assignee))
+        cmd = " ".join(f"{k} {{{v}}}" for k, v in sets if v)
+        warning = ""
+        if cmd:
+            post = {"query": cmd, "issues": [{"idReadable": issue_id}]}
+            try:
+                await yt_dashboard.yt("/api/commands", post=post, fields="id")
+            except YtError as e:
+                log.warning("ticket %s created, fields not set: %s", issue_id, e.message)
+                warning = f"Chưa đặt được Type / Priority / Assignee: {e.message}."
+        if body.chat_id and body.message_id:  # the tag's screenshot goes with the bug report
+            photo = await _photo(request, body.chat_id, int(body.message_id))
+            if photo is not None:
+                try:
+                    await yt_dashboard.attach(issue_id, photo)
+                except YtError as e:
+                    log.warning("ticket %s created, photo not attached: %s", issue_id, e.message)
+                    warning = f"{warning} Không đính kèm được ảnh.".strip()
+        yt_dashboard.stale()  # the YouTrack page shows it on its next refresh
+        return YouTrackIssue(id=issue_id, url=url, warning=warning)
 
     @app.get("/api/youtrack/similar")
-    async def youtrack_similar(q: str) -> list[YouTrackIssue]:
+    async def youtrack_similar(q: str, project: str = "") -> list[YouTrackIssue]:
         """Open tickets whose text matches q (YouTrack's own relevance), to spot a duplicate."""
         words = re.findall(r"\w{3,}", q)[:8]  # plain words only: query syntax chars never reach YQL
-        if not settings.youtrack_configured or not words:
+        project = re.sub(r"[^\w-]", "", project) or settings.youtrack_project
+        if not settings.youtrack_configured or not words or not project:
             return []
-        query = f"project: {settings.youtrack_project} #Unresolved {' '.join(words)}"  # shortName: no braces
+        query = f"project: {project} #Unresolved {' '.join(words)}"  # shortName: no braces
         try:
             rows = await yt_dashboard.yt(
                 "/api/issues", query=query, fields="idReadable,summary", **{"$top": 5}

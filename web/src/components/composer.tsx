@@ -1,20 +1,26 @@
 "use client";
 
-import { Bot, Bug, Check, ExternalLink, Loader2, Send, Sparkles, Square, X } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { Bot, Bug, Check, ExternalLink, Loader2, MessageCircleQuestion, Send, Sparkles, Square, X } from "lucide-react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ModelEffortPicker } from "@/components/claude";
+import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { IssueDialog, TaskDialog } from "@/components/composer-dialogs";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
-import { api, ApiError, errorText, type AiResult, type Message, type Outbox } from "@/lib/api";
+import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type YouTrackIssue } from "@/lib/api";
 import { telegramLink } from "@/lib/inbox";
-import { readComposerAiOpen, readPlatform, readTemplates, setPref } from "@/lib/prefs";
+import { getPref, PLATFORMS, put, readComposerAiOpen, readPlatform, readTemplates, setPref, useRole, usesCode, type YtRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const MAX = 4096; // UTF-16 code units == JS string length
+// What "Tóm tắt" brings out and an example ask, per role (Cài đặt chung › Vai trò); the prompt side is ai.py ROLE_FOCUS.
+const ROLE_AI: Record<YtRole, [string, string]> = {
+  dev: ["góc nhìn kỹ thuật", "trả lời lịch sự, hẹn chiều nay"],
+  qa: ["góc nhìn QA: bước tái hiện, môi trường, mức độ, phạm vi test", "hỏi thêm build và thiết bị để tái hiện"],
+  po: ["góc nhìn PO: ảnh hưởng người dùng, ưu tiên, việc cần bạn quyết", "chốt ưu tiên, hẹn trả lời trước thứ Sáu"],
+};
 
 type Outcome =
   | { kind: "idle" }
@@ -67,6 +73,12 @@ export function Composer({
   const [showContext, setShowContext] = useState(false);
   const [options, setOptions] = useState<string[]>([]);
   const [analysis, setAnalysis] = useState("");
+  const [partial, setPartial] = useState(""); // the answer so far, while the AI writes it
+  const aiName = useAiPrefs().name;
+  const role = useRole();
+  const [angle, example] = ROLE_AI[role ?? "dev"];
+  const platform = PLATFORMS.find(([p]) => p === readPlatform())?.[1];
+  const missing = role === "qa" ? askMissing(analysis) : "";
   const [picked, setPicked] = useState(0); // which AI option is in the textarea
   const [taskOpen, setTaskOpen] = useState(false); // AI Agent dialog
   const [issueOpen, setIssueOpen] = useState(false); // YouTrack dialog
@@ -133,6 +145,15 @@ export function Composer({
     },
   });
 
+  const relKey = `aiRel:${replyTo.sender_id ?? "?"}`; // which of LEVELS the user is to this sender
+  // Open tickets that look like this tag (YouTrack search, no AI), when it names none itself.
+  const related = useQuery({
+    queryKey: ["youtrack-similar", replyTo.text.slice(0, 300), getPref("project") ?? ""],
+    queryFn: ({ signal }) => api<YouTrackIssue[]>(`/youtrack/similar?q=${encodeURIComponent(replyTo.text.slice(0, 300))}&project=${encodeURIComponent(getPref("project") ?? "")}`, { signal }),
+    enabled: youtrackConfigured && !TICKET_ID.test(replyTo.text) && replyTo.text.trim().length > 0,
+    staleTime: 60_000,
+  });
+
   // Tagged message (+ nearby context) + the user's prompt -> AI summary, next steps and reply options.
   // Aborting the request is the cancel: the server sees the browser go and kills the claude run.
   const askAbort = useRef<AbortController | null>(null);
@@ -140,17 +161,19 @@ export function Composer({
   const ask = useMutation({
     mutationFn: () => {
       askAbort.current = new AbortController();
-      return api<AiResult>("/ai/draft", {
-        method: "POST",
-        json: { chat_id: chatId, message_ids: [replyTo.message_id], instruction: aiPrompt, project: null, with_context: true, platform: readPlatform() },
-        signal: askAbort.current.signal,
-      });
+      setPartial("");
+      return apiStream<AiResult>("/ai/draft",
+        { chat_id: chatId, message_ids: [replyTo.message_id], instruction: aiPrompt, project: null, with_context: true, platform: readPlatform(), role: role ?? "dev" },
+        askAbort.current.signal, setPartial);
     },
     onSuccess: (r) => {
       setAnalysis(r.analysis);
       setOptions(r.options.length > 1 ? r.options : []);
-      setPicked(0);
-      setText(r.text);
+      // the relationship picked last time for this sender comes first in the textarea
+      const rel = r.options.length === LEVELS.length ? Number(getPref(relKey) ?? 0) : 0;
+      const i = rel >= 0 && rel < r.options.length ? rel : 0;
+      setPicked(i);
+      setText(r.options[i] ?? r.text);
       setDraftSources(new Set(r.source_message_ids));
       setDraftStale(false);
     },
@@ -239,11 +262,11 @@ export function Composer({
           {aiConfigured && (
             <Button type="button" variant="outline" aria-expanded={aiOpen} aria-controls="ai-panel" onClick={() => toggleAi()}
               className={cn(aiOpen && "border-hl bg-hl-wash text-hl-2 hover:bg-hl-wash")}
-              title="AI tóm tắt tin được tag (kèm ngữ cảnh nhóm), đề xuất bước tiếp theo và mẫu trả lời (góc nhìn mobile, chủ yếu Android)">
+              title={`AI tóm tắt tin được tag (kèm ngữ cảnh nhóm), đề xuất bước tiếp theo và mẫu trả lời (${angle}${platform && readPlatform() !== "any" ? `, nền tảng ${platform}` : ""})`}>
               <Sparkles /> Tóm tắt
             </Button>
           )}
-          {aiConfigured && (
+          {aiConfigured && usesCode(role) && (
             <Button type="button" variant="outline" disabled={targetDeleted} onClick={() => setTaskOpen(true)}
               title="Giao việc cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
               <Bot /> AI Agent
@@ -254,6 +277,18 @@ export function Composer({
               title="Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời">
               <Bug /> YouTrack
             </Button>
+          )}
+          {!!related.data?.length && (
+            <div aria-label="Ticket có vẻ liên quan" className="flex w-full flex-wrap items-center gap-1.5 text-xs text-ink-3">
+              Có vẻ liên quan:
+              {related.data.slice(0, 3).map((t) => (
+                <span key={t.id} className="inline-flex max-w-full items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-1 pl-2">
+                  <a href={t.url} target="_blank" rel="noreferrer" title={t.summary} className="truncate text-ink-2 hover:underline"><b className="font-mono">{t.id}</b> {t.summary}</a>
+                  <button type="button" title="Chèn link ticket vào trả lời" className="rounded-full px-1.5 hover:bg-paper-3 hover:text-ink"
+                    onClick={() => setText((cur) => (cur.trim() ? `${cur}\n${t.id}: ${t.url}` : `${t.id}: ${t.url}`))}>+ chèn</button>
+                </span>
+              ))}
+            </div>
           )}
         </div>
       )}
@@ -275,7 +310,7 @@ export function Composer({
                     if (!ask.isPending && !targetDeleted) ask.mutate();
                   }
                 }}
-                placeholder="Thêm yêu cầu (không bắt buộc). Ví dụ: trả lời lịch sự, hẹn chiều nay"
+                placeholder={`Thêm yêu cầu (không bắt buộc). Ví dụ: ${example}`}
               />
               <div className="flex flex-wrap items-center gap-1.5">
                 <Button
@@ -299,10 +334,20 @@ export function Composer({
                 <ModelEffortPicker />
               </div>
               {ask.isPending ? (
-                <AiThinking />
+                partial.trim() ? (
+                  <div aria-label="AI đang viết" className="grid gap-1.5 break-words rounded-[var(--radius-input)] bg-paper-2 px-3 py-2.5 text-sm leading-[1.55] text-ink-2">
+                    <Md text={partial.split(/\n\s*={3,}\s*(?:\n|$)/)[0]} />
+                  </div>
+                ) : <AiThinking />
               ) : analysis && (
                 <div aria-label="Tóm tắt và bước tiếp theo" className="grid gap-1.5 break-words rounded-[var(--radius-input)] bg-paper-2 px-3 py-2.5 text-sm leading-[1.55] text-ink-2 animate-in fade-in-0 duration-(--dur-short)">
                   <Md text={analysis} />
+                  {missing && (
+                    <Button type="button" size="xs" variant="outline" className="justify-self-start" title="Chèn câu hỏi xin các thông tin AI đánh dấu [cần bổ sung]"
+                      onClick={() => setText((cur) => (cur.trim() ? `${cur}\n${missing}` : missing))}>
+                      <MessageCircleQuestion /> Hỏi thông tin còn thiếu
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
@@ -331,6 +376,7 @@ export function Composer({
                 onChange={() => {
                   setPicked(i);
                   setText(o);
+                  if (options.length === LEVELS.length) put(relKey, String(i));
                 }}
               />
               <span className={cn("flex items-center gap-1.5 text-xs font-medium", picked === i ? "text-hl-2" : "text-ink-3")}>
@@ -398,8 +444,8 @@ export function Composer({
             <span role="alert" className="text-error">
               {errorText(ask.error, {
                 ai_scope_not_allowed: "AI bị chặn do chưa cấp quyền dữ liệu (đặt AI_REQUIRE_CONSENT=0 cho dùng cá nhân). ",
-                ai_agent_missing: "Không tìm thấy Claude Code CLI (lệnh claude) để đọc dự án. Cài Claude Code hoặc đặt AI_AGENT_PROJECT_COMMAND trong .env. ",
-              }, "AI Agent lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công. ")}
+                ai_agent_missing: `Không tìm thấy ${aiName} CLI để đọc dự án, xem Cài đặt › AI. `,
+              }, "AI lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công. ")}
             </span>
           )}
           {outcome.kind === "sent" && <span className="text-ok">Đã gửi.</span>}
@@ -427,9 +473,9 @@ export function Composer({
         </Button>
       </div>
       </div>
-      <TaskDialog m={replyTo} analysis={analysis} open={taskOpen} onOpenChange={setTaskOpen}
-        onCreated={() => { setTaskOpen(false); onTaskCreated?.(); }} />
-      <IssueDialog m={replyTo} note={aiPrompt} open={issueOpen} onOpenChange={setIssueOpen}
+      {usesCode(role) && <TaskDialog m={replyTo} analysis={analysis} open={taskOpen} onOpenChange={setTaskOpen}
+        onCreated={() => { setTaskOpen(false); onTaskCreated?.(); }} />}
+      <IssueDialog m={replyTo} note={aiPrompt} ai={aiConfigured} open={issueOpen} onOpenChange={setIssueOpen}
         onCreated={(line) => { setText((t) => (t.trim() ? `${t}\n${line}` : line)); setIssueOpen(false); }} />
     </form>
   );
@@ -469,6 +515,16 @@ function Md({ text }: { text: string }) {
 function bold(s: string, key: number) {
   return s.split(/\*\*(.+?)\*\*/g).map((t, i) =>
     i % 2 ? <strong key={i} className="font-semibold text-ink">{inline(t, key * 100 + i)}</strong> : inline(t, key * 100 + i));
+}
+
+const TICKET_ID = /\b[A-Z][A-Z0-9]+-\d+\b/;
+
+/** QA: a reply asking for what the summary marked [cần bổ sung] ("**Môi trường:** [cần bổ sung]" → "Môi trường"). */
+export function askMissing(analysis: string) {
+  const lines = analysis.split("\n").filter((l) => /cần bổ sung/i.test(l));
+  if (!lines.length) return "";
+  const what = [...new Set(lines.map((l) => l.match(/\*\*([^*]+?):?\*\*/)?.[1]?.trim()).filter(Boolean))];
+  return `Bạn bổ sung giúp mình ${what.length ? what.join(", ").toLowerCase() : "các thông tin còn thiếu (build, thiết bị / OS, bước tái hiện)"} để mình tái hiện và test nhé.`;
 }
 
 // The AI drafts come in this order (prompt in ai.py): who the user is to the person they answer.

@@ -2,63 +2,82 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ExternalLink, Monitor, Moon, Sun, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { ClaudeSection } from "@/components/claude";
+import { useState, useSyncExternalStore } from "react";
+import { AiAccounts, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
 import { Kbd } from "@/components/pending-inbox";
 import { RulesSection } from "@/components/tools-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { StreamState } from "@/hooks/use-events";
-import { api, errorText, type Status } from "@/lib/api";
-import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, readOverdueHours, readTemplates, readLook, readTheme, saveLook, setPref, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
+import { api, ApiError, errorText, type Status } from "@/lib/api";
+import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, onPrefs, readOverdueHours, readReportAt, readTemplates, type ReportAt, saveReportAt, readLook, readTheme, readYtRole, saveLook, saveYtRole, setPref, YT_ROLES, type YtRole, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { yt } from "@/lib/yt";
+import { Textarea } from "@/components/ui/textarea";
+import { PromptManager } from "@/components/yt/prompts";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
-/** Settings both modules use (theme, Claude, YouTrack token, connections); YouTrack opens it via /?settings=shared. */
-export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  status: Status;
-  stream?: StreamState; // the YouTrack page has no live stream
-}) {
+const SHARED_TABS = [["system", "Hệ thống"], ["youtrack", "YouTrack"], ["ai", "AI"]] as const;
+
+/** Settings both modules use (app look, YouTrack token, AI accounts); YouTrack opens it via /?settings=shared. */
+export function SharedSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [theme, setTheme] = useState<ThemePref>(readTheme);
+  const [tab, setTab] = useState<(typeof SHARED_TABS)[number][0]>("system");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      {/* Fixed full height so switching tabs doesn't resize the dialog; only the tab body scrolls. */}
+      <DialogContent className="flex h-[min(88dvh,48rem)] flex-col sm:max-w-lg">
         <DialogTitle>Cài đặt chung</DialogTitle>
         <DialogDescription className="-mt-2">Dùng chung cho Telegram và YouTrack.</DialogDescription>
 
-        <Section title="Giao diện">
-          <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
-            options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
-          <LookSection />
-        </Section>
+        <span role="tablist" aria-label="Mục cài đặt" className="flex gap-4 border-b border-rule text-sm">
+          {SHARED_TABS.map(([k, label]) => (
+            <button key={k} type="button" role="tab" id={`shared-tab-${k}`} aria-selected={tab === k} aria-controls="shared-tabpanel" onClick={() => setTab(k)}
+              className={cn("relative pb-2.5 font-medium transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-center after:rounded-full after:bg-hl after:transition-transform after:duration-(--dur-short) after:ease-(--ease-out)",
+                tab === k ? "text-ink after:scale-x-100" : "text-ink-3 after:scale-x-0 hover:text-ink")}>
+              {label}
+            </button>
+          ))}
+        </span>
 
-        <Section title="Tài khoản Claude" hint="Tài khoản, hạn mức, model và effort cho mọi tính năng AI.">
-          <ClaudeSection />
-        </Section>
-
-        <Section title="YouTrack" hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
-          <YouTrackSection />
-        </Section>
-
-        <Section title="Kết nối">
-          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-1.5 text-sm">
-            <dt className="text-ink-3">Telegram</dt>
-            <dd className={status.state === "connected" ? "text-ok" : "text-warn"}>{status.state === "connected" ? "Đã kết nối" : status.detail || status.state}</dd>
-            {stream && <>
-              <dt className="text-ink-3">Cập nhật trực tiếp</dt>
-              <dd className={stream === "open" ? "text-ok" : "text-warn"}>{stream === "open" ? "Đang chạy" : stream === "connecting" ? "Đang nối lại…" : "Tạm dừng"}</dd>
-            </>}
-            <dt className="text-ink-3">AI</dt>
-            <dd className={status.ai_configured ? "text-ok" : "text-ink-3"}>{status.ai_configured ? "Đã cấu hình" : "Chưa cấu hình"}</dd>
-            <dt className="text-ink-3">YouTrack</dt>
-            <dd className={status.youtrack_configured ? "text-ok" : "text-ink-3"}>{status.youtrack_configured ? "Đã cấu hình" : "Chưa cấu hình (dán token ở mục YouTrack; tạo issue cần thêm YOUTRACK_PROJECT)"}</dd>
-          </dl>
-        </Section>
+        <div role="tabpanel" id="shared-tabpanel" aria-labelledby={`shared-tab-${tab}`} className="-mx-5 grid min-h-0 flex-1 content-start gap-4 overflow-y-auto overscroll-contain px-5">
+          {tab === "system" && <>
+            <Section title="Vai trò" hint="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code. Lưu trên trình duyệt này." first>
+              <RoleSection />
+            </Section>
+            <Section title="Giao diện">
+              <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
+                options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
+              <LookSection />
+            </Section>
+            <Section title="Cập nhật" hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
+              <UpdateSection />
+            </Section>
+          </>}
+          {tab === "youtrack" && <>
+            <Section title="Tài khoản YouTrack" first hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
+              <YouTrackSection />
+            </Section>
+            <Section title="Instructions cho AI" hint="Hướng dẫn riêng của team cho vai trò đang chọn, AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
+              <NotesSection />
+            </Section>
+            <Section title="Kho prompt" hint="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
+              <PromptManager role={readYtRole() ?? "dev"} />
+            </Section>
+            <Section title="Báo cáo release" hint="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò ở trên và project đang chọn bên trái. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
+              <ReportSection />
+            </Section>
+          </>}
+          {tab === "ai" && <>
+            <Section title="Tài khoản" hint="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập." first>
+              <AiAccounts />
+            </Section>
+            <ProviderSection />
+            <ConsentSection />
+          </>}
+        </div>
 
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Đóng</DialogClose>
@@ -68,13 +87,89 @@ export function SharedSettingsDialog({ open, onOpenChange, status, stream }: {
   );
 }
 
+/** Which CLI runs every AI feature (drafts, summaries, Digest, YouTrack, tasks, AI Agent); saved in data/claude.json. */
+function ProviderSection() {
+  const { p, set, info, name } = useAiPrefs();
+  const accounts = useAccounts();
+  if (!p) return null;
+  const ready = (v: Provider) => accounts[v].installed && accounts[v].loggedIn;
+  const options = (["claude", "codex", "antigravity"] as const).map((v) => ({
+    value: v, label: <span className={cn(!ready(v) && "opacity-50")}>{info(v)?.name ?? v}</span>,
+  }));
+  return (
+    <Section title="Dùng AI nào" hint="Áp dụng cho mọi tính năng AI: tóm tắt, soạn nháp, Digest, YouTrack, Task và AI Agent. Mỗi AI giữ model và effort riêng, đổi qua lại không mất lựa chọn; chỉnh ở Chi tiết của từng AI.">
+      <Segmented label="AI cho mọi tính năng" value={p.provider} onChange={(v) => set({ provider: v })} options={options} />
+      {!accounts[p.provider].checking && !ready(p.provider) && <span className="text-xs text-warn">{name} chưa cài hoặc chưa đăng nhập: lần chạy sẽ lỗi.</span>}
+      <p className="text-xs text-ink-3">Task đang dở tiếp tục bằng AI đã bắt đầu nó.</p>
+    </Section>
+  );
+}
+
+type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
+
+/** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
+function UpdateSection() {
+  const qc = useQueryClient();
+  const info = useQuery({ queryKey: ["update"], queryFn: ({ signal }) => api<UpdateInfo>("/update", { signal }), retry: false, staleTime: 60_000 });
+  const [restarting, setRestarting] = useState(false);
+  const run = useMutation({
+    mutationFn: () => api<UpdateInfo>("/update", { method: "POST" }),
+    onSuccess: async (r) => {
+      if (!r.updated) return void qc.invalidateQueries({ queryKey: ["update"] });
+      setRestarting(true);
+      await new Promise((ok) => setTimeout(ok, 2000));
+      for (let i = 0; i < 60; i++) {
+        if (await fetch("/health", { cache: "no-store" }).then((x) => x.ok, () => false)) return location.reload();
+        await new Promise((ok) => setTimeout(ok, 1000));
+      }
+    },
+  });
+  const auto = useMutation({
+    mutationFn: (on: boolean) => api("/update/auto", { method: "PUT", json: { on } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["update"] }),
+  });
+  const d = info.data;
+  const err = (e: unknown) => (e instanceof ApiError && e.detail) || "Không kết nối được GitHub.";
+  return (
+    <div className="grid gap-2 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <span className={cn(d?.behind ? "text-hl-2" : "text-ink-3")}>
+          {info.isFetching ? "Đang kiểm tra…" : !d ? "" : d.behind ? `Có ${d.behind} bản mới trên ${d.branch}` : `Đã mới nhất (${d.current} · ${d.branch})`}
+        </span>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={info.isFetching || run.isPending} onClick={() => void info.refetch()}>Kiểm tra</Button>
+          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || run.isPending || restarting} onClick={() => run.mutate()}>
+            {restarting ? "Đang khởi động lại…" : run.isPending ? "Đang cập nhật…" : "Cập nhật"}
+          </Button>
+        </div>
+      </div>
+      {!!d?.commits.length && (
+        <ul className="grid max-h-32 gap-0.5 overflow-y-auto text-xs text-ink-3">
+          {d.commits.map((c) => <li key={c.sha} className="truncate"><span className="font-mono">{c.sha}</span> {c.subject} · {c.when}</li>)}
+        </ul>
+      )}
+      {d?.dirty && <p className="text-xs text-warn">Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.</p>}
+      {(info.isError || run.isError) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
+      {d && (
+        <label className="flex cursor-pointer items-center justify-between gap-4">
+          <span className="grid gap-0.5">
+            <span>Tự động cập nhật</span>
+            <span className="text-xs text-ink-3">Kiểm tra mỗi 6 giờ khi server chạy; có bản mới thì cập nhật và khởi động lại (bỏ qua khi đang có task AI Agent).</span>
+          </span>
+          <Switch label="Tự động cập nhật" checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
+        </label>
+      )}
+    </div>
+  );
+}
+
 const STYLES: { value: UiStyle; label: React.ReactNode; hint: string }[] = [
   { value: "simple", label: "Đơn giản", hint: "Phẳng, màu dịu, không gradient, chuyển động nhanh gọn." },
   { value: "default", label: "Mặc định", hint: "Cân bằng: nền ấm nhẹ, bóng mềm, màu nhấn rõ." },
   { value: "vivid", label: <>Rực rỡ <span className="rounded-sm bg-hl-wash px-1 text-[10px] font-semibold text-hl-2">Pro</span></>,
     hint: "Màu đậm hơn, nền loang theo màu của bạn, nút phát sáng, chuyển động nảy; bật gradient thì màu chạy chậm." },
 ];
-const WHEEL = `linear-gradient(to right, ${Array.from({ length: 13 }, (_, i) => `oklch(62% 0.14 ${i * 30})`).join()})`;
+const WHEEL = `linear-gradient(to right in oklch, ${Array.from({ length: 37 }, (_, i) => `oklch(66% 0.17 ${i * 10})`).join()})`;
 const swatch = (h: number) => `oklch(58% 0.13 ${h})`;
 
 /** Each member's look, saved in this browser and applied in every open tab (public/design/look.js). */
@@ -153,8 +248,11 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogTitle>Cài đặt Telegram</DialogTitle>
-        <DialogDescription className="-mt-2">Chỉ cho Telegram, lưu trên trình duyệt này. Giao diện, Claude, YouTrack ở Cài đặt chung (góc trên phải).</DialogDescription>
+        <DialogDescription className="-mt-2">Chỉ cho Telegram. Tài khoản lưu trên máy này, các mục khác lưu trên trình duyệt này. Giao diện, AI, YouTrack ở Cài đặt chung (góc trên phải).</DialogDescription>
 
+        <Section title="Tài khoản Telegram" first hint="API ID/Hash và phiên đăng nhập chỉ lưu trên máy này (thư mục data/).">
+          <TelegramSection />
+        </Section>
         <Section title="Hàng chờ" hint="Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách (quá hạn).">
           <Segmented label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
             options={OVERDUE_CHOICES.map((h) => ({ value: h, label: `${h} giờ` }))} />
@@ -214,12 +312,157 @@ const YT_ERRORS: Record<string, string> = {
   youtrack_unreachable: "Không kết nối được YouTrack ở URL này.",
 };
 
+/** The role (Telegram + YouTrack): pick one, or clear it so the YouTrack page asks again. */
+function RoleSection() {
+  const [role, setRole] = useState(readYtRole);
+  const pick = (r: YtRole | null) => { setRole(r); saveYtRole(r); };
+  return <>
+    <div role="radiogroup" aria-label="Vai trò" className="grid gap-1.5">
+      {YT_ROLES.map(([r, name, what]) => (
+        <button key={r} type="button" role="radio" aria-checked={role === r} onClick={() => pick(r)}
+          className={cn("grid gap-0.5 rounded-md border px-3 py-2 text-left transition-colors duration-(--dur-micro)", role === r ? "border-hl bg-hl-wash" : "border-rule hover:bg-paper-2")}>
+          <span className="flex items-center gap-1.5 text-sm font-medium">{name}{role === r && <Check className="size-3.5 text-hl-2" aria-hidden />}</span>
+          <span className="text-xs text-ink-3">{what}</span>
+        </button>
+      ))}
+    </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button size="sm" variant="outline" disabled={!role} onClick={() => pick(null)}><Trash2 /> Xóa vai trò</Button>
+      <span className="text-xs text-ink-3">{role ? "Xóa thì trang YouTrack sẽ hỏi lại; Telegram tạm coi như Dev." : "Chưa chọn: Telegram coi như Dev, mở YouTrack sẽ hỏi bạn chọn."}</span>
+    </div>
+  </>;
+}
+
 /** Paste a permanent token (made on the YouTrack profile page); the server checks it before keeping it. */
+const TG_ERRORS: Record<string, string> = {
+  phone_invalid: "Số điện thoại không hợp lệ (ghi kèm mã nước, vd. +84…).",
+  api_invalid: "API ID/Hash sai, kiểm tra lại trên my.telegram.org.",
+  code_invalid: "Mã không đúng.",
+  code_expired: "Mã đã hết hạn, gửi lại mã mới.",
+  code_not_sent: "Gửi mã trước đã.",
+  password_invalid: "Mật khẩu 2FA không đúng.",
+  flood_wait: "Telegram tạm chặn vì thử nhiều lần, đợi một lúc rồi thử lại.",
+  telegram_not_configured: "Lưu API ID/Hash trước.",
+};
+
+function useStatus() {
+  return useQuery({ queryKey: ["status"], queryFn: ({ signal }) => api<Status>("/status", { signal }) });
+}
+
+/** API ID/Hash from my.telegram.org, then phone → code → 2FA: the whole Telegram setup without .env or a terminal. */
+function TelegramSection() {
+  const qc = useQueryClient();
+  const status = useStatus().data;
+  const [editApi, setEditApi] = useState(false);
+  const [apiId, setApiId] = useState("");
+  const [apiHash, setApiHash] = useState("");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [step, setStep] = useState<"phone" | "code" | "password">("phone");
+  const refresh = () => void qc.invalidateQueries({ queryKey: ["status"] });
+  const saveApi = useMutation({
+    mutationFn: () => api("/telegram/app", { method: "PUT", json: { api_id: Number(apiId), api_hash: apiHash.trim().toLowerCase() } }),
+    onSuccess: () => { setEditApi(false); setApiHash(""); setStep("phone"); refresh(); },
+  });
+  const sendCode = useMutation({
+    mutationFn: () => api("/telegram/code", { method: "POST", json: { phone: phone.trim() } }),
+    onSuccess: () => { setCode(""); setStep("code"); },
+  });
+  const signIn = useMutation({
+    mutationFn: () => api<{ password_required: boolean }>("/telegram/sign-in", { method: "POST", json: step === "password" ? { password } : { code: code.trim() } }),
+    onSuccess: (r) => { if (r.password_required) setStep("password"); else { setPassword(""); refresh(); } },
+  });
+  if (!status) return null;
+  const err = saveApi.error ?? sendCode.error ?? signIn.error;
+  const errLine = err && <p role="alert" className="text-xs text-error">{errorText(err, TG_ERRORS, "Không thực hiện được, thử lại.")}</p>;
+
+  if (editApi || !status.telegram_api_id) {
+    return (
+      <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); saveApi.mutate(); }}>
+        <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer"
+          className="inline-flex w-fit items-center gap-1 text-xs text-hl-2 underline decoration-hl underline-offset-[3px]">
+          Lấy API ID/Hash tại my.telegram.org → API development tools <ExternalLink className="size-3" aria-hidden />
+        </a>
+        <div className="flex gap-2">
+          <Input aria-label="API ID" placeholder="API ID" inputMode="numeric" maxLength={12} className="w-32"
+            value={apiId} onChange={(e) => setApiId(e.target.value.replace(/\D/g, ""))} />
+          <Input aria-label="API Hash" type="password" autoComplete="off" placeholder="API Hash (32 ký tự)" maxLength={32}
+            value={apiHash} onChange={(e) => setApiHash(e.target.value)} />
+        </div>
+        <div className="flex gap-2">
+          <Button type="submit" variant="outline" aria-busy={saveApi.isPending} disabled={saveApi.isPending || !apiId || !/^[0-9a-fA-F]{32}$/.test(apiHash.trim())}>
+            {saveApi.isPending ? "Đang lưu…" : "Lưu"}
+          </Button>
+          {editApi && <Button type="button" variant="ghost" onClick={() => setEditApi(false)}>Hủy</Button>}
+        </div>
+        {errLine}
+      </form>
+    );
+  }
+
+  const changeApi = <button type="button" className="w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink" onClick={() => { setApiId(String(status.telegram_api_id)); setEditApi(true); }}>Đổi API ID/Hash</button>;
+  if (status.state !== "login_required") {
+    const label = status.state === "connected" ? `Đã đăng nhập${status.telegram_me ? `: ${status.telegram_me}` : ""}` : "Đang kết nối Telegram…";
+    return <div className="grid gap-1"><p className={cn("text-sm", status.state === "connected" ? "text-ok" : "text-ink-3")}>{label}</p>{changeApi}</div>;
+  }
+  return (
+    <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); if (step === "phone") sendCode.mutate(); else signIn.mutate(); }}>
+      <p className="text-sm text-warn">Chưa đăng nhập Telegram.</p>
+      {step === "phone" ? (
+        <div className="flex gap-2">
+          <Input aria-label="Số điện thoại" type="tel" autoComplete="tel" placeholder="+84 9xx xxx xxx" maxLength={20}
+            value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Button type="submit" variant="outline" aria-busy={sendCode.isPending} disabled={sendCode.isPending || !/^\+?[0-9 ]{6,20}$/.test(phone.trim())}>
+            {sendCode.isPending ? "Đang gửi…" : "Gửi mã"}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          {step === "code"
+            ? <Input aria-label="Mã đăng nhập" inputMode="numeric" autoComplete="one-time-code" placeholder="Mã Telegram vừa gửi" maxLength={8} autoFocus
+                value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />
+            : <Input aria-label="Mật khẩu 2FA" type="password" autoComplete="current-password" placeholder="Mật khẩu 2FA" maxLength={256} autoFocus
+                value={password} onChange={(e) => setPassword(e.target.value)} />}
+          <Button type="submit" variant="outline" aria-busy={signIn.isPending} disabled={signIn.isPending || (step === "code" ? code.length < 3 : !password)}>
+            {signIn.isPending ? "Đang đăng nhập…" : "Đăng nhập"}
+          </Button>
+        </div>
+      )}
+      {step !== "phone" && <button type="button" className="w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink" onClick={() => setStep("phone")}>Đổi số / gửi lại mã</button>}
+      {step === "phone" && changeApi}
+      {errLine}
+    </form>
+  );
+}
+
+/** Per-message consent before AI reads Telegram text (Telegram API Terms); off only for personal use. Saved in data/config.json. */
+function ConsentSection() {
+  const qc = useQueryClient();
+  const status = useStatus().data;
+  const save = useMutation({
+    mutationFn: (on: boolean) => api("/settings/consent", { method: "PUT", json: { ai_require_consent: on } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["status"] }),
+  });
+  if (!status) return null;
+  return (
+    <Section title="Quyền đọc tin">
+      <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
+        <span className="grid gap-0.5">
+          <span>Hỏi trước khi AI đọc tin Telegram</span>
+          <span className="text-xs text-ink-3">Tắt chỉ khi dùng cá nhân: AI được đọc tin xung quanh và các tin bạn từng gửi để viết nháp đúng giọng.</span>
+        </span>
+        <Switch label="Hỏi trước khi AI đọc tin Telegram" checked={status.ai_require_consent} disabled={save.isPending} onChange={(v) => save.mutate(v)} />
+      </label>
+    </Section>
+  );
+}
+
 function YouTrackSection() {
   const qc = useQueryClient();
   const cfg = useQuery({
     queryKey: ["yt-config"],
-    queryFn: ({ signal }) => api<{ base: string; mock: boolean }>("/yt/config", { signal }),
+    queryFn: ({ signal }) => api<{ base: string; mock: boolean; hint: string | null }>("/yt/config", { signal }),
   });
   const [url, setUrl] = useState<string | null>(null); // null: still showing the server's URL
   const [token, setToken] = useState("");
@@ -240,10 +483,10 @@ function YouTrackSection() {
       <Input aria-label="URL YouTrack" placeholder="https://youtrack.example.com" inputMode="url" maxLength={200}
         value={url ?? cfg.data?.base ?? ""} onChange={(e) => setUrl(e.target.value)} />
       <div className="flex gap-2">
-        <Input aria-label="Token YouTrack" type="password" autoComplete="off" placeholder="perm-…" maxLength={500}
+        <Input aria-label="Token YouTrack" type="password" autoComplete="off" placeholder={cfg.data?.hint ?? "perm-…"} maxLength={500}
           value={token} onChange={(e) => setToken(e.target.value)} />
         <Button type="submit" variant="outline" aria-busy={save.isPending} disabled={save.isPending || !/^https?:\/\/\S+$/.test(base) || token.trim().length < 8}>
-          {save.isPending ? "Đang kiểm tra…" : "Lưu"}
+          {save.isPending ? "Đang kiểm tra…" : cfg.data?.hint ? "Cập nhật" : "Lưu"}
         </Button>
       </div>
       {/^https?:\/\/\S+$/.test(base) && (
@@ -254,6 +497,63 @@ function YouTrackSection() {
       )}
       {save.isError && <p role="alert" className="text-xs text-error">{errorText(save.error, YT_ERRORS, "Không lưu được. Kiểm tra URL (bắt đầu bằng https://) và token.")}</p>}
     </form>
+  );
+}
+
+const NOTES_HINT: Record<YtRole, string> = {
+  qa: "Vd.\n- Test case dạng bảng: ID | Tiền điều kiện | Bước | Kết quả mong đợi | Mức ưu tiên\n- Luôn kiểm cả iOS và Android; môi trường dev rồi staging\n- Khi phân tích bug: nêu mức ảnh hưởng người dùng và vùng regression\n- Viết test case bằng tiếng Việt, tên màn hình giữ tiếng Anh",
+  dev: "Vd.\n- Khi chia task: ước lượng theo giờ, tách FE / BE\n- Standup ngắn, tối đa 5 dòng",
+  po: "Vd.\n- Báo cáo cho khách hàng: tránh thuật ngữ kỹ thuật\n- Luôn nêu rủi ro về deadline trước",
+};
+
+/** Team instructions per role, kept on the server; this box edits the role picked above. */
+function NotesSection() {
+  const role = useSyncExternalStore(onPrefs, readYtRole, () => null);
+  const q = useQuery({ queryKey: ["yt", "notes"], queryFn: () => yt.notes() });
+  const qc = useQueryClient();
+  const [edit, setEdit] = useState<{ role: YtRole; text: string } | null>(null); // null: showing the saved text
+  const save = useMutation({
+    mutationFn: (text: string) => yt.setNotes({ ...q.data!, [role!]: text }),
+    onSuccess: (d) => { qc.setQueryData(["yt", "notes"], d); setEdit(null); },
+  });
+  if (!role) return <p className="text-sm text-ink-3">Chọn vai trò ở trên trước.</p>;
+  if (!q.data) return <p className="text-sm text-ink-3">{q.isError ? `Không tải được: ${(q.error as Error).message}` : "Đang tải…"}</p>;
+  const draft = edit?.role === role ? edit.text : null; // an edit belongs to the role it was typed for
+  const text = draft ?? q.data[role];
+  const name = YT_ROLES.find(([r]) => r === role)?.[1];
+  return (
+    <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); save.mutate(text.trim()); }}>
+      <Textarea rows={6} maxLength={4000} value={text} onChange={(e) => setEdit({ role, text: e.target.value })} aria-label={`Instructions cho AI, vai trò ${name}`} placeholder={NOTES_HINT[role]} className="text-sm" />
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" size="sm" variant="outline" disabled={draft === null || save.isPending}>Lưu</Button>
+        {draft !== null && <Button type="button" size="sm" variant="ghost" onClick={() => setEdit(null)}>Hủy</Button>}
+        <span className="text-xs text-ink-3">Đang áp dụng cho: <b className="text-ink-2">{name}</b> · {text.length}/4000</span>
+      </div>
+      {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
+    </form>
+  );
+}
+
+const WEEK = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+/** When the YouTrack release report writes itself (per browser); the report follows the role above and the project on the left. */
+function ReportSection() {
+  const [v, setV] = useState(readReportAt);
+  const set = (next: Partial<ReportAt>) => { const n = { ...v, ...next }; setV(n); saveReportAt(n); };
+  return (
+    <div className="grid gap-2">
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.on} onChange={(e) => set({ on: e.target.checked })} /> Tự tạo báo cáo mỗi ngày</label>
+      <div className="flex flex-wrap items-center gap-2">
+        <div role="group" aria-label="Ngày tạo báo cáo" className="flex flex-wrap gap-1">
+          {WEEK.map((d, k) => {
+            const on = v.days.includes(k);
+            return <Button key={d} type="button" size="xs" variant={on ? "default" : "outline"} aria-pressed={on} disabled={!v.on}
+              onClick={() => set({ days: on ? v.days.filter((x) => x !== k) : [...v.days, k].sort() })}>{d}</Button>;
+          })}
+        </div>
+        <Input aria-label="Giờ tạo báo cáo" type="time" className="h-8 w-28" disabled={!v.on} value={v.time} onChange={(e) => /^\d\d:\d\d$/.test(e.target.value) && set({ time: e.target.value })} />
+      </div>
+    </div>
   );
 }
 
@@ -323,9 +623,9 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({ title, hint, first, children }: { title: string; hint?: string; first?: boolean; children: React.ReactNode }) {
   return (
-    <section className="grid gap-2.5 border-t border-rule pt-4">
+    <section className={cn("grid gap-2.5", !first && "border-t border-rule pt-4")}>
       <h3 className="text-[0.8125rem] font-semibold text-ink-2">{title}</h3>
       {hint && <p className="-mt-1.5 text-xs text-ink-3">{hint}</p>}
       {children}

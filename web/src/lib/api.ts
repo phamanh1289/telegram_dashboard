@@ -16,8 +16,13 @@ export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
 export type YouTrackIssue = S["YouTrackIssue"];
+export type AiTicketDraft = S["AiTicketDraft"];
 export type ClaudeAccount = S["ClaudeAccount"];
-export type ClaudePrefs = S["ClaudePrefs"];
+export type AiPrefs = S["AiPrefs"];
+export type AiPicks = S["AiPicks"];
+export type AiCatalogEntry = S["AiCatalogEntry"];
+export type AiAccount = S["AiAccount"];
+export type AiRun = S["AiRun"];
 export type AiPermissionResponse = S["AiPermissionResponse"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
@@ -65,8 +70,44 @@ export async function api<T>(
   return body as T;
 }
 
+/** NDJSON lines of an AI answer as Claude writes it: `onPart` gets the text so far, the result comes last. */
+export async function readAnswer<T>(res: Response, onPart?: (text: string) => void): Promise<T> {
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "", text = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) throw new ApiError(502, "ai_provider_error");
+    buf += value;
+    const lines = buf.split("\n");
+    buf = lines.pop()!;
+    for (const line of lines.filter(Boolean)) {
+      const m = JSON.parse(line);
+      if ("done" in m) return m.done as T;
+      if ("error" in m) throw new ApiError(m.error.status, m.error.code, null, m.error.detail);
+      text = m.reset ? "" : text + m.delta;
+      onPart?.(text);
+    }
+  }
+}
+
+/** POST to an AI route that streams its answer (see `readAnswer`). */
+export async function apiStream<T>(path: string, json: unknown, signal?: AbortSignal, onPart?: (text: string) => void): Promise<T> {
+  const res = await fetch(`/api${path}`, {
+    method: "POST", credentials: "same-origin", cache: "no-store", signal,
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(json),
+  });
+  if (!res.ok) {
+    const e = (await res.json().catch(() => null))?.error;
+    throw new ApiError(res.status, e?.code ?? (res.status === 422 ? "validation" : "http_error"), e?.retry_after ?? null, e?.detail ?? null);
+  }
+  return readAnswer<T>(res, onPart);
+}
+
 export const isAuthError = (e: unknown) => e instanceof ApiError && e.status === 401;
 
 /** Vietnamese text for a failed call: the error code's entry in `map`, else `fallback`. */
-export const errorText = (e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") =>
-  (e instanceof ApiError && map[e.code]) || fallback;
+/** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
+export function errorText(e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") {
+  const text = (e instanceof ApiError && map[e.code]) || fallback;
+  return e instanceof ApiError && e.code === "ai_provider_error" && e.detail ? `${text.trimEnd()} (${e.detail}) ` : text;
+}

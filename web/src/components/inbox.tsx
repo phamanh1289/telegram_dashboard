@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
@@ -11,19 +12,19 @@ import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
 import { SettingsDialog, SharedSettingsDialog, ShortcutsDialog } from "@/components/settings";
-import { Toaster, TopBar } from "@/components/shell";
+import { NavPill, Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
 import { ALL, BRIEFING, msgKey, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
-import { getPref, setPref } from "@/lib/prefs";
+import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 const STATE_LABEL: Record<Status["state"], string> = {
-  setup_required: "Chưa cấu hình Telegram (TELEGRAM_API_ID/HASH)",
-  login_required: "Cần đăng nhập: uv run python -m telegram_dashboard login",
+  setup_required: "Chưa cấu hình Telegram: mở Cài đặt Telegram",
+  login_required: "Cần đăng nhập: mở Cài đặt Telegram",
   connecting: "Đang kết nối Telegram…",
   connected: "Đã kết nối Telegram",
   degraded: "Mất kết nối, đang thử lại",
@@ -35,6 +36,9 @@ const STREAM_LABEL: Record<StreamState, string> = {
   connecting: "Đang nối lại luồng cập nhật…",
   closed: "Luồng cập nhật tạm dừng",
 };
+
+// Same motion as the YouTrack module (yt/app.tsx): a sliding highlight on the active nav item, a fade-and-rise between pages.
+const PAGE_MOTION = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.18 } } as const;
 
 export function App() {
   const status = useQuery({
@@ -85,7 +89,9 @@ export function App() {
 
 function Inbox({ status }: { status: Status }) {
   const stream = useSync(status.cursor);
-  const runningTasks = (useTaskList().data ?? []).filter((t) => t.running).length;
+  const taskList = useTaskList().data ?? [];
+  const runningTasks = taskList.filter((t) => t.running).length;
+  const codeRole = usesCode(useRole()); // QA / PO: no AI Agent unless they already have sessions
   // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
   // (after /status), so state starts from the URL and prefs directly, with no first paint on defaults.
   const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
@@ -104,7 +110,8 @@ function Inbox({ status }: { status: Status }) {
     if (q.trim() && chatId !== ALL && chatId !== PINNED) selectChat(ALL); // results live in the cross-group list
   }
   // Settings remount on each open (key) so they read fresh values.
-  const [settings, setSettings] = useState({ open: false, key: 0 });
+  // First run: open straight on the Telegram setup (API ID/Hash, then login).
+  const [settings, setSettings] = useState(() => ({ open: status.state === "setup_required" || status.state === "login_required", key: 0 }));
   // YouTrack's gear lands here with ?settings=shared: open the shared dialog once (the flag is dropped below).
   const [shared, setShared] = useState(() => ({ open: new URLSearchParams(location.search).get("settings") === "shared", key: 0 }));
   // Sidebar: pinned open or a hover-to-open rail (remembered per browser).
@@ -205,7 +212,7 @@ function Inbox({ status }: { status: Status }) {
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
     [PINNED, "Tag đã ghim", 0, Pin],
-    [TASKS, "AI Agent", runningTasks, Bot],
+    ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as const] : []),
     ...(status.ai_configured ? [[BRIEFING, "Briefing", 0, Newspaper] as const] : []),
   ] as const;
   const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
@@ -234,13 +241,14 @@ function Inbox({ status }: { status: Status }) {
           {views.map(([id, label, count, Icon]) => (
             <button key={id} type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} title={label}
               className={cn(
-                "flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
-                chatId === id ? "bg-hl-wash font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
+                "relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
+                chatId === id ? "font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
               )}>
-              <Icon className="size-5 shrink-0" aria-hidden />
-              <span className={cn("flex-1 whitespace-nowrap", t)}>{label}</span>
+              {chatId === id && <NavPill />}
+              <Icon className="relative size-5 shrink-0" aria-hidden />
+              <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
               {count > 0 && (
-                <span className={cn("rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2")}>
+                <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2")}>
                   <span className="sr-only">(</span>{count}<span className="sr-only">{id === TASKS ? " đang chạy)" : ")"}</span>
                 </span>
               )}
@@ -303,8 +311,9 @@ function Inbox({ status }: { status: Status }) {
         {/* The page sits in one card, like the YouTrack ledger. */}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
+            <AnimatePresence mode="wait">
             {chatId ? (
-              <div key={chatId} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out)">
+              <motion.div key={`${chatId}:${digest}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)]" {...PAGE_MOTION}>
                 {chatId === BRIEFING ? (
                   <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
@@ -327,16 +336,17 @@ function Inbox({ status }: { status: Status }) {
                   itemsRef={listItems}
                 />
                 )}
-              </div>
+              </motion.div>
             ) : (
-              <div className="grid place-items-center p-6">
+              <motion.div key="empty" className="grid place-items-center p-6" {...PAGE_MOTION}>
                 <div className="grid max-w-xs justify-items-center gap-3 text-center">
                   <MessageSquare className="size-6 text-ink-3" aria-hidden />
                   <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
                   <Button size="sm" variant="outline" onClick={() => go(ALL)}>Việc cần xử lý</Button>
                 </div>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </div>
         {replyTo ? (
@@ -349,7 +359,7 @@ function Inbox({ status }: { status: Status }) {
         ) : null}
       </div>
       <SettingsDialog key={settings.key} open={settings.open} onOpenChange={(open) => setSettings((s) => ({ ...s, open }))} />
-      <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} status={status} stream={stream} />
+      <SharedSettingsDialog key={`shared${shared.key}`} open={shared.open} onOpenChange={(open) => setShared((s) => ({ ...s, open }))} />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <Toaster />
     </div>

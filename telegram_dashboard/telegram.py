@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -78,6 +79,7 @@ class TelegramBridge:
         self.reaction = reaction  # emoji mirrored on Telegram when a tag is marked done ("" = off)
         self._react_lock = asyncio.Lock()
         self._bg: set[asyncio.Task] = set()  # reactions, notifications
+        self.me = ""  # logged-in account (@username or name), set by the transport on connect
         if transport is not None:
             transport.attach(self)
 
@@ -88,8 +90,15 @@ class TelegramBridge:
             self.db.hub.notify()
 
     async def start(self) -> None:
-        if self.transport is not None and self._main is None:
+        if self.transport is not None and (self._main is None or self._main.done()):
             self._main = asyncio.create_task(self._run())
+
+    async def set_transport(self, transport: Transport) -> None:
+        """Swap in a transport built from new API credentials (Settings) and connect it."""
+        await self.stop()
+        self.transport = transport
+        transport.attach(self)
+        await self.start()
 
     async def stop(self) -> None:
         tasks = [t for t in [self._main, *self._bg] if t]
@@ -429,7 +438,10 @@ class TelethonTransport:
         try:
             if not self.client.is_connected():
                 await self.client.connect()
-            return await self.client.is_user_authorized()
+            ok = await self.client.is_user_authorized()
+            if ok and self.bridge is not None and not self.bridge.me:
+                self.bridge.me = await self._whoami()
+            return ok
         except (
             errors.AuthKeyError,
             errors.AuthKeyUnregisteredError,
@@ -438,6 +450,56 @@ class TelethonTransport:
             errors.UserDeactivatedBanError,
         ) as e:
             raise LoginRequired() from e
+
+    async def _whoami(self) -> str:
+        from telethon import utils
+
+        try:
+            me = await self.client.get_me()
+        except Exception as e:  # drafts just miss the hint
+            log.debug("get_me failed: %s", type(e).__name__)
+            return ""
+        return f"@{me.username}" if getattr(me, "username", None) else utils.get_display_name(me)
+
+    # ---- login from the dashboard (Settings) --------------------------------
+    async def send_code(self, phone: str) -> None:
+        from telethon import errors
+
+        try:
+            if not self.client.is_connected():
+                await self.client.connect()
+            self._phone = phone
+            self._code_hash = (await self.client.send_code_request(phone)).phone_code_hash
+        except errors.FloodWaitError as e:
+            raise ApiError(429, "flood_wait", retry_after=e.seconds) from e
+        except (errors.PhoneNumberInvalidError, errors.PhoneNumberBannedError) as e:
+            raise ApiError(422, "phone_invalid") from e
+        except errors.ApiIdInvalidError as e:
+            raise ApiError(422, "api_invalid") from e
+
+    async def sign_in(self, code: str | None, password: str | None) -> bool:
+        """True when logged in; False when the account has 2FA and the password is still needed."""
+        from telethon import errors
+
+        try:
+            if password:
+                await self.client.sign_in(password=password)
+            elif getattr(self, "_code_hash", None) and code:
+                await self.client.sign_in(self._phone, code, phone_code_hash=self._code_hash)
+            else:
+                raise ApiError(409, "code_not_sent")
+        except errors.SessionPasswordNeededError:
+            return False
+        except errors.FloodWaitError as e:
+            raise ApiError(429, "flood_wait", retry_after=e.seconds) from e
+        except (errors.PhoneCodeInvalidError, errors.PhoneCodeEmptyError) as e:
+            raise ApiError(422, "code_invalid") from e
+        except errors.PhoneCodeExpiredError as e:
+            raise ApiError(422, "code_expired") from e
+        except errors.PasswordHashInvalidError as e:
+            raise ApiError(422, "password_invalid") from e
+        self._code_hash = None
+        return True
 
     async def disconnect(self) -> None:
         await self.client.disconnect()
@@ -516,7 +578,15 @@ class TelethonTransport:
         msg = await self.client.get_messages(int(chat_id), ids=message_id)
         if msg is None or not getattr(msg, "photo", None):
             return False
-        return await self.client.download_media(msg, file=str(dest)) is not None
+        # a private temp name, then rename: a failed or concurrent download never leaves a broken "cached" photo
+        tmp = dest.with_name(f".{dest.stem}.{secrets.token_hex(4)}.jpg")
+        try:
+            if await self.client.download_media(msg, file=str(tmp)) is None:
+                return False
+            os.replace(tmp, dest)
+            return True
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def latest_id(self, chat_id: str) -> int:
         msgs = await self.client.get_messages(int(chat_id), limit=1)

@@ -1,8 +1,8 @@
 // Dashboard numbers for the YouTrack module (pure, no DOM); ported from public/yt/js/stats.js.
-import { bucket, byAs, bySp, DAY, type Filters, QUICK, shortSp, type Sprint, type Ticket } from "@/lib/yt";
+import { bucket, byAs, bySp, DAY, type Filters, QUICK, shortSp, type Sprint, tagsOf, type Ticket } from "@/lib/yt";
 
 export const AGE = { warn: 2, bad: 3 }; // days a ticket may sit in a watched state: > warn amber, > bad red
-const ATTN = [["blocked", "bad"], ["critical", "bad"], ["overdue", "bad"], ["unassigned", "warn"], ["noest", "warn"]] as const;
+const ATTN = [["blocked", "bad"], ["critical", "bad"], ["overdue", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]] as const;
 const up = (s: string | null | undefined) => String(s || "—").toUpperCase();
 const inSet = (set: Set<string>) => (i: Ticket) => i.sprints.some((s) => set.has(s));
 const isBug = (i: Ticket) => i.type === "Bug";
@@ -51,6 +51,8 @@ export function dashStats(x: StatsInput) {
   const done = cohort.filter((i) => i.resolved);
   const bugs = rows.filter((i) => isBug(i) && as(i));
   const spBugs = bugs.filter(inSet(per.set));
+  const openBugs = bugs.filter((i) => !i.resolved);
+  const modOf = (i: Ticket) => tagsOf(i)[0] || "Không module";
   const days = lastDays(x.range, now);
 
   // bulk clean-ups (hundreds of old tickets closed on one day) would swamp lead time, velocity and the per-day chart
@@ -154,6 +156,8 @@ export function dashStats(x: StatsInput) {
       vel: () => [`Xong trong sprint ${arg}`, rows.filter((i) => i.resolved && real(i) && i.sprints.includes(arg) && as(i))],
       lead: () => [`Lead time · xong trong ${days.length} ngày qua (lâu nhất trước)`, recent.slice().sort((a, b) => b.resolved! - b.created - (a.resolved! - a.created))],
       carry: () => ["Ticket chuyển sprint nhiều lần", carry],
+      bugp: () => [`Bug đang mở · ${arg}`, openBugs.filter((i) => (i.priority || "—") === arg)],
+      bugm: () => [`Bug đang mở · ${arg}`, openBugs.filter((i) => modOf(i) === arg)],
     };
     return R[key]?.() ?? null;
   };
@@ -181,6 +185,8 @@ export function dashStats(x: StatsInput) {
     bugFix: perDay(days, bugs, "resolved"),
     dist: tally(open, (i) => up(i.state)),
     qcLoad: tally(open.filter((i) => bucket(i) === 2), (i) => i.qc || "Chưa có QC"),
+    bugPrio: tally(openBugs, (i) => i.priority || "—"),
+    bugMod: tally(openBugs, modOf),
     ready: { n: open.length, rows: Object.entries(MISSING).map(([l, fn]) => [l, open.filter(fn).length] as const) },
     carry,
     mix: mixOf(per.set),

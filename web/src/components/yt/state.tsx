@@ -2,24 +2,31 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getPref, setPref } from "@/lib/prefs";
-import { type ColKey, type Filters, type Group, GROUPS, isColKey, type Sprint, type Ticket, UNASSIGNED, yt } from "@/lib/yt";
+import { getPref, put, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
+import type { AiRun } from "./bits";
+import type { AiSession } from "./history";
+import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, type Sprint, type Ticket, QUICK, UNASSIGNED, yt } from "@/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
 
-export type Mode = "dev" | "lead";
-export type Page = "home" | "tickets" | "dash";
+export type Mode = YtRole;
+export type Page = "home" | "tickets" | "dash" | "people";
+/** An AI run the AI session starts by itself: `seed` shows a saved answer instead (followed up from there), `onDone` keeps a new one. */
+export type AiAuto = AiRun & { seed?: { text: string; req: AiReq | null }; onDone?: (r: { text: string; req: AiReq | null }) => void };
 export type Sheet =
-  | { kind: "ticket"; id: string; nav: string[] }
+  | { kind: "ticket"; id: string; nav: string[]; comment?: string }
   | { kind: "list"; title: string; rows: Ticket[] }
-  | { kind: "ai"; title: string; label: string; run: (signal: AbortSignal) => Promise<{ text: string }> };
+  | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; resume?: AiSession }
+  | { kind: "history"; title: string };
 
-export const ANDROID_TEAM = ["Lễ Tất Dũng"]; // exact YouTrack full names; "Android team" = the current user + these people
+/** Tickets I just changed from the dashboard (assignee, field, comment): their next update is mine, not news (watch.tsx). */
+export const selfEdits = new Map<string, number>();
+
 const CAP = 600;
 const json = <T,>(k: string, d: T): T => { try { return JSON.parse(getPref(k) ?? "null") ?? d; } catch { return d; } };
 const qp = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
-const FILTER_PARAMS = ["sprint", "assignee", "state", "group", "sort", "everyone", "tier", "priority", "type", "q"];
+const FILTER_PARAMS = ["sprint", "assignee", "state", "group", "sort", "everyone", "tier", "quick", "priority", "type", "q"];
 
 type Stored = Omit<Filters, "assignee"> & { assignee: string[] | null }; // null = not chosen: the mode decides
 
@@ -28,7 +35,7 @@ function initialFilters(): Stored {
   const fromUrl = FILTER_PARAMS.some((k) => p.has(k));
   const s: Record<string, unknown> = fromUrl
     ? { sprint: p.getAll("sprint"), assignee: p.has("assignee") ? p.getAll("assignee") : p.has("everyone") ? [] : null, state: p.getAll("state"), group: p.get("group"), sort: p.get("sort"),
-        tier: p.get("tier"), priority: p.getAll("priority"), type: p.getAll("type"), q: p.get("q") ?? "" }
+        tier: p.get("tier"), quick: p.get("quick"), priority: p.getAll("priority"), type: p.getAll("type"), q: p.get("q") ?? "" }
     : json<Record<string, unknown>>("ytFilters", {});
   if (!fromUrl && s.v !== 3) delete s.assignee; // older saves never chose an assignee
   const flt = fromUrl && (s.priority as string[]).length + (s.type as string[]).length ? s : json<Record<string, unknown>>("ytFlt", {});
@@ -39,6 +46,7 @@ function initialFilters(): Stored {
     sprint: arr(s.sprint), assignee: Array.isArray(s.assignee) ? arr(s.assignee) : null, state: arr(s.state),
     priority: arr(flt.priority), type: arr(flt.type), q: typeof s.q === "string" ? s.q : "",
     tier: ["0", "1", "2"].includes(String(s.tier)) ? (+String(s.tier) as 0 | 1 | 2) : null,
+    quick: typeof s.quick === "string" && s.quick in QUICK ? s.quick : null,
     group: g === "none" || g in GROUPS ? (g as Group) : "sprint",
     sort: isColKey(k) && (d === "asc" || d === "desc") ? { k, d } : { k: "priority", d: "asc" },
   };
@@ -63,42 +71,74 @@ function useYtState() {
   const ps = projects.data; // the saved project no longer exists: fall back to VA, else the first one
   const project = !ps?.length || ps.some((p) => p.shortName === wanted) ? wanted : ps.find((p) => p.shortName === "VA")?.shortName ?? ps[0].shortName;
 
-  const [mode, setModeRaw] = useState<Mode>(() => { const m = qp().get("mode") || getPref("ytMode"); return m === "lead" ? "lead" : "dev"; });
-  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" ? "dash" : v === "tickets" ? "tickets" : "home"; });
+  // null: not chosen yet, the page asks first (and loads nothing); `mode` stands in as Dev for the code below
+  const role = useRole();
+  const mode: Mode = role ?? "dev";
+  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "people" ? v : "home"; });
   const [stored, setStored] = useState<Stored>(initialFilters);
   const [cap, setCap] = useState(CAP);
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [sheet, setSheet] = useState<Sheet | null>(null);
+  // ?ticket=VA-1 (a ticket chip in Telegram) opens that ticket's sheet
+  const [sheet, setSheet] = useState<Sheet | null>(() => { const t = qp().get("ticket"); return t && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t) ? { kind: "ticket", id: t, nav: [] } : null; });
   const [tv, setTv] = useState(false);
+  const [newTicket, setNewTicket] = useState<string | null>(null); // the create dialog, open with this starting note
 
   const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000 });
   const sprintsQ = useQuery({ queryKey: ["yt", "sprints", project], queryFn: () => yt.sprints(project), staleTime: 10 * 60_000 });
   const sprints = useMemo(() => new Map((sprintsQ.data ?? []).map((s) => [s.name, s] as [string, Sprint])), [sprintsQ.data]);
   const loginOf = useMemo(() => new Map((people.data ?? []).map((p) => [p.name, p.login])), [people.data]);
 
-  // Not chosen yet: Dev starts on my tickets, Lead on everyone's.
+  // Not chosen yet: Dev starts on my tickets, QA and PO on everyone's (QA tests tickets assigned to developers).
   const assignee = useMemo(() => stored.assignee ?? (mode === "dev" && me ? [me] : []), [stored.assignee, mode, me]);
   const filters: Filters = useMemo(() => ({ ...stored, assignee }), [stored, assignee]);
+  // the scope presets in the header: My task (me) / My team (me + saved members) / All ("" = a custom pick)
+  const [members, setMembersRaw] = useState<string[]>(() => json<unknown[]>("ytTeam", []).filter((x): x is string => typeof x === "string"));
+  const [teamPick, setTeamPick] = useState(false); // an empty team is just me: remember the click so "My team" stays lit
+  const team = useMemo(() => [...new Set([me, ...members].filter((n): n is string => !!n))], [me, members]);
+  const scope = !assignee.length ? "all"
+    : (teamPick || members.length) && assignee.length === team.length && team.every((n) => assignee.includes(n)) ? "team"
+    : assignee.length === 1 && assignee[0] === me ? "me" : "";
 
   // Load only the people the filter shows ('me', 'unassigned', logins); everyone when the filter is empty.
-  const who = useMemo(() => {
-    if (!assignee.length) return null;
-    const keys = assignee.map((n) => (n === UNASSIGNED ? "unassigned" : n === me ? "me" : loginOf.get(n)));
-    return keys.every(Boolean) ? (keys as string[]).sort() : people.isSuccess ? null : undefined; // undefined: wait for logins
-  }, [assignee, me, loginOf, people.isSuccess]);
+  const whoOf = useCallback((names: string[]) => {
+    if (!names.length) return null;
+    const keys = names.map((n) => (n === UNASSIGNED ? "unassigned" : n === me ? "me" : loginOf.get(n)));
+    return keys.every(Boolean) ? (keys as string[]).sort() : people.isPending ? undefined : null; // undefined: wait for logins; failed: everyone
+  }, [me, loginOf, people.isPending]);
+  const issuesQuery = useCallback((w: string[] | null) => ({
+    queryKey: ["yt", "issues", project, w?.join(",") ?? "*"],
+    queryFn: ({ signal }: { signal: AbortSignal }) => yt.issues(project, w, signal),
+  }), [project]);
+  const who = useMemo(() => whoOf(assignee), [whoOf, assignee]);
   const waitMe = stored.assignee === null && mode === "dev" && meQ.isPending;
   const issues = useQuery({
-    queryKey: ["yt", "issues", project, who?.join(",") ?? "*"],
-    queryFn: ({ signal }) => yt.issues(project, who ?? null, signal),
-    enabled: !!config.data && who !== undefined && !waitMe,
+    ...issuesQuery(who ?? null),
+    enabled: !!config.data && who !== undefined && !waitMe && !!role,
     placeholderData: keepPreviousData,
     refetchInterval: 60_000, // background tabs wait until visible again
   });
   const rows = issues.data ?? EMPTY;
+  // Warm the other scope presets once the current one is in, so switching tabs shows data at once instead of a dimmed wait.
+  const loaded = issues.isSuccess && !issues.isPlaceholderData;
+  useEffect(() => {
+    if (!loaded) return;
+    for (const w of [null, whoOf(team), me ? whoOf([me]) : undefined]) // ponytail: re-fetched at most every 5 min; drop "all" if the project gets huge
+      if (w !== undefined) void qc.prefetchQuery({ ...issuesQuery(w), staleTime: 5 * 60_000 });
+  }, [loaded, qc, issuesQuery, whoOf, team, me]);
 
   function setFilters(patch: Partial<Filters>) {
+    if (patch.assignee !== undefined) setTeamPick(false);
     setStored((s) => ({ ...s, ...patch, assignee: patch.assignee !== undefined ? patch.assignee : s.assignee }));
     setCap(CAP);
+  }
+  function setScope(s: "me" | "team" | "all") {
+    setFilters({ assignee: s === "all" ? [] : s === "team" ? team : me ? [me] : [] });
+    if (s === "team") setTeamPick(true);
+  }
+  function setMembers(names: string[]) {
+    setPref("ytTeam", JSON.stringify(names));
+    setMembersRaw(names);
+    setStored((st) => ({ ...st, assignee: [...new Set([me, ...names].filter((n): n is string => !!n))] }));
   }
   function setProject(p: string) {
     setPref("project", p);
@@ -106,40 +146,53 @@ function useYtState() {
     setStored((s) => ({ ...s, sprint: [], state: [], assignee: null }));
     setPicked(new Set());
   }
-  function setMode(m: Mode) {
-    setPref("ytMode", m);
-    setModeRaw(m);
-    setStored((s) => ({ ...s, assignee: null })); // the scope follows the new mode
+  const setMode = (m: Mode | null) => saveYtRole(m);
+  // a new role (here or from Settings): its own default scope and home page
+  const [seenRole, setSeenRole] = useState(role);
+  if (seenRole !== role) {
+    setSeenRole(role);
+    setStored((s) => ({ ...s, assignee: null }));
     setPage("home");
   }
 
   // persist filters (localStorage, same keys as /yt/) and keep a shareable URL
   useEffect(() => {
     const f = stored;
-    setPref("ytFilters", JSON.stringify({ v: 3, state: f.state, sprint: f.sprint, ...(f.assignee ? { assignee: f.assignee } : {}), group: f.group, sort: `${f.sort.k}:${f.sort.d}`, tier: null, q: "" }));
-    setPref("ytFlt", JSON.stringify({ priority: f.priority, type: f.type }));
+    put("ytFilters", JSON.stringify({ v: 3, state: f.state, sprint: f.sprint, ...(f.assignee ? { assignee: f.assignee } : {}), group: f.group, sort: `${f.sort.k}:${f.sort.d}`, tier: null, q: "" }));
+    put("ytFlt", JSON.stringify({ priority: f.priority, type: f.type }));
     const p = new URLSearchParams();
     p.set("project", project);
-    if (mode === "lead") p.set("mode", "lead");
     if (page !== "home") p.set("view", page);
     for (const k of ["sprint", "state", "priority", "type"] as const) f[k].forEach((v) => p.append(k, v));
     if (f.assignee) { if (f.assignee.length) f.assignee.forEach((v) => p.append("assignee", v)); else p.set("everyone", "1"); }
     if (f.q) p.set("q", f.q);
     if (f.tier != null) p.set("tier", String(f.tier));
+    if (f.quick) p.set("quick", f.quick);
     if (f.group !== "sprint") p.set("group", f.group);
     if (f.sort.k !== "priority" || f.sort.d !== "asc") p.set("sort", `${f.sort.k}:${f.sort.d}`);
     try { history.replaceState(null, "", `?${p}`); } catch {}
   }, [stored, project, mode, page]);
 
   // view prefs (same localStorage keys as /yt/)
-  const [hiddenCols, setHiddenCols] = usePref<ColKey[]>("ytColsOff", (v) => { try { const a = JSON.parse(v ?? "null"); return Array.isArray(a) ? a.filter(isColKey) : ["due", "updated"]; } catch { return ["due", "updated"]; } }, JSON.stringify);
+  // columns per role: QA reads who tests and how fresh, PO reads due dates, Dev keeps the original default
+  const colsOff = (d: ColKey[]) => (v: string | null) => { try { const a = JSON.parse(v ?? "null"); return Array.isArray(a) ? a.filter(isColKey) : d; } catch { return d; } };
+  const cols = {
+    dev: usePref<ColKey[]>("ytColsOff", colsOff(["due", "updated"]), JSON.stringify),
+    qa: usePref<ColKey[]>("ytColsOffQa", colsOff(["due"]), JSON.stringify),
+    po: usePref<ColKey[]>("ytColsOffPo", colsOff(["qc", "updated"]), JSON.stringify),
+  };
+  const [hiddenCols, setHiddenCols] = cols[mode];
   const [dense, setDense] = usePref("ytDense", bool(false), b2s);
+  const [view, setView] = usePref<"table" | "board">("ytView", (v) => (v === "board" ? "board" : "table"), String);
   const [showRes, setShowRes] = usePref("ytRes", bool(true), b2s);
   const [hiOn, setHiOn] = usePref("ytHi", bool(true), b2s);
   const [range, setRange] = usePref("ytRange", (v) => ([7, 14, 30].includes(Number(v)) ? Number(v) : 14), String);
   const [wipPref, setWip] = usePref("ytWip", (v) => (Number(v) >= 2 && Number(v) <= 5 ? Number(v) : 0), String);
   const wip = wipPref || config.data?.t.wip || 3;
-  const [agingStates, setAgingStates] = usePref<string[]>("ytAgSt", (v) => { try { const a = JSON.parse(v ?? "null"); return Array.isArray(a) ? a : ["IN PROGRESS", "BUILT ON DEV"]; } catch { return ["IN PROGRESS", "BUILT ON DEV"]; } }, JSON.stringify);
+  const states = (d: string[]) => (v: string | null) => { try { const a = JSON.parse(v ?? "null"); return Array.isArray(a) ? a : d; } catch { return d; } };
+  const devAging = usePref<string[]>("ytAgSt", states(["IN PROGRESS", "BUILT ON DEV"]), JSON.stringify);
+  const qaAging = usePref<string[]>("ytAgStQa", states(["READY FOR TEST", "QC - QA", "QC"]), JSON.stringify); // QA watches how long tickets wait for test
+  const [agingStates, setAgingStates] = mode === "qa" ? qaAging : devAging;
 
   // "new since your last visit": tickets updated after the last time this project was looked at
   const seen = useMemo(() => Number(getPref(`ytSeen:${project}`)) || 0, [project]);
@@ -166,15 +219,17 @@ function useYtState() {
         const next = new Map(m);
         for (const i of batch) if (r[i.id] != null) next.set(`${i.id}@${i.updated}`, +r[i.id] || i.created || i.updated);
         return next;
-      })).catch(() => {}).finally(() => setSinceBusy((b) => b - 1)));
+      })).catch(() => keys.forEach((k) => tried.current.delete(k))).finally(() => setSinceBusy((b) => b - 1)));
     }
   }, []);
 
-  /** Write the server's answer into every cached list (after an assignee change). */
-  function patchTicket(t: Ticket) {
+  /** Write the server's answer into every cached list and the open detail (after an assignee / state / priority change). */
+  const patchTicket = useCallback(async (t: Ticket) => {
+    selfEdits.set(t.id, Date.now());
+    qc.setQueryData<Ticket>(["yt", "detail", t.id], (old) => old && { ...old, ...t });
+    await qc.cancelQueries({ queryKey: ["yt", "issues", project] }); // a list fetched before the edit would put the old value back
     qc.setQueriesData<Ticket[]>({ queryKey: ["yt", "issues", project] }, (old) => old?.map((i) => (i.id === t.id ? { ...i, ...t } : i)));
-    qc.removeQueries({ queryKey: ["yt", "detail", t.id] });
-  }
+  }, [qc, project]);
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ["yt", "issues", project] });
     void qc.invalidateQueries({ queryKey: ["yt", "sprints", project] });
@@ -195,14 +250,15 @@ function useYtState() {
   const aiOn = !!config.data?.ai && !config.data.mock;
 
   return {
-    config: config.data, configError: config.error, projects: projects.data ?? [], project, setProject, me, people: people.data ?? [], loginOf,
-    sprints, sprintOptions, peopleOptions, rows, issues, refresh, filters, setFilters, mode, setMode, page, setPage, cap, setCap,
-    picked, setPicked, sheet, setSheet, tv, setTv, aiOn, seen, since, loadSince, sinceBusy: sinceBusy > 0, patchTicket,
-    hiddenCols, setHiddenCols, dense, setDense, showRes, setShowRes, hiOn, setHiOn, range, setRange, wip, setWip, agingStates, setAgingStates,
+    config: config.data, configError: config.error, projects: projects.data ?? [], project, setProject, me, people: people.data ?? NO_PEOPLE, loginOf,
+    sprints, sprintOptions, peopleOptions, rows, issues, refresh, filters, setFilters, team, members, setMembers, scope, setScope, role, mode, setMode, page, setPage, cap, setCap,
+    picked, setPicked, sheet, setSheet, tv, setTv, newTicket, setNewTicket, aiOn, seen, since, loadSince, sinceBusy: sinceBusy > 0, patchTicket,
+    hiddenCols, setHiddenCols, dense, setDense, view, setView, showRes, setShowRes, hiOn, setHiOn, range, setRange, wip, setWip, agingStates, setAgingStates,
     openTicket: (id: string, list?: Ticket[]) => setSheet((s) => ({ kind: "ticket", id, nav: list ? list.map((i) => i.id) : s?.kind === "ticket" ? s.nav : [] })),
   };
 }
 const EMPTY: Ticket[] = [];
+const NO_PEOPLE: Person[] = [];
 export const CAP_STEP = CAP;
 
 export type Yt = ReturnType<typeof useYtState>;

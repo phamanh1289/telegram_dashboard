@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlarmClock, Bot, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
+import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
+import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
-import { clockLabel, dbId, msgKey, openTask, pin, setHandled, smooth, telegramLink, timeLabel, toast, waitLabel } from "@/lib/inbox";
-import { readOverdueHours } from "@/lib/prefs";
+import { clockLabel, dbId, msgKey, openTask, pin, setHandled, smooth, snooze, telegramLink, timeLabel, toast, useNow, waitLabel } from "@/lib/inbox";
+import { readOverdueHours, useRole } from "@/lib/prefs";
+import { useRetest, yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 
 const MEDIA: Record<string, string> = {
@@ -25,8 +27,8 @@ const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] tex
 // Entity links only open these schemes; anything else (file:, data:, app handlers) stays plain text.
 const SAFE_URL = /^(https?|tg|mailto):/i;
 
-// Bare URLs, @username mentions (not inside e-mails) and `code` the sender typed literally.
-const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`/g;
+// Bare URLs, @username mentions (not inside e-mails), `code` the sender typed literally and YouTrack IDs (VA-123).
+const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`|(?<![\w-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)/g;
 
 export function inline(text: string, key: number) {
   const out: React.ReactNode[] = [];
@@ -36,11 +38,36 @@ export function inline(text: string, key: number) {
     const k = `${key}-${x.index}`;
     if (x[1]) out.push(<a key={k} href={x[1]} target="_blank" rel="noreferrer" className={cn(linkCls, "break-all")}>{x[1]}</a>);
     else if (x[2]) out.push(<a key={k} href={`https://t.me/${x[2].slice(1)}`} target="_blank" rel="noreferrer" className={mentionCls}>{x[2]}</a>);
-    else out.push(<code key={k} className={codeCls}>{x[3]}</code>);
+    else if (x[3]) out.push(<code key={k} className={codeCls}>{x[3]}</code>);
+    else out.push(<TicketChip key={k} id={x[4]} />);
     at = x.index + x[0].length;
   }
   out.push(text.slice(at));
   return out;
+}
+
+/** VA-123 of a known YouTrack project: a chip that opens the ticket sheet; hovering shows its state and assignee. */
+export function TicketChip({ id }: { id: string }) {
+  const [hover, setHover] = useState(false);
+  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false });
+  const d = useQuery({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000, retry: false, enabled: hover });
+  if (!projects.data?.some((p) => p.shortName === id.split("-")[0])) return id;
+  const t = d.data;
+  return (
+    <span className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}>
+      <a href={`/youtrack/?ticket=${id}`} className={cn(codeCls, "font-semibold no-underline hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/30", t?.resolved && "line-through")}>{id}</a>
+      {hover && (
+        <span role="tooltip" className="absolute top-full left-0 z-30 mt-1 grid w-72 gap-1 rounded-md bg-cotton p-2.5 text-xs leading-snug whitespace-normal text-ink-2 shadow-pop animate-in fade-in-0 duration-(--dur-micro)">
+          {t ? (
+            <>
+              <span className="font-medium text-ink">{t.summary}</span>
+              <span>{t.state || "—"} · {t.priority || "—"} · {t.assignee || "Chưa assign"}</span>
+            </>
+          ) : d.isError ? "Không tải được ticket" : "Đang tải…"}
+        </span>
+      )}
+    </span>
+  );
 }
 
 type Span = Message["links"][number];
@@ -122,6 +149,7 @@ function MessageRow({
   const link = telegramLink(m);
   const photo = `/api/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/photo`;
 
+  const retest = useRetest(m.text, useRole() === "qa" && !m.outgoing && !done);
   const selected = !!focused || isReplyTarget;
   const quiet = !m.outgoing && (done || snoozed);
 
@@ -179,6 +207,12 @@ function MessageRow({
               {wait.overdue && <span className="sr-only"> quá hạn</span>}
             </span>
           ))}
+          {retest.length > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 font-medium text-warn"
+              title={`Bạn là QC của ${retest.join(", ")} và tin này báo đã fix / có build: cần test lại`}>
+              <RotateCcw className="size-3" aria-hidden /> Cần retest
+            </span>
+          )}
           <div className="ml-auto flex flex-wrap items-center gap-x-2.5 text-xs leading-5">
             <button type="button" title={`ID ${dbId(m)} (bấm để chép, dùng khi báo lỗi)`}
               onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
@@ -236,7 +270,7 @@ function MessageRow({
             </p>
             {t.result && (
               <>
-                <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-ink-2">{t.result}</p>
+                <Markdown text={t.result} className="mt-1 line-clamp-4 text-[length:inherit] text-ink-2" />
                 <Button size="xs" variant="link" className="mt-0.5 h-auto px-0" onClick={() => onUseText(m, t.result!)}>
                   Dùng kết quả làm nháp trả lời
                 </Button>
@@ -290,7 +324,7 @@ function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boole
   );
 }
 
-/** Xong / ghim / ngữ cảnh, on the hover row and in the reply panel header. */
+/** Xong / hoãn / ghim / ngữ cảnh, on the hover row and in the reply panel header. */
 export function MessageActions({
   m, showContext, onToggleContext, onDone,
 }: {
@@ -306,8 +340,8 @@ export function MessageActions({
   const pinned = over.pinned ?? m.pinned;
   // Other changes come back through SSE, which refreshes lists and counts.
   const mark = useMutation({
-    mutationFn: (handled: boolean) => setHandled([m], handled),
-    onSuccess: (_, handled) => {
+    mutationFn: ({ handled, react = true }: { handled: boolean; react?: boolean }) => setHandled([m], handled, react),
+    onSuccess: (_, { handled }) => {
       setOver((o) => ({ ...o, handled, from: m.handled }));
       if (handled) onDone?.();
     },
@@ -322,9 +356,17 @@ export function MessageActions({
       <Button type="button" size="icon-xs" variant="ghost" className={cn(!done && "hover:bg-ok-wash hover:text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
         aria-label={done ? "Mở lại" : "Xong"}
         title={done ? "Mở lại: đánh dấu chưa xử lý (x)" : "Xong: không cần trả lời / đã xử lý nơi khác (x)"}
-        onClick={() => mark.mutate(!done)}>
+        onClick={() => mark.mutate({ handled: !done })}>
         {done ? <RotateCcw /> : <CheckCheck />}
       </Button>
+      {!done && (
+        <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-ok-wash hover:text-ok" aria-busy={mark.isPending} disabled={mark.isPending}
+          aria-label="Xong, không thả reaction" title="Xong nhưng không thả reaction trên Telegram"
+          onClick={() => mark.mutate({ handled: true, react: false })}>
+          <Check />
+        </Button>
+      )}
+      {!done && <SnoozeMenu m={m} />}
       {(!done || pinned) && (
         <Button type="button" size="icon-xs" variant="ghost" className={cn(pinned && "text-ink")}
           disabled={togglePin.isPending} aria-label={pinned ? "Bỏ ghim" : "Ghim"} aria-pressed={pinned}
@@ -337,6 +379,48 @@ export function MessageActions({
         <MessagesSquare />
       </Button>
     </>
+  );
+}
+
+const SNOOZES: [string, () => Date][] = [
+  ["1 giờ", () => new Date(Date.now() + 3600_000)],
+  ["3 giờ", () => new Date(Date.now() + 3 * 3600_000)],
+  ["Sáng mai 9:00", () => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d; }],
+];
+
+/** Hoãn: the tag leaves the to-do list and comes back on its own (pending lists refetch every minute). */
+function SnoozeMenu({ m }: { m: Message }) {
+  const [open, setOpen] = useState(false);
+  const now = useNow();
+  const snoozed = !!m.snoozed_until && new Date(m.snoozed_until).getTime() > now;
+  const run = useMutation({
+    mutationFn: (until: Date | null) => snooze(m, until),
+    onSettled: () => setOpen(false),
+    onError: () => toast({ text: "Không hoãn được, thử lại" }),
+  });
+  return (
+    <div className="relative" onClick={(e) => e.stopPropagation()} onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
+      onKeyDown={(e) => e.key === "Escape" && open && (e.stopPropagation(), setOpen(false))}>
+      <Button type="button" size="icon-xs" variant="ghost" className={cn(snoozed && "text-info")} aria-haspopup="menu" aria-expanded={open}
+        aria-label="Hoãn" title={snoozed ? `Đang hoãn tới ${timeLabel(m.snoozed_until!, true)}` : "Hoãn: ẩn khỏi Việc cần xử lý, tự hiện lại sau"} onClick={() => setOpen((v) => !v)}>
+        <AlarmClock />
+      </Button>
+      {open && (
+        // tabIndex: Safari/Firefox don't focus a clicked button, so without a focusable menu the blur closes it before the click lands
+        <div role="menu" aria-label="Hoãn tới" tabIndex={-1} className="absolute top-8 right-0 z-30 grid w-40 gap-0.5 rounded-md bg-cotton p-1 text-xs shadow-pop animate-in fade-in-0 zoom-in-[0.98] duration-(--dur-short)">
+          {SNOOZES.map(([label, at]) => (
+            <button key={label} type="button" role="menuitem" disabled={run.isPending} onClick={() => run.mutate(at())}
+              className="flex h-8 items-center gap-2 rounded-sm px-2 text-left text-ink-2 hover:bg-paper-3 hover:text-ink">
+              {label}
+            </button>
+          ))}
+          {snoozed && (
+            <button type="button" role="menuitem" disabled={run.isPending} onClick={() => run.mutate(null)}
+              className="flex h-8 items-center rounded-sm border-t px-2 text-left text-ink-3 hover:bg-paper-3 hover:text-ink">Bỏ hoãn</button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

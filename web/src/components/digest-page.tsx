@@ -1,15 +1,18 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Copy, RotateCw, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Copy, MessageSquarePlus, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
+import { motion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
+import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
 import { smooth, timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { lastSp, yt } from "@/lib/yt";
 
 const PRESETS = [["24h", 24], ["3 ngày", 72], ["7 ngày", 168]] as const;
 
@@ -18,7 +21,7 @@ const ERRORS: Record<string, string> = {
   digest_empty: "Không có tin nào để tóm tắt.",
   digest_too_large: "Quá nhiều tin cho một lần tóm tắt; hãy thu hẹp khoảng thời gian.",
   not_connected: "Telegram chưa kết nối.",
-  ai_not_configured: "Chưa có Claude Code CLI (`claude`) trên máy.",
+  ai_not_configured: "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.",
   ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
   ai_provider_error: "AI gặp lỗi; thử lại.",
   ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
@@ -63,7 +66,7 @@ function meta(key: string, it: DigestItem) {
 }
 
 export function toMarkdown(r: DigestResult, title: string) {
-  const refs = (ids: string[]) => (ids.length ? ` (${ids.map((i) => `#${i}`).join(", ")})` : "");
+  const refs = (ids: string[], tix: string[] = []) => (ids.length || tix.length ? ` (${[...tix, ...ids.map((i) => `#${i}`)].join(", ")})` : "");
   const out = [`# Tóm tắt: ${title}`];
   for (const [key, label] of SECTIONS) {
     const items = r[key] ?? [];
@@ -72,12 +75,12 @@ export function toMarkdown(r: DigestResult, title: string) {
     for (const it of items) {
       const m = key === "impacts" ? `**${it.who || "Khác"}**: ` : "";
       const extra = meta(key, it);
-      out.push(`- ${m}${it.text}${extra ? ` — ${extra}` : ""}${refs(it.message_ids ?? [])}`);
+      out.push(`- ${m}${it.text}${extra ? ` — ${extra}` : ""}${refs(it.message_ids ?? [], it.tickets)}`);
     }
   }
   if (r.topics?.length) {
     out.push("", "## Chủ đề");
-    for (const t of r.topics) out.push(`- **${t.title}** [${STATUS[t.status ?? "open"][0]}]: ${t.summary}${refs(t.message_ids ?? [])}`);
+    for (const t of r.topics) out.push(`- **${t.title}** [${STATUS[t.status ?? "open"][0]}]: ${t.summary}${refs(t.message_ids ?? [], t.tickets)}`);
   }
   if (r.raw) out.push("", r.raw);
   return out.join("\n");
@@ -213,14 +216,16 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           {last && (
             <button type="button" role="tab" aria-selected={preset === "last"} onClick={() => onPreset("last")}
               title={`Tin mới từ lần tóm tắt trước (${timeLabel(last.last_date)})`}
-              className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === "last" ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-              Từ lần trước
+              className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === "last" ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
+              {preset === "last" && <motion.span layoutId="tg-digest" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+              <span className="relative">Từ lần trước</span>
             </button>
           )}
           {PRESETS.map(([l, h]) => (
             <button key={h} type="button" role="tab" aria-selected={preset === h} onClick={() => onPreset(h)}
-              className={cn("h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === h ? "bg-hl font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-              {l}
+              className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === h ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
+              {preset === h && <motion.span layoutId="tg-digest" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+              <span className="relative">{l}</span>
             </button>
           ))}
         </div>
@@ -270,7 +275,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           ) : run.isError ? (
             <p role="alert" className="text-sm text-error">{digestError(run.error)}</p>
           ) : shown ? (
-            <Result r={shown} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
+            <Result r={shown} title={title} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
           ) : (
             <p className="text-sm leading-relaxed text-ink-3">
               Tóm tắt {label}: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần PO/PM confirm gì. Chọn tin bên dưới (Shift+click để chọn cả đoạn) nếu chỉ muốn tóm tắt một phần.
@@ -339,6 +344,42 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
   );
 }
 
+/** A change to a ticket already in a sprint is scope creep: flag it (the ticket is fetched only for change items). */
+function ScopeFlag({ id }: { id: string }) {
+  const d = useQuery({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000, retry: false });
+  const sp = d.data && !d.data.resolved && lastSp(d.data);
+  return sp ? (
+    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn" title={`${id} đang trong sprint ${sp}: thay đổi này làm đổi scope sprint`}>
+      <TriangleAlert className="size-3" aria-hidden /> đổi scope sprint {sp}
+    </span>
+  ) : null;
+}
+
+/** A decision about a ticket goes on record there: one click adds it as a comment. */
+function RecordOn({ id, text }: { id: string; text: string }) {
+  const save = useMutation({ mutationFn: () => yt.comment(id, text), onSuccess: () => toast({ text: `Đã ghi quyết định vào ${id}` }) });
+  return (
+    <button type="button" disabled={save.isPending || save.isSuccess} onClick={() => save.mutate()}
+      title={save.isError ? `Không ghi được: ${save.error.message}` : `Thêm quyết định này làm bình luận trên ${id}`}
+      className={cn("ml-1 inline-flex items-center gap-1 rounded-sm px-1 text-xs transition-colors duration-(--dur-micro)", save.isError ? "text-error" : "text-ink-3 hover:bg-hl-wash hover:text-hl-2")}>
+      {save.isSuccess ? <Check className="size-3" aria-hidden /> : <MessageSquarePlus className="size-3" aria-hidden />}
+      {save.isSuccess ? "đã ghi" : `ghi vào ${id}`}
+    </button>
+  );
+}
+
+/** Tickets an item names (known YouTrack projects only); `record`: a decision's comment text. */
+function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: boolean; record?: string }) {
+  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false });
+  return (ids ?? []).filter((id) => projects.data?.some((p) => p.shortName === id.split("-")[0])).map((id) => (
+    <Fragment key={id}>
+      {" "}<TicketChip id={id} />
+      {scope && <ScopeFlag id={id} />}
+      {record && <RecordOn id={id} text={record} />}
+    </Fragment>
+  ));
+}
+
 function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump: (id: string) => void }) {
   return ids.map((id) => (
     <button key={id} type="button" onClick={() => onJump(id)} title="Xem tin gốc"
@@ -348,7 +389,7 @@ function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump:
   ));
 }
 
-export function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void }) {
+export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void; title?: string }) {
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">
@@ -385,6 +426,8 @@ export function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when
                       <li key={i} className="text-sm leading-relaxed">
                         <span className="text-ink">{it.text}</span>
                         {extra && <span className="text-ink-3"> — {extra}</span>}
+                        <Tickets ids={it.tickets} scope={key === "changes"}
+                          record={key === "decisions" ? `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}` : undefined} />
                         <Refs ids={it.message_ids ?? []} lit={lit} onJump={onJump} />
                       </li>
                     );
@@ -407,7 +450,7 @@ export function Result({ r, when, lit, onJump, onCopy }: { r: DigestResult; when
                     <span className="font-semibold">{t.title}</span>
                     <span className={cn("rounded-full px-1.5 text-xs leading-5", cls)}>{s}</span>
                   </span>
-                  <span className="text-ink-2">{t.summary}<Refs ids={t.message_ids ?? []} lit={lit} onJump={onJump} /></span>
+                  <span className="text-ink-2">{t.summary}<Tickets ids={t.tickets} /><Refs ids={t.message_ids ?? []} lit={lit} onJump={onJump} /></span>
                 </li>
               );
             })}

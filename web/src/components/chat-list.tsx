@@ -2,7 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Trash2 } from "lucide-react";
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { NavPill } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -94,7 +96,7 @@ export function ChatList({
           </span>
         )}
       </h2>
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      <motion.div layoutScroll className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {chats.isPending && (
           <ul aria-label="Đang tải nhóm" className="grid gap-1 px-3 pt-1">
             {[0, 1, 2, 3, 4].map((i) => (
@@ -124,18 +126,19 @@ export function ChatList({
                 onClick={() => onSelect(c.chat_id)}
                 aria-current={selected === c.chat_id}
                 className={cn(
-                  "flex h-10 w-full items-center gap-3 rounded-md px-3 pr-10 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
-                  selected === c.chat_id && "bg-hl-wash font-medium text-hl-2 hover:bg-hl-wash",
+                  "relative flex h-10 w-full items-center gap-3 rounded-md px-3 pr-10 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
+                  selected === c.chat_id && "font-medium text-hl-2 hover:bg-transparent",
                 )}
               >
+                {selected === c.chat_id && <NavPill />}
                 <span className="relative shrink-0">
                   <Avatar name={c.title} />
                   {collapsed && c.pending_count > 0 && <RailBadge n={c.pending_count} />}
                 </span>
-                <span className={cn("block min-w-0 flex-1 truncate", c.pending_count > 0 && "font-medium text-ink", collapsed && railHide)}>{c.title}</span>
+                <span className={cn("relative block min-w-0 flex-1 truncate", c.pending_count > 0 && "font-medium text-ink", collapsed && railHide)}>{c.title}</span>
                 {c.pending_count > 0 && (
                   <span title={`${c.pending_count} tin chưa xử lý`}
-                    className={cn("shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums group-hover:bg-cotton", collapsed && railHide)}>
+                    className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums group-hover:bg-cotton", collapsed && railHide)}>
                     {c.pending_count}
                   </span>
                 )}
@@ -148,7 +151,7 @@ export function ChatList({
             </li>
           ))}
         </ul>
-      </div>
+      </motion.div>
       <Dialog open={purging !== null} onOpenChange={(o) => !o && setPurging(null)}>
         <DialogContent>
           <DialogTitle>Xóa dữ liệu nhóm?</DialogTitle>

@@ -1,18 +1,17 @@
 "use client";
 
-import { AlertTriangle, FileText, MessageCircleQuestion, ScrollText, Sparkles } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { AlertTriangle } from "lucide-react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { toast, useNow } from "@/lib/inbox";
+import { Fragment, useEffect, useMemo } from "react";
+import { useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { dm, fmt, QUICK, shortName, shortSp, stateColor, type Ticket, yt } from "@/lib/yt";
-import { AGE, dashStats, reportData, type Stats } from "@/lib/yt-stats";
-import { AiBox, Card, MultiSelect, Person, StatePill, useAi } from "./bits";
-import { useYt } from "./state";
-import { aiReview } from "./tickets";
+import { byAs, bySp, DAY, dm, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
+import { AGE, dashStats, type Stats } from "@/lib/yt-stats";
+import { Card, MultiSelect, Person, StatePill } from "./bits";
+import { type Mode, useYt } from "./state";
 
-// The bento dashboard: what needs someone first, then sprint figures, speed, load, bugs. Every number opens its tickets.
+// The bento dashboard, laid out per role (LAYOUT): what needs that role first, then its figures. Every number opens its tickets.
 
 export function useStats() {
   const y = useYt();
@@ -33,79 +32,225 @@ const useDrill = (d: Stats) => {
   return (key: string, arg?: string) => { const r = d.detail(key, arg); if (r) y.setSheet({ kind: "list", title: r[0], rows: r[1] }); };
 };
 
+type Block = "attn" | "aging" | "kpis" | "progress" | "burn" | "vel" | "lead" | "wip" | "qcload" | "dist" | "thru" | "carry" | "bugsp" | "bugflow" | "bugusr" | "ready" | "mix" | "bugprio" | "bugmod" | "qckpi" | "qcdays" | "qcwho" | "qcdev" | "qcpong";
+type Layout = [id: string, title: string, blocks: [Block, string][]][];
+/** Each role reads the same numbers for a different job: Dev its own flow (the scope is "me"), QA quality and the QC queue,
+ *  PO decisions, delivery forecast and load. Spans are literal classes (Tailwind sees them). */
+const LAYOUT: Record<Mode, Layout> = {
+  dev: [
+    ["need", "Cần xử lý", [["attn", "lg:col-span-5"], ["aging", "lg:col-span-7"]]],
+    ["sprint", "Sprint", [["kpis", ""], ["progress", "lg:col-span-6"], ["burn", "lg:col-span-6"]]],
+    ["flow", "Nhịp làm việc", [["thru", "lg:col-span-6"], ["lead", "lg:col-span-6"], ["carry", ""]]],
+    ["qc", "Kiểm thử", [["qckpi", ""], ["qcpong", "lg:col-span-6"], ["qcdays", "lg:col-span-6"]]],
+    ["bug", "Bug", [["bugsp", "md:col-span-4"], ["bugflow", "md:col-span-8"]]],
+  ],
+  qa: [
+    ["need", "Hàng đợi QC", [["attn", "lg:col-span-4"], ["qcload", "lg:col-span-4"], ["dist", "lg:col-span-4"], ["aging", ""]]],
+    ["qc", "Kết quả kiểm thử", [["qckpi", ""], ["qcdays", "lg:col-span-8"], ["qcwho", "lg:col-span-4"], ["qcdev", "lg:col-span-6"], ["qcpong", "lg:col-span-6"]]],
+    ["bug", "Chất lượng", [["bugsp", "md:col-span-4"], ["bugflow", "md:col-span-8"], ["bugprio", "lg:col-span-4"], ["bugmod", "lg:col-span-4"], ["mix", "lg:col-span-4"], ["bugusr", ""]]],
+    ["sprint", "Sprint", [["kpis", ""], ["progress", "lg:col-span-6"], ["burn", "lg:col-span-6"]]],
+  ],
+  po: [
+    ["need", "Cần quyết định", [["attn", "lg:col-span-5"], ["ready", "lg:col-span-7"], ["aging", ""]]],
+    ["sprint", "Sprint", [["kpis", ""], ["progress", "lg:col-span-6"], ["burn", "lg:col-span-6"]]],
+    ["speed", "Tốc độ & dự báo", [["vel", "lg:col-span-6"], ["lead", "lg:col-span-6"], ["thru", "lg:col-span-6"], ["carry", "lg:col-span-6"]]],
+    ["load", "Tải việc", [["wip", "md:col-span-6 xl:col-span-4"], ["qcload", "md:col-span-6 xl:col-span-4"], ["dist", "xl:col-span-4"]]],
+    ["bug", "Chất lượng", [["qckpi", ""], ["bugsp", "md:col-span-4"], ["bugflow", "md:col-span-8"], ["mix", "lg:col-span-6"], ["bugprio", "lg:col-span-6"]]],
+  ],
+};
+
 export function DashboardPage() {
   const y = useYt();
   const d = useStats();
   const drill = useDrill(d);
+  const B: Record<Block, (c: string) => React.ReactNode> = {
+    attn: (c) => <Card title="Cần chú ý" meta="ticket đang mở" className={c}><Attention d={d} /></Card>,
+    aging: (c) => <Card title={y.mode === "qa" ? "Chờ test quá lâu" : "Cảnh báo ticket kéo dài"} className={c}><Aging d={d} /></Card>,
+    kpis: () => <Kpis d={d} />,
+    progress: (c) => <Card title="Tiến độ sprint" meta="vạch dọc = thời gian đã qua" className={c}><Progress d={d} /></Card>,
+    burn: (c) => <Card title="Burndown sprint" className={c}
+      meta={<span className="flex gap-3"><Lg c="var(--color-hl)">thực tế</Lg><Lg c="var(--color-ink-3)" dash>lý tưởng</Lg><Lg c="var(--color-hl-2)" dash>dự báo</Lg></span>}><Burn d={d} /></Card>,
+    vel: (c) => <Card title="Velocity" meta={d.vel.avg == null ? "" : `TB ${fmt(d.vel.avg)} ticket / sprint`} className={c}>
+      <HBars rows={d.vel.rows.map((r) => ({ label: <>{shortSp(r.name)}{r.running && <span className="text-ink-3"> (đang chạy)</span>}</>, v: r.n, c: r.running ? "var(--color-ink-3)" : "var(--color-hl)", on: () => drill("vel", r.name) }))} empty="Chưa có sprint có ngày bắt đầu / kết thúc." />
+    </Card>,
+    lead: (c) => <Card title="Lead time" meta={`${fmt(d.lead.n)} ticket, ${d.days.length} ngày qua`} onMeta={() => drill("lead")} className={c}><Lead d={d} /></Card>,
+    wip: (c) => <Card title="Công việc đang làm" className={c}
+      meta={<label className="flex items-center gap-1">ngưỡng WIP <select value={y.wip} onChange={(e) => y.setWip(+e.target.value)} className="h-6 rounded border border-rule bg-cotton px-1">{[2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>}><Wip d={d} /></Card>,
+    qcload: (c) => <Card title="Chờ QC theo người" className={c}>
+      <HBars rows={d.qcLoad.map(([n, k]) => ({ label: n === "Chưa có QC" ? n : <Person name={n} />, v: k, c: n === "Chưa có QC" ? "var(--color-warn)" : "var(--color-hl)", on: () => drill("qcl", n) }))} empty="Không có ticket chờ QC." />
+    </Card>,
+    dist: (c) => <Card title="Ticket đang mở theo state" className={c}>
+      <HBars rows={d.dist.map(([s, n]) => ({ label: s, v: n, c: stateColor(s), on: () => drill("dist", s) }))} empty="Không có ticket mở." />
+    </Card>,
+    thru: (c) => <Card title="Ticket xong mỗi ngày" className={c}
+      meta={<select value={y.range} onChange={(e) => y.setRange(+e.target.value)} aria-label="Khoảng thời gian biểu đồ" className="h-6 rounded border border-rule bg-cotton px-1">{[7, 14, 30].map((n) => <option key={n} value={n}>{n} ngày</option>)}</select>}>
+      <Columns days={d.days} series={[{ v: d.thru, c: "var(--color-hl)", on: (k) => drill("thru", String(k)) }]} /><BulkNote d={d} />
+    </Card>,
+    carry: (c) => <Card title="Ticket chuyển sprint nhiều lần" meta={`${fmt(d.carry.length)} ticket`} onMeta={() => drill("carry")} className={c}><Carry d={d} /></Card>,
+    bugsp: (c) => <Card title="Bug trong sprint" className={c}>
+      <button type="button" onClick={() => drill("bugs")} className="grid justify-items-start gap-2 text-left">
+        <span className="flex items-baseline gap-2"><b className="font-mono text-3xl font-medium tabular-nums"><Count n={d.bug.sp} /></b><span className="text-sm text-ink-3">bug trong sprint</span></span>
+        <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-2">
+          <Lg c="var(--color-error)">Đang mở <b>{fmt(d.bug.spOpen)}</b></Lg><Lg c="var(--color-ink-3)">Đã xong <b>{fmt(d.bug.sp - d.bug.spOpen)}</b></Lg>
+          <span className="text-ink-3">Mở toàn project: {fmt(d.bug.open)}</span>
+        </span>
+      </button>
+    </Card>,
+    bugflow: (c) => <Card title="Bug mới và đã sửa" meta={<span className="flex gap-3"><Lg c="var(--color-error)">mới</Lg><Lg c="var(--color-ink-3)">đã sửa</Lg></span>} className={c}>
+      <Columns days={d.days} series={[{ v: d.bugNew, c: "var(--color-error)", on: (k) => drill("bugnew", String(k)) }, { v: d.bugFix, c: "var(--color-ink-3)", on: (k) => drill("bugfix", String(k)) }]} />
+    </Card>,
+    bugusr: (c) => <Card title="Bug của user" meta={<span className="flex gap-3"><Lg c="var(--color-error)">mở</Lg><Lg c="var(--color-ink-3)">xong</Lg></span>} className={c}>
+      <Stack rows={d.bug.spUser.map(([n, [o, x]]) => ({ label: n === "Chưa assign" ? n : <Person name={n} />, parts: [[o, "var(--color-error)"], [x, "var(--color-ink-3)"]], text: `${o}${x ? ` / ${x}` : ""}`, on: () => drill("bugu", n) }))} empty="Sprint này chưa có bug." />
+    </Card>,
+    ready: (c) => <Card title="Chưa sẵn sàng vào sprint" meta={`${fmt(d.ready.n)} ticket mở`} className={c}>
+      <HBars max={d.ready.n} rows={d.ready.rows.map(([l, n]) => ({ label: l, v: n, c: n ? "var(--color-warn)" : "var(--color-ok)", on: () => drill("ready", l) }))} empty="" />
+    </Card>,
+    mix: (c) => <Card title="Bug so với Feature" meta="xong trong sprint" className={c}><Mix d={d} /></Card>,
+    bugprio: (c) => <Card title="Bug đang mở theo priority" meta={`${fmt(d.bug.open)} bug`} className={c}>
+      <HBars rows={[...d.bugPrio].sort((a, b) => rank({ priority: a[0] }) - rank({ priority: b[0] })).map(([p, n]) => ({ label: p, v: n, c: PCOL[p] || "var(--color-ink-3)", on: () => drill("bugp", p) }))} empty="Không có bug đang mở." />
+    </Card>,
+    qckpi: () => <QcKpis />,
+    qcdays: (c) => <Card title="Kết quả test mỗi ngày" meta={<span className="flex gap-3"><Lg c="var(--color-ok)">pass</Lg><Lg c="var(--color-error)">trả lại</Lg></span>} className={c}><QcDays d={d} /></Card>,
+    qcwho: (c) => <Card title="Theo người test" meta={<span className="flex gap-3"><Lg c="var(--color-ok)">pass</Lg><Lg c="var(--color-error)">trả lại</Lg></span>} className={c}><QcWho /></Card>,
+    qcdev: (c) => <Card title="Bị trả lại theo dev" meta="lượt fail, theo assignee" className={c}><QcDev /></Card>,
+    qcpong: (c) => <Card title="Trả lại nhiều lần / reopen" className={c}><QcPong /></Card>,
+    bugmod: (c) => <Card title="Bug đang mở theo module" meta="tag đầu tiên trong tiêu đề" className={c}>
+      <HBars rows={d.bugMod.slice(0, 10).map(([m, n]) => ({ label: m, v: n, c: "var(--color-error)", on: () => drill("bugm", m) }))} empty="Không có bug đang mở." />
+    </Card>,
+  };
+  const layout = LAYOUT[y.mode];
   return (
     <div className="grid grid-cols-12 gap-3">
-      <Section title="Cần xử lý" />
-      <Card title="Cần chú ý" meta="ticket đang mở" className="col-span-12 lg:col-span-5"><Attention d={d} /></Card>
-      <Card title="Cảnh báo ticket kéo dài" className="col-span-12 lg:col-span-7"><Aging d={d} /></Card>
-
-      <Section title="Tổng quan sprint">
-        {y.aiOn && <DashAi d={d} />}
-      </Section>
-      <Kpis d={d} />
-      <Card title="Tiến độ sprint" meta="vạch dọc = thời gian đã qua" className="col-span-12 lg:col-span-6"><Progress d={d} /></Card>
-      <Card title="Burndown sprint" className="col-span-12 lg:col-span-6"
-        meta={<span className="flex gap-3"><Lg c="var(--color-hl)">thực tế</Lg><Lg c="var(--color-ink-3)" dash>lý tưởng</Lg><Lg c="var(--color-hl-2)" dash>dự báo</Lg></span>}><Burn d={d} /></Card>
-
-      <Section title="Tốc độ" />
-      <Card title="Velocity" meta={d.vel.avg == null ? "" : `TB ${fmt(d.vel.avg)} ticket / sprint`} className="col-span-12 lg:col-span-6">
-        <HBars rows={d.vel.rows.map((r) => ({ label: <>{shortSp(r.name)}{r.running && <span className="text-ink-3"> (đang chạy)</span>}</>, v: r.n, c: r.running ? "var(--color-ink-3)" : "var(--color-hl)", on: () => drill("vel", r.name) }))} empty="Chưa có sprint có ngày bắt đầu / kết thúc." />
-      </Card>
-      <Card title="Lead time" meta={`${fmt(d.lead.n)} ticket, ${d.days.length} ngày qua`} onMeta={() => drill("lead")} className="col-span-12 lg:col-span-6"><Lead d={d} /></Card>
-
-      <Section title="Tải công việc & luồng làm việc" />
-      <Card title="Công việc đang làm" className="col-span-12 md:col-span-6 xl:col-span-4"
-        meta={<label className="flex items-center gap-1">ngưỡng WIP <select value={y.wip} onChange={(e) => y.setWip(+e.target.value)} className="h-6 rounded border border-rule bg-cotton px-1">{[2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>}>
-        <Wip d={d} />
-      </Card>
-      <Card title="Chờ QC theo người" className="col-span-12 md:col-span-6 xl:col-span-4">
-        <HBars rows={d.qcLoad.map(([n, c]) => ({ label: n === "Chưa có QC" ? n : <Person name={n} />, v: c, c: "var(--color-hl)", on: () => drill("qcl", n) }))} empty="Không có ticket chờ QC." />
-      </Card>
-      <Card title="Ticket đang mở theo state" className="col-span-12 xl:col-span-4">
-        <HBars rows={d.dist.map(([s, n]) => ({ label: s, v: n, c: stateColor(s), on: () => drill("dist", s) }))} empty="Không có ticket mở." />
-      </Card>
-      <Card title="Ticket xong mỗi ngày" className="col-span-12 lg:col-span-6"
-        meta={<select value={y.range} onChange={(e) => y.setRange(+e.target.value)} aria-label="Khoảng thời gian biểu đồ" className="h-6 rounded border border-rule bg-cotton px-1">{[7, 14, 30].map((n) => <option key={n} value={n}>{n} ngày</option>)}</select>}>
-        <Columns days={d.days} series={[{ v: d.thru, c: "var(--color-hl)", on: (k) => drill("thru", String(k)) }]} /><BulkNote d={d} />
-      </Card>
-      <Card title="Ticket chuyển sprint nhiều lần" meta={`${fmt(d.carry.length)} ticket`} onMeta={() => drill("carry")} className="col-span-12 lg:col-span-6"><Carry d={d} /></Card>
-
-      <Section title="Bug" />
-      <Card title="Bug trong sprint" className="col-span-12 md:col-span-4">
-        <button type="button" onClick={() => drill("bugs")} className="grid justify-items-start gap-2 text-left">
-          <span className="flex items-baseline gap-2"><b className="font-mono text-3xl tabular-nums"><Count n={d.bug.sp} /></b><span className="text-sm text-ink-3">bug trong sprint</span></span>
-          <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-2">
-            <Lg c="var(--color-error)">Đang mở <b>{fmt(d.bug.spOpen)}</b></Lg><Lg c="var(--color-ink-3)">Đã xong <b>{fmt(d.bug.sp - d.bug.spOpen)}</b></Lg>
-            <span className="text-ink-3">Mở toàn project: {fmt(d.bug.open)}</span>
-          </span>
-        </button>
-      </Card>
-      <Card title="Bug mới và đã sửa" meta={<span className="flex gap-3"><Lg c="var(--color-error)">mới</Lg><Lg c="var(--color-ink-3)">đã sửa</Lg></span>} className="col-span-12 md:col-span-8">
-        <Columns days={d.days} series={[{ v: d.bugNew, c: "var(--color-error)", on: (k) => drill("bugnew", String(k)) }, { v: d.bugFix, c: "var(--color-ink-3)", on: (k) => drill("bugfix", String(k)) }]} />
-      </Card>
-      <Card title="Bug của user" meta={<span className="flex gap-3"><Lg c="var(--color-error)">mở</Lg><Lg c="var(--color-ink-3)">xong</Lg></span>} className="col-span-12">
-        <Stack rows={d.bug.spUser.map(([n, [o, x]]) => ({ label: n === "Chưa assign" ? n : <Person name={n} />, parts: [[o, "var(--color-error)"], [x, "var(--color-ink-3)"]], text: `${o}${x ? ` / ${x}` : ""}`, on: () => drill("bugu", n) }))} empty="Sprint này chưa có bug." />
-      </Card>
-
-      <Section title="Khác" />
-      <Card title="Chưa sẵn sàng vào sprint" meta={`${fmt(d.ready.n)} ticket mở`} className="col-span-12 lg:col-span-6">
-        <HBars max={d.ready.n} rows={d.ready.rows.map(([l, n]) => ({ label: l, v: n, c: n ? "var(--color-warn)" : "var(--color-ok)", on: () => drill("ready", l) }))} empty="" />
-      </Card>
-      <Card title="Bug so với Feature" meta="xong trong sprint" className="col-span-12 lg:col-span-6"><Mix d={d} /></Card>
+      <JumpNav items={layout.map(([id, title]) => [id, title])} />
+      {layout.map(([id, title, blocks]) => (
+        <Fragment key={id}>
+          <Section id={`yt-${id}`} title={title} />
+          {blocks.map(([k, span]) => <Fragment key={k}>{B[k](cn("col-span-12", span))}</Fragment>)}
+        </Fragment>
+      ))}
     </div>
   );
 }
 
-const Section = ({ title, children }: { title: string; children?: React.ReactNode }) => (
-  <div className="col-span-12 mt-3 flex flex-wrap items-center gap-2 first:mt-0">
-    <h2 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{title}</h2>
+/** QC verdicts over the chart range, limited to the tickets the current Sprint / Người filter shows (Dev: their own). */
+export function useQc() {
+  const y = useYt();
+  const q = useQuery({
+    queryKey: ["yt", "trans", y.project, y.range], queryFn: ({ signal }) => yt.transitions(y.project, y.range, signal),
+    enabled: !!y.config && !y.config.mock, staleTime: 5 * 60_000,
+  });
+  const f = y.filters;
+  const s = useMemo(() => {
+    const as = byAs(f), sp = bySp(f);
+    const byId = new Map(y.rows.filter((i) => as(i) && sp(i)).map((i) => [i.id, i]));
+    const v = verdicts(q.data ?? []).filter((x) => byId.has(x.id));
+    const of = (k: Verdict["kind"]) => v.filter((x) => x.kind === k);
+    const pass = of("pass"), fail = of("fail"), reopen = of("reopen");
+    const fails = new Map<string, number>();
+    for (const x of fail) fails.set(x.id, (fails.get(x.id) || 0) + 1);
+    const tested = new Set([...pass, ...fail].map((x) => x.id));
+    const reopened = new Set(reopen.map((x) => x.id));
+    const tickets = (list: Verdict[]) => [...new Set(list.map((x) => x.id))].map((id) => byId.get(id)!);
+    const tally = (list: Verdict[], key: (x: Verdict) => string) => { const c = new Map<string, [number, number]>(); for (const x of list) (c.get(key(x)) ?? c.set(key(x), [0, 0]).get(key(x))!)[x.kind === "pass" ? 0 : 1]++; return [...c].sort((a, b) => b[1][1] - a[1][1] || b[1][0] - a[1][0]); };
+    return {
+      pass, fail, reopen, tested: tested.size, firstPass: [...tested].filter((id) => !fails.has(id)).length, tickets, byId,
+      // tickets bounced twice or more, or reopened: the ones worth a look
+      pong: [...new Set([...fails.keys(), ...reopened])].filter((id) => (fails.get(id) || 0) >= 2 || reopened.has(id))
+        .map((id) => ({ i: byId.get(id)!, n: fails.get(id) || 0, re: reopened.has(id) })).sort((a, b) => b.n - a.n || +b.re - +a.re),
+      who: tally([...pass, ...fail], (x) => x.by || "—"),
+      dev: tally(fail, (x) => byId.get(x.id)!.assignee || "Chưa assign"),
+    };
+  }, [q.data, y.rows, f]);
+  return { ...s, q };
+}
+const QcState = ({ q }: { q: ReturnType<typeof useQc>["q"] }) => {
+  const y = useYt();
+  return <p className="text-sm text-ink-3">{y.config?.mock ? "Cần token YouTrack để đọc lịch sử state." : y.configError ? "Chưa kết nối được YouTrack." : q.isError ? `Không đọc được lịch sử state: ${(q.error as Error).message}` : "Đang đọc lịch sử state…"}</p>;
+};
+const useList = () => { const y = useYt(); return (title: string, rows: Ticket[]) => y.setSheet({ kind: "list", title, rows }); };
+
+function QcKpis() {
+  const y = useYt();
+  const s = useQc();
+  const list = useList();
+  const pc = (a: number, b: number) => (b ? Math.round(a / b * 100) : null);
+  const tiles: [string, number | null, string, string, () => void][] = [
+    ["Lượt test", s.pass.length + s.fail.length, "", `${s.tested} ticket, ${y.range} ngày qua`, () => list("Ticket đã test", s.tickets([...s.pass, ...s.fail]))],
+    ["Pass ngay lần đầu", pc(s.firstPass, s.tested), "%", `${s.firstPass}/${s.tested} ticket không bị trả lại`, () => list("Pass không bị trả lại", s.tickets(s.pass).filter((i) => !s.fail.some((x) => x.id === i.id)))],
+    ["Bị trả lại", s.fail.length, "", `lượt QC chuyển về dev · ${pc(s.fail.length, s.pass.length + s.fail.length) ?? 0}%`, () => list("Bị QC trả lại", s.tickets(s.fail))],
+    ["Reopen", s.reopen.length, "", "đã xong rồi mở lại", () => list("Ticket reopen", s.tickets(s.reopen))],
+  ];
+  if (!s.q.data) return <div className="col-span-12 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock"><QcState q={s.q} /></div>;
+  return (
+    <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {tiles.map(([l, v, suf, sub, on], k) => (
+        <motion.button key={l} type="button" onClick={on} whileHover={{ y: -2 }} title="Xem danh sách ticket"
+          className="grid content-start justify-items-start gap-1 rounded-[var(--radius-card)] bg-cotton p-4 text-left shadow-stock">
+          <span className="text-xs text-ink-3">{l}</span>
+          <b className={cn("font-mono text-3xl font-medium tabular-nums", k >= 2 && v ? "text-error" : "")}><Count n={v} suffix={suf} /></b>
+          <span className="text-xs text-ink-3">{sub}</span>
+        </motion.button>
+      ))}
+    </div>
+  );
+}
+
+function QcDays({ d }: { d: Stats }) {
+  const s = useQc();
+  const list = useList();
+  if (!s.q.data) return <QcState q={s.q} />;
+  const day = (l: Verdict[]) => d.days.map((t) => l.filter((x) => x.at >= t && x.at < t + DAY));
+  const p = day(s.pass), f = day(s.fail), dl = (k: number) => new Date(d.days[k]).toLocaleDateString("vi-VN");
+  return <Columns days={d.days} series={[
+    { v: p.map((x) => x.length), c: "var(--color-ok)", on: (k) => list(`Pass ngày ${dl(k)}`, s.tickets(p[k])) },
+    { v: f.map((x) => x.length), c: "var(--color-error)", on: (k) => list(`Trả lại ngày ${dl(k)}`, s.tickets(f[k])) },
+  ]} />;
+}
+
+function QcWho() {
+  const s = useQc();
+  const list = useList();
+  if (!s.q.data) return <QcState q={s.q} />;
+  return <Stack rows={s.who.map(([n, [p, f]]) => ({ label: n === "—" ? n : <Person name={n} />, parts: [[p, "var(--color-ok)"], [f, "var(--color-error)"]], text: `${p} / ${f}`,
+    on: () => list(`Đã test · ${n}`, s.tickets([...s.pass, ...s.fail].filter((x) => (x.by || "—") === n))) }))} empty="Chưa có lượt test nào." />;
+}
+
+function QcDev() {
+  const s = useQc();
+  const list = useList();
+  if (!s.q.data) return <QcState q={s.q} />;
+  return <HBars rows={s.dev.map(([n, [, f]]) => ({ label: n === "Chưa assign" ? n : <Person name={n} />, v: f, c: "var(--color-error)",
+    on: () => list(`Bị trả lại · ${n}`, s.tickets(s.fail.filter((x) => (s.byId.get(x.id)!.assignee || "Chưa assign") === n))) }))} empty="Chưa có ticket nào bị trả lại." />;
+}
+
+function QcPong() {
+  const s = useQc();
+  const list = useList();
+  if (!s.q.data) return <QcState q={s.q} />;
+  const SHOW = 8;
+  return <TicketRows rows={s.pong.slice(0, SHOW).map(({ i, n, re }) => ({ i, right: <span className={cn("font-mono text-xs whitespace-nowrap", n >= 3 || re ? "font-semibold text-error" : "text-warn")}>{[n ? `${n} lần trả lại` : "", re ? "reopen" : ""].filter(Boolean).join(" · ")}</span> }))}
+    all={s.pong.map((x) => x.i)} more={s.pong.length > SHOW ? () => list("Trả lại nhiều lần / reopen", s.pong.map((x) => x.i)) : undefined} moreN={s.pong.length - SHOW}
+    empty="Không có ticket nào bị trả lại từ 2 lần hay reopen." />;
+}
+
+const Section = ({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) => (
+  <div id={id} className="col-span-12 mt-3 flex scroll-mt-[calc(var(--yt-top)+3rem)] flex-wrap items-center gap-2 first:mt-0">
+    <h2 className="text-sm font-semibold text-ink-2">{title}</h2>
     {children && <div className="ml-auto flex flex-wrap gap-1.5">{children}</div>}
   </div>
 );
+/** The dashboard is long: a sticky row of its sections, a click scrolls there. */
+function JumpNav({ items }: { items: [string, string][] }) {
+  return (
+    <nav aria-label="Mục dashboard" className="yt-noprint sticky top-(--yt-top) z-10 col-span-12 -mx-1 flex gap-1 overflow-x-auto bg-paper/90 px-1 py-1.5 backdrop-blur">
+      {items.map(([k, l]) => (
+        <button key={k} type="button" onClick={() => document.getElementById(`yt-${k}`)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
+          className="h-7 shrink-0 rounded-full border border-rule bg-cotton px-3 text-xs font-medium text-ink-2 hover:border-rule-2 hover:text-ink">{l}</button>
+      ))}
+    </nav>
+  );
+}
+
 const Lg = ({ c, dash, children }: { c: string; dash?: boolean; children: React.ReactNode }) => (
   <span className="inline-flex items-center gap-1"><u className={cn("inline-block h-0.5 w-3 no-underline", dash && "bg-[length:4px_2px] bg-repeat-x")}
     style={dash ? { backgroundImage: `linear-gradient(90deg, ${c} 50%, transparent 50%)` } : { background: c }} />{children}</span>
@@ -120,9 +265,17 @@ function Count({ n, suffix = "" }: { n: number | null; suffix?: string }) {
 }
 
 const SEV = { bad: 0, warn: 1 };
+/** What each role must act on: QUICK keys with how bad a non-zero count is. */
+const ATTN: Record<Mode, [string, keyof typeof SEV][]> = {
+  dev: [["blocked", "bad"], ["overdue", "bad"], ["critical", "bad"], ["noest", "warn"]],
+  qa: [["bugcrit", "bad"], ["noqc", "warn"], ["blocked", "bad"], ["bugnew", "warn"], ["stale", "warn"]],
+  po: [["waitpo", "bad"], ["critical", "bad"], ["overdue", "bad"], ["blocked", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]],
+};
 function Attention({ d }: { d: Stats }) {
+  const y = useYt();
   const drill = useDrill(d);
-  const ranked = [...d.attn].sort((a, b) => +!a.n - +!b.n || SEV[a.sev] - SEV[b.sev] || b.n - a.n);
+  const est = y.rows.some((i) => i.estimate != null); // a team that never estimates: "chưa estimate" is noise
+  const ranked = ATTN[y.mode].filter(([q]) => q !== "noest" || est).map(([q, sev]) => ({ q, sev, n: d.detail("q", q)?.[1].length ?? 0 })).sort((a, b) => +!a.n - +!b.n || SEV[a.sev] - SEV[b.sev] || b.n - a.n);
   return (
     <div className="grid gap-1.5">
       {ranked.map(({ q, sev, n }) => (
@@ -170,7 +323,7 @@ function TicketRows({ rows, all, empty, more, moreN }: { rows: { i: Ticket; righ
       {rows.map(({ i, right }) => (
         <li key={i.id}>
           <button type="button" onClick={() => y.openTicket(i.id, all)} className="grid w-full grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-left hover:bg-paper-2">
-            <span className="grid"><b className="font-mono text-xs">{i.id}</b><span className="truncate text-xs text-ink-3">{i.assignee ? shortName(i.assignee) : "Chưa assign"}</span></span>
+            <span className="grid"><b className="font-mono text-xs">{i.id}</b><span className="truncate text-xs text-ink-2">{i.assignee ? shortName(i.assignee) : "Chưa assign"}</span></span>
             <span className="min-w-0 truncate"><StatePill state={i.state} /></span>
             {right}
           </button>
@@ -187,7 +340,10 @@ function Kpis({ d }: { d: Stats }) {
   const cards: [string, number | null, string, string, React.ReactNode?][] = [
     ["Ticket trong sprint", d.total, "", "total", <span key="s" className="flex flex-wrap gap-x-2 text-xs text-ink-3"><span>{d.per.label}</span>
       {d.per.prev && <span>trước: {shortSp(d.per.prev)} ({fmt(d.prevTotal)})</span>}{delta != null && <span>{delta > 0 ? "+" : delta < 0 ? "−" : ""}{Math.abs(delta)}%</span>}</span>],
-    ["Đang làm", d.doing, "", "doing"], ["Chờ QC", d.qc, "", "qc"], ["Tỉ lệ xong sprint", d.doneRate, "%", "rate"],
+    // doing / QC count every open ticket in the filter, not only this sprint's: say so, or they read as parts of the total
+    ["Đang làm", d.doing, "", "doing", <span key="d" className="text-xs text-ink-3">mọi ticket đang mở</span>],
+    ["Chờ QC", d.qc, "", "qc", <span key="q" className="text-xs text-ink-3">mọi ticket đang mở</span>],
+    ["Tỉ lệ xong sprint", d.doneRate, "%", "rate", <span key="r" className="text-xs text-ink-3">{d.per.label}</span>],
   ];
   return (
     <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -246,7 +402,7 @@ function Burn({ d }: { d: Stats }) {
     : <span>Cuối sprint dự kiến còn <b>~{Math.round(left - b.rate * (end - last))} ticket</b></span>;
   return (
     <div className="grid gap-2">
-      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Burndown: còn ${left} / ${b.total} ticket`} className="w-full text-[11px]">
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`Burndown: còn ${left} / ${b.total} ticket`} className="w-full text-xs">
         <g stroke="var(--color-rule)"><line x1={L} x2={W - R} y1={yv(0)} y2={yv(0)} /><line x1={L} x2={L} y1={T} y2={yv(0)} /></g>
         <g fill="var(--color-ink-3)">
           <text x={L - 4} y={T + 4} textAnchor="end">{b.total}</text><text x={L - 4} y={yv(0) + 4} textAnchor="end">0</text>
@@ -268,7 +424,7 @@ function Burn({ d }: { d: Stats }) {
 function Columns({ days, series }: { days: number[]; series: { v: number[]; c: string; on: (k: number) => void }[] }) {
   const W = 600, H = 170, L = 6, B = 22, T = 16, max = Math.max(1, ...series.flatMap((s) => s.v)), gw = (W - L * 2) / days.length, bw = gw * 0.7 / series.length;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" className="w-full text-[11px]">
+    <svg viewBox={`0 0 ${W} ${H}`} role="img" className="w-full text-xs">
       <line x1={L} x2={W - L} y1={H - B} y2={H - B} stroke="var(--color-rule)" />
       {days.map((t, k) => (
         <g key={t}>
@@ -320,7 +476,7 @@ function Lead({ d }: { d: Stats }) {
   const max = Math.max(0, ...l.kinds.map((k) => k[1] || 0));
   return (
     <div className="grid gap-3">
-      <div className="flex flex-wrap gap-6"><span><b className="font-mono text-2xl">{ddays(l.med)}</b><span className="text-sm text-ink-3"> trung vị</span></span>
+      <div className="flex flex-wrap gap-6"><span><b className="font-mono text-2xl font-medium tabular-nums">{ddays(l.med)}</b><span className="text-sm text-ink-3"> trung vị</span></span>
         <span className="text-sm text-ink-3">85% xong trong <b className="font-mono text-base text-ink">{ddays(l.p85)}</b></span></div>
       <Stack max={max} empty="" rows={l.kinds.filter((k) => k[2]).map(([k, m, n]) => ({ label: <>{KIND[k][0]} <span className="text-ink-3">({n})</span></>, parts: [[m ?? 0, KIND[k][1]]], text: ddays(m), on: () => drill("lead") }))} />
       <BulkNote d={d} />
@@ -380,47 +536,4 @@ function Mix({ d }: { d: Stats }) {
   );
 }
 
-/** AI over the dashboard: sprint report, review of the open tickets, release notes, a question about the numbers. */
-function DashAi({ d }: { d: Stats }) {
-  const y = useYt();
-  const [ask, setAsk] = useState(false);
-  const panel = (title: string, label: string, run: (sig: AbortSignal) => Promise<{ text: string }>) => y.setSheet({ kind: "ai", title, label, run });
-  return (
-    <>
-      <Button size="sm" variant="outline" title="AI viết báo cáo tiến độ, rủi ro, đề xuất từ số liệu dashboard (không gửi nội dung ticket)"
-        onClick={() => panel(`Báo cáo sprint · ${d.per.label}`, "AI đang viết báo cáo", (sig) => yt.aiData("report", reportData(d, y.wip), sig))}><FileText /> Báo cáo sprint</Button>
-      <Button size="sm" variant="outline" title="AI đọc chi tiết + bình luận + tin Telegram của các ticket đang mở trong sprint"
-        onClick={() => aiReview(y, d.sprintOpen.map((i) => i.id), `${d.per.label} (ticket đang mở)`)}><Sparkles /> Rà soát ticket</Button>
-      <Button size="sm" variant="outline" title="AI viết release notes từ các ticket đã xong trong sprint đang xem"
-        onClick={() => d.doneRows.length ? panel(`Release notes · ${d.per.label}`, "AI đang viết release notes", (sig) => yt.aiData("notes", d.doneRows.slice(0, 300).map((i) => ({ id: i.id, type: i.type, summary: i.summary })), sig)) : toast({ text: "Sprint đang xem chưa có ticket xong" })}>
-        <ScrollText /> Release notes</Button>
-      <Button size="sm" variant="outline" aria-pressed={ask} onClick={() => setAsk(!ask)} title="Hỏi AI về số liệu dashboard"><MessageCircleQuestion /> Hỏi AI</Button>
-      {ask && <AskAi d={d} />}
-    </>
-  );
-}
-
-/** "Sprint này ai đang quá tải?": answered from the dashboard numbers only. */
-export function AskAi({ d, className }: { d: Stats; className?: string }) {
-  const y = useYt();
-  const ai = useAi();
-  const [q, setQ] = useState("");
-  function go() {
-    const question = q.trim();
-    if (!question) return;
-    void ai.run({ label: "AI đang trả lời", run: (sig) => yt.aiData("ask", reportData(d, y.wip), sig, question) });
-  }
-  return (
-    <div className={cn("grid w-full gap-2", className)}>
-      <div className="flex gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) go(); }} maxLength={500}
-          placeholder="Hỏi về số liệu: vd. ai đang quá tải? ticket nào có nguy cơ trễ?" aria-label="Câu hỏi cho AI"
-          className="h-9 flex-1 rounded-md border border-hl/40 bg-hl-wash/30 px-3 text-sm outline-none focus:border-hl" />
-        <Button onClick={go} disabled={!q.trim() || ai.s.status === "busy"}>Hỏi</Button>
-      </div>
-      <AiBox ai={ai} />
-    </div>
-  );
-}
-
-export { Attention, Aging, Kpis, Wip };
+export { Attention, Aging, Kpis, Progress, Wip };

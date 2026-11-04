@@ -119,6 +119,8 @@ class StatusDTO(BaseModel):
     ai_configured: bool
     ai_require_consent: bool
     youtrack_configured: bool = False
+    telegram_api_id: int | None = None
+    telegram_me: str | None = None
     db_epoch: str
     cursor: str
 
@@ -177,10 +179,25 @@ class AiDraftRequest(BaseModel):
     project: str | None = None  # path of a registered project the agent may read
     with_context: bool = True  # add nearby group messages (fetched live, not stored)
     platform: Literal["android", "ios", "mobile", "any"] = "android"  # angle of the analysis
+    role: Literal["dev", "qa", "po"] = "dev"  # who reads it (Cài đặt chung › Vai trò)
+
+
+class AiTicketRequest(AiDraftRequest):
+    instruction: str = Field("", max_length=2000)  # the user's note for the ticket
+    types: list[str] = Field([], max_length=50)  # the YouTrack project's Type values
+    priorities: list[str] = Field([], max_length=50)
+
+
+class AiTicketDraft(BaseModel):
+    summary: str  # "" when the model's answer could not be read (it is all in description)
+    type: str  # one of the given types, or ""
+    priority: str
+    description: str
 
 
 class HandledRequest(BaseModel):
     handled: bool
+    react: bool = True  # False: tick done here only, no Telegram reaction
 
 
 class PinRequest(BaseModel):
@@ -234,6 +251,36 @@ class TaskDTO(BaseModel):
 class YouTrackRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=300)
     description: str = Field(default="", max_length=20000)
+    project: str | None = Field(default=None, pattern=r"^[\w-]{1,30}$")  # None: YOUTRACK_PROJECT
+    # set after creating, through one command (values go between braces)
+    type: str | None = Field(default=None, pattern=r"^[^{}\n]{1,100}$")
+    priority: str | None = Field(default=None, pattern=r"^[^{}\n]{1,100}$")
+    assignee: str | None = Field(default=None, pattern=r"^[\w.@-]{1,100}$")
+    # the tag the ticket comes from: its photo (if any) is attached to the ticket
+    chat_id: str | None = Field(default=None, max_length=40)
+    message_id: str | None = Field(default=None, pattern=r"^\d{1,12}$")
+
+
+class TelegramApp(BaseModel):
+    api_id: int = Field(gt=0, lt=2**31)
+    api_hash: str = Field(pattern=r"^[0-9a-f]{32}$")
+
+
+class TelegramPhone(BaseModel):
+    phone: str = Field(pattern=r"^\+?[0-9 ]{6,20}$")
+
+
+class TelegramSignIn(BaseModel):
+    code: str | None = Field(default=None, pattern=r"^[0-9]{3,8}$")
+    password: str | None = Field(default=None, min_length=1, max_length=256)
+
+
+class TelegramSignInResult(BaseModel):
+    password_required: bool
+
+
+class ConsentPref(BaseModel):
+    ai_require_consent: bool
 
 
 class YouTrackAuth(BaseModel):
@@ -268,22 +315,103 @@ class ClaudeAccount(BaseModel):
     subscription_status: str | None = None
     extra_usage: bool | None = None
     usage: list[ClaudeUsage] = []
+    usage_at: str | None = None  # when the quota was last read from Anthropic
     login_pending: bool = False
     login_url: str | None = None
 
 
-ClaudeEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
+AiEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
 # A CLI model alias or id; never starts with "-" so it can't pass for a flag.
-ClaudeModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
+AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
 
 
-class ClaudePrefs(BaseModel):
-    """"" = the CLI default. task_* apply to tasks and the AI Agent."""
+AiProvider = Literal["claude", "codex", "antigravity"]
 
-    model: ClaudeModel = ""
-    effort: ClaudeEffort = ""
-    task_model: ClaudeModel = ""
-    task_effort: ClaudeEffort = ""
+
+class AiPicks(BaseModel):
+    """One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent."""
+
+    model: AiModel = ""
+    effort: AiEffort = ""
+    task_model: AiModel = ""
+    task_effort: AiEffort = ""
+
+
+class AiPrefs(BaseModel):
+    """provider: the CLI every AI feature runs on; by: each CLI's own picks (see providers.prefs)."""
+
+    provider: AiProvider = "claude"
+    by: dict[AiProvider, AiPicks] = {}
+    fallback: bool = False  # Claude: step down to haiku (tasks: sonnet) once a window reaches fallback_at %
+    fallback_at: int = Field(90, ge=50, le=100)
+
+
+class AiOption(BaseModel):
+    value: str
+    label: str
+    hint: str = ""
+
+
+class AiCatalogEntry(BaseModel):
+    """What one CLI offers (providers.catalog). efforts: [] = the CLI takes none."""
+
+    id: AiProvider
+    name: str
+    models: list[AiOption]
+    efforts: list[AiEffort]
+    quota: bool  # a quota to show and fall back on (Claude)
+    install: str
+
+
+class AiAccount(BaseModel):
+    """Another agent CLI's login, as far as the dashboard can tell (see providers.account)."""
+
+    provider: AiProvider
+    installed: bool
+    install: str  # the command that installs it
+    loggedIn: bool = False
+    method: str | None = None  # ChatGPT / Google / API key
+    email: str | None = None
+    plan: str | None = None
+    login_pending: bool = False
+    login_url: str | None = None
+    usage: list[ClaudeUsage] = []  # the plan's windows, as for Claude
+    usage_at: str | None = None
+
+
+class AiLoginStarted(BaseModel):
+    url: str | None = None
+
+
+class AiRun(BaseModel):
+    """One logged AI run (any CLI). cost: what the tokens would cost on the API, in USD;
+    quota: % used per window right after the run (as fresh as the 3-minute quota cache)."""
+
+    at: str
+    feature: str
+    model: str
+    effort: str = ""
+    fallback: bool = False
+    ok: bool
+    error: str | None = None
+    ms: int = 0
+    cost: float | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read: int = 0
+    cache_write: int = 0
+    turns: int = 0
+    quota: dict[str, float] = {}
+    imported: bool = False  # read back from the CLI's transcripts, not logged live
+
+
+class AiTestRequest(BaseModel):
+    task: bool = False
+
+
+class AiTestResult(BaseModel):
+    text: str
+    ms: int
 
 
 class ClaudeLoginStarted(BaseModel):
@@ -298,6 +426,7 @@ class YouTrackIssue(BaseModel):
     id: str
     url: str
     summary: str = ""
+    warning: str = ""  # created, but Type / Priority / Assignee could not be set
 
 
 class HandledAllResponse(BaseModel):
@@ -365,6 +494,7 @@ class DigestRequest(BaseModel):
 
 class DigestRef(BaseModel):
     message_ids: list[str] = []
+    tickets: list[str] = []  # YouTrack ids named in those messages
 
 
 class DigestTopic(DigestRef):

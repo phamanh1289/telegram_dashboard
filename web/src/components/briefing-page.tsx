@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type BriefingItem, type DigestResult, type GroupInfo } from "@/lib/api";
 import { timeLabel, toast } from "@/lib/inbox";
-import { readDigestTeams } from "@/lib/prefs";
+import { readDigestTeams, useRole } from "@/lib/prefs";
+import { yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 
 type RunState = { status: "running" | "done" | "error"; error?: string };
@@ -87,6 +88,12 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
   const offline = allowed.length > 0 && allowed.every((i) => i.latest_id == null);
   // Open questions across every group, from each group's latest digest.
   const asks = allowed.flatMap((i) => (i.saved?.result.confirmations ?? []).map((c) => ({ ...c, chat: i })));
+  // Asked of me (my YouTrack name; a PO also answers to "PO" / "PM") first, the rest after.
+  const role = useRole();
+  const me = useQuery({ queryKey: ["yt", "me"], queryFn: yt.me, staleTime: Infinity, retry: false }).data?.name?.toLowerCase();
+  const isMine = (who: string) => (!!me && who.toLowerCase().includes(me)) || (role === "po" && /\b(PO|PM|product owner)\b/i.test(who));
+  const mine = asks.filter((a) => isMine(a.who ?? ""));
+  const others = asks.filter((a) => !isMine(a.who ?? ""));
 
   // One group at a time: keeps the AI provider and Telegram calm, and each result lands as it comes.
   async function runAll() {
@@ -184,13 +191,13 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
         )}
         {offline && <p className="mb-4 text-sm text-warn">Không kiểm tra được tin mới; Telegram có thể chưa kết nối.</p>}
 
-        {asks.length > 0 && (
-          <section className="mb-6 grid gap-2 rounded-[var(--radius-card)] bg-hl-wash/40 p-3 md:p-4">
+        {([[mine, "Chờ bạn chốt", "bg-hl-wash/60"], [others, mine.length ? "Chờ người khác confirm" : "Cần confirm", "bg-hl-wash/30"]] as const).map(([list, label, bg]) => list.length > 0 && (
+          <section key={label} className={cn("mb-6 grid gap-2 rounded-[var(--radius-card)] p-3 md:p-4", bg)}>
             <h3 className="text-xs font-semibold uppercase tracking-wide text-hl-2">
-              Cần confirm <span className="font-mono font-normal">{asks.length}</span>
+              {label} <span className="font-mono font-normal">{list.length}</span>
             </h3>
             <ul className="grid gap-1.5">
-              {asks.map((a, n) => (
+              {list.map((a, n) => (
                 <li key={n} className="text-sm leading-relaxed">
                   <span className="text-ink">{a.text}</span>
                   {a.who && <span className="text-ink-3"> — hỏi {a.who}</span>}
@@ -202,7 +209,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
               ))}
             </ul>
           </section>
-        )}
+        ))}
 
         <ul className="grid gap-3">
           {[...allowed].sort((a, b) => Number(hasNews(b)) - Number(hasNews(a))).map((i) => {
@@ -228,7 +235,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
                       {counts(i.saved.result) || "Không có gì đáng chú ý"}
                     </summary>
                     <div className="mt-3 border-t border-rule pt-3">
-                      <Result r={i.saved.result} when={i.saved.created_at} lit={null} onJump={() => onOpenDigest(i.chat_id, i.title)}
+                      <Result r={i.saved.result} title={i.title} when={i.saved.created_at} lit={null} onJump={() => onOpenDigest(i.chat_id, i.title)}
                         onCopy={() => void navigator.clipboard.writeText(toMarkdown(i.saved!.result, i.title)).then(() => toast({ text: "Đã copy markdown" }), () => toast({ text: "Không copy được" }))} />
                     </div>
                   </details>

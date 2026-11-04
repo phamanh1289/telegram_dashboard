@@ -6,10 +6,11 @@ how far digests have read (digests), both dropped with the consent.
 """
 
 import json
+import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from .ai import AiService
+from .ai import AiService, data_json
 from .errors import ApiError
 from .models import DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store
@@ -18,6 +19,7 @@ MAX_MESSAGES = 400
 MAX_CHARS = 80_000
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 STATUSES = ("decided", "open", "dropped")
+TICKET = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 VN = ZoneInfo("Asia/Ho_Chi_Minh")  # what the UI shows; the server's own zone may be UTC
 
 TASK = """Analyze the group conversation in <messages>: a work chat where several subjects are \
@@ -31,7 +33,8 @@ Return ONLY one JSON object (no prose, no code fence) with these keys, each a li
 must confirm; who = who must answer
 - "actions": [{"text", "who", "due", "message_ids"}] - who = owner, due = deadline if stated
 Rules: group scattered messages into topics by subject, using reply_to, timing and speakers. \
-Every item cites the ids of the messages it is based on. Never invent facts: leave a field empty \
+Every item cites the ids of the messages it is based on, and every item and topic also has \
+"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent facts: leave a field empty \
 or drop the item when unsure; empty lists are fine. Write every text in Vietnamese, short and \
 concrete."""
 
@@ -74,7 +77,11 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
         for it in items if isinstance(items, list) else []:
             if not isinstance(it, dict):
                 continue
-            row = {k: _field(v) for k, v in it.items() if k != "message_ids" and v is not None}
+            row = {k: _field(v) for k, v in it.items() if k not in ("message_ids", "tickets") and v is not None}
+            tix = it.get("tickets")
+            row["tickets"] = list(dict.fromkeys(
+                t.upper() for t in (tix if isinstance(tix, list) else []) if isinstance(t, str) and TICKET.match(t)
+            ))  # fmt: skip
             refs = it.get("message_ids")
             refs = [str(i) for i in refs] if isinstance(refs, list) else []
             row["message_ids"] = list(dict.fromkeys(i for i in refs if i in ids))
@@ -145,10 +152,8 @@ class DigestService:
         prompt = TASK
         if teams := [t.strip() for t in req.teams if t.strip()]:
             prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
-        # Escaped "<": a message cannot close the data block and pose as instructions.
-        data = json.dumps(context, ensure_ascii=False).replace("<", "\\u003c")
-        prompt += f"\n<messages>\n{data}\n</messages>"
-        text = await self.ai.ask(prompt)
+        prompt += f"\n<messages>\n{data_json(context)}\n</messages>"
+        text = await self.ai.ask(prompt, feature="digest")
         if not await self._consented(req.chat_id):
             raise ApiError(
                 409, "ai_permission_changed",

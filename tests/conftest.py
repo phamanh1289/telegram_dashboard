@@ -113,6 +113,17 @@ class Env:
         await asyncio.gather(*self.bridge._bg, return_exceptions=True)
 
 
+@pytest.fixture(autouse=True)
+def _no_keychain(monkeypatch):
+    """A claude run refreshes the quota for its log line: never the real Keychain/API in tests."""
+    import telegram_dashboard.claude as mod
+
+    async def no_token():
+        return None
+
+    monkeypatch.setattr(mod, "_oauth_token", no_token)
+
+
 @pytest.fixture
 def env(tmp_path):
     return Env(tmp_path)
@@ -138,10 +149,12 @@ class FakeAgent:
 
     def __init__(self, reply="draft text", on_call=None, exc=None):
         self.calls: list[str] = []
+        self.projects: list[str | None] = []  # the folder each run could read
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
-    async def __call__(self, prompt, project=None, read_dir=None, system=None):
+    async def __call__(self, prompt, project=None, read_dir=None, system=None, heavy=False, on_text=None, feature=None):
         self.calls.append(prompt)
+        self.projects.append(project)
         if self.on_call:
             self.on_call()
         if self.exc:

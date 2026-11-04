@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from conftest import G1, G2, A, B, msg
 
 from telegram_dashboard.models import GroupInfo
@@ -261,3 +263,12 @@ def test_old_database_is_migrated_once(tmp_path):
     cols = {r[1] for r in c.execute("PRAGMA table_info(messages)")}
     assert {"handled", "links", "snoozed_until", "pinned"} <= cols
     assert c.execute("SELECT handled, links FROM messages").fetchone() == (0, "[]")
+
+
+def test_my_replies_keeps_the_newest_oldest_first(env):
+    env.track(A)
+    for i in range(5):
+        m = msg(A, 100 + i, f"r{i}", sender="1", outgoing=True)
+        env.store.apply_message(m.model_copy(update={"date": m.date + timedelta(hours=i)}))
+    got = env.store.my_replies(0, limit=3)
+    assert [r["text"] for r in got] == ["r2", "r3", "r4"]

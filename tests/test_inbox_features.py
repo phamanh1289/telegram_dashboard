@@ -179,6 +179,8 @@ def _reaction_flow(client):
     assert reactions(2) == [(A, 1, "👍"), (A, 1, None)]
     assert client.post(f"/api/chats/{B}/handled-all", headers=H).json() == {"count": 1}
     assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]  # bulk marks stay private
+    client.put(url, json={"handled": True, "react": False}, headers=H)  # done without a reaction
+    assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]
 
 
 async def test_reaction_never_replaces_or_removes_the_users_own():

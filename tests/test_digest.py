@@ -332,3 +332,9 @@ def test_untagged_group_digest_and_briefing(settings):
         assert item["latest_id"] == "7"
         c.put(f"/api/chats/{B}/digest-consent", json={"enabled": False})
         assert c.get("/api/briefing").json() == []  # revoked: gone with its saved digest
+
+
+def test_parse_result_keeps_only_ticket_ids():
+    r = parse_result('{"decisions": [{"text": "x", "tickets": ["va-12", "VA-12", "not id", 5, "SDK-3"]}]}', set())
+    assert r["decisions"][0]["tickets"] == ["VA-12", "SDK-3"]
+    assert parse_result('{"changes": [{"text": "y"}]}', set())["changes"][0]["tickets"] == []

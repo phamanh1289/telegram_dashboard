@@ -116,10 +116,10 @@ export const scrollToRow = (key: string) =>
 /** How an AI Agent task runs; "terminal" only on old tasks (shown, no longer started). */
 export const TASK_MODES: Record<string, string> = { plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal (cũ)" };
 
-export const markHandled = (m: Message, handled: boolean) =>
+export const markHandled = (m: Message, handled: boolean, react = true) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/handled`, {
     method: "PUT",
-    json: { handled },
+    json: { handled, react },
   });
 
 export type ToastMsg = { text: string; undo?: () => unknown };
@@ -128,9 +128,10 @@ export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("t
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
 
-/** Mark done or reopen; marking done offers an undo (for the ones that went through, if some failed). */
-export async function setHandled(ms: Message[], handled: boolean) {
-  const res = await Promise.allSettled(ms.map((m) => markHandled(m, handled)));
+/** Mark done or reopen; marking done offers an undo (for the ones that went through, if some failed).
+ *  `react: false` ticks done without mirroring it as a Telegram reaction. */
+export async function setHandled(ms: Message[], handled: boolean, react = true) {
+  const res = await Promise.allSettled(ms.map((m) => markHandled(m, handled, react)));
   const ok = ms.filter((_, i) => res[i].status === "fulfilled");
   const undo = handled && ok.length ? () => Promise.all(ok.map((m) => markHandled(m, false))) : undefined;
   const failed = res.find((r) => r.status === "rejected");
@@ -147,6 +148,13 @@ export const pin = (m: Message, pinned: boolean) =>
     method: "PUT",
     json: { pinned },
   });
+
+/** Hide a tag from the to-do list until `until` (null: back now); the toast offers undo. */
+export async function snooze(m: Message, until: Date | null) {
+  const put = (u: Date | null) => api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, { method: "PUT", json: { until: u?.toISOString() ?? null } });
+  await put(until);
+  toast(until ? { text: `Nhắc lại lúc ${timeLabel(until.toISOString())}`, undo: () => put(null) } : { text: "Đã bỏ hoãn" });
+}
 
 /** Every task handed to the AI. Polls while some task has no result yet. */
 export function useTaskList() {

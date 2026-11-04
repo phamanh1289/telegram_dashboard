@@ -76,11 +76,14 @@ class Settings:
     ai_task_command: str = "claude"
     ai_task_model: str = "sonnet"  # model for tasks and the AI Agent ("" = the CLI default)
     ai_task_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
+    # Other agent CLIs that can stand in for claude (picked per kind of run; see providers.py).
+    codex_command: str = "codex"
+    antigravity_command: str = "agy"
     # macOS banner for each live tag (NOTIFY=0 turns it off).
     notify: bool = True
     # Reaction sent on Telegram when a tag is marked done (removed on reopen); empty = off.
-    done_reaction: str = ""
-    # Your Telegram @username, so drafts know which mentions are you (optional).
+    done_reaction: str = "👍"
+    # Your Telegram @username for drafts; empty = read from the logged-in account.
     telegram_me: str = ""
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
@@ -95,6 +98,13 @@ class Settings:
     @property
     def youtrack_path(self) -> Path:
         return self.data_dir / "youtrack.json"  # URL + token pasted in Settings; wins over .env
+
+    @property
+    def config_path(self) -> Path:
+        return self.data_dir / "config.json"  # Telegram API + consent set in the UI; wins over .env
+
+    def save_config(self, **values) -> None:
+        write_private_json(self.config_path, {**_read_json(self.config_path), **values})
 
     @property
     def claude_prefs_path(self) -> Path:
@@ -122,7 +132,7 @@ class Settings:
 
     @property
     def youtrack_configured(self) -> bool:
-        return bool(self.youtrack_url and self.youtrack_token and self.youtrack_project)
+        return bool(self.youtrack_url and self.youtrack_token)  # the project is picked per ticket
 
     @property
     def ai_configured(self) -> bool:
@@ -136,13 +146,15 @@ class Settings:
     def from_env(cls, root: Path = ROOT) -> Settings:
         _load_dotenv(root / ".env")
         env = os.environ
-        api_id = env.get("TELEGRAM_API_ID", "").strip()
+        conf = _read_json(root / "data" / "config.json")
+        api_id = str(conf.get("telegram_api_id") or env.get("TELEGRAM_API_ID", "")).strip()
+        consent = conf.get("ai_require_consent", env.get("AI_REQUIRE_CONSENT", "1").strip() != "0")
         saved = _read_json(root / "data" / "youtrack.json")
         return cls(
             root=root,
             app_origin=env.get("APP_ORIGIN") or f"http://{HOST}:{PORT}",
             telegram_api_id=int(api_id) if api_id.isdigit() else None,
-            telegram_api_hash=env.get("TELEGRAM_API_HASH") or None,
+            telegram_api_hash=conf.get("telegram_api_hash") or env.get("TELEGRAM_API_HASH") or None,
             ai_agent_command=env.get("AI_AGENT_COMMAND") or Settings.ai_agent_command,
             ai_model=env["AI_MODEL"].strip() if "AI_MODEL" in env else Settings.ai_model,
             ai_effort=env["AI_EFFORT"].strip() if "AI_EFFORT" in env else Settings.ai_effort,
@@ -151,6 +163,8 @@ class Settings:
             ai_task_command=env.get("AI_TASK_COMMAND") or Settings.ai_task_command,
             ai_task_model=env["AI_TASK_MODEL"].strip() if "AI_TASK_MODEL" in env else Settings.ai_task_model,
             ai_task_effort=env["AI_TASK_EFFORT"].strip() if "AI_TASK_EFFORT" in env else Settings.ai_task_effort,
+            codex_command=env.get("CODEX_COMMAND") or Settings.codex_command,
+            antigravity_command=env.get("ANTIGRAVITY_COMMAND") or Settings.antigravity_command,
             notify=env.get("NOTIFY", "1").strip() != "0",
             done_reaction=env.get("DONE_REACTION", Settings.done_reaction).strip(),
             telegram_me=env.get("TELEGRAM_ME", "").strip(),
@@ -160,5 +174,5 @@ class Settings:
             or env.get("YT_TOKEN")
             or None,
             youtrack_project=env.get("YOUTRACK_PROJECT") or None,
-            ai_require_consent=env.get("AI_REQUIRE_CONSENT", "1").strip() != "0",
+            ai_require_consent=bool(consent),
         )

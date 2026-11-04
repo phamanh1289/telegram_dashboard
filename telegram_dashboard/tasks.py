@@ -1,4 +1,4 @@
-"""AI Agent task routes: headless `claude -p` sessions per project (see agent.py)."""
+"""AI Agent task routes: headless `claude -p` (or Codex/Antigravity) sessions per project (see agent.py)."""
 
 import asyncio
 import uuid
@@ -31,8 +31,7 @@ def build_router(settings) -> APIRouter:
             raise ApiError(422, "ai_agent_missing")
         task_id = f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
-        session = s.agent.new_session()
-        await s.agent.start(task_id, body.project, body.prompt, body.mode, session, False)
+        session = await s.agent.start(task_id, body.project, body.prompt, body.mode, s.agent.new_session(), False)
         await s.db.write(
             s.store.add_task, task_id, body.chat_id, mid, body.project, body.prompt,
             mode=body.mode, session_id=session,
@@ -66,8 +65,7 @@ def build_router(settings) -> APIRouter:
         if not row["prompt"]:
             raise ApiError(404, "task_not_found")
         await s.agent.stop(task_id)
-        session = s.agent.new_session()
-        await s.agent.start(task_id, row["project"], row["prompt"], row["mode"], session, False)
+        session = await s.agent.start(task_id, row["project"], row["prompt"], row["mode"], s.agent.new_session(), False)
         await s.db.write(s.store.set_task_session, task_id, session)
 
     @r.get("/{task_id}/events")
