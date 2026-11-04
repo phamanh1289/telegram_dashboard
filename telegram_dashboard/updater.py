@@ -76,7 +76,7 @@ async def _check_release(root: Path) -> dict:
         "dirty": False,
         "commits": [{"sha": x["tag_name"], "subject": x.get("name") or x["tag_name"],
                      "when": (x.get("published_at") or "")[:10]} for x in newer],  # fmt: skip
-        "latest": newer[0] if newer else None,
+        "newer": newer,  # popped before replying
     }
 
 
@@ -107,14 +107,17 @@ def _extract(zip_path: Path, name: str, dest: Path) -> None:
 
 async def _apply_release(root: Path, h: Path) -> dict:
     info = await _check_release(root)
-    latest = info.pop("latest")
-    if not latest:
+    newer = info.pop("newer")
+    if not newer:
         return {**info, "updated": False}
-    name = latest["tag_name"].removeprefix("v")
     want = f"-{platform_tag()}.zip"
-    asset = next((a for a in latest.get("assets", []) if a["name"].endswith(want)), None)
+    # newest release that has a package for this machine (one may lack it: failed upload)
+    latest, asset = next(
+        ((r, a) for r in newer for a in r.get("assets", []) if a["name"].endswith(want)), (newer[0], None)
+    )
     if not asset:
         raise ApiError(409, "update_failed", detail=f"Bản {latest['tag_name']} chưa có gói {platform_tag()}.")
+    name = latest["tag_name"].removeprefix("v")
     versions = h / "versions"
     versions.mkdir(exist_ok=True)
     tmp = versions / f".{name}.zip"
@@ -178,7 +181,7 @@ async def check(root: Path) -> dict:
     global behind
     if home():
         info = await _check_release(root)
-        info.pop("latest")
+        info.pop("newer")
         return info
     try:
         upstream = await _run(root, "git", "rev-parse", "--abbrev-ref", "@{u}")

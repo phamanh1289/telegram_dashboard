@@ -61,3 +61,18 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+      - name: Ensure every file is attached (the action dropped one silently in v0.1.3)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rel=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME")
+          id=$(jq -r .id <<<"$rel")
+          for f in dist/*; do
+            n=$(basename "$f")
+            jq -e --arg n "$n" '.assets[] | select(.name == $n and .state == "uploaded")' <<<"$rel" >/dev/null && continue
+            echo "re-uploading $n"
+            curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" -H "Content-Type: application/octet-stream" \
+              --data-binary @"$f" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$id/assets?name=$n" >/dev/null
+          done
