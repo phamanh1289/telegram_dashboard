@@ -14,9 +14,29 @@ Hai module độc lập, chuyển qua lại bằng link trên header (crossfade 
 
 Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.md) · [thiết kế](docs/superpowers/specs/2026-10-29-local-web-design.md) · [rà stack](docs/decisions/2026-10-29-stack-review.md) · [nghiệm thu](docs/verification/local-web-smoke.md).
 
-## Bản cài cho người dùng
+## Cài đặt nhanh (người dùng)
 
-Người dùng cuối tải bộ cài ở [GitHub Releases](https://github.com/phamanh1289/telegram_dashboard/releases/latest) (Windows: lệnh `irm … install-windows.ps1 | iex` hoặc `…-setup.exe`; macOS: lệnh `curl … install-macos.sh | bash`), không cần Python/Node/git: **[docs/INSTALL.md](docs/INSTALL.md)**. Cập nhật ngay trong Cài đặt › GitHub. Phát hành bản mới: skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`).
+Không cần Python/Node/git. Dán **một lệnh** (bấm nút copy góc phải khung lệnh) rồi Enter. Lệnh tải bản mới nhất, cài và mở app; chạy lại = cập nhật, dữ liệu giữ nguyên.
+
+**macOS** (chip Apple): mở **Terminal** (Spotlight: gõ "Terminal"), dán:
+
+```bash
+curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
+```
+
+Cài vào `~/Applications/Telegram Dashboard`; lần sau double-click `Start Dashboard Telegram.command` trong đó.
+
+**Windows 10/11**: bấm Start, gõ **PowerShell**, mở lên, dán:
+
+```powershell
+irm https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-windows.ps1 | iex
+```
+
+Cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard`, có shortcut **Telegram Dashboard** ở Start Menu và Desktop.
+
+Cài bằng lệnh để không bị macOS Gatekeeper / Windows SmartScreen chặn (app chưa ký số). Muốn tải tay thì lấy ở [GitHub Releases](https://github.com/phamanh1289/telegram_dashboard/releases/latest) và xem **[docs/INSTALL.md](docs/INSTALL.md)**. Lần đầu mở: dán Telegram API ID/Hash (https://my.telegram.org/apps) rồi đăng nhập. Cập nhật sau này: Cài đặt › GitHub.
+
+Phát hành bản mới (cho người phát triển): skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`).
 
 ## Cài đặt từ clone sạch
 

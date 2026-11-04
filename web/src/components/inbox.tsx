@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
+import { ComboBar } from "@/components/deep-think";
 import { BriefingPage } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
@@ -355,6 +356,7 @@ function Inbox({ status }: { status: Status }) {
           </div>
         ) : null}
       </div>
+      <ComboBar />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <Toaster />
     </div>

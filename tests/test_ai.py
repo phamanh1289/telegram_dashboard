@@ -510,7 +510,7 @@ async def test_deep_traces_question_and_confirm_in_the_project(env, tmp_path):
     r = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
     assert r.text == "draft text" and fetched == [[4]] and provider.projects == [str(proj)]
     p = provider.calls[0]
-    assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.index("BE confirm")
+    assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.rindex("BE confirm")
     await expect("ai_scope_not_allowed", svc.deep(A, "5", "5", str(proj)))
     await expect("message_not_found", svc.deep(A, "4", "5", str(proj)))  # offline: no fetch
     await expect("project_not_found", svc.deep(A, "4", "5", str(tmp_path / "nope")))

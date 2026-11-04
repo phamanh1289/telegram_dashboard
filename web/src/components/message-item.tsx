@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
+import { ComboPick } from "@/components/deep-think";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -225,6 +226,7 @@ function MessageRow({
                 make the line taller. */}
             <div className="row-actions ml-auto flex flex-row-reverse items-center gap-0.5 @xl:-my-1.5">
               {!m.outgoing && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
+              <ComboPick m={m} />
               <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
                 title={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
                 onClick={(e) => {
@@ -442,6 +444,7 @@ export function ContextPanel({ m }: { m: Message }) {
       {q.isError && <p className="text-error">Không lấy được (cần đang kết nối Telegram).</p>}
       {q.data?.map((c) => (
         <p key={c.message_id} className={cn("whitespace-pre-wrap break-words", c.message_id === m.message_id ? "-mx-1.5 rounded-sm bg-hl-wash px-1.5 text-ink" : "text-ink-2")}>
+          <ComboPick m={c} className="float-right -my-1 ml-1" />
           <span className="font-semibold" style={c.outgoing ? undefined : { color: `var(--cat-${hueOf(c.sender_name ?? "?")})` }}>
             {c.outgoing ? "Bạn" : (c.sender_name ?? "?")}:
           </span>{" "}
