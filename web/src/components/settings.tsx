@@ -110,7 +110,8 @@ type UpdateInfo = { branch: string; current: string; behind: number; dirty: bool
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 function UpdateSection() {
   const qc = useQueryClient();
-  const info = useQuery({ queryKey: ["update"], queryFn: ({ signal }) => api<UpdateInfo>("/update", { signal }), retry: false, staleTime: 60_000 });
+  const info = useQuery({ queryKey: ["update"], retry: false,
+    queryFn: async ({ signal }) => { const r = await api<UpdateInfo>("/update", { signal }); void qc.invalidateQueries({ queryKey: ["update-state"] }); return r; }, staleTime: 60_000 });
   const [restarting, setRestarting] = useState(false);
   const run = useMutation({
     mutationFn: () => api<UpdateInfo>("/update", { method: "POST" }),
@@ -154,7 +155,7 @@ function UpdateSection() {
         <label className="flex cursor-pointer items-center justify-between gap-4">
           <span className="grid gap-0.5">
             <span>Tự động cập nhật</span>
-            <span className="text-xs text-ink-3">Kiểm tra mỗi 6 giờ khi server chạy; có bản mới thì cập nhật và khởi động lại (bỏ qua khi đang có task AI Agent).</span>
+            <span className="text-xs text-ink-3">Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.</span>
           </span>
           <Switch label="Tự động cập nhật" checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
         </label>

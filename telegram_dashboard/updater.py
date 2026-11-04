@@ -13,8 +13,9 @@ from .config import _read_json
 from .errors import ApiError
 
 log = logging.getLogger("telegram_dashboard.updater")
-AUTO_EVERY = 6 * 3600  # seconds between auto-update checks
+CHECK_EVERY = 3600  # seconds between background checks (badge; auto-update when on)
 restart_requested = False  # read by __main__._serve after uvicorn returns
+behind = 0  # last background/manual check, for the badge on the Settings button
 _lock = asyncio.Lock()
 
 
@@ -38,6 +39,7 @@ async def _run(root: Path, *cmd: str, timeout: float = 600) -> str:
 
 async def check(root: Path) -> dict:
     """Fetch the upstream branch and say how far behind this checkout is."""
+    global behind
     try:
         upstream = await _run(root, "git", "rev-parse", "--abbrev-ref", "@{u}")
     except ApiError:
@@ -45,10 +47,11 @@ async def check(root: Path) -> dict:
     await _run(root, "git", "fetch", "--quiet", timeout=60)
     log_ = await _run(root, "git", "log", "--format=%h\x1f%s\x1f%cr", "-n", "30", "HEAD..@{u}")
     commits = [dict(zip(("sha", "subject", "when"), ln.split("\x1f"), strict=False)) for ln in log_.splitlines()]
+    behind = int(await _run(root, "git", "rev-list", "--count", "HEAD..@{u}"))
     return {
         "branch": upstream,
         "current": await _run(root, "git", "rev-parse", "--short", "HEAD"),
-        "behind": int(await _run(root, "git", "rev-list", "--count", "HEAD..@{u}")),
+        "behind": behind,
         "dirty": bool(await _run(root, "git", "status", "--porcelain", "--untracked-files=no")),
         "commits": commits,
     }
@@ -86,18 +89,20 @@ def auto_enabled(root: Path) -> bool:
 
 
 async def auto_loop(settings, agent) -> None:
-    """When on in Settings: check every AUTO_EVERY, update + restart if no AI Agent task is running."""
+    """Check every CHECK_EVERY (feeds the badge). When auto-update is on in Settings and no AI Agent
+    task is running: pull, rebuild, restart; open pages reload when /api/update/state's version changes."""
     await asyncio.sleep(60)
     while True:
-        if auto_enabled(settings.root) and not agent.procs:
-            try:
+        try:
+            await check(settings.root)
+            if behind and auto_enabled(settings.root) and not agent.procs:
                 if (await apply(settings.root))["updated"]:
                     log.info("auto-update applied, restarting")
                     restart()
                     return
-            except ApiError as e:
-                log.warning("auto-update skipped: %s %s", e.code, e.detail)
-        await asyncio.sleep(AUTO_EVERY)
+        except ApiError as e:
+            log.warning("update check skipped: %s %s", e.code, e.detail)
+        await asyncio.sleep(CHECK_EVERY)
 
 
 def build_router(settings) -> APIRouter:
@@ -106,6 +111,15 @@ def build_router(settings) -> APIRouter:
     @r.get("")
     async def get_update() -> dict:
         return {**await check(settings.root), "auto": auto_enabled(settings.root)}
+
+    @r.get("/state")
+    async def get_state() -> dict:
+        """Cheap (no network): the running version and the last known count of new commits."""
+        try:
+            version = await _run(settings.root, "git", "rev-parse", "--short", "HEAD")
+        except ApiError:
+            version = ""
+        return {"version": version, "behind": behind}
 
     @r.post("")
     async def post_update(request: Request) -> dict:

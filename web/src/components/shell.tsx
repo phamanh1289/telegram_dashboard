@@ -3,9 +3,11 @@
 import { ListChecks, Moon, Send, Settings, Sun } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
-import { useEffect, useState, ViewTransition } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/components/ai";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 import { toast, type ToastMsg, useNow } from "@/lib/inbox";
 import { applyTheme, readTheme, useRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -27,8 +29,25 @@ function useYtRisk(on: boolean) {
   return rows.flatMap((i) => { const r = (role === "po" || (role === "qa" ? i.qc : i.assignee) === me) ? riskOf(i, now) : null; return r ? [`${i.id}: ${r}`] : []; });
 }
 
+/** New commits on GitHub (server checks hourly), and a reload once the server restarted on a new version. */
+function useUpdateState() {
+  const q = useQuery({
+    queryKey: ["update-state"], refetchInterval: 60_000, retry: false,
+    queryFn: ({ signal }) => api<{ version: string; behind: number }>("/update/state", { signal }),
+  });
+  const first = useRef<string | null>(null);
+  const v = q.data?.version;
+  useEffect(() => {
+    if (!v) return;
+    if (first.current === null) first.current = v;
+    else if (first.current !== v) location.reload(); // auto-update pulled and restarted: load the new UI
+  }, [v]);
+  return q.data?.behind ?? 0;
+}
+
 export function TopBar({ module, onSettings, children }: { module: "telegram" | "youtrack"; onSettings: () => void; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
+  const behind = useUpdateState();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -61,8 +80,11 @@ export function TopBar({ module, onSettings, children }: { module: "telegram" | 
           onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
           <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
         </Button>
-        <Button size="icon-sm" variant="ghost" aria-label="Cài đặt chung" title="Cài đặt chung: giao diện, AI, YouTrack, kết nối" onClick={onSettings}>
+        <Button size="icon-sm" variant="ghost" className="relative" onClick={onSettings}
+          aria-label={behind ? `Cài đặt chung (có ${behind} bản cập nhật)` : "Cài đặt chung"}
+          title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → Cập nhật` : "Cài đặt chung: giao diện, AI, YouTrack, kết nối"}>
           <Settings />
+          {behind > 0 && <span aria-hidden className="absolute top-1 right-1 size-2 rounded-full bg-hl ring-2 ring-paper-2" />}
         </Button>
       </div>
     </div>
