@@ -15,7 +15,7 @@ Mỗi người chạy **bản riêng trên máy mình**, với **tài khoản Te
 | 4. Chạy | double-click `Start Dashboard Telegram.command` | double-click `Start Dashboard Telegram.bat` |
 | 5. Mở | http://127.0.0.1:8765 | http://127.0.0.1:8765 |
 
-Lần chạy đầu script sẽ tự: cài thư viện → tạo `.env` (bạn điền API ID/Hash) → đăng nhập Telegram → build giao diện → chạy server → mở trình duyệt.
+Lần chạy đầu script sẽ tự: cài thư viện → build giao diện → chạy server → mở trình duyệt. Trình duyệt tự vào **Cài đặt › Telegram** để bạn dán API ID/Hash và đăng nhập (mục 7), rồi chọn **Vai trò** ở Cài đặt › Chung (mục 7.1). Không cần `.env`.
 
 ---
 
@@ -27,8 +27,8 @@ Lần chạy đầu script sẽ tự: cài thư viện → tạo `.env` (bạn �
 | [uv](https://docs.astral.sh/uv/) | mới nhất | quản lý Python. **Không cần cài Python riêng**: uv tự tải Python 3.14 theo file `.python-version` |
 | Node.js | ≥ 24.14 (khuyến nghị 24.22.1, xem `.node-version`) | để build giao diện |
 | Tài khoản Telegram | — | cần điện thoại để nhận mã đăng nhập |
-| Claude Code CLI (`claude`) | tùy chọn | chỉ cần nếu muốn dùng tính năng AI |
-| Token YouTrack | tùy chọn | chỉ cần nếu dùng nút YouTrack / trang `/yt/` |
+| Claude Code CLI (`claude`) | tùy chọn | chỉ cần nếu muốn dùng tính năng AI (hoặc Codex / Antigravity thay thế, mục 9.1) |
+| Token YouTrack | tùy chọn | chỉ cần nếu dùng nút YouTrack / trang YouTrack (`/youtrack/`) |
 
 ---
 
@@ -111,7 +111,18 @@ cd telegram_dashboard
 
 ## 5. Cấu hình (không bắt buộc `.env`)
 
-Lần đầu mở dashboard, **Cài đặt Telegram** tự bật: dán API ID/Hash (lấy ở https://my.telegram.org/apps), nhập số điện thoại, mã và mật khẩu 2FA (xem mục 7). YouTrack và quyền đọc tin của AI nằm ở **Cài đặt chung**. Mọi thứ lưu trong `data/` trên máy này.
+Mọi cấu hình nằm ở trang **Cài đặt** (nút bánh răng góc phải header, hoặc http://127.0.0.1:8765/settings/; bấm bánh răng lần nữa để đóng). Trang chia nhóm:
+
+| Nhóm | Có gì |
+|---|---|
+| **Chung** | Vai trò (Dev / QA / PO), giao diện sáng/tối, phong cách, màu chủ đạo |
+| **Telegram** | API ID/Hash và đăng nhập, hàng chờ, trả lời, tóm tắt nhóm, mẫu trả lời nhanh, quy tắc tự đánh dấu "đã xử lý" |
+| **YouTrack** | URL + token, instructions cho AI, kho prompt, báo cáo release |
+| **AI** | đăng nhập từng CLI (Claude / Codex / Antigravity), chọn AI dùng cho mọi tính năng, quyền đọc tin |
+| **GitHub** | cập nhật app (mục 10) |
+| **Phím tắt** | bảng phím tắt Inbox (trong Inbox bấm `?`) |
+
+Lần đầu mở dashboard, trang tự vào nhóm **Telegram**: dán API ID/Hash (lấy ở https://my.telegram.org/apps), nhập số điện thoại, mã và mật khẩu 2FA (xem mục 7). Tài khoản, token và cấu hình AI lưu trong `data/` trên máy này; vai trò và giao diện lưu trên trình duyệt.
 
 `.env` chỉ cần cho tùy chỉnh nâng cao (tạo bằng `cp .env.example .env`). Giá trị nhập trên giao diện thắng `.env`. Biến hay dùng:
 
@@ -119,7 +130,7 @@ Lần đầu mở dashboard, **Cài đặt Telegram** tự bật: dán API ID/Ha
 |---|---|
 | `NOTIFY=0` | tắt thông báo khi có tag mới (chỉ có trên macOS) |
 | `DONE_REACTION=👍` | thả reaction lên tin Telegram khi bạn bấm ✓ xong |
-| `YOUTRACK_URL`, `YOUTRACK_TOKEN`, `YOUTRACK_PROJECT` | bật nút tạo ticket YouTrack và trang `/yt/` (cũng có thể nhập trong Cài đặt trên giao diện) |
+| `YOUTRACK_URL`, `YOUTRACK_TOKEN`, `YOUTRACK_PROJECT` | bật nút tạo ticket YouTrack và trang YouTrack `/youtrack/` (cũng có thể nhập ở Cài đặt › YouTrack) |
 
 Xem đầy đủ trong `.env.example`.
 
@@ -172,15 +183,21 @@ Rồi mở http://127.0.0.1:8765.
 
 ## 7. Đăng nhập Telegram (chỉ một lần)
 
-Trong **Cài đặt Telegram** (tự mở lần đầu), sau khi lưu API ID/Hash. Vẫn có thể đăng nhập bằng terminal: `uv run python -m telegram_dashboard login`.
+Trong **Cài đặt › Telegram** (tự mở lần đầu), sau khi lưu API ID/Hash:
 
-1. **Phone**: số điện thoại dạng quốc tế, ví dụ `+84912345678`.
-2. **Code**: mã Telegram gửi vào app Telegram (tin từ "Telegram"), không phải SMS.
-3. **Password**: mật khẩu 2FA nếu bạn có bật (gõ không hiện ký tự, cứ gõ rồi Enter).
+1. **Số điện thoại**: dạng quốc tế, ví dụ `+84912345678`.
+2. **Mã**: mã Telegram gửi vào app Telegram (tin từ "Telegram"), không phải SMS.
+3. **Mật khẩu 2FA**: nếu bạn có bật.
 
-Thấy `Đã đăng nhập: <tên>` là xong. Phiên lưu ở `data/account.session`, lần sau không hỏi lại.
+Đăng nhập xong là dùng được ngay. Phiên lưu ở `data/account.session`, lần sau không hỏi lại.
 
-> Nhập mã/2FA **chỉ trong cửa sổ terminal trên máy bạn**. Không gửi mã cho ai, kể cả AI agent.
+Muốn đăng nhập bằng terminal thay cho giao diện: `uv run python -m telegram_dashboard login` (mật khẩu 2FA gõ không hiện ký tự, cứ gõ rồi Enter).
+
+> Chỉ nhập mã/2FA trên dashboard hoặc terminal **trên máy bạn**. Không gửi mã cho ai, kể cả AI agent.
+
+### 7.1 Chọn vai trò
+
+Vào **Cài đặt › Chung › Vai trò**, chọn **Dev**, **QA/QC** hoặc **PO/PM**. Vai trò quyết định trang chủ, Dashboard YouTrack và góc nhìn của AI khi tóm tắt / tạo ticket. QA và PO không dùng AI Agent nên không cần thư mục code.
 
 ---
 
@@ -200,16 +217,17 @@ Mở **http://127.0.0.1:8765** — phải dùng `127.0.0.1`, **không dùng `loc
 
 ### 8.2 AI (tùy chọn)
 
-Cần Claude Code CLI đã đăng nhập (mục 9). Không có `claude` thì inbox vẫn chạy, chỉ ẩn AI.
+Cần ít nhất một AI CLI đã đăng nhập (mục 9). Không có CLI nào thì inbox vẫn chạy, chỉ ẩn AI.
 
 - **Nhờ AI**: Trả lời một tin → khung "Nhờ AI" → chọn **dự án** (nút **Thêm** mở hộp thoại chọn thư mục) → nhập yêu cầu → Enter. AI trả 3 bản nháp, bấm để đưa vào khung soạn. AI **không bao giờ tự gửi**.
 - **Tóm tắt**: AI liệt kê việc tồn theo mức gấp.
 - **Tạo task (AI Agent)**: chạy Claude trong thư mục dự án; chế độ *plan* chỉ đọc, *edit* được sửa file.
-- Đổi model / AI (Claude, Codex, Antigravity): **Cài đặt** trên giao diện.
+- Đổi AI (Claude, Codex, Antigravity), model, effort: **Cài đặt › AI**. Mỗi tin gửi cho AI cần bạn cấp quyền; tắt *Hỏi trước khi AI đọc tin Telegram* ở cùng chỗ nếu chỉ dùng cá nhân.
+- Sau khi giao việc cho AI Agent, toast có nút **Mở phiên** (xem tiến trình) và **Hoàn tác** (dừng và xóa task).
 
-### 8.3 YouTrack Dashboard (`/yt/`)
+### 8.3 YouTrack Dashboard (`/youtrack/`)
 
-Bấm link YouTrack trên header. Cần `YOUTRACK_URL` + `YOUTRACK_TOKEN` (trong `.env` hoặc nhập ở Cài đặt). Token lấy tại YouTrack → Profile → **Account Security → New token**. Chưa có token thì xem dữ liệu mẫu: http://127.0.0.1:8765/yt/?mock=1
+Bấm **YouTrack** trên header. Cần URL + token YouTrack: nhập ở **Cài đặt › YouTrack** (hoặc `YOUTRACK_URL` + `YOUTRACK_TOKEN` trong `.env`). Token lấy tại YouTrack → Profile → **Account Security → New token**. Chưa có token thì trang hiện dữ liệu mẫu để xem thử. Trang cũ `/yt/` vẫn còn nhưng không cần dùng.
 
 ---
 
@@ -233,11 +251,25 @@ Mở terminal mới, chạy `claude` một lần và đăng nhập tài khoản 
 claude auth status
 ```
 
-Sau đó **restart dashboard** (macOS: phím 3; Windows: đóng và mở lại `.bat`).
+Sau đó **restart dashboard** (macOS: phím 3; Windows: đóng và mở lại `.bat`). Kiểm tra ở **Cài đặt › AI › Tài khoản**: Claude phải hiện "đang dùng" kèm tài khoản.
+
+### 9.1 Codex / Antigravity (thay cho Claude, tùy chọn)
+
+- **Codex**: `npm i -g @openai/codex`, rồi bấm **Đăng nhập** ở Cài đặt › AI (mở trình duyệt).
+- **Antigravity**: cài Antigravity CLI (`agy`) theo hướng dẫn của Google, rồi bấm **Đăng nhập** ở Cài đặt › AI (mở Terminal chạy `agy`, đăng nhập Google, xong thì đóng Terminal; nút này chỉ chạy trên macOS).
+- Chọn AI dùng cho mọi tính năng ở **Cài đặt › AI › Dùng AI nào**. CLI chưa cài / chưa đăng nhập hiện mờ.
 
 ---
 
 ## 10. Cập nhật khi có code mới
+
+### 10.1 Trong app (khuyến nghị)
+
+**Cài đặt › GitHub › Cập nhật**: app tự `git pull`, cài lại thư viện nếu `uv.lock` / `package-lock.json` đổi, build lại giao diện, khởi động lại server rồi tải lại trang. Server kiểm tra bản mới mỗi giờ; có bản mới thì nút bánh răng hiện chấm. Bật **Tự động cập nhật** để app tự làm (bỏ qua khi đang có task AI Agent).
+
+Điều kiện: thư mục là bản `git clone` có nhánh theo dõi trên GitHub, máy có quyền đọc repo (SSH key hoặc đăng nhập git), và **không có file sửa tay** trong repo (có thì app từ chối, dùng git ở mục 10.2).
+
+### 10.2 Bằng lệnh
 
 ```bash
 git pull
@@ -272,9 +304,10 @@ Dữ liệu của bạn (`data/`, `.env`) không bị ảnh hưởng khi pull.
 | Mọi nút bấm báo lỗi / bị từ chối | Đang mở `localhost` → đổi sang `http://127.0.0.1:8765` |
 | Port 8765 bị chiếm | Một dashboard khác đang chạy. macOS: menu phím 2 rồi 1. Windows: `netstat -ano \| findstr 8765` rồi `taskkill /PID <pid> /F` |
 | Giao diện trống / 503 | Chưa build: `npm run build` |
-| App báo `login_required` | Phiên Telegram hết hạn → đăng nhập lại ở Cài đặt Telegram |
+| App báo `login_required` | Phiên Telegram hết hạn → đăng nhập lại ở Cài đặt › Telegram |
 | `FloodWaitError` khi login | Telegram giới hạn số lần thử, đợi theo số giây báo rồi thử lại |
 | Không có tính năng AI | `claude` chưa có trên PATH hoặc chưa đăng nhập → mục 9, rồi restart |
+| Cài đặt › GitHub báo không cập nhật được | Có file sửa tay (`git status`), hoặc máy chưa có quyền đọc repo, hoặc không phải bản `git clone` → cập nhật bằng lệnh (mục 10.2) |
 | macOS: không hiện thông báo tag mới | System Settings → Notifications → **Script Editor** → bật Allow |
 
 ### Khác biệt trên Windows
