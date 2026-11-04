@@ -18,13 +18,15 @@ import { PromptManager } from "@/components/yt/prompts";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
-const SHARED_TABS = [["system", "Hệ thống"], ["youtrack", "YouTrack"], ["ai", "AI"]] as const;
+const SHARED_TABS = [["system", "Hệ thống"], ["youtrack", "YouTrack"], ["ai", "AI"], ["github", "GitHub"]] as const;
 
 /** Settings both modules use (app look, YouTrack token, AI accounts); YouTrack opens it via /?settings=shared. */
 export function SharedSettingsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   // Read on mount; the parent remounts this (key) each time it opens, so the values are fresh.
   const [theme, setTheme] = useState<ThemePref>(readTheme);
-  const [tab, setTab] = useState<(typeof SHARED_TABS)[number][0]>("system");
+  const qc = useQueryClient();
+  // Opened from the update badge (new commits known): land on the GitHub tab.
+  const [tab, setTab] = useState<(typeof SHARED_TABS)[number][0]>(() => qc.getQueryData<{ behind: number }>(["update-state"])?.behind ? "github" : "system");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Fixed full height so switching tabs doesn't resize the dialog; only the tab body scrolls. */}
@@ -52,9 +54,6 @@ export function SharedSettingsDialog({ open, onOpenChange }: { open: boolean; on
                 options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
               <LookSection />
             </Section>
-            <Section title="Cập nhật" hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
-              <UpdateSection />
-            </Section>
           </>}
           {tab === "youtrack" && <>
             <Section title="Tài khoản YouTrack" first hint="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
@@ -77,6 +76,11 @@ export function SharedSettingsDialog({ open, onOpenChange }: { open: boolean; on
             <ProviderSection />
             <ConsentSection />
           </>}
+          {tab === "github" && (
+            <Section title="Cập nhật" first hint="Lấy bản mới từ GitHub (git pull), build lại giao diện rồi khởi động lại server. Máy cần quyền đọc repo (SSH key hoặc đăng nhập git).">
+              <UpdateSection />
+            </Section>
+          )}
         </div>
 
         <DialogFooter>

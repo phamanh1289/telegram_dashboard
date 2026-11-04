@@ -82,7 +82,7 @@ export function TopBar({ module, onSettings, children }: { module: "telegram" | 
         </Button>
         <Button size="icon-sm" variant="ghost" className="relative" onClick={onSettings}
           aria-label={behind ? `Cài đặt chung (có ${behind} bản cập nhật)` : "Cài đặt chung"}
-          title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → Cập nhật` : "Cài đặt chung: giao diện, AI, YouTrack, kết nối"}>
+          title={behind ? `Có ${behind} bản cập nhật: mở Cài đặt → GitHub` : "Cài đặt chung: giao diện, AI, YouTrack, kết nối"}>
           <Settings />
           {behind > 0 && <span aria-hidden className="absolute top-1 right-1 size-2 rounded-full bg-hl ring-2 ring-paper-2" />}
         </Button>
