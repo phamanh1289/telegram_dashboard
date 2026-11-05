@@ -393,6 +393,7 @@ class TelethonTransport:
             settings.telegram_api_hash,
             flood_sleep_threshold=0,
             request_retries=0,
+            connection_retries=1,  # blocked network: degraded after ~20s, not ~70s; the bridge retries
             catch_up=True,
         )
         self.bridge: TelegramBridge | None = None
@@ -488,7 +489,11 @@ class TelethonTransport:
             if not self.client.is_connected():
                 await self.client.connect()
             self._phone = phone
-            self._code_hash = (await self.client.send_code_request(phone)).phone_code_hash
+            try:
+                sent = await self.client.send_code_request(phone)
+            except ValueError:  # request_retries=0: PHONE_MIGRATE only switched DC; ask again
+                sent = await self.client.send_code_request(phone)
+            self._code_hash = sent.phone_code_hash
         except errors.FloodWaitError as e:
             raise ApiError(429, "flood_wait", retry_after=e.seconds) from e
         except (errors.PhoneNumberInvalidError, errors.PhoneNumberBannedError) as e:

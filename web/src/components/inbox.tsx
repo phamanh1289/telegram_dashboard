@@ -31,7 +31,7 @@ const STATE_LABEL: Record<Status["state"], string> = {
   login_required: "Cần đăng nhập: mở Cài đặt Telegram",
   connecting: "Đang kết nối Telegram…",
   connected: "Đã kết nối Telegram",
-  degraded: "Mất kết nối, đang thử lại",
+  degraded: "Không kết nối được Telegram (mạng chặn? bật VPN), đang thử lại",
   stopped: "Đã dừng",
 };
 

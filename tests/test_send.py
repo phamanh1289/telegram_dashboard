@@ -113,6 +113,7 @@ def test_telethon_client_never_sleeps_or_retries(tmp_path):
     t = TelethonTransport(settings)
     assert t.client.flood_sleep_threshold == 0
     assert t.client._request_retries == 0
+    assert t.client._connection_retries == 1
 
 
 async def test_outgoing_event_and_response_deduplicate(ready):
@@ -156,3 +157,34 @@ async def test_sent_reply_gets_trace_code(ready):
     rec = await ready.bridge.submit_reply(req(text="hello there"))
     assert rec.status == "sent" and rec.code and rec.code.startswith("R-")
     assert ready.store.outbox_claim(str(rec.request_id)) is None  # send payload still blanked
+
+
+async def test_send_code_retries_once_after_phone_migrate(tmp_path):
+    """request_retries=0 makes Telethon stop after switching DC on PHONE_MIGRATE_X (phones on another DC)."""
+    from telethon import errors
+    from telethon.tl import types
+
+    from telegram_dashboard.config import Settings
+    from telegram_dashboard.telegram import TelethonTransport
+
+    settings = Settings(root=tmp_path, telegram_api_id=1, telegram_api_hash="x")
+    settings.ensure_data_dir()
+    t = TelethonTransport(settings)
+    c, calls = t.client, []
+
+    class Sender:
+        def send(self, request, ordered=False):
+            calls.append(request)
+            f = asyncio.get_running_loop().create_future()
+            if len(calls) == 1:
+                f.set_exception(errors.PhoneMigrateError(request=request, capture=5))
+            else:
+                f.set_result(types.auth.SentCode(type=types.auth.SentCodeTypeApp(length=5), phone_code_hash="h"))
+            return f
+
+    async def noop(*a, **k):
+        return False
+
+    c._sender, c.is_connected, c.is_user_authorized, c._switch_dc = Sender(), lambda: True, noop, noop
+    await t.send_code("+84900000000")
+    assert t._code_hash == "h" and len(calls) == 2

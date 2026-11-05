@@ -429,6 +429,14 @@ function TelegramSection() {
   }
 
   const changeApi = <button type="button" className="w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink" onClick={() => { setApiId(String(status.telegram_api_id)); setEditApi(true); }}>Đổi API ID/Hash</button>;
+  if (status.state === "degraded") {
+    return (
+      <div className="grid gap-1">
+        <p className="text-sm text-warn">Không kết nối được tới Telegram{status.detail ? ` (${status.detail})` : ""}. Mạng có thể đang chặn Telegram: bật VPN, app sẽ tự thử lại.</p>
+        {changeApi}
+      </div>
+    );
+  }
   if (status.state !== "login_required") {
     const label = status.state === "connected" ? `Đã đăng nhập${status.telegram_me ? `: ${status.telegram_me}` : ""}` : "Đang kết nối Telegram…";
     return <div className="grid gap-1"><p className={cn("text-sm", status.state === "connected" ? "text-ok" : "text-ink-3")}>{label}</p>{changeApi}</div>;
