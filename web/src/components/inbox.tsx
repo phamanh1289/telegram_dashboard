@@ -8,7 +8,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
-import { ComboBar } from "@/components/deep-think";
+import { DeepThinking } from "@/components/deep-think";
 import { BriefingPage } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
 import { MessageList } from "@/components/message-list";
@@ -24,6 +24,7 @@ import { api, type Message, type Status } from "@/lib/api";
 import { ALL, BRIEFING, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
+import { Hint } from "@/components/ui/hint";
 
 const STATE_LABEL: Record<Status["state"], string> = {
   setup_required: "Chưa cấu hình Telegram: mở Cài đặt Telegram",
@@ -126,6 +127,7 @@ function Inbox({ status }: { status: Status }) {
   const flashMessage = (text: string) => toast({ text });
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [headSlot, setHeadSlot] = useState<HTMLDivElement | null>(null);
   // Global keys outside text fields: ? shortcuts, / search (z undo lives in the Toaster).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -139,7 +141,6 @@ function Inbox({ status }: { status: Status }) {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   });
-  const rightPanel = !!replyTo;
 
   // After a tag is answered or marked done, open the next open one below it (or above, at the end of the list).
   const listItems = useRef<Message[]>([]);
@@ -205,6 +206,12 @@ function Inbox({ status }: { status: Status }) {
     return () => removeEventListener("open-task", onOpenTask);
   }, []);
 
+  const hints: Record<string, string> = {
+    [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
+    [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
+    [TASKS]: "Phiên AI đọc / sửa code: Giao việc từ tin tag và Đối chiếu BE.",
+    [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
+  };
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
     [PINNED, "Tag đã ghim", 0, Pin],
@@ -235,7 +242,7 @@ function Inbox({ status }: { status: Status }) {
         </div>
         <nav aria-label="Trang" className="grid gap-1">
           {views.map(([id, label, count, Icon]) => (
-            <button key={id} type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} title={label}
+            <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} aria-label={label}
               className={cn(
                 "relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
                 chatId === id ? "font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
@@ -248,7 +255,7 @@ function Inbox({ status }: { status: Status }) {
                   <span className="sr-only">(</span>{count}<span className="sr-only">{id === TASKS ? " đang chạy)" : ")"}</span>
                 </span>
               )}
-            </button>
+            </button></Hint>
           ))}
         </nav>
         <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
@@ -274,14 +281,16 @@ function Inbox({ status }: { status: Status }) {
       </aside>
       <div className="hidden md:block" aria-hidden />
 
-      <div className={cn("grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]", rightPanel && "xl:grid-cols-[minmax(0,1fr)_30rem]")}>
-        <header className={cn("flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6", rightPanel && "xl:col-span-2")}>
+      <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
           <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
             aria-label="Thu gọn / mở rộng menu" title="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
             <Menu />
           </Button>
           <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.01em] sm:flex-none">{title}</h2>
-          <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
+          {/* AI Agent puts its session tabs here (portal) instead of search and range, which it doesn't use. */}
+          <div ref={setHeadSlot} className={cn("min-w-0 flex-1", chatId !== TASKS && "hidden")} />
+          {chatId !== TASKS && <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
             <label className="relative hidden w-full min-w-40 max-w-80 sm:block">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
               <input
@@ -302,18 +311,20 @@ function Inbox({ status }: { status: Status }) {
               )}
             </label>
             <DateRangePicker value={days} onChange={setDays} />
-          </div>
+          </div>}
         </header>
-        {/* The page sits in one card, like the YouTrack ledger. */}
+        {/* The page sits in one card, like the YouTrack ledger. A reply opens as a detail page over the list, which stays
+            mounted (hidden) so its scroll and "next tag" order survive. */}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
+            <div className={cn("grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
             <AnimatePresence mode="wait">
             {chatId ? (
               <motion.div key={`${chatId}:${digest}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)]" {...PAGE_MOTION}>
                 {chatId === BRIEFING ? (
                   <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
-                  <TasksPage focus={focus} onBack={() => go(ALL)} onOpenGroup={go} onUseText={useText} />
+                  <TasksPage focus={focus} headSlot={headSlot} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo && msgKey(replyTo)} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
@@ -343,20 +354,20 @@ function Inbox({ status }: { status: Status }) {
               </motion.div>
             )}
             </AnimatePresence>
-          </div>
-        </div>
-        {replyTo ? (
-          <div key={`${replyTo.chat_id}:${replyTo.message_id}`}
-            className="fixed inset-y-0 right-0 z-30 flex w-full max-w-[30rem] flex-col border-l bg-cotton shadow-pop animate-in fade-in-0 slide-in-from-right-8 duration-(--dur-short) xl:static xl:row-start-2 xl:col-start-2 xl:max-w-none xl:shadow-none">
-            <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
+            </div>
+            {replyTo && (
+              <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
+                <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
               onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời ✓"); advance(); }} onDone={advance} onTaskCreated={(id) => toast({ text: "Đã giao việc cho AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
                 // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
                 undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) })} draft={draft}
-              aiConfigured={status.ai_configured} />
+              aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />
+              </div>
+            )}
           </div>
-        ) : null}
+        </div>
       </div>
-      <ComboBar />
+      <DeepThinking />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <Toaster />
     </div>

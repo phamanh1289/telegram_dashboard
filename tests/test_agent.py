@@ -67,3 +67,10 @@ async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch
     items, _ = r.read("t1")
     assert [i["kind"] for i in items] == ["user", "result"] and not items[1]["error"]
     assert not r.running("t1") and read_task_result(r.settings, "t1") == "ok"
+
+
+async def test_session_model_and_effort_override_the_task_picks(tmp_path):
+    r = runner(tmp_path, LONG)
+    await r.start("t1", str(tmp_path), "hi", "plan", "s1", False, ("sonnet", "low"))
+    await r.pumps["t1"]
+    assert "--model sonnet --effort low" in r.read("t1")[0][1]["text"]

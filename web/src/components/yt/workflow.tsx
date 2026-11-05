@@ -1,11 +1,12 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LayoutGrid, RotateCcw, Trash2, X } from "lucide-react";
+import { Download, EyeOff, LayoutGrid, Plus, Trash2, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { type PointerEvent as RPointerEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { getPref, onPrefs, readYtRole, YT_ROLES } from "@/lib/prefs";
+import { getPref, onPrefs, put, readYtRole, YT_ROLES } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { stateColor, type Workflow, yt } from "@/lib/yt";
 
@@ -43,6 +44,15 @@ function layout(states: string[], edges: [string, string][], cols: number) {
 }
 const key = (e: [string, string]) => `${e[0]}\u0000${e[1]}`;
 
+/** An unsaved edit, kept in this browser per project and role: leaving the page keeps it as a draft, only Lưu applies it. */
+const DRAFT = (at: string) => `wfDraft:${at}`;
+function readDraft(at: string): Workflow | null {
+  try {
+    const d = JSON.parse(getPref(DRAFT(at)) ?? "null");
+    return d?.pos && Array.isArray(d.edges) ? { on: !!d.on, pos: d.pos, edges: d.edges, hidden: Array.isArray(d.hidden) ? d.hidden : [] } : null;
+  } catch { return null; }
+}
+
 /** The role whose flow is shown / saved / applied: the one picked in Settings › Chung (none yet: Dev, as on the server). */
 const useRole = () => useSyncExternalStore(onPrefs, readYtRole, () => null) ?? "dev";
 
@@ -75,16 +85,22 @@ export function WorkflowSection() {
   const role = useRole();
   const q = useQuery({ queryKey: ["yt", "workflow", p, role], queryFn: () => yt.workflow(p) });
   const qc = useQueryClient();
-  const [draft, setDraft] = useState<(Workflow & { p: string }) | null>(null); // null: showing the saved one
   const at = `${p}:${role}`; // a draft belongs to the project and role it was drawn for
+  const [, redraw] = useState(0);
+  const draft = readDraft(at); // null: showing the saved one
+  const setDraft = (d: Workflow | null) => { put(DRAFT(at), d && JSON.stringify(d)); redraw((n) => n + 1); }; // ponytail: written on every drag move, ~3 KB
   const states = q.data?.states ?? [];
   const [cols, setCols] = useState(3); // as many boxes as fit across the canvas
   const fit = (el: HTMLDivElement | null) => { if (el) setCols(Math.max(1, Math.floor((el.clientWidth - PAD - W) / GX) + 1)); };
   const saved: Workflow | null = q.data ? { on: q.data.on, pos: { ...layout(states, q.data.edges, cols), ...q.data.pos }, edges: q.data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)), hidden: (q.data.hidden ?? []).filter((s) => states.includes(s)) } : null;
-  const wf = draft?.p === at ? draft : saved;
+  const wf = draft ?? saved;
   const shown = states.filter((s) => !wf?.hidden.includes(s)); // the boxes on the canvas
   const hide = (s: string) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)) });
-  const set = (patch: Partial<Workflow>) => wf && setDraft({ ...wf, ...patch, p: at });
+  const set = (patch: Partial<Workflow>) => {
+    if (!wf || !saved) return;
+    const next = { ...wf, ...patch };
+    setDraft(JSON.stringify(next) === JSON.stringify(saved) ? null : next); // back to the saved one: no draft left
+  };
   const save = useMutation({
     mutationFn: (w: Workflow) => yt.setWorkflow(p, { on: w.on, pos: Object.fromEntries(states.map((s) => [s, w.pos[s]])), edges: w.edges, hidden: w.hidden }),
     onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ["yt", "workflow", p, role] }); },
@@ -98,7 +114,7 @@ export function WorkflowSection() {
   });
 
   if (!q.data || !wf) return <p className="text-sm text-ink-3">{q.isError ? `Không tải được: ${(q.error as Error).message}` : "Đang tải…"}</p>;
-  const dirty = draft?.p === at && JSON.stringify(draft) !== JSON.stringify({ ...saved, p: at });
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved);
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -124,22 +140,17 @@ export function WorkflowSection() {
       {fromYt.isError && <p role="alert" className="text-xs text-error">Không đọc được: {(fromYt.error as Error).message}</p>}
       {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">Chưa có ticket nào ở {fromYt.data.unknown.join(", ")} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.</p> : null}
       {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? "Chưa có state: cần token YouTrack (mục Tài khoản ở trên)." : null}</p>
-        : <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />}
-      {wf.hidden.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
-          Đã ẩn ({wf.hidden.length}):
-          {wf.hidden.map((s) => (
-            <button key={s} type="button" aria-label={`Hiện lại ${s}`} onClick={() => set({ hidden: wf.hidden.filter((x) => x !== s) })}
-              className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-2 pl-2.5 text-ink-2 hover:bg-paper-3 hover:text-ink">
-              {s}<RotateCcw className="size-3" aria-hidden />
-            </button>
-          ))}
-        </div>
-      )}
+        : (
+          <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule">
+            <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />
+            <HiddenTray hidden={wf.hidden} onShow={(list) => set({ hidden: wf.hidden.filter((x) => !list.includes(x)) })} />
+          </div>
+        )}
       <EdgeList states={shown} edges={wf.edges} onChange={(edges) => set({ edges })} />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>Lưu</Button>
-        {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>Hủy</Button>}
+        {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>Bỏ nháp</Button>}
+        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">Bản nháp · chưa áp dụng cho ticket, bấm Lưu để áp dụng</span>}
         <span className="text-xs text-ink-3">Vai trò <b className="text-ink-2">{YT_ROLES.find(([r]) => r === role)?.[1]}</b> · {wf.edges.length} mũi tên · {wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định"}</span>
       </div>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
@@ -184,7 +195,7 @@ function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: W
 
   return (
     <div ref={box} onPointerMove={move} onPointerUp={up} onPointerCancel={() => setDrag(null)} onPointerDown={(e) => e.target === e.currentTarget && setSel(null)}
-      className="relative h-[420px] touch-none overflow-auto rounded-[var(--radius-card)] border border-rule bg-paper-2 select-none"
+      className="relative h-[420px] touch-none overflow-auto bg-paper-2 select-none"
       style={{ backgroundImage: "radial-gradient(var(--color-rule) 1px, transparent 1px)", backgroundSize: "16px 16px" }}>
       <svg width={width} height={height} className="pointer-events-none absolute top-0 left-0" aria-hidden>
         <defs>
@@ -232,6 +243,43 @@ function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: W
         );
       })}
     </div>
+  );
+}
+
+/** Under the canvas: the states taken off it, as small boxes like the ones above; a click puts one back where it was. */
+function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: string[]) => void }) {
+  return (
+    <AnimatePresence initial={false}>
+      {hidden.length > 0 && (
+        <motion.div key="tray" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" }} className="overflow-hidden border-t border-rule bg-cotton">
+          <div className="grid gap-2 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs text-ink-3">
+              <EyeOff className="size-3.5" aria-hidden />
+              <span className="font-medium text-ink-2">Đã ẩn</span>
+              <span className="rounded-full bg-paper-3 px-1.5 font-mono text-[11px] leading-[18px]">{hidden.length}</span>
+              <span className="max-sm:hidden">· bấm một state để đưa lại vào sơ đồ</span>
+              {hidden.length > 1 && (
+                <button type="button" onClick={() => onShow(hidden)} className="ml-auto rounded px-1.5 py-0.5 font-medium text-hl-2 hover:bg-hl-wash">Hiện tất cả</button>
+              )}
+            </div>
+            <ul className="flex flex-wrap gap-1.5">
+              <AnimatePresence initial={false}>
+                {hidden.map((s) => (
+                  <motion.li key={s} layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }}>
+                    <button type="button" aria-label={`Hiện lại ${s}`} onClick={() => onShow([s])} style={{ borderLeftColor: stateColor(s) }}
+                      className="group inline-flex h-7 max-w-56 items-center gap-1.5 rounded-[var(--radius-input)] border border-l-[3px] border-rule bg-paper-2 pr-1.5 pl-2 text-xs text-ink-2 transition-colors hover:border-hl/60 hover:bg-cotton hover:text-ink focus-visible:ring-2 focus-visible:ring-hl">
+                      <span className="truncate">{s}</span>
+                      <Plus className="size-3.5 shrink-0 text-ink-3 transition-colors group-hover:text-hl-2" aria-hidden />
+                    </button>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

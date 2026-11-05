@@ -13,9 +13,10 @@ import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from . import providers
@@ -24,6 +25,7 @@ from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
 
+MAX_FILE = 25 << 20  # ponytail: proxied whole in memory; stream it if videos ever need to play here
 TTL = 50.0  # shorter than the UI refresh (60s) so each refresh sees fresh data
 WAVE = 4  # issue pages fetched concurrently
 PAGE = 500
@@ -151,6 +153,23 @@ class Workflow(BaseModel):
     hidden: list[StateName] = Field(default_factory=list, max_length=200)  # boxes taken off the canvas
 
 
+# The Dev flow a project starts with when Dev has none saved yet (QA / PO start empty). Only used
+# when the project has all these states; the rest are hidden.
+DEV_FLOW = {
+    "on": True,
+    "pos": {
+        "OPENED": (24, 24), "ASSIGN TO DESIGN": (288, 24), "TO DO": (24, 104), "CLOSED": (338, 110),
+        "ON HOLD": (343, 178), "IN PROGRESS": (24, 182), "BUILT ON DEV": (347, 240),
+        "READY FOR TEST": (24, 249),
+    },
+    "edges": [
+        ("OPENED", "TO DO"), ("OPENED", "ASSIGN TO DESIGN"), ("OPENED", "CLOSED"),
+        ("TO DO", "IN PROGRESS"), ("TO DO", "CLOSED"), ("TO DO", "ON HOLD"),
+        ("IN PROGRESS", "CLOSED"), ("IN PROGRESS", "BUILT ON DEV"), ("BUILT ON DEV", "READY FOR TEST"),
+    ],
+}  # fmt: skip
+
+
 class AiFilter(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     options: dict
@@ -231,7 +250,14 @@ AI_DATA = {
     "**Cần làm ngay:** 3-5 việc cụ thể, ai làm, trước ngày nào.\n"
     "Role qa: nhấn mạnh Bàn giao cho QC và Kiểm thử. Role po: nhấn mạnh rủi ro, tải team, quyết định "
     "cần chốt. Role dev: thêm **Việc của tôi:** ticket của data.me cần xong để kịp release. Chỉ dùng "
-    "số và ID trong data, không bịa. Markdown gọn để xuất file.",
+    "số và ID trong data, không bịa. Markdown gọn để xuất file.\n"
+    "data.by = sprint: data.sprintTickets là mọi ticket trong sprint (đếm theo state); báo cáo phủ hết "
+    "phạm vi đó.\n"
+    "data.by = day: KHÔNG theo các mục trên. Đây là tình trạng test tính tới data.asOf, không có ngày "
+    "release. Dòng đầu: **Tổng quan:** 1-2 câu kèm số. Sau đó các nhãn in đậm, CHỈ in mục có nội dung: "
+    "**Đã test xong:** (data.testedDone) liệt kê ID; **Đang test:** (data.testing) ID, ai đang test; "
+    "**Chờ test:** (data.waitingTest) ID, ticket chưa có QC (noQc); **Bị trả lại / reopen:** "
+    "(data.qcResult.bounced); **Cần làm ngay:** 2-4 việc, ai làm.",
     "team": "Từ bảng số liệu từng thành viên trong <data>, đánh giá tải công việc của team: ai "
     "đang quá tải, ai còn trống, ai có nhiều ticket kẹt / quá hạn. Gợi ý chia lại việc cụ thể "
     "(chuyển ticket nào cho ai nếu data có ID), và rủi ro nếu giữ nguyên. Chỉ dựa vào số liệu, "
@@ -425,6 +451,7 @@ def _normalize(i: dict) -> dict:
             ]
         if name == "Assignee" and isinstance(val, dict):
             login = val.get("login")
+    rep = i.get("reporter") or {}
     return {
         "id": i["idReadable"],
         "summary": i.get("summary"),
@@ -437,6 +464,7 @@ def _normalize(i: dict) -> dict:
         "assignee": f.get("Assignee"),
         "assigneeLogin": login,
         "qc": f.get("QC"),
+        "reporter": rep.get("fullName") or rep.get("login"),
         "due": f.get("Due Date"),
         "estimate": f.get("Estimation"),
         "sprints": sprints,
@@ -500,10 +528,16 @@ class YouTrackDashboard:
             return {}
         return {r: raw for r in ROLES} if "edges" in raw else raw
 
-    def workflow(self, project: str, role: str) -> Workflow:
-        """One flow per project and role (dev / qa / po): {project: {role: Workflow}}."""
+    def workflow(self, project: str, role: str, states: list[str]) -> Workflow:
+        """One flow per project and role (dev / qa / po): {project: {role: Workflow}}.
+        Nothing saved: Dev gets DEV_FLOW when the project has its states, else an empty flow."""
+        saved = self._workflows(project).get(role)
+        if saved is None:
+            if role == "dev" and set(DEV_FLOW["pos"]) <= set(states):
+                return Workflow(**DEV_FLOW, hidden=[s for s in states if s not in DEV_FLOW["pos"]])
+            return Workflow()
         try:
-            return Workflow(**(self._workflows(project).get(role) or {}))
+            return Workflow(**saved)
         except (ValidationError, TypeError):  # a hand-edited file: start over rather than 500
             return Workflow()
 
@@ -666,7 +700,8 @@ class YouTrackDashboard:
     async def detail(self, issue_id: str):
         d = await self.yt(
             f"/api/issues/{issue_id}",
-            fields=FIELDS + ",description,comments(text,created,author(fullName,login)),"
+            fields=FIELDS + ",description,comments(id,text,created,author(fullName,login)),"
+            "attachments(id,name,mimeType,size,removed,comment(id)),"
             "links(direction,linkType(name,sourceToTarget,targetToSource),"
             "issues(idReadable,summary,resolved))",
         )
@@ -694,13 +729,12 @@ class YouTrackDashboard:
                 ],
             }
 
-        rep = d.get("reporter") or {}
         return {
             **_normalize(d),
             "description": d.get("description") or "",
-            "reporter": rep.get("fullName") or rep.get("login"),
             "comments": [
                 {
+                    "id": c.get("id"),
                     "text": c.get("text"),
                     "created": c.get("created"),
                     "author": (c.get("author") or {}).get("fullName")
@@ -709,7 +743,37 @@ class YouTrackDashboard:
                 for c in d.get("comments") or []
             ],
             "links": [x for x in map(link, d.get("links") or []) if x["issues"]],
+            # the text names them: ![](image.png); the UI loads them through /attachment
+            "attachments": [
+                {"id": a["id"], "name": a.get("name") or "", "mime": a.get("mimeType") or "",
+                 "size": a.get("size") or 0, "comment": (a.get("comment") or {}).get("id")}
+                for a in d.get("attachments") or [] if a.get("id") and not a.get("removed")
+            ],  # fmt: skip
         }
+
+    async def file(self, issue_id: str, att: str) -> Response:
+        """One attachment's bytes, fetched with the token (the browser has none)."""
+        path = f"/api/issues/{issue_id}/attachments/{att}"
+        a = await self.yt(path, fields="url,mimeType,name,size")
+        if (a.get("size") or 0) > MAX_FILE:
+            raise YtError(413, "Tệp quá lớn để xem trong dashboard — mở trên YouTrack")
+        url = urljoin(self.base + "/", a.get("url") or "")  # a path from the host root
+        if urlsplit(url).netloc != urlsplit(self.base).netloc:
+            raise YtError(502, "YouTrack trả về link tệp lạ")
+        try:
+            r = await self._http().get(url, headers={"Accept": "*/*"})
+        except httpx.HTTPError:
+            raise YtError(502, "Không kết nối được YouTrack") from None
+        if r.status_code >= 400:
+            raise YtError(502, f"YouTrack {r.status_code} khi tải tệp")
+        mime = a.get("mimeType") or "application/octet-stream"
+        show = mime.startswith("image/") and mime != "image/svg+xml"  # svg may hold script
+        name = quote(a.get("name") or "file")
+        return Response(r.content, media_type=mime, headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "Content-Disposition": f"{'inline' if show else 'attachment'}; filename*=UTF-8''{name}",
+        })  # fmt: skip
 
     async def state_since(self, issue_id: str, updated: str) -> int:
         """Latest State change in the activity log (0 = never changed). Cached per id@updated."""
@@ -1023,6 +1087,15 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(404, "ticket not found")
         return await svc.cached(f"issue:{i}", lambda: svc.detail(i))
 
+    @r.get("/attachment")
+    async def attachment(issue: str = Query(), id: str = Query()):
+        i = _issue_id(issue)
+        if not re.fullmatch(r"[\w.-]{1,40}", id):
+            raise YtError(400, "bad attachment id")
+        if svc.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        return await svc.file(i, id)
+
     @r.post("/issue/assignee")
     async def set_assignee(body: Assignee):
         i = _issue_id(body.id)
@@ -1058,7 +1131,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def get_workflow(project: str, request: Request) -> dict:
         p = _project(project)
         fields = {} if svc.mock else await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
-        return {"states": fields.get("State", []), **svc.workflow(p, _role(request)).model_dump()}
+        states = fields.get("State", [])
+        return {"states": states, **svc.workflow(p, _role(request), states).model_dump()}
 
     @r.post("/workflow")
     async def set_workflow(project: str, body: Workflow, request: Request) -> Workflow:
@@ -1090,7 +1164,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             d = await svc.yt(f"/api/issues/{i}", fields=ev)
             sf = next((f for f in d.get("customFields") or [] if f["name"] == "State"), {})
             cur = (sf.get("value") or {}).get("name")
-            wf = svc.workflow(p, _role(request))
+            wf = svc.workflow(p, _role(request), known.get("State", []))
             if wf.on and cur != body.value and (cur, body.value) not in wf.edges:
                 to = ", ".join(t for s, t in wf.edges if s == cur) or "không có"
                 raise YtError(400, f"Workflow của team không cho {cur} → {body.value} — chỉ sang: {to}")

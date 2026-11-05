@@ -195,6 +195,25 @@ class TelegramBridge:
     async def fetch_context(self, chat_id: str, message_id: int) -> list[StoredMessage]:
         return await self.ensure_connected().fetch_context(chat_id, message_id, 10, 5)
 
+    async def fetch_page(self, chat_id: str, before: int | None, limit: int) -> list[StoredMessage]:
+        """`limit` messages older than `before` (None: the newest), oldest first."""
+        t = self.ensure_connected()
+        before = before or await t.latest_id(chat_id) + 1
+        return [m for m in await t.fetch_context(chat_id, before, limit, 0) if m.message_id < before]
+
+    async def fetch_before(
+        self, chat_id: str, message_id: int, reply_to: int | None = None, limit: int = 40
+    ) -> list[StoredMessage]:
+        """Where a message's question is: the one it replies to (however old) first, then the
+        `limit` messages right before it, newest first."""
+        t = self.ensure_connected()
+        msgs = [m for m in await t.fetch_context(chat_id, message_id, limit, 0) if m.message_id < message_id]
+        msgs.reverse()
+        if reply_to is not None:
+            msgs = [m for m in msgs if m.message_id != reply_to]
+            msgs = [m for m in await t.fetch_ids(chat_id, [reply_to]) if m.message_id == reply_to] + msgs
+        return msgs
+
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
         return await self.ensure_connected().download_photo(chat_id, message_id, dest)
 

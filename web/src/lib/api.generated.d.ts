@@ -82,6 +82,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Task Ai
+         * @description Model/effort for this session's next turns.
+         */
+        put: operations["task_ai_api_tasks__task_id__ai_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/stop": {
         parameters: {
             query?: never;
@@ -111,6 +131,61 @@ export interface paths {
         post?: never;
         /** Delete Task */
         delete: operations["delete_task_api_tasks__task_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Update */
+        get: operations["get_update_api_update_get"];
+        put?: never;
+        /** Post Update */
+        post: operations["post_update_api_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/update/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get State
+         * @description Cheap (no network): the running version and the last known count of new commits.
+         */
+        get: operations["get_state_api_update_state_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/update/auto": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Auto */
+        put: operations["put_auto_api_update_auto_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -193,6 +268,26 @@ export interface paths {
         };
         /** Messages */
         get: operations["messages_api_chats__chat_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/live": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Live
+         * @description Every message of the group, live from Telegram (not stored), newest page first.
+         */
+        get: operations["live_api_chats__chat_id__live_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -337,6 +432,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/deep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Deep
+         * @description Deep thinking on a combo (question to BE + BE's confirmation): a read-only AI Agent session.
+         */
+        post: operations["ai_deep_api_ai_deep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/ticket": {
         parameters: {
             query?: never;
@@ -351,6 +466,26 @@ export interface paths {
          * @description A YouTrack ticket proposal (summary, Type, Priority, templated description) of a tag.
          */
         post: operations["ai_ticket_api_ai_ticket_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Guide
+         * @description Which features answer the user's question, and how to use them: from the guide the page sends.
+         */
+        post: operations["ai_guide_api_ai_guide_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -603,6 +738,26 @@ export interface paths {
         };
         /** Context */
         get: operations["context_api_chats__chat_id__messages__message_id__context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/before": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Before
+         * @description Live, not stored: Deep thinking's question candidates for a BE answer (see fetch_before).
+         */
+        get: operations["before_api_chats__chat_id__messages__message_id__before_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1071,6 +1226,31 @@ export interface components {
             /** Install */
             install: string;
         };
+        /**
+         * AiDeepRequest
+         * @description Deep thinking: a question to BE + BE's confirmation, traced through a project's code.
+         */
+        AiDeepRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Question Id */
+            question_id: string;
+            /** Confirm Id */
+            confirm_id: string;
+            /** Project */
+            project: string;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            /**
+             * Platform
+             * @default android
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "mobile" | "any";
+        };
         /** AiDraftRequest */
         AiDraftRequest: {
             /** Chat Id */
@@ -1098,6 +1278,16 @@ export interface components {
              * @enum {string}
              */
             role: "dev" | "qa" | "po";
+        };
+        /**
+         * AiGuideRequest
+         * @description A question about how to use the app, answered from the in-app guide (sent by the page).
+         */
+        AiGuideRequest: {
+            /** Question */
+            question: string;
+            /** Guide */
+            guide: string;
         };
         /** AiLoginStarted */
         AiLoginStarted: {
@@ -1946,6 +2136,23 @@ export interface components {
             /** Cursor */
             cursor: string;
         };
+        /**
+         * TaskAi
+         * @description Model/effort for the next turns of one AI Agent session ("" = the CLI default).
+         */
+        TaskAi: {
+            /**
+             * Model
+             * @default
+             */
+            model: string;
+            /**
+             * Effort
+             * @default
+             * @enum {string}
+             */
+            effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+        };
         /** TaskDTO */
         TaskDTO: {
             /** Id */
@@ -1990,6 +2197,24 @@ export interface components {
              * @default false
              */
             handled: boolean;
+            /**
+             * Kind
+             * @default task
+             * @enum {string}
+             */
+            kind: "task" | "deep";
+            /** Title */
+            title?: string | null;
+            /**
+             * Provider
+             * @default claude
+             * @enum {string}
+             */
+            provider: "claude" | "codex" | "antigravity";
+            /** Model */
+            model?: string | null;
+            /** Effort */
+            effort?: string | null;
         };
         /** TaskMessage */
         TaskMessage: {
@@ -2162,11 +2387,15 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {
@@ -2276,6 +2505,39 @@ export interface operations {
             };
         };
     };
+    task_ai_api_tasks__task_id__ai_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskAi"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     task_stop_api_tasks__task_id__stop_post: {
         parameters: {
             query?: never;
@@ -2315,6 +2577,105 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_update_api_update_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_update_api_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    get_state_api_update_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    put_auto_api_update_auto_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {
@@ -2447,6 +2808,41 @@ export interface operations {
                 since?: string | null;
                 until?: string | null;
                 pending?: boolean;
+                handled?: boolean;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessagesPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    live_api_chats__chat_id__live_get: {
+        parameters: {
+            query?: {
+                before?: string | null;
+                limit?: number;
             };
             header?: never;
             path: {
@@ -2750,6 +3146,41 @@ export interface operations {
             };
         };
     };
+    ai_deep_api_ai_deep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiDeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_ticket_api_ai_ticket_post: {
         parameters: {
             query?: never;
@@ -2770,6 +3201,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiTicketDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_guide_api_ai_guide_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiGuideRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: {text}} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -3253,6 +3717,40 @@ export interface operations {
     context_api_chats__chat_id__messages__message_id__context_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    before_api_chats__chat_id__messages__message_id__before_get: {
+        parameters: {
+            query?: {
+                reply_to?: number | null;
+            };
             header?: never;
             path: {
                 chat_id: string;

@@ -1,16 +1,14 @@
 "use client";
 
-import { Bot, ChevronDown, Copy, Loader2, MessageSquarePlus, Sparkles } from "lucide-react";
-import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Sparkles } from "lucide-react";
+import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { toast, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { copyText, similar, type Ticket, yt } from "@/lib/yt";
-import { Label, Markdown, StatePill } from "./bits";
+import { similar, type Ticket, yt } from "@/lib/yt";
+import { Label, StatePill } from "./bits";
 import { useYt } from "./state";
 
-// Ticket sheet extras: tickets that look like this one, and the AI Agent runs that mention it.
+// Ticket sheet extras: tickets that look like this one.
 
 /** Tickets with a similar title in the loaded data; the AI can say which are real duplicates. */
 export function Related({ t }: { t: Ticket }) {
@@ -36,48 +34,6 @@ export function Related({ t }: { t: Ticket }) {
           <span className="flex items-center gap-2"><StatePill state={i.state} /><span className="font-mono text-xs text-ink-3">{Math.round(score * 100)}%</span></span>
         </button>
       ))}
-    </section>
-  );
-}
-
-/** AI Agent runs (Telegram › AI Agent) whose prompt names every one of these tickets; a result can become a comment. */
-export function LinkedTasks({ ids, onComment }: { ids: string[]; onComment?: (text: string) => void }) {
-  const tasks = useTaskList();
-  const key = ids.join();
-  const res = useMemo(() => key.split(",").map((id) => new RegExp(`(^|[^A-Z0-9-])${id.replace(/[-]/g, "\\-")}(?![0-9])`)), [key]);
-  // no ticket (a session about figures): "" would match every Telegram AI Agent run, so nothing is linked
-  const mine = !ids.length ? [] : (tasks.data ?? []).filter((t) => res.every((re) => re.test(t.prompt))).sort((a, b) => b.created_at.localeCompare(a.created_at));
-  const [open, setOpen] = useState<string | null>(null);
-  if (!mine.length) return null;
-  return (
-    <section className="grid gap-1.5">
-      <Label><Bot className="size-3.5" />AI Agent ({mine.length})</Label>
-      {mine.map((t) => {
-        const isOpen = open === t.id;
-        return (
-          <div key={t.id} className="grid gap-1.5 rounded-lg bg-cotton p-2.5 shadow-edge">
-            <button type="button" onClick={() => setOpen(isOpen ? null : t.id)} className="flex items-center gap-2 text-left text-xs">
-              {t.running ? <Loader2 className="size-3.5 animate-spin text-hl-2" /> : <Bot className="size-3.5 text-ink-3" />}
-              <span className="font-medium">{t.running ? "Đang chạy" : t.result ? "Đã xong" : "Không có kết quả"}</span>
-              <span className="text-ink-3">{t.mode === "edit" ? "được sửa code" : "chỉ phân tích"} · {new Date(t.created_at).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" })}</span>
-              <ChevronDown className={cn("ml-auto size-3.5 transition-transform", isOpen && "rotate-180")} />
-            </button>
-            {t.result && (
-              <>
-                <Markdown text={t.result} className={cn(!isOpen && "line-clamp-3")} />
-                {isOpen && (
-                  <div className="flex flex-wrap justify-end gap-1">
-                    <Button size="xs" variant="ghost" onClick={() => void copyText(t.result!)}><Copy /> Copy</Button>
-                    {onComment && <Button size="xs" variant="outline" title="Điền kết quả vào ô bình luận để bạn sửa rồi gửi lên YouTrack"
-                      onClick={() => { onComment(`Kết quả phân tích code (AI Agent):\n${t.result!.slice(0, 15000)}`); toast({ text: "Đã điền vào ô bình luận ở cuối, sửa rồi gửi" }); }}><MessageSquarePlus /> Đăng làm bình luận</Button>}
-                    <Link href="/?chat=__tasks__" className="self-center px-2 text-xs text-ink-3">Mở AI Agent</Link>
-                  </div>
-                )}
-              </>
-            )}
-          </div>
-        );
-      })}
     </section>
   );
 }

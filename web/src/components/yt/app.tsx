@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, CalendarCheck, History,ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, Monitor, Printer, RotateCw, Search, Settings2, Sparkles, UserSearch, X } from "lucide-react";
+import { Plus, CalendarCheck, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, Monitor, Printer, RotateCw, Search, Settings2, Sparkles, UserSearch, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/components/shell";
@@ -19,7 +19,10 @@ import { useWatch, WatchBell } from "./watch";
 import { Sheet } from "./sheet";
 import { type Mode, type Page, useYt, YtProvider } from "./state";
 import { PeoplePage } from "./people";
+import { HistoryPage } from "./history";
 import { TicketsPage } from "./tickets";
+import { Pill } from "@/components/ui/segmented";
+import { Hint } from "@/components/ui/hint";
 
 const noop = () => () => {};
 export function YouTrackApp() {
@@ -32,6 +35,16 @@ const PAGES: Record<Mode, [Page, string, typeof ListChecks][]> = {
   dev: [["home", "Hôm nay", CalendarCheck], ["tickets", "Ticket", ListChecks], ["dash", "Dashboard", LayoutDashboard], ["people", "Thành viên", UserSearch]],
   qa: [["home", "Kiểm thử", FlaskConical], ["tickets", "Ticket", ListChecks], ["dash", "Dashboard", LayoutDashboard], ["people", "Thành viên", UserSearch]],
   po: [["home", "Brief", ClipboardList], ["dash", "Dashboard", LayoutDashboard], ["people", "Thành viên", UserSearch], ["tickets", "Ticket", ListChecks]],
+};
+/** What each sidebar page is for, in its hover hint ("home" per role). */
+const PAGE_HINT: Record<string, string> = {
+  dev: "Việc của bạn hôm nay: ticket đang làm, tới hạn, cần chú ý.",
+  qa: "Ticket chờ test và kết quả kiểm thử gần đây.",
+  po: "Tình hình project cho PO: tiến độ, rủi ro, việc cần quyết.",
+  tickets: "Danh sách ticket: lọc, tìm, chọn nhiều ticket để hỏi AI.",
+  dash: "Biểu đồ và số liệu project; bấm AI trên mỗi thẻ để hỏi về số liệu đó.",
+  people: "Tải việc và ticket của từng thành viên.",
+  ai: "Các phiên đã hỏi AI (ticket, dashboard, thành viên): đọc lại và hỏi tiếp ngay tại đây.",
 };
 
 function Shell() {
@@ -46,7 +59,7 @@ function Shell() {
     return () => document.removeEventListener("keydown", k);
   }, []);
   useWatch();
-  const pages = PAGES[y.mode];
+  const pages = y.aiOn ? [...PAGES[y.mode], ["ai", "Lịch sử AI", History] as (typeof PAGES)[Mode][number]] : PAGES[y.mode];
   const now = useNow(); // badge on the home page: my risky tickets (Dev), the ones I test (QA), the team's (PO)
   const risk = y.rows.filter((i) => (y.mode === "po" || (y.mode === "qa" ? i.qc : i.assignee) === y.me) && riskOf(i, now)).length;
   const title = pages.find(([p]) => p === y.page)?.[1] ?? "";
@@ -76,7 +89,7 @@ function Shell() {
   );
 
   return (
-    <div className={cn("grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]", y.dense && "yt-dense")}>
+    <div className={cn("grid min-h-dvh grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]", y.dense && "yt-dense")}>
       {!y.tv && (
         <div className="yt-noprint sticky top-0 z-30">
           <TopBar module="youtrack">
@@ -84,7 +97,7 @@ function Shell() {
           </TopBar>
         </div>
       )}
-      <div className={cn("grid min-h-0", !y.tv && (collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"))}>
+      <div className={cn("grid min-h-0 grid-cols-[minmax(0,1fr)]", !y.tv && (collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]"))}>
         {!y.tv && (
           <>
             {menu && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden" onClick={() => setMenu(false)} />}
@@ -103,21 +116,16 @@ function Shell() {
               </select>
               <nav aria-label="Trang" className="mt-2 grid grid-cols-1 gap-1">
                 {pages.map(([p, label, Icon]) => (
-                  <button key={p} type="button" aria-current={y.page === p ? "page" : undefined} onClick={() => go(p)} title={label}
+                  <Hint key={p} title={label} text={PAGE_HINT[p === "home" ? y.mode : p] ?? ""}><button type="button" aria-current={y.page === p ? "page" : undefined} onClick={() => go(p)} aria-label={label}
                     className={cn("relative flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-colors duration-(--dur-micro)",
                       y.page === p ? "text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink")}>
-                    {y.page === p && <motion.span layoutId="yt-nav" className="absolute inset-0 rounded-[var(--radius-input)] bg-hl-wash" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
+                    {y.page === p && <Pill id="yt-nav" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
                     <Icon className="relative size-5 shrink-0" aria-hidden /><span className={cn("relative flex-1", fade)}>{label}</span>
                     {p === "home" && risk > 0 && <span title={`${risk} ticket cần xử lý ngay (quá hạn, tới hạn, blocked, đứng lâu)`}
                       className={cn("relative rounded-full bg-error px-1.5 font-mono text-xs leading-[18px] text-cotton tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}</span>}
-                  </button>
+                  </button></Hint>
                 ))}
               </nav>
-              {y.aiOn && (
-                <button type="button" onClick={() => { setMenu(false); y.setSheet({ kind: "history", title: "Lịch sử AI" }); }} title="Các phiên AI đã hỏi: mở lại, hỏi tiếp"
-                  className="mt-2 flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
-                  <History className="size-5 shrink-0" /><span className={fade}>Lịch sử AI</span></button>
-              )}
               {!y.config?.mock && (
                 <button type="button" onClick={() => { setMenu(false); y.setNewTicket(""); }} title="Tạo ticket mới, AI soạn từ ghi chú thô"
                   className="mt-1 flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] border border-dashed border-rule-2 px-2.5 text-sm text-ink-2 hover:bg-paper-3 hover:text-ink">
@@ -150,14 +158,21 @@ function Shell() {
             {/* a scope not warmed yet (first load): a sliding bar + a light fade, the old rows stay readable */}
             <AnimatePresence>
               {y.issues.isPlaceholderData && (
-                <motion.div key="bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sticky top-[var(--yt-top)] z-10 -mt-3 mb-2.5 h-0.5 overflow-hidden rounded-full bg-paper-3">
-                  <motion.div className="h-full w-1/3 rounded-full bg-hl" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
+                <motion.div key="bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sticky top-[var(--yt-top)] z-10 -mt-3 mb-2.5 h-0.5">
+                  <div className="h-full overflow-hidden rounded-full bg-paper-3">
+                    <motion.div className="h-full w-1/3 rounded-full bg-hl" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
+                  </div>
+                  <motion.div role="status" initial={{ opacity: 0, y: -6, scale: 0.96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.96 }} transition={{ type: "spring", stiffness: 420, damping: 30 }}
+                    className="absolute inset-x-0 top-3 mx-auto flex w-fit items-center gap-2 rounded-full bg-cotton whitespace-nowrap px-3 py-1.5 text-xs font-medium text-ink-2 shadow-pop">
+                    Đang tải {y.scope === "all" ? "tất cả ticket" : "ticket"}
+                    <span aria-hidden className="flex gap-0.5">{[0, 1, 2].map((i) => <span key={i} className="ai-dot size-1 rounded-full bg-hl-2" style={{ animationDelay: `${i * 0.15}s` }} />)}</span>
+                  </motion.div>
                 </motion.div>
               )}
             </AnimatePresence>
-            <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: y.issues.isPlaceholderData ? 0.7 : 1, y: 0 }} transition={{ duration: 0.25 }}
-              aria-busy={y.issues.isPlaceholderData} className={cn(y.issues.isPlaceholderData && "pointer-events-none")}>
-              {y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "people" ? <PeoplePage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
+            <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: y.issues.isPlaceholderData ? 0.55 : 1, y: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+              aria-busy={y.issues.isPlaceholderData} className={cn(y.issues.isPlaceholderData && "shimmer pointer-events-none select-none")}>
+              {y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
             </motion.div>
         </main>
       </div>
@@ -245,7 +260,7 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
                 onClick={() => (team && on ? setTeamOpen(!teamOpen) : (y.setScope(s), setTeamOpen(false)))}
                 title={team && on ? "Sửa thành viên team" : undefined}
                 className={cn("relative flex h-7 w-full items-center justify-center gap-1 rounded-[var(--radius-input)] px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-sm:flex-1", on ? "text-hl-ink" : "text-ink-3 hover:text-ink disabled:opacity-50")}>
-                {on && <motion.span layoutId="yt-scope" className="absolute inset-0 rounded-[var(--radius-input)] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+                {on && <Pill id="yt-scope" className="inset-0 rounded-[var(--radius-input)] bg-hl" />}
                 <span className="relative">{l}</span>
                 {team && <span className={cn("relative rounded-full px-1.5 text-[10px] tabular-nums", on ? "bg-hl-ink/15" : "bg-paper-2")}>{y.team.length}</span>}
                 {team && on && <Settings2 className="relative size-3.5" />}
@@ -321,7 +336,8 @@ function FilterChips() {
   const chips: [string, string, () => void][] = [
     ...f.sprint.map((v) => ["Sprint", shortSp(v), () => y.setFilters({ sprint: f.sprint.filter((x) => x !== v) })] as [string, string, () => void]),
     ...(y.scope === "me" || y.scope === "team" ? [] : f.assignee).map((v) => ["Người", v === UNASSIGNED ? v : shortName(v), () => y.setFilters({ assignee: f.assignee.filter((x) => x !== v) })] as [string, string, () => void]),
-    ...(y.page === "tickets" ? [...f.priority.map((v) => ["Priority", v, () => y.setFilters({ priority: f.priority.filter((x) => x !== v) })] as [string, string, () => void]),
+    ...(y.page === "tickets" ? [...f.state.map((v) => ["State", v, () => y.setFilters({ state: f.state.filter((x) => x !== v) })] as [string, string, () => void]),
+      ...f.priority.map((v) => ["Priority", v, () => y.setFilters({ priority: f.priority.filter((x) => x !== v) })] as [string, string, () => void]),
       ...f.type.map((v) => ["Type", v, () => y.setFilters({ type: f.type.filter((x) => x !== v) })] as [string, string, () => void])] : []),
     ...(f.tier != null ? [["Tầng", TIER_LABEL[f.tier], () => y.setFilters({ tier: null })] as [string, string, () => void]] : []),
     ...(f.quick && QUICK[f.quick] ? [["Lọc", QUICK[f.quick].label, () => y.setFilters({ quick: null })] as [string, string, () => void]] : []),
@@ -337,7 +353,7 @@ function FilterChips() {
           </motion.button>
         ))}
       </AnimatePresence>
-      {chips.length > 1 && <button type="button" onClick={() => y.setFilters({ sprint: [], ...(y.scope === "me" || y.scope === "team" ? {} : { assignee: [] }), priority: [], type: [], tier: null, quick: null })} className="text-xs text-ink-3 hover:text-ink">Xóa tất cả</button>}
+      {chips.length > 1 && <button type="button" onClick={() => y.setFilters({ sprint: [], ...(y.scope === "me" || y.scope === "team" ? {} : { assignee: [] }), state: [], priority: [], type: [], tier: null, quick: null })} className="text-xs text-ink-3 hover:text-ink">Xóa tất cả</button>}
     </div>
   );
 }

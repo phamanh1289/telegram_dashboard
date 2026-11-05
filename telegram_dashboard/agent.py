@@ -122,12 +122,17 @@ class AgentRunner:
         return items, len(lines)
 
     def _append(self, task_id: str, item: dict) -> None:
+        """`at` (epoch seconds) lets the page show how long each step and turn took."""
         with self.log_path(task_id).open("a") as f:
-            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            f.write(json.dumps(item | {"at": round(time.time(), 1)}, ensure_ascii=False) + "\n")
 
-    async def start(self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool) -> str:
+    async def start(
+        self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool,
+        ai: tuple[str | None, str | None] = (None, None),
+    ) -> str:  # fmt: skip
         """Run one turn. Returns once the process has the prompt; output streams into the log.
         A new session (not `resume`) replaces the old log and result, once it is running.
+        `ai`: the session's own model/effort (None: the task picks in AI settings).
         Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out)."""
         if self.running(task_id):
             raise ApiError(409, "task_busy")
@@ -136,6 +141,8 @@ class AgentRunner:
         try:
             tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
+            if ai[0] is not None:  # picked for this session: used as is, no step-down
+                choice = (ai[0], ai[1] or "", False)
             if provider == "claude":
                 flag = ["--resume", sid] if resume else ["--session-id", sid]
                 cmd = [*self.executable, "-p", *flags_for(*choice[:2]),

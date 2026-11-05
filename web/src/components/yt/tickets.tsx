@@ -5,20 +5,22 @@ import { AlertTriangle, Bookmark, ChevronDown, Columns3, Copy, Download, Link2, 
 import { AnimatePresence, motion } from "motion/react";
 import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
+import { Segmented } from "@/components/ui/segmented";
 import { toast, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
-import { cn, durShort } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import {
   activePool, ago, bucket, type ColKey, COLS, copyText, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, norm, PCOL, rank,
   shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt,
 } from "@/lib/yt";
 import { period } from "@/lib/yt-stats";
-import { Avatar, Chip, Person, Popover, Prio, Seg, StatePill, Tag, TypeTag } from "./bits";
+import { Avatar, MultiSelect, Person, Popover, Prio, StatePill, Tag, TypeTag } from "./bits";
 import { type AssigneeActs, AssigneePicker } from "./sheet";
-import { CAP_STEP, useYt, type Yt } from "./state";
+import { CAP_STEP, saveTicket, useYt, type Yt } from "./state";
 import { useFlow } from "./workflow";
 
-// The ticket ledger: search + AI filter, chip rows with counts, grouping, columns, bulk changes, CSV.
+// The ticket ledger: one toolbar (search + AI filter, Priority / Type / State menus, views, display), then the table or board.
 
 export function TicketsPage() {
   const y = useYt();
@@ -30,33 +32,34 @@ export function TicketsPage() {
   const priPool = useMemo(() => activePool(y.rows, fq, opts, "priority"), [y.rows, fq, y.showRes, y.me]); // eslint-disable-line react-hooks/exhaustive-deps
   const typePool = useMemo(() => activePool(y.rows, fq, opts, "type"), [y.rows, fq, y.showRes, y.me]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(() => visibleRows(pool, fq), [pool, fq]);
-  const shown = shownAll.slice(0, y.cap);
+  const groups = useMemo(() => (f.group === "none" ? null : groupRows(shownAll, f.group, y.sprints)), [shownAll, f.group, y.sprints]);
   const cols = useMemo(() => COLS.map(([k]) => k).filter((k) => !y.hiddenCols.includes(k)), [y.hiddenCols]);
+  const tcols = useMemo(() => cols.filter((k) => k !== "id" && k !== "type"), [cols]); // ID and Type sit under the title
   const now = useNow();
   const searchRef = useRef<HTMLInputElement>(null);
   const aiBusy = useAiFilterBusy();
   const tableRef = useRef<HTMLTableSectionElement>(null);
-  // group fold: absent = open; rows animate their height while "opening" / "closing", and unmount once "folded"
-  const [fold, setFold] = useState<Map<string, Fold>>(new Map());
-  function toggleGroup(g: string) {
-    const to = fold.get(g) === "folded" || fold.get(g) === "closing" ? "opening" : "closing";
-    const set = (v: Fold | null, only?: Fold) => setFold((m) => {
-      if (only && m.get(g) !== only) return m; // toggled again meanwhile
-      const n = new Map(m);
-      if (v) n.set(g, v); else n.delete(g);
-      return n;
-    });
-    set(to);
-    setTimeout(() => set(to === "closing" ? "folded" : null, to), durShort());
+  const endRef = useRef<HTMLDivElement>(null);
+  const [folded, setFolded] = useState<Set<string>>(new Set());
+  // the first `cap` rows in display order (groups first, so more rows append at the end); folded groups keep only their header
+  let left = y.cap;
+  const parts: [string, Ticket[], Ticket[]][] = [];
+  for (const [g, items] of groups ?? [["", shownAll] as [string, Ticket[]]]) {
+    if (left <= 0) break;
+    const part = folded.has(g) ? [] : items.slice(0, left);
+    left -= part.length;
+    parts.push([g, items, part]);
   }
+  const shown = parts.flatMap((p) => p[2]);
+  const more = parts.length < (groups?.length ?? 1) || parts.some(([g, items, part]) => !folded.has(g) && part.length < items.length);
 
   // stable props for the memoized rows: a keystroke or a tick re-renders only the rows that changed
-  const { setPicked, setSheet, people, loginOf, patchTicket, config } = y;
+  const { setPicked, setSheet, people, loginOf, patchTicket, config, me, setCap } = y;
   const togglePick = useCallback((id: string) => setPicked((p) => { const next = new Set(p); if (!next.delete(id)) next.add(id); return next; }), [setPicked]);
   const open = useCallback((i: Ticket) => setSheet({ kind: "ticket", id: i.id, nav: shownAll.map((x) => x.id) }), [setSheet, shownAll]);
-  const acts: AssigneeActs = useMemo(() => ({ people, loginOf, patchTicket, config }), [people, loginOf, patchTicket, config]);
-  const row = (i: Ticket, f?: Fold) => (
-    <Row key={i.id} fold={f} i={i} cols={cols} now={now} onOpen={open} onPick={togglePick} acts={acts} picked={y.picked.has(i.id)} dense={y.dense}
+  const acts: AssigneeActs = useMemo(() => ({ people, loginOf, patchTicket, config, me }), [people, loginOf, patchTicket, config, me]);
+  const row = (i: Ticket) => (
+    <Row key={i.id} i={i} cols={tcols} showType={cols.includes("type")} now={now} onOpen={open} onPick={togglePick} acts={acts} picked={y.picked.has(i.id)} dense={y.dense}
       tint={y.hiOn && TINT[rank(i)] && !i.resolved ? TINT[rank(i)] : 0} fresh={y.seen > 0 && i.updated > y.seen} />
   );
 
@@ -66,7 +69,18 @@ export function TicketsPage() {
     if ([...y.picked].some((id) => !ids.has(id))) y.setPicked(new Set([...y.picked].filter((id) => ids.has(id))));
   }, [shownAll]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // keys: / or ⌘K search, j / k rows, x tick, Esc clears the search, then the ticked rows
+  // the next rows render once the end of the table scrolls into view (a new observer per step: it fires again if the end is still visible)
+  useEffect(() => {
+    const el = endRef.current;
+    if (!el || !more) return;
+    const box = el.parentElement!; // the table's own scroll area from md up; below md the page scrolls
+    const root = getComputedStyle(box).overflowY === "auto" ? box : null;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) setCap((c) => c + CAP_STEP); }, { root, rootMargin: "0px 0px 400px 0px" });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [y.cap, more, setCap]);
+
+  // keys: / search, j / k rows, x tick, Esc clears the search, then the ticked rows
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (y.sheet) return;
@@ -92,83 +106,72 @@ export function TicketsPage() {
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  const shut = (g: string) => fold.get(g) === "folded" || fold.get(g) === "closing";
-  const toggle = (key: "state" | "priority" | "type", v: string | null) =>
-    y.setFilters({ [key]: v == null ? [] : f[key].includes(v) ? f[key].filter((x) => x !== v) : [...f[key], v] });
+  const fold = (g: string) => setFolded((s) => { const n = new Set(s); if (!n.delete(g)) n.add(g); return n; });
   const anyFilter = !!(f.sprint.length || f.assignee.length || f.tier != null || f.quick || f.state.length || f.priority.length || f.type.length || f.q);
+  const facet = (key: "state" | "priority" | "type", from: Ticket[], color: (v: string) => string) => {
+    const items = counts(from, key, f[key]), n = new Map(items);
+    return (
+      <MultiSelect label={key === "state" ? "State" : key === "priority" ? "Priority" : "Type"} all={key === "state" ? "State" : key === "priority" ? "Priority" : "Type"}
+        options={items.map(([v]) => v)} value={f[key]} onChange={(v) => y.setFilters({ [key]: v })} count={(v) => n.get(v)} swatch={color} search={items.length > 10}
+        className={cn("w-auto", f[key].length > 0 && "border-hl text-hl-2")} />
+    );
+  };
 
   return (
     <section aria-label="Ticket" className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="relative min-w-64 flex-1">
+        <label className="relative min-w-56 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
           <input ref={searchRef} type="search" value={f.q} onChange={(e) => y.setFilters({ q: e.target.value })} aria-label="Tìm ticket" autoComplete="off" maxLength={500}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && y.aiOn) { e.preventDefault(); void aiFilterApply(y, f.q); } }}
-            placeholder={y.aiOn ? "Tìm ID, tiêu đề, người… hoặc gõ một câu rồi bấm ✨ để AI lọc  ( / )" : "Tìm ID, tiêu đề, người…  ( / )"}
-            className={cn("h-9 w-full rounded-md border border-rule bg-cotton pl-8 text-sm outline-none focus:border-hl", y.aiOn ? "pr-20" : "pr-2")} />
+            placeholder={y.aiOn ? "Tìm ID, tiêu đề, người… hoặc gõ một câu cho AI lọc  ( / )" : "Tìm ID, tiêu đề, người…  ( / )"}
+            className={cn("h-8 w-full rounded-md border border-rule bg-cotton pl-8 text-sm outline-none focus:border-hl", y.aiOn ? "pr-20" : "pr-2")} />
           {y.aiOn && (
-            <button type="button" disabled={!f.q.trim() || aiBusy} onClick={() => void aiFilterApply(y, f.q)} title="AI đổi câu này thành bộ lọc State / Priority / Type / Người / Sprint (⌘↵)"
-              className="absolute top-1/2 right-1 inline-flex h-7 -translate-y-1/2 items-center gap-1 rounded-[var(--radius-input)] px-2 text-xs font-medium text-hl-2 hover:bg-hl-wash disabled:opacity-40">
-              <Sparkles className={cn("size-3.5", aiBusy && "animate-pulse")} />AI lọc
-            </button>
+            <Hint text="AI đổi câu này thành bộ lọc State / Priority / Type / Người / Sprint (⌘↵)" side="bottom">
+              <button type="button" disabled={!f.q.trim() || aiBusy} onClick={() => void aiFilterApply(y, f.q)}
+                className="absolute top-1/2 right-1 inline-flex h-6 -translate-y-1/2 items-center gap-1 rounded-[var(--radius-input)] px-2 text-xs font-medium text-hl-2 hover:bg-hl-wash disabled:opacity-40">
+                <Sparkles className={cn("size-3.5", aiBusy && "animate-pulse")} />AI lọc
+              </button>
+            </Hint>
           )}
         </label>
-        <span aria-live="polite" className="text-xs whitespace-nowrap text-ink-3">{fmt(shownAll.length)} ticket{y.view === "table" && shownAll.length > y.cap ? `, hiện ${fmt(y.cap)} đầu` : ""}</span>
-        <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          <SavedViews />
-          <Seg label="Kiểu xem" value={y.view} onChange={y.setView} options={[["table", <><Rows3 />Bảng</>, "Bảng ticket"], ["board", <><Columns3 />Board</>, "Cột theo State, kéo thẻ để đổi State"]]} />
-          {y.view === "table" && (
-            <select value={f.group} onChange={(e) => { setFold(new Map()); y.setFilters({ group: e.target.value as Filters["group"] }); }} aria-label="Gom nhóm"
-              className="h-[30px] rounded-md border border-rule bg-cotton px-2 text-sm">
-              <option value="none">Không gom nhóm</option><option value="assignee">Gom theo Assignee</option><option value="sprint">Gom theo Sprint</option><option value="module">Gom theo Module / App</option>
-            </select>
-          )}
-          <Popover label={<span className="inline-flex items-center gap-1"><SlidersHorizontal className="size-3.5" />Hiển thị</span>} align="right" title="Cột và kiểu hiển thị">
-            {() => (
-              <div className="grid p-1 text-sm">
-                {([["Gọn: hàng thấp, tiêu đề 1 dòng", y.dense, y.setDense], ["Hiện ticket đã resolved", y.showRes, y.setShowRes], ["Tô nền ticket High trở lên", y.hiOn, y.setHiOn]] as const).map(([l, on, set]) => (
-                  <label key={l} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-paper-2"><input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />{l}</label>
-                ))}
-                {y.view === "table" && <>
-                  <div className="mx-2 my-1 border-t border-rule" />
-                  <span className="px-2 pt-1 pb-0.5 text-xs font-medium text-ink-3">Cột</span>
-                  {COLS.filter(([k]) => k !== "id" && k !== "summary").map(([k, l]) => (
-                    <label key={k} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-paper-2">
-                      <input type="checkbox" checked={!y.hiddenCols.includes(k)} onChange={(e) => y.setHiddenCols(e.target.checked ? y.hiddenCols.filter((c) => c !== k) : [...y.hiddenCols, k])} />{l}
-                    </label>
-                  ))}
-                </>}
-              </div>
-            )}
-          </Popover>
-          <Button size="icon-sm" variant="outline" onClick={() => exportCsv(shownAll, y.project, cols)} aria-label="Xuất CSV" title="Xuất danh sách đang lọc (các cột đang hiện) ra CSV"><Download /></Button>
+        <div role="group" aria-label="Bộ lọc" className="flex flex-wrap items-center gap-1.5">
+          {facet("priority", priPool, (v) => PCOL[v] || "var(--color-ink-3)")}
+          {facet("type", typePool, typeColor)}
+          {facet("state", pool, stateColor)}
         </div>
-      </div>
-
-      <RoleViews />
-      <div role="group" aria-label="Bộ lọc" className="grid gap-1.5 rounded-lg bg-paper-2 p-2.5">
-        <ChipRow label="Priority" items={counts(priPool, "priority", f.priority)} value={f.priority} total={priPool.length} color={(n) => PCOL[n] || "var(--color-ink-3)"} onPick={(v) => toggle("priority", v)} />
-        <ChipRow label="Type" items={counts(typePool, "type", f.type)} value={f.type} total={typePool.length} color={typeColor} onPick={(v) => toggle("type", v)} />
-        <ChipRow label="State" items={counts(pool, "state", f.state)} value={f.state} total={pool.length} color={stateColor} onPick={(v) => toggle("state", v)} />
+        <span aria-live="polite" className="px-1 font-mono text-xs whitespace-nowrap text-ink-3 tabular-nums">{fmt(shownAll.length)} ticket</span>
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <Views />
+          <Segmented id="yt-tickets-view" label="Kiểu xem" value={y.view} onChange={y.setView} items={[
+            { value: "table", label: <span className="inline-flex items-center gap-1"><Rows3 className="size-3.5" />Bảng</span> },
+            { value: "board", label: <span className="inline-flex items-center gap-1"><Columns3 className="size-3.5" />Board</span> },
+          ]} />
+          <Display onGroup={() => setFolded(new Set())} />
+          <Hint text="Xuất danh sách đang lọc (các cột đang hiện) ra CSV" side="bottom">
+            <Button size="icon-sm" variant="outline" onClick={() => exportCsv(shownAll, y.project, cols)} aria-label="Xuất CSV"><Download /></Button>
+          </Hint>
+        </div>
       </div>
 
       <AnimatePresence>{y.picked.size > 0 && <BulkBar key="bulk" />}</AnimatePresence>
 
-      {y.view === "board" && shownAll.length > 0 ? <Board rows={shownAll} onOpen={open} /> : shown.length > 0 ? (
+      {y.view === "board" && shownAll.length > 0 ? <Board rows={shownAll} onOpen={open} /> : parts.some((p) => p[1].length) ? (
         // its own scroll area (both ways) from md up: wide tables keep their right-hand columns and the sticky headers still work
         <div className="overflow-x-auto rounded-lg bg-cotton shadow-stock md:max-h-[calc(100dvh-var(--yt-top)-1rem)] md:overflow-y-auto">
           <table className="w-full border-collapse text-sm">
-            <thead className="z-10 bg-paper-2 text-left text-xs text-ink-3 md:sticky md:top-0">
+            <thead className="z-10 bg-cotton text-left text-xs text-ink-3 shadow-[inset_0_-1px_0_var(--color-rule)] md:sticky md:top-0">
               <tr>
-                <th className="w-9 px-3 py-2"><input type="checkbox" aria-label="Chọn tất cả ticket đang hiện" checked={shown.every((i) => y.picked.has(i.id))}
+                <th className="w-9 py-2 pr-1 pl-3.5"><input type="checkbox" aria-label="Chọn tất cả ticket đang hiện" checked={shown.every((i) => y.picked.has(i.id))}
                   onChange={(e) => y.setPicked(e.target.checked ? new Set([...y.picked, ...shown.map((i) => i.id)]) : new Set([...y.picked].filter((id) => !shown.some((i) => i.id === id))))} /></th>
-                {cols.map((k) => {
-                  const on = f.sort.k === k;
+                {tcols.map((k) => {
+                  const sk: ColKey = k === "summary" ? "id" : k; // the title column sorts by ticket number
+                  const on = f.sort.k === sk;
                   return (
-                    <th key={k} aria-sort={on ? (f.sort.d === "asc" ? "ascending" : "descending") : undefined} className="px-2 py-2 font-medium whitespace-nowrap">
+                    <th key={k} aria-sort={on ? (f.sort.d === "asc" ? "ascending" : "descending") : undefined} className="px-3 py-2 font-medium whitespace-nowrap">
                       <button type="button" className={cn("inline-flex items-center gap-1 hover:text-ink", on && "text-ink")}
-                        onClick={() => y.setFilters({ sort: on ? { k, d: f.sort.d === "asc" ? "desc" : "asc" } : { k, d: "asc" } })}>
-                        {COLS.find(([c]) => c === k)![1]}{on && <span aria-hidden>{f.sort.d === "asc" ? "▲" : "▼"}</span>}
+                        onClick={() => y.setFilters({ sort: on ? { k: sk, d: f.sort.d === "asc" ? "desc" : "asc" } : { k: sk, d: "asc" } })}>
+                        {k === "summary" ? "Ticket" : COLS.find(([c]) => c === k)![1]}{on && <span aria-hidden>{f.sort.d === "asc" ? "▲" : "▼"}</span>}
                       </button>
                     </th>
                   );
@@ -176,114 +179,109 @@ export function TicketsPage() {
               </tr>
             </thead>
             <tbody ref={tableRef}>
-              {f.group === "none"
-                ? shown.map((i) => row(i))
-                : groupRows(shown, f.group, y.sprints).map(([g, items]) => (
+              {!groups
+                ? shown.map(row)
+                : parts.map(([g, items, part]) => (
                   <Fragment key={g}>
                     <tr className="z-[5] bg-paper-2 md:sticky md:top-[33px]">
-                      <td colSpan={cols.length + 1} className="border-y border-rule px-3 py-2">
-                        <button type="button" aria-expanded={!shut(g)} className="flex w-full items-center gap-2 text-left text-sm font-semibold text-ink" onClick={() => toggleGroup(g)}>
-                          <ChevronDown className={cn("size-3.5 transition-transform duration-(--dur-short) ease-(--ease-in-out)", shut(g) && "-rotate-90")} />
-                          {f.group === "sprint" ? g : f.group === "assignee" && g !== "Chưa assign" ? <Person name={g} /> : g}
-                          <b className="rounded-full bg-cotton px-1.5 font-mono text-xs font-medium text-ink-2 shadow-edge">{items.length}</b>
+                      <td colSpan={tcols.length + 1} className="px-3.5 py-1.5">
+                        <button type="button" aria-expanded={!folded.has(g)} className="flex w-full items-center gap-2 text-left text-sm font-semibold text-ink" onClick={() => fold(g)}>
+                          <ChevronDown className={cn("size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-in-out)", folded.has(g) && "-rotate-90")} />
+                          {f.group === "assignee" && g !== "Chưa assign" ? <Person name={g} /> : g}
+                          <b className="font-mono text-xs font-medium text-ink-3">{items.length}</b>
                         </button>
                       </td>
                     </tr>
-                    {fold.get(g) !== "folded" && items.map((i) => row(i, fold.get(g) ?? "open"))}
+                    {part.map(row)}
                   </Fragment>
                 ))}
             </tbody>
           </table>
+          {more && <div ref={endRef} role="status" className="px-3 py-3 text-center text-xs text-ink-3">Đang hiện {fmt(shown.length)} / {fmt(shownAll.length)}…</div>}
         </div>
       ) : y.issues.isPending ? <TableSkeleton /> : (
         <Empty anyFilter={anyFilter} />
-      )}
-      {y.view === "table" && shownAll.length > y.cap && (
-        <Button variant="outline" className="justify-self-center" onClick={() => y.setCap(y.cap + CAP_STEP)}>Hiện thêm {fmt(Math.min(CAP_STEP, shownAll.length - y.cap))} ticket</Button>
       )}
       {y.view === "table" && <HoverPreview body={tableRef} />}
     </section>
   );
 }
 
-function ChipRow({ label, items, value, total, color, onPick }: { label: string; items: [string, number][]; value: string[]; total: number; color: (v: string) => string; onPick: (v: string | null) => void }) {
-  const TOP = 7;
-  const [all, setAll] = useState(false);
-  // the most common values, plus whatever is chosen; the rest behind "+N"
-  const shown = all ? items : items.filter(([v], k) => k < TOP || value.includes(v));
-  const rest = items.length - shown.length;
+/** Display options: density, resolved tickets, priority tint, grouping, columns. */
+function Display({ onGroup }: { onGroup: () => void }) {
+  const y = useYt();
   return (
-    <div className="grid grid-cols-[4rem_minmax(0,1fr)] items-start gap-2 max-sm:grid-cols-1">
-      <span className="pt-1.5 text-xs font-medium text-ink-2">{label}</span>
-      <div className="flex flex-wrap gap-1">
-        <Chip on={!value.length} onClick={() => onPick(null)} count={total}>Tất cả</Chip>
-        {shown.map(([v, n]) => <Chip key={v} on={value.includes(v)} onClick={() => onPick(v)} swatch={color(v)} count={n}>{v}</Chip>)}
-        {(rest > 0 || all) && items.length > TOP && (
-          <button type="button" onClick={() => setAll(!all)} className="h-7 rounded-full px-2.5 text-xs font-medium text-hl-2 hover:bg-hl-wash">{all ? "Thu gọn" : `+${rest} khác`}</button>
-        )}
-      </div>
-    </div>
+    <Popover label={<span className="inline-flex items-center gap-1"><SlidersHorizontal className="size-3.5" />Hiển thị</span>} align="right">
+      {() => (
+        <div className="grid p-1 text-sm">
+          {([["Gọn: hàng thấp, tiêu đề 1 dòng", y.dense, y.setDense], ["Hiện ticket đã resolved", y.showRes, y.setShowRes], ["Tô nền ticket High trở lên", y.hiOn, y.setHiOn]] as const).map(([l, on, set]) => (
+            <label key={l} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-paper-2"><input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />{l}</label>
+          ))}
+          {y.view === "table" && <>
+            <div className="mx-2 my-1 border-t border-rule" />
+            <span className="px-2 pt-1 pb-1.5 text-xs font-medium text-ink-3">Gom nhóm</span>
+            <Segmented id="yt-tickets-group" label="Gom nhóm" className="mx-2 mb-1" value={y.filters.group} onChange={(group) => { onGroup(); y.setFilters({ group }); }} items={[
+              { value: "none", label: "Không" }, { value: "assignee", label: "Người" }, { value: "sprint", label: "Sprint" }, { value: "module", label: "Module" },
+            ]} />
+            <div className="mx-2 my-1 border-t border-rule" />
+            <span className="px-2 pt-1 pb-0.5 text-xs font-medium text-ink-3">Cột</span>
+            {COLS.filter(([k]) => k !== "id" && k !== "summary").map(([k, l]) => (
+              <label key={k} className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-paper-2">
+                <input type="checkbox" checked={!y.hiddenCols.includes(k)} onChange={(e) => y.setHiddenCols(e.target.checked ? y.hiddenCols.filter((c) => c !== k) : [...y.hiddenCols, k])} />{l}
+              </label>
+            ))}
+          </>}
+        </div>
+      )}
+    </Popover>
   );
 }
 
-type Fold = "open" | "opening" | "closing" | "folded";
-
-const Row = memo(function Row({ i, cols, now, onOpen, onPick, acts, picked, dense, tint, fresh, fold }: {
-  fold?: Fold; // grouped rows only
-  i: Ticket; cols: ColKey[]; now: number; onOpen: (i: Ticket) => void; onPick: (id: string) => void; acts: AssigneeActs; picked: boolean; dense: boolean; tint: number; fresh: boolean;
+const Row = memo(function Row({ i, cols, showType, now, onOpen, onPick, acts, picked, dense, tint, fresh }: {
+  i: Ticket; cols: ColKey[]; showType: boolean; now: number; onOpen: (i: Ticket) => void; onPick: (id: string) => void; acts: AssigneeActs; picked: boolean; dense: boolean; tint: number; fresh: boolean;
 }) {
   const base = acts.config?.base ?? "";
-  const pad = dense ? "py-1" : "py-2";
-  // a table row can't animate its height, so a grouped row's cells do: their content sits in a grid row 1fr <-> 0fr
-  // (0fr at insert via @starting-style when the group opens); the padding sits one level in, or 0fr stops at it
-  // `wide`: the clip box would let the column shrink to nothing (an overflow-hidden grid item has no minimum width)
-  const box = (c: React.ReactNode, x: string, wide = false) => !fold ? c : (
-    <div className={cn("grid transition-[grid-template-rows,opacity] duration-(--dur-short) ease-(--ease-in-out) motion-reduce:transition-none",
-      fold === "closing" ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr]", fold === "opening" && "starting:grid-rows-[0fr] starting:opacity-0")}>
-      <div className={cn("min-h-0 overflow-hidden", wide && "min-w-max")}><div className={cn(x, pad)}>{c}</div></div>
-    </div>
-  );
+  const pad = dense ? "py-1.5" : "py-2.5";
   const tags = tagsOf(i);
-  const cell: Record<ColKey, React.ReactNode> = {
-    id: (
-      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
-        <a href={issueUrl(base, i.id)} target="_blank" rel="noreferrer" className="font-mono text-xs font-medium text-ink-2 no-underline hover:text-hl-2" onClick={(e) => e.stopPropagation()}>{i.id}</a>
-        {fresh && <span title="Cập nhật sau lần bạn xem trước" className="rounded-full bg-hl px-1.5 text-xs leading-4 font-semibold text-hl-ink">mới</span>}
-        <span className="flex opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100">
-          <button type="button" title="Copy ID" aria-label="Copy ID" className="rounded p-0.5 text-ink-3 hover:text-ink" onClick={(e) => { e.stopPropagation(); void copyText(i.id, `Đã copy ${i.id}`); }}><Copy className="size-3" /></button>
-          <button type="button" title="Copy link" aria-label="Copy link" className="rounded p-0.5 text-ink-3 hover:text-ink" onClick={(e) => { e.stopPropagation(); void copyText(issueUrl(base, i.id), `Đã copy link ${i.id}`); }}><Link2 className="size-3" /></button>
-        </span>
+  const id = (
+    <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap">
+      <a href={issueUrl(base, i.id)} target="_blank" rel="noreferrer" className="font-mono text-xs font-medium text-ink-3 no-underline hover:text-hl-2" onClick={(e) => e.stopPropagation()}>{i.id}</a>
+      {fresh && <span aria-label="Cập nhật sau lần bạn xem trước" className="rounded-full bg-hl px-1.5 text-xs leading-4 font-semibold text-hl-ink">mới</span>}
+      <span className="flex opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100">
+        <button type="button" aria-label={`Copy ID ${i.id}`} className="rounded p-0.5 text-ink-3 hover:text-ink" onClick={(e) => { e.stopPropagation(); void copyText(i.id, `Đã copy ${i.id}`); }}><Copy className="size-3" /></button>
+        <button type="button" aria-label={`Copy link ${i.id}`} className="rounded p-0.5 text-ink-3 hover:text-ink" onClick={(e) => { e.stopPropagation(); void copyText(issueUrl(base, i.id), `Đã copy link ${i.id}`); }}><Link2 className="size-3" /></button>
       </span>
-    ),
-    type: <TypeTag type={i.type} />,
-    summary: (
-      <span className="grid gap-0.5">
-        {tags.length > 0 && <span className="flex flex-wrap gap-1">{tags.map((t) => <Tag key={t} name={t} />)}</span>}
-        <span title={i.summary ?? ""} className={cn("font-medium text-ink", dense ? "line-clamp-1" : "line-clamp-2", i.resolved && "font-normal text-ink-3 line-through")}>{titleOf(i)}</span>
+    </span>
+  );
+  const title = <span className={cn("min-w-0 font-medium text-ink", dense ? "truncate" : "line-clamp-2", i.resolved && "font-normal text-ink-3 line-through")}>{titleOf(i)}</span>;
+  const cell: Partial<Record<ColKey, React.ReactNode>> = {
+    summary: dense ? <span className="flex min-w-0 items-center gap-2">{id}{title}</span> : (
+      <span className="grid min-w-0 gap-1">
+        {title}
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">{id}{showType && i.type && <TypeTag type={i.type} />}{tags.map((t) => <Tag key={t} name={t} />)}</span>
       </span>
     ),
     state: <StatePill state={i.state} />,
     priority: <Prio p={i.priority} />,
-    assignee: <span className="inline-flex items-center gap-1.5">{i.assignee ? <Avatar name={i.assignee} /> : <i aria-hidden className="size-6 shrink-0 rounded-full border border-dashed border-rule-2" />}
-      <AssigneePicker ticket={i} acts={acts} className="h-7 w-32 border-transparent bg-transparent hover:border-rule" /></span>,
+    assignee: <AssigneePicker ticket={i} acts={acts} className="w-40" />,
     qc: <Person name={i.qc} />,
-    sprint: i.sprints.length ? <span title={i.sprints.join(", ")} className="font-mono text-xs whitespace-nowrap text-ink-2">{shortSp(lastSp(i))}{i.sprints.length > 1 && <small className="ml-1 text-ink-3">+{i.sprints.length - 1}</small>}</span> : <span className="text-ink-3">—</span>,
+    sprint: i.sprints.length ? <span className="font-mono text-xs whitespace-nowrap text-ink-2">{shortSp(lastSp(i))}{i.sprints.length > 1 && <small className="ml-1 text-ink-3">+{i.sprints.length - 1}</small>}</span> : <span className="text-ink-3">—</span>,
     due: i.due ? (
-      <span title={new Date(i.due).toLocaleString("vi-VN")} className={cn("inline-flex items-center gap-1 font-mono text-xs whitespace-nowrap", i.due < now ? "font-semibold text-error" : i.due - now < 2 * DAY ? "text-warn" : "text-ink-2")}>
+      <span className={cn("inline-flex items-center gap-1 font-mono text-xs whitespace-nowrap", i.due < now ? "font-semibold text-error" : i.due - now < 2 * DAY ? "text-warn" : "text-ink-2")}>
         {i.due < now && <AlertTriangle className="size-3" />}{new Date(i.due).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}
       </span>
     ) : <span className="text-ink-3">—</span>,
-    updated: <span title={new Date(i.updated).toLocaleString("vi-VN")} className="text-xs whitespace-nowrap text-ink-3">{ago(i.updated)}</span>,
+    updated: <span className="text-xs whitespace-nowrap text-ink-3">{ago(i.updated)}</span>,
   };
   return (
     <tr data-id={i.id} tabIndex={0} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,select,input")) onOpen(i); }}
       onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(i); }}
       style={tint ? { background: `color-mix(in oklch, ${PCOL[i.priority!]} ${tint}%, transparent)` } : undefined}
-      className={cn("group/row cursor-pointer border-t border-rule align-middle transition-colors duration-(--dur-micro) hover:bg-paper-2 focus-visible:bg-hl-wash focus-visible:outline-none", picked && "bg-hl-wash/60", i.resolved && "text-ink-3")}>
-      <td className={cn(!fold && "px-3", !fold && pad)} style={{ boxShadow: `inset 3px 0 0 ${stateColor(i.state)}` }} onClick={(e) => { e.stopPropagation(); onPick(i.id); }}>
-        {box(<input type="checkbox" checked={picked} onChange={() => onPick(i.id)} onClick={(e) => e.stopPropagation()} aria-label={`Chọn ${i.id}`} />, "px-3")}
+      className={cn("group/row cursor-pointer border-t border-rule/60 align-middle transition-colors duration-(--dur-micro) first:border-0 hover:bg-paper-2 focus-visible:bg-hl-wash focus-visible:outline-none", picked && "bg-hl-wash/60", i.resolved && "text-ink-3")}>
+      <td className={cn("pr-1 pl-3.5", pad)} style={{ boxShadow: `inset 3px 0 0 ${stateColor(i.state)}` }} onClick={(e) => { e.stopPropagation(); onPick(i.id); }}>
+        <input type="checkbox" checked={picked} onChange={() => onPick(i.id)} onClick={(e) => e.stopPropagation()} aria-label={`Chọn ${i.id}`} />
       </td>
-      {cols.map((k) => <td key={k} className={cn(!fold && "px-2", !fold && pad, k === "summary" ? "w-full min-w-72" : "whitespace-nowrap")}>{box(cell[k], "px-2", k !== "summary")}</td>)}
+      {cols.map((k) => <td key={k} className={cn("px-3", pad, k === "summary" ? "w-full max-w-0 min-w-80" : "whitespace-nowrap")}>{cell[k]}</td>)}
     </tr>
   );
 });
@@ -348,52 +346,6 @@ function BulkBar() {
   );
 }
 
-/** Built-in views per role: one click sets the whole filter + table / board + grouping for a job the role does every day. */
-type RoleView = [label: string, hint: string, f: Partial<Filters>, view?: "table" | "board"];
-function RoleViews() {
-  const y = useYt();
-  const now = useNow();
-  const me = y.me ? [y.me] : [];
-  const sprint = [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now }).set];
-  const VIEWS: Record<Yt["mode"], RoleView[]> = {
-    dev: [
-      ["Board của tôi", "Ticket của bạn theo cột State, kéo thẻ để chuyển trạng thái", { assignee: me }, "board"],
-      ["Sprint này", "Ticket của bạn trong sprint đang chạy", { assignee: me, sprint }],
-      ["Chờ QC", "Ticket bạn đã làm xong, đang chờ test / release", { assignee: me, tier: 2 }],
-      ["Bug của tôi", "Bug đang mở được assign cho bạn", { assignee: me, quick: "bugopen" }],
-      ["Quá hạn", "Ticket của bạn đã quá hạn", { assignee: me, quick: "overdue" }],
-    ],
-    qa: [
-      ["Board chờ test", "Ticket chờ test của cả team theo cột State, kéo sang Done / Reopen", { tier: 2 }, "board"],
-      ["Chưa có QC", "Ticket chờ test chưa ai nhận", { quick: "noqc", group: "assignee" }],
-      ["Bug đang mở", "Bug chưa xong, Critical trước, gom theo module", { quick: "bugopen", group: "module" }],
-      ["Bug mới 7 ngày", "Bug được tạo trong 7 ngày qua", { quick: "bugnew", group: "none", sort: { k: "updated", d: "asc" } }],
-      ["Regression", "Ticket đã build / chờ release, gom theo module để lên checklist", { quick: "built", group: "module" }],
-    ],
-    po: [
-      ["Backlog", "Ticket mở chưa vào sprint, gom theo module, priority cao trước", { quick: "nosprint", group: "module" }],
-      ["Chờ PO chốt", "Ticket đang chờ định nghĩa / xác nhận design", { quick: "waitpo", group: "none" }],
-      ["Sprint theo người", "Sprint đang chạy, gom theo người để xem phân việc", { sprint, group: "assignee" }],
-      ["Board sprint", "Sprint đang chạy theo cột State", { sprint }, "board"],
-      ["Chưa assign", "Ticket mở chưa có người làm", { quick: "unassigned", group: "sprint" }],
-    ],
-  };
-  function apply([label, , f, view = "table"]: RoleView) {
-    y.setFilters({ sprint: [], assignee: [], state: [], priority: [], type: [], q: "", tier: null, quick: null, group: "sprint", sort: { k: "priority", d: "asc" }, ...f });
-    y.setView(view);
-    toast({ text: `Góc nhìn “${label}”` });
-  }
-  return (
-    <div role="group" aria-label="Góc nhìn theo vai trò" className="flex flex-wrap items-center gap-1.5">
-      <span className="text-xs font-medium text-ink-2">{({ dev: "Dev", qa: "QA/QC", po: "PO/PM" } as const)[y.mode]}</span>
-      {VIEWS[y.mode].map((v) => (
-        <button key={v[0]} type="button" title={v[1]} onClick={() => apply(v)} disabled={y.mode === "dev" && !y.me}
-          className="h-7 rounded-full border border-rule bg-cotton px-3 text-xs font-medium text-ink-2 hover:border-hl hover:text-ink disabled:opacity-50">{v[0]}</button>
-      ))}
-    </div>
-  );
-}
-
 /** A sentence becomes the regular filters (state / priority / type / người / sprint / search): the ✨ in the search box and ⌘K. */
 let filterBusy = false;
 const busyListeners = new Set<() => void>();
@@ -427,7 +379,38 @@ export function applyView(y: Yt, v: SavedView) {
   toast({ text: `View “${v.name}”` });
 }
 
-function SavedViews() {
+/** Built-in views per role: one click sets the whole filter + table / board + grouping for a job the role does every day. */
+type RoleView = [label: string, hint: string, f: Partial<Filters>, view?: "table" | "board"];
+function roleViews(y: Yt): RoleView[] {
+  const me = y.me ? [y.me] : [];
+  const sprint = [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now: Date.now() }).set];
+  return {
+    dev: [
+      ["Board của tôi", "Ticket của bạn theo cột State, kéo thẻ để chuyển trạng thái", { assignee: me }, "board"],
+      ["Sprint này", "Ticket của bạn trong sprint đang chạy", { assignee: me, sprint }],
+      ["Chờ QC", "Ticket bạn đã làm xong, đang chờ test / release", { assignee: me, tier: 2 }],
+      ["Bug của tôi", "Bug đang mở được assign cho bạn", { assignee: me, quick: "bugopen" }],
+      ["Quá hạn", "Ticket của bạn đã quá hạn", { assignee: me, quick: "overdue" }],
+    ] as RoleView[],
+    qa: [
+      ["Board chờ test", "Ticket chờ test của cả team theo cột State, kéo sang Done / Reopen", { tier: 2 }, "board"],
+      ["Chưa có QC", "Ticket chờ test chưa ai nhận", { quick: "noqc", group: "assignee" }],
+      ["Bug đang mở", "Bug chưa xong, Critical trước, gom theo module", { quick: "bugopen", group: "module" }],
+      ["Bug mới 7 ngày", "Bug được tạo trong 7 ngày qua", { quick: "bugnew", group: "none", sort: { k: "updated", d: "asc" } }],
+      ["Regression", "Ticket đã build / chờ release, gom theo module để lên checklist", { quick: "built", group: "module" }],
+    ] as RoleView[],
+    po: [
+      ["Backlog", "Ticket mở chưa vào sprint, gom theo module, priority cao trước", { quick: "nosprint", group: "module" }],
+      ["Chờ PO chốt", "Ticket đang chờ định nghĩa / xác nhận design", { quick: "waitpo", group: "none" }],
+      ["Sprint theo người", "Sprint đang chạy, gom theo người để xem phân việc", { sprint, group: "assignee" }],
+      ["Board sprint", "Sprint đang chạy theo cột State", { sprint }, "board"],
+      ["Chưa assign", "Ticket mở chưa có người làm", { quick: "unassigned", group: "sprint" }],
+    ] as RoleView[],
+  }[y.mode];
+}
+
+/** "Góc nhìn": the role's built-in views, then the saved ones (a name for the current filters + table / board). */
+function Views() {
   const y = useYt();
   const [list, setList] = useState(readViews);
   const [name, setName] = useState("");
@@ -439,18 +422,33 @@ function SavedViews() {
     setName("");
     toast({ text: `Đã lưu view “${n}”` });
   }
+  function apply([label, , f, view = "table"]: RoleView) {
+    y.setFilters({ sprint: [], assignee: [], state: [], priority: [], type: [], q: "", tier: null, quick: null, group: "sprint", sort: { k: "priority", d: "asc" }, ...f });
+    y.setView(view);
+    toast({ text: `Góc nhìn “${label}”` });
+  }
+  const head = "px-2 pt-1.5 pb-0.5 text-xs font-medium text-ink-3";
   return (
-    <Popover label={<span className="inline-flex items-center gap-1"><Bookmark className="size-3.5" />View{list.length ? <b className="font-mono font-medium text-ink-3">{list.length}</b> : null}</span>} align="right" title="View đã lưu: bộ lọc + kiểu xem">
+    <Popover label={<span className="inline-flex items-center gap-1"><Bookmark className="size-3.5" />Góc nhìn{list.length ? <b className="font-mono font-medium text-ink-3">{list.length}</b> : null}</span>} align="right">
       {(close) => (
-        <div className="grid gap-1 p-1">
+        <div className="grid gap-0.5 p-1">
+          <span className={head}>Gợi ý cho {({ dev: "Dev", qa: "QA/QC", po: "PO/PM" } as const)[y.mode]}</span>
+          {roleViews(y).map((v) => (
+            <button key={v[0]} type="button" onClick={() => { close(); apply(v); }} disabled={y.mode === "dev" && !y.me}
+              className="grid gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2 disabled:pointer-events-none disabled:opacity-50">
+              <span className="text-sm">{v[0]}</span><span className="text-xs text-ink-3">{v[1]}</span>
+            </button>
+          ))}
+          <div className="mx-2 my-1 border-t border-rule" />
+          <span className={head}>Đã lưu</span>
           {list.map((v) => (
             <div key={v.name} className="flex items-center gap-1 rounded hover:bg-paper-2">
               <button type="button" onClick={() => { close(); applyView(y, v); }} className="min-w-0 flex-1 truncate px-2 py-1.5 text-left text-sm">{v.name}</button>
-              <button type="button" aria-label={`Xóa view ${v.name}`} title="Xóa view" onClick={() => save(list.filter((x) => x !== v))} className="rounded p-1 text-ink-3 hover:text-error"><X className="size-3.5" /></button>
+              <button type="button" aria-label={`Xóa view ${v.name}`} onClick={() => save(list.filter((x) => x !== v))} className="rounded p-1 text-ink-3 hover:text-error"><X className="size-3.5" /></button>
             </div>
           ))}
-          {!list.length && <p className="px-2 py-1.5 text-xs text-ink-3">Chưa có view nào. Đặt bộ lọc, chọn Bảng / Board, rồi lưu lại ở đây.</p>}
-          <form onSubmit={(e) => { e.preventDefault(); add(); }} className="flex gap-1 border-t border-rule pt-1.5">
+          {!list.length && <p className="px-2 py-1 text-xs text-ink-3">Chưa có. Đặt bộ lọc, chọn Bảng / Board, rồi lưu lại ở đây.</p>}
+          <form onSubmit={(e) => { e.preventDefault(); add(); }} className="flex gap-1 pt-1">
             <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="Tên view, vd. Bug sprint này" aria-label="Tên view"
               className="h-8 min-w-0 flex-1 rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />
             <Button type="submit" size="sm" disabled={!name.trim()}>Lưu</Button>
@@ -486,12 +484,8 @@ function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) => void }
     setDrag(null);
     if (!t || !write || state === "—" || t.state === state) return;
     if (!canGo(t, state)) return void toast({ text: `Workflow của team không cho ${t.state} → ${state}` });
-    const prev = t.state;
-    y.patchTicket({ ...t, state }); // show it moved at once; the server's answer (or the error) settles it
-    try {
-      y.patchTicket(await yt.setField(t.id, "State", state));
-      toast({ text: `${t.id} → ${state}`, undo: prev ? async () => y.patchTicket(await yt.setField(t.id, "State", prev)) : undefined });
-    } catch (e) { y.patchTicket({ ...t, state: prev }); toast({ text: `Không đổi được: ${(e as Error).message}` }); }
+    const prev = t.state, go = (from: Ticket, to: string) => saveTicket(y.patchTicket, from, { state: to }, () => yt.setField(t.id, "State", to));
+    if (await go(t, state)) toast({ text: `${t.id} → ${state}`, undo: prev ? () => void go({ ...t, state }, prev) : undefined });
   }
   return (
     <div className="flex gap-3 overflow-x-auto pb-2 md:max-h-[calc(100dvh-var(--yt-top)-1rem)]">
@@ -557,9 +551,21 @@ function Empty({ anyFilter }: { anyFilter: boolean }) {
 }
 
 function TableSkeleton() {
+  // table-shaped rows (check, id, avatar, title, chips) under one shimmer sweep, fading in one after another
   return (
-    <div aria-label="Đang tải…" className="grid gap-3 rounded-lg bg-cotton p-4 shadow-stock">
-      {[0, 1, 2, 3, 4, 5].map((k) => <div key={k} className="h-5 animate-pulse rounded bg-paper-3" style={{ width: `${92 - k * 7}%` }} />)}
+    <div role="status" aria-label="Đang tải…" className="shimmer grid rounded-lg bg-cotton shadow-stock">
+      <div className="h-9 border-b border-rule bg-paper-2" />
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
+        <motion.div key={k} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1 - k * 0.09, y: 0 }} transition={{ delay: k * 0.05, duration: 0.3 }}
+          className="flex items-center gap-3 border-b border-rule/60 px-3 py-2.5 last:border-0">
+          <span className="size-4 rounded bg-paper-3" />
+          <span className="h-3.5 w-14 rounded bg-paper-3" />
+          <span className="size-6 rounded-full bg-paper-3" />
+          <span className="h-3.5 rounded bg-paper-3" style={{ width: `${30 + ((k * 37) % 35)}%` }} />
+          <span className="ml-auto h-5 w-16 rounded-full bg-paper-3 max-sm:hidden" />
+          <span className="h-5 w-12 rounded-full bg-paper-3 max-sm:hidden" />
+        </motion.div>
+      ))}
     </div>
   );
 }

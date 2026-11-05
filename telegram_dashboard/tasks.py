@@ -8,7 +8,12 @@ from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
 from .errors import ApiError, int_or_404
-from .models import TaskDTO, TaskMessage, TaskRequest
+from .models import TaskAi, TaskDTO, TaskMessage, TaskRequest
+from .providers import split_session
+
+
+def new_task_id() -> str:
+    return f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
 def build_router(settings) -> APIRouter:
@@ -29,7 +34,7 @@ def build_router(settings) -> APIRouter:
             raise ApiError(404, "project_not_found")
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        task_id = f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+        task_id = new_task_id()
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
         session = await s.agent.start(task_id, body.project, body.prompt, body.mode, s.agent.new_session(), False)
         await s.db.write(
@@ -54,6 +59,8 @@ def build_router(settings) -> APIRouter:
                 mode=r["mode"], running=s.agent.running(r["id"]),
                 chat_title=r["chat_title"], sender_name=r["sender_name"],
                 message_text=r["message_text"], handled=bool(r["handled"]),
+                kind=r["kind"], title=r["title"], model=r["model"], effort=r["effort"],
+                provider=split_session(r["session_id"] or "")[0],
             )
             for r, (result, prompt) in zip(rows, files, strict=True)
         ]  # fmt: skip
@@ -66,7 +73,10 @@ def build_router(settings) -> APIRouter:
         if not row["prompt"]:
             raise ApiError(404, "task_not_found")
         await s.agent.stop(task_id)
-        session = await s.agent.start(task_id, row["project"], row["prompt"], row["mode"], s.agent.new_session(), False)
+        ai = (row["model"], row["effort"])
+        session = await s.agent.start(
+            task_id, row["project"], row["prompt"], row["mode"], s.agent.new_session(), False, ai
+        )  # fmt: skip
         await s.db.write(s.store.set_task_session, task_id, session)
 
     @r.get("/{task_id}/events")
@@ -86,7 +96,15 @@ def build_router(settings) -> APIRouter:
             raise ApiError(404, "task_not_found")
         mode = "edit" if body.edit else row["mode"]  # per turn, so a plan can be approved
         # start() reserves the task before its first await: a double send gets 409 task_busy.
-        await s.agent.start(task_id, row["project"], body.text, mode, row["session_id"], True)
+        ai = (row["model"], row["effort"])
+        await s.agent.start(task_id, row["project"], body.text, mode, row["session_id"], True, ai)
+
+    @r.put("/{task_id}/ai", status_code=204)
+    async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:
+        """Model/effort for this session's next turns."""
+        s = request.app.state
+        if not await s.db.write(s.store.set_task_ai, task_id, body.model, body.effort):
+            raise ApiError(404, "task_not_found")
 
     @r.post("/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

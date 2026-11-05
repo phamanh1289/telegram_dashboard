@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Copy, MessageSquarePlus, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
-import { motion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
+import { DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,6 +13,7 @@ import { smooth, timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { lastSp, yt } from "@/lib/yt";
+import { Segmented } from "@/components/ui/segmented";
 
 const PRESETS = [["24h", 24], ["3 ngày", 72], ["7 ngày", 168]] as const;
 
@@ -212,23 +213,10 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           <ArrowLeft />
         </Button>
         <span className="text-sm font-semibold">Tóm tắt</span>
-        <div role="tablist" aria-label="Khoảng thời gian" className="flex rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
-          {last && (
-            <button type="button" role="tab" aria-selected={preset === "last"} onClick={() => onPreset("last")}
-              title={`Tin mới từ lần tóm tắt trước (${timeLabel(last.last_date)})`}
-              className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === "last" ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-              {preset === "last" && <motion.span layoutId="tg-digest" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-              <span className="relative">Từ lần trước</span>
-            </button>
-          )}
-          {PRESETS.map(([l, h]) => (
-            <button key={h} type="button" role="tab" aria-selected={preset === h} onClick={() => onPreset(h)}
-              className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", preset === h ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-              {preset === h && <motion.span layoutId="tg-digest" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-              <span className="relative">{l}</span>
-            </button>
-          ))}
-        </div>
+        <Segmented id="tg-digest" label="Khoảng thời gian" value={preset} onChange={onPreset} items={[
+          ...(last ? [{ value: "last" as const, label: "Từ lần trước", title: `Tin mới từ lần tóm tắt trước (${timeLabel(last.last_date)})` }] : []),
+          ...PRESETS.map(([l, h]) => ({ value: h, label: l })),
+        ]} />
         <DateRangePicker value={days} onChange={onDays} emptyLabel="Tuỳ chọn ngày" />
         <Button size="sm" className="ml-auto" aria-busy={run.isPending}
           disabled={!enabled || !items.length || run.isPending || history.isFetching || tooMany}
@@ -337,6 +325,7 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
           <span className="truncate font-semibold text-ink">{m.outgoing ? "Bạn" : m.sender_name ?? "?"}</span>
           <span className="shrink-0 font-mono tabular-nums text-ink-3">{timeLabel(m.date)}</span>
           <span className="shrink-0 font-mono text-ink-3">#{m.message_id}</span>
+          <DeepPick m={m} className="-my-1 ml-auto" />
         </div>
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">{text}</p>
       </div>

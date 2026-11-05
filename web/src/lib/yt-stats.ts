@@ -171,6 +171,7 @@ export function dashStats(x: StatsInput) {
     qc: work.filter((i) => bucket(i) === 2).length,
     doneRate: cohort.length ? Math.round(done.length / cohort.length * 100) : null,
     doneRows: done,
+    sprintRows: cohort,
     sprintOpen: cohort.filter((i) => !i.resolved),
     prog,
     attn: ATTN.filter(([q]) => q !== "noest" || rows.some((i) => i.estimate != null)).map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length })),

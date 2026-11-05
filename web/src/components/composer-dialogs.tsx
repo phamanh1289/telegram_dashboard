@@ -1,6 +1,6 @@
 "use client";
 
-import { Bot, Bug, Loader2, Sparkles } from "lucide-react";
+import { Bot, Bug, Eye, FilePen, Loader2, MessageSquareQuote, Sparkles } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
@@ -12,11 +12,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { type AiTicketDraft, api, errorText, type Message, type YouTrackIssue } from "@/lib/api";
 import { TASK_MODES, textWithLinks, toast } from "@/lib/inbox";
 import { getPref, readAgentProject, readPlatform, readYtRole, setPref } from "@/lib/prefs";
+import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 
 const TASK_MODE_NOTE = {
-  plan: "AI đọc dự án và lập phương án, không sửa gì. Chạy ngầm, nhắn tiếp ngay trong tab AI Agent.",
-  edit: "Như Chỉ đọc nhưng AI được tự sửa file trong dự án. Lệnh shell vẫn bị chặn.",
+  plan: "Đọc dự án, lập phương án, không sửa gì. Nhắn tiếp trong tab AI Agent.",
+  edit: "Như Chỉ đọc nhưng được tự sửa file. Lệnh shell vẫn bị chặn.",
 };
 
 /**
@@ -63,36 +64,60 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
       onCreated(r.id);
     },
   });
+  const start = () => { if (projectOk && !task.isPending) task.mutate(); };
+  const label = "text-xs font-medium text-ink-3";
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) setNote(""); onOpenChange(o); }}>
-      <DialogContent className="flex h-[calc(100dvh-2.5rem)] max-h-none flex-col sm:max-w-2xl">
-        <DialogTitle className="flex items-center gap-2">
-          <Bot className="size-4 text-ink-3" aria-hidden /> AI Agent
-        </DialogTitle>
-        <DialogDescription render={<div />}>
-          Dùng khi tin tag là <b className="font-semibold text-ink">việc cần làm trong code</b> (sửa bug, thêm tính năng…), không chỉ cần trả lời.
-        </DialogDescription>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-ink-3">Dự án</span>
-          <ProjectPicker value={project} onChange={(p) => { setProject(p); setPref("agentProject", p); }} />
+      <DialogContent className="gap-5 sm:max-w-xl">
+        <div className="flex items-start gap-3 pr-8">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-ink"><Bot className="size-[18px]" aria-hidden /></span>
+          <div className="grid gap-0.5">
+            <DialogTitle>AI Agent</DialogTitle>
+            <DialogDescription render={<div />} className="text-xs">
+              Dùng khi tin tag là <b className="font-medium text-ink">việc cần làm trong code</b> (sửa bug, thêm tính năng…), không chỉ cần trả lời.
+            </DialogDescription>
+          </div>
         </div>
-        <div className="flex min-h-40 flex-1 flex-col gap-2">
-          <label htmlFor="task-note" className="text-xs font-medium text-ink-3">
-            Yêu cầu thêm <span className="font-normal">(không bắt buộc, tin Telegram được gửi kèm sẵn)</span>
-          </label>
-          <Textarea id="task-note" className="min-h-0 flex-1 resize-none overflow-y-auto text-sm md:text-sm" maxLength={4000}
+        <figure className="grid gap-1 rounded-lg border-l-2 border-hl bg-paper-2 px-3 py-2">
+          <figcaption className="flex items-center gap-1.5 text-xs text-ink-3">
+            <MessageSquareQuote className="size-3.5" aria-hidden />
+            <span className="truncate">Gửi kèm tin của <b className="font-medium text-ink-2">{m.sender_name ?? "không rõ"}</b></span>
+            {analysis && <span className="ml-auto shrink-0 rounded-sm bg-cotton px-1.5 py-px">+ phân tích AI</span>}
+          </figcaption>
+          <blockquote className="line-clamp-3 whitespace-pre-line text-sm text-ink-2">{m.text || "(không có chữ)"}</blockquote>
+        </figure>
+        <div className="grid gap-1.5">
+          <span className={label}>Dự án</span>
+          <ProjectPicker value={project} onChange={(p) => { setProject(p); setPref("agentProject", p); }} />
+          {!projectOk && <p className="text-xs text-warn">Chọn một dự án (hoặc Thêm) để bắt đầu.</p>}
+        </div>
+        <div className="grid gap-1.5">
+          <label htmlFor="task-note" className={label}>Yêu cầu thêm <span className="font-normal">· không bắt buộc</span></label>
+          <Textarea id="task-note" autoFocus rows={3} maxLength={4000}
+            className="max-h-48 min-h-20 resize-none overflow-y-auto text-sm [field-sizing:content] md:text-sm"
             value={note} onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); start(); } }}
             placeholder="Ví dụ: chỉ sửa màn hình đăng nhập, ưu tiên Android" />
         </div>
-        <fieldset className="flex flex-wrap gap-x-4 gap-y-1.5">
-          <legend className="sr-only">Cách chạy</legend>
-          {(["plan", "edit"] as const).map((id) => (
-            <label key={id} className="flex cursor-pointer items-center gap-1.5 text-sm text-ink">
-              <input type="radio" name="task-mode" className="size-3.5 accent-(--color-board)" checked={mode === id} onChange={() => setMode(id)} />
-              {TASK_MODES[id]}{id === "plan" && <span className="text-xs text-ok">khuyên dùng</span>}
-            </label>
-          ))}
-          <p className="w-full text-xs text-ink-3">{TASK_MODE_NOTE[mode]}</p>
+        <fieldset className="grid gap-1.5">
+          <legend className={cn(label, "mb-1.5")}>Cách chạy</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([["plan", Eye], ["edit", FilePen]] as const).map(([id, Icon]) => (
+              <label key={id} className={cn(
+                "flex cursor-pointer gap-2.5 rounded-lg border p-3 transition-[border-color,background-color,box-shadow] duration-(--dur-micro) has-focus-visible:ring-2 has-focus-visible:ring-focus",
+                mode === id ? (id === "edit" ? "border-warn bg-warn-wash" : "border-hl bg-hl-wash") : "border-rule hover:border-rule-2 hover:bg-paper-2",
+              )}>
+                <input type="radio" name="task-mode" className="sr-only" checked={mode === id} onChange={() => setMode(id)} />
+                <Icon className={cn("mt-0.5 size-4 shrink-0", mode === id ? (id === "edit" ? "text-warn" : "text-hl-ink") : "text-ink-3")} aria-hidden />
+                <span className="grid gap-0.5">
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
+                    {TASK_MODES[id]}{id === "plan" && <span className="rounded-sm bg-ok-wash px-1.5 text-[0.6875rem] font-normal text-ok">khuyên dùng</span>}
+                  </span>
+                  <span className="text-xs leading-snug text-ink-2">{TASK_MODE_NOTE[id]}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </fieldset>
         {task.isError && (
           <p role="alert" className="text-sm text-error">
@@ -105,8 +130,9 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
         <DialogFooter>
           <ModelEffortPicker task className="sm:mr-auto" />
           <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
-          <Button type="button" aria-busy={task.isPending} disabled={!projectOk || task.isPending} onClick={() => task.mutate()}>
+          <Button type="button" aria-busy={task.isPending} disabled={!projectOk || task.isPending} onClick={start}>
             {task.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Bot />} {task.isPending ? "Đang khởi động…" : "Bắt đầu"}
+            {!task.isPending && <span aria-hidden className="ml-1 font-mono text-[0.6875rem] font-normal opacity-70">⌘↵</span>}
           </Button>
         </DialogFooter>
       </DialogContent>

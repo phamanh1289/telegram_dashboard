@@ -211,6 +211,44 @@
 .ai-dot { animation: ai-dot 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ai-hop, .ai-dot { animation: none; } }
 
+/* Loading shimmer: a brand-tinted light sweeping across skeletons and rows still loading. clip, not hidden: sticky headers inside keep working */
+.shimmer { position: relative; overflow: clip; }
+.shimmer::after { content: ""; position: absolute; inset: 0; pointer-events: none; translate: -100% 0;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in oklch, var(--color-hl) 16%, transparent) 50%, transparent 80%);
+  animation: shimmer 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+@keyframes shimmer { to { translate: 100% 0; } }
+@media (prefers-reduced-motion: reduce) { .shimmer::after { animation: none; opacity: 0; } }
+
+/* AI chip (YouTrack dashboard cards): accent ring + a glint sweeping every few seconds; filled on hover */
+.ai-chip { color: var(--color-hl-2); box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--color-hl) 45%, transparent);
+  background: linear-gradient(110deg, var(--color-hl-wash) 35%, color-mix(in oklch, var(--color-hl) 35%, var(--color-hl-wash)) 50%, var(--color-hl-wash) 65%) 100% 0 / 300% 100%;
+  animation: ai-glint 3.2s ease-in-out infinite; transition: color var(--dur-micro), box-shadow var(--dur-micro), scale var(--dur-micro); }
+.ai-chip:hover, .ai-chip:focus-visible { color: var(--color-hl-ink); background: var(--color-hl); box-shadow: 0 0 0 3px color-mix(in oklch, var(--color-hl) 25%, transparent); scale: 1.05; }
+@keyframes ai-glint { 0%, 55% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+.ai-blink { transform-box: fill-box; transform-origin: center; animation: ai-blink 2.6s infinite; }
+@keyframes ai-blink { 0%, 88%, 100% { transform: scaleY(1); } 93% { transform: scaleY(0.1); } }
+.ai-wave { transform-box: view-box; transform-origin: 26px 27.5px; animation: ai-wave 0.5s ease-in-out 3 alternate; }
+@keyframes ai-wave { from { transform: rotate(0); } to { transform: rotate(-35deg); } }
+.ai-glow { animation: ai-glow 1.2s ease-in-out infinite alternate; }
+@keyframes ai-glow { to { fill: var(--color-hl-2); } }
+.hint-rays { animation: hint-rays 0.9s ease-in-out infinite alternate; }
+@keyframes hint-rays { from { opacity: 0.35; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ai-chip, .ai-blink, .ai-wave, .ai-glow, .hint-rays { animation: none; } }
+
+/* AI Agent session (tasks-page): a gradient ring orbits the box while the AI works; status text shimmers. */
+@property --ai-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.ai-ring { position: relative; border-color: transparent; box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-hl) 10%, transparent), 0 6px 24px -8px color-mix(in oklch, var(--color-hl) 45%, transparent); }
+.ai-ring::before { content: ""; position: absolute; inset: -1px; z-index: 0; border-radius: inherit; padding: 2px; pointer-events: none;
+  background: conic-gradient(from var(--ai-a), var(--color-hl), var(--color-info), transparent 35%, transparent 65%, var(--color-hl));
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; -webkit-mask-composite: xor;
+  animation: ai-orbit 2.6s linear infinite; }
+@keyframes ai-orbit { to { --ai-a: 360deg; } }
+.ai-text { color: transparent; background: linear-gradient(90deg, var(--color-ink-3) 30%, var(--color-hl-2) 50%, var(--color-ink-3) 70%) 0 0 / 250% 100%;
+  -webkit-background-clip: text; background-clip: text; animation: ai-text 1.8s linear infinite; }
+@keyframes ai-text { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-ring::before, .ai-text { animation: none; } }
+@media print { .yt-card { opacity: 1 !important; transform: none !important; } }
+
 /* YouTrack module (components/yt): workflow tiers, ticket types, avatars; same mapping as public/yt/css/app.css */
 :root {
     --st-todo: var(--cat-1); --st-doing: var(--cat-2); --st-qc: var(--cat-3); --st-dev: var(--cat-4); --st-design: var(--cat-5);

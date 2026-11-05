@@ -338,3 +338,39 @@ def test_parse_result_keeps_only_ticket_ids():
     r = parse_result('{"decisions": [{"text": "x", "tickets": ["va-12", "VA-12", "not id", 5, "SDK-3"]}]}', set())
     assert r["decisions"][0]["tickets"] == ["VA-12", "SDK-3"]
     assert parse_result('{"changes": [{"text": "y"}]}', set())["changes"][0]["tickets"] == []
+
+
+def test_question_candidates_before_an_answer(settings):
+    fake = FakeTransport()
+    fake.history[A] = [at(A, i, f"m{i}", i) for i in range(1, 50)]
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.store.set_tracking(A, True, title="a", kind="supergroup")
+        app.state.bridge.state = "connected"
+        ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages/45/before").json()]
+        assert ids[:2] == ["44", "43"] and len(ids) == 40  # newest first
+        ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages/45/before?reply_to=2").json()]
+        assert ids[:2] == ["2", "44"]  # the replied message leads, however old
+        ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages/45/before?reply_to=44").json()]
+        assert ids[:2] == ["44", "43"] and ids.count("44") == 1
+        assert c.get("/api/chats/-999/messages/1/before").status_code == 404
+
+
+def test_live_pages_and_handled_filter(settings):
+    fake = FakeTransport()
+    fake.history[A] = [at(A, i, f"m{i}", i) for i in range(1, 8)]
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.store.set_tracking(A, True, title="a", kind="supergroup")
+        app.state.bridge.state = "connected"
+        r = c.get(f"/api/chats/{A}/live", params={"limit": 3}).json()
+        assert [m["message_id"] for m in r["items"]] == ["5", "6", "7"] and r["has_more"]
+        r = c.get(f"/api/chats/{A}/live", params={"limit": 3, "before": "5"}).json()
+        assert [m["message_id"] for m in r["items"]] == ["2", "3", "4"]
+        assert c.get("/api/chats/-999/live").status_code == 404
+        st = app.state.store
+        st.apply_message(fake.history[A][0])
+        st.apply_message(fake.history[A][1])
+        st.set_handled(A, 1, True)
+        ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages", params={"handled": "true"}).json()["items"]]
+        assert ids == ["1"]

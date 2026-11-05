@@ -1,15 +1,15 @@
 "use client";
 
-import { AlertTriangle, ChevronLeft, ChevronRight, RotateCw, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { useNow } from "@/lib/inbox";
+import { toast, useNow } from "@/lib/inbox";
 import { getPref, put, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, when, yt } from "@/lib/yt";
 import { Card, Label, Markdown, Prio, Seg, StatePill, Tag } from "./bits";
-import { Aging, Attention, Kpis, Progress, useStats, Wip } from "./dashboard";
+import { Aging, Attention, Kpis, Progress, useQc, useStats, Wip } from "./dashboard";
 import { ReportCard } from "./report";
 import { useYt } from "./state";
 
@@ -179,7 +179,7 @@ export function DevHome() {
 function LensBar<L extends string>({ label, lenses, value, onChange }: { label: string; lenses: [L, string, number, string][]; value: L; onChange: (l: L) => void }) {
   const all = lenses[0][0];
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-5 divide-x divide-rule overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock max-sm:grid-cols-3 max-sm:divide-x-0">
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] divide-x divide-rule overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock max-sm:grid-cols-3 max-sm:divide-x-0">
       {lenses.map(([l, name, n, tone]) => (
         <button key={l} type="button" role="radio" aria-checked={value === l} onClick={() => onChange(value === l ? all : l)}
           className={cn("relative grid justify-items-start gap-0.5 px-3 py-2.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2", value === l && l !== all && "bg-hl-wash")}>
@@ -262,7 +262,7 @@ function Pager({ page, pages, total, onGo }: { page: number; pages: number; tota
   );
 }
 
-type QaLens = "queue" | "mine" | "noqc" | "bugs" | "critical";
+type QaLens = "queue" | "mine" | "retest" | "noqc" | "bugs" | "mybugs" | "critical";
 
 export function QaHome() {
   const y = useYt();
@@ -271,10 +271,14 @@ export function QaHome() {
   const open = useMemo(() => y.rows.filter((i) => !i.resolved), [y.rows]);
   const { loadSince } = y;
   useEffect(() => { const waiting = open.filter((i) => bucket(i) === 2); if (waiting.length) loadSince(waiting); }, [open, loadSince]);
-  const ranked = useMemo(() => qaList(open, y.me, y.since, now), [open, y.me, y.since, now]);
+  const qc = useQc();
+  const fails = useMemo(() => { const m = new Map<string, number>(); for (const x of qc.fail) m.set(x.id, (m.get(x.id) || 0) + 1); return m; }, [qc.fail]);
+  const ranked = useMemo(() => qaList(open, y.me, y.since, now, fails), [open, y.me, y.since, now, fails]);
   const LENS: Record<QaLens, [string, (i: Ticket) => boolean, string]> = {
     queue: ["Chờ test", (i) => bucket(i) === 2, ""], mine: ["Chờ tôi test", (i) => !!y.me && i.qc === y.me && bucket(i) === 2, "text-signal-2"],
+    retest: ["Test lại", (i) => bucket(i) === 2 && fails.has(i.id), "text-signal-2"],
     noqc: ["Chưa có QC", (i) => bucket(i) === 2 && !i.qc, "text-warn"], bugs: ["Bug đang mở", isBug, ""],
+    mybugs: ["Bug tôi log", (i) => !!y.me && isBug(i) && i.reporter === y.me, ""],
     critical: ["Bug Critical", (i) => isBug(i) && rank(i) <= 1, "text-error"],
   };
   const [lens, setLens] = useState<QaLens>("queue");
@@ -305,7 +309,7 @@ export function QaHome() {
         )}
         <LensBar label="Lọc hàng đợi kiểm thử" value={lens} onChange={setLens}
           lenses={(Object.keys(LENS) as QaLens[]).map((l) => [l, LENS[l][0], ranked.filter((x) => LENS[l][1](x.i)).length, LENS[l][2]])} />
-        <Card title={lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test"}
+        <Card title={lens === "mybugs" ? "Bug tôi đã log, còn mở" : lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test"}
           meta={lens === "queue" ? `${shown.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{LENS[lens][0]}: {shown.length} · bỏ lọc</button>}>
           <FocusList key={lens} list={shown} top={lens === "queue" ? "Test ngay" : ""} empty="Không có ticket nào ở mục này." />
         </Card>
@@ -327,6 +331,8 @@ export function QaHome() {
               ids: upstream.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(upstream.slice(0, AI_MAX).map((i) => i.id), `${d.per.label}, chưa tới QC`, "quality", sig) },
           ]} />
         )}
+        <QcMine qc={qc} waiting={mine.map((x) => x.i)} retest={ranked.filter((x) => LENS.retest[1](x.i)).map((x) => x.i)} />
+        <QcSplit open={open} />
         <Card title="Bug 7 ngày qua">
           <dl className="grid grid-cols-3 gap-2 text-center">
             {([["Mới", week.created, week.created > week.fixed ? "text-error" : ""], ["Đã fix", week.fixed, "text-ok"], ["Đang mở", bugs.length, ""]] as const).map(([l, n, tone]) => (
@@ -426,5 +432,80 @@ export function PoHome() {
         </div>
       </div>
     </div>
+  );
+}
+
+const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => toast({ text: `Đã chép ${what}` }), () => toast({ text: "Không chép được" }));
+
+/** My test results (from the State history: moves out of a test state I made), and a standup line to paste in Telegram. */
+function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting: Ticket[]; retest: Ticket[] }) {
+  const y = useYt();
+  const now = useNow();
+  if (!y.me || !qc.q.data) return null;
+  const today = new Date(now).setHours(0, 0, 0, 0);
+  const of = (from: number) => {
+    const v = [...qc.pass, ...qc.fail].filter((x) => x.by === y.me && x.at >= from);
+    const ids = (k: "pass" | "fail") => [...new Set(v.filter((x) => x.kind === k).map((x) => x.id))];
+    return { n: new Set(v.map((x) => x.id)).size, pass: ids("pass"), fail: ids("fail") };
+  };
+  const rows = [["Hôm nay", of(today)], ["24 giờ qua", of(now - DAY)], ["7 ngày", of(now - 7 * DAY)]] as const;
+  const day = rows[1][1];
+  const standup = [
+    `Standup QC · ${y.me} · ${new Date(now).toLocaleDateString("vi-VN")}`,
+    `- 24h qua đã test ${day.n} ticket${day.pass.length ? `; pass: ${day.pass.join(", ")}` : ""}${day.fail.length ? `; trả lại: ${day.fail.join(", ")}` : ""}`,
+    `- Chờ tôi test: ${waiting.length}${waiting.length ? ` (${waiting.slice(0, 8).map((i) => i.id).join(", ")})` : ""}`,
+    ...(retest.length ? [`- Test lại sau khi dev sửa: ${retest.slice(0, 8).map((i) => i.id).join(", ")}`] : []),
+  ].join("\n");
+  return (
+    <Card title="Kết quả test của tôi" meta={<Button size="xs" variant="ghost" onClick={() => void copy(standup, "standup")}><Copy /> Copy standup</Button>}>
+      <dl className="grid grid-cols-3 gap-2 text-center">
+        {rows.map(([l, r]) => (
+          <div key={l} className="grid gap-0.5 rounded-md bg-paper-2 py-2">
+            <dt className="text-xs text-ink-3">{l}</dt>
+            <dd className="font-mono text-2xl tabular-nums">{r.n}</dd>
+            <dd className="text-xs text-ink-3"><button type="button" disabled={!r.pass.length} className="text-ok enabled:hover:underline"
+              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã pass · ${l}`, rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
+              {" · "}<button type="button" disabled={!r.fail.length} className={cn(r.fail.length && "text-error", "enabled:hover:underline")}
+              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã trả lại · ${l}`, rows: r.fail.map((id) => qc.byId.get(id)!) })}>{r.fail.length} trả</button></dd>
+          </div>
+        ))}
+      </dl>
+    </Card>
+  );
+}
+
+/** Tickets waiting for test with no QC: each suggested to whoever holds the fewest tickets in test right now (counting the
+ *  ones suggested above it), most urgent first. QC people = whoever is QC on any loaded ticket. */
+function QcSplit({ open }: { open: Ticket[] }) {
+  const y = useYt();
+  const plan = useMemo(() => {
+    const load = new Map<string, number>();
+    for (const i of y.rows) if (i.qc && !load.has(i.qc)) load.set(i.qc, 0);
+    for (const i of open) if (i.qc && bucket(i) === 2) load.set(i.qc, (load.get(i.qc) || 0) + 1);
+    if (!load.size) return [];
+    // ponytail: counts tickets, not effort; weigh by estimate if the team estimates test work
+    return open.filter((i) => bucket(i) === 2 && !i.qc).sort((a, b) => rank(a) - rank(b)).map((i) => {
+      const [who, n] = [...load].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))[0];
+      load.set(who, n + 1);
+      return { i, who, n };
+    });
+  }, [y.rows, open]);
+  if (!plan.length) return null;
+  const text = ["Đề xuất chia QC:", ...plan.map((x) => `- ${x.i.id} ${titleOf(x.i).slice(0, 60)} → ${x.who}`)].join("\n");
+  return (
+    <Card title="Gợi ý chia QC" meta={<Button size="xs" variant="ghost" onClick={() => void copy(text, "phân công")}><Copy /> Copy</Button>}>
+      <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm để mở ticket và gán.</p>
+      <ol className="grid divide-y divide-rule/60">
+        {plan.slice(0, 12).map(({ i, who, n }) => (
+          <li key={i.id}>
+            <button type="button" onClick={() => y.openTicket(i.id, plan.map((x) => x.i))} className="flex w-full items-baseline gap-2 py-1.5 text-left text-sm hover:bg-paper-2">
+              <span className="font-mono text-xs text-ink-3">{i.id}</span>
+              <span className="min-w-0 flex-1 truncate">{titleOf(i)}</span>
+              <span className="shrink-0 text-xs"><b className="font-medium">{who}</b> <span className="text-ink-3">· đang giữ {n}</span></span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }

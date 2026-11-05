@@ -102,7 +102,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   prompt TEXT,
   tty TEXT,
   mode TEXT NOT NULL DEFAULT 'terminal',
-  session_id TEXT
+  session_id TEXT,
+  kind TEXT NOT NULL DEFAULT 'task',
+  title TEXT,
+  model TEXT,
+  effort TEXT
 );
 CREATE TABLE IF NOT EXISTS projects (
   path TEXT PRIMARY KEY,
@@ -231,7 +235,22 @@ def _add_missing_columns(c: sqlite3.Connection) -> None:
 
 
 # Run once each, in order; PRAGMA user_version = how many ran. Append only, never edit.
-MIGRATIONS = [_add_missing_columns]
+def _task_kind(c: sqlite3.Connection) -> None:
+    """Deep thinking sessions live with the AI Agent tasks."""
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}
+    if "kind" not in cols:  # new databases get both from the CREATE TABLE
+        c.execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task'")
+        c.execute("ALTER TABLE tasks ADD COLUMN title TEXT")
+
+
+def _task_ai(c: sqlite3.Connection) -> None:
+    """Model/effort picked for one AI Agent session (NULL: the task picks in AI settings)."""
+    if "model" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
+        c.execute("ALTER TABLE tasks ADD COLUMN model TEXT")
+        c.execute("ALTER TABLE tasks ADD COLUMN effort TEXT")
+
+
+MIGRATIONS = [_add_missing_columns, _task_kind, _task_ai]
 
 
 class Store:
@@ -676,6 +695,7 @@ class Store:
         since: datetime | None = None,
         until: datetime | None = None,
         pending: bool = False,
+        handled: bool = False,
     ) -> tuple[list[MessageDTO], str, bool]:
         limit = max(1, min(limit, 100))
         where, args = ["chat_id=?"], [chat_id]
@@ -684,6 +704,8 @@ class Store:
             args.append(_like(q))
         if pending:
             where.append(PENDING)
+        if handled:
+            where.append("m.outgoing=0 AND m.handled=1 AND m.deleted=0")
         if since is not None:
             where.append("deleted=0 AND date>=?")
             args.append(_ts(since))
@@ -907,18 +929,23 @@ class Store:
     # ---- tasks ---------------------------------------------------------
     def add_task(
         self, task_id: str, chat_id: str | None, message_id: int | None, project: str,
-        prompt: str, mode: str = "plan", session_id: str | None = None,
+        prompt: str, mode: str = "plan", session_id: str | None = None, kind: str = "task", title: str | None = None,
     ):  # fmt: skip
         with self._conn(write=True) as c:
             c.execute(
                 "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, "
-                "mode, session_id) VALUES (?,?,?,?,?,?,?,?)",
-                (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id),
+                "mode, session_id, kind, title) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id, kind, title),
             )
 
     def set_task_session(self, task_id: str, session_id: str) -> None:
         with self._conn(write=True) as c:
             c.execute("UPDATE tasks SET session_id=? WHERE id=?", (session_id, task_id))
+
+    def set_task_ai(self, task_id: str, model: str, effort: str) -> bool:
+        with self._conn(write=True) as c:
+            sql = "UPDATE tasks SET model=?, effort=? WHERE id=?"
+            return bool(c.execute(sql, (model, effort, task_id)).rowcount)
 
     def list_tasks(self, chat_id: str | None = None) -> list[dict]:
         """Newest first, with a peek at the tagged message so the task list stands alone."""

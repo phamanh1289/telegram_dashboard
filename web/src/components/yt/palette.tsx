@@ -15,7 +15,7 @@ import { aiFilterApply, applyView, readViews } from "./tickets";
 // ⌘K anywhere in the YouTrack tab: open a ticket, go to a page, switch mode, and the one place to ask the AI about the
 // current scope or turn a sentence into ticket filters.
 
-export const PAGE_LABEL: Record<Page, string> = { home: "Trang chủ", tickets: "Ticket", dash: "Dashboard", people: "Thành viên" };
+export const PAGE_LABEL: Record<Page, string> = { home: "Trang chủ", tickets: "Ticket", dash: "Dashboard", people: "Thành viên", ai: "Lịch sử AI" };
 
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
@@ -73,7 +73,7 @@ function Body({ onClose }: { onClose: () => void }) {
       if (y.page !== "tickets") out.push({ key: "search", group: "Ticket", icon: <Search />, label: <>Tìm “{t}” trong bảng ticket</>, run: go(() => { y.setPage("tickets"); y.setFilters({ q: t }); }) });
     }
     const nav: [string, () => void][] = [
-      ...(Object.keys(PAGE_LABEL) as Page[]).map((p) => [`Đi tới ${p === "home" ? ({ dev: "Hôm nay", qa: "Kiểm thử", po: "Brief" } as const)[y.mode] : PAGE_LABEL[p]}`, () => y.setPage(p)] as [string, () => void]),
+      ...(Object.keys(PAGE_LABEL) as Page[]).filter((p) => p !== "ai" || y.aiOn).map((p) => [`Đi tới ${p === "home" ? ({ dev: "Hôm nay", qa: "Kiểm thử", po: "Brief" } as const)[y.mode] : PAGE_LABEL[p]}`, () => y.setPage(p)] as [string, () => void]),
       ["Làm mới dữ liệu", y.refresh],
       ...(!y.config?.mock ? [["Tạo ticket mới", () => y.setNewTicket("")] as [string, () => void]] : []),
     ];

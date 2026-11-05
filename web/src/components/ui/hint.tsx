@@ -61,7 +61,7 @@ export function Hint({ title, text, side = "right", children }: { title?: string
           {at && (
             <motion.div key="hint" role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: -10 } : { y: -10 }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, scale: 0.6, ...(right ? { x: -8 } : { y: -8 }) }} transition={{ type: "spring", stiffness: 520, damping: 22 }}
-              style={right ? { left: at.right + 8, top: at.top + at.height / 2 - 16 } : { left: at.left + at.width / 2 - 16, top: at.bottom + 6 }}
+              style={right ? { left: at.right + 8, top: at.top + at.height / 2 - 16 } : { left: Math.min(at.left + at.width / 2 - 16, innerWidth - 300), top: at.bottom + 6 }}
               className={cn("pointer-events-none fixed z-50 flex max-w-72 gap-1", right ? "origin-left items-start" : "origin-top-left items-start")}>
               <GuideBulb className="size-8 shrink-0 drop-shadow-sm" />
               <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}

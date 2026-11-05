@@ -11,7 +11,9 @@ from fastapi.responses import JSONResponse
 from conftest import FakeAgent
 
 from telegram_dashboard.config import Settings
-from telegram_dashboard.yt_dashboard import Workflow, YouTrackDashboard, YtError, build_router
+from telegram_dashboard.yt_dashboard import (
+    DEV_FLOW, Workflow, YouTrackDashboard, YtError, build_router,
+)
 
 
 def issue(n, state="Open"):
@@ -308,9 +310,21 @@ def test_workflow_of_the_first_version_goes_to_every_role(tmp_path):
     svc = make(lambda req: httpx.Response(200, json=[]))
     svc.workflow_path = tmp_path / "yt_workflow.json"
     svc.workflow_path.write_text(json.dumps({"VA": {"on": True, "edges": [["A", "B"]]}}))
-    assert svc.workflow("VA", "qa").edges == [("A", "B")]
+    assert svc.workflow("VA", "qa", []).edges == [("A", "B")]
     svc.save_workflow("VA", "po", Workflow())
-    assert svc.workflow("VA", "dev").on and not svc.workflow("VA", "po").edges
+    assert svc.workflow("VA", "dev", []).on and not svc.workflow("VA", "po", []).edges
+
+
+def test_dev_starts_with_the_built_in_flow_when_the_project_has_its_states(tmp_path):
+    svc = make(lambda req: httpx.Response(200, json=[]))
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    states = [*DEV_FLOW["pos"], "QC - QA"]
+    dev = svc.workflow("VA", "dev", states)
+    assert dev.on and len(dev.edges) == 9 and dev.hidden == ["QC - QA"]
+    assert svc.workflow("VA", "qa", states) == Workflow()  # QA / PO start empty
+    assert svc.workflow("X", "dev", ["Open", "Done"]) == Workflow()  # other states: no default
+    svc.save_workflow("VA", "dev", Workflow())
+    assert svc.workflow("VA", "dev", states) == Workflow()  # a saved flow wins
 
 
 async def test_transitions_keep_state_changes_across_pages():

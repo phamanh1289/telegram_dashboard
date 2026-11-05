@@ -13,6 +13,7 @@ import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, type A
 import { byUnit, clockLabel, dayLabel, timeLabel, useNow } from "@/lib/inbox";
 import { cn, downloadCsv } from "@/lib/utils";
 import { copyText } from "@/lib/yt";
+import { Pill, Segmented } from "@/components/ui/segmented";
 
 // The AI CLIs (Claude, Codex, Antigravity) in one place: which one runs every AI feature, what each offers (the backend's
 // catalog), each CLI's own model/effort, every CLI's login in one shape, the top-bar pill, the account page, the run log.
@@ -234,8 +235,8 @@ function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: 
           <span role="tablist" aria-label="Mục" className="flex gap-5 text-sm">
             {TABS.map(([k, label, Icon]) => (
               <button key={k} type="button" role="tab" id={`ai-tab-${k}`} aria-selected={tab === k} aria-controls="ai-tabpanel" onClick={() => setTab(k)}
-                className={cn("relative flex items-center gap-1.5 pb-2.5 font-medium transition-colors duration-(--dur-micro) after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:origin-center after:rounded-full after:bg-hl after:transition-transform after:duration-(--dur-short) after:ease-(--ease-out)",
-                  tab === k ? "text-ink after:scale-x-100" : "text-ink-3 after:scale-x-0 hover:text-ink")}>
+                className={cn("relative flex items-center gap-1.5 pb-2.5 font-medium transition-colors duration-(--dur-micro)", tab === k ? "text-ink" : "text-ink-3 hover:text-ink")}>
+                {tab === k && <Pill id="ai-tab" className="inset-x-0 bottom-0 h-0.5 rounded-full bg-hl" />}
                 <Icon aria-hidden className="size-4" />
                 {label}
               </button>
@@ -497,7 +498,7 @@ function QuotaSection({ usage, at, provider = "claude" }: { usage: ClaudeAccount
 const THRESHOLDS = [70, 80, 90, 95].map((n) => ({ value: String(n), label: `${n}%` }));
 
 /** One CLI's model dropdown and effort slider, both from its catalog entry (no efforts: the CLI takes none, no slider). */
-function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass }: {
+export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass }: {
   c: AiCatalogEntry; label: string; model: string; effort: Effort;
   onModel: (v: string) => void; onEffort: (v: Effort) => void; modelClass?: string; effortClass?: string;
 }) {
@@ -692,14 +693,8 @@ function PeriodHead({ title, days, setDays, children }: { title: string; days: n
     <span className="flex flex-wrap items-center justify-between gap-2">
       <h3 className={sectionHead}>{title}</h3>
       <span className="flex items-center gap-1">
-        <span role="group" aria-label="Khoảng thời gian" className="flex rounded-[var(--radius-input)] bg-paper-3 p-0.5 text-xs">
-          {PERIODS.map(([d, label]) => (
-            <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
-              className={cn("rounded-[calc(var(--radius-input)-2px)] px-2 py-1 font-medium text-ink-2 transition-colors duration-(--dur-micro)", days === d ? "bg-cotton text-ink shadow-stock" : "hover:text-ink")}>
-              {label}
-            </button>
-          ))}
-        </span>
+        <Segmented id={`period-${title}`} label="Khoảng thời gian" value={days} onChange={setDays}
+          items={PERIODS.map(([d, label]) => ({ value: d, label }))} />
         {children}
       </span>
     </span>

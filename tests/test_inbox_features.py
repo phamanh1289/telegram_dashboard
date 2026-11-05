@@ -277,7 +277,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
             if len(ev["items"]) == 6 and not ev["running"]:
                 break
             time.sleep(0.05)
-        assert ev["items"][3] == {"kind": "user", "text": "tiếp"} and "--resume" in ev["items"][-1]["text"]
+        assert ev["items"][3] | {"at": 0} == {"kind": "user", "text": "tiếp", "at": 0} and "--resume" in ev["items"][-1]["text"]
         assert "--permission-mode plan" in ev["items"][-1]["text"]
         # Accept edit: the plan task's next turn resumes the same session allowed to edit
         assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "làm đi", "edit": True}, headers=H).status_code == 204
@@ -287,3 +287,32 @@ def test_headless_task_runs_and_resumes(tmp_path):
                 break
             time.sleep(0.05)
         assert "--permission-mode acceptEdits" in ev["items"][-1]["text"] and "--resume" in ev["items"][-1]["text"]
+
+
+def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
+    import shlex
+    import sys
+
+    from conftest import FakeTransport, TestClient, create_app
+
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text("import sys\nsys.stdin.read()\n")
+    (tmp_path / "web" / "out").mkdir(parents=True)
+    (tmp_path / "web" / "out" / "index.html").write_text("x")
+    cfg = Settings(root=tmp_path, ai_require_consent=False, ai_agent_command="cat", ai_agent_project_command="pwd",
+                   ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")  # fmt: skip
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:
+        store = c.app.state.store
+        store.add_project(str(proj), "proj")
+        store.set_tracking(A, True, title="Alpha", kind="supergroup")
+        store.apply_message(msg(A, 4, "BE ơi API trả field gì?", outgoing=True))
+        store.apply_message(msg(A, 5, "field là status", sender="8"))
+        body = {"chat_id": A, "question_id": "4", "confirm_id": "5", "project": str(proj)}
+        r = c.post("/api/ai/deep", json=body, headers=H)
+        assert r.status_code == 200, r.text
+        [t] = c.get("/api/tasks").json()
+        assert (t["id"], t["kind"], t["mode"], t["message_id"]) == (r.json()["id"], "deep", "plan", "5")
+        assert t["title"] == "Hỏi: BE ơi API trả field gì?\nBE: field là status" and "<confirm>" in t["prompt"]
+        assert c.post("/api/ai/deep", json=body | {"confirm_id": "4"}, headers=H).json()["error"]["code"] == "ai_scope_not_allowed"

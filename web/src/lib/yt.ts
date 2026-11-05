@@ -21,13 +21,18 @@ export type Ticket = {
   assignee: string | null;
   assigneeLogin: string | null;
   qc: string | null;
+  reporter: string | null;
   due: number | null;
   estimate: number | null;
   sprints: string[];
 };
-export type Comment = { text: string | null; created: number; author: string | null };
+export type Comment = { id?: string; text: string | null; created: number; author: string | null };
+/** A file on the ticket; `comment`: the comment it was added with (its text names it), null for the description. */
+export type Attachment = { id: string; name: string; mime: string; size: number; comment: string | null };
+/** The file through our server: YouTrack wants the token, the browser has none. */
+export const fileUrl = (issue: string, a: Attachment) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
 export type Link = { rel: string; issues: { id: string; summary: string | null; resolved: number | null }[] };
-export type Detail = Ticket & { description: string; reporter: string | null; comments: Comment[]; links: Link[] };
+export type Detail = Ticket & { description: string; comments: Comment[]; links: Link[]; attachments?: Attachment[] };
 export type Config = { base: string; mock: boolean; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
 export type Sprint = { name: string; start: number; finish: number };
 export type Person = { login: string; name: string };
@@ -191,6 +196,8 @@ export const TIER_LABEL = ["Todo / Opened", "Đang làm", "QC / Chờ test"];
 export const isBlocked = (i: Ticket) => up(i.state) === "BLOCKED";
 export const isBug = (i: Ticket) => up(i.type) === "BUG";
 /** Built and waiting to ship: the scope of a release's regression run. */
+/** Being tested right now (QC picked it up), vs. READY FOR TEST still waiting. */
+export const inTest = (i: Ticket) => !i.resolved && ["QC - QA", "QC"].includes(up(i.state));
 export const isBuilt = (i: Ticket) => !i.resolved && ["BUILT ON DEV", "DONE ON DEV", "WAITING TO RELEASE"].includes(up(i.state));
 /** Waiting on the PO / PM: definition or design to write or confirm. */
 const PO_ST = new Set(["ASSIGN TO DEFINE", "DEFINITION IN PROCESS", "CONFIRM DEFINITION", "CONFIRM DESIGN"]);
@@ -298,12 +305,15 @@ export function todayList(rows: Ticket[], me: string | null, since: (i: Ticket) 
 }
 
 // ---------- QA "Kiểm thử": open tickets ranked by what to test (or triage) first, with the reasons ----------
-export function qaList(rows: Ticket[], me: string | null, since: (i: Ticket) => number | null, now: number): Focus[] {
+/** `fails`: times QC sent each ticket back (from the State history); a returned ticket back in the queue is a retest, tested first. */
+export function qaList(rows: Ticket[], me: string | null, since: (i: Ticket) => number | null, now: number, fails = new Map<string, number>()): Focus[] {
   return rows.filter((i) => !i.resolved).map((i) => {
     const why: string[] = [];
     let score = 0;
     if (me && i.qc === me) { score += 30; why.push("Của bạn"); }
     if (bucket(i) === 2 && !i.qc) { score += 10; why.push("Chưa có QC"); }
+    const n = fails.get(i.id);
+    if (n && bucket(i) === 2) { score += 20; why.push(`Test lại · trả ${n} lần`); }
     if (isBlocked(i)) { score += 20; why.push("Blocked"); }
     if (i.due && i.due < now) { score += 40; why.push("Quá hạn"); } else if (i.due && i.due - now < 2 * DAY) { score += 25; why.push("Sắp tới hạn"); }
     if (rank(i) <= 1) { score += 30; why.push(i.priority!); } else if (rank(i) === 2) score += 12;

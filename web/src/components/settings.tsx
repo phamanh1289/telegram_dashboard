@@ -11,8 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TopBar } from "@/components/shell";
 import { Input } from "@/components/ui/input";
+import { Hint } from "@/components/ui/hint";
+import { Pill } from "@/components/ui/segmented";
 import { api, ApiError, errorText, type Status } from "@/lib/api";
-import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readComposerAiOpen, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, onPrefs, readOverdueHours, readReportAt, readTemplates, type ReportAt, saveReportAt, readLook, readTheme, readYtRole, saveLook, saveYtRole, setPref, YT_ROLES, type YtRole, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
+import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, onPrefs, readOverdueHours, readReportAt, readTemplates, type ReportAt, saveReportAt, readLook, readTheme, readYtRole, saveLook, saveYtRole, setPref, YT_ROLES, type YtRole, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,18 +52,19 @@ export function SettingsPage() {
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
       <div className="sticky top-0 z-30"><TopBar module="settings" /></div>
       <div className="page-in mx-auto grid w-full max-w-5xl grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[13rem_minmax(0,1fr)] md:gap-10 md:py-10">
-        <nav aria-label="Mục cài đặt" className="grid min-w-0 content-start gap-3 md:sticky md:top-[calc(2.75rem+2.5rem)]">
+        <nav aria-label="Mục cài đặt" className="sticky top-11 z-20 -mx-4 -mt-6 grid min-w-0 content-start gap-3 bg-paper px-4 pt-6 pb-2 md:top-[calc(2.75rem+2.5rem)] md:m-0 md:self-start md:bg-transparent md:p-0">
           <button type="button" onClick={back} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
             <ArrowLeft className="size-4" aria-hidden /> Quay lại
           </button>
           <h1 className="text-xl font-semibold tracking-tight">Cài đặt</h1>
           <div className="-mx-4 flex gap-1 overflow-x-auto px-4 md:mx-0 md:grid md:overflow-visible md:px-0">
-            {GROUPS.map(([id, label, Icon]) => (
-              <a key={id} href={`#${id}`} aria-current={tab === id ? "page" : undefined} onClick={(e) => { e.preventDefault(); pick(id); }}
-                className={cn("flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-input)] px-2.5 text-sm font-medium no-underline transition-[background-color,color] duration-(--dur-micro)",
-                  tab === id ? "bg-hl-wash font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink")}>
-                <Icon className="size-4 shrink-0" aria-hidden />{label}
-              </a>
+            {GROUPS.map(([id, label, Icon, hint]) => (
+              <Hint key={id} title={label} text={hint}><a href={`#${id}`} aria-current={tab === id ? "page" : undefined} onClick={(e) => { e.preventDefault(); pick(id); }}
+                className={cn("relative flex min-h-9 shrink-0 items-center gap-2.5 rounded-[var(--radius-input)] px-2.5 text-sm font-medium no-underline transition-colors duration-(--dur-micro)",
+                  tab === id ? "font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink")}>
+                {tab === id && <Pill id="settings-nav" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
+                <Icon className="relative size-4 shrink-0" aria-hidden /><span className="relative">{label}</span>
+              </a></Hint>
             ))}
           </div>
         </nav>
@@ -265,7 +268,6 @@ function HueSlider({ label, value, onChange }: { label: string; value: number; o
 function TelegramGroup() {
   const [overdue, setOverdue] = useState(readOverdueHours);
   const [rowActions, setRowActions] = useState(readRowActions);
-  const [aiOpen, setAiOpen] = useState(readComposerAiOpen);
   const [platform, setPlatform] = useState(readPlatform);
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
@@ -308,10 +310,6 @@ function TelegramGroup() {
         </Section>
 
         <Section title="Trả lời">
-          <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
-            <span>Mở sẵn Tóm tắt khi soạn trả lời</span>
-            <Switch label="Mở sẵn Tóm tắt khi soạn trả lời" checked={aiOpen} onChange={(v) => { setAiOpen(v); setPref("composerAiOpen", v ? "1" : "0"); }} />
-          </label>
           <span className="mt-1 grid gap-1.5 text-sm">
             <span>Tóm tắt theo nền tảng</span>
             <Segmented label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}

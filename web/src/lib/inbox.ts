@@ -187,6 +187,8 @@ export function useListShortcuts(
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
+      // A reply open in the detail view covers the list: only "a" (AI prompt) still applies.
+      if (e.key !== "a" && document.querySelector("form[aria-label='Soạn trả lời']")) return;
       const actionable = items.filter((m) => !m.deleted);
       const i = actionable.findIndex((m) => msgKey(m) === focused);
       const cur = actionable[i];

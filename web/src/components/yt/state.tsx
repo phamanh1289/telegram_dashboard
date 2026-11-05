@@ -2,6 +2,7 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "@/lib/inbox";
 import { getPref, put, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
@@ -11,19 +12,29 @@ import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, ty
 // the side sheet, and when each ticket entered its state.
 
 export type Mode = YtRole;
-export type Page = "home" | "tickets" | "dash" | "people";
+export type Page = "home" | "tickets" | "dash" | "people" | "ai";
 /** An AI run the AI session starts by itself: `seed` shows a saved answer instead (followed up from there), `onDone` keeps a new one. */
+/** A session that waits for the user's first prompt (dashboard figures): `ask` runs it with that prompt. */
+export type AiStart = { label: string; ask: (q: string, signal: AbortSignal) => ReturnType<AiRun["run"]> };
 export type AiAuto = AiRun & { seed?: { text: string; req: AiReq | null }; onDone?: (r: { text: string; req: AiReq | null }) => void };
 export type Sheet =
   | { kind: "ticket"; id: string; nav: string[]; comment?: string }
   | { kind: "list"; title: string; rows: Ticket[] }
-  | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; resume?: AiSession }
-  | { kind: "history"; title: string };
+  | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession };
 
 /** Tickets I just changed from the dashboard (assignee, field, comment): their next update is mine, not news (watch.tsx). */
 export const selfEdits = new Map<string, number>();
 
-const CAP = 600;
+export type TicketPatch = Partial<Ticket> & { id: string };
+/** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error. */
+export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ticket, local: Partial<Ticket>, call: () => Promise<Ticket>) {
+  const back = Object.fromEntries(Object.keys(local).map((k) => [k, t[k as keyof Ticket] ?? null]));
+  await patch({ id: t.id, ...local });
+  try { await patch(await call()); return true; }
+  catch (e) { await patch({ id: t.id, ...back }); toast({ text: `${t.id}: không đổi được — ${(e as Error).message}` }); return false; }
+}
+
+const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view
 const json = <T,>(k: string, d: T): T => { try { return JSON.parse(getPref(k) ?? "null") ?? d; } catch { return d; } };
 const qp = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 const FILTER_PARAMS = ["sprint", "assignee", "state", "group", "sort", "everyone", "tier", "quick", "priority", "type", "q"];
@@ -74,7 +85,7 @@ function useYtState() {
   // null: not chosen yet, the page asks first (and loads nothing); `mode` stands in as Dev for the code below
   const role = useRole();
   const mode: Mode = role ?? "dev";
-  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "people" ? v : "home"; });
+  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "people" || v === "ai" ? v : "home"; });
   const [stored, setStored] = useState<Stored>(initialFilters);
   const [cap, setCap] = useState(CAP);
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -224,7 +235,7 @@ function useYtState() {
   }, []);
 
   /** Write the server's answer into every cached list and the open detail (after an assignee / state / priority change). */
-  const patchTicket = useCallback(async (t: Ticket) => {
+  const patchTicket = useCallback(async (t: TicketPatch) => {
     selfEdits.set(t.id, Date.now());
     qc.setQueryData<Ticket>(["yt", "detail", t.id], (old) => old && { ...old, ...t });
     await qc.cancelQueries({ queryKey: ["yt", "issues", project] }); // a list fetched before the edit would put the old value back

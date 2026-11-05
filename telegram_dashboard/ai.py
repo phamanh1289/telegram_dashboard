@@ -93,15 +93,17 @@ TICKET_TASK = (
 
 DEEP_TASK = (
     "<question> is a message asking the backend (BE) team something; <confirm> is the BE's "
-    "confirmation / answer to it. The current directory is the user's project. Read its code and "
-    "trace everything the question and the BE's answer touch (API endpoints, request/response "
-    "models and parsing, screens, state, validation, error handling). Never quote secrets (.env, "
-    "keys, tokens); never claim code you did not read, say so when you could not find it. Answer "
-    "in Markdown, no preamble, no tables, with these sections: **Tóm tắt**: what was asked and "
-    "exactly what BE confirmed (fields, values, behaviour); **Hiện trạng code**: how it works now, "
-    "with `path:line` references; **Chênh lệch**: where the code differs from what BE confirmed; "
-    "**Đề xuất xử lý**: a numbered list of concrete changes (file, what to change and why); "
-    "**Rủi ro & cần hỏi lại BE**: edge cases, regressions and points still unclear."
+    "confirmation / answer to it. The current directory is the user's project. Check whether the "
+    "code already follows what BE confirmed: read it and trace everything the question and the "
+    "answer touch (API endpoints, request/response models and parsing, screens, state, validation, "
+    "error handling). Never quote secrets (.env, keys, tokens); never claim code you did not read, "
+    "say so when you could not find it. Do not edit files. Answer in Markdown, no preamble, no "
+    "tables, with these sections: **Tóm tắt**: what was asked and exactly what BE confirmed "
+    "(fields, values, behaviour); **Đã adapt**: what the code already does as confirmed, with "
+    "`path:line` references; **Còn thiếu / sai lệch**: what is missing or differs from the "
+    "confirmation; **Cần bổ sung / thay đổi**: a numbered list of concrete changes (file, what to "
+    "change and why), or say nothing is needed; **Rủi ro & cần hỏi lại BE**: edge cases, "
+    "regressions and points still unclear."
 )
 
 
@@ -361,14 +363,10 @@ class AiService:
         instruction: str = "",
         platform: str = "android",
         fetch=None,
-        on_text=None,
-    ) -> AiResult:
-        """Deep thinking on a combo: a question to BE + BE's confirmation, traced through `project`.
-        `fetch(chat_id, ids)`: reads messages not stored (no consent mode only: they carry no grant)."""
-        if not self.configured:
-            raise ApiError(503, "ai_not_configured")
-        if not self.reader_available:
-            raise ApiError(422, "ai_agent_missing")
+    ) -> tuple[str, str]:
+        """Deep thinking on a combo: a question to BE + BE's confirmation, to trace through `project`.
+        Returns (prompt, title) for an AI Agent session (read-only); no consent gate.
+        `fetch(chat_id, ids)`: reads messages not stored."""
         if not await self.db.read(self.store.has_project, project):
             raise ApiError(404, "project_not_found")
         try:
@@ -378,19 +376,12 @@ class AiService:
         if q == c:
             raise ApiError(422, "ai_scope_not_allowed")
         ids = sorted({q, c})
-        consent = self.settings.ai_require_consent
-        if consent:
-            ok, msgs, cursor = await self.db.read(self._check, chat_id, ids, "draft")
-            if not ok:
-                raise ApiError(403, "ai_scope_not_allowed")
-        else:
-            if not await self.db.read(self.store.is_tracking, chat_id):
-                raise ApiError(403, "ai_scope_not_allowed")
-            msgs, cursor = await self.db.read(self.store.get_messages_by_ids, chat_id, ids)
-            have = {m.message_id for m in msgs if not m.deleted}
-            missing = [i for i in ids if i not in have]
-            if missing and fetch is not None:
-                msgs = [m for m in msgs if not m.deleted] + await fetch(chat_id, missing)
+        # No consent / tracking gate: the user picked both messages; stored ones first, the rest live.
+        msgs, _ = await self.db.read(self.store.get_messages_by_ids, chat_id, ids)
+        msgs = [m for m in msgs if not m.deleted]
+        missing = [i for i in ids if i not in {m.message_id for m in msgs}]
+        if missing and fetch is not None:
+            msgs += [m for m in await fetch(chat_id, missing) if m.chat_id == chat_id and not m.deleted]
         by_id = {m.message_id: m for m in msgs}
         if q not in by_id or c not in by_id:
             raise ApiError(404, "message_not_found")
@@ -408,10 +399,7 @@ class AiService:
             f"{task}\n<question>\n{data_json(one(by_id[q]))}\n</question>"
             f"\n<confirm>\n{data_json(one(by_id[c]))}\n</confirm>"
         )
-        text = await self.ask(user, project, on_text=on_text, feature="deep")
-        if consent and not (await self.db.read(self._check, chat_id, ids, "draft"))[0]:
-            raise ApiError(409, "ai_permission_changed")
-        return AiResult(text=text, source_message_ids=[str(q), str(c)], context_revision=cursor or "")
+        return user, f"Hỏi: {by_id[q].text[:150]}\nBE: {by_id[c].text[:150]}"
 
     async def ask(
         self,

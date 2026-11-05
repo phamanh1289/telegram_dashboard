@@ -2,7 +2,6 @@
 
 import { useMutation } from "@tanstack/react-query";
 import { ArrowDown, ArrowLeft, CheckCheck, RotateCw, Search, Sparkles, X } from "lucide-react";
-import { motion } from "motion/react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem, revealMessage } from "@/components/message-item";
 import { RowsSkeleton } from "@/components/pending-inbox";
@@ -16,10 +15,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { useChatMessages } from "@/hooks/use-chat-messages";
+import { useChatMessages, type View } from "@/hooks/use-chat-messages";
 import { api, ApiError, type Message } from "@/lib/api";
 import { dayLabel, msgKey, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
+import { Segmented } from "@/components/ui/segmented";
 
 export function MessageList({
   chatId,
@@ -45,7 +45,9 @@ export function MessageList({
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState("");
-  const [pendingOnly, setPendingOnly] = useState(!focus); // the focused message may already be handled
+  const [view, setView] = useState<View>(focus ? "live" : "pending"); // the focused message may already be handled
+  const pendingOnly = view === "pending";
+  const live = view === "live" && !q;
   const [confirmAll, setConfirmAll] = useState(false);
   const markAll = useMutation({
     mutationFn: () =>
@@ -60,15 +62,21 @@ export function MessageList({
     return () => clearTimeout(t);
   }, [search]);
 
-  const query = useChatMessages(chatId, q, range, pendingOnly && !q);
-  const items = useMemo(
+  const query = useChatMessages(chatId, q, range, view);
+  const all = useMemo(
     () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : []),
     [query.data],
   );
+  // Sender filter, over the loaded pages ("Tải tin cũ hơn" brings in more). "" = everyone.
+  // ponytail: client-side, so it only sees what is loaded; a server-side filter if long histories need it.
+  const [sender, setSender] = useState("");
+  const senders = useMemo(() => [...new Map(all.filter((m) => !m.deleted).map((m) => [who(m), m.outgoing ? "Bạn" : (m.sender_name ?? "Không rõ")])).entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], "vi")), [all]);
+  const items = useMemo(() => (sender ? all.filter((m) => !m.deleted && who(m) === sender) : all), [all, sender]);
   const days = useMemo(() => items.map((m) => dayLabel(m.date)), [items]); // day pills: Intl is too slow to run per row per render
   const now = useNow();
   const tasks = useTasks();
-  const focused = useListShortcuts(items, onReply);
+  const focused = useListShortcuts(items, live ? () => {} : onReply);
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
@@ -127,17 +135,20 @@ export function MessageList({
             className="h-[30px]"
           />
         ) : (
-          <div role="tablist" aria-label="Lọc tin" className="flex rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
-            {([[true, "Chưa xử lý"], [false, "Tất cả"]] as const).map(([v, label]) => (
-              <button key={label} type="button" role="tab" aria-selected={pendingOnly === v} onClick={() => setPendingOnly(v)}
-                className={cn("relative h-[26px] rounded-[5px] px-3 transition-colors duration-(--dur-micro)", pendingOnly === v ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
-                {pendingOnly === v && <motion.span layoutId="tg-pending" className="absolute inset-0 rounded-[5px] bg-hl" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
-                <span className="relative">{label}</span>
-              </button>
-            ))}
-          </div>
+          <Segmented id="tg-view" label="Lọc tin" value={view} onChange={setView} items={[
+            { value: "pending", label: "Chưa xử lý", title: "Tin tag bạn chưa xử lý" },
+            { value: "done", label: "Đã xử lý", title: "Tin tag bạn đã xử lý" },
+            { value: "live", label: "Cả nhóm", title: "Mọi tin trong nhóm, đọc trực tiếp từ Telegram (không lưu)" },
+          ]} />
         )}
         <div className="ml-auto flex items-center gap-1">
+        {(senders.length > 1 || sender) && (
+          <select aria-label="Lọc theo người gửi" value={sender} onChange={(e) => setSender(e.target.value)}
+            className={cn("h-[30px] max-w-40 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", sender && "border-hl text-hl-2")}>
+            <option value="">Mọi người gửi</option>
+            {senders.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
+          </select>
+        )}
         {!searching && pendingOnly && items.length > 0 && (
           <Button size="xs" variant="outline" onClick={() => setConfirmAll(true)}
             title="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý">
@@ -183,7 +194,7 @@ export function MessageList({
         )}
         {!q && !query.hasNextPage && query.isSuccess && (
           <p className="border-b border-rule px-5 py-2 text-center text-xs text-ink-3">
-            Chỉ lưu tin tag/reply bạn (nạp lại 14 ngày gần nhất mỗi lần kết nối).
+            {live ? "Đầu cuộc trò chuyện." : "Chỉ lưu tin tag/reply bạn (nạp lại 14 ngày gần nhất mỗi lần kết nối)."}
           </p>
         )}
         {query.isPending && <RowsSkeleton />}
@@ -199,8 +210,9 @@ export function MessageList({
         {query.isSuccess && items.length === 0 && (
           <div className="grid justify-items-center gap-3 px-6 py-20 text-center text-sm text-ink-2">
             {!q && pendingOnly && <CheckCheck className="size-5 text-ok" aria-hidden />}
-            <p>{q ? "Không có kết quả." : pendingOnly ? "Đã xử lý hết tin tag trong nhóm này." : "Chưa có tin nào."}</p>
-            {!q && pendingOnly && <Button size="sm" variant="outline" onClick={() => setPendingOnly(false)}>Xem tất cả tin</Button>}
+            <p>{sender ? "Không có tin của người gửi này trong các tin đã tải." : q ? "Không có kết quả." : pendingOnly ? "Đã xử lý hết tin tag trong nhóm này." : view === "done" ? "Chưa có tin tag nào đã xử lý." : "Chưa có tin nào."}</p>
+            {sender && <Button size="sm" variant="outline" onClick={() => setSender("")}>Bỏ lọc người gửi</Button>}
+            {!sender && !q && pendingOnly && <Button size="sm" variant="outline" onClick={() => setView("live")}>Xem mọi tin trong nhóm</Button>}
           </div>
         )}
         <ol className="@container divide-y divide-rule">
@@ -225,6 +237,7 @@ export function MessageList({
               tasks={tasks.get(msgKey(m))}
               onReply={onReply}
               onUseText={onUseText}
+              live={live}
             />
             </Fragment>
             );
@@ -258,3 +271,6 @@ export function MessageList({
     </section>
   );
 }
+
+/** One key per sender for the filter: "me" for your own messages, else the Telegram id (or the name). */
+const who = (m: Message) => (m.outgoing ? "me" : (m.sender_id ?? m.sender_name ?? "?"));

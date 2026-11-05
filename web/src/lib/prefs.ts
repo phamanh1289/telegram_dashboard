@@ -96,7 +96,6 @@ export function applyRowActions(pref: RowActionsPref) {
 }
 
 /** The composer opens its AI block by default (the composer also flips this when toggled). */
-export const readComposerAiOpen = () => getPref("composerAiOpen") === "1";
 
 /** Desktop notification for new tags while the tab is in the background. */
 export function readNotify() {

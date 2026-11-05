@@ -34,6 +34,7 @@ from .models import (
     AiCatalogEntry,
     AiDeepRequest,
     AiDraftRequest,
+    AiGuideRequest,
     AiLoginStarted,
     AiPermissionRequest,
     AiPermissionResponse,
@@ -86,13 +87,22 @@ from .models import (
     to_dto,
 )
 from .storage import Db, Store, _dt, parse_cursor
-from .tasks import build_router as build_task_router
+from .tasks import build_router as build_task_router, new_task_id
 from .telegram import TelegramBridge, Transport
 from .yt_dashboard import YouTrackDashboard, YtError, build_router, create_issue, whoami
 
 log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
 LIVE_READS = 4  # parallel Telegram calls in /api/briefing
+
+
+GUIDE_PROMPT = (
+    "Bạn là trợ lý hướng dẫn sử dụng ứng dụng Telegram Dashboard (2 tab: Telegram và YouTrack, cùng Cài đặt). "
+    "Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước. Chỉ dựa vào danh mục đó; "
+    "nếu không có tính năng phù hợp thì nói rõ là không thấy, đừng bịa. Trả lời tiếng Việt, ngắn gọn, markdown: "
+    "nêu tính năng phù hợp nhất (tên in đậm kèm [id]), rồi các bước làm theo đánh số, ghi đúng nhãn nút/phím tắt. "
+    "Có thể gợi ý thêm 1-2 tính năng liên quan."
+)
 
 
 def create_app(
@@ -201,6 +211,7 @@ def create_app(
         since: datetime | None = None,
         until: datetime | None = None,
         pending: bool = False,
+        handled: bool = False,
     ) -> MessagesPage:
         s = S(request)
         items, cursor, has_more = await s.db.read(
@@ -213,8 +224,23 @@ def create_app(
             since=since,
             until=until,
             pending=pending,
+            handled=handled,
         )
         return MessagesPage(items=items, snapshot_cursor=cursor, has_more=has_more)
+
+    @app.get("/api/chats/{chat_id}/live")
+    async def live(
+        chat_id: str,
+        request: Request,
+        before: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    ) -> MessagesPage:
+        """Every message of the group, live from Telegram (not stored), newest page first."""
+        s = S(request)
+        await _known_chat(s, chat_id)
+        mid = None if before is None else int_or_404(before, "invalid_cursor")
+        msgs = await s.bridge.fetch_page(chat_id, mid, limit)
+        return MessagesPage(items=[to_dto(m) for m in msgs], snapshot_cursor="", has_more=len(msgs) == limit)
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/handled", status_code=204)
     async def handled(
@@ -350,20 +376,20 @@ def create_app(
 
         return stream_answer(work)
 
-    @app.post("/api/ai/deep", responses={200: {
-        "model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}})
-    async def ai_deep(body: AiDeepRequest, request: Request) -> StreamingResponse:
-        """Deep thinking on a combo (question to BE + BE's confirmation), traced through a project."""
-        client_gone.set(request.is_disconnected)
+    @app.post("/api/ai/deep")
+    async def ai_deep(body: AiDeepRequest, request: Request) -> dict:
+        """Deep thinking on a combo (question to BE + BE's confirmation): a read-only AI Agent session."""
         s = S(request)
+        if not s.agent.available:
+            raise ApiError(422, "ai_agent_missing")
         fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
-
-        async def work(on_text):
-            r = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project, body.instruction,
-                                body.platform, fetch=fetch, on_text=on_text)  # fmt: skip
-            return r.model_dump()
-
-        return stream_answer(work)
+        prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
+                                        body.instruction, body.platform, fetch=fetch)  # fmt: skip
+        task_id = new_task_id()
+        session = await s.agent.start(task_id, body.project, prompt, "plan", s.agent.new_session(), False)
+        await s.db.write(s.store.add_task, task_id, body.chat_id, int(body.confirm_id), body.project, prompt,
+                         mode="plan", session_id=session, kind="deep", title=title)  # fmt: skip
+        return {"id": task_id}
 
     @app.post("/api/ai/ticket")
     async def ai_ticket(body: AiTicketRequest, request: Request) -> AiTicketDraft:
@@ -376,6 +402,17 @@ def create_app(
             nearby=nearby, images=images, platform=body.platform, role=body.role, fields=fields,
         )  # fmt: skip
         return AiTicketDraft(**parse_ticket(r.text, fields))
+
+    @app.post("/api/ai/guide", responses={200: {"description": "NDJSON: delta / reset lines, then {done: {text}}"}})
+    async def ai_guide(body: AiGuideRequest, request: Request) -> StreamingResponse:
+        """Which features answer the user's question, and how to use them: from the guide the page sends."""
+        client_gone.set(request.is_disconnected)
+        user = f"<guide>\n{body.guide}\n</guide>\n\nCâu hỏi của người dùng: {body.question}"
+
+        async def work(on_text):
+            return {"text": await S(request).ai.ask(user, system=GUIDE_PROMPT, on_text=on_text, feature="guide")}
+
+        return stream_answer(work)
 
     @app.post("/api/ai/summary")
     async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:
@@ -546,6 +583,16 @@ def create_app(
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")  # only around tags we keep
         return [to_dto(m) for m in await s.bridge.fetch_context(chat_id, mid)]
+
+    @app.get("/api/chats/{chat_id}/messages/{message_id}/before")
+    async def before(
+        chat_id: str, message_id: str, request: Request, reply_to: int | None = None
+    ) -> list[MessageDTO]:
+        """Live, not stored: Deep thinking's question candidates for a BE answer (see fetch_before)."""
+        s = S(request)
+        await _known_chat(s, chat_id)
+        mid = int_or_404(message_id, "message_not_found")
+        return [to_dto(m) for m in await s.bridge.fetch_before(chat_id, mid, reply_to)]
 
     async def _photo(request: Request, chat_id: str, mid: int) -> Path | None:
         """Cached copy of a kept tag's photo, downloaded on first use."""

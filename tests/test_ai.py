@@ -500,17 +500,45 @@ async def test_deep_traces_question_and_confirm_in_the_project(env, tmp_path):
     env.store.add_project(str(proj), "proj")
     s = Settings(root=tmp_path, ai_agent_project_command="pwd", ai_require_consent=False, **AI)
     svc = AiService(s, env.store, env.db)
-    svc.ask = provider = FakeAgent()
     fetched = []
 
     async def fetch(chat, ids):  # the question was never stored (not a tag): read live
         fetched.append(ids)
         return [msg(A, 4, "BE ơi API trả field gì?", outgoing=True)]
 
-    r = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
-    assert r.text == "draft text" and fetched == [[4]] and provider.projects == [str(proj)]
-    p = provider.calls[0]
-    assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.rindex("BE confirm")
+    p, title = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
+    assert fetched == [[4]] and title == "Hỏi: BE ơi API trả field gì?\nBE: BE confirm: field is `status`"
+    assert "Đã adapt" in p and p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.rindex("BE confirm")
     await expect("ai_scope_not_allowed", svc.deep(A, "5", "5", str(proj)))
     await expect("message_not_found", svc.deep(A, "4", "5", str(proj)))  # offline: no fetch
     await expect("project_not_found", svc.deep(A, "4", "5", str(tmp_path / "nope")))
+
+
+async def test_deep_needs_no_consent_or_tracking(env, tmp_path):
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    env.store.add_project(str(proj), "proj")
+    s = Settings(root=tmp_path, ai_agent_project_command="pwd", **AI)  # consent mode on
+    svc = AiService(s, env.store, env.db)
+
+    async def fetch(chat, ids):
+        return [msg(B, 10, "BE ơi?", outgoing=True), msg(B, 11, "confirm", sender="8")]
+
+    _, title = await svc.deep(B, "10", "11", str(proj), fetch=fetch)
+    assert title == "Hỏi: BE ơi?\nBE: confirm"
+
+
+def test_ai_guide_streams_answer_from_sent_guide(client, monkeypatch):
+    seen = {}
+
+    async def ask(self, user, *a, **kw):
+        seen["user"], seen["kw"] = user, kw
+        return "Dùng **Tóm tắt nhóm** [group-digest]"
+
+    monkeypatch.setattr("telegram_dashboard.ai.AiService.ask", ask)
+    r = client.post("/api/ai/guide", json={"question": "tóm tắt nhóm?", "guide": "[group-digest] Tóm tắt nhóm"},
+                    headers={"Origin": "http://127.0.0.1:8765"})
+    assert r.status_code == 200
+    assert json.loads(r.text.strip().splitlines()[-1]) == {"done": {"text": "Dùng **Tóm tắt nhóm** [group-digest]"}}
+    assert "[group-digest]" in seen["user"] and "tóm tắt nhóm?" in seen["user"]
+    assert seen["kw"]["feature"] == "guide"

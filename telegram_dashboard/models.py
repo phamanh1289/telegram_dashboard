@@ -242,6 +242,14 @@ class RuleAdded(BaseModel):
     handled: int  # existing pending tags the rule cleared
 
 
+AiEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
+# A CLI model alias or id; never starts with "-" so it can't pass for a flag.
+AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
+
+
+AiProvider = Literal["claude", "codex", "antigravity"]
+
+
 class TaskDTO(BaseModel):
     id: str
     chat_id: str | None
@@ -257,6 +265,11 @@ class TaskDTO(BaseModel):
     sender_name: str | None = None
     message_text: str | None = None
     handled: bool = False  # the tagged message was marked done
+    kind: Literal["task", "deep"] = "task"  # deep: a Deep thinking session (question to BE + BE's confirmation)
+    title: str | None = None  # deep: the two messages, short
+    provider: AiProvider = "claude"  # the CLI the session runs on
+    model: str | None = None  # picked for this session; None: the task picks in AI settings
+    effort: str | None = None
 
 
 class YouTrackRequest(BaseModel):
@@ -331,12 +344,6 @@ class ClaudeAccount(BaseModel):
     login_url: str | None = None
 
 
-AiEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
-# A CLI model alias or id; never starts with "-" so it can't pass for a flag.
-AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
-
-
-AiProvider = Literal["claude", "codex", "antigravity"]
 
 
 class AiPicks(BaseModel):
@@ -464,6 +471,20 @@ class TaskRequest(BaseModel):
 class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
+
+
+class TaskAi(BaseModel):
+    """Model/effort for the next turns of one AI Agent session ("" = the CLI default)."""
+
+    model: AiModel = ""
+    effort: AiEffort = ""
+
+
+class AiGuideRequest(BaseModel):
+    """A question about how to use the app, answered from the in-app guide (sent by the page)."""
+
+    question: str = Field(min_length=1, max_length=500)
+    guide: str = Field(max_length=200_000)
 
 
 class AiSummaryRequest(BaseModel):

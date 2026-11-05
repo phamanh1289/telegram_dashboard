@@ -1,8 +1,8 @@
 "use client";
 
-import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type Status, type Task } from "@/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Status, type Task } from "@/lib/api";
 import { msgKey } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
@@ -16,24 +16,6 @@ export function onChanges(cb: Listener) {
 }
 
 export type StreamState = "connecting" | "open" | "closed";
-
-function upsert(data: InfiniteData<MessagesPage> | undefined, m: Message) {
-  if (!data) return data;
-  let found = false;
-  const pages = data.pages.map((p) => ({
-    ...p,
-    items: p.items.map((x) => (x.message_id === m.message_id ? ((found = true), m) : x)),
-  }));
-  const first = pages[0];
-  if (!found && first) {
-    const last = first.items.at(-1);
-    // pages[0] is the newest page; older unseen ids are fetched when scrolling back.
-    if (!last || Number(m.message_id) > Number(last.message_id)) {
-      pages[0] = { ...first, items: [...first.items, m] };
-    }
-  }
-  return { ...data, pages };
-}
 
 /**
  * Desktop notification for fresh incoming tags while the tab is hidden. Stored messages are only tags/replies
@@ -72,17 +54,9 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
       continue;
     }
     touched.add(it.chat_id);
-    // Live rows go into the plain view only (no search, no date range, not "chưa xử lý"); the rest refetch below.
-    const m = it.message;
-    if (m) qc.setQueriesData<InfiniteData<MessagesPage>>({ queryKey: ["messages", it.chat_id, "", "", false] }, (d) => upsert(d, m));
   }
-  // Searches, date ranges and the "not handled" view can gain or lose rows: refetch those.
-  for (const chat of touched) {
-    void qc.invalidateQueries({
-      queryKey: ["messages", chat],
-      predicate: (q) => q.queryKey[2] !== "" || q.queryKey[3] !== "" || q.queryKey[4] === true,
-    });
-  }
+  // Every stored view filters (chưa / đã xử lý, search, dates): a change can add or drop rows, so refetch.
+  for (const chat of touched) void qc.invalidateQueries({ queryKey: ["messages", chat] });
   void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
   if (touched.size) void qc.invalidateQueries({ queryKey: ["pending"] });
   // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
