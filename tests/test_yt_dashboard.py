@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from conftest import FakeAgent
 
 from telegram_dashboard.config import Settings
-from telegram_dashboard.yt_dashboard import YouTrackDashboard, YtError, build_router
+from telegram_dashboard.yt_dashboard import Workflow, YouTrackDashboard, YtError, build_router
 
 
 def issue(n, state="Open"):
@@ -217,7 +217,7 @@ async def test_answer_fetched_before_set_auth_is_not_cached():
     await svc.aclose()
 
 
-async def test_set_field_sends_known_values_and_state_machine_events():
+async def test_set_field_sends_known_values_and_state_machine_events(tmp_path):
     cmds = []
     bundle = lambda n, vs: {"field": {"name": n}, "bundle": {"values": [{"name": v} for v in vs]}}  # noqa: E731
     events = [{"id": "pass test", "presentation": "DONE ON DEV"}]
@@ -234,9 +234,11 @@ async def test_set_field_sends_known_values_and_state_machine_events():
             return httpx.Response(200, json={"customFields": [sf]})
         return httpx.Response(200, json=issue(1, "DONE ON DEV"))
 
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
     app = FastAPI()
     app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
-    app.include_router(build_router(make(handler)))
+    app.include_router(build_router(svc))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         def post(name, value):
             return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": name, "value": value})
@@ -247,6 +249,68 @@ async def test_set_field_sends_known_values_and_state_machine_events():
         assert (await post("State", "QC")).status_code == 400  # no event leads there
         assert (await post("Priority", "High Assignee me")).status_code == 400  # not a value
         assert len(cmds) == 2
+
+
+async def test_team_workflow_blocks_moves_without_an_arrow_and_reads_youtrack_flow(tmp_path):
+    cmds = []
+    vals = [{"name": v} for v in ("Open", "Dev", "QC")]
+    bundle = {"field": {"name": "State"}, "bundle": {"values": vals}}
+    nxt = {"Open": ["Dev", "QC"], "Dev": ["QC"]}  # nobody is in QC yet
+
+    def handler(req):
+        q = parse_qs(req.url.query.decode())
+        if req.url.path == "/api/admin/projects/VA/customFields":
+            return httpx.Response(200, json=[bundle])
+        if req.method == "POST":
+            cmds.append(json.loads(req.content)["query"])
+            return httpx.Response(200, json={"id": "c"})
+        if req.url.path == "/api/issues":  # one ticket per state, for the YouTrack flow
+            st = q["query"][0].split("State: {")[1].rstrip("}")
+            evs = [{"presentation": t} for t in nxt.get(st, [])]
+            hit = [{"customFields": [{"name": "State", "possibleEvents": evs}]}]
+            return httpx.Response(200, json=hit if st in nxt else [])
+        if "possibleEvents" in q.get("fields", [""])[0]:
+            sf = {"name": "State", "value": {"name": "Open"}, "possibleEvents": None}
+            return httpx.Response(200, json={"customFields": [sf]})
+        return httpx.Response(200, json=issue(1))
+
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    app = FastAPI()
+    app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        flow = (await c.get("/api/yt/workflow/youtrack?project=VA")).json()
+        assert sorted(map(tuple, flow["edges"])) == [("Dev", "QC"), ("Open", "Dev"), ("Open", "QC")]
+        assert flow["unknown"] == ["QC"]
+        wf = {"on": True, "pos": {"Open": [0, 0]}, "edges": [["Open", "Dev"]]}
+        assert (await c.post("/api/yt/workflow?project=VA", json=wf)).status_code == 200
+        got = (await c.get("/api/yt/workflow?project=VA")).json()
+        assert (got["states"], got["edges"]) == (["Open", "Dev", "QC"], [["Open", "Dev"]])
+
+        def post(v):
+            return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": "State", "value": v})
+
+        assert (await post("QC")).status_code == 400  # no arrow Open → QC
+        qa = {"X-Yt-Role": "qa"}  # each role keeps its own flow: QA has none, so YouTrack decides
+        assert (await c.get("/api/yt/workflow?project=VA", headers=qa)).json()["edges"] == []
+        body = {"id": "VA-1", "name": "State", "value": "QC"}
+        assert (await c.post("/api/yt/issue/field", json=body, headers=qa)).status_code == 200
+        cmds.clear()
+        assert (await post("Dev")).status_code == 200
+        wf["on"] = False
+        await c.post("/api/yt/workflow?project=VA", json=wf)
+        assert (await post("QC")).status_code == 200  # off: only YouTrack decides
+        assert cmds == ["State Dev", "State QC"]
+
+
+def test_workflow_of_the_first_version_goes_to_every_role(tmp_path):
+    svc = make(lambda req: httpx.Response(200, json=[]))
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    svc.workflow_path.write_text(json.dumps({"VA": {"on": True, "edges": [["A", "B"]]}}))
+    assert svc.workflow("VA", "qa").edges == [("A", "B")]
+    svc.save_workflow("VA", "po", Workflow())
+    assert svc.workflow("VA", "dev").on and not svc.workflow("VA", "po").edges
 
 
 async def test_transitions_keep_state_changes_across_pages():

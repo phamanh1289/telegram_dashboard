@@ -75,6 +75,8 @@ export type SavedPrompt = { name: string; text: string };
 export type PromptCtx = `${"dev" | "qa" | "po"}:${"one" | "many"}`;
 /** The team's prompts and, per context, the names shown as buttons in the AI session (missing = the role's default). */
 export type PromptLib = { prompts: SavedPrompt[]; shown: Partial<Record<PromptCtx, string[]>>; hidden: string[] }; // hidden: built-ins the team deleted
+/** The team's State flow for a project (Settings › YouTrack › Workflow); `on`: the app only moves tickets along an arrow. */
+export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][] };
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),
@@ -94,6 +96,9 @@ export const yt = {
   setAssignee: (id: string, login: string | null) => ytApi<Ticket>("/issue/assignee", { json: { id, login } }),
   comment: (id: string, text: string) => ytApi<{ ok: true }>("/issue/comment", { json: { id, text } }),
   fields: (p: string) => ytApi<Partial<Record<Field, string[]>>>(`/fields?project=${enc(p)}`),
+  workflow: (p: string) => ytApi<Workflow & { states: string[] }>(`/workflow?project=${enc(p)}`),
+  setWorkflow: (p: string, w: Workflow) => ytApi<Workflow>(`/workflow?project=${enc(p)}`, { json: w }),
+  youtrackFlow: (p: string) => ytApi<{ edges: [string, string][]; unknown: string[] }>(`/workflow/youtrack?project=${enc(p)}`),
   setField: (id: string, name: Field, value: string) => ytApi<Ticket>("/issue/field", { json: { id, name, value } }),
   mentions: (id: string) => ytApi<Mention[]>(`/mentions?id=${enc(id)}`),
   aiTicket: (id: string, kind: AiTicketKind, signal?: AbortSignal, folder = "") => ytApi<AiText>("/ai/ticket", { json: { id, kind, folder }, signal }),

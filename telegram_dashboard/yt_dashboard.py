@@ -137,6 +137,19 @@ class SavedPrompts(BaseModel):
     hidden: list[str] = Field(default_factory=list, max_length=50)  # built-ins the team deleted
 
 
+StateName = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class Workflow(BaseModel):
+    """The team's own State flow for one project (Settings › YouTrack › Workflow): boxes on a canvas
+    and arrows from → to. `on`: the app only moves a ticket along an arrow (YouTrack's own state
+    machine still applies on top)."""
+
+    on: bool = False
+    pos: dict[StateName, tuple[float, float]] = Field(default_factory=dict, max_length=200)
+    edges: list[tuple[StateName, StateName]] = Field(default_factory=list, max_length=1000)
+
+
 class AiFilter(BaseModel):
     text: str = Field(min_length=1, max_length=500)
     options: dict
@@ -448,6 +461,7 @@ class YouTrackDashboard:
         env = os.environ
         self.notes_path = settings.data_dir / "yt_ai.json"
         self.prompts_path = settings.data_dir / "yt_prompts.json"
+        self.workflow_path = settings.data_dir / "yt_workflow.json"
         self.base = (settings.youtrack_url or "").rstrip("/")
         self.token = settings.youtrack_token or ""
         self.mock = not (self.base and self.token)
@@ -477,6 +491,42 @@ class YouTrackDashboard:
             return SavedPrompts(**raw)
         except ValidationError:  # a hand-edited file: start over rather than 500
             return SavedPrompts()
+
+    def _workflows(self, project: str) -> dict:
+        """{role: flow} of a project; a first-version file (one flow for all) goes to each role."""
+        raw = _read_json(self.workflow_path).get(project)
+        if not isinstance(raw, dict):
+            return {}
+        return {r: raw for r in ROLES} if "edges" in raw else raw
+
+    def workflow(self, project: str, role: str) -> Workflow:
+        """One flow per project and role (dev / qa / po): {project: {role: Workflow}}."""
+        try:
+            return Workflow(**(self._workflows(project).get(role) or {}))
+        except (ValidationError, TypeError):  # a hand-edited file: start over rather than 500
+            return Workflow()
+
+    def save_workflow(self, project: str, role: str, wf: Workflow) -> None:
+        raw = _read_json(self.workflow_path)
+        raw[project] = {**self._workflows(project), role: wf.model_dump()}
+        write_private_json(self.workflow_path, raw)
+
+    async def yt_flow(self, project: str, states: list[str]) -> dict:
+        """The arrows YouTrack's own state machine allows: one ticket per state, its possibleEvents.
+        A state no ticket is in yet can't be asked (listed in `unknown`)."""
+        ev = "customFields(name,possibleEvents(presentation))"
+
+        async def one(st: str):
+            q = f"project: {{{project}}} State: {{{st}}}"
+            a = await self.yt("/api/issues", query=q, fields=ev, **{"$top": 1})
+            if not a:
+                return st, None
+            sf = next((f for f in a[0].get("customFields") or [] if f["name"] == "State"), {})
+            return st, [e["presentation"] for e in sf.get("possibleEvents") or []]
+
+        got = await asyncio.gather(*(one(s) for s in states))
+        edges = [(s, t) for s, ts in got if ts for t in ts if t in states and t != s]
+        return {"edges": edges, "unknown": [s for s, ts in got if ts is None]}
 
     def set_auth(self, base: str, token: str) -> None:
         """New URL/token from Settings: next call opens a fresh client, nothing cached survives.
@@ -821,6 +871,12 @@ async def _whoami(svc: YouTrackDashboard) -> str:
     )
 
 
+def _role(request: Request) -> str:
+    """The role the page is in (header X-Yt-Role); none picked yet counts as Dev, like Telegram."""
+    role = request.headers.get("x-yt-role", "")
+    return role if role in ROLES else "dev"
+
+
 def _team_notes(svc: YouTrackDashboard, request: Request) -> str:
     """The instructions of the role the page is in (header X-Yt-Role), under the system rules:
     they shape format / language / scope, they never lift the untrusted-data rules."""
@@ -997,8 +1053,27 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         p = _project(project)
         return {} if svc.mock else await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
 
+    @r.get("/workflow")
+    async def get_workflow(project: str, request: Request) -> dict:
+        p = _project(project)
+        fields = {} if svc.mock else await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
+        return {"states": fields.get("State", []), **svc.workflow(p, _role(request)).model_dump()}
+
+    @r.post("/workflow")
+    async def set_workflow(project: str, body: Workflow, request: Request) -> Workflow:
+        svc.save_workflow(_project(project), _role(request), body)
+        return body
+
+    @r.get("/workflow/youtrack")
+    async def youtrack_flow(project: str) -> dict:
+        p = _project(project)
+        if svc.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        states = (await svc.cached(f"fields:{p}", lambda: _fields(svc, p))).get("State", [])
+        return await svc.yt_flow(p, states)
+
     @r.post("/issue/field")
-    async def set_field(body: FieldSet):
+    async def set_field(body: FieldSet, request: Request):
         """Through a command, so State follows the project's workflow (it is a state machine)."""
         i = _issue_id(body.id)
         if svc.mock:
@@ -1010,9 +1085,14 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(400, f"{body.name} không có giá trị {body.value}")
         value = body.value
         if body.name == "State":  # a state machine takes the event leading to a state, not its name
-            ev = "customFields(name,possibleEvents(id,presentation))"
+            ev = "customFields(name,value(name),possibleEvents(id,presentation))"
             d = await svc.yt(f"/api/issues/{i}", fields=ev)
             sf = next((f for f in d.get("customFields") or [] if f["name"] == "State"), {})
+            cur = (sf.get("value") or {}).get("name")
+            wf = svc.workflow(p, _role(request))
+            if wf.on and cur != body.value and (cur, body.value) not in wf.edges:
+                to = ", ".join(t for s, t in wf.edges if s == cur) or "không có"
+                raise YtError(400, f"Workflow của team không cho {cur} → {body.value} — chỉ sang: {to}")
             if (events := sf.get("possibleEvents")) is not None:
                 value = next((e["id"] for e in events if e["presentation"] == body.value), None)
                 if value is None:

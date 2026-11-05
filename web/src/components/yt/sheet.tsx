@@ -15,6 +15,7 @@ import { selfEdits, useYt, type Yt } from "./state";
 import { LinkedTasks, Related } from "./ticket-extras";
 import { HistoryView } from "./history";
 import { WorkView } from "./work";
+import { useFlow } from "./workflow";
 
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
 
@@ -254,7 +255,8 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const key = name === "State" ? "state" : name === "Priority" ? "priority" : "type";
   const cur = ticket[key] ?? "";
   const view = name === "State" ? <StatePill state={ticket.state} /> : name === "Priority" ? <Prio p={ticket.priority} /> : <span>{cur || "—"}</span>;
-  const values = opts.data?.[name];
+  const flow = useFlow(project)(name === "State" ? cur : null); // the team's arrows out of this state; null: no rule
+  const values = name === "State" && flow ? opts.data?.[name]?.filter((v) => v === cur || flow.includes(v)) : opts.data?.[name];
   if (!values?.length) return view;
   async function change(v: string, prev: string) {
     setBusy(true);

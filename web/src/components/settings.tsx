@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 import { Textarea } from "@/components/ui/textarea";
 import { PromptManager } from "@/components/yt/prompts";
+import { WorkflowSection } from "@/components/yt/workflow";
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
@@ -24,7 +25,7 @@ type GroupId = "general" | "telegram" | "youtrack" | "ai" | "github" | "shortcut
 const GROUPS: [GroupId, string, typeof Send, string][] = [
   ["general", "Chung", SlidersHorizontal, "Vai trò và giao diện, dùng cho cả Telegram lẫn YouTrack. Lưu trên trình duyệt này."],
   ["telegram", "Telegram", Send, "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này."],
-  ["youtrack", "YouTrack", ListChecks, "Kết nối, hướng dẫn cho AI, kho prompt và báo cáo release."],
+  ["youtrack", "YouTrack", ListChecks, "Kết nối, hướng dẫn cho AI, workflow, kho prompt và báo cáo release."],
   ["ai", "AI", Sparkles, "CLI nào chạy các tính năng AI, tài khoản của từng CLI và quyền đọc tin."],
   ["github", "GitHub", GitBranch, "Cập nhật app từ repo GitHub."],
   ["shortcuts", "Phím tắt", Keyboard, "Phím tắt trong Telegram Inbox."],
@@ -78,6 +79,9 @@ export function SettingsPage() {
             </Section>
             <Section title="Instructions cho AI" hint="Hướng dẫn riêng của team cho vai trò đang chọn (mục Chung), AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
               <NotesSection />
+            </Section>
+            <Section title="Workflow" hint="Luồng State cho từng project và vai trò đang chọn (mục Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
+              <WorkflowSection />
             </Section>
             <Section title="Kho prompt" hint="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
               <PromptManager role={readYtRole() ?? "dev"} />

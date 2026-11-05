@@ -16,6 +16,7 @@ import { period } from "@/lib/yt-stats";
 import { Avatar, Chip, Person, Popover, Prio, Seg, StatePill, Tag, TypeTag } from "./bits";
 import { type AssigneeActs, AssigneePicker } from "./sheet";
 import { CAP_STEP, useYt, type Yt } from "./state";
+import { useFlow } from "./workflow";
 
 // The ticket ledger: search + AI filter, chip rows with counts, grouping, columns, bulk changes, CSV.
 
@@ -476,11 +477,15 @@ function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) => void }
     return [...m].sort((a, b) => bucket(a[1][0]) - bucket(b[1][0]) || +(stateSem(a[0]) === "bad") - +(stateSem(b[0]) === "bad") || b[1].length - a[1].length);
   }, [rows, showDone]);
   const write = !y.config?.mock;
+  const flow = useFlow(y.project);
+  const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
+  const moving = drag ? rows.find((i) => i.id === drag) : undefined;
   async function drop(state: string) {
     setOver(null);
     const t = rows.find((i) => i.id === drag);
     setDrag(null);
     if (!t || !write || state === "—" || t.state === state) return;
+    if (!canGo(t, state)) return void toast({ text: `Workflow của team không cho ${t.state} → ${state}` });
     const prev = t.state;
     y.patchTicket({ ...t, state }); // show it moved at once; the server's answer (or the error) settles it
     try {
@@ -493,7 +498,8 @@ function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) => void }
       {cols.map(([st, list]) => (
         <section key={st} aria-label={`${st}: ${list.length} ticket`}
           onDragOver={(e) => { if (drag && write) { e.preventDefault(); setOver(st); } }} onDragLeave={() => setOver((o) => (o === st ? null : o))} onDrop={(e) => { e.preventDefault(); void drop(st); }}
-          className={cn("flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-colors duration-(--dur-micro)", over === st && "bg-hl-wash ring-2 ring-hl")}>
+          className={cn("flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,opacity] duration-(--dur-micro)", over === st && "bg-hl-wash ring-2 ring-hl",
+            moving && moving.state !== st && !canGo(moving, st) && "opacity-40")}>
           <header className="sticky top-0 flex items-center gap-2 px-3 py-2"><StatePill state={st} /><b className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-xs font-medium text-ink-3">{list.length}</b></header>
           <ul className="grid min-h-16 content-start gap-1.5 overflow-y-auto px-2 pb-2">
             {list.slice(0, PER).map((i) => (
