@@ -76,7 +76,7 @@ export type PromptCtx = `${"dev" | "qa" | "po"}:${"one" | "many"}`;
 /** The team's prompts and, per context, the names shown as buttons in the AI session (missing = the role's default). */
 export type PromptLib = { prompts: SavedPrompt[]; shown: Partial<Record<PromptCtx, string[]>>; hidden: string[] }; // hidden: built-ins the team deleted
 /** The team's State flow for a project (Settings › YouTrack › Workflow); `on`: the app only moves tickets along an arrow. */
-export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][] };
+export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][]; hidden: string[] }; // hidden: states taken off the canvas (no arrow can reach them)
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),

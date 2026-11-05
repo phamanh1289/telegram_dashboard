@@ -148,6 +148,7 @@ class Workflow(BaseModel):
     on: bool = False
     pos: dict[StateName, tuple[float, float]] = Field(default_factory=dict, max_length=200)
     edges: list[tuple[StateName, StateName]] = Field(default_factory=list, max_length=1000)
+    hidden: list[StateName] = Field(default_factory=list, max_length=200)  # boxes taken off the canvas
 
 
 class AiFilter(BaseModel):

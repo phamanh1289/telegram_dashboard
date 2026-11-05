@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, LayoutGrid, Trash2, X } from "lucide-react";
+import { Download, LayoutGrid, RotateCcw, Trash2, X } from "lucide-react";
 import { type PointerEvent as RPointerEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
@@ -80,16 +80,21 @@ export function WorkflowSection() {
   const states = q.data?.states ?? [];
   const [cols, setCols] = useState(3); // as many boxes as fit across the canvas
   const fit = (el: HTMLDivElement | null) => { if (el) setCols(Math.max(1, Math.floor((el.clientWidth - PAD - W) / GX) + 1)); };
-  const saved: Workflow | null = q.data ? { on: q.data.on, pos: { ...layout(states, q.data.edges, cols), ...q.data.pos }, edges: q.data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)) } : null;
+  const saved: Workflow | null = q.data ? { on: q.data.on, pos: { ...layout(states, q.data.edges, cols), ...q.data.pos }, edges: q.data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)), hidden: (q.data.hidden ?? []).filter((s) => states.includes(s)) } : null;
   const wf = draft?.p === at ? draft : saved;
+  const shown = states.filter((s) => !wf?.hidden.includes(s)); // the boxes on the canvas
+  const hide = (s: string) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)) });
   const set = (patch: Partial<Workflow>) => wf && setDraft({ ...wf, ...patch, p: at });
   const save = useMutation({
-    mutationFn: (w: Workflow) => yt.setWorkflow(p, { on: w.on, pos: Object.fromEntries(states.map((s) => [s, w.pos[s]])), edges: w.edges }),
+    mutationFn: (w: Workflow) => yt.setWorkflow(p, { on: w.on, pos: Object.fromEntries(states.map((s) => [s, w.pos[s]])), edges: w.edges, hidden: w.hidden }),
     onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ["yt", "workflow", p, role] }); },
   });
   const fromYt = useMutation({
     mutationFn: () => yt.youtrackFlow(p),
-    onSuccess: (d) => set({ edges: d.edges, ...(Object.keys(q.data?.pos ?? {}).length ? {} : { pos: layout(states, d.edges, cols) }) }), // nothing placed by hand yet: lay out along the new flow
+    onSuccess: (d) => { // hidden boxes stay hidden; nothing placed by hand yet: lay out along the new flow
+      const edges = d.edges.filter(([s, t]) => shown.includes(s) && shown.includes(t));
+      set({ edges, ...(Object.keys(q.data?.pos ?? {}).length ? {} : { pos: layout(shown, edges, cols) }) });
+    },
   });
 
   if (!q.data || !wf) return <p className="text-sm text-ink-3">{q.isError ? `Không tải được: ${(q.error as Error).message}` : "Đang tải…"}</p>;
@@ -107,7 +112,7 @@ export function WorkflowSection() {
           </Button>
         </Hint>
         <Hint title="Tự xếp" text="Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.">
-          <Button type="button" size="sm" variant="ghost" disabled={!states.length} onClick={() => set({ pos: layout(states, wf.edges, cols) })}><LayoutGrid className="size-3.5" />Tự xếp</Button>
+          <Button type="button" size="sm" variant="ghost" disabled={!states.length} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-3.5" />Tự xếp</Button>
         </Hint>
         <Hint title="Xóa hết mũi tên" text="Bỏ mọi mũi tên để vẽ lại từ đầu.">
           <Button type="button" size="sm" variant="ghost" disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-3.5" />Xóa hết</Button>
@@ -119,8 +124,19 @@ export function WorkflowSection() {
       {fromYt.isError && <p role="alert" className="text-xs text-error">Không đọc được: {(fromYt.error as Error).message}</p>}
       {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">Chưa có ticket nào ở {fromYt.data.unknown.join(", ")} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.</p> : null}
       {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? "Chưa có state: cần token YouTrack (mục Tài khoản ở trên)." : null}</p>
-        : <Canvas states={states} wf={wf} onChange={set} fit={fit} />}
-      <EdgeList states={states} edges={wf.edges} onChange={(edges) => set({ edges })} />
+        : <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />}
+      {wf.hidden.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-3">
+          Đã ẩn ({wf.hidden.length}):
+          {wf.hidden.map((s) => (
+            <button key={s} type="button" aria-label={`Hiện lại ${s}`} onClick={() => set({ hidden: wf.hidden.filter((x) => x !== s) })}
+              className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-2 pl-2.5 text-ink-2 hover:bg-paper-3 hover:text-ink">
+              {s}<RotateCcw className="size-3" aria-hidden />
+            </button>
+          ))}
+        </div>
+      )}
+      <EdgeList states={shown} edges={wf.edges} onChange={(edges) => set({ edges })} />
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>Lưu</Button>
         {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>Hủy</Button>}
@@ -133,14 +149,14 @@ export function WorkflowSection() {
 
 type Drag = { kind: "move"; s: string; dx: number; dy: number } | { kind: "link"; s: string; x: number; y: number; over: string | null };
 
-function Canvas({ states, wf, onChange, fit }: { states: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void; fit: (el: HTMLDivElement | null) => void }) {
+function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void; onHide: (s: string) => void; fit: (el: HTMLDivElement | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => fit(box.current), []); // eslint-disable-line react-hooks/exhaustive-deps -- measured once
   const [drag, setDrag] = useState<Drag | null>(null);
   const [sel, setSel] = useState<string | null>(null); // the picked arrow's key
   const has = new Set(wf.edges.map(key));
-  const width = Math.max(...states.map((s) => wf.pos[s][0])) + W + PAD;
-  const height = Math.max(360, Math.max(...states.map((s) => wf.pos[s][1])) + H + PAD);
+  const width = Math.max(0, ...states.map((s) => wf.pos[s][0])) + W + PAD;
+  const height = Math.max(360, Math.max(0, ...states.map((s) => wf.pos[s][1])) + H + PAD);
 
   const remove = (k: string) => { onChange({ edges: wf.edges.filter((e) => key(e) !== k) }); setSel(null); };
   useEffect(() => {
@@ -203,11 +219,15 @@ function Canvas({ states, wf, onChange, fit }: { states: string[]; wf: Workflow;
         return (
           <div key={s} data-state={s} style={{ left: x, top: y, width: W, height: H, borderColor: stateColor(s) }}
             onPointerDown={(e) => { if (e.button) return; const [px, py] = at(e); setDrag({ kind: "move", s, dx: px - x, dy: py - y }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
-            className={cn("absolute flex cursor-grab items-center gap-1.5 rounded-[var(--radius-input)] border-l-4 bg-cotton pr-4 pl-2 text-xs font-medium shadow-stock active:cursor-grabbing",
+            className={cn("group absolute flex cursor-grab items-center gap-1.5 rounded-[var(--radius-input)] border-l-4 bg-cotton pr-4 pl-2 text-xs font-medium shadow-stock active:cursor-grabbing",
               target && "ring-2 ring-hl", drag?.kind === "move" && drag.s === s && "z-10 shadow-lg")}>
             <span className="truncate" title={s}>{s}</span>
             <span role="button" aria-label={`Kéo để nối từ ${s}`} onPointerDown={(e) => { e.stopPropagation(); const [px, py] = at(e); setDrag({ kind: "link", s, x: px, y: py, over: null }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
               className="absolute top-1/2 -right-[7px] size-3.5 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-cotton bg-hl shadow-stock hover:scale-125" />
+            <button type="button" aria-label={`Ẩn ${s} khỏi workflow`} onPointerDown={(e) => e.stopPropagation()} onClick={() => onHide(s)}
+              className="absolute -top-2 right-3 grid size-[18px] place-items-center rounded-full bg-paper-3 text-ink-3 opacity-0 shadow-stock transition-opacity group-hover:opacity-100 hover:bg-error hover:text-cotton focus-visible:opacity-100 [@media(hover:none)]:opacity-100">
+              <X className="size-3" />
+            </button>
           </div>
         );
       })}
