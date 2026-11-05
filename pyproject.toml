@@ -1,6 +1,6 @@
 [project]
 name = "telegram-dashboard"
-version = "0.1.4"
+version = "0.1.5"
 description = "Local web inbox for Telegram groups"
 requires-python = ">=3.14"
 dependencies = [
