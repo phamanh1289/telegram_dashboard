@@ -24,7 +24,7 @@ Không cần Python/Node/git. Dán **một lệnh** (bấm nút copy góc phải
 curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 ```
 
-Cài vào `~/Applications/Telegram Dashboard`; lần sau double-click `Start Dashboard Telegram.command` trong đó.
+Cài vào `~/Applications/Telegram Dashboard`; lần sau mở **Telegram Dashboard** từ Spotlight / Launchpad.
 
 **Windows 10/11**: bấm Start, gõ **PowerShell**, mở lên, dán:
 

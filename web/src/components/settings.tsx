@@ -373,7 +373,9 @@ const TG_ERRORS: Record<string, string> = {
 };
 
 function useStatus() {
-  return useQuery({ queryKey: ["status"], queryFn: ({ signal }) => api<Status>("/status", { signal }) });
+  // No event stream on this page: poll until Telegram settles, so "Đang kết nối…" turns into the result by itself.
+  return useQuery({ queryKey: ["status"], queryFn: ({ signal }) => api<Status>("/status", { signal }),
+    refetchInterval: (q) => (q.state.data?.state === "connected" ? false : 2000) });
 }
 
 /** API ID/Hash from my.telegram.org, then phone → code → 2FA: the whole Telegram setup without .env or a terminal. */
@@ -508,6 +510,7 @@ function YouTrackSection() {
       setToken("");
       void qc.invalidateQueries({ queryKey: ["yt-config"] });
       void qc.invalidateQueries({ queryKey: ["status"] });
+      qc.removeQueries({ queryKey: ["yt"] }); // projects/me/issues of the old token (or sample data) are cached forever
     },
   });
   return (

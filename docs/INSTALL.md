@@ -42,9 +42,9 @@ Mở **Terminal** (Spotlight: gõ "Terminal"), dán lệnh này rồi Enter:
 curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 ```
 
-Lệnh tải bản mới nhất vào `~/Applications/Telegram Dashboard`, mở thư mục đó và chạy app: một cửa sổ
-Terminal mở (để nguyên, đóng = tắt app), trình duyệt mở `http://127.0.0.1:8765`. Đăng nhập như bước 5 của Windows.
-Lần sau: double-click `Start Dashboard Telegram.command` trong thư mục đó (kéo vào Dock cho tiện).
+Lệnh tải bản mới nhất vào `~/Applications/Telegram Dashboard`, tạo app `~/Applications/Telegram Dashboard.app`
+và chạy app: một cửa sổ Terminal mở (để nguyên, đóng = tắt app), trình duyệt mở `http://127.0.0.1:8765`.
+Đăng nhập như bước 5 của Windows. Lần sau: gõ **Telegram Dashboard** trong Spotlight / Launchpad (kéo vào Dock cho tiện).
 
 > Vì sao không tải zip bằng trình duyệt? App chưa được Apple notarize nên file tải qua trình duyệt bị chặn
 > (*"Apple could not verify… Not Opened"*). Nếu đã lỡ tải zip: bấm **Done**, mở **System Settings ›
