@@ -69,6 +69,10 @@ class FakeTransport:
         newer = [m for m in ms if m.message_id > message_id][:after]
         return older + [m for m in ms if m.message_id == message_id] + newer
 
+    async def fetch_older(self, chat_id, before, limit):
+        ms = sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)
+        return [m for m in ms if before is None or m.message_id < before][-limit:]
+
     async def download_photo(self, chat_id, message_id, dest):
         return False
 

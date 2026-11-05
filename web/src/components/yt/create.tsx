@@ -1,8 +1,7 @@
 "use client";
 
-import { TicketForm } from "@/components/ticket-form";
+import { createTicket, TicketForm } from "@/components/ticket-form";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { api, type YouTrackIssue } from "@/lib/api";
 import { toast } from "@/lib/inbox";
 import { yt } from "@/lib/yt";
 import { useYt } from "./state";
@@ -27,9 +26,7 @@ export function CreateTicket() {
           aiOn={y.aiOn}
           aiDraft={(note, f) => yt.aiDraft(note, f.types, f.priorities)}
           onSubmit={async (v) => {
-            const r = await api<YouTrackIssue>("/youtrack/issues", { method: "POST", json: {
-              summary: v.summary, description: v.description, markdown: v.markdown, project: v.project,
-              type: v.type || null, priority: v.priority || null, assignee: v.assignee || null } });
+            const r = await createTicket(v);
             toast({ text: r.warning ? `Đã tạo ${r.id}. ${r.warning}` : `Đã tạo ${r.id}` });
             y.setNewTicket(null);
             y.refresh();

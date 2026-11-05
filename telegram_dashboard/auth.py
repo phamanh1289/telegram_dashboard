@@ -55,6 +55,10 @@ class LocalGuardMiddleware:
                 value = b"private, no-store, no-transform" if is_sse else b"private, no-store"
                 hdrs.append((b"cache-control", value))  # FastAPI SSE sets X-Accel-Buffering
                 message = {**message, "headers": hdrs}
+            elif message["type"] == "http.response.start" and scope["path"].startswith("/_next/static/"):
+                # Content-hashed build output: a rebuild changes the names, so the browser never needs to revalidate.
+                hdrs = [(k, v) for k, v in message["headers"] if k.lower() != b"cache-control"]
+                message = {**message, "headers": [*hdrs, (b"cache-control", b"public, max-age=31536000, immutable")]}
             elif message["type"] == "http.response.start" and not scope["path"].startswith("/_next/"):
                 # The page shell is not content-hashed: revalidate so a rebuilt UI shows up on reload.
                 message = {**message, "headers": [*message["headers"], (b"cache-control", b"no-cache")]}

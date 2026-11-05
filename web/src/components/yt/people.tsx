@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
-import { useNow } from "@/lib/inbox";
+import { fold, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { AI_MAX, bucket, DAY, isBlocked, norm, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
+import { AI_MAX, bucket, DAY, isBlocked, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
 import { Avatar, Card, Prio, StatePill } from "./bits";
 import { useYt } from "./state";
 
@@ -109,14 +109,14 @@ export function PeoplePage() {
     return new Map(names.map((n) => [n, statsOf(by.get(n) ?? [], days, now)]));
   }, [data.data, names, days, now]);
   const max = Math.max(1, ...[...stats.values()].map((s) => s.open.length));
-  const shown = names.filter((n) => !q || norm(n).includes(norm(q)));
+  const shown = names.filter((n) => !q || fold(n).includes(fold(q)));
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
       <nav aria-label="Thành viên" className="grid content-start gap-2 rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-72 overflow-y-auto lg:sticky lg:top-28 lg:max-h-[calc(100dvh-8rem)]">
         <label className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${names.length} người…`} aria-label="Tìm người" className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm outline-none focus:border-hl" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${names.length} người…`} aria-label="Tìm người" className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm focus:border-hl" />
         </label>
         <button type="button" aria-current={person === TEAM} onClick={() => pick(TEAM)}
           className={cn("flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium", person === TEAM ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
@@ -130,7 +130,7 @@ export function PeoplePage() {
                 <button type="button" aria-current={n === person} onClick={() => pick(n)}
                   className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md px-2 py-1.5 text-left text-sm", n === person ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
                   <span className="relative row-span-2"><Avatar name={n} className="size-7" />{s.risk.length > 0 && <i aria-label={`${s.risk.length} ticket blocked hoặc quá hạn`} className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-error ring-2 ring-cotton" />}</span>
-                  <span className={cn("truncate", n === person && "font-medium")}>{shortName(n)}{n === y.me && <span className="text-ink-3"> · tôi</span>}</span>
+                  <span className={cn("truncate", n === person && "font-medium")}>{shortName(n)}{n === y.me && <span className="text-ink-3"> (tôi)</span>}</span>
                   <b className="font-mono text-xs font-normal text-ink-3 tabular-nums">{s.open.length || ""}</b>
                   <Load s={s} max={max} className="col-span-2 h-1.5" />
                 </button>
@@ -177,7 +177,7 @@ function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<s
         {y.aiOn && <Button size="sm" onClick={run} disabled={!rows.length}><Sparkles /> AI chia việc</Button>}
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Kpi label="Đang mở" value={sum((s) => s.open.length)} sub={`${sum((s) => s.doing.length)} đang làm · ${sum((s) => s.qc.length)} chờ QC`} />
+        <Kpi label="Đang mở" value={sum((s) => s.open.length)} sub={`${sum((s) => s.doing.length)} đang làm, ${sum((s) => s.qc.length)} chờ QC`} />
         <Kpi label="Blocked / quá hạn" value={sum((s) => s.risk.length)} bad={sum((s) => s.risk.length) > 0} sub={`${sum((s) => s.stale.length)} không cập nhật >7 ngày`} />
         <Kpi label={`Xong trong ${days} ngày`} value={sum((s) => s.done.length)} sub={`${sum((s) => s.fixed.length)} bug đã sửa`} />
         <Kpi label="Bug đang mở" value={sum((s) => s.bugs.length)} />
@@ -197,7 +197,7 @@ function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<s
                   <span className="flex min-w-0 items-center gap-2 text-sm"><Avatar name={n} className="size-7" /><span className="truncate">{shortName(n)}</span></span>
                   <span className="grid gap-1">
                     <Load s={s} max={max} className="h-2.5" />
-                    <span className="text-xs text-ink-3 tabular-nums"><b className="font-mono font-medium text-ink">{s.open.length}</b> mở · <span className={cn(over && "font-semibold text-error")}>{s.doing.length} đang làm{over && ` (> WIP ${y.wip})`}</span> · {s.qc.length} chờ QC</span>
+                    <span className="text-xs text-ink-3 tabular-nums"><b className="font-mono font-medium text-ink">{s.open.length}</b> mở, <span className={cn(over && "font-semibold text-error")}>{s.doing.length} đang làm{over && ` (> WIP ${y.wip})`}</span>, {s.qc.length} chờ QC</span>
                   </span>
                   <span className="col-span-2 flex flex-wrap gap-1 md:col-span-1">
                     {s.blocked.length > 0 && <Tag tone="bad">{s.blocked.length} blocked</Tag>}
@@ -248,16 +248,16 @@ function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stat
       <div className="flex flex-wrap items-center gap-3">
         <Avatar name={name} className="size-11 text-sm" />
         <div className="mr-auto grid">
-          <h2 className="text-lg font-semibold">{name}{name === y.me && <span className="font-normal text-ink-3"> · tôi</span>}</h2>
-          <span className="text-xs text-ink-3">{loading ? "Đang tải ticket…" : `${s.open.length + s.done.length} ticket · lịch sử ${y.config?.hist ?? ""} ngày`}</span>
+          <h2 className="text-lg font-semibold">{name}{name === y.me && <span className="font-normal text-ink-3"> (tôi)</span>}</h2>
+          <span className="text-xs text-ink-3">{loading ? "Đang tải ticket…" : `${s.open.length + s.done.length} ticket, lịch sử ${y.config?.hist ?? ""} ngày`}</span>
         </div>
         <Period days={days} setDays={setDays} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Đang mở" value={s.open.length} sub={<span className="grid gap-1.5"><span>{s.doing.length} đang làm · {s.qc.length} chờ QC</span><Load s={s} max={s.open.length || 1} /></span>} />
+        <Kpi label="Đang mở" value={s.open.length} sub={<span className="grid gap-1.5"><span>{s.doing.length} đang làm, {s.qc.length} chờ QC</span><Load s={s} max={s.open.length || 1} /></span>} />
         <Kpi label="Cần chú ý" value={s.attn.length} bad={s.risk.length > 0} sub={`${s.risk.length} blocked / quá hạn`} />
-        <Kpi label={`Xong trong ${days} ngày`} value={s.done.length} sub={`${s.fixed.length} bug đã sửa · ${s.bugs.length} bug mở`} />
+        <Kpi label={`Xong trong ${days} ngày`} value={s.done.length} sub={`${s.fixed.length} bug đã sửa, ${s.bugs.length} bug mở`} />
         <Kpi label="Lead time trung vị" value={s.lead ?? "—"} sub={s.lead != null ? "ngày, từ tạo đến xong" : "chưa có ticket xong"} />
       </div>
 

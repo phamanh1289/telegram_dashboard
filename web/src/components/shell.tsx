@@ -23,7 +23,6 @@ const MODULES = [
   ["youtrack", "/youtrack/", "YouTrack", ListChecks, "Chuyển sang YouTrack"],
 ] as const;
 
-/** Module switch left; Claude quota, theme and the shared settings right. */
 /** My YouTrack tickets that need attention now, for a badge on the YouTrack switch while on Telegram (same cache key as the YouTrack page). */
 function useYtRisk(on: boolean) {
   const { me, rows } = useMyTickets(on);
@@ -48,6 +47,7 @@ function useUpdateState() {
   return q.data?.behind ?? 0;
 }
 
+/** Module switch left; AI quota, guide, theme and the shared settings right. */
 export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
   const behind = useUpdateState();
@@ -67,14 +67,15 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
           // Shared across both pages: on a module switch React morphs the pill and crossfades the rest (globals.css sets the timing).
           <ViewTransition key={id} name="module-pill">
             <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-              <Icon className="size-4 shrink-0" aria-hidden />{label}
+              <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
             </span>
           </ViewTransition>
         ) : (
           <Hint key={id} side="bottom" title={label} text={id === "youtrack" && risk.length ? `${title}. ${risk.length} ticket cần xử lý ngay: ${risk.slice(0, 5).join(", ")}${risk.length > 5 ? "…" : ""}` : title}><Link href={href}
             className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
-            <Icon className="size-4 shrink-0" aria-hidden />{label}
-            {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-error px-1.5 font-mono text-[11px] leading-[18px] text-white tabular-nums" aria-label={`${risk.length} ticket cần xử lý ngay`}>{risk.length}</span>}
+            <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
+            {/* "Needs you" is signal, the same as the Telegram rail's counts. */}
+            {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-[18px] text-signal-ink tabular-nums">{risk.length}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
           </Link></Hint>
         ))}
       </nav>
@@ -104,7 +105,8 @@ export function NavPill() {
   return <Pill id="tg-nav" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />;
 }
 
-/** One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z. */
+/** One toast at a time (lib/inbox `toast`); one with an undo stays longer and answers z. At most one button: with both
+ *  an action and an undo, the action gets the button and the undo stays on z (said in the text). */
 export function Toaster() {
   const [flash, setFlash] = useState<(ToastMsg & { id: number }) | null>(null);
   useEffect(() => {
@@ -133,9 +135,9 @@ export function Toaster() {
   if (!flash) return null;
   return (
     <div key={flash.id} role="status" className={cn("fixed bottom-[calc(1rem+env(safe-area-inset-bottom,0px))] left-1/2 z-[60] flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-3 rounded-md bg-board py-1.5 pr-1.5 pl-4 text-sm font-medium text-board-type shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short) ease-(--ease-out)", !flash.undo && !flash.action && "pr-4")}>
-      <span className="py-1">{flash.text}</span>
-      {flash.undo && (
-        <button type="button" onClick={undo} title="Hoàn tác (z)"
+      <span className="py-1">{flash.text}{flash.undo && flash.action && <span className="font-normal opacity-80"> (z: hoàn tác)</span>}</span>
+      {flash.undo && !flash.action && (
+        <button type="button" onClick={undo} aria-keyshortcuts="z"
           className="rounded-[var(--radius-input)] px-2.5 py-1 font-semibold underline decoration-board-type/40 underline-offset-4 transition-colors duration-(--dur-micro) hover:bg-board-type/15 hover:decoration-board-type">
           Hoàn tác
         </button>

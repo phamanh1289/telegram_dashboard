@@ -4,11 +4,13 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Tra
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { toast, useNow } from "@/lib/inbox";
+import { copyText, useNow, ymd } from "@/lib/inbox";
 import { getPref, put, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, when, yt } from "@/lib/yt";
-import { Card, Label, Markdown, Prio, Seg, StatePill, Tag } from "./bits";
+import { Card, Label, Markdown, Prio, StatePill, Tag } from "./bits";
+import { Segmented } from "@/components/ui/segmented";
+import { Hint } from "@/components/ui/hint";
 import { Aging, Attention, Kpis, Progress, useQc, useStats, Wip } from "./dashboard";
 import { ReportCard } from "./report";
 import { useYt } from "./state";
@@ -16,8 +18,7 @@ import { useYt } from "./state";
 // Each mode's home: Dev "Hôm nay" (my tickets in the order to do them), QA "Kiểm thử" (what to test / triage first),
 // PO "Brief" (team state, backlog, what waits on the PO). One AI Studio card per home.
 
-const today = () => new Date().toLocaleDateString("sv"); // YYYY-MM-DD, local
-const monday = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toLocaleDateString("sv"); };
+const monday = () => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return ymd(d); };
 
 /** The last 7 days per person, for the weekly AI digest: ids + short titles only. */
 function weekData(rows: Ticket[], now: number) {
@@ -66,7 +67,7 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
   const y = useYt();
   const [k, setK] = useState(() => { const v = getPref(`ytAiTab:${id}`); return tabs.some((t) => t.k === v) ? v! : tabs[0].k; });
   const t = tabs.find((x) => x.k === k) ?? tabs[0];
-  const key = `ytAi:${id}:${t.k}:${t.weekly ? monday() : today()}`;
+  const key = `ytAi:${id}:${t.k}:${t.weekly ? monday() : ymd()}`;
   const [ver, setVer] = useState(0); // bumped on save / delete: the answer is read from prefs for the current tab and day
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
   const setSaved = (v: Saved | null) => { setPref(key, v && JSON.stringify(v)); setVer((n) => n + 1); };
@@ -79,7 +80,7 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
   return (
     <Card title={<span className="inline-flex items-center gap-1.5"><Sparkles className="size-4 text-hl-2" />AI Studio</span>}
       meta={saved ? `${t.label} lúc ${when(saved.at)}` : undefined} className="border border-hl/25">
-      <Seg label="Việc của AI" value={t.k} onChange={pick} options={tabs.map((x) => [x.k, x.label, x.hint] as const)} className="flex-wrap justify-self-start" />
+      <Segmented id={`ai-studio-${id}`} label="Việc của AI" value={t.k} onChange={pick} items={tabs.map((x) => ({ value: x.k, label: x.label, title: x.hint }))} className="flex-wrap justify-self-start" />
       {saved ? <div className="line-clamp-6"><Markdown text={saved.text} onTicket={(i) => y.openTicket(i)} /></div>
         : <p className="text-sm text-ink-2">{t.disabled ?? t.hint}</p>}
       <div className="flex gap-1.5">
@@ -87,7 +88,7 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
         <Button size="sm" variant={saved ? "outline" : "default"} disabled={!!t.disabled} onClick={() => open(true)}>
           {saved ? <><RotateCw /> Làm lại</> : <><Sparkles /> {t.label}</>}
         </Button>
-        {saved && <Button size="sm" variant="ghost" title="Xóa nội dung AI đã lưu" onClick={() => setSaved(null)}><Trash2 /> Xóa</Button>}
+        {saved && <Hint side="bottom" text="Xóa nội dung AI đã lưu"><Button size="sm" variant="ghost" onClick={() => setSaved(null)}><Trash2 /> Xóa</Button></Hint>}
       </div>
     </Card>
   );
@@ -132,14 +133,14 @@ export function DevHome() {
           <div role="alert" className="flex flex-wrap items-center gap-1.5 rounded-lg border border-error/25 bg-error-wash/40 px-3 py-2">
             <span className="mr-1 inline-flex items-center gap-1.5 text-sm font-semibold text-error"><AlertTriangle className="size-4" />{risky.length} cần xử lý ngay</span>
             {risky.map(([i, why]) => (
-              <button key={i.id} type="button" onClick={() => y.openTicket(i.id, risky.map(([t]) => t))} title={i.summary ?? ""}
+              <Hint key={i.id} side="bottom" text={i.summary ?? i.id}><button type="button" onClick={() => y.openTicket(i.id, risky.map(([t]) => t))}
                 className="inline-flex items-center gap-1.5 rounded-full bg-cotton px-2.5 py-0.5 text-xs shadow-edge hover:bg-paper-2">
                 <b className="font-mono">{i.id}</b><span className="text-error">{why}</span>
-              </button>
+              </button></Hint>
             ))}
           </div>
         )}
-        <Card title="Hôm nay làm gì" meta={lens === "all" ? `${list.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{LENS[lens][0]}: {shown.length} · bỏ lọc</button>}>
+        <Card title="Hôm nay làm gì" meta={lens === "all" ? `${list.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
           <FocusList key={lens} list={shown} top={lens === "all" ? "Làm ngay" : ""} empty={lens === "all" ? "Không có ticket nào đang mở của bạn." : "Không có ticket nào ở mục này."} />
         </Card>
       </div>
@@ -310,7 +311,7 @@ export function QaHome() {
         <LensBar label="Lọc hàng đợi kiểm thử" value={lens} onChange={setLens}
           lenses={(Object.keys(LENS) as QaLens[]).map((l) => [l, LENS[l][0], ranked.filter((x) => LENS[l][1](x.i)).length, LENS[l][2]])} />
         <Card title={lens === "mybugs" ? "Bug tôi đã log, còn mở" : lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test"}
-          meta={lens === "queue" ? `${shown.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{LENS[lens][0]}: {shown.length} · bỏ lọc</button>}>
+          meta={lens === "queue" ? `${shown.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
           <FocusList key={lens} list={shown} top={lens === "queue" ? "Test ngay" : ""} empty="Không có ticket nào ở mục này." />
         </Card>
       </div>
@@ -435,7 +436,6 @@ export function PoHome() {
   );
 }
 
-const copy = (text: string, what: string) => navigator.clipboard.writeText(text).then(() => toast({ text: `Đã chép ${what}` }), () => toast({ text: "Không chép được" }));
 
 /** My test results (from the State history: moves out of a test state I made), and a standup line to paste in Telegram. */
 function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting: Ticket[]; retest: Ticket[] }) {
@@ -457,16 +457,16 @@ function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting
     ...(retest.length ? [`- Test lại sau khi dev sửa: ${retest.slice(0, 8).map((i) => i.id).join(", ")}`] : []),
   ].join("\n");
   return (
-    <Card title="Kết quả test của tôi" meta={<Button size="xs" variant="ghost" onClick={() => void copy(standup, "standup")}><Copy /> Copy standup</Button>}>
+    <Card title="Kết quả test của tôi" meta={<Button size="xs" variant="ghost" onClick={() => void copyText(standup, "Đã chép standup")}><Copy /> Copy standup</Button>}>
       <dl className="grid grid-cols-3 gap-2 text-center">
         {rows.map(([l, r]) => (
           <div key={l} className="grid gap-0.5 rounded-md bg-paper-2 py-2">
             <dt className="text-xs text-ink-3">{l}</dt>
             <dd className="font-mono text-2xl tabular-nums">{r.n}</dd>
             <dd className="text-xs text-ink-3"><button type="button" disabled={!r.pass.length} className="text-ok enabled:hover:underline"
-              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã pass · ${l}`, rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
-              {" · "}<button type="button" disabled={!r.fail.length} className={cn(r.fail.length && "text-error", "enabled:hover:underline")}
-              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã trả lại · ${l}`, rows: r.fail.map((id) => qc.byId.get(id)!) })}>{r.fail.length} trả</button></dd>
+              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã pass: ${l}`, rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
+              {", "}<button type="button" disabled={!r.fail.length} className={cn(r.fail.length && "text-error", "enabled:hover:underline")}
+              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã trả lại: ${l}`, rows: r.fail.map((id) => qc.byId.get(id)!) })}>{r.fail.length} trả</button></dd>
           </div>
         ))}
       </dl>
@@ -493,7 +493,7 @@ function QcSplit({ open }: { open: Ticket[] }) {
   if (!plan.length) return null;
   const text = ["Đề xuất chia QC:", ...plan.map((x) => `- ${x.i.id} ${titleOf(x.i).slice(0, 60)} → ${x.who}`)].join("\n");
   return (
-    <Card title="Gợi ý chia QC" meta={<Button size="xs" variant="ghost" onClick={() => void copy(text, "phân công")}><Copy /> Copy</Button>}>
+    <Card title="Gợi ý chia QC" meta={<Button size="xs" variant="ghost" onClick={() => void copyText(text, "Đã chép phân công")}><Copy /> Copy</Button>}>
       <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm để mở ticket và gán.</p>
       <ol className="grid grid-cols-1 divide-y divide-rule/60">
         {plan.slice(0, 12).map(({ i, who, n }) => (
@@ -501,7 +501,7 @@ function QcSplit({ open }: { open: Ticket[] }) {
             <button type="button" onClick={() => y.openTicket(i.id, plan.map((x) => x.i))} className="flex w-full items-baseline gap-2 py-1.5 text-left text-sm hover:bg-paper-2">
               <span className="shrink-0 font-mono text-xs text-ink-3">{i.id}</span>
               <span className="min-w-0 flex-1 truncate">{titleOf(i)}</span>
-              <span className="shrink-0 text-xs"><b className="font-medium">{who}</b> <span className="text-ink-3">· đang giữ {n}</span></span>
+              <span className="shrink-0 text-xs"><b className="font-medium">{who}</b> <span className="text-ink-3">đang giữ {n}</span></span>
             </button>
           </li>
         ))}

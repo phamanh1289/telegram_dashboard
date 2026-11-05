@@ -3,7 +3,8 @@
 import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getPref, setPref } from "@/lib/prefs";
-import { ago, type Ticket } from "@/lib/yt";
+import { type Ticket } from "@/lib/yt";
+import { ago } from "@/lib/inbox";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
 

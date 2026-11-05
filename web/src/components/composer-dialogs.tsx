@@ -5,19 +5,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
-import { TicketForm } from "@/components/ticket-form";
+import { createTicket, TicketForm } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { type AiTicketDraft, api, errorText, type Message, type YouTrackIssue } from "@/lib/api";
+import { type AiTicketDraft, api, errorText, type Message } from "@/lib/api";
 import { TASK_MODES, textWithLinks, toast } from "@/lib/inbox";
 import { getPref, readAgentProject, readPlatform, readYtRole, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 
 const TASK_MODE_NOTE = {
-  plan: "Đọc dự án, lập phương án, không sửa gì. Nhắn tiếp trong tab AI Agent.",
-  edit: "Như Chỉ đọc nhưng được tự sửa file. Lệnh shell vẫn bị chặn.",
+  plan: "Đọc dự án, lập phương án, không sửa gì, không chạy lệnh. Nhắn tiếp trong tab AI Agent.",
+  edit: "Được tự sửa file và chạy lệnh shell trong dự án. Chỉ dùng khi tin nội dung tin nhắn.",
 };
 
 /**
@@ -92,7 +92,7 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
           {!projectOk && <p className="text-xs text-warn">Chọn một dự án (hoặc Thêm) để bắt đầu.</p>}
         </div>
         <div className="grid gap-1.5">
-          <label htmlFor="task-note" className={label}>Yêu cầu thêm <span className="font-normal">· không bắt buộc</span></label>
+          <label htmlFor="task-note" className={label}>Yêu cầu thêm <span className="font-normal">(không bắt buộc)</span></label>
           <Textarea id="task-note" autoFocus rows={3} maxLength={4000}
             className="max-h-48 min-h-20 resize-none overflow-y-auto text-sm [field-sizing:content] md:text-sm"
             value={note} onChange={(e) => setNote(e.target.value)}
@@ -187,9 +187,7 @@ export function IssueDialog({ m, note, ai, open, onOpenChange, onCreated }: {
               return { ...r, description: `${r.description}\n\n---\nTin gốc (${from}):\n${body}` };
             }}
             onSubmit={async (v) => {
-              const r = await api<YouTrackIssue>("/youtrack/issues", { method: "POST", json: {
-                summary: v.summary, description: v.description, markdown: v.markdown, project: v.project || null,
-                type: v.type || null, priority: v.priority || null, assignee: v.assignee || null, chat_id: m.chat_id, message_id: m.message_id } });
+              const r = await createTicket(v, { chat_id: m.chat_id, message_id: m.message_id });
               setPref("ticketMeta", JSON.stringify({ project: v.project, type: v.type, priority: v.priority, assignee: v.assignee }));
               if (r.warning) toast({ text: `Đã tạo ${r.id}. ${r.warning}` });
               onCreated(`Đã tạo ticket ${r.id}: ${r.url}`);

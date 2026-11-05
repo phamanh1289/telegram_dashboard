@@ -1,17 +1,17 @@
 "use client";
 
 import { Plus, CalendarCheck, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, Monitor, Printer, RotateCw, Search, Settings2, Sparkles, UserSearch, X } from "lucide-react";
+import { Popover as BasePopover } from "@base-ui/react/popover";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/components/shell";
 import { Button } from "@/components/ui/button";
-import { toast } from "@/lib/inbox";
+import { fold, toast, useNow } from "@/lib/inbox";
 import { getPref, saveYtRole, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, durShort } from "@/lib/utils";
-import { useNow } from "@/lib/inbox";
-import { norm, QUICK, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
-import { Avatar, MultiSelect } from "./bits";
+import { QUICK, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
+import { Avatar, MultiSelect, POP } from "./bits";
 import { DashboardPage } from "./dashboard";
 import { DevHome, PoHome, QaHome } from "./home";
 import { CreateTicket } from "./create";
@@ -60,7 +60,7 @@ function Shell() {
     return () => document.removeEventListener("keydown", k);
   }, []);
   useWatch();
-  // No YouTrack token yet: go to its setup in Settings, like Telegram does before login.
+  // No YouTrack token yet (the server answers empty "mock" lists): go to its setup in Settings, like Telegram does before login.
   const router = useRouter();
   const mock = !!y.config?.mock;
   useEffect(() => { if (mock) router.replace("/settings/#youtrack"); }, [mock, router]);
@@ -109,38 +109,38 @@ function Shell() {
             <aside ref={asideRef} className={cn("yt-noprint fixed inset-y-0 left-0 z-50 flex w-60 flex-col gap-1 overflow-x-clip border-r bg-paper-2 p-3 transition-transform duration-(--dur-short) md:sticky md:top-11 md:z-10 md:h-[calc(100dvh-2.75rem)] md:w-auto md:translate-x-0",
               menu ? "translate-x-0 shadow-pop" : "-translate-x-full")}>
               <div className="mb-2 flex min-h-10 items-center gap-3 px-1">
-                <button type="button" onClick={() => { markSlide(); setPref("ytSide", collapsed ? "0" : "1"); setCollapsed(!collapsed); }} title="Thu gọn / mở rộng menu"
-                  className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-input)] bg-board text-board-type max-md:pointer-events-none"><ListChecks className="size-4" aria-hidden /></button>
+                <Hint text="Thu gọn / mở rộng menu"><button type="button" onClick={() => { markSlide(); setPref("ytSide", collapsed ? "0" : "1"); setCollapsed(!collapsed); }} aria-label="Thu gọn / mở rộng menu" aria-expanded={!collapsed}
+                  className="grid size-8 shrink-0 place-items-center rounded-[var(--radius-input)] bg-board text-board-type max-md:pointer-events-none"><ListChecks className="size-4" aria-hidden /></button></Hint>
                 <span className={cn("grid leading-tight", fade)}><span className="text-sm font-semibold">YouTrack</span><span className="text-xs text-ink-3">{y.projects.find((p) => p.shortName === y.project)?.name ?? y.project}</span></span>
                 <Button size="icon-xs" variant="ghost" className="ml-auto md:hidden" aria-label="Đóng menu" onClick={() => setMenu(false)}><X /></Button>
               </div>
               {/* the project rarely changes: it sits here, not in the page header */}
-              <select value={y.project} onChange={(e) => y.setProject(e.target.value)} aria-label="Project" title="Project"
+              <select value={y.project} onChange={(e) => y.setProject(e.target.value)} aria-label="Project"
                 className={cn("mb-2 h-8 w-full rounded-md border border-rule bg-cotton px-2 text-sm", collapsed && "md:hidden")}>
-                {(y.projects.length ? y.projects : [{ shortName: y.project, name: y.project }]).map((p) => <option key={p.shortName} value={p.shortName} title={p.name}>{p.shortName} · {p.name}</option>)}
+                {(y.projects.length ? y.projects : [{ shortName: y.project, name: y.project }]).map((p) => <option key={p.shortName} value={p.shortName}>{p.shortName} ({p.name})</option>)}
               </select>
               <nav aria-label="Trang" className="mt-2 grid grid-cols-1 gap-1">
                 {pages.map(([p, label, Icon]) => (
-                  <Hint key={p} title={label} text={PAGE_HINT[p === "home" ? y.mode : p] ?? ""}><button type="button" aria-current={y.page === p ? "page" : undefined} onClick={() => go(p)} aria-label={label}
+                  <Hint key={p} title={label} text={`${PAGE_HINT[p === "home" ? y.mode : p] ?? ""}${p === "home" && risk > 0 ? ` ${risk} ticket cần xử lý ngay (quá hạn, tới hạn, blocked, đứng lâu).` : ""}`}><button type="button" aria-current={y.page === p ? "page" : undefined} onClick={() => go(p)} aria-label={label}
                     className={cn("relative flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-colors duration-(--dur-micro)",
                       y.page === p ? "text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink")}>
                     {y.page === p && <Pill id="yt-nav" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
                     <Icon className="relative size-5 shrink-0" aria-hidden /><span className={cn("relative flex-1", fade)}>{label}</span>
-                    {p === "home" && risk > 0 && <span title={`${risk} ticket cần xử lý ngay (quá hạn, tới hạn, blocked, đứng lâu)`}
-                      className={cn("relative rounded-full bg-error px-1.5 font-mono text-xs leading-[18px] text-cotton tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}</span>}
+                    {p === "home" && risk > 0 && <span
+                      className={cn("relative rounded-full bg-signal px-1.5 font-mono text-xs leading-[18px] text-signal-ink tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
                   </button></Hint>
                 ))}
               </nav>
               {!y.config?.mock && (
-                <button type="button" onClick={() => { setMenu(false); y.setNewTicket(""); }} title="Tạo ticket mới, AI soạn từ ghi chú thô"
+                <Hint text="Tạo ticket mới, AI soạn từ ghi chú thô"><button type="button" onClick={() => { setMenu(false); y.setNewTicket(""); }} aria-label="Tạo ticket"
                   className="mt-1 flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] border border-dashed border-rule-2 px-2.5 text-sm text-ink-2 hover:bg-paper-3 hover:text-ink">
-                  <Plus className="size-5 shrink-0" /><span className={fade}>Tạo ticket</span></button>
+                  <Plus className="size-5 shrink-0" aria-hidden /><span className={fade}>Tạo ticket</span></button></Hint>
               )}
               <div className="mt-auto grid grid-cols-1 gap-1 border-t pt-2">
-                <button type="button" onClick={tv} title="Toàn màn hình, chữ lớn, ẩn menu (Esc để thoát)" className="flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
-                  <Monitor className="size-5 shrink-0" /><span className={fade}>Chế độ TV</span></button>
-                <button type="button" onClick={() => print()} title="In hoặc lưu PDF trang đang xem" className="flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
-                  <Printer className="size-5 shrink-0" /><span className={fade}>In / PDF</span></button>
+                <Hint text="Toàn màn hình, chữ lớn, ẩn menu (Esc để thoát)"><button type="button" onClick={tv} aria-label="Chế độ TV" className="flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
+                  <Monitor className="size-5 shrink-0" aria-hidden /><span className={fade}>Chế độ TV</span></button></Hint>
+                <Hint text="In hoặc lưu PDF trang đang xem"><button type="button" onClick={() => print()} aria-label="In / PDF" className="flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
+                  <Printer className="size-5 shrink-0" aria-hidden /><span className={fade}>In / PDF</span></button></Hint>
                 {y.me && <div className="flex items-center gap-2 px-1.5 pt-1 text-sm" title={y.me}><Avatar name={y.me} /><span className={cn("truncate", fade)}>{y.me}</span></div>}
               </div>
             </aside>
@@ -149,15 +149,15 @@ function Shell() {
 
         <main ref={mainRef} className="min-w-0 px-3 pb-10 sm:px-5">
           <Header title={title} onPalette={() => setPal(true)} />
-          {y.config?.mock && (
-            <p role="alert" className="mb-3 rounded-md bg-warn-wash px-3 py-2 text-sm">Đang dùng dữ liệu MOCK. Dán token YouTrack trong Cài đặt › YouTrack để xem dữ liệu thật.</p>
-          )}
-          {(y.configError || y.issues.isError) && (
-            <div role="alert" className="mb-3 flex items-center gap-3 rounded-md bg-error-wash px-3 py-2 text-sm text-error">
-              <span className="flex-1">Lỗi: {((y.configError ?? y.issues.error) as Error).message}</span>
-              <Button size="sm" variant="outline" onClick={y.refresh}><RotateCw /> Thử lại</Button>
-            </div>
-          )}
+          {(y.configError || y.issues.isError) && (() => {
+            const e = (y.configError ?? y.issues.error) as Error, text = loadError(e);
+            return (
+              <div role="alert" className="mb-3 flex items-center gap-3 rounded-md bg-error-wash px-3 py-2 text-sm text-error">
+                <span className="grid flex-1 gap-0.5">{text}{e.message !== text && <span className="text-xs opacity-80">Chi tiết: {e.message}</span>}</span>
+                <Button size="sm" variant="outline" onClick={y.refresh}><RotateCw /> Thử lại</Button>
+              </div>
+            );
+          })()}
           <FilterChips />
             {/* while another scope loads, the old rows stay (keepPreviousData) but dimmed, so the swap is expected */}
             {/* a scope not warmed yet (first load): a sliding bar + a light fade, the old rows stay readable */}
@@ -237,6 +237,15 @@ function RolePicker() {
   );
 }
 
+/** A failed YouTrack load in words the user can act on; the raw reason stays as a secondary line. */
+function loadError(e: Error) {
+  const m = e.message;
+  if (e.name === "TypeError" || /failed to fetch|load failed|networkerror/i.test(m)) return "Không liên lạc được dashboard local. Kiểm tra app còn chạy rồi thử lại.";
+  if (/\b(401|403)\b|unauthori|forbidden|token/i.test(m)) return "YouTrack từ chối token. Kiểm tra lại token trong Cài đặt › YouTrack.";
+  if (/\bHTTP 5\d\d\b|timeout|timed out|unavailable/i.test(m)) return "YouTrack không phản hồi hoặc đang lỗi. Thử lại sau ít phút.";
+  return "Không tải được dữ liệu YouTrack.";
+}
+
 function Header({ title, onPalette }: { title: string; onPalette: () => void }) {
   const y = useYt();
   // sticky table headers sit right under this bar, which wraps on narrow screens
@@ -255,57 +264,59 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
   return (
     <header ref={ref} className="yt-noprint sticky top-11 z-20 -mx-3 mb-3 flex flex-wrap items-center gap-2 bg-paper/90 px-3 py-2.5 backdrop-blur sm:-mx-5 sm:px-5">
       <h1 className="mr-auto text-lg font-semibold max-xl:sr-only">{title}</h1>
-      <div role="group" aria-label="Phạm vi" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove max-sm:order-last max-sm:w-full" title="My task: ticket bạn được assign hoặc làm QC · My team: bạn + thành viên đã thêm · All: tất cả người">
+      <Hint side="bottom" text="My task: ticket bạn được assign hoặc làm QC. My team: bạn và thành viên đã thêm. All: tất cả mọi người."><div role="group" aria-label="Phạm vi" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove max-sm:order-last max-sm:w-full">
         {scopes.map(([s, l]) => {
           const on = scope === s, team = s === "team";
+          const btn = (
+            <button type="button" aria-pressed={on} disabled={s !== "all" && !y.me}
+              // the active My team tab opens its member editor (the popover trigger): the team lives on the tab, not in a second people dropdown
+              onClick={team && on ? undefined : () => { y.setScope(s); setTeamOpen(false); }}
+              className={cn("relative flex h-7 w-full items-center justify-center gap-1 rounded-[var(--radius-input)] px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-sm:flex-1", on ? "text-hl-ink" : "text-ink-3 hover:text-ink disabled:opacity-50")}>
+              {on && <Pill id="yt-scope" className="inset-0 rounded-[var(--radius-input)] bg-hl" />}
+              <span className="relative">{l}</span>
+              {team && <span className={cn("relative rounded-full px-1.5 text-[10px] tabular-nums", on ? "bg-hl-ink/15" : "bg-paper-2")}>{y.team.length}</span>}
+              {team && on && <><Settings2 className="relative size-3.5" aria-hidden /><span className="sr-only">, sửa thành viên team</span></>}
+            </button>
+          );
           return (
             <div key={s} className={cn("relative", team && "max-sm:flex-1")}>
-              <button type="button" aria-pressed={on} disabled={s !== "all" && !y.me} aria-haspopup={team ? "dialog" : undefined} aria-expanded={team && on ? teamOpen : undefined}
-                // the active My team tab opens its member editor: the team lives on the tab, not in a second people dropdown
-                onClick={() => (team && on ? setTeamOpen(!teamOpen) : (y.setScope(s), setTeamOpen(false)))}
-                title={team && on ? "Sửa thành viên team" : undefined}
-                className={cn("relative flex h-7 w-full items-center justify-center gap-1 rounded-[var(--radius-input)] px-2.5 text-xs font-medium whitespace-nowrap transition-colors max-sm:flex-1", on ? "text-hl-ink" : "text-ink-3 hover:text-ink disabled:opacity-50")}>
-                {on && <Pill id="yt-scope" className="inset-0 rounded-[var(--radius-input)] bg-hl" />}
-                <span className="relative">{l}</span>
-                {team && <span className={cn("relative rounded-full px-1.5 text-[10px] tabular-nums", on ? "bg-hl-ink/15" : "bg-paper-2")}>{y.team.length}</span>}
-                {team && on && <Settings2 className="relative size-3.5" />}
-              </button>
-              {team && <AnimatePresence>{teamOpen && on && <TeamMenu onClose={() => setTeamOpen(false)} />}</AnimatePresence>}
+              {team ? (
+                <BasePopover.Root open={teamOpen && on} onOpenChange={(o) => setTeamOpen(o && on)}>
+                  <BasePopover.Trigger render={btn} />
+                  <BasePopover.Portal>
+                    <BasePopover.Positioner sideOffset={6} align="start" className="z-40 outline-none">
+                      <BasePopover.Popup aria-label="Team của tôi" className={cn(POP, "p-1")}><TeamMenu /></BasePopover.Popup>
+                    </BasePopover.Positioner>
+                  </BasePopover.Portal>
+                </BasePopover.Root>
+              ) : btn}
             </div>
           );
         })}
-      </div>
+      </div></Hint>
       {/* fixed widths: a label that changes with the filter must not re-wrap the bar (the page jumps) */}
       <MultiSelect label="Sprint" all="Tất cả sprint" options={y.sprintOptions} value={y.filters.sprint} onChange={(sprint) => y.setFilters({ sprint })} render={shortSp} className="w-36" />
       <MultiSelect label="Người" all="Tất cả người" options={y.peopleOptions} value={a} onChange={(assignee) => y.setFilters({ assignee })} render={shortName} className="w-36" />
-      <Button size="sm" variant="outline" onClick={onPalette} title="Mở ticket, chuyển trang, hỏi AI, lọc bằng AI (⌘K)" className="text-ink-3">
+      <Hint side="bottom" text="Mở ticket, chuyển trang, hỏi AI, lọc bằng AI (⌘K)"><Button size="sm" variant="outline" onClick={onPalette} aria-label={y.aiOn ? "Tìm, hỏi AI" : "Tìm"} className="text-ink-3">
         {y.aiOn ? <Sparkles className="text-hl-2" /> : <Search />}<span className="max-xl:hidden">{y.aiOn ? "Tìm, hỏi AI" : "Tìm"}</span><kbd className="font-mono text-xs max-lg:hidden">⌘K</kbd>
-      </Button>
+      </Button></Hint>
       <WatchBell />
-      <Button size="sm" variant="outline" onClick={y.refresh} aria-busy={y.issues.isFetching} title={`Cập nhật lúc ${updated} · tự làm mới mỗi phút · bấm để làm mới ngay`} className="tabular-nums">
+      <Hint side="bottom" text={`Cập nhật lúc ${updated}, tự làm mới mỗi phút. Bấm để làm mới ngay.`}><Button size="sm" variant="outline" onClick={y.refresh} aria-busy={y.issues.isFetching} aria-label="Làm mới" className="tabular-nums">
         <RotateCw className={cn(y.issues.isFetching && "animate-spin")} /><span className="max-xl:hidden">{updated}</span>
-      </Button>
+      </Button></Hint>
     </header>
   );
 }
 
 /** "My team" members: me (fixed) + people I add, saved for next time. Avatars and a remove ✕ per row so it reads as
  *  editing a group, not as the Người filter's checkboxes. */
-function TeamMenu({ onClose }: { onClose: () => void }) {
-  const y = useYt(), ref = useRef<HTMLDivElement>(null);
+function TeamMenu() {
+  const y = useYt();
   const [q, setQ] = useState("");
-  useEffect(() => {
-    const down = (e: PointerEvent) => { if (!ref.current?.parentElement?.contains(e.target as Node)) onClose(); };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
-    document.addEventListener("pointerdown", down);
-    document.addEventListener("keydown", key, true);
-    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key, true); };
-  }, [onClose]);
-  const add = y.peopleOptions.filter((n) => n !== UNASSIGNED && n !== y.me && !y.members.includes(n) && (!q || norm(n).includes(norm(q))));
+  const add = y.peopleOptions.filter((n) => n !== UNASSIGNED && n !== y.me && !y.members.includes(n) && (!q || fold(n).includes(fold(q))));
   const row = "flex items-center gap-2 rounded px-2 py-1.5 text-sm";
   return (
-    <motion.div ref={ref} role="dialog" aria-label="Team của tôi" initial={{ opacity: 0, y: -4, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -4, scale: 0.98 }} transition={{ duration: 0.13 }}
-      className="absolute top-full left-0 z-40 mt-1.5 grid w-72 max-w-[calc(100vw-2rem)] origin-top-left rounded-md bg-cotton p-1 shadow-pop">
+    <>
       <div className="px-2 pt-1.5 pb-1"><p className="text-sm font-semibold">Team của tôi</p><p className="text-xs text-ink-3">Tab My team lọc ticket của cả team. Lưu cho lần sau.</p></div>
       <div className="grid max-h-44 overflow-y-auto">
         {y.me && <div className={row}><Avatar name={y.me} /><span className="flex-1 truncate">{y.me}</span><span className="text-xs text-ink-3">Bạn</span></div>}
@@ -319,8 +330,8 @@ function TeamMenu({ onClose }: { onClose: () => void }) {
         </AnimatePresence>
       </div>
       <div className="mt-1 border-t border-rule pt-1">
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Thêm thành viên…" aria-label="Tìm người để thêm vào team"
-          className="m-1 h-8 w-[calc(100%-0.5rem)] rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Thêm thành viên…" aria-label="Tìm người để thêm vào team"
+          className="m-1 h-8 w-[calc(100%-0.5rem)] rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />
         <div className="grid max-h-44 overflow-y-auto">
           {add.map((n) => (
             <button key={n} type="button" onClick={() => { y.setMembers([...y.members, n]); setQ(""); }} className={cn(row, "text-left text-ink-2 hover:bg-paper-2 hover:text-ink")}>
@@ -330,7 +341,7 @@ function TeamMenu({ onClose }: { onClose: () => void }) {
           {!add.length && <p className="px-2 py-1.5 text-xs text-ink-3">{q ? "Không tìm thấy" : "Đã thêm hết mọi người"}</p>}
         </div>
       </div>
-    </motion.div>
+    </>
   );
 }
 
@@ -352,7 +363,7 @@ function FilterChips() {
     <div className="yt-noprint mb-3 flex flex-wrap items-center gap-1.5">
       <AnimatePresence initial={false}>
         {chips.map(([k, v, rm]) => (
-          <motion.button layout key={k + v} type="button" onClick={rm} title="Gỡ bộ lọc" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+          <motion.button layout key={k + v} type="button" onClick={rm} aria-label={`Gỡ bộ lọc ${k} ${v}`} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
             className="inline-flex h-7 items-center gap-1.5 rounded-full bg-hl-wash px-2.5 text-xs text-hl-2 hover:bg-hl-wash/70">
             <span className="text-ink-3">{k}</span>{v}<X className="size-3" />
           </motion.button>

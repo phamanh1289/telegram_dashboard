@@ -5,10 +5,11 @@ import { ArrowLeft, Copy, Loader2, Plus, RotateCw, Sparkles, Square } from "luci
 import { useEffect, useRef, useState } from "react";
 import { digestError, Result, toMarkdown } from "@/components/digest-page";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type BriefingItem, type DigestResult, type GroupInfo } from "@/lib/api";
-import { timeLabel, toast } from "@/lib/inbox";
+import { copyText, timeLabel } from "@/lib/inbox";
 import { readDigestTeams, useRole } from "@/lib/prefs";
 import { yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ function counts(r: DigestResult) {
   ]
     .filter(([n]) => n)
     .map(([n, l]) => `${n} ${l}`)
-    .join(" · ");
+    .join(", ");
 }
 
 /** Any Telegram group, tagged or not: opening one goes to its Digest, where "Cho phép" adds it here. */
@@ -129,19 +130,16 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
 
   async function copyAll() {
     const parts = allowed.filter((i) => i.saved).map((i) => toMarkdown(i.saved!.result, i.title).replace(/^# /, "## "));
-    try {
-      await navigator.clipboard.writeText([`# Briefing ${timeLabel(new Date().toISOString(), true)}`, ...parts].join("\n\n"));
-      toast({ text: "Đã copy markdown" });
-    } catch {
-      toast({ text: "Không copy được" });
-    }
+    await copyText([`# Briefing ${timeLabel(new Date().toISOString(), true)}`, ...parts].join("\n\n"), "Đã copy markdown");
   }
 
   const groupButton = (i: BriefingItem) => (
-    <button type="button" onClick={() => onOpenDigest(i.chat_id, i.title)} title="Mở tóm tắt của nhóm"
-      className="truncate font-semibold text-ink underline-offset-2 hover:underline">
-      {i.title}
-    </button>
+    <Hint side="bottom" text="Mở tóm tắt của nhóm">
+      <button type="button" onClick={() => onOpenDigest(i.chat_id, i.title)}
+        className="truncate font-semibold text-ink underline-offset-2 hover:underline">
+        {i.title}
+      </button>
+    </Hint>
   );
 
   return (
@@ -154,18 +152,22 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
           {list.data ? `${todo.length}/${allowed.length} nhóm có tin mới từ lần tóm tắt trước` : "Đang kiểm tra các nhóm…"}
         </span>
         <div className="ml-auto flex items-center gap-1">
-          <Button size="icon-sm" variant="ghost" aria-label="Kiểm tra lại" title="Kiểm tra lại tin mới" disabled={running || list.isFetching}
-            onClick={() => void list.refetch()}>
-            <RotateCw className={cn(list.isFetching && "animate-spin")} />
-          </Button>
+          <Hint side="bottom" text="Kiểm tra lại tin mới ở các nhóm">
+            <Button size="icon-sm" variant="ghost" aria-label="Kiểm tra lại" disabled={running || list.isFetching}
+              onClick={() => void list.refetch()}>
+              <RotateCw className={cn(list.isFetching && "animate-spin")} />
+            </Button>
+          </Hint>
           <Button size="xs" variant="outline" disabled={!allowed.some((i) => i.saved)} onClick={() => void copyAll()}>
             <Copy /> Copy tất cả
           </Button>
           {running ? (
-            <Button size="sm" variant="outline" className="hover:bg-error-wash hover:text-error" title="Dừng tóm tắt (nhóm đang chạy bị hủy)"
-              onClick={() => abort.current?.abort()}>
-              <Square className="fill-current" aria-hidden /> Dừng
-            </Button>
+            <Hint side="bottom" text="Dừng tóm tắt (nhóm đang chạy bị hủy)">
+              <Button size="sm" variant="outline" className="hover:bg-error-wash hover:text-error"
+                onClick={() => abort.current?.abort()}>
+                <Square className="fill-current" aria-hidden /> Dừng
+              </Button>
+            </Hint>
           ) : (
             <Button size="sm" disabled={!todo.length} onClick={() => void runAll()}>
               <Sparkles /> {todo.length ? `Tóm tắt ${todo.length} nhóm` : "Không có tin mới"}
@@ -193,16 +195,15 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
 
         {([[mine, "Chờ bạn chốt", "bg-hl-wash/60"], [others, mine.length ? "Chờ người khác confirm" : "Cần confirm", "bg-hl-wash/30"]] as const).map(([list, label, bg]) => list.length > 0 && (
           <section key={label} className={cn("mb-6 grid gap-2 rounded-[var(--radius-card)] p-3 md:p-4", bg)}>
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-hl-2">
+            <h3 className="text-sm font-semibold text-hl-2">
               {label} <span className="font-mono font-normal">{list.length}</span>
             </h3>
             <ul className="grid gap-1.5">
               {list.map((a, n) => (
                 <li key={n} className="text-sm leading-relaxed">
                   <span className="text-ink">{a.text}</span>
-                  {a.who && <span className="text-ink-3"> — hỏi {a.who}</span>}
-                  <span className="text-ink-3"> · </span>
-                  <button type="button" className="text-xs text-ink-2 underline underline-offset-2 hover:text-ink" onClick={() => onOpenDigest(a.chat.chat_id, a.chat.title)}>
+                  {a.who && <span className="text-ink-3">, hỏi {a.who}</span>}
+                  <button type="button" className="ml-2 text-xs text-ink-2 underline underline-offset-2 hover:text-ink" onClick={() => onOpenDigest(a.chat.chat_id, a.chat.title)}>
                     {a.chat.title}
                   </button>
                 </li>
@@ -223,7 +224,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
                   ) : run?.status === "error" ? (
                     <span role="alert" className="text-xs text-error">{run.error}</span>
                   ) : hasNews(i) ? (
-                    <span className="rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn">Có tin mới</span>
+                    <span className="rounded-full bg-signal-wash px-1.5 text-xs leading-5 font-medium text-signal-2">Có tin mới</span>
                   ) : (
                     <span className="text-xs text-ink-3">Không có tin mới</span>
                   )}
@@ -236,7 +237,7 @@ export function BriefingPage({ onBack, onOpenDigest }: { onBack: () => void; onO
                     </summary>
                     <div className="mt-3 border-t border-rule pt-3">
                       <Result r={i.saved.result} title={i.title} when={i.saved.created_at} lit={null} onJump={() => onOpenDigest(i.chat_id, i.title)}
-                        onCopy={() => void navigator.clipboard.writeText(toMarkdown(i.saved!.result, i.title)).then(() => toast({ text: "Đã copy markdown" }), () => toast({ text: "Không copy được" }))} />
+                        onCopy={() => void copyText(toMarkdown(i.saved!.result, i.title), "Đã copy markdown")} />
                     </div>
                   </details>
                 ) : (

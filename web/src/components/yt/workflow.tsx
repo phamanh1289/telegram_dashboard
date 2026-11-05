@@ -3,10 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, EyeOff, LayoutGrid, Plus, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { type PointerEvent as RPointerEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type PointerEvent as RPointerEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { getPref, onPrefs, put, readYtRole, YT_ROLES } from "@/lib/prefs";
+import { getPref, put, useRole, YT_ROLES } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { stateColor, type Workflow, yt } from "@/lib/yt";
 
@@ -53,12 +53,10 @@ function readDraft(at: string): Workflow | null {
   } catch { return null; }
 }
 
-/** The role whose flow is shown / saved / applied: the one picked in Settings › Chung (none yet: Dev, as on the server). */
-const useRole = () => useSyncExternalStore(onPrefs, readYtRole, () => null) ?? "dev";
 
 /** The team's workflow for a project and the current role, as "which states can a ticket in `from` move to" (null: no rule, YouTrack decides). */
 export function useFlow(project: string) {
-  const role = useRole();
+  const role = useRole() ?? "dev"; // the flow shown / saved / applied; no role yet: Dev, as on the server
   const q = useQuery({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 5 * 60_000, enabled: !!project });
   const wf = q.data;
   return (from: string | null): string[] | null => (wf?.on ? wf.edges.filter(([s]) => s === from).map(([, t]) => t) : null);
@@ -82,7 +80,7 @@ export function WorkflowSection() {
   const [project, setProject] = useState(() => getPref("project") || "VA");
   const ps = projects.data;
   const p = !ps?.length || ps.some((x) => x.shortName === project) ? project : ps[0].shortName;
-  const role = useRole();
+  const role = useRole() ?? "dev"; // the flow shown / saved / applied; no role yet: Dev, as on the server
   const q = useQuery({ queryKey: ["yt", "workflow", p, role], queryFn: () => yt.workflow(p) });
   const qc = useQueryClient();
   const at = `${p}:${role}`; // a draft belongs to the project and role it was drawn for
@@ -120,7 +118,7 @@ export function WorkflowSection() {
       <div className="flex flex-wrap items-center gap-2">
         <select aria-label="Project" value={p} onChange={(e) => { setProject(e.target.value); fromYt.reset(); }}
           className="h-8 rounded-[var(--radius-input)] border border-rule bg-cotton px-2 text-sm">
-          {(ps ?? [{ shortName: p, name: p }]).map((x) => <option key={x.shortName} value={x.shortName}>{x.shortName} · {x.name}</option>)}
+          {(ps ?? [{ shortName: p, name: p }]).map((x) => <option key={x.shortName} value={x.shortName}>{x.shortName} ({x.name})</option>)}
         </select>
         <Hint title="Lấy từ YouTrack" text="Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.">
           <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate()}>
@@ -150,8 +148,8 @@ export function WorkflowSection() {
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>Lưu</Button>
         {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>Bỏ nháp</Button>}
-        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">Bản nháp · chưa áp dụng cho ticket, bấm Lưu để áp dụng</span>}
-        <span className="text-xs text-ink-3">Vai trò <b className="text-ink-2">{YT_ROLES.find(([r]) => r === role)?.[1]}</b> · {wf.edges.length} mũi tên · {wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định"}</span>
+        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">Bản nháp: chưa áp dụng cho ticket, bấm Lưu để áp dụng</span>}
+        <span className="flex flex-wrap gap-x-3 text-xs text-ink-3"><span>Vai trò <b className="text-ink-2">{YT_ROLES.find(([r]) => r === role)?.[1]}</b></span><span>{wf.edges.length} mũi tên</span><span>{wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định"}</span></span>
       </div>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
     </div>
@@ -258,7 +256,7 @@ function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: str
               <EyeOff className="size-3.5" aria-hidden />
               <span className="font-medium text-ink-2">Đã ẩn</span>
               <span className="rounded-full bg-paper-3 px-1.5 font-mono text-[11px] leading-[18px]">{hidden.length}</span>
-              <span className="max-sm:hidden">· bấm một state để đưa lại vào sơ đồ</span>
+              <span className="max-sm:hidden">(bấm một state để đưa lại vào sơ đồ)</span>
               {hidden.length > 1 && (
                 <button type="button" onClick={() => onShow(hidden)} className="ml-auto rounded px-1.5 py-0.5 font-medium text-hl-2 hover:bg-hl-wash">Hiện tất cả</button>
               )}

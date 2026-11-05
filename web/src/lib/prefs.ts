@@ -58,7 +58,7 @@ export function applyTheme(pref: ThemePref, save = true) {
   vt.ready.catch(() => {}); // skipped when another transition starts; the swap still runs
 }
 
-/** Each member's look (Cài đặt chung), saved per browser; public/design/look.js applies it before first paint and in every open tab. */
+/** Each member's look (Cài đặt chung), saved per browser; the boot script in app/layout.tsx (window.applyLook) applies it before first paint and in every open tab. */
 export type UiStyle = "simple" | "default" | "vivid";
 export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean };
 /** Preset highlight hues; the slider reaches the rest. */

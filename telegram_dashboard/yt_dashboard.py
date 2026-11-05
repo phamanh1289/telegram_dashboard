@@ -7,7 +7,6 @@ Also `whoami` (check a pasted token) and `create_issue` (a ticket from a tagged 
 """
 
 import asyncio
-import json
 import os
 import re
 import time
@@ -17,10 +16,11 @@ from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import providers
-from .ai import client_gone, data_json, parse_ticket, stream_answer
+from .ai import TICKET_FORMAT, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
@@ -412,15 +412,7 @@ AI_FILTER = (
     "ID / tiêu đề nếu câu có nhắc, còn lại \"\". \"tôi\" = options.me; \"sprint này\" = "
     "options.current_sprint."
 )
-AI_DRAFT = (
-    "Biến ghi chú thô trong <ask> thành MỘT ticket YouTrack. Trả về DUY NHẤT một JSON object (không "
-    'prose, không code fence): {"summary","type","priority","description"}. summary: một dòng ngắn '
-    "nêu vấn đề / yêu cầu. type / priority: đúng một giá trị trong <fields>, không chắc thì \"\". "
-    "description: Markdown, giữ mọi chi tiết và link, không bịa; phần thiếu ghi [cần bổ sung]. Bug: "
-    "**Mô tả**, **Bước tái hiện** (đánh số), **Kết quả mong đợi**, **Kết quả thực tế**, **Môi "
-    "trường**. Feature / task: **Mục tiêu**, **Phạm vi**, **Tiêu chí nghiệm thu** (mỗi dòng "
-    "'- [ ] ...'), **Câu hỏi còn mở**."
-)
+AI_DRAFT = f"Biến ghi chú thô trong <ask> thành MỘT ticket YouTrack. {TICKET_FORMAT}"
 AI_ERR = {  # {ai}: the CLI picked in Settings › AI
     "ai_timeout": "{ai} chạy quá lâu, thử lại",
     "ai_cancelled": "Đã hủy",
@@ -441,7 +433,7 @@ def _label(v):
 
 
 def _normalize(i: dict) -> dict:
-    f, sprints, login = {}, [], None
+    f, sprints, login, qc = {}, [], None, None
     for c in i.get("customFields") or []:
         name, val = c.get("name"), c.get("value")
         f[name] = _label(val)
@@ -451,6 +443,8 @@ def _normalize(i: dict) -> dict:
             ]
         if name == "Assignee" and isinstance(val, dict):
             login = val.get("login")
+        if name == "QC" and isinstance(val, dict):
+            qc = val.get("login")
     rep = i.get("reporter") or {}
     return {
         "id": i["idReadable"],
@@ -464,6 +458,7 @@ def _normalize(i: dict) -> dict:
         "assignee": f.get("Assignee"),
         "assigneeLogin": login,
         "qc": f.get("QC"),
+        "qcLogin": qc,
         "reporter": rep.get("fullName") or rep.get("login"),
         "due": f.get("Due Date"),
         "estimate": f.get("Estimation"),
@@ -630,10 +625,14 @@ class YouTrackDashboard:
         for k in [k for k in self._inflight if drop(k)]:
             self._inflight.pop(k)
 
-    async def cached(self, key: str, fn):
+    def fresh(self, key: str):
+        """The cached value of `key` while it is fresh, else None."""
         hit = self._cache.get(key)
-        if hit and time.monotonic() - hit[0] < TTL:
-            return hit[1]
+        return hit[1] if hit and time.monotonic() - hit[0] < TTL else None
+
+    async def cached(self, key: str, fn):
+        if (hit := self.fresh(key)) is not None:
+            return hit
         auth = self._auth
         task = self._inflight.get(key)  # concurrent identical requests share one YouTrack call
         if task is None:
@@ -650,13 +649,9 @@ class YouTrackDashboard:
         self._cache[key] = (time.monotonic(), value)
         return value
 
-    async def issues(
-        self, project: str, scope: str, who: list[str] | None, hist: int | None = None
-    ):
+    async def issues(self, project: str, who: list[str] | None, hist: int | None = None):
         hist = self.hist if hist is None else hist
-        if scope == "active":
-            sc = " and #Unresolved"
-        elif hist:
+        if hist:
             since = (datetime.now(UTC) - timedelta(days=hist)).date().isoformat()
             sc = f" and (#Unresolved or resolved date: {since} .. Today)"
         else:
@@ -689,13 +684,41 @@ class YouTrackDashboard:
             pages = await asyncio.gather(*(page(skip + k * PAGE) for k in range(WAVE)))
             skip += PAGE * WAVE
 
-    async def issues_or_whole(self, project, scope, who):
+    async def issues_or_whole(self, project, who):
         try:
-            return await self.issues(project, scope, who)
+            return await self.issues(project, who)
         except YtError as e:  # query syntax refused: fall back to the whole project
-            if e.status == 400 and scope == "all" and self.hist:
-                return await self.issues(project, scope, who, 0)
+            if e.status == 400 and self.hist:
+                return await self.issues(project, who, 0)
             raise
+
+    async def who_filter(self, rows: list[dict], who: list[str]) -> list[dict]:
+        """`who`'s tickets out of the whole project's, as the YouTrack query would pick them
+        ("me" also covers the tickets the user tests as QC)."""
+        me = (await self.cached("me", lambda: _me(self)))["login"] if "me" in who else None
+        logins = {k for k in who if k not in ("me", "unassigned")} | ({me} if me else set())
+
+        def pick(i: dict) -> bool:
+            return (i["assigneeLogin"] in logins or (me is not None and i.get("qcLogin") == me)
+                    or ("unassigned" in who and not i["assignee"]))  # fmt: skip
+
+        return [i for i in rows if pick(i)]
+
+    async def create_issue(self, summary: str, description: str, project: str, markdown: bool = True):
+        """A ticket from a tagged message: (idReadable, browser URL); ApiError codes for app.py."""
+        try:
+            projects = await self.cached("projects", lambda: _projects(self))
+            pid = next((p["id"] for p in projects if p["shortName"] == project), None)
+            if pid is None:
+                raise ApiError(422, "youtrack_project_not_found")
+            post = {"project": {"id": pid}, "summary": summary, "description": description, "usesMarkdown": markdown}
+            issue_id = (await self.yt("/api/issues", post=post, fields="idReadable"))["idReadable"]
+        except YtError as e:
+            code = "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error"
+            raise ApiError(502, code) from None
+        except (KeyError, TypeError, ValueError):
+            raise ApiError(502, "youtrack_error") from None
+        return issue_id, f"{self.base}/issue/{issue_id}"
 
     async def detail(self, issue_id: str):
         d = await self.yt(
@@ -1037,9 +1060,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         return await svc.cached("projects", lambda: _projects(svc))
 
     @r.get("/issues")
-    async def issues(project: str, scope: str = "all", who: str | None = None):
+    async def issues(project: str, who: str | None = None):
         p = _project(project)
-        scope = "active" if scope == "active" else "all"
         keys = None
         if who is not None:
             keys = sorted(
@@ -1049,10 +1071,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
                 return []
         if svc.mock:
             return []
-        return await svc.cached(
-            f"issues:{p}:{scope}:{','.join(keys) if keys else '*'}",
-            lambda: svc.issues_or_whole(p, scope, keys),
-        )
+        whole = svc.fresh(f"issues:{p}:*")
+        if keys and whole is not None:  # a subset of the whole project: no second YouTrack pull
+            return JSONResponse(await svc.who_filter(whole, keys))
+        # JSONResponse: a big cached list skips FastAPI's encoder (tens of ms on the event loop)
+        return JSONResponse(await svc.cached(f"issues:{p}:{','.join(keys) if keys else '*'}",
+                                             lambda: svc.issues_or_whole(p, keys)))  # fmt: skip
 
     @r.get("/statesince")
     async def statesince(items: str = ""):
@@ -1062,12 +1086,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/transitions")
     async def transitions(project: str, days: int = 14):
         p, n = _project(project), max(1, min(days, 90))
-        return [] if svc.mock else await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n)))
 
     @r.get("/sprints")
     async def sprints(project: str = ""):
         p = re.sub(r"[^\w-]", "", project)
-        return [] if svc.mock else await svc.cached(f"sprints:{p}", lambda: svc.sprints(p))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"sprints:{p}", lambda: svc.sprints(p)))
 
     @r.get("/me")
     async def me():
@@ -1078,7 +1102,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/people")
     async def people(project: str):
         p = _project(project)
-        return [] if svc.mock else await svc.cached(f"people:{p}", lambda: svc.people(p))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"people:{p}", lambda: svc.people(p)))
 
     @r.get("/issue")
     async def issue(id: str = Query()):
@@ -1329,13 +1353,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def ai_filter(body: AiFilter, request: Request):
         opts = data_json(body.options)[:20_000]
         prompt = f"{AI_FILTER}\n<options>{opts}</options>\n<ask>{body.text}</ask>"
-        text = await _ai(svc, request, prompt, notes=False)
-        m = re.search(r"\{.*\}", text, re.S)
-        try:
-            out = json.loads(m.group(0)) if m else None
-        except ValueError:
-            out = None
-        if not isinstance(out, dict):
+        out = json_object(await _ai(svc, request, prompt, notes=False))
+        if out is None:
             raise YtError(502, "AI trả về không đọc được, thử diễn đạt khác")
         return out
 
@@ -1343,7 +1362,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
 
 
 async def _projects(svc: YouTrackDashboard):
-    a = await svc.yt("/api/admin/projects", fields="shortName,name,archived", **{"$top": 200})
+    a = await svc.yt("/api/admin/projects", fields="id,shortName,name,archived", **{"$top": 200})
     return [p for p in a if not p.get("archived")]
 
 
@@ -1386,37 +1405,3 @@ async def whoami(url: str, token: str) -> dict:
         raise ApiError(502, "youtrack_unreachable") from None
     except (KeyError, ValueError, TypeError):
         raise ApiError(502, "youtrack_unreachable") from None  # not a YouTrack answer
-
-
-async def create_issue(
-    settings, summary: str, description: str, project_name: str, markdown: bool = True
-) -> tuple[str, str]:
-    """Returns (idReadable, browser URL)."""
-    base = settings.youtrack_url.rstrip("/")
-    headers = {"Authorization": f"Bearer {settings.youtrack_token}", "Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(base_url=base, headers=headers, timeout=TIMEOUT) as c:
-            r = await c.get(
-                "/api/admin/projects",
-                params={"fields": "id,shortName", "query": project_name},
-            )
-            r.raise_for_status()
-            project = next(
-                (p for p in r.json() if p["shortName"] == project_name), None
-            )
-            if project is None:
-                raise ApiError(422, "youtrack_project_not_found")
-            r = await c.post(
-                "/api/issues",
-                params={"fields": "idReadable"},
-                json={"project": {"id": project["id"]}, "summary": summary,
-                      "description": description, "usesMarkdown": markdown},
-            )  # fmt: skip
-            r.raise_for_status()
-            issue_id = r.json()["idReadable"]
-    except httpx.HTTPStatusError as e:
-        code = "youtrack_unauthorized" if e.response.status_code in (401, 403) else "youtrack_error"
-        raise ApiError(502, code) from None
-    except (httpx.HTTPError, KeyError, ValueError):
-        raise ApiError(502, "youtrack_error") from None
-    return issue_id, f"{base}/issue/{issue_id}"

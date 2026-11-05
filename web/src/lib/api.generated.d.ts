@@ -33,7 +33,8 @@ export interface paths {
         put?: never;
         /**
          * Reopen Task
-         * @description Run the same task again in a fresh session; the old result goes once it runs.
+         * @description Run the same task again in a fresh session on the CLI that ran it (its model/effort picks
+         *     belong to that CLI); the old result goes once it runs.
          */
         post: operations["reopen_task_api_tasks__task_id__reopen_post"];
         delete?: never;
@@ -418,23 +419,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chats/{chat_id}/ai-permission": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Ai Permission */
-        put: operations["ai_permission_api_chats__chat_id__ai_permission_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/ai/draft": {
         parameters: {
             query?: never;
@@ -506,23 +490,6 @@ export interface paths {
          * @description Which features answer the user's question, and how to use them: from the guide the page sends.
          */
         post: operations["ai_guide_api_ai_guide_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/ai/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Ai Summary */
-        post: operations["ai_summary_api_ai_summary_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -758,6 +725,27 @@ export interface paths {
         };
         /** Context */
         get: operations["context_api_chats__chat_id__messages__message_id__context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One Message
+         * @description One message by id (a ref pasted into an AI Agent session): the kept copy, else live from
+         *     Telegram. Consent mode: 403, its text is for the AI.
+         */
+        get: operations["one_message_api_chats__chat_id__messages__message_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1326,30 +1314,6 @@ export interface components {
              */
             hint: string;
         };
-        /** AiPermissionRequest */
-        AiPermissionRequest: {
-            /**
-             * Grants
-             * @default []
-             */
-            grants: components["schemas"]["PermissionGrant"][];
-            /**
-             * Revoke Message Ids
-             * @default []
-             */
-            revoke_message_ids: string[];
-        };
-        /** AiPermissionResponse */
-        AiPermissionResponse: {
-            /** Granted */
-            granted: string[];
-            /** Revoked */
-            revoked: string[];
-            /** Rejected */
-            rejected: {
-                [key: string]: string;
-            };
-        };
         /**
          * AiPicks
          * @description One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent.
@@ -1496,13 +1460,6 @@ export interface components {
              * @default false
              */
             imported: boolean;
-        };
-        /** AiSummaryRequest */
-        AiSummaryRequest: {
-            /** Chat Id */
-            chat_id: string;
-            /** Message Ids */
-            message_ids: string[];
         };
         /** AiTestRequest */
         AiTestRequest: {
@@ -1898,6 +1855,8 @@ export interface components {
         HandledAllResponse: {
             /** Count */
             count: number;
+            /** Message Ids */
+            message_ids: number[];
         };
         /** HandledRequest */
         HandledRequest: {
@@ -2023,25 +1982,6 @@ export interface components {
             chat_title: string;
             message: components["schemas"]["MessageDTO"];
         };
-        /** PermissionGrant */
-        PermissionGrant: {
-            /** Message Id */
-            message_id: string;
-            /** Scope */
-            scope: string;
-            /**
-             * Expires At
-             * Format: date-time
-             */
-            expires_at: string;
-            /**
-             * Participants
-             * @description sender id -> evidence reference of that person's consent
-             */
-            participants: {
-                [key: string]: string;
-            };
-        };
         /** PinRequest */
         PinRequest: {
             /** Pinned */
@@ -2090,9 +2030,9 @@ export interface components {
             id: number;
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "keyword";
+            kind: "keyword" | "sender";
             /** Value */
             value: string;
             /** Label */
@@ -2102,9 +2042,9 @@ export interface components {
         RuleRequest: {
             /**
              * Kind
-             * @constant
+             * @enum {string}
              */
-            kind: "keyword";
+            kind: "keyword" | "sender";
             /** Value */
             value: string;
             /**
@@ -3141,41 +3081,6 @@ export interface operations {
             };
         };
     };
-    ai_permission_api_chats__chat_id__ai_permission_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AiPermissionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiPermissionResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     ai_draft_api_ai_draft_post: {
         parameters: {
             query?: never;
@@ -3297,39 +3202,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    ai_summary_api_ai_summary_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AiSummaryRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiResult"];
                 };
             };
             /** @description Validation Error */
@@ -3796,6 +3668,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessageDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    one_message_api_chats__chat_id__messages__message_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDTO"];
                 };
             };
             /** @description Validation Error */

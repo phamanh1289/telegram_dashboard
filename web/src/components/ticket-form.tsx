@@ -22,6 +22,12 @@ import { yt } from "@/lib/yt";
 export type TicketDraft = { summary: string; description: string; type?: string; priority?: string };
 export type TicketMeta = { type: string; priority: string; assignee: string }; // "": leave unset
 export type TicketValue = TicketMeta & { project: string; summary: string; description: string; markdown: boolean };
+
+/** The one create call (YouTrack tab and Telegram composer); `from`: the Telegram message it came from (photo attached). */
+export const createTicket = (v: TicketValue, from?: { chat_id: string; message_id: string }) =>
+  api<YouTrackIssue>("/youtrack/issues", { method: "POST", json: {
+    summary: v.summary, description: v.description, markdown: v.markdown, project: v.project || null,
+    type: v.type || null, priority: v.priority || null, assignee: v.assignee || null, ...from } });
 type Mode = "manual" | "ai";
 type Format = "md" | "text";
 

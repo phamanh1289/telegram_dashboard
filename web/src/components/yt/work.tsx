@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Send, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import { Textarea } from "@/components/ui/textarea";
 import { api, type Project } from "@/lib/api";
 import { toast } from "@/lib/inbox";
@@ -116,7 +117,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
                 <b className="font-mono text-xs">{r.id}</b><span className="truncate text-ink-2">{r.summary}</span>{r.state && <StatePill state={r.state} />}
               </button>
               {ids.length > 1 && <Button type="button" size="icon-xs" variant="ghost" disabled={busy} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={() => change(ids.filter((x) => x !== r.id))} aria-label={`Bỏ ${r.id}`} title={`Bỏ ${r.id}`}><X /></Button>}
+                onClick={() => change(ids.filter((x) => x !== r.id))} aria-label={`Bỏ ${r.id}`}><X /></Button>}
             </div>
           ))}
         </blockquote>}
@@ -124,7 +125,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
           <input list="work-add-ids" value={add} onChange={(e) => setAdd(e.target.value)} maxLength={40} aria-label="Thêm ticket theo ID" placeholder="Thêm ticket: ABC-123"
             className="h-7 w-44 rounded-md border border-rule bg-cotton px-2 font-mono text-xs" />
           <datalist id="work-add-ids">{y.rows.filter((i) => !ids.includes(i.id)).slice(0, 500).map((i) => <option key={i.id} value={i.id}>{i.summary}</option>)}</datalist>
-          <Button type="submit" size="icon-xs" variant="ghost" disabled={!add.trim() || busy || ids.length >= AI_MAX} aria-label="Thêm ticket" title="Thêm ticket"><Plus /></Button>
+          <Button type="submit" size="icon-xs" variant="ghost" disabled={!add.trim() || busy || ids.length >= AI_MAX} aria-label="Thêm ticket"><Plus /></Button>
         </form>
       </div>
 
@@ -144,18 +145,18 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
           {chips.map((n) => {
             const b = builtin(n);
             return (
-              <button key={n} type="button" disabled={busy} title={b?.hint ?? lib.prompts.find((p) => p.name === n)?.text} onClick={() => pick(n)}
+              <Hint key={n} side="bottom" title={n} text={(b?.hint ?? lib.prompts.find((p) => p.name === n)?.text ?? "").slice(0, 240)}><button type="button" disabled={busy} onClick={() => pick(n)}
                 className="inline-flex h-7 max-w-52 items-center gap-1.5 rounded-full bg-paper-2 px-2.5 text-xs font-medium text-ink-2 ring-1 ring-rule transition-colors duration-(--dur-micro) hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/40 disabled:pointer-events-none disabled:opacity-50">
                 {b ? <Sparkles className="size-3.5 shrink-0 opacity-70" /> : <MessageSquareText className="size-3.5 shrink-0 opacity-70" />}<span className="truncate">{n}</span>
-              </button>
+              </button></Hint>
             );
           })}
-          <button type="button" onClick={() => setSaved(true)} title="Mở kho prompt: chạy, ghim, thêm, sửa, xóa"
+          <Hint side="bottom" text="Mở kho prompt: chạy, ghim, thêm, sửa, xóa"><button type="button" onClick={() => setSaved(true)}
             className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium border border-dashed border-rule-2 text-ink-3 transition-colors duration-(--dur-micro) hover:border-ink-3 hover:text-ink">
             <LibraryBig className="size-3.5" />{chips.length ? "Kho prompt" : "Kho prompt: chọn hoặc ghim prompt"}
-          </button>
-          {noted && <span className="ml-auto rounded-full bg-hl-wash px-2 text-xs leading-5 font-medium text-hl-2" title={notes.data![y.mode]}>Có instructions {({ dev: "Dev", qa: "QC", po: "PO" })[y.mode]}</span>}
-          {chatting && <Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel} title="Bắt đầu cuộc trò chuyện mới với các ticket này"><RotateCcw /> Cuộc mới</Button>}
+          </button></Hint>
+          {noted && <Hint side="bottom" title="Instructions của team" text={notes.data![y.mode].slice(0, 300)}><span className="ml-auto rounded-full bg-hl-wash px-2 text-xs leading-5 font-medium text-hl-2">Có instructions {({ dev: "Dev", qa: "QC", po: "PO" })[y.mode]}</span></Hint>}
+          {chatting && <Hint side="bottom" text="Bắt đầu cuộc trò chuyện mới với các ticket này"><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> Cuộc mới</Button></Hint>}
         </div>
         <Textarea rows={2} maxLength={2000} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Yêu cầu cho AI về các ticket đã chọn" autoFocus
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}

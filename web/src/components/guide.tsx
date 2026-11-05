@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { GuideBulb, Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { apiStream, errorText } from "@/lib/api";
+import { fold } from "@/lib/inbox";
 import GUIDE from "@/lib/guide.json";
 import { cn } from "@/lib/utils";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
@@ -29,8 +30,6 @@ const TAB: Record<Tab, { label: string; Icon: typeof Send; tone: string }> = {
   settings: { label: "Cài đặt", Icon: Settings, tone: "bg-paper-3 text-ink-2" },
 };
 
-/** Lowercase, no Vietnamese accents: "Tóm tắt" and "tom tat" match. */
-export const fold = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "d").toLowerCase();
 
 /** A step with its quoted UI labels drawn as little keys. */
 export function StepText({ text }: { text: string }) {
@@ -144,8 +143,8 @@ function Guide({ module, onTour }: { module: Module; onTour: (f: Feature) => voi
         items={[{ value: "all", label: "Tất cả" }, { value: "telegram", label: "Telegram" }, { value: "youtrack", label: "YouTrack" }, { value: "settings", label: "Cài đặt" }]} />
       <div className="-mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-1">
         {ai && <AiAnswer ai={ai} onClose={() => { abort.current?.abort(); setAi(null); }} onOpen={(id) => { setTab("all"); setQ(""); setOpen(id); }} onTour={onTour} />}
-        <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold tracking-wide text-ink-3 uppercase">
-          <BookOpen className="size-3.5" aria-hidden />{dq.trim() ? "Tính năng phù hợp" : "Mọi tính năng"} · {hits.length}<span className="h-px flex-1 bg-rule" />
+        <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+          <BookOpen className="size-3.5 text-ink-3" aria-hidden />{dq.trim() ? "Tính năng phù hợp" : "Mọi tính năng"} <span className="font-mono font-normal text-ink-3 tabular-nums">{hits.length}</span><span className="h-px flex-1 bg-rule" />
         </h3>
         {hits.length === 0 ? (
           <p className="py-6 text-center text-sm text-ink-3">Không tìm thấy tính năng khớp. Bấm <b>Hỏi AI</b> để hỏi bằng câu tự nhiên.</p>

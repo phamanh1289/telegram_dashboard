@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, type Message, type PendingItem, type Task } from "@/lib/api";
 import { readOverdueHours } from "@/lib/prefs";
 
@@ -40,10 +40,16 @@ export const clockLabel = (date: string) => {
   return `${p.hour}:${p.minute}`;
 };
 
-/** Lowercase without accents ("Luận" -> "luan") for forgiving name search. */
-export function fold(s: string) {
-  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/đ/gi, "d").toLowerCase();
-}
+/** Lowercase without accents ("Luận" -> "luan") for forgiving search; anything else becomes its string (null: ""). */
+export const fold = (s: unknown) => String(s ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/đ/gi, "d").toLowerCase();
+
+/** Local calendar day "YYYY-MM-DD" (Swedish locale = ISO order). */
+export const ymd = (t: number | Date = Date.now()) => new Date(t).toLocaleDateString("sv");
+/** Short day "2/11" from a time or a "YYYY-MM-DD" day. */
+export const dm = (d: number | string) => {
+  const [, m, day] = (typeof d === "string" ? d : ymd(d)).split("-");
+  return `${+day}/${+m}`;
+};
 
 /** Message text plus the URLs hidden behind its words, so an agent can open them. */
 export function textWithLinks({ text, links = [] }: Message) {
@@ -78,6 +84,12 @@ export function useNow() {
 /** Minutes in the largest whole unit: [12, "phút"], [3, "giờ"], [2, "ngày"]. */
 export const byUnit = (mins: number): [number, string] =>
   mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
+
+/** "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước" (`t`: ms or ISO). */
+export function ago(t: number | string, now = Date.now()) {
+  const mins = Math.max(0, Math.floor((now - new Date(t).getTime()) / 60_000));
+  return mins < 1 ? "vừa xong" : `${byUnit(mins).join(" ")} trước`;
+}
 
 export function waitLabel(date: string, now: number) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
@@ -116,7 +128,7 @@ export const scrollToRow = (key: string) =>
 /** How an AI Agent task runs; "terminal" only on old tasks (shown, no longer started). */
 export const TASK_MODES: Record<string, string> = { plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal (cũ)" };
 
-export const markHandled = (m: Message, handled: boolean, react = true) =>
+export const markHandled = (m: Pick<Message, "chat_id" | "message_id">, handled: boolean, react = true) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/handled`, {
     method: "PUT",
     json: { handled, react },
@@ -125,6 +137,10 @@ export const markHandled = (m: Message, handled: boolean, react = true) =>
 export type ToastMsg = { text: string; undo?: () => unknown; action?: { label: string; run: () => unknown } };
 /** Show a toast (rendered by the inbox shell); `undo` adds a "Hoàn tác" button and the z shortcut. */
 export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("toast", { detail: t }));
+/** Copy and say so; a refused clipboard (no focus, permissions) says that instead of a false "Đã copy". */
+export async function copyText(text: string, done = "Đã copy") {
+  try { await navigator.clipboard.writeText(text); toast({ text: done }); } catch { toast({ text: "Không copy được, thử lại" }); }
+}
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
 
@@ -156,56 +172,106 @@ export async function snooze(m: Message, until: Date | null) {
   toast(until ? { text: `Nhắc lại lúc ${timeLabel(until.toISOString())}`, undo: () => put(null) } : { text: "Đã bỏ hoãn" });
 }
 
-/** Every task handed to the AI. Polls while some task has no result yet. */
+/** The task list query, without polling: rows read it through `select` (only the inbox shell and AI Agent poll). */
+export const taskListQuery = {
+  queryKey: ["tasks"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Task[]>("/tasks", { signal }),
+};
+
+/** Every task handed to the AI. Polls while some task has no result yet (one poller: the inbox shell / AI Agent page). */
 export function useTaskList() {
   return useQuery({
-    queryKey: ["tasks"],
-    queryFn: ({ signal }) => api<Task[]>("/tasks", { signal }),
+    ...taskListQuery,
     refetchInterval: (query) => (query.state.data?.some((t) => t.running) ? 10_000 : false),
   });
 }
 
-/** Tasks created from tags, keyed "chat:message". */
-export function useTasks() {
-  const q = useTaskList();
-  const byMessage = new Map<string, Task[]>();
-  for (const t of q.data ?? []) {
-    if (!t.chat_id || !t.message_id) continue;
-    const k = msgKey(t);
-    byMessage.set(k, [...(byMessage.get(k) ?? []), t]);
-  }
-  return byMessage;
+/** Short ID of an AI Agent session ("AI-e03a28"): the random tail of its id, shown and searched. */
+export const sessionId = (t: { id: string }) => `AI-${t.id.slice(-6)}`;
+
+/** Search the sessions: by ID (with or without "AI-"), title, tagged text, request or group. */
+export function sessionMatches(t: Task, q: string) {
+  const s = q.trim().toLowerCase().replace(/^#?ai-/, "");
+  return !s || t.id.includes(s) || [t.title, t.message_text, t.prompt, t.chat_title].some((v) => v?.toLowerCase().includes(s));
 }
 
-/** j/k move, r reply, x done/reopen, a focus the AI prompt. Ignored while typing. Returns the focused row's `msgKey`. */
+/** Tasks created from tags, keyed "chat:message". One Map per task list, so memoised rows keep their props. */
+export function useTasks() {
+  const data = useQuery(taskListQuery).data;
+  return useMemo(() => {
+    const byMessage = new Map<string, Task[]>();
+    for (const t of data ?? []) {
+      if (!t.chat_id || !t.message_id) continue;
+      const k = msgKey(t);
+      const list = byMessage.get(k);
+      if (list) list.push(t);
+      else byMessage.set(k, [t]);
+    }
+    return byMessage;
+  }, [data]);
+}
+
+/** Open a message in Telegram: the app for a message link, Telegram Web for a basic group (no message links there). */
+export function openInTelegram(m: Message) {
+  const l = telegramLink(m);
+  if (l.exact) location.href = l.app;
+  else window.open(l.web, "_blank", "noreferrer");
+}
+
+// "g" then a letter jumps to a page (the inbox shell handles it); list keys leave that letter alone.
+let gAt = 0;
+export const goKey = {
+  arm: () => { gAt = Date.now(); },
+  armed: () => Date.now() - gAt < 1500,
+  take: () => { const on = Date.now() - gAt < 1500; gAt = 0; return on; },
+};
+
+/** Keys outside text fields act on the page, not on a focused control. */
+export const typing = (e: KeyboardEvent) =>
+  e.metaKey || e.ctrlKey || e.altKey || !!(e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable], [role=dialog]");
+
+/**
+ * j/k move, Enter or r reply, o open in Telegram, x done/reopen, Shift+x done without a reaction, s snooze 1 hour,
+ * p pin / unpin, a focus the AI prompt. Ignored while typing. `actions`: false on live (unstored) rows, which only move
+ * and open. Returns the focused row's `msgKey`.
+ */
 export function useListShortcuts(
   items: Message[],
   onReply: (m: Message) => void,
+  actions = true,
 ) {
   const [focused, setFocused] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
+      if (typing(e) || goKey.armed()) return;
       // A reply open in the detail view covers the list: only "a" (AI prompt) still applies.
       if (e.key !== "a" && document.querySelector("form[aria-label='Soạn trả lời']")) return;
+      // Enter on a focused button or link is that control's own click.
+      if (e.key === "Enter" && (e.target as HTMLElement | null)?.closest?.("button, a, [role=menuitem]")) return;
       const actionable = items.filter((m) => !m.deleted);
       const i = actionable.findIndex((m) => msgKey(m) === focused);
       const cur = actionable[i];
-      if (e.key === "j" || e.key === "k") {
-        const next = actionable[e.key === "j" ? Math.min(actionable.length - 1, i + 1) : Math.max(0, i < 0 ? actionable.length - 1 : i - 1)];
+      const tag = actions && cur && !cur.outgoing ? cur : null; // tag actions: stored, incoming
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; // Caps Lock: same keys
+      if (k === "j" || k === "k") {
+        const next = actionable[k === "j" ? Math.min(actionable.length - 1, i + 1) : Math.max(0, i < 0 ? actionable.length - 1 : i - 1)];
         if (next) {
           setFocused(msgKey(next));
           scrollToRow(msgKey(next));
         }
-      } else if (e.key === "r" && cur) onReply(cur);
-      else if (e.key === "x" && cur && !cur.outgoing) setHandled([cur], !cur.handled).catch(() => {}); // the toast already reported it
-      else if (e.key === "a") (document.getElementById("ai-prompt") as HTMLTextAreaElement | null)?.focus();
+      } else if ((k === "r" || k === "Enter") && cur && actions) onReply(cur);
+      else if (k === "o" && cur) openInTelegram(cur);
+      else if (k === "x" && tag && !e.shiftKey) setHandled([tag], !tag.handled).catch(() => {}); // the toast already reported it
+      else if (k === "x" && tag && !tag.handled) setHandled([tag], true, false).catch(() => {}); // Shift+x: no reaction
+      else if (k === "s" && tag && !tag.handled) snooze(tag, new Date(Date.now() + 3600_000)).catch(() => toast({ text: "Không hoãn được, thử lại" }));
+      else if (k === "p" && tag) {
+        pin(tag, !tag.pinned).then(() => toast({ text: tag.pinned ? "Đã bỏ ghim" : "Đã ghim" }), () => toast({ text: "Không ghim được, thử lại" }));
+      } else if (k === "a") (document.getElementById("ai-prompt") as HTMLTextAreaElement | null)?.focus();
       else return;
       e.preventDefault();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [items, focused, onReply]);
+  }, [items, focused, onReply, actions]);
   return focused;
 }

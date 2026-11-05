@@ -1,8 +1,8 @@
 "use client";
 
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
+import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Status, type Task } from "@/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type Status, type Task } from "@/lib/api";
 import { msgKey } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
@@ -43,6 +43,33 @@ function notifyNew(items: ChangeItem[]) {
   } catch {} // no Notification constructor here (Android Chrome, webviews): nothing to show
 }
 
+type Pages = InfiniteData<MessagesPage, string | null>;
+/** What decides which views a row is in: a change to any of these can move it, so those views refetch. */
+const viewState = (m: Message) => `${m.handled}|${m.deleted}|${m.pinned}|${m.snoozed_until ?? ""}|${m.outgoing}`;
+
+/**
+ * An edit that leaves the row in every view it is in (text, reactions…): put the server's copy into the cached lists
+ * instead of refetching every loaded page. False when it may move between views, or no cached copy says what it was.
+ */
+function patchEdit(qc: QueryClient, m: Message) {
+  const k = msgKey(m), want = viewState(m);
+  let seen = false, same = true;
+  const check = (x: Message) => {
+    if (msgKey(x) !== k) return;
+    seen = true;
+    if (viewState(x) !== want) same = false;
+  };
+  for (const [, d] of qc.getQueriesData<Pages>({ queryKey: ["messages", m.chat_id] })) d?.pages.forEach((p) => p.items.forEach(check));
+  for (const [, d] of qc.getQueriesData<PendingItem[]>({ queryKey: ["pending"] })) d?.forEach((p) => check(p.message));
+  if (!seen || !same) return false;
+  const swap = (x: Message) => (msgKey(x) === k ? m : x);
+  qc.setQueriesData<Pages>({ queryKey: ["messages", m.chat_id] }, (d) => d && { ...d, pages: d.pages.map((p) => ({ ...p, items: p.items.map(swap) })) });
+  qc.setQueriesData<PendingItem[]>({ queryKey: ["pending"] }, (d) => d?.map((p) => ({ ...p, message: swap(p.message) })));
+  // Search results match on text: those still refetch.
+  void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "messages" && q.queryKey[1] === m.chat_id && !!q.queryKey[2] });
+  return true;
+}
+
 /** Apply one /changes page to the caches; each query is invalidated once per page, not once per item. */
 export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   if (!items.length) return;
@@ -53,11 +80,12 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
       else void qc.resetQueries({ queryKey: ["messages", it.chat_id] });
       continue;
     }
+    if (it.kind === "edit" && it.message && patchEdit(qc, it.message)) continue;
     touched.add(it.chat_id);
   }
   // Every stored view filters (chưa / đã xử lý, search, dates): a change can add or drop rows, so refetch.
   for (const chat of touched) void qc.invalidateQueries({ queryKey: ["messages", chat] });
-  void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
+  if (touched.size || items.some((it) => it.message_id === null)) void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
   if (touched.size) void qc.invalidateQueries({ queryKey: ["pending"] });
   // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
   const tasks = new Set((qc.getQueryData<Task[]>(["tasks"]) ?? []).map(msgKey));

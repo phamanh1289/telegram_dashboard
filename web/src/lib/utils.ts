@@ -1,5 +1,8 @@
 export { cn } from "cn"
 
+/** The shortcut modifier as the keyboard labels it: ⌘ on Apple, Ctrl elsewhere. Client-only UI (it is "Ctrl" while prerendering). */
+export const MOD = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+
 /** --dur-short in ms ("220ms", or ".22s" once minified); the design look changes it. */
 export function durShort() {
   const d = getComputedStyle(document.documentElement).getPropertyValue("--dur-short").trim();

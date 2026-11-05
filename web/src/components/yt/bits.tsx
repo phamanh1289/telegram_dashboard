@@ -1,14 +1,16 @@
 "use client";
 
+import { Popover as BasePopover } from "@base-ui/react/popover";
 import { Check, ChevronDown, Copy, MessageSquareText, SendHorizontal, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { createContext, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
-import { Pill } from "@/components/ui/segmented";
+import { Hint } from "@/components/ui/hint";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, copyText, fileUrl, hue, IMG, initials, norm, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, yt } from "@/lib/yt";
+import { aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, yt } from "@/lib/yt";
+import { copyText, fold } from "@/lib/inbox";
 import { useYt } from "./state";
 
 // Small pieces every YouTrack view uses.
@@ -39,7 +41,7 @@ export function StatePill({ state }: { state: string | null }) {
 
 /** A [module] tag from the title: a fixed hue per name, so the same module reads the same everywhere. */
 const TAG_HUES = [185, 225, 255, 285, 315, 345]; // teal → magenta: six apart, none of them a state's red / amber / green
-const tagHue = (n: string) => TAG_HUES[[...norm(n)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TAG_HUES.length];
+const tagHue = (n: string) => TAG_HUES[[...fold(n)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TAG_HUES.length];
 export function Tag({ name }: { name: string }) {
   return <span className="rounded-[4px] px-1.5 text-xs leading-[18px] font-medium text-ink" style={{ background: `oklch(var(--av-l) calc(var(--av-c) * 2) ${tagHue(name)})` }}>{name}</span>;
 }
@@ -65,47 +67,27 @@ export function TypeTag({ type }: { type: string | null }) {
   );
 }
 
-/** Toggle chip with a colour swatch and a count, as in the State / Priority / Type rows. */
-export function Chip({ on, onClick, swatch, children, count, title }: { on: boolean; onClick: () => void; swatch?: string; children: React.ReactNode; count?: number; title?: string }) {
-  return (
-    <button type="button" aria-pressed={on} onClick={onClick} title={title}
-      className={cn("inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs whitespace-nowrap transition-colors duration-(--dur-micro)",
-        on ? "border-hl bg-hl text-hl-ink" : "border-rule bg-cotton text-ink-2 hover:border-rule-2 hover:text-ink")}>
-      {swatch && <i className="size-2 shrink-0 rounded-[2px]" style={{ background: swatch }} />}
-      {children}
-      {count != null && <b className={cn("font-mono font-medium tabular-nums", on ? "text-hl-ink/80" : "text-ink-3")}>{count.toLocaleString("vi-VN")}</b>}
-    </button>
-  );
-}
-
-/** Button + floating panel; closes on outside click and Esc. */
+/** Button + floating panel (Base UI: closes on outside click and Esc, focus goes back to the button). `title`: a Hint on the button. */
 export function Popover({ label, children, className, align = "left", title, chevron = true }: { label: React.ReactNode; children: (close: () => void) => React.ReactNode; className?: string; align?: "left" | "right"; title?: string; chevron?: boolean }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const down = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
-    document.addEventListener("pointerdown", down);
-    document.addEventListener("keydown", key, true);
-    return () => { document.removeEventListener("pointerdown", down); document.removeEventListener("keydown", key, true); };
-  }, [open]);
+  const trigger = (
+    <BasePopover.Trigger render={<Button size="sm" variant="outline" className={cn("max-w-56 justify-between", className)} />}>
+      <span className="truncate">{label}</span>{chevron && <ChevronDown className="text-ink-3" />}
+    </BasePopover.Trigger>
+  );
   return (
-    <div ref={ref} className="relative">
-      <Button size="sm" variant="outline" aria-expanded={open} title={title} onClick={() => setOpen(!open)} className={cn("max-w-56 justify-between", className)}>
-        <span className="truncate">{label}</span>{chevron && <ChevronDown className="text-ink-3" />}
-      </Button>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.13 }}
-            className={cn("absolute top-full z-40 mt-1 grid max-h-96 w-72 overflow-y-auto rounded-md bg-cotton shadow-pop", align === "right" ? "right-0" : "left-0")}>
-            {children(() => setOpen(false))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+    <BasePopover.Root open={open} onOpenChange={setOpen}>
+      {title ? <Hint side="bottom" text={title}>{trigger}</Hint> : trigger}
+      <BasePopover.Portal>
+        <BasePopover.Positioner sideOffset={4} align={align === "right" ? "end" : "start"} className="z-40 outline-none">
+          <BasePopover.Popup className={POP}>{children(() => setOpen(false))}</BasePopover.Popup>
+        </BasePopover.Positioner>
+      </BasePopover.Portal>
+    </BasePopover.Root>
   );
 }
+/** The floating panel's look, shared with yt/app TeamMenu. */
+export const POP = "grid max-h-96 w-72 max-w-[calc(100vw-2rem)] origin-(--transform-origin) overflow-y-auto rounded-md bg-cotton shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
 
 export type PickOpt = { v: string; node: React.ReactNode; text?: string; hint?: string };
 /**
@@ -117,7 +99,7 @@ export function Picker({ label, title, value, options, onPick, search, foot, dis
 }) {
   const id = useId(), btn = useRef<HTMLButtonElement>(null), pop = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [q, setQ] = useState("");
-  const shown = q ? options.filter((o) => norm(`${o.text ?? o.v} ${o.v}`).includes(norm(q))) : options;
+  const shown = q ? options.filter((o) => fold(`${o.text ?? o.v} ${o.v}`).includes(fold(q))) : options;
   const hide = () => { pop.current?.hidePopover(); btn.current?.focus(); };
   const pick = (v: string) => { hide(); if (v !== value) onPick(v); };
   useLayoutEffect(() => { // place it under the trigger (above when there is no room), then focus the search or the current value
@@ -152,7 +134,7 @@ export function Picker({ label, title, value, options, onPick, search, foot, dis
         {open && (
           <div className="flex max-h-80 flex-col">
             {search && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={search} aria-label={search}
-              className="m-2 mb-1 h-8 shrink-0 rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />}
+              className="m-2 mb-1 h-8 shrink-0 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />}
             <div role="listbox" aria-label={title} className="grid min-h-0 overflow-y-auto p-1">
               {shown.map((o) => (
                 <button key={o.v} type="button" role="option" aria-selected={o.v === value} onClick={() => pick(o.v)}
@@ -184,10 +166,10 @@ export function MultiSelect({ label, all, options, value, onChange, render = (v)
       {() => (
         <>
           {search && <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm ${label.toLowerCase()}…`} aria-label={`Tìm ${label.toLowerCase()}`}
-            className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />}
+            className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />}
           <div className="grid overflow-y-auto p-1">
             <button type="button" onClick={() => onChange([])} className="rounded px-2 py-1.5 text-left text-xs text-ink-3 hover:bg-paper-2 hover:text-ink">Bỏ chọn tất cả</button>
-            {options.filter((o) => !q || norm(o).includes(norm(q))).map((o) => {
+            {options.filter((o) => !q || fold(o).includes(fold(q))).map((o) => {
               const on = value.includes(o);
               return (
                 <button key={o} type="button" role="menuitemcheckbox" aria-checked={on} onClick={() => onChange(on ? value.filter((v) => v !== o) : [...value, o])}
@@ -341,7 +323,7 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, ask = true }:
         <div>
           <Markdown text={s.text} onTicket={open} />
           <div className="mt-2 flex justify-end gap-1">
-            {onUse && <Button size="xs" variant="ghost" title="Đặt vào ô bình luận để sửa rồi gửi lên YouTrack" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> Đưa vào bình luận</Button>}
+            {onUse && <Hint side="bottom" text="Đặt vào ô bình luận để sửa rồi gửi lên YouTrack"><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> Đưa vào bình luận</Button></Hint>}
             <Button size="xs" variant="ghost" onClick={() => void copyText(s.text)}><Copy /> Copy</Button>
             <Button size="icon-xs" variant="ghost" aria-label="Đóng" onClick={close}><X /></Button>
           </div>
@@ -375,7 +357,7 @@ export const AiBot = ({ className }: { className?: string }) => (
 export function AiAsk({ label, onClick, hint = "Hỏi mình về số liệu này nhé!", big }: { label: string; onClick: () => void; hint?: string; big?: boolean }) {
   const [peek, setPeek] = useState(false);
   return (
-    <button type="button" onClick={onClick} aria-label={label} title={label}
+    <button type="button" onClick={onClick} aria-label={label}
       onPointerEnter={() => setPeek(true)} onPointerLeave={() => setPeek(false)} onFocus={() => setPeek(true)} onBlur={() => setPeek(false)}
       className={cn("ai-chip yt-noprint relative inline-flex shrink-0 items-center gap-1 rounded-full font-semibold", big ? "h-7 px-3 text-xs" : "h-6 px-2 text-[11px]")}>
       <AnimatePresence>
@@ -417,23 +399,6 @@ export function Card({ title, meta, children, className, onMeta }: { title: Reac
 export const Label = ({ children, className }: { children: React.ReactNode; className?: string }) => (
   <h4 className={cn("flex items-center gap-1.5 text-xs font-semibold text-ink-3", className)}>{children}</h4>
 );
-
-/** Segmented control (2–5 options): a groove with the chosen stop raised. */
-export function Seg<T extends string>({ value, options, onChange, label, className }: { value: T; options: readonly (readonly [T, React.ReactNode, string?])[]; onChange: (v: T) => void; label: string; className?: string }) {
-  const id = useId();
-  return (
-    <div role="radiogroup" aria-label={label} className={cn("inline-flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove", className)}>
-      {options.map(([v, l, title]) => (
-        <button key={v} type="button" role="radio" aria-checked={value === v} title={title} onClick={() => onChange(v)}
-          className={cn("relative inline-flex h-7 items-center justify-center gap-1.5 rounded-[var(--radius-input)] px-2.5 text-xs font-medium whitespace-nowrap transition-colors duration-(--dur-micro) [&_svg]:size-3.5",
-            value === v ? "text-ink" : "text-ink-3 hover:text-ink")}>
-          {value === v && <Pill id={id} className="inset-0 rounded-[var(--radius-input)] bg-cotton shadow-edge" />}
-          <span className="relative inline-flex items-center gap-1.5">{l}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /** A button that opens a short list of actions (AI ▾, Hiển thị ▾). */
 export function Menu({ label, items, align = "left", title, className }: {

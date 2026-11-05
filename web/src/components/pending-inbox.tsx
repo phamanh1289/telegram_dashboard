@@ -5,7 +5,6 @@ import { ArrowLeft, CheckCheck, Clock, Flame, type LucideIcon, Pin, RotateCw } f
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
-import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Message, PendingItem } from "@/lib/api";
 import { fold, msgKey, pendingQuery, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
@@ -36,6 +35,7 @@ export function PendingInbox({
   pinned = false,
   range,
   search,
+  onClearSearch,
   replyTo,
   onReply,
   onBack,
@@ -46,6 +46,7 @@ export function PendingInbox({
   pinned?: boolean;
   range: string;
   search: string;
+  onClearSearch: () => void;
   replyTo: string | null; // msgKey of the message being answered
   onReply: (m: Message) => void;
   onBack: () => void;
@@ -97,22 +98,25 @@ export function PendingInbox({
               <>
                 <span className="font-mono text-base font-semibold text-ink tabular-nums">{items.length}</span>
                 {pinned ? " tin đã ghim" : " tin đang chờ bạn"}
-                {late > 0 && <span className="font-medium text-signal-2"> · <span className="font-mono tabular-nums">{late}</span> quá hạn</span>}
+                {late > 0 && <span className="ml-2 font-medium text-signal-2">(<span className="font-mono tabular-nums">{late}</span> quá hạn)</span>}
               </>
             )}
           </p>
-          <p className="ml-auto hidden shrink-0 items-center gap-1 text-xs text-ink-3 lg:flex">
-            <Kbd>j</Kbd><Kbd>k</Kbd> chọn tin · <Kbd>r</Kbd> trả lời · <Kbd>x</Kbd> xong · bấm vào thẻ để trả lời
+          {/* Many groups: a list, not a segmented bar (DESIGN: segmented is for 2-4 options). */}
+          {groups.length > 1 && (
+            <select aria-label="Lọc theo nhóm" value={group} onChange={(e) => setGroup(e.target.value)}
+              className={cn("h-7 max-w-48 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", group && "border-hl text-hl-2")}>
+              <option value="">Mọi nhóm ({found.length})</option>
+              {groups.map(([id, g]) => <option key={id} value={id}>{g.title} ({g.n})</option>)}
+            </select>
+          )}
+          <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 lg:flex">
+            <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> chọn tin</span>
+            <span className="flex items-center gap-1"><Kbd>Enter</Kbd> trả lời</span>
+            <span className="flex items-center gap-1"><Kbd>x</Kbd> xong</span>
+            <span className="flex items-center gap-1"><Kbd>?</Kbd> mọi phím tắt</span>
           </p>
         </div>
-        {groups.length > 1 && (
-          <div className="-mx-1 overflow-x-auto px-1 pb-0.5">
-            <Segmented id="pending-group" label="Lọc theo nhóm" value={group} onChange={setGroup} className="w-fit"
-              items={[["", "Tất cả nhóm", found.length] as const, ...groups.map(([id, g]) => [id, g.title, g.n] as const)].map(([value, title, n]) => ({
-                value, label: <>{title} <span className="font-mono tabular-nums opacity-70">{n}</span></>,
-              }))} />
-          </div>
-        )}
       </div>
 
       <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-paper-2">
@@ -128,7 +132,10 @@ export function PendingInbox({
         {q.isSuccess && items.length === 0 && (
           <div className="grid justify-items-center gap-2 px-6 py-20 text-center text-sm text-ink-2 animate-in fade-in-0 zoom-in-95 duration-(--dur-short)">
             {search.trim() ? (
-              <p>Không có tin nào khớp “{search.trim()}”.</p>
+              <>
+                <p>Không có tin nào khớp “{search.trim()}”.</p>
+                <Button size="sm" variant="outline" onClick={onClearSearch}>Xóa tìm kiếm</Button>
+              </>
             ) : pinned ? (
               <>
                 <span className="mb-1 grid size-14 place-items-center rounded-full bg-paper-3 text-ink-3"><Pin className="size-6" aria-hidden /></span>
@@ -200,16 +207,15 @@ export function RowsSkeleton({ rows = 4 }: { rows?: number }) {
   );
 }
 
-/** Loading cards in the shape of the to-do list: group and sender, two lines of message, the action bar. */
+/** Loading cards in the shape of the to-do list: group and sender, two lines of message. */
 function CardsSkeleton({ rows = 3 }: { rows?: number }) {
   return (
     <ul aria-label="Đang tải…" className="mx-auto grid max-w-4xl gap-2.5 px-3 py-4 md:px-5">
       {Array.from({ length: rows }, (_, i) => (
-        <li key={i} className="grid gap-2.5 rounded-xl border border-rule bg-cotton p-4">
+        <li key={i} className="grid gap-2.5 rounded-[var(--radius-card)] border border-rule bg-cotton p-4">
           <div className="flex gap-2"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-28" /><Skeleton className="h-5 w-16 rounded-full" /></div>
           <Skeleton className="h-3.5 w-full max-w-xl" />
           <Skeleton className="h-3.5 max-w-md" style={{ width: `${70 - i * 10}%` }} />
-          <div className="flex gap-2 border-t border-rule pt-2.5"><Skeleton className="h-7 w-20" /><Skeleton className="h-7 w-16" /><Skeleton className="h-7 w-16" /></div>
         </li>
       ))}
     </ul>

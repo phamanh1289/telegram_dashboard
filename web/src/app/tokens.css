@@ -34,7 +34,7 @@
   --color-rule-2: oklch(63% 0.022 60);   /* control borders (≥ 3:1) */
 
   /* highlight: terracotta by default. selection, current, focus. Each member picks the hue (--hl-h, gradient end --hl-h2) in Cài đặt chung;
-   * /design/look.js sets them inline on <html>. --hl-c scales chroma per style (see "styles" at the end). */
+   * the boot script in app/layout.tsx sets them inline on <html>. --hl-c scales chroma per style (see "styles" at the end). */
   --hl-h: 40; --hl-h2: 40; --hl-c: 1;
   --color-hl: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h));         /* fills, marks, underlines */
   --color-hl-b: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h2));      /* gradient end */

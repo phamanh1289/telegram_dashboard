@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
 import { getPref, put } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { type AiReq, type AiTurn, DAY, norm, when } from "@/lib/yt";
+import { type AiReq, type AiTurn, DAY, when } from "@/lib/yt";
+import { fold } from "@/lib/inbox";
 import { WorkView } from "./work";
 
 // The YouTrack tab's AI history (apart from Telegram's AI Agent tasks), per browser. A small index lists the sessions,
@@ -71,8 +72,8 @@ export function HistoryPage() {
   const [sure, setSure] = useState(false);
   const inTab = useMemo(() => (tab === "all" ? idx : idx.filter((m) => tabOf(m) === tab)), [idx, tab]);
   const shown = useMemo(() => {
-    const k = norm(q.trim());
-    return k ? inTab.filter((m) => norm(`${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
+    const k = fold(q.trim());
+    return k ? inTab.filter((m) => fold(`${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
   }, [inTab, q]);
   const cur = idx.find((m) => m.id === sel) ?? shown[0];
   const s = useMemo(() => (cur ? loadSession(cur.id) : null), [cur?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- a new turn must not reload the open chat
@@ -89,7 +90,7 @@ export function HistoryPage() {
         <label className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${idx.length} phiên…`} aria-label="Tìm phiên AI"
-            className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm outline-none focus:border-hl" />
+            className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm focus:border-hl" />
         </label>
         <Segmented id="yt-history" label="Loại phiên AI" value={tab} onChange={(t) => { setTab(t); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"]] as const).map(([v, l]) => (
           { value: v, label: <>{l} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
@@ -125,7 +126,7 @@ export function HistoryPage() {
         <section className="flex h-[75dvh] min-h-0 flex-col gap-3 lg:sticky lg:top-28 lg:h-[calc(100dvh-8rem)]">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h2 className="mr-auto min-w-0 truncate text-lg font-semibold">{cur.title.replace(/^AI · /, "")}</h2>
-            <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden />{cur.n} lượt · {when(cur.at)}</span>
+            <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{cur.n} lượt</span><span>{when(cur.at)}</span></span>
           </div>
           {s ? <WorkView key={cur.id} title={cur.title} ids={s.ids} resume={s} />
             : <p className="m-auto text-sm text-ink-3">Phiên này không còn trong bộ nhớ trình duyệt. <Button size="xs" variant="ghost" onClick={() => remove([cur.id])}>Xóa khỏi danh sách</Button></p>}

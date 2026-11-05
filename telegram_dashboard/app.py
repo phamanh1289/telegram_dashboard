@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 import re
 import time
@@ -12,10 +13,11 @@ from fastapi import FastAPI, Header, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
+from telethon import errors as tg_errors
 
 from . import providers, updater
 from .agent import AgentRunner
-from .ai import AiService, client_gone, grant_problem, parse_ticket, pick_folder, stream_answer
+from .ai import AiService, client_gone, parse_ticket, pick_folder, stream_answer
 from .auth import LocalGuardMiddleware
 from .claude import (
     claude_account,
@@ -36,13 +38,10 @@ from .models import (
     AiDraftRequest,
     AiGuideRequest,
     AiLoginStarted,
-    AiPermissionRequest,
-    AiPermissionResponse,
     AiPrefs,
     AiProvider,
     AiResult,
     AiRun,
-    AiSummaryRequest,
     AiTestRequest,
     AiTestResult,
     AiTicketDraft,
@@ -87,9 +86,10 @@ from .models import (
     to_dto,
 )
 from .storage import Db, Store, _dt, parse_cursor
-from .tasks import build_router as build_task_router, new_task_id
+from .tasks import build_router as build_task_router
+from .tasks import new_task_id, start_task
 from .telegram import TelegramBridge, Transport
-from .yt_dashboard import YouTrackDashboard, YtError, build_router, create_issue, whoami
+from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 
 log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
@@ -131,15 +131,21 @@ def create_app(
         app.state.ai.me = lambda: bridge.me
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
+        app.state.yt = yt_dashboard  # links.py reads YouTrack articles with its token
         await bridge.start()
         auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
         try:
             yield
         finally:
             auto.cancel()
-            await yt_dashboard.aclose()
-            await app.state.agent.stop_all()
-            await bridge.stop()
+            # Agents and Telegram first; one failing step never skips the others.
+            for step in (app.state.agent.stop_all, bridge.stop, yt_dashboard.aclose):
+                try:
+                    await step()
+                except Exception:
+                    log.warning("shutdown step %s failed", step.__name__, exc_info=True)
+            with contextlib.suppress(asyncio.CancelledError):
+                await auto
 
     yt_dashboard = YouTrackDashboard(settings)
     app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
@@ -152,6 +158,15 @@ def create_app(
         headers = {"Retry-After": str(e.retry_after)} if e.retry_after else None
         body = {"code": e.code, "retry_after": e.retry_after, "detail": e.detail}
         return JSONResponse({"error": body}, status_code=e.status, headers=headers)
+
+    # Live Telegram reads run with no flood sleep: say how long to wait instead of a bare 500.
+    @app.exception_handler(tg_errors.FloodWaitError)
+    async def flood_wait(r: Request, e: tg_errors.FloodWaitError):
+        return await api_error(r, ApiError(429, "flood_wait", retry_after=e.seconds))
+
+    @app.exception_handler(tg_errors.RPCError)
+    async def telegram_error(r: Request, e: tg_errors.RPCError):
+        return await api_error(r, ApiError(502, "telegram_error", detail=type(e).__name__))
 
     @app.exception_handler(YtError)
     async def yt_error(_: Request, e: YtError):
@@ -266,7 +281,7 @@ def create_app(
     ) -> HandledAllResponse:
         s = S(request)
         ids = await s.db.write(s.store.mark_all_handled, chat_id, since, until)
-        return HandledAllResponse(count=len(ids))  # no reactions: a bulk mark would flood Telegram
+        return HandledAllResponse(count=len(ids), message_ids=ids)  # no reactions: would flood Telegram
 
     @app.get("/api/changes")
     async def changes(
@@ -319,50 +334,26 @@ def create_app(
             raise ApiError(404, "not_found")
         return rec
 
-    @app.put("/api/chats/{chat_id}/ai-permission")
-    async def ai_permission(
-        chat_id: str, body: AiPermissionRequest, request: Request
-    ) -> AiPermissionResponse:
-        s = S(request)
-        if not await s.db.read(s.store.is_tracking, chat_id):
-            raise ApiError(409, "not_tracking")
-        now = datetime.now(UTC)
-        granted, rejected = [], {}
-        for g in body.grants:
-            mid = int_or_404(g.message_id, "message_not_found")
-            msg = await s.db.read(s.store.get_message, chat_id, mid)
-            problem = grant_problem(msg, g, now)
-            if problem:
-                rejected[g.message_id] = problem
-                continue
-            await s.db.write(s.store.put_grant, chat_id, mid, g.scope, g.expires_at, g.participants)
-            granted.append(g.message_id)
-        revoke = [int_or_404(i, "message_not_found") for i in body.revoke_message_ids]
-        if revoke:
-            await s.db.write(s.store.revoke_grants, chat_id, revoke)
-        return AiPermissionResponse(
-            granted=granted, revoked=body.revoke_message_ids, rejected=rejected
-        )
-
     async def _draft_extras(request: Request, body: AiDraftRequest):
-        """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
+        """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images).
+        Consent mode: 403 up front, before anything is read."""
         s = S(request)
+        s.ai.require_read()
         nearby, images = None, []
-        if not settings.ai_require_consent:  # extras carry no consent grants
-            ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
-            msgs, _c = await s.db.read(s.store.get_messages_by_ids, body.chat_id, ids)
-            for m in msgs:
-                if m.media_kind != "photo":
-                    continue
-                if photo := await _photo(request, m.chat_id, m.message_id):
-                    images.append(photo)
-                else:
-                    log.warning("draft without photo %s/%s: not available", m.chat_id, m.message_id)
-            if body.with_context and len(ids) == 1 and s.bridge.state == "connected":
-                try:
-                    nearby = await s.bridge.fetch_context(body.chat_id, ids[0])
-                except Exception as e:  # context is a bonus; draft from the tag alone
-                    log.warning("draft without context for %s: %r", body.chat_id, e)
+        ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
+        msgs, _c = await s.db.read(s.store.get_messages_by_ids, body.chat_id, ids)
+        for m in msgs:
+            if m.media_kind != "photo":
+                continue
+            if photo := await _photo(request, m.chat_id, m.message_id):
+                images.append(photo)
+            else:
+                log.warning("draft without photo %s/%s: not available", m.chat_id, m.message_id)
+        if body.with_context and len(ids) == 1 and s.bridge.state == "connected":
+            try:
+                nearby = await s.bridge.fetch_context(body.chat_id, ids[0])
+            except Exception as e:  # context is a bonus; draft from the tag alone
+                log.warning("draft without context for %s: %r", body.chat_id, e)
         return nearby, images
 
     @app.post("/api/ai/draft", responses={200: {
@@ -390,9 +381,8 @@ def create_app(
         prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
                                         body.instruction, body.platform, fetch=fetch)  # fmt: skip
         task_id = new_task_id()
-        session = await s.agent.start(task_id, body.project, prompt, "plan", s.agent.new_session(), False)
-        await s.db.write(s.store.add_task, task_id, body.chat_id, int(body.confirm_id), body.project, prompt,
-                         mode="plan", session_id=session, kind="deep", title=title)  # fmt: skip
+        await start_task(s, task_id, body.chat_id, int(body.confirm_id), body.project, prompt, "plan",
+                         kind="deep", title=title)  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/ticket")
@@ -417,11 +407,6 @@ def create_app(
             return {"text": await S(request).ai.ask(user, system=GUIDE_PROMPT, on_text=on_text, feature="guide")}
 
         return stream_answer(work)
-
-    @app.post("/api/ai/summary")
-    async def ai_summary(body: AiSummaryRequest, request: Request) -> AiResult:
-        client_gone.set(request.is_disconnected)
-        return await S(request).ai.run("summary", body.chat_id, body.message_ids)
 
     # ---- Digest: chat-wide consent, live history, structured summary ------------
     async def _known_chat(s, chat_id: str) -> None:
@@ -499,23 +484,19 @@ def create_app(
         s = S(request)
         live = asyncio.Semaphore(LIVE_READS)
 
-        async def item(chat_id: str) -> BriefingItem:
-            chat = await s.db.read(s.store.get_chat, chat_id)
-            consent = await s.db.read(s.store.get_digest_consent, chat_id) is not None
+        async def item(row: dict) -> BriefingItem:
             latest = None
-            if consent and s.bridge.state == "connected":  # only groups the AI may read
+            if row["consent"] and s.bridge.state == "connected":  # only groups the AI may read
                 try:
                     async with live:
-                        latest = str(await s.bridge.transport.latest_id(chat_id))
+                        latest = str(await s.bridge.transport.latest_id(row["chat_id"]))
                 except Exception as e:  # one unreachable group must not hide the others
-                    log.warning("briefing: latest id of %s unknown: %r", chat_id, e)
-            return BriefingItem(
-                chat_id=chat_id, title=chat["title"], consent=consent, latest_id=latest,
-                saved=_saved(await s.db.read(s.store.get_digest, chat_id)),
-            )  # fmt: skip
+                    log.warning("briefing: latest id of %s unknown: %r", row["chat_id"], e)
+            return BriefingItem(chat_id=row["chat_id"], title=row["title"], consent=row["consent"],
+                                latest_id=latest, saved=_saved(row["digest"]))  # fmt: skip
 
-        ids = await s.db.read(s.store.briefing_chat_ids)
-        return list(await asyncio.gather(*(item(c) for c in ids)))
+        rows = await s.db.read(s.store.briefing_rows)
+        return list(await asyncio.gather(*(item(r) for r in rows)))
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:
@@ -592,6 +573,23 @@ def create_app(
         kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids) if ids else ([], "")
         done = {k.message_id for k in kept if k.handled}
         return [to_dto(m.model_copy(update={"handled": m.message_id in done})) for m in live]
+
+    @app.get("/api/chats/{chat_id}/messages/{message_id}")
+    async def one_message(chat_id: str, message_id: str, request: Request) -> MessageDTO:
+        """One message by id (a ref pasted into an AI Agent session): the kept copy, else live from
+        Telegram. Consent mode: 403, its text is for the AI."""
+        s = S(request)
+        s.ai.require_read()
+        mid = int_or_404(message_id, "message_not_found")
+        if not 0 < mid < 2**31:  # Telegram ids are int32
+            raise ApiError(404, "message_not_found")
+        m = await s.db.read(s.store.get_message, chat_id, mid)
+        if m is None:
+            await _known_chat(s, chat_id)
+            m = next(iter(await s.bridge.fetch_ids(chat_id, [mid])), None)
+        if m is None or m.deleted:
+            raise ApiError(404, "message_not_found")
+        return to_dto(m)
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}/before")
     async def before(
@@ -699,7 +697,8 @@ def create_app(
     async def ai_accounts(fresh: bool = False) -> list[AiAccount]:
         """Codex and Antigravity logins and quotas (Claude has its own /api/claude/account); `fresh`
         reads the quotas now instead of from the last few minutes."""
-        return [AiAccount(**a) for a in await asyncio.gather(*(providers.account(settings, p, fresh) for p in providers.OTHERS))]
+        got = await asyncio.gather(*(providers.account(settings, p, fresh) for p in providers.OTHERS))
+        return [AiAccount(**a) for a in got]
 
     @app.post("/api/ai/{provider}/login")
     async def ai_login(provider: AiProvider) -> AiLoginStarted:
@@ -774,7 +773,7 @@ def create_app(
         project = body.project or settings.youtrack_project
         if not project:
             raise ApiError(422, "youtrack_project_not_found")
-        issue_id, url = await create_issue(settings, body.summary, body.description, project, body.markdown)
+        issue_id, url = await yt_dashboard.create_issue(body.summary, body.description, project, body.markdown)
         sets = (("Type", body.type), ("Priority", body.priority), ("Assignee", body.assignee))
         cmd = " ".join(f"{k} {{{v}}}" for k, v in sets if v)
         warning = ""

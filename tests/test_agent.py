@@ -1,10 +1,12 @@
 import asyncio
+import dataclasses
 
 import pytest
 
-from telegram_dashboard.agent import ALLOW, DENY, AgentRunner, read_task_result
+from telegram_dashboard.agent import AgentRunner, read_task_result
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
+from telegram_dashboard.providers import ALLOW, DENY
 
 # Stand-ins for `claude -p`: one answers with a single >64 KiB stream-json line that echoes its
 # CLI args; the other keeps the turn running.
@@ -33,7 +35,8 @@ async def test_long_output_line_and_locked_down_flags(tmp_path):
     assert not items[1]["error"] and not r.running("t1")
     assert read_task_result(r.settings, "t1").startswith("x" * 1000)
     text = items[1]["text"]  # the line was over asyncio's default 64 KiB limit
-    assert f"--permission-mode acceptEdits --strict-mcp-config --allowedTools {ALLOW} --disallowedTools {DENY}" in text
+    assert f"--permission-mode acceptEdits --strict-mcp-config --allowedTools {ALLOW['edit']} " in text
+    assert f"--disallowedTools {DENY}" in text
 
 
 async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):
@@ -67,6 +70,19 @@ async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch
     items, _ = r.read("t1")
     assert [i["kind"] for i in items] == ["user", "result"] and not items[1]["error"]
     assert not r.running("t1") and read_task_result(r.settings, "t1") == "ok"
+
+
+async def test_stop_while_starting_cancels_the_launch(tmp_path):
+    r = runner(tmp_path, SLOW)  # as Codex: it never names its session, so start() waits for it
+    r.settings = dataclasses.replace(r.settings, codex_command=r.settings.ai_task_command)
+    start = asyncio.ensure_future(r.start("t1", str(tmp_path), "hi", "plan", "codex:", False))
+    while r._starting.get("t1") is None:
+        await asyncio.sleep(0.01)
+    await r.stop("t1")
+    with pytest.raises(ApiError) as e:
+        await asyncio.wait_for(start, 5)
+    assert e.value.code == "task_cancelled" and not r.running("t1") and r.procs == {}
+    assert not r.log_path("t1").exists()
 
 
 async def test_session_model_and_effort_override_the_task_picks(tmp_path):

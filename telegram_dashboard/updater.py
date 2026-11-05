@@ -20,7 +20,7 @@ from pathlib import Path
 import httpx
 from fastapi import APIRouter, Request
 
-from .config import _read_json
+from .config import _read_json, run_cli
 from .errors import ApiError
 
 log = logging.getLogger("telegram_dashboard.updater")
@@ -90,9 +90,9 @@ def _extract(zip_path: Path, name: str, dest: Path) -> None:
             _, sep, rel = info.filename.partition(marker)
             if not sep or not rel or info.is_dir():
                 continue
-            if ".." in Path(rel).parts or Path(rel).is_absolute():
+            out = part / rel  # ".." or a Windows root-relative name must not land outside `part`
+            if ".." in Path(rel).parts or not out.resolve().is_relative_to(part.resolve()):
                 raise ApiError(502, "update_failed", detail=f"Đường dẫn lạ trong gói: {info.filename}")
-            out = part / rel
             out.parent.mkdir(parents=True, exist_ok=True)
             with z.open(info) as src, open(out, "wb") as f:
                 shutil.copyfileobj(src, f, 1 << 20)
@@ -135,8 +135,8 @@ async def _apply_release(root: Path, h: Path) -> dict:
     except httpx.HTTPError as e:
         tmp.unlink(missing_ok=True)
         raise ApiError(502, "update_failed", detail=f"Tải gói lỗi: {e}") from None
-    digest = asset.get("digest") or ""  # GitHub: "sha256:<hex>"
-    if digest.startswith("sha256:") and digest[7:] != sha.hexdigest():
+    digest = asset.get("digest") or ""  # GitHub: "sha256:<hex>"; none = unverifiable, not installed
+    if not digest.startswith("sha256:") or digest[7:] != sha.hexdigest():
         tmp.unlink(missing_ok=True)
         raise ApiError(502, "update_failed", detail="Gói tải về sai checksum.")
     try:
@@ -162,16 +162,11 @@ async def _run(root: Path, *cmd: str, timeout: float = 600) -> str:
     exe = shutil.which(cmd[0])  # Windows: npm is npm.cmd
     if not exe:
         raise ApiError(503, "update_failed", detail=f"Không tìm thấy {cmd[0]}")
-    proc = await asyncio.create_subprocess_exec(
-        exe, *cmd[1:], cwd=root, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-    )  # fmt: skip
-    try:
-        out, _ = await asyncio.wait_for(proc.communicate(), timeout)
-    except TimeoutError:
-        proc.kill()
-        raise ApiError(504, "update_failed", detail=f"{' '.join(cmd)}: quá thời gian") from None
-    text = out.decode(errors="replace").strip()
-    if proc.returncode:
+    got = await run_cli([exe, *cmd[1:]], timeout=timeout, cwd=root, merge=True)
+    if got is None:  # timed out (killed and reaped), or did not start
+        raise ApiError(504, "update_failed", detail=f"{' '.join(cmd)}: quá thời gian / không chạy được")
+    text = got[1].decode(errors="replace").strip()
+    if got[0]:
         raise ApiError(502, "update_failed", detail=f"{' '.join(cmd)}: {text[-800:]}")
     return text
 
@@ -186,7 +181,8 @@ async def check(root: Path) -> dict:
     try:
         upstream = await _run(root, "git", "rev-parse", "--abbrev-ref", "@{u}")
     except ApiError:
-        raise ApiError(409, "no_upstream", detail="Thư mục này không phải bản git có nhánh theo dõi trên GitHub.") from None
+        detail = "Thư mục này không phải bản git có nhánh theo dõi trên GitHub."
+        raise ApiError(409, "no_upstream", detail=detail) from None
     await _run(root, "git", "fetch", "--quiet", timeout=60)
     log_ = await _run(root, "git", "log", "--format=%h\x1f%s\x1f%cr", "-n", "30", "HEAD..@{u}")
     commits = [dict(zip(("sha", "subject", "when"), ln.split("\x1f"), strict=False)) for ln in log_.splitlines()]
@@ -212,13 +208,17 @@ async def apply(root: Path) -> dict:
             return {**info, "updated": False}
         before = await _run(root, "git", "rev-parse", "HEAD")
         await _run(root, "git", "pull", "--ff-only", "--quiet", timeout=120)
-        changed = (await _run(root, "git", "diff", "--name-only", before, "HEAD")).splitlines()
-        if any(f in ("uv.lock", "pyproject.toml") for f in changed):
-            await _run(root, "uv", "sync", "--locked")
-        if any(f.endswith(("package-lock.json", "package.json")) for f in changed):
-            await _run(root, "npm", "ci")
-        if any(f.startswith("web/") or f == "package-lock.json" for f in changed):
-            await _run(root, "npm", "run", "build")
+        try:
+            changed = (await _run(root, "git", "diff", "--name-only", before, "HEAD")).splitlines()
+            if any(f in ("uv.lock", "pyproject.toml") for f in changed):
+                await _run(root, "uv", "sync", "--locked")
+            if any(f.endswith(("package-lock.json", "package.json")) for f in changed):
+                await _run(root, "npm", "ci")
+            if any(f.startswith("web/") or f == "package-lock.json" for f in changed):
+                await _run(root, "npm", "run", "build")
+        except ApiError as e:  # the code is new, its deps / UI are not: say what to rerun
+            detail = f"Đã pull code mới nhưng chưa xong, cần chạy lại: {e.detail}"
+            raise ApiError(e.status, e.code, detail=detail) from None
         return {**info, "updated": True}
 
 
@@ -240,13 +240,15 @@ async def auto_loop(settings, agent) -> None:
     while True:
         try:
             await check(settings.root)
-            if behind and auto_enabled(settings) and not agent.procs:
-                if (await apply(settings.root))["updated"]:
-                    log.info("auto-update applied, restarting")
-                    restart()
-                    return
+            if (behind and auto_enabled(settings) and not agent.procs
+                    and (await apply(settings.root))["updated"]):
+                log.info("auto-update applied, restarting")
+                restart()
+                return
         except ApiError as e:
             log.warning("update check skipped: %s %s", e.code, e.detail)
+        except Exception:  # a bad zip, a full disk, GitHub's HTML error page: try again next time
+            log.warning("update check failed", exc_info=True)
         await asyncio.sleep(CHECK_EVERY)
 
 

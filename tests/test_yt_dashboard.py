@@ -5,14 +5,17 @@ import types
 from urllib.parse import parse_qs
 
 import httpx
+from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from conftest import FakeAgent
-
 from telegram_dashboard.config import Settings
 from telegram_dashboard.yt_dashboard import (
-    DEV_FLOW, Workflow, YouTrackDashboard, YtError, build_router,
+    DEV_FLOW,
+    Workflow,
+    YouTrackDashboard,
+    YtError,
+    build_router,
 )
 
 
@@ -46,7 +49,7 @@ async def test_issues_paginate_and_normalize():
         )
 
     svc = make(handler)
-    out = await svc.issues("VA", "active", ["me"])
+    out = await svc.issues("VA", ["me"])
     assert sorted(k for k, qc in seen if not qc) == [0, 500, 1000, 1500, 2000]  # page 0, a wave
     assert any(qc for _, qc in seen)  # "me" also fetches the tickets the user tests
     assert len(out) == 1000  # QC rows already listed are not added twice
@@ -195,7 +198,7 @@ async def test_qc_query_failure_other_than_400_is_not_hidden():
         return httpx.Response(200, json=[issue(1)])
 
     try:
-        await make(handler).issues("VA", "active", ["me"])
+        await make(handler).issues("VA", ["me"])
     except YtError as e:
         assert e.status == 401
     else:
@@ -426,3 +429,23 @@ async def test_ai_reads_only_a_registered_code_folder():
         else:
             raise AssertionError("expected YtError")
         assert len(agent.calls) == 3
+
+
+async def test_who_lists_come_from_the_cached_whole_project():
+    calls = []
+
+    def handler(req):
+        calls.append(req.url.path)
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "a", "fullName": "A"})
+        return httpx.Response(200, json=[issue(1), {**issue(2), "customFields": []}])
+
+    svc = make(handler)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert len((await c.get("/api/yt/issues", params={"project": "VA"})).json()) == 2
+        mine = (await c.get("/api/yt/issues", params={"project": "VA", "who": "me"})).json()
+        none = (await c.get("/api/yt/issues", params={"project": "VA", "who": "unassigned"})).json()
+    assert [i["id"] for i in mine] == ["VA-1"] and [i["id"] for i in none] == ["VA-2"]
+    assert calls.count("/api/issues") == 1  # one pull of the project, the rest filtered from it

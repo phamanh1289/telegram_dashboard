@@ -1,6 +1,7 @@
 import json
 
 from conftest import ORIGIN
+
 from telegram_dashboard.config import Settings
 
 
@@ -22,7 +23,8 @@ def test_ui_config_wins_over_env(tmp_path, monkeypatch):
 def test_consent_toggle_from_settings(client, settings):
     st = client.get("/api/status").json()
     assert st["state"] in ("setup_required", "connecting", "connected", "stopped")
-    assert client.put("/api/settings/consent", json={"ai_require_consent": False}, headers={"Origin": ORIGIN}).status_code == 204
+    off = client.put("/api/settings/consent", json={"ai_require_consent": False}, headers={"Origin": ORIGIN})
+    assert off.status_code == 204
     assert client.get("/api/status").json()["ai_require_consent"] is False
     assert client.app.state.ai.settings.ai_require_consent is False  # AI sees it without a restart
     assert Settings.from_env(settings.root).ai_require_consent is False  # and it survives one

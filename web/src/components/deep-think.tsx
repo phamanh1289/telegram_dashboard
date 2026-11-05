@@ -2,15 +2,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuit, CheckCheck, CornerDownRight, Loader2 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Textarea } from "@/components/ui/textarea";
-import { api, errorText, type Message } from "@/lib/api";
-import { openTask, useTaskList } from "@/lib/inbox";
+import { api, errorText, type Message, type Task } from "@/lib/api";
+import { openTask, taskListQuery } from "@/lib/inbox";
 import { readAgentProject, readPlatform, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -22,7 +22,10 @@ const useTarget = () => useSyncExternalStore((f) => (subs.add(f), () => subs.del
 
 /** The newest Đối chiếu BE session run on this message as BE's confirmation (the task list is newest first), if any. */
 export function useDeepTask(m: Message) {
-  return useTaskList().data?.find((t) => t.kind === "deep" && t.chat_id === m.chat_id && t.message_id === m.message_id);
+  // `select` + structural sharing: a row re-renders only when its own session changes, not on every task-list poll.
+  const { chat_id, message_id } = m;
+  const pick = useCallback((l: Task[]) => l.find((t) => t.kind === "deep" && t.chat_id === chat_id && t.message_id === message_id), [chat_id, message_id]);
+  return useQuery({ ...taskListQuery, select: pick }).data;
 }
 
 /** Row button: Đối chiếu BE on this message as BE's confirmation; the message it replies to becomes the question. */
@@ -30,12 +33,13 @@ export function DeepPick({ m, className }: { m: Message; className?: string }) {
   const done = !!useDeepTask(m);
   if (!m.reply_to_id) return null; // not a reply: no question to compare against
   return (
-    <Button type="button" size="icon-xs" variant="ghost" className={cn(done && "text-ok", className)}
-      aria-label={done ? "Đối chiếu BE lại" : "Đối chiếu BE"}
-      title={`${done ? "Đã đối chiếu, chạy lại. " : ""}Đối chiếu BE: tin này là BE confirm, tin nó trả lời là câu hỏi; AI trace code và đề xuất xử lý`}
-      onClick={(e) => { e.stopPropagation(); open(m); }}>
-      <BrainCircuit />
-    </Button>
+    <Hint side="bottom" title={done ? "Đối chiếu BE lại" : "Đối chiếu BE"} text="Tin này là BE confirm, tin nó trả lời là câu hỏi: AI trace code và đề xuất xử lý.">
+      <Button type="button" size="icon-xs" variant="ghost" className={cn(done && "text-ok", className)}
+        aria-label={done ? "Đối chiếu BE lại" : "Đối chiếu BE"}
+        onClick={(e) => { e.stopPropagation(); open(m); }}>
+        <BrainCircuit />
+      </Button>
+    </Hint>
   );
 }
 
@@ -100,7 +104,7 @@ function DeepDialog({ c, onClose }: { c: Message; onClose: () => void }) {
           <div className="flex min-w-0 items-baseline gap-1.5">
             <dt className="w-20 shrink-0 font-semibold text-ink-2">Hỏi BE:</dt>
             <dd className="min-w-0 flex-1 text-ink">
-              {q ? <span className="line-clamp-2"><b className="font-medium">{who(q)}</b> · {q.text}</span>
+              {q ? <span className="line-clamp-2"><b className="font-medium">{who(q)}:</b> {q.text}</span>
                 : before.isPending ? <span className="inline-flex items-center gap-1.5 text-ink-3"><Loader2 className="size-3 animate-spin" aria-hidden /> Đang lấy tin từ Telegram…</span>
                 : before.isError ? <span className="text-error">Không lấy được tin (cần đang kết nối Telegram).</span>
                 : <span className="text-ink-3">{c.reply_to_id ? "Không đọc được tin được trả lời; " : "Tin này không trả lời tin nào; "}chọn tin hỏi bên dưới.</span>}
@@ -126,7 +130,7 @@ function DeepDialog({ c, onClose }: { c: Message; onClose: () => void }) {
           )}
           <div className="flex min-w-0 gap-1.5">
             <dt className="w-20 shrink-0 font-semibold text-ink-2">BE confirm:</dt>
-            <dd className="line-clamp-2 min-w-0 text-ink"><b className="font-medium">{who(c)}</b> · {c.text}</dd>
+            <dd className="line-clamp-2 min-w-0 text-ink"><b className="font-medium">{who(c)}:</b> {c.text}</dd>
           </div>
         </dl>
         <div className="flex flex-wrap items-center gap-2">

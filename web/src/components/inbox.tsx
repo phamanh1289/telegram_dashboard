@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { DeepThinking } from "@/components/deep-think";
@@ -16,12 +16,12 @@ import { TasksPage } from "@/components/tasks-page";
 import { Kbd, PendingInbox } from "@/components/pending-inbox";
 import { ShortcutsDialog } from "@/components/settings";
 import { NavPill, Toaster, TopBar } from "@/components/shell";
-import { DateRangePicker, type DayRange, rangeQuery } from "@/components/date-range";
+import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status } from "@/lib/api";
-import { ALL, BRIEFING, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, useTaskList } from "@/lib/inbox";
+import { ALL, BRIEFING, goKey, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
@@ -80,7 +80,7 @@ export function App() {
       <main className="grid min-h-dvh place-items-center p-4">
         <div role="alert" className="grid max-w-sm justify-items-start gap-3">
           <h1 className="text-base">Không liên lạc được backend</h1>
-          <p className="text-sm leading-relaxed text-ink-2">Không liên lạc được backend local.</p>
+          <p className="text-sm leading-relaxed text-ink-2">Server dashboard trên máy này chưa chạy hoặc vừa dừng. Mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm Thử lại.</p>
           <Button size="sm" variant="outline" aria-busy={status.isFetching} disabled={status.isFetching} onClick={() => void status.refetch()}>
             <RotateCw /> Thử lại
           </Button>
@@ -108,11 +108,9 @@ function Inbox({ status }: { status: Status }) {
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
   const range = rangeQuery(days);
   const pendingTotal = (useChats(range).data?.items ?? []).reduce((n, c) => n + c.pending_count, 0);
+  // One search box: across groups on Việc cần xử lý / Ghim, within the group when one is open.
   const [search, setSearch] = useState("");
-  function onSearch(q: string) {
-    setSearch(q);
-    if (q.trim() && chatId !== ALL && chatId !== PINNED) selectChat(ALL); // results live in the cross-group list
-  }
+  const [searchOpen, setSearchOpen] = useState(false); // phones: the box opens from an icon
   // First run: go straight to the Telegram setup (API ID/Hash, then login) on the settings page.
   const router = useRouter();
   const [firstRun] = useState(() => status.state === "setup_required" || status.state === "login_required");
@@ -128,14 +126,20 @@ function Inbox({ status }: { status: Status }) {
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [headSlot, setHeadSlot] = useState<HTMLDivElement | null>(null);
-  // Global keys outside text fields: ? shortcuts, / search (z undo lives in the Toaster).
+  // Global keys outside text fields: ? shortcuts, / search, g then i / p / a / b a page (z undo lives in the Toaster).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey || el?.closest("input, textarea, select, [contenteditable], [role=dialog]")) return;
-      if (e.key === "?") setShortcuts(true);
-      else if (e.key === "/") searchRef.current?.focus();
-      else return;
+      if (typing(e)) return;
+      if (goKey.take()) {
+        const to = { i: ALL, p: PINNED, a: TASKS, b: BRIEFING }[e.key.toLowerCase()];
+        if (to && views.some(([id]) => id === to)) go(to);
+        else return;
+      } else if (e.key === "g") goKey.arm();
+      else if (e.key === "?") setShortcuts(true);
+      else if (e.key === "/") {
+        setSearchOpen(true);
+        requestAnimationFrame(() => searchRef.current?.focus());
+      } else return;
       e.preventDefault();
     };
     document.addEventListener("keydown", onKey);
@@ -144,20 +148,24 @@ function Inbox({ status }: { status: Status }) {
 
   // After a tag is answered or marked done, open the next open one below it (or above, at the end of the list).
   const listItems = useRef<Message[]>([]);
-  function advance() {
+  // `dir` 0: after a send / done (the next one, else the last before it); 1 / -1: Alt+↓ / Alt+↑ in the reply panel.
+  function advance(dir: 0 | 1 | -1 = 0) {
     const all = listItems.current;
     const i = all.findIndex((m) => m.chat_id === replyTo?.chat_id && m.message_id === replyTo?.message_id);
     const open = (m: Message, j: number) => j !== i && !m.outgoing && !m.deleted && !m.handled;
-    const next = all.find((m, j) => j > i && open(m, j)) ?? all.findLast((m, j) => open(m, j)) ?? null;
-    setReplyTo(next);
+    const next = dir < 0 ? all.findLast((m, j) => j < i && open(m, j))
+      : all.find((m, j) => j > i && open(m, j)) ?? (dir ? undefined : all.findLast((m, j) => open(m, j)));
+    if (dir && !next) return toast({ text: dir > 0 ? "Không còn tag nào phía dưới" : "Không còn tag nào phía trên" });
+    setReplyTo(next ?? null);
     setDraft(null);
     if (next) requestAnimationFrame(() => scrollToRow(msgKey(next)));
   }
 
-  function useText(m: Message, text: string) {
+  // Stable (setters only): the memoised list rows keep their props.
+  const useText = useCallback((m: Message, text: string) => {
     setReplyTo(m);
     setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
-  }
+  }, []);
 
   // Esc: leave reply mode and clear every selection (dialogs close themselves first).
   useEffect(() => {
@@ -166,6 +174,7 @@ function Inbox({ status }: { status: Status }) {
       setReplyTo(null);
       setDraft(null);
       setSearch("");
+      setSearchOpen(false);
       (document.activeElement as HTMLElement | null)?.blur();
     };
     document.addEventListener("keydown", onKey);
@@ -178,6 +187,7 @@ function Inbox({ status }: { status: Status }) {
     setDigest(false);
     setReplyTo(null);
     setDraft(null);
+    setSearch(""); // a search belongs to the page it was typed on
     const url = new URL(location.href);
     if (id) url.searchParams.set("chat", id);
     else url.searchParams.delete("chat");
@@ -209,7 +219,7 @@ function Inbox({ status }: { status: Status }) {
   const hints: Record<string, string> = {
     [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
     [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
-    [TASKS]: "Phiên AI đọc / sửa code: Giao việc từ tin tag và Đối chiếu BE.",
+    [TASKS]: "Phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE.",
     [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
   };
   const views = [
@@ -218,6 +228,19 @@ function Inbox({ status }: { status: Status }) {
     ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as const] : []),
     ...(status.ai_configured ? [[BRIEFING, "Briefing", 0, Newspaper] as const] : []),
   ] as const;
+  const offline = status.state !== "connected" || stream !== "open";
+  // Shown only once the problem lasts a few seconds: a reconnect blip shouldn't flash a banner.
+  const [lasting, setLasting] = useState(false);
+  useEffect(() => {
+    if (!offline) return;
+    const t = setTimeout(() => setLasting(true), 4000);
+    return () => { clearTimeout(t); setLasting(false); };
+  }, [offline]);
+  const banner = offline && lasting;
+  const filtering = !!(days.from || days.to);
+  // Search and the day range filter tag lists; Briefing, Digest and AI Agent have their own (or none).
+  const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && !digest;
+  const inGroup = listPage && chatId !== ALL && chatId !== PINNED;
   const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
@@ -258,20 +281,34 @@ function Inbox({ status }: { status: Status }) {
             </button></Hint>
           ))}
         </nav>
+        {filtering && (
+          // The day range also filters the counts here: say so where the counts are.
+          <div className={cn("mt-1 flex items-center gap-1 rounded-full bg-paper-3 py-0.5 pr-0.5 pl-2.5 text-xs text-ink-2", t)}>
+            <span className="min-w-0 flex-1 truncate">Đang lọc: <b className="font-medium text-ink">{rangeLabel(days)}</b></span>
+            <button type="button" aria-label="Bỏ lọc ngày" onClick={() => setDays({ from: "", to: "" })}
+              className="grid size-6 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-cotton hover:text-ink">
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </div>
+        )}
         <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
           <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
         </div>
         <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
-          <Link href="/settings/#telegram" title="Cài đặt Telegram"
-            className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-            <SlidersHorizontal className="size-5 shrink-0" aria-hidden />
-            <span className={cn("whitespace-nowrap", t)}>Cài đặt Telegram</span>
-          </Link>
+          <Hint title="Cài đặt Telegram" text="Tài khoản, hàng chờ, mẫu trả lời, tự đánh dấu đã xử lý.">
+            <Link href="/settings/#telegram"
+              className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+              <SlidersHorizontal className="size-5 shrink-0" aria-hidden />
+              <span className={cn("whitespace-nowrap", t)}>Cài đặt Telegram</span>
+            </Link>
+          </Hint>
           <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
-            <span data-testid="tg-state" title={STATE_LABEL[status.state]} className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
-              {connected ? <Wifi className="size-5" aria-hidden /> : <WifiOff className="size-5" aria-hidden />}
-              <span className="sr-only">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
-            </span>
+            <Hint text={`${STATE_LABEL[status.state]}. ${STREAM_LABEL[stream]}.`}>
+              <span data-testid="tg-state" className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
+                {connected ? <Wifi className="size-5" aria-hidden /> : <WifiOff className="size-5" aria-hidden />}
+                <span className="sr-only">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
+              </span>
+            </Hint>
             <span className={cn("grid min-w-0 leading-tight", t)}>
               <span className={cn("truncate font-medium", connected ? "text-ink-2" : "text-warn")}>{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
               <span data-testid="stream-state" className={cn("truncate", stream === "open" ? "text-ink-3" : "text-warn")}>{STREAM_LABEL[stream]}</span>
@@ -283,28 +320,36 @@ function Inbox({ status }: { status: Status }) {
 
       <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
         <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
-          <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
-            aria-label="Thu gọn / mở rộng menu" title="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
-            <Menu />
-          </Button>
+          <Hint side="bottom" text="Thu gọn / mở rộng menu">
+            <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
+              aria-label="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
+              <Menu />
+            </Button>
+          </Hint>
           <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.01em] sm:flex-none">{title}</h2>
           {/* AI Agent puts its session tabs here (portal) instead of search and range, which it doesn't use. */}
           <div ref={setHeadSlot} className={cn("min-w-0 flex-1", chatId !== TASKS && "hidden")} />
-          {chatId !== TASKS && <div className="ml-auto flex min-w-0 flex-1 items-center justify-end gap-2">
-            <label className="relative hidden w-full min-w-40 max-w-80 sm:block">
+          {listPage && <div className={cn("ml-auto flex min-w-0 flex-1 items-center justify-end gap-2", searchOpen && "max-sm:order-last max-sm:basis-full")}>
+            {!searchOpen && (
+              <Button size="icon-sm" variant="ghost" className="sm:hidden" aria-label="Tìm kiếm" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchRef.current?.focus()); }}>
+                <Search />
+              </Button>
+            )}
+            <label className={cn("relative w-full min-w-40 max-w-80 max-sm:max-w-none sm:block", searchOpen ? "block" : "hidden")}>
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
               <input
                 ref={searchRef}
                 type="search"
                 value={search}
-                onChange={(e) => onSearch(e.target.value)}
-                placeholder="Tìm nội dung tin tag…"
-                aria-label="Tìm nội dung tin tag"
+                onChange={(e) => setSearch(e.target.value)}
+                onBlur={() => { if (!search) setSearchOpen(false); }}
+                placeholder={inGroup ? "Tìm trong nhóm này…" : "Tìm ở mọi nhóm…"}
+                aria-label={inGroup ? "Tìm tin tag trong nhóm này" : "Tìm tin tag ở mọi nhóm"}
                 className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
               />
               {!search && <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" aria-hidden><Kbd>/</Kbd></span>}
               {search && (
-                <button type="button" aria-label="Xóa tìm kiếm" onClick={() => onSearch("")}
+                <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setSearch("")}
                   className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
                   <X className="size-3.5" aria-hidden />
                 </button>
@@ -315,6 +360,17 @@ function Inbox({ status }: { status: Status }) {
         </header>
         {/* The page sits in one card, like the YouTrack ledger. A reply opens as a detail page over the list, which stays
             mounted (hidden) so its scroll and "next tag" order survive. */}
+        {banner && (
+          <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-warn-wash px-3 py-1.5 text-xs text-warn sm:px-6">
+            <WifiOff className="size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1">
+              {status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream]}. Danh sách có thể chưa mới.
+            </span>
+            {status.state === "setup_required" || status.state === "login_required"
+              ? <Link href="/settings/#telegram" className="font-semibold underline underline-offset-4">Mở Cài đặt Telegram</Link>
+              : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> Thử lại</Button>}
+          </div>
+        )}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
             <div className={cn("grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
@@ -324,9 +380,10 @@ function Inbox({ status }: { status: Status }) {
                 {chatId === BRIEFING ? (
                   <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
-                  <TasksPage focus={focus} headSlot={headSlot} onOpenGroup={go} onUseText={useText} />
+                  // keyed by focus: "Mở phiên" while already on AI Agent selects the new session
+                  <TasksPage key={focus ?? ""} focus={focus} headSlot={headSlot} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
-                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} replyTo={replyTo && msgKey(replyTo)} onReply={setReplyTo}
+                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} onClearSearch={() => setSearch("")} replyTo={replyTo && msgKey(replyTo)} onReply={setReplyTo}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
@@ -335,6 +392,8 @@ function Inbox({ status }: { status: Status }) {
                   onDigest={status.ai_configured ? () => { setReplyTo(null); setFocus(null); setDigest(true); } : undefined}
                   onUseText={useText}
                   chatId={chatId}
+                  title={title}
+                  search={search}
                   focus={focus}
                   range={range}
                   onBack={() => go(ALL)}
@@ -358,7 +417,8 @@ function Inbox({ status }: { status: Status }) {
             {replyTo && (
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
                 <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời ✓"); advance(); }} onDone={advance} onTaskCreated={(id) => toast({ text: "Đã giao việc cho AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
+              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); }} onDone={() => advance()} onStep={advance}
+              onTaskCreated={(id) => toast({ text: "Đã giao AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
                 // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
                 undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) })} draft={draft}
               aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />

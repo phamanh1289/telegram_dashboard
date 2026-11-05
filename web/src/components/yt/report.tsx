@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
-import { toast, useNow } from "@/lib/inbox";
+import { toast, useNow, ymd } from "@/lib/inbox";
 import { getPref, onPrefs, readReportAt, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, downloadCsv, downloadText } from "@/lib/utils";
 import { type AiReq, bucket, bugSpike, DAY, inTest, isBug, isBuilt, QUICK, rank, type Ticket, when, yt } from "@/lib/yt";
@@ -19,7 +19,6 @@ import { useYt } from "./state";
 // (a snapshot as of now: tested, in test, waiting for test). Writes itself once a day at the time set in Settings › YouTrack (while the page is open; a missed
 // time runs on the next open that day). Kept per browser, per project / role / day; exported as MD, PDF (print) or CSV.
 
-const ymd = (t: number) => new Date(t).toLocaleDateString("sv");
 const day0 = (s: string) => +new Date(`${s}T00:00`);
 /** Mon-Fri days after today, up to and including the release day. */
 function workDays(now: number, release: string) {
@@ -172,7 +171,7 @@ export function ReportCard() {
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-3" aria-label="Số liệu báo cáo">
         {stats.map(([k, l]) => (
-          <button key={k} type="button" disabled={!l.length} onClick={() => y.setSheet({ kind: "list", title: k, rows: l })} title={l.length ? `Xem ${l.length} ticket` : undefined}
+          <button key={k} type="button" disabled={!l.length} onClick={() => y.setSheet({ kind: "list", title: k, rows: l })} aria-label={`${k}: ${l.length} ticket${l.length ? ", bấm để xem" : ""}`}
             className="flex items-baseline justify-between gap-2 border-b border-rule/60 px-1 py-1.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2 disabled:pointer-events-none">
             <span className="truncate text-xs text-ink-2">{k}</span>
             <span className={cn("font-mono text-sm font-semibold tabular-nums", !l.length ? "text-ink-3" : /Quá hạn|Blocked|Critical/.test(k) ? "text-error" : "text-ink")}>{l.length}</span>
@@ -182,7 +181,7 @@ export function ReportCard() {
 
       {saved && !busy ? (
         <div className="grid gap-2">
-          <p className="text-xs text-ink-3">Viết lúc {when(saved.at)} · {saved.release ? `cho release ${saved.release}` : "tình trạng test tính tới lúc viết"}</p>
+          <p className="text-xs text-ink-3">Viết lúc {when(saved.at)}, {saved.release ? `cho release ${saved.release}` : "tình trạng test tính tới lúc viết"}</p>
           <div className={cn("relative", !full && "max-h-72 overflow-hidden")}>
             <div ref={view}><Markdown text={saved.text} onTicket={(i) => y.openTicket(i)} /></div>
             {!full && <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-cotton" />}

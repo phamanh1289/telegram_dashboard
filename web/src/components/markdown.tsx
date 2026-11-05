@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -17,12 +17,16 @@ const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a
 /**
  * GFM markdown (lists, tables, code, single newlines kept) for AI answers and YouTrack text.
  * Raw HTML stays text. `onTicket`: ticket IDs become buttons that open the ticket.
+ * Memoised: a long AI Agent log re-renders on every poll, but its old answers keep the same text.
  */
-export function Markdown({ text, className, onTicket }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void }) {
+export const Markdown = memo(function Markdown({ text, className, onTicket }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void }) {
   let src = text ?? "";
   if (onTicket) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
   const components: Components = {
-    img: ({ src, alt }) => (typeof src === "string" && src ? <ImageView src={src} alt={alt} /> : null),
+    // only this app's own files load inline: a remote image would fetch on sight (tracking pixel, or a
+    // prompt-injected AI answer leaking data in its URL), so it stays a link the user chooses to open
+    img: ({ src, alt }) => (typeof src !== "string" || !src ? null
+      : src.startsWith("/api/") ? <ImageView src={src} alt={alt} /> : <Link href={src}>[ảnh{alt ? `: ${alt}` : ""}]</Link>),
     a: onTicket
       ? ({ href, children }) => (href?.startsWith("#ticket:") ? <button type="button" onClick={() => onTicket(href.slice(8))}>{children}</button> : <Link href={href}>{children}</Link>)
       : Link,
@@ -32,7 +36,7 @@ export function Markdown({ text, className, onTicket }: { text: string | null | 
       <ReactMarkdown remarkPlugins={PLUGINS} components={components}>{src}</ReactMarkdown>
     </div>
   );
-}
+});
 
 /**
  * An image that opens in a popup over the page (native modal <dialog>): fitted to the screen, click it for 100% (scroll to pan).

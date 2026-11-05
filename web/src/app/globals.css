@@ -5,8 +5,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "../../public/design/tokens.css";
-@import "../../public/design/base.css" layer(base);
+@import "./tokens.css";
+@import "./base.css" layer(base);
 
 @custom-variant dark (&:is(.dark *));
 
@@ -141,14 +141,14 @@
 /* Row actions sit right to left (flex-row-reverse): the first one (Xong; the Telegram link on your own messages)
    stays at the edge, the rest tuck behind it and slide out leftwards on a card when it is hovered or focused.
    Hidden ones take no pointer (pointer-events inherit from the strip), so only the first wakes them; once out, the
-   whole strip keeps them. Settings can keep them shown (data-row-actions="always"); touch screens always show them.
+   whole strip keeps them; so does the selected row (j/k, or the one being answered). Settings can keep them shown (data-row-actions="always"); touch screens always show them.
    Transform + opacity only. */
 /* An open menu (Hoãn) keeps the strip out and sits above the rows below. */
 .row-actions:has([aria-haspopup][aria-expanded="true"]) { position: relative; z-index: 30; }
 @media (hover: hover) {
   :root:not([data-row-actions="always"]) .row-actions { position: relative; isolation: isolate; pointer-events: none; }
   :root:not([data-row-actions="always"]) .row-actions > :first-child,
-  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])) { pointer-events: auto; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) { pointer-events: auto; }
   :root:not([data-row-actions="always"]) .row-actions::before {
     content: ""; position: absolute; inset: 0; z-index: -1; border-radius: var(--radius-input);
     background: var(--color-cotton); box-shadow: var(--edge-stock);
@@ -159,11 +159,11 @@
     opacity: 0; transform: translateX(0.75rem) scale(0.9);
     transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-short) var(--ease-out);
   }
-  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))::before { opacity: 1; transform: none; }
-  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])) > * { opacity: 1; transform: none; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])))::before { opacity: 1; transform: none; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > * { opacity: 1; transform: none; }
   /* Out from the edge: nearest first. Tucking back has no delay. */
-  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])) > :nth-child(3) { transition-delay: 30ms; }
-  :root:not([data-row-actions="always"]) .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])) > :nth-child(4) { transition-delay: 60ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(3) { transition-delay: 30ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(4) { transition-delay: 60ms; }
 }
 
 
@@ -279,3 +279,5 @@
 .md hr { border-color: var(--color-rule); }
 .md input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
+/* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
+.yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }

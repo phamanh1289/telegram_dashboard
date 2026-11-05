@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { type Feature, fold, type Module, type Step, StepText, stepText } from "./guide";
+import { fold } from "@/lib/inbox";
+import { type Feature, type Module, type Step, StepText, stepText } from "./guide";
 
 // Live guide: walks a feature's steps on the real page. Each step names its control (`at`: a UI label or `css:` selector);
 // it stays lit and clickable while the rest goes dark, and clicking it moves to the next step. The walk survives a route
@@ -167,7 +168,7 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
     <div data-guide-tour className="pointer-events-none fixed inset-0 z-[70]">
       <div className="pointer-events-auto absolute inset-0 bg-black/75 transition-[clip-path] duration-300 ease-(--ease-out) animate-in fade-in-0" style={{ clipPath: clip }} />
       {h && (
-        <div aria-hidden className="absolute rounded-lg ring-2 ring-hl transition-all duration-300 ease-(--ease-out)"
+        <div aria-hidden className="absolute rounded-lg ring-2 ring-hl transition-[left,top,width,height] duration-300 ease-(--ease-out)"
           style={{ left: h.x1, top: h.y1, width: h.x2 - h.x1, height: h.y2 - h.y1 }}>
           <span className="absolute inset-0 animate-ping rounded-lg ring-2 ring-hl/60" />
         </div>
@@ -183,7 +184,7 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
         <p className="text-xs text-ink-3">{tip}</p>
         <div className="flex items-center gap-1.5">
           <div className="flex flex-1 gap-1" aria-hidden>
-            {steps.map((_, n) => <span key={n} className={cn("h-1.5 rounded-full transition-all duration-(--dur-short)", n === i ? "w-4 bg-hl" : n < i ? "w-1.5 bg-hl/50" : "w-1.5 bg-rule-2")} />)}
+            {steps.map((_, n) => <span key={n} className={cn("h-1.5 rounded-full transition-[width,background-color] duration-(--dur-short)", n === i ? "w-4 bg-hl" : n < i ? "w-1.5 bg-hl/50" : "w-1.5 bg-rule-2")} />)}
           </div>
           {i > 0 && <Button size="sm" variant="ghost" onClick={() => go(i - 1)}>Trước</Button>}
           <Button size="sm" onClick={next}>{last ? "Xong" : "Tiếp"}</Button>

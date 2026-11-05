@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import sqlite3
+import threading
 import uuid
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS chats (
   tracking INTEGER NOT NULL DEFAULT 0,
   tracked_at INTEGER,
   generation INTEGER NOT NULL DEFAULT 0,
-  migrated_to TEXT
+  migrated_to TEXT,
+  purged_at INTEGER  -- "Xóa dữ liệu nhóm": tags up to then are never stored again
 );
 CREATE TABLE IF NOT EXISTS messages (
   chat_id TEXT NOT NULL REFERENCES chats(chat_id),
@@ -75,20 +77,9 @@ CREATE TABLE IF NOT EXISTS outbox (
   sent_text TEXT NOT NULL DEFAULT '',  -- no longer written, cleared on startup
   sent_at INTEGER
 );
-CREATE TABLE IF NOT EXISTS ai_permissions (
-  chat_id TEXT NOT NULL,
-  message_id INTEGER NOT NULL,
-  content_hash TEXT NOT NULL,
-  scope TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  participants TEXT NOT NULL,
-  revoked INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL,
-  PRIMARY KEY (chat_id, message_id)
-);
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,   -- keyword
+  kind TEXT NOT NULL,   -- keyword (value: lowercase text) | sender (value: sender id)
   value TEXT NOT NULL,
   label TEXT NOT NULL DEFAULT '',
   UNIQUE (kind, value)
@@ -204,7 +195,10 @@ def _is_basic_group(chat_id: str) -> bool:
 
 def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
     text = m.text.lower()
-    return any(r["kind"] == "keyword" and r["value"] in text for r in rules)
+    return any(
+        r["value"] in text if r["kind"] == "keyword" else r["kind"] == "sender" and r["value"] == m.sender_id
+        for r in rules
+    )
 
 
 def _like(text: str) -> str:
@@ -212,23 +206,21 @@ def _like(text: str) -> str:
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
+def _add_cols(c: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
+    """ALTER TABLE ADD COLUMN for each column the table lacks (new databases have them already)."""
+    have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+    for col, ddl in cols.items():
+        if col not in have:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+
+
 def _add_missing_columns(c: sqlite3.Connection) -> None:
     """Databases from before versioning may lack these columns; a no-op on new ones."""
-    for table, col, ddl in (
-        ("messages", "handled", "INTEGER NOT NULL DEFAULT 0"),
-        ("messages", "links", "TEXT NOT NULL DEFAULT '[]'"),
-        ("messages", "snoozed_until", "INTEGER"),
-        ("messages", "pinned", "INTEGER NOT NULL DEFAULT 0"),
-        ("tasks", "prompt", "TEXT"),
-        ("tasks", "mode", "TEXT NOT NULL DEFAULT 'terminal'"),
-        ("tasks", "session_id", "TEXT"),
-        ("tasks", "tty", "TEXT"),
-        ("outbox", "code", "TEXT"),
-        ("outbox", "sent_text", "TEXT NOT NULL DEFAULT ''"),
-        ("outbox", "sent_at", "INTEGER"),
-    ):
-        if col not in {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}:
-            c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    _add_cols(c, "messages", {"handled": "INTEGER NOT NULL DEFAULT 0", "links": "TEXT NOT NULL DEFAULT '[]'",
+                              "snoozed_until": "INTEGER", "pinned": "INTEGER NOT NULL DEFAULT 0"})  # fmt: skip
+    _add_cols(c, "tasks", {"prompt": "TEXT", "mode": "TEXT NOT NULL DEFAULT 'terminal'", "session_id": "TEXT",
+                           "tty": "TEXT"})  # fmt: skip
+    _add_cols(c, "outbox", {"code": "TEXT", "sent_text": "TEXT NOT NULL DEFAULT ''", "sent_at": "INTEGER"})
     for (rid,) in c.execute("SELECT request_id FROM outbox WHERE code IS NULL").fetchall():
         c.execute("UPDATE outbox SET code=? WHERE request_id=?", (reply_code(rid), rid))
     c.execute("CREATE UNIQUE INDEX IF NOT EXISTS outbox_code ON outbox(code)")
@@ -238,39 +230,65 @@ def _add_missing_columns(c: sqlite3.Connection) -> None:
 # Run once each, in order; PRAGMA user_version = how many ran. Append only, never edit.
 def _task_kind(c: sqlite3.Connection) -> None:
     """Deep thinking sessions live with the AI Agent tasks."""
-    cols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}
-    if "kind" not in cols:  # new databases get both from the CREATE TABLE
-        c.execute("ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'task'")
-        c.execute("ALTER TABLE tasks ADD COLUMN title TEXT")
+    _add_cols(c, "tasks", {"kind": "TEXT NOT NULL DEFAULT 'task'", "title": "TEXT"})
 
 
 def _task_ai(c: sqlite3.Connection) -> None:
     """Model/effort picked for one AI Agent session (NULL: the task picks in AI settings)."""
-    if "model" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
-        c.execute("ALTER TABLE tasks ADD COLUMN model TEXT")
-        c.execute("ALTER TABLE tasks ADD COLUMN effort TEXT")
+    _add_cols(c, "tasks", {"model": "TEXT", "effort": "TEXT"})
 
 
 def _task_done(c: sqlite3.Connection) -> None:
     """Done for a session whose message is not a kept tag (e.g. Đối chiếu BE on any BE reply)."""
-    if "done" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
-        c.execute("ALTER TABLE tasks ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+    _add_cols(c, "tasks", {"done": "INTEGER NOT NULL DEFAULT 0"})
 
 
-MIGRATIONS = [_add_missing_columns, _task_kind, _task_ai, _task_done]
+def _chat_purged(c: sqlite3.Connection) -> None:
+    """A purged chat remembers when, so the mention backfill does not bring its old tags back."""
+    _add_cols(c, "chats", {"purged_at": "INTEGER"})
+
+
+def _pending_indexes(c: sqlite3.Connection) -> None:
+    """The pending counts and date ranges (chat list, inbox) without a scan of every message."""
+    if {"outgoing", "handled", "deleted"} <= {r["name"] for r in c.execute("PRAGMA table_info(messages)")}:
+        c.execute("CREATE INDEX IF NOT EXISTS messages_pending ON messages(chat_id, date) "
+                  "WHERE outgoing=0 AND handled=0 AND deleted=0")  # fmt: skip
+    c.execute("CREATE INDEX IF NOT EXISTS messages_chat_date ON messages(chat_id, date)")
+
+
+def _drop_grants(c: sqlite3.Connection) -> None:
+    """Per-message AI grants are gone: consent mode now just keeps the AI off Telegram text."""
+    c.execute("DROP TABLE IF EXISTS ai_permissions")
+
+
+MIGRATIONS = [
+    _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
+]  # fmt: skip
 
 
 class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._local = threading.local()  # one connection per thread, reused (Db runs calls in a pool)
         self._init()
 
-    @contextmanager
-    def _conn(self, write: bool = False):
+    def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+
+    @contextmanager
+    def _conn(self, write: bool = False):
+        """One transaction on this thread's connection. A nested call gets a connection of its own;
+        one left inside a transaction (a failed COMMIT/ROLLBACK) is closed, never reused."""
+        conn = getattr(self._local, "conn", None)
+        nested = conn is not None and conn.in_transaction
+        if conn is None or nested:
+            conn = self._connect()
+            if not nested:
+                self._local.conn = conn
         try:
             conn.execute("BEGIN IMMEDIATE" if write else "BEGIN")
             try:
@@ -281,7 +299,10 @@ class Store:
             else:
                 conn.execute("COMMIT")
         finally:
-            conn.close()
+            if nested or conn.in_transaction:
+                conn.close()
+                if not nested:
+                    self._local.conn = None
 
     def _init(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -346,16 +367,6 @@ class Store:
         if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
             self._record(c, chat_id, message_id, "edit", chat["generation"])
         return bool(cur.rowcount)
-
-    @staticmethod
-    def _revoke_grants(c: sqlite3.Connection, chat_id: str, message_ids: list[int] | None = None):
-        if message_ids is None:
-            c.execute("UPDATE ai_permissions SET revoked=1 WHERE chat_id=?", (chat_id,))
-        else:
-            c.executemany(
-                "UPDATE ai_permissions SET revoked=1 WHERE chat_id=? AND message_id=?",
-                [(chat_id, m) for m in message_ids],
-            )
 
     @staticmethod
     def _clear_outbox_text(c: sqlite3.Connection, chat_id: str, reply_ids: list[int] | None):
@@ -428,10 +439,6 @@ class Store:
             self._record(c, chat_id, None, "untrack", gen)
         return gen
 
-    def track_mention(self, chat_id: str, title: str, kind: str) -> None:
-        """A chat exists here only because it tagged us."""
-        self.set_tracking(chat_id, True, title, kind)
-
     def mark_migrated(self, old_chat_id: str, new_chat_id: str) -> None:
         with self._conn(write=True) as c:
             row = self._chat(c, old_chat_id)
@@ -451,8 +458,8 @@ class Store:
                 raise ApiError(404, "unknown_chat")
             gen = row["generation"] + 1
             c.execute(
-                "UPDATE chats SET tracking=0, generation=?, tracked_at=NULL WHERE chat_id=?",
-                (gen, chat_id),
+                "UPDATE chats SET tracking=0, generation=?, tracked_at=NULL, purged_at=? WHERE chat_id=?",
+                (gen, now_ts(), chat_id),
             )
             c.execute(
                 "UPDATE outbox SET status='failed', error_code='purged', updated_at=? "
@@ -460,7 +467,6 @@ class Store:
                 (now_ts(), chat_id),
             )
             self._clear_outbox_text(c, chat_id, None)
-            self._revoke_grants(c, chat_id)
             c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM digests WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
@@ -474,14 +480,6 @@ class Store:
     def is_tracking(self, chat_id: str) -> bool:
         row = self.get_chat(chat_id)
         return bool(row and row["tracking"])
-
-    def briefing_chat_ids(self) -> list[str]:
-        """Tracked chats plus untagged ones opened to Digest (any consent row, even expired)."""
-        with self._conn() as c:
-            return [r[0] for r in c.execute(
-                "SELECT chat_id FROM chats WHERE tracking=1 "
-                "OR chat_id IN (SELECT chat_id FROM digest_consents)"
-            )]  # fmt: skip
 
     def list_chats(
         self, since: datetime | None = None, until: datetime | None = None
@@ -545,7 +543,6 @@ class Store:
             "topic_id=?,outgoing=?,media_kind=?,links=? WHERE chat_id=? AND message_id=?",
             (*values, m.chat_id, m.message_id),
         )
-        self._revoke_grants(c, m.chat_id, [m.message_id])
         self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
         return True
 
@@ -558,21 +555,28 @@ class Store:
 
     def store_mentions(self, found: list[tuple[str, str, StoredMessage, bool]]) -> list[int]:
         """Keep tags/replies to us, (title, kind, message, we_replied) each, in one transaction:
-        track the chat, store the message, apply ignore rules, mark answered ones handled.
-        Returns ids of tags seen for the first time and still pending (to notify about)."""
+        track the chat, store the message, and for a tag seen for the first time apply the rules
+        and mark it handled when answered (a kept tag the user reopened stays open). Tags of a
+        purged chat up to its purge are skipped. Returns ids of tags seen for the first time and
+        still pending (to notify about)."""
         fresh = []
         with self._conn(write=True) as c:
             rules = [dict(r) for r in c.execute("SELECT * FROM rules")]
             for title, kind, m, replied in found:
+                chat = self._chat(c, m.chat_id)
+                if chat is not None and chat["purged_at"] and (_ts(m.date) or 0) <= chat["purged_at"]:
+                    continue
                 try:
                     self._set_tracking(c, m.chat_id, True, title, kind)
                 except ApiError:
                     continue  # migrated chat
                 new = self._msg(c, m.chat_id, m.message_id) is None
                 self._upsert_message(c, m, self._chat(c, m.chat_id))
+                if not new:
+                    continue
                 if replied or _rule_matches(rules, m):
                     self._set_col(c, m.chat_id, m.message_id, "handled", 1, only_change=True)
-                elif new:
+                else:
                     fresh.append(m.message_id)
         return fresh
 
@@ -617,7 +621,6 @@ class Store:
                         (cid, mid),
                     )
                 self._clear_outbox_text(c, cid, [mid])
-                self._revoke_grants(c, cid, [mid])
                 self._record(c, cid, mid, "delete", chat["generation"])
                 touched.append(cid)
         return touched
@@ -904,12 +907,15 @@ class Store:
     # ---- auto-handle rules ---------------------------------------------
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM rules WHERE kind='keyword' ORDER BY id")
+            rows = c.execute("SELECT * FROM rules WHERE kind IN ('keyword','sender') ORDER BY id")
             return [dict(r) for r in rows]
 
     def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, int]:
-        """Save a rule and clear the pending tags it already matches."""
-        value = value.strip().lower()
+        """Save a rule (keyword: text in the tag, any case; sender: a sender id) and clear the
+        pending tags it already matches."""
+        value = value.strip().lower() if kind == "keyword" else value.strip()
+        if not value:  # "" is in every text: it would clear every tag
+            raise ApiError(422, "rule_value_empty")
         with self._conn(write=True) as c:
             c.execute(
                 "INSERT INTO rules (kind,value,label) VALUES (?,?,?) "
@@ -919,9 +925,7 @@ class Store:
             rule = dict(
                 c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
             )
-            rows = c.execute(
-                "SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0"
-            ).fetchall()
+            rows = c.execute("SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0").fetchall()
             n = sum(
                 self._set_col(c, r["chat_id"], r["message_id"], "handled", 1, True)
                 for r in rows
@@ -1023,36 +1027,21 @@ class Store:
         with self._conn() as c:
             return c.execute("SELECT 1 FROM projects WHERE path=?", (path,)).fetchone() is not None
 
-    # ---- AI grants -----------------------------------------------------
-    def put_grant(
-        self, chat_id: str, message_id: int, scope: str, expires_at: datetime,
-        participants: dict[str, str],
-    ) -> None:  # fmt: skip
-        with self._conn(write=True) as c:
-            m = self._msg(c, chat_id, message_id)
-            if m is None or m["deleted"]:
-                raise ApiError(404, "message_not_found")
-            c.execute(
-                "INSERT OR REPLACE INTO ai_permissions VALUES (?,?,?,?,?,?,0,?)",
-                (chat_id, message_id, content_hash(m["text"]), scope, _ts(expires_at),
-                 json.dumps(participants, sort_keys=True), now_ts()),
-            )  # fmt: skip
-
-    def revoke_grants(self, chat_id: str, message_ids: list[int]) -> None:
-        with self._conn(write=True) as c:
-            self._revoke_grants(c, chat_id, message_ids)
-
-    def get_grant(self, chat_id: str, message_id: int) -> dict | None:
+    # ---- digests -------------------------------------------------------
+    def briefing_rows(self) -> list[dict]:
+        """Tracked chats plus untagged ones opened to Digest (any consent row, even expired), each
+        with its title, whether the consent is live, and its saved digest (None when none)."""
         with self._conn() as c:
-            r = c.execute(
-                "SELECT * FROM ai_permissions WHERE chat_id=? AND message_id=?",
-                (chat_id, message_id),
-            ).fetchone()
-            if r is None:
-                return None
-            d = dict(r)
-            d["participants"] = json.loads(d["participants"])
-            return d
+            rows = c.execute(
+                "SELECT c.chat_id, c.title, dc.expires_at>unixepoch() AS consent, d.chat_id AS d_chat, "
+                "d.last_message_id, d.last_date, d.result, d.created_at FROM chats c "
+                "LEFT JOIN digest_consents dc USING (chat_id) LEFT JOIN digests d USING (chat_id) "
+                "WHERE c.tracking=1 OR dc.chat_id IS NOT NULL"
+            ).fetchall()  # fmt: skip
+        keys = ("chat_id", "last_message_id", "last_date", "result", "created_at")
+        return [{"chat_id": r["chat_id"], "title": r["title"], "consent": bool(r["consent"]),
+                 "digest": dict(zip(keys, (r["d_chat"], *(r[k] for k in keys[1:])), strict=True))
+                 if r["d_chat"] else None} for r in rows]  # fmt: skip
 
     def get_digest_consent(self, chat_id: str) -> int | None:
         """Expiry (epoch seconds) of the chat-wide Digest consent, or None when absent/expired."""

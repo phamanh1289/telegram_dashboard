@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FolderGit2, Plus, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import {
   Dialog,
   DialogClose,
@@ -64,15 +65,19 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
         ))}
       </select>
       {current && (
-        <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Gỡ dự án khỏi danh sách" title="Gỡ dự án khỏi danh sách"
-          disabled={remove.isPending} onClick={() => remove.mutate(current)}>
-          <X />
-        </Button>
+        <Hint side="bottom" text="Gỡ dự án khỏi danh sách (không xóa thư mục)">
+          <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Gỡ dự án khỏi danh sách"
+            disabled={remove.isPending} onClick={() => remove.mutate(current)}>
+            <X />
+          </Button>
+        </Hint>
       )}
-      <Button size="xs" variant="ghost" title="Chọn thư mục dự án trong Finder" aria-busy={pick.isPending} disabled={pick.isPending}
-        onClick={() => pick.mutate()}>
-        <Plus /> {pick.isPending ? "Đang chọn…" : "Thêm"}
-      </Button>
+      <Hint side="bottom" text="Chọn thư mục dự án trên máy này">
+        <Button size="xs" variant="ghost" aria-busy={pick.isPending} disabled={pick.isPending}
+          onClick={() => pick.mutate()}>
+          <Plus /> {pick.isPending ? "Đang chọn…" : "Thêm"}
+        </Button>
+      </Hint>
       {pick.isError && (
         <Button size="xs" variant="link" className="whitespace-normal text-left text-error" onClick={() => setAdding(true)}>
           {errorText(pick.error, { not_found: "Backend cũ: khởi động lại dashboard (hoặc nhập đường dẫn)" }, "Không mở được hộp chọn thư mục, nhập đường dẫn")}

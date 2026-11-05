@@ -7,9 +7,10 @@ import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/compon
 import { DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
-import { smooth, timeLabel, toast } from "@/lib/inbox";
+import { copyText, smooth, timeLabel, toast } from "@/lib/inbox";
 import { readDigestTeams } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { lastSp, yt } from "@/lib/yt";
@@ -62,7 +63,7 @@ function byTeam(list: DigestItem[]): [string, DigestItem[]][] {
 function meta(key: string, it: DigestItem) {
   if (key === "decisions" && it.who) return `chốt bởi ${it.who}`;
   if (key === "confirmations" && it.who) return `hỏi ${it.who}`;
-  if (key === "actions") return [it.who, it.due && `hạn ${it.due}`].filter(Boolean).join(" · ");
+  if (key === "actions") return [it.who, it.due && `hạn ${it.due}`].filter(Boolean).join(", ");
   return "";
 }
 
@@ -190,12 +191,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   }
   async function copy() {
     if (!shown) return;
-    try {
-      await navigator.clipboard.writeText(toMarkdown(shown, title));
-      toast({ text: "Đã copy markdown" });
-    } catch {
-      toast({ text: "Không copy được" });
-    }
+    await copyText(toMarkdown(shown, title), "Đã copy markdown");
   }
 
   const enabled = consent.data?.enabled ?? false;
@@ -209,9 +205,11 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   return (
     <section aria-label="Tóm tắt nhóm" className="flex min-h-0 flex-col">
       <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-2 border-b px-3 py-1.5 md:px-5">
-        <Button size="icon-sm" variant="ghost" onClick={onBack} aria-label="Quay lại nhóm" title="Quay lại nhóm">
-          <ArrowLeft />
-        </Button>
+        <Hint side="bottom" text="Quay lại danh sách tin của nhóm">
+          <Button size="icon-sm" variant="ghost" onClick={onBack} aria-label="Quay lại nhóm">
+            <ArrowLeft />
+          </Button>
+        </Hint>
         <span className="text-sm font-semibold">Tóm tắt</span>
         <Segmented id="tg-digest" label="Khoảng thời gian" value={preset} onChange={onPreset} items={[
           ...(last ? [{ value: "last" as const, label: "Từ lần trước", title: `Tin mới từ lần tóm tắt trước (${timeLabel(last.last_date)})` }] : []),
@@ -220,7 +218,6 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         <DateRangePicker value={days} onChange={onDays} emptyLabel="Tuỳ chọn ngày" />
         <Button size="sm" className="ml-auto" aria-busy={run.isPending}
           disabled={!enabled || !items.length || run.isPending || history.isFetching || tooMany}
-          title={tooMany ? "Khoảng này quá nhiều tin: thu hẹp khoảng thời gian hoặc chọn tin cần tóm tắt" : undefined}
           onClick={() => run.mutate()}>
           <Sparkles /> {run.isPending ? "Đang tóm tắt…" : picked.size ? `Tóm tắt ${picked.size} tin đã chọn` : tooMany ? "Quá nhiều tin" : `Tóm tắt ${items.length} tin`}
         </Button>
@@ -291,7 +288,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
                 onToggle={(shift) => toggle(i, shift)} />
               {isOld(m) && items[i + 1] && !isOld(items[i + 1]) && (
                 <li role="separator" className="flex items-center gap-2 px-3 py-1 text-xs font-medium text-hl-2 md:px-5">
-                  <span className="h-px flex-1 bg-hl/40" />Đã tóm tắt đến đây · {timeLabel(last!.created_at)}<span className="h-px flex-1 bg-hl/40" />
+                  <span className="h-px flex-1 bg-hl/40" />Đã tóm tắt đến đây, lúc {timeLabel(last!.created_at)}<span className="h-px flex-1 bg-hl/40" />
                 </li>
               )}
             </Fragment>
@@ -312,7 +309,6 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
   const text = m.text || (m.media_kind ? `[${m.media_kind === "photo" ? "ảnh" : "file"}]` : "");
   return (
     <li data-digest-id={m.message_id}
-      title={old ? "Đã nằm trong lần tóm tắt trước" : undefined}
       className={cn("flex cursor-pointer gap-3 px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2 md:px-5", old && !checked && !lit && "opacity-60", checked && "bg-hl-wash/60", lit && "bg-hl-wash")}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a,input") || getSelection()?.toString()) return;
@@ -325,6 +321,7 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
           <span className="truncate font-semibold text-ink">{m.outgoing ? "Bạn" : m.sender_name ?? "?"}</span>
           <span className="shrink-0 font-mono tabular-nums text-ink-3">{timeLabel(m.date)}</span>
           <span className="shrink-0 font-mono text-ink-3">#{m.message_id}</span>
+          {old && <span className="sr-only">đã nằm trong lần tóm tắt trước</span>}
           <DeepPick m={m} className="-my-1 ml-auto" />
         </div>
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">{text}</p>
@@ -338,9 +335,11 @@ function ScopeFlag({ id }: { id: string }) {
   const d = useQuery({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000, retry: false });
   const sp = d.data && !d.data.resolved && lastSp(d.data);
   return sp ? (
-    <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn" title={`${id} đang trong sprint ${sp}: thay đổi này làm đổi scope sprint`}>
-      <TriangleAlert className="size-3" aria-hidden /> đổi scope sprint {sp}
-    </span>
+    <Hint side="bottom" text={`${id} đang trong sprint ${sp}: thay đổi này làm đổi scope sprint`}>
+      <span tabIndex={0} className="ml-1 inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn">
+        <TriangleAlert className="size-3" aria-hidden /> đổi scope sprint {sp}
+      </span>
+    </Hint>
   ) : null;
 }
 
@@ -348,12 +347,13 @@ function ScopeFlag({ id }: { id: string }) {
 function RecordOn({ id, text }: { id: string; text: string }) {
   const save = useMutation({ mutationFn: () => yt.comment(id, text), onSuccess: () => toast({ text: `Đã ghi quyết định vào ${id}` }) });
   return (
-    <button type="button" disabled={save.isPending || save.isSuccess} onClick={() => save.mutate()}
-      title={save.isError ? `Không ghi được: ${save.error.message}` : `Thêm quyết định này làm bình luận trên ${id}`}
-      className={cn("ml-1 inline-flex items-center gap-1 rounded-sm px-1 text-xs transition-colors duration-(--dur-micro)", save.isError ? "text-error" : "text-ink-3 hover:bg-hl-wash hover:text-hl-2")}>
-      {save.isSuccess ? <Check className="size-3" aria-hidden /> : <MessageSquarePlus className="size-3" aria-hidden />}
-      {save.isSuccess ? "đã ghi" : `ghi vào ${id}`}
-    </button>
+    <Hint side="bottom" text={save.isError ? `Không ghi được: ${save.error.message}` : `Thêm quyết định này làm bình luận trên ${id}`}>
+      <button type="button" disabled={save.isPending || save.isSuccess} onClick={() => save.mutate()}
+        className={cn("ml-1 inline-flex items-center gap-1 rounded-sm px-1 text-xs transition-colors duration-(--dur-micro)", save.isError ? "text-error" : "text-ink-3 hover:bg-hl-wash hover:text-hl-2")}>
+        {save.isSuccess ? <Check className="size-3" aria-hidden /> : <MessageSquarePlus className="size-3" aria-hidden />}
+        {save.isSuccess ? "đã ghi" : save.isError ? `ghi lại vào ${id}` : `ghi vào ${id}`}
+      </button>
+    </Hint>
   );
 }
 
@@ -371,10 +371,12 @@ function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: bo
 
 function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump: (id: string) => void }) {
   return ids.map((id) => (
-    <button key={id} type="button" onClick={() => onJump(id)} title="Xem tin gốc"
-      className={cn("ml-1 rounded-sm px-1 font-mono text-xs transition-colors duration-(--dur-micro)", lit === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2 hover:bg-hl-wash hover:text-hl-2")}>
-      #{id}
-    </button>
+    <Hint key={id} side="bottom" text="Cuộn tới tin gốc trong danh sách">
+      <button type="button" onClick={() => onJump(id)} aria-label={`Xem tin gốc #${id}`}
+        className={cn("ml-1 rounded-sm px-1 font-mono text-xs transition-colors duration-(--dur-micro)", lit === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2 hover:bg-hl-wash hover:text-hl-2")}>
+        #{id}
+      </button>
+    </Hint>
   ));
 }
 
@@ -383,7 +385,8 @@ export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResul
   return (
     <div className="grid gap-5">
       <div className="flex items-center gap-2 text-xs text-ink-3">
-        {when ? <>Bản tóm tắt lúc {timeLabel(when)} · {r.source_count} tin</> : <>Vừa tóm tắt · {r.source_count} tin</>}
+        <span>{when ? `Bản tóm tắt lúc ${timeLabel(when)}` : "Vừa tóm tắt"}</span>
+        <span>{r.source_count} tin</span>
         <Button size="xs" variant="outline" className="ml-auto" onClick={onCopy}><Copy /> Copy markdown</Button>
       </div>
       {empty && <p className="text-sm text-ink-3">AI không tìm thấy nội dung đáng chú ý.</p>}
@@ -402,7 +405,7 @@ export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResul
           : [["", list] as [string, DigestItem[]]];
         return (
           <section key={key} className="grid gap-2">
-            <h3 className={cn("text-xs font-semibold uppercase tracking-wide", key === "confirmations" ? "text-hl-2" : "text-ink-3")}>
+            <h3 className={cn("text-sm font-semibold", key === "confirmations" ? "text-hl-2" : "text-ink")}>
               {label} <span className="font-mono font-normal">{list.length}</span>
             </h3>
             {groups.map(([team, its]) => (
@@ -429,7 +432,7 @@ export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResul
       })}
       {!!r.topics?.length && (
         <section className="grid gap-2">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-3">Chủ đề <span className="font-mono font-normal">{r.topics.length}</span></h3>
+          <h3 className="text-sm font-semibold text-ink">Chủ đề <span className="font-mono font-normal">{r.topics.length}</span></h3>
           <ul className="grid gap-3">
             {r.topics.map((t, i) => {
               const [s, cls] = STATUS[t.status ?? "open"];

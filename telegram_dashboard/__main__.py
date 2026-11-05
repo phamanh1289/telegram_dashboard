@@ -156,14 +156,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("serve")
     ex = sub.add_parser("export-openapi")
     ex.add_argument("--output", default="work/openapi.json")
-    sub.add_parser("import-claude-runs", help="backfill the Claude run log from the CLI's transcripts")
     args = p.parse_args(argv)
     settings = Settings.from_env()
-    if args.cmd == "import-claude-runs":
-        from .claude import import_transcripts
-
-        print(f"Đã nhập {import_transcripts(settings)} lần chạy.")
-        return 0
     if args.cmd == "login":
         return _login(settings)
     if args.cmd == "serve":

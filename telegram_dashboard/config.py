@@ -1,7 +1,11 @@
+import asyncio
+import contextlib
 import json
 import os
 import shlex
 import shutil
+import signal
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -33,6 +37,44 @@ SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # .env lands in os.environ (yt_d
 def child_env() -> dict[str, str]:
     """os.environ minus this app's secrets (Telegram API, YouTrack token): for claude runs."""
     return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+
+
+async def run_cli(
+    cmd: list[str], stdin: bytes | None = None, timeout: float = 30, cwd=None, merge: bool = False
+) -> tuple[int, bytes, bytes] | None:
+    """(exit code, stdout, stderr) of a short CLI call, run outside any project (`merge`: stderr into
+    stdout). None when it did not start or ran past `timeout`; a timed-out or abandoned call is
+    killed and reaped, never left running."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=cwd or tempfile.gettempdir(), env=child_env(),
+            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT if merge else asyncio.subprocess.PIPE,
+        )  # fmt: skip
+    except OSError:
+        return None
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(stdin), timeout)
+    except TimeoutError:
+        return None
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+    return proc.returncode, out, err or b""
+
+
+def kill_tree(proc, term: bool = False) -> None:
+    """SIGKILL (`term`: SIGTERM) a CLI started with start_new_session=True and everything it spawned
+    (shell commands, background jobs). Windows: the CLI only."""
+    # ponytail: no `taskkill /T` on Windows; add it if agents there leave children behind.
+    if os.name == "posix":
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGTERM if term else signal.SIGKILL)
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate() if term else proc.kill()
 
 
 def on_path(command: str) -> bool:
@@ -94,7 +136,8 @@ class Settings:
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
-    # Per-message consent grants before AI use (Telegram API Terms). Off only for personal use.
+    # On: inbox AI (drafts, tickets, deep thinking, message refs) may not read Telegram text
+    # (Telegram API Terms). Off only for personal use. Digest has its own per-chat consent.
     ai_require_consent: bool = True
 
     @property

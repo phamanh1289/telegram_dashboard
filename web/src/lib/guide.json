@@ -167,7 +167,7 @@
 "tab": "telegram",
 "area": "Thanh bên › AI Agent",
 "title": "Trang AI Agent",
-"what": "Danh sách phiên AI đọc / sửa code: Giao việc từ tin tag và Đối chiếu BE. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên).",
+"what": "Danh sách phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên).",
 "how": [
 {
 "t": "Bấm \"AI Agent\" ở thanh bên",
@@ -216,13 +216,21 @@
 {
 "id": "group-purge",
 "tab": "telegram",
-"area": "Thanh bên › Nhóm có tag › Xóa dữ liệu",
+"area": "Trang nhóm › ⋯ › Xóa dữ liệu nhóm",
 "title": "Xóa dữ liệu nhóm",
 "what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.",
 "how": [
 {
-"t": "Rê chuột vào một nhóm ở thanh bên rồi bấm thùng rác \"Xóa dữ liệu\"",
-"at": "Xóa dữ liệu"
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm nút \"⋯\" (Thao tác với nhóm) ở đầu danh sách tin",
+"at": "Thao tác với nhóm"
+},
+{
+"t": "Chọn \"Xóa dữ liệu nhóm…\"",
+"at": "Xóa dữ liệu nhóm"
 },
 {
 "t": "Đọc hộp \"Xóa dữ liệu nhóm?\"; bấm \"Hủy\" để thoát (chỉ bấm \"Xóa dữ liệu\" nếu thật sự muốn xóa)",
@@ -267,11 +275,11 @@
 "tab": "telegram",
 "area": "Thanh tiêu đề › Ô tìm kiếm",
 "title": "Tìm nội dung tin tag",
-"what": "Lọc tin tag chờ xử lý theo nội dung, không phân biệt hoa thường và dấu tiếng Việt. Gõ khi đang ở một nhóm sẽ chuyển sang Việc cần xử lý.",
+"what": "Lọc tin tag theo nội dung, không phân biệt hoa thường và dấu tiếng Việt. Ở Việc cần xử lý / Tag đã ghim ô này tìm ở mọi nhóm; khi đang mở một nhóm, nó tìm trong nhóm đó. Trên điện thoại bấm kính lúp để mở ô.",
 "how": [
 {
-"t": "Bấm ô \"Tìm nội dung tin tag…\" (hoặc nhấn phím /) rồi gõ từ khóa",
-"at": "Tìm nội dung tin tag"
+"t": "Bấm ô tìm kiếm trên đầu trang (\"Tìm ở mọi nhóm…\", hoặc nhấn phím /) rồi gõ từ khóa",
+"at": "Tìm tin tag ở mọi nhóm"
 },
 {
 "t": "Bấm X \"Xóa tìm kiếm\" (hoặc nhấn Esc) để xóa",
@@ -351,23 +359,19 @@
 "tab": "telegram",
 "area": "Trang nhóm › Tìm kiếm",
 "title": "Tìm trong nhóm",
-"what": "Tìm trong các tin đã lưu của nhóm đang mở.",
+"what": "Tìm trong các tin đã lưu của nhóm đang mở, bằng ô tìm kiếm trên đầu trang.",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
 "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
 },
 {
-"t": "Bấm biểu tượng kính lúp \"Tìm kiếm\"",
-"at": "Tìm kiếm"
+"t": "Gõ vào ô tìm kiếm trên đầu trang (\"Tìm trong nhóm này…\"; phím /). Ở Việc cần xử lý ô này tìm ở mọi nhóm",
+"at": "Tìm tin tag trong nhóm này"
 },
 {
-"t": "Gõ vào ô \"Tìm trong tin đã lưu…\"",
-"at": "Tìm trong tin đã lưu"
-},
-{
-"t": "Bấm X \"Đóng tìm kiếm\" để đóng",
-"at": "Đóng tìm kiếm"
+"t": "Bấm X \"Xóa tìm kiếm\" (hoặc Esc) để bỏ tìm",
+"at": "Xóa tìm kiếm"
 }
 ],
 "keys": "tim trong nhom search group tim tin da luu kính lúp"
@@ -531,7 +535,7 @@
 "Chờ kết quả; rê chuột vào chip ticket YouTrack để xem trạng thái (ticket trong sprint có cảnh báo đổi scope)",
 {
 "t": "Bấm \"#123\" cạnh một mục để nhảy tới tin gốc",
-"at": "css:button[title=\"Xem tin gốc\"]"
+"at": "css:button[aria-label^=\"Xem tin gốc\"]"
 },
 {
 "t": "Ở mục Đã chốt, bấm \"ghi vào <ticket>\" để thêm bình luận lên YouTrack",
@@ -690,14 +694,14 @@
 {
 "id": "msg-done-no-react",
 "tab": "telegram",
-"area": "Dòng tin › Xong, không thả reaction",
+"area": "Dòng tin › Xong (Shift+bấm)",
 "title": "Xong không thả reaction",
 "what": "Đánh dấu đã xử lý nhưng không thả reaction trên Telegram.",
 "how": [
 "Dùng khi muốn đánh dấu xong mà không để lại reaction trên Telegram.",
 {
-"t": "Bấm nút một dấu tích \"Xong, không thả reaction\" (rê chuột vào nút Xong của tin để hiện)",
-"at": "Xong, không thả reaction"
+"t": "Giữ Shift rồi bấm nút \"Xong\" của tin (hoặc chọn tin bằng j/k rồi bấm Shift+x)",
+"at": "Xong"
 }
 ],
 "keys": "xong khong tha reaction im lang done no reaction danh dau xong"
@@ -799,7 +803,7 @@
 },
 {
 "t": "Ở \"Nút thao tác trên tin\" bấm \"Luôn hiện\" để các nút luôn hiện.",
-"at": "css:[role=radiogroup][aria-label=\"Nút thao tác trên tin\"] button:last-child"
+"at": "css:[aria-label=\"Nút thao tác trên tin\"] button:last-child"
 }
 ],
 "keys": "nut thao tac an hien hover luon hien row actions"
@@ -828,7 +832,7 @@
 "how": [
 {
 "t": "Bấm dòng \"trả lời #<số>\" phía trên nội dung tin để cuộn tới tin gốc (chỉ có ở tin trả lời tin khác).",
-"at": "css:[data-testid=\"message\"] button[title=\"Tới tin gốc\"]"
+"at": "css:[data-testid=\"message\"] button[aria-label^=\"Tới tin gốc\"]"
 }
 ],
 "keys": "toi tin goc tra loi reply to jump original message"
@@ -852,7 +856,7 @@
 },
 {
 "t": "Ở \"Hàng chờ\" chọn \"Ngưỡng quá hạn\" (3/6/… giờ).",
-"at": "css:[role=radiogroup][aria-label=\"Ngưỡng quá hạn\"] button"
+"at": "css:[aria-label=\"Ngưỡng quá hạn\"] button"
 }
 ],
 "keys": "cho qua han overdue da sua can retest qc nhan trang thai xem them thu gon anh"
@@ -1038,7 +1042,7 @@
 "id": "composer-ai-agent",
 "tab": "telegram",
 "area": "Khung Trả lời › AI Agent",
-"title": "Giao việc cho AI Agent",
+"title": "Giao AI Agent",
 "what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Chỉ có với vai trò Dev.",
 "how": [
 "Chỉ có với vai trò Dev.",
@@ -1172,7 +1176,7 @@
 "tab": "telegram",
 "area": "AI Agent › Bộ lọc",
 "title": "Lọc phiên AI Agent",
-"what": "Chuyển giữa loại phiên \"Giao việc\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý); hiện số phiên đang chạy.",
+"what": "Chuyển giữa loại phiên \"Giao AI Agent\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý); hiện số phiên đang chạy.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1183,8 +1187,8 @@
 "at": "Đối chiếu BE"
 },
 {
-"t": "Bấm \"Giao việc\" để quay lại phiên giao việc.",
-"at": "Giao việc"
+"t": "Bấm \"Giao AI Agent\" để quay lại phiên Giao AI Agent.",
+"at": "Giao AI Agent"
 },
 {
 "t": "Bấm \"Done\" (hoặc \"Doing\", \"Tất cả\") để lọc theo trạng thái.",
@@ -1210,7 +1214,7 @@
 },
 {
 "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
-"at": "css:[role=tablist][aria-label=\"Lọc phiên\"] [role=tab]:first-child"
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
 },
 {
 "t": "Chọn một phiên trong danh sách.",
@@ -1248,7 +1252,7 @@
 },
 {
 "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
-"at": "css:[role=tablist][aria-label=\"Lọc phiên\"] [role=tab]:first-child"
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
 },
 {
 "t": "Chọn một phiên chế độ Chỉ đọc.",
@@ -1275,7 +1279,7 @@
 },
 {
 "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
-"at": "css:[role=tablist][aria-label=\"Lọc phiên\"] [role=tab]:first-child"
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
 },
 {
 "t": "Chọn một phiên trong danh sách.",
@@ -1364,7 +1368,7 @@
 "how": [
 {
 "t": "Bấm một vai trò: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Vai trò\"]"
+"at": "css:[aria-label=\"Vai trò\"]"
 },
 {
 "t": "Bấm \"Xóa vai trò\" để bỏ chọn",
@@ -1382,15 +1386,15 @@
 "how": [
 {
 "t": "Chọn \"Sáng\", \"Tối\" hoặc \"Theo hệ thống\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Giao diện\"]"
+"at": "css:[aria-label=\"Giao diện\"]"
 },
 {
 "t": "Chọn phong cách \"Đơn giản\", \"Mặc định\" hoặc \"Rực rỡ\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Phong cách\"]"
+"at": "css:[aria-label=\"Phong cách\"]"
 },
 {
 "t": "Bấm một ô màu có sẵn",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Màu có sẵn\"]"
+"at": "css:[aria-label=\"Màu có sẵn\"]"
 },
 {
 "t": "Bật \"Gradient\" để thêm màu thứ hai",
@@ -1453,7 +1457,7 @@
 },
 {
 "t": "Chọn số giờ ở \"Ngưỡng quá hạn\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Ngưỡng quá hạn\"]"
+"at": "css:[aria-label=\"Ngưỡng quá hạn\"]"
 }
 ],
 "keys": "nguong qua han overdue gio cho mau ho phach hang cho"
@@ -1489,7 +1493,7 @@
 },
 {
 "t": "Chọn \"Khi rê vào nút Xong\" hoặc \"Luôn hiện\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Nút thao tác trên tin\"]"
+"at": "css:[aria-label=\"Nút thao tác trên tin\"]"
 }
 ],
 "keys": "nut thao tac tren tin luon hien re vao row actions"
@@ -1507,7 +1511,7 @@
 },
 {
 "t": "Chọn nền tảng ở \"Tóm tắt theo nền tảng\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Tóm tắt theo nền tảng\"]"
+"at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
 }
 ],
 "keys": "mo san tom tat nen tang android ios mobile platform tra loi"
@@ -1621,7 +1625,7 @@
 },
 {
 "t": "Bấm tên AI muốn dùng ở \"Dùng AI nào\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"AI cho mọi tính năng\"]"
+"at": "css:[aria-label=\"AI cho mọi tính năng\"]"
 }
 ],
 "keys": "dung ai nao provider claude codex antigravity chon ai"
@@ -1630,16 +1634,16 @@
 "id": "settings-ai-consent",
 "tab": "settings",
 "area": "Cài đặt › AI › Quyền đọc tin",
-"title": "Hỏi trước khi AI đọc tin Telegram",
-"what": "Bật để AI chỉ đọc tin khi được cấp quyền; tắt chỉ khi dùng cá nhân để AI đọc tin xung quanh và tin bạn từng gửi, viết nháp đúng giọng.",
+"title": "Không cho AI đọc tin Telegram",
+"what": "Bật: mọi tính năng AI trên tin Telegram tắt (tóm tắt, soạn nháp, tạo ticket bằng AI, Đối chiếu BE, Giao AI Agent từ tin tag). Tắt khi dùng cá nhân để AI đọc tin tag, tin xung quanh và tin bạn từng gửi, viết nháp đúng giọng.",
 "how": [
 {
 "t": "Chọn mục \"AI\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
 },
 {
-"t": "Bật/tắt \"Hỏi trước khi AI đọc tin Telegram\"",
-"at": "Hỏi trước khi AI đọc tin Telegram"
+"t": "Bật/tắt \"Không cho AI đọc tin Telegram\"",
+"at": "Không cho AI đọc tin Telegram"
 }
 ],
 "keys": "quyen doc tin consent hoi truoc ai doc tin rieng tu privacy"
@@ -1736,7 +1740,7 @@
 },
 {
 "t": "Bấm một thẻ: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Vai trò\"]"
+"at": "css:[aria-label=\"Vai trò\"]"
 }
 ],
 "keys": "vai tro vai trò role dev qa qc po pm chon vai tro chọn vai trò xoa vai tro xóa vai trò doi vai tro đổi vai trò"
@@ -1774,11 +1778,11 @@
 "how": [
 {
 "t": "Bấm ô biểu tượng YouTrack đầu thanh bên (\"Thu gọn / mở rộng menu\")",
-"at": "css:button[title=\"Thu gọn / mở rộng menu\"]"
+"at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
 },
 {
 "t": "Bấm lại lần nữa để mở rộng",
-"at": "css:button[title=\"Thu gọn / mở rộng menu\"]"
+"at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
 }
 ],
 "keys": "thu gon thu gọn mo rong mở rộng collapse sidebar an menu ẩn menu"
@@ -2007,7 +2011,7 @@
 },
 {
 "t": "Bấm chip vừa hiện (\"Gỡ bộ lọc\") để gỡ",
-"at": "css:button[title=\"Gỡ bộ lọc\"]"
+"at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
 },
 "Khi có từ 2 chip, bấm \"Xóa tất cả\" để gỡ hết"
 ],
@@ -2185,16 +2189,16 @@
 "how": [
 {
 "t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] button:nth-child(2)"
+"at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
 },
 {
 "t": "Bấm nút cùng tên tab để chạy; phiên AI mở ở bảng bên",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] ~ div.flex button"
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
 },
 "Chờ AI viết xong; kết quả được lưu trong ngày. Nhấn Esc để đóng bảng bên",
 {
 "t": "Thẻ giờ có kết quả: bấm \"Mở phiên AI\" để xem lại và hỏi tiếp",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] ~ div.flex button"
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
 },
 "Nhấn Esc. \"Làm lại\" chạy lại, \"Xóa\" xóa nội dung đã lưu"
 ],
@@ -2213,7 +2217,7 @@
 },
 {
 "t": "Bấm nút chạy, AI viết standup ở bảng bên",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] ~ div.flex button"
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
 },
 {
 "t": "Khi có kết quả, bấm \"Copy\" để dán vào nhóm Telegram",
@@ -2239,7 +2243,7 @@
 },
 {
 "t": "Bấm một ô số để lọc (Chờ test, Chờ tôi test, Test lại, Bug…)",
-"at": "css:[role=\"radiogroup\"][aria-label=\"Lọc hàng đợi kiểm thử\"]"
+"at": "css:[aria-label=\"Lọc hàng đợi kiểm thử\"]"
 },
 {
 "t": "Bấm một dòng để mở ticket",
@@ -2326,7 +2330,7 @@
 },
 {
 "t": "Bấm một số KPI để xem danh sách ticket",
-"at": "css:button[title=\"Xem danh sách ticket\"]"
+"at": "css:button[data-drill=\"list\"]"
 },
 {
 "t": "Ở thẻ \"Chờ PO chốt\", bấm \"Xem cả … ticket\"",
@@ -2344,11 +2348,11 @@
 "how": [
 {
 "t": "Ở thẻ \"AI Studio\" bấm tab \"Lên sprint\" (tab \"Brief\", \"Grooming\", \"Bản tin tuần\", \"Release notes\" dùng tương tự)",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] button:nth-child(2)"
+"at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
 },
 {
 "t": "Bấm nút chạy; kết quả mở ở bảng bên",
-"at": "css:[role=radiogroup][aria-label=\"Việc của AI\"] ~ div.flex button"
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
 },
 {
 "t": "Khi có kết quả, bấm \"Copy\" để chép",
@@ -2517,7 +2521,7 @@
 },
 {
 "t": "Bấm một dòng trong thẻ \"Cần chú ý\" để xem danh sách ticket",
-"at": "css:button[title=\"Xem danh sách ticket\"]"
+"at": "css:button[data-drill=\"list\"]"
 },
 {
 "t": "Bấm \"Đóng\" để đóng danh sách",
@@ -2537,7 +2541,7 @@
 },
 {
 "t": "Bấm chip \"Lọc …\" phía trên để gỡ bộ lọc nhanh",
-"at": "css:button[title=\"Gỡ bộ lọc\"]"
+"at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
 }
 ],
 "keys": "loc nhanh lọc nhanh quick filter blocked qua han quá hạn chua assign chưa assign chua estimate chưa estimate backlog cho po chot chờ po chốt bug dang mo bug đang mở bi bo quen bị bỏ quên stale"
@@ -2612,7 +2616,7 @@
 "Kéo một thẻ ticket sang cột State khác; thông báo \"VA-1 → State\" có nút hoàn tác",
 {
 "t": "Bấm cột dọc \"Đã xong\" để hiện các cột đã xong (bấm lại để ẩn)",
-"at": "css:button[title=\"Hiện các cột đã xong\"], button[title=\"Ẩn các cột đã xong\"]"
+"at": "css:button[aria-label=\"Hiện các cột đã xong\"], button[aria-label=\"Ẩn các cột đã xong\"]"
 },
 "Mỗi cột hiện tối đa 60 thẻ; lọc bớt để xem phần còn lại"
 ],
@@ -2947,7 +2951,7 @@
 "Xem State, Assignee, Priority, QC, Sprint, Hạn, Mô tả, Liên kết, Nhắc trên Telegram, Bình luận; bấm một ticket trong \"Liên kết\" để chuyển sang đó",
 {
 "t": "Bấm ID ở đầu bảng bên để mở trên YouTrack",
-"at": "css:aside[role=\"dialog\"] a[title=\"Mở trên YouTrack\"]"
+"at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
 },
 {
 "t": "Bấm ✕ \"Đóng\" (hoặc Esc)",
@@ -3324,7 +3328,7 @@
 },
 {
 "t": "Bấm một số hoặc thanh biểu đồ để mở danh sách ticket",
-"at": "css:button[title=\"Xem danh sách ticket\"]"
+"at": "css:button[data-drill=\"list\"]"
 },
 {
 "t": "Thu hẹp số liệu bằng bộ lọc \"Sprint\"",
@@ -3388,7 +3392,7 @@
 },
 {
 "t": "Chọn tab \"Dashboard\" để thấy phiên vừa hỏi",
-"at": "css:[role=tablist][aria-label=\"Loại phiên AI\"] [role=tab]:nth-child(2)"
+"at": "css:[aria-label=\"Loại phiên AI\"] button:nth-child(2)"
 }
 ],
 "keys": "hoi ai dashboard hỏi ai dashboard ai so lieu ai số liệu phan tich phân tích bat thuong bất thường"
@@ -3460,7 +3464,7 @@
 "Nhấn Esc để đóng bảng bên",
 {
 "t": "Bấm thanh tiến độ của sprint để xem ticket của sprint đó",
-"at": "css:button[title=\"Xem danh sách ticket của sprint này\"]"
+"at": "css:button[data-drill=\"sprint\"]"
 },
 "Xem thẻ Burndown bên cạnh: đường thực tế, lý tưởng, dự báo ngày xong"
 ],

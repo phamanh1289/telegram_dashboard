@@ -8,12 +8,31 @@ from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
 from .errors import ApiError, int_or_404
+from .links import expand
 from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
 
 
 def new_task_id() -> str:
     return f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
+
+
+async def start_task(
+    s, task_id: str, chat_id: str | None, message_id: int | None, project: str, prompt: str, mode: str,
+    kind: str = "task", title: str | None = None,
+) -> None:  # fmt: skip
+    """Save the task, then start its first turn: a run is never without its row (a failed start
+    takes the row back)."""
+    session = s.agent.new_session()
+    await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
+                     mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
+    try:
+        named = await s.agent.start(task_id, project, await expand(s, prompt), mode, session, False)
+    except BaseException:
+        await s.db.write(s.store.delete_task, task_id)
+        raise
+    if named != session:  # Codex / Antigravity name their session once it runs
+        await s.db.write(s.store.set_task_session, task_id, named)
 
 
 def build_router(settings) -> APIRouter:
@@ -34,13 +53,11 @@ def build_router(settings) -> APIRouter:
             raise ApiError(404, "project_not_found")
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        task_id = new_task_id()
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
-        session = await s.agent.start(task_id, body.project, body.prompt, body.mode, s.agent.new_session(), False)
-        await s.db.write(
-            s.store.add_task, task_id, body.chat_id, mid, body.project, body.prompt,
-            mode=body.mode, session_id=session,
-        )  # fmt: skip
+        if mid is not None:  # "Giao AI Agent" on a message: its prompt carries the Telegram text
+            s.ai.require_read()
+        task_id = new_task_id()
+        await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode)
         return {"id": task_id}
 
     @r.get("")
@@ -67,15 +84,17 @@ def build_router(settings) -> APIRouter:
 
     @r.post("/{task_id}/reopen", status_code=204)
     async def reopen_task(task_id: str, request: Request) -> None:
-        """Run the same task again in a fresh session; the old result goes once it runs."""
+        """Run the same task again in a fresh session on the CLI that ran it (its model/effort picks
+        belong to that CLI); the old result goes once it runs."""
         s = request.app.state
         row = await _task(s, task_id, headless=True)
         if not row["prompt"]:
             raise ApiError(404, "task_not_found")
         await s.agent.stop(task_id)
         ai = (row["model"], row["effort"])
+        fresh = s.agent.new_session(split_session(row["session_id"] or "")[0])
         session = await s.agent.start(
-            task_id, row["project"], row["prompt"], row["mode"], s.agent.new_session(), False, ai
+            task_id, row["project"], await expand(s, row["prompt"]), row["mode"], fresh, False, ai
         )  # fmt: skip
         await s.db.write(s.store.set_task_session, task_id, session)
 
@@ -97,7 +116,7 @@ def build_router(settings) -> APIRouter:
         mode = "edit" if body.edit else row["mode"]  # per turn, so a plan can be approved
         # start() reserves the task before its first await: a double send gets 409 task_busy.
         ai = (row["model"], row["effort"])
-        await s.agent.start(task_id, row["project"], body.text, mode, row["session_id"], True, ai)
+        await s.agent.start(task_id, row["project"], await expand(s, body.text), mode, row["session_id"], True, ai)
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:

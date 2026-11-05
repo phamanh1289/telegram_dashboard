@@ -2,18 +2,16 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Bookmark, ChevronDown, Columns3, Copy, Download, Link2, Rows3, Search, SlidersHorizontal, Sparkles, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
-import { Fragment, memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from "motion/react";
+import { Fragment, memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
-import { toast, useNow } from "@/lib/inbox";
+import { ago, copyText, fold, toast, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import {
-  activePool, ago, bucket, type ColKey, COLS, copyText, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, norm, PCOL, rank,
-  shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt,
-} from "@/lib/yt";
+import { activePool, bucket, type ColKey, COLS, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, PCOL, rank, shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt } from "@/lib/yt";
 import { period } from "@/lib/yt-stats";
 import { Avatar, MultiSelect, Person, Popover, Prio, StatePill, Tag, TypeTag } from "./bits";
 import { type AssigneeActs, AssigneePicker } from "./sheet";
@@ -39,6 +37,9 @@ export function TicketsPage() {
   const searchRef = useRef<HTMLInputElement>(null);
   const aiBusy = useAiFilterBusy();
   const tableRef = useRef<HTMLTableSectionElement>(null);
+  // State too, not just the ref: HoverPreview must re-attach when the table first mounts (cold load) or comes back from Empty.
+  const [tbody, setTbody] = useState<HTMLTableSectionElement | null>(null);
+  const bodyRef = useCallback((el: HTMLTableSectionElement | null) => { tableRef.current = el; setTbody(el); }, []);
   const endRef = useRef<HTMLDivElement>(null);
   const [folded, setFolded] = useState<Set<string>>(new Set());
   // the first `cap` rows in display order (groups first, so more rows append at the end); folded groups keep only their header
@@ -125,7 +126,7 @@ export function TicketsPage() {
           <input ref={searchRef} type="search" value={f.q} onChange={(e) => y.setFilters({ q: e.target.value })} aria-label="Tìm ticket" autoComplete="off" maxLength={500}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && y.aiOn) { e.preventDefault(); void aiFilterApply(y, f.q); } }}
             placeholder={y.aiOn ? "Tìm ID, tiêu đề, người… hoặc gõ một câu cho AI lọc  ( / )" : "Tìm ID, tiêu đề, người…  ( / )"}
-            className={cn("h-8 w-full rounded-md border border-rule bg-cotton pl-8 text-sm outline-none focus:border-hl", y.aiOn ? "pr-20" : "pr-2")} />
+            className={cn("h-8 w-full rounded-md border border-rule bg-cotton pl-8 text-sm focus:border-hl", y.aiOn ? "pr-20" : "pr-2")} />
           {y.aiOn && (
             <Hint text="AI đổi câu này thành bộ lọc State / Priority / Type / Người / Sprint (⌘↵)" side="bottom">
               <button type="button" disabled={!f.q.trim() || aiBusy} onClick={() => void aiFilterApply(y, f.q)}
@@ -178,7 +179,7 @@ export function TicketsPage() {
                 })}
               </tr>
             </thead>
-            <tbody ref={tableRef}>
+            <tbody ref={bodyRef}>
               {!groups
                 ? shown.map(row)
                 : parts.map(([g, items, part]) => (
@@ -202,7 +203,7 @@ export function TicketsPage() {
       ) : y.issues.isPending ? <TableSkeleton /> : (
         <Empty anyFilter={anyFilter} />
       )}
-      {y.view === "table" && <HoverPreview body={tableRef} />}
+      {y.view === "table" && <HoverPreview el={tbody} />}
     </section>
   );
 }
@@ -323,10 +324,10 @@ function BulkBar() {
           return (
             <>
               <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm người…" aria-label="Tìm người"
-                className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm text-ink outline-none focus:border-hl" />
+                className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm text-ink focus:border-hl" />
               <div className="grid overflow-y-auto p-1 text-ink">
                 {!q && <button type="button" onClick={() => pick("")} className="rounded px-2 py-1.5 text-left text-sm text-ink-3 hover:bg-paper-2 hover:text-ink">Chưa assign</button>}
-                {y.people.filter((p) => !q || norm(p.name).includes(norm(q)) || norm(p.login).includes(norm(q))).map((p) => (
+                {y.people.filter((p) => !q || fold(p.name).includes(fold(q)) || fold(p.login).includes(fold(q))).map((p) => (
                   <button key={p.login} type="button" onClick={() => pick(p.login)} aria-current={as === p.login}
                     className={cn("flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-paper-2", as === p.login && "bg-paper-2 font-medium")}>
                     <Avatar name={p.name} /><span className="truncate">{p.name}</span>
@@ -339,8 +340,8 @@ function BulkBar() {
       </Popover>
       <Button size="sm" variant="outline" disabled={busy} aria-busy={busy} onClick={() => void apply()}>Áp dụng</Button>
       {y.aiOn && (
-        <Button size="sm" variant="outline" title="Hỏi AI về các ticket đã chọn, có thể trace code trong thư mục dự án"
-          onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids })}><Sparkles /> AI</Button>
+        <Hint side="bottom" text="Hỏi AI về các ticket đã chọn, có thể trace code trong thư mục dự án"><Button size="sm" variant="outline"
+          onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids })}><Sparkles /> AI</Button></Hint>
       )}
       <Button size="sm" variant="ghost" className="ml-auto text-board-type hover:bg-board-type/15 hover:text-board-type" onClick={() => y.setPicked(new Set())}>Bỏ chọn</Button>
     </motion.div>
@@ -451,7 +452,7 @@ function Views() {
           {!list.length && <p className="px-2 py-1 text-xs text-ink-3">Chưa có. Đặt bộ lọc, chọn Bảng / Board, rồi lưu lại ở đây.</p>}
           <form onSubmit={(e) => { e.preventDefault(); add(); }} className="flex gap-1 pt-1">
             <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} placeholder="Tên view, vd. Bug sprint này" aria-label="Tên view"
-              className="h-8 min-w-0 flex-1 rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />
+              className="h-8 min-w-0 flex-1 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />
             <Button type="submit" size="sm" disabled={!name.trim()}>Lưu</Button>
           </form>
         </div>
@@ -460,66 +461,208 @@ function Views() {
   );
 }
 
-/** Columns by State (workflow order), cards dragged onto a column change the ticket's State in YouTrack. */
+/** Board drag: one spring for lift, the slots opening / closing and the card flying into place. */
+const DND = { type: "spring", stiffness: 460, damping: 36 } as const;
+type Drag = { t: Ticket; from: string; w: number; h: number; land?: string }; // land: set on release, the column the card flies into
+const colAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-col]") ?? null;
+const GHOST = "\u0000ghost";
+
+/**
+ * Columns by State (workflow order), cards dragged onto a column change the ticket's State in YouTrack.
+ * Drag is pointer-driven (mouse / pen): the card lifts into a floating copy that tilts with its speed, a slot opens where it would land
+ * (its place in the list order), the board scrolls at its edges, and on release the copy springs into the card's new place. Esc cancels.
+ */
 function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) => void }) {
   const y = useYt();
   const now = useNow();
+  const still = useReducedMotion();
   const [over, setOver] = useState<string | null>(null);
-  const [drag, setDrag] = useState<string | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [pend, setPend] = useState<{ id: string; state: string } | null>(null); // the dropped card sits in its new column while YouTrack answers
   const PER = 60;
   const [showDone, setShowDone] = useState(false); // done columns hold thousands of tickets: folded into one button
   const doneN = useMemo(() => rows.filter((i) => i.resolved).length, [rows]);
   const cols = useMemo(() => {
     const m = new Map<string, Ticket[]>();
     for (const i of rows) {
-      if (i.resolved && !showDone) continue; const k = i.state || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(i); }
+      if (i.resolved && !showDone) continue; const k = (pend?.id === i.id ? pend.state : i.state) || "—"; (m.get(k) ?? m.set(k, []).get(k)!).push(i); }
     return [...m].sort((a, b) => bucket(a[1][0]) - bucket(b[1][0]) || +(stateSem(a[0]) === "bad") - +(stateSem(b[0]) === "bad") || b[1].length - a[1].length);
-  }, [rows, showDone]);
+  }, [rows, showDone, pend]);
+  // columns keep their places while the same states are on the board: a drop that changes counts must not reshuffle them under the pointer
+  const sig = cols.map(([s]) => s).sort().join("\n");
+  const [keep, setKeep] = useState({ sig, order: cols.map(([s]) => s) });
+  if (keep.sig !== sig) setKeep({ sig, order: cols.map(([s]) => s) });
+  const lanes = useMemo(() => { const m = new Map(cols); return keep.sig === sig ? keep.order.map((s) => [s, m.get(s)!] as const) : cols; }, [cols, keep, sig]);
+  const order = useMemo(() => new Map(rows.map((i, k) => [i.id, k])), [rows]);
   const write = !y.config?.mock;
   const flow = useFlow(y.project);
   const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
-  const moving = drag ? rows.find((i) => i.id === drag) : undefined;
-  async function drop(state: string) {
+  const live = drag && !drag.land ? drag : null;
+  const target = live && over && over !== live.from && over !== "—" && canGo(live.t, over) ? over : null; // where the card goes if let go now
+  const blocked = !!live && !!over && over !== live.from && !target;
+
+  // the floating copy: position, lift (0 resting → 1 picked up), tilt from horizontal speed
+  const ox = useMotionValue(0), oy = useMotionValue(0), lift = useMotionValue(0), fade = useMotionValue(1);
+  const vx = useVelocity(ox);
+  const rotate = useSpring(useTransform(() => (still ? 0 : Math.max(-7, Math.min(7, vx.get() / 260)) + lift.get() * 1.5)), { stiffness: 380, damping: 28 });
+  const scale = useTransform(lift, [0, 1], [1, 1.03]);
+  const boxShadow = useTransform(lift, (v) => `0 ${1 + 13 * v}px ${3 + 29 * v}px ${-5 * v}px oklch(0% 0 0 / ${0.1 + 0.14 * v}), 0 0 0 1px oklch(0% 0 0 / 0.05)`);
+  const ptr = useRef({ x: 0, y: 0 });
+  const board = useRef<HTMLDivElement>(null);
+  const dragged = useRef(false); // the click that ends a drag must not open the ticket
+
+  function release(to: string | null) {
+    if (!drag) return;
+    const t = drag.t, ok = !!to && to !== drag.from && to !== "—" && canGo(t, to);
+    if (to && to !== drag.from && to !== "—" && !ok) toast({ text: `Workflow của team không cho ${t.state} → ${to}` });
     setOver(null);
-    const t = rows.find((i) => i.id === drag);
-    setDrag(null);
-    if (!t || !write || state === "—" || t.state === state) return;
-    if (!canGo(t, state)) return void toast({ text: `Workflow của team không cho ${t.state} → ${state}` });
-    const prev = t.state, go = (from: Ticket, to: string) => saveTicket(y.patchTicket, from, { state: to }, () => yt.setField(t.id, "State", to));
-    if (await go(t, state)) toast({ text: `${t.id} → ${state}`, undo: prev ? () => void go({ ...t, state }, prev) : undefined });
+    setDrag({ ...drag, land: ok ? to : drag.from });
+    if (!ok) return;
+    setPend({ id: t.id, state: to });
+    const prev = t.state, go = (from: Ticket, s: string) => saveTicket(y.patchTicket, from, { state: s }, () => yt.setField(t.id, "State", s));
+    void go(t, to).then((saved) => {
+      setPend(null);
+      if (saved) toast({ text: `${t.id} → ${to}`, undo: prev ? () => void go({ ...t, state: to }, prev) : undefined });
+    });
   }
+  const releaseRef = useRef(release);
+  useLayoutEffect(() => { releaseRef.current = release; });
+
+  const start = useCallback((e: React.PointerEvent<HTMLElement>, t: Ticket, from: string) => {
+    if (e.button !== 0 || e.pointerType === "touch") return; // touch keeps scrolling the board
+    const r = e.currentTarget.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
+    let on = false;
+    const move = (ev: PointerEvent) => {
+      ptr.current = { x: ev.clientX, y: ev.clientY };
+      if (!on) {
+        if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+        on = true;
+        document.documentElement.classList.add("yt-dragging");
+        ox.jump(r.left); oy.jump(r.top); lift.jump(0); fade.jump(1);
+        animate(lift, 1, DND);
+        setDrag({ t, from, w: r.width, h: r.height });
+      }
+      ox.set(ev.clientX - sx + r.left); oy.set(ev.clientY - sy + r.top);
+    };
+    const end = (ev: Event) => {
+      removeEventListener("pointermove", move); removeEventListener("pointerup", end); removeEventListener("pointercancel", end); removeEventListener("keydown", esc, true);
+      if (!on) return;
+      document.documentElement.classList.remove("yt-dragging");
+      dragged.current = true; setTimeout(() => { dragged.current = false; });
+      releaseRef.current(ev.type === "pointerup" ? colAt(ptr.current.x, ptr.current.y)?.dataset.col ?? null : null);
+    };
+    const esc = (ev: KeyboardEvent) => { if (ev.key === "Escape" && on) { ev.stopPropagation(); ev.preventDefault(); end(ev); } };
+    addEventListener("pointermove", move); addEventListener("pointerup", end); addEventListener("pointercancel", end); addEventListener("keydown", esc, true);
+  }, [ox, oy, lift, fade]);
+  const open = useCallback((i: Ticket) => { if (!dragged.current) onOpen(i); }, [onOpen]);
+  useEffect(() => () => document.documentElement.classList.remove("yt-dragging"), []);
+
+  // while dragging: which column is under the pointer, and scroll the board / that column near their edges
+  useEffect(() => {
+    if (!drag || drag.land) return;
+    let raf = 0;
+    const speed = (d: number) => (d < 56 ? Math.min(1, (56 - d) / 56) ** 2 * 18 : 0);
+    const tick = () => {
+      const p = ptr.current, b = board.current;
+      if (b) { const r = b.getBoundingClientRect(); b.scrollLeft += speed(r.right - p.x) - speed(p.x - r.left); }
+      const col = colAt(p.x, p.y), ul = col?.querySelector("ul");
+      if (ul) { const r = ul.getBoundingClientRect(); ul.scrollTop += speed(r.bottom - p.y) - speed(p.y - r.top); }
+      setOver(col?.dataset.col ?? null);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drag]);
+
+  // released: the copy springs onto the card's new (or old) place, then hands over to it
+  useLayoutEffect(() => {
+    if (!drag?.land) return;
+    const el = board.current?.querySelector<HTMLElement>(`[data-card="${CSS.escape(drag.t.id)}"] > button`);
+    const tr = still ? { duration: 0 } : DND;
+    el?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const r = el?.getBoundingClientRect();
+    const runs = r ? [animate(lift, 0, tr), animate(ox, r.left, tr), animate(oy, r.top, tr)] : [animate(fade, 0, { duration: 0.15 })];
+    let done = false;
+    void Promise.all(runs).then(() => { if (!done) setDrag(null); });
+    return () => { done = true; runs.forEach((a) => a.stop()); };
+  }, [drag, still, lift, ox, oy, fade]);
+
   return (
-    <div className="flex gap-3 overflow-x-auto pb-2 md:max-h-[calc(100dvh-var(--yt-top)-1rem)]">
-      {cols.map(([st, list]) => (
-        <section key={st} aria-label={`${st}: ${list.length} ticket`}
-          onDragOver={(e) => { if (drag && write) { e.preventDefault(); setOver(st); } }} onDragLeave={() => setOver((o) => (o === st ? null : o))} onDrop={(e) => { e.preventDefault(); void drop(st); }}
-          className={cn("flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,opacity] duration-(--dur-micro)", over === st && "bg-hl-wash ring-2 ring-hl",
-            moving && moving.state !== st && !canGo(moving, st) && "opacity-40")}>
-          <header className="sticky top-0 flex items-center gap-2 px-3 py-2"><StatePill state={st} /><b className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-xs font-medium text-ink-3">{list.length}</b></header>
-          <ul className="grid min-h-16 content-start gap-1.5 overflow-y-auto px-2 pb-2">
-            {list.slice(0, PER).map((i) => (
-              <li key={i.id} draggable={write} onDragStart={(e) => { setDrag(i.id); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => { setDrag(null); setOver(null); }}
-                className={cn("rounded-[var(--radius-input)]", drag === i.id && "opacity-40")}>
-                <button type="button" onClick={() => onOpen(i)} style={{ boxShadow: `inset 3px 0 0 ${stateColor(i.state)}, var(--edge-stock)` }}
-                  className={cn("grid w-full gap-1.5 rounded-[var(--radius-input)] bg-cotton py-2.5 pr-2.5 pl-3.5 text-left hover:bg-paper-2", write && "cursor-grab active:cursor-grabbing")}>
-                  <span className="flex items-center gap-2"><b className="font-mono text-xs">{i.id}</b><TypeTag type={i.type} />{i.due && i.due < now && <span className="ml-auto inline-flex items-center gap-0.5 text-xs font-semibold text-error"><AlertTriangle className="size-3" />quá hạn</span>}</span>
-                  {tagsOf(i).length > 0 && <span className="flex flex-wrap gap-1">{tagsOf(i).map((t) => <Tag key={t} name={t} />)}</span>}
-                  <span className={cn("line-clamp-3 text-sm leading-snug font-medium text-ink", i.resolved && "font-normal text-ink-3 line-through")}>{titleOf(i)}</span>
-                  <span className="flex items-center justify-between gap-2"><Prio p={i.priority} /><Person name={i.assignee} empty="Chưa assign" /></span>
-                </button>
-              </li>
-            ))}
-            {list.length > PER && <li className="px-1 text-xs text-ink-3">… và {list.length - PER} ticket nữa, lọc bớt để xem</li>}
-          </ul>
-        </section>
-      ))}
+    <div ref={board} className="flex gap-3 overflow-x-auto pb-2 md:max-h-[calc(100dvh-var(--yt-top)-1rem)]">
+      {lanes.map(([st, list]) => {
+        const shown: (Ticket | typeof GHOST)[] = list.slice(0, PER);
+        if (st === target && live) {
+          const at = list.findIndex((i) => order.get(i.id)! > order.get(live.t.id)!);
+          shown.splice(Math.min(at < 0 ? list.length : at, PER), 0, GHOST);
+        }
+        const away = drag && (drag.land ? drag.land !== drag.from : !!target); // the card is leaving its column: close its old slot
+        return (
+          <section key={st} data-col={st} aria-label={`${st}: ${list.length} ticket`}
+            className={cn("flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,box-shadow,opacity] duration-(--dur-short)",
+              st === target && "bg-hl-wash shadow-[inset_0_0_0_2px_var(--color-hl)]",
+              live && st !== live.from && st !== "—" && !canGo(live.t, st) && "opacity-40")}>
+            <header className="sticky top-0 flex items-center gap-2 px-3 py-2"><StatePill state={st} /><b className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-xs font-medium text-ink-3">{list.length}</b></header>
+            <ul className="flex min-h-16 flex-col overflow-y-auto px-2 pb-1">
+              <AnimatePresence initial={false} custom={!!drag?.land}>
+                {shown.map((i) => i === GHOST ? <Slot key={GHOST} h={live!.h} open grow />
+                  : drag && !drag.land && i.id === drag.t.id ? <Slot key={i.id} h={drag.h} open={!away} />
+                  : <BoardCard key={i.id} i={i} now={now} col={st} write={write} hidden={!!drag?.land && i.id === drag.t.id} onOpen={open} onDown={start} />)}
+              </AnimatePresence>
+              {list.length > PER && <li className="px-1 pb-1 text-xs text-ink-3">… và {list.length - PER} ticket nữa, lọc bớt để xem</li>}
+            </ul>
+          </section>
+        );
+      })}
       {doneN > 0 && (
-        <button type="button" onClick={() => setShowDone(!showDone)} title={showDone ? "Ẩn các cột đã xong" : "Hiện các cột đã xong"}
+        <button type="button" onClick={() => setShowDone(!showDone)} aria-expanded={showDone} aria-label={showDone ? "Ẩn các cột đã xong" : "Hiện các cột đã xong"}
           className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-[var(--radius-card)] bg-paper-2 py-3 text-xs font-medium text-ink-2 hover:bg-paper-3 hover:text-ink">
           <b className="font-mono font-medium tabular-nums">{fmt(doneN)}</b><span className="[writing-mode:vertical-rl]">{showDone ? "Ẩn đã xong" : "Đã xong"}</span>
         </button>
       )}
+      {drag && createPortal(
+        <motion.div aria-hidden style={{ x: ox, y: oy, width: drag.w, rotate, scale, boxShadow, opacity: fade }}
+          className={cn("pointer-events-none fixed top-0 left-0 z-50 grid origin-center gap-1.5 rounded-[var(--radius-input)] bg-cotton py-2.5 pr-2.5 pl-3.5 transition-[outline-color] duration-(--dur-micro) outline-2 outline-transparent",
+            blocked && "outline-error")}>
+          <CardBody i={drag.t} now={now} bar={stateColor(drag.land ?? target ?? drag.t.state)} />
+        </motion.div>, document.body)}
     </div>
+  );
+}
+
+/** A gap in a column: where the dragged card came from (`open` until it heads elsewhere), or where it would land (`grow`s in). */
+function Slot({ h, open, grow }: { h: number; open: boolean; grow?: boolean }) {
+  return (
+    <motion.li aria-hidden initial={grow ? { height: 0, opacity: 0 } : false} animate={{ height: open ? h + 6 : 0, opacity: open ? 1 : 0 }} transition={DND}
+      exit="gone" variants={{ gone: (instant: boolean) => ({ height: 0, opacity: 0, transition: instant ? { duration: 0 } : DND }) }} className="shrink-0 overflow-hidden">
+      <div style={{ height: h }} className="rounded-[var(--radius-input)] border-2 border-dashed border-hl/45 bg-hl-wash/70" />
+    </motion.li>
+  );
+}
+
+/** One ticket on the board; the floating copy while dragging shows the same body. */
+const BoardCard = memo(function BoardCard({ i, now, col, write, hidden, onOpen, onDown }: {
+  i: Ticket; now: number; col: string; write: boolean; hidden: boolean; onOpen: (i: Ticket) => void; onDown: (e: React.PointerEvent<HTMLElement>, t: Ticket, from: string) => void;
+}) {
+  return (
+    <li data-card={i.id} className={cn("shrink-0 pb-1.5", hidden && "opacity-0")}>
+      <button type="button" onClick={() => onOpen(i)} onPointerDown={write ? (e) => onDown(e, i, col) : undefined}
+        className={cn("relative grid w-full gap-1.5 rounded-[var(--radius-input)] bg-cotton py-2.5 pr-2.5 pl-3.5 text-left shadow-edge transition-[translate,box-shadow] duration-(--dur-micro) hover:-translate-y-px hover:shadow-stock",
+          write && "cursor-grab select-none")}>
+        <CardBody i={i} now={now} bar={stateColor(i.state)} />
+      </button>
+    </li>
+  );
+});
+
+function CardBody({ i, now, bar }: { i: Ticket; now: number; bar: string }) {
+  return (
+    <>
+      <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] rounded-l-[var(--radius-input)] transition-colors duration-(--dur-short)" style={{ backgroundColor: bar }} />
+      <span className="flex items-center gap-2"><b className="font-mono text-xs">{i.id}</b><TypeTag type={i.type} />{i.due && i.due < now && <span className="ml-auto inline-flex items-center gap-0.5 text-xs font-semibold text-error"><AlertTriangle className="size-3" />quá hạn</span>}</span>
+      {tagsOf(i).length > 0 && <span className="flex flex-wrap gap-1">{tagsOf(i).map((t) => <Tag key={t} name={t} />)}</span>}
+      <span className={cn("line-clamp-3 text-sm leading-snug font-medium text-ink", i.resolved && "font-normal text-ink-3 line-through")}>{titleOf(i)}</span>
+      <span className="flex items-center justify-between gap-2"><Prio p={i.priority} /><Person name={i.assignee} empty="Chưa assign" /></span>
+    </>
   );
 }
 
@@ -543,7 +686,7 @@ function Empty({ anyFilter }: { anyFilter: boolean }) {
       {anyFilter && <Button size="sm" variant="outline" onClick={() => y.setFilters({ q: "", tier: null, quick: null, state: [], priority: [], type: [], sprint: [], assignee: [] })}><X /> Xóa bộ lọc</Button>}
       <div className="flex w-full max-w-md gap-2">
         <input type="search" value={gid} onChange={(e) => setGid(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void find(); }} placeholder="Tìm toàn cục theo ID (vd. 123 hoặc VA-123)"
-          aria-label="Tìm toàn cục theo ID" className="h-9 flex-1 rounded-md border border-rule bg-paper px-2 text-sm outline-none focus:border-hl" />
+          aria-label="Tìm toàn cục theo ID" className="h-9 flex-1 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />
         <Button onClick={() => void find()}>Tìm toàn cục</Button>
       </div>
       <p role="status" className="text-xs text-ink-3">{msg}</p>
@@ -572,12 +715,11 @@ function TableSkeleton() {
 }
 
 /** Hover a row for a moment: a card with the description. */
-function HoverPreview({ body }: { body: React.RefObject<HTMLTableSectionElement | null> }) {
+function HoverPreview({ el }: { el: HTMLTableSectionElement | null }) {
   const y = useYt();
   const [at, setAt] = useState<{ id: string; x: number; y: number } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
-    const el = body.current;
     if (!el || matchMedia("(hover: none)").matches) return;
     let cur: string | null = null;
     const over = (e: MouseEvent) => {
@@ -594,7 +736,7 @@ function HoverPreview({ body }: { body: React.RefObject<HTMLTableSectionElement 
     el.addEventListener("mouseleave", leave);
     addEventListener("scroll", scroll, { passive: true, capture: true });
     return () => { el.removeEventListener("mouseover", over); el.removeEventListener("mouseleave", leave); removeEventListener("scroll", scroll, { capture: true }); clearTimeout(timer.current); };
-  }, [body]);
+  }, [el]);
   const d = useQuery({ queryKey: ["yt", "detail", at?.id], queryFn: () => yt.detail(at!.id), enabled: !!at, staleTime: 60_000 });
   const t = at && y.rows.find((i) => i.id === at.id);
   if (!at || !t || y.sheet) return null;

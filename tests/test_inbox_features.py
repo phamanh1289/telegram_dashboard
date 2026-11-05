@@ -9,8 +9,8 @@ H = {"Origin": ORIGIN}
 
 
 def _seed(store):
-    store.track_mention(A, "Alpha", "supergroup")
-    store.track_mention(B, "Beta", "supergroup")
+    store.set_tracking(A, True, "Alpha", "supergroup")
+    store.set_tracking(B, True, "Beta", "supergroup")
     a1 = msg(A, 1, "@me review PR", sender="5")
     a1.date = datetime(2026, 10, 30, 8, tzinfo=UTC)
     b1 = msg(B, 2, "#TB thông báo bảo trì", sender="9")
@@ -57,15 +57,20 @@ def test_rules_clear_existing_and_new_tags(client):
     assert [i["message"]["message_id"] for i in client.get("/api/pending").json()] == ["1"]
     assert store.store_mentions([("Beta", "supergroup", msg(B, 3, "#tb lần 2"), False)]) == []
     assert store.get_message(B, 3).handled
-    assert client.post("/api/rules", json={"kind": "sender", "value": "5"}, headers=H).status_code == 422
-    assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword"]
+    for blank in ("", "   "):  # "" is in every text: it would clear every tag
+        assert client.post("/api/rules", json={"kind": "keyword", "value": blank}, headers=H).status_code == 422
+    r = client.post("/api/rules", json={"kind": "sender", "value": "5", "label": "Alice"}, headers=H).json()
+    assert r["handled"] == 1 and r["rule"] | {"id": 0} == {"id": 0, "kind": "sender", "value": "5", "label": "Alice"}
+    assert client.get("/api/pending").json() == []
+    assert store.store_mentions([("Alpha", "supergroup", msg(A, 5, "@me again", sender="5"), False)]) == []
+    assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword", "sender"]
 
 
 def test_context_is_live_and_only_around_kept_tags(client):
     store = client.app.state.store
     bridge = client.app.state.bridge
     bridge.state = "connected"
-    store.track_mention(A, "Alpha", "supergroup")
+    store.set_tracking(A, True, "Alpha", "supergroup")
     bridge.transport.history[A] = [msg(A, i, f"m{i}") for i in range(1, 21)]
     store.apply_message(msg(A, 10, "m10"))
     ids = [m["message_id"] for m in client.get(f"/api/chats/{A}/messages/10/context").json()]
@@ -77,8 +82,23 @@ def test_context_is_live_and_only_around_kept_tags(client):
     assert done == ["10"]
 
 
+def test_one_message_kept_else_live(client):
+    store = client.app.state.store
+    bridge = client.app.state.bridge
+    store.set_tracking(A, True, "Alpha", "supergroup")
+    store.apply_message(msg(A, 10, "kept tag"))
+    r = client.get(f"/api/chats/{A}/messages/10")  # a ref for the AI: consent mode keeps it out
+    assert r.status_code == 403 and r.json()["error"]["code"] == "ai_scope_not_allowed"
+    client.put("/api/settings/consent", json={"ai_require_consent": False}, headers=H)
+    assert client.get(f"/api/chats/{A}/messages/10").json()["text"] == "kept tag"
+    bridge.transport.history[A] = [msg(A, 11, "BE confirm")]
+    assert client.get(f"/api/chats/{A}/messages/11").json()["text"] == "BE confirm"
+    for bad in ("12", "0", "x", str(2**31)):
+        assert client.get(f"/api/chats/{A}/messages/{bad}").status_code == 404
+
+
 async def test_draft_includes_context(env, tmp_path):
-    env.store.track_mention(A, "Alpha", "supergroup")
+    env.store.set_tracking(A, True, "Alpha", "supergroup")
     env.store.apply_message(msg(A, 1, "@me what about this?", sender="7"))
     s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="", ai_require_consent=False)
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
@@ -119,7 +139,7 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     from telegram_dashboard.agent import task_result_path
 
     store = client.app.state.store
-    store.track_mention(A, "Alpha", "supergroup")
+    store.set_tracking(A, True, "Alpha", "supergroup")
     store.add_task("t1", A, 4, "/tmp/proj", "sửa bug login")
     assert client.get("/api/tasks").json()[0]["result"] is None
     assert client.get("/api/tasks").json()[0]["handled"] is False  # message not stored yet
@@ -150,7 +170,7 @@ def test_date_range_filters_lists(client):
     msgs = client.get(f"/api/chats/{A}/messages?{day}").json()["items"]
     assert msgs == []
     r = client.post(f"/api/chats/{B}/handled-all?{day}", headers=H).json()
-    assert r == {"count": 1}
+    assert r == {"count": 1, "message_ids": [2]}
 
 
 def test_done_mirrors_as_telegram_reaction(settings):
@@ -187,7 +207,7 @@ def _reaction_flow(client):
     client.put(url, json={"handled": True}, headers=H)  # unchanged: nothing sent
     client.put(url, json={"handled": False}, headers=H)  # reopened: reaction removed
     assert reactions(2) == [(A, 1, "👍"), (A, 1, None)]
-    assert client.post(f"/api/chats/{B}/handled-all", headers=H).json() == {"count": 1}
+    assert client.post(f"/api/chats/{B}/handled-all", headers=H).json()["count"] == 1
     assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]  # bulk marks stay private
     client.put(url, json={"handled": True, "react": False}, headers=H)  # done without a reaction
     assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]
@@ -279,7 +299,8 @@ def test_headless_task_runs_and_resumes(tmp_path):
         assert task["mode"] == "plan"
         ev = wait_idle(task["id"])
         assert [i["kind"] for i in ev["items"]] == ["user", "assistant", "result"]
-        assert "--model sonnet --effort medium" in ev["items"][-1]["text"] and "--permission-mode plan" in ev["items"][-1]["text"] and "--session-id" in ev["items"][-1]["text"]
+        last = ev["items"][-1]["text"]
+        assert "--model sonnet --effort medium" in last and "--permission-mode plan" in last and "--session-id" in last
         assert c.get("/api/tasks").json()[0]["running"] is False
         assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "tiếp"}, headers=H).status_code == 204
         for _ in range(100):
@@ -287,10 +308,12 @@ def test_headless_task_runs_and_resumes(tmp_path):
             if len(ev["items"]) == 6 and not ev["running"]:
                 break
             time.sleep(0.05)
-        assert ev["items"][3] | {"at": 0} == {"kind": "user", "text": "tiếp", "at": 0} and "--resume" in ev["items"][-1]["text"]
+        assert ev["items"][3] | {"at": 0} == {"kind": "user", "text": "tiếp", "at": 0}
+        assert "--resume" in ev["items"][-1]["text"]
         assert "--permission-mode plan" in ev["items"][-1]["text"]
         # Accept edit: the plan task's next turn resumes the same session allowed to edit
-        assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "làm đi", "edit": True}, headers=H).status_code == 204
+        go = {"text": "làm đi", "edit": True}
+        assert c.post(f"/api/tasks/{task['id']}/message", json=go, headers=H).status_code == 204
         for _ in range(100):
             ev = c.get(f"/api/tasks/{task['id']}/events").json()
             if len(ev["items"]) == 9 and not ev["running"]:
@@ -325,4 +348,5 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         [t] = c.get("/api/tasks").json()
         assert (t["id"], t["kind"], t["mode"], t["message_id"]) == (r.json()["id"], "deep", "plan", "5")
         assert t["title"] == "Hỏi: BE ơi API trả field gì?\nBE: field là status" and "<confirm>" in t["prompt"]
-        assert c.post("/api/ai/deep", json=body | {"confirm_id": "4"}, headers=H).json()["error"]["code"] == "ai_scope_not_allowed"
+        same = c.post("/api/ai/deep", json=body | {"confirm_id": "4"}, headers=H).json()
+        assert same["error"]["code"] == "ai_scope_not_allowed"

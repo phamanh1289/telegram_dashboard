@@ -7,6 +7,8 @@ import Link from "next/link";
 import { ImageView } from "@/components/markdown";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
@@ -30,6 +32,15 @@ export function Sheet() {
     opener.current ??= document.activeElement as HTMLElement | null;
     panel.current?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
   }, [s]);
+  // aria-modal needs the page behind to be out of reach too: Tab and screen readers stay in the sheet.
+  const open = !!s;
+  useEffect(() => {
+    const p = panel.current;
+    if (!open || !p?.parentElement) return;
+    const behind = [...p.parentElement.children].filter((el): el is HTMLElement => el instanceof HTMLElement && el !== p && !el.dataset.sheet && !el.inert);
+    behind.forEach((el) => { el.inert = true; });
+    return () => behind.forEach((el) => { el.inert = false; });
+  }, [open]);
   useEffect(() => {
     if (!s) return;
     const onKey = (e: KeyboardEvent) => {
@@ -53,28 +64,28 @@ export function Sheet() {
     <AnimatePresence>
       {s && (
         <>
-          <motion.div key="dim" aria-hidden className="fixed inset-0 z-40 bg-(--scrim)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={close} />
+          <motion.div key="dim" data-sheet aria-hidden className="fixed inset-0 z-40 bg-(--scrim)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={close} />
           <motion.aside key="sheet" ref={panel} role="dialog" aria-modal aria-label={s.kind === "ticket" ? `Ticket ${s.id}` : s.title}
             initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", stiffness: 420, damping: 40 }}
             className={cn("fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-paper shadow-pop", s.kind === "ticket" ? "max-w-2xl" : "max-w-4xl")}>
             <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-paper-2 px-4">
               {s.kind === "ticket" ? (
-                <a href={issueUrl(y.config?.base ?? "", s.id)} target="_blank" rel="noreferrer" title="Mở trên YouTrack" className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold no-underline hover:text-hl-2">
-                  {s.id}<ExternalLink className="size-3.5" aria-hidden />
-                </a>
+                <Hint side="bottom" text="Mở trên YouTrack"><a href={issueUrl(y.config?.base ?? "", s.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-sm font-semibold no-underline hover:text-hl-2">
+                  {s.id}<ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">, mở trên YouTrack</span>
+                </a></Hint>
               ) : <h2 className="truncate text-sm font-semibold">{s.title}</h2>}
               {k >= 0 && (
                 <span className="ml-1 flex gap-0.5">
-                  <Button size="icon-xs" variant="ghost" disabled={k <= 0} onClick={() => step(-1)} aria-label="Ticket trước" title="Ticket trước (k)"><ChevronLeft /></Button>
-                  <Button size="icon-xs" variant="ghost" disabled={k >= nav.length - 1} onClick={() => step(1)} aria-label="Ticket sau" title="Ticket sau (j)"><ChevronRight /></Button>
+                  <Hint side="bottom" text="Ticket trước (k)"><Button size="icon-xs" variant="ghost" disabled={k <= 0} onClick={() => step(-1)} aria-label="Ticket trước"><ChevronLeft /></Button></Hint>
+                  <Hint side="bottom" text="Ticket sau (j)"><Button size="icon-xs" variant="ghost" disabled={k >= nav.length - 1} onClick={() => step(1)} aria-label="Ticket sau"><ChevronRight /></Button></Hint>
                   <span className="self-center font-mono text-xs text-ink-3 tabular-nums">{k + 1}/{nav.length}</span>
                 </span>
               )}
               {s.kind === "ticket" && y.aiOn && (
-                <Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="AI cho ticket này" title="Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code"
-                  onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids: [s.id] })}><Sparkles /></Button>
+                <Hint side="bottom" text="Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code"><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="AI cho ticket này"
+                  onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids: [s.id] })}><Sparkles /></Button></Hint>
               )}
-              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(s.kind === "ticket" && y.aiOn) && "ml-auto")} onClick={close} aria-label="Đóng" title="Đóng (Esc)"><X /></Button>
+              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(s.kind === "ticket" && y.aiOn) && "ml-auto")} onClick={close} aria-label="Đóng (Esc)"><X /></Button>
             </div>
             <div className={cn("min-h-0 flex-1 p-4 sm:p-5", s.kind === "work" ? "flex flex-col" : "overflow-y-auto")}>{/* work: a chat, it scrolls its own middle */}
               {s.kind === "ticket" ? <TicketView key={s.id} id={s.id} draft={s.comment} />
@@ -140,7 +151,13 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
 
   if (!i) {
     return d.isError ? <p role="alert" className="text-sm text-error">Không tải được {id}: {(d.error as Error).message}</p>
-      : <p className="text-sm text-ink-3">Đang tải…</p>;
+      : (
+        <div aria-label={`Đang tải ${id}…`} className="grid gap-5">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-24 rounded-[var(--radius-card)]" />
+          <div className="grid gap-2">{[96, 88, 92, 60].map((w) => <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />)}</div>
+        </div>
+      );
   }
   const files = d.data?.attachments ?? [];
   const said = [d.data?.description, ...(d.data?.comments.map((c) => c.text) ?? [])].join("\n");
@@ -161,7 +178,11 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
 
       <motion.section variants={fade} className="grid gap-2">
         <Label>Mô tả</Label>
-        {d.isPending ? <p className="text-sm text-ink-3">Đang tải…</p> : d.data?.description ? <Markdown text={d.data.description} files={{ issue: id, list: files }} className="rounded-lg bg-cotton p-3 shadow-edge" /> : <p className="text-sm text-ink-3 italic">Không có mô tả</p>}
+        {d.isPending ? (
+          <div aria-label="Đang tải mô tả…" className="grid gap-2 rounded-lg bg-cotton p-3 shadow-edge">
+            {[96, 88, 92, 60].map((w) => <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />)}
+          </div>
+        ) : d.data?.description ? <Markdown text={d.data.description} files={{ issue: id, list: files }} className="rounded-lg bg-cotton p-3 shadow-edge" /> : <p className="text-sm text-ink-3 italic">Không có mô tả</p>}
       </motion.section>
 
       {!!loose.length && (

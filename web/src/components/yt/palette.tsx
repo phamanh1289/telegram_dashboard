@@ -3,9 +3,9 @@
 import { ArrowRight, Bookmark, CornerDownLeft, Filter, Plus, Search, Sparkles } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNow } from "@/lib/inbox";
+import { fold, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { AI_MAX, norm, rank, riskOf, ticketId, yt } from "@/lib/yt";
+import { AI_MAX, rank, riskOf, ticketId, yt } from "@/lib/yt";
 import { reportData } from "@/lib/yt-stats";
 import { StatePill } from "./bits";
 import { useStats } from "./dashboard";
@@ -47,7 +47,7 @@ function Body({ onClose }: { onClose: () => void }) {
   const go = (f: () => void) => () => { onClose(); f(); };
 
   const items = useMemo(() => {
-    const t = q.trim(), terms = norm(t).split(/\s+/).filter(Boolean), out: Item[] = [];
+    const t = q.trim(), terms = fold(t).split(/\s+/).filter(Boolean), out: Item[] = [];
     if (t && y.aiOn) {
       out.push({ key: "ask", group: "AI", icon: <Sparkles className="text-hl-2" />, label: <>Hỏi AI: <b>“{t}”</b></>, hint: "về các ticket đang mở trong phạm vi đang xem, kèm số liệu dashboard",
         run: go(() => {
@@ -62,11 +62,11 @@ function Body({ onClose }: { onClose: () => void }) {
         run: go(() => { y.setPage("tickets"); void aiFilterApply(y, t); }) });
     }
     if (t && !y.config?.mock) out.push({ key: "create", group: "Tạo", icon: <Plus />, label: <>Tạo ticket: <b>“{t.slice(0, 80)}”</b></>, hint: y.aiOn ? "AI soạn tiêu đề, Type, Priority và mô tả theo mẫu" : undefined, run: go(() => y.setNewTicket(t)) });
-    for (const v of readViews()) if (!terms.length || terms.every((x) => norm(v.name).includes(x))) out.push({ key: `view:${v.name}`, group: "View đã lưu", icon: <Bookmark />, label: v.name, run: go(() => applyView(y, v)) });
+    for (const v of readViews()) if (!terms.length || terms.every((x) => fold(v.name).includes(x))) out.push({ key: `view:${v.name}`, group: "View đã lưu", icon: <Bookmark />, label: v.name, run: go(() => applyView(y, v)) });
     const id = t && ticketId(t, y.project);
     if (id) out.push({ key: `id:${id}`, group: "Ticket", icon: <ArrowRight />, label: <>Mở <b className="font-mono">{id}</b></>, run: go(() => y.openTicket(id)) });
     if (terms.length) {
-      const hits = y.rows.filter((i) => { const h = norm(`${i.id} ${i.summary}`); return terms.every((x) => h.includes(x)); })
+      const hits = y.rows.filter((i) => { const h = fold(`${i.id} ${i.summary}`); return terms.every((x) => h.includes(x)); })
         .sort((a, b) => +!!a.resolved - +!!b.resolved || b.updated - a.updated).slice(0, 8);
       for (const i of hits) if (i.id !== id) out.push({ key: i.id, group: "Ticket", label: <span className="flex min-w-0 items-center gap-2"><b className="shrink-0 font-mono text-xs">{i.id}</b><span className={cn("truncate", i.resolved && "text-ink-3 line-through")}>{i.summary}</span></span>,
         hint: <StatePill state={i.state} />, run: go(() => y.openTicket(i.id, hits)) });
@@ -77,7 +77,7 @@ function Body({ onClose }: { onClose: () => void }) {
       ["Làm mới dữ liệu", y.refresh],
       ...(!y.config?.mock ? [["Tạo ticket mới", () => y.setNewTicket("")] as [string, () => void]] : []),
     ];
-    for (const [l, f] of nav) if (!terms.length || terms.every((x) => norm(l).includes(x))) out.push({ key: l, group: "Đi tới", icon: <ArrowRight />, label: l, run: go(f) });
+    for (const [l, f] of nav) if (!terms.length || terms.every((x) => fold(l).includes(x))) out.push({ key: l, group: "Đi tới", icon: <ArrowRight />, label: l, run: go(f) });
     return out;
   }, [q, y, d, now]); // eslint-disable-line react-hooks/exhaustive-deps -- go() closes over onClose only
 

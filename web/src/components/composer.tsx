@@ -2,7 +2,7 @@
 
 import { ArrowLeft, Bot, Bug, Check, ExternalLink, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { Avatar } from "@/components/chat-list";
 import { IssueDialog, TaskDialog } from "@/components/composer-dialogs";
@@ -13,9 +13,9 @@ import { Hint } from "@/components/ui/hint";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type YouTrackIssue } from "@/lib/api";
-import { telegramLink, timeLabel } from "@/lib/inbox";
+import { telegramLink, timeLabel, toast } from "@/lib/inbox";
 import { getPref, PLATFORMS, put, readPlatform, readTemplates, useRole, usesCode, type YtRole } from "@/lib/prefs";
-import { cn } from "@/lib/utils";
+import { cn, MOD } from "@/lib/utils";
 
 const MAX = 4096; // UTF-16 code units == JS string length
 // What "Tóm tắt" brings out and an example ask, per role (Cài đặt chung › Vai trò); the prompt side is ai.py ROLE_FOCUS.
@@ -50,6 +50,7 @@ export function Composer({
   draft,
   onSent,
   onDone,
+  onStep,
   aiConfigured,
   youtrackConfigured,
   groupTitle,
@@ -61,6 +62,7 @@ export function Composer({
   draft: DraftInjection | null;
   onSent?: () => void;
   onDone?: () => void; // marked "Xong" here
+  onStep?: (dir: 1 | -1) => void; // Alt+↓ / Alt+↑: the next / previous open tag
   aiConfigured: boolean;
   youtrackConfigured: boolean;
   groupTitle?: string;
@@ -88,6 +90,14 @@ export function Composer({
   const [issueOpen, setIssueOpen] = useState(false); // YouTrack dialog
   const [aiPrompt, setAiPrompt] = useState("");
   const [showContext, setShowContext] = useState(true); // the group thread around the tag (Ngữ cảnh toggles it)
+  // Leaving with an unsent draft (Esc, Alt+↑/↓) asks once: the first press only says so, the second leaves.
+  const [leaving, setLeaving] = useState<"esc" | 1 | -1 | null>(null);
+  // A reply sent here can land after the panel closed: its callbacks must not close or advance the next one.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   // Bring the tag into view whenever its card mounts (first paint, then again once the thread loads around it).
   const toTag = useCallback((el: HTMLElement | null) => el?.scrollIntoView({ block: "start" }), []);
 
@@ -183,6 +193,7 @@ export function Composer({
   });
 
   function handle(rec: Outbox) {
+    if (!alive.current) return;
     if (rec.status === "sent") {
       setRequestId(null);
       setText("");
@@ -207,6 +218,28 @@ export function Composer({
   const waitLeft = outcome.kind === "error" && outcome.until ? Math.max(0, Math.ceil((outcome.until - now) / 1000)) : 0;
   const canSend = text.trim().length > 0 && text.length <= MAX && !send.isPending && !pending && waitLeft === 0 && !targetDeleted;
 
+  // Captured before the inbox's own Esc (which closes the reply): a draft or a send in flight holds it.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    const step = e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp") ? (e.key === "ArrowDown" ? 1 : -1) : 0;
+    if ((e.key !== "Escape" && !step) || document.querySelector("[role=dialog], [role=menu]")) return; // an open dialog / menu goes first
+    const kind = step || "esc";
+    if (send.isPending || (text.trim() && !pending && leaving !== kind)) {
+      e.preventDefault();
+      if (!send.isPending) setLeaving(kind);
+      if (kind === "esc") (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    if (step) {
+      e.preventDefault();
+      onStep?.(step);
+    }
+  });
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => onKey(e);
+    document.addEventListener("keydown", on, true);
+    return () => document.removeEventListener("keydown", on, true);
+  }, []);
+
   function submit(body = text) {
     if (!canSend) return;
     const id = requestId ?? crypto.randomUUID();
@@ -224,7 +257,7 @@ export function Composer({
   const tag = (
     <article ref={toTag} aria-label="Tin được tag" className="my-1 grid scroll-mt-16 gap-1 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-2.5 pr-3 pl-3">
       <span className="flex min-h-6 items-center gap-2 text-xs font-medium text-hl-2">
-        {replyTo.outgoing ? "Bạn" : name} · tag bạn
+        <span>{replyTo.outgoing ? "Bạn" : name}</span><span className="font-normal">tag bạn</span>
         <DeepBadge m={replyTo} />
         <DeepPick m={replyTo} className="ml-auto" />
       </span>
@@ -292,7 +325,7 @@ export function Composer({
               {tools && (
                 <div role="toolbar" aria-label="Công cụ" className="flex flex-wrap gap-1.5">
                   {aiConfigured && usesCode(role) && (
-                    <Hint side="bottom" title="AI Agent" text="Giao việc cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
+                    <Hint side="bottom" title="AI Agent" text="Giao cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
                       <Button type="button" size="sm" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> Giao AI Agent</Button>
                     </Hint>
                   )}
@@ -382,8 +415,12 @@ export function Composer({
                         className="absolute size-px opacity-0"
                         checked={picked === i}
                         onChange={() => {
+                          // Edited by hand: add the new pick under it rather than overwrite the edits.
+                          if (text.trim() && text !== options[picked]) {
+                            insert(o);
+                            toast({ text: "Đã chèn mẫu dưới nội dung bạn đã sửa" });
+                          } else setText(o);
                           setPicked(i);
-                          setText(o);
                           if (options.length === LEVELS.length) put(relKey, String(i));
                         }}
                       />
@@ -436,7 +473,7 @@ export function Composer({
               className="max-h-[40vh] min-h-16 resize-none border-0 bg-transparent hover:border-0 focus-visible:outline-none"
               value={text}
               readOnly={pending}
-              onChange={(e) => setText(e.target.value)}
+              onChange={(e) => { setText(e.target.value); setLeaving(null); }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault();
@@ -448,12 +485,13 @@ export function Composer({
             />
             <div className="flex items-center gap-3 px-2 pb-2 pl-3">
               <div aria-live="polite" className="min-w-0 flex-1 text-xs leading-snug">
+                {leaving && <span role="status" className="text-warn">Còn nháp chưa gửi: bấm {leaving === "esc" ? "Esc" : leaving === 1 ? "Alt+↓" : "Alt+↑"} lần nữa để bỏ nháp. </span>}
                 {draftStale && <span role="status" className="text-warn">Tin nguồn của bản nháp AI đã đổi; bản nháp có thể đã cũ. </span>}
                 {ask.isError && ask.error.name === "AbortError" && <span role="status" className="text-ink-3">Đã hủy tóm tắt. </span>}
                 {ask.isError && ask.error.name !== "AbortError" && (
                   <span role="alert" className="text-error">
                     {errorText(ask.error, {
-                      ai_scope_not_allowed: "AI bị chặn do chưa cấp quyền dữ liệu (đặt AI_REQUIRE_CONSENT=0 cho dùng cá nhân). ",
+                      ai_scope_not_allowed: "AI đang không được đọc tin Telegram: tắt “Không cho AI đọc tin Telegram” ở Cài đặt › AI. ",
                       ai_agent_missing: `Không tìm thấy ${aiName} CLI để đọc dự án, xem Cài đặt › AI. `,
                     }, "AI lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công. ")}
                   </span>
@@ -469,7 +507,7 @@ export function Composer({
               )}
               <Button type="submit" size="sm" aria-busy={send.isPending} disabled={!canSend} className="shrink-0 px-3">
                 {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />} {send.isPending ? "Đang gửi…" : "Gửi"}
-                <span aria-hidden className="ml-0.5 font-mono text-[0.6875rem] font-normal opacity-70">⌘↵</span>
+                <span aria-hidden className="ml-0.5 font-mono text-[0.6875rem] font-normal opacity-70">{MOD}↵</span>
               </Button>
             </div>
           </div>
@@ -552,8 +590,8 @@ const LEVELS = ["Tôi là cấp trên", "Ngang cấp", "Trả lời cấp trên"
 const THINKING = [
   "Đang đọc tin nhắn…",
   "Đang lục lại ngữ cảnh nhóm…",
-  "Đang hỏi ý kiến con Android 🤖",
-  "Đang pha cà phê cho AI ☕",
+  "Đang hỏi ý kiến con Android…",
+  "Đang pha cà phê cho AI…",
   "Đang gọt câu trả lời cho lịch sự…",
   "Sắp xong rồi, đợi xíu nha…",
 ];

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .ai import _applescript_str
+from .config import run_cli
 from .errors import ApiError
 from .models import GroupInfo, LinkSpan, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
 from .storage import Db, Store
@@ -20,10 +21,19 @@ RETRY_DELAY = 5.0
 WATCH_INTERVAL = 20.0
 # ponytail: fixed look-back for tags on connect; make it a setting if 14 days is not enough.
 BACKFILL_DAYS = 14
+BACKFILL_MARGIN = timedelta(hours=1)  # a reconnect looks back from the last full backfill, minus this
 
 
 class LoginRequired(Exception):
     """Session missing, expired or revoked."""
+
+
+class PartialBackfill(Exception):
+    """The mention scan stopped early (flood wait): `found` is what it read before."""
+
+    def __init__(self, found: list):
+        super().__init__(len(found))
+        self.found = found
 
 
 class SendRejected(Exception):
@@ -41,11 +51,14 @@ class Transport(Protocol):
     async def disconnect(self) -> None: ...
     def is_connected(self) -> bool: ...
     async def list_groups(self) -> list[GroupInfo]: ...
-    # (title, kind, message, we_replied) for tags/replies to us since `cutoff`, read or not
+    # (title, kind, message, we_replied) for tags/replies to us since `cutoff`, read or not;
+    # raises PartialBackfill when cut short
     async def fetch_mentions(
         self, cutoff: datetime
     ) -> list[tuple[str, str, StoredMessage, bool]]: ...
     async def latest_id(self, chat_id: str) -> int: ...
+    # `limit` messages older than `before` (None: the newest), oldest first, in one request
+    async def fetch_older(self, chat_id: str, before: int | None, limit: int) -> list[StoredMessage]: ...
     async def fetch_context(
         self, chat_id: str, message_id: int, before: int, after: int
     ) -> list[StoredMessage]: ...
@@ -80,6 +93,7 @@ class TelegramBridge:
         self._react_lock = asyncio.Lock()
         self._bg: set[asyncio.Task] = set()  # reactions, notifications
         self.me = ""  # logged-in account (@username or name), set by the transport on connect
+        self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
         if transport is not None:
             transport.attach(self)
 
@@ -164,11 +178,19 @@ class TelegramBridge:
                         m.message_id, type(e).__name__)  # fmt: skip
 
     async def backfill_mentions(self) -> None:
-        """Pull recent tags/replies to us (read or unread); nothing else is fetched."""
-        cutoff = datetime.now(UTC) - timedelta(days=BACKFILL_DAYS)
+        """Pull recent tags/replies to us (read or unread); nothing else is fetched. A reconnect
+        looks back only to the last complete backfill (Telethon's catch-up replays the rest)."""
+        started = datetime.now(UTC)
+        cutoff = max(started - timedelta(days=BACKFILL_DAYS), self._backfilled_at - BACKFILL_MARGIN)
         try:
-            found = await self.ensure_connected().fetch_mentions(cutoff)
+            try:
+                found, complete = await self.ensure_connected().fetch_mentions(cutoff), True
+            except PartialBackfill as e:  # keep what it read; the next connect looks back as far again
+                log.warning("mention backfill cut short after %d tags", len(e.found))
+                found, complete = e.found, False
             await self.db.write(self.store.store_mentions, found)
+            if complete:
+                self._backfilled_at = started
         except Exception as e:
             log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
 
@@ -197,9 +219,7 @@ class TelegramBridge:
 
     async def fetch_page(self, chat_id: str, before: int | None, limit: int) -> list[StoredMessage]:
         """`limit` messages older than `before` (None: the newest), oldest first."""
-        t = self.ensure_connected()
-        before = before or await t.latest_id(chat_id) + 1
-        return [m for m in await t.fetch_context(chat_id, before, limit, 0) if m.message_id < before]
+        return await self.ensure_connected().fetch_older(chat_id, before, limit)
 
     async def fetch_before(
         self, chat_id: str, message_id: int, reply_to: int | None = None, limit: int = 40
@@ -207,8 +227,7 @@ class TelegramBridge:
         """Where a message's question is: the one it replies to (however old) first, then the
         `limit` messages right before it, newest first."""
         t = self.ensure_connected()
-        msgs = [m for m in await t.fetch_context(chat_id, message_id, limit, 0) if m.message_id < message_id]
-        msgs.reverse()
+        msgs = (await t.fetch_older(chat_id, message_id, limit))[::-1]
         if reply_to is not None:
             msgs = [m for m in msgs if m.message_id != reply_to]
             msgs = [m for m in await t.fetch_ids(chat_id, [reply_to]) if m.message_id == reply_to] + msgs
@@ -411,14 +430,14 @@ class TelethonTransport:
         from telethon import utils
 
         name = None
-        try:
-            sender = await msg.get_sender()
+        try:  # the cached sender first: get_sender() is a network call when it is missing or "min"
+            sender = msg.sender or await msg.get_sender()
             name = utils.get_display_name(sender) if sender else None
         except Exception as e:  # stored without a sender name
             log.debug("sender of message %s not resolved: %s", msg.id, type(e).__name__)
         return raw_to_stored(msg, str(msg.chat_id), name)
 
-    async def _on_new(self, event) -> None:
+    async def _on_new(self, event, edit: bool = False) -> None:
         from telethon import utils
         from telethon.tl import types
 
@@ -435,7 +454,9 @@ class TelethonTransport:
         if getattr(msg, "out", False):
             reply_to = getattr(msg.reply_to, "reply_to_msg_id", None) if msg.is_reply else None
             if reply_to and await b.db.read(b.store.get_message, chat_id, reply_to):
-                await b.on_my_reply(await self._convert(msg))
+                m = await self._convert(msg)
+                # Editing an old reply only updates it: it never re-closes a tag the user reopened.
+                await (b.on_message(m) if edit else b.on_my_reply(m))
             return
         if msg.mentioned:  # @username, text mention or a reply to us (Telegram flags all three)
             chat = await event.get_chat()
@@ -445,7 +466,8 @@ class TelethonTransport:
         elif await b.db.read(b.store.get_message, chat_id, msg.id):  # edit of a kept message
             await b.on_message(await self._convert(msg))
 
-    _on_edit = _on_new  # on_mention notifies only for tags it has not seen before
+    async def _on_edit(self, event) -> None:
+        await self._on_new(event, edit=True)  # on_mention notifies only for tags it has not seen before
 
     async def _on_deleted(self, event) -> None:
         assert self.bridge is not None
@@ -580,23 +602,25 @@ class TelethonTransport:
                 out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
         except errors.FloodWaitError as e:  # keep what we have; the next connect tries again
             log.warning("mention backfill cut short by a %ss flood wait", e.seconds)
+            raise PartialBackfill(out) from e
         return out
 
     async def fetch_context(
         self, chat_id: str, message_id: int, before: int, after: int
     ) -> list[StoredMessage]:
         peer = int(chat_id)
-        it = self.client.iter_messages(peer, offset_id=message_id, limit=before)
-        older = [m async for m in it]
-        newer = [
-            m
-            async for m in self.client.iter_messages(
-                peer, min_id=message_id, reverse=True, limit=after
-            )
-        ]
-        target = await self.client.get_messages(peer, ids=message_id)
-        msgs = [*reversed(older), *([target] if target else []), *newer]
-        return [await self._convert(m) for m in msgs]
+        # offset_id is exclusive: +1 brings the message itself with the `before` older ones, one request
+        older = [m async for m in self.client.iter_messages(peer, offset_id=message_id + 1, limit=before + 1)]
+        if older and older[0].id != message_id:  # the message itself is gone
+            older = older[:before]
+        newer = []
+        if after:
+            newer = [m async for m in self.client.iter_messages(peer, min_id=message_id, reverse=True, limit=after)]
+        return [await self._convert(m) for m in [*reversed(older), *newer]]
+
+    async def fetch_older(self, chat_id: str, before: int | None, limit: int) -> list[StoredMessage]:
+        it = self.client.iter_messages(int(chat_id), offset_id=before or 0, limit=limit)
+        return [await self._convert(m) for m in reversed([m async for m in it])]
 
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
         msg = await self.client.get_messages(int(chat_id), ids=message_id)
@@ -726,11 +750,4 @@ async def notify_mac(title: str, subtitle: str, body: str) -> None:
         f"display notification {q(body[:200])} with title {q(title[:80])} "
         f'subtitle {q(subtitle[:80])} sound name "Glass"'
     )
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "osascript", "-e", script,
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )  # fmt: skip
-        await asyncio.wait_for(proc.wait(), 10)
-    except Exception:
-        pass
+    await run_cli(["osascript", "-e", script], timeout=10)

@@ -4,9 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Bug, CheckCheck, FlaskConical, Gauge, Hammer, Layers, type LucideIcon, RotateCcw, Target, TestTubes, Timer, Undo2, Users } from "lucide-react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { useNow } from "@/lib/inbox";
+import { Hint } from "@/components/ui/hint";
+import { Pill } from "@/components/ui/segmented";
+import { dm, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { AI_MAX, byAs, bySp, DAY, dm, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
+import { AI_MAX, byAs, bySp, DAY, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
 import { AGE, dashStats, reportData, type Stats } from "@/lib/yt-stats";
 import { AiAsk, Card, CardAi, MultiSelect, Person, StatePill } from "./bits";
 import { type Mode, useYt } from "./state";
@@ -188,7 +190,7 @@ function QcKpis() {
   const tiles: [string, number | null, string, string, () => void][] = [
     ["Lượt test", s.pass.length + s.fail.length, "", `${s.tested} ticket, ${y.range} ngày qua`, () => list("Ticket đã test", s.tickets([...s.pass, ...s.fail]))],
     ["Pass ngay lần đầu", pc(s.firstPass, s.tested), "%", `${s.firstPass}/${s.tested} ticket không bị trả lại`, () => list("Pass không bị trả lại", s.tickets(s.pass).filter((i) => !s.fail.some((x) => x.id === i.id)))],
-    ["Bị trả lại", s.fail.length, "", `lượt QC chuyển về dev · ${pc(s.fail.length, s.pass.length + s.fail.length) ?? 0}%`, () => list("Bị QC trả lại", s.tickets(s.fail))],
+    ["Bị trả lại", s.fail.length, "", `lượt QC chuyển về dev, ${pc(s.fail.length, s.pass.length + s.fail.length) ?? 0}%`, () => list("Bị QC trả lại", s.tickets(s.fail))],
     ["Reopen", s.reopen.length, "", "đã xong rồi mở lại", () => list("Ticket reopen", s.tickets(s.reopen))],
   ];
   if (!s.q.data) return <div className="col-span-12 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock"><QcState q={s.q} /></div>;
@@ -218,7 +220,7 @@ function QcWho() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   return <Stack rows={s.who.map(([n, [p, f]]) => ({ label: n === "—" ? n : <Person name={n} />, parts: [[p, "var(--color-ok)"], [f, "var(--color-error)"]], text: `${p} / ${f}`,
-    on: () => list(`Đã test · ${n}`, s.tickets([...s.pass, ...s.fail].filter((x) => (x.by || "—") === n))) }))} empty="Chưa có lượt test nào." />;
+    on: () => list(`Đã test: ${n}`, s.tickets([...s.pass, ...s.fail].filter((x) => (x.by || "—") === n))) }))} empty="Chưa có lượt test nào." />;
 }
 
 function QcDev() {
@@ -226,7 +228,7 @@ function QcDev() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   return <HBars rows={s.dev.map(([n, [, f]]) => ({ label: n === "Chưa assign" ? n : <Person name={n} />, v: f, c: "var(--color-error)",
-    on: () => list(`Bị trả lại · ${n}`, s.tickets(s.fail.filter((x) => (s.byId.get(x.id)!.assignee || "Chưa assign") === n))) }))} empty="Chưa có ticket nào bị trả lại." />;
+    on: () => list(`Bị trả lại: ${n}`, s.tickets(s.fail.filter((x) => (s.byId.get(x.id)!.assignee || "Chưa assign") === n))) }))} empty="Chưa có ticket nào bị trả lại." />;
 }
 
 function QcPong() {
@@ -234,7 +236,7 @@ function QcPong() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   const SHOW = 8;
-  return <TicketRows rows={s.pong.slice(0, SHOW).map(({ i, n, re }) => ({ i, right: <span className={cn("font-mono text-xs whitespace-nowrap", n >= 3 || re ? "font-semibold text-error" : "text-warn")}>{[n ? `${n} lần trả lại` : "", re ? "reopen" : ""].filter(Boolean).join(" · ")}</span> }))}
+  return <TicketRows rows={s.pong.slice(0, SHOW).map(({ i, n, re }) => ({ i, right: <span className={cn("font-mono text-xs whitespace-nowrap", n >= 3 || re ? "font-semibold text-error" : "text-warn")}>{[n ? `${n} lần trả lại` : "", re ? "reopen" : ""].filter(Boolean).join(", ")}</span> }))}
     all={s.pong.map((x) => x.i)} more={s.pong.length > SHOW ? () => list("Trả lại nhiều lần / reopen", s.pong.map((x) => x.i)) : undefined} moreN={s.pong.length - SHOW}
     empty="Không có ticket nào bị trả lại từ 2 lần hay reopen." />;
 }
@@ -272,7 +274,7 @@ function JumpNav({ items, onAi }: { items: [string, string][]; onAi?: () => void
           return (
             <button key={k} type="button" aria-current={cur ? "location" : undefined} onClick={() => go(k)}
               className={cn("relative flex h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-(--dur-micro)", cur ? "text-hl-ink" : "text-ink-2 hover:bg-paper-3 hover:text-ink")}>
-              {cur && <motion.span layoutId="yt-jump" className="absolute inset-0 rounded-full bg-hl shadow-stock" transition={{ type: "spring", stiffness: 500, damping: 38 }} />}
+              {cur && <Pill id="yt-jump" className="inset-0 rounded-full bg-hl shadow-stock" />}
               <Icon className="relative size-3.5" aria-hidden /><span className="relative">{l}</span>
             </button>
           );
@@ -286,7 +288,7 @@ function JumpNav({ items, onAi }: { items: [string, string][]; onAi?: () => void
 /** A KPI tile: label + icon, a big counting number, a sub line; a click lists its tickets. */
 function Tile({ label, icon: Icon, value, suffix = "", bad, onClick, children }: { label: string; icon: LucideIcon; value: number | null; suffix?: string; bad?: boolean; onClick: () => void; children?: React.ReactNode }) {
   return (
-    <motion.button type="button" onClick={onClick} whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }} title="Xem danh sách ticket"
+    <Hint side="bottom" text="Bấm để xem danh sách ticket"><motion.button type="button" data-drill="list" onClick={onClick} whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}
       initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
       className="yt-card group relative grid content-start justify-items-start gap-1 overflow-hidden rounded-[var(--radius-card)] bg-cotton p-4 text-left shadow-stock transition-shadow duration-(--dur-short) hover:shadow-pop">
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 transition-transform duration-(--dur-short) group-hover:scale-x-100", bad ? "bg-error" : "bg-hl")} />
@@ -295,7 +297,7 @@ function Tile({ label, icon: Icon, value, suffix = "", bad, onClick, children }:
       </span>
       <b className={cn("font-mono text-3xl font-medium tabular-nums", bad && "text-error")}><Count n={value} suffix={suffix} /></b>
       {children}
-    </motion.button>
+    </motion.button></Hint>
   );
 }
 
@@ -327,11 +329,11 @@ function Attention({ d }: { d: Stats }) {
   return (
     <div className="grid gap-1.5">
       {ranked.map(({ q, sev, n }) => (
-        <motion.button layout key={q} type="button" onClick={() => drill("q", q)} title="Xem danh sách ticket"
+        <Hint key={q} side="bottom" text="Bấm để xem danh sách ticket"><motion.button layout type="button" data-drill="list" onClick={() => drill("q", q)}
           className={cn("flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors duration-(--dur-micro)",
             !n ? "bg-paper-2 text-ink-3" : sev === "bad" ? "bg-error-wash text-error hover:bg-error-wash/70" : "bg-warn-wash text-warn hover:bg-warn-wash/70")}>
           <span className={cn(n && "font-medium")}>{QUICK[q].label}</span><b className="font-mono tabular-nums">{fmt(n)}</b>
-        </motion.button>
+        </motion.button></Hint>
       ))}
     </div>
   );
@@ -413,13 +415,13 @@ function Progress({ d }: { d: Stats }) {
         const diff = r.time == null ? null : p - r.time;
         const st = p === 100 && r.t ? ["ok", "Hoàn thành"] : diff == null ? null : diff >= 0 ? ["ok", "Đúng tiến độ"] : diff > -15 ? ["warn", "Hơi chậm"] : ["bad", "Chậm tiến độ"];
         return (
-          <button key={r.name} type="button" onClick={() => drill("sp", r.name)} className="grid gap-1.5 text-left" title="Xem danh sách ticket của sprint này">
-            <span className="flex justify-between text-sm"><span className="font-medium">{r.name}</span><span className="font-mono text-xs text-ink-2 tabular-nums">{r.d}/{r.t} · {p}%</span></span>
+          <Hint key={r.name} side="bottom" text="Bấm để xem danh sách ticket của sprint này"><button type="button" data-drill="sprint" onClick={() => drill("sp", r.name)} className="grid gap-1.5 text-left">
+            <span className="flex justify-between text-sm"><span className="font-medium">{r.name}</span><span className="font-mono text-xs text-ink-2 tabular-nums">{r.d}/{r.t} ({p}%)</span></span>
             <span className="relative flex h-2.5 overflow-hidden rounded-full bg-paper-3">
               {[[r.d, "var(--color-ok)"], [r.qc, "var(--st-qc)"], [r.doing, "var(--st-doing)"]].map(([n, c], k) => (
                 <motion.i key={k} className="h-full" style={{ background: c as string }} initial={{ width: 0 }} animate={{ width: `${w(n as number)}%` }} transition={{ duration: 0.5, delay: k * 0.05 }} />
               ))}
-              {r.time != null && <u className="absolute inset-y-[-2px] w-0.5 bg-ink" style={{ left: `${r.time}%` }} title={`Thời gian sprint đã qua ${r.time}%`} />}
+              {r.time != null && <u aria-hidden className="absolute inset-y-[-2px] w-0.5 bg-ink" style={{ left: `${r.time}%` }} />}
             </span>
             <span className="flex flex-wrap justify-between gap-2 text-xs text-ink-3">
               <span className="flex flex-wrap gap-x-3"><Lg c="var(--color-ok)">Xong {r.d}</Lg><Lg c="var(--st-qc)">QC {r.qc}</Lg><Lg c="var(--st-doing)">Đang làm {r.doing}</Lg><Lg c="var(--color-rule-2)">Todo {r.todo}</Lg></span>
@@ -428,7 +430,7 @@ function Progress({ d }: { d: Stats }) {
                 {st && <span className={cn("rounded-full px-2 font-medium", st[0] === "ok" ? "bg-ok-wash text-ok" : st[0] === "warn" ? "bg-warn-wash text-warn" : "bg-error-wash text-error")}>{st[1]}</span>}
               </span>
             </span>
-          </button>
+          </button></Hint>
         );
       })}
     </div>

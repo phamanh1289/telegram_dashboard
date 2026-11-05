@@ -53,7 +53,7 @@ def main() -> None:
     py = vdir / ("python/python.exe" if sys.platform == "win32" else "python/bin/python3")
 
     req = DIST / "requirements.txt"
-    run("uv", "export", "--frozen", "--no-dev", "--no-emit-project", "--no-hashes", "-o", str(req))
+    run("uv", "export", "--frozen", "--no-dev", "--no-emit-project", "-o", str(req))
     run("uv", "pip", "install", "--python", str(py), "--break-system-packages", "--no-cache", "-r", str(req))
 
     app = vdir / "app"

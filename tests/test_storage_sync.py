@@ -166,7 +166,7 @@ def test_since_filters_messages_and_chats(env):
 
 
 async def test_any_reply_from_us_handles_the_tag(env):
-    env.store.track_mention(A, "Team", "supergroup")
+    env.store.set_tracking(A, True, "Team", "supergroup")
     env.store.apply_message(msg(A, 10, "@me pls", sender="7"))
     mine = msg(A, 11, "on it", sender="1", outgoing=True)
     mine.reply_to_id = 10
@@ -272,3 +272,18 @@ def test_my_replies_keeps_the_newest_oldest_first(env):
         env.store.apply_message(m.model_copy(update={"date": m.date + timedelta(hours=i)}))
     got = env.store.my_replies(0, limit=3)
     assert [r["text"] for r in got] == ["r2", "r3", "r4"]
+
+
+def test_backfill_neither_resurrects_a_purge_nor_recloses_a_reopened_tag(env):
+    from datetime import UTC, datetime, timedelta
+
+    old = [("Team", "supergroup", msg(A, 1, "@me hi"), False)]
+    env.store.store_mentions(old)
+    env.store.purge_chat(A)
+    assert env.store.store_mentions(old) == [] and env.store.get_message(A, 1) is None  # stays forgotten
+    assert not env.store.is_tracking(A)
+    new = msg(A, 2, "@me again").model_copy(update={"date": datetime.now(UTC) + timedelta(seconds=5)})
+    assert env.store.store_mentions([("Team", "supergroup", new, False)]) == [2]  # a new tag brings it back
+    env.store.set_handled(A, 2, False)  # reopened after a reply: a later backfill must not close it
+    env.store.store_mentions([("Team", "supergroup", new, True)])
+    assert not env.store.get_message(A, 2).handled

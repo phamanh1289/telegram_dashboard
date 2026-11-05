@@ -153,26 +153,6 @@ class OutboxDTO(BaseModel):
     retry_after: int | None = None
 
 
-class PermissionGrant(BaseModel):
-    message_id: str
-    scope: str = Field(min_length=1, max_length=200)
-    expires_at: datetime
-    participants: dict[str, str] = Field(
-        description="sender id -> evidence reference of that person's consent"
-    )
-
-
-class AiPermissionRequest(BaseModel):
-    grants: list[PermissionGrant] = []
-    revoke_message_ids: list[str] = []
-
-
-class AiPermissionResponse(BaseModel):
-    granted: list[str]
-    revoked: list[str]
-    rejected: dict[str, str]
-
-
 class AiDraftRequest(BaseModel):
     chat_id: str
     message_ids: list[str] = Field(min_length=1, max_length=30)
@@ -227,14 +207,14 @@ class PendingItem(BaseModel):
 
 class RuleDTO(BaseModel):
     id: int
-    kind: Literal["keyword"]
-    value: str
-    label: str
+    kind: Literal["keyword", "sender"]
+    value: str  # keyword: lowercase text; sender: the sender's id
+    label: str  # sender: the sender's name
 
 
 class RuleRequest(BaseModel):
-    kind: Literal["keyword"]
-    value: str = Field(min_length=1, max_length=200)
+    kind: Literal["keyword", "sender"]
+    value: str = Field(min_length=1, max_length=200, pattern=r"\S")  # never blank: "" matches every tag
     label: str = Field(default="", max_length=200)
 
 
@@ -310,7 +290,8 @@ class ConsentPref(BaseModel):
 
 
 class YouTrackAuth(BaseModel):
-    url: str = Field(pattern=r"^https?://[^\s/]+(/[^\s]*)?$", max_length=200)
+    # the token rides every request: plain http only to this machine
+    url: str = Field(pattern=r"^(https://[^\s/]+|http://(localhost|127\.0\.0\.1)(:\d+)?)(/[^\s]*)?$", max_length=200)
     token: str = Field(min_length=8, max_length=500, pattern=r"^\S+$")
 
 
@@ -451,6 +432,7 @@ class YouTrackIssue(BaseModel):
 
 class HandledAllResponse(BaseModel):
     count: int
+    message_ids: list[int]  # the tags just marked, for an Undo
 
 
 class ProjectDTO(BaseModel):
@@ -471,7 +453,7 @@ class TaskRequest(BaseModel):
 
 
 class TaskMessage(BaseModel):
-    text: str = Field(min_length=1, max_length=8000)
+    text: str = Field(min_length=1, max_length=16000)  # 8000 typed + attached messages
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
 
 
@@ -487,11 +469,6 @@ class AiGuideRequest(BaseModel):
 
     question: str = Field(min_length=1, max_length=500)
     guide: str = Field(max_length=200_000)
-
-
-class AiSummaryRequest(BaseModel):
-    chat_id: str
-    message_ids: list[str] = Field(min_length=1, max_length=30)
 
 
 class AiResult(BaseModel):
@@ -569,12 +546,6 @@ class BriefingItem(BaseModel):
     consent: bool
     saved: SavedDigest | None = None
     latest_id: str | None = None  # newest message on Telegram; None if unknown or no consent
-
-
-class ApiErrorBody(BaseModel):
-    code: str
-    retry_after: int | None = None
-    detail: str | None = None
 
 
 def utf16_len(text: str) -> int:

@@ -10,7 +10,6 @@ import json
 import os
 import re
 import shlex
-import sqlite3
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -18,7 +17,7 @@ from pathlib import Path
 
 import httpx
 
-from .config import _read_json, child_env, write_private_json
+from .config import _read_json, child_env, run_cli, write_private_json
 from .errors import ApiError
 
 _login: dict = {"proc": None, "url": None}
@@ -34,14 +33,8 @@ async def _oauth_token() -> str | None:
     """The CLI's current claude.ai access token: Keychain on macOS, else .credentials.json."""
     raw = ""
     if sys.platform == "darwin":
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "security", "find-generic-password", "-s", "Claude Code-credentials", "-w",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            )  # fmt: skip
-            raw = (await asyncio.wait_for(proc.communicate(), 5))[0].decode()
-        except (OSError, TimeoutError):
-            pass
+        got = await run_cli(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"], timeout=5)
+        raw = got[1].decode(errors="replace") if got else ""
     if not raw:
         home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
         raw = json.dumps(_read_json(home / ".credentials.json"))
@@ -172,15 +165,13 @@ def _account_changed() -> None:
 
 async def claude_account(settings) -> dict:
     """`claude auth status --json` plus whether a dashboard-started login is still waiting."""
+    got = await run_cli([_claude_exe(settings), "auth", "status", "--json"], timeout=15)
     try:
-        proc = await asyncio.create_subprocess_exec(
-            _claude_exe(settings), "auth", "status", "--json", env=child_env(),
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        )  # fmt: skip
-        out, _ = await asyncio.wait_for(proc.communicate(), 15)
-        data = json.loads(out)
-    except (OSError, TimeoutError, ValueError):
-        raise ApiError(502, "claude_cli_unavailable") from None
+        data = json.loads(got[1]) if got else None
+    except ValueError:
+        data = None
+    if not isinstance(data, dict):
+        raise ApiError(502, "claude_cli_unavailable")
     if data.get("loggedIn") and data.get("authMethod") == "claude.ai":
         data |= await _claude_details(settings)
     pending = _login_pending()
@@ -215,7 +206,7 @@ async def claude_login(settings) -> str | None:
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(read_url(), 10)
         # ponytail: an abandoned login keeps the CLI waiting until the next login/logout kills it.
-        asyncio.get_running_loop().create_task(proc.wait())  # reap it when it finishes
+        spawn(proc.wait())  # reap it when it finishes
         return _login["url"]
 
 
@@ -239,14 +230,8 @@ async def claude_logout(settings) -> None:
     if _login_pending():
         _login["proc"].kill()
     _account_changed()
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            _claude_exe(settings), "auth", "logout", env=child_env(),
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )  # fmt: skip
-        await asyncio.wait_for(proc.wait(), 15)
-    except (OSError, TimeoutError):
-        raise ApiError(502, "claude_cli_unavailable") from None
+    if await run_cli([_claude_exe(settings), "auth", "logout"], timeout=15) is None:
+        raise ApiError(502, "claude_cli_unavailable")
 
 
 # ---- run log: one JSON line per claude run, for the Claude page's history and report ----
@@ -257,11 +242,16 @@ def _runs_path(settings) -> Path:
     return settings.data_dir / "claude_runs.jsonl"
 
 
-def note_run(settings, feature: str, choice, final: dict | None, seconds: float, error: str | None) -> None:
-    """Log one claude run (`final`: its result event) without holding up the caller."""
-    t = asyncio.get_running_loop().create_task(_note_run(settings, feature, choice, final, seconds, error))
+def spawn(coro) -> None:
+    """Run in the background, referenced until done (asyncio keeps only weak refs to tasks)."""
+    t = asyncio.get_running_loop().create_task(coro)
     _bg.add(t)
     t.add_done_callback(_bg.discard)
+
+
+def note_run(settings, feature: str, choice, final: dict | None, seconds: float, error: str | None) -> None:
+    """Log one AI run (`final`: its Claude-shaped result event) without holding up the caller."""
+    spawn(_note_run(settings, feature, choice, final, seconds, error))
 
 
 async def _note_run(settings, feature, choice, final, seconds, error) -> None:
@@ -286,7 +276,8 @@ async def _note_run(settings, feature, choice, final, seconds, error) -> None:
         "input_tokens": n("input_tokens"), "output_tokens": n("output_tokens"),
         "cache_read": n("cache_read_input_tokens"), "cache_write": n("cache_creation_input_tokens"),
         "turns": f.get("num_turns") if isinstance(f.get("num_turns"), int) else 0,
-        "quota": {} if str(model).startswith(("codex", "antigravity")) else quota_now(settings),  # Claude's windows only
+        # Claude's windows only
+        "quota": {} if str(model).startswith(("codex", "antigravity")) else quota_now(settings),
     }  # fmt: skip
     try:
         settings.ensure_data_dir()
@@ -310,123 +301,4 @@ def claude_runs(settings, days: int) -> list[dict]:
                 continue
             if isinstance(r, dict) and str(r.get("at", "")) >= since:
                 rows.append(r)
-    return sorted(rows, key=lambda r: str(r["at"]), reverse=True)  # imported runs land out of order
-
-
-# Prompt markers -> feature, for runs read back from the CLI's own transcripts.
-_TELEGRAM = "You help a user read and answer a Telegram group"
-_YOUTRACK = "You help a developer work through YouTrack tickets"
-_TASKS = (("First summarize the tagged <messages>", "draft"), ("Turn the tagged <messages>", "ticket"),
-          ("Analyze the group conversation", "digest"), ("Summarize these messages briefly", "summary"),
-          ("Reply with exactly", "test"))  # fmt: skip
-
-
-def _utc(ts: str) -> str:
-    return datetime.fromisoformat(ts).astimezone(UTC).isoformat(timespec="seconds")
-
-
-def import_transcripts(settings, projects: Path | None = None) -> int:
-    """Backfill the run log from the claude CLI's transcripts (~/.claude/projects), for runs made
-    before the log existed: dashboard prompts and AI Agent sessions only. Runs from when the live
-    log starts, or already imported, are skipped; the quota at the time is not recoverable.
-    Returns how many runs were added."""
-    home = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-    projects = projects or home / "projects"
-    old = claude_runs(settings, 3650)
-    live = [r["at"] for r in old if not r.get("imported")]
-    cutoff = min(live) if live else "9999"
-    seen = {r.get("source") for r in old}
-    agent_sessions: set[str] = set()
-    with contextlib.suppress(sqlite3.Error):
-        db = sqlite3.connect(f"file:{settings.db_path}?mode=ro", uri=True)
-        agent_sessions = {s for (s,) in db.execute("SELECT session_id FROM tasks WHERE session_id IS NOT NULL")}
-        db.close()
-    rows = []
-    for f in sorted(projects.glob("*/*.jsonl")):
-        rows += _transcript_runs(f, agent_sessions)
-    added = [r for r in rows if r["at"] < cutoff and r["source"] not in seen]
-    if added:
-        settings.ensure_data_dir()
-        fd = os.open(_runs_path(settings), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-        with os.fdopen(fd, "a") as fh:
-            fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in added)
-    return len(added)
-
-
-def _transcript_runs(path: Path, agent_sessions: set[str]) -> list[dict]:
-    """One run per `claude -p` call in a transcript (a resumed session holds several); the
-    session's real cost (its last cost-state) is split over its runs by weighted tokens."""
-    runs, cost, headless = [], None, False
-    msgs: dict[str, dict] = {}  # message id -> its last line (a message is logged once per block)
-    try:
-        lines = path.open(encoding="utf-8")
-    except OSError:
-        return []
-    with lines:
-        for line in lines:
-            try:
-                d = json.loads(line)
-            except ValueError:
-                continue
-            t = d.get("type")
-            headless |= d.get("entrypoint") == "sdk-cli"
-            if t == "queue-operation" and d.get("operation") == "enqueue" and d.get("timestamp"):
-                runs.append({"at": d["timestamp"], "prompt": str(d.get("content") or ""), "ids": [], "end": d["timestamp"]})
-            elif t == "assistant" and runs and isinstance(d.get("message"), dict):
-                m = d["message"]
-                key = m.get("id") or d.get("uuid")
-                if key not in msgs:
-                    runs[-1]["ids"].append(key)
-                msgs[key] = d
-                runs[-1]["end"] = d.get("timestamp") or runs[-1]["end"]
-            elif t == "cost-state" and isinstance(d.get("totalCostUSD"), int | float):
-                cost = max(cost or 0.0, d["totalCostUSD"])
-    if not headless or not runs:
-        return []
-    session = path.stem
-    first = runs[0]["prompt"]
-    if session in agent_sessions:
-        feature = "agent"
-    elif _TELEGRAM in first:
-        feature = next((f for marker, f in _TASKS if marker in first), "ai")
-    elif _YOUTRACK in first:
-        feature = "youtrack"
-    else:
-        return []  # someone else's `claude -p`, not the dashboard's
-    out = []
-    for r in runs:
-        ms = [msgs[k] for k in r["ids"]]
-        if not ms:
-            continue  # stopped before Claude answered: nothing to count
-        n = {"input_tokens": 0, "output_tokens": 0, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0}
-        by_model: dict[str, int] = {}
-        for d in ms:
-            u = d["message"].get("usage") or {}
-            for k in n:
-                n[k] += u.get(k) if isinstance(u.get(k), int) else 0
-            model = d["message"].get("model") or ""
-            if model and not model.startswith("<"):
-                by_model[model] = by_model.get(model, 0) + (u.get("output_tokens") or 0)
-        try:
-            ms_run = round((datetime.fromisoformat(r["end"]) - datetime.fromisoformat(r["at"])).total_seconds() * 1000)
-            at = _utc(r["at"])
-        except (TypeError, ValueError):
-            continue
-        out.append({
-            "at": at, "feature": feature,
-            "model": max(by_model, key=by_model.get) if by_model else "mặc định",
-            "effort": "", "fallback": False,
-            "ok": any(not d.get("isApiErrorMessage") for d in ms),
-            "error": None if any(not d.get("isApiErrorMessage") for d in ms) else "claude_error",
-            "ms": max(0, ms_run), "cost": None,
-            "input_tokens": n["input_tokens"], "output_tokens": n["output_tokens"],
-            "cache_read": n["cache_read_input_tokens"], "cache_write": n["cache_creation_input_tokens"],
-            "turns": len(ms), "quota": {}, "imported": True, "source": f"{session}@{r['at']}",
-        })  # fmt: skip
-    # API price ratios: output 5x input, cache write 1.25x, cache read 0.1x.
-    weight = lambda r: r["input_tokens"] + 5 * r["output_tokens"] + 1.25 * r["cache_write"] + 0.1 * r["cache_read"]  # noqa: E731
-    total = sum(map(weight, out))
-    if cost is not None and total:
-        for r in out:
-            r["cost"] = round(cost * weight(r) / total, 6)
-    return out
+    return sorted(rows, key=lambda r: str(r["at"]), reverse=True)

@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { cloneElement, type FocusEvent, type PointerEvent, type ReactElement, useEffect, useState } from "react";
+import { cloneElement, type FocusEvent, type PointerEvent, type ReactElement, useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +42,7 @@ const closed = () => { shown = Math.max(0, shown - 1); closedAt = Date.now(); };
  */
 export function Hint({ title, text, side = "right", children }: { title?: string; text: string; side?: Side; children: ReactElement<Record<string, unknown>> }) {
   const [at, setAt] = useState<DOMRect | null>(null);
+  const id = useId();
   useEffect(() => cancel, []);
   useEffect(() => { if (!at) return; opened(); return closed; }, [at]); // also on unmount, so "warm" never sticks
   const later = (el: Element) => schedule(() => setAt(el.getBoundingClientRect()));
@@ -55,11 +56,12 @@ export function Hint({ title, text, side = "right", children }: { title?: string
         onPointerDown: hide, // clicked: it did its job
         onFocus: (e: FocusEvent) => { if (e.currentTarget.matches(":focus-visible")) later(e.currentTarget); },
         onBlur: hide,
+        "aria-describedby": at ? id : undefined, // screen readers hear the note with the control
       })}
       {typeof document !== "undefined" && createPortal(
         <AnimatePresence>
           {at && (
-            <motion.div key="hint" role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: -10 } : { y: -10 }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+            <motion.div key="hint" id={id} role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: -10 } : { y: -10 }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, scale: 0.6, ...(right ? { x: -8 } : { y: -8 }) }} transition={{ type: "spring", stiffness: 520, damping: 22 }}
               style={right ? { left: at.right + 8, top: at.top + at.height / 2 - 16 } : { left: Math.min(at.left + at.width / 2 - 16, innerWidth - 300), top: at.bottom + 6 }}
               className={cn("pointer-events-none fixed z-50 flex max-w-72 gap-1", right ? "origin-left items-start" : "origin-top-left items-start")}>

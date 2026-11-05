@@ -10,7 +10,7 @@ Hai module độc lập, chuyển qua lại bằng link trên header (crossfade 
 
 - **Telegram Inbox** tại `/`.
 - **Cài đặt** tại `/settings/` (nhóm Chung / Telegram / YouTrack / AI / GitHub / Phím tắt, `#nhóm` trên URL).
-- **YouTrack Dashboard** tại `/youtrack/` (React, `web/src/components/yt/`; bản vanilla JS cũ vẫn ở `/yt/`, `web/public/yt/`) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song). Dùng chung `YOUTRACK_URL` / `YOUTRACK_TOKEN` (không cần `YOUTRACK_PROJECT`); tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`. Thiếu token thì hiện dữ liệu mẫu.
+- **YouTrack Dashboard** tại `/youtrack/` (React, `web/src/components/yt/`) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song). Dùng chung `YOUTRACK_URL` / `YOUTRACK_TOKEN` (không cần `YOUTRACK_PROJECT`); tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`. Thiếu token thì trang chuyển sang Cài đặt › YouTrack để nhập.
 
 Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.md) · [thiết kế](docs/superpowers/specs/2026-10-29-local-web-design.md) · [rà stack](docs/decisions/2026-10-29-stack-review.md) · [nghiệm thu](docs/verification/local-web-smoke.md).
 
@@ -79,31 +79,31 @@ Next dev ở `http://127.0.0.1:3000` (proxy `/api` sang Python `:8765`), Python 
 ## Sử dụng
 
 1. Không cần chọn nhóm: khi có người **tag** (hoặc reply) bạn trong nhóm, tin đó hiện ngay trong dashboard qua luồng cập nhật Telegram. Chỉ tin tag bạn (và tin bạn trả lời) được lưu; không nạp lịch sử.
-2. **Trả lời** một tin → soạn → **Gửi** hoặc Ctrl/Cmd+Enter (Enter xuống dòng). Nếu kết quả "chưa rõ", dùng **Kiểm tra** hoặc **Thử lại cùng yêu cầu** (dùng lại cùng `random_id`, Telegram không tạo tin thứ hai). Ứng dụng không bao giờ tự gửi lại.
-3. **Nhờ AI** (khi đã bật AI): bấm **Trả lời** một tin → khung "Nhờ AI" hiện ra → chọn **dự án** (nút **Thêm** mở Finder để chọn thư mục) → nhập **prompt** → Enter hoặc **AI xử lý**. AI trả 3 mẫu: bấm mẫu để đưa vào khung soạn, hoặc ➤ để gửi ngay.
+2. **Trả lời**: bấm vào một tin (hoặc chọn bằng `j`/`k` rồi `Enter`) → soạn → **Gửi** hoặc Ctrl/Cmd+Enter (Enter xuống dòng). Nếu kết quả "chưa rõ", dùng **Kiểm tra** hoặc **Thử lại cùng yêu cầu** (dùng lại cùng `random_id`, Telegram không tạo tin thứ hai). Ứng dụng không bao giờ tự gửi lại.
+3. **Nhờ AI** (khi đã bật AI): mở trả lời một tin → khung "Nhờ AI" hiện ra → chọn **dự án** (nút **Thêm** mở Finder để chọn thư mục) → nhập **prompt** → Enter hoặc **AI xử lý**. AI trả 3 mẫu: bấm mẫu để đưa vào khung soạn, hoặc ➤ để gửi ngay.
    - Có dự án: agent chạy trong thư mục đó với quyền **chỉ đọc** (Read/Grep/Glob).
-   - **Tạo task** (AI Agent): chạy `claude -p` không giao diện trong dự án, xem và nhắn tiếp ngay trên dashboard. Chế độ **plan** chỉ đọc; **edit** được sửa file (trừ `.claude/`, `.git/`, `.github/`). Luôn tắt shell, web và MCP.
+   - **Giao AI Agent**: chạy `claude -p` không giao diện trong dự án, xem và nhắn tiếp ngay trên dashboard. Chế độ **plan** chỉ đọc; **edit** được sửa file (trừ `.claude/`, `.git/`, `.github/`). Luôn tắt shell, web và MCP.
 4. **Việc cần xử lý** (mục đầu danh sách, mặc định khi mở): mọi tin tag chưa xử lý của mọi nhóm, chờ lâu nhất lên đầu, nhãn "chờ X giờ" (đỏ khi quá 4 giờ). Tiêu đề tab hiện số tin chờ; tag mới có thông báo macOS (`NOTIFY=0` để tắt).
-   - Tin được coi là **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm ✓. Mỗi tin còn có: 💬 **ngữ cảnh** (~15 tin trước/sau, lấy trực tiếp từ Telegram), ⏰ **nhắc lại sau** (1 giờ / 3 giờ / 9:00 sáng mai) hoặc **luôn bỏ qua người gửi**, link **Telegram**, ảnh trong tin.
-   - **Quy tắc tự bỏ qua** (biểu tượng phễu): từ khóa như `#TB` hoặc người gửi; tin khớp tự chuyển "đã xử lý", không báo.
-   - **Tóm tắt**: AI liệt kê việc tồn theo mức gấp. **Phím tắt**: `j`/`k` chọn tin, `r` trả lời, `x` xong, `a` nhờ AI, `Esc` thoát.
-   - Khi nhờ AI: mỗi nhóm nhớ dự án riêng; có **prompt mẫu** (lưu thêm được); **Kèm ngữ cảnh nhóm** gửi thêm tin xung quanh; ảnh trong tin được AI đọc. **Tạo task** gắn với tin: agent ghi kết quả vào file, dashboard hiện ngay dưới tin kèm nút "Dùng kết quả làm nháp trả lời". **YouTrack** (nếu cấu hình `YOUTRACK_*`) tạo ticket rồi chèn link vào khung trả lời; **AI soạn** điền sẵn tiêu đề, Type / Priority và mô tả theo mẫu. Tin không có mã ticket hiện các ticket đang mở có vẻ liên quan (+ chèn link). Nháp AI nhớ bạn là cấp gì với từng người gửi và bắt chước giọng các tin bạn từng gửi trong nhóm (khi `AI_REQUIRE_CONSENT=0`).
+   - Tin được coi là **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm **Xong** (Shift+bấm: xong mà không thả reaction). Mỗi tin còn có: **ngữ cảnh** (~15 tin trước/sau, lấy trực tiếp từ Telegram), **Hoãn** (1 giờ / 3 giờ / 9:00 sáng mai), **Ghim**, link **Telegram**, ảnh trong tin.
+   - **Quy tắc tự bỏ qua** (Cài đặt › Telegram): theo từ khóa như `#TB`; tin khớp tự chuyển "đã xử lý", không báo.
+   - **Tóm tắt**: AI liệt kê việc tồn theo mức gấp. **Phím tắt** (bấm `?` để xem hết): `j`/`k` chọn tin, `Enter`/`r` trả lời, `o` mở trong Telegram, `x` xong, `s` hoãn 1 giờ, `p` ghim, `g` rồi `i`/`p`/`a`/`b` đổi trang, `Esc` thoát.
+   - Khi nhờ AI: mỗi nhóm nhớ dự án riêng; có **prompt mẫu** (lưu thêm được); **Kèm ngữ cảnh nhóm** gửi thêm tin xung quanh; ảnh trong tin được AI đọc. **Giao AI Agent** từ tin: agent ghi kết quả vào file, dashboard hiện ngay dưới tin kèm nút "Dùng kết quả làm nháp trả lời". **YouTrack** (nếu cấu hình `YOUTRACK_*`) tạo ticket rồi chèn link vào khung trả lời; **AI soạn** điền sẵn tiêu đề, Type / Priority và mô tả theo mẫu. Tin không có mã ticket hiện các ticket đang mở có vẻ liên quan (+ chèn link). Nháp AI nhớ bạn là cấp gì với từng người gửi và bắt chước giọng các tin bạn từng gửi trong nhóm (khi tắt *Không cho AI đọc tin Telegram*).
 5. Muốn thu hồi session Telegram: Telegram → Settings → Devices → kết thúc phiên, rồi xóa `data/account.session`; app sẽ báo `login_required`.
 
 ## AI (tùy chọn)
 
-Mọi tính năng AI (nháp, tóm tắt, Digest, Tạo task) đều chạy qua **Claude Code CLI** (`claude`) trên máy, dùng tài khoản claude.ai đã đăng nhập (`claude auth status`); không cần API key hay gateway. Thiếu `claude` trên PATH thì inbox vẫn chạy, chỉ tắt AI.
+Mọi tính năng AI (nháp, tóm tắt, Digest, AI Agent) đều chạy qua **Claude Code CLI** (`claude`) trên máy, dùng tài khoản claude.ai đã đăng nhập (`claude auth status`); không cần API key hay gateway. Thiếu `claude` trên PATH thì inbox vẫn chạy, chỉ tắt AI.
 
 - Nháp/tóm tắt/Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`, effort `AI_EFFORT` mặc định `medium`; Task/AI Agent mặc định `sonnet`; model/effort chọn trong Cài đặt → Tài khoản Claude sẽ được ưu tiên).
 - Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read/Grep/Glob).
-- Tạo task: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`. AI YouTrack đọc trên 10 ticket cũng chạy bằng model này.
+- AI Agent: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT`. AI YouTrack đọc trên 10 ticket cũng chạy bằng model này.
 - Nháp và AI YouTrack hiện chữ dần trong lúc Claude viết (stream-json, chỉ khi lệnh là `claude`).
-- YouTrack Dev › **AI: việc tôi đã nhận**: các việc bạn đã hứa trong tin Telegram 7 ngày qua (cần `AI_REQUIRE_CONSENT=0`). Lead › AI brief nói thêm phần thay đổi từ lần brief trước.
+- YouTrack Dev › **AI: việc tôi đã nhận**: các việc bạn đã hứa trong tin Telegram 7 ngày qua (cần tắt *Không cho AI đọc tin Telegram*). Lead › AI brief nói thêm phần thay đổi từ lần brief trước.
 - Nháp AI biết mention nào là bạn: tự lấy @username của tài khoản đang đăng nhập (`TELEGRAM_ME` để ghi đè).
 - **Codex / Antigravity** thay cho Claude: Cài đặt › AI › *Dùng AI nào* — một lựa chọn cho mọi tính năng AI (nháp, tóm tắt, Digest, YouTrack, Task, AI Agent). Mỗi AI giữ model/effort riêng (`data/claude.json` › `by`), đổi qua lại không mất; danh sách model lấy từ CLI (Claude: haiku/sonnet/opus/fable; Codex: `~/.codex/models_cache.json`; Antigravity: danh sách `agy models`, mức suy luận nằm trong tên model nên không có effort). Cần CLI trên PATH (`npm i -g @openai/codex`; Antigravity CLI `agy`; đổi lệnh bằng `CODEX_COMMAND` / `ANTIGRAVITY_COMMAND`) và đã đăng nhập (Codex: nút Đăng nhập mở trình duyệt; Antigravity: mở Terminal chạy `agy`, đăng nhập Google). Gemini CLI không còn dùng vì Google đã khóa đăng nhập bằng tài khoản cá nhân cho nó. Codex chạy sandbox `read-only` (Task sửa file: `workspace-write`), nháp thì tắt shell; Antigravity chạy custom agent `telegram-dashboard-read` / `-edit` (app tự ghi vào `~/.gemini/antigravity-cli/agents/`) chỉ có tool đọc/sửa file, cộng luật `--settings` chặn shell, MCP và web (Task sửa file: `--mode accept-edits`). Hạn mức và tự hạ model chỉ có ở Claude. Task đang dở tiếp tục bằng CLI và lựa chọn của AI đã bắt đầu nó.
 - Các lệnh `claude` không nhận biến môi trường `TELEGRAM_*`, `YOUTRACK_*`, `YT_*`.
 
-Tắt *Hỏi trước khi AI đọc tin Telegram* (Cài đặt › AI) hoặc `AI_REQUIRE_CONSENT=0` để bỏ bước cấp quyền từng tin (chỉ dùng cá nhân).
+*Không cho AI đọc tin Telegram* (Cài đặt › AI, mặc định bật; `AI_REQUIRE_CONSENT`): khi bật, mọi tính năng AI đọc tin Telegram (nháp, tóm tắt, tạo ticket bằng AI, Đối chiếu BE, Giao AI Agent từ tin tag) đều tắt, server trả `ai_scope_not_allowed`. Tắt khi chỉ dùng cá nhân. Digest giữ quyền riêng theo từng nhóm.
 
 Telegram API Terms hạn chế dùng dữ liệu Telegram với AI. App chỉ gửi những tin có **quyền dữ liệu** hợp lệ: đúng chat/tin/nội dung hiện tại, còn hạn, có phạm vi (draft/summary), và mỗi người gửi có tham chiếu bằng chứng đồng ý. Tin sửa/xóa tự mất quyền; không hỗ trợ media/forward. Đây là guard kỹ thuật, không phải chứng nhận pháp lý. AI chỉ trả văn bản; người dùng tự đưa vào khung soạn và bấm gửi.
 

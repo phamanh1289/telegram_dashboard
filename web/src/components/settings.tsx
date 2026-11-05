@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TopBar } from "@/components/shell";
 import { Input } from "@/components/ui/input";
 import { Hint } from "@/components/ui/hint";
-import { Pill } from "@/components/ui/segmented";
+import { Pill, Segmented } from "@/components/ui/segmented";
 import { api, ApiError, errorText, type Status } from "@/lib/api";
 import { ACCENTS, applyRowActions, applyTheme, OVERDUE_CHOICES, PLATFORMS, readDigestTeams, readPlatform, readRowActions, saveDigestTeams, readNotify, onPrefs, readOverdueHours, readReportAt, readTemplates, type ReportAt, saveReportAt, readLook, readTheme, readYtRole, saveLook, saveYtRole, setPref, YT_ROLES, type YtRole, type Look, type UiStyle, saveTemplates, type ThemePref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -30,7 +30,7 @@ const GROUPS: [GroupId, string, typeof Send, string][] = [
   ["youtrack", "YouTrack", ListChecks, "Kết nối, hướng dẫn cho AI, workflow, kho prompt và báo cáo release."],
   ["ai", "AI", Sparkles, "CLI nào chạy các tính năng AI, tài khoản của từng CLI và quyền đọc tin."],
   ["github", "GitHub", GitBranch, "Cập nhật app từ repo GitHub."],
-  ["shortcuts", "Phím tắt", Keyboard, "Phím tắt trong Telegram Inbox."],
+  ["shortcuts", "Phím tắt", Keyboard, "Phím tắt trong Telegram Inbox và YouTrack."],
 ];
 
 /** The settings page (/settings/#group): every module's settings, one group at a time. */
@@ -105,7 +105,10 @@ export function SettingsPage() {
               <UpdateSection />
             </Section>
           )}
-          {tab === "shortcuts" && <Section title="Telegram Inbox" hint="Bấm ? trong Inbox để mở nhanh bảng này."><ShortcutList /></Section>}
+          {tab === "shortcuts" && <>
+            <Section title="Telegram Inbox" hint="Bấm ? trong Inbox để mở nhanh bảng này. Phím một chữ không chạy khi đang gõ trong ô nhập."><ShortcutList list={TG_KEYS} /></Section>
+            <Section title="YouTrack"><ShortcutList list={YT_KEYS} /></Section>
+          </>}
         </main>
       </div>
     </div>
@@ -119,8 +122,8 @@ function GeneralGroup() {
       <RoleSection />
     </Section>
     <Section title="Giao diện">
-      <Segmented label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
-        options={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
+      <Segmented id="set-theme" variant="card" label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
+        items={THEMES.map(([v, label, Icon]) => ({ value: v, label: <><Icon className="size-3.5" aria-hidden />{label}</> }))} />
       <LookSection />
     </Section>
   </>;
@@ -132,12 +135,12 @@ function ProviderSection() {
   const accounts = useAccounts();
   if (!p) return null;
   const ready = (v: Provider) => accounts[v].installed && accounts[v].loggedIn;
-  const options = (["claude", "codex", "antigravity"] as const).map((v) => ({
+  const items = (["claude", "codex", "antigravity"] as const).map((v) => ({
     value: v, label: <span className={cn(!ready(v) && "opacity-50")}>{info(v)?.name ?? v}</span>,
   }));
   return (
     <Section title="Dùng AI nào" hint="Áp dụng cho mọi tính năng AI: tóm tắt, soạn nháp, Digest, YouTrack, Task và AI Agent. Mỗi AI giữ model và effort riêng, đổi qua lại không mất lựa chọn; chỉnh ở Chi tiết của từng AI.">
-      <Segmented label="AI cho mọi tính năng" value={p.provider} onChange={(v) => set({ provider: v })} options={options} />
+      <Segmented id="set-provider" variant="card" label="AI cho mọi tính năng" value={p.provider} onChange={(v) => set({ provider: v })} items={items} />
       {!accounts[p.provider].checking && !ready(p.provider) && <span className="text-xs text-warn">{name} chưa cài hoặc chưa đăng nhập: lần chạy sẽ lỗi.</span>}
       <p className="text-xs text-ink-3">Task đang dở tiếp tục bằng AI đã bắt đầu nó.</p>
     </Section>
@@ -152,16 +155,20 @@ function UpdateSection() {
   const info = useQuery({ queryKey: ["update"], retry: false,
     queryFn: async ({ signal }) => { const r = await api<UpdateInfo>("/update", { signal }); void qc.invalidateQueries({ queryKey: ["update-state"] }); return r; }, staleTime: 60_000 });
   const [restarting, setRestarting] = useState(false);
+  const [restartFailed, setRestartFailed] = useState(false);
   const run = useMutation({
     mutationFn: () => api<UpdateInfo>("/update", { method: "POST" }),
     onSuccess: async (r) => {
       if (!r.updated) return void qc.invalidateQueries({ queryKey: ["update"] });
       setRestarting(true);
+      setRestartFailed(false);
       await new Promise((ok) => setTimeout(ok, 2000));
       for (let i = 0; i < 60; i++) {
         if (await fetch("/health", { cache: "no-store" }).then((x) => x.ok, () => false)) return location.reload();
         await new Promise((ok) => setTimeout(ok, 1000));
       }
+      setRestarting(false); // a minute without the server: say so instead of spinning forever
+      setRestartFailed(true);
     },
   });
   const auto = useMutation({
@@ -174,7 +181,7 @@ function UpdateSection() {
     <div className="grid gap-2 text-sm">
       <div className="flex items-center justify-between gap-4">
         <span className={cn(d?.behind ? "text-hl-2" : "text-ink-3")}>
-          {info.isFetching ? "Đang kiểm tra…" : !d ? "" : d.behind ? `Có ${d.behind} bản mới trên ${d.branch}` : `Đã mới nhất (${d.current} · ${d.branch})`}
+          {info.isFetching ? "Đang kiểm tra…" : !d ? "" : d.behind ? `Có ${d.behind} bản mới trên ${d.branch}` : `Đã mới nhất (${d.current}, nhánh ${d.branch})`}
         </span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" disabled={info.isFetching || run.isPending} onClick={() => void info.refetch()}>Kiểm tra</Button>
@@ -185,11 +192,12 @@ function UpdateSection() {
       </div>
       {!!d?.commits.length && (
         <ul className="grid max-h-32 gap-0.5 overflow-y-auto text-xs text-ink-3">
-          {d.commits.map((c) => <li key={c.sha} className="truncate"><span className="font-mono">{c.sha}</span> {c.subject} · {c.when}</li>)}
+          {d.commits.map((c) => <li key={c.sha} className="flex gap-2"><span className="shrink-0 font-mono">{c.sha}</span><span className="min-w-0 flex-1 truncate">{c.subject}</span><span className="shrink-0">{c.when}</span></li>)}
         </ul>
       )}
       {d?.dirty && <p className="text-xs text-warn">Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.</p>}
       {(info.isError || run.isError) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
+      {restartFailed && <p role="alert" className="text-xs text-error">Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.</p>}
       {d && (
         <label className="flex cursor-pointer items-center justify-between gap-4">
           <span className="grid gap-0.5">
@@ -212,14 +220,14 @@ const STYLES: { value: UiStyle; label: React.ReactNode; hint: string }[] = [
 const WHEEL = `linear-gradient(to right in oklch, ${Array.from({ length: 37 }, (_, i) => `oklch(66% 0.17 ${i * 10})`).join()})`;
 const swatch = (h: number) => `oklch(58% 0.13 ${h})`;
 
-/** Each member's look, saved in this browser and applied in every open tab (public/design/look.js). */
+/** Each member's look, saved in this browser and applied in every open tab (the boot script in app/layout.tsx). */
 function LookSection() {
   const [look, setLook] = useState<Look>(readLook);
   const set = (patch: Partial<Look>) => { const next = { ...look, ...patch }; setLook(next); saveLook(next); };
   const simple = look.style === "simple";
   return (
     <>
-      <Segmented label="Phong cách" value={look.style} onChange={(style) => set({ style })} options={STYLES} />
+      <Segmented id="set-style" variant="card" label="Phong cách" value={look.style} onChange={(style) => set({ style })} items={STYLES} />
       <p className="-mt-1 text-xs text-ink-3">{STYLES.find((o) => o.value === look.style)?.hint}</p>
 
       <div className="mt-1 grid gap-2 text-sm">
@@ -227,12 +235,12 @@ function LookSection() {
           <span>Màu chủ đạo</span>
           <div role="radiogroup" aria-label="Màu có sẵn" className="flex gap-1.5">
             {ACCENTS.map(([h, label]) => (
-              <button key={h} type="button" role="radio" aria-checked={look.hue === h} aria-label={label} title={label} onClick={() => set({ hue: h })}
+              <Hint key={h} side="bottom" text={label}><button type="button" role="radio" aria-checked={look.hue === h} aria-label={label} onClick={() => set({ hue: h })}
                 className={cn("grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
                   look.hue === h ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-rule-2")}
                 style={{ background: swatch(h) }}>
                 {look.hue === h && <Check className="size-3.5 text-white" aria-hidden />}
-              </button>
+              </button></Hint>
             ))}
           </div>
         </div>
@@ -289,8 +297,8 @@ function TelegramGroup() {
           <TelegramSection />
         </Section>
         <Section title="Hàng chờ" hint="Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách (quá hạn).">
-          <Segmented label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
-            options={OVERDUE_CHOICES.map((h) => ({ value: h, label: `${h} giờ` }))} />
+          <Segmented id="set-overdue" variant="card" label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
+            items={OVERDUE_CHOICES.map((h) => ({ value: h, label: `${h} giờ` }))} />
           <label className="mt-1 flex cursor-pointer items-center justify-between gap-4 text-sm">
             <span className="grid gap-0.5">
               <span>Thông báo khi có tag mới</span>
@@ -304,16 +312,16 @@ function TelegramGroup() {
               <span>Nút thao tác trên tin</span>
               <span className="text-xs text-ink-3">Ghim, ngữ cảnh, mở Telegram. Màn hình cảm ứng luôn hiện.</span>
             </span>
-            <Segmented label="Nút thao tác trên tin" value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
-              options={[{ value: "hover", label: "Khi rê vào nút Xong" }, { value: "always", label: "Luôn hiện" }]} />
+            <Segmented id="set-row-actions" variant="card" label="Nút thao tác trên tin" value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
+              items={[{ value: "hover", label: "Khi rê vào nút Xong" }, { value: "always", label: "Luôn hiện" }]} />
           </span>
         </Section>
 
         <Section title="Trả lời">
           <span className="mt-1 grid gap-1.5 text-sm">
             <span>Tóm tắt theo nền tảng</span>
-            <Segmented label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
-              options={PLATFORMS.map(([value, label]) => ({ value, label }))} />
+            <Segmented id="set-platform" variant="card" label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
+              items={PLATFORMS.map(([value, label]) => ({ value, label }))} />
           </span>
         </Section>
 
@@ -466,14 +474,14 @@ function TelegramSection() {
           </Button>
         </div>
       )}
-      {step !== "phone" && <button type="button" className="w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink" onClick={() => setStep("phone")}>Đổi số / gửi lại mã</button>}
+      {step !== "phone" && <button type="button" className="w-fit text-xs text-ink-3 underline underline-offset-[3px] hover:text-ink" onClick={() => { signIn.reset(); setStep("phone"); }}>Đổi số / gửi lại mã</button>}
       {step === "phone" && changeApi}
       {errLine}
     </form>
   );
 }
 
-/** Per-message consent before AI reads Telegram text (Telegram API Terms); off only for personal use. Saved in data/config.json. */
+/** On: no AI reads Telegram text (Telegram API Terms; the server answers 403 ai_scope_not_allowed). Off for personal use. Saved in data/config.json. */
 function ConsentSection() {
   const qc = useQueryClient();
   const status = useStatus().data;
@@ -486,10 +494,10 @@ function ConsentSection() {
     <Section title="Quyền đọc tin">
       <label className="flex cursor-pointer items-center justify-between gap-4 text-sm">
         <span className="grid gap-0.5">
-          <span>Hỏi trước khi AI đọc tin Telegram</span>
-          <span className="text-xs text-ink-3">Tắt chỉ khi dùng cá nhân: AI được đọc tin xung quanh và các tin bạn từng gửi để viết nháp đúng giọng.</span>
+          <span>Không cho AI đọc tin Telegram</span>
+          <span className="text-xs text-ink-3">Bật: tắt mọi tính năng AI trên tin Telegram (tóm tắt, soạn nháp, Digest, Briefing, AI Agent từ tin tag) và AI YouTrack không đọc tin Telegram nhắc tới ticket. Tắt khi dùng cá nhân: AI được đọc tin tag, tin xung quanh và các tin bạn từng gửi để viết nháp đúng giọng.</span>
         </span>
-        <Switch label="Hỏi trước khi AI đọc tin Telegram" checked={status.ai_require_consent} disabled={save.isPending} onChange={(v) => save.mutate(v)} />
+        <Switch label="Không cho AI đọc tin Telegram" checked={status.ai_require_consent} disabled={save.isPending} onChange={(v) => save.mutate(v)} />
       </label>
     </Section>
   );
@@ -565,7 +573,7 @@ function NotesSection() {
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" size="sm" variant="outline" disabled={draft === null || save.isPending}>Lưu</Button>
         {draft !== null && <Button type="button" size="sm" variant="ghost" onClick={() => setEdit(null)}>Hủy</Button>}
-        <span className="text-xs text-ink-3">Đang áp dụng cho: <b className="text-ink-2">{name}</b> · {text.length}/4000</span>
+        <span className="flex gap-3 text-xs text-ink-3"><span>Đang áp dụng cho: <b className="text-ink-2">{name}</b></span><span className="font-mono tabular-nums">{text.length}/4000</span></span>
       </div>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
     </form>
@@ -631,16 +639,37 @@ function TemplatesSection() {
   );
 }
 
-const SHORTCUTS: [React.ReactNode, string][] = [
-  [<><Kbd>j</Kbd> / <Kbd>k</Kbd></>, "Chọn tin dưới / trên"],
-  [<Kbd key="r">r</Kbd>, "Trả lời tin đang chọn"],
-  [<Kbd key="x">x</Kbd>, "Xong / mở lại tin đang chọn"],
-  [<Kbd key="z">z</Kbd>, "Hoàn tác thao tác vừa làm"],
-  [<Kbd key="a">a</Kbd>, "Nhập yêu cầu cho AI (khi đang trả lời)"],
-  [<Kbd key="/">/</Kbd>, "Tìm kiếm"],
-  [<><Kbd>⌘</Kbd>/<Kbd>Ctrl</Kbd> + <Kbd>Enter</Kbd></>, "Gửi trả lời"],
-  [<Kbd key="esc">Esc</Kbd>, "Đóng trả lời, thoát chế độ chọn"],
-  [<Kbd key="?">?</Kbd>, "Mở bảng này"],
+const k = (...keys: string[]) => <>{keys.map((x, i) => <Kbd key={i}>{x}</Kbd>)}</>;
+const or = (...parts: React.ReactNode[]) => <>{parts.map((x, i) => <span key={i}>{i > 0 && " / "}{x}</span>)}</>;
+const MOD_KEY = "⌘/Ctrl";
+
+const TG_KEYS: [React.ReactNode, string][] = [
+  [or(k("j"), k("k")), "Chọn tin dưới / trên"],
+  [or(k("Enter"), k("r")), "Trả lời tin đang chọn"],
+  [k("o"), "Mở tin đang chọn trong Telegram"],
+  [k("x"), "Xong / mở lại tin đang chọn"],
+  [<>{k("Shift")} + {k("x")}</>, "Xong, không thả reaction trên Telegram"],
+  [k("s"), "Hoãn tin đang chọn 1 giờ"],
+  [k("p"), "Ghim / bỏ ghim tin đang chọn"],
+  [k("z"), "Hoàn tác thao tác vừa làm"],
+  [k("a"), "Nhập yêu cầu cho AI (khi đang trả lời)"],
+  [<>{k("Alt")} + {or(k("↑"), k("↓"))}</>, "Sang tag trước / kế (khi đang trả lời)"],
+  [<>{k(MOD_KEY)} + {k("Enter")}</>, "Gửi trả lời"],
+  [k("/"), "Tìm kiếm"],
+  [<>{k("g")} rồi {or(k("i"), k("p"), k("a"), k("b"))}</>, "Đi tới Việc cần xử lý / Tag đã ghim / AI Agent / Briefing"],
+  [k("Esc"), "Đóng trả lời (còn nháp thì lần đầu chỉ rời ô soạn)"],
+  [k("?"), "Mở bảng này"],
+  [k("F1"), "Mở hướng dẫn"],
+];
+
+const YT_KEYS: [React.ReactNode, string][] = [
+  [<>{k(MOD_KEY)} + {k("K")}</>, "Lệnh nhanh"],
+  [k("/"), "Tìm ticket"],
+  [or(k("j"), k("k")), "Chọn ticket dưới / trên"],
+  [k("Enter"), "Mở ticket đang chọn"],
+  [k("x"), "Chọn / bỏ chọn ticket (chọn nhiều)"],
+  [k("Esc"), "Xóa ô tìm, rồi bỏ chọn các ticket"],
+  [k("F1"), "Mở hướng dẫn"],
 ];
 
 export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
@@ -648,16 +677,16 @@ export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenC
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogTitle>Phím tắt</DialogTitle>
-        <ShortcutList />
+        <ShortcutList list={TG_KEYS} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function ShortcutList() {
+function ShortcutList({ list }: { list: [React.ReactNode, string][] }) {
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-6 gap-y-2.5 text-sm">
-      {SHORTCUTS.map(([keys, what]) => (
+      {list.map(([keys, what]) => (
         <div key={what} className="contents">
           <dt className="whitespace-nowrap text-ink-3">{keys}</dt>
           <dd className="text-ink-2">{what}</dd>
@@ -676,29 +705,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
       </div>
       {children}
     </section>
-  );
-}
-
-/** Pill segmented control; the active segment slides between options. */
-function Segmented<T extends string | number>({ label, value, onChange, options }: {
-  label: string;
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: React.ReactNode }[];
-}) {
-  const i = Math.max(0, options.findIndex((o) => o.value === value));
-  return (
-    <div role="radiogroup" aria-label={label} className="relative grid w-full auto-cols-fr grid-flow-col rounded-md bg-paper-2 p-0.5 text-xs shadow-groove">
-      <span aria-hidden className="absolute inset-y-0.5 left-0.5 rounded-[5px] bg-cotton shadow-stock transition-transform duration-(--dur-short) ease-(--ease-out)"
-        style={{ width: `calc((100% - 4px) / ${options.length})`, transform: `translateX(${i * 100}%)` }} />
-      {options.map((o) => (
-        <button key={String(o.value)} type="button" role="radio" aria-checked={o.value === value} onClick={() => onChange(o.value)}
-          className={cn("relative flex h-7 items-center justify-center gap-1.5 rounded-[5px] px-2 transition-colors duration-(--dur-micro)",
-            o.value === value ? "font-medium text-ink" : "text-ink-3 hover:text-ink")}>
-          {o.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

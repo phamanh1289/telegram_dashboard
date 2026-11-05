@@ -1,15 +1,18 @@
 "use client";
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, Reply, RotateCcw, Users } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AlarmClock, Bot, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Paperclip, Pin, RotateCcw, Users } from "lucide-react";
+import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Menu } from "@base-ui/react/menu";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { DeepBadge, DeepPick, useDeepTask } from "@/components/deep-think";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Message, type Task } from "@/lib/api";
-import { clockLabel, dbId, msgKey, openTask, pin, setHandled, smooth, snooze, telegramLink, timeLabel, toast, useNow, waitLabel } from "@/lib/inbox";
+import { api, errorText, type Message, type Task } from "@/lib/api";
+import { attach, sameRef } from "@/lib/attach";
+import { clockLabel, copyText, dbId, msgKey, openTask, pin, sessionId, setHandled, smooth, snooze, telegramLink, timeLabel, toast, useNow, useTaskList, waitLabel } from "@/lib/inbox";
 import { readOverdueHours, useRole } from "@/lib/prefs";
 import { useRetest, yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
@@ -62,7 +65,7 @@ export function TicketChip({ id }: { id: string }) {
           {t ? (
             <>
               <span className="font-medium text-ink">{t.summary}</span>
-              <span>{t.state || "—"} · {t.priority || "—"} · {t.assignee || "Chưa assign"}</span>
+              <span className="flex flex-wrap gap-x-2.5"><span>{t.state || "—"}</span><span>{t.priority || "—"}</span><span>{t.assignee || "Chưa assign"}</span></span>
             </>
           ) : d.isError ? "Không tải được ticket" : "Đang tải…"}
         </span>
@@ -127,7 +130,8 @@ export type MessageItemProps = {
   live?: boolean; // read live from Telegram, not stored: no tag actions, no reply panel
 };
 
-export function MessageItem(props: MessageItemProps) {
+/** Memoised: lists re-render on every count / SSE change, a row only when its own props change. */
+export const MessageItem = memo(function MessageItem(props: MessageItemProps) {
   const { m } = props;
   if (m.deleted) {
     return (
@@ -137,7 +141,7 @@ export function MessageItem(props: MessageItemProps) {
     );
   }
   return <MessageRow {...props} />;
-}
+});
 
 function MessageRow({
   m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, onUseText, live,
@@ -164,7 +168,7 @@ function MessageRow({
       className={cn(
         "group/row relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-x-3 px-4 py-3 animate-in fade-in-0 duration-(--dur-short) @xl:px-5",
         card
-          ? "rounded-xl border border-rule bg-cotton shadow-edge transition-[border-color,box-shadow,background-color] duration-(--dur-micro) hover:shadow-stock"
+          ? "rounded-[var(--radius-card)] border border-rule bg-cotton shadow-edge transition-[border-color,box-shadow,background-color] duration-(--dur-micro) hover:shadow-stock"
           : "transition-colors duration-(--dur-micro) hover:bg-paper-2",
         card && wait?.overdue && "border-l-[3px] border-l-signal-2",
         selected && (card ? "border-hl/60 bg-hl-wash/40 ring-1 ring-hl/40"
@@ -204,48 +208,56 @@ function MessageRow({
           {!m.outgoing && (done ? (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-ok"><CheckCheck className="size-3.5" aria-hidden /> Đã xử lý</span>
           ) : snoozed ? (
-            <span className="inline-flex items-center gap-1 text-xs text-info" title={`Nhắc lại lúc ${timeLabel(m.snoozed_until!, true)}`}>
-              <AlarmClock className="size-3.5 shrink-0" aria-hidden /> nhắc <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
-            </span>
+            <Hint side="bottom" text={`Đang hoãn: nhắc lại lúc ${timeLabel(m.snoozed_until!, true)}`}>
+              <span className="inline-flex items-center gap-1 text-xs text-info">
+                <AlarmClock className="size-3.5 shrink-0" aria-hidden /> nhắc <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
+              </span>
+            </Hint>
           ) : wait && (
-            <span className={cn("whitespace-nowrap text-xs", wait.overdue ? "font-semibold text-signal-2" : "font-medium text-ink-2",
-              card && cn("rounded-full px-2 leading-6", wait.overdue ? "bg-signal-wash" : "bg-paper-2"))}
-              title={wait.overdue ? `Chưa xử lý, đã chờ quá ${readOverdueHours()} giờ` : "Chưa xử lý"}>
-              {card ? <>{wait.overdue && "Quá hạn · "}chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}</>
-                : <>(chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}){wait.overdue && <span className="sr-only"> quá hạn</span>}</>}
-            </span>
+            <Hint side="bottom" text={wait.overdue ? `Chưa xử lý, đã chờ quá ${readOverdueHours()} giờ` : "Chưa xử lý"}>
+              <span className={cn("whitespace-nowrap text-xs", wait.overdue ? "font-semibold text-signal-2" : "font-medium text-ink-2",
+                card && cn("rounded-full px-2 leading-6", wait.overdue ? "bg-signal-wash" : "bg-paper-2"))}>
+                {card ? <>{wait.overdue && "Quá hạn, "}chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}</>
+                  : <>(chờ <span className="font-mono tabular-nums">{wait.n}</span> {wait.unit}){wait.overdue && <span className="sr-only"> quá hạn</span>}</>}
+              </span>
+            </Hint>
           ))}
           {retest.length > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 font-medium text-warn"
-              title={`Bạn là QC của ${retest.join(", ")} và tin này báo đã fix / có build: cần test lại`}>
-              <RotateCcw className="size-3" aria-hidden /> Cần retest
-            </span>
+            <Hint side="bottom" text={`Bạn là QC của ${retest.join(", ")} và tin này báo đã fix / có build: cần test lại`}>
+              <span className="inline-flex items-center gap-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 font-medium text-warn">
+                <RotateCcw className="size-3" aria-hidden /> Cần retest
+              </span>
+            </Hint>
           )}
           <DeepBadge m={m} />
           <div className="ml-auto flex flex-wrap items-center gap-x-2.5 text-xs leading-5">
-            <button type="button" title={`ID ${dbId(m)} (bấm để chép, dùng khi báo lỗi)`}
-              onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
-              className="whitespace-nowrap rounded-sm px-0.5 font-mono text-[0.6875rem] text-ink-3 tabular-nums hover:bg-paper-3 hover:text-ink">
-              #{m.message_id}
-            </button>
+            <Hint side="bottom" title={`ID ${dbId(m)}`} text="Bấm để chép ID. Dán vào ô nhắn của một phiên AI Agent để đính kèm tin này (hoặc gửi kèm khi báo lỗi).">
+              <button type="button" aria-label={`Chép ID ${dbId(m)}`}
+                onClick={() => void copyText(dbId(m), `Đã chép ID ${dbId(m)}, dán vào phiên AI để đính kèm`)}
+                className="whitespace-nowrap rounded-sm px-0.5 font-mono text-[0.6875rem] text-ink-3 tabular-nums hover:bg-paper-3 hover:text-ink">
+                #{m.message_id}
+              </button>
+            </Hint>
             {/* Actions, laid out right to left: the first (Xong, or the Telegram link on your own messages) sits at the
-                edge and the rest tuck behind it until it is hovered (globals.css, or always shown per Settings); always
-                in the tab order. Replying is a click on the row. Wide rows: negative margin so the 30px targets don't
-                make the line taller. */}
-            {!card && (
-              <div className="row-actions ml-auto flex flex-row-reverse items-center gap-0.5 @xl:-my-1.5">
-                {!m.outgoing && !live && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-                <DeepPick m={m} />
-                <TgLink m={m} />
-              </div>
-            )}
+                edge and the rest tuck behind it until the row is hovered or selected (globals.css; always shown per
+                Settings and on touch screens); always in the tab order. Replying is a click on the row (or Enter / r).
+                Wide rows: negative margin so the 30px targets don't make the line taller. To-do cards use the same
+                strip, so a card stays a few lines tall. */}
+            <div className="row-actions ml-auto flex flex-row-reverse items-center gap-0.5 @xl:-my-1.5">
+              {!m.outgoing && !live && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
+              <DeepPick m={m} />
+              <AttachPick m={m} />
+              <TgLink m={m} />
+            </div>
           </div>
         </div>
         {m.reply_to_id && (
-          <button type="button" title="Tới tin gốc" onClick={(e) => jumpTo(e.currentTarget, m.reply_to_id!)}
-            className="mb-0.5 inline-flex items-center gap-1 rounded-sm text-xs text-ink-3 hover:text-hl-2">
-            <CornerDownRight className="size-3" aria-hidden /> trả lời <span className="font-mono">#{m.reply_to_id}</span>
-          </button>
+          <Hint side="bottom" text="Tới tin gốc trong danh sách">
+            <button type="button" aria-label={`Tới tin gốc #${m.reply_to_id}`} onClick={(e) => jumpTo(e.currentTarget, m.reply_to_id!)}
+              className="mb-0.5 inline-flex items-center gap-1 rounded-sm text-xs text-ink-3 hover:text-hl-2">
+              <CornerDownRight className="size-3" aria-hidden /> trả lời <span className="font-mono">#{m.reply_to_id}</span>
+            </button>
+          </Hint>
         )}
         {m.media_kind === "photo" && !photoFailed ? (
           <a href={photo} target="_blank" rel="noreferrer" className="my-1.5 block w-fit">
@@ -265,10 +277,12 @@ function MessageRow({
                 Task {t.result ? "đã có kết quả" : "đang làm…"}
               </span>
               <span className="inline-flex items-center gap-1 font-normal text-ink-3"><FolderGit2 className="size-3" aria-hidden /> {t.project.split("/").pop()}</span>
-              <button type="button" onClick={() => openTask(t.id)} title="Mở lại phiên AI này ở trang AI Agent"
-                className="ml-auto inline-flex items-center gap-1 rounded-sm font-normal text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
-                <Bot className="size-3.5" aria-hidden /> Mở phiên
-              </button>
+              <Hint side="bottom" text="Mở lại phiên AI này ở trang AI Agent">
+                <button type="button" onClick={() => openTask(t.id)}
+                  className="ml-auto inline-flex items-center gap-1 rounded-sm font-normal text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
+                  <Bot className="size-3.5" aria-hidden /> Mở phiên
+                </button>
+              </Hint>
             </p>
             {t.result && (
               <>
@@ -281,15 +295,69 @@ function MessageRow({
           </div>
         ))}
         {showContext && <ContextPanel m={m} />}
-        {card && !live && (
-          <div className="mt-3 flex flex-wrap items-center gap-1 border-t border-rule pt-2.5">
-            <Button type="button" size="xs" variant="outline" onClick={() => onReply(m)}><Reply /> Trả lời</Button>
-            {!m.outgoing && <MessageActions m={m} labels showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-            <span className="ml-auto flex items-center gap-0.5"><DeepPick m={m} /><TgLink m={m} /></span>
-          </div>
-        )}
       </div>
     </li>
+  );
+}
+
+/** Row button: attach this message to the next prompt of a Doing AI Agent session, Giao AI Agent or Đối chiếu BE
+ *  (this group's first). Always shown, so the feature is found; with no Doing session the menu says so. The session
+ *  list lives in the popup, so rows don't each watch the task list. */
+function AttachPick({ m }: { m: Message }) {
+  return (
+    <Menu.Root>
+      <Hint side="bottom" text="Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent">
+        <Menu.Trigger aria-label="Đính kèm vào phiên AI" onClick={(e) => e.stopPropagation()}
+          className="relative inline-flex size-[30px] items-center justify-center rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink">
+          <Paperclip className="size-3.5" aria-hidden />
+        </Menu.Trigger>
+      </Hint>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
+          {/* Portalled, but React events still bubble to the row: a click here must not open the reply panel. */}
+          <Menu.Popup onClick={(e) => e.stopPropagation()} className={MENU_POPUP}>
+            <AttachList m={m} />
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
+const MENU_POPUP = "grid origin-(--transform-origin) gap-0.5 rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
+const MENU_ITEM = "cursor-default rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-paper-2";
+
+function AttachList({ m }: { m: Message }) {
+  const open = (useTaskList().data ?? []).filter((t) => t.mode !== "terminal" && !t.handled)
+    .sort((a, b) => Number(b.chat_id === m.chat_id) - Number(a.chat_id === m.chat_id)) // stable: newest first within
+    .slice(0, 8);
+  const add = (t: Task) => {
+    const name = sessionId(t);
+    const ok = attach(t.id, [{ chat_id: m.chat_id, message_id: m.message_id }]).some((r) => sameRef(r, m));
+    toast(ok ? { text: `Đã đính kèm #${m.message_id} vào phiên ${name}`, action: { label: "Mở phiên", run: () => openTask(t.id) } }
+      : { text: `Phiên ${name} đã đủ tin đính kèm cho lượt tới` });
+  };
+  return (
+    <div className="grid w-72 gap-0.5">
+            <p className="px-2.5 pt-1 pb-0.5 text-xs text-ink-3">Đính kèm #{m.message_id} vào phiên</p>
+            {!open.length && (
+              <p className="px-2.5 pb-1.5 text-xs leading-relaxed text-ink-2">
+                Chưa có phiên nào đang làm (Doing). Với phiên đã Done: chép ID tin (bấm #{m.message_id}) rồi dán vào ô nhắn của phiên đó.
+              </p>
+            )}
+            {open.map((t) => (
+              <Menu.Item key={t.id} onClick={() => add(t)} className={cn("grid gap-0.5", MENU_ITEM)}>
+                <span className="truncate text-sm font-medium text-ink">{t.title || t.message_text || t.prompt}</span>
+                <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
+                  {t.running && <Loader2 className="-mr-1 size-3 shrink-0 animate-spin text-hl-2" aria-label="Đang chạy" />}
+                  <span className="shrink-0 font-mono tabular-nums">{sessionId(t)}</span>
+                  <span className="shrink-0">{t.kind === "deep" ? "Đối chiếu BE" : "Giao AI Agent"}</span>
+                  <span className="truncate">{t.chat_title || t.project.split("/").pop()}</span>
+                  {t.chat_id === m.chat_id && <span className="shrink-0 rounded-full bg-paper-3 px-1.5 leading-4">nhóm này</span>}
+                </span>
+              </Menu.Item>
+            ))}
+    </div>
   );
 }
 
@@ -297,8 +365,8 @@ function MessageRow({
 function TgLink({ m }: { m: Message }) {
   const link = telegramLink(m);
   return (
+    <Hint side="bottom" title="Mở Telegram (o)" text={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>
     <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
-      title={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}
       onClick={(e) => {
         if (e.altKey && link.exact) {
           e.preventDefault();
@@ -308,6 +376,7 @@ function TgLink({ m }: { m: Message }) {
       className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
       <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
     </a>
+    </Hint>
   );
 }
 
@@ -325,7 +394,7 @@ export function revealMessage(root: ParentNode | null | undefined, id: string) {
   return true;
 }
 
-/** Message body; in the cross-group queue it is cut to 10 lines so the list stays scannable (the reply panel shows it
+/** Message body; in the cross-group queue it is cut to 3 lines so the list stays scannable (the reply panel shows it
  *  all). "Xem thêm" only appears when the text actually overflows. */
 function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boolean }) {
   const [open, setOpen] = useState(false);
@@ -338,7 +407,7 @@ function MessageText({ m, clamp, dim }: { m: Message; clamp: boolean; dim: boole
   }, [clamp, open, m.text]);
   return (
     <>
-      <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-10")}>
+      <p ref={ref} className={cn("whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55]", dim ? "text-ink-2" : "text-ink", clamp && !open && "line-clamp-3")}>
         {body}
       </p>
       {clamp && (long || open) && (
@@ -381,31 +450,29 @@ export function MessageActions({
   });
   return (
     <>
-      <Button type="button" size={size} variant="ghost" className={cn(!done && "hover:bg-ok-wash hover:text-ok", labels && !done && "text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
-        aria-label={done ? "Mở lại" : "Xong"}
-        title={done ? "Mở lại: đánh dấu chưa xử lý (x)" : "Xong: không cần trả lời / đã xử lý nơi khác (x)"}
-        onClick={() => mark.mutate({ handled: !done })}>
-        {done ? <RotateCcw /> : <CheckCheck />}{labels && (done ? "Mở lại" : "Xong")}
-      </Button>
-      {!done && (
-        <Button type="button" size="icon-xs" variant="ghost" className="hover:bg-ok-wash hover:text-ok" aria-busy={mark.isPending} disabled={mark.isPending}
-          aria-label="Xong, không thả reaction" title="Xong nhưng không thả reaction trên Telegram"
-          onClick={() => mark.mutate({ handled: true, react: false })}>
-          <Check />
+      <Hint side="bottom" title={done ? "Mở lại (x)" : "Xong (x)"}
+        text={done ? "Đánh dấu chưa xử lý." : "Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Shift+bấm (Shift+x): xong mà không thả reaction."}>
+        <Button type="button" size={size} variant="ghost" className={cn(!done && "hover:bg-ok-wash hover:text-ok", labels && !done && "text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
+          aria-label={done ? "Mở lại" : "Xong"}
+          onClick={(e) => mark.mutate({ handled: !done, react: !e.shiftKey })}>
+          {done ? <RotateCcw /> : <CheckCheck />}{labels && (done ? "Mở lại" : "Xong")}
         </Button>
-      )}
+      </Hint>
       {!done && <SnoozeMenu m={m} label={labels} />}
       {(!done || pinned) && (
-        <Button type="button" size={size} variant="ghost" className={cn(pinned && "text-ink")}
-          disabled={togglePin.isPending} aria-label={pinned ? "Bỏ ghim" : "Ghim"} aria-pressed={pinned}
-          title={pinned ? "Bỏ ghim" : "Ghim lên đầu danh sách"} onClick={() => togglePin.mutate()}>
-          <Pin className={cn(pinned && "fill-current")} />{labels && (pinned ? "Bỏ ghim" : "Ghim")}
-        </Button>
+        <Hint side="bottom" title={pinned ? "Bỏ ghim (p)" : "Ghim (p)"} text={pinned ? "Bỏ ghim tin này." : "Ghim lên đầu danh sách; giữ ở Tag đã ghim kể cả khi đã xử lý."}>
+          <Button type="button" size={size} variant="ghost" className={cn(pinned && "text-ink")}
+            disabled={togglePin.isPending} aria-label={pinned ? "Bỏ ghim" : "Ghim"} aria-pressed={pinned} onClick={() => togglePin.mutate()}>
+            <Pin className={cn(pinned && "fill-current")} />{labels && (pinned ? "Bỏ ghim" : "Ghim")}
+          </Button>
+        </Hint>
       )}
-      <Button type="button" size={size} variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
-        aria-label="Ngữ cảnh" aria-expanded={showContext} title="Xem các tin trước/sau trong nhóm" onClick={onToggleContext}>
-        <MessagesSquare />{labels && "Ngữ cảnh"}
-      </Button>
+      <Hint side="bottom" title="Ngữ cảnh" text="Xem các tin trước / sau trong nhóm.">
+        <Button type="button" size={size} variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
+          aria-label="Ngữ cảnh" aria-expanded={showContext} onClick={onToggleContext}>
+          <MessagesSquare />{labels && "Ngữ cảnh"}
+        </Button>
+      </Hint>
     </>
   );
 }
@@ -418,37 +485,37 @@ const SNOOZES: [string, () => Date][] = [
 
 /** Hoãn: the tag leaves the to-do list and comes back on its own (pending lists refetch every minute). */
 function SnoozeMenu({ m, label }: { m: Message; label?: boolean }) {
-  const [open, setOpen] = useState(false);
   const now = useNow();
   const snoozed = !!m.snoozed_until && new Date(m.snoozed_until).getTime() > now;
   const run = useMutation({
     mutationFn: (until: Date | null) => snooze(m, until),
-    onSettled: () => setOpen(false),
     onError: () => toast({ text: "Không hoãn được, thử lại" }),
   });
   return (
-    <div className="relative" onClick={(e) => e.stopPropagation()} onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setOpen(false)}
-      onKeyDown={(e) => e.key === "Escape" && open && (e.stopPropagation(), setOpen(false))}>
-      <Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info")} aria-haspopup="menu" aria-expanded={open}
-        aria-label="Hoãn" title={snoozed ? `Đang hoãn tới ${timeLabel(m.snoozed_until!, true)}` : "Hoãn: ẩn khỏi Việc cần xử lý, tự hiện lại sau"} onClick={() => setOpen((v) => !v)}>
-        <AlarmClock />{label && "Hoãn"}
-      </Button>
-      {open && (
-        // tabIndex: Safari/Firefox don't focus a clicked button, so without a focusable menu the blur closes it before the click lands
-        <div role="menu" aria-label="Hoãn tới" tabIndex={-1} className={cn("absolute top-8 z-30 grid w-40 gap-0.5 rounded-md bg-cotton p-1 text-xs shadow-pop animate-in fade-in-0 zoom-in-[0.98] duration-(--dur-short)", label ? "left-0" : "right-0")}>
-          {SNOOZES.map(([label, at]) => (
-            <button key={label} type="button" role="menuitem" disabled={run.isPending} onClick={() => run.mutate(at())}
-              className="flex h-8 items-center gap-2 rounded-sm px-2 text-left text-ink-2 hover:bg-paper-3 hover:text-ink">
-              {label}
-            </button>
-          ))}
-          {snoozed && (
-            <button type="button" role="menuitem" disabled={run.isPending} onClick={() => run.mutate(null)}
-              className="flex h-8 items-center rounded-sm border-t px-2 text-left text-ink-3 hover:bg-paper-3 hover:text-ink">Bỏ hoãn</button>
-          )}
-        </div>
-      )}
-    </div>
+    <Menu.Root>
+      <Hint side="bottom" title="Hoãn (s: 1 giờ)" text={snoozed ? `Đang hoãn tới ${timeLabel(m.snoozed_until!, true)}.` : "Ẩn khỏi Việc cần xử lý, tự hiện lại sau."}>
+        <Menu.Trigger aria-label="Hoãn" onClick={(e) => e.stopPropagation()}
+          render={<Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info", "data-popup-open:bg-paper-3")} />}>
+          <AlarmClock />{label && "Hoãn"}
+        </Menu.Trigger>
+      </Hint>
+      <Menu.Portal>
+        <Menu.Positioner sideOffset={6} align={label ? "start" : "end"} className="z-50 outline-none">
+          <Menu.Popup aria-label="Hoãn tới" onClick={(e) => e.stopPropagation()} className={cn(MENU_POPUP, "w-40 text-xs")}>
+            {SNOOZES.map(([text, at]) => (
+              <Menu.Item key={text} disabled={run.isPending} onClick={() => run.mutate(at())} className={cn("text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
+                {text}
+              </Menu.Item>
+            ))}
+            {snoozed && (
+              <Menu.Item disabled={run.isPending} onClick={() => run.mutate(null)} className={cn("border-t text-ink-3 data-highlighted:text-ink", MENU_ITEM)}>
+                Bỏ hoãn
+              </Menu.Item>
+            )}
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 
@@ -468,7 +535,7 @@ export function ContextPanel({ m, className, focus }: { m: Message; className?: 
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-3" style={{ width: `${90 - i * 20}%` }} />)}
         </div>
       )}
-      {q.isError && <p className="text-error">Không lấy được (cần đang kết nối Telegram).</p>}
+      {q.isError && <p className="text-error">{errorText(q.error, {}, "Không lấy được (cần đang kết nối Telegram).")}</p>}
       {focus && !inList && focus}
       {q.data?.map((c) => focus && c.message_id === m.message_id ? <div key={c.message_id} className="contents">{focus}</div> : (
         <ContextLine key={c.message_id} c={c} focused={c.message_id === m.message_id} />
@@ -477,8 +544,9 @@ export function ContextPanel({ m, className, focus }: { m: Message; className?: 
   );
 }
 
-/** One message of the thread; a tag marked done or one checked with Đối chiếu BE gets a green edge and its mark. */
-function ContextLine({ c, focused }: { c: Message; focused: boolean }) {
+/** One message of the thread; a tag marked done or one checked with Đối chiếu BE gets a green edge and its mark.
+ *  Memoised: the reply panel re-renders on every streamed AI chunk, the thread lines don't need to. */
+const ContextLine = memo(function ContextLine({ c, focused }: { c: Message; focused: boolean }) {
   const deep = !!useDeepTask(c);
   return (
     <p className={cn("whitespace-pre-wrap break-words", focused ? "-mx-1.5 rounded-sm bg-hl-wash px-1.5 text-ink"
@@ -496,4 +564,4 @@ function ContextLine({ c, focused }: { c: Message; focused: boolean }) {
       {c.text ? richText(c) : (c.media_kind ? `[${MEDIA[c.media_kind] ?? "tệp"}]` : "")}
     </p>
   );
-}
+});

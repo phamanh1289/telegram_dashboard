@@ -1,16 +1,15 @@
 """Digest: structured AI summary of a group conversation, read live from Telegram.
 
 Separate from tag drafts: it needs a chat-wide consent (digest_consents) and never touches
-per-message grants or handled state. Messages are never stored; only the latest result and
+handled state. Messages are never stored; only the latest result and
 how far digests have read (digests), both dropped with the consent.
 """
 
-import json
 import re
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from .ai import AiService, data_json
+from .ai import AiService, data_json, json_object
 from .errors import ApiError
 from .models import DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store
@@ -34,9 +33,9 @@ must confirm; who = who must answer
 - "actions": [{"text", "who", "due", "message_ids"}] - who = owner, due = deadline if stated
 Rules: group scattered messages into topics by subject, using reply_to, timing and speakers. \
 Every item cites the ids of the messages it is based on, and every item and topic also has \
-"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent facts: leave a field empty \
-or drop the item when unsure; empty lists are fine. Write every text in Vietnamese, short and \
-concrete."""
+"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent \
+facts: leave a field empty or drop the item when unsure; empty lists are fine. Write every text \
+in Vietnamese, short and concrete."""
 
 
 def aware(d: datetime | None) -> datetime | None:
@@ -61,14 +60,8 @@ def _field(v) -> str:
 def parse_result(text: str, ids: set[str]) -> dict | None:
     """The model's JSON object, cleaned: unknown ids dropped, fields coerced to strings.
     None (show it raw) when no JSON object can be read or it uses none of our keys."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < start:
-        return None
-    try:
-        data = json.loads(text[start : end + 1])
-    except ValueError:
-        return None
-    if not isinstance(data, dict) or (data and not set(data) & set(KEYS)):
+    data = json_object(text)
+    if data is None or (data and not set(data) & set(KEYS)):
         return None
     out: dict = {}
     for key in KEYS:
