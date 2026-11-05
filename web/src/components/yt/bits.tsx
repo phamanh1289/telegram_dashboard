@@ -400,7 +400,7 @@ export function Card({ title, meta, children, className, onMeta }: { title: Reac
   const ai = use(CardAi);
   return (
     <motion.section initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }} transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
-      className={cn("yt-card grid min-w-0 content-start gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock transition-shadow duration-(--dur-short) hover:shadow-pop", className)}>
+      className={cn("yt-card grid min-w-0 grid-cols-1 content-start gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock transition-shadow duration-(--dur-short) hover:shadow-pop", className)}>
       <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-ink">{title}</h3>
         <div className="ml-auto flex items-center gap-2">

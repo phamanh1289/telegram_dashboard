@@ -650,7 +650,7 @@
 "tab": "telegram",
 "area": "Danh sách tin › Dòng tin",
 "title": "Mở trang trả lời",
-"what": "Bấm vào bất kỳ đâu trên dòng tin (trừ link/nút) để mở trang \"Trả lời\": tin, ngữ cảnh nhóm và ô soạn bên trái, Trợ lý AI và công cụ bên phải.",
+"what": "Bấm vào bất kỳ đâu trên dòng tin (trừ link/nút) để mở trang \"Trả lời\": hội thoại trong nhóm (tin tag nổi bật đúng vị trí, tự cuộn tới) và ô soạn bên trái, Trợ lý AI và công cụ bên phải.",
 "how": [
 {
 "t": "Bấm vào bất kỳ đâu trên một dòng tin (trừ link / nút) để mở khung trả lời",
@@ -891,7 +891,7 @@
 "tab": "telegram",
 "area": "Dòng tin › Đối chiếu BE",
 "title": "Đối chiếu BE (đối chiếu BE confirm với code)",
-"what": "Chọn một tin là BE confirm; tin nó trả lời là câu hỏi. AI đọc hai tin, so với code dự án: đã adapt chưa, còn thiếu gì, cần thay đổi gì. Chạy thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE.",
+"what": "Chọn một tin là BE confirm; tin nó trả lời là câu hỏi. AI đọc hai tin, so với code dự án: đã adapt chưa, còn thiếu gì, cần thay đổi gì. Chạy thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE. Tin đã chạy hiện nhãn xanh \"Đã đối chiếu BE\" (\"Đang đối chiếu BE\" khi đang chạy) và viền xanh trong Ngữ cảnh; bấm nhãn để mở phiên.",
 "how": [
 {
 "t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" (rê chuột vào nút Xong của tin để hiện)",
@@ -1047,7 +1047,7 @@
 "at": "css:[data-testid=\"message\"]"
 },
 {
-"t": "Bấm \"Giao AI Agent\" ở cột Công cụ.",
+"t": "Bấm \"Giao AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
 "at": "css:form[aria-label=\"Soạn trả lời\"] button[aria-label=\"AI Agent\"]"
 },
 {
@@ -1084,7 +1084,7 @@
 "at": "css:[data-testid=\"message\"]"
 },
 {
-"t": "Bấm \"Tạo ticket\" ở cột Công cụ.",
+"t": "Bấm \"Tạo ticket\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
 "at": "css:form[aria-label=\"Soạn trả lời\"] button[aria-label=\"YouTrack\"]"
 },
 {

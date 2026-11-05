@@ -17,7 +17,7 @@ import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type AiPicks, api, ApiError, type Message, type Task } from "@/lib/api";
-import { ALL, byUnit, setHandled, timeLabel, useNow, useTaskList } from "@/lib/inbox";
+import { ALL, byUnit, timeLabel, toast, useNow, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 type TaskEvent = { kind: string; text: string; error?: boolean; at?: number };
@@ -47,7 +47,7 @@ function asMessage(t: Task): Message {
   return {
     chat_id: t.chat_id!, message_id: t.message_id!, sender_id: null, sender_name: t.sender_name ?? null, text: t.message_text ?? "", date: t.created_at,
     edit_date: null, reply_to_id: null, topic_id: null, outgoing: false, media_kind: null, deleted: false,
-    handled: t.handled ?? false, pinned: false, links: [],
+    handled: t.handled ?? false, pinned: false, links: [], kept: true,
   };
 }
 
@@ -487,11 +487,15 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
   const [open, setOpen] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ["tasks"] });
   const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: refresh });
-  // Done on the tagged message (setHandled toasts errors and the undo); the session moves to the Done tab.
+  // Done: on the tagged message, or on the session itself when its message is not a kept tag (Đối chiếu BE on any
+  // reply); the session moves to the Done tab.
   const tag = t.chat_id && t.message_id ? asMessage(t) : null;
+  const put = (handled: boolean, react = true) =>
+    api<void>(`/tasks/${t.id}/handled`, { method: "PUT", json: { handled, react } }).finally(refresh);
   const mark = useMutation({
-    mutationFn: ({ handled, react }: { handled: boolean; react: boolean }) => setHandled([tag!], handled, react),
-    onSettled: refresh,
+    mutationFn: ({ handled, react }: { handled: boolean; react: boolean }) => put(handled, react),
+    onSuccess: (_, { handled }) => { if (handled) toast({ text: "Đã đánh dấu xong", undo: () => put(false) }); },
+    onError: () => toast({ text: "Không cập nhật được, thử lại sau" }),
   });
 
   const head = <>

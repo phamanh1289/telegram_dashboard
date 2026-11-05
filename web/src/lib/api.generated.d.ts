@@ -102,6 +102,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/{task_id}/handled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Task Handled
+         * @description Done / reopen: on the kept tag when the message is one, else on the session itself.
+         */
+        put: operations["task_handled_api_tasks__task_id__handled_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/stop": {
         parameters: {
             query?: never;
@@ -1960,6 +1980,11 @@ export interface components {
              * @default []
              */
             links: components["schemas"]["LinkSpan"][];
+            /**
+             * Kept
+             * @default false
+             */
+            kept: boolean;
         };
         /** MessagesPage */
         MessagesPage: {
@@ -2313,6 +2338,11 @@ export interface components {
              * @default
              */
             description: string;
+            /**
+             * Markdown
+             * @default true
+             */
+            markdown: boolean;
             /** Project */
             project?: string | null;
             /** Type */
@@ -2517,6 +2547,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TaskAi"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    task_handled_api_tasks__task_id__handled_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandledRequest"];
             };
         };
         responses: {

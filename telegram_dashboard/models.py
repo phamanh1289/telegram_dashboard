@@ -68,6 +68,7 @@ class MessageDTO(BaseModel):
     snoozed_until: datetime | None = None
     pinned: bool = False
     links: list[LinkSpan] = []
+    kept: bool = False  # live pages: a tag/reply we store (handled in the tag lists; Cả nhóm hides it)
 
 
 class ChatDTO(BaseModel):
@@ -275,6 +276,7 @@ class TaskDTO(BaseModel):
 class YouTrackRequest(BaseModel):
     summary: str = Field(min_length=1, max_length=300)
     description: str = Field(default="", max_length=20000)
+    markdown: bool = True  # False: plain text, YouTrack parses it as its own wiki markup
     project: str | None = Field(default=None, pattern=r"^[\w-]{1,30}$")  # None: YOUTRACK_PROJECT
     # set after creating, through one command (values go between braces)
     type: str | None = Field(default=None, pattern=r"^[^{}\n]{1,100}$")

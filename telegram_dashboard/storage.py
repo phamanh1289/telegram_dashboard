@@ -106,7 +106,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   kind TEXT NOT NULL DEFAULT 'task',
   title TEXT,
   model TEXT,
-  effort TEXT
+  effort TEXT,
+  done INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS projects (
   path TEXT PRIMARY KEY,
@@ -250,7 +251,13 @@ def _task_ai(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE tasks ADD COLUMN effort TEXT")
 
 
-MIGRATIONS = [_add_missing_columns, _task_kind, _task_ai]
+def _task_done(c: sqlite3.Connection) -> None:
+    """Done for a session whose message is not a kept tag (e.g. Đối chiếu BE on any BE reply)."""
+    if "done" not in {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}:
+        c.execute("ALTER TABLE tasks ADD COLUMN done INTEGER NOT NULL DEFAULT 0")
+
+
+MIGRATIONS = [_add_missing_columns, _task_kind, _task_ai, _task_done]
 
 
 class Store:
@@ -947,12 +954,17 @@ class Store:
             sql = "UPDATE tasks SET model=?, effort=? WHERE id=?"
             return bool(c.execute(sql, (model, effort, task_id)).rowcount)
 
+    def set_task_done(self, task_id: str, done: bool) -> bool:
+        with self._conn(write=True) as c:
+            sql = "UPDATE tasks SET done=? WHERE id=?"
+            return bool(c.execute(sql, (int(done), task_id)).rowcount)
+
     def list_tasks(self, chat_id: str | None = None) -> list[dict]:
         """Newest first, with a peek at the tagged message so the task list stands alone."""
         with self._conn() as c:
             rows = c.execute(
                 "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, "
-                "COALESCE(m.handled, 0) AS handled "
+                "COALESCE(m.handled, t.done) AS handled "  # not a kept tag: the session's own Done
                 "FROM tasks t LEFT JOIN chats c ON c.chat_id=t.chat_id "
                 "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
                 "WHERE ?1 IS NULL OR t.chat_id=?1 ORDER BY t.created_at DESC LIMIT 200",

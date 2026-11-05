@@ -1,15 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuit, CornerDownRight, Loader2 } from "lucide-react";
+import { BrainCircuit, CheckCheck, CornerDownRight, Loader2 } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Hint } from "@/components/ui/hint";
 import { Textarea } from "@/components/ui/textarea";
 import { api, errorText, type Message } from "@/lib/api";
-import { openTask } from "@/lib/inbox";
+import { openTask, useTaskList } from "@/lib/inbox";
 import { readAgentProject, readPlatform, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -19,15 +20,38 @@ const subs = new Set<() => void>();
 const open = (m: Message | null) => { target = m; subs.forEach((f) => f()); };
 const useTarget = () => useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => target, () => target);
 
+/** The newest Đối chiếu BE session run on this message as BE's confirmation (the task list is newest first), if any. */
+export function useDeepTask(m: Message) {
+  return useTaskList().data?.find((t) => t.kind === "deep" && t.chat_id === m.chat_id && t.message_id === m.message_id);
+}
+
 /** Row button: Đối chiếu BE on this message as BE's confirmation; the message it replies to becomes the question. */
 export function DeepPick({ m, className }: { m: Message; className?: string }) {
+  const done = !!useDeepTask(m);
   if (!m.reply_to_id) return null; // not a reply: no question to compare against
   return (
-    <Button type="button" size="icon-xs" variant="ghost" className={className}
-      aria-label="Đối chiếu BE" title="Đối chiếu BE: tin này là BE confirm, tin nó trả lời là câu hỏi; AI trace code và đề xuất xử lý"
+    <Button type="button" size="icon-xs" variant="ghost" className={cn(done && "text-ok", className)}
+      aria-label={done ? "Đối chiếu BE lại" : "Đối chiếu BE"}
+      title={`${done ? "Đã đối chiếu, chạy lại. " : ""}Đối chiếu BE: tin này là BE confirm, tin nó trả lời là câu hỏi; AI trace code và đề xuất xử lý`}
       onClick={(e) => { e.stopPropagation(); open(m); }}>
       <BrainCircuit />
     </Button>
+  );
+}
+
+/** Always-visible mark on a message already checked with Đối chiếu BE (running or done); opens that session. */
+export function DeepBadge({ m, className }: { m: Message; className?: string }) {
+  const t = useDeepTask(m);
+  if (!t) return null;
+  return (
+    <Hint side="bottom" title={t.running ? "Đang đối chiếu BE" : "Đã đối chiếu BE"} text="Tin BE confirm này đã chạy Đối chiếu BE. Bấm để mở phiên ở AI Agent › Đối chiếu BE.">
+      <button type="button" onClick={(e) => { e.stopPropagation(); openTask(t.id); }}
+        className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 text-xs leading-5 font-medium transition-colors duration-(--dur-micro)",
+          t.running ? "bg-info-wash text-info hover:bg-info/20" : "bg-ok-wash text-ok hover:bg-ok/20", className)}>
+        {t.running ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <CheckCheck className="size-3" aria-hidden />}
+        {t.running ? "Đang đối chiếu BE" : "Đã đối chiếu BE"}
+      </button>
+    </Hint>
   );
 }
 

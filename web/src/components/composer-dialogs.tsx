@@ -1,13 +1,13 @@
 "use client";
 
-import { Bot, Bug, Eye, FilePen, Loader2, MessageSquareQuote, Sparkles } from "lucide-react";
+import { Bot, Eye, FilePen, Loader2, MessageSquareQuote } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
+import { TicketForm } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { type AiTicketDraft, api, errorText, type Message, type YouTrackIssue } from "@/lib/api";
 import { TASK_MODES, textWithLinks, toast } from "@/lib/inbox";
@@ -140,7 +140,6 @@ export function TaskDialog({ m, analysis, open, onOpenChange, onCreated }: {
   );
 }
 
-type Issue = { summary: string; description: string };
 type Meta = { project?: string; type?: string; priority?: string; assignee?: string }; // "" / missing: leave unset
 const readMeta = (): Meta => { try { return JSON.parse(getPref("ticketMeta") ?? "{}") ?? {}; } catch { return {}; } };
 
@@ -148,155 +147,66 @@ const readMeta = (): Meta => { try { return JSON.parse(getPref("ticketMeta") ?? 
 export function IssueDialog({ m, note, ai, open, onOpenChange, onCreated }: {
   m: Message;
   note: string; // the AI prompt, added as a note
-  ai: boolean; // Claude is set up: offer "AI soạn"
+  ai: boolean; // Claude is set up: offer the AI tab
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: (line: string) => void;
 }) {
-  const [edit, setEdit] = useState<Issue | null>(null); // null: still the proposal below
-  const aiName = useAiPrefs().name;
-  const issue = edit ?? {
-    summary: m.text.split("\n")[0].slice(0, 120) || "Yêu cầu từ Telegram",
-    description: `Từ Telegram (${m.sender_name ?? "không rõ"}):\n\n${textWithLinks(m)}${note.trim() ? `\n\nGhi chú: ${note.trim()}` : ""}`,
-  };
-  const aiAbort = useRef<AbortController | null>(null);
-  const close = (o: boolean) => { if (!o) { setEdit(null); aiAbort.current?.abort(); } onOpenChange(o); };
+  const from = `${m.sender_name ?? "không rõ"}`;
+  const body = textWithLinks(m);
+  const extraNote = note.trim() ? `\n\nGhi chú: ${note.trim()}` : "";
   // Project, Type, Priority, Assignee: the last choice comes back next time (same caches as the YouTrack page).
-  const [meta, setMeta] = useState(readMeta);
+  const meta = readMeta();
   const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, enabled: open });
   const project = meta.project || getPref("project") || projects.data?.[0]?.shortName || "";
-  const fields = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: open && !!project });
-  const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000, enabled: open && !!project });
-  const pick = (k: keyof Meta, v: string) => setMeta((x) => ({ ...x, [k]: v, ...(k === "project" && { type: "", priority: "", assignee: "" }) }));
-  // open tickets that already look like this one, so a duplicate is caught before it is created
-  const q = m.text.slice(0, 300);
-  const similar = useQuery({
-    queryKey: ["youtrack-similar", q, project],
-    queryFn: ({ signal }) => api<YouTrackIssue[]>(`/youtrack/similar?q=${encodeURIComponent(q)}&project=${encodeURIComponent(project)}`, { signal }),
-    enabled: open && q.length > 0,
-    staleTime: 60_000,
-  });
-  const create = useMutation({
-    mutationFn: (v: Issue) => api<YouTrackIssue>("/youtrack/issues", {
-      method: "POST",
-      json: { ...v, project: project || null, type: meta.type || null, priority: meta.priority || null, assignee: meta.assignee || null,
-        chat_id: m.chat_id, message_id: m.message_id },
-    }),
-    onSuccess: (r) => {
-      setEdit(null);
-      setPref("ticketMeta", JSON.stringify({ ...meta, project }));
-      if (r.warning) toast({ text: `Đã tạo ${r.id}. ${r.warning}` });
-      onCreated(`Đã tạo ticket ${r.id}: ${r.url}`);
-    },
-  });
-  // A duplicate: add this report to the open ticket instead of creating another.
-  const addTo = useMutation({
-    mutationFn: (t: YouTrackIssue) => yt.comment(t.id, `Báo thêm từ Telegram (${m.sender_name ?? "không rõ"}):\n\n${textWithLinks(m)}${note.trim() ? `\n\nGhi chú: ${note.trim()}` : ""}`).then(() => t),
-    onSuccess: (t) => { setEdit(null); onCreated(`Đã ghi nhận vào ticket ${t.id}: ${t.url}`); },
-  });
-  // AI turns the tag into a ticket: summary, Type / Priority from the project's values, templated description.
-  const draft = useMutation({
-    mutationFn: () => {
-      aiAbort.current = new AbortController();
-      return api<AiTicketDraft>("/ai/ticket", {
-        method: "POST",
-        signal: aiAbort.current.signal,
-        json: {
-          chat_id: m.chat_id, message_ids: [m.message_id], instruction: note, project: null, with_context: true,
-          platform: readPlatform(), role: readYtRole() ?? "dev", types: fields.data?.Type ?? [], priorities: fields.data?.Priority ?? [],
-        },
-      });
-    },
-    onSuccess: (r) => {
-      // the original message stays at the end: nothing the AI dropped is lost
-      setEdit({ summary: r.summary || issue.summary, description: `${r.description}\n\n---\nTin gốc (${m.sender_name ?? "không rõ"}):\n${textWithLinks(m)}` });
-      setMeta((x) => ({ ...x, ...(r.type && { type: r.type }), ...(r.priority && { priority: r.priority }) }));
-    },
-  });
-  const sel = "h-8 min-w-0 rounded-md border border-rule bg-cotton px-2 text-sm";
-  const opts = (vs: string[] | undefined, cur: string | undefined) => [...(cur && !vs?.includes(cur) ? [cur] : []), ...(vs ?? [])];
   return (
-    <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="flex flex-col sm:max-w-xl">
-        <DialogTitle>Tạo ticket YouTrack</DialogTitle>
-        <DialogDescription>Tạo xong, link ticket được thêm vào khung trả lời để bạn gửi lại nhóm.</DialogDescription>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <label className="grid gap-1 text-xs text-ink-3">Project
-            <select className={sel} value={project} onChange={(e) => pick("project", e.target.value)}>
-              {opts(projects.data?.map((p) => p.shortName), project).map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs text-ink-3">Type
-            <select className={sel} value={meta.type ?? ""} onChange={(e) => pick("type", e.target.value)}>
-              <option value="">Mặc định</option>
-              {opts(fields.data?.Type, meta.type).map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs text-ink-3">Priority
-            <select className={sel} value={meta.priority ?? ""} onChange={(e) => pick("priority", e.target.value)}>
-              <option value="">Mặc định</option>
-              {opts(fields.data?.Priority, meta.priority).map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </label>
-          <label className="grid gap-1 text-xs text-ink-3">Assignee
-            <select className={sel} value={meta.assignee ?? ""} onChange={(e) => pick("assignee", e.target.value)}>
-              <option value="">Chưa assign</option>
-              {meta.assignee && !people.data?.some((p) => p.login === meta.assignee) && <option value={meta.assignee}>{meta.assignee}</option>}
-              {people.data?.map((p) => <option key={p.login} value={p.login}>{p.name}</option>)}
-            </select>
-          </label>
-        </div>
-        <Input aria-label="Tiêu đề ticket" maxLength={300} value={issue.summary}
-          onChange={(e) => setEdit({ ...issue, summary: e.target.value })} />
-        {m.media_kind === "photo" && <p className="text-xs text-ink-3">Ảnh trong tin sẽ được đính kèm vào ticket.</p>}
-        <Textarea aria-label="Mô tả ticket" className="min-h-24 flex-auto resize-none overflow-y-auto" rows={8} maxLength={20000} value={issue.description}
-          onChange={(e) => setEdit({ ...issue, description: e.target.value })} />
-        {!!similar.data?.length && (
-          <section aria-label="Ticket có thể trùng" className="grid gap-1 rounded-[var(--radius-card)] bg-warn-wash p-2 text-sm">
-            <p className="text-xs text-ink-2">Có thể đã có ticket tương tự đang mở. Trùng thì ghi thêm vào ticket đó thay vì tạo mới:</p>
-            {similar.data.map((t) => (
-              <span key={t.id} className="flex items-center gap-2">
-                <a href={t.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate hover:underline">
-                  <b className="font-medium">{t.id}</b> <span className="text-ink-2">{t.summary}</span>
-                </a>
-                <Button type="button" size="xs" variant="outline" disabled={addTo.isPending} onClick={() => addTo.mutate(t)}
-                  title="Thêm tin này làm bình luận trên ticket đó và chèn link vào trả lời">Ghi thêm vào đây</Button>
-              </span>
-            ))}
-            {addTo.isError && <p role="alert" className="text-xs text-error">{addTo.error.message || "Không ghi được bình luận."}</p>}
-          </section>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="flex flex-col sm:max-w-2xl">
+        {project ? (
+          <TicketForm key={project}
+            title="Tạo ticket YouTrack"
+            hint="Tạo xong, link ticket được thêm vào khung trả lời để bạn gửi lại nhóm."
+            project={project}
+            projects={projects.data?.map((p) => p.shortName)}
+            initial={{ summary: m.text.split("\n")[0].slice(0, 120) || "Yêu cầu từ Telegram", description: `Từ Telegram (${from}):\n\n${body}${extraNote}` }}
+            meta={{ type: meta.type ?? "", priority: meta.priority ?? "", assignee: meta.assignee ?? "" }}
+            note={note}
+            notePlaceholder="vd. Bug màn thanh toán, ưu tiên cao, giao cho team mobile"
+            aiOn={ai}
+            aiContext={
+              <figure className="grid gap-1 rounded-lg bg-paper-2 px-3 py-2 text-xs">
+                <figcaption className="text-ink-3">AI đọc tin này cùng ngữ cảnh chat</figcaption>
+                <blockquote className="line-clamp-4 whitespace-pre-wrap text-ink-2"><b className="font-medium text-ink">{from}:</b> {m.text}</blockquote>
+              </figure>
+            }
+            aiDraft={async (instruction, f, signal) => {
+              const r = await api<AiTicketDraft>("/ai/ticket", { method: "POST", signal, json: {
+                chat_id: m.chat_id, message_ids: [m.message_id], instruction, project: null, with_context: true,
+                platform: readPlatform(), role: readYtRole() ?? "dev", types: f.types, priorities: f.priorities } });
+              // the original message stays at the end: nothing the AI dropped is lost
+              return { ...r, description: `${r.description}\n\n---\nTin gốc (${from}):\n${body}` };
+            }}
+            onSubmit={async (v) => {
+              const r = await api<YouTrackIssue>("/youtrack/issues", { method: "POST", json: {
+                summary: v.summary, description: v.description, markdown: v.markdown, project: v.project || null,
+                type: v.type || null, priority: v.priority || null, assignee: v.assignee || null, chat_id: m.chat_id, message_id: m.message_id } });
+              setPref("ticketMeta", JSON.stringify({ project: v.project, type: v.type, priority: v.priority, assignee: v.assignee }));
+              if (r.warning) toast({ text: `Đã tạo ${r.id}. ${r.warning}` });
+              onCreated(`Đã tạo ticket ${r.id}: ${r.url}`);
+            }}
+            // A duplicate: add this report to the open ticket instead of creating another.
+            addTo={async (t) => {
+              await yt.comment(t.id, `Báo thêm từ Telegram (${from}):\n\n${body}${extraNote}`);
+              onCreated(`Đã ghi nhận vào ticket ${t.id}: ${t.url}`);
+            }}
+            extra={m.media_kind === "photo" && <p className="text-xs text-ink-3">Ảnh trong tin sẽ được đính kèm vào ticket.</p>}
+          />
+        ) : (
+          <>
+            <DialogTitle>Tạo ticket YouTrack</DialogTitle>
+            <DialogDescription>{projects.isError ? "Không tải được danh sách project YouTrack." : "Đang tải project…"}</DialogDescription>
+          </>
         )}
-        {draft.isError && (draft.error as Error).name !== "AbortError" && (
-          <p role="alert" className="text-sm text-error">
-            {errorText(draft.error, {
-              ai_scope_not_allowed: "Tin này chưa được cấp quyền dùng AI.",
-              ai_timeout: `${aiName} chạy quá lâu, thử lại.`,
-              ai_provider_error: `${aiName} lỗi, kiểm tra đăng nhập ${aiName} trong Cài đặt.`,
-            }, "AI chưa soạn được ticket.")}
-          </p>
-        )}
-        {create.isError && (
-          <p role="alert" className="text-sm text-error">
-            {errorText(create.error, {
-              youtrack_unauthorized: "YouTrack từ chối token (YOUTRACK_TOKEN).",
-              youtrack_project_not_found: "Không thấy project này trên YouTrack.",
-            }, "Không tạo được ticket.")}
-          </p>
-        )}
-        <DialogFooter>
-          {ai && (
-            <Button type="button" variant="outline" className="sm:mr-auto" aria-busy={draft.isPending} disabled={draft.isPending || fields.isLoading}
-              title="AI viết tiêu đề, chọn Type / Priority và soạn mô tả theo mẫu (bug: bước tái hiện…; feature: tiêu chí nghiệm thu…)"
-              onClick={() => draft.mutate()}>
-              {draft.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles />} {draft.isPending ? "AI đang soạn…" : "AI soạn"}
-            </Button>
-          )}
-          <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
-          <Button type="button" aria-busy={create.isPending} disabled={!issue.summary.trim() || create.isPending}
-            onClick={() => create.mutate(issue)}>
-            {create.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Bug />} {create.isPending ? "Đang tạo…" : "Tạo ticket"}
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

@@ -513,7 +513,7 @@ export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, 
 }
 
 /** Model + effort of the AI in use, inline (reply panel, AI Agent); the same saved picks as its AI page. */
-export function ModelEffortPicker({ task = false, className }: { task?: boolean; className?: string }) {
+export function ModelEffortPicker({ task = false, compact = false, className }: { task?: boolean; compact?: boolean; className?: string }) {
   const { p, isError, save, provider, info, picks, setPicks } = useAiPrefs();
   const c = info(provider);
   if (!p || !c) return isError ? <span role="alert" className={cn("text-xs text-error", className)}>Không đọc được model/effort</span> : null;
@@ -521,9 +521,9 @@ export function ModelEffortPicker({ task = false, className }: { task?: boolean;
   const k = picks();
   return (
     <span role="group" aria-label={`${c.name}: model và effort cho ${what}`} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
-      <span className="text-xs font-medium text-ink-3">{c.name}</span>
+      {!compact && <span className="text-xs font-medium text-ink-3">{c.name}</span>}
       <Picks c={c} label={what} model={k[m]} effort={k[e]} onModel={(v) => setPicks(provider, { [m]: v })} onEffort={(v) => setPicks(provider, { [e]: v })}
-        modelClass="w-32" effortClass="w-28" />
+        modelClass={compact ? "w-24" : "w-32"} effortClass={compact ? "w-20" : "w-28"} />
       {save.isError && <span role="alert" className="text-xs text-error">Không lưu được, thử lại</span>}
     </span>
   );

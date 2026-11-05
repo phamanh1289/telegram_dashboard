@@ -1389,7 +1389,7 @@ async def whoami(url: str, token: str) -> dict:
 
 
 async def create_issue(
-    settings, summary: str, description: str, project_name: str
+    settings, summary: str, description: str, project_name: str, markdown: bool = True
 ) -> tuple[str, str]:
     """Returns (idReadable, browser URL)."""
     base = settings.youtrack_url.rstrip("/")
@@ -1410,7 +1410,7 @@ async def create_issue(
                 "/api/issues",
                 params={"fields": "idReadable"},
                 json={"project": {"id": project["id"]}, "summary": summary,
-                      "description": description},
+                      "description": description, "usesMarkdown": markdown},
             )  # fmt: skip
             r.raise_for_status()
             issue_id = r.json()["idReadable"]

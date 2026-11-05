@@ -71,6 +71,10 @@ def test_context_is_live_and_only_around_kept_tags(client):
     ids = [m["message_id"] for m in client.get(f"/api/chats/{A}/messages/10/context").json()]
     assert ids == [str(i) for i in range(1, 16)]
     assert client.get(f"/api/chats/{A}/messages/11/context").status_code == 404
+    # A kept tag marked done shows as done in the live thread; the rest stay as Telegram has them.
+    store.set_handled(A, 10, True)
+    done = [m["message_id"] for m in client.get(f"/api/chats/{A}/messages/10/context").json() if m["handled"]]
+    assert done == ["10"]
 
 
 async def test_draft_includes_context(env, tmp_path):
@@ -119,8 +123,14 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     store.add_task("t1", A, 4, "/tmp/proj", "sửa bug login")
     assert client.get("/api/tasks").json()[0]["result"] is None
     assert client.get("/api/tasks").json()[0]["handled"] is False  # message not stored yet
+    # Not a kept tag (e.g. Đối chiếu BE on any reply): Done sits on the session itself.
+    done = {"handled": True, "react": False}
+    assert client.put("/api/tasks/t1/handled", json=done, headers=H).status_code == 204
+    assert client.get("/api/tasks").json()[0]["handled"] is True
+    client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
     store.apply_message(msg(A, 4, "@me login crash"))
-    client.put(f"/api/chats/{A}/messages/4/handled", json={"handled": True}, headers=H)
+    client.put("/api/tasks/t1/handled", json=done, headers=H)  # now on the tag
+    assert store.get_message(A, 4).handled
     assert client.get("/api/tasks").json()[0]["handled"] is True  # the task follows its tag
     p = task_result_path(settings, "t1")
     p.parent.mkdir(parents=True, exist_ok=True)

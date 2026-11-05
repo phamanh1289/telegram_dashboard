@@ -370,6 +370,8 @@ def test_live_pages_and_handled_filter(settings):
         assert c.get("/api/chats/-999/live").status_code == 404
         st = app.state.store
         st.apply_message(fake.history[A][0])
+        r = c.get(f"/api/chats/{A}/live", params={"limit": 3, "before": "4"}).json()
+        assert [m["message_id"] for m in r["items"] if m["kept"]] == ["1"]  # the stored tag, flagged for Cả nhóm
         st.apply_message(fake.history[A][1])
         st.set_handled(A, 1, True)
         ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages", params={"handled": "true"}).json()["items"]]

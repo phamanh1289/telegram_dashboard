@@ -495,11 +495,11 @@ function QcSplit({ open }: { open: Ticket[] }) {
   return (
     <Card title="Gợi ý chia QC" meta={<Button size="xs" variant="ghost" onClick={() => void copy(text, "phân công")}><Copy /> Copy</Button>}>
       <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm để mở ticket và gán.</p>
-      <ol className="grid divide-y divide-rule/60">
+      <ol className="grid grid-cols-1 divide-y divide-rule/60">
         {plan.slice(0, 12).map(({ i, who, n }) => (
           <li key={i.id}>
             <button type="button" onClick={() => y.openTicket(i.id, plan.map((x) => x.i))} className="flex w-full items-baseline gap-2 py-1.5 text-left text-sm hover:bg-paper-2">
-              <span className="font-mono text-xs text-ink-3">{i.id}</span>
+              <span className="shrink-0 font-mono text-xs text-ink-3">{i.id}</span>
               <span className="min-w-0 flex-1 truncate">{titleOf(i)}</span>
               <span className="shrink-0 text-xs"><b className="font-medium">{who}</b> <span className="text-ink-3">· đang giữ {n}</span></span>
             </button>

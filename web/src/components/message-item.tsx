@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessagesSquare, Pin, Reply, RotateCcw, Users } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Avatar, hueOf } from "@/components/chat-list";
-import { DeepPick } from "@/components/deep-think";
+import { DeepBadge, DeepPick, useDeepTask } from "@/components/deep-think";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -221,6 +221,7 @@ function MessageRow({
               <RotateCcw className="size-3" aria-hidden /> Cần retest
             </span>
           )}
+          <DeepBadge m={m} />
           <div className="ml-auto flex flex-wrap items-center gap-x-2.5 text-xs leading-5">
             <button type="button" title={`ID ${dbId(m)} (bấm để chép, dùng khi báo lỗi)`}
               onClick={() => navigator.clipboard.writeText(dbId(m)).then(() => toast({ text: `Đã chép ID ${dbId(m)}` }), () => toast({ text: "Không chép được ID" }))}
@@ -451,14 +452,15 @@ function SnoozeMenu({ m, label }: { m: Message; label?: boolean }) {
   );
 }
 
-/** Messages around a tag, read live from Telegram (not stored). */
-export function ContextPanel({ m, className }: { m: Message; className?: string }) {
+/** Messages around a tag, read live from Telegram (not stored). `focus`: drawn in place of the tag's own line (always shown, even when the rest can't load). */
+export function ContextPanel({ m, className, focus }: { m: Message; className?: string; focus?: React.ReactNode }) {
   const q = useQuery({
     queryKey: ["context", m.chat_id, m.message_id],
     queryFn: ({ signal }) =>
       api<Message[]>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/context`, { signal }),
     staleTime: 60_000,
   });
+  const inList = !!q.data?.some((c) => c.message_id === m.message_id);
   return (
     <div aria-label="Ngữ cảnh" className={cn("mt-2 grid max-h-72 gap-1.5 overflow-y-auto rounded-md bg-paper-3/60 p-3 text-[0.8125rem] leading-relaxed", className)}>
       {q.isPending && (
@@ -467,15 +469,31 @@ export function ContextPanel({ m, className }: { m: Message; className?: string 
         </div>
       )}
       {q.isError && <p className="text-error">Không lấy được (cần đang kết nối Telegram).</p>}
-      {q.data?.map((c) => (
-        <p key={c.message_id} className={cn("whitespace-pre-wrap break-words", c.message_id === m.message_id ? "-mx-1.5 rounded-sm bg-hl-wash px-1.5 text-ink" : "text-ink-2")}>
-          <DeepPick m={c} className="float-right -my-1 ml-1" />
-          <span className="font-semibold" style={c.outgoing ? undefined : { color: `var(--cat-${hueOf(c.sender_name ?? "?")})` }}>
-            {c.outgoing ? "Bạn" : (c.sender_name ?? "?")}:
-          </span>{" "}
-          {c.text ? richText(c) : (c.media_kind ? `[${MEDIA[c.media_kind] ?? "tệp"}]` : "")}
-        </p>
+      {focus && !inList && focus}
+      {q.data?.map((c) => focus && c.message_id === m.message_id ? <div key={c.message_id} className="contents">{focus}</div> : (
+        <ContextLine key={c.message_id} c={c} focused={c.message_id === m.message_id} />
       ))}
     </div>
+  );
+}
+
+/** One message of the thread; a tag marked done or one checked with Đối chiếu BE gets a green edge and its mark. */
+function ContextLine({ c, focused }: { c: Message; focused: boolean }) {
+  const deep = !!useDeepTask(c);
+  return (
+    <p className={cn("whitespace-pre-wrap break-words", focused ? "-mx-1.5 rounded-sm bg-hl-wash px-1.5 text-ink"
+      : deep || c.handled ? "-mx-1.5 rounded-sm border-l-2 border-ok bg-ok-wash/60 pr-1.5 pl-1 text-ink" : "text-ink-2")}>
+      <DeepPick m={c} className="float-right -my-1 ml-1" />
+      <span className="font-semibold" style={c.outgoing ? undefined : { color: `var(--cat-${hueOf(c.sender_name ?? "?")})` }}>
+        {c.outgoing ? "Bạn" : (c.sender_name ?? "?")}:
+      </span>{" "}
+      {c.handled && (
+        <span className="mr-1 inline-flex items-center gap-1 rounded-full bg-ok-wash px-1.5 align-[1px] text-xs leading-5 font-medium text-ok">
+          <CheckCheck className="size-3" aria-hidden /> Đã xử lý
+        </span>
+      )}
+      <DeepBadge m={c} className="mr-1 align-[1px]" />
+      {c.text ? richText(c) : (c.media_kind ? `[${MEDIA[c.media_kind] ?? "tệp"}]` : "")}
+    </p>
   );
 }

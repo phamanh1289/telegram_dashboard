@@ -22,9 +22,11 @@ from .errors import ApiError
 log = logging.getLogger("telegram_dashboard.agent")
 
 PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
-# Enforced here, not left to ~/.claude settings: no shell or web, no MCP servers, and no edits to
-# files that run code later (hooks, git hooks, CI). An Edit(path) rule also covers Write.
-DENY = ("Bash,WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
+# Enforced here, not left to ~/.claude settings: shell yes in both modes (plan = no file tools),
+# no web, no MCP servers, and no edits to files that run code later (hooks, git hooks, CI).
+# An Edit(path) rule also covers Write; it does not bind Bash, which can still write anywhere.
+ALLOW = "Bash"
+DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
         # files that run code later (on folder open, commit, cd) or load tools into the next session
         "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json)")
 STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file read
@@ -66,15 +68,17 @@ def _short(inp: dict) -> str:
 def _items(ev: dict) -> list[dict]:
     """One stream-json event -> display items (text / tool call / tool output / final result)."""
     kind = ev.get("type")
-    blocks = (ev.get("message") or {}).get("content")
+    msg = ev.get("message")  # some events (system/hook notices) carry a plain-string message
+    blocks = msg.get("content") if isinstance(msg, dict) else None
+    blocks = [b for b in blocks if isinstance(b, dict)] if isinstance(blocks, list) else None
     out: list[dict] = []
-    if kind == "assistant" and isinstance(blocks, list):
+    if kind == "assistant" and blocks:
         for b in blocks:
             if b.get("type") == "text" and b.get("text", "").strip():
                 out.append({"kind": "assistant", "text": b["text"]})
             elif b.get("type") == "tool_use":
-                out.append({"kind": "tool", "text": f"{b.get('name', '?')}  {_short(b.get('input') or {})}"})
-    elif kind == "user" and isinstance(blocks, list):
+                out.append({"kind": "tool", "text": f"{b.get('name', '?')}  {_short(b['input'] if isinstance(b.get('input'), dict) else {})}"})
+    elif kind == "user" and blocks:
         for b in blocks:
             if b.get("type") != "tool_result":
                 continue
@@ -148,7 +152,7 @@ class AgentRunner:
                 cmd = [*self.executable, "-p", *flags_for(*choice[:2]),
                        "--output-format", "stream-json", "--verbose",
                        "--permission-mode", PERMISSION[mode], "--strict-mcp-config",
-                       "--disallowedTools", DENY, *flag]  # fmt: skip
+                       "--allowedTools", ALLOW, "--disallowedTools", DENY, *flag]  # fmt: skip
             else:
                 cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2])
             try:
@@ -225,12 +229,16 @@ class AgentRunner:
                     continue
                 if not isinstance(ev, dict):
                     continue
+                try:  # a CLI update can add event shapes: skip one we can't read, never kill the run for it
+                    found = (_items(ev) if provider == "claude" else
+                             [i for i in providers.items(provider, ev, st) if i["kind"] not in ("session", "reset", "delta")])  # fmt: skip
+                except Exception:
+                    log.warning("task %s: skipped unreadable %r event", task_id, ev.get("type"), exc_info=True)
+                    continue
                 if provider == "claude":
-                    found = _items(ev)
                     if ev.get("type") == "result":
                         note_run(self.settings, "agent", choice, ev, time.monotonic() - t0, None)
                 else:
-                    found = [i for i in providers.items(provider, ev, st) if i["kind"] not in ("session", "reset", "delta")]
                     for i in found:
                         if i["kind"] == "result":
                             run = (st.get("model") or provider, *choice[1:])
@@ -248,7 +256,7 @@ class AgentRunner:
                 self._append(task_id, {"kind": "result", "error": True,
                                        "text": tail or f"Tiến trình dừng (mã {code})."})  # fmt: skip
         except Exception as e:
-            log.warning("agent output of task %s failed: %r", task_id, e)
+            log.warning("agent output of task %s failed: %r", task_id, e, exc_info=True)
             self._append(task_id, {"kind": "result", "error": True,
                                    "text": f"Lỗi đọc output: {e!r}"})  # fmt: skip
         finally:

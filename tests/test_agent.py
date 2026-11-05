@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from telegram_dashboard.agent import DENY, AgentRunner, read_task_result
+from telegram_dashboard.agent import ALLOW, DENY, AgentRunner, read_task_result
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
 
@@ -33,7 +33,7 @@ async def test_long_output_line_and_locked_down_flags(tmp_path):
     assert not items[1]["error"] and not r.running("t1")
     assert read_task_result(r.settings, "t1").startswith("x" * 1000)
     text = items[1]["text"]  # the line was over asyncio's default 64 KiB limit
-    assert f"--permission-mode acceptEdits --strict-mcp-config --disallowedTools {DENY}" in text
+    assert f"--permission-mode acceptEdits --strict-mcp-config --allowedTools {ALLOW} --disallowedTools {DENY}" in text
 
 
 async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):

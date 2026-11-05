@@ -8,7 +8,7 @@ from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
 from .errors import ApiError, int_or_404
-from .models import TaskAi, TaskDTO, TaskMessage, TaskRequest
+from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
 
 
@@ -105,6 +105,20 @@ def build_router(settings) -> APIRouter:
         s = request.app.state
         if not await s.db.write(s.store.set_task_ai, task_id, body.model, body.effort):
             raise ApiError(404, "task_not_found")
+
+    @r.put("/{task_id}/handled", status_code=204)
+    async def task_handled(task_id: str, body: HandledRequest, request: Request) -> None:
+        """Done / reopen: on the kept tag when the message is one, else on the session itself."""
+        s = request.app.state
+        row = await _task(s, task_id)
+        cid, mid = row["chat_id"], row["message_id"]
+        kept = mid is not None and await s.db.read(s.store.get_message, cid, mid) is not None
+        if kept:
+            changed = await s.db.write(s.store.set_handled, cid, mid, body.handled)
+        else:
+            changed = await s.db.write(s.store.set_task_done, task_id, body.handled)
+        if changed and body.react and mid is not None:
+            s.bridge.react(cid, [mid], body.handled)
 
     @r.post("/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

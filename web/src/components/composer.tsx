@@ -2,10 +2,11 @@
 
 import { ArrowLeft, Bot, Bug, Check, ExternalLink, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square } from "lucide-react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { Avatar } from "@/components/chat-list";
 import { IssueDialog, TaskDialog } from "@/components/composer-dialogs";
+import { DeepBadge, DeepPick } from "@/components/deep-think";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
@@ -87,6 +88,8 @@ export function Composer({
   const [issueOpen, setIssueOpen] = useState(false); // YouTrack dialog
   const [aiPrompt, setAiPrompt] = useState("");
   const [showContext, setShowContext] = useState(true); // the group thread around the tag (Ngữ cảnh toggles it)
+  // Bring the tag into view whenever its card mounts (first paint, then again once the thread loads around it).
+  const toTag = useCallback((el: HTMLElement | null) => el?.scrollIntoView({ block: "start" }), []);
 
   // Adjust state while rendering when inputs change (no effect round-trip).
   if (draft && draft.chatId === chatId && draft.nonce !== seenDraft) {
@@ -218,6 +221,18 @@ export function Composer({
   const platformNote = platform && readPlatform() !== "any" ? `, nền tảng ${platform}` : "";
   const insert = (line: string) => setText((cur) => (cur.trim() ? `${cur}\n${line}` : line));
   const tools = (aiConfigured && usesCode(role)) || youtrackConfigured;
+  const tag = (
+    <article ref={toTag} aria-label="Tin được tag" className="my-1 grid scroll-mt-16 gap-1 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-2.5 pr-3 pl-3">
+      <span className="flex min-h-6 items-center gap-2 text-xs font-medium text-hl-2">
+        {replyTo.outgoing ? "Bạn" : name} · tag bạn
+        <DeepBadge m={replyTo} />
+        <DeepPick m={replyTo} className="ml-auto" />
+      </span>
+      <p className="whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.6] text-ink">
+        {replyTo.text ? richText(replyTo) : <i className="text-ink-3">Tin không có chữ</i>}
+      </p>
+    </article>
+  );
 
   return (
     <form
@@ -243,68 +258,67 @@ export function Composer({
             <time dateTime={replyTo.date} className="shrink-0 font-mono tabular-nums">{timeLabel(replyTo.date)}</time>
           </span>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-0.5">
-          {!replyTo.outgoing && (
+        {/* Narrow: Mở Telegram stays on the name row, the actions take the next row whole. */}
+        {!replyTo.outgoing && (
+          <div className="order-last flex w-full flex-wrap items-center gap-0.5 sm:order-none sm:w-auto">
             <MessageActions m={replyTo} labels showContext={showContext} onDone={onDone} onToggleContext={() => setShowContext((v) => !v)} />
-          )}
-          <Hint side="bottom" title="Mở Telegram" text={link.exact ? "Mở tin này trong app Telegram" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>
-            <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })} aria-label="Mở Telegram"
-              className="grid size-[30px] place-items-center rounded-[var(--radius-input)] text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-              <ExternalLink className="size-4" aria-hidden />
-            </a>
-          </Hint>
-        </div>
+          </div>
+        )}
+        <Hint side="bottom" title="Mở Telegram" text={link.exact ? "Mở tin này trong app Telegram" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>
+          <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })} aria-label="Mở Telegram"
+            className="grid size-[30px] shrink-0 place-items-center rounded-[var(--radius-input)] text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+            <ExternalLink className="size-4" aria-hidden />
+          </a>
+        </Hint>
       </div>
 
       {/* Wide: conversation + reply box on the left, assistant on the right. Narrow: one scroll, reply box pinned at the bottom. */}
       <div className="flex min-h-0 flex-col overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] lg:grid-rows-[minmax(0,1fr)_auto] lg:overflow-hidden">
-        <div className="grid content-start gap-5 px-4 py-5 sm:px-6 lg:col-start-1 lg:row-start-1 lg:overflow-y-auto">
-          {targetDeleted && <p role="alert" className="rounded-[var(--radius-input)] bg-error-wash px-3 py-2 text-xs text-error">Tin đích đã bị xóa.</p>}
-          <article aria-label="Tin được tag" className="grid max-w-[72ch] gap-1.5 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-3 pr-4 pl-3.5">
-            <span className="text-xs font-medium text-hl-2">Tin tag bạn</span>
-            <p className="whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.6] text-ink">
-              {replyTo.text ? richText(replyTo) : <i className="text-ink-3">Tin không có chữ</i>}
-            </p>
-          </article>
-          {showContext && (
-            <section aria-label="Ngữ cảnh trong nhóm" className="grid max-w-[72ch] gap-2">
-              <h3 className={head}>Ngữ cảnh trong nhóm</h3>
-              <ContextPanel m={replyTo} className="mt-0 max-h-none" />
-            </section>
-          )}
+        {/* The thread as it reads in the group: messages before, the tag in place, messages after. */}
+        <div className="grid content-start gap-3 px-4 py-5 sm:px-6 lg:col-start-1 lg:row-start-1 lg:overflow-y-auto">
+          {targetDeleted && <p role="alert" className="max-w-[72ch] rounded-[var(--radius-input)] bg-error-wash px-3 py-2 text-xs text-error">Tin đích đã bị xóa.</p>}
+          {showContext
+            ? <ContextPanel m={replyTo} focus={tag} className="mt-0 max-h-none max-w-[72ch] gap-3 overflow-visible bg-transparent p-0 text-sm" />
+            : <div className="max-w-[72ch]">{tag}</div>}
         </div>
 
-        <aside aria-label="Trợ lý" className="order-2 grid content-start gap-6 border-t bg-paper-2 px-4 py-5 sm:px-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:px-5">
-          {tools && (
-            <section aria-label="Công cụ" className="grid gap-2">
-              <h3 className={head}>Công cụ</h3>
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-2">
-                {aiConfigured && usesCode(role) && (
-                  <Hint side="bottom" title="AI Agent" text="Giao việc cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
-                    <Button type="button" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> Giao AI Agent</Button>
-                  </Hint>
-                )}
-                {youtrackConfigured && (
-                  <Hint side="bottom" title="YouTrack" text="Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời">
-                    <Button type="button" variant="outline" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><Bug /> Tạo ticket</Button>
-                  </Hint>
-                )}
-              </div>
-            </section>
+        <aside aria-label="Trợ lý" className="order-2 grid content-start gap-4 border-t bg-paper-2 px-4 py-4 sm:px-6 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto lg:border-t-0 lg:border-l lg:px-5">
+          {/* One row: what this panel is, and the tools that act on the tag. */}
+          {(aiConfigured || tools) && (
+            <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
+              <h3 className={cn(head, "flex items-center gap-1.5")}>
+                {aiConfigured ? <><Sparkles className="size-4 text-hl" aria-hidden /> Trợ lý AI</> : "Công cụ"}
+              </h3>
+              {tools && (
+                <div role="toolbar" aria-label="Công cụ" className="flex flex-wrap gap-1.5">
+                  {aiConfigured && usesCode(role) && (
+                    <Hint side="bottom" title="AI Agent" text="Giao việc cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
+                      <Button type="button" size="sm" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> Giao AI Agent</Button>
+                    </Hint>
+                  )}
+                  {youtrackConfigured && (
+                    <Hint side="bottom" title="YouTrack" text="Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời">
+                      <Button type="button" size="sm" variant="outline" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><Bug /> Tạo ticket</Button>
+                    </Hint>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {aiConfigured && (
             <section aria-label="Trợ lý AI" aria-busy={ask.isPending} className="grid gap-3">
-              <h3 className={cn(head, "flex items-center gap-1.5")}><Sparkles className="size-4 text-hl" aria-hidden /> Trợ lý AI</h3>
               {!analysis && !ask.isPending && (
-                <p className="text-sm leading-relaxed text-ink-2">
+                <p className="-mt-2 text-xs leading-relaxed text-ink-3">
                   Đọc tin kèm ngữ cảnh nhóm, tóm tắt theo {angle}{platformNote}, gợi ý bước tiếp theo và soạn sẵn mẫu trả lời.
                 </p>
               )}
+              {/* One field like the reply box: the ask, then which model runs it. */}
+              <div className="grid rounded-[var(--radius-card)] border border-rule-2 bg-cotton transition-[border-color] duration-(--dur-micro) hover:border-ink-3 has-[textarea:focus-visible]:border-hl">
               <Textarea
                 id="ai-prompt"
                 aria-label="Prompt cho AI"
-                className="min-h-14 resize-none text-sm md:text-sm"
+                className="min-h-14 resize-none border-0 bg-transparent text-sm hover:border-0 focus-visible:outline-none md:text-sm"
                 rows={2}
                 maxLength={2000}
                 value={aiPrompt}
@@ -317,8 +331,10 @@ export function Composer({
                 }}
                 placeholder={`Thêm yêu cầu (không bắt buộc). Ví dụ: ${example}`}
               />
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button type="button" size="sm" variant={analysis ? "outline" : "default"} aria-busy={ask.isPending}
+                <ModelEffortPicker compact className="gap-x-2 px-3 pb-2" />
+              </div>
+              <div className="flex gap-1.5">
+                <Button type="button" size="sm" variant={analysis ? "outline" : "default"} aria-busy={ask.isPending} className="flex-1"
                   disabled={targetDeleted || pending || ask.isPending} onClick={() => ask.mutate()}>
                   {ask.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Sparkles aria-hidden />}
                   {ask.isPending ? "Đang tóm tắt…" : analysis ? "Tóm tắt lại" : "Tóm tắt & gợi ý"}
@@ -330,7 +346,6 @@ export function Composer({
                   </Button>
                 )}
               </div>
-              <ModelEffortPicker />
 
               {ask.isPending ? (
                 partial.trim() ? (
@@ -414,17 +429,11 @@ export function Composer({
               ))}
             </div>
           )}
-          {/* One field: the quoted tag, the text and the send row, like Telegram's reply box. */}
+          {/* One field: the text and the send row (the tag it answers is the highlighted card above). */}
           <div className="grid rounded-[var(--radius-card)] border border-rule-2 bg-cotton transition-[border-color] duration-(--dur-micro) hover:border-ink-3 has-[textarea:focus-visible]:border-hl">
-            <div className="mx-2 mt-2 grid gap-0.5 rounded-sm border-l-[3px] border-hl bg-paper-2 py-1.5 pr-2.5 pl-2 text-xs leading-snug">
-              <span className="truncate font-semibold text-hl-2">Trả lời {name}</span>
-              <span className="line-clamp-1 break-words text-ink-2">
-                {replyTo.text ? richText(replyTo) : <i className="text-ink-3">Tin không có chữ</i>}
-              </span>
-            </div>
             <Textarea
               aria-label="Nội dung trả lời"
-              className="max-h-[40vh] min-h-24 resize-none border-0 bg-transparent hover:border-0 focus-visible:outline-none"
+              className="max-h-[40vh] min-h-16 resize-none border-0 bg-transparent hover:border-0 focus-visible:outline-none"
               value={text}
               readOnly={pending}
               onChange={(e) => setText(e.target.value)}
@@ -434,8 +443,8 @@ export function Composer({
                   submit();
                 }
               }}
-              rows={3}
-              placeholder="Viết trả lời… (⌘/Ctrl+Enter để gửi)"
+              rows={2}
+              placeholder={`Trả lời ${name}…`}
             />
             <div className="flex items-center gap-3 px-2 pb-2 pl-3">
               <div aria-live="polite" className="min-w-0 flex-1 text-xs leading-snug">

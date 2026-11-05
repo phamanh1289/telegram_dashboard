@@ -63,9 +63,11 @@ export function MessageList({
   }, [search]);
 
   const query = useChatMessages(chatId, q, range, view);
+  // Cả nhóm leaves out tags (handled in Chưa / Đã xử lý), except the one opened here to be shown.
   const all = useMemo(
-    () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : []),
-    [query.data],
+    () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : [])
+      .filter((m) => !live || !m.kept || m.message_id === focus),
+    [query.data, live, focus],
   );
   // Sender filter, over the loaded pages ("Tải tin cũ hơn" brings in more). "" = everyone.
   // ponytail: client-side, so it only sees what is loaded; a server-side filter if long histories need it.

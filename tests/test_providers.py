@@ -58,13 +58,14 @@ def test_sessions_resume_in_the_cli_that_started_them(tmp_path, monkeypatch):
     assert cmd[cmd.index("-m") + 1] == "gpt-6.1-sol"
     g = task_cmd(s, "antigravity", "edit", "c1", False, "gemini-x", "")
     assert "--conversation" not in g and g[g.index("--model") + 1] == "gemini-x"
-    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit"
+    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit-shell"
     assert '"write_file(*)"' not in g[g.index("--settings") + 1]
     r = task_cmd(s, "antigravity", "plan", "c1", True, "", "")
     assert r[-2:] == ["--conversation", "c1"] and "--model" not in r and "--mode" not in r
     assert '"write_file(*)"' in r[r.index("--settings") + 1] and '"mcp(*)"' in r[r.index("--settings") + 1]
-    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-read.md").read_text()
-    assert "tools: [view_file, list_dir, grep_search, find_by_name]" in agent and "write_to_file" not in agent
+    assert '"allow": ["command(*)"]' in r[r.index("--settings") + 1]  # tasks run shell in both modes
+    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-read-shell.md").read_text()
+    assert "tools: [view_file, list_dir, grep_search, find_by_name, run_command" in agent and "write_to_file" not in agent
 
 
 def test_a_failed_run_says_why_in_the_clis_words():

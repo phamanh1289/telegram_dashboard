@@ -240,7 +240,11 @@ def create_app(
         await _known_chat(s, chat_id)
         mid = None if before is None else int_or_404(before, "invalid_cursor")
         msgs = await s.bridge.fetch_page(chat_id, mid, limit)
-        return MessagesPage(items=[to_dto(m) for m in msgs], snapshot_cursor="", has_more=len(msgs) == limit)
+        ids = [m.message_id for m in msgs]
+        kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids) if ids else ([], "")
+        tags = {k.message_id for k in kept}
+        items = [to_dto(m).model_copy(update={"kept": m.message_id in tags}) for m in msgs]
+        return MessagesPage(items=items, snapshot_cursor="", has_more=len(msgs) == limit)
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/handled", status_code=204)
     async def handled(
@@ -582,7 +586,12 @@ def create_app(
         mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")  # only around tags we keep
-        return [to_dto(m) for m in await s.bridge.fetch_context(chat_id, mid)]
+        live = await s.bridge.fetch_context(chat_id, mid)
+        # Live copies don't know which of them are kept tags marked done: take that from the store.
+        ids = [m.message_id for m in live]
+        kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids) if ids else ([], "")
+        done = {k.message_id for k in kept if k.handled}
+        return [to_dto(m.model_copy(update={"handled": m.message_id in done})) for m in live]
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}/before")
     async def before(
@@ -765,7 +774,7 @@ def create_app(
         project = body.project or settings.youtrack_project
         if not project:
             raise ApiError(422, "youtrack_project_not_found")
-        issue_id, url = await create_issue(settings, body.summary, body.description, project)
+        issue_id, url = await create_issue(settings, body.summary, body.description, project, body.markdown)
         sets = (("Type", body.type), ("Priority", body.priority), ("Assignee", body.assignee))
         cmd = " ".join(f"{k} {{{v}}}" for k, v in sets if v)
         warning = ""

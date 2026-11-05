@@ -34,7 +34,7 @@ export function TicketsPage() {
   const shownAll = useMemo(() => visibleRows(pool, fq), [pool, fq]);
   const groups = useMemo(() => (f.group === "none" ? null : groupRows(shownAll, f.group, y.sprints)), [shownAll, f.group, y.sprints]);
   const cols = useMemo(() => COLS.map(([k]) => k).filter((k) => !y.hiddenCols.includes(k)), [y.hiddenCols]);
-  const tcols = useMemo(() => cols.filter((k) => k !== "id" && k !== "type"), [cols]); // ID and Type sit under the title
+  const tcols = useMemo(() => cols.filter((k) => k !== "id"), [cols]); // ID sits under the title
   const now = useNow();
   const searchRef = useRef<HTMLInputElement>(null);
   const aiBusy = useAiFilterBusy();
@@ -59,7 +59,7 @@ export function TicketsPage() {
   const open = useCallback((i: Ticket) => setSheet({ kind: "ticket", id: i.id, nav: shownAll.map((x) => x.id) }), [setSheet, shownAll]);
   const acts: AssigneeActs = useMemo(() => ({ people, loginOf, patchTicket, config, me }), [people, loginOf, patchTicket, config, me]);
   const row = (i: Ticket) => (
-    <Row key={i.id} i={i} cols={tcols} showType={cols.includes("type")} now={now} onOpen={open} onPick={togglePick} acts={acts} picked={y.picked.has(i.id)} dense={y.dense}
+    <Row key={i.id} i={i} cols={tcols} now={now} onOpen={open} onPick={togglePick} acts={acts} picked={y.picked.has(i.id)} dense={y.dense}
       tint={y.hiOn && TINT[rank(i)] && !i.resolved ? TINT[rank(i)] : 0} fresh={y.seen > 0 && i.updated > y.seen} />
   );
 
@@ -237,8 +237,8 @@ function Display({ onGroup }: { onGroup: () => void }) {
   );
 }
 
-const Row = memo(function Row({ i, cols, showType, now, onOpen, onPick, acts, picked, dense, tint, fresh }: {
-  i: Ticket; cols: ColKey[]; showType: boolean; now: number; onOpen: (i: Ticket) => void; onPick: (id: string) => void; acts: AssigneeActs; picked: boolean; dense: boolean; tint: number; fresh: boolean;
+const Row = memo(function Row({ i, cols, now, onOpen, onPick, acts, picked, dense, tint, fresh }: {
+  i: Ticket; cols: ColKey[]; now: number; onOpen: (i: Ticket) => void; onPick: (id: string) => void; acts: AssigneeActs; picked: boolean; dense: boolean; tint: number; fresh: boolean;
 }) {
   const base = acts.config?.base ?? "";
   const pad = dense ? "py-1.5" : "py-2.5";
@@ -258,9 +258,10 @@ const Row = memo(function Row({ i, cols, showType, now, onOpen, onPick, acts, pi
     summary: dense ? <span className="flex min-w-0 items-center gap-2">{id}{title}</span> : (
       <span className="grid min-w-0 gap-1">
         {title}
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">{id}{showType && i.type && <TypeTag type={i.type} />}{tags.map((t) => <Tag key={t} name={t} />)}</span>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">{id}{tags.map((t) => <Tag key={t} name={t} />)}</span>
       </span>
     ),
+    type: i.type ? <TypeTag type={i.type} /> : <span className="text-ink-3">—</span>,
     state: <StatePill state={i.state} />,
     priority: <Prio p={i.priority} />,
     assignee: <AssigneePicker ticket={i} acts={acts} className="w-40" />,

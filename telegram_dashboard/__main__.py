@@ -43,12 +43,12 @@ def _no_quickedit() -> None:
         k.SetConsoleMode(h, (mode.value & ~0x0040) | 0x0080)  # -QUICK_EDIT_MODE +EXTENDED_FLAGS
 
 
-_lock = None  # data/server.lock, held while this server runs
+_lock = None  # ~/.telegram_dashboard/server.lock, held while this server runs
 
 
 def _claim(settings: Settings) -> Settings | None:
-    """One server per data dir: if this install's server already runs, open it and return None.
-    Else take PORT, or the next free one when another app (or another install) holds it."""
+    """One server per machine (installed build and dev checkout alike): if one already runs,
+    open it and return None. Else take PORT, or the next free one when another app holds it."""
     import dataclasses
     import socket
     import time
@@ -56,8 +56,10 @@ def _claim(settings: Settings) -> Settings | None:
 
     global _lock
     settings.ensure_data_dir()
-    port_file = settings.data_dir / "server.port"
-    _lock = open(settings.data_dir / "server.lock", "a")  # noqa: SIM115 (held until exit)
+    run_dir = Path.home() / ".telegram_dashboard"  # outside every install's data/
+    run_dir.mkdir(mode=0o700, exist_ok=True)
+    port_file = run_dir / "server.port"
+    _lock = open(run_dir / "server.lock", "a")  # noqa: SIM115 (held until exit)
     for _ in range(25):  # a restarting server may still be exiting
         try:
             if sys.platform == "win32":

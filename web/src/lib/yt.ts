@@ -203,7 +203,7 @@ export const isBuilt = (i: Ticket) => !i.resolved && ["BUILT ON DEV", "DONE ON D
 const PO_ST = new Set(["ASSIGN TO DEFINE", "DEFINITION IN PROCESS", "CONFIRM DEFINITION", "CONFIRM DESIGN"]);
 export const needsPo = (i: Ticket) => !i.resolved && PO_ST.has(up(i.state));
 
-export const COLS = [["id", "ID"], ["type", "Type"], ["summary", "Tiêu đề"], ["state", "State"], ["priority", "Priority"], ["assignee", "Assignee"], ["qc", "QC"], ["sprint", "Sprint"], ["due", "Hạn"], ["updated", "Cập nhật"]] as const;
+export const COLS = [["id", "ID"], ["summary", "Tiêu đề"], ["type", "Type"], ["state", "State"], ["priority", "Priority"], ["assignee", "Assignee"], ["qc", "QC"], ["sprint", "Sprint"], ["due", "Hạn"], ["updated", "Cập nhật"]] as const;
 export type ColKey = (typeof COLS)[number][0];
 export const lastSp = (i: Ticket) => i.sprints[i.sprints.length - 1] || "";
 const KEYS: Record<ColKey, (i: Ticket) => number | string> = {

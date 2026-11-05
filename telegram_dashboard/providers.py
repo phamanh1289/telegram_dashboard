@@ -55,11 +55,12 @@ AGY_MODELS = [
     ("gpt-oss-120b-medium", "GPT-OSS 120B (Medium)", "Model mở"),
 ]
 TIERS = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
-# Antigravity runs as a custom agent with only these built-in tools (no web, shell or browser), none of
-# the user's skills/plugins, and deny rules over the user's own allow rules (MCP still reaches the agent).
+# Antigravity runs as a custom agent with only these built-in tools (no web or browser; shell only in
+# task sessions), none of the user's skills/plugins, and deny rules over the user's own allow rules.
 AGY_TOOLS = {"read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
-_AGY_DENY = ["command(*)", "mcp(*)", "read_url(*)", "execute_url(*)"]
+AGY_SHELL = ["run_command", "command_status", "send_command_input"]
+_AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)"]
 
 
 # ---- prefs: which CLI, and each CLI's model/effort ----
@@ -193,24 +194,27 @@ def _codex_base(settings, model: str, effort: str) -> list[str]:
             *(["-c", f'model_reasoning_effort="{effort}"'] if effort in EFFORTS else [])]  # fmt: skip
 
 
-def _agy_agent(kind: str) -> str:
-    """The custom agent a run uses, written where agy looks agents up by name: `read` or `edit`."""
-    name = f"telegram-dashboard-{kind}"
+def _agy_agent(kind: str, shell: bool) -> str:
+    """The custom agent a run uses, written where agy looks agents up by name: `read` or `edit` (+ shell)."""
+    name = f"telegram-dashboard-{kind}{'-shell' if shell else ''}"
     path = _agy_home() / "agents" / f"{name}.md"
+    tools = [*AGY_TOOLS[kind], *(AGY_SHELL if shell else [])]
     text = (f"---\nname: {name}\ndescription: Telegram Dashboard run ({kind})\n"
-            f"tools: [{', '.join(AGY_TOOLS[kind])}]\ninheritCustomizations: false\n---\n"
-            "Work only through the tools you have; you cannot run commands or browse.\n")  # fmt: skip
+            f"tools: [{', '.join(tools)}]\ninheritCustomizations: false\n---\n"
+            f"Work only through the tools you have; you cannot {'browse' if shell else 'run commands or browse'}.\n")  # fmt: skip
     if not path.is_file() or path.read_text() != text:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
     return name
 
 
-def _agy_base(settings, kind: str, model: str) -> list[str]:
-    deny = [*_AGY_DENY, *(["write_file(*)"] if kind == "read" else [])]
+def _agy_base(settings, kind: str, model: str, shell: bool = False) -> list[str]:
+    deny = [*_AGY_DENY, *(["write_file(*)"] if kind == "read" else []), *([] if shell else ["command(*)"])]
+    # headless agy auto-denies what it would prompt for: shell needs an explicit allow
+    perms = {"deny": deny, **({"allow": ["command(*)"]} if shell else {})}
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
-            "--disable-slash-commands", "--agent", _agy_agent(kind),
-            "--settings", json.dumps({"permissions": {"deny": deny}}), *(["--model", model] if model else [])]  # fmt: skip
+            "--disable-slash-commands", "--agent", _agy_agent(kind, shell),
+            "--settings", json.dumps({"permissions": perms}), *(["--model", model] if model else [])]  # fmt: skip
 
 
 def stdin(p: str, text: str) -> bytes:
@@ -238,13 +242,13 @@ def ask_cmd(settings, p: str, *, tools: bool, read_dir: str | None, model: str, 
 
 
 def task_cmd(settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str) -> list[str]:
-    """One task turn (prompt on stdin): `plan` reads only, `edit` may edit files in the project."""
+    """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them; both may run shell commands."""
     if p == "codex":
         sandbox = ["-c", f'sandbox_mode="{"read-only" if mode == "plan" else "workspace-write"}"']
         head = [*exe(settings, p), "exec", *(["resume"] if resume else [])]
         return [*head, *_codex_base(settings, model, effort), *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model), *edit,
+    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, shell=True), *edit,
             *(["--conversation", sid] if resume else [])]  # fmt: skip
 
 

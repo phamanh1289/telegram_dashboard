@@ -2,6 +2,7 @@
 
 import { Plus, CalendarCheck, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, Monitor, Printer, RotateCw, Search, Settings2, Sparkles, UserSearch, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/components/shell";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,10 @@ function Shell() {
     return () => document.removeEventListener("keydown", k);
   }, []);
   useWatch();
+  // No YouTrack token yet: go to its setup in Settings, like Telegram does before login.
+  const router = useRouter();
+  const mock = !!y.config?.mock;
+  useEffect(() => { if (mock) router.replace("/settings/#youtrack"); }, [mock, router]);
   const pages = y.aiOn ? [...PAGES[y.mode], ["ai", "Lịch sử AI", History] as (typeof PAGES)[Mode][number]] : PAGES[y.mode];
   const now = useNow(); // badge on the home page: my risky tickets (Dev), the ones I test (QA), the team's (PO)
   const risk = y.rows.filter((i) => (y.mode === "po" || (y.mode === "qa" ? i.qc : i.assignee) === y.me) && riskOf(i, now)).length;
