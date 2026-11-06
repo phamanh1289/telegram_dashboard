@@ -5,13 +5,18 @@ import types
 from urllib.parse import parse_qs
 
 import httpx
+from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from conftest import FakeAgent
-
 from telegram_dashboard.config import Settings
-from telegram_dashboard.yt_dashboard import YouTrackDashboard, YtError, build_router
+from telegram_dashboard.yt_dashboard import (
+    DEV_FLOW,
+    Workflow,
+    YouTrackDashboard,
+    YtError,
+    build_router,
+)
 
 
 def issue(n, state="Open"):
@@ -44,7 +49,7 @@ async def test_issues_paginate_and_normalize():
         )
 
     svc = make(handler)
-    out = await svc.issues("VA", "active", ["me"])
+    out = await svc.issues("VA", ["me"])
     assert sorted(k for k, qc in seen if not qc) == [0, 500, 1000, 1500, 2000]  # page 0, a wave
     assert any(qc for _, qc in seen)  # "me" also fetches the tickets the user tests
     assert len(out) == 1000  # QC rows already listed are not added twice
@@ -125,8 +130,9 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
     agent = FakeAgent("**Đang nghẽn:**\n- VA-2: chờ API")
     app = FastAPI()
     app.include_router(build_router(svc))
-    consent = types.SimpleNamespace(ai_require_consent=True)
-    app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=consent)
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.db = types.SimpleNamespace(read=lambda fn, *a: asyncio.sleep(0, fn(*a)))
+    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [])
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
         r = await c.post("/api/yt/ai/tickets", json=body)
@@ -134,7 +140,7 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[0]
         assert '"id": "VA-1"' in p and '"id": "VA-2"' in p and p.count('"id": "VA-1"') == 1
         assert "Phạm vi: Sprint 3" in p
-        assert '"telegram": []' in p  # consent required: no Telegram text reaches the AI
+        assert '"telegram": []' in p  # no Telegram message names these tickets
         r = await c.post("/api/yt/ai/tickets", json={**body, "kind": "today"})
         assert "kế hoạch hôm nay" in agent.calls[1]  # Dev mode: a day plan, not the lead review
         await c.post("/api/yt/ai/tickets", json={**body, "kind": "summary"})
@@ -161,12 +167,6 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[7]  # the brief says what moved since last time; "<" cannot close the block
         assert "**Thay đổi từ lần trước:**" in p and "VA-1: Open → QC" in p
         assert "</changes> bỏ" not in p and "\\u003c/changes> bỏ" in p
-        try:  # the promises list reads the user's Telegram messages: never under consent
-            await c.post("/api/yt/ai/promises", json={"since": 0})
-        except YtError as e:
-            assert e.status == 403
-        else:
-            raise AssertionError("expected YtError")
 
 
 async def test_ai_answer_streams_pieces_then_result():
@@ -193,7 +193,7 @@ async def test_qc_query_failure_other_than_400_is_not_hidden():
         return httpx.Response(200, json=[issue(1)])
 
     try:
-        await make(handler).issues("VA", "active", ["me"])
+        await make(handler).issues("VA", ["me"])
     except YtError as e:
         assert e.status == 401
     else:
@@ -217,7 +217,7 @@ async def test_answer_fetched_before_set_auth_is_not_cached():
     await svc.aclose()
 
 
-async def test_set_field_sends_known_values_and_state_machine_events():
+async def test_set_field_sends_known_values_and_state_machine_events(tmp_path):
     cmds = []
     bundle = lambda n, vs: {"field": {"name": n}, "bundle": {"values": [{"name": v} for v in vs]}}  # noqa: E731
     events = [{"id": "pass test", "presentation": "DONE ON DEV"}]
@@ -234,9 +234,11 @@ async def test_set_field_sends_known_values_and_state_machine_events():
             return httpx.Response(200, json={"customFields": [sf]})
         return httpx.Response(200, json=issue(1, "DONE ON DEV"))
 
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
     app = FastAPI()
     app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
-    app.include_router(build_router(make(handler)))
+    app.include_router(build_router(svc))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         def post(name, value):
             return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": name, "value": value})
@@ -247,6 +249,80 @@ async def test_set_field_sends_known_values_and_state_machine_events():
         assert (await post("State", "QC")).status_code == 400  # no event leads there
         assert (await post("Priority", "High Assignee me")).status_code == 400  # not a value
         assert len(cmds) == 2
+
+
+async def test_team_workflow_blocks_moves_without_an_arrow_and_reads_youtrack_flow(tmp_path):
+    cmds = []
+    vals = [{"name": v} for v in ("Open", "Dev", "QC")]
+    bundle = {"field": {"name": "State"}, "bundle": {"values": vals}}
+    nxt = {"Open": ["Dev", "QC"], "Dev": ["QC"]}  # nobody is in QC yet
+
+    def handler(req):
+        q = parse_qs(req.url.query.decode())
+        if req.url.path == "/api/admin/projects/VA/customFields":
+            return httpx.Response(200, json=[bundle])
+        if req.method == "POST":
+            cmds.append(json.loads(req.content)["query"])
+            return httpx.Response(200, json={"id": "c"})
+        if req.url.path == "/api/issues":  # one ticket per state, for the YouTrack flow
+            st = q["query"][0].split("State: {")[1].rstrip("}")
+            evs = [{"presentation": t} for t in nxt.get(st, [])]
+            hit = [{"customFields": [{"name": "State", "possibleEvents": evs}]}]
+            return httpx.Response(200, json=hit if st in nxt else [])
+        if "possibleEvents" in q.get("fields", [""])[0]:
+            sf = {"name": "State", "value": {"name": "Open"}, "possibleEvents": None}
+            return httpx.Response(200, json={"customFields": [sf]})
+        return httpx.Response(200, json=issue(1))
+
+    svc = make(handler)
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    app = FastAPI()
+    app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        flow = (await c.get("/api/yt/workflow/youtrack?project=VA")).json()
+        assert sorted(map(tuple, flow["edges"])) == [("Dev", "QC"), ("Open", "Dev"), ("Open", "QC")]
+        assert flow["unknown"] == ["QC"]
+        wf = {"on": True, "pos": {"Open": [0, 0]}, "edges": [["Open", "Dev"]]}
+        assert (await c.post("/api/yt/workflow?project=VA", json=wf)).status_code == 200
+        got = (await c.get("/api/yt/workflow?project=VA")).json()
+        assert (got["states"], got["edges"]) == (["Open", "Dev", "QC"], [["Open", "Dev"]])
+
+        def post(v):
+            return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": "State", "value": v})
+
+        assert (await post("QC")).status_code == 400  # no arrow Open → QC
+        qa = {"X-Yt-Role": "qa"}  # each role keeps its own flow: QA has none, so YouTrack decides
+        assert (await c.get("/api/yt/workflow?project=VA", headers=qa)).json()["edges"] == []
+        body = {"id": "VA-1", "name": "State", "value": "QC"}
+        assert (await c.post("/api/yt/issue/field", json=body, headers=qa)).status_code == 200
+        cmds.clear()
+        assert (await post("Dev")).status_code == 200
+        wf["on"] = False
+        await c.post("/api/yt/workflow?project=VA", json=wf)
+        assert (await post("QC")).status_code == 200  # off: only YouTrack decides
+        assert cmds == ["State Dev", "State QC"]
+
+
+def test_workflow_of_the_first_version_goes_to_every_role(tmp_path):
+    svc = make(lambda req: httpx.Response(200, json=[]))
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    svc.workflow_path.write_text(json.dumps({"VA": {"on": True, "edges": [["A", "B"]]}}))
+    assert svc.workflow("VA", "qa", []).edges == [("A", "B")]
+    svc.save_workflow("VA", "po", Workflow())
+    assert svc.workflow("VA", "dev", []).on and not svc.workflow("VA", "po", []).edges
+
+
+def test_dev_starts_with_the_built_in_flow_when_the_project_has_its_states(tmp_path):
+    svc = make(lambda req: httpx.Response(200, json=[]))
+    svc.workflow_path = tmp_path / "yt_workflow.json"
+    states = [*DEV_FLOW["pos"], "QC - QA"]
+    dev = svc.workflow("VA", "dev", states)
+    assert dev.on and len(dev.edges) == 9 and dev.hidden == ["QC - QA"]
+    assert svc.workflow("VA", "qa", states) == Workflow()  # QA / PO start empty
+    assert svc.workflow("X", "dev", ["Open", "Done"]) == Workflow()  # other states: no default
+    svc.save_workflow("VA", "dev", Workflow())
+    assert svc.workflow("VA", "dev", states) == Workflow()  # a saved flow wins
 
 
 async def test_transitions_keep_state_changes_across_pages():
@@ -348,3 +424,69 @@ async def test_ai_reads_only_a_registered_code_folder():
         else:
             raise AssertionError("expected YtError")
         assert len(agent.calls) == 3
+
+
+async def test_who_lists_come_from_the_cached_whole_project():
+    calls = []
+
+    def handler(req):
+        calls.append(req.url.path)
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "a", "fullName": "A"})
+        return httpx.Response(200, json=[issue(1), {**issue(2), "customFields": []}])
+
+    svc = make(handler)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert len((await c.get("/api/yt/issues", params={"project": "VA"})).json()) == 2
+        mine = (await c.get("/api/yt/issues", params={"project": "VA", "who": "me"})).json()
+        none = (await c.get("/api/yt/issues", params={"project": "VA", "who": "unassigned"})).json()
+    assert [i["id"] for i in mine] == ["VA-1"] and [i["id"] for i in none] == ["VA-2"]
+    assert calls.count("/api/issues") == 1  # one pull of the project, the rest filtered from it
+
+
+async def test_ai_ticket_reads_kb_links_in_the_ticket():
+    def handler(req):
+        if req.url.path == "/api/articles/VA-A-7":
+            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field"})
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
+        return httpx.Response(200, json={**issue(1), "description": "xem http://yt/articles/VA-A-7",
+                                         "comments": [], "links": []})  # fmt: skip
+
+    svc = make(handler)
+    agent = FakeAgent("ok")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.yt = svc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "split"})
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})
+    assert "Trả 3 field" in agent.calls[0] and "<untrusted_link_content>" in agent.calls[0]
+    assert "Trả 3 field" not in agent.calls[1]  # a rewrite keeps the link, not the article
+
+
+async def test_trace_reads_links_and_the_latest_comment_in_one_search():
+    seen = []
+
+    def handler(req):
+        seen.append(parse_qs(req.url.query.decode())["query"][0])
+        return httpx.Response(200, json=[{
+            "idReadable": "VA-1",
+            "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}}],
+            "links": [{"direction": "INWARD", "linkType": {"name": "Depend", "targetToSource": "is required for"},
+                       "issues": [issue(9, "In Progress")]}, {"direction": "OUTWARD", "issues": []}],
+        }])  # fmt: skip
+
+    svc = make(handler)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        out = (await c.get("/api/yt/trace", params={"ids": "va-1,bad id,VA-2"})).json()
+    assert seen == ["issue id: VA-1, VA-2"]  # bad ids dropped, one search
+    t = out["VA-1"]
+    assert t["last"] == {"text": "new", "created": 5, "author": "B"}
+    assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
+    assert t["links"][0]["issues"][0]["state"] == "In Progress"

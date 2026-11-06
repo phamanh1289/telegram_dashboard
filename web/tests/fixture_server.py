@@ -1,9 +1,10 @@
-"""Standalone e2e backend: real app + fake Telegram on :8765, test control API on :8799.
+"""Standalone e2e backend: real app + fake Telegram on :E2E_PORT (8766), test control API on :E2E_CONTROL (8799).
 
-Never part of the live app. Data lives in a temp dir; nothing touches Telegram or a real AI.
+Never part of the live app (which owns :8765). Data lives in a temp dir; nothing touches Telegram or a real AI.
 """
 
 import asyncio
+import os
 import sys
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -24,13 +25,18 @@ from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.telegram import SendRejected  # noqa: E402
 
 A, B = "-1001", "-1002"
-CONTROL = "http://127.0.0.1:8799"
+PORT = int(os.environ.get("E2E_PORT", "8766"))
+CONTROL_PORT = int(os.environ.get("E2E_CONTROL", "8799"))
 
 tmp = Path(tempfile.mkdtemp(prefix="td-e2e-"))
 (tmp / "web").mkdir()
 (tmp / "web" / "out").symlink_to(ROOT / "web" / "out")
 AGENT = "sh -c \"cat >/dev/null; echo 'Bản nháp AI: cảm ơn mọi người!'\""  # fake claude CLI
-settings = Settings(root=tmp, ai_agent_command=AGENT, ai_model="")
+# Consent mode off: the inbox AI may read the seeded tags (the AI-draft test needs it).
+settings = Settings(
+    root=tmp, port=PORT, ai_agent_command=AGENT, ai_model="",
+    app_origin=f"http://127.0.0.1:{PORT}",
+)
 
 fake = FakeTransport(
     groups=[
@@ -99,9 +105,11 @@ async def state():
 
 @ctl.post("/message")
 async def message(request: Request):
+    """A live tag (new or edited), as Telegram delivers one that mentions us."""
     b = await request.json()
     m = msg(b["chat"], b["id"], b["text"], edit=b.get("edit"), sender=b.get("sender", "7"))
-    await app.state.bridge.on_message(m)
+    m.date = datetime.now(UTC)
+    await app.state.bridge.on_mention(m, TITLES[b["chat"]], "supergroup")
     return {"ok": True}
 
 
@@ -112,27 +120,25 @@ async def delete(request: Request):
     return {"ok": True}
 
 
+TITLES = {A: "Nhóm Dự án", B: "Nhóm Bạn bè"}
+
+
 async def main():
     async def seed():
         while not hasattr(app.state, "store") or app.state.bridge.state != "connected":
             await asyncio.sleep(0.05)
-        s = app.state.store
-        for chat in (A, B):
-            s.upsert_chat_info(chat, "x", "supergroup")
-        await app.state.db.write(s.set_tracking, A, True)
-        await app.state.db.write(s.set_tracking, B, True)
-        # Seed 120 messages for A (more than the 50-message initial limit, to test paging).
-        gen = s.history_checkpoint(A)[1]
-        await app.state.db.write(s.apply_history_batch, A, gen, fake.history[A], 120)
-        await app.state.bridge.sync_chat(B)
-        until = datetime.now(UTC) + timedelta(days=1)
-        for i in (118, 119):
-            s.put_grant(A, i, "draft,summary", until, {"7": "consent-ref-7"})
+        # The app keeps only tags: A's last 10 and all of B's are tags (pending), the rest is live history.
+        now = datetime.now(UTC)
+        tags = [m for m in fake.history[A] if m.message_id > 110] + fake.history[B]
+        for k, m in enumerate(tags):
+            m.date = now - timedelta(minutes=len(tags) - k)
+        found = [(TITLES[m.chat_id], "supergroup", m, False) for m in tags]
+        await app.state.db.write(app.state.store.store_mentions, found)
 
     main_srv = uvicorn.Server(
-        uvicorn.Config(Faults(app), host="127.0.0.1", port=8765, log_level="warning")
+        uvicorn.Config(Faults(app), host="127.0.0.1", port=PORT, log_level="warning")
     )
-    ctl_srv = uvicorn.Server(uvicorn.Config(ctl, host="127.0.0.1", port=8799, log_level="warning"))
+    ctl_srv = uvicorn.Server(uvicorn.Config(ctl, host="127.0.0.1", port=CONTROL_PORT, log_level="warning"))
     await asyncio.gather(main_srv.serve(), ctl_srv.serve(), seed())
 
 

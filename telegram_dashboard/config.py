@@ -1,13 +1,23 @@
+import asyncio
+import contextlib
 import json
 import os
 import shlex
 import shutil
+import signal
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 HOST = "127.0.0.1"
 PORT = 8765
+
+
+def data_root(root: Path) -> Path:
+    """Packaged install: the launcher sets TD_HOME (outside versions/, so updates keep the data)."""
+    home = os.environ.get("TD_HOME")
+    return Path(home) / "data" if home else root / "data"
 
 
 def _load_dotenv(path: Path) -> None:
@@ -27,6 +37,44 @@ SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # .env lands in os.environ (yt_d
 def child_env() -> dict[str, str]:
     """os.environ minus this app's secrets (Telegram API, YouTrack token): for claude runs."""
     return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+
+
+async def run_cli(
+    cmd: list[str], stdin: bytes | None = None, timeout: float = 30, cwd=None, merge: bool = False
+) -> tuple[int, bytes, bytes] | None:
+    """(exit code, stdout, stderr) of a short CLI call, run outside any project (`merge`: stderr into
+    stdout). None when it did not start or ran past `timeout`; a timed-out or abandoned call is
+    killed and reaped, never left running."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd, cwd=cwd or tempfile.gettempdir(), env=child_env(),
+            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT if merge else asyncio.subprocess.PIPE,
+        )  # fmt: skip
+    except OSError:
+        return None
+    try:
+        out, err = await asyncio.wait_for(proc.communicate(stdin), timeout)
+    except TimeoutError:
+        return None
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+            await proc.wait()
+    return proc.returncode, out, err or b""
+
+
+def kill_tree(proc, term: bool = False) -> None:
+    """SIGKILL (`term`: SIGTERM) a CLI started with start_new_session=True and everything it spawned
+    (shell commands, background jobs). Windows: the CLI only."""
+    # ponytail: no `taskkill /T` on Windows; add it if agents there leave children behind.
+    if os.name == "posix":
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGTERM if term else signal.SIGKILL)
+    if proc.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate() if term else proc.kill()
 
 
 def on_path(command: str) -> bool:
@@ -88,12 +136,10 @@ class Settings:
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
-    # Per-message consent grants before AI use (Telegram API Terms). Off only for personal use.
-    ai_require_consent: bool = True
 
     @property
     def data_dir(self) -> Path:
-        return self.root / "data"
+        return data_root(self.root)
 
     @property
     def youtrack_path(self) -> Path:
@@ -146,10 +192,9 @@ class Settings:
     def from_env(cls, root: Path = ROOT) -> Settings:
         _load_dotenv(root / ".env")
         env = os.environ
-        conf = _read_json(root / "data" / "config.json")
+        conf = _read_json(data_root(root) / "config.json")
         api_id = str(conf.get("telegram_api_id") or env.get("TELEGRAM_API_ID", "")).strip()
-        consent = conf.get("ai_require_consent", env.get("AI_REQUIRE_CONSENT", "1").strip() != "0")
-        saved = _read_json(root / "data" / "youtrack.json")
+        saved = _read_json(data_root(root) / "youtrack.json")
         return cls(
             root=root,
             app_origin=env.get("APP_ORIGIN") or f"http://{HOST}:{PORT}",
@@ -174,5 +219,4 @@ class Settings:
             or env.get("YT_TOKEN")
             or None,
             youtrack_project=env.get("YOUTRACK_PROJECT") or None,
-            ai_require_consent=bool(consent),
         )

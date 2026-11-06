@@ -1,0 +1,3650 @@
+[
+{
+"id": "module-switch",
+"tab": "telegram",
+"area": "Thanh trên cùng",
+"title": "Chuyển module Telegram / YouTrack",
+"what": "Chuyển qua lại giữa Telegram Inbox và trang YouTrack. Khi đang ở Telegram, nút YouTrack có huy hiệu đỏ đếm số ticket của bạn cần xử lý ngay.",
+"how": [
+{
+"t": "Rê chuột vào \"YouTrack\" để xem ticket cần xử lý ngay (huy hiệu đỏ), rồi bấm để sang YouTrack",
+"at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+},
+{
+"t": "Bấm \"Telegram\" để quay lại Telegram Inbox",
+"at": "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]"
+}
+],
+"keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay"
+},
+{
+"id": "ai-quota-pill",
+"tab": "telegram",
+"area": "Thanh trên cùng › Hạn mức AI",
+"title": "Xem hạn mức AI đang dùng",
+"what": "Nút trên thanh trên cùng hiện % hạn mức (Phiên 5 giờ, 7 ngày) và thời gian đặt lại của AI đang dùng; báo nếu AI chưa cài hoặc chưa đăng nhập. Bấm mở trang tài khoản AI.",
+"how": [
+{
+"t": "Nhìn nút đồng hồ đo: xanh ổn, vàng từ 70%, đỏ từ 90%; rê chuột xem chi tiết, bấm để mở trang tài khoản AI",
+"at": "AI đang dùng"
+},
+"Trang \"Tài khoản <AI>\" trượt ra từ bên phải",
+{
+"t": "Bấm \"Đóng\" để đóng trang",
+"at": "Đóng"
+}
+],
+"keys": "han muc quota usage claude codex antigravity gioi han 5h 7 ngay hạn mức ai dang dung"
+},
+{
+"id": "ai-account-dialog",
+"tab": "telegram",
+"area": "Thanh trên cùng › Hạn mức AI › Tài khoản",
+"title": "Trang tài khoản AI (Tài khoản / Usage / History)",
+"what": "Bảng trượt từ phải hiện đăng nhập của CLI AI, chọn model/effort, hạn mức, báo cáo chi phí và lịch sử từng lần chạy AI.",
+"how": [
+{
+"t": "Bấm nút hạn mức AI trên thanh trên cùng",
+"at": "AI đang dùng"
+},
+"Tab \"Tài khoản\": đăng nhập/đăng xuất ở trên cùng; dưới là \"Model và effort\" để chọn model và effort",
+{
+"t": "Bấm \"Thử model\" để kiểm tra model có trả lời",
+"at": "Thử model"
+},
+{
+"t": "Mở tab \"Usage\" xem hạn mức và báo cáo",
+"at": "Usage"
+},
+{
+"t": "Chọn \"30 ngày\" để đổi khoảng báo cáo (24 giờ / 7 ngày / 30 ngày)",
+"at": "30 ngày"
+},
+{
+"t": "Mở tab \"History\" xem lịch sử từng lần chạy AI",
+"at": "History"
+},
+{
+"t": "Gõ vào ô \"Tìm theo model, tính năng, lỗi…\" để lọc; nút \"Xuất CSV\" bên cạnh xuất dòng đang hiện",
+"at": "Tìm theo model"
+}
+],
+"keys": "tai khoan ai account usage history lich su chay chi phi cost csv model effort thu model đăng nhập claude"
+},
+{
+"id": "theme-toggle",
+"tab": "telegram",
+"area": "Thanh trên cùng",
+"title": "Đổi giao diện sáng / tối",
+"what": "Chuyển nhanh giữa giao diện sáng và tối.",
+"how": [
+{
+"t": "Bấm biểu tượng mặt trăng / mặt trời \"Đổi giao diện sáng / tối\"",
+"at": "Đổi giao diện sáng / tối"
+},
+{
+"t": "Bấm lần nữa để đổi lại",
+"at": "Đổi giao diện sáng / tối"
+}
+],
+"keys": "giao dien sang toi dark mode light mode theme đổi giao diện"
+},
+{
+"id": "settings-button",
+"tab": "telegram",
+"area": "Thanh trên cùng › Cài đặt",
+"title": "Mở Cài đặt và báo có bản cập nhật",
+"what": "Mở trang Cài đặt. Khi có bản mới trên GitHub, nút có chấm báo và mở thẳng mục GitHub. Bấm lần nữa khi đang ở Cài đặt để quay lại.",
+"how": [
+{
+"t": "Bấm bánh răng \"Cài đặt\"; nếu có chấm nhỏ là có bản cập nhật và trang mở ở mục GitHub",
+"at": "css:a[aria-label^=\"Cài đặt\"]"
+},
+{
+"t": "Bấm bánh răng lần nữa để quay lại",
+"at": "css:a[aria-label^=\"Cài đặt\"]"
+}
+],
+"keys": "cai dat settings cap nhat update github cham bao bánh răng"
+},
+{
+"id": "sidebar-toggle",
+"tab": "telegram",
+"area": "Thanh tiêu đề trang",
+"title": "Thu gọn / mở rộng menu bên",
+"what": "Trên máy tính thu menu bên thành thanh hẹp chỉ có biểu tượng (rê chuột để mở tạm); trên điện thoại mở/đóng menu dạng ngăn kéo. Lựa chọn được nhớ trên trình duyệt.",
+"how": [
+{
+"t": "Bấm nút ba gạch \"Thu gọn / mở rộng menu\" ở góc trái thanh tiêu đề",
+"at": "Thu gọn / mở rộng menu"
+},
+"Rê chuột vào thanh hẹp để xem tên nhóm và số tin chờ",
+{
+"t": "Bấm lần nữa để mở rộng lại",
+"at": "Thu gọn / mở rộng menu"
+}
+],
+"keys": "thu gon menu sidebar mo rong rail an menu hamburger collapse"
+},
+{
+"id": "view-pending",
+"tab": "telegram",
+"area": "Thanh bên › Việc cần xử lý",
+"title": "Việc cần xử lý (hộp thư chung mọi nhóm)",
+"what": "Gom mọi tin tag bạn chưa xử lý từ tất cả các nhóm thành từng thẻ, chia mục Đã ghim / Quá hạn / Đang chờ, tin chờ lâu nhất ở trên. Dòng đầu tóm tắt số tin chờ và số quá hạn; lọc nhanh theo nhóm bằng các nút ngay dưới. Mỗi thẻ có sẵn nút Trả lời, Xong, Hoãn, Ghim, Ngữ cảnh. Số trên mục là tổng tin chưa xử lý; tiêu đề tab trình duyệt cũng hiện số này.",
+"how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên; bấm lại để cuộn về đầu danh sách",
+"at": "Việc cần xử lý"
+},
+{
+"t": "Bấm vào một thẻ tin (hoặc nút \"Trả lời\") để mở khung trả lời",
+"at": "css:li[data-testid=\"message\"]"
+}
+],
+"keys": "viec can xu ly inbox hop thu tin tag chua xu ly pending todo tất cả nhóm"
+},
+{
+"id": "view-pinned",
+"tab": "telegram",
+"area": "Thanh bên › Tag đã ghim",
+"title": "Tag đã ghim",
+"what": "Danh sách các tin bạn đã ghim để giữ lại, kể cả khi đã xử lý.",
+"how": [
+{
+"t": "Rê chuột vào một tin, bấm biểu tượng \"Ghim\" để ghim nó",
+"at": "Ghim"
+},
+{
+"t": "Bấm \"Tag đã ghim\" ở thanh bên để xem các tin đã ghim",
+"at": "Tag đã ghim"
+}
+],
+"keys": "tag da ghim pinned ghim pin luu tin giu lai"
+},
+{
+"id": "view-ai-agent",
+"tab": "telegram",
+"area": "Thanh bên › AI Agent",
+"title": "Trang AI Agent",
+"what": "Danh sách phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên).",
+"how": [
+{
+"t": "Bấm \"AI Agent\" ở thanh bên",
+"at": "AI Agent"
+},
+{
+"t": "Chọn một phiên bên trái để xem chi tiết bên phải",
+"at": "css:ul[aria-label=\"Danh sách phiên\"] button"
+}
+],
+"keys": "ai agent phien ai task giao viec deep thinking code session agent"
+},
+{
+"id": "view-briefing",
+"tab": "telegram",
+"area": "Thanh bên › Nhóm › Briefing",
+"title": "Briefing (tóm tắt nhanh mọi nhóm)",
+"what": "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn. Chỉ hiện khi đã cấu hình AI.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm một nhóm trong tab Briefing để chỉ xem việc của nhóm đó; \"Tất cả nhóm\" để xem lại tất cả",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới",
+"at": "css:#briefing-run"
+}
+],
+"keys": "briefing tom tat cac nhom tong quan tóm tắt nhanh overview"
+},
+{
+"id": "group-list",
+"tab": "telegram",
+"area": "Thanh bên › Nhóm › Có tag",
+"title": "Danh sách nhóm có tag",
+"what": "Liệt kê các nhóm có tin tag bạn trong khoảng ngày đang lọc, kèm số tin chưa xử lý của từng nhóm và tổng \"chưa xử lý\".",
+"how": [
+"Xem mục \"Nhóm\" ở thanh bên, tab \"Có tag\": mỗi nhóm kèm số tin chưa xử lý, tổng nằm trên tab (chưa cấu hình AI thì mục này tên \"Nhóm có tag\")",
+{
+"t": "Bấm tên một nhóm để mở danh sách tin của nhóm đó",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+}
+],
+"keys": "nhom co tag danh sach nhom group list chat list so tin chua xu ly"
+},
+{
+"id": "group-purge",
+"tab": "telegram",
+"area": "Trang nhóm › ⋯ › Xóa dữ liệu nhóm",
+"title": "Xóa dữ liệu nhóm",
+"what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm nút \"⋯\" (Thao tác với nhóm) ở đầu danh sách tin",
+"at": "Thao tác với nhóm"
+},
+{
+"t": "Chọn \"Xóa dữ liệu nhóm…\"",
+"at": "Xóa dữ liệu nhóm"
+},
+{
+"t": "Đọc hộp \"Xóa dữ liệu nhóm?\"; bấm \"Hủy\" để thoát (chỉ bấm \"Xóa dữ liệu\" nếu thật sự muốn xóa)",
+"at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+}
+],
+"keys": "xoa du lieu nhom purge delete chat data thung rac xóa nhóm"
+},
+{
+"id": "connection-status",
+"tab": "telegram",
+"area": "Thanh bên › Chân trang",
+"title": "Trạng thái kết nối Telegram",
+"what": "Cho biết đã kết nối Telegram chưa (Đã kết nối / Mất kết nối, đang thử lại / Cần đăng nhập…) và luồng cập nhật trực tiếp có đang chạy không.",
+"how": [
+"Xem thẻ ở cuối thanh bên: robot AI cắm dây vào Telegram là đã kết nối (xung chạy dọc dây = đang cập nhật trực tiếp); dây tuột, xám là mất kết nối",
+"Nếu báo \"AI chờ bạn đăng nhập\" hoặc \"Chưa có dây Telegram\", bấm vào thẻ đó để mở Cài đặt Telegram",
+"Làm theo mục \"Tài khoản Telegram\": nhập API ID/Hash rồi đăng nhập"
+],
+"keys": "trang thai ket noi connected robot cam day wifi mat ket noi cap nhat truc tiep stream status"
+},
+{
+"id": "global-search",
+"tab": "telegram",
+"area": "Thanh tiêu đề › Ô tìm kiếm",
+"title": "Tìm nội dung tin tag",
+"what": "Lọc tin tag theo nội dung, không phân biệt hoa thường và dấu tiếng Việt. Ở Việc cần xử lý / Tag đã ghim ô này tìm ở mọi nhóm; khi đang mở một nhóm, nó tìm trong nhóm đó. Trên điện thoại bấm kính lúp để mở ô.",
+"how": [
+{
+"t": "Bấm ô tìm kiếm trên đầu trang (\"Tìm ở mọi nhóm…\", hoặc nhấn phím /) rồi gõ từ khóa",
+"at": "Tìm tin tag ở mọi nhóm"
+},
+{
+"t": "Bấm X \"Xóa tìm kiếm\" (hoặc nhấn Esc) để xóa",
+"at": "Xóa tìm kiếm"
+}
+],
+"keys": "tim kiem search tim tin tag tìm nội dung phim tat / loc"
+},
+{
+"id": "date-range",
+"tab": "telegram",
+"area": "Thanh tiêu đề › Khoảng ngày",
+"title": "Lọc theo khoảng ngày",
+"what": "Chỉ hiện tin tag trong khoảng ngày chọn; áp dụng cho danh sách nhóm, số đếm và danh sách tin.",
+"how": [
+{
+"t": "Bấm nút lịch \"Chọn khoảng ngày của tin tag\"",
+"at": "Khoảng ngày"
+},
+{
+"t": "Chọn nhanh, vd \"7 ngày qua\" (hoặc nhập \"Từ ngày\" / \"Đến ngày\" rồi bấm \"Xong\")",
+"at": "7 ngày qua"
+},
+{
+"t": "Bấm X \"Bỏ lọc ngày\" để bỏ lọc",
+"at": "Bỏ lọc ngày"
+}
+],
+"keys": "khoang ngay loc ngay date range lich hom nay hom qua 7 ngay 30 ngay thang nay tu ngay den ngay"
+},
+{
+"id": "group-view-filter",
+"tab": "telegram",
+"area": "Trang nhóm › Lọc tin",
+"title": "Chưa xử lý / Đã xử lý / Cả nhóm",
+"what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và mọi tin trong nhóm đọc trực tiếp từ Telegram (không lưu, không thao tác tag).",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Đã xử lý\" để xem tin tag đã xử lý",
+"at": "Đã xử lý"
+},
+{
+"t": "Bấm \"Cả nhóm\" để đọc mọi tin trực tiếp từ Telegram (khi hết tin chưa xử lý có nút \"Xem mọi tin trong nhóm\")",
+"at": "Cả nhóm"
+}
+],
+"keys": "chua xu ly da xu ly ca nhom loc tin view filter live tat ca tin nhom"
+},
+{
+"id": "group-sender-filter",
+"tab": "telegram",
+"area": "Trang nhóm › Lọc theo người gửi",
+"title": "Lọc theo người gửi",
+"what": "Chỉ hiện tin của một người gửi trong các tin đã tải. Ô lọc chỉ hiện khi nhóm có từ 2 người gửi trở lên.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Cả nhóm\" để có nhiều người gửi (ô lọc chỉ hiện khi có từ 2 người)",
+"at": "Cả nhóm"
+},
+{
+"t": "Chọn một người trong ô \"Mọi người gửi\"; chọn lại \"Mọi người gửi\" để bỏ lọc",
+"at": "Lọc theo người gửi"
+}
+],
+"keys": "loc nguoi gui sender filter moi nguoi gui lọc theo người gửi"
+},
+{
+"id": "group-search",
+"tab": "telegram",
+"area": "Trang nhóm › Tìm kiếm",
+"title": "Tìm trong nhóm",
+"what": "Tìm trong các tin đã lưu của nhóm đang mở, bằng ô tìm kiếm trên đầu trang.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Gõ vào ô tìm kiếm trên đầu trang (\"Tìm trong nhóm này…\"; phím /). Ở Việc cần xử lý ô này tìm ở mọi nhóm",
+"at": "Tìm tin tag trong nhóm này"
+},
+{
+"t": "Bấm X \"Xóa tìm kiếm\" (hoặc Esc) để bỏ tìm",
+"at": "Xóa tìm kiếm"
+}
+],
+"keys": "tim trong nhom search group tim tin da luu kính lúp"
+},
+{
+"id": "group-mark-all",
+"tab": "telegram",
+"area": "Trang nhóm › Xong tất cả",
+"title": "Đánh dấu tất cả là đã xử lý",
+"what": "Chuyển mọi tin chưa xử lý trong nhóm (trong khoảng ngày đang lọc) sang Đã xử lý.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Xong tất cả\" (ở tab \"Chưa xử lý\")",
+"at": "Xong tất cả"
+},
+{
+"t": "Xác nhận \"Xong tất cả\" trong hộp \"Đánh dấu tất cả là đã xử lý?\"",
+"at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :last-child"
+}
+],
+"keys": "xong tat ca danh dau tat ca da xu ly mark all done handled all"
+},
+{
+"id": "group-load-older",
+"tab": "telegram",
+"area": "Trang nhóm › Danh sách tin",
+"title": "Tải tin cũ hơn và xuống tin mới nhất",
+"what": "Tải thêm trang tin cũ hơn ở đầu danh sách; khi cuộn lên xa, có nút tròn để quay xuống tin mới nhất. Tin được nhóm theo ngày với nhãn ngày dính đầu.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Cuộn lên đầu danh sách, bấm \"Tải tin cũ hơn\"",
+"at": "Tải tin cũ hơn"
+},
+"Cuộn lên xa khỏi tin mới nhất hơn một màn hình: nút tròn mũi tên xuống hiện ở góc dưới phải",
+{
+"t": "Bấm nút mũi tên xuống \"Xuống tin mới nhất\"",
+"at": "Xuống tin mới nhất"
+}
+],
+"keys": "tai tin cu hon load older xuong tin moi nhat scroll bottom nhan ngay"
+},
+{
+"id": "group-digest",
+"tab": "telegram",
+"area": "Trang nhóm › Tóm tắt (Digest)",
+"title": "Tóm tắt nhóm (Digest)",
+"what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+"at": "Tóm tắt"
+},
+{
+"t": "Chọn khoảng: \"Từ lần trước\", \"24h\", \"3 ngày\", \"7 ngày\" hoặc \"Tuỳ chọn ngày\"",
+"at": "7 ngày"
+},
+{
+"t": "Bấm \"Tóm tắt N tin\"",
+"at": "Tóm tắt N tin"
+},
+"Chờ AI tóm tắt: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm, Chủ đề",
+{
+"t": "Bấm mũi tên \"Quay lại nhóm\" để trở lại",
+"at": "Quay lại nhóm"
+}
+],
+"keys": "digest tom tat nhom summary can confirm da chot thay doi anh huong team viec can lam chu de tóm tắt hội thoại"
+},
+{
+"id": "digest-consent",
+"tab": "telegram",
+"area": "Trang nhóm › Tóm tắt › Cho phép",
+"title": "Cho phép / thu hồi quyền AI đọc nhóm",
+"what": "Trước khi tóm tắt, phải cho phép AI đọc tin của nhóm trong 7, 30 hoặc 90 ngày; có thể thu hồi bất cứ lúc nào (thu hồi sẽ xóa bản tóm tắt đã lưu).",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+"at": "Tóm tắt"
+},
+{
+"t": "Chọn thời hạn 7 / 30 / 90 ngày ở ô \"Thời hạn cho phép\"",
+"at": "Thời hạn cho phép"
+},
+{
+"t": "Bấm \"Cho phép\"",
+"at": "Cho phép"
+},
+{
+"t": "Để thu hồi, bấm \"Thu hồi\" ở dòng \"AI được đọc nhóm này đến…\"",
+"at": "Thu hồi"
+}
+],
+"keys": "cho phep ai doc nhom consent quyen thu hoi revoke permission 30 ngay"
+},
+{
+"id": "digest-pick-messages",
+"tab": "telegram",
+"area": "Trang nhóm › Tóm tắt › Hội thoại",
+"title": "Chọn một phần tin để tóm tắt",
+"what": "Chỉ tóm tắt những tin được chọn thay vì cả khoảng thời gian; vạch \"Đã tóm tắt đến đây\" cho biết tin nào đã nằm trong lần trước.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+"at": "Tóm tắt"
+},
+{
+"t": "Trong cột \"Hội thoại\", bấm một tin hoặc ô chọn để chọn / bỏ chọn",
+"at": "Chọn tin"
+},
+"Giữ Shift rồi bấm tin khác để chọn cả đoạn liên tiếp; vạch \"Đã tóm tắt đến đây\" đánh dấu phần của lần trước",
+{
+"t": "Bấm \"Tóm tắt N tin đã chọn\"",
+"at": "Tóm tắt N tin đã chọn"
+},
+{
+"t": "Bấm \"Bỏ chọn\" để xóa lựa chọn",
+"at": "Bỏ chọn"
+}
+],
+"keys": "chon tin shift click chon doan tom tat mot phan select messages bo chon"
+},
+{
+"id": "digest-result-actions",
+"tab": "telegram",
+"area": "Trang nhóm › Tóm tắt › Kết quả",
+"title": "Dùng kết quả tóm tắt",
+"what": "Bấm số #tin để nhảy tới tin gốc; chip ticket YouTrack hiện trạng thái khi rê chuột; quyết định liên quan ticket có thể ghi thành bình luận; thay đổi trên ticket đang trong sprint được cảnh báo đổi scope; copy toàn bộ dạng Markdown.",
+"how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+"at": "Tóm tắt"
+},
+{
+"t": "Bấm \"Tóm tắt N tin\" nếu chưa có bản tóm tắt",
+"at": "Tóm tắt N tin"
+},
+"Chờ kết quả; rê chuột vào chip ticket YouTrack để xem trạng thái (ticket trong sprint có cảnh báo đổi scope)",
+{
+"t": "Bấm \"#123\" cạnh một mục để nhảy tới tin gốc",
+"at": "css:button[aria-label^=\"Xem tin gốc\"]"
+},
+{
+"t": "Ở mục Đã chốt, bấm \"ghi vào <ticket>\" để thêm bình luận lên YouTrack",
+"at": "ghi vào <ticket>"
+},
+{
+"t": "Bấm \"Copy markdown\" để chép bản tóm tắt",
+"at": "Copy markdown"
+}
+],
+"keys": "copy markdown ghi vao ticket binh luan doi scope sprint xem tin goc ket qua tom tat"
+},
+{
+"id": "briefing-run-all",
+"tab": "telegram",
+"area": "Briefing › Tóm tắt N nhóm",
+"title": "Tóm tắt mọi nhóm có tin mới",
+"what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất).",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm \"Tóm tắt N nhóm\" để tóm tắt lần lượt các nhóm có tin mới; dải tiến độ hiện nhóm đang chạy",
+"at": "css:#briefing-run"
+},
+"Bấm nút dừng tròn đỏ trên dải tiến độ để hủy giữa chừng",
+{
+"t": "Muốn tóm tắt một nhóm: bấm biểu tượng ✦ trên chip của nhóm đó (hàng chip dưới tiêu đề)",
+"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Tóm tắt \"]"
+},
+{
+"t": "Đổi model / effort riêng cho Briefing ở dưới ô hỏi của Trợ lý Briefing",
+"at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
+},
+{
+"t": "Bấm biểu tượng xoay \"Kiểm tra lại\" để kiểm tra tin mới",
+"at": "Kiểm tra lại"
+}
+],
+"keys": "briefing tom tat tat ca nhom run all dung kiem tra lai tin moi tom tat mot nhom model effort rieng"
+},
+{
+"id": "briefing-ask",
+"tab": "telegram",
+"area": "Briefing › Trợ lý Briefing",
+"title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
+"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\") là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm một thẻ gợi ý, hoặc gõ câu hỏi vào ô \"Hỏi về mọi nhóm…\" rồi Enter",
+"at": "Hỏi AI về các nhóm"
+},
+"Bấm nút dừng khi AI đang trả lời để hủy; biểu tượng thùng rác ở đầu khung để xóa hội thoại"
+],
+"keys": "hoi ai briefing hom nay can lam gi standup blocker rui ro ai dang cho toi tong hop cac nhom chat ai"
+},
+{
+"id": "briefing-confirmations",
+"tab": "telegram",
+"area": "Briefing › Việc cần xử lý",
+"title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
+"what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Chọn tab: Cần bạn, Cần confirm, Việc cần làm, Đã chốt, Thay đổi (số bên cạnh là mục chưa xử lý)",
+"at": "css:[aria-label=\"Lọc việc\"]"
+},
+{
+"t": "Bấm \"Trả lời\" / \"Tạo ticket\" ngay dưới mục, hoặc bấm tên nhóm để mở tóm tắt của nhóm",
+"at": "css:ul[aria-label=\"Việc cần xử lý\"]"
+},
+{
+"t": "Bấm vòng tròn đầu dòng để đánh dấu đã xử lý; \"Đã xử lý N\" ở cuối để xem lại / bỏ đánh dấu",
+"at": "Đánh dấu đã xử lý"
+}
+],
+"keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung"
+},
+{
+"id": "briefing-group-cards",
+"tab": "telegram",
+"area": "Briefing › Hàng chip nhóm",
+"title": "Trạng thái từng nhóm, lọc theo nhóm và copy tất cả",
+"what": "Mỗi nhóm là một chip dưới tiêu đề: chấm vàng = có tin mới, xanh = đã cập nhật, số = mục chưa xử lý. Bấm chip để chỉ xem việc của nhóm đó; mũi tên ↗ mở trang Tóm tắt đầy đủ của nhóm. Có thể chép mọi bản tóm tắt thành một Markdown.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm chip của một nhóm để lọc danh sách việc theo nhóm đó; bấm \"Tất cả nhóm\" để bỏ lọc",
+"at": "css:[aria-label=\"Lọc theo nhóm\"]"
+},
+{
+"t": "Bấm ↗ trên chip để mở trang Tóm tắt của nhóm",
+"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Mở \"]"
+},
+{
+"t": "Bấm \"Copy tất cả\" để chép Markdown của mọi nhóm",
+"at": "Copy tất cả"
+}
+],
+"keys": "copy tat ca briefing markdown co tin moi nhom chip loc theo nhom trang thai"
+},
+{
+"id": "briefing-saved",
+"tab": "telegram",
+"area": "Briefing › Gửi vào Saved Messages",
+"title": "Gửi briefing vào Saved Messages",
+"what": "Gửi các mục chưa xử lý của mọi nhóm (cần confirm, việc cần làm, đã chốt, thay đổi) thành một tin vào Saved Messages trên Telegram của bạn, để đọc trên điện thoại. Câu trả lời của Hỏi AI cũng gửi được.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm biểu tượng máy bay giấy \"Gửi vào Saved Messages\" ở góc phải trên",
+"at": "Gửi vào Saved Messages"
+},
+"Hoặc trong câu trả lời của Hỏi AI, bấm \"Gửi Saved Messages\""
+],
+"keys": "saved messages gui telegram tin nhan da luu dien thoai briefing gui cho minh"
+},
+{
+"id": "briefing-add-group",
+"tab": "telegram",
+"area": "Briefing › Hàng chip nhóm › Thêm",
+"title": "Thêm nhóm chưa tag vào Briefing",
+"what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép AI nằm đầu danh sách trong \"Thêm\".",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm chip \"+ Thêm\" ở cuối hàng chip nhóm",
+"at": "Thêm nhóm"
+},
+{
+"t": "Gõ vào ô \"Tìm nhóm Telegram…\"",
+"at": "Tìm nhóm"
+},
+"Bấm tên một nhóm (nhóm \"Chưa cho phép AI\" ở trên cùng)",
+{
+"t": "Trong trang Tóm tắt, bấm \"Cho phép\" để nhóm có mặt ở Briefing",
+"at": "Cho phép"
+}
+],
+"keys": "them nhom chua tag tim nhom chua cho phep ai add group briefing"
+},
+{
+"id": "msg-open-reply",
+"tab": "telegram",
+"area": "Danh sách tin › Dòng tin",
+"title": "Mở trang trả lời",
+"what": "Bấm vào bất kỳ đâu trên dòng tin (trừ link/nút) để mở trang \"Trả lời\": hội thoại trong nhóm (tin tag nổi bật đúng vị trí, tự cuộn tới) và ô soạn bên trái, Trợ lý AI và công cụ bên phải.",
+"how": [
+{
+"t": "Bấm vào bất kỳ đâu trên một dòng tin (trừ link / nút) để mở khung trả lời",
+"at": "css:li[data-testid=\"message\"]"
+},
+"Hoặc chọn tin bằng j/k rồi nhấn r"
+],
+"keys": "tra loi reply mo khung tra loi bam vao tin soạn trả lời"
+},
+{
+"id": "msg-done",
+"tab": "telegram",
+"area": "Dòng tin › Xong",
+"title": "Đánh dấu Xong / Mở lại",
+"what": "Đánh dấu tin tag đã xử lý (không cần trả lời / đã xử lý nơi khác), đồng thời thả reaction trên Telegram; tin đã xong có thể mở lại. Có thông báo kèm \"Hoàn tác\".",
+"how": [
+{
+"t": "Bấm nút hai dấu tích \"Xong\" trên một tin (hoặc chọn tin rồi nhấn x).",
+"at": "Xong"
+},
+"Thông báo hiện \"Hoàn tác\" nếu bạn bấm nhầm.",
+{
+"t": "Chọn một nhóm ở thanh bên để xem lại tin của nhóm.",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
+"t": "Bấm tab \"Đã xử lý\".",
+"at": "Đã xử lý"
+},
+{
+"t": "Bấm nút mũi tên vòng \"Mở lại\" để đánh dấu chưa xử lý.",
+"at": "Mở lại"
+}
+],
+"keys": "xong done da xu ly mo lai reopen danh dau handled x reaction"
+},
+{
+"id": "msg-done-no-react",
+"tab": "telegram",
+"area": "Dòng tin › Xong (Shift+bấm)",
+"title": "Xong không thả reaction",
+"what": "Đánh dấu đã xử lý nhưng không thả reaction trên Telegram.",
+"how": [
+"Dùng khi muốn đánh dấu xong mà không để lại reaction trên Telegram.",
+{
+"t": "Giữ Shift rồi bấm nút \"Xong\" của tin (hoặc chọn tin bằng j/k rồi bấm Shift+x)",
+"at": "Xong"
+}
+],
+"keys": "xong khong tha reaction im lang done no reaction danh dau xong"
+},
+{
+"id": "msg-snooze",
+"tab": "telegram",
+"area": "Dòng tin › Hoãn",
+"title": "Hoãn tin (nhắc lại sau)",
+"what": "Ẩn tin khỏi Việc cần xử lý và tự hiện lại sau 1 giờ, 3 giờ hoặc sáng mai 9:00; tin đang hoãn hiện \"nhắc <giờ>\".",
+"how": [
+{
+"t": "Bấm biểu tượng đồng hồ báo thức \"Hoãn\" (rê chuột vào nút Xong của tin để hiện)",
+"at": "Hoãn"
+},
+{
+"t": "Chọn \"1 giờ\", \"3 giờ\" hoặc \"Sáng mai 9:00\".",
+"at": [
+"1 giờ",
+"3 giờ",
+"Sáng mai 9:00"
+]
+},
+"Để hủy: mở lại menu Hoãn và bấm \"Bỏ hoãn\", hoặc bấm \"Hoàn tác\" trên thông báo."
+],
+"keys": "hoan snooze nhac lai sau bo hoan remind later 1 gio 3 gio sang mai"
+},
+{
+"id": "msg-pin",
+"tab": "telegram",
+"area": "Dòng tin › Ghim",
+"title": "Ghim / Bỏ ghim tin",
+"what": "Ghim tin lên đầu danh sách và giữ nó trong \"Tag đã ghim\", kể cả khi đã xử lý.",
+"how": [
+{
+"t": "Bấm biểu tượng ghim \"Ghim\" (rê chuột vào nút Xong của tin để hiện)",
+"at": "Ghim"
+},
+{
+"t": "Mở \"Tag đã ghim\" ở thanh bên để thấy tin vừa ghim.",
+"at": "Tag đã ghim"
+},
+{
+"t": "Bấm \"Bỏ ghim\" để bỏ.",
+"at": "Bỏ ghim"
+}
+],
+"keys": "ghim bo ghim pin unpin giu tin len dau"
+},
+{
+"id": "msg-context",
+"tab": "telegram",
+"area": "Dòng tin › Ngữ cảnh",
+"title": "Xem ngữ cảnh (tin trước/sau)",
+"what": "Hiện các tin trước và sau tin tag trong nhóm, đọc trực tiếp từ Telegram (cần đang kết nối).",
+"how": [
+{
+"t": "Bấm biểu tượng hai bong bóng \"Ngữ cảnh\" (rê chuột vào nút Xong của tin để hiện)",
+"at": "Ngữ cảnh"
+},
+"Các tin trước và sau hiện ngay dưới tin (cần đang kết nối Telegram).",
+{
+"t": "Bấm \"Ngữ cảnh\" lần nữa để ẩn.",
+"at": "Ngữ cảnh"
+}
+],
+"keys": "ngu canh context tin truoc sau xung quanh hoi thoai"
+},
+{
+"id": "msg-open-telegram",
+"tab": "telegram",
+"area": "Dòng tin › Mở Telegram",
+"title": "Mở tin trong Telegram",
+"what": "Mở đúng tin trong app Telegram (nhóm thường chỉ mở được nhóm trên Telegram Web).",
+"how": [
+{
+"t": "Bấm biểu tượng mũi tên ra ngoài \"Mở Telegram\" (rê vào nút Xong để hiện).",
+"at": "Mở Telegram"
+},
+"Giữ Alt khi bấm để mở bản web."
+],
+"keys": "mo telegram open in telegram app telegram web link tin alt"
+},
+{
+"id": "msg-row-actions-visibility",
+"tab": "telegram",
+"area": "Dòng tin › Nút thao tác",
+"title": "Hiện nút thao tác trên tin",
+"what": "Mặc định chỉ nút Xong luôn hiện; Hoãn, Ghim, Ngữ cảnh, Đối chiếu BE, Mở Telegram nằm sau nó và chỉ hiện khi rê chuột vào; có thể chỉnh để luôn hiện (màn hình cảm ứng luôn hiện).",
+"how": [
+"Mặc định chỉ nút Xong luôn hiện; rê chuột vào nó thì các nút còn lại mới hiện.",
+{
+"t": "Mở Cài đặt ở thanh trên.",
+"at": "Cài đặt"
+},
+{
+"t": "Chọn mục \"Telegram\".",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Ở \"Nút thao tác trên tin\" bấm \"Luôn hiện\" để các nút luôn hiện.",
+"at": "css:[aria-label=\"Nút thao tác trên tin\"] button:last-child"
+}
+],
+"keys": "nut thao tac an hien hover luon hien row actions"
+},
+{
+"id": "msg-copy-id",
+"tab": "telegram",
+"area": "Dòng tin › Mã tin",
+"title": "Chép ID tin (để báo lỗi)",
+"what": "Bấm số #mã tin để chép ID cơ sở dữ liệu của tin, dùng khi báo lỗi.",
+"how": [
+{
+"t": "Bấm số \"#<mã tin>\" ở góc phải dòng tin để chép ID.",
+"at": "css:[data-testid=\"message\"] button[title^=\"ID \"]"
+},
+"Thông báo \"Đã chép ID …\" xuất hiện; dán khi báo lỗi."
+],
+"keys": "chep id copy id ma tin bao loi bug report message id"
+},
+{
+"id": "msg-jump-reply",
+"tab": "telegram",
+"area": "Dòng tin › trả lời #",
+"title": "Tới tin gốc được trả lời",
+"what": "Với tin trả lời một tin khác, bấm để cuộn tới tin gốc và làm nó sáng lên (nếu tin gốc có trong danh sách).",
+"how": [
+{
+"t": "Bấm dòng \"trả lời #<số>\" phía trên nội dung tin để cuộn tới tin gốc (chỉ có ở tin trả lời tin khác).",
+"at": "css:[data-testid=\"message\"] button[aria-label^=\"Tới tin gốc\"]"
+}
+],
+"keys": "toi tin goc tra loi reply to jump original message"
+},
+{
+"id": "msg-indicators",
+"tab": "telegram",
+"area": "Dòng tin › Nhãn trạng thái",
+"title": "Nhãn trạng thái tin (chờ, quá hạn, đã sửa, cần retest)",
+"what": "Mỗi tin hiện thời gian chờ \"(chờ N giờ)\" (màu hổ phách khi quá ngưỡng quá hạn), \"Đã xử lý\", \"nhắc <giờ>\" khi đang hoãn, \"(đã sửa)\"; với vai trò QA hiện \"Cần retest\" khi tin báo đã fix ticket bạn là QC. Ảnh hiển thị trực tiếp, bấm để xem lớn; tin dài có \"Xem thêm\" / \"Thu gọn\".",
+"how": [
+"Xem dòng đầu mỗi tin: \"(chờ N giờ)\", \"nhắc <giờ>\", \"(đã sửa)\", \"Cần retest\" (QA); ảnh bấm để xem lớn.",
+"Tin dài trong Việc cần xử lý có \"Xem thêm\" / \"Thu gọn\".",
+{
+"t": "Để đổi ngưỡng quá hạn, mở Cài đặt ở thanh trên.",
+"at": "Cài đặt"
+},
+{
+"t": "Chọn mục \"Telegram\".",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Ở \"Hàng chờ\" chọn \"Ngưỡng quá hạn\" (3/6/… giờ).",
+"at": "css:[aria-label=\"Ngưỡng quá hạn\"] button"
+}
+],
+"keys": "cho qua han overdue da sua can retest qc nhan trang thai xem them thu gon anh"
+},
+{
+"id": "msg-ticket-chip",
+"tab": "telegram",
+"area": "Nội dung tin › Mã ticket",
+"title": "Chip ticket YouTrack trong tin",
+"what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột xem tiêu đề, trạng thái, độ ưu tiên, người được giao; bấm để mở ticket. Link, @mention và `code` cũng được tô riêng.",
+"how": [
+{
+"t": "Rê chuột lên mã ticket (vd. VA-123) trong tin để xem tiêu đề, trạng thái, người được giao; bấm để mở ticket.",
+"at": "css:[data-testid=\"message\"] a[href^=\"/youtrack/?ticket=\"]"
+}
+],
+"keys": "ticket chip youtrack ma ticket va-123 trang thai assignee link mention"
+},
+{
+"id": "msg-task-result",
+"tab": "telegram",
+"area": "Dòng tin › Task",
+"title": "Kết quả AI Agent ngay trên tin",
+"what": "Tin đã giao việc cho AI hiện khối \"Task đang làm…\" / \"Task đã có kết quả\", có thể dùng kết quả làm nháp hoặc mở lại phiên.",
+"how": [
+"Chỉ hiện trên tin đã giao việc cho AI.",
+{
+"t": "Bấm \"Mở phiên\" để mở phiên ở trang AI Agent.",
+"at": "Mở phiên"
+}
+],
+"keys": "task ket qua mo phien dung ket qua lam nhap tra loi ai agent"
+},
+{
+"id": "deep-thinking",
+"tab": "telegram",
+"area": "Dòng tin, Briefing › Đối chiếu BE",
+"title": "Đối chiếu BE (soi câu trả lời của BE với code)",
+"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả.",
+"how": [
+{
+"t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing.",
+"at": "Đối chiếu BE"
+},
+{
+"t": "Xem thẻ \"1 · Câu hỏi\"; sai thì bấm \"Đổi tin hỏi\" và chọn lại.",
+"at": [
+"Đổi tin hỏi",
+"css:ul[aria-label=\"Chọn tin hỏi\"] button"
+]
+},
+{
+"t": "Chọn \"Dự án\" (hoặc Thêm).",
+"at": "css:select[aria-label=\"Dự án tham chiếu cho AI\"]"
+},
+{
+"t": "Bấm \"Yêu cầu thêm\" nếu muốn khoanh vùng.",
+"at": "Yêu cầu thêm"
+},
+{
+"t": "Bấm \"Phân tích\"; tiếp tục làm việc khác, bấm \"Xem\" trên thông báo hoặc nhãn trên tin để mở kết quả.",
+"at": "Phân tích"
+}
+],
+"keys": "deep thinking phan tich be confirm backend trace code bo nao brain"
+},
+{
+"id": "composer-reply",
+"tab": "telegram",
+"area": "Khung Trả lời",
+"title": "Soạn và gửi trả lời",
+"what": "Gửi trả lời trực tiếp vào tin tag trên Telegram (tối đa 4096 ký tự, có bộ đếm). Gửi xong tự mở tin chưa xử lý kế tiếp.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Gõ vào ô \"Viết trả lời…\".",
+"at": "Nội dung trả lời"
+},
+{
+"t": "Bấm \"Gửi\" (hoặc nhấn ⌘/Ctrl+Enter).",
+"at": "css:form[data-composer] button[type=submit]"
+},
+"Gửi xong tự mở tin chưa xử lý kế tiếp. Nhấn Esc hoặc bấm X \"Đóng (Esc)\" để đóng khung."
+],
+"keys": "gui tra loi send reply soan ctrl enter cmd enter 4096 ky tu dong esc"
+},
+{
+"id": "composer-send-recovery",
+"tab": "telegram",
+"area": "Khung Trả lời › Trạng thái gửi",
+"title": "Xử lý khi chưa rõ đã gửi",
+"what": "Nếu không rõ Telegram đã nhận tin chưa, có thể kiểm tra, thử lại cùng yêu cầu (không gửi trùng) hoặc bỏ theo dõi. Khi Telegram yêu cầu chờ, hiện số giây còn lại.",
+"how": [
+"Chỉ hiện khi Telegram chưa xác nhận đã nhận tin (mất mạng, hết thời gian).",
+"Bấm \"Kiểm tra\" để xem trạng thái.",
+"Bấm \"Thử lại cùng yêu cầu\" để gửi lại an toàn, không gửi trùng.",
+"Bấm \"Bỏ theo dõi yêu cầu\" để soạn lại."
+],
+"keys": "kiem tra thu lai cung yeu cau bo theo doi gui that bai retry unknown"
+},
+{
+"id": "composer-ai-summary",
+"tab": "telegram",
+"area": "Khung Trả lời › Tóm tắt",
+"title": "AI tóm tắt và gợi ý trả lời",
+"what": "AI tóm tắt tin được tag (kèm ngữ cảnh nhóm) theo góc nhìn vai trò và nền tảng, đề xuất bước tiếp theo và các mẫu trả lời; hiện chữ trực tiếp khi AI đang viết.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Nhập yêu cầu thêm vào ô prompt (không bắt buộc); nhấn a để nhảy vào ô này.",
+"at": "Prompt cho AI"
+},
+{
+"t": "Bấm \"Tóm tắt & gợi ý\" (hoặc Enter trong ô prompt).",
+"at": [
+"Tóm tắt & gợi ý",
+"Tóm tắt lại"
+]
+},
+"Chữ hiện dần khi AI viết; bấm \"Hủy\" để dừng, \"Tóm tắt lại\" để chạy lại."
+],
+"keys": "tom tat goi y ai summary draft prompt phim a tom tat lai huy"
+},
+{
+"id": "composer-ai-options",
+"tab": "telegram",
+"area": "Khung Trả lời › Mẫu AI",
+"title": "Chọn mẫu trả lời AI theo quan hệ",
+"what": "AI đưa ra mẫu trả lời theo quan hệ với người gửi (\"Tôi là cấp trên\", \"Ngang cấp\", \"Trả lời cấp trên\"); lựa chọn được nhớ cho người gửi đó.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Bấm \"Tóm tắt & gợi ý\" và chờ AI xong.",
+"at": [
+"Tóm tắt & gợi ý",
+"Tóm tắt lại"
+]
+},
+{
+"t": "Ở \"Mẫu AI\" bấm một mẫu để đưa vào ô trả lời, sửa rồi Gửi.",
+"at": "css:label:has(input[name=\"ai-option\"])"
+}
+],
+"keys": "mau ai cap tren ngang cap tra loi cap tren options draft quan he"
+},
+{
+"id": "composer-ask-missing",
+"tab": "telegram",
+"area": "Khung Trả lời › Tóm tắt (QA)",
+"title": "Hỏi thông tin còn thiếu",
+"what": "Với vai trò QA, khi tóm tắt đánh dấu [cần bổ sung], chèn câu hỏi xin các thông tin đó (build, thiết bị, bước tái hiện…).",
+"how": [
+"Cần vai trò QA/QC (đổi ở Cài đặt › Chung).",
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Bấm \"Tóm tắt & gợi ý\" và chờ AI xong.",
+"at": [
+"Tóm tắt & gợi ý",
+"Tóm tắt lại"
+]
+},
+{
+"t": "Nếu tóm tắt có [cần bổ sung], bấm \"Hỏi thông tin còn thiếu\".",
+"at": "Hỏi thông tin còn thiếu"
+}
+],
+"keys": "hoi thong tin con thieu qa can bo sung buoc tai hien build thiet bi"
+},
+{
+"id": "composer-ai-agent",
+"tab": "telegram",
+"area": "Khung Trả lời › AI Agent",
+"title": "Giao AI Agent",
+"what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Chỉ có với vai trò Dev.",
+"how": [
+"Chỉ có với vai trò Dev.",
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Bấm \"Giao AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
+"at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
+},
+{
+"t": "Chọn \"Dự án\".",
+"at": "css:select[aria-label=\"Dự án tham chiếu cho AI\"]"
+},
+{
+"t": "Nhập \"Yêu cầu thêm\" nếu cần.",
+"at": "css:#task-note"
+},
+{
+"t": "Chọn \"Chỉ đọc\" (khuyên dùng) hoặc \"Được sửa file\".",
+"at": [
+"Chỉ đọc",
+"Được sửa file"
+]
+},
+{
+"t": "Bấm \"Bắt đầu\"; có thể chỉnh model/effort trước.",
+"at": "Bắt đầu"
+}
+],
+"keys": "giao viec ai agent task du an code sua bug chi doc duoc sua file bat dau"
+},
+{
+"id": "composer-youtrack-ticket",
+"tab": "telegram",
+"area": "Khung Trả lời › YouTrack",
+"title": "Tạo ticket YouTrack từ tin",
+"what": "Tạo ticket từ tin tag (chọn Project, Type, Priority, Assignee; ảnh trong tin được đính kèm); link ticket được thêm vào trả lời. AI có thể soạn tiêu đề, Type/Priority và mô tả theo mẫu. Cảnh báo ticket có thể trùng.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Bấm \"Tạo ticket\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
+"at": "css:form[data-composer] button[aria-label=\"YouTrack\"]"
+},
+{
+"t": "Bấm \"AI soạn\" để AI viết tiêu đề, Type/Priority, mô tả (nếu có AI).",
+"at": [
+"AI soạn",
+"Tiêu đề ticket"
+]
+},
+{
+"t": "Sửa tiêu đề nếu cần.",
+"at": "Tiêu đề ticket"
+},
+{
+"t": "Bấm \"Tạo ticket\".",
+"at": "Tạo ticket"
+},
+"Nếu có ticket tương tự, bấm \"Ghi thêm vào đây\" để thêm bình luận thay vì tạo mới."
+],
+"keys": "tao ticket youtrack issue bug ai soan trung ticket ghi them vao day project type priority assignee"
+},
+{
+"id": "composer-related-tickets",
+"tab": "telegram",
+"area": "Khung Trả lời › Có vẻ liên quan",
+"title": "Ticket có vẻ liên quan",
+"what": "Khi tin không nêu mã ticket, gợi ý tối đa 3 ticket đang mở có vẻ liên quan và cho chèn link vào trả lời.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+"Xem dòng \"Có vẻ liên quan:\" dưới các nút công cụ (chỉ hiện khi tin không nêu mã ticket).",
+{
+"t": "Bấm \"+ chèn\" để chèn link ticket vào trả lời.",
+"at": "css:[aria-label=\"Ticket có vẻ liên quan\"] button"
+}
+],
+"keys": "ticket lien quan related chen link youtrack goi y"
+},
+{
+"id": "composer-model-effort",
+"tab": "telegram",
+"area": "Khung Trả lời / AI Agent › Model và effort",
+"title": "Chọn model và effort tại chỗ",
+"what": "Chọn nhanh model và mức effort cho tóm tắt/soạn nháp hoặc cho Task và AI Agent; dùng chung lựa chọn với trang tài khoản AI.",
+"how": [
+{
+"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Chọn model trong ô thả xuống.",
+"at": "css:[role=group][aria-label*=\"model và effort\"] [aria-label^=\"Model\"]"
+},
+{
+"t": "Kéo thanh effort.",
+"at": "css:[role=group][aria-label*=\"model và effort\"] input[type=range]"
+},
+"Cũng có trong hộp AI Agent, Đối chiếu BE và đầu trang AI Agent; dùng chung lựa chọn với trang tài khoản AI."
+],
+"keys": "model effort chon model ai nhanh manh low medium high"
+},
+{
+"id": "agent-filters",
+"tab": "telegram",
+"area": "AI Agent › Bộ lọc",
+"title": "Lọc phiên AI Agent",
+"what": "Chuyển giữa loại phiên \"Giao AI Agent\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý); hiện số phiên đang chạy.",
+"how": [
+{
+"t": "Mở \"AI Agent\" ở thanh bên.",
+"at": "AI Agent"
+},
+{
+"t": "Bấm \"Đối chiếu BE\" để xem phiên đối chiếu BE confirm.",
+"at": "Đối chiếu BE"
+},
+{
+"t": "Bấm \"Giao AI Agent\" để quay lại phiên Giao AI Agent.",
+"at": "Giao AI Agent"
+},
+{
+"t": "Bấm \"Done\" (hoặc \"Doing\", \"Tất cả\") để lọc theo trạng thái.",
+"at": [
+"Done",
+"Doing",
+"Tất cả"
+]
+}
+],
+"keys": "loc phien giao viec deep thinking doing done tat ca filter agent"
+},
+{
+"id": "agent-session-chat",
+"tab": "telegram",
+"area": "AI Agent › Phiên › Nhắn tiếp",
+"title": "Nhắn tiếp cho AI và hàng đợi",
+"what": "Xem nhật ký phiên (các bước Đọc/Sửa/Tìm… gom nhóm, bấm để xem đầu ra) và nhắn tiếp cho AI; khi AI đang làm có thể xếp lời nhắn vào hàng đợi, chạy lần lượt.",
+"how": [
+{
+"t": "Mở \"AI Agent\" ở thanh bên.",
+"at": "AI Agent"
+},
+{
+"t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+},
+{
+"t": "Chọn một phiên trong danh sách.",
+"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+},
+{
+"t": "Gõ vào ô \"Nhắn tiếp cho AI\"; Enter gửi, Shift+Enter xuống dòng.",
+"at": "Nhắn tiếp cho AI"
+},
+{
+"t": "Bấm \"Gửi\", hoặc \"Vào hàng đợi\" (⌘/Ctrl+Enter) khi AI đang làm.",
+"at": [
+"Vào hàng đợi",
+"Gửi"
+]
+},
+{
+"t": "Bấm \"Yêu cầu đã giao\" để xem prompt ban đầu.",
+"at": "Yêu cầu đã giao"
+},
+"Bấm X \"Bỏ khỏi hàng đợi\" để xóa một mục đang xếp hàng."
+],
+"keys": "nhan tiep ai hang doi queue follow up enter ctrl enter nhat ky buoc tool log"
+},
+{
+"id": "agent-accept-edit",
+"tab": "telegram",
+"area": "AI Agent › Phiên › Cho sửa code",
+"title": "Cho phép lượt sau sửa file (duyệt plan)",
+"what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.",
+"how": [
+{
+"t": "Mở \"AI Agent\" ở thanh bên.",
+"at": "AI Agent"
+},
+{
+"t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+},
+{
+"t": "Chọn một phiên chế độ Chỉ đọc.",
+"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+},
+{
+"t": "Tích \"Cho sửa code\" trong ô nhắn.",
+"at": "Cho sửa code"
+},
+"Rồi nhắn tiếp cho AI (vd. duyệt plan và bảo AI làm)."
+],
+"keys": "accept edit cho sua code duyet plan cho sua file chi doc plan mode"
+},
+{
+"id": "agent-session-actions",
+"tab": "telegram",
+"area": "AI Agent › Phiên › Thao tác",
+"title": "Done, dừng, xóa phiên, mở nhóm, model riêng",
+"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn.",
+"how": [
+{
+"t": "Mở \"AI Agent\" ở thanh bên.",
+"at": "AI Agent"
+},
+{
+"t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+"at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+},
+{
+"t": "Chọn một phiên trong danh sách.",
+"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+},
+{
+"t": "Rê chuột hoặc bấm nút ⋯ ở góc phải thanh đầu phiên để mở menu: Done, Done không reaction (hoặc Mở lại), Dùng làm nháp trả lời, Mở nhóm, Xóa phiên (hỏi xác nhận).",
+"at": "css:[aria-label=\"Thao tác phiên\"]"
+},
+"Trong ô nhắn: model và effort riêng cho phiên (áp dụng từ lượt nhắn tiếp), nút Dừng khi AI đang chạy.",
+{
+"t": "Bấm \"Mở nhóm\" để tới tin gốc đã giao việc.",
+"at": "Mở nhóm"
+}
+],
+"keys": "dung chay lai xoa phien mo nhom stop rerun delete session dung ket qua"
+},
+{
+"id": "toast-undo",
+"tab": "telegram",
+"area": "Thông báo nổi",
+"title": "Hoàn tác thao tác vừa làm",
+"what": "Sau khi đánh dấu Xong, Hoãn hoặc giao việc, thông báo dưới màn hình có nút \"Hoàn tác\" (khoảng 6 giây).",
+"how": [
+{
+"t": "Bấm \"Xong\" trên một tin (rê chuột vào dòng tin để thấy nút)",
+"at": "Xong"
+},
+{
+"t": "Bấm \"Hoàn tác\" trên thông báo ở dưới màn hình (khoảng 6 giây)",
+"at": "Hoàn tác"
+},
+"Hoặc nhấn phím z khi thông báo còn hiện"
+],
+"keys": "hoan tac undo z thong bao toast"
+},
+{
+"id": "keyboard-shortcuts",
+"tab": "telegram",
+"area": "Phím tắt",
+"title": "Phím tắt Inbox",
+"what": "Thao tác nhanh bằng bàn phím (không áp dụng khi đang gõ trong ô nhập): j/k chọn tin dưới/trên, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, ⌘/Ctrl+Enter gửi, Esc đóng trả lời, ? mở bảng phím tắt.",
+"how": [
+"Nhấn ? để mở bảng \"Phím tắt\"; Esc để đóng",
+{
+"t": "Hoặc bấm bánh răng \"Cài đặt\" để xem bảng phím tắt ở trang Cài đặt",
+"at": "css:a[aria-label^=\"Cài đặt\"]"
+},
+{
+"t": "Bấm mục \"Phím tắt\"",
+"at": "Phím tắt"
+},
+"Ngoài ô nhập: j/k chọn tin, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, Esc đóng trả lời"
+],
+"keys": "phim tat shortcuts keyboard j k r x z a / esc ? ctrl enter ban phim"
+},
+{
+"id": "new-tag-notification",
+"tab": "telegram",
+"area": "Thông báo trình duyệt",
+"title": "Thông báo khi có tag mới",
+"what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi và nội dung tag mới (tối đa 3, kèm \"Còn N tag mới khác\"); bấm để quay lại app.",
+"how": [
+{
+"t": "Bấm bánh răng \"Cài đặt\"",
+"at": "css:a[aria-label^=\"Cài đặt\"]"
+},
+{
+"t": "Bấm mục \"Telegram\" ở danh sách bên trái",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Ở mục \"Hàng chờ\", bật công tắc \"Thông báo khi có tag mới\"",
+"at": "Thông báo khi có tag mới"
+},
+"Cho phép thông báo khi trình duyệt hỏi"
+],
+"keys": "thong bao notification tag moi desktop push trinh duyet"
+},
+{
+"id": "settings-search",
+"tab": "settings",
+"area": "Cài đặt › Tìm cài đặt",
+"title": "Tìm một cài đặt",
+"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt.",
+"how": [
+{
+"t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
+"at": "Tìm cài đặt"
+},
+"Gõ vài chữ, ví dụ \"qua han\", \"prompt\", \"model\"",
+"Dùng ↑ ↓ chọn rồi Enter, hoặc bấm một kết quả"
+],
+"keys": "tim cai dat search settings nhay toi"
+},
+{
+"id": "settings-role",
+"tab": "settings",
+"area": "Cài đặt › Chung › Vai trò",
+"title": "Chọn vai trò (Dev / QA/QC / PO/PM)",
+"what": "Vai trò quyết định trang chủ, Dashboard và góc nhìn của AI khi tóm tắt và tạo ticket; QA, PO không dùng AI Agent. Chưa chọn thì Telegram coi như Dev.",
+"how": [
+{
+"t": "Bấm một vai trò: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
+"at": "css:[aria-label=\"Vai trò\"]"
+},
+{
+"t": "Bấm \"Bỏ chọn vai trò\" để bỏ chọn",
+"at": "Bỏ chọn vai trò"
+}
+],
+"keys": "vai tro role dev qa qc po pm xoa vai tro"
+},
+{
+"id": "settings-theme",
+"tab": "settings",
+"area": "Cài đặt › Chung › Giao diện",
+"title": "Giao diện, phong cách, màu chủ đạo, gradient",
+"what": "Chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; màu chủ đạo (có sẵn hoặc kéo chọn); bật Gradient với màu thứ hai. Lưu trên trình duyệt.",
+"how": [
+{
+"t": "Chọn \"Sáng\", \"Tối\" hoặc \"Theo hệ thống\"",
+"at": "css:[aria-label=\"Giao diện\"]"
+},
+{
+"t": "Chọn phong cách \"Đơn giản\", \"Mặc định\" hoặc \"Rực rỡ\"",
+"at": "css:[aria-label=\"Phong cách\"]"
+},
+{
+"t": "Bấm một ô màu có sẵn",
+"at": "css:[aria-label=\"Màu có sẵn\"]"
+},
+{
+"t": "Bật \"Gradient\" để thêm màu thứ hai",
+"at": "Gradient"
+}
+],
+"keys": "giao dien sang toi theo he thong phong cach don gian mac dinh ruc ro mau chu dao gradient theme accent"
+},
+{
+"id": "settings-telegram-account",
+"tab": "settings",
+"area": "Cài đặt › Telegram › Tài khoản Telegram",
+"title": "Kết nối và đăng nhập Telegram",
+"what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này.",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Bấm link \"Lấy API ID/Hash tại my.telegram.org\" (hoặc \"Đổi API ID/Hash\" nếu đã có)",
+"at": [
+"Lấy API ID/Hash tại my.telegram.org",
+"Đổi API ID/Hash"
+]
+},
+{
+"t": "Nhập \"API ID\" và \"API Hash\" lấy từ trang đó",
+"at": "API ID"
+},
+{
+"t": "Bấm \"Lưu\"",
+"at": "Lưu"
+},
+{
+"t": "Nhập \"Số điện thoại\" kèm mã nước",
+"at": "Số điện thoại"
+},
+{
+"t": "Bấm \"Gửi mã\"",
+"at": "Gửi mã"
+},
+{
+"t": "Nhập mã Telegram (và mật khẩu 2FA nếu có), bấm \"Đăng nhập\"",
+"at": "Đăng nhập"
+}
+],
+"keys": "dang nhap telegram api id api hash so dien thoai ma 2fa my.telegram.org login"
+},
+{
+"id": "settings-overdue",
+"tab": "settings",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
+"title": "Ngưỡng quá hạn",
+"what": "Tin tag chờ lâu hơn ngưỡng (1, 2, 4, 8 hoặc 24 giờ) hiện màu hổ phách là quá hạn.",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Chọn số giờ ở \"Ngưỡng quá hạn\"",
+"at": "css:[aria-label=\"Ngưỡng quá hạn\"]"
+}
+],
+"keys": "nguong qua han overdue gio cho mau ho phach hang cho"
+},
+{
+"id": "settings-notify",
+"tab": "settings",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
+"title": "Bật thông báo khi có tag mới",
+"what": "Bật thông báo trình duyệt khi có tag mới lúc tab đang ẩn.",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Bật công tắc \"Thông báo khi có tag mới\", rồi cho phép trong trình duyệt",
+"at": "Thông báo khi có tag mới"
+}
+],
+"keys": "thong bao tag moi notification bat tat cong tac"
+},
+{
+"id": "settings-row-actions",
+"tab": "settings",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
+"title": "Nút thao tác trên tin",
+"what": "Chọn hiện nút Ghim, Ngữ cảnh, Mở Telegram \"Khi rê vào nút Xong\" hay \"Luôn hiện\".",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Chọn \"Khi rê vào nút Xong\" hoặc \"Luôn hiện\"",
+"at": "css:[aria-label=\"Nút thao tác trên tin\"]"
+}
+],
+"keys": "nut thao tac tren tin luon hien re vao row actions"
+},
+{
+"id": "settings-reply",
+"tab": "settings",
+"area": "Cài đặt › Telegram › AI cho Telegram",
+"title": "Nền tảng tóm tắt",
+"what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Mobile chung, Không giới hạn).",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Chọn nền tảng ở \"Tóm tắt theo nền tảng\"",
+"at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
+}
+],
+"keys": "mo san tom tat nen tang android ios mobile platform tra loi"
+},
+{
+"id": "settings-briefing-model",
+"tab": "settings",
+"area": "Cài đặt › Telegram › AI cho Telegram",
+"title": "Model và effort riêng cho Briefing / Digest",
+"what": "Briefing và Digest (tóm tắt cả nhóm) chạy model/effort riêng; để \"Như tóm tắt\" thì dùng lựa chọn của tóm tắt, soạn nháp. Cũng chỉnh được ngay trên trang Briefing và ở Cài đặt › AI › Model và effort.",
+"how": [
+{
+"t": "Chọn mục \"Telegram\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+},
+{
+"t": "Ở \"Model cho Briefing và Digest\", chọn model và kéo effort",
+"at": "css:[aria-label$=\"model và effort cho Briefing và Digest\"]"
+}
+],
+"keys": "briefing digest model effort rieng tom tat nhom nhu tom tat"
+},
+{
+"id": "settings-ai-accounts",
+"tab": "settings",
+"area": "Cài đặt › AI › Tài khoản",
+"title": "Tài khoản các CLI AI",
+"what": "Xem trạng thái cài đặt/đăng nhập của Claude, Codex, Antigravity CLI; đăng nhập, xem chi tiết, hoặc copy lệnh cài.",
+"how": [
+{
+"t": "Chọn mục \"AI\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+},
+{
+"t": "Bấm \"Đăng nhập\" hoặc \"Chi tiết\" cạnh CLI (\"Đã cài, kiểm tra lại\" nếu vừa cài)",
+"at": [
+"Đăng nhập",
+"Chi tiết",
+"Đã cài, kiểm tra lại"
+]
+},
+{
+"t": "CLI chưa cài: bấm nút copy lệnh cài, chạy trong Terminal",
+"at": "css:button[aria-label=\"Copy lệnh cài\"]"
+}
+],
+"keys": "tai khoan ai cli claude codex antigravity dang nhap cai dat lenh cai"
+},
+{
+"id": "settings-ai-provider",
+"tab": "settings",
+"area": "Cài đặt › AI › Dùng AI nào",
+"title": "Chọn AI cho mọi tính năng",
+"what": "Chọn CLI (Claude, Codex, Antigravity) chạy mọi tính năng AI; mỗi AI giữ model/effort riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
+"how": [
+{
+"t": "Chọn mục \"AI\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+},
+{
+"t": "Bấm tên AI muốn dùng ở \"Dùng AI nào\"",
+"at": "css:[aria-label=\"AI cho mọi tính năng\"]"
+}
+],
+"keys": "dung ai nao provider claude codex antigravity chon ai"
+},
+{
+"id": "settings-github-update",
+"tab": "settings",
+"area": "Cài đặt › Cập nhật",
+"title": "Cập nhật app và tự động cập nhật",
+"what": "Kiểm tra và cài bản mới từ GitHub, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
+"how": [
+{
+"t": "Chọn mục \"Cập nhật\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+},
+{
+"t": "Bấm biểu tượng xoay \"Kiểm tra\" để kiểm tra lại",
+"at": "Kiểm tra"
+},
+{
+"t": "Có bản mới thì bấm \"Cập nhật\"",
+"at": "Cập nhật"
+},
+{
+"t": "Bật \"Tự động cập nhật\" nếu muốn",
+"at": "Tự động cập nhật"
+}
+],
+"keys": "cap nhat update github tu dong cap nhat auto update phien ban moi"
+},
+{
+"id": "settings-youtrack",
+"tab": "settings",
+"area": "Cài đặt › YouTrack",
+"title": "Kết nối YouTrack và cấu hình AI cho YouTrack",
+"what": "Ba nhóm: Kết nối và báo cáo (URL, token YouTrack, lịch Báo cáo release), AI và prompt (Instructions cho AI theo vai trò, Kho prompt), Workflow.",
+"how": [
+{
+"t": "Chọn mục \"YouTrack\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+},
+{
+"t": "Chọn \"Kết nối và báo cáo\"",
+"at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+},
+"Đã kết nối thì bấm \"Đổi URL / token\" để hiện ô nhập",
+{
+"t": "Nhập \"URL YouTrack\"",
+"at": "URL YouTrack"
+},
+{
+"t": "Nhập \"Token YouTrack\"",
+"at": "Token YouTrack"
+},
+{
+"t": "Bấm \"Lưu\" (hoặc \"Cập nhật\")",
+"at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+},
+{
+"t": "Chưa có token: bấm link \"Tạo token trên YouTrack\"",
+"at": "Tạo token trên YouTrack"
+}
+],
+"keys": "youtrack token url ket noi instructions kho prompt bao cao release"
+},
+{
+"id": "settings-shortcuts",
+"tab": "settings",
+"area": "Cài đặt › Phím tắt",
+"title": "Bảng phím tắt",
+"what": "Phím tắt của Telegram Inbox và YouTrack, chia theo nhóm (Di chuyển, Xử lý tin, Trả lời…), có ô tìm. Trong Inbox nhấn ? để mở nhanh.",
+"how": [
+{
+"t": "Chọn mục \"Phím tắt\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#shortcuts\"]"
+},
+{
+"t": "Chọn \"Telegram Inbox\" hoặc \"YouTrack\"",
+"at": "css:[aria-label=\"Phím tắt của\"]"
+},
+{
+"t": "Gõ vào ô \"Tìm phím tắt\" để lọc",
+"at": "Tìm phím tắt"
+},
+"Hoặc nhấn ? khi đang ở Inbox"
+],
+"keys": "phim tat shortcuts bang phim tat keyboard tim phim tat youtrack"
+},
+{
+"id": "yt-chon-vai-tro",
+"tab": "youtrack",
+"area": "Màn hình đầu tiên",
+"title": "Chọn vai trò Dev / QA/QC / PO/PM",
+"what": "Lần đầu mở trang YouTrack (hoặc sau khi xóa vai trò), trang hỏi bạn làm vai trò nào. Trang chủ, góc nhìn Ticket, Dashboard và AI đều chạy theo vai trò này.",
+"how": [
+{
+"t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+"at": "Cài đặt"
+},
+{
+"t": "Bấm \"Bỏ chọn vai trò\" (nếu đang có vai trò)",
+"at": "Bỏ chọn vai trò"
+},
+{
+"t": "Quay lại module \"YouTrack\" ở thanh trên",
+"at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+},
+{
+"t": "Bấm một thẻ: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
+"at": "css:[aria-label=\"Vai trò\"]"
+}
+],
+"keys": "vai tro vai trò role dev qa qc po pm chon vai tro chọn vai trò xoa vai tro xóa vai trò doi vai tro đổi vai trò"
+},
+{
+"id": "yt-thanh-ben-dieu-huong",
+"tab": "youtrack",
+"area": "Thanh bên",
+"title": "Điều hướng các trang theo vai trò",
+"what": "Thanh bên liệt kê các trang của vai trò: Dev có Hôm nay / Ticket / Dashboard / Thành viên; QA có Kiểm thử / Ticket / Dashboard / Thành viên; PO có Brief / Dashboard / Thành viên / Ticket. Rê chuột vào từng mục để xem gợi ý trang đó làm gì.",
+"how": [
+{
+"t": "Bấm \"Ticket\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+},
+{
+"t": "Bấm \"Dashboard\"",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+},
+{
+"t": "Bấm \"Thành viên\"",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+},
+"Rê chuột vào mục để đọc gợi ý trang đó làm gì",
+"Trên điện thoại: nút Menu ở thanh trên mở thanh bên, \"Đóng menu\" để đóng"
+],
+"keys": "thanh ben thanh bên sidebar menu trang page dieu huong điều hướng navigation hom nay hôm nay kiem thu kiểm thử brief"
+},
+{
+"id": "yt-thu-gon-thanh-ben",
+"tab": "youtrack",
+"area": "Thanh bên",
+"title": "Thu gọn / mở rộng menu",
+"what": "Thu thanh bên lại chỉ còn biểu tượng để có thêm chỗ cho bảng ticket; trạng thái được nhớ cho lần sau.",
+"how": [
+{
+"t": "Bấm ô biểu tượng YouTrack đầu thanh bên (\"Thu gọn / mở rộng menu\")",
+"at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+},
+{
+"t": "Bấm lại lần nữa để mở rộng",
+"at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+}
+],
+"keys": "thu gon thu gọn mo rong mở rộng collapse sidebar an menu ẩn menu"
+},
+{
+"id": "yt-chon-project",
+"tab": "youtrack",
+"area": "Thanh bên",
+"title": "Chọn project YouTrack",
+"what": "Đổi project đang xem; toàn bộ ticket, sprint, thành viên được tải lại theo project mới. Lựa chọn được lưu.",
+"how": [
+{
+"t": "Mở ô chọn \"Project\" ở thanh bên rồi chọn project khác (menu phải đang mở rộng)",
+"at": "Project"
+},
+"Bộ lọc sprint / người được đặt lại và ticket tải lại theo project mới"
+],
+"keys": "project du an dự án chon project chọn project doi project đổi project"
+},
+{
+"id": "yt-huy-hieu-rui-ro",
+"tab": "youtrack",
+"area": "Thanh bên › mục trang chủ",
+"title": "Huy hiệu số ticket rủi ro",
+"what": "Con số đỏ cạnh mục trang chủ cho biết số ticket cần xử lý ngay (quá hạn, tới hạn trong 24 giờ, Blocked, đang làm mà 3+ ngày không cập nhật). Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team.",
+"how": [
+{
+"t": "Nhìn số đỏ cạnh trang chủ, rê chuột để đọc giải thích, bấm để xem danh sách",
+"at": [
+"css:nav[aria-label=\"Trang\"] span[title*=\"cần xử lý ngay\"]",
+"Hôm nay",
+"Kiểm thử",
+"Brief"
+]
+},
+"Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team"
+],
+"keys": "rui ro rủi ro risk badge huy hieu huy hiệu qua han quá hạn toi han tới hạn blocked dung lau đứng lâu"
+},
+{
+"id": "yt-lich-su-ai",
+"tab": "youtrack",
+"area": "Thanh bên › Lịch sử AI",
+"title": "Lịch sử AI",
+"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp.",
+"how": [
+{
+"t": "Bấm \"Lịch sử AI\" trên thanh bên (chỉ hiện khi AI bật)",
+"at": "Lịch sử AI"
+},
+{
+"t": "Chọn tab \"Ticket\" hoặc \"Dashboard\"",
+"at": "css:[role=\"tablist\"][aria-label=\"Loại phiên AI\"]"
+},
+{
+"t": "Gõ vào ô \"Lọc lịch sử AI\" để tìm",
+"at": "Lọc lịch sử AI"
+},
+{
+"t": "Bấm một phiên để mở lại và hỏi tiếp",
+"at": "css:aside[role=\"dialog\"] li.group > button"
+},
+{
+"t": "Xóa một phiên: bấm thùng rác khi rê vào phiên",
+"at": "css:aside[role=\"dialog\"] button[aria-label^=\"Xóa phiên\"]"
+},
+{
+"t": "Hoặc \"Xóa tất cả\", bấm lần nữa ở \"Chắc chắn xóa … phiên?\"",
+"at": "css:label:has(input[aria-label=\"Lọc lịch sử AI\"]) + button"
+}
+],
+"keys": "lich su ai lịch sử ai history phien ai phiên ai mo lai mở lại hoi tiep hỏi tiếp xoa phien xóa phiên"
+},
+{
+"id": "yt-tao-ticket",
+"tab": "youtrack",
+"area": "Thanh bên › Tạo ticket",
+"title": "Tạo ticket mới (AI soạn từ ghi chú thô)",
+"what": "Tạo ticket YouTrack ngay trong dashboard. AI có thể soạn tiêu đề, Type, Priority và mô tả theo mẫu từ ghi chú thô; trước khi tạo, các ticket đang mở giống thế này được cảnh báo.",
+"how": [
+{
+"t": "Bấm \"Tạo ticket\" trên thanh bên (ẩn khi dùng dữ liệu MOCK)",
+"at": "Tạo ticket"
+},
+{
+"t": "Dán ghi chú thô vào ô \"Ghi chú thô cho AI\"",
+"at": "Ghi chú thô cho AI"
+},
+{
+"t": "Bấm \"AI soạn ticket\" (khi AI bật)",
+"at": "AI soạn ticket"
+},
+{
+"t": "Kiểm tra \"Tiêu đề\"; nếu có cảnh báo ticket giống thì bấm ID để xem",
+"at": "Tiêu đề"
+},
+{
+"t": "Chọn Type, Priority, Assignee",
+"at": "css:[data-slot=\"dialog-content\"] div.grid-cols-3"
+},
+{
+"t": "Bấm \"Tạo ticket\" ở cuối hộp thoại",
+"at": "css:[data-slot=\"dialog-footer\"] > button:last-child"
+}
+],
+"keys": "tao ticket tạo ticket create issue new ticket ai soan ai soạn ghi chu tho ghi chú thô ticket trung ticket trùng duplicate"
+},
+{
+"id": "yt-pham-vi-my-task",
+"tab": "youtrack",
+"area": "Thanh trên trang › Phạm vi",
+"title": "Phạm vi My task / My team / All",
+"what": "Chọn nhanh tập ticket: My task (ticket bạn được assign hoặc làm QC), My team (bạn + thành viên đã thêm), All (tất cả người).",
+"how": [
+{
+"t": "Bấm \"My task\", \"My team\" hoặc \"All\" trên thanh đầu trang",
+"at": "css:[role=\"group\"][aria-label=\"Phạm vi\"]"
+},
+"Số cạnh \"My team\" là số người trong team"
+],
+"keys": "pham vi phạm vi scope my task my team all cua toi của tôi ca team cả team tat ca tất cả"
+},
+{
+"id": "yt-sua-team",
+"tab": "youtrack",
+"area": "Thanh trên trang › My team",
+"title": "Sửa thành viên team (Team của tôi)",
+"what": "Thêm/bớt người trong nhóm “My team”; danh sách được lưu cho lần sau.",
+"how": [
+{
+"t": "Bấm \"My team\" để chọn phạm vi này",
+"at": "My team"
+},
+{
+"t": "Bấm lại \"My team\" (biểu tượng bánh răng) để mở \"Team của tôi\"",
+"at": "My team"
+},
+{
+"t": "Gõ tên vào ô \"Tìm người để thêm vào team\"",
+"at": "Tìm người để thêm vào team"
+},
+{
+"t": "Bấm tên trong danh sách để thêm",
+"at": "css:[role=\"dialog\"][aria-label=\"Team của tôi\"] button:not([aria-label])"
+},
+{
+"t": "Bấm ✕ cạnh tên (\"Bỏ … khỏi team\") để bớt",
+"at": "css:button[aria-label^=\"Bỏ \"]"
+},
+"Esc hoặc bấm ra ngoài để đóng"
+],
+"keys": "team cua toi team của tôi my team them thanh vien thêm thành viên bo khoi team bỏ khỏi team members"
+},
+{
+"id": "yt-loc-sprint-nguoi",
+"tab": "youtrack",
+"area": "Thanh trên trang",
+"title": "Lọc theo Sprint và Người",
+"what": "Chọn một hoặc nhiều sprint, một hoặc nhiều người (có cả “Unassigned”) để thu hẹp mọi trang: Ticket, Dashboard, trang chủ.",
+"how": [
+{
+"t": "Bấm nút \"Sprint\" (mặc định \"Tất cả sprint\")",
+"at": "Sprint"
+},
+{
+"t": "Tích một hoặc nhiều sprint (gõ vào ô tìm nếu cần)",
+"at": "css:[role=\"menuitemcheckbox\"]"
+},
+{
+"t": "Bấm nút \"Người\" (mặc định \"Tất cả người\")",
+"at": "Người"
+},
+{
+"t": "Tích người cần xem (có cả \"Unassigned\")",
+"at": "css:[role=\"menuitemcheckbox\"]"
+},
+"Bộ lọc được lưu và ghi lên URL để chia sẻ"
+],
+"keys": "loc sprint lọc sprint loc nguoi lọc người filter assignee nguoi người unassigned chua assign chưa assign"
+},
+{
+"id": "yt-chip-bo-loc",
+"tab": "youtrack",
+"area": "Dưới thanh trên trang",
+"title": "Chip bộ lọc đang bật",
+"what": "Mỗi bộ lọc đang áp dụng (Sprint, Người, Priority, Type, Tầng, Lọc nhanh) hiện thành một chip; bấm chip để gỡ.",
+"how": [
+{
+"t": "Bấm nút \"Sprint\" để chọn bộ lọc",
+"at": "Sprint"
+},
+{
+"t": "Tích một sprint",
+"at": "css:[role=\"menuitemcheckbox\"]"
+},
+{
+"t": "Bấm chip vừa hiện (\"Gỡ bộ lọc\") để gỡ",
+"at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+},
+"Khi có từ 2 chip, bấm \"Xóa tất cả\" để gỡ hết"
+],
+"keys": "chip bo loc chip bộ lọc go bo loc gỡ bộ lọc xoa tat ca xóa tất cả clear filter"
+},
+{
+"id": "yt-lam-moi",
+"tab": "youtrack",
+"area": "Thanh trên trang",
+"title": "Làm mới dữ liệu",
+"what": "Dữ liệu tự làm mới mỗi phút; nút hiện giờ cập nhật gần nhất và cho làm mới ngay.",
+"how": [
+{
+"t": "Bấm nút xoay có giờ cập nhật (vd. \"14:05\") ở cuối thanh trên",
+"at": "Cập nhật lúc"
+},
+"Hoặc ⌘K › \"Làm mới dữ liệu\"",
+"Khi lỗi tải, bấm \"Thử lại\" trong khung báo lỗi"
+],
+"keys": "lam moi làm mới refresh reload cap nhat cập nhật tu lam moi tự làm mới thu lai thử lại"
+},
+{
+"id": "yt-chuong-thay-doi",
+"tab": "youtrack",
+"area": "Thanh trên trang › biểu tượng chuông",
+"title": "Chuông thay đổi trên ticket của bạn",
+"what": "Theo dõi ticket bạn được assign hoặc làm QC: báo khi đổi state, mới được giao cho bạn, hoặc có cập nhật (bình luận, sửa). Có thể bật thông báo trên máy khi tab chạy nền.",
+"how": [
+{
+"t": "Bấm biểu tượng chuông \"Thay đổi trên ticket của bạn\"",
+"at": "Thay đổi trên ticket của bạn"
+},
+{
+"t": "Tích \"Thông báo trên máy\" và cho phép quyền của trình duyệt",
+"at": "Thông báo trên máy"
+},
+"Có thay đổi mới thì bấm một dòng để mở ticket"
+],
+"keys": "chuong chuông thong bao thông báo notification watch theo doi theo dõi thay doi thay đổi bell"
+},
+{
+"id": "yt-palette-cmdk",
+"tab": "youtrack",
+"area": "Toàn trang › ⌘K",
+"title": "Lệnh nhanh ⌘K (Tìm, hỏi AI)",
+"what": "Hộp lệnh nhanh: mở ticket theo ID hoặc tiêu đề, chuyển trang, áp view đã lưu, tạo ticket, làm mới, hỏi AI về phạm vi đang xem hoặc lọc ticket bằng AI.",
+"how": [
+{
+"t": "Bấm nút \"Tìm, hỏi AI\" / \"Tìm\" trên thanh trên (hoặc nhấn ⌘K)",
+"at": [
+"Tìm, hỏi AI",
+"Tìm",
+"Mở ticket, chuyển trang"
+]
+},
+{
+"t": "Gõ ID (vd. 123), tiêu đề, tên trang hoặc một câu hỏi",
+"at": "Lệnh, ticket hoặc câu hỏi cho AI"
+},
+{
+"t": "Chọn một dòng, vd. \"Đi tới …\"",
+"at": "css:[role=\"listbox\"] [role=\"option\"]"
+},
+"Dùng ↑ ↓ để chọn, Enter để chạy, Esc để đóng"
+],
+"keys": "cmd k ctrl k ⌘k palette lenh nhanh lệnh nhanh command tim kiem tìm kiếm search mo ticket mở ticket hoi ai hỏi ai"
+},
+{
+"id": "yt-palette-hoi-ai",
+"tab": "youtrack",
+"area": "⌘K › nhóm AI",
+"title": "Hỏi AI về phạm vi đang xem",
+"what": "Gõ câu hỏi trong ⌘K để AI đọc tối đa 40 ticket đang mở của phạm vi (ưu tiên ticket rủi ro, priority cao) kèm số liệu dashboard rồi trả lời.",
+"how": [
+{
+"t": "Bấm nút \"Tìm, hỏi AI\" trên thanh trên (hoặc nhấn ⌘K)",
+"at": [
+"Tìm, hỏi AI",
+"Tìm",
+"Mở ticket, chuyển trang"
+]
+},
+{
+"t": "Gõ câu hỏi vào ô lệnh",
+"at": "Lệnh, ticket hoặc câu hỏi cho AI"
+},
+{
+"t": "Chọn dòng \"Hỏi AI: …\"",
+"at": "Hỏi AI:"
+},
+"Phiên AI mở ở bảng bên, có thể hỏi tiếp"
+],
+"keys": "hoi ai hỏi ai ask ai cau hoi câu hỏi pham vi phạm vi scope cmd k"
+},
+{
+"id": "yt-trang-hom-nay-dev",
+"tab": "youtrack",
+"area": "Thanh bên › Hôm nay (Dev)",
+"title": "Hôm nay làm gì (trang chủ Dev)",
+"what": "Danh sách ticket của bạn xếp theo mức gấp kèm lý do (Blocked, Quá hạn, Sắp tới hạn, priority, Chờ bạn test, Đang làm, Đứng N ngày); 3 ticket đầu ở mục “Làm ngay”, còn lại “Tiếp theo”, 20 ticket mỗi trang.",
+"how": [
+{
+"t": "Bấm \"Hôm nay\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Hôm nay\"]"
+},
+{
+"t": "Bấm một dòng trong \"Hôm nay làm gì\" để mở ticket",
+"at": "css:ol > li > button"
+},
+"Quá 20 ticket: dùng ‹ › hoặc số trang; khi thanh trang đang focus, phím ← → cũng chuyển trang"
+],
+"keys": "hom nay hôm nay today dev lam ngay làm ngay tiep theo tiếp theo uu tien ưu tiên focus viec cua toi việc của tôi"
+},
+{
+"id": "yt-lens-dev",
+"tab": "youtrack",
+"area": "Hôm nay (Dev) › hàng số liệu",
+"title": "Lọc nhanh danh sách hôm nay",
+"what": "Hàng số liệu đồng thời là bộ lọc cho danh sách: Đang mở, Đang làm, Chờ QC, Blocked, Chờ bạn test.",
+"how": [
+{
+"t": "Bấm ô \"Blocked\" trong hàng số liệu: danh sách \"Hôm nay làm gì\" chỉ còn ticket Blocked",
+"at": "Blocked"
+},
+{
+"t": "Bấm ô khác, vd. \"Chờ QC\", để đổi mục lọc",
+"at": "Chờ QC"
+},
+{
+"t": "Bấm \"bỏ lọc\" ở góc thẻ (hoặc bấm lại ô \"Đang mở\") để xem tất cả",
+"at": [
+"css:section span.text-ink-3 > button[class~=\"hover:text-ink\"]",
+"Đang mở"
+]
+}
+],
+"keys": "loc nhanh lọc nhanh lens dang mo đang mở dang lam đang làm cho qc chờ qc blocked cho ban test chờ bạn test"
+},
+{
+"id": "yt-canh-bao-can-xu-ly",
+"tab": "youtrack",
+"area": "Hôm nay (Dev)",
+"title": "Dải cảnh báo “cần xử lý ngay”",
+"what": "Khung đỏ liệt kê ticket của bạn đang rủi ro kèm lý do: Quá hạn, Tới hạn trong 24 giờ, Blocked, Không cập nhật N ngày.",
+"how": [
+{
+"t": "Bấm một chip ID trong khung đỏ \"cần xử lý ngay\" ở đầu trang Hôm nay để mở ticket",
+"at": "css:div[role=alert] button[title]"
+},
+"Nhấn Esc để đóng bảng bên để quay lại trang"
+],
+"keys": "can xu ly ngay cần xử lý ngay rui ro rủi ro risk qua han quá hạn toi han trong 24 gio tới hạn trong 24 giờ khong cap nhat không cập nhật"
+},
+{
+"id": "yt-moi-cap-nhat",
+"tab": "youtrack",
+"area": "Hôm nay (Dev)",
+"title": "Mới cập nhật",
+"what": "5 ticket của bạn được cập nhật gần nhất.",
+"how": [
+{
+"t": "Bấm một dòng trong thẻ \"Mới cập nhật\" (cột phải) để mở ticket",
+"at": "css:ul[class~=\"gap-0.5\"] > li > button.text-left"
+},
+"Nhấn Esc để đóng bảng bên để quay lại trang"
+],
+"keys": "moi cap nhat mới cập nhật recent gan day gần đây"
+},
+{
+"id": "yt-ai-studio",
+"tab": "youtrack",
+"area": "Trang chủ (Dev/QA/PO) › AI Studio",
+"title": "AI Studio trên trang chủ",
+"what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case, Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
+"how": [
+{
+"t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",
+"at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+},
+{
+"t": "Bấm nút cùng tên tab để chạy; phiên AI mở ở bảng bên",
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+},
+"Chờ AI viết xong; kết quả được lưu trong ngày. Nhấn Esc để đóng bảng bên",
+{
+"t": "Thẻ giờ có kết quả: bấm \"Mở phiên AI\" để xem lại và hỏi tiếp",
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+},
+"Nhấn Esc. \"Làm lại\" chạy lại, \"Xóa\" xóa nội dung đã lưu"
+],
+"keys": "ai studio ke hoach kế hoạch standup test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes"
+},
+{
+"id": "yt-ai-standup-dev",
+"tab": "youtrack",
+"area": "Hôm nay (Dev) › AI Studio",
+"title": "Standup và Kế hoạch (Dev)",
+"what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt.",
+"how": [
+{
+"t": "Ở thẻ \"AI Studio\" bấm tab \"Standup\"",
+"at": "Standup"
+},
+{
+"t": "Bấm nút chạy, AI viết standup ở bảng bên",
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+},
+{
+"t": "Khi có kết quả, bấm \"Copy\" để dán vào nhóm Telegram",
+"at": "Copy"
+},
+{
+"t": "Nhấn Esc, rồi bấm tab \"Kế hoạch\" để AI chọn việc làm ngay (dùng tương tự)",
+"at": "Kế hoạch"
+}
+],
+"keys": "standup ke hoach kế hoạch plan hom qua hôm qua vuong mac vướng mắc telegram"
+},
+{
+"id": "yt-trang-kiem-thu-qa",
+"tab": "youtrack",
+"area": "Thanh bên › Kiểm thử (QA)",
+"title": "Hàng đợi test (trang chủ QA)",
+"what": "Ticket chờ test xếp theo mức gấp (Của bạn, Chưa có QC, Test lại · trả N lần, Blocked, Quá hạn, Chờ N ngày…); 3 ticket đầu ở mục “Test ngay”.",
+"how": [
+{
+"t": "Bấm \"Kiểm thử\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Kiểm thử\"]"
+},
+{
+"t": "Bấm một ô số để lọc (Chờ test, Chờ tôi test, Test lại, Bug…)",
+"at": "css:[aria-label=\"Lọc hàng đợi kiểm thử\"]"
+},
+{
+"t": "Bấm một dòng để mở ticket",
+"at": "css:ol > li > button"
+},
+"Bấm lại ô hoặc \"… · bỏ lọc\" để về \"Chờ test\""
+],
+"keys": "kiem thu kiểm thử qa qc hang doi test hàng đợi test test ngay cho toi test chờ tôi test test lai test lại bug toi log bug tôi log"
+},
+{
+"id": "yt-bug-dot-bien",
+"tab": "youtrack",
+"area": "Kiểm thử (QA)",
+"title": "Cảnh báo bug tăng đột biến",
+"what": "Khi bug mới 7 ngày qua từ 3 trở lên và vượt 1,5 lần trung bình 4 tuần trước (toàn project hoặc theo module), hiện khung “Bug tăng đột biến” kèm các module nóng.",
+"how": [
+{
+"t": "Bấm khung đỏ \"Bug tăng đột biến\" (chỉ hiện khi bug mới tăng bất thường) để xem \"Bug mới 7 ngày\"",
+"at": "css:button[role=alert]"
+},
+"Nhấn Esc để đóng bảng bên"
+],
+"keys": "bug tang dot bien bug tăng đột biến spike bug moi bug mới module"
+},
+{
+"id": "yt-ket-qua-test-cua-toi",
+"tab": "youtrack",
+"area": "Kiểm thử (QA)",
+"title": "Kết quả test của tôi + Copy standup",
+"what": "Số ticket bạn đã test Hôm nay / 24 giờ qua / 7 ngày, tách pass và trả lại (đọc từ lịch sử state); tạo sẵn đoạn standup QC.",
+"how": [
+{
+"t": "Bấm \"… pass\" (vd. \"2 pass\") ở một cột để xem danh sách ticket đã pass",
+"at": "css:button.text-ok:enabled"
+},
+"Nhấn Esc để đóng bảng bên",
+{
+"t": "Bấm \"Copy standup\" để chép đoạn standup dán vào Telegram",
+"at": "Copy standup"
+}
+],
+"keys": "ket qua test kết quả test pass tra lai trả lại standup qc copy standup"
+},
+{
+"id": "yt-goi-y-chia-qc",
+"tab": "youtrack",
+"area": "Kiểm thử (QA)",
+"title": "Gợi ý chia QC",
+"what": "Ticket chờ test chưa có QC được đề xuất giao cho người đang giữ ít ticket test nhất, ưu tiên ticket gấp.",
+"how": [
+{
+"t": "Trong thẻ \"Gợi ý chia QC\" bấm một dòng để mở ticket và gán QC",
+"at": "css:ol li > button.items-baseline"
+},
+"Nhấn Esc để đóng bảng bên",
+{
+"t": "Bấm \"Copy\" để chép bảng phân công",
+"at": "Copy"
+}
+],
+"keys": "chia qc goi y gợi ý phan cong phân công assign qc can bang tai cân bằng tải"
+},
+{
+"id": "yt-bug-7-ngay",
+"tab": "youtrack",
+"area": "Kiểm thử (QA)",
+"title": "Bug 7 ngày qua",
+"what": "Ba con số: bug Mới, Đã fix trong 7 ngày và bug Đang mở.",
+"how": [
+"Xem thẻ \"Bug 7 ngày qua\" ở cột phải trang Kiểm thử: ba số Mới, Đã fix, Đang mở (chỉ để xem, không bấm được)"
+],
+"keys": "bug 7 ngay bug 7 ngày bug moi bug mới da fix đã fix dang mo đang mở"
+},
+{
+"id": "yt-trang-brief-po",
+"tab": "youtrack",
+"area": "Thanh bên › Brief (PO)",
+"title": "Brief (trang chủ PO)",
+"what": "Tổng quan cho PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
+"how": [
+{
+"t": "Bấm \"Brief\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Brief\"]"
+},
+{
+"t": "Bấm một số KPI để xem danh sách ticket",
+"at": "css:button[data-drill=\"list\"]"
+},
+{
+"t": "Ở thẻ \"Chờ PO chốt\", bấm \"Xem cả … ticket\"",
+"at": "Xem cả"
+}
+],
+"keys": "brief po pm cho po chot chờ po chốt tien do sprint tiến độ sprint can chu y cần chú ý wip"
+},
+{
+"id": "yt-ai-brief-po",
+"tab": "youtrack",
+"area": "Brief (PO) › AI Studio",
+"title": "AI Brief, Lên sprint, Grooming, Bản tin tuần, Release notes",
+"what": "Brief: AI đọc ticket mở của sprint, nêu việc tiếp theo từng người, chỗ nghẽn, cần chốt và những gì đã đổi từ lần brief trước. Lên sprint: gợi ý ticket kéo vào sprint tới và giao ai. Grooming: rà backlog. Bản tin tuần: 7 ngày qua theo từng người. Release notes: từ ticket đã xong.",
+"how": [
+{
+"t": "Ở thẻ \"AI Studio\" bấm tab \"Lên sprint\" (tab \"Brief\", \"Grooming\", \"Bản tin tuần\", \"Release notes\" dùng tương tự)",
+"at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+},
+{
+"t": "Bấm nút chạy; kết quả mở ở bảng bên",
+"at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+},
+{
+"t": "Khi có kết quả, bấm \"Copy\" để chép",
+"at": "Copy"
+},
+"Nhấn Esc để đóng bảng bên; thẻ lưu kết quả, bấm \"Mở phiên AI\" để hỏi tiếp"
+],
+"keys": "brief len sprint lên sprint sprint planning grooming backlog ban tin tuan bản tin tuần weekly release notes po"
+},
+{
+"id": "yt-bao-cao-release",
+"tab": "youtrack",
+"area": "Trang chủ › Báo cáo release",
+"title": "Báo cáo release",
+"what": "AI viết báo cáo từ số liệu dashboard: Theo sprint (kịp ngày release không, chưa bàn giao QC, stuck, kết quả test, trễ, quá tải, bug) hoặc Theo ngày (đã test xong, đang test, chờ test). Mỗi con số mở danh sách ticket; có thể tự tạo theo lịch trong Cài đặt.",
+"how": [
+{
+"t": "Ở thẻ \"Báo cáo release\" bấm \"Theo ngày\" để xem tình trạng test tính tới giờ",
+"at": "Theo ngày"
+},
+{
+"t": "Bấm \"Theo sprint\" để báo cáo theo ngày release",
+"at": "Theo sprint"
+},
+{
+"t": "Chỉnh \"Ngày release\" (mặc định cuối sprint); số \"ngày làm việc còn lại\" đổi theo",
+"at": "Ngày release"
+},
+{
+"t": "Bấm \"Tạo báo cáo\" (đã có báo cáo hôm nay thì là \"Tạo lại\")",
+"at": [
+"Tạo báo cáo",
+"Tạo lại"
+]
+},
+"Chờ AI viết xong (đóng bảng bằng Esc để báo cáo hiện trong thẻ); đặt lịch tự tạo ở Cài đặt › YouTrack",
+{
+"t": "Bấm \"Xem đầy đủ\" (hoặc \"Thu gọn\") để mở rộng nội dung",
+"at": [
+"Xem đầy đủ",
+"Thu gọn"
+]
+}
+],
+"keys": "bao cao release báo cáo release report ngay release ngày release theo sprint theo ngay theo ngày tu tao tự tạo lich lịch"
+},
+{
+"id": "yt-xuat-bao-cao",
+"tab": "youtrack",
+"area": "Trang chủ › Báo cáo release › Xuất",
+"title": "Xuất báo cáo MD / PDF / CSV",
+"what": "Tải báo cáo release ra Markdown, PDF (bản in) hoặc CSV (số liệu và danh sách ticket theo mục).",
+"how": [
+{
+"t": "Trong thẻ \"Báo cáo release\" đã có báo cáo, bấm \"Xuất\" (chưa có thì tạo báo cáo trước)",
+"at": "Xuất"
+},
+{
+"t": "Chọn \"Markdown (.md)\", \"PDF\" (mở bản in, chọn Lưu dạng PDF; cần cho phép popup) hoặc \"CSV\"",
+"at": "Markdown (.md)"
+}
+],
+"keys": "xuat bao cao xuất báo cáo export markdown md pdf csv tai bao cao tải báo cáo"
+},
+{
+"id": "yt-tim-ticket",
+"tab": "youtrack",
+"area": "Ticket › ô tìm",
+"title": "Tìm ticket",
+"what": "Tìm theo ID, tiêu đề, người (assignee/QC), state; không phân biệt dấu.",
+"how": [
+{
+"t": "Bấm \"Ticket\" ở menu bên",
+"at": "Ticket"
+},
+{
+"t": "Gõ từ khóa vào ô \"Tìm ticket\"",
+"at": "Tìm ticket"
+},
+"Nhấn / để nhảy vào ô tìm từ bất kỳ đâu; nhấn Esc trong ô để xóa từ khóa"
+],
+"keys": "tim ticket tìm ticket search tim kiem tìm kiếm phim tat phím tắt slash /"
+},
+{
+"id": "yt-ai-loc",
+"tab": "youtrack",
+"area": "Ticket › ô tìm › AI lọc",
+"title": "AI lọc (câu tiếng Việt thành bộ lọc)",
+"what": "Gõ một câu (vd. “bug critical của tôi sprint này”), AI đổi thành bộ lọc State / Priority / Type / Người / Sprint / từ khóa.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Gõ một câu tiếng Việt vào ô \"Tìm ticket\"",
+"at": "Tìm ticket"
+},
+{
+"t": "Bấm \"AI lọc\" (hoặc ⌘↵)",
+"at": "AI lọc"
+},
+"Thông báo \"AI đã đặt bộ lọc\" hiện ra; xem các chip lọc bên dưới. Cũng chạy được từ ⌘K"
+],
+"keys": "ai loc ai lọc ai filter loc bang ai lọc bằng ai cau tu nhien câu tự nhiên natural language"
+},
+{
+"id": "yt-chip-priority-type-state",
+"tab": "youtrack",
+"area": "Ticket › Bộ lọc",
+"title": "Lọc theo Priority / Type / State (có đếm)",
+"what": "Ba hàng chip có số đếm theo bộ lọc hiện tại; chọn nhiều giá trị mỗi hàng. Giá trị ít gặp nằm sau “+N khác”.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một chip giá trị (vd. \"Critical\", \"Bug\") để bật lọc",
+"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button[aria-pressed=\"false\"]"
+},
+{
+"t": "Bấm lại \"Tất cả\" của hàng đó để bỏ lọc",
+"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button[aria-pressed=\"false\"]"
+},
+{
+"t": "Bấm \"+N khác\" để hiện thêm giá trị ít gặp (và \"Thu gọn\" để ẩn)",
+"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button:not([aria-pressed])"
+}
+],
+"keys": "loc priority lọc priority loc type lọc type loc state lọc state chip dem đếm filter bug feature task"
+},
+{
+"id": "yt-goc-nhin-vai-tro",
+"tab": "youtrack",
+"area": "Ticket › Góc nhìn theo vai trò",
+"title": "Góc nhìn có sẵn theo vai trò",
+"what": "Một cú bấm đặt cả bộ lọc + Bảng/Board + cách gom nhóm. Dev: Board của tôi, Sprint này, Chờ QC, Bug của tôi, Quá hạn. QA/QC: Board chờ test, Chưa có QC, Bug đang mở, Bug mới 7 ngày, Regression. PO/PM: Backlog, Chờ PO chốt, Sprint theo người, Board sprint, Chưa assign.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một nút góc nhìn dưới thanh công cụ (rê chuột xem mô tả)",
+"at": [
+"Board của tôi",
+"Board chờ test",
+"Backlog"
+]
+},
+"Thông báo \"Góc nhìn …\" xác nhận; bộ lọc, Bảng/Board và gom nhóm đã đổi theo"
+],
+"keys": "goc nhin góc nhìn view preset board cua toi board của tôi sprint nay sprint này backlog regression cho po chot chờ po chốt sprint theo nguoi sprint theo người"
+},
+{
+"id": "yt-loc-nhanh-quick",
+"tab": "youtrack",
+"area": "Ticket / Dashboard › Lọc nhanh",
+"title": "Bộ lọc nhanh (Quick filters)",
+"what": "Các bộ lọc dựng sẵn: Blocked; Critical / Highest; Quá hạn; Chưa assign; Trong sprint, chưa estimate; Backlog chưa vào sprint; Chờ PO chốt; Chờ test, chưa có QC; Bug đang mở; Bug Critical / Highest; Bug mới 7 ngày; Đã build, chờ release; Bị bỏ quên (>7 ngày không cập nhật).",
+"how": [
+{
+"t": "Bấm \"Dashboard\"",
+"at": "Dashboard"
+},
+{
+"t": "Bấm một dòng trong thẻ \"Cần chú ý\" để xem danh sách ticket",
+"at": "css:button[data-drill=\"list\"]"
+},
+{
+"t": "Bấm \"Đóng\" để đóng danh sách",
+"at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+},
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một góc nhìn dùng bộ lọc nhanh (vd. \"Quá hạn\", \"Bug đang mở\", \"Backlog\")",
+"at": [
+"Quá hạn",
+"Bug đang mở",
+"Backlog"
+]
+},
+{
+"t": "Bấm chip \"Lọc …\" phía trên để gỡ bộ lọc nhanh",
+"at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+}
+],
+"keys": "loc nhanh lọc nhanh quick filter blocked qua han quá hạn chua assign chưa assign chua estimate chưa estimate backlog cho po chot chờ po chốt bug dang mo bug đang mở bi bo quen bị bỏ quên stale"
+},
+{
+"id": "yt-view-da-luu",
+"tab": "youtrack",
+"area": "Ticket › View",
+"title": "View đã lưu",
+"what": "Lưu bộ lọc hiện tại + kiểu xem (Bảng/Board) dưới một tên để mở lại nhanh; cũng hiện trong ⌘K.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Đặt bộ lọc (vd. bấm một góc nhìn hoặc chip), rồi bấm \"View\"",
+"at": "View"
+},
+{
+"t": "Gõ tên vào ô \"Tên view\"",
+"at": "Tên view"
+},
+{
+"t": "Bấm \"Lưu\"",
+"at": "Lưu"
+},
+{
+"t": "Mở \"View\" lại, bấm ✕ cạnh tên view để xóa nếu muốn",
+"at": "Xóa view"
+}
+],
+"keys": "view da luu view đã lưu saved view luu bo loc lưu bộ lọc bookmark"
+},
+{
+"id": "yt-bang-board",
+"tab": "youtrack",
+"area": "Ticket › Kiểu xem",
+"title": "Chuyển Bảng / Board",
+"what": "Xem ticket dạng bảng hoặc dạng board theo cột State.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Board\" để xem theo cột State",
+"at": "Board"
+},
+{
+"t": "Bấm \"Bảng\" để quay lại bảng",
+"at": "Bảng"
+}
+],
+"keys": "bang bảng board kanban kieu xem kiểu xem table view"
+},
+{
+"id": "yt-board-keo-tha",
+"tab": "youtrack",
+"area": "Ticket › Board",
+"title": "Kéo thả thẻ để đổi State",
+"what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack; có nút hoàn tác trong thông báo. Cột đã xong được gộp thành một nút.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Board\"",
+"at": "Board"
+},
+"Kéo một thẻ ticket sang cột State khác; thông báo \"VA-1 → State\" có nút hoàn tác",
+{
+"t": "Bấm cột dọc \"Đã xong\" để hiện các cột đã xong (bấm lại để ẩn)",
+"at": "css:button[aria-label=\"Hiện các cột đã xong\"], button[aria-label=\"Ẩn các cột đã xong\"]"
+},
+"Mỗi cột hiện tối đa 60 thẻ; lọc bớt để xem phần còn lại"
+],
+"keys": "keo tha kéo thả drag drop doi state đổi state board cot cột da xong đã xong hoan tac hoàn tác undo"
+},
+{
+"id": "yt-gom-nhom",
+"tab": "youtrack",
+"area": "Ticket › Bảng › Gom nhóm",
+"title": "Gom nhóm bảng ticket",
+"what": "Gom bảng theo Assignee, Sprint (mặc định) hoặc Module / App (tag đầu trong tiêu đề); mỗi nhóm thu/mở được.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Bảng\" (gom nhóm chỉ có ở dạng bảng)",
+"at": "Bảng"
+},
+{
+"t": "Chọn kiểu ở ô \"Gom nhóm\"",
+"at": "Gom nhóm"
+},
+{
+"t": "Bấm tiêu đề nhóm để thu gọn / mở",
+"at": "css:tbody button[aria-expanded]"
+}
+],
+"keys": "gom nhom gom nhóm group by assignee sprint module app thu gon nhom thu gọn nhóm"
+},
+{
+"id": "yt-sap-xep-cot",
+"tab": "youtrack",
+"area": "Ticket › Bảng › tiêu đề cột",
+"title": "Sắp xếp theo cột",
+"what": "Sắp xếp bảng theo ID, Type, Tiêu đề, State, Priority, Assignee, QC, Sprint, Hạn, Cập nhật.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Bảng\"",
+"at": "Bảng"
+},
+{
+"t": "Bấm tên một cột ở tiêu đề bảng để sắp tăng dần ▲",
+"at": "css:thead th button"
+},
+{
+"t": "Bấm lại cột đó để đảo chiều ▼",
+"at": "css:thead th button"
+}
+],
+"keys": "sap xep sắp xếp sort cot cột tang dan tăng dần giam dan giảm dần"
+},
+{
+"id": "yt-hien-thi-che-do-gon",
+"tab": "youtrack",
+"area": "Ticket › Hiển thị",
+"title": "Hiển thị: chế độ gọn, ticket resolved, tô nền High+",
+"what": "Tùy chọn hiển thị: “Gọn: hàng thấp, tiêu đề 1 dòng” (dense mode); “Hiện ticket đã resolved”; “Tô nền ticket High trở lên” (Critical/Highest/High có nền màu). Lưu cho lần sau.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Hiển thị\"",
+"at": "Hiển thị"
+},
+{
+"t": "Tích \"Gọn: hàng thấp, tiêu đề 1 dòng\"",
+"at": "Gọn: hàng thấp, tiêu đề 1 dòng"
+},
+{
+"t": "Tích \"Hiện ticket đã resolved\"",
+"at": "Hiện ticket đã resolved"
+},
+{
+"t": "Tích \"Tô nền ticket High trở lên\"",
+"at": "Tô nền ticket High trở lên"
+}
+],
+"keys": "che do gon chế độ gọn dense mode compact hang thap hàng thấp resolved da xong đã xong to nen tô nền highlight high critical"
+},
+{
+"id": "yt-chon-cot",
+"tab": "youtrack",
+"area": "Ticket › Hiển thị › Cột",
+"title": "Ẩn/hiện cột bảng",
+"what": "Chọn cột hiển thị (Type, State, Priority, Assignee, QC, Sprint, Hạn, Cập nhật); mỗi vai trò có bộ cột mặc định riêng.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Bảng\"",
+"at": "Bảng"
+},
+{
+"t": "Bấm \"Hiển thị\"",
+"at": "Hiển thị"
+},
+{
+"t": "Ở mục \"Cột\", tích/bỏ tích một cột (vd. đầu tiên)",
+"at": "css:div.top-full label:nth-of-type(4)"
+}
+],
+"keys": "cot cột column an cot ẩn cột hien cot hiện cột han hạn cap nhat cập nhật qc sprint"
+},
+{
+"id": "yt-xuat-csv",
+"tab": "youtrack",
+"area": "Ticket › thanh công cụ",
+"title": "Xuất CSV danh sách ticket",
+"what": "Tải toàn bộ danh sách đang lọc (không chỉ phần đang hiện) với các cột đang hiện ra file CSV.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm nút tải xuống \"Xuất CSV\" ở cuối thanh công cụ",
+"at": "Xuất CSV"
+}
+],
+"keys": "xuat csv xuất csv export excel tai xuong tải xuống download"
+},
+{
+"id": "yt-chon-nhieu-thao-tac-hang-loat",
+"tab": "youtrack",
+"area": "Ticket › Bảng › Thao tác hàng loạt",
+"title": "Chọn nhiều ticket, đổi assignee hàng loạt, hỏi AI",
+"what": "Tích nhiều ticket để đổi assignee cùng lúc (có hoàn tác) hoặc mở phiên AI về các ticket đã chọn.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Bảng\"",
+"at": "Bảng"
+},
+{
+"t": "Tích ô đầu một dòng",
+"at": "css:tbody tr[data-id] input[type=\"checkbox\"]"
+},
+{
+"t": "Bấm \"Assignee: giữ nguyên\" trên thanh \"… ticket đã chọn\"",
+"at": "Assignee: giữ nguyên"
+},
+{
+"t": "Gõ tên người vào ô \"Tìm người\"",
+"at": "Tìm người"
+},
+{
+"t": "Chọn một người",
+"at": "css:[role=\"region\"][aria-label=\"Thao tác hàng loạt\"] button[aria-current]"
+},
+{
+"t": "Bấm \"Áp dụng\"",
+"at": "Áp dụng"
+}
+],
+"keys": "chon nhieu chọn nhiều bulk hang loat hàng loạt doi assignee đổi assignee ap dung áp dụng bo chon bỏ chọn select all"
+},
+{
+"id": "yt-doi-assignee-trong-bang",
+"tab": "youtrack",
+"area": "Ticket › Bảng › cột Assignee",
+"title": "Đổi assignee ngay trong bảng",
+"what": "Đổi người làm trực tiếp ở cột Assignee; thông báo có nút hoàn tác.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm \"Bảng\"",
+"at": "Bảng"
+},
+{
+"t": "Bấm ô chọn ở cột Assignee của dòng rồi chọn người (hoặc \"Chưa assign\")",
+"at": "css:tbody tr[data-id] select[aria-label^=\"Đổi assignee\"]"
+},
+"Bấm hoàn tác trong thông báo nếu nhầm"
+],
+"keys": "doi assignee đổi assignee giao viec giao việc assign nguoi lam người làm"
+},
+{
+"id": "yt-copy-id-link",
+"tab": "youtrack",
+"area": "Ticket › Bảng › cột ID",
+"title": "Copy ID / Copy link, mở trên YouTrack",
+"what": "Rê chuột vào dòng để hiện nút Copy ID và Copy link; bấm ID để mở ticket trên YouTrack ở tab mới.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Rê chuột vào dòng, bấm \"Copy ID\"",
+"at": "Copy ID"
+},
+{
+"t": "Bấm \"Copy link\"",
+"at": "Copy link"
+},
+{
+"t": "Bấm chính ID để mở trên YouTrack ở tab mới",
+"at": "css:tbody tr[data-id] a[href]"
+}
+],
+"keys": "copy id copy link sao chep sao chép mo youtrack mở youtrack link ticket"
+},
+{
+"id": "yt-nhan-moi",
+"tab": "youtrack",
+"area": "Ticket › Bảng",
+"title": "Nhãn “mới” (cập nhật sau lần xem trước)",
+"what": "Ticket được cập nhật sau lần cuối bạn xem project này có nhãn “mới” cạnh ID (chỉ hiện khi có ticket như vậy).",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+"Nhìn nhãn \"mới\" cạnh ID của ticket cập nhật sau lần bạn xem trước; rê chuột để xem giải thích"
+],
+"keys": "moi mới new cap nhat moi cập nhật mới chua xem chưa xem unread"
+},
+{
+"id": "yt-xem-nhanh-mo-ta",
+"tab": "youtrack",
+"area": "Ticket › Bảng",
+"title": "Xem nhanh mô tả khi rê chuột",
+"what": "Rê chuột lên một dòng chừng nửa giây để hiện thẻ xem trước: tiêu đề, State, Priority, Assignee và đoạn mô tả (không có trên màn hình cảm ứng).",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Rê chuột lên một dòng ticket chừng nửa giây (đừng bấm) để hiện thẻ xem trước",
+"at": "css:tbody tr[data-id]"
+}
+],
+"keys": "xem nhanh xem trước preview hover mo ta mô tả tooltip"
+},
+{
+"id": "yt-phim-tat-bang",
+"tab": "youtrack",
+"area": "Ticket › Bảng",
+"title": "Phím tắt trang Ticket",
+"what": "Điều khiển bảng bằng bàn phím: / tìm, j/k di chuyển dòng, x chọn dòng, Enter mở ticket, Esc xóa tìm kiếm rồi bỏ chọn.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+"Nhấn / để vào ô tìm; j (xuống) / k (lên) để chuyển dòng",
+"Nhấn x để tích/bỏ tích dòng đang chọn; Enter để mở ticket",
+"Nhấn Esc: trong ô tìm thì xóa từ khóa, ngoài ra bỏ các dòng đã chọn"
+],
+"keys": "phim tat phím tắt keyboard shortcut j k x enter esc slash dieu huong ban phim điều hướng bàn phím"
+},
+{
+"id": "yt-hien-them",
+"tab": "youtrack",
+"area": "Ticket › cuối bảng",
+"title": "Hiện thêm ticket",
+"what": "Bảng hiện 600 ticket đầu; bấm để tải thêm.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Cuộn xuống cuối bảng, bấm \"Hiện thêm … ticket\" (chỉ có khi hơn 600 ticket)",
+"at": "Hiện thêm"
+}
+],
+"keys": "hien them hiện thêm load more xem them xem thêm phan trang phân trang"
+},
+{
+"id": "yt-tim-toan-cuc",
+"tab": "youtrack",
+"area": "Ticket › khi không có kết quả",
+"title": "Tìm toàn cục theo ID",
+"what": "Khi không có ticket nào khớp, tìm một ticket bất kỳ trên YouTrack theo số hoặc ID, kể cả ngoài dữ liệu đã tải.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Gõ một từ khóa không có kết quả vào ô \"Tìm ticket\"",
+"at": "Tìm ticket"
+},
+{
+"t": "Gõ số hoặc ID (vd. VA-123) vào ô \"Tìm toàn cục theo ID\"",
+"at": "Tìm toàn cục theo ID"
+},
+{
+"t": "Bấm \"Tìm toàn cục\" (hoặc Enter)",
+"at": "Tìm toàn cục"
+},
+{
+"t": "Bấm \"Xóa bộ lọc\" nếu muốn bỏ hết bộ lọc",
+"at": "Xóa bộ lọc"
+}
+],
+"keys": "tim toan cuc tìm toàn cục global search tim theo id tìm theo id khong tim thay không tìm thấy xoa bo loc xóa bộ lọc"
+},
+{
+"id": "yt-chi-tiet-ticket",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket",
+"title": "Xem chi tiết ticket",
+"what": "Bảng bên hiện tiêu đề, State, Assignee, Priority, QC, Sprint, Hạn, ngày tạo/cập nhật, Reporter, Mô tả, Liên kết, Nhắc trên Telegram và Bình luận.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+"Xem State, Assignee, Priority, QC, Sprint, Hạn, Mô tả, Liên kết, Nhắc trên Telegram, Bình luận; bấm một ticket trong \"Liên kết\" để chuyển sang đó",
+{
+"t": "Bấm ID ở đầu bảng bên để mở trên YouTrack",
+"at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
+},
+{
+"t": "Bấm ✕ \"Đóng\" (hoặc Esc)",
+"at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+}
+],
+"keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
+},
+{
+"id": "yt-chuyen-ticket-jk",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket",
+"title": "Chuyển ticket trước / sau",
+"what": "Đi qua lần lượt các ticket của danh sách vừa mở mà không phải đóng bảng bên.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm › \"Ticket sau\" (phím j)",
+"at": "Ticket sau"
+},
+{
+"t": "Bấm ‹ \"Ticket trước\" (phím k)",
+"at": "Ticket trước"
+},
+"Số \"n/N\" bên cạnh cho biết vị trí trong danh sách"
+],
+"keys": "ticket truoc ticket trước ticket sau next previous j k chuyen ticket chuyển ticket"
+},
+{
+"id": "yt-doi-state-priority-assignee",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket",
+"title": "Đổi State / Priority / Assignee",
+"what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow); thông báo có nút hoàn tác.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm State (có mũi tên ▾), chọn giá trị mới",
+"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi State\"]"
+},
+{
+"t": "Bấm Priority, chọn giá trị mới",
+"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi Priority\"]"
+},
+{
+"t": "Ở Assignee, chọn người mới hoặc \"Chưa assign\"",
+"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi assignee\"]"
+},
+"Bấm hoàn tác trong thông báo nếu nhầm"
+],
+"keys": "doi state đổi state doi priority đổi priority doi assignee đổi assignee workflow hoan tac hoàn tác undo"
+},
+{
+"id": "yt-gui-binh-luan",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket › Bình luận",
+"title": "Gửi bình luận lên YouTrack",
+"what": "Viết và gửi bình luận lên ticket ngay từ dashboard.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Cuộn xuống, gõ vào ô \"Bình luận mới\"",
+"at": "Bình luận mới"
+},
+{
+"t": "Bấm \"Gửi bình luận\"",
+"at": "Gửi bình luận"
+}
+],
+"keys": "binh luan bình luận comment gui binh luan gửi bình luận tra loi trả lời"
+},
+{
+"id": "yt-ticket-giong",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket",
+"title": "Ticket giống / liên quan + AI kiểm tra trùng",
+"what": "Liệt kê ticket có tiêu đề giống (kèm % giống); AI có thể xét cái nào trùng, cái nào chỉ liên quan, và đề xuất gộp/link/giữ riêng.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+"Cuộn tới mục \"Ticket giống / liên quan\" (chỉ có khi có ticket tiêu đề giống); bấm một dòng để mở ticket đó",
+{
+"t": "Bấm \"AI kiểm tra trùng\"",
+"at": "AI kiểm tra trùng"
+}
+],
+"keys": "ticket giong ticket giống lien quan liên quan trung trùng duplicate similar ai kiem tra trung ai kiểm tra trùng"
+},
+{
+"id": "yt-ai-agent-lien-ket",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket › AI Agent",
+"title": "Kết quả AI Agent liên quan ticket",
+"what": "Các lượt chạy AI Agent (Telegram › AI Agent) có nhắc ticket này hiện ở đây; có thể copy hoặc đưa kết quả vào ô bình luận.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Ở mục \"AI Agent\", bấm một lượt để mở rộng",
+"at": "css:aside[role=\"dialog\"] section button:has(svg.lucide-chevron-down)"
+},
+{
+"t": "Bấm \"Đăng làm bình luận\" (điền vào ô bình luận để sửa rồi gửi)",
+"at": "Đăng làm bình luận"
+},
+{
+"t": "Hoặc bấm \"Copy\"",
+"at": "Copy"
+},
+{
+"t": "Hoặc bấm \"Mở AI Agent\"",
+"at": "Mở AI Agent"
+}
+],
+"keys": "ai agent trace code ket qua phan tich kết quả phân tích dang lam binh luan đăng làm bình luận"
+},
+{
+"id": "yt-phien-ai",
+"tab": "youtrack",
+"area": "Bảng bên › Phiên AI",
+"title": "Phiên AI về ticket",
+"what": "Hỏi AI về một hoặc nhiều ticket (tối đa 40): AI đọc mô tả, bình luận và trả lời; câu trả lời chảy dần, hỏi tiếp được, ticket ID trong câu trả lời bấm được.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm ✨ \"AI cho ticket này\"",
+"at": "AI cho ticket này"
+},
+{
+"t": "Gõ yêu cầu vào ô dưới, Enter để gửi (Shift+Enter xuống dòng)",
+"at": "Yêu cầu cho AI về các ticket đã chọn"
+},
+{
+"t": "Thêm ticket: gõ ID vào ô \"Thêm ticket theo ID\"",
+"at": "Thêm ticket theo ID"
+},
+{
+"t": "Bấm +",
+"at": "Thêm ticket"
+},
+{
+"t": "Bấm \"Cuộc mới\" để bắt đầu lại (hoặc \"Hủy\" để dừng, \"Copy\" để chép)",
+"at": "Cuộc mới"
+}
+],
+"keys": "phien ai phiên ai ai session hoi ai hỏi ai chat ai hoi tiep hỏi tiếp cuoc moi cuộc mới them ticket thêm ticket"
+},
+{
+"id": "yt-nut-goi-y-ai",
+"tab": "youtrack",
+"area": "Bảng bên › Phiên AI › nút gợi ý",
+"title": "Prompt có sẵn trong phiên AI",
+"what": "Các nút việc AI dựng sẵn: Tóm tắt thread, Kiểm tra đủ AC, Chia task & estimate, Chuẩn hoá mô tả, Test case, Soạn trả lời (1 ticket); Tóm tắt & việc cần làm, Rà soát cho lead, Release notes (nhiều ticket). Mỗi vai trò có 4 nút mặc định.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm ✨ \"AI cho ticket này\"",
+"at": "AI cho ticket này"
+},
+{
+"t": "Bấm một nút gợi ý (rê chuột xem mô tả), vd. \"Tóm tắt thread\"",
+"at": [
+"Tóm tắt thread",
+"Test case",
+"Tóm tắt & việc cần làm"
+]
+},
+"Nút cần đúng 1 ticket hoặc từ 2 ticket thì thông báo sẽ nhắc"
+],
+"keys": "prompt co san prompt có sẵn tom tat thread tóm tắt thread kiem tra du ac kiểm tra đủ ac chia task estimate chuan hoa mo ta chuẩn hoá mô tả test case soan tra loi soạn trả lời ra soat cho lead rà soát cho lead release notes"
+},
+{
+"id": "yt-dua-vao-binh-luan",
+"tab": "youtrack",
+"area": "Bảng bên › Phiên AI",
+"title": "Đưa câu trả lời AI vào bình luận",
+"what": "Với phiên AI về 1 ticket, đặt câu trả lời (hoặc bản nháp, vd. Soạn trả lời) vào ô bình luận của ticket để sửa rồi gửi lên YouTrack.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm ✨ \"AI cho ticket này\"",
+"at": "AI cho ticket này"
+},
+{
+"t": "Hỏi AI (vd. bấm \"Soạn trả lời\") và đợi trả lời xong",
+"at": [
+"Soạn trả lời",
+"Tóm tắt thread",
+"Test case"
+]
+},
+{
+"t": "Bấm \"Đưa vào bình luận\"",
+"at": "Đưa vào bình luận"
+},
+{
+"t": "Sửa rồi bấm \"Gửi bình luận\"",
+"at": "Gửi bình luận"
+}
+],
+"keys": "dua vao binh luan đưa vào bình luận ai tra loi ai trả lời draft nhap nháp comment"
+},
+{
+"id": "yt-trace-code",
+"tab": "youtrack",
+"area": "Bảng bên › Phiên AI › Thư mục code",
+"title": "Trace code trong thư mục dự án",
+"what": "Chọn thư mục dự án để AI đọc code (chỉ đọc) khi trả lời. Vai trò Dev có thể giao câu hỏi tự do cho AI Agent trace code, chọn “Chỉ phân tích” hoặc “Cho phép sửa code”.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm ✨ \"AI cho ticket này\"",
+"at": "AI cho ticket này"
+},
+{
+"t": "Chọn thư mục ở ô \"Thư mục code để trace\"",
+"at": "Thư mục code để trace"
+},
+{
+"t": "Dev: chọn \"Chế độ\" (Chỉ phân tích / Cho phép sửa code)",
+"at": "Chế độ"
+},
+{
+"t": "Gõ yêu cầu vào ô",
+"at": "Yêu cầu cho AI về các ticket đã chọn"
+},
+{
+"t": "Bấm \"Giao … trace code\"",
+"at": "Giao"
+}
+],
+"keys": "trace code doc code đọc code thu muc du an thư mục dự án ai agent sua code sửa code chi phan tich chỉ phân tích codebase"
+},
+{
+"id": "yt-kho-prompt",
+"tab": "youtrack",
+"area": "Bảng bên › Phiên AI › Kho prompt",
+"title": "Kho prompt (thêm, sửa, ghim, xóa)",
+"what": "Thư viện prompt dùng chung cả team: chạy, thêm prompt mới, sửa, xóa, ghim tối đa 5 prompt làm nút cho từng vai trò và số ticket; khôi phục prompt có sẵn đã xóa. Cũng có ở Cài đặt › YouTrack.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm ✨ \"AI cho ticket này\"",
+"at": "AI cho ticket này"
+},
+{
+"t": "Bấm \"Kho prompt\"",
+"at": "Kho prompt"
+},
+{
+"t": "Bấm \"Prompt mới\", nhập \"Tên prompt\" và \"Nội dung prompt\"",
+"at": "Prompt mới"
+},
+{
+"t": "Bấm \"Lưu\"",
+"at": "Lưu"
+},
+{
+"t": "Bấm biểu tượng ghim để ghim/bỏ ghim (tối đa 5)",
+"at": "css:button[aria-label^=\"Ghim\"]"
+},
+{
+"t": "Bấm biểu tượng ▶ để chạy ngay",
+"at": "css:button[aria-label^=\"Chạy\"]"
+}
+],
+"keys": "kho prompt prompt library prompt moi prompt mới ghim pin sua prompt sửa prompt xoa prompt xóa prompt khoi phuc khôi phục ve mac dinh về mặc định"
+},
+{
+"id": "yt-instructions-ai",
+"tab": "youtrack",
+"area": "Cài đặt › YouTrack › Instructions cho AI",
+"title": "Instructions cho AI theo vai trò",
+"what": "Hướng dẫn riêng của team cho vai trò đang chọn, AI làm theo ở mọi tính năng YouTrack (trừ lọc ticket). Phiên AI hiện nhãn “Có instructions Dev/QC/PO” khi đang có.",
+"how": [
+{
+"t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+"at": "Cài đặt"
+},
+{
+"t": "Chọn mục \"YouTrack\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+},
+{
+"t": "Chọn \"AI và prompt\"",
+"at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+},
+{
+"t": "Nhập hướng dẫn vào ô \"Instructions cho AI\"",
+"at": "Instructions cho AI"
+},
+{
+"t": "Bấm \"Lưu\"",
+"at": "css:form:has(textarea[aria-label^=\"Instructions cho AI\"]) button[type=\"submit\"]"
+},
+"Trong phiên AI, rê chuột lên nhãn \"Có instructions …\" để xem nội dung"
+],
+"keys": "instructions huong dan ai hướng dẫn ai team notes chi dan chỉ dẫn"
+},
+{
+"id": "yt-dashboard",
+"tab": "youtrack",
+"area": "Thanh bên › Dashboard",
+"title": "Dashboard theo vai trò",
+"what": "Bảng số liệu và biểu đồ của project, bố cục khác nhau theo vai trò (Dev: Cần xử lý, Sprint, Nhịp làm việc, Kiểm thử, Bug; QA: Hàng đợi QC, Kết quả kiểm thử, Chất lượng, Sprint; PO: Cần quyết định, Sprint, Tốc độ & dự báo, Tải việc, Chất lượng). Mọi con số bấm được để xem danh sách ticket.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+},
+{
+"t": "Bấm một số hoặc thanh biểu đồ để mở danh sách ticket",
+"at": "css:button[data-drill=\"list\"]"
+},
+{
+"t": "Thu hẹp số liệu bằng bộ lọc \"Sprint\"",
+"at": "Sprint"
+}
+],
+"keys": "dashboard bieu do biểu đồ so lieu số liệu chart kpi thong ke thống kê"
+},
+{
+"id": "yt-dashboard-muc-nhay",
+"tab": "youtrack",
+"area": "Dashboard › thanh mục",
+"title": "Thanh mục dashboard (nhảy nhanh)",
+"what": "Hàng nút dính trên đầu dashboard, mục đang xem được tô sáng; bấm để cuộn tới mục đó.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Bấm tên mục thứ hai trên thanh mục (vd. Sprint): trang cuộn tới mục đó",
+"at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(2)"
+},
+{
+"t": "Bấm tên mục thứ tư: mục đang xem được tô sáng",
+"at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(4)"
+}
+],
+"keys": "muc dashboard mục dashboard jump nav nhay muc nhảy mục cuon cuộn section"
+},
+{
+"id": "yt-dashboard-hoi-ai",
+"tab": "youtrack",
+"area": "Dashboard › nút AI",
+"title": "Hỏi AI về số liệu dashboard",
+"what": "Nút AI trên từng thẻ mở phiên hỏi về báo cáo đó; nút lớn ở thanh mục hỏi về toàn bộ dashboard. AI nhận số liệu dashboard (và kết quả QC nếu có).",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Bấm chip \"AI\" trên thẻ \"Cần chú ý\" (nút \"Hỏi AI về toàn bộ dashboard\" ở thanh mục hỏi cả dashboard)",
+"at": [
+"Hỏi AI về Cần chú ý",
+"Hỏi AI về"
+]
+},
+{
+"t": "Gõ câu hỏi về số liệu vào ô yêu cầu",
+"at": "Yêu cầu cho AI về các ticket đã chọn"
+},
+{
+"t": "Bấm \"Gửi\" (hoặc Enter)",
+"at": "Gửi"
+},
+"Chờ AI trả lời, rồi nhấn Esc để đóng bảng",
+{
+"t": "Bấm \"Lịch sử AI\" ở thanh bên",
+"at": "Lịch sử AI"
+},
+{
+"t": "Chọn tab \"Dashboard\" để thấy phiên vừa hỏi",
+"at": "css:[aria-label=\"Loại phiên AI\"] button:nth-child(2)"
+}
+],
+"keys": "hoi ai dashboard hỏi ai dashboard ai so lieu ai số liệu phan tich phân tích bat thuong bất thường"
+},
+{
+"id": "yt-can-chu-y",
+"tab": "youtrack",
+"area": "Dashboard › Cần chú ý",
+"title": "Cần chú ý",
+"what": "Danh sách bộ lọc nhanh quan trọng theo vai trò kèm số lượng, đỏ (nghiêm trọng) hoặc vàng (cảnh báo), mục có số lên đầu.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Trong thẻ \"Cần chú ý\" bấm một dòng (vd. \"Blocked\", \"Quá hạn\") để xem danh sách ticket",
+"at": [
+"Blocked",
+"Quá hạn"
+]
+},
+"Nhấn Esc để đóng bảng bên"
+],
+"keys": "can chu y cần chú ý attention canh bao cảnh báo blocked qua han quá hạn critical"
+},
+{
+"id": "yt-ticket-keo-dai",
+"tab": "youtrack",
+"area": "Dashboard › Cảnh báo ticket kéo dài",
+"title": "Cảnh báo ticket kéo dài / Chờ test quá lâu",
+"what": "Ticket nằm ở cùng state quá lâu: vàng từ ngưỡng cảnh báo, đỏ khi quá ngưỡng xấu. Chọn được các state cần theo dõi (QA mặc định theo dõi state chờ test).",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Ở thẻ \"Cảnh báo ticket kéo dài\" (QA: \"Chờ test quá lâu\") bấm nút \"State\" để chọn state theo dõi",
+"at": "State"
+},
+{
+"t": "Bấm chip \"… đỏ / … vàng\" để xem danh sách ticket",
+"at": "css:button:has(> span.bg-error-wash)"
+},
+"Nhấn Esc để đóng bảng bên",
+{
+"t": "Bấm một dòng trong thẻ để mở ticket",
+"at": "css:ul.divide-y > li > button"
+}
+],
+"keys": "keo dai kéo dài aging dung lau đứng lâu cho test qua lau chờ test quá lâu stuck do vang đỏ vàng"
+},
+{
+"id": "yt-kpi-sprint",
+"tab": "youtrack",
+"area": "Dashboard › Sprint",
+"title": "KPI sprint, Tiến độ sprint, Burndown",
+"what": "KPI: Ticket trong sprint (so với sprint trước), Đang làm, Chờ QC, Tỉ lệ xong sprint. Tiến độ: thanh Xong/QC/Đang làm/Todo với vạch thời gian đã qua và nhãn Đúng tiến độ/Hơi chậm/Chậm tiến độ. Burndown: thực tế, lý tưởng, dự báo ngày xong.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Bấm ô KPI \"Ticket trong sprint\" (mục Sprint) để xem ticket",
+"at": "Ticket trong sprint"
+},
+"Nhấn Esc để đóng bảng bên",
+{
+"t": "Bấm thanh tiến độ của sprint để xem ticket của sprint đó",
+"at": "css:button[data-drill=\"sprint\"]"
+},
+"Xem thẻ Burndown bên cạnh: đường thực tế, lý tưởng, dự báo ngày xong"
+],
+"keys": "kpi sprint tien do sprint tiến độ sprint burndown du bao dự báo ti le xong tỉ lệ xong dung tien do đúng tiến độ cham tien do chậm tiến độ"
+},
+{
+"id": "yt-nhip-lam-viec",
+"tab": "youtrack",
+"area": "Dashboard › Nhịp làm việc (Dev) / Tốc độ & dự báo (PO)",
+"title": "Ticket xong mỗi ngày, Lead time, Velocity, Chuyển sprint nhiều lần",
+"what": "Ticket xong mỗi ngày (chọn 7/14/30 ngày), Lead time (trung vị, 85%, theo Bug/Feature/Task), Velocity theo sprint (PO), ticket bị chuyển sprint nhiều lần.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Ở thẻ \"Ticket xong mỗi ngày\" chọn khoảng \"7 ngày / 14 ngày / 30 ngày\"",
+"at": "Khoảng thời gian biểu đồ"
+},
+{
+"t": "Bấm một cột trong biểu đồ để xem ticket xong ngày đó",
+"at": "css:svg g.cursor-pointer"
+}
+],
+"keys": "ticket xong moi ngay ticket xong mỗi ngày throughput lead time velocity chuyen sprint chuyển sprint carry over khoang thoi gian khoảng thời gian"
+},
+{
+"id": "yt-tai-viec-wip",
+"tab": "youtrack",
+"area": "Dashboard › Tải việc (PO)",
+"title": "Công việc đang làm (ngưỡng WIP), Chờ QC theo người, Ticket mở theo state",
+"what": "Bảng số ticket đang làm và Blocked của từng người, cảnh báo “vượt ngưỡng” WIP; số ticket chờ QC theo người; ticket mở theo state.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Ở thẻ \"Công việc đang làm\" chọn \"ngưỡng WIP\" 2-5",
+"at": "ngưỡng WIP"
+},
+{
+"t": "Bấm một dòng người để xem ticket của họ",
+"at": "css:tbody tr[tabindex=\"0\"]"
+}
+],
+"keys": "wip nguong wip ngưỡng wip tai viec tải việc vuot nguong vượt ngưỡng cho qc theo nguoi chờ qc theo người qa load"
+},
+{
+"id": "yt-ket-qua-kiem-thu",
+"tab": "youtrack",
+"area": "Dashboard › Kết quả kiểm thử",
+"title": "Số liệu QC: Lượt test, Pass lần đầu, Bị trả lại, Reopen",
+"what": "Đọc từ lịch sử state: lượt test, % pass ngay lần đầu, lượt bị QC trả lại, reopen; kết quả test mỗi ngày; theo người test; bị trả lại theo dev; ticket trả lại nhiều lần / reopen.",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Bấm ô \"Lượt test\" (mục Kiểm thử / Kết quả kiểm thử) để xem ticket đã test",
+"at": "Lượt test"
+},
+"Nhấn Esc để đóng bảng bên",
+{
+"t": "Bấm ô \"Bị trả lại\" để xem ticket bị QC trả về dev",
+"at": "Bị trả lại"
+}
+],
+"keys": "qc pass tra lai trả lại reopen first pass luot test lượt test kiem thu kiểm thử ping pong theo nguoi test theo người test"
+},
+{
+"id": "yt-chat-luong-bug",
+"tab": "youtrack",
+"area": "Dashboard › Bug / Chất lượng",
+"title": "Số liệu bug",
+"what": "Bug trong sprint, Bug mới và đã sửa theo ngày, Bug của user, Bug đang mở theo priority và theo module, Bug so với Feature, Chưa sẵn sàng vào sprint (PO).",
+"how": [
+{
+"t": "Bấm \"Dashboard\" ở thanh bên",
+"at": "Dashboard"
+},
+{
+"t": "Bấm số \"bug trong sprint\" (thẻ \"Bug trong sprint\") để mở danh sách ticket",
+"at": "css:button.justify-items-start:not(.yt-card)"
+},
+"Cuộn xuống: bấm cột hoặc thanh ở các thẻ bug khác (theo ngày, priority, module, Bug so với Feature) để xem ticket"
+],
+"keys": "bug chat luong chất lượng bug theo module bug theo priority bug so voi feature bug so với feature chua san sang vao sprint chưa sẵn sàng vào sprint"
+},
+{
+"id": "yt-thanh-vien",
+"tab": "youtrack",
+"area": "Thanh bên › Thành viên",
+"title": "Trang Thành viên (từng người)",
+"what": "Chọn một người để xem số liệu theo kỳ (Đang mở, Đang làm, Chờ QC, Blocked, Quá hạn, Không cập nhật >7 ngày, Chuyển sprint ≥2 lần, Xong, Bug, Lead time) và danh sách Đang mở / Đã xong.",
+"how": [
+{
+"t": "Bấm \"Thành viên\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+},
+{
+"t": "Tìm bằng ô \"Tìm người\"",
+"at": "Tìm người"
+},
+{
+"t": "Bấm tên một người",
+"at": "css:li > button[aria-current]"
+},
+{
+"t": "Chọn \"Kỳ\" 7/14/30/60/90 ngày",
+"at": "css:main select"
+},
+{
+"t": "Bấm ticket trong \"Đang mở\" hoặc \"Đã xong\" để mở",
+"at": "css:main ul.divide-y > li > button"
+}
+],
+"keys": "thanh vien thành viên nguoi người member person ca nhan cá nhân ky kỳ"
+},
+{
+"id": "yt-ai-phan-tich-nguoi",
+"tab": "youtrack",
+"area": "Thành viên › AI phân tích",
+"title": "AI phân tích một người",
+"what": "AI đọc ticket và số liệu của người đó: Tóm tắt công việc, Review, Đánh giá, Chuẩn bị 1-1, hoặc yêu cầu riêng.",
+"how": [
+{
+"t": "Bấm \"Thành viên\" ở thanh bên",
+"at": "Thành viên"
+},
+{
+"t": "Bấm tên một người trong danh sách (hoặc chính bạn)",
+"at": "css:main li > button[aria-current]"
+},
+{
+"t": "Ở thẻ \"AI phân tích …\" bấm một nút, vd. \"Tóm tắt công việc\" (còn \"Review\", \"Đánh giá\", \"Chuẩn bị 1-1\")",
+"at": "Tóm tắt công việc"
+},
+"Chờ AI xong rồi nhấn Esc đóng bảng",
+{
+"t": "Hoặc sửa câu lệnh trong ô yêu cầu",
+"at": "Yêu cầu cho AI"
+},
+{
+"t": "Chọn \"Ticket gửi cho AI\": Đang mở / Đã xong trong kỳ / Cả hai",
+"at": "css:select:has(option[value=both])"
+},
+{
+"t": "Bấm \"Phân tích\"",
+"at": "Phân tích"
+}
+],
+"keys": "ai phan tich ai phân tích danh gia đánh giá review 1-1 one on one tom tat cong viec tóm tắt công việc performance"
+},
+{
+"id": "yt-so-sanh-team",
+"tab": "youtrack",
+"area": "Thành viên › So sánh cả team",
+"title": "So sánh cả team + AI chia việc",
+"what": "Bảng mọi người cạnh nhau theo kỳ (tô màu theo độ cao), sắp xếp theo cột; AI phân tích tải và gợi ý chia lại việc.",
+"how": [
+{
+"t": "Bấm \"Thành viên\" ở thanh bên",
+"at": "Thành viên"
+},
+{
+"t": "Bấm \"So sánh cả team\" ở đầu danh sách",
+"at": "So sánh cả team"
+},
+{
+"t": "Chọn kỳ 7-90 ngày ở ô \"Kỳ\"",
+"at": "Kỳ"
+},
+{
+"t": "Bấm tiêu đề cột (vd. \"Blocked\") để sắp xếp",
+"at": "Blocked"
+},
+{
+"t": "Bấm \"AI phân tích tải & chia việc\"; AI chạy ở bảng bên",
+"at": "AI phân tích tải"
+},
+{
+"t": "Nhấn Esc đóng bảng, rồi bấm một dòng để xem chi tiết người đó",
+"at": "css:tbody tr[tabindex=\"0\"]"
+}
+],
+"keys": "so sanh ca team so sánh cả team team compare tai team tải team chia viec chia việc rebalance workload"
+},
+{
+"id": "yt-link-ticket-telegram",
+"tab": "youtrack",
+"area": "URL › ?ticket=",
+"title": "Mở ticket từ link (chip ticket bên Telegram)",
+"what": "Link có ?ticket=VA-1 (vd. bấm chip ticket trong Telegram) mở thẳng ticket đó ở bảng bên; bộ lọc, trang, project cũng nằm trên URL để chia sẻ.",
+"how": [
+{
+"t": "Bấm \"Ticket\" trên thanh bên: trang và bộ lọc hiện lên URL",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+},
+"Sao chép URL trang hiện tại để chia sẻ đúng bộ lọc và trang",
+"Bấm chip ticket trong Telegram hoặc mở link dạng /youtrack/?ticket=VA-123 để vào thẳng ticket"
+],
+"keys": "link ticket url chia se chia sẻ share deep link telegram chip ticket"
+},
+{
+"id": "yt-du-lieu-mock",
+"tab": "youtrack",
+"area": "Đầu trang",
+"title": "Dữ liệu MOCK khi chưa có token",
+"what": "Chưa dán token YouTrack thì trang hiện dữ liệu mẫu, các thao tác ghi (tạo ticket, đổi state, bình luận) và AI bị tắt.",
+"how": [
+"Thấy dòng \"Đang dùng dữ liệu MOCK…\" ở đầu trang thì chưa có token",
+{
+"t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+"at": "Cài đặt"
+},
+{
+"t": "Chọn mục \"YouTrack\"",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+},
+{
+"t": "Nhập \"URL YouTrack\"",
+"at": "URL YouTrack"
+},
+{
+"t": "Dán \"Token YouTrack\" (Hồ sơ → Account Security → New token)",
+"at": "Token YouTrack"
+},
+{
+"t": "Bấm \"Lưu\"",
+"at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+}
+],
+"keys": "mock du lieu mau dữ liệu mẫu token youtrack ket noi kết nối cai dat cài đặt"
+}
+]

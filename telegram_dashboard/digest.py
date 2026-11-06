@@ -1,25 +1,27 @@
 """Digest: structured AI summary of a group conversation, read live from Telegram.
 
 Separate from tag drafts: it needs a chat-wide consent (digest_consents) and never touches
-per-message grants or handled state. Messages are never stored; only the latest result and
+handled state. Messages are never stored; only the latest result and
 how far digests have read (digests), both dropped with the consent.
 """
 
-import json
+import asyncio
+import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from .ai import AiService, data_json
+from .ai import AiService, about_user, data_json, json_object
 from .errors import ApiError
 from .models import DigestRequest, DigestResult, StoredMessage
-from .storage import Db, Store
+from .storage import Db, Store, _dt
 
 MAX_MESSAGES = 400
 MAX_CHARS = 80_000
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 STATUSES = ("decided", "open", "dropped")
 TICKET = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
+log = logging.getLogger(__name__)
 VN = ZoneInfo("Asia/Ho_Chi_Minh")  # what the UI shows; the server's own zone may be UTC
 
 TASK = """Analyze the group conversation in <messages>: a work chat where several subjects are \
@@ -33,10 +35,20 @@ Return ONLY one JSON object (no prose, no code fence) with these keys, each a li
 must confirm; who = who must answer
 - "actions": [{"text", "who", "due", "message_ids"}] - who = owner, due = deadline if stated
 Rules: group scattered messages into topics by subject, using reply_to, timing and speakers. \
-Every item cites the ids of the messages it is based on, and every item and topic also has \
-"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent facts: leave a field empty \
-or drop the item when unsure; empty lists are fine. Write every text in Vietnamese, short and \
-concrete."""
+Every item cites the ids of ALL messages it is based on (the question, the discussion and \
+the message that settled it), and also has "why": 1-2 sentences of context a reader who missed \
+the chat needs - the problem behind it and how the conclusion was reached (who proposed, who \
+agreed, quoting the deciding message when short). "text" must make sense on its own: name the \
+subject (feature, screen, module, API), not only the verdict. Every item and topic also has \
+"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent \
+facts: leave a field empty or drop the item when unsure; empty lists are fine. Write every text \
+in Vietnamese, short and concrete."""
+
+ASK = """<briefing> holds the latest AI digests of the user's work groups (JSON per group: \
+decisions, changes, impacts, confirmations = open questions, actions = to-dos, topics). Answer \
+the user's question from them only; say so when they do not cover it, never invent. Write in \
+Vietnamese markdown, short and scannable: bullets, the group name in bold before each point, \
+the most urgent first (what waits on the user, deadlines, blockers)."""
 
 
 def aware(d: datetime | None) -> datetime | None:
@@ -61,14 +73,8 @@ def _field(v) -> str:
 def parse_result(text: str, ids: set[str]) -> dict | None:
     """The model's JSON object, cleaned: unknown ids dropped, fields coerced to strings.
     None (show it raw) when no JSON object can be read or it uses none of our keys."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end < start:
-        return None
-    try:
-        data = json.loads(text[start : end + 1])
-    except ValueError:
-        return None
-    if not isinstance(data, dict) or (data and not set(data) & set(KEYS)):
+    data = json_object(text)
+    if data is None or (data and not set(data) & set(KEYS)):
         return None
     out: dict = {}
     for key in KEYS:
@@ -152,8 +158,9 @@ class DigestService:
         prompt = TASK
         if teams := [t.strip() for t in req.teams if t.strip()]:
             prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
+        prompt += about_user(req.intro)
         prompt += f"\n<messages>\n{data_json(context)}\n</messages>"
-        text = await self.ai.ask(prompt, feature="digest")
+        text = await self.ai.ask(prompt, feature="digest", brief=True)
         if not await self._consented(req.chat_id):
             raise ApiError(
                 409, "ai_permission_changed",
@@ -174,3 +181,49 @@ class DigestService:
             result.model_dump_json(),
         )  # fmt: skip
         return result
+
+    async def ask(self, question: str, intro: str = "", on_text=None) -> str:
+        """A question about every consented group's saved digest (the AI's own earlier output, no
+        new messages are read)."""
+        if not self.ai.configured:
+            raise ApiError(503, "ai_not_configured")
+        rows = await self.db.read(self.store.briefing_rows)
+        data = []
+        for r in rows:
+            if not (r["consent"] and r["digest"]):
+                continue
+            res = DigestResult.model_validate_json(r["digest"]["result"])
+            keep = res.model_dump(include=set(KEYS), exclude_defaults=True)
+            at = _dt(r["digest"]["created_at"]).astimezone(VN).strftime("%d/%m %H:%M")
+            data.append({"group": r["title"], "summarized_at": at, **keep})
+        if not data:
+            raise ApiError(422, "briefing_empty")
+        prompt = ASK + about_user(intro)
+        prompt += f"\n<briefing>\n{data_json(data)}\n</briefing>\n\nCâu hỏi: {question}"
+        return await self.ai.ask(prompt, on_text=on_text, feature="briefing", brief=True)
+
+    async def answered(self) -> dict[str, list[str]]:
+        """Per consented group: the ids its latest digest cites under "Cần confirm" / "Việc cần làm"
+        that I have since replied to on Telegram (a reply_to from me, sent here or in Telegram)."""
+        if self.bridge.state != "connected":
+            return {}
+        live = asyncio.Semaphore(4)
+        now = datetime.now(UTC)
+
+        async def one(r: dict) -> tuple[str, list[str]]:
+            res = DigestResult.model_validate_json(r["digest"]["result"])
+            cited = {i for k in ("confirmations", "actions") for it in getattr(res, k) for i in it.message_ids}
+            if not cited:
+                return r["chat_id"], []
+            since = aware(res.since) or _dt(r["digest"]["last_date"]) - timedelta(days=7)
+            try:
+                async with live:
+                    msgs = await self.bridge.fetch_range(r["chat_id"], since, now, MAX_MESSAGES)
+            except Exception as e:  # one unreachable group must not hide the others
+                log.warning("answered: %s unread: %r", r["chat_id"], e)
+                return r["chat_id"], []
+            mine = {str(m.reply_to_id) for m in msgs if m.outgoing and m.reply_to_id}
+            return r["chat_id"], sorted(mine & cited)
+
+        rows = [r for r in await self.db.read(self.store.briefing_rows) if r["consent"] and r["digest"]]
+        return dict(await asyncio.gather(*(one(r) for r in rows)))

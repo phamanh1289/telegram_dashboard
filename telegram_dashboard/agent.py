@@ -7,26 +7,19 @@ so a task runs with a fixed permission mode: `plan` (read-only) or `acceptEdits`
 """
 
 import asyncio
-import contextlib
 import json
 import logging
-import shlex
 import time
 from pathlib import Path
 
 from . import providers
-from .claude import flags_for, note_run
-from .config import child_env, on_path
+from .claude import note_run
+from .config import child_env, kill_tree, on_path
 from .errors import ApiError
+from .links import delete_links, links_dir
 
 log = logging.getLogger("telegram_dashboard.agent")
 
-PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
-# Enforced here, not left to ~/.claude settings: no shell or web, no MCP servers, and no edits to
-# files that run code later (hooks, git hooks, CI). An Edit(path) rule also covers Write.
-DENY = ("Bash,WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
-        # files that run code later (on folder open, commit, cd) or load tools into the next session
-        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json)")
 STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file read
 # After a result the CLI can linger (background agents, hooks): quiet this long = the turn is over.
 AFTER_RESULT_IDLE = 20.0
@@ -54,36 +47,7 @@ def read_task_prompt(settings, task_id: str) -> str:
 def delete_task_files(settings, task_id: str) -> None:
     for suffix in (".md", ".result.md", ".log.jsonl"):
         (tasks_dir(settings) / f"{task_id}{suffix}").unlink(missing_ok=True)
-
-
-def _short(inp: dict) -> str:
-    for key in ("command", "file_path", "pattern", "path", "url", "description", "prompt"):
-        if isinstance(inp.get(key), str):
-            return inp[key][:160]
-    return json.dumps(inp, ensure_ascii=False)[:120]
-
-
-def _items(ev: dict) -> list[dict]:
-    """One stream-json event -> display items (text / tool call / tool output / final result)."""
-    kind = ev.get("type")
-    blocks = (ev.get("message") or {}).get("content")
-    out: list[dict] = []
-    if kind == "assistant" and isinstance(blocks, list):
-        for b in blocks:
-            if b.get("type") == "text" and b.get("text", "").strip():
-                out.append({"kind": "assistant", "text": b["text"]})
-            elif b.get("type") == "tool_use":
-                out.append({"kind": "tool", "text": f"{b.get('name', '?')}  {_short(b.get('input') or {})}"})
-    elif kind == "user" and isinstance(blocks, list):
-        for b in blocks:
-            if b.get("type") != "tool_result":
-                continue
-            c = b.get("content")
-            text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
-            out.append({"kind": "tool_result", "text": text.strip()[:400], "error": bool(b.get("is_error"))})
-    elif kind == "result":
-        out.append({"kind": "result", "text": ev.get("result") or "", "error": bool(ev.get("is_error"))})
-    return out
+    delete_links(settings, task_id)
 
 
 class AgentRunner:
@@ -91,11 +55,10 @@ class AgentRunner:
         self.settings = settings
         self.procs: dict[str, asyncio.subprocess.Process] = {}
         self.pumps: dict[str, asyncio.Task] = {}
-        self._starting: set[str] = set()  # reserved before the first await: no double turn
-
-    @property
-    def executable(self) -> list[str]:
-        return shlex.split(self.settings.ai_task_command)
+        # Reserved before the first await (no double turn), with its process once spawned.
+        self._starting: dict[str, asyncio.subprocess.Process | None] = {}
+        self._cancel: set[str] = set()  # stopped while starting: never registered
+        self._why: dict[str, str] = {}  # stopped on purpose: what the log says instead of the exit code
 
     @property
     def available(self) -> bool:
@@ -122,52 +85,65 @@ class AgentRunner:
         return items, len(lines)
 
     def _append(self, task_id: str, item: dict) -> None:
+        """`at` (epoch seconds) lets the page show how long each step and turn took."""
         with self.log_path(task_id).open("a") as f:
-            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            f.write(json.dumps(item | {"at": round(time.time(), 1)}, ensure_ascii=False) + "\n")
 
-    async def start(self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool) -> str:
+    async def start(
+        self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool,
+        ai: tuple[str | None, str | None] = (None, None),
+    ) -> str:  # fmt: skip
         """Run one turn. Returns once the process has the prompt; output streams into the log.
         A new session (not `resume`) replaces the old log and result, once it is running.
-        Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out)."""
+        `ai`: the session's own model/effort (None: the task picks in AI settings).
+        Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out).
+        Stopped while starting: the process is killed and 409 task_cancelled."""
         if self.running(task_id):
             raise ApiError(409, "task_busy")
-        self._starting.add(task_id)
+        self._starting[task_id] = proc = None
         provider, sid = providers.split_session(session_id)
         try:
             tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
-            if provider == "claude":
-                flag = ["--resume", sid] if resume else ["--session-id", sid]
-                cmd = [*self.executable, "-p", *flags_for(*choice[:2]),
-                       "--output-format", "stream-json", "--verbose",
-                       "--permission-mode", PERMISSION[mode], "--strict-mcp-config",
-                       "--disallowedTools", DENY, *flag]  # fmt: skip
-            else:
-                cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2])
-            try:
+            if ai[0] is not None:  # picked for this session: used as is, no step-down
+                choice = (ai[0], ai[1] or "", False)
+            links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
+            read_dir = str(links) if links.is_dir() else None
+            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir)
+            try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                    limit=STREAM_LIMIT, env=child_env(),
+                    limit=STREAM_LIMIT, env=child_env(), start_new_session=True,
                 )  # fmt: skip
             except OSError as e:
                 log.warning("agent for task %s not started: %s", task_id, e)
                 raise ApiError(502, "task_launch_failed", detail=type(e).__name__) from None
+            self._starting[task_id] = proc
             try:
                 proc.stdin.write(providers.stdin(provider, text))
                 await proc.stdin.drain()
                 proc.stdin.close()
             except OSError:  # the CLI quit at once (bad flag, unknown session): stderr says why
-                if proc.returncode is None:
-                    proc.kill()
+                kill_tree(proc)
                 err = (await proc.communicate())[1].decode(errors="replace")[-300:]
                 log.warning("agent for task %s exited: %s", task_id, err)
                 raise ApiError(502, "task_launch_failed") from None
             if provider in providers.OTHERS and not resume:  # its first event names the new session
                 session_id = await self._new_thread(task_id, proc, provider)
+            if task_id in self._cancel:
+                raise ApiError(409, "task_cancelled")
             self.procs[task_id] = proc
+        except BaseException as e:
+            if proc is not None and proc.returncode is None:
+                kill_tree(proc)
+                await proc.wait()
+            if isinstance(e, ApiError) and task_id in self._cancel:
+                raise ApiError(409, "task_cancelled") from None
+            raise
         finally:
-            self._starting.discard(task_id)
+            self._starting.pop(task_id, None)
+            self._cancel.discard(task_id)
         # The pump owns the process from here; it first runs after these sync lines.
         self.pumps[task_id] = asyncio.create_task(self._pump(task_id, proc, choice, provider))
         if not resume:
@@ -179,12 +155,10 @@ class AgentRunner:
     @staticmethod
     async def _new_thread(task_id: str, proc, provider: str) -> str:
         async def first() -> str:
-            async for raw in proc.stdout:
-                with contextlib.suppress(ValueError):
-                    ev = json.loads(raw)
-                    for i in providers.items(provider, ev if isinstance(ev, dict) else {}, {}):
-                        if i["kind"] == "session" and i["id"]:
-                            return i["id"]
+            async for ev in providers.events(proc.stdout):
+                for i in providers.items(provider, ev, {}):
+                    if i["kind"] == "session" and i["id"]:
+                        return i["id"]
             return ""
 
         try:
@@ -192,61 +166,56 @@ class AgentRunner:
         except TimeoutError:
             thread = ""
         if not thread:
-            if proc.returncode is None:
-                proc.kill()
+            kill_tree(proc)
             err = (await proc.communicate())[1].decode(errors="replace")[-300:]
             log.warning("%s for task %s gave no session: %s", provider, task_id, err)
             raise ApiError(502, "task_launch_failed")
         return f"{provider}:{thread}"
 
-    async def _pump(self, task_id: str, proc: asyncio.subprocess.Process, choice=("", "", False), provider="claude") -> None:
+    def _items(self, task_id: str, provider: str, ev: dict, st: dict) -> list[dict]:
+        """Display items of one event; a CLI update can add event shapes: one we can't read is
+        skipped, never the end of the run."""
+        try:
+            return [i for i in providers.items(provider, ev, st) if i["kind"] not in ("session", "reset", "delta")]
+        except Exception:
+            log.warning("task %s: skipped unreadable %r event", task_id, ev.get("type"), exc_info=True)
+            return []
+
+    async def _pump(self, task_id: str, proc: asyncio.subprocess.Process, choice=("", "", False),
+                    provider="claude") -> None:  # fmt: skip
         got_result, t0, st = False, time.monotonic(), {}
         err = asyncio.create_task(proc.stderr.read())
         try:
-            while True:
-                try:  # once a result is in, a CLI that stays alive but silent is done, not "running"
-                    raw = await asyncio.wait_for(proc.stdout.readline(), AFTER_RESULT_IDLE if got_result else None)
-                except TimeoutError:
-                    log.info("task %s: no output %ss after its result, ending the run", task_id, AFTER_RESULT_IDLE)
-                    proc.kill()
-                    break
-                if not raw:
-                    break
-                try:
-                    ev = json.loads(raw)
-                except ValueError:
-                    continue
-                if not isinstance(ev, dict):
-                    continue
-                if provider == "claude":
-                    found = _items(ev)
-                    if ev.get("type") == "result":
-                        note_run(self.settings, "agent", choice, ev, time.monotonic() - t0, None)
-                else:
-                    found = [i for i in providers.items(provider, ev, st) if i["kind"] not in ("session", "reset", "delta")]
-                    for i in found:
-                        if i["kind"] == "result":
-                            run = (st.get("model") or provider, *choice[1:])
-                            note_run(self.settings, "agent", run, i.pop("final"), time.monotonic() - t0, None)
-                for item in found:
-                    self._append(task_id, item)
-                    if item["kind"] == "result":
-                        got_result = True
-                        if not item["error"]:  # a failed turn is not a result
-                            task_result_path(self.settings, task_id).write_text(item["text"])
+            # once a result is in, a CLI that stays alive but silent is done, not "running"
+            idle = lambda: AFTER_RESULT_IDLE if got_result else None  # noqa: B023, E731 (reads it live)
+            try:
+                async for ev in providers.events(proc.stdout, idle):
+                    for item in self._items(task_id, provider, ev, st):
+                        # work after a result means the turn goes on: only a result that stays last ends it
+                        got_result = item["kind"] == "result"
+                        if got_result:
+                            run = (providers.run_model(provider, st.get("model"), choice[0]), *choice[1:])
+                            note_run(self.settings, "agent", run, item.pop("final"), time.monotonic() - t0, None)
+                            if not item["error"]:  # a failed turn is not a result
+                                task_result_path(self.settings, task_id).write_text(item["text"])
+                        self._append(task_id, item)
+            except TimeoutError:
+                log.info("task %s: no output %ss after its result, ending the run", task_id, AFTER_RESULT_IDLE)
+                kill_tree(proc)
             code = await proc.wait()
             if not got_result:
                 note_run(self.settings, "agent", choice, None, time.monotonic() - t0, f"exit_{code}")
                 tail = (await err).decode(errors="replace").strip()[-400:]
-                self._append(task_id, {"kind": "result", "error": True,
-                                       "text": tail or f"Tiến trình dừng (mã {code})."})  # fmt: skip
+                text = self._why.get(task_id) or tail or f"Tiến trình dừng (mã {code})."
+                self._append(task_id, {"kind": "result", "error": True, "text": text})
         except Exception as e:
-            log.warning("agent output of task %s failed: %r", task_id, e)
+            log.warning("agent output of task %s failed: %r", task_id, e, exc_info=True)
             self._append(task_id, {"kind": "result", "error": True,
                                    "text": f"Lỗi đọc output: {e!r}"})  # fmt: skip
         finally:
-            if proc.returncode is None:  # nobody reads its output any more: never leave it running
-                proc.kill()
+            kill_tree(proc)  # nobody reads its output any more: it, or what it left behind, stops now
+            self._why.pop(task_id, None)
+            if proc.returncode is None:
                 await proc.wait()
             err.cancel()
             if self.procs.get(task_id) is proc:
@@ -254,20 +223,27 @@ class AgentRunner:
             if self.pumps.get(task_id) is asyncio.current_task():
                 del self.pumps[task_id]
 
-    async def stop(self, task_id: str) -> None:
-        """Stop the run and wait until its pump is done, so nothing writes to the log after."""
+    async def stop(self, task_id: str, why: str = "Đã dừng.") -> None:
+        """Stop the run (and what it started) and wait until its pump is done, so nothing writes to
+        the log after. A turn still starting is cancelled: start() kills it and never registers it."""
+        if task_id in self._starting:
+            self._cancel.add(task_id)
+            if (starting := self._starting[task_id]) is not None:
+                kill_tree(starting)
         proc = self.procs.get(task_id)
         if proc and proc.returncode is None:
-            proc.terminate()
+            self._why[task_id] = why
+            kill_tree(proc, term=True)
             try:
                 await asyncio.wait_for(proc.wait(), 5)
             except TimeoutError:
-                proc.kill()
+                kill_tree(proc)
         if pump := self.pumps.get(task_id):
             await asyncio.gather(pump, return_exceptions=True)
 
     async def stop_all(self) -> None:
-        await asyncio.gather(*(self.stop(t) for t in list(self.procs)))
+        why = "Server khởi động lại nên lượt này dừng giữa chừng. Gửi tin (vd \"tiếp tục\") để chạy tiếp."
+        await asyncio.gather(*(self.stop(t, why) for t in {*self.procs, *self._starting}))
 
-    def new_session(self) -> str:
-        return providers.new_session(self.settings)
+    def new_session(self, provider: str | None = None) -> str:
+        return providers.new_session(self.settings, provider)

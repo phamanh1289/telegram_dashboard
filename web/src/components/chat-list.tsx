@@ -1,27 +1,19 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCw, Trash2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { RotateCw } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { NavPill } from "@/components/shell";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Chat, type ChatsResponse } from "@/lib/api";
+import { api, type ChatsResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** 24px initial on a wash of one of the six categorical hues, picked from the name (fixed L/C via tokens). */
 /** One of the six categorical hues (1-6), fixed per name: the avatar wash and the sender's name share it. */
 export const hueOf = (name: string) => ([...name].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 360, 0) % 6) + 1;
 
+/** 24px initial on a wash of the name's categorical hue (fixed L/C via tokens). */
 export function Avatar({ name, className }: { name: string; className?: string }) {
   return (
     <span
@@ -35,7 +27,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
 }
 
 /** While collapsed to a rail, text beyond the avatars waits for the rail to open (hover or focus). */
-const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
+export const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
 
 /** Count on the avatar while the list is a narrow rail. */
 function RailBadge({ n }: { n: number }) {
@@ -61,41 +53,34 @@ export function ChatList({
   onSelect,
   range,
   collapsed,
+  bare,
 }: {
   range: string;
+  /** No "Nhóm có tag" heading: the caller titles the list (the sidebar's tabs). */
+  bare?: boolean;
   collapsed: boolean;
   selected: string | null;
   onSelect: (id: string | null) => void;
 }) {
-  const qc = useQueryClient();
-  const [purging, setPurging] = useState<Chat | null>(null);
   const chats = useChats(range);
-  const purge = useMutation({
-    mutationFn: (id: string) =>
-      api<void>(`/chats/${encodeURIComponent(id)}/data`, { method: "DELETE" }),
-    onSuccess: (_, id) => {
-      qc.removeQueries({ queryKey: ["messages", id] });
-      if (selected === id) onSelect(null);
-      setPurging(null);
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["chats"] }),
-  });
   const items = chats.data?.items ?? [];
   const pendingTotal = items.reduce((n, c) => n + c.pending_count, 0);
+  // The tab title always counts every open tag, whatever the day range (same query when no range is set).
+  const allTotal = (useChats("").data?.items ?? []).reduce((n, c) => n + c.pending_count, 0);
   useEffect(() => {
-    document.title = pendingTotal ? `(${pendingTotal}) Telegram Dashboard` : "Telegram Dashboard";
-  }, [pendingTotal]);
+    document.title = allTotal ? `(${allTotal}) Telegram Dashboard` : "Telegram Dashboard";
+  }, [allTotal]);
 
   return (
     <nav aria-label="Nhóm có tag" className="flex h-full min-h-0 flex-col">
-      <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && railHide)}>
+      {!bare && <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && railHide)}>
         Nhóm có tag
         {pendingTotal > 0 && (
           <span className="ml-auto font-normal text-ink-3">
             <span className="font-mono text-ink-2 tabular-nums">{pendingTotal}</span> chưa xử lý
           </span>
         )}
-      </h2>
+      </h2>}
       <motion.div layoutScroll className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {chats.isPending && (
           <ul aria-label="Đang tải nhóm" className="grid gap-1 px-3 pt-1">
@@ -126,7 +111,7 @@ export function ChatList({
                 onClick={() => onSelect(c.chat_id)}
                 aria-current={selected === c.chat_id}
                 className={cn(
-                  "relative flex h-10 w-full items-center gap-3 rounded-md px-3 pr-10 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
+                  "relative flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
                   selected === c.chat_id && "font-medium text-hl-2 hover:bg-transparent",
                 )}
               >
@@ -137,38 +122,15 @@ export function ChatList({
                 </span>
                 <span className={cn("relative block min-w-0 flex-1 truncate", c.pending_count > 0 && "font-medium text-ink", collapsed && railHide)}>{c.title}</span>
                 {c.pending_count > 0 && (
-                  <span title={`${c.pending_count} tin chưa xử lý`}
-                    className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums group-hover:bg-cotton", collapsed && railHide)}>
-                    {c.pending_count}
+                  <span className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums group-hover:bg-cotton", collapsed && railHide)}>
+                    {c.pending_count}<span className="sr-only"> tin chưa xử lý</span>
                   </span>
                 )}
               </button>
-              <Button size="icon-xs" variant="ghost" aria-label="Xóa dữ liệu" title="Xóa dữ liệu"
-                className="absolute right-1 top-1/2 -translate-y-1/2 text-ink-3 opacity-0 transition-opacity hover:bg-error-wash hover:text-error focus-visible:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100 active:-translate-y-1/2"
-                onClick={() => setPurging(c)}>
-                <Trash2 />
-              </Button>
             </li>
           ))}
         </ul>
       </motion.div>
-      <Dialog open={purging !== null} onOpenChange={(o) => !o && setPurging(null)}>
-        <DialogContent>
-          <DialogTitle>Xóa dữ liệu nhóm?</DialogTitle>
-          <DialogDescription>
-            Xóa tin đã lưu của “{purging?.title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.
-            Tin đang gửi có thể đã tới Telegram và không thu hồi được.
-          </DialogDescription>
-          {purge.isError && <p role="alert" className="text-sm text-error">Không xóa được dữ liệu nhóm. Thử lại.</p>}
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
-            <Button variant="destructive" className="bg-error-wash hover:bg-error-wash" aria-busy={purge.isPending} disabled={purge.isPending}
-              onClick={() => purging && purge.mutate(purging.chat_id)}>
-              Xóa dữ liệu
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </nav>
   );
 }

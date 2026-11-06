@@ -1,6 +1,6 @@
 # DESIGN.md — Citics work dashboards (locked system)
 
-Two modules, one product: **Telegram Inbox** (`/`, Next + Tailwind 4 + shadcn) and **YouTrack** (`/yt/`, vanilla ES modules). Both read the same tokens: [`web/public/design/tokens.css`](web/public/design/tokens.css) and [`web/public/design/base.css`](web/public/design/base.css). Change a value there, never a literal in a component.
+Two modules, one product, one Next app (Tailwind 4 + shadcn / Base UI): **Telegram Inbox** (`/`) and **YouTrack** (`/youtrack/`, `web/src/components/yt/`), plus **Cài đặt** (`/settings/`). All read the same tokens: [`web/src/app/tokens.css`](web/src/app/tokens.css) and [`web/src/app/base.css`](web/src/app/base.css) (imported by `globals.css`; each member's look is applied before first paint by the boot script in `web/src/app/layout.tsx`). Change a value there, never a literal in a component.
 
 Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a near-neutral warm graphite (dark: low chroma so it never reads as muddy brown; ground < sidebar < card in clear steps, cards lit by a 1px top highlight); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** (a deeper, redder copper in dark mode, where lifted terracotta read too close to the amber) for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
@@ -60,9 +60,10 @@ In the Next app these map onto shadcn names in `globals.css` (`--background`, `-
 
 ## Shell
 
-- Both modules share one **module switch**: the left rail top shows the two modules (Telegram Inbox, YouTrack) as a segmented choice with the current one pressed; on narrow screens it becomes the first item of the menu. Switching uses a cross-document view transition.
-- Header: page title left, the module's controls right, 56px, paper ground, one hairline under.
-- Sidebar ≤ 248px, collapses to a 64px rail (icons + tooltips) by `transform`/opacity, never by animating width; under 60rem it becomes an off-canvas sheet.
+- **Top bar** (`TopBar`, `components/shell.tsx`), shared by Telegram, YouTrack and Cài đặt: 44px, paper-2, one hairline under. Left: the **module switch** (Telegram, YouTrack) as a segmented pill with the current module pressed; the pill morphs between modules with a React `ViewTransition`; under 640px only the icons show (labels stay for screen readers). A "needs you" count on the YouTrack switch is signal. Right: AI quota, guide (F1), theme toggle, Cài đặt (dot = update available).
+- **Page header** under it: the sidebar toggle, page title left, the page's controls right (search and day range only on tag lists), 56px min, one hairline under. A connection problem lasting a few seconds adds a thin warn strip under it with a retry.
+- **Sidebar** 15.5rem (Telegram) / 15rem (YouTrack): views, then groups or pages, footer. Collapses to a 64px rail (icons + Hint tooltips; it opens over the page on hover / focus). Telegram clips the rail with `clip-path` and swaps the grid column once; YouTrack swaps the column once and slides the page with a `transform` (WAAPI). Neither animates width frame by frame. Under 48rem (768px) it becomes an off-canvas sheet with a scrim.
+- **Toast** (`Toaster`, `components/shell.tsx`): one button max; an undo next to an action stays on the `z` key.
 - Theme toggle: one key `localStorage.theme` = `light` | `dark` shared by both modules (default: OS preference); the root carries both `class="dark"` and `data-theme`.
 
 ## Accessibility floor

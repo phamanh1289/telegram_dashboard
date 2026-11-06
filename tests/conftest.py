@@ -40,6 +40,7 @@ class FakeTransport:
     history: dict[str, list[StoredMessage]] = field(default_factory=dict)
     send_calls: list[dict] = field(default_factory=list)
     reactions: list[tuple] = field(default_factory=list)
+    saved: list[str] = field(default_factory=list)
     send_impl: object = None
     connect_impl: object = None
     bridge: object = None
@@ -69,6 +70,10 @@ class FakeTransport:
         newer = [m for m in ms if m.message_id > message_id][:after]
         return older + [m for m in ms if m.message_id == message_id] + newer
 
+    async def fetch_older(self, chat_id, before, limit):
+        ms = sorted(self.history.get(chat_id, []), key=lambda m: m.message_id)
+        return [m for m in ms if before is None or m.message_id < before][-limit:]
+
     async def download_photo(self, chat_id, message_id, dest):
         return False
 
@@ -96,6 +101,9 @@ class FakeTransport:
     async def send_reaction(self, chat_id, message_id, emoji):
         self.reactions.append((chat_id, message_id, emoji))
 
+    async def send_saved(self, text):
+        self.saved.append(text)
+
 
 class Env:
     def __init__(self, tmp_path):
@@ -122,6 +130,11 @@ def _no_keychain(monkeypatch):
         return None
 
     monkeypatch.setattr(mod, "_oauth_token", no_token)
+
+    async def no_creds():
+        return {}
+
+    monkeypatch.setattr(mod, "_oauth_creds", no_creds)
 
 
 @pytest.fixture
@@ -152,7 +165,8 @@ class FakeAgent:
         self.projects: list[str | None] = []  # the folder each run could read
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
-    async def __call__(self, prompt, project=None, read_dir=None, system=None, heavy=False, on_text=None, feature=None):
+    async def __call__(self, prompt, project=None, read_dir=None, system=None, heavy=False, on_text=None, feature=None,
+                       brief=False, yt=False):
         self.calls.append(prompt)
         self.projects.append(project)
         if self.on_call:

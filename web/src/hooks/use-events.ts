@@ -2,7 +2,7 @@
 
 import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type Status, type Task } from "@/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type Status, type Task } from "@/lib/api";
 import { msgKey } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
@@ -16,24 +16,6 @@ export function onChanges(cb: Listener) {
 }
 
 export type StreamState = "connecting" | "open" | "closed";
-
-function upsert(data: InfiniteData<MessagesPage> | undefined, m: Message) {
-  if (!data) return data;
-  let found = false;
-  const pages = data.pages.map((p) => ({
-    ...p,
-    items: p.items.map((x) => (x.message_id === m.message_id ? ((found = true), m) : x)),
-  }));
-  const first = pages[0];
-  if (!found && first) {
-    const last = first.items.at(-1);
-    // pages[0] is the newest page; older unseen ids are fetched when scrolling back.
-    if (!last || Number(m.message_id) > Number(last.message_id)) {
-      pages[0] = { ...first, items: [...first.items, m] };
-    }
-  }
-  return { ...data, pages };
-}
 
 /**
  * Desktop notification for fresh incoming tags while the tab is hidden. Stored messages are only tags/replies
@@ -61,6 +43,33 @@ function notifyNew(items: ChangeItem[]) {
   } catch {} // no Notification constructor here (Android Chrome, webviews): nothing to show
 }
 
+type Pages = InfiniteData<MessagesPage, string | null>;
+/** What decides which views a row is in: a change to any of these can move it, so those views refetch. */
+const viewState = (m: Message) => `${m.handled}|${m.deleted}|${m.pinned}|${m.snoozed_until ?? ""}|${m.outgoing}`;
+
+/**
+ * An edit that leaves the row in every view it is in (text, reactions…): put the server's copy into the cached lists
+ * instead of refetching every loaded page. False when it may move between views, or no cached copy says what it was.
+ */
+function patchEdit(qc: QueryClient, m: Message) {
+  const k = msgKey(m), want = viewState(m);
+  let seen = false, same = true;
+  const check = (x: Message) => {
+    if (msgKey(x) !== k) return;
+    seen = true;
+    if (viewState(x) !== want) same = false;
+  };
+  for (const [, d] of qc.getQueriesData<Pages>({ queryKey: ["messages", m.chat_id] })) d?.pages.forEach((p) => p.items.forEach(check));
+  for (const [, d] of qc.getQueriesData<PendingItem[]>({ queryKey: ["pending"] })) d?.forEach((p) => check(p.message));
+  if (!seen || !same) return false;
+  const swap = (x: Message) => (msgKey(x) === k ? m : x);
+  qc.setQueriesData<Pages>({ queryKey: ["messages", m.chat_id] }, (d) => d && { ...d, pages: d.pages.map((p) => ({ ...p, items: p.items.map(swap) })) });
+  qc.setQueriesData<PendingItem[]>({ queryKey: ["pending"] }, (d) => d?.map((p) => ({ ...p, message: swap(p.message) })));
+  // Search results match on text: those still refetch.
+  void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === "messages" && q.queryKey[1] === m.chat_id && !!q.queryKey[2] });
+  return true;
+}
+
 /** Apply one /changes page to the caches; each query is invalidated once per page, not once per item. */
 export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   if (!items.length) return;
@@ -71,19 +80,12 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
       else void qc.resetQueries({ queryKey: ["messages", it.chat_id] });
       continue;
     }
+    if (it.kind === "edit" && it.message && patchEdit(qc, it.message)) continue;
     touched.add(it.chat_id);
-    // Live rows go into the plain view only (no search, no date range, not "chưa xử lý"); the rest refetch below.
-    const m = it.message;
-    if (m) qc.setQueriesData<InfiniteData<MessagesPage>>({ queryKey: ["messages", it.chat_id, "", "", false] }, (d) => upsert(d, m));
   }
-  // Searches, date ranges and the "not handled" view can gain or lose rows: refetch those.
-  for (const chat of touched) {
-    void qc.invalidateQueries({
-      queryKey: ["messages", chat],
-      predicate: (q) => q.queryKey[2] !== "" || q.queryKey[3] !== "" || q.queryKey[4] === true,
-    });
-  }
-  void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
+  // Every stored view filters (chưa / đã xử lý, search, dates): a change can add or drop rows, so refetch.
+  for (const chat of touched) void qc.invalidateQueries({ queryKey: ["messages", chat] });
+  if (touched.size || items.some((it) => it.message_id === null)) void qc.invalidateQueries({ queryKey: ["chats"] }); // pending counts
   if (touched.size) void qc.invalidateQueries({ queryKey: ["pending"] });
   // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
   const tasks = new Set((qc.getQueryData<Task[]>(["tasks"]) ?? []).map(msgKey));

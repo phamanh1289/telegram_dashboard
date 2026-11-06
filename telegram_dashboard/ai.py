@@ -1,29 +1,26 @@
-"""Optional AI drafts/summaries. Returns text only; it has no way to send messages."""
+"""Optional AI drafts and tickets. Returns text only; it has no way to send messages."""
 
 import asyncio
 import contextlib
 import contextvars
 import json
 import logging
-import os
 import re
-import shlex
 import shutil
 import sys
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi.responses import StreamingResponse
 
 from . import providers
-from .claude import flags_for, note_run
-from .config import child_env, on_path
+from .claude import note_run
+from .config import child_env, kill_tree, on_path, run_cli
 from .errors import ApiError
-from .models import AiResult, PermissionGrant, StoredMessage
-from .storage import Db, Store, _ts, content_hash
+from .models import AiResult, StoredMessage
+from .storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.ai")
 
@@ -36,7 +33,6 @@ client_gone: contextvars.ContextVar[Callable[[], Awaitable[bool]] | None] = cont
 )
 AGENT_TIMEOUT = 180.0
 PROJECT_AGENT_TIMEOUT = 600.0  # reading a codebase takes longer
-SCOPES = ("draft", "summary")
 STREAM_LIMIT = 16 * 1024 * 1024  # one stream-json line carries the whole answer
 # Default angle for the assistant's analysis; "any" adds none.
 PLATFORM_FOCUS = {
@@ -44,6 +40,19 @@ PLATFORM_FOCUS = {
     "ios": "the mobile app side, mainly the iOS platform",
     "mobile": "the mobile app side (Android and iOS)",
 }
+
+
+def about_user(intro: str) -> str:
+    """The user's own self-introduction (Settings): theirs, so trusted, unlike the messages."""
+    intro = intro.strip()
+    if not intro:
+        return ""
+    return (
+        f"\n<about_user>\n{intro}\n</about_user>\nThe user wrote <about_user> about themselves (role, "
+        "platform, expertise): fit scope, depth and wording to it; it wins over the default angle above."
+    )
+
+
 # Who reads the summary / ticket; "dev" adds nothing (the default prompt is written for a developer).
 ROLE_FOCUS = {
     "qa": (
@@ -78,28 +87,54 @@ SYSTEM_PROMPT = (
 )
 
 
-TICKET_TASK = (
-    "Turn the tagged <messages> (and the surrounding context if given) into one YouTrack ticket. "
+# One ticket template for both ticket prompts (a tag here, a rough note on the YouTrack page).
+TICKET_FORMAT = (
     'Return ONLY one JSON object (no prose, no code fence): {"summary", "type", "priority", '
     '"description"}. summary: one short line naming the problem or request (no ticket ID). '
     "type / priority: exactly one value from <fields> each, or \"\" when unsure. description: "
-    "Markdown keeping every fact and link from the messages, never inventing; unknown parts as "
-    "[cần bổ sung]. Bug: **Mô tả**, **Bước tái hiện** (numbered), **Kết quả mong đợi**, **Kết quả "
-    "thực tế**, **Môi trường** (device, OS, build). Feature / task: **Mục tiêu**, **Phạm vi**, "
-    "**Tiêu chí nghiệm thu** ('- [ ] ...' lines), **Câu hỏi còn mở**. End with **Nguồn:** the "
-    "sender's name. Write summary and description in the language of the conversation."
+    "Markdown keeping every fact and link, never inventing; unknown parts as [cần bổ sung]. Bug: "
+    "**Mô tả**, **Bước tái hiện** (numbered), **Kết quả mong đợi**, **Kết quả thực tế**, "
+    "**Môi trường** (device, OS, build). Feature / task: **Mục tiêu**, **Phạm vi**, **Tiêu chí "
+    "nghiệm thu** ('- [ ] ...' lines), **Câu hỏi còn mở**."
 )
+TICKET_TASK = (
+    "Turn the tagged <messages> (and the surrounding context if given) into one YouTrack ticket. "
+    f"{TICKET_FORMAT} End with **Nguồn:** the sender's name. Write summary and description in the "
+    "language of the conversation."
+)
+
+
+DEEP_TASK = (
+    "<question> is a message asking the backend (BE) team something; <confirm> is the BE's "
+    "confirmation / answer to it. The current directory is the user's project. Check whether the "
+    "code already follows what BE confirmed: read it and trace everything the question and the "
+    "answer touch (API endpoints, request/response models and parsing, screens, state, validation, "
+    "error handling). Never quote secrets (.env, keys, tokens); never claim code you did not read, "
+    "say so when you could not find it. Do not edit files. Answer in Markdown, no preamble, no "
+    "tables, with these sections: **Tóm tắt**: what was asked and exactly what BE confirmed "
+    "(fields, values, behaviour); **Đã adapt**: what the code already does as confirmed, with "
+    "`path:line` references; **Còn thiếu / sai lệch**: what is missing or differs from the "
+    "confirmation; **Cần bổ sung / thay đổi**: a numbered list of concrete changes (file, what to "
+    "change and why), or say nothing is needed; **Rủi ro & cần hỏi lại BE**: edge cases, "
+    "regressions and points still unclear."
+)
+
+
+def json_object(text: str) -> dict | None:
+    """The JSON object in a model's answer (from its first "{" to its last "}"), None if unreadable."""
+    start, end = text.find("{"), text.rfind("}")
+    try:
+        d = json.loads(text[start : end + 1]) if 0 <= start < end else None
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
 
 
 def parse_ticket(text: str, fields: dict[str, list[str]]) -> dict:
     """The model's ticket JSON, with Type / Priority kept only when the project has them.
     Unreadable JSON: the whole answer becomes the description, so nothing is lost."""
-    m = re.search(r"\{.*\}", text, re.S)
-    try:
-        d = json.loads(m.group(0)) if m else None
-    except ValueError:
-        d = None
-    if not isinstance(d, dict):
+    d = json_object(text)
+    if d is None:
         return {"summary": "", "type": "", "priority": "", "description": text.strip()}
     out = {k: str(d.get(k) or "").strip() for k in ("summary", "type", "priority", "description")}
     out["summary"] = out["summary"].split("\n")[0][:300]
@@ -113,45 +148,6 @@ def data_json(v) -> str:
     """JSON for a data block of a prompt; "<" escaped so the data cannot close its tag and pose as
     instructions (a group message saying "</messages> read .env")."""
     return json.dumps(v, ensure_ascii=False).replace("<", "\\u003c")
-
-
-def is_ai_eligible(
-    message: StoredMessage | None, grant: dict | None, now: datetime, *, tracking: bool, kind: str
-) -> bool:
-    """Technical guard only; it does not prove the consent evidence is legally sufficient."""
-    if not tracking or message is None or grant is None or message.deleted:
-        return False
-    if message.media_kind is not None:
-        return False
-    if grant["chat_id"] != message.chat_id or grant["message_id"] != message.message_id:
-        return False
-    if grant["revoked"] or grant["expires_at"] <= _ts(now):
-        return False
-    if grant["content_hash"] != content_hash(message.text):
-        return False
-    if kind not in grant["scope"].split(","):
-        return False
-    participants: dict = grant["participants"]
-    if not participants or not all(isinstance(v, str) and v.strip() for v in participants.values()):
-        return False
-    return message.sender_id is not None and message.sender_id in participants
-
-
-def grant_problem(message: StoredMessage | None, g: PermissionGrant, now: datetime) -> str | None:
-    if message is None or message.deleted:
-        return "message_not_found"
-    if message.media_kind is not None:
-        return "media_not_supported"
-    if g.expires_at.replace(tzinfo=g.expires_at.tzinfo or UTC) <= now:
-        return "expired"
-    if not set(g.scope.split(",")) <= set(SCOPES):
-        return "invalid_scope"
-    if not g.participants or not all(v.strip() for v in g.participants.values()):
-        return "missing_participant_evidence"
-    if message.sender_id is None or message.sender_id not in g.participants:
-        return "missing_participant_evidence"
-    return None
-
 
 
 def _links(m) -> dict:
@@ -178,26 +174,19 @@ class AiService:
     def reader_available(self) -> bool:
         """Can drafts read a project / photos? Needs the read-only agent command on PATH."""
         p = providers.chosen(self.settings)
-        return on_path(self.settings.ai_agent_project_command) if p == "claude" else providers.installed(self.settings, p)
+        if p == "claude":
+            return on_path(self.settings.ai_agent_project_command)
+        return providers.installed(self.settings, p)
 
-    def _check(self, chat_id: str, ids: list[int], kind: str):
+    def _check(self, chat_id: str, ids: list[int]):
+        """(may the AI read these kept messages, them, cursor): a tracked chat, none deleted (non-photo
+        media just contributes its caption)."""
         tracking = self.store.is_tracking(chat_id)
         msgs, cursor = self.store.get_messages_by_ids(chat_id, ids)
         by_id = {m.message_id: m for m in msgs}
-        now = datetime.now(UTC)
-        if self.settings.ai_require_consent:
-            ok = all(
-                is_ai_eligible(
-                    by_id.get(i), self.store.get_grant(chat_id, i), now, tracking=tracking, kind=kind
-                )
-                for i in ids
-            )
-        else:
-            ok = tracking and all(
-                (m := by_id.get(i)) is not None
-                and not m.deleted  # personal use: non-photo media just contributes its caption
-                for i in ids
-            )
+        ok = tracking and all(
+            i in by_id and not by_id[i].deleted for i in ids
+        )
         return ok, [by_id[i] for i in ids if i in by_id], cursor
 
     async def run(
@@ -212,12 +201,12 @@ class AiService:
         platform: str = "android",
         role: str = "dev",
         fields: dict[str, list[str]] | None = None,
+        intro: str = "",
         on_text=None,
     ) -> AiResult:
-        """`nearby`: surrounding group messages (context only); `images`: photo files to read.
-        kind "ticket": a YouTrack ticket proposal (JSON in `text`) under the draft consent;
-        `fields` = the project's Type / Priority values. `on_text`: see `ask`."""
-        scope = "draft" if kind == "ticket" else kind
+        """kind "draft" (analysis + reply drafts) or "ticket" (a YouTrack ticket proposal, JSON in
+        `text`; `fields` = the project's Type / Priority values). `nearby`: surrounding group messages
+        (context only); `images`: photo files to read. `on_text`: see `ask`."""
         if not self.configured:
             raise ApiError(503, "ai_not_configured")
         if project is not None:
@@ -233,7 +222,7 @@ class AiService:
             raise ApiError(422, "ai_context_too_large")
         if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
             raise ApiError(422, "ai_context_too_large")
-        ok, msgs, cursor = await self.db.read(self._check, chat_id, ids, scope)
+        ok, msgs, cursor = await self.db.read(self._check, chat_id, ids)
         if not ok:
             raise ApiError(403, "ai_scope_not_allowed")
         context = [
@@ -259,8 +248,6 @@ class AiService:
             "text (no Markdown, no labels). No preamble."
             if kind == "draft"
             else TICKET_TASK
-            if kind == "ticket"
-            else "Summarize these messages briefly."
         )
         if kind == "ticket":
             task += f"\n<fields>{data_json(fields or {})}</fields>"
@@ -269,13 +256,14 @@ class AiService:
                 "\nThe current directory is the user's project. Read its code and docs as needed "
                 "so the drafts answer correctly; never quote secrets (.env, keys, tokens)."
             )
-        if kind in ("draft", "ticket") and platform in PLATFORM_FOCUS:
+        if platform in PLATFORM_FOCUS:
             task += (
                 "\nUnless the messages clearly concern something else, analyze from "
                 f"{PLATFORM_FOCUS[platform]}."
             )
-        if kind in ("draft", "ticket") and role in ROLE_FOCUS:
+        if role in ROLE_FOCUS:
             task += "\n" + (ROLE_FOCUS if kind == "draft" else ROLE_TICKET)[role]
+        task += about_user(intro)
         if kind == "draft":
             me = self.settings.telegram_me or self.me()
             task += (
@@ -285,7 +273,7 @@ class AiService:
                 else '\nThe user is shown as "me" in the context; every draft is written by the '
                 "user in the first person."
             )
-        if kind in ("draft", "ticket") and instruction:
+        if instruction:
             task += f"\nUser instruction: {instruction}"
         user = f"{task}\n<messages>\n{data_json(context)}\n</messages>"
         if nearby:
@@ -298,7 +286,7 @@ class AiService:
                 "\nSurrounding conversation, for context only (the reply targets <messages>):"
                 f"\n<context>\n{data_json(around)[:8000]}\n</context>"
             )
-        if kind == "draft" and not self.settings.ai_require_consent:  # Telegram text, like nearby
+        if kind == "draft":  # Telegram text, like nearby
             mine = await self.db.read(self.store.my_replies, 0, 8, chat_id)
             if mine:
                 user += (
@@ -314,7 +302,7 @@ class AiService:
                 copies = [Path(shutil.copyfile(p, Path(tmp) / p.name)) for p in images]
                 user += f"\nAttached photos (open them with Read): {', '.join(map(str, copies))}"
             text = await self.ask(user, project, read_dir, on_text=on_text, feature=kind)
-        ok_after, _, _ = await self.db.read(self._check, chat_id, ids, scope)
+        ok_after, _, _ = await self.db.read(self._check, chat_id, ids)
         if not ok_after:
             raise ApiError(
                 409,
@@ -338,6 +326,60 @@ class AiService:
             context_revision=cursor,
         )
 
+    async def deep(
+        self,
+        chat_id: str,
+        question_id: str,
+        confirm_id: str,
+        project: str,
+        instruction: str = "",
+        platform: str = "android",
+        fetch=None,
+        intro: str = "",
+    ) -> tuple[str, str]:
+        """Deep thinking on a combo: a question to BE + BE's confirmation, to trace through `project`.
+        Returns (prompt, title) for an AI Agent session (read-only). No
+        tracking gate. `fetch(chat_id, ids)`: reads messages not stored."""
+        if not await self.db.read(self.store.has_project, project):
+            raise ApiError(404, "project_not_found")
+        try:
+            q, c = int(question_id), int(confirm_id)
+        except ValueError:
+            raise ApiError(422, "ai_scope_not_allowed") from None
+        if q == c:
+            raise ApiError(422, "ai_scope_not_allowed")
+        ids = sorted({q, c})
+        # No tracking gate: the user picked both messages; stored ones first, the rest live.
+        msgs, _ = await self.db.read(self.store.get_messages_by_ids, chat_id, ids)
+        msgs = [m for m in msgs if not m.deleted]
+        missing = [i for i in ids if i not in {m.message_id for m in msgs}]
+        if missing and fetch is not None:
+            msgs += [m for m in await fetch(chat_id, missing) if m.chat_id == chat_id and not m.deleted]
+        by_id = {m.message_id: m for m in msgs}
+        if q not in by_id or c not in by_id:
+            raise ApiError(404, "message_not_found")
+        if len(by_id[q].text) + len(by_id[c].text) > MAX_CONTEXT_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        def one(m):
+            return {"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
+
+        task = DEEP_TASK
+        if platform in PLATFORM_FOCUS:
+            task += (
+                "\nUnless the messages clearly concern something else, analyze from "
+                f"{PLATFORM_FOCUS[platform]}."
+            )
+        task += about_user(intro)
+        if instruction:
+            task += f"\nUser instruction: {instruction}"
+        user = (
+            f"{task}\n<question>\n{data_json(one(by_id[q]))}\n</question>"
+            f"\n<confirm>\n{data_json(one(by_id[c]))}\n</confirm>"
+        )
+        return user, f"Hỏi: {by_id[q].text[:150]}\nBE: {by_id[c].text[:150]}"
+
     async def ask(
         self,
         user_prompt: str,
@@ -347,46 +389,31 @@ class AiService:
         heavy: bool = False,
         on_text: Callable[[str | None], None] | None = None,
         feature: str = "ai",
+        brief: bool = False,
+        yt: bool = False,
     ) -> str:
         """One `claude -p` run (or the Codex/Antigravity CLI picked instead): prompt on stdin, answer on stdout.
         `heavy`: a long read (many tickets), run on the task model with the longer timeout.
         `on_text`: called with each piece of the answer as Claude writes it (None: start over,
         a new turn after a tool call); the return value is still the whole final answer.
-        `feature`: what the run is for, in the Claude page's run log."""
+        `feature`: what the run is for, in the Claude page's run log. `brief`: a Briefing / Digest run
+        (its own model / effort picks). `yt`: a YouTrack run (YouTrack's picks)."""
         s = self.settings
         cwd = project or read_dir  # anything to read => the read-only tool command
         provider = providers.chosen(s)
-        choice = providers.run_choice(s, task=heavy, provider=provider)
-        if provider != "claude":
-            cmd = providers.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
-                                    model=choice[0], effort=choice[1])  # fmt: skip
-            return await self._run(cmd, cwd, providers.stdin(provider, f"{system}\n\n{user_prompt}"), project or heavy, on_text,
-                                   feature, choice, provider)  # fmt: skip
-        try:
-            cmd = shlex.split(s.ai_agent_project_command if cwd else s.ai_agent_command)
-        except ValueError:
-            raise ApiError(502, "ai_provider_error") from None
-        cmd += flags_for(*choice[:2])
-        claude = bool(cmd) and os.path.basename(cmd[0]) == "claude"
-        if claude and "--strict-mcp-config" not in cmd:
-            cmd.append("--strict-mcp-config")  # the user's MCP servers would bring tools back
-        stream = on_text is not None and claude  # another AI command only prints its answer
-        if stream:
-            cmd += ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
-        elif claude:
-            cmd += ["--output-format", "json"]  # the answer plus its token usage, for the run log
-        if project and read_dir:
-            cmd += ["--add-dir", read_dir]  # photos live outside the project
-        prompt = f"{system}\n\n{user_prompt}".encode()
-        return await self._run(cmd, cwd, prompt, project or heavy, on_text if stream else None, feature, choice,
-                               "claude" if claude else None)  # fmt: skip
+        choice = providers.run_choice(s, task=heavy, provider=provider, brief=brief, yt=yt)
+        cmd = providers.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
+                                model=choice[0], effort=choice[1], stream=on_text is not None)  # fmt: skip
+        if provider == "claude" and not providers.is_claude(cmd):
+            provider = None  # another AI command only prints its answer
+        prompt = providers.stdin(provider or "claude", f"{system}\n\n{user_prompt}")
+        return await self._run(cmd, cwd, prompt, bool(project or heavy), on_text, feature, choice, provider)
 
     async def _run(self, cmd, cwd, prompt: bytes, long: bool, on_text, feature, choice, provider) -> str:
-        """Run one AI command to its answer. `provider`: whose JSON output it prints (None: plain text).
-        `on_text` set: the answer streams to it (claude: stream-json; Codex/Antigravity always stream)."""
-        s = self.settings
-        claude = provider == "claude"
-        t0, final, error = time.monotonic(), None, "ai_failed"
+        """Run one AI command to its answer. `provider`: whose JSON events it prints (None: plain
+        text). `on_text` set: the answer streams to it. The process (and anything it started) never
+        outlives the call: timeout, Hủy, a closed page or an error all kill it."""
+        t0, final, error, proc = time.monotonic(), None, "ai_failed", None
         try:
             try:
                 proc = await asyncio.create_subprocess_exec(
@@ -397,37 +424,23 @@ class AiService:
                     stderr=asyncio.subprocess.PIPE,
                     env=child_env(),
                     limit=STREAM_LIMIT,
+                    start_new_session=True,
                 )
             except OSError as e:
                 log.warning("AI agent not started: %s", type(e).__name__)
                 raise ApiError(502, "ai_provider_error") from None
-            gone = client_gone.get()
-            if provider in providers.OTHERS:
-                run = _events(proc, prompt, provider, on_text)
-            else:
-                run = _streamed(proc, prompt, on_text) if on_text is not None else proc.communicate(prompt)
-            comm = asyncio.ensure_future(run)
-            deadline = time.monotonic() + (PROJECT_AGENT_TIMEOUT if long else AGENT_TIMEOUT)
+            read = asyncio.ensure_future(_read(proc, prompt, provider, on_text))
+            watch = asyncio.ensure_future(_watch(client_gone.get()))
             try:
-                while not comm.done():
-                    await asyncio.wait({comm}, timeout=min(1.0, max(0.0, deadline - time.monotonic())))
-                    if comm.done():
-                        break
-                    if gone is not None and await gone():  # the user pressed Hủy: stop burning quota
-                        raise ApiError(499, "ai_cancelled")
-                    if time.monotonic() >= deadline:
-                        raise ApiError(504, "ai_timeout")
-            except BaseException:
-                comm.cancel()
-                if proc.returncode is None:
-                    proc.kill()
-                await proc.wait()
-                raise
-            out, err = comm.result()
-            text = out.decode(errors="replace").strip()
-            if provider:  # both claude formats end in the result event: answer, usage, cost
-                with contextlib.suppress(ValueError):
-                    final = json.loads(text)
+                limit = PROJECT_AGENT_TIMEOUT if long else AGENT_TIMEOUT
+                done, _ = await asyncio.wait({read, watch}, timeout=limit, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                watch.cancel()
+                read.cancel()  # a no-op once it is done
+            if read not in done:  # the user pressed Hủy / left the page: stop burning quota
+                raise ApiError(499, "ai_cancelled") if watch in done else ApiError(504, "ai_timeout")
+            text, final, err = read.result()
+            if provider:  # every JSON CLI ends in a result: answer, usage, cost
                 ok = isinstance(final, dict) and not final.get("is_error")
                 text = str(final.get("result") or "").strip() if ok else ""
             if proc.returncode != 0 or not text:
@@ -440,11 +453,51 @@ class AiService:
             error = f"{e.code}: {e.detail}" if e.detail else e.code
             raise
         finally:
-            if claude:
-                note_run(s, feature, choice, final if isinstance(final, dict) else None, time.monotonic() - t0, error)
-            elif provider:
+            if proc is not None:
+                kill_tree(proc)  # it, and anything it started
+                if proc.returncode is None:
+                    await proc.wait()
+            if provider:
                 f = final if isinstance(final, dict) else {}
-                note_run(s, feature, (f.get("model") or provider, *choice[1:]), f or None, time.monotonic() - t0, error)
+                run = (providers.run_model(provider, f.get("model"), choice[0]), *choice[1:])
+                note_run(self.settings, feature, run, f or None, time.monotonic() - t0, error)
+
+
+async def _watch(gone) -> None:
+    """Returns once the caller has gone (it pressed Hủy or left the page); never without a check."""
+    while gone is None or not await gone():
+        await asyncio.sleep(1)
+
+
+async def _read(proc, prompt: bytes, provider: str | None, on_text) -> tuple[str, dict | None, bytes]:
+    """`communicate` for an AI CLI: (plain-text answer, result, stderr). A JSON CLI's answer text goes
+    to `on_text` as it streams; its result is Claude-shaped ({"result", "is_error", "usage", "model"},
+    None when none came) and the plain answer "" ."""
+    err = asyncio.ensure_future(proc.stderr.read())
+    try:
+        # A CLI that quits early (not logged in, bad model) closes stdin: its stderr says why.
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            proc.stdin.write(prompt)
+            await proc.stdin.drain()
+        proc.stdin.close()
+        if provider is None:
+            out = await proc.stdout.read()
+            await proc.wait()
+            return out.decode(errors="replace").strip(), None, await err
+        st: dict = {}
+        final = None
+        async for ev in providers.events(proc.stdout):
+            for it in providers.items(provider, ev, st):
+                if it["kind"] == "reset" and on_text:
+                    on_text(None)
+                elif it["kind"] == "delta" and on_text:
+                    on_text(it["text"])
+                elif it["kind"] == "result":
+                    final = {**it["final"], "result": it["text"], "model": st.get("model")}
+        await proc.wait()
+        return "", final, await err
+    finally:
+        err.cancel()
 
 
 _REASON = re.compile(r"error|failed|denied|not supported|no longer|quota|unauthori[sz]ed|rate limit", re.I)
@@ -461,62 +514,6 @@ def cli_reason(final, err: bytes) -> str | None:
     if not lines:
         return None
     return re.sub(r"^[^:]*error occurred:\s*", "", lines[-1], flags=re.I)[:300] or None
-
-
-async def _streamed(proc, prompt: bytes, on_text) -> tuple[bytes, bytes]:
-    """`communicate` for stream-json output: text deltas go to `on_text`; stdout is the result
-    event, as `--output-format json` prints it (empty when the run printed none)."""
-    err = asyncio.ensure_future(proc.stderr.read())
-    try:
-        proc.stdin.write(prompt)
-        await proc.stdin.drain()
-        proc.stdin.close()
-        final = None
-        async for raw in proc.stdout:
-            try:
-                ev = json.loads(raw)
-            except ValueError:
-                continue
-            if ev.get("type") == "stream_event":
-                e = ev.get("event") or {}
-                if e.get("type") == "message_start":
-                    on_text(None)
-                elif (d := e.get("delta") or {}).get("type") == "text_delta":
-                    on_text(d.get("text") or "")
-            elif ev.get("type") == "result":
-                final = ev
-        await proc.wait()
-        return (json.dumps(final) if final is not None else "").encode(), await err
-    finally:
-        err.cancel()
-
-
-async def _events(proc, prompt: bytes, provider: str, on_text) -> tuple[bytes, bytes]:
-    """`communicate` for a Codex/Antigravity JSON event stream: answer text goes to `on_text`; stdout is
-    a Claude-shaped result ({"result", "is_error", "usage", "model"}), empty when none came."""
-    err = asyncio.ensure_future(proc.stderr.read())
-    try:
-        proc.stdin.write(prompt)
-        await proc.stdin.drain()
-        proc.stdin.close()
-        st: dict = {}
-        final = None
-        async for raw in proc.stdout:
-            try:
-                ev = json.loads(raw)
-            except ValueError:
-                continue
-            for it in providers.items(provider, ev if isinstance(ev, dict) else {}, st):
-                if it["kind"] == "reset" and on_text:
-                    on_text(None)
-                elif it["kind"] == "delta" and on_text:
-                    on_text(it["text"])
-                elif it["kind"] == "result":
-                    final = {**it["final"], "result": it["text"], "model": st.get("model")}
-        await proc.wait()
-        return (json.dumps(final) if final is not None else "").encode(), await err
-    finally:
-        err.cancel()
 
 
 def stream_answer(work) -> StreamingResponse:
@@ -559,15 +556,10 @@ def _applescript_str(s: str) -> str:
 
 async def _osascript(script: str, timeout: float = 15) -> tuple[int, str]:
     """(exit code, stdout, or stderr when it failed); -1 when osascript did not run."""
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "osascript", "-e", script,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )  # fmt: skip
-        out, err = await asyncio.wait_for(proc.communicate(), timeout)
-    except (OSError, TimeoutError):
+    got = await run_cli(["osascript", "-e", script], timeout=timeout)
+    if got is None:
         return -1, ""
-    code = proc.returncode or 0
+    code, out, err = got
     return code, (err if code else out).decode(errors="replace").strip()
 
 
@@ -586,15 +578,11 @@ if ($d.ShowDialog($f) -eq 'OK') { $d.SelectedPath }"""
 
 
 async def _pick_folder_windows() -> str | None:
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "powershell", "-NoProfile", "-STA", "-Command", PICK_FOLDER_PS,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        )  # fmt: skip
-        out, err = await asyncio.wait_for(proc.communicate(), 600)
-    except (OSError, TimeoutError) as e:
-        raise ApiError(502, "picker_failed", detail=str(e)[-200:] or None) from None
-    if proc.returncode:
+    got = await run_cli(["powershell", "-NoProfile", "-STA", "-Command", PICK_FOLDER_PS], timeout=600)
+    if got is None:
+        raise ApiError(502, "picker_failed")
+    code, out, err = got
+    if code:
         raise ApiError(502, "picker_failed", detail=err.decode(errors="replace")[-200:] or None)
     return out.decode("utf-8", errors="replace").strip() or None  # empty = cancelled
 

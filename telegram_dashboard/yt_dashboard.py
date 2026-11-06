@@ -7,23 +7,26 @@ Also `whoami` (check a pasted token) and `create_issue` (a ticket from a tagged 
 """
 
 import asyncio
-import json
 import os
 import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import providers
-from .ai import client_gone, data_json, parse_ticket, stream_answer
+from .ai import TICKET_FORMAT, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
+from .links import link_block
 
+MAX_FILE = 25 << 20  # ponytail: proxied whole in memory; stream it if videos ever need to play here
 TTL = 50.0  # shorter than the UI refresh (60s) so each refresh sees fresh data
 WAVE = 4  # issue pages fetched concurrently
 PAGE = 500
@@ -41,6 +44,17 @@ class YtError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(message)
         self.status, self.message = status, message
+
+
+class Mention(BaseModel):
+    chat_id: str
+    chat: str | None
+    from_: str | None = Field(alias="from")
+    text: str
+    date: int  # epoch ms
+    message_id: str
+    outgoing: bool
+    reply_to_id: str | None
 
 
 class Assignee(BaseModel):
@@ -86,10 +100,6 @@ class AiTickets(BaseModel):
     folder: str = Field("", max_length=1000)  # a registered code folder: the AI reads it (read-only)
 
 
-class AiPromises(BaseModel):
-    since: int = 0  # epoch ms: read the user's Telegram messages from here
-
-
 class AiDraft(BaseModel):
     text: str = Field(min_length=1, max_length=8000)  # what the user typed / pasted
     types: list[Annotated[str, Field(max_length=100)]] = Field([], max_length=50)  # the project's values
@@ -102,7 +112,7 @@ class AiTurn(BaseModel):
 
 
 class AiFollowup(BaseModel):
-    path: Literal["/ai/ticket", "/ai/data", "/ai/tickets", "/ai/promises"]  # the first request
+    path: Literal["/ai/ticket", "/ai/data", "/ai/tickets"]  # the first request
     body: dict  # its JSON, validated again by that endpoint's model
     history: list[AiTurn] = Field(min_length=1, max_length=12)
     question: str = Field(min_length=1, max_length=2000)
@@ -135,6 +145,37 @@ class SavedPrompts(BaseModel):
     # per role and ticket count ("dev:one"…): names shown as buttons; missing = the role default
     shown: dict[PromptCtx, Annotated[list[str], Field(max_length=5)]] = Field(default_factory=dict)
     hidden: list[str] = Field(default_factory=list, max_length=50)  # built-ins the team deleted
+
+
+StateName = Annotated[str, Field(min_length=1, max_length=100)]
+
+
+class Workflow(BaseModel):
+    """The team's own State flow for one project (Settings › YouTrack › Workflow): boxes on a canvas
+    and arrows from → to. `on`: the app only moves a ticket along an arrow (YouTrack's own state
+    machine still applies on top)."""
+
+    on: bool = False
+    pos: dict[StateName, tuple[float, float]] = Field(default_factory=dict, max_length=200)
+    edges: list[tuple[StateName, StateName]] = Field(default_factory=list, max_length=1000)
+    hidden: list[StateName] = Field(default_factory=list, max_length=200)  # boxes taken off the canvas
+
+
+# The Dev flow a project starts with when Dev has none saved yet (QA / PO start empty). Only used
+# when the project has all these states; the rest are hidden.
+DEV_FLOW = {
+    "on": True,
+    "pos": {
+        "OPENED": (24, 24), "ASSIGN TO DESIGN": (288, 24), "TO DO": (24, 104), "CLOSED": (338, 110),
+        "ON HOLD": (343, 178), "IN PROGRESS": (24, 182), "BUILT ON DEV": (347, 240),
+        "READY FOR TEST": (24, 249),
+    },
+    "edges": [
+        ("OPENED", "TO DO"), ("OPENED", "ASSIGN TO DESIGN"), ("OPENED", "CLOSED"),
+        ("TO DO", "IN PROGRESS"), ("TO DO", "CLOSED"), ("TO DO", "ON HOLD"),
+        ("IN PROGRESS", "CLOSED"), ("IN PROGRESS", "BUILT ON DEV"), ("BUILT ON DEV", "READY FOR TEST"),
+    ],
+}  # fmt: skip
 
 
 class AiFilter(BaseModel):
@@ -217,7 +258,14 @@ AI_DATA = {
     "**Cần làm ngay:** 3-5 việc cụ thể, ai làm, trước ngày nào.\n"
     "Role qa: nhấn mạnh Bàn giao cho QC và Kiểm thử. Role po: nhấn mạnh rủi ro, tải team, quyết định "
     "cần chốt. Role dev: thêm **Việc của tôi:** ticket của data.me cần xong để kịp release. Chỉ dùng "
-    "số và ID trong data, không bịa. Markdown gọn để xuất file.",
+    "số và ID trong data, không bịa. Markdown gọn để xuất file.\n"
+    "data.by = sprint: data.sprintTickets là mọi ticket trong sprint (đếm theo state); báo cáo phủ hết "
+    "phạm vi đó.\n"
+    "data.by = day: KHÔNG theo các mục trên. Đây là tình trạng test tính tới data.asOf, không có ngày "
+    "release. Dòng đầu: **Tổng quan:** 1-2 câu kèm số. Sau đó các nhãn in đậm, CHỈ in mục có nội dung: "
+    "**Đã test xong:** (data.testedDone) liệt kê ID; **Đang test:** (data.testing) ID, ai đang test; "
+    "**Chờ test:** (data.waitingTest) ID, ticket chưa có QC (noQc); **Bị trả lại / reopen:** "
+    "(data.qcResult.bounced); **Cần làm ngay:** 2-4 việc, ai làm.",
     "team": "Từ bảng số liệu từng thành viên trong <data>, đánh giá tải công việc của team: ai "
     "đang quá tải, ai còn trống, ai có nhiều ticket kẹt / quá hạn. Gợi ý chia lại việc cụ thể "
     "(chuyển ticket nào cho ai nếu data có ID), và rủi ro nếu giữ nguyên. Chỉ dựa vào số liệu, "
@@ -355,15 +403,6 @@ AI_CODE = (
     "kiện theo nền tảng / feature flag, nơi khác cùng gọi phần code đó (vùng regression). Nêu file / "
     "hàm làm căn cứ ở dạng `path:hàm`. Không thấy code liên quan thì nói rõ và trả lời theo ticket."
 )
-AI_PROMISES = (
-    "Từ <telegram_replies> (tin tôi đã gửi trong các nhóm, cũ trước mới sau), liệt kê những việc "
-    "tôi đã hứa hoặc nhận làm (vd 'để em check', 'mai em gửi', 'ok em làm', 'chiều em fix'). Tính "
-    "hạn từ ngày gửi ('mai' = ngày gửi + 1) và so với Hôm nay. Bỏ việc mà tin sau đó cho thấy đã "
-    "xong. Các nhãn in đậm, theo thứ tự, CHỈ in mục có nội dung: **Quá hạn / hôm nay:**, "
-    "**Sắp tới:**, **Chưa rõ hạn:**. Mỗi dòng '- việc cụ thể (nhóm, ngày hứa; ID ticket nếu có)'. "
-    "Không có việc nào thì chỉ ghi 'Không thấy việc nào bạn đã nhận.' Không bịa; không chắc thì "
-    "ghi '(có vẻ)'."
-)
 AI_FILTER = (
     "Chuyển câu của người dùng trong <ask> thành bộ lọc cho bảng ticket. <options> liệt kê giá trị "
     "hợp lệ. Trả về DUY NHẤT một JSON object (không prose, không code fence): "
@@ -372,15 +411,7 @@ AI_FILTER = (
     "ID / tiêu đề nếu câu có nhắc, còn lại \"\". \"tôi\" = options.me; \"sprint này\" = "
     "options.current_sprint."
 )
-AI_DRAFT = (
-    "Biến ghi chú thô trong <ask> thành MỘT ticket YouTrack. Trả về DUY NHẤT một JSON object (không "
-    'prose, không code fence): {"summary","type","priority","description"}. summary: một dòng ngắn '
-    "nêu vấn đề / yêu cầu. type / priority: đúng một giá trị trong <fields>, không chắc thì \"\". "
-    "description: Markdown, giữ mọi chi tiết và link, không bịa; phần thiếu ghi [cần bổ sung]. Bug: "
-    "**Mô tả**, **Bước tái hiện** (đánh số), **Kết quả mong đợi**, **Kết quả thực tế**, **Môi "
-    "trường**. Feature / task: **Mục tiêu**, **Phạm vi**, **Tiêu chí nghiệm thu** (mỗi dòng "
-    "'- [ ] ...'), **Câu hỏi còn mở**."
-)
+AI_DRAFT = f"Biến ghi chú thô trong <ask> thành MỘT ticket YouTrack. {TICKET_FORMAT}"
 AI_ERR = {  # {ai}: the CLI picked in Settings › AI
     "ai_timeout": "{ai} chạy quá lâu, thử lại",
     "ai_cancelled": "Đã hủy",
@@ -401,7 +432,7 @@ def _label(v):
 
 
 def _normalize(i: dict) -> dict:
-    f, sprints, login = {}, [], None
+    f, sprints, login, qc = {}, [], None, None
     for c in i.get("customFields") or []:
         name, val = c.get("name"), c.get("value")
         f[name] = _label(val)
@@ -411,6 +442,9 @@ def _normalize(i: dict) -> dict:
             ]
         if name == "Assignee" and isinstance(val, dict):
             login = val.get("login")
+        if name == "QC" and isinstance(val, dict):
+            qc = val.get("login")
+    rep = i.get("reporter") or {}
     return {
         "id": i["idReadable"],
         "summary": i.get("summary"),
@@ -423,10 +457,19 @@ def _normalize(i: dict) -> dict:
         "assignee": f.get("Assignee"),
         "assigneeLogin": login,
         "qc": f.get("QC"),
+        "qcLogin": qc,
+        "reporter": rep.get("fullName") or rep.get("login"),
         "due": f.get("Due Date"),
         "estimate": f.get("Estimation"),
         "sprints": sprints,
     }
+
+
+def _rel(x: dict) -> str:
+    """A link's name as read from this ticket's side ("is required for", "relates to")."""
+    t = x.get("linkType") or {}
+    side = t.get("targetToSource") if x.get("direction") == "INWARD" else t.get("sourceToTarget")
+    return side or t.get("name") or "liên kết"
 
 
 def _who_clause(who: list[str] | None) -> str:
@@ -448,6 +491,7 @@ class YouTrackDashboard:
         env = os.environ
         self.notes_path = settings.data_dir / "yt_ai.json"
         self.prompts_path = settings.data_dir / "yt_prompts.json"
+        self.workflow_path = settings.data_dir / "yt_workflow.json"
         self.base = (settings.youtrack_url or "").rstrip("/")
         self.token = settings.youtrack_token or ""
         self.mock = not (self.base and self.token)
@@ -477,6 +521,48 @@ class YouTrackDashboard:
             return SavedPrompts(**raw)
         except ValidationError:  # a hand-edited file: start over rather than 500
             return SavedPrompts()
+
+    def _workflows(self, project: str) -> dict:
+        """{role: flow} of a project; a first-version file (one flow for all) goes to each role."""
+        raw = _read_json(self.workflow_path).get(project)
+        if not isinstance(raw, dict):
+            return {}
+        return {r: raw for r in ROLES} if "edges" in raw else raw
+
+    def workflow(self, project: str, role: str, states: list[str]) -> Workflow:
+        """One flow per project and role (dev / qa / po): {project: {role: Workflow}}.
+        Nothing saved: Dev gets DEV_FLOW when the project has its states, else an empty flow."""
+        saved = self._workflows(project).get(role)
+        if saved is None:
+            if role == "dev" and set(DEV_FLOW["pos"]) <= set(states):
+                return Workflow(**DEV_FLOW, hidden=[s for s in states if s not in DEV_FLOW["pos"]])
+            return Workflow()
+        try:
+            return Workflow(**saved)
+        except (ValidationError, TypeError):  # a hand-edited file: start over rather than 500
+            return Workflow()
+
+    def save_workflow(self, project: str, role: str, wf: Workflow) -> None:
+        raw = _read_json(self.workflow_path)
+        raw[project] = {**self._workflows(project), role: wf.model_dump()}
+        write_private_json(self.workflow_path, raw)
+
+    async def yt_flow(self, project: str, states: list[str]) -> dict:
+        """The arrows YouTrack's own state machine allows: one ticket per state, its possibleEvents.
+        A state no ticket is in yet can't be asked (listed in `unknown`)."""
+        ev = "customFields(name,possibleEvents(presentation))"
+
+        async def one(st: str):
+            q = f"project: {{{project}}} State: {{{st}}}"
+            a = await self.yt("/api/issues", query=q, fields=ev, **{"$top": 1})
+            if not a:
+                return st, None
+            sf = next((f for f in a[0].get("customFields") or [] if f["name"] == "State"), {})
+            return st, [e["presentation"] for e in sf.get("possibleEvents") or []]
+
+        got = await asyncio.gather(*(one(s) for s in states))
+        edges = [(s, t) for s, ts in got if ts for t in ts if t in states and t != s]
+        return {"edges": edges, "unknown": [s for s, ts in got if ts is None]}
 
     def set_auth(self, base: str, token: str) -> None:
         """New URL/token from Settings: next call opens a fresh client, nothing cached survives.
@@ -545,10 +631,14 @@ class YouTrackDashboard:
         for k in [k for k in self._inflight if drop(k)]:
             self._inflight.pop(k)
 
-    async def cached(self, key: str, fn):
+    def fresh(self, key: str):
+        """The cached value of `key` while it is fresh, else None."""
         hit = self._cache.get(key)
-        if hit and time.monotonic() - hit[0] < TTL:
-            return hit[1]
+        return hit[1] if hit and time.monotonic() - hit[0] < TTL else None
+
+    async def cached(self, key: str, fn):
+        if (hit := self.fresh(key)) is not None:
+            return hit
         auth = self._auth
         task = self._inflight.get(key)  # concurrent identical requests share one YouTrack call
         if task is None:
@@ -565,13 +655,9 @@ class YouTrackDashboard:
         self._cache[key] = (time.monotonic(), value)
         return value
 
-    async def issues(
-        self, project: str, scope: str, who: list[str] | None, hist: int | None = None
-    ):
+    async def issues(self, project: str, who: list[str] | None, hist: int | None = None):
         hist = self.hist if hist is None else hist
-        if scope == "active":
-            sc = " and #Unresolved"
-        elif hist:
+        if hist:
             since = (datetime.now(UTC) - timedelta(days=hist)).date().isoformat()
             sc = f" and (#Unresolved or resolved date: {since} .. Today)"
         else:
@@ -604,35 +690,54 @@ class YouTrackDashboard:
             pages = await asyncio.gather(*(page(skip + k * PAGE) for k in range(WAVE)))
             skip += PAGE * WAVE
 
-    async def issues_or_whole(self, project, scope, who):
+    async def issues_or_whole(self, project, who):
         try:
-            return await self.issues(project, scope, who)
+            return await self.issues(project, who)
         except YtError as e:  # query syntax refused: fall back to the whole project
-            if e.status == 400 and scope == "all" and self.hist:
-                return await self.issues(project, scope, who, 0)
+            if e.status == 400 and self.hist:
+                return await self.issues(project, who, 0)
             raise
+
+    async def who_filter(self, rows: list[dict], who: list[str]) -> list[dict]:
+        """`who`'s tickets out of the whole project's, as the YouTrack query would pick them
+        ("me" also covers the tickets the user tests as QC)."""
+        me = (await self.cached("me", lambda: _me(self)))["login"] if "me" in who else None
+        logins = {k for k in who if k not in ("me", "unassigned")} | ({me} if me else set())
+
+        def pick(i: dict) -> bool:
+            return (i["assigneeLogin"] in logins or (me is not None and i.get("qcLogin") == me)
+                    or ("unassigned" in who and not i["assignee"]))  # fmt: skip
+
+        return [i for i in rows if pick(i)]
+
+    async def create_issue(self, summary: str, description: str, project: str, markdown: bool = True):
+        """A ticket from a tagged message: (idReadable, browser URL); ApiError codes for app.py."""
+        try:
+            projects = await self.cached("projects", lambda: _projects(self))
+            pid = next((p["id"] for p in projects if p["shortName"] == project), None)
+            if pid is None:
+                raise ApiError(422, "youtrack_project_not_found")
+            post = {"project": {"id": pid}, "summary": summary, "description": description, "usesMarkdown": markdown}
+            issue_id = (await self.yt("/api/issues", post=post, fields="idReadable"))["idReadable"]
+        except YtError as e:
+            code = "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error"
+            raise ApiError(502, code) from None
+        except (KeyError, TypeError, ValueError):
+            raise ApiError(502, "youtrack_error") from None
+        return issue_id, f"{self.base}/issue/{issue_id}"
 
     async def detail(self, issue_id: str):
         d = await self.yt(
             f"/api/issues/{issue_id}",
-            fields=FIELDS + ",description,comments(text,created,author(fullName,login)),"
+            fields=FIELDS + ",description,comments(id,text,created,author(fullName,login)),"
+            "attachments(id,name,mimeType,size,removed,comment(id)),"
             "links(direction,linkType(name,sourceToTarget,targetToSource),"
             "issues(idReadable,summary,resolved))",
         )
 
         def link(x):
-            t = x.get("linkType") or {}
-            rel = (
-                (
-                    t.get("targetToSource")
-                    if x.get("direction") == "INWARD"
-                    else t.get("sourceToTarget")
-                )
-                or t.get("name")
-                or "liên kết"
-            )
             return {
-                "rel": rel,
+                "rel": _rel(x),
                 "issues": [
                     {
                         "id": i["idReadable"],
@@ -643,13 +748,12 @@ class YouTrackDashboard:
                 ],
             }
 
-        rep = d.get("reporter") or {}
         return {
             **_normalize(d),
             "description": d.get("description") or "",
-            "reporter": rep.get("fullName") or rep.get("login"),
             "comments": [
                 {
+                    "id": c.get("id"),
                     "text": c.get("text"),
                     "created": c.get("created"),
                     "author": (c.get("author") or {}).get("fullName")
@@ -658,7 +762,64 @@ class YouTrackDashboard:
                 for c in d.get("comments") or []
             ],
             "links": [x for x in map(link, d.get("links") or []) if x["issues"]],
+            # the text names them: ![](image.png); the UI loads them through /attachment
+            "attachments": [
+                {"id": a["id"], "name": a.get("name") or "", "mime": a.get("mimeType") or "",
+                 "size": a.get("size") or 0, "comment": (a.get("comment") or {}).get("id")}
+                for a in d.get("attachments") or [] if a.get("id") and not a.get("removed")
+            ],  # fmt: skip
         }
+
+    async def trace(self, ids: list[str]) -> dict:
+        """For the release report, per ticket: its links (the linked tickets with their state, type,
+        assignee) and its latest comment. One YouTrack search per 100 tickets."""
+        fields = (
+            "idReadable,comments(text,created,author(fullName,login)),"
+            f"links(direction,linkType(name,sourceToTarget,targetToSource),issues({FIELDS}))"
+        )  # ponytail: every comment comes back to pick the last one; fine for a release's ~100-300 tickets
+
+        async def chunk(part: list[str]):
+            q = "issue id: " + ", ".join(part)
+            return await self.yt("/api/issues", query=q, fields=fields, **{"$top": len(part)})
+
+        out = {}
+        for rows in await asyncio.gather(*(chunk(ids[n : n + 100]) for n in range(0, len(ids), 100))):
+            for d in rows:
+                last = max(d.get("comments") or [], key=lambda c: c.get("created") or 0, default=None)
+                a = (last or {}).get("author") or {}
+                out[d["idReadable"]] = {
+                    "links": [
+                        {"rel": _rel(x), "issues": [_normalize(i) for i in x.get("issues") or []]}
+                        for x in d.get("links") or [] if x.get("issues")
+                    ],
+                    "last": last and {"text": (last.get("text") or "")[:600], "created": last.get("created"),
+                                      "author": a.get("fullName") or a.get("login")},
+                }  # fmt: skip
+        return out
+
+    async def file(self, issue_id: str, att: str) -> Response:
+        """One attachment's bytes, fetched with the token (the browser has none)."""
+        path = f"/api/issues/{issue_id}/attachments/{att}"
+        a = await self.yt(path, fields="url,mimeType,name,size")
+        if (a.get("size") or 0) > MAX_FILE:
+            raise YtError(413, "Tệp quá lớn để xem trong dashboard — mở trên YouTrack")
+        url = urljoin(self.base + "/", a.get("url") or "")  # a path from the host root
+        if urlsplit(url).netloc != urlsplit(self.base).netloc:
+            raise YtError(502, "YouTrack trả về link tệp lạ")
+        try:
+            r = await self._http().get(url, headers={"Accept": "*/*"})
+        except httpx.HTTPError:
+            raise YtError(502, "Không kết nối được YouTrack") from None
+        if r.status_code >= 400:
+            raise YtError(502, f"YouTrack {r.status_code} khi tải tệp")
+        mime = a.get("mimeType") or "application/octet-stream"
+        show = mime.startswith("image/") and mime != "image/svg+xml"  # svg may hold script
+        name = quote(a.get("name") or "file")
+        return Response(r.content, media_type=mime, headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "Content-Disposition": f"{'inline' if show else 'attachment'}; filename*=UTF-8''{name}",
+        })  # fmt: skip
 
     async def state_since(self, issue_id: str, updated: str) -> int:
         """Latest State change in the activity log (0 = never changed). Cached per id@updated."""
@@ -821,6 +982,12 @@ async def _whoami(svc: YouTrackDashboard) -> str:
     )
 
 
+def _role(request: Request) -> str:
+    """The role the page is in (header X-Yt-Role); none picked yet counts as Dev, like Telegram."""
+    role = request.headers.get("x-yt-role", "")
+    return role if role in ROLES else "dev"
+
+
 def _team_notes(svc: YouTrackDashboard, request: Request) -> str:
     """The instructions of the role the page is in (header X-Yt-Role), under the system rules:
     they shape format / language / scope, they never lift the untrusted-data rules."""
@@ -856,7 +1023,7 @@ async def _ai(
         prompt, heavy = prompt + AI_CODE, True
     try:
         return await ai.ask(f"{head}{prompt}", project=code, system=AI_SYSTEM, heavy=heavy,
-                            on_text=on_text, feature="youtrack")  # fmt: skip
+                            on_text=on_text, feature="youtrack", yt=True)  # fmt: skip
     except ApiError as e:
         msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
@@ -916,9 +1083,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         return await svc.cached("projects", lambda: _projects(svc))
 
     @r.get("/issues")
-    async def issues(project: str, scope: str = "all", who: str | None = None):
+    async def issues(project: str, who: str | None = None):
         p = _project(project)
-        scope = "active" if scope == "active" else "all"
         keys = None
         if who is not None:
             keys = sorted(
@@ -928,10 +1094,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
                 return []
         if svc.mock:
             return []
-        return await svc.cached(
-            f"issues:{p}:{scope}:{','.join(keys) if keys else '*'}",
-            lambda: svc.issues_or_whole(p, scope, keys),
-        )
+        whole = svc.fresh(f"issues:{p}:*")
+        if keys and whole is not None:  # a subset of the whole project: no second YouTrack pull
+            return JSONResponse(await svc.who_filter(whole, keys))
+        # JSONResponse: a big cached list skips FastAPI's encoder (tens of ms on the event loop)
+        return JSONResponse(await svc.cached(f"issues:{p}:{','.join(keys) if keys else '*'}",
+                                             lambda: svc.issues_or_whole(p, keys)))  # fmt: skip
 
     @r.get("/statesince")
     async def statesince(items: str = ""):
@@ -941,12 +1109,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/transitions")
     async def transitions(project: str, days: int = 14):
         p, n = _project(project), max(1, min(days, 90))
-        return [] if svc.mock else await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n)))
 
     @r.get("/sprints")
     async def sprints(project: str = ""):
         p = re.sub(r"[^\w-]", "", project)
-        return [] if svc.mock else await svc.cached(f"sprints:{p}", lambda: svc.sprints(p))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"sprints:{p}", lambda: svc.sprints(p)))
 
     @r.get("/me")
     async def me():
@@ -957,7 +1125,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/people")
     async def people(project: str):
         p = _project(project)
-        return [] if svc.mock else await svc.cached(f"people:{p}", lambda: svc.people(p))
+        return [] if svc.mock else JSONResponse(await svc.cached(f"people:{p}", lambda: svc.people(p)))
 
     @r.get("/issue")
     async def issue(id: str = Query()):
@@ -965,6 +1133,22 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         if svc.mock:
             raise YtError(404, "ticket not found")
         return await svc.cached(f"issue:{i}", lambda: svc.detail(i))
+
+    @r.get("/trace")
+    async def trace(ids: str = ""):
+        keys = sorted({i.upper() for i in ids.split(",") if ID_RE.match(i)})[:300]
+        if svc.mock or not keys:
+            return {}
+        return JSONResponse(await svc.cached(f"trace:{','.join(keys)}", lambda: svc.trace(keys)))
+
+    @r.get("/attachment")
+    async def attachment(issue: str = Query(), id: str = Query()):
+        i = _issue_id(issue)
+        if not re.fullmatch(r"[\w.-]{1,40}", id):
+            raise YtError(400, "bad attachment id")
+        if svc.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        return await svc.file(i, id)
 
     @r.post("/issue/assignee")
     async def set_assignee(body: Assignee):
@@ -997,8 +1181,28 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         p = _project(project)
         return {} if svc.mock else await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
 
+    @r.get("/workflow")
+    async def get_workflow(project: str, request: Request) -> dict:
+        p = _project(project)
+        fields = {} if svc.mock else await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
+        states = fields.get("State", [])
+        return {"states": states, **svc.workflow(p, _role(request), states).model_dump()}
+
+    @r.post("/workflow")
+    async def set_workflow(project: str, body: Workflow, request: Request) -> Workflow:
+        svc.save_workflow(_project(project), _role(request), body)
+        return body
+
+    @r.get("/workflow/youtrack")
+    async def youtrack_flow(project: str) -> dict:
+        p = _project(project)
+        if svc.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        states = (await svc.cached(f"fields:{p}", lambda: _fields(svc, p))).get("State", [])
+        return await svc.yt_flow(p, states)
+
     @r.post("/issue/field")
-    async def set_field(body: FieldSet):
+    async def set_field(body: FieldSet, request: Request):
         """Through a command, so State follows the project's workflow (it is a state machine)."""
         i = _issue_id(body.id)
         if svc.mock:
@@ -1010,9 +1214,14 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(400, f"{body.name} không có giá trị {body.value}")
         value = body.value
         if body.name == "State":  # a state machine takes the event leading to a state, not its name
-            ev = "customFields(name,possibleEvents(id,presentation))"
+            ev = "customFields(name,value(name),possibleEvents(id,presentation))"
             d = await svc.yt(f"/api/issues/{i}", fields=ev)
             sf = next((f for f in d.get("customFields") or [] if f["name"] == "State"), {})
+            cur = (sf.get("value") or {}).get("name")
+            wf = svc.workflow(p, _role(request), known.get("State", []))
+            if wf.on and cur != body.value and (cur, body.value) not in wf.edges:
+                to = ", ".join(t for s, t in wf.edges if s == cur) or "không có"
+                raise YtError(400, f"Workflow của team không cho {cur} → {body.value} — chỉ sang: {to}")
             if (events := sf.get("possibleEvents")) is not None:
                 value = next((e["id"] for e in events if e["presentation"] == body.value), None)
                 if value is None:
@@ -1024,13 +1233,17 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         return _normalize(await svc.yt(f"/api/issues/{i}", fields=FIELDS))
 
     @r.get("/mentions")
-    async def mentions(request: Request, id: str = Query()):
-        """Telegram messages (tracked groups) that mention this ticket."""
+    async def mentions(request: Request, id: str = Query()) -> list[Mention]:
+        """Telegram messages (tracked groups) that mention this ticket. `message_id` / `outgoing` /
+        `reply_to_id`: where to answer when the ticket is done (your own mention: the tag it replied to)."""
         s = request.app.state
         rows = await s.db.read(s.store.find_mentions, _issue_id(id))
         return [
-            {"chat_id": m["chat_id"], "chat": m["title"], "from": m["sender_name"],
-             "text": m["text"][:400], "date": m["date"] * 1000}
+            Mention.model_validate({
+                "chat_id": m["chat_id"], "chat": m["title"], "from": m["sender_name"],
+                "text": m["text"][:400], "date": m["date"] * 1000, "message_id": str(m["message_id"]),
+                "outgoing": bool(m["outgoing"]),
+                "reply_to_id": None if m["reply_to_id"] is None else str(m["reply_to_id"])})
             for m in rows
         ]  # fmt: skip
 
@@ -1039,7 +1252,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         if svc.mock:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-        return f"{AI_TICKET[body.kind]}\n<ticket>\n{_ticket_json(d)}\n</ticket>", False
+        ticket = _ticket_json(d)
+        links = ""  # KB / Telegram links in it, read for the AI (no web); a rewrite only keeps the links
+        if body.kind != "rewrite":
+            links = await svc.cached(f"links:{i}", lambda: link_block(request.app.state, ticket, None))
+        return f"{AI_TICKET[body.kind]}\n<ticket>\n{ticket}\n</ticket>{links}", False
 
     async def p_data(body: AiData, request: Request) -> tuple[str, bool]:
         data = data_json(body.data)
@@ -1059,13 +1276,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         gate = asyncio.Semaphore(WAVE * 2)
         st = request.app.state
-        # Telegram text goes to the AI only without per-message consent (AI_REQUIRE_CONSENT=0).
-        with_tg = not st.ai.settings.ai_require_consent
 
         async def one(i: str) -> str:
             async with gate:
                 d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-            tg = await st.db.read(st.store.find_mentions, i, 5) if with_tg else []
+            tg = await st.db.read(st.store.find_mentions, i, 5)
             return _ticket_json(d, 1200, 6, 500, telegram=[
                 {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                 for m in tg
@@ -1081,7 +1296,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         head = heads.get(body.kind, AI_TICKETS)
         if body.kind == "standup":
             since = body.since // 1000
-            sent = await st.db.read(st.store.my_replies, since) if with_tg else []
+            sent = await st.db.read(st.store.my_replies, since)
             replies = data_json(
                 [{"group": m["title"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                  for m in sent])  # fmt: skip
@@ -1099,17 +1314,6 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             )
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
-
-    async def p_promises(body: AiPromises, request: Request) -> tuple[str, bool]:
-        """What the user promised in Telegram ("mai em gửi") and has not done yet."""
-        st = request.app.state
-        if st.ai.settings.ai_require_consent:  # their own messages, still Telegram data
-            raise YtError(403, "Cần AI_REQUIRE_CONSENT=0: mục này đọc tin bạn gửi trên Telegram")
-        sent = await st.db.read(st.store.my_replies, max(0, body.since // 1000), 80)
-        replies = data_json(
-            [{"group": m["title"], "date": _day(m["date"] * 1000), "text": m["text"][:400]}
-             for m in sent])  # fmt: skip
-        return f"{AI_PROMISES}\n<telegram_replies>{replies}</telegram_replies>", False
 
     def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None):
         async def work(on_text):
@@ -1135,17 +1339,9 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         code = await _code_dir(request, body.folder)
         return answer(request, *await p_tickets(body, request), draft=False, code=code)
 
-    @r.post("/ai/promises")
-    async def ai_promises(body: AiPromises, request: Request):
-        prompt = await p_promises(body, request)  # checks consent first
-        st = request.app.state
-        if not await st.db.read(st.store.my_replies, max(0, body.since // 1000), 1):
-            return {"text": "Chưa có tin nào bạn gửi trong các nhóm đang theo dõi."}
-        return answer(request, *prompt, draft=False)
-
     FOLLOW = {
         "/ai/ticket": (AiTicket, p_ticket), "/ai/data": (AiData, p_data),
-        "/ai/tickets": (AiTickets, p_tickets), "/ai/promises": (AiPromises, p_promises),
+        "/ai/tickets": (AiTickets, p_tickets),
     }  # fmt: skip
 
     @r.post("/ai/followup")
@@ -1174,13 +1370,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def ai_filter(body: AiFilter, request: Request):
         opts = data_json(body.options)[:20_000]
         prompt = f"{AI_FILTER}\n<options>{opts}</options>\n<ask>{body.text}</ask>"
-        text = await _ai(svc, request, prompt, notes=False)
-        m = re.search(r"\{.*\}", text, re.S)
-        try:
-            out = json.loads(m.group(0)) if m else None
-        except ValueError:
-            out = None
-        if not isinstance(out, dict):
+        out = json_object(await _ai(svc, request, prompt, notes=False))
+        if out is None:
             raise YtError(502, "AI trả về không đọc được, thử diễn đạt khác")
         return out
 
@@ -1188,7 +1379,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
 
 
 async def _projects(svc: YouTrackDashboard):
-    a = await svc.yt("/api/admin/projects", fields="shortName,name,archived", **{"$top": 200})
+    a = await svc.yt("/api/admin/projects", fields="id,shortName,name,archived", **{"$top": 200})
     return [p for p in a if not p.get("archived")]
 
 
@@ -1231,37 +1422,3 @@ async def whoami(url: str, token: str) -> dict:
         raise ApiError(502, "youtrack_unreachable") from None
     except (KeyError, ValueError, TypeError):
         raise ApiError(502, "youtrack_unreachable") from None  # not a YouTrack answer
-
-
-async def create_issue(
-    settings, summary: str, description: str, project_name: str
-) -> tuple[str, str]:
-    """Returns (idReadable, browser URL)."""
-    base = settings.youtrack_url.rstrip("/")
-    headers = {"Authorization": f"Bearer {settings.youtrack_token}", "Accept": "application/json"}
-    try:
-        async with httpx.AsyncClient(base_url=base, headers=headers, timeout=TIMEOUT) as c:
-            r = await c.get(
-                "/api/admin/projects",
-                params={"fields": "id,shortName", "query": project_name},
-            )
-            r.raise_for_status()
-            project = next(
-                (p for p in r.json() if p["shortName"] == project_name), None
-            )
-            if project is None:
-                raise ApiError(422, "youtrack_project_not_found")
-            r = await c.post(
-                "/api/issues",
-                params={"fields": "idReadable"},
-                json={"project": {"id": project["id"]}, "summary": summary,
-                      "description": description},
-            )  # fmt: skip
-            r.raise_for_status()
-            issue_id = r.json()["idReadable"]
-    except httpx.HTTPStatusError as e:
-        code = "youtrack_unauthorized" if e.response.status_code in (401, 403) else "youtrack_error"
-        raise ApiError(502, code) from None
-    except (httpx.HTTPError, KeyError, ValueError):
-        raise ApiError(502, "youtrack_error") from None
-    return issue_id, f"{base}/issue/{issue_id}"

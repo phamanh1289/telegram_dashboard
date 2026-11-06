@@ -15,6 +15,7 @@ export type Task = S["TaskDTO"];
 export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
+export type HandledAllResponse = S["HandledAllResponse"];
 export type YouTrackIssue = S["YouTrackIssue"];
 export type AiTicketDraft = S["AiTicketDraft"];
 export type ClaudeAccount = S["ClaudeAccount"];
@@ -23,7 +24,6 @@ export type AiPicks = S["AiPicks"];
 export type AiCatalogEntry = S["AiCatalogEntry"];
 export type AiAccount = S["AiAccount"];
 export type AiRun = S["AiRun"];
-export type AiPermissionResponse = S["AiPermissionResponse"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
 export type DigestItem = S["DigestItem"];
@@ -103,11 +103,22 @@ export async function apiStream<T>(path: string, json: unknown, signal?: AbortSi
   return readAnswer<T>(res, onPart);
 }
 
-export const isAuthError = (e: unknown) => e instanceof ApiError && e.status === 401;
+/** Codes any call may answer, worded once; a caller's `map` wins over these. */
+const COMMON: Record<string, (e: ApiError) => string> = {
+  flood_wait: (e) => `Telegram yêu cầu chờ${e.retryAfter ? ` ${e.retryAfter} giây` : ""} rồi thử lại. `,
+  telegram_error: (e) => `Telegram báo lỗi${e.detail ? ` (${e.detail})` : ""}, thử lại sau. `,
+  task_cancelled: () => "Phiên đã bị dừng khi đang khởi động. ",
+  ai_scope_not_allowed: () => "Tin này không còn được theo dõi hoặc đã bị xóa. ",
+};
 
-/** Vietnamese text for a failed call: the error code's entry in `map`, else `fallback`. */
+/** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */
+export const statusQuery = {
+  queryKey: ["status"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Status>("/status", { signal }),
+};
+
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
 export function errorText(e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") {
-  const text = (e instanceof ApiError && map[e.code]) || fallback;
+  const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || fallback;
   return e instanceof ApiError && e.code === "ai_provider_error" && e.detail ? `${text.trimEnd()} (${e.detail}) ` : text;
 }

@@ -3,7 +3,7 @@ from conftest import ORIGIN, msg
 
 def test_cross_origin_requests_rejected(client):
     for headers in ({"Origin": "http://evil.test"}, {}, {"Origin": "http://localhost:8765"}):
-        r = client.put("/api/chats/x/ai-permission", json={}, headers=headers)
+        r = client.put("/api/ai/prefs", json={"provider": "claude"}, headers=headers)
         assert r.status_code == 403
     assert client.get("/api/status", headers={"Origin": "http://evil.test"}).status_code == 403
     assert client.get("/api/status", headers={"Origin": ORIGIN}).status_code == 200
@@ -27,9 +27,17 @@ def test_no_store_headers(client):
     assert r.json()["state"] in {"connected", "connecting"}
 
 
+def test_static_cache_headers(client, settings):
+    asset = settings.static_dir / "_next" / "static" / "a1b2.js"
+    asset.parent.mkdir(parents=True)
+    asset.write_text("x")
+    assert client.get("/_next/static/a1b2.js").headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert client.get("/").headers["cache-control"] == "no-cache"
+
+
 def test_toggle_handled(client):
     store = client.app.state.store
-    store.track_mention("-1001", "Team", "supergroup")
+    store.set_tracking("-1001", True, "Team", "supergroup")
     store.apply_message(msg("-1001", 7, "@me ?", sender="5"))
     url = "/api/chats/-1001/messages/7/handled"
     assert client.put(url, json={"handled": True}, headers={"Origin": ORIGIN}).status_code == 204
@@ -46,16 +54,16 @@ def test_mark_all_handled_respects_since(client):
     from datetime import UTC, datetime
 
     store = client.app.state.store
-    store.track_mention("-1001", "Team", "supergroup")
+    store.set_tracking("-1001", True, "Team", "supergroup")
     old, new = msg("-1001", 1, "@me a", sender="5"), msg("-1001", 2, "@me b", sender="5")
     new.date = datetime(2026, 10, 30, tzinfo=UTC)
     store.apply_message(old)
     store.apply_message(new)
     h = {"Origin": ORIGIN}
     r = client.post("/api/chats/-1001/handled-all?since=2026-10-29T00:00:00Z", headers=h)
-    assert r.json() == {"count": 1}
+    assert r.json() == {"count": 1, "message_ids": [2]}  # the ids, for an Undo
     assert client.get("/api/chats").json()["items"][0]["pending_count"] == 1
-    assert client.post("/api/chats/-1001/handled-all", headers=h).json() == {"count": 1}
+    assert client.post("/api/chats/-1001/handled-all", headers=h).json() == {"count": 1, "message_ids": [1]}
 
 
 def test_cross_site_and_forwarded_host_rejected(client):

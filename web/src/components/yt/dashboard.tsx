@@ -1,14 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle } from "lucide-react";
+import { Activity, AlertTriangle, Bug, CheckCheck, FlaskConical, Gauge, Hammer, Layers, type LucideIcon, RotateCcw, Target, TestTubes, Timer, Undo2, Users } from "lucide-react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
-import { Fragment, useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { Hint } from "@/components/ui/hint";
+import { Pill } from "@/components/ui/segmented";
 import { useNow } from "@/lib/inbox";
+import { dm } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { AI_MAX, byAs, bySp, DAY, dm, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
+import { AI_MAX, byAs, bySp, DAY, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
 import { AGE, dashStats, reportData, type Stats } from "@/lib/yt-stats";
-import { Card, CardAi, MultiSelect, Person, StatePill } from "./bits";
+import { AiAsk, Card, CardAi, MultiSelect, Person, StatePill } from "./bits";
 import { type Mode, useYt } from "./state";
 
 // The bento dashboard, laid out per role (LAYOUT): what needs that role first, then its figures. Every number opens its tickets.
@@ -119,18 +122,18 @@ export function DashboardPage() {
     </Card>,
   };
   const qc = useQc();
-  /** A chat about one report: the dashboard's figures (+ QC verdicts when read), then follow-ups in the sheet. */
-  const ask = (title: string) => y.setSheet({ kind: "work", title: `AI · ${title}`, ids: [], auto: { label: `AI đang phân tích “${title}”`, run: (sig) => yt.aiData("ask", {
+  /** A chat about one report: opens empty, the first prompt sends the dashboard's figures (+ QC verdicts when read), then follow-ups. */
+  const ask = (title: string) => y.setSheet({ kind: "work", title: `AI · ${title}`, ids: [], start: { label: `AI đang phân tích “${title}”`, ask: (q, sig) => yt.aiData("ask", {
     focusReport: title, role: y.mode, rangeDays: y.range, ...reportData(d, y.wip),
     qc: qc.q.data && { tests: qc.pass.length + qc.fail.length, ticketsTested: qc.tested, firstPass: qc.firstPass, returned: qc.fail.length, reopened: qc.reopen.length,
       byTester: Object.fromEntries(qc.who), returnedByDev: Object.fromEntries(qc.dev.map(([n, [, f]]) => [n, f])),
       pingPong: qc.pong.slice(0, AI_MAX).map(({ i, n, re }) => ({ id: i.id, summary: i.summary, returned: n, reopened: re })) },
-  }, sig, `Phân tích sâu báo cáo “${title}” trên dashboard: số liệu đang nói gì, điểm bất thường hay rủi ro, nguyên nhân có thể (nêu ID ticket), và việc nên làm tiếp.`) } });
+  }, sig, `Về báo cáo “${title}” trên dashboard (nêu ID ticket khi có): ${q}`) } });
   const layout = LAYOUT[y.mode];
   return (
     <CardAi value={y.aiOn ? ask : null}>
     <div className="grid grid-cols-12 gap-3">
-      <JumpNav items={layout.map(([id, title]) => [id, title])} />
+      <JumpNav items={layout.map(([id, title]) => [id, title])} onAi={y.aiOn ? () => ask("Tổng quan dashboard") : undefined} />
       {layout.map(([id, title, blocks]) => (
         <Fragment key={id}>
           <Section id={`yt-${id}`} title={title} />
@@ -179,6 +182,7 @@ const QcState = ({ q }: { q: ReturnType<typeof useQc>["q"] }) => {
 };
 const useList = () => { const y = useYt(); return (title: string, rows: Ticket[]) => y.setSheet({ kind: "list", title, rows }); };
 
+const QC_ICON = [TestTubes, CheckCheck, Undo2, RotateCcw];
 function QcKpis() {
   const y = useYt();
   const s = useQc();
@@ -187,19 +191,14 @@ function QcKpis() {
   const tiles: [string, number | null, string, string, () => void][] = [
     ["Lượt test", s.pass.length + s.fail.length, "", `${s.tested} ticket, ${y.range} ngày qua`, () => list("Ticket đã test", s.tickets([...s.pass, ...s.fail]))],
     ["Pass ngay lần đầu", pc(s.firstPass, s.tested), "%", `${s.firstPass}/${s.tested} ticket không bị trả lại`, () => list("Pass không bị trả lại", s.tickets(s.pass).filter((i) => !s.fail.some((x) => x.id === i.id)))],
-    ["Bị trả lại", s.fail.length, "", `lượt QC chuyển về dev · ${pc(s.fail.length, s.pass.length + s.fail.length) ?? 0}%`, () => list("Bị QC trả lại", s.tickets(s.fail))],
+    ["Bị trả lại", s.fail.length, "", `lượt QC chuyển về dev, ${pc(s.fail.length, s.pass.length + s.fail.length) ?? 0}%`, () => list("Bị QC trả lại", s.tickets(s.fail))],
     ["Reopen", s.reopen.length, "", "đã xong rồi mở lại", () => list("Ticket reopen", s.tickets(s.reopen))],
   ];
   if (!s.q.data) return <div className="col-span-12 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock"><QcState q={s.q} /></div>;
   return (
     <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
       {tiles.map(([l, v, suf, sub, on], k) => (
-        <motion.button key={l} type="button" onClick={on} whileHover={{ y: -2 }} title="Xem danh sách ticket"
-          className="grid content-start justify-items-start gap-1 rounded-[var(--radius-card)] bg-cotton p-4 text-left shadow-stock">
-          <span className="text-xs text-ink-3">{l}</span>
-          <b className={cn("font-mono text-3xl font-medium tabular-nums", k >= 2 && v ? "text-error" : "")}><Count n={v} suffix={suf} /></b>
-          <span className="text-xs text-ink-3">{sub}</span>
-        </motion.button>
+        <Tile key={l} label={l} icon={QC_ICON[k]} value={v} suffix={suf} bad={k >= 2 && !!v} onClick={on}><span className="text-xs text-ink-3">{sub}</span></Tile>
       ))}
     </div>
   );
@@ -222,7 +221,7 @@ function QcWho() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   return <Stack rows={s.who.map(([n, [p, f]]) => ({ label: n === "—" ? n : <Person name={n} />, parts: [[p, "var(--color-ok)"], [f, "var(--color-error)"]], text: `${p} / ${f}`,
-    on: () => list(`Đã test · ${n}`, s.tickets([...s.pass, ...s.fail].filter((x) => (x.by || "—") === n))) }))} empty="Chưa có lượt test nào." />;
+    on: () => list(`Đã test: ${n}`, s.tickets([...s.pass, ...s.fail].filter((x) => (x.by || "—") === n))) }))} empty="Chưa có lượt test nào." />;
 }
 
 function QcDev() {
@@ -230,7 +229,7 @@ function QcDev() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   return <HBars rows={s.dev.map(([n, [, f]]) => ({ label: n === "Chưa assign" ? n : <Person name={n} />, v: f, c: "var(--color-error)",
-    on: () => list(`Bị trả lại · ${n}`, s.tickets(s.fail.filter((x) => (s.byId.get(x.id)!.assignee || "Chưa assign") === n))) }))} empty="Chưa có ticket nào bị trả lại." />;
+    on: () => list(`Bị trả lại: ${n}`, s.tickets(s.fail.filter((x) => (s.byId.get(x.id)!.assignee || "Chưa assign") === n))) }))} empty="Chưa có ticket nào bị trả lại." />;
 }
 
 function QcPong() {
@@ -238,26 +237,68 @@ function QcPong() {
   const list = useList();
   if (!s.q.data) return <QcState q={s.q} />;
   const SHOW = 8;
-  return <TicketRows rows={s.pong.slice(0, SHOW).map(({ i, n, re }) => ({ i, right: <span className={cn("font-mono text-xs whitespace-nowrap", n >= 3 || re ? "font-semibold text-error" : "text-warn")}>{[n ? `${n} lần trả lại` : "", re ? "reopen" : ""].filter(Boolean).join(" · ")}</span> }))}
+  return <TicketRows rows={s.pong.slice(0, SHOW).map(({ i, n, re }) => ({ i, right: <span className={cn("font-mono text-xs whitespace-nowrap", n >= 3 || re ? "font-semibold text-error" : "text-warn")}>{[n ? `${n} lần trả lại` : "", re ? "reopen" : ""].filter(Boolean).join(", ")}</span> }))}
     all={s.pong.map((x) => x.i)} more={s.pong.length > SHOW ? () => list("Trả lại nhiều lần / reopen", s.pong.map((x) => x.i)) : undefined} moreN={s.pong.length - SHOW}
     empty="Không có ticket nào bị trả lại từ 2 lần hay reopen." />;
 }
 
-const Section = ({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) => (
-  <div id={id} className="col-span-12 mt-3 flex scroll-mt-[calc(var(--yt-top)+3rem)] flex-wrap items-center gap-2 first:mt-0">
-    <h2 className="text-sm font-semibold text-ink-2">{title}</h2>
-    {children && <div className="ml-auto flex flex-wrap gap-1.5">{children}</div>}
-  </div>
-);
-/** The dashboard is long: a sticky row of its sections, a click scrolls there. */
-function JumpNav({ items }: { items: [string, string][] }) {
+const SECTION_ICON: Record<string, LucideIcon> = { need: AlertTriangle, sprint: Timer, flow: Activity, qc: FlaskConical, bug: Bug, speed: Gauge, load: Users };
+const Section = ({ id, title, children }: { id: string; title: string; children?: React.ReactNode }) => {
+  const Icon = SECTION_ICON[id.slice(3)] ?? Layers;
   return (
-    <nav aria-label="Mục dashboard" className="yt-noprint sticky top-(--yt-top) z-10 col-span-12 -mx-1 flex gap-1 overflow-x-auto bg-paper/90 px-1 py-1.5 backdrop-blur">
-      {items.map(([k, l]) => (
-        <button key={k} type="button" onClick={() => document.getElementById(`yt-${k}`)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" })}
-          className="h-7 shrink-0 rounded-full border border-rule bg-cotton px-3 text-xs font-medium text-ink-2 hover:border-rule-2 hover:text-ink">{l}</button>
-      ))}
+    <div id={id} className="col-span-12 mt-4 flex scroll-mt-[calc(var(--yt-top)+3rem)] flex-wrap items-center gap-2.5 first:mt-0">
+      <span className="grid size-7 place-items-center rounded-lg bg-hl-wash text-hl-2"><Icon className="size-4" aria-hidden /></span>
+      <h2 className="text-base font-semibold text-ink">{title}</h2>
+      <span aria-hidden className="h-px flex-1 bg-gradient-to-r from-rule to-transparent" />
+      {children && <div className="flex flex-wrap gap-1.5">{children}</div>}
+    </div>
+  );
+};
+/** The dashboard is long: a sticky row of its sections (the one on screen lit), a click scrolls there; the whole-dashboard AI at the end. */
+function JumpNav({ items, onAi }: { items: [string, string][]; onAi?: () => void }) {
+  const [on, setOn] = useState(items[0]?.[0]);
+  const ids = items.map(([k]) => k).join(",");
+  useEffect(() => {
+    const io = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) setOn(e.target.id.slice(3)); }, { rootMargin: "-25% 0px -65% 0px" });
+    for (const k of ids.split(",")) { const el = document.getElementById(`yt-${k}`); if (el) io.observe(el); }
+    return () => io.disconnect();
+  }, [ids]);
+  const go = (k: string) => {
+    setOn(k);
+    document.getElementById(`yt-${k}`)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
+  return (
+    <nav aria-label="Mục dashboard" className="yt-noprint sticky top-(--yt-top) z-10 col-span-12 -mx-1 flex items-center gap-1 bg-paper/90 px-1 py-1.5 backdrop-blur">
+      <div className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
+        {items.map(([k, l]) => {
+          const Icon = SECTION_ICON[k] ?? Layers, cur = on === k;
+          return (
+            <button key={k} type="button" aria-current={cur ? "location" : undefined} onClick={() => go(k)}
+              className={cn("relative flex h-7 shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors duration-(--dur-micro)", cur ? "text-hl-ink" : "text-ink-2 hover:bg-paper-3 hover:text-ink")}>
+              {cur && <Pill id="yt-jump" className="inset-0 rounded-full bg-hl shadow-stock" />}
+              <Icon className="relative size-3.5" aria-hidden /><span className="relative">{l}</span>
+            </button>
+          );
+        })}
+      </div>
+      {onAi && <AiAsk big label="Hỏi AI về toàn bộ dashboard" hint="Hỏi mình về cả dashboard nhé!" onClick={onAi} />}
     </nav>
+  );
+}
+
+/** A KPI tile: label + icon, a big counting number, a sub line; a click lists its tickets. */
+function Tile({ label, icon: Icon, value, suffix = "", bad, onClick, children }: { label: string; icon: LucideIcon; value: number | null; suffix?: string; bad?: boolean; onClick: () => void; children?: React.ReactNode }) {
+  return (
+    <Hint side="bottom" text="Bấm để xem danh sách ticket"><motion.button type="button" data-drill="list" onClick={onClick} whileHover={{ y: -3 }} whileTap={{ scale: 0.98 }}
+      initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}
+      className="yt-card group relative grid content-start justify-items-start gap-1 overflow-hidden rounded-[var(--radius-card)] bg-cotton p-4 text-left shadow-stock transition-shadow duration-(--dur-short) hover:shadow-pop">
+      <span aria-hidden className={cn("absolute inset-x-0 top-0 h-0.5 origin-left scale-x-0 transition-transform duration-(--dur-short) group-hover:scale-x-100", bad ? "bg-error" : "bg-hl")} />
+      <span className="flex w-full items-center justify-between gap-2 text-xs text-ink-3">{label}
+        <span className={cn("grid size-7 place-items-center rounded-lg", bad ? "bg-error-wash text-error" : "bg-hl-wash text-hl-2")}><Icon className="size-4" aria-hidden /></span>
+      </span>
+      <b className={cn("font-mono text-3xl font-medium tabular-nums", bad && "text-error")}><Count n={value} suffix={suffix} /></b>
+      {children}
+    </motion.button></Hint>
   );
 }
 
@@ -289,11 +330,11 @@ function Attention({ d }: { d: Stats }) {
   return (
     <div className="grid gap-1.5">
       {ranked.map(({ q, sev, n }) => (
-        <motion.button layout key={q} type="button" onClick={() => drill("q", q)} title="Xem danh sách ticket"
+        <Hint key={q} side="bottom" text="Bấm để xem danh sách ticket"><motion.button layout type="button" data-drill="list" onClick={() => drill("q", q)}
           className={cn("flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors duration-(--dur-micro)",
             !n ? "bg-paper-2 text-ink-3" : sev === "bad" ? "bg-error-wash text-error hover:bg-error-wash/70" : "bg-warn-wash text-warn hover:bg-warn-wash/70")}>
           <span className={cn(n && "font-medium")}>{QUICK[q].label}</span><b className="font-mono tabular-nums">{fmt(n)}</b>
-        </motion.button>
+        </motion.button></Hint>
       ))}
     </div>
   );
@@ -344,6 +385,7 @@ function TicketRows({ rows, all, empty, more, moreN }: { rows: { i: Ticket; righ
   );
 }
 
+const KPI_ICON = [Layers, Hammer, FlaskConical, Target];
 function Kpis({ d }: { d: Stats }) {
   const drill = useDrill(d);
   const delta = d.per.prev && d.prevTotal ? Math.round((d.total - d.prevTotal) / d.prevTotal * 100) : null;
@@ -357,11 +399,8 @@ function Kpis({ d }: { d: Stats }) {
   ];
   return (
     <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {cards.map(([l, v, s, k, extra]) => (
-        <motion.button key={k} type="button" onClick={() => drill(k)} whileHover={{ y: -2 }} title="Xem danh sách ticket"
-          className="grid content-start justify-items-start gap-1 rounded-[var(--radius-card)] bg-cotton p-4 text-left shadow-stock">
-          <span className="text-xs text-ink-3">{l}</span><b className="font-mono text-3xl font-medium tabular-nums"><Count n={v} suffix={s} /></b>{extra}
-        </motion.button>
+      {cards.map(([l, v, s, k, extra], j) => (
+        <Tile key={k} label={l} icon={KPI_ICON[j]} value={v} suffix={s} onClick={() => drill(k)}>{extra}</Tile>
       ))}
     </div>
   );
@@ -377,13 +416,13 @@ function Progress({ d }: { d: Stats }) {
         const diff = r.time == null ? null : p - r.time;
         const st = p === 100 && r.t ? ["ok", "Hoàn thành"] : diff == null ? null : diff >= 0 ? ["ok", "Đúng tiến độ"] : diff > -15 ? ["warn", "Hơi chậm"] : ["bad", "Chậm tiến độ"];
         return (
-          <button key={r.name} type="button" onClick={() => drill("sp", r.name)} className="grid gap-1.5 text-left" title="Xem danh sách ticket của sprint này">
-            <span className="flex justify-between text-sm"><span className="font-medium">{r.name}</span><span className="font-mono text-xs text-ink-2 tabular-nums">{r.d}/{r.t} · {p}%</span></span>
+          <Hint key={r.name} side="bottom" text="Bấm để xem danh sách ticket của sprint này"><button type="button" data-drill="sprint" onClick={() => drill("sp", r.name)} className="grid gap-1.5 text-left">
+            <span className="flex justify-between text-sm"><span className="font-medium">{r.name}</span><span className="font-mono text-xs text-ink-2 tabular-nums">{r.d}/{r.t} ({p}%)</span></span>
             <span className="relative flex h-2.5 overflow-hidden rounded-full bg-paper-3">
               {[[r.d, "var(--color-ok)"], [r.qc, "var(--st-qc)"], [r.doing, "var(--st-doing)"]].map(([n, c], k) => (
                 <motion.i key={k} className="h-full" style={{ background: c as string }} initial={{ width: 0 }} animate={{ width: `${w(n as number)}%` }} transition={{ duration: 0.5, delay: k * 0.05 }} />
               ))}
-              {r.time != null && <u className="absolute inset-y-[-2px] w-0.5 bg-ink" style={{ left: `${r.time}%` }} title={`Thời gian sprint đã qua ${r.time}%`} />}
+              {r.time != null && <u aria-hidden className="absolute inset-y-[-2px] w-0.5 bg-ink" style={{ left: `${r.time}%` }} />}
             </span>
             <span className="flex flex-wrap justify-between gap-2 text-xs text-ink-3">
               <span className="flex flex-wrap gap-x-3"><Lg c="var(--color-ok)">Xong {r.d}</Lg><Lg c="var(--st-qc)">QC {r.qc}</Lg><Lg c="var(--st-doing)">Đang làm {r.doing}</Lg><Lg c="var(--color-rule-2)">Todo {r.todo}</Lg></span>
@@ -392,7 +431,7 @@ function Progress({ d }: { d: Stats }) {
                 {st && <span className={cn("rounded-full px-2 font-medium", st[0] === "ok" ? "bg-ok-wash text-ok" : st[0] === "warn" ? "bg-warn-wash text-warn" : "bg-error-wash text-error")}>{st[1]}</span>}
               </span>
             </span>
-          </button>
+          </button></Hint>
         );
       })}
     </div>
@@ -455,17 +494,18 @@ function Columns({ days, series }: { days: number[]; series: { v: number[]; c: s
 }
 
 type Bar = { label: React.ReactNode; v: number; c: string; on: () => void };
-function HBars({ rows, empty, max }: { rows: Bar[]; empty: string; max?: number }) {
+function HBars({ rows, empty, max, label }: { rows: Bar[]; empty: string; max?: number; label?: string }) {
   const m = max ?? Math.max(0, ...rows.map((r) => r.v));
-  return <Stack rows={rows.map((r) => ({ label: r.label, parts: [[r.v, r.c]], text: String(r.v), on: r.on }))} max={m} empty={empty} />;
+  return <Stack rows={rows.map((r) => ({ label: r.label, parts: [[r.v, r.c]], text: String(r.v), on: r.on }))} max={m} empty={empty} label={label} />;
 }
-function Stack({ rows, empty, max }: { rows: { label: React.ReactNode; parts: [number, string][]; text: string; on: () => void }[]; empty: string; max?: number }) {
+/** `label`: the label column's widest (9rem). */
+function Stack({ rows, empty, max, label = "9rem" }: { rows: { label: React.ReactNode; parts: [number, string][]; text: string; on: () => void }[]; empty: string; max?: number; label?: string }) {
   const m = Math.max(1, max ?? Math.max(0, ...rows.map((r) => r.parts.reduce((s, [n]) => s + n, 0))));
   if (!rows.length) return empty ? <p className="text-sm text-ink-3">{empty}</p> : null;
   return (
     <div className="grid gap-1">
       {rows.map((r, k) => (
-        <button key={k} type="button" onClick={r.on} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_2.5rem] items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
+        <button key={k} type="button" onClick={r.on} style={{ gridTemplateColumns: `minmax(0,${label}) minmax(0,1fr) 2.5rem` }} className="grid items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
           <span className="min-w-0 truncate">{r.label}</span>
           <span className="flex h-2 overflow-hidden rounded-full bg-paper-3">
             {r.parts.map(([n, c], j) => <motion.i key={j} className="h-full" style={{ background: c }} initial={{ width: 0 }} animate={{ width: `${n / m * 100}%` }} transition={{ duration: 0.45 }} />)}
@@ -546,4 +586,4 @@ function Mix({ d }: { d: Stats }) {
   );
 }
 
-export { Attention, Aging, Kpis, Progress, Wip };
+export { Attention, Aging, HBars, Kpis, Progress, Stack, Wip };

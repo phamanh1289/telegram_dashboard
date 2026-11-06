@@ -13,7 +13,8 @@ def test_codex_events_become_the_claude_items():
     out, _ = run("codex", [
         {"type": "thread.started", "thread_id": "th1"},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "Looking."}},
-        {"type": "item.completed", "item": {"type": "command_execution", "command": "ls", "aggregated_output": "a.py\n", "exit_code": 0}},
+        {"type": "item.completed",
+         "item": {"type": "command_execution", "command": "ls", "aggregated_output": "a.py\n", "exit_code": 0}},
         {"type": "item.completed", "item": {"type": "agent_message", "text": "One file."}},
         {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 40, "output_tokens": 5}},
     ])  # fmt: skip
@@ -35,7 +36,8 @@ def test_antigravity_answer_is_the_text_after_the_last_tool():
              tool_info={"parameters": {"AbsolutePath": "/p/a.py"}}),
         step(step_index=2, state="DONE", step_type="tool", tool_name="view_file", tool_info={"output": "x"}),
         step(step_index=3, state="ACTIVE", step_type="agent_response", text_delta="Done."),
-        {"event": "result", "result": {"status": "SUCCESS", "response": "Done.\n", "num_turns": 1, "duration_seconds": 1.5,
+        {"event": "result", "result": {"status": "SUCCESS", "response": "Done.\n", "num_turns": 1,
+                                       "duration_seconds": 1.5,
                                        "usage": {"input_tokens": 10, "output_tokens": 2, "cache_read_tokens": 4}}},
     ])  # fmt: skip
     kinds = [i["kind"] for i in out if i["kind"] not in ("delta", "session")]
@@ -58,13 +60,15 @@ def test_sessions_resume_in_the_cli_that_started_them(tmp_path, monkeypatch):
     assert cmd[cmd.index("-m") + 1] == "gpt-6.1-sol"
     g = task_cmd(s, "antigravity", "edit", "c1", False, "gemini-x", "")
     assert "--conversation" not in g and g[g.index("--model") + 1] == "gemini-x"
-    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit"
+    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit-shell"
     assert '"write_file(*)"' not in g[g.index("--settings") + 1]
     r = task_cmd(s, "antigravity", "plan", "c1", True, "", "")
     assert r[-2:] == ["--conversation", "c1"] and "--model" not in r and "--mode" not in r
-    assert '"write_file(*)"' in r[r.index("--settings") + 1] and '"mcp(*)"' in r[r.index("--settings") + 1]
-    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-read.md").read_text()
-    assert "tools: [view_file, list_dir, grep_search, find_by_name]" in agent and "write_to_file" not in agent
+    perms = r[r.index("--settings") + 1]
+    assert '"write_file(*)"' in perms and '"mcp(*)"' in perms and '"command(*)"' in perms
+    assert '"allow"' not in perms  # plan carries others' text: no shell
+    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-edit-shell.md").read_text()
+    assert "run_command" in agent and "write_to_file" in agent
 
 
 def test_a_failed_run_says_why_in_the_clis_words():
@@ -88,9 +92,9 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
         {"window": "5h", "remaining_fraction": 0.75, "reset_time": "2026-11-03T10:19:36Z"}]}]}  # fmt: skip
 
     async def out(cmd, *a, **k):
-        return json.dumps({"command": {"name": "usage", "data": data}}).encode()
+        return 0, json.dumps({"command": {"name": "usage", "data": data}}).encode(), b""
 
-    monkeypatch.setattr(providers, "_cli_out", out)
+    monkeypatch.setattr(providers, "run_cli", out)
     got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip

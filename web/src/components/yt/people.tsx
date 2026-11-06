@@ -1,234 +1,324 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowDown, Search, Sparkles, Users } from "lucide-react";
+import { Search, Sparkles, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { useNow } from "@/lib/inbox";
+import { Hint } from "@/components/ui/hint";
+import { Segmented } from "@/components/ui/segmented";
+import { AiPromptBox } from "@/components/ai/chat";
+import { fold, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { AI_MAX, bucket, DAY, isBlocked, norm, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
-import { Avatar, Card, Prio, StatePill } from "./bits";
+import { AI_MAX, bucket, DAY, isBlocked, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
+import { Avatar, Card, Prio, StatePill, YtPicks } from "./bits";
 import { useYt } from "./state";
 
-// One person's work: figures for a period, their tickets, and an AI that answers your own prompt about them.
+// Members: a rail with everyone's load, the team side by side, or one person (figures, tickets, an AI on your own prompt).
 
 const PRESETS = [
-  ["Tóm tắt công việc", (n: string, d: number) => `Tóm tắt công việc của ${n} trong ${d} ngày qua: đang làm gì, đã xong gì, việc tiếp theo, chỗ đang kẹt hoặc chờ người khác.`],
-  ["Review", (n: string) => `Review công việc của ${n}: chất lượng ticket (mô tả, bình luận cập nhật tiến độ), tiến độ so với hạn và sprint, ticket kéo dài hoặc chuyển sprint nhiều lần, rủi ro. Đề xuất cụ thể theo ID.`],
-  ["Đánh giá", (n: string, d: number) => `Đánh giá công việc của ${n} trong ${d} ngày qua: khối lượng, tốc độ (lead time), độ ổn định (bug, ticket mở lại), mức độ cập nhật trên ticket. Nêu điểm mạnh, điểm cần cải thiện, mỗi ý kèm căn cứ.`],
-  ["Chuẩn bị 1-1", (n: string) => `Gợi ý nội dung buổi 1-1 với ${n}: việc đáng ghi nhận, vấn đề cần hỏi, chỗ có thể cần hỗ trợ, mục tiêu cho tuần tới.`],
+  ["Tóm tắt công việc", "Đang làm gì, đã xong gì, việc tiếp theo, chỗ đang kẹt.", (n: string, d: number) => `Tóm tắt công việc của ${n} trong ${d} ngày qua: đang làm gì, đã xong gì, việc tiếp theo, chỗ đang kẹt hoặc chờ người khác.`],
+  ["Review", "Chất lượng ticket, tiến độ so với hạn, rủi ro; đề xuất theo ID.", (n: string) => `Review công việc của ${n}: chất lượng ticket (mô tả, bình luận cập nhật tiến độ), tiến độ so với hạn và sprint, ticket kéo dài hoặc chuyển sprint nhiều lần, rủi ro. Đề xuất cụ thể theo ID.`],
+  ["Đánh giá", "Khối lượng, tốc độ, độ ổn định; điểm mạnh và cần cải thiện.", (n: string, d: number) => `Đánh giá công việc của ${n} trong ${d} ngày qua: khối lượng, tốc độ (lead time), độ ổn định (bug, ticket mở lại), mức độ cập nhật trên ticket. Nêu điểm mạnh, điểm cần cải thiện, mỗi ý kèm căn cứ.`],
+  ["Chuẩn bị 1-1", "Gợi ý nội dung buổi 1-1 với người này.", (n: string) => `Gợi ý nội dung buổi 1-1 với ${n}: việc đáng ghi nhận, vấn đề cần hỏi, chỗ có thể cần hỗ trợ, mục tiêu cho tuần tới.`],
 ] as const;
 const TEAM = "__team__";
+const PERIODS = [7, 14, 30, 60, 90];
+const SCOPES = [{ value: "open", label: "Đang mở" }, { value: "done", label: "Đã xong" }, { value: "both", label: "Cả hai" }] as const;
+type Scope = (typeof SCOPES)[number]["value"];
 
-/** Everyone side by side for a period; a click opens the person, the AI reads the table for load and rebalancing. */
-function TeamView({ names, onPick }: { names: string[]; onPick: (n: string) => void }) {
-  const y = useYt();
-  const now = useNow();
-  const [days, setDays] = useState(14);
-  const [sort, setSort] = useState(1);
-  const q = useQuery({ queryKey: ["yt", "issues", y.project, "*"], queryFn: ({ signal }) => yt.issues(y.project, null, signal), staleTime: 60_000 });
-  const COLSET = ["Đang mở", "Đang làm", "Chờ QC", "Blocked", "Quá hạn", "Không cập nhật >7 ngày", `Xong ${days} ngày`, "Bug mở", "Lead time (ngày)"] as const;
-  const table = useMemo(() => {
-    const from = now - days * DAY, rows = q.data ?? [];
-    return names.map((n) => {
-      const mine = rows.filter((i) => i.assignee === n), open = mine.filter((i) => !i.resolved), done = mine.filter((i) => i.resolved && i.resolved >= from);
-      const lead = done.map((i) => (i.resolved! - i.created) / DAY).sort((a, b) => a - b);
-      const v = [open.length, open.filter((i) => bucket(i) === 1).length, open.filter((i) => bucket(i) === 2).length, open.filter(isBlocked).length,
-        open.filter((i) => i.due && i.due < now).length, open.filter((i) => now - i.updated > 7 * DAY).length, done.length, open.filter((i) => i.type === "Bug").length,
-        lead.length ? +lead[Math.floor(lead.length / 2)].toFixed(1) : null];
-      return { n, v, risky: open.filter((i) => isBlocked(i) || (i.due && i.due < now)).map((i) => i.id).slice(0, 8), doing: open.filter((i) => bucket(i) === 1).map((i) => i.id).slice(0, 8) };
-    }).filter((r) => r.v.some((x) => x));
-  }, [q.data, names, days, now]);
-  const sorted = table.toSorted((a, b) => (b.v[sort] ?? -1) - (a.v[sort] ?? -1));
-  const max = COLSET.map((_, k) => Math.max(1, ...table.map((r) => r.v[k] ?? 0)));
-  const run = () => y.setSheet({ kind: "work", title: "AI · tải team & chia việc", ids: [], auto: { label: "AI đang phân tích tải team", run: (sig) => yt.aiData("team", {
-    periodDays: days, wipLimit: y.wip, columns: COLSET, people: table.map((r) => ({ name: r.n, ...Object.fromEntries(COLSET.map((c, k) => [c, r.v[k]])), blockedOrOverdue: r.risky, doing: r.doing })),
-  }, sig) } });
-  const bad = new Set([3, 4, 5]);
+type Stats = ReturnType<typeof statsOf>;
+/** One person's tickets cut every way the views need; `risk` = blocked or overdue, `attn` = anything that needs a look. */
+function statsOf(mine: Ticket[], days: number, now: number) {
+  const from = now - days * DAY;
+  const open = mine.filter((i) => !i.resolved), done = mine.filter((i) => i.resolved && i.resolved >= from);
+  const lead = done.map((i) => (i.resolved! - i.created) / DAY).sort((a, b) => a - b);
+  const blocked = open.filter(isBlocked), overdue = open.filter((i) => i.due && i.due < now), stale = open.filter((i) => now - i.updated > 7 * DAY);
+  return {
+    open, done, blocked, overdue, stale,
+    doing: open.filter((i) => bucket(i) === 1), qc: open.filter((i) => bucket(i) === 2), moved: open.filter((i) => i.sprints.length >= 2),
+    risk: open.filter((i) => isBlocked(i) || (i.due && i.due < now)), attn: open.filter((i) => reasons(i, now).length),
+    bugs: open.filter((i) => i.type === "Bug"), fixed: done.filter((i) => i.type === "Bug"),
+    lead: lead.length ? +lead[Math.floor(lead.length / 2)].toFixed(1) : null,
+  };
+}
+
+/** Why an open ticket needs a look, as short tags (bad = red, warn = amber). */
+function reasons(i: Ticket, now: number): [string, "bad" | "warn"][] {
+  if (i.resolved) return [];
+  const r: [string, "bad" | "warn"][] = [];
+  if (isBlocked(i)) r.push(["Blocked", "bad"]);
+  if (i.due && i.due < now) r.push([`Quá hạn ${Math.ceil((now - i.due) / DAY)} ngày`, "bad"]);
+  if (now - i.updated > 7 * DAY) r.push([`Im ${Math.floor((now - i.updated) / DAY)} ngày`, "warn"]);
+  if (i.sprints.length >= 2) r.push([`${i.sprints.length} sprint`, "warn"]);
+  return r;
+}
+
+const Tag = ({ tone, children }: { tone: "bad" | "warn"; children: React.ReactNode }) => (
+  <span className={cn("rounded-[4px] px-1.5 text-xs leading-[18px] font-medium whitespace-nowrap", tone === "bad" ? "bg-error-wash text-error" : "bg-warn-wash text-warn")}>{children}</span>
+);
+
+/** Open tickets as one bar: doing, waiting QC, the rest; `max` scales it against the busiest person. */
+function Load({ s, max, className }: { s: Stats; max: number; className?: string }) {
+  const n = s.open.length, rest = n - s.doing.length - s.qc.length;
   return (
-    <div className="grid content-start gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h2 className="mr-auto text-lg font-semibold">So sánh cả team</h2>
-        <span className="text-xs text-ink-3">{q.isError ? <span className="text-error">Lỗi tải ticket: {(q.error as Error).message}</span> : q.isFetching ? "Đang tải ticket cả team…" : `${table.length} người có ticket`}</span>
-        <select value={days} onChange={(e) => setDays(+e.target.value)} aria-label="Kỳ" className="h-[30px] rounded-md border border-rule bg-cotton px-2 text-sm">{[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} ngày</option>)}</select>
-        {y.aiOn && <Button size="sm" onClick={run} disabled={!table.length}><Sparkles /> AI phân tích tải & chia việc</Button>}
-      </div>
-      <div className="overflow-x-auto rounded-lg bg-cotton shadow-stock">
-        <table className="w-full text-sm">
-          <thead className="bg-paper-2 text-left text-xs text-ink-3">
-            <tr>
-              <th className="px-3 py-2 font-medium">Người</th>
-              {COLSET.map((c, k) => (
-                <th key={c} aria-sort={sort === k ? "descending" : undefined} className="px-2 py-2 text-right font-medium">
-                  <button type="button" onClick={() => setSort(k)} className={cn("inline-flex items-center gap-0.5 hover:text-ink", sort === k && "text-ink")}>{c}{sort === k && <ArrowDown className="size-3" />}</button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r) => (
-              <tr key={r.n} tabIndex={0} onClick={() => onPick(r.n)} onKeyDown={(e) => { if (e.key === "Enter") onPick(r.n); }} className="cursor-pointer border-t border-rule hover:bg-paper-2">
-                <td className="px-3 py-1.5"><span className="flex items-center gap-2 whitespace-nowrap"><Avatar name={r.n} />{shortName(r.n)}</span></td>
-                {r.v.map((x, k) => {
-                  const heat = x == null || k === 8 ? 0 : x / max[k];
-                  return (
-                    <td key={k} className="px-2 py-1.5 text-right font-mono tabular-nums">
-                      <span className={cn("inline-block min-w-8 rounded px-1.5", bad.has(k) && x ? "font-semibold text-error" : !x && "text-ink-3")}
-                        style={heat ? { background: `color-mix(in oklch, ${bad.has(k) ? "var(--color-error)" : "var(--color-hl)"} ${Math.round(heat * 22)}%, transparent)` } : undefined}>{x ?? "—"}</span>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {y.wip > 0 && <p className="text-xs text-ink-3">Ngưỡng WIP đang đặt: {y.wip} ticket đang làm / người. Bấm một dòng để xem chi tiết người đó.</p>}
+    <span className={cn("flex h-2 rounded-full bg-paper-3", className)} aria-label={`${n} mở: ${s.doing.length} đang làm, ${s.qc.length} chờ QC`}>
+      <span className="flex overflow-hidden rounded-full" style={{ width: `${n ? Math.max(6, (n / max) * 100) : 0}%` }}>
+        {s.doing.length > 0 && <i className="bg-hl" style={{ flex: s.doing.length }} />}
+        {s.qc.length > 0 && <i className="bg-info" style={{ flex: s.qc.length }} />}
+        {rest > 0 && <i className="bg-rule-2" style={{ flex: rest }} />}
+      </span>
+    </span>
+  );
+}
+const Legend = () => (
+  <span className="flex flex-wrap items-center gap-3 text-xs text-ink-3">
+    {[["bg-hl", "Đang làm"], ["bg-info", "Chờ QC"], ["bg-rule-2", "Mở khác"]].map(([c, l]) => <span key={l} className="inline-flex items-center gap-1.5"><i className={cn("size-2 rounded-full", c)} />{l}</span>)}
+  </span>
+);
+
+function Kpi({ label, value, sub, bad }: { label: string; value: React.ReactNode; sub?: React.ReactNode; bad?: boolean }) {
+  return (
+    <div className="grid content-start gap-0.5 rounded-[var(--radius-card)] bg-cotton px-4 py-3 shadow-stock">
+      <span className="text-xs text-ink-3">{label}</span>
+      <b className={cn("font-mono text-2xl font-medium tabular-nums", bad && "text-error")}>{value}</b>
+      {sub && <span className="text-xs text-ink-3">{sub}</span>}
     </div>
   );
 }
 
-const SCOPES = [["open", "Đang mở"], ["done", "Đã xong trong kỳ"], ["both", "Cả hai"]] as const;
-type Scope = (typeof SCOPES)[number][0];
+const Period = ({ days, setDays }: { days: number; setDays: (d: number) => void }) => (
+  <div className="max-w-full overflow-x-auto"><Segmented id="people-period" label="Kỳ" value={days} onChange={setDays} items={PERIODS.map((d) => ({ value: d, label: `${d} ngày` }))} /></div>
+);
 
 export function PeoplePage() {
   const y = useYt();
-  const names = y.peopleOptions.filter((n) => n !== UNASSIGNED);
+  const now = useNow();
+  // only the people of the header scope (My task / My team / Group / a Người pick); none picked = everyone
+  const pickd = y.filters.assignee;
+  const names = useMemo(() => y.peopleOptions.filter((n) => n !== UNASSIGNED && (!pickd.length || pickd.includes(n))), [y.peopleOptions, pickd]);
   const [who, setWho] = useState(() => getPref("ytPerson") || y.me || "");
+  const [days, setDaysState] = useState(() => Number(getPref("ytPeopleDays")) || 30);
   const [q, setQ] = useState("");
   const person = who === TEAM || names.includes(who) ? who : y.me && names.includes(y.me) ? y.me : names[0] ?? "";
   const pick = (n: string) => { setWho(n); setPref("ytPerson", n); };
-  // tickets already loaded (the current filter) give each name a count; the chosen person is fetched on their own
-  const openBy = useMemo(() => { const c: Record<string, number> = {}; for (const i of y.rows) if (!i.resolved && i.assignee) c[i.assignee] = (c[i.assignee] || 0) + 1; return c; }, [y.rows]);
+  const setDays = (d: number) => { setDaysState(d); setPref("ytPeopleDays", String(d)); };
+  // everyone's tickets in one query (the same cache as the All scope): rail, team and person read from it
+  const data = useQuery({ queryKey: ["yt", "issues", y.project, "*"], queryFn: ({ signal }) => yt.issues(y.project, null, signal), staleTime: 60_000 });
+  const stats = useMemo(() => {
+    const by = new Map<string, Ticket[]>();
+    for (const i of data.data ?? []) if (i.assignee) by.set(i.assignee, [...(by.get(i.assignee) ?? []), i]);
+    return new Map(names.map((n) => [n, statsOf(by.get(n) ?? [], days, now)]));
+  }, [data.data, names, days, now]);
+  const max = Math.max(1, ...[...stats.values()].map((s) => s.open.length));
+  const shown = names.filter((n) => !q || fold(n).includes(fold(q)));
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <Card title="Thành viên" meta={`${names.length} người`} className="content-start lg:sticky lg:top-28 lg:max-h-[calc(100dvh-8rem)] lg:overflow-y-auto">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <nav aria-label="Thành viên" className="grid content-start gap-2 rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-72 overflow-y-auto lg:sticky lg:top-28 lg:max-h-[calc(100dvh-8rem)]">
         <label className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm người…" aria-label="Tìm người" className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm outline-none focus:border-hl" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${names.length} người…`} aria-label="Tìm người" className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm focus:border-hl" />
         </label>
         <button type="button" aria-current={person === TEAM} onClick={() => pick(TEAM)}
-          className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm font-medium", person === TEAM ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
-          <Users className="size-5 text-ink-3" />So sánh cả team
+          className={cn("flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium", person === TEAM ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
+          <span className="grid size-6 place-items-center rounded-full bg-paper-3"><Users className="size-3.5" /></span>Cả team
         </button>
-        <ul className="grid gap-0.5">
-          {names.filter((n) => !q || norm(n).includes(norm(q))).map((n) => (
-            <li key={n}>
-              <button type="button" aria-current={n === person} onClick={() => pick(n)}
-                className={cn("flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm", n === person ? "bg-hl-wash font-medium text-hl-2" : "hover:bg-paper-2")}>
-                <Avatar name={n} /><span className="flex-1 truncate">{n}{n === y.me && <span className="text-ink-3"> (tôi)</span>}</span>
-                {openBy[n] ? <b className="font-mono text-xs font-normal text-ink-3">{openBy[n]}</b> : null}
-              </button>
-            </li>
-          ))}
+        <ul className="grid gap-0.5 border-t border-rule pt-2">
+          {shown.map((n) => {
+            const s = stats.get(n)!;
+            return (
+              <li key={n}>
+                <button type="button" aria-current={n === person} onClick={() => pick(n)}
+                  className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md px-2 py-1.5 text-left text-sm", n === person ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
+                  <span className="relative row-span-2"><Avatar name={n} className="size-7" />{s.risk.length > 0 && <i aria-label={`${s.risk.length} ticket blocked hoặc quá hạn`} className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-error ring-2 ring-cotton" />}</span>
+                  <span className={cn("truncate", n === person && "font-medium")}>{shortName(n)}{n === y.me && <span className="text-ink-3"> (tôi)</span>}</span>
+                  <b className="font-mono text-xs font-normal text-ink-3 tabular-nums">{s.open.length || ""}</b>
+                  <Load s={s} max={max} className="col-span-2 h-1.5" />
+                </button>
+              </li>
+            );
+          })}
         </ul>
-      </Card>
-      {person === TEAM ? <TeamView names={names} onPick={pick} /> : person ? <PersonView key={person} name={person} /> : <p className="text-sm text-ink-3">Chưa có danh sách thành viên.</p>}
+      </nav>
+      {data.isError ? <p role="alert" className="text-sm text-error">Không tải được ticket: {(data.error as Error).message}</p>
+        : !person ? <p className="text-sm text-ink-3">Chưa có danh sách thành viên.</p>
+        : person === TEAM ? <TeamView stats={stats} max={max} days={days} setDays={setDays} loading={data.isPending} onPick={pick} />
+        : <PersonView key={person} name={person} s={stats.get(person)!} days={days} setDays={setDays} loading={data.isPending} />}
     </div>
   );
 }
 
-function PersonView({ name }: { name: string }) {
+const SORTS = [
+  { value: "open", label: "Tải", f: (s: Stats) => s.open.length }, { value: "doing", label: "Đang làm", f: (s: Stats) => s.doing.length },
+  { value: "risk", label: "Rủi ro", f: (s: Stats) => s.risk.length * 1000 + s.stale.length }, { value: "done", label: "Đã xong", f: (s: Stats) => s.done.length },
+  { value: "lead", label: "Lead time", f: (s: Stats) => s.lead ?? -1 },
+] as const;
+// what the team AI reads: same column names as before, so its prompt is unchanged
+const COLS: [string, (s: Stats) => number | null][] = [["Đang mở", (s) => s.open.length], ["Đang làm", (s) => s.doing.length], ["Chờ QC", (s) => s.qc.length], ["Blocked", (s) => s.blocked.length],
+  ["Quá hạn", (s) => s.overdue.length], ["Không cập nhật >7 ngày", (s) => s.stale.length], ["Xong trong kỳ", (s) => s.done.length], ["Bug mở", (s) => s.bugs.length], ["Lead time (ngày)", (s) => s.lead]];
+
+/** Everyone side by side: a load bar, what's at risk, output; a click opens the person, the AI reads it for rebalancing. */
+function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<string, Stats>; max: number; days: number; setDays: (d: number) => void; loading: boolean; onPick: (n: string) => void }) {
   const y = useYt();
-  const now = useNow();
-  const [days, setDays] = useState(30);
-  const key = name === y.me ? "me" : y.loginOf.get(name);
-  const q = useQuery({ queryKey: ["yt", "issues", y.project, key ?? ""], queryFn: ({ signal }) => yt.issues(y.project, [key!], signal), enabled: !!key, staleTime: 60_000 });
-  const mine = useMemo(() => (q.data ?? []).filter((i) => i.assignee === name), [q.data, name]);
-
-  const s = useMemo(() => {
-    const from = now - days * DAY;
-    const open = mine.filter((i) => !i.resolved), done = mine.filter((i) => i.resolved && i.resolved >= from);
-    const lead = done.map((i) => (i.resolved! - i.created) / DAY).sort((a, b) => a - b);
-    return {
-      open, done,
-      figures: [
-        ["Đang mở", open.length], ["Đang làm", open.filter((i) => bucket(i) === 1).length], ["Chờ QC", open.filter((i) => bucket(i) === 2).length],
-        ["Blocked", open.filter(isBlocked).length], ["Quá hạn", open.filter((i) => i.due && i.due < now).length],
-        ["Không cập nhật > 7 ngày", open.filter((i) => now - i.updated > 7 * DAY).length], ["Chuyển sprint ≥ 2 lần", open.filter((i) => i.sprints.length >= 2).length],
-        [`Xong trong ${days} ngày`, done.length], ["Bug đã sửa", done.filter((i) => i.type === "Bug").length], ["Bug đang mở", open.filter((i) => i.type === "Bug").length],
-        ["Lead time trung vị", lead.length ? `${lead[Math.floor(lead.length / 2)].toFixed(1)} ngày` : "—"],
-      ] as [string, number | string][],
-    };
-  }, [mine, days, now]);
-
-  const [scope, setScope] = useState<Scope>("both");
-  const [prompt, setPrompt] = useState(() => PRESETS[0][1](name, 30));
-  const ids = (scope === "open" ? s.open : scope === "done" ? s.done : [...s.open, ...s.done]).toSorted((a, b) => b.updated - a.updated).map((i) => i.id);
-  function run(text = prompt) {
-    const ask = text.trim();
-    if (!ask || !ids.length) return;
-    const stats = { person: name, periodDays: days, ...Object.fromEntries(s.figures) };
-    const pick = ids.slice(0, AI_MAX);
-    y.setSheet({ kind: "work", title: `AI · ${shortName(name)}`, ids: pick, auto: { label: `AI đang đọc ${pick.length} ticket của ${shortName(name)}`, q: ask,
-      run: (sig) => yt.aiTickets(pick, `${name}, ${SCOPES.find(([k]) => k === scope)![1].toLowerCase()} (${days} ngày)`, "ask", sig, ask, stats) } });
-  }
+  const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>(() => (getPref("ytPeopleSort") as never) || "open");
+  const f = (SORTS.find((x) => x.value === sort) ?? SORTS[0]).f;
+  const rows = [...stats].filter(([, s]) => s.open.length || s.done.length).sort(([, a], [, b]) => f(b) - f(a));
+  const all = rows.map(([, s]) => s), sum = (k: (s: Stats) => number) => all.reduce((a, s) => a + k(s), 0);
+  const leads = all.map((s) => s.lead).filter((x) => x != null).sort((a, b) => a - b);
+  const run = () => y.setSheet({ kind: "work", title: "AI · tải team & chia việc", ids: [], auto: { label: "AI đang phân tích tải team", run: (sig) => yt.aiData("team", {
+    periodDays: days, wipLimit: y.wip, columns: COLS.map(([c]) => c),
+    people: rows.map(([n, s]) => ({ name: n, ...Object.fromEntries(COLS.map(([c, g]) => [c, g(s)])), blockedOrOverdue: s.risk.map((i) => i.id).slice(0, 8), doing: s.doing.map((i) => i.id).slice(0, 8) })),
+  }, sig) } });
 
   return (
     <div className="grid content-start gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <Avatar name={name} className="size-10 text-sm" />
-        <div className="mr-auto grid"><h2 className="text-lg font-semibold">{name}</h2><span className="text-xs text-ink-3">{q.isFetching ? "Đang tải ticket…" : `${mine.length} ticket trong ${y.config?.hist ?? ""} ngày lịch sử`}</span></div>
-        <label className="flex items-center gap-1.5 text-xs text-ink-3">Kỳ
-          <select value={days} onChange={(e) => { setDays(+e.target.value); }} className="h-[30px] rounded-md border border-rule bg-cotton px-2 text-sm">{[7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} ngày</option>)}</select>
-        </label>
+        <div className="mr-auto grid"><h2 className="text-lg font-semibold">Cả team</h2><span className="text-xs text-ink-3">{loading ? "Đang tải ticket cả team…" : `${rows.length} người có ticket`}</span></div>
+        <Period days={days} setDays={setDays} />
+        {y.aiOn && <Button size="sm" onClick={run} disabled={!rows.length}><Sparkles /> AI chia việc</Button>}
       </div>
-      {!key && <p className="text-sm text-warn">Chưa tìm thấy login YouTrack của {name}.</p>}
-      {q.isError && <p role="alert" className="text-sm text-error">Không tải được ticket: {(q.error as Error).message}</p>}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Kpi label="Đang mở" value={sum((s) => s.open.length)} sub={`${sum((s) => s.doing.length)} đang làm, ${sum((s) => s.qc.length)} chờ QC`} />
+        <Kpi label="Blocked / quá hạn" value={sum((s) => s.risk.length)} bad={sum((s) => s.risk.length) > 0} sub={`${sum((s) => s.stale.length)} không cập nhật >7 ngày`} />
+        <Kpi label={`Xong trong ${days} ngày`} value={sum((s) => s.done.length)} sub={`${sum((s) => s.fixed.length)} bug đã sửa`} />
+        <Kpi label="Bug đang mở" value={sum((s) => s.bugs.length)} />
+        <Kpi label="Lead time trung vị" value={leads.length ? leads[Math.floor(leads.length / 2)] : "—"} sub="ngày, giữa các người" />
+      </div>
+      <section className="grid gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="max-w-full overflow-x-auto"><Segmented id="people-sort" label="Sắp xếp" value={sort} onChange={(v) => { setSort(v); setPref("ytPeopleSort", v); }} items={SORTS.map(({ value, label }) => ({ value, label }))} /></div>
+          <span className="ml-auto"><Legend /></span>
+        </div>
+        <ul className="grid divide-y divide-rule">
+          {rows.map(([n, s]) => {
+            const over = y.wip > 0 && s.doing.length > y.wip;
+            return (
+              <li key={n}>
+                <button type="button" onClick={() => onPick(n)} className="grid w-full grid-cols-[minmax(0,11rem)_minmax(0,1fr)] items-center gap-x-4 gap-y-1.5 rounded-md px-2 py-2.5 text-left hover:bg-paper-2 md:grid-cols-[11rem_minmax(0,1fr)_14rem_8rem]">
+                  <span className="flex min-w-0 items-center gap-2 text-sm"><Avatar name={n} className="size-7" /><span className="truncate">{shortName(n)}</span></span>
+                  <span className="grid gap-1">
+                    <Load s={s} max={max} className="h-2.5" />
+                    <span className="text-xs text-ink-3 tabular-nums"><b className="font-mono font-medium text-ink">{s.open.length}</b> mở, <span className={cn(over && "font-semibold text-error")}>{s.doing.length} đang làm{over && ` (> WIP ${y.wip})`}</span>, {s.qc.length} chờ QC</span>
+                  </span>
+                  <span className="col-span-2 flex flex-wrap gap-1 md:col-span-1">
+                    {s.blocked.length > 0 && <Tag tone="bad">{s.blocked.length} blocked</Tag>}
+                    {s.overdue.length > 0 && <Tag tone="bad">{s.overdue.length} quá hạn</Tag>}
+                    {s.stale.length > 0 && <Tag tone="warn">{s.stale.length} im &gt;7 ngày</Tag>}
+                    {!s.risk.length && !s.stale.length && <span className="text-xs text-ink-3">Không có cảnh báo</span>}
+                  </span>
+                  <span className="hidden text-right text-xs text-ink-3 md:grid">
+                    <span><b className="font-mono text-sm font-medium text-ok tabular-nums">{s.done.length}</b> xong</span>
+                    <span className="tabular-nums">{s.lead != null ? `lead ${s.lead} ngày` : "—"}</span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+        {!rows.length && !loading && <p className="text-sm text-ink-3">Chưa ai có ticket trong kỳ này.</p>}
+      </section>
+    </div>
+  );
+}
 
-      <div className="grid grid-cols-2 overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock sm:grid-cols-4 xl:grid-cols-6">
-        {s.figures.map(([l, v]) => (
-          <div key={l} className="px-3 py-2.5 shadow-[inset_-1px_-1px_0_var(--color-rule)]">
-            <div className="text-xs leading-tight text-ink-3">{l}</div>
-            <b className={cn("font-mono text-2xl font-medium tabular-nums", (l === "Blocked" || l === "Quá hạn") && Number(v) > 0 && "text-error")}>{v}</b>
-          </div>
-        ))}
+const LISTS = [["open", "Đang mở"], ["attn", "Cần chú ý"], ["done", "Đã xong"]] as const;
+
+function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stats; days: number; setDays: (d: number) => void; loading: boolean }) {
+  const y = useYt();
+  const now = useNow();
+  const [list, setList] = useState<(typeof LISTS)[number][0]>("open");
+  const [scope, setScope] = useState<Scope>("both");
+  const [prompt, setPrompt] = useState(() => PRESETS[0][2](name, days));
+  const ids = (scope === "open" ? s.open : scope === "done" ? s.done : [...s.open, ...s.done]).toSorted((a, b) => b.updated - a.updated).map((i) => i.id);
+  const figures = {
+    "Đang mở": s.open.length, "Đang làm": s.doing.length, "Chờ QC": s.qc.length, Blocked: s.blocked.length, "Quá hạn": s.overdue.length,
+    "Không cập nhật > 7 ngày": s.stale.length, "Chuyển sprint ≥ 2 lần": s.moved.length, [`Xong trong ${days} ngày`]: s.done.length,
+    "Bug đã sửa": s.fixed.length, "Bug đang mở": s.bugs.length, "Lead time trung vị": s.lead != null ? `${s.lead} ngày` : "—",
+  };
+  function run(text = prompt) {
+    const ask = text.trim();
+    if (!ask || !ids.length) return;
+    const pick = ids.slice(0, AI_MAX);
+    y.setSheet({ kind: "work", title: `AI · ${shortName(name)}`, ids: pick, auto: { label: `AI đang đọc ${pick.length} ticket của ${shortName(name)}`, q: ask,
+      run: (sig) => yt.aiTickets(pick, `${name}, ${SCOPES.find((x) => x.value === scope)!.label.toLowerCase()} (${days} ngày)`, "ask", sig, ask, { person: name, periodDays: days, ...figures }) } });
+  }
+  const flags = ([["Blocked", s.blocked, "bad"], ["Quá hạn", s.overdue, "bad"], ["Không cập nhật >7 ngày", s.stale, "warn"], ["Chuyển ≥ 2 sprint", s.moved, "warn"]] as const).filter(([, l]) => l.length);
+
+  return (
+    <div className="grid content-start gap-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <Avatar name={name} className="size-11 text-sm" />
+        <div className="mr-auto grid">
+          <h2 className="text-lg font-semibold">{name}{name === y.me && <span className="font-normal text-ink-3"> (tôi)</span>}</h2>
+          <span className="text-xs text-ink-3">{loading ? "Đang tải ticket…" : `${s.open.length + s.done.length} ticket, lịch sử ${y.config?.hist ?? ""} ngày`}</span>
+        </div>
+        <Period days={days} setDays={setDays} />
       </div>
 
-      {y.aiOn && (
-        <Card title={<span className="inline-flex items-center gap-1.5"><Sparkles className="size-4 text-hl-2" />AI phân tích {shortName(name)}</span>} className="border border-hl/25">
-          <div className="flex flex-wrap gap-1.5">
-            {PRESETS.map(([label, make]) => <Button key={label} size="sm" variant="outline" disabled={!ids.length} title="Chạy ngay; sửa câu lệnh ở ô bên dưới rồi bấm Phân tích để hỏi theo ý bạn"
-              onClick={() => { const p = make(name, days); setPrompt(p); run(p); }}>{label}</Button>)}
-          </div>
-          <Textarea rows={2} maxLength={2000} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Yêu cầu cho AI"
-            placeholder="Nhập yêu cầu: tóm tắt, review, đánh giá… AI chỉ dựa trên ticket và số liệu của người này." />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Kpi label="Đang mở" value={s.open.length} sub={<span className="grid gap-1.5"><span>{s.doing.length} đang làm, {s.qc.length} chờ QC</span><Load s={s} max={s.open.length || 1} /></span>} />
+        <Kpi label="Cần chú ý" value={s.attn.length} bad={s.risk.length > 0} sub={`${s.risk.length} blocked / quá hạn`} />
+        <Kpi label={`Xong trong ${days} ngày`} value={s.done.length} sub={`${s.fixed.length} bug đã sửa, ${s.bugs.length} bug mở`} />
+        <Kpi label="Lead time trung vị" value={s.lead ?? "—"} sub={s.lead != null ? "ngày, từ tạo đến xong" : "chưa có ticket xong"} />
+      </div>
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <section className="grid min-w-0 gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-ink-3">Ticket gửi cho AI</span>
-            <select value={scope} onChange={(e) => setScope(e.target.value as Scope)} className="h-[30px] rounded-md border border-rule bg-cotton px-2 text-sm">
-              {SCOPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-            <span className="text-xs text-ink-3">{Math.min(ids.length, AI_MAX)} ticket{ids.length > AI_MAX ? ` (mới nhất trong ${ids.length})` : ""}, kèm số liệu ở trên</span>
-            <Button size="sm" className="ml-auto" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button>
+            <Segmented id="people-list" label="Danh sách ticket" value={list} onChange={setList}
+              items={LISTS.map(([k, l]) => ({ value: k, label: <>{l} <b className="font-mono font-normal opacity-70">{s[k].length}</b></> }))} />
+            {list === "open" && flags.length > 0 && (
+              <span className="flex flex-wrap gap-1">{flags.map(([l, t, tone]) => <Tag key={l} tone={tone}>{t.length} {l.toLowerCase()}</Tag>)}</span>
+            )}
           </div>
-        </Card>
-      )}
+          <Rows rows={s[list]} now={now} empty={list === "attn" ? "Không có ticket nào cần chú ý." : list === "done" ? `Chưa xong ticket nào trong ${days} ngày.` : "Không có ticket đang mở."} />
+        </section>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card title="Đang mở" meta={`${s.open.length} ticket`}><Rows rows={s.open} /></Card>
-        <Card title={`Đã xong trong ${days} ngày`} meta={`${s.done.length} ticket`}><Rows rows={s.done} /></Card>
+        {y.aiOn && (
+          <Card title={<span className="inline-flex items-center gap-1.5"><Sparkles className="size-4 text-hl-2" />Hỏi AI về {shortName(name)}</span>} className="border border-hl/25 xl:sticky xl:top-28">
+            <div className="flex flex-wrap gap-1.5">
+              {PRESETS.map(([label, hint, make]) => (
+                <Hint key={label} title={label} text={`${hint} Bấm để chạy ngay.`} side="bottom">
+                  <Button size="sm" variant="outline" disabled={!ids.length} onClick={() => { const p = make(name, days); setPrompt(p); run(p); }}>{label}</Button>
+                </Hint>
+              ))}
+            </div>
+            <div className="grid gap-1.5">
+              <span className="text-xs text-ink-3">Ticket gửi cho AI</span>
+              <Segmented id="people-ai-scope" label="Ticket gửi cho AI" value={scope} onChange={setScope} items={SCOPES.map((x) => ({ ...x }))} className="w-fit" />
+              <span className="text-xs text-ink-3">{Math.min(ids.length, AI_MAX)} ticket{ids.length > AI_MAX ? ` (mới nhất trong ${ids.length})` : ""}, kèm số liệu ở trên</span>
+            </div>
+            <AiPromptBox aria-label="Yêu cầu cho AI" maxLength={2000} value={prompt} onChange={setPrompt} onSend={() => run()}
+              placeholder="Nhập yêu cầu: tóm tắt, review, đánh giá… AI chỉ dựa trên ticket và số liệu của người này."
+              tools={<YtPicks heavy={Math.min(ids.length, AI_MAX) > 10} />}
+              actions={<Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button>} />
+          </Card>
+        )}
       </div>
     </div>
   );
 }
 
-function Rows({ rows }: { rows: Ticket[] }) {
+function Rows({ rows, now, empty }: { rows: Ticket[]; now: number; empty: string }) {
   const y = useYt();
-  if (!rows.length) return <p className="text-sm text-ink-3">Không có ticket.</p>;
+  if (!rows.length) return <p className="py-6 text-center text-sm text-ink-3">{empty}</p>;
   const sorted = rows.toSorted((a, b) => b.updated - a.updated);
   return (
     <ul className="divide-y divide-rule">
-      {sorted.slice(0, 60).map((i) => (
+      {sorted.slice(0, 80).map((i) => (
         <li key={i.id}>
-          <button type="button" onClick={() => y.openTicket(i.id, sorted)} className="grid w-full gap-0.5 py-1.5 text-left hover:bg-paper-2">
-            <span className="flex flex-wrap items-center gap-x-2.5"><b className="font-mono text-xs">{i.id}</b><StatePill state={i.state} /><Prio p={i.priority} /><span className="ml-auto text-xs text-ink-3">{when(i.resolved ?? i.updated)}</span></span>
+          <button type="button" onClick={() => y.openTicket(i.id, sorted)} className="grid w-full gap-1 rounded-md px-2 py-2 text-left hover:bg-paper-2">
+            <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <b className="font-mono text-xs">{i.id}</b><StatePill state={i.state} /><Prio p={i.priority} />
+              {reasons(i, now).map(([l, tone]) => <Tag key={l} tone={tone}>{l}</Tag>)}
+              <span className="ml-auto text-xs text-ink-3">{i.resolved ? `Xong ${when(i.resolved)}` : `Cập nhật ${when(i.updated)}`}</span>
+            </span>
             <span className="truncate text-sm">{i.summary}</span>
           </button>
         </li>
       ))}
+      {sorted.length > 80 && <li className="px-2 py-2 text-xs text-ink-3">+{sorted.length - 80} ticket cũ hơn</li>}
     </ul>
   );
 }

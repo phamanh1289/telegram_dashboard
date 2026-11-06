@@ -1,4 +1,5 @@
 data/
+agent-links/
 work/
 .env
 .env.*
@@ -21,3 +22,4 @@ test-results/
 *.tsbuildinfo
 .hallmark/
 .codegraph/
+dist/

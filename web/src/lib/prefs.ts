@@ -13,12 +13,16 @@ export function getPref(key: string) {
   }
 }
 
-/** Save without telling open views: for state that only needs to survive a reload (no re-render of every clock). */
+/** Save without telling open views: for state that only needs to survive a reload (no re-render of every clock).
+ *  False when storage is blocked or full (callers that would lose user text check it). */
 export function put(key: string, value: string | null) {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
-  } catch {}
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Save one preference (null removes it) and tell open views (wait labels re-render with a new threshold). */
@@ -27,15 +31,20 @@ export function setPref(key: string, value: string | null) {
   dispatchEvent(new Event("prefs"));
 }
 
-/** A stored JSON list of strings, else `fallback`. */
-function readList(key: string, fallback: string[]) {
+/** A stored JSON value, else `fallback` (missing, unreadable or not JSON). */
+export function readJson(key: string, fallback: unknown = null): unknown {
   try {
-    const v = JSON.parse(getPref(key) ?? "null");
-    return Array.isArray(v) ? v.filter((t): t is string => typeof t === "string") : fallback;
+    return JSON.parse(getPref(key) ?? "null") ?? fallback;
   } catch {
     return fallback;
   }
 }
+/** A stored JSON list, keeping the entries `ok` accepts; else `fallback`. */
+export function readList<T>(key: string, fallback: T[], ok: (x: unknown) => x is T): T[] {
+  const v = readJson(key);
+  return Array.isArray(v) ? v.filter(ok) : fallback;
+}
+export const isString = (x: unknown): x is string => typeof x === "string";
 
 export type ThemePref = "light" | "dark" | "system";
 
@@ -58,7 +67,7 @@ export function applyTheme(pref: ThemePref, save = true) {
   vt.ready.catch(() => {}); // skipped when another transition starts; the swap still runs
 }
 
-/** Each member's look (Cài đặt chung), saved per browser; public/design/look.js applies it before first paint and in every open tab. */
+/** Each member's look (Cài đặt chung), saved per browser; the boot script in app/layout.tsx (window.applyLook) applies it before first paint and in every open tab. */
 export type UiStyle = "simple" | "default" | "vivid";
 export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean };
 /** Preset highlight hues; the slider reaches the rest. */
@@ -96,7 +105,6 @@ export function applyRowActions(pref: RowActionsPref) {
 }
 
 /** The composer opens its AI block by default (the composer also flips this when toggled). */
-export const readComposerAiOpen = () => getPref("composerAiOpen") === "1";
 
 /** Desktop notification for new tags while the tab is in the background. */
 export function readNotify() {
@@ -106,10 +114,6 @@ export function readNotify() {
     return false;
   }
 }
-
-/** Quick replies inserted from the composer; until edited in Settings, the role's starter set. */
-export const readTemplates = () => readList("replyTemplates", ROLE_TEMPLATES[readYtRole() ?? "dev"]);
-export const saveTemplates = (list: string[]) => put("replyTemplates", JSON.stringify(list));
 
 /** Project the AI Agent dialog last ran in ("" = none chosen yet). */
 export const readAgentProject = () => getPref("agentProject") ?? "";
@@ -122,10 +126,15 @@ export function readPlatform(): Platform {
   return PLATFORMS.find(([p]) => p === v)?.[0] ?? "android";
 }
 
+/** The user's self-introduction (role, platform, expertise) for every AI feature; "" = not written yet. */
+export const INTRO_MAX = 2000;
+export const readIntro = () => (getPref("aiIntro") ?? "").trim().slice(0, INTRO_MAX);
+/** Live, so an open dialog drops its "AI chưa biết bạn làm gì" notice once Settings saves one. */
+export const useIntro = () => useSyncExternalStore(onPrefs, readIntro, () => "");
+
 /** Teams Digest checks for impact; sent with every /digest. */
 export const DEFAULT_DIGEST_TEAMS = ["Web", "Mobile", "Backend", "QA", "Design"];
-export const readDigestTeams = () => readList("digestTeams", DEFAULT_DIGEST_TEAMS);
-export const saveDigestTeams = (list: string[]) => put("digestTeams", JSON.stringify(list));
+export const readDigestTeams = () => readList("digestTeams", DEFAULT_DIGEST_TEAMS, isString);
 
 /** The role (Cài đặt chung › Hệ thống): YouTrack's home, views, dashboard and AI, and Telegram's AI angle and AI Agent follow it. null = not chosen yet. */
 export type YtRole = "dev" | "qa" | "po";
@@ -134,21 +143,6 @@ export const YT_ROLES: [YtRole, string, string][] = [
   ["qa", "QA/QC", "Hàng đợi test, bug triage, test case, regression; tỷ lệ pass / trả lại / reopen. AI tóm tắt theo bước tái hiện, môi trường; không cần thư mục code."],
   ["po", "PO/PM", "Brief sprint, backlog và grooming, việc chờ PO chốt; tiến độ, dự báo, tải việc của team. AI tóm tắt theo ảnh hưởng, ưu tiên; không cần thư mục code."],
 ];
-const ROLE_TEMPLATES: Record<YtRole, string[]> = {
-  dev: [],
-  qa: [
-    "Mình đã tái hiện được, đang log bug.",
-    "Bạn cho mình xin thêm build, thiết bị / OS và các bước tái hiện nhé.",
-    "Đã test lại trên build mới: OK, mình close ticket.",
-    "Test lại vẫn lỗi, mình reopen ticket và gửi thêm log.",
-  ],
-  po: [
-    "Mình ghi nhận, sẽ chốt ưu tiên và phản hồi trong hôm nay.",
-    "Phần này ngoài scope sprint hiện tại, mình đưa vào backlog để groom.",
-    "Chốt: làm theo phương án này. Team cập nhật ticket giúp mình.",
-    "Mình cần thêm thông tin về ảnh hưởng tới người dùng để quyết định.",
-  ],
-};
 export function readYtRole(): YtRole | null {
   const m = getPref("ytMode");
   return m === "dev" || m === "qa" ? m : m === "po" || m === "lead" ? "po" : null; // "lead" = the old PO / PM mode

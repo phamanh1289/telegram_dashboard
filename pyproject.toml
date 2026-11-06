@@ -1,6 +1,6 @@
 [project]
 name = "telegram-dashboard"
-version = "0.1.0"
+version = "0.1.7"
 description = "Local web inbox for Telegram groups"
 requires-python = ">=3.14"
 dependencies = [
@@ -31,7 +31,7 @@ filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]

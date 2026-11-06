@@ -209,11 +209,11 @@ Mở **http://127.0.0.1:8765** — phải dùng `127.0.0.1`, **không dùng `loc
 
 - Không cần chọn nhóm: khi ai đó **tag** hoặc **reply** bạn trong nhóm, tin hiện ngay. App chỉ lưu tin tag bạn, không nạp lịch sử cũ — nên lúc mới cài inbox sẽ trống, chờ có tag mới.
 - **Việc cần xử lý** (mục đầu): mọi tin tag chưa xử lý, chờ lâu nhất lên đầu; quá 4 giờ thì đỏ.
-- Tin được tính **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm ✓.
-- Mỗi tin có: 💬 xem ngữ cảnh, ⏰ nhắc lại sau, bỏ qua người gửi, link mở trong Telegram.
-- **Trả lời**: bấm Trả lời → gõ → **Gửi** hoặc Ctrl/Cmd+Enter (Enter = xuống dòng).
-- **Quy tắc tự bỏ qua** (biểu tượng phễu): theo từ khóa (ví dụ `#TB`) hoặc người gửi.
-- **Phím tắt**: `j`/`k` chọn tin · `r` trả lời · `x` xong · `a` nhờ AI · `Esc` thoát.
+- Tin được tính **đã xử lý** khi bạn reply nó (từ dashboard, điện thoại hay máy khác) hoặc bấm **Xong** (Shift+bấm: không thả reaction).
+- Mỗi tin có: xem ngữ cảnh, hoãn (nhắc lại sau), ghim, link mở trong Telegram.
+- **Trả lời**: bấm vào tin (hoặc `Enter`) → gõ → **Gửi** hoặc Ctrl/Cmd+Enter (Enter = xuống dòng).
+- **Quy tắc tự bỏ qua** (Cài đặt › Telegram): theo từ khóa (ví dụ `#TB`).
+- **Phím tắt** (bấm `?` để xem hết): `j`/`k` chọn tin, `Enter`/`r` trả lời, `x` xong, `s` hoãn, `p` ghim, `a` nhờ AI, `Esc` thoát.
 
 ### 8.2 AI (tùy chọn)
 
@@ -221,13 +221,13 @@ Cần ít nhất một AI CLI đã đăng nhập (mục 9). Không có CLI nào 
 
 - **Nhờ AI**: Trả lời một tin → khung "Nhờ AI" → chọn **dự án** (nút **Thêm** mở hộp thoại chọn thư mục) → nhập yêu cầu → Enter. AI trả 3 bản nháp, bấm để đưa vào khung soạn. AI **không bao giờ tự gửi**.
 - **Tóm tắt**: AI liệt kê việc tồn theo mức gấp.
-- **Tạo task (AI Agent)**: chạy Claude trong thư mục dự án; chế độ *plan* chỉ đọc, *edit* được sửa file.
-- Đổi AI (Claude, Codex, Antigravity), model, effort: **Cài đặt › AI**. Mỗi tin gửi cho AI cần bạn cấp quyền; tắt *Hỏi trước khi AI đọc tin Telegram* ở cùng chỗ nếu chỉ dùng cá nhân.
-- Sau khi giao việc cho AI Agent, toast có nút **Mở phiên** (xem tiến trình) và **Hoàn tác** (dừng và xóa task).
+- **Giao AI Agent**: chạy AI trong thư mục dự án; chế độ *plan* chỉ đọc, *edit* được sửa file.
+- Đổi AI (Claude, Codex, Antigravity), model, effort: **Cài đặt › AI**. Khi *Không cho AI đọc tin Telegram* (cùng chỗ) đang bật, AI không đọc tin Telegram; tắt nếu chỉ dùng cá nhân.
+- Sau khi Giao AI Agent, toast có nút **Mở phiên** (xem tiến trình); phím `z` hoàn tác (dừng và xóa task).
 
-### 8.3 YouTrack Dashboard (`/youtrack/`)
+### 8.3 My Dashboard — YouTrack (`/youtrack/`)
 
-Bấm **YouTrack** trên header. Cần URL + token YouTrack: nhập ở **Cài đặt › YouTrack** (hoặc `YOUTRACK_URL` + `YOUTRACK_TOKEN` trong `.env`). Token lấy tại YouTrack → Profile → **Account Security → New token**. Chưa có token thì trang hiện dữ liệu mẫu để xem thử. Trang cũ `/yt/` vẫn còn nhưng không cần dùng.
+Bấm **YouTrack** trên header. Cần URL + token YouTrack: nhập ở **Cài đặt › YouTrack** (hoặc `YOUTRACK_URL` + `YOUTRACK_TOKEN` trong `.env`). Token lấy tại YouTrack → Profile → **Account Security → New token**. Chưa có token thì trang chuyển sang Cài đặt › YouTrack để nhập.
 
 ---
 
