@@ -4,7 +4,8 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Tra
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { copyText, useNow, ymd } from "@/lib/inbox";
+import { copyText, useNow } from "@/lib/inbox";
+import { ymd } from "@/lib/time";
 import { getPref, put, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, when, yt } from "@/lib/yt";
@@ -153,9 +154,6 @@ export function DevHome() {
             { k: "standup", label: "Standup", busy: "AI đang viết standup", disabled: standup.ids.length ? undefined : "Chưa có ticket nào của bạn.",
               hint: "Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Dán thẳng vào nhóm.",
               ids: standup.ids, run: (sig) => yt.aiTickets(standup.ids, `Ticket của ${y.me}`, "standup", sig, "", undefined, standup.since) },
-            { k: "promises", label: "Việc đã hứa", busy: "AI đang đọc tin bạn đã gửi",
-              hint: "Những việc bạn đã hứa trong các nhóm Telegram 7 ngày qua (“để em check”, “mai em gửi”) mà chưa thấy xong.",
-              run: (sig) => yt.aiPromises(Date.now() - 7 * DAY, sig) },
           ]} />
         )}
         <Card title="Mới cập nhật" meta="ticket của bạn">
@@ -194,7 +192,7 @@ function LensBar<L extends string>({ label, lenses, value, onChange }: { label: 
 }
 
 /** A ranked ticket list; with `top`, the first three are headed by it and the rest by "Tiếp theo". */
-const PAGE = 20;
+export const PAGE = 20;
 
 /** The ranked list, 20 a page: page 1 opens with the "top" few; numbers stay global. Pages slide in the direction moved. */
 function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: string }) {
@@ -240,7 +238,7 @@ function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: st
 }
 
 /** ‹ 1 2 3 … 9 › and "21–40 / 57"; arrow keys move a page while it has focus. */
-function Pager({ page, pages, total, onGo }: { page: number; pages: number; total: number; onGo: (n: number) => void }) {
+export function Pager({ page, pages, total, onGo }: { page: number; pages: number; total: number; onGo: (n: number) => void }) {
   // first, last, and the pages around the current one; gaps become …
   const nums = [...new Set([0, page - 1, page, page + 1, pages - 1])].filter((n) => n >= 0 && n < pages).sort((a, b) => a - b);
   const btn = "grid h-7 min-w-7 place-items-center rounded-md px-1.5 font-mono text-xs tabular-nums transition-colors duration-(--dur-micro)";

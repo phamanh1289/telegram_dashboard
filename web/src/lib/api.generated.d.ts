@@ -574,6 +574,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evidence
+         * @description Live, not stored: the messages a digest item cites plus the ones they reply to (Briefing's
+         *     item detail shows them as the evidence behind it).
+         */
+        get: operations["evidence_api_chats__chat_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/briefing": {
         parameters: {
             query?: never;
@@ -589,6 +610,66 @@ export interface paths {
         get: operations["briefing_api_briefing_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Briefing Ask
+         * @description Ask AI across every group's latest digest (no new Telegram reads).
+         */
+        post: operations["briefing_ask_api_briefing_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/answered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Briefing Answered
+         * @description chat_id -> digest-cited message ids I have replied to since (Briefing ticks them off).
+         */
+        get: operations["briefing_answered_api_briefing_answered_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Briefing Saved
+         * @description Send the briefing (or an AI answer about it) to my own Saved Messages.
+         */
+        post: operations["briefing_saved_api_briefing_saved_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -742,8 +823,7 @@ export interface paths {
         };
         /**
          * One Message
-         * @description One message by id (a ref pasted into an AI Agent session): the kept copy, else live from
-         *     Telegram. Consent mode: 403, its text is for the AI.
+         * @description One message by id: the kept copy, else live from Telegram.
          */
         get: operations["one_message_api_chats__chat_id__messages__message_id__get"];
         put?: never;
@@ -1095,23 +1175,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/settings/consent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /** Set Consent */
-        put: operations["set_consent_api_settings_consent_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/youtrack/auth": {
         parameters: {
             query?: never;
@@ -1158,9 +1221,30 @@ export interface paths {
         };
         /**
          * Youtrack Similar
-         * @description Open tickets whose text matches q (YouTrack's own relevance), to spot a duplicate.
+         * @description Open tickets whose text matches q (YouTrack's own relevance): ones possibly related.
          */
         get: operations["youtrack_similar_api_youtrack_similar_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/youtrack/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Youtrack Search
+         * @description A ticket to comment on: an ID (VA-123) finds that one in any state; words search the
+         *     project's open tickets (2+ letters: short Vietnamese words count).
+         */
+        get: operations["youtrack_search_api_youtrack_search_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1258,6 +1342,11 @@ export interface components {
              * @enum {string}
              */
             platform: "android" | "ios" | "mobile" | "any";
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
         };
         /** AiDraftRequest */
         AiDraftRequest: {
@@ -1286,6 +1375,11 @@ export interface components {
              * @enum {string}
              */
             role: "dev" | "qa" | "po";
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
         };
         /**
          * AiGuideRequest
@@ -1316,7 +1410,9 @@ export interface components {
         };
         /**
          * AiPicks
-         * @description One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent.
+         * @description One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent, brief_* to
+         *     Briefing / Digest ("" = same as model / effort), yt_* / yt_task_* to YouTrack's light / heavy runs
+         *     ("" = same as model / task_model).
          */
         AiPicks: {
             /**
@@ -1341,6 +1437,39 @@ export interface components {
              * @enum {string}
              */
             task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Brief Model
+             * @default
+             */
+            brief_model: string;
+            /**
+             * Brief Effort
+             * @default
+             * @enum {string}
+             */
+            brief_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Yt Model
+             * @default
+             */
+            yt_model: string;
+            /**
+             * Yt Effort
+             * @default
+             * @enum {string}
+             */
+            yt_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
+            /**
+             * Yt Task Model
+             * @default
+             */
+            yt_task_model: string;
+            /**
+             * Yt Task Effort
+             * @default
+             * @enum {string}
+             */
+            yt_task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max";
         };
         /**
          * AiPrefs
@@ -1468,6 +1597,16 @@ export interface components {
              * @default false
              */
             task: boolean;
+            /**
+             * Brief
+             * @default false
+             */
+            brief: boolean;
+            /**
+             * Yt
+             * @default false
+             */
+            yt: boolean;
         };
         /** AiTestResult */
         AiTestResult: {
@@ -1518,6 +1657,11 @@ export interface components {
              */
             role: "dev" | "qa" | "po";
             /**
+             * Intro
+             * @default
+             */
+            intro: string;
+            /**
              * Types
              * @default []
              */
@@ -1527,6 +1671,19 @@ export interface components {
              * @default []
              */
             priorities: string[];
+        };
+        /**
+         * BriefingAskRequest
+         * @description A question about every group's latest digest.
+         */
+        BriefingAskRequest: {
+            /** Question */
+            question: string;
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
         };
         /** BriefingItem */
         BriefingItem: {
@@ -1658,6 +1815,8 @@ export interface components {
             usage: components["schemas"]["ClaudeUsage"][];
             /** Usage At */
             usage_at?: string | null;
+            /** Usage Error */
+            usage_error?: string | null;
             /**
              * Login Pending
              * @default false
@@ -1684,11 +1843,6 @@ export interface components {
             percent: number;
             /** Resets At */
             resets_at?: string | null;
-        };
-        /** ConsentPref */
-        ConsentPref: {
-            /** Ai Require Consent */
-            ai_require_consent: boolean;
         };
         /** DigestConsent */
         DigestConsent: {
@@ -1734,6 +1888,11 @@ export interface components {
              * @default
              */
             due: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
         };
         /** DigestRequest */
         DigestRequest: {
@@ -1755,6 +1914,11 @@ export interface components {
              * @default []
              */
             teams: string[];
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
         };
         /** DigestResult */
         DigestResult: {
@@ -1927,6 +2091,14 @@ export interface components {
              * @default false
              */
             handled: boolean;
+            /**
+             * Handled By
+             * @default
+             * @enum {string}
+             */
+            handled_by: "" | "me" | "quiet" | "reply" | "dashboard" | "all" | "rule";
+            /** Handled At */
+            handled_at?: string | null;
             /** Snoozed Until */
             snoozed_until?: string | null;
             /**
@@ -1944,6 +2116,13 @@ export interface components {
              * @default false
              */
             kept: boolean;
+        };
+        /** MessageRef */
+        MessageRef: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: string;
         };
         /** MessagesPage */
         MessagesPage: {
@@ -2023,6 +2202,8 @@ export interface components {
             rule: components["schemas"]["RuleDTO"];
             /** Handled */
             handled: number;
+            /** Cleared */
+            cleared: components["schemas"]["MessageRef"][];
         };
         /** RuleDTO */
         RuleDTO: {
@@ -2069,6 +2250,14 @@ export interface components {
              */
             last_date: string;
         };
+        /**
+         * SavedMessageRequest
+         * @description Text for the user's own Saved Messages (Telegram markdown: **bold**, __italic__).
+         */
+        SavedMessageRequest: {
+            /** Text */
+            text: string;
+        };
         /** SnoozeRequest */
         SnoozeRequest: {
             /** Until */
@@ -2085,8 +2274,6 @@ export interface components {
             detail?: string | null;
             /** Ai Configured */
             ai_configured: boolean;
-            /** Ai Require Consent */
-            ai_require_consent: boolean;
             /**
              * Youtrack Configured
              * @default false
@@ -3367,6 +3554,39 @@ export interface operations {
             };
         };
     };
+    evidence_api_chats__chat_id__evidence_get: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     briefing_api_briefing_get: {
         parameters: {
             query?: never;
@@ -3383,6 +3603,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BriefingItem"][];
+                };
+            };
+        };
+    };
+    briefing_ask_api_briefing_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BriefingAskRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: {text}} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    briefing_answered_api_briefing_answered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+    };
+    briefing_saved_api_briefing_saved_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4291,37 +4597,6 @@ export interface operations {
             };
         };
     };
-    set_consent_api_settings_consent_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ConsentPref"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     youtrack_auth_api_youtrack_auth_put: {
         parameters: {
             query?: never;
@@ -4389,6 +4664,38 @@ export interface operations {
         };
     };
     youtrack_similar_api_youtrack_similar_get: {
+        parameters: {
+            query: {
+                q: string;
+                project?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["YouTrackIssue"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    youtrack_search_api_youtrack_search_get: {
         parameters: {
             query: {
                 q: string;

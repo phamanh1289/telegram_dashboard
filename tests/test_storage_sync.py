@@ -171,11 +171,24 @@ async def test_any_reply_from_us_handles_the_tag(env):
     mine = msg(A, 11, "on it", sender="1", outgoing=True)
     mine.reply_to_id = 10
     await env.bridge.on_my_reply(mine)
-    assert env.store.get_message(A, 10).handled
+    got = env.store.get_message(A, 10)
+    assert got.handled and got.handled_by == "reply" and got.handled_at is not None  # the row says why
     assert [m.message_id for m in env.store.query_messages(A, pending=True)[0]] == []
     assert env.store.set_handled(A, 10, False)  # manual undo emits a change
+    assert (env.store.get_message(A, 10).handled_by, env.store.get_message(A, 10).handled_at) == ("", None)
     assert not env.store.set_handled(A, 10, False)  # no-op when unchanged
     assert [m.message_id for m in env.store.query_messages(A, pending=True)[0]] == ["10"]
+
+
+def test_handled_by_says_how_a_tag_was_done(env):
+    env.store.set_tracking(A, True, "Team", "supergroup")
+    for i in (1, 2, 3):
+        env.store.apply_message(msg(A, i, f"@me {i}", sender="7"))
+    env.store.set_handled(A, 1, True, "quiet")  # Shift+Xong: no reaction
+    assert env.store.mark_all_handled(A) == [2, 3]  # "Xong tất cả" leaves no reaction either
+    assert [env.store.get_message(A, i).handled_by for i in (1, 2, 3)] == ["quiet", "all", "all"]
+    assert not env.store.set_handled(A, 1, True, "me")  # already done: the first reason stays
+    assert env.store.get_message(A, 1).handled_by == "quiet"
 
 
 def test_entity_spans_keep_links_mentions_and_code():
@@ -199,6 +212,12 @@ def test_find_mentions_matches_whole_ticket_id(env):
     for mid, text in ((1, "xem VA-12 nhé"), (2, "VA-123 lỗi"), (3, "XVA-12"), (4, "va-12, done")):
         env.store.apply_message(msg(A, mid, text, sender="7"))
     assert sorted(m["message_id"] for m in env.store.find_mentions("VA-12")) == [1, 4]
+    # where "Báo lại" answers: your own mention points back at the tag it replied to
+    mine = msg(A, 5, "đã tạo VA-12", outgoing=True)
+    mine.reply_to_id = 1
+    env.store.apply_message(mine)
+    found = {m["message_id"]: (m["outgoing"], m["reply_to_id"]) for m in env.store.find_mentions("VA-12")}
+    assert found[5] == (1, 1)
 
 
 def test_store_mentions_reports_only_new_pending_tags(env):
@@ -263,6 +282,23 @@ def test_old_database_is_migrated_once(tmp_path):
     cols = {r[1] for r in c.execute("PRAGMA table_info(messages)")}
     assert {"handled", "links", "snoozed_until", "pinned"} <= cols
     assert c.execute("SELECT handled, links FROM messages").fetchone() == (0, "[]")
+
+
+def test_database_from_the_previous_version_gets_new_columns(tmp_path):
+    """A live database already ran the earlier steps: new columns need a new step, not an edit of an old one."""
+    import sqlite3
+
+    from telegram_dashboard.storage import MIGRATIONS, Store
+
+    path = tmp_path / "prev.sqlite3"
+    Store(path).set_tracking(A, True, "Team", "supergroup")
+    c = sqlite3.connect(path)
+    c.executescript("ALTER TABLE messages DROP COLUMN handled_by; ALTER TABLE messages DROP COLUMN handled_at;")
+    c.execute(f"PRAGMA user_version={len(MIGRATIONS) - 1}")
+    c.close()
+    store = Store(path)
+    store.apply_message(msg(A, 1, "@me hi", sender="7"))
+    assert store.set_handled(A, 1, True, "quiet") and store.get_message(A, 1).handled_by == "quiet"
 
 
 def test_my_replies_keeps_the_newest_oldest_first(env):

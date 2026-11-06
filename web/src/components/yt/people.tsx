@@ -6,12 +6,12 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
-import { Textarea } from "@/components/ui/textarea";
+import { AiPromptBox } from "@/components/ai/chat";
 import { fold, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, bucket, DAY, isBlocked, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
-import { Avatar, Card, Prio, StatePill } from "./bits";
+import { Avatar, Card, Prio, StatePill, YtPicks } from "./bits";
 import { useYt } from "./state";
 
 // Members: a rail with everyone's load, the team side by side, or one person (figures, tickets, an AI on your own prompt).
@@ -94,7 +94,9 @@ const Period = ({ days, setDays }: { days: number; setDays: (d: number) => void 
 export function PeoplePage() {
   const y = useYt();
   const now = useNow();
-  const names = useMemo(() => y.peopleOptions.filter((n) => n !== UNASSIGNED), [y.peopleOptions]);
+  // only the people of the header scope (My task / My team / Group / a Người pick); none picked = everyone
+  const pickd = y.filters.assignee;
+  const names = useMemo(() => y.peopleOptions.filter((n) => n !== UNASSIGNED && (!pickd.length || pickd.includes(n))), [y.peopleOptions, pickd]);
   const [who, setWho] = useState(() => getPref("ytPerson") || y.me || "");
   const [days, setDaysState] = useState(() => Number(getPref("ytPeopleDays")) || 30);
   const [q, setQ] = useState("");
@@ -282,14 +284,15 @@ function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stat
                 </Hint>
               ))}
             </div>
-            <Textarea rows={4} maxLength={2000} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Yêu cầu cho AI"
-              placeholder="Nhập yêu cầu: tóm tắt, review, đánh giá… AI chỉ dựa trên ticket và số liệu của người này." />
             <div className="grid gap-1.5">
               <span className="text-xs text-ink-3">Ticket gửi cho AI</span>
               <Segmented id="people-ai-scope" label="Ticket gửi cho AI" value={scope} onChange={setScope} items={SCOPES.map((x) => ({ ...x }))} className="w-fit" />
               <span className="text-xs text-ink-3">{Math.min(ids.length, AI_MAX)} ticket{ids.length > AI_MAX ? ` (mới nhất trong ${ids.length})` : ""}, kèm số liệu ở trên</span>
             </div>
-            <Button size="sm" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button>
+            <AiPromptBox aria-label="Yêu cầu cho AI" maxLength={2000} value={prompt} onChange={setPrompt} onSend={() => run()}
+              placeholder="Nhập yêu cầu: tóm tắt, review, đánh giá… AI chỉ dựa trên ticket và số liệu của người này."
+              tools={<YtPicks heavy={Math.min(ids.length, AI_MAX) > 10} />}
+              actions={<Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button>} />
           </Card>
         )}
       </div>

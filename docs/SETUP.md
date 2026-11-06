@@ -225,7 +225,7 @@ Cần ít nhất một AI CLI đã đăng nhập (mục 9). Không có CLI nào 
 - Đổi AI (Claude, Codex, Antigravity), model, effort: **Cài đặt › AI**. Khi *Không cho AI đọc tin Telegram* (cùng chỗ) đang bật, AI không đọc tin Telegram; tắt nếu chỉ dùng cá nhân.
 - Sau khi Giao AI Agent, toast có nút **Mở phiên** (xem tiến trình); phím `z` hoàn tác (dừng và xóa task).
 
-### 8.3 YouTrack Dashboard (`/youtrack/`)
+### 8.3 My Dashboard — YouTrack (`/youtrack/`)
 
 Bấm **YouTrack** trên header. Cần URL + token YouTrack: nhập ở **Cài đặt › YouTrack** (hoặc `YOUTRACK_URL` + `YOUTRACK_TOKEN` trong `.env`). Token lấy tại YouTrack → Profile → **Account Security → New token**. Chưa có token thì trang chuyển sang Cài đặt › YouTrack để nhập.
 

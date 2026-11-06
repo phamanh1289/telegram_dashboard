@@ -177,32 +177,62 @@
 .hue-range:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 3px; }
 .hue-range:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* Effort slider (claude.tsx EffortSlider): accent fill + step ticks + a drawn thumb that glide with --pct; the native range on top takes input. */
+/* Effort slider (ai.tsx EffortSlider): the accent fill (--hl-fill / --hl-glow, so it follows the chosen look) + step dots + a drawn
+   thumb, all on --pct. While dragged ([data-drag]) it follows the pointer freely; on release it glides to the nearest step.
+   The native range underneath (no pointer events) takes the keyboard and a11y. */
 @property --pct { syntax: "<number>"; inherits: true; initial-value: 0; }
-.effort { --t: 1rem; position: relative; display: block; flex: 1 1 auto; min-width: 5rem; height: 1.25rem; transition: --pct var(--dur-short) var(--ease-out); }
-.effort::before, .effort::after { content: ""; position: absolute; top: 50%; left: calc(var(--t) / 2); height: 4px; margin-top: -2px; border-radius: var(--radius-pill); }
-.effort::before { right: calc(var(--t) / 2); background: color-mix(in oklch, var(--color-rule-2) 60%, transparent); }
-.effort::after { width: calc((100% - var(--t)) * var(--pct)); background: var(--color-hl); }
+.effort { --t: 1.25rem; --track: 8px; position: relative; display: block; flex: 1 1 auto; min-width: 6rem; height: 2rem; cursor: pointer; touch-action: none; transition: --pct var(--dur-long) var(--ease-out); }
+.effort[data-drag] { cursor: grabbing; transition: none; }
+.effort::before, .effort::after { content: ""; position: absolute; top: 50%; left: calc(var(--t) / 2); height: var(--track); margin-top: calc(var(--track) / -2); border-radius: var(--radius-pill); }
+.effort::before { right: calc(var(--t) / 2); background: color-mix(in oklch, var(--color-rule-2) 55%, transparent); }
+/* The fill is the whole track's light-to-deep ramp, clipped at --pct: a higher effort reveals a deeper accent. */
+.effort::after { right: calc(var(--t) / 2); background: linear-gradient(90deg, color-mix(in oklch, var(--color-hl) 28%, var(--color-hl-wash)), var(--color-hl) 65%, var(--color-hl-2)); box-shadow: var(--hl-glow); clip-path: inset(0 calc((1 - var(--pct)) * 100%) 0 0 round var(--radius-pill)); }
 .effort-tick, .effort-thumb { position: absolute; top: 50%; z-index: 1; border-radius: 50%; translate: -50% -50%; pointer-events: none; }
-.effort-tick { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--k)); width: 4px; height: 4px; background: var(--color-ink-3); opacity: 0.45; transition: background-color var(--dur-short), opacity var(--dur-short); }
-.effort-tick[data-on] { background: var(--color-cotton); opacity: 0.9; }
-.effort-thumb { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--pct)); width: var(--t); height: var(--t); background: var(--color-cotton); border: 2px solid var(--color-hl); box-shadow: 0 1px 3px oklch(0% 0 0 / 0.25); transition: scale var(--dur-micro) var(--ease-out), box-shadow var(--dur-micro); }
-.effort:hover .effort-thumb { scale: 1.12; box-shadow: 0 0 0 5px color-mix(in oklch, var(--color-hl) 16%, transparent), 0 1px 3px oklch(0% 0 0 / 0.25); }
-.effort:active .effort-thumb { scale: 1.2; }
+/* Step dots: the accent in light, white in dark; dimmer past the thumb, full on the fill. */
+.effort { --tick: var(--color-hl); }
+:is(.dark, [data-theme="dark"]) .effort { --tick: oklch(100% 0 0); }
+.effort-tick { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--k)); width: 5px; height: 5px; background: var(--tick); opacity: 0.45; transition: opacity var(--dur-short); }
+.effort-tick[data-on] { opacity: 1; }
+.effort-thumb { left: calc(var(--t) / 2 + (100% - var(--t)) * var(--pct)); width: var(--t); height: var(--t); background: color-mix(in oklch, var(--color-hl-2) calc(var(--pct) * 100%), color-mix(in oklch, var(--color-hl) 55%, var(--color-hl-wash))); border: 3px solid var(--color-cotton); box-shadow: 0 0 0 1px color-mix(in oklch, var(--color-hl) 40%, transparent), 0 1px 4px oklch(0% 0 0 / 0.3); transition: scale var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
+.effort:hover .effort-thumb { scale: 1.12; box-shadow: 0 0 0 6px color-mix(in oklch, var(--color-hl) 16%, transparent), 0 1px 4px oklch(0% 0 0 / 0.3); }
+.effort[data-drag] .effort-thumb { scale: 1.25; box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-hl) 20%, transparent), 0 2px 6px oklch(0% 0 0 / 0.3); }
 .effort:has(input:focus-visible) .effort-thumb { box-shadow: 0 0 0 2px var(--color-cotton), 0 0 0 4px var(--color-focus); }
-.effort input { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; margin: 0; appearance: none; background: transparent; cursor: pointer; outline: none; }
-.effort input::-webkit-slider-thumb { appearance: none; width: var(--t); height: var(--t); opacity: 0; }
-.effort input::-moz-range-thumb { width: var(--t); height: var(--t); opacity: 0; border: 0; }
-.effort input::-moz-range-track { background: transparent; }
+.effort input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .effort, .effort-tick, .effort-thumb { transition: none; } }
 
 /* AI "thinking" loader in the composer: the sparkle hops and tilts, the dots ride a wave. */
 /* Module switch (TopBar): crossfade the page, morph the active pill */
 ::view-transition-group(*) { animation-duration: var(--dur-short); animation-timing-function: var(--ease-out); }
 /* Page body entering (Settings): a short delay (held hidden by `both`) lets the mount's first busy frames pass, so the fade starts from 0 instead of popping in midway; a soft deceleration, not the expo --ease-out that spends itself in the first frames. */
-.page-in { animation: page-in var(--dur-long) cubic-bezier(0.2, 0, 0, 1) 40ms both; }
-@keyframes page-in { from { opacity: 0; transform: translateY(8px); } }
-@media (prefers-reduced-motion: reduce) { .page-in { animation: none; } }
+.page-in { animation: page-in var(--dur-long) var(--ease-emph) 40ms both; }
+@keyframes page-in { from { opacity: 0; translate: 0 8px; } }
+/* A detail page (reply composer) pushes in from the right; the list it covers comes back from the left when shown again
+   (@starting-style also fires on display: none -> shown, so the kept-mounted list needs no remount). */
+.detail-in { animation: detail-in var(--dur-long) var(--ease-emph) 30ms both; }
+@keyframes detail-in { from { opacity: 0; translate: 1.5rem 0; } }
+.view-back { transition: opacity var(--dur-long) var(--ease-emph), translate var(--dur-long) var(--ease-emph); }
+@starting-style { .view-back { opacity: 0; translate: -1rem 0; } }
+@media (prefers-reduced-motion: reduce) { .page-in, .detail-in { animation: none; } .view-back { transition: none; } }
+
+/* Popups (ui/dialog, ui/palette). base-ui marks the first frame [data-starting-style] and closing [data-ending-style], so these are
+   interruptible transitions, not keyframes: open on --ease-emph over --dur-long, close quicker on --ease-in.
+   .pop: centred, rises 12px and grows from 0.96 · .pop-top: anchored at the top, drops in · .pop-sheet: detail page sliding from the right. */
+.pop, .scrim { transition-property: opacity, scale, translate; transition-duration: var(--dur-long); transition-timing-function: var(--ease-emph); }
+.pop[data-ending-style], .scrim[data-ending-style] { transition-duration: var(--dur-short); transition-timing-function: var(--ease-in); }
+.scrim:is([data-starting-style], [data-ending-style]) { opacity: 0; }
+.pop:is([data-starting-style], [data-ending-style]) { opacity: 0; scale: 0.96; translate: -50% calc(-50% + 0.75rem); }
+.pop-top:is([data-starting-style], [data-ending-style]) { translate: -50% -0.75rem; }
+.pop-sheet:is([data-starting-style], [data-ending-style]) { opacity: 1; scale: 1; translate: 100% 0; }
+@media (prefers-reduced-motion: reduce) { .pop, .scrim { transition-property: opacity; } }
+
+/* AI arrives: on a page or popup the AI made (Tổng quan, AI Agent, Tóm tắt, Đối chiếu BE, YouTrack AI), one soft beam in the
+   accent → info gradient sweeps top to bottom as it opens, then is gone. The host must be positioned (relative / fixed). */
+.ai-in::after { content: ""; position: absolute; inset-inline: 0; top: 0; z-index: 1; height: 40%; pointer-events: none; opacity: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-hl) 70%, transparent) 35%, color-mix(in oklch, var(--color-info) 70%, transparent) 65%, transparent) bottom / 100% 1px no-repeat,
+    linear-gradient(180deg, transparent, color-mix(in oklch, var(--color-hl) 7%, transparent) 70%, color-mix(in oklch, var(--color-info) 12%, transparent));
+  animation: ai-scan 1s var(--ease-emph) 80ms both; }
+@keyframes ai-scan { from { translate: 0 -100%; opacity: 1; } 70% { opacity: 1; } to { translate: 0 260%; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-in::after { animation: none; } }
 @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; } }
 
 @keyframes ai-hop { 0%, 100% { transform: translateY(0) rotate(0); } 30% { transform: translateY(-4px) rotate(-15deg) scale(1.1); } 60% { transform: translateY(0) rotate(12deg); } }
@@ -247,6 +277,47 @@
   -webkit-background-clip: text; background-clip: text; animation: ai-text 1.8s linear infinite; }
 @keyframes ai-text { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .ai-ring::before, .ai-text { animation: none; } }
+
+/* Sidebar AI plug (components/ai-plug.tsx). --back = how far the plug sits back from the socket: it slides the jack and trims
+   the wire's end by the same amount (dash 116 = the wire's length), so cable and plug always meet. */
+@property --back { syntax: "<number>"; inherits: true; initial-value: 0; }
+.plug { --back: 0; transition: --back var(--dur-long) var(--ease-out); }
+.plug-wire { stroke: var(--color-rule-2); stroke-dasharray: 116 200; stroke-dashoffset: calc(var(--back) * 1px); transition: stroke var(--dur-short); }
+.plug-jack { translate: calc(var(--back) * -1px) 0; transform-box: view-box; transform-origin: 107px 18px; transition: rotate var(--dur-long) var(--ease-out); }
+.plug-head, .plug-prong { fill: var(--color-ink-3); transition: fill var(--dur-short); }
+.plug-bot { transition: rotate var(--dur-long) var(--ease-out); }
+/* Connected: the jack clicks home, a spark, then data pulses socket → AI and the socket breathes. */
+.plug[data-pose="on"] { animation: plug-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+@keyframes plug-in { from { --back: 22; } }
+.plug[data-pose="on"] .plug-wire { stroke: color-mix(in oklch, var(--color-hl) 40%, transparent); }
+.plug[data-pose="on"] .plug-head { fill: var(--color-hl); }
+.plug[data-pose="on"] .plug-prong { fill: var(--color-hl-2); }
+.plug-pulse { stroke: var(--color-hl-2); animation: plug-flow 0.9s linear infinite; }
+@keyframes plug-flow { to { stroke-dashoffset: 12; } }
+.plug-spark { stroke: var(--color-hl); transform-box: view-box; transform-origin: 127px 18px; animation: plug-spark 0.6s 0.35s ease-out both; }
+@keyframes plug-spark { 0% { opacity: 0; scale: 0.4; } 30% { opacity: 1; } 100% { opacity: 0; scale: 1.6; } }
+.plug-sock { isolation: isolate; }
+.plug[data-pose="on"] .plug-sock::after { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: inherit; animation: plug-ping 2.4s ease-out infinite; }
+@keyframes plug-ping { from { opacity: 0.5; scale: 1; } to { opacity: 0; scale: 1.7; } }
+/* Connecting: the robot reaches the jack to the socket and back while a ring spins round the socket. */
+.plug[data-pose="try"] { animation: plug-reach 1.6s ease-in-out infinite; }
+@keyframes plug-reach { 0%, 100% { --back: 26; } 45%, 60% { --back: 3; } }
+.plug[data-pose="try"] .plug-head { fill: color-mix(in oklch, var(--color-hl) 55%, var(--color-ink-3)); }
+.plug[data-pose="try"] .plug-sock::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px dashed color-mix(in oklch, var(--color-hl) 70%, transparent); animation: plug-spin 3s linear infinite; }
+@keyframes plug-spin { to { rotate: 360deg; } }
+/* Down: the jack is pulled out and hangs loose, swaying; a broken spark flickers at the socket, the robot tilts its head. */
+.plug[data-pose="off"] { --back: 24; }
+.plug[data-pose="off"] .plug-jack { rotate: 30deg; animation: plug-sway 2.8s ease-in-out var(--dur-long) infinite; }
+@keyframes plug-sway { 0%, 100% { rotate: 30deg; } 50% { rotate: 18deg; } }
+.plug[data-pose="off"] .plug-bot { rotate: -12deg; }
+.plug-zap { stroke: var(--color-warn); animation: plug-zap 2s linear infinite; }
+@keyframes plug-zap { 0%, 38%, 46%, 100% { opacity: 1; } 42% { opacity: 0.1; } 80% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .plug, .plug-jack, .plug-bot { transition: none; }
+  .plug[data-pose], .plug-pulse, .plug .plug-sock::after, .plug .plug-sock::before, .plug[data-pose="off"] .plug-jack, .plug-zap { animation: none; }
+  .plug[data-pose="try"] { --back: 10; }
+  .plug-spark { display: none; }
+}
 @media print { .yt-card { opacity: 1 !important; transform: none !important; } }
 
 /* YouTrack module (components/yt): workflow tiers, ticket types, avatars; same mapping as public/yt/css/app.css */

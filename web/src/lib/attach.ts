@@ -1,7 +1,8 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
-import { api, type ChatsResponse, type Message } from "@/lib/api";
-import { timeLabel } from "@/lib/inbox";
+import type { ChatsResponse, Message } from "@/lib/api";
+import { getMessage } from "@/lib/inbox";
+import { timeLabel } from "@/lib/time";
 
 /** A Telegram message attached to an AI Agent session's next prompt. */
 export type Ref = { chat_id: string; message_id: string };
@@ -56,7 +57,7 @@ export const useRefs = (taskId: string) =>
 
 export const messageQuery = (r: Ref) => queryOptions({
   queryKey: ["message", r.chat_id, r.message_id],
-  queryFn: ({ signal }) => api<Message>(`/chats/${encodeURIComponent(r.chat_id)}/messages/${r.message_id}`, { signal }),
+  queryFn: ({ signal }) => getMessage(r.chat_id, r.message_id, { signal }), // its text goes to the AI: consent is checked
   staleTime: 60_000,
   retry: false, // 404 / not connected: say so on the chip at once
 });

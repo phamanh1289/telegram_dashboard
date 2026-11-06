@@ -2,20 +2,22 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Square, Trash2, Users } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui/react/menu";
-import { Markdown } from "@/components/markdown";
+import { AiBot, AiThinking, useFollow } from "@/components/ai/chat";
+import { AskTag, Markdown } from "@/components/markdown";
 import { EventItem, groupEvents, type TaskEvent, type TaskLog, ToolGroup } from "@/components/tasks-feed";
 import { TaskComposer } from "@/components/task-composer";
-import { AiBot } from "@/components/yt/bits";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, type Message, type Task } from "@/lib/api";
-import { ago, ALL, copyText, sessionId, sessionMatches, timeLabel, toast, useNow, useTaskList } from "@/lib/inbox";
+import type { View } from "@/hooks/use-chat-messages";
+import { ALL, copyText, sessionId, sessionMatches, toast, useNow, useTaskList } from "@/lib/inbox";
+import { ago, timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 // The AI Agent page: session list and the selected session (its log in tasks-feed.tsx, its input in task-composer.tsx).
@@ -26,14 +28,12 @@ type Kind = "task" | "deep";
 const KINDS: [Kind, string][] = [["task", "Giao AI Agent"], ["deep", "Đối chiếu BE"]];
 const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, string>;
 
-const atBottom = (el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-
 /** The tagged message as the reply panel needs it (the task row only keeps a snapshot). */
 function asMessage(t: Task): Message {
   return {
     chat_id: t.chat_id!, message_id: t.message_id!, sender_id: null, sender_name: t.sender_name ?? null, text: t.message_text ?? "", date: t.created_at,
     edit_date: null, reply_to_id: null, topic_id: null, outgoing: false, media_kind: null, deleted: false,
-    handled: t.handled ?? false, pinned: false, links: [], kept: true,
+    handled: t.handled ?? false, handled_by: "", pinned: false, links: [], kept: true,
   };
 }
 
@@ -63,15 +63,10 @@ function HandledBadge() {
  * the user sits at the bottom, and only inside this box so the page never jumps.
  */
 function Feed({ follow, children, footer }: { follow: unknown; children: ReactNode; footer?: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null);
-  const stick = useRef(true);
-  useEffect(() => {
-    const el = box.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [follow]);
+  const { ref, onScroll } = useFollow(follow);
   return (
     <>
-      <div ref={box} onScroll={(e) => { stick.current = atBottom(e.currentTarget); }} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+      <div ref={ref} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         <div className="mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-4">{children}</div>
       </div>
       {footer && <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6"><div className="mx-auto grid max-w-3xl gap-1.5">{footer}</div></div>}
@@ -90,13 +85,16 @@ function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
     queryFn: async ({ signal }): Promise<TaskLog> => {
       const prev = qc.getQueryData<TaskLog>(["task-events", id]);
       const read = (after: number) =>
-        api<{ items: TaskEvent[]; next: number; total: number }>(`/tasks/${id}/events?after=${after}`, { signal });
+        api<{ items: TaskEvent[]; next: number; total: number; running: boolean }>(`/tasks/${id}/events?after=${after}`, { signal });
       let after = prev?.next ?? 0;
       let r = await read(after);
       if (r.total < after) r = await read((after = 0)); // the task was re-run: start over
-      return { items: after ? [...prev!.items, ...r.items] : r.items, next: r.items.length ? r.next : after };
+      return { items: after ? [...prev!.items, ...r.items] : r.items, next: r.items.length ? r.next : after, running: r.running };
     },
-    refetchInterval: running ? 1500 : false, // a finished turn only changes after a send, which refetches
+    // Until the log itself says the run ended: the list can flip `running` off before the last poll caught the
+    // result (the server reads the log before checking `running`, so that last poll has every line).
+    // A finished turn only changes after a send, which refetches.
+    refetchInterval: (query) => (running || query.state.data?.running ? 1500 : false),
   });
   const items = q.data?.items;
   const blocks = useMemo(() => groupEvents(items ?? []), [items]);
@@ -116,11 +114,7 @@ function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
           </li>
         )}
         {running && blocks.at(-1)?.kind !== "tools" && (
-          <li className="flex items-center gap-2.5 px-0.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)" aria-live="polite">
-            <AiBot className="ai-hop size-7 shrink-0 drop-shadow-sm" />
-            <span className="ai-text text-sm font-medium">AI đang suy nghĩ</span>
-            <span className="flex gap-1" aria-hidden>{[0, 150, 300].map((d) => <span key={d} className="ai-dot size-1.5 rounded-full bg-hl" style={{ animationDelay: `${d}ms` }} />)}</span>
-          </li>
+          <li><AiThinking /></li>
         )}
       </ul>
     </Feed>
@@ -172,7 +166,7 @@ function MenuRow({ icon: Icon, label, hint, tone, disabled, onClick }: {
 
 /** The selected session: a slim title bar with one action menu, the scrolling conversation, the composer pinned at the bottom. */
 function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
-  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string) => void; onUseText: (m: Message, text: string) => void;
+  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string, view?: View) => void; onUseText: (m: Message, text: string) => void;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -241,7 +235,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
                 </>)}
                 {tag && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 {t.result && tag && <MenuRow icon={MessageSquare} label="Dùng làm nháp trả lời" hint="Kết quả thành nháp trả lời tin tag" onClick={() => onUseText(tag, t.result!)} />}
-                {t.chat_id && <MenuRow icon={Users} label="Mở nhóm" hint="Cuộn tới tin đã giao AI Agent" onClick={() => onOpenGroup(t.chat_id!, t.message_id ?? undefined)} />}
+                {t.chat_id && <MenuRow icon={Users} label="Mở nhóm" hint={isDone(t) ? "Cả nhóm, cuộn tới tin đã giao AI Agent" : "Chưa xử lý, cuộn tới tin đã giao AI Agent"} onClick={() => onOpenGroup(t.chat_id!, t.message_id ?? undefined, isDone(t) ? "live" : "pending")} />}
                 {(t.chat_id || (t.result && tag)) && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 <MenuRow icon={Trash2} tone="error" label="Xóa phiên" hint="Hỏi xác nhận trước khi xóa" disabled={remove.isPending}
                   onClick={() => confirm("Xóa phiên này khỏi danh sách?") && remove.mutate()} />
@@ -252,16 +246,18 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
       </div>
       {remove.isError && <p role="alert" className="border-b px-4 py-1.5 text-xs text-error">Xóa thất bại, thử lại.</p>}
 
+      <AskTag value={sessionId(t)}>
       {t.mode !== "terminal" ? <ChatPanel t={t} head={head} /> : ( // old Terminal tasks: prompt and result only
         <Feed follow={t.result}>
           {head}
           <section aria-label="Kết quả" className="grid gap-1.5">
             <h3 className="text-xs font-medium text-ink-3">Kết quả từ AI</h3>
-            {t.result ? <Markdown text={t.result} className="rounded-md bg-ok-wash p-3 text-[0.9375rem] leading-[1.55] text-ink" />
+            {t.result ? <Markdown asks text={t.result} className="rounded-md bg-ok-wash p-3 text-[0.9375rem] leading-[1.55] text-ink" />
               : <p className="rounded-md bg-paper-2 p-3 text-sm leading-relaxed text-ink-3">Phiên Terminal cũ chưa có kết quả.</p>}
           </section>
         </Feed>
       )}
+      </AskTag>
     </div>
   );
 }
@@ -270,7 +266,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
 export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
   focus?: string | null; // task to select on open ("Mở phiên" from a tagged message)
   headSlot: HTMLElement | null; // the page header, where the session tabs go
-  onOpenGroup: (chatId: string, messageId?: string) => void; onUseText: (m: Message, text: string) => void;
+  onOpenGroup: (chatId: string, messageId?: string, view?: View) => void; onUseText: (m: Message, text: string) => void;
 }) {
   const q = useTaskList();
   const now = useNow();
@@ -330,7 +326,7 @@ export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
       {q.isSuccess && all.length === 0 && (
         <div className="grid justify-items-center gap-3 py-20 text-center text-sm text-ink-2 animate-in fade-in-0">
           <AiBot className="size-10" />
-          <p>{kind === "deep" ? "Chưa có phiên Đối chiếu BE. Bấm nút “Đối chiếu BE” trên tin BE confirm, chọn tin hỏi và dự án, rồi “Phân tích”."
+          <p>{kind === "deep" ? "Chưa có phiên Đối chiếu BE. Bấm nút bộ não trên tin BE trả lời, hoặc “Đối chiếu code” ở mục Đã chốt trong Briefing."
             : "Chưa giao việc nào cho AI Agent. Mở một tin, bấm “Giao AI Agent”, chọn dự án."}</p>
           {kind === "task" && <Button size="sm" variant="outline" onClick={() => onOpenGroup(ALL)}>Mở Việc cần xử lý</Button>}
         </div>

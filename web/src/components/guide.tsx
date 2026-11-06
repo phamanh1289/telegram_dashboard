@@ -1,7 +1,8 @@
 "use client";
 
-import { BookOpen, Bot, ChevronDown, ListChecks, MousePointerClick, Search, Send, Settings, Sparkles } from "lucide-react";
+import { BookOpen, ChevronDown, MousePointerClick, Search, Send, Settings, Sparkles } from "lucide-react";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { AiResultCard, AiThinking, AiWriting, UserBubble } from "@/components/ai/chat";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -12,6 +13,7 @@ import { fold } from "@/lib/inbox";
 import GUIDE from "@/lib/guide.json";
 import { cn } from "@/lib/utils";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
+import { YtLogo } from "@/components/yt-logo";
 
 // In-app user guide: every feature of the Telegram / YouTrack tabs (lib/guide.json), one search box,
 // "Hỏi AI" over the same catalog, and a live walk-through of a feature's steps on the page (guide-tour).
@@ -24,9 +26,9 @@ export type Feature = { id: string; tab: Tab; area: string; title: string; what:
 export const stepText = (s: Step) => (typeof s === "string" ? s : s.t);
 const ALL = GUIDE as Feature[];
 const BY_ID = new Map(ALL.map((f) => [f.id, f]));
-const TAB: Record<Tab, { label: string; Icon: typeof Send; tone: string }> = {
+const TAB: Record<Tab, { label: string; Icon: React.ComponentType<{ className?: string }>; tone: string }> = {
   telegram: { label: "Telegram", Icon: Send, tone: "bg-info-wash text-info" },
-  youtrack: { label: "YouTrack", Icon: ListChecks, tone: "bg-hl-wash text-hl-2" },
+  youtrack: { label: "YouTrack", Icon: YtLogo, tone: "bg-hl-wash text-hl-2" },
   settings: { label: "Cài đặt", Icon: Settings, tone: "bg-paper-3 text-ink-2" },
 };
 
@@ -158,38 +160,32 @@ function Guide({ module, onTour }: { module: Module; onTour: (f: Feature) => voi
   );
 }
 
-/** The AI's answer: a chat card apart from the feature list; features it names become buttons. */
+/** The AI's answer, in the shared AI chat look (components/ai/chat); features it names become buttons under it. */
 function AiAnswer({ ai, onClose, onOpen, onTour }: { ai: Ai; onClose: () => void; onOpen: (id: string) => void; onTour: (f: Feature) => void }) {
   const refs = [...new Set([...ai.text.matchAll(/\[([a-z0-9-]+)\]/g)].map((m) => m[1]))].flatMap((id) => BY_ID.get(id) ?? []);
   const text = ai.text.replace(/\s*\[([a-z0-9-]+)\]/g, (m, id) => (BY_ID.has(id) ? "" : m));
   return (
-    <section aria-live="polite" className="mb-4 overflow-hidden rounded-lg border border-hl/30 bg-hl-wash/40 animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short)">
-      <header className="flex items-center gap-2 border-b border-hl/20 px-3 py-2 text-xs font-semibold text-hl-2">
+    <section aria-label="Trợ lý AI" aria-live="polite" className="mb-4 grid grid-cols-[minmax(0,1fr)] gap-3">
+      <header className="flex items-center gap-1.5 text-xs font-semibold text-hl-2">
         <Sparkles className="size-3.5" aria-hidden />Trợ lý AI
-        <button type="button" onClick={onClose} className="ml-auto font-medium text-ink-3 hover:text-ink">Đóng</button>
+        <button type="button" onClick={onClose} className="ml-auto font-medium text-ink-3 hover:text-ink">{ai.busy ? "Dừng" : "Đóng"}</button>
       </header>
-      <div className="grid gap-3 p-3">
-        <p className="ml-auto max-w-[85%] rounded-2xl rounded-br-sm bg-hl px-3 py-1.5 text-sm text-hl-ink">{ai.q}</p>
-        <div className="flex gap-2.5">
-          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-cotton text-hl-2 shadow-groove"><Bot className="size-4" aria-hidden /></span>
-          <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm bg-cotton px-3 py-2 shadow-groove">
-            {ai.error ? <p className="text-sm text-error">{ai.error}</p>
-              : text ? <Markdown text={text} /> : <p className="animate-pulse text-sm text-ink-3">Đang đọc hướng dẫn…</p>}
-          </div>
+      <UserBubble>{ai.q}</UserBubble>
+      {ai.error ? <AiResultCard error>{ai.error}</AiResultCard>
+        : ai.busy ? (text ? <><Markdown text={text} className="px-0.5 text-ink" /><AiWriting /></> : <AiThinking label="Đang đọc hướng dẫn" />)
+        : <AiResultCard><Markdown text={text} /></AiResultCard>}
+      {!ai.busy && refs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
+          {refs.map((f) => (
+            <span key={f.id} className="flex items-center overflow-hidden rounded-full border border-rule-2 bg-cotton text-xs">
+              <button type="button" onClick={() => onOpen(f.id)} className="px-2.5 py-1 font-medium hover:bg-paper-2">{f.title}</button>
+              <Hint side="bottom" title="Chỉ cho tôi" text="Mở đúng trang và làm sáng từng nút cần bấm.">
+                <button type="button" aria-label={`Chỉ cho tôi: ${f.title}`} onClick={() => onTour(f)} className="border-l border-rule-2 px-2 py-1 text-hl-2 hover:bg-hl-wash"><MousePointerClick className="size-3.5" /></button>
+              </Hint>
+            </span>
+          ))}
         </div>
-        {!ai.busy && refs.length > 0 && (
-          <div className="ml-9 flex flex-wrap gap-1.5">
-            {refs.map((f) => (
-              <span key={f.id} className="flex items-center overflow-hidden rounded-full border border-rule-2 bg-cotton text-xs">
-                <button type="button" onClick={() => onOpen(f.id)} className="px-2.5 py-1 font-medium hover:bg-paper-2">{f.title}</button>
-                <Hint side="bottom" title="Chỉ cho tôi" text="Mở đúng trang và làm sáng từng nút cần bấm.">
-                  <button type="button" aria-label={`Chỉ cho tôi: ${f.title}`} onClick={() => onTour(f)} className="border-l border-rule-2 px-2 py-1 text-hl-2 hover:bg-hl-wash"><MousePointerClick className="size-3.5" /></button>
-                </Hint>
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      )}
     </section>
   );
 }

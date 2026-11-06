@@ -18,6 +18,11 @@ class LinkSpan(BaseModel):
     ] = "link"
 
 
+# How a tag got handled: me = Xong (with the reaction), quiet = Shift+Xong (no reaction), reply = our own reply on
+# Telegram, dashboard = a reply sent from here, all = "Xong tất cả", rule = an auto-skip rule.
+HandledBy = Literal["", "me", "quiet", "reply", "dashboard", "all", "rule"]
+
+
 class StoredMessage(BaseModel):
     """Internal message record; ids are ints here and strings on the wire."""
 
@@ -34,6 +39,8 @@ class StoredMessage(BaseModel):
     media_kind: str | None = None
     deleted: bool = False
     handled: bool = False  # answered (any reply from us) or marked done by hand
+    handled_by: HandledBy = ""  # how it got handled ("" while pending, or marked before this was kept)
+    handled_at: datetime | None = None
     snoozed_until: datetime | None = None  # hidden from pending until then
     pinned: bool = False  # sticks to the top of the pending list
     links: list[LinkSpan] = []  # Telegram formatting entities (UTF-16 offsets)
@@ -65,6 +72,8 @@ class MessageDTO(BaseModel):
     media_kind: str | None
     deleted: bool
     handled: bool = False
+    handled_by: HandledBy = ""
+    handled_at: datetime | None = None
     snoozed_until: datetime | None = None
     pinned: bool = False
     links: list[LinkSpan] = []
@@ -118,7 +127,6 @@ class StatusDTO(BaseModel):
     ]
     detail: str | None = None
     ai_configured: bool
-    ai_require_consent: bool
     youtrack_configured: bool = False
     telegram_api_id: int | None = None
     telegram_me: str | None = None
@@ -161,6 +169,7 @@ class AiDraftRequest(BaseModel):
     with_context: bool = True  # add nearby group messages (fetched live, not stored)
     platform: Literal["android", "ios", "mobile", "any"] = "android"  # angle of the analysis
     role: Literal["dev", "qa", "po"] = "dev"  # who reads it (Cài đặt chung › Vai trò)
+    intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt chung)
 
 
 class AiDeepRequest(BaseModel):
@@ -172,6 +181,7 @@ class AiDeepRequest(BaseModel):
     project: str
     instruction: str = Field("", max_length=2000)
     platform: Literal["android", "ios", "mobile", "any"] = "android"
+    intro: str = Field("", max_length=2000)
 
 
 class AiTicketRequest(AiDraftRequest):
@@ -218,9 +228,15 @@ class RuleRequest(BaseModel):
     label: str = Field(default="", max_length=200)
 
 
+class MessageRef(BaseModel):
+    chat_id: str
+    message_id: str
+
+
 class RuleAdded(BaseModel):
     rule: RuleDTO
-    handled: int  # existing pending tags the rule cleared
+    handled: int  # existing pending tags the rule cleared (the toast's count)
+    cleared: list[MessageRef]  # those tags, for an Undo (reopen them)
 
 
 AiEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
@@ -285,10 +301,6 @@ class TelegramSignInResult(BaseModel):
     password_required: bool
 
 
-class ConsentPref(BaseModel):
-    ai_require_consent: bool
-
-
 class YouTrackAuth(BaseModel):
     # the token rides every request: plain http only to this machine
     url: str = Field(pattern=r"^(https://[^\s/]+|http://(localhost|127\.0\.0\.1)(:\d+)?)(/[^\s]*)?$", max_length=200)
@@ -323,6 +335,7 @@ class ClaudeAccount(BaseModel):
     extra_usage: bool | None = None
     usage: list[ClaudeUsage] = []
     usage_at: str | None = None  # when the quota was last read from Anthropic
+    usage_error: str | None = None  # "no_token": the CLI login has no live token, usage is the last reading
     login_pending: bool = False
     login_url: str | None = None
 
@@ -330,12 +343,20 @@ class ClaudeAccount(BaseModel):
 
 
 class AiPicks(BaseModel):
-    """One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent."""
+    """One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent, brief_* to
+    Briefing / Digest ("" = same as model / effort), yt_* / yt_task_* to YouTrack's light / heavy runs
+    ("" = same as model / task_model)."""
 
     model: AiModel = ""
     effort: AiEffort = ""
     task_model: AiModel = ""
     task_effort: AiEffort = ""
+    brief_model: AiModel = ""
+    brief_effort: AiEffort = ""
+    yt_model: AiModel = ""
+    yt_effort: AiEffort = ""
+    yt_task_model: AiModel = ""
+    yt_task_effort: AiEffort = ""
 
 
 class AiPrefs(BaseModel):
@@ -408,6 +429,8 @@ class AiRun(BaseModel):
 
 class AiTestRequest(BaseModel):
     task: bool = False
+    brief: bool = False  # Briefing / Digest picks
+    yt: bool = False  # YouTrack picks
 
 
 class AiTestResult(BaseModel):
@@ -501,6 +524,7 @@ class DigestRequest(BaseModel):
     message_ids: list[str] = Field(default=[], max_length=400)  # wins over the range
     after_id: int | None = None  # range only: skip messages a previous digest already read
     teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
+    intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt › Telegram)
 
 
 class DigestRef(BaseModel):
@@ -518,6 +542,7 @@ class DigestItem(DigestRef):
     text: str = ""
     who: str = ""  # decided by / owner / who must confirm / team name
     due: str = ""  # actions only
+    why: str = ""  # context: the problem behind it and how it was concluded
 
 
 class DigestResult(BaseModel):
@@ -538,6 +563,19 @@ class SavedDigest(BaseModel):
     created_at: datetime
     last_message_id: str  # newest message any digest of this chat covered
     last_date: datetime
+
+
+class BriefingAskRequest(BaseModel):
+    """A question about every group's latest digest."""
+
+    question: str = Field(min_length=1, max_length=1000)
+    intro: str = Field("", max_length=2000)
+
+
+class SavedMessageRequest(BaseModel):
+    """Text for the user's own Saved Messages (Telegram markdown: **bold**, __italic__)."""
+
+    text: str = Field(min_length=1, max_length=20_000)
 
 
 class BriefingItem(BaseModel):
@@ -567,6 +605,8 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         media_kind=m.media_kind,
         deleted=m.deleted,
         handled=m.handled,
+        handled_by=m.handled_by,
+        handled_at=m.handled_at,
         snoozed_until=m.snoozed_until,
         pinned=m.pinned,
         links=m.links,

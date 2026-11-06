@@ -16,7 +16,7 @@ description: Use when writing or reviewing code under web/ (Next.js 16 static ex
 - Query key là mảng ổn định bắt đầu bằng tên tài nguyên (`["messages", chatId, …]`); truyền `signal` vào `api()` để hủy request.
 - Mutation: `retry: false` (gửi tin / AI không bao giờ tự gửi lại). Sau khi xong: `invalidateQueries` key liên quan, hoặc `setQueryData` khi server đã trả bản mới.
 - SSE (`hooks/use-events.ts`) là nguồn cập nhật; đừng thêm polling nếu có event (polling chỉ khi không có SSE, kèm comment `ponytail:`).
-- Không cache dữ liệu riêng tư vào `localStorage`; chỉ lưu preference UI (theme, look).
+- Không cache dữ liệu riêng tư vào `localStorage`; chỉ lưu preference UI (theme, look). Ngoại lệ có chủ đích: nháp trả lời theo tag (`saveDraft`, tự xóa khi tin xong / xóa dữ liệu nhóm / Cài đặt › "Xóa nháp"); hàng Báo lại chỉ lưu mã tham chiếu (`lib/report-back.ts`), nội dung tin đọc từ server khi hiển thị.
 
 ## React 19
 - State dẫn xuất → tính trong render, không `useEffect` + `setState`.

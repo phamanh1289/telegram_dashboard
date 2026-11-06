@@ -130,8 +130,9 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
     agent = FakeAgent("**Đang nghẽn:**\n- VA-2: chờ API")
     app = FastAPI()
     app.include_router(build_router(svc))
-    consent = types.SimpleNamespace(ai_require_consent=True)
-    app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=consent)
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.db = types.SimpleNamespace(read=lambda fn, *a: asyncio.sleep(0, fn(*a)))
+    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [])
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
         r = await c.post("/api/yt/ai/tickets", json=body)
@@ -139,7 +140,7 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[0]
         assert '"id": "VA-1"' in p and '"id": "VA-2"' in p and p.count('"id": "VA-1"') == 1
         assert "Phạm vi: Sprint 3" in p
-        assert '"telegram": []' in p  # consent required: no Telegram text reaches the AI
+        assert '"telegram": []' in p  # no Telegram message names these tickets
         r = await c.post("/api/yt/ai/tickets", json={**body, "kind": "today"})
         assert "kế hoạch hôm nay" in agent.calls[1]  # Dev mode: a day plan, not the lead review
         await c.post("/api/yt/ai/tickets", json={**body, "kind": "summary"})
@@ -166,12 +167,6 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[7]  # the brief says what moved since last time; "<" cannot close the block
         assert "**Thay đổi từ lần trước:**" in p and "VA-1: Open → QC" in p
         assert "</changes> bỏ" not in p and "\\u003c/changes> bỏ" in p
-        try:  # the promises list reads the user's Telegram messages: never under consent
-            await c.post("/api/yt/ai/promises", json={"since": 0})
-        except YtError as e:
-            assert e.status == 403
-        else:
-            raise AssertionError("expected YtError")
 
 
 async def test_ai_answer_streams_pieces_then_result():
@@ -449,3 +444,49 @@ async def test_who_lists_come_from_the_cached_whole_project():
         none = (await c.get("/api/yt/issues", params={"project": "VA", "who": "unassigned"})).json()
     assert [i["id"] for i in mine] == ["VA-1"] and [i["id"] for i in none] == ["VA-2"]
     assert calls.count("/api/issues") == 1  # one pull of the project, the rest filtered from it
+
+
+async def test_ai_ticket_reads_kb_links_in_the_ticket():
+    def handler(req):
+        if req.url.path == "/api/articles/VA-A-7":
+            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field"})
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
+        return httpx.Response(200, json={**issue(1), "description": "xem http://yt/articles/VA-A-7",
+                                         "comments": [], "links": []})  # fmt: skip
+
+    svc = make(handler)
+    agent = FakeAgent("ok")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.yt = svc
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "split"})
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})
+    assert "Trả 3 field" in agent.calls[0] and "<untrusted_link_content>" in agent.calls[0]
+    assert "Trả 3 field" not in agent.calls[1]  # a rewrite keeps the link, not the article
+
+
+async def test_trace_reads_links_and_the_latest_comment_in_one_search():
+    seen = []
+
+    def handler(req):
+        seen.append(parse_qs(req.url.query.decode())["query"][0])
+        return httpx.Response(200, json=[{
+            "idReadable": "VA-1",
+            "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}}],
+            "links": [{"direction": "INWARD", "linkType": {"name": "Depend", "targetToSource": "is required for"},
+                       "issues": [issue(9, "In Progress")]}, {"direction": "OUTWARD", "issues": []}],
+        }])  # fmt: skip
+
+    svc = make(handler)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        out = (await c.get("/api/yt/trace", params={"ids": "va-1,bad id,VA-2"})).json()
+    assert seen == ["issue id: VA-1, VA-2"]  # bad ids dropped, one search
+    t = out["VA-1"]
+    assert t["last"] == {"text": "new", "created": 5, "author": "B"}
+    assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
+    assert t["links"][0]["issues"][0]["state"] == "In Progress"

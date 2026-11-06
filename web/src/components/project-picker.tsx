@@ -19,16 +19,15 @@ import { api, errorText, type Project } from "@/lib/api";
 /** Projects registered for the AI agent; one cache for the picker and the AI Agent dialog. */
 export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: ({ signal }) => api<Project[]>("/projects", { signal }) });
 
-/** Project the AI agent may read when drafting; "" = none. */
-export function ProjectPicker({ value, onChange }: { value: string; onChange: (path: string) => void }) {
+/** Register a project folder: the native Finder dialog, or a typed path when that can't open. */
+export function AddProject({ onAdded, className }: { onAdded: (path: string) => void; className?: string }) {
   const qc = useQueryClient();
   const [adding, setAdding] = useState(false);
   const [path, setPath] = useState("");
-  const projects = useProjects();
   const add = useMutation({
     mutationFn: (p: string) => api<Project>("/projects", { method: "POST", json: { path: p } }),
     onSuccess: (p) => {
-      onChange(p.path);
+      onAdded(p.path);
       setAdding(false);
       setPath("");
     },
@@ -37,43 +36,13 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
   // Opens the native Finder folder dialog on this Mac (backend runs locally); 204 = cancelled.
   const pick = useMutation({
     mutationFn: () => api<Project | undefined>("/projects/pick", { method: "POST" }),
-    onSuccess: (p) => p && onChange(p.path),
+    onSuccess: (p) => p && onAdded(p.path),
     onSettled: () => qc.invalidateQueries({ queryKey: ["projects"] }),
   });
-  const remove = useMutation({
-    mutationFn: (p: string) => api<void>(`/projects?path=${encodeURIComponent(p)}`, { method: "DELETE" }),
-    onSuccess: () => onChange(""),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["projects"] }),
-  });
-  const items = projects.data ?? [];
-  // A stored choice that no longer exists falls back to "none".
-  const current = items.some((p) => p.path === value) ? value : "";
-
   return (
-    <span className="flex items-center gap-1 text-xs text-ink-3">
-      <FolderGit2 className="size-4 shrink-0" aria-hidden />
-      <select
-        aria-label="Dự án tham chiếu cho AI"
-        title={current || "AI không đọc dự án nào"}
-        value={current}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-[30px] max-w-40 rounded-md border border-rule-2 bg-cotton px-2 text-ink transition-[border-color] duration-(--dur-micro) hover:border-ink-3"
-      >
-        <option value="">Không dùng dự án</option>
-        {items.map((p) => (
-          <option key={p.path} value={p.path}>{p.name}</option>
-        ))}
-      </select>
-      {current && (
-        <Hint side="bottom" text="Gỡ dự án khỏi danh sách (không xóa thư mục)">
-          <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Gỡ dự án khỏi danh sách"
-            disabled={remove.isPending} onClick={() => remove.mutate(current)}>
-            <X />
-          </Button>
-        </Hint>
-      )}
+    <>
       <Hint side="bottom" text="Chọn thư mục dự án trên máy này">
-        <Button size="xs" variant="ghost" aria-busy={pick.isPending} disabled={pick.isPending}
+        <Button size="xs" variant="ghost" className={className} aria-busy={pick.isPending} disabled={pick.isPending}
           onClick={() => pick.mutate()}>
           <Plus /> {pick.isPending ? "Đang chọn…" : "Thêm"}
         </Button>
@@ -111,6 +80,47 @@ export function ProjectPicker({ value, onChange }: { value: string; onChange: (p
           </form>
         </DialogContent>
       </Dialog>
+    </>
+  );
+}
+
+/** Project the AI agent may read when drafting; "" = none. */
+export function ProjectPicker({ value, onChange }: { value: string; onChange: (path: string) => void }) {
+  const qc = useQueryClient();
+  const projects = useProjects();
+  const remove = useMutation({
+    mutationFn: (p: string) => api<void>(`/projects?path=${encodeURIComponent(p)}`, { method: "DELETE" }),
+    onSuccess: () => onChange(""),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+  const items = projects.data ?? [];
+  // A stored choice that no longer exists falls back to "none".
+  const current = items.some((p) => p.path === value) ? value : "";
+
+  return (
+    <span className="flex items-center gap-1 text-xs text-ink-3">
+      <FolderGit2 className="size-4 shrink-0" aria-hidden />
+      <select
+        aria-label="Dự án tham chiếu cho AI"
+        title={current || "AI không đọc dự án nào"}
+        value={current}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-[30px] max-w-40 rounded-md border border-rule-2 bg-cotton px-2 text-ink transition-[border-color] duration-(--dur-micro) hover:border-ink-3"
+      >
+        <option value="">Không dùng dự án</option>
+        {items.map((p) => (
+          <option key={p.path} value={p.path}>{p.name}</option>
+        ))}
+      </select>
+      {current && (
+        <Hint side="bottom" text="Gỡ dự án khỏi danh sách (không xóa thư mục)">
+          <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label="Gỡ dự án khỏi danh sách"
+            disabled={remove.isPending} onClick={() => remove.mutate(current)}>
+            <X />
+          </Button>
+        </Hint>
+      )}
+      <AddProject onAdded={onChange} />
     </span>
   );
 }

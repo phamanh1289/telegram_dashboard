@@ -40,6 +40,19 @@ PLATFORM_FOCUS = {
     "ios": "the mobile app side, mainly the iOS platform",
     "mobile": "the mobile app side (Android and iOS)",
 }
+
+
+def about_user(intro: str) -> str:
+    """The user's own self-introduction (Settings): theirs, so trusted, unlike the messages."""
+    intro = intro.strip()
+    if not intro:
+        return ""
+    return (
+        f"\n<about_user>\n{intro}\n</about_user>\nThe user wrote <about_user> about themselves (role, "
+        "platform, expertise): fit scope, depth and wording to it; it wins over the default angle above."
+    )
+
+
 # Who reads the summary / ticket; "dev" adds nothing (the default prompt is written for a developer).
 ROLE_FOCUS = {
     "qa": (
@@ -165,19 +178,13 @@ class AiService:
             return on_path(self.settings.ai_agent_project_command)
         return providers.installed(self.settings, p)
 
-    def require_read(self) -> None:
-        """Consent mode on (Settings › "Hỏi trước khi AI đọc tin Telegram"): no inbox AI may read
-        Telegram text. Digest has its own per-chat consent."""
-        if self.settings.ai_require_consent:
-            raise ApiError(403, "ai_scope_not_allowed")
-
     def _check(self, chat_id: str, ids: list[int]):
         """(may the AI read these kept messages, them, cursor): a tracked chat, none deleted (non-photo
-        media just contributes its caption), and consent mode off."""
+        media just contributes its caption)."""
         tracking = self.store.is_tracking(chat_id)
         msgs, cursor = self.store.get_messages_by_ids(chat_id, ids)
         by_id = {m.message_id: m for m in msgs}
-        ok = not self.settings.ai_require_consent and tracking and all(
+        ok = tracking and all(
             i in by_id and not by_id[i].deleted for i in ids
         )
         return ok, [by_id[i] for i in ids if i in by_id], cursor
@@ -194,6 +201,7 @@ class AiService:
         platform: str = "android",
         role: str = "dev",
         fields: dict[str, list[str]] | None = None,
+        intro: str = "",
         on_text=None,
     ) -> AiResult:
         """kind "draft" (analysis + reply drafts) or "ticket" (a YouTrack ticket proposal, JSON in
@@ -201,7 +209,6 @@ class AiService:
         (context only); `images`: photo files to read. `on_text`: see `ask`."""
         if not self.configured:
             raise ApiError(503, "ai_not_configured")
-        self.require_read()
         if project is not None:
             if not self.reader_available:
                 raise ApiError(422, "ai_agent_missing")
@@ -256,6 +263,7 @@ class AiService:
             )
         if role in ROLE_FOCUS:
             task += "\n" + (ROLE_FOCUS if kind == "draft" else ROLE_TICKET)[role]
+        task += about_user(intro)
         if kind == "draft":
             me = self.settings.telegram_me or self.me()
             task += (
@@ -327,11 +335,11 @@ class AiService:
         instruction: str = "",
         platform: str = "android",
         fetch=None,
+        intro: str = "",
     ) -> tuple[str, str]:
         """Deep thinking on a combo: a question to BE + BE's confirmation, to trace through `project`.
-        Returns (prompt, title) for an AI Agent session (read-only). Consent mode blocks it; no
+        Returns (prompt, title) for an AI Agent session (read-only). No
         tracking gate. `fetch(chat_id, ids)`: reads messages not stored."""
-        self.require_read()
         if not await self.db.read(self.store.has_project, project):
             raise ApiError(404, "project_not_found")
         try:
@@ -363,6 +371,7 @@ class AiService:
                 "\nUnless the messages clearly concern something else, analyze from "
                 f"{PLATFORM_FOCUS[platform]}."
             )
+        task += about_user(intro)
         if instruction:
             task += f"\nUser instruction: {instruction}"
         user = (
@@ -380,16 +389,19 @@ class AiService:
         heavy: bool = False,
         on_text: Callable[[str | None], None] | None = None,
         feature: str = "ai",
+        brief: bool = False,
+        yt: bool = False,
     ) -> str:
         """One `claude -p` run (or the Codex/Antigravity CLI picked instead): prompt on stdin, answer on stdout.
         `heavy`: a long read (many tickets), run on the task model with the longer timeout.
         `on_text`: called with each piece of the answer as Claude writes it (None: start over,
         a new turn after a tool call); the return value is still the whole final answer.
-        `feature`: what the run is for, in the Claude page's run log."""
+        `feature`: what the run is for, in the Claude page's run log. `brief`: a Briefing / Digest run
+        (its own model / effort picks). `yt`: a YouTrack run (YouTrack's picks)."""
         s = self.settings
         cwd = project or read_dir  # anything to read => the read-only tool command
         provider = providers.chosen(s)
-        choice = providers.run_choice(s, task=heavy, provider=provider)
+        choice = providers.run_choice(s, task=heavy, provider=provider, brief=brief, yt=yt)
         cmd = providers.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
                                 model=choice[0], effort=choice[1], stream=on_text is not None)  # fmt: skip
         if provider == "claude" and not providers.is_claude(cmd):

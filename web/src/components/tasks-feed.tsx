@@ -1,7 +1,8 @@
 "use client";
 
-import { Bot, CheckCircle2, ChevronDown, CircleAlert, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
+import { Bot, ChevronDown, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
 import { memo, useState } from "react";
+import { AiResultCard, dur, UserBubble } from "@/components/ai/chat";
 import { Markdown } from "@/components/markdown";
 import { splitAttachments } from "@/lib/attach";
 import { cn } from "@/lib/utils";
@@ -9,14 +10,7 @@ import { cn } from "@/lib/utils";
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results.
 
 export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number };
-export type TaskLog = { items: TaskEvent[]; next: number };
-
-/** Seconds as "0.8s", "42s", "3m 05s". */
-function dur(s: number) {
-  if (s < 10) return `${Math.max(0, s).toFixed(1)}s`;
-  if (s < 60) return `${Math.round(s)}s`;
-  return `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
-}
+export type TaskLog = { items: TaskEvent[]; next: number; running?: boolean };
 
 /** Tool name -> icon and a Vietnamese verb, so a step reads "Đọc SellProgressCard.kt". */
 const TOOLS: Record<string, [LucideIcon, string]> = {
@@ -167,40 +161,31 @@ function UserTurn({ text }: { text: string }) {
   const [said, attached] = splitAttachments(text);
   const n = attached.match(/^\[#\d+\] /gm)?.length ?? 0;
   return (
-    <div className={cn(AI_TEXT, "max-w-[85%] origin-bottom-right break-words rounded-2xl rounded-br-sm bg-hl-wash px-3.5 py-2 text-ink")}>
-      {said && <p className="whitespace-pre-wrap">{said}</p>}
+    <UserBubble className={AI_TEXT}>
+      {said && <p>{said}</p>}
       {attached && (
         <details className={cn("text-xs text-ink-2", said && "mt-1.5")}>
           <summary className="inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-ink"><Paperclip className="size-3" aria-hidden /> {n} tin đính kèm</summary>
-          <p className="mt-1 whitespace-pre-wrap border-l-2 border-hl/40 pl-2">{attached}</p>
+          <p className="mt-1 border-l-2 border-hl/40 pl-2">{attached}</p>
         </details>
       )}
-    </div>
+    </UserBubble>
   );
 }
 
 /** One turn's text, prompt or result. Memoised on the event itself (the log keeps old event objects while it grows), so
  *  the 1.5s poll doesn't re-parse every Markdown block of the session. */
 export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: TaskEvent; took?: number; tools?: number }) {
-  if (ev.kind === "user") {
-    return (
-      <li className="flex justify-end animate-in fade-in-0 slide-in-from-bottom-2 zoom-in-95 duration-(--dur-short)">
-        <UserTurn text={ev.text} />
-      </li>
-    );
-  }
+  if (ev.kind === "user") return <li><UserTurn text={ev.text} /></li>;
   if (ev.kind === "result") {
     return (
-      <li className={cn("rounded-xl border p-4 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-long)",
-        ev.error ? "border-error/25 bg-error-wash" : "border-ok/25 bg-ok-wash")}>
-        <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-semibold", ev.error ? "text-error" : "text-ok")}>
-          {ev.error ? <CircleAlert className="size-4" aria-hidden /> : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
-          {ev.error ? "Có lỗi" : "Kết quả"}
-        </p>
-        {ev.text && <Markdown text={ev.text} className={AI_TEXT} />}
-        {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} />}
+      <li>
+        <AiResultCard error={ev.error} className="p-4">
+          {ev.text && <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />}
+          {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} />}
+        </AiResultCard>
       </li>
     );
   }
-  return <li className={cn("px-0.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)", ev.error ? "text-error" : "text-ink")}><Markdown text={ev.text} className={AI_TEXT} /></li>;
+  return <li className={cn("px-0.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)", ev.error ? "text-error" : "text-ink")}><Markdown asks text={ev.text} className={AI_TEXT} /></li>;
 });

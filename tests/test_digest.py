@@ -96,6 +96,20 @@ def test_history_api(settings):
         assert c.get("/api/chats/-999/history", params=q).status_code == 404
 
 
+def test_evidence_api(settings):
+    """A digest item's cited messages plus what they reply to, oldest first."""
+    fake = FakeTransport()
+    fake.history[A] = [at(A, 1, "hỏi baseUrl?", 0), at(A, 2, "b", 5),
+                       at(A, 3, "chốt bỏ baseUrl", 10).model_copy(update={"reply_to_id": 1})]  # fmt: skip
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.store.set_tracking(A, True, title="a", kind="supergroup")
+        app.state.bridge.state = "connected"
+        r = c.get(f"/api/chats/{A}/evidence", params={"ids": [3, 99]}).json()
+        assert [m["message_id"] for m in r] == ["1", "3"]
+        assert c.get(f"/api/chats/{A}/evidence").status_code == 422
+
+
 # ---- digest ----------------------------------------------------------------------
 
 
@@ -334,6 +348,40 @@ def test_untagged_group_digest_and_briefing(settings):
         assert c.get("/api/briefing").json() == []  # revoked: gone with its saved digest
 
 
+async def test_briefing_ask_reads_only_consented_digests(dg):
+    env, svc, provider = dg
+    await expect("briefing_empty", svc.ask("gì?"))
+    consent(env)
+    env.store.save_digest(A, 1, T0, '{"source_count": 1, "actions": [{"text": "fix login"}]}')
+    env.store.save_digest(B, 9, T0, '{"source_count": 1, "actions": [{"text": "secret B"}]}')  # no consent
+    await svc.ask("Tôi cần làm gì?")
+    prompt = provider.calls[-1]
+    assert "fix login" in prompt and "secret B" not in prompt and "Tôi cần làm gì?" in prompt
+
+
+async def test_briefing_answered_finds_my_replies(dg):
+    env, svc, _ = dg
+    env.bridge.state = "connected"
+    consent(env)
+    env.store.save_digest(A, 3, T0, json.dumps({"source_count": 3, "since": T0.isoformat(),
+        "confirmations": [{"text": "q", "message_ids": ["3"]}], "actions": [{"text": "a", "message_ids": ["2"]}]}))
+    mine = at(A, 9, "ok", 20)
+    mine.outgoing, mine.reply_to_id = True, 3
+    other = at(A, 10, "me too", 21)
+    other.reply_to_id = 2  # someone else's reply: not mine
+    env.fake.history[A] += [mine, other]
+    assert await svc.answered() == {A: ["3"]}
+
+
+def test_chunks_split_at_lines():
+    from telegram_dashboard.telegram import chunks
+
+    assert chunks("a\nb\n", 4) == ["a\nb\n"]
+    assert chunks("aaa\nbbb\n", 4) == ["aaa\n", "bbb\n"]
+    assert chunks("x" * 9, 4) == ["xxxx", "xxxx", "x"]
+    assert chunks("") == []
+
+
 def test_parse_result_keeps_only_ticket_ids():
     r = parse_result('{"decisions": [{"text": "x", "tickets": ["va-12", "VA-12", "not id", 5, "SDK-3"]}]}', set())
     assert r["decisions"][0]["tickets"] == ["VA-12", "SDK-3"]
@@ -376,3 +424,14 @@ def test_live_pages_and_handled_filter(settings):
         st.set_handled(A, 1, True)
         ids = [m["message_id"] for m in c.get(f"/api/chats/{A}/messages", params={"handled": "true"}).json()["items"]]
         assert ids == ["1"]
+
+
+def test_briefing_saved_sends_to_me(settings):
+    fake = FakeTransport()
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.bridge.state = "degraded"
+        assert c.post("/api/briefing/saved", json={"text": "hi"}).status_code == 503
+        app.state.bridge.state = "connected"
+        assert c.post("/api/briefing/saved", json={"text": "**Briefing**"}).status_code == 204
+        assert fake.saved == ["**Briefing**"]

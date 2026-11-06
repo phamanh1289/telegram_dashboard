@@ -1,15 +1,17 @@
 "use client";
 
 import { type UseQueryResult, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, FolderGit2, ListPlus, Loader2, Paperclip, Square, X } from "lucide-react";
+import { ArrowUp, FolderGit2, ListPlus, Loader2, Paperclip, X } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/components/ai";
+import { AiPromptBox } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 import { type AiPicks, api, ApiError, errorText, type Message, type Task } from "@/lib/api";
 import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, useRefs, withAttachments } from "@/lib/attach";
-import { timeLabel, toast } from "@/lib/inbox";
+import { toast } from "@/lib/inbox";
+import { timeLabel } from "@/lib/time";
 import { cn, MOD } from "@/lib/utils";
 
 // The follow-up box under an AI Agent session: queue, attached messages, paste, send, stop. Its own memoised component,
@@ -36,7 +38,7 @@ function SessionAi({ t, disabled }: { t: Task; disabled: boolean }) {
       <span role="group" aria-label={`${c.name}: model và effort cho phiên này`}
         className={cn("flex min-w-0 items-center gap-2", disabled && "pointer-events-none opacity-50", save.isError && "[&_button]:border-error")}>
         <Picks c={c} label="phiên này" model={model} effort={effort} modelClass="w-28"
-          effortClass="w-14" onModel={(m) => save.mutate({ model: m, effort })} onEffort={(e) => save.mutate({ model, effort: e })} />
+          variant="short" onModel={(m) => save.mutate({ model: m, effort })} onEffort={(e) => save.mutate({ model, effort: e })} />
       </span>
     </Hint>
   );
@@ -144,29 +146,17 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
         ))}
       </ol>
     )}
-    <form onSubmit={(e) => { e.preventDefault(); submit(); }}
-      className={cn("rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
-        running && "ai-ring")}>
-      {refs.length > 0 && (
-        <ul aria-label="Tin đính kèm" className="flex flex-wrap gap-1.5 px-3 pt-3">
+    <AiPromptBox aria-label="Nhắn tiếp cho AI" maxLength={8000} value={text} onChange={setText} onPaste={paste}
+      onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
+      stopHint="Dừng AI (giữ hội thoại, có thể nhắn tiếp)"
+      placeholder={running ? `AI đang làm: ${MOD}+Enter để thêm vào hàng đợi` : `Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, ${MOD}+Enter vào hàng đợi)`}
+      top={refs.length > 0 && (
+        <ul aria-label="Tin đính kèm" className="flex flex-wrap gap-1.5">
           {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== t.chat_id}
             onRemove={() => setRefs(id, refs.filter((x) => !sameRef(x, r)))} />)}
         </ul>
       )}
-      <textarea
-        aria-label="Nhắn tiếp cho AI" rows={2} maxLength={8000} value={text}
-        onChange={(e) => setText(e.target.value)} onPaste={paste}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            if (e.metaKey || e.ctrlKey) enqueue();
-            else submit();
-          }
-        }}
-        placeholder={running ? `AI đang làm: ${MOD}+Enter để thêm vào hàng đợi` : `Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, ${MOD}+Enter vào hàng đợi)`}
-        className="relative block max-h-48 min-h-14 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-ink outline-none field-sizing-content placeholder:text-ink-3"
-      />
-      <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2 px-2.5 pb-2.5 text-xs text-ink-2">
+      tools={<>
         <span className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full bg-paper-2 px-2 py-1" title={t.project}>
           <FolderGit2 className="size-3.5 shrink-0 text-ink-3" aria-hidden /><span className="truncate">{t.project.split("/").pop()}</span>
         </span>
@@ -178,30 +168,20 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
             </label>
           </Hint>
         )}
-        <div className="ml-auto flex min-w-0 items-center gap-2">
-          <SessionAi t={t} disabled={running} />
-          {running && (
-            <Hint text="Dừng AI (giữ hội thoại, có thể nhắn tiếp)" side="bottom">
-              <button type="button" aria-label="Dừng" aria-busy={stop.isPending} disabled={stop.isPending} onClick={() => stop.mutate()}
-                className="relative grid size-8 shrink-0 place-items-center rounded-full bg-error-wash text-error transition-[scale,background-color] duration-(--dur-micro) hover:scale-105 hover:bg-error hover:text-cotton active:scale-95 disabled:opacity-60 animate-in zoom-in-50 fade-in-0 duration-(--dur-short)">
-                <span className="absolute inset-0 animate-spin rounded-full border-2 border-error/20 border-t-error motion-reduce:animate-none" aria-hidden />
-                {stop.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Square className="size-3 fill-current" aria-hidden />}
-              </button>
-            </Hint>
-          )}
-          {running ? (
-            <Hint text={`Thêm vào hàng đợi, chạy khi AI xong lượt này (${MOD}+Enter)`} side="bottom">
-              <Button type="button" size="icon-sm" variant="outline" className="rounded-full" aria-label="Vào hàng đợi" disabled={!ready} onClick={enqueue}><ListPlus /></Button>
-            </Hint>
-          ) : (
-            <Button type="submit" size="icon-sm" aria-label="Gửi" aria-busy={send.isPending || resolving} disabled={!ready || send.isPending}
-              className="rounded-full bg-hl text-hl-ink hover:brightness-110">
-              {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp />}
-            </Button>
-          )}
-        </div>
-      </div>
-    </form>
+      </>}
+      actions={<>
+        <SessionAi t={t} disabled={running} />
+        {running ? (
+          <Hint text={`Thêm vào hàng đợi, chạy khi AI xong lượt này (${MOD}+Enter)`} side="bottom">
+            <Button type="button" size="icon-sm" variant="outline" className="rounded-full" aria-label="Vào hàng đợi" disabled={!ready} onClick={enqueue}><ListPlus /></Button>
+          </Hint>
+        ) : (
+          <Button type="button" size="icon-sm" aria-label="Gửi" aria-busy={send.isPending || resolving} disabled={!ready || send.isPending} onClick={submit}
+            className="rounded-full bg-hl text-hl-ink hover:brightness-110">
+            {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp />}
+          </Button>
+        )}
+      </>} />
     {failed && <p role="alert" className="text-xs text-error">Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.</p>}
     {send.isError && <p role="alert" className="text-xs text-error">{busy ? "AI đang làm lượt trước." : "Gửi thất bại."}</p>}
     {stop.isError && <p role="alert" className="text-xs text-error">Không dừng được, thử lại.</p>}

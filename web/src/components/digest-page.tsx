@@ -1,17 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, Copy, MessageSquarePlus, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { IssueDialog } from "@/components/composer-dialogs";
+import { AiThinking } from "@/components/ai/chat";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
-import { DeepPick } from "@/components/deep-think";
+import { DeepItemAction, DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/lib/api";
-import { copyText, smooth, timeLabel, toast } from "@/lib/inbox";
-import { readDigestTeams } from "@/lib/prefs";
+import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
+import { copyText, getMessage, openReplyById, smooth, toast } from "@/lib/inbox";
+import { timeLabel } from "@/lib/time";
+import { readDigestTeams, readIntro } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { lastSp, yt } from "@/lib/yt";
 import { Segmented } from "@/components/ui/segmented";
@@ -54,6 +57,8 @@ const hoursAgo = (h: number) => span(new Date(Date.now() - h * 3_600_000).toISOS
 const CONSENT_DAYS = [7, 30, 90] as const;
 
 /** Impacts grouped by team, in first-seen order. */
+const THINKING = ["Đang đọc tin nhắn", "Đang tìm điều đã chốt, thay đổi", "Đang xếp việc cần PO/PM confirm"];
+
 function byTeam(list: DigestItem[]): [string, DigestItem[]][] {
   const out = new Map<string, DigestItem[]>();
   for (const it of list) out.set(it.who || "Khác", [...(out.get(it.who || "Khác") ?? []), it]);
@@ -109,6 +114,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     onSuccess: (d) => {
       qc.setQueryData(["digest-consent", chatId], d);
       void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }); // revoking drops the saved digest
+      void qc.invalidateQueries({ queryKey: ["briefing"] }); // the sidebar's Briefing tab lists consented groups
       if (!d.enabled && preset === "last") onPreset(24); // …and with it the "since last time" range
     },
   });
@@ -144,9 +150,10 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           message_ids: [...picked],
           after_id: preset === "last" && last ? Number(last.last_message_id) : null,
           teams: readDigestTeams(),
+          intro: readIntro(),
         },
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }); void qc.invalidateQueries({ queryKey: ["briefing"] }); },
   });
 
   function choose(next: Span) {
@@ -254,13 +261,11 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         {/* Result: first on phones, right column on desktop. */}
         <div className="border-b p-3 md:p-5 lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-l" aria-live="polite">
           {run.isPending ? (
-            <div aria-busy className="grid gap-3" aria-label="Đang tóm tắt…">
-              {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-4" style={{ width: `${90 - i * 15}%` }} />)}
-            </div>
+            <AiThinking lines={THINKING} />
           ) : run.isError ? (
             <p role="alert" className="text-sm text-error">{digestError(run.error)}</p>
           ) : shown ? (
-            <Result r={shown} title={title} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
+            <Result r={shown} title={title} chatId={chatId} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
           ) : (
             <p className="text-sm leading-relaxed text-ink-3">
               Tóm tắt {label}: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần PO/PM confirm gì. Chọn tin bên dưới (Shift+click để chọn cả đoạn) nếu chỉ muốn tóm tắt một phần.
@@ -309,7 +314,7 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
   const text = m.text || (m.media_kind ? `[${m.media_kind === "photo" ? "ảnh" : "file"}]` : "");
   return (
     <li data-digest-id={m.message_id}
-      className={cn("flex cursor-pointer gap-3 px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2 md:px-5", old && !checked && !lit && "opacity-60", checked && "bg-hl-wash/60", lit && "bg-hl-wash")}
+      className={cn("group/row flex cursor-pointer gap-3 px-3 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2 md:px-5", old && !checked && !lit && "opacity-60", checked && "bg-hl-wash/60", lit && "bg-hl-wash")}
       onClick={(e) => {
         if ((e.target as HTMLElement).closest("a,input") || getSelection()?.toString()) return;
         onToggle(e.shiftKey);
@@ -322,7 +327,7 @@ function Row({ m, checked, lit, old, onToggle }: { m: Message; checked: boolean;
           <span className="shrink-0 font-mono tabular-nums text-ink-3">{timeLabel(m.date)}</span>
           <span className="shrink-0 font-mono text-ink-3">#{m.message_id}</span>
           {old && <span className="sr-only">đã nằm trong lần tóm tắt trước</span>}
-          <DeepPick m={m} className="-my-1 ml-auto" />
+          <DeepPick m={m} className="-my-1 ml-auto opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" />
         </div>
         <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-ink">{text}</p>
       </div>
@@ -358,7 +363,7 @@ function RecordOn({ id, text }: { id: string; text: string }) {
 }
 
 /** Tickets an item names (known YouTrack projects only); `record`: a decision's comment text. */
-function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: boolean; record?: string }) {
+export function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: boolean; record?: string }) {
   const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false });
   return (ids ?? []).filter((id) => projects.data?.some((p) => p.shortName === id.split("-")[0])).map((id) => (
     <Fragment key={id}>
@@ -367,6 +372,37 @@ function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: bo
       {record && <RecordOn id={id} text={record} />}
     </Fragment>
   ));
+}
+
+/** "Cần confirm" / "Việc cần làm" (and Briefing's asks): answer the message it came from, or make it a ticket. */
+/** `suggest`: no ticket yet and none similar on YouTrack, so "Tạo ticket" stands out; `onCreated`: after one is made. */
+export function ItemActions({ chatId, ids, text, suggest, onCreated }: { chatId: string; ids: string[]; text: string; suggest?: boolean; onCreated?: () => void }) {
+  const status = useQuery({ ...statusQuery, staleTime: Infinity }).data; // the shell keeps it fresh
+  const [m, setM] = useState<Message | null>(null);
+  const load = useMutation({
+    mutationFn: () => getMessage(chatId, ids[0]), // the ticket form reads it
+    onSuccess: setM,
+    onError: (e) => toast({ text: errorText(e, {}, "Không mở được tin gốc, thử lại sau") }),
+  });
+  if (!ids.length) return null;
+  const cls = "ml-1 h-5 px-1 text-ink-3 hover:bg-hl-wash hover:text-hl-2 [&_svg]:size-3";
+  return (
+    <>
+      <Button type="button" size="xs" variant="ghost" className={cls} onClick={() => void openReplyById(chatId, ids[0])}><Reply aria-hidden /> Trả lời</Button>
+      {status?.youtrack_configured && (
+        <Button type="button" size="xs" variant="ghost" disabled={load.isPending} onClick={() => load.mutate()}
+          className={cn(cls, suggest && "bg-hl-wash font-medium text-hl-2")}><Bug aria-hidden /> {suggest ? "Chưa có ticket · Tạo" : "Tạo ticket"}</Button>
+      )}
+      {m && (
+        <IssueDialog m={m} note={text} ai={status?.ai_configured ?? false} open onOpenChange={(o) => { if (!o) setM(null); }}
+          onCreated={(line) => {
+            setM(null);
+            onCreated?.();
+            toast({ text: line.split(":")[0], action: { label: "Báo nhóm", run: () => void openReplyById(chatId, m.message_id, line) } });
+          }} />
+      )}
+    </>
+  );
 }
 
 function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump: (id: string) => void }) {
@@ -380,7 +416,7 @@ function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump:
   ));
 }
 
-export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void; title?: string }) {
+export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void; title?: string; chatId?: string }) {
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">
@@ -421,6 +457,8 @@ export function Result({ r, when, lit, onJump, onCopy, title }: { r: DigestResul
                         <Tickets ids={it.tickets} scope={key === "changes"}
                           record={key === "decisions" ? `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}` : undefined} />
                         <Refs ids={it.message_ids ?? []} lit={lit} onJump={onJump} />
+                        {chatId && (key === "confirmations" || key === "actions") && <ItemActions chatId={chatId} ids={it.message_ids ?? []} text={it.text} />}
+                        {chatId && (key === "decisions" || key === "changes") && <DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />}
                       </li>
                     );
                   })}

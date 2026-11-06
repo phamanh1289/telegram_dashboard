@@ -16,6 +16,7 @@ from . import providers
 from .claude import note_run
 from .config import child_env, kill_tree, on_path
 from .errors import ApiError
+from .links import delete_links, links_dir
 
 log = logging.getLogger("telegram_dashboard.agent")
 
@@ -46,6 +47,7 @@ def read_task_prompt(settings, task_id: str) -> str:
 def delete_task_files(settings, task_id: str) -> None:
     for suffix in (".md", ".result.md", ".log.jsonl"):
         (tasks_dir(settings) / f"{task_id}{suffix}").unlink(missing_ok=True)
+    delete_links(settings, task_id)
 
 
 class AgentRunner:
@@ -56,6 +58,7 @@ class AgentRunner:
         # Reserved before the first await (no double turn), with its process once spawned.
         self._starting: dict[str, asyncio.subprocess.Process | None] = {}
         self._cancel: set[str] = set()  # stopped while starting: never registered
+        self._why: dict[str, str] = {}  # stopped on purpose: what the log says instead of the exit code
 
     @property
     def available(self) -> bool:
@@ -104,7 +107,9 @@ class AgentRunner:
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
             if ai[0] is not None:  # picked for this session: used as is, no step-down
                 choice = (ai[0], ai[1] or "", False)
-            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2])
+            links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
+            read_dir = str(links) if links.is_dir() else None
+            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir)
             try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,
@@ -186,8 +191,9 @@ class AgentRunner:
             try:
                 async for ev in providers.events(proc.stdout, idle):
                     for item in self._items(task_id, provider, ev, st):
-                        if item["kind"] == "result":
-                            got_result = True
+                        # work after a result means the turn goes on: only a result that stays last ends it
+                        got_result = item["kind"] == "result"
+                        if got_result:
                             run = (providers.run_model(provider, st.get("model"), choice[0]), *choice[1:])
                             note_run(self.settings, "agent", run, item.pop("final"), time.monotonic() - t0, None)
                             if not item["error"]:  # a failed turn is not a result
@@ -200,14 +206,15 @@ class AgentRunner:
             if not got_result:
                 note_run(self.settings, "agent", choice, None, time.monotonic() - t0, f"exit_{code}")
                 tail = (await err).decode(errors="replace").strip()[-400:]
-                self._append(task_id, {"kind": "result", "error": True,
-                                       "text": tail or f"Tiến trình dừng (mã {code})."})  # fmt: skip
+                text = self._why.get(task_id) or tail or f"Tiến trình dừng (mã {code})."
+                self._append(task_id, {"kind": "result", "error": True, "text": text})
         except Exception as e:
             log.warning("agent output of task %s failed: %r", task_id, e, exc_info=True)
             self._append(task_id, {"kind": "result", "error": True,
                                    "text": f"Lỗi đọc output: {e!r}"})  # fmt: skip
         finally:
             kill_tree(proc)  # nobody reads its output any more: it, or what it left behind, stops now
+            self._why.pop(task_id, None)
             if proc.returncode is None:
                 await proc.wait()
             err.cancel()
@@ -216,7 +223,7 @@ class AgentRunner:
             if self.pumps.get(task_id) is asyncio.current_task():
                 del self.pumps[task_id]
 
-    async def stop(self, task_id: str) -> None:
+    async def stop(self, task_id: str, why: str = "Đã dừng.") -> None:
         """Stop the run (and what it started) and wait until its pump is done, so nothing writes to
         the log after. A turn still starting is cancelled: start() kills it and never registers it."""
         if task_id in self._starting:
@@ -225,6 +232,7 @@ class AgentRunner:
                 kill_tree(starting)
         proc = self.procs.get(task_id)
         if proc and proc.returncode is None:
+            self._why[task_id] = why
             kill_tree(proc, term=True)
             try:
                 await asyncio.wait_for(proc.wait(), 5)
@@ -234,7 +242,8 @@ class AgentRunner:
             await asyncio.gather(pump, return_exceptions=True)
 
     async def stop_all(self) -> None:
-        await asyncio.gather(*(self.stop(t) for t in {*self.procs, *self._starting}))
+        why = "Server khởi động lại nên lượt này dừng giữa chừng. Gửi tin (vd \"tiếp tục\") để chạy tiếp."
+        await asyncio.gather(*(self.stop(t, why) for t in {*self.procs, *self._starting}))
 
     def new_session(self, provider: str | None = None) -> str:
         return providers.new_session(self.settings, provider)

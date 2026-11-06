@@ -18,7 +18,9 @@ import {
 import { Hint } from "@/components/ui/hint";
 import { useChatMessages, type View } from "@/hooks/use-chat-messages";
 import { api, ApiError, errorText, type Message } from "@/lib/api";
-import { dayLabel, markHandled, msgKey, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
+import { clearDrafts, markAllHandled, msgKey, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
+import { clearLoopItems } from "@/lib/report-back";
+import { dayLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/components/ui/segmented";
 
@@ -34,7 +36,9 @@ export function MessageList({
   itemsRef,
   onDigest,
   focus,
+  view: initialView,
 }: {
+  view?: View; // tab to open on (AI Agent "Mở nhóm": Done → Cả nhóm, else Chưa xử lý)
   focus?: string | null; // message id to scroll to and flash once loaded (e.g. "Mở nhóm" from an AI task)
   title: string; // the group's name, for the delete-data confirmation
   search: string; // the top bar's search box: in a group it searches this group's stored tags
@@ -48,21 +52,13 @@ export function MessageList({
   itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
 }) {
   const [q, setQ] = useState("");
-  const [view, setView] = useState<View>(focus ? "live" : "pending"); // the focused message may already be handled
+  const [view, setView] = useState<View>(initialView ?? (focus ? "live" : "pending")); // the focused message may already be handled
   const pendingOnly = view === "pending";
   const live = view === "live" && !q;
   const [confirmAll, setConfirmAll] = useState(false);
   const markAll = useMutation({
-    mutationFn: () =>
-      api<{ count: number; message_ids?: number[] }>(
-        `/chats/${encodeURIComponent(chatId)}/handled-all${range ? `?${range}` : ""}`,
-        { method: "POST" },
-      ),
-    onSuccess: ({ count, message_ids: ids = [] }) => {
-      setConfirmAll(false);
-      // Undo reopens exactly the tags this marked (no reactions either way).
-      toast({ text: `Đã xử lý ${count} tin`, undo: ids.length ? () => Promise.all(ids.map((id) => markHandled({ chat_id: chatId, message_id: String(id) }, false, false))) : undefined });
-    },
+    mutationFn: () => markAllHandled(chatId, range),
+    onSuccess: () => setConfirmAll(false),
   });
   useEffect(() => {
     const t = setTimeout(() => setQ(search.trim()), 300);
@@ -85,7 +81,7 @@ export function MessageList({
   const days = useMemo(() => items.map((m) => dayLabel(m.date)), [items]); // day pills: Intl is too slow to run per row per render
   const now = useNow();
   const tasks = useTasks();
-  const focused = useListShortcuts(items, onReply, !live);
+  const focused = useListShortcuts(items, onReply, !live, { initial: focus ? msgKey({ chat_id: chatId, message_id: focus }) : null });
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
@@ -273,6 +269,8 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
     mutationFn: () => api<void>(`/chats/${encodeURIComponent(chatId)}/data`, { method: "DELETE" }),
     onSuccess: () => {
       qc.removeQueries({ queryKey: ["messages", chatId] });
+      clearDrafts(chatId); // this browser's copies go with the group's data
+      clearLoopItems(chatId);
       setConfirm(false);
       onPurged();
     },

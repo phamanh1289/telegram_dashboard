@@ -1,13 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, Clock, Flame, type LucideIcon, Pin, RotateCw } from "lucide-react";
-import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { MessageItem } from "@/components/message-item";
+import { ArrowLeft, CheckCheck, Clock, Flame, type LucideIcon, Megaphone, Pin, Reply, RotateCw, X } from "lucide-react";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useChats } from "@/components/chat-list";
+import { MessageItem, SnoozeMenu } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Message, PendingItem } from "@/lib/api";
-import { fold, msgKey, pendingQuery, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
+import { fold, getMessage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, setHandled, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
+import { doneLoopItem, type LoopItem, loopKey, useLoopItems } from "@/lib/report-back";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -84,43 +88,61 @@ export function PendingInbox({
     [found, group, pinned, now],
   );
   const items = useMemo(() => sections.flatMap((s) => s.rows.map((p) => p.message)), [sections]);
-  const focused = useListShortcuts(items, onReply);
+  // Multi-select (to-do only): Space / Shift+click; a bar acts on all of them; Esc clears.
+  const [sel, setSel] = useState<Set<string>>(() => new Set());
+  const pick = useCallback((m: Message) => setSel((cur) => {
+    const next = new Set(cur);
+    if (!next.delete(msgKey(m))) next.add(msgKey(m));
+    return next;
+  }), []);
+  const chosen = useMemo(() => items.filter((m) => sel.has(msgKey(m))), [items, sel]);
+  useEffect(() => {
+    if (!chosen.length) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || (e.target as HTMLElement | null)?.closest?.("[role=dialog], [role=menu]")) return; // an open dialog / menu has focus: its own Esc
+      e.preventDefault();
+      e.stopPropagation(); // before the inbox's Esc: this one only clears the selection
+      setSel(new Set());
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [chosen.length]);
+  const focused = useListShortcuts(items, onReply, true, { onPick: pinned ? undefined : pick });
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
   const late = sections.find((s) => s.id === "late")?.rows.length ?? 0;
 
   return (
-    <section aria-label={pinned ? "Tag đã ghim" : "Việc cần xử lý"} className="flex min-h-0 flex-col">
-      <div className="grid shrink-0 gap-2 border-b px-3 py-2.5 md:px-5">
-        <div className="flex min-h-8 items-center gap-2">
-          <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại"><ArrowLeft /></Button>
-          <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
-            {!q.data ? "Đang tải…" : items.length === 0 ? (pinned ? "Chưa có tin ghim" : "Không còn việc nào") : (
-              <>
-                <span className="font-mono text-base font-semibold text-ink tabular-nums">{items.length}</span>
-                {pinned ? " tin đã ghim" : " tin đang chờ bạn"}
-                {late > 0 && <span className="ml-2 font-medium text-signal-2">(<span className="font-mono tabular-nums">{late}</span> quá hạn)</span>}
-              </>
-            )}
-          </p>
-          {/* Many groups: a list, not a segmented bar (DESIGN: segmented is for 2-4 options). */}
-          {groups.length > 1 && (
-            <select aria-label="Lọc theo nhóm" value={group} onChange={(e) => setGroup(e.target.value)}
-              className={cn("h-7 max-w-48 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", group && "border-hl text-hl-2")}>
-              <option value="">Mọi nhóm ({found.length})</option>
-              {groups.map(([id, g]) => <option key={id} value={id}>{g.title} ({g.n})</option>)}
-            </select>
+    <section aria-label={pinned ? "Tag đã ghim" : "Việc cần xử lý"} className="relative flex min-h-0 flex-col">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
+        <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại"><ArrowLeft /></Button>
+        <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
+          {!q.data ? "Đang tải…" : items.length === 0 ? (pinned ? "Chưa có tin ghim" : "Không còn việc nào") : (
+            <>
+              <span className="font-mono text-base font-semibold text-ink tabular-nums">{items.length}</span>
+              {pinned ? " tin đã ghim" : " tin đang chờ bạn"}
+              {late > 0 && <span className="ml-2 font-medium text-signal-2">(<span className="font-mono tabular-nums">{late}</span> quá hạn)</span>}
+            </>
           )}
-          <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 lg:flex">
-            <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> chọn tin</span>
-            <span className="flex items-center gap-1"><Kbd>Enter</Kbd> trả lời</span>
-            <span className="flex items-center gap-1"><Kbd>x</Kbd> xong</span>
-            <span className="flex items-center gap-1"><Kbd>?</Kbd> mọi phím tắt</span>
-          </p>
-        </div>
+        </p>
+        {/* Many groups: a list, not a segmented bar (DESIGN: segmented is for 2-4 options). */}
+        {groups.length > 1 && (
+          <select aria-label="Lọc theo nhóm" value={group} onChange={(e) => setGroup(e.target.value)}
+            className={cn("h-7 max-w-48 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", group && "border-hl text-hl-2")}>
+            <option value="">Mọi nhóm ({found.length})</option>
+            {groups.map(([id, g]) => <option key={id} value={id}>{g.title} ({g.n})</option>)}
+          </select>
+        )}
+        <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 lg:flex">
+          <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> chọn tin</span>
+          <span className="flex items-center gap-1"><Kbd>Enter</Kbd> trả lời</span>
+          <span className="flex items-center gap-1"><Kbd>x</Kbd> xong</span>
+          {!pinned && <span className="flex items-center gap-1"><Kbd>Space</Kbd> chọn nhiều</span>}
+          <span className="flex items-center gap-1"><Kbd>?</Kbd> mọi phím tắt</span>
+        </p>
       </div>
 
-      <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-paper-2">
-        {q.isPending && <CardsSkeleton />}
+      <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-cotton">
+        {q.isPending && <RowsSkeleton />}
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">
             <p className="text-error">Không tải được danh sách.</p>
@@ -151,16 +173,13 @@ export function PendingInbox({
             )}
           </div>
         )}
-        <div className="@container mx-auto grid max-w-4xl gap-5 px-3 py-4 md:px-5">
+        <div className="@container grid gap-1 pb-4">
+          {!pinned && !search.trim() && <LoopBack range={range} />}
           {sections.map((s) => s.rows.length > 0 && (
             <section key={s.id} aria-labelledby={`pending-${s.id}`}>
-              <h3 id={`pending-${s.id}`} className="sticky top-0 z-10 -mx-1 mb-1 flex items-baseline gap-2 bg-paper-2 px-1 py-2 text-sm">
-                <s.icon className={cn("size-4 shrink-0 self-center", s.tone)} aria-hidden />
-                <span className={cn("font-semibold", s.tone === "text-ink-2" ? "text-ink" : s.tone)}>{s.title}</span>
-                <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums">{s.rows.length}</span>
-                {s.note && <span className="truncate text-xs text-ink-3">{s.note}</span>}
-              </h3>
-              <ol className="grid gap-2.5">
+              <SectionHead id={`pending-${s.id}`} icon={s.icon} tone={s.tone} title={s.title} n={s.rows.length} note={s.note}
+                className="sticky top-0 z-10 bg-cotton px-4 @xl:px-5" />
+              <ol className="grid divide-y divide-rule border-y border-rule">
                 {s.rows.map(({ chat_title, message: m }) => (
                   <MessageItem
                     key={msgKey(m)}
@@ -173,6 +192,8 @@ export function PendingInbox({
                     tasks={tasks.get(msgKey(m))}
                     onReply={onReply}
                     onUseText={onUseText}
+                    picked={sel.has(msgKey(m))}
+                    onPick={pinned ? undefined : pick}
                   />
                 ))}
               </ol>
@@ -180,13 +201,86 @@ export function PendingInbox({
           ))}
         </div>
       </div>
+      {chosen.length > 0 && <BulkBar ms={chosen} onSelect={(ms) => setSel(new Set(ms.map(msgKey)))} />}
     </section>
   );
 }
 
-/** A key in a shortcut hint. */
-export function Kbd({ children }: { children: React.ReactNode }) {
-  return <kbd className="rounded-sm border border-rule bg-cotton px-1 py-px text-[0.6875rem] text-ink-2">{children}</kbd>;
+/** What to do with the selected tags; each action clears the selection, or keeps the ones that failed selected (the toast
+ *  already said how many, and offers Undo where it can). */
+function BulkBar({ ms, onSelect }: { ms: Message[]; onSelect: (ms: Message[]) => void }) {
+  const run = (f: () => Promise<unknown>) => () => {
+    onSelect([]);
+    f().catch((e) => { if (e instanceof PartialError) onSelect(e.failed); }); // other failures toast on their own
+  };
+  return (
+    <div role="toolbar" aria-label="Tin đã chọn"
+      className="absolute bottom-4 left-1/2 z-20 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-wrap items-center gap-0.5 rounded-[var(--radius-card)] bg-cotton py-1 pr-1 pl-3 text-sm shadow-pop animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
+      <span className="mr-1.5 font-medium"><span className="font-mono tabular-nums">{ms.length}</span> đã chọn</span>
+      <Button size="xs" variant="ghost" className="text-ok hover:bg-ok-wash" onClick={run(() => setHandled(ms, true))}><CheckCheck /> Xong</Button>
+      <Button size="xs" variant="ghost" onClick={run(() => setHandled(ms, true, false))}>Xong không reaction</Button>
+      <SnoozeMenu ms={ms} label onDone={onSelect} />
+      <Button size="xs" variant="ghost" onClick={run(() => pinAll(ms))}><Pin /> Ghim</Button>
+      <Hint text="Bỏ chọn (Esc)">
+        <Button size="icon-xs" variant="ghost" aria-label="Bỏ chọn" onClick={() => onSelect([])}><X /></Button>
+      </Hint>
+    </div>
+  );
+}
+
+/** A section's title row: icon, title, count, a note. */
+function SectionHead({ id, icon: Icon, tone, title, n, note, className }: { id: string; icon: LucideIcon; tone: string; title: string; n: number; note?: string; className?: string }) {
+  return (
+    <h3 id={id} className={cn("mb-1 flex items-baseline gap-2 py-2 text-sm", className)}>
+      <Icon className={cn("size-4 shrink-0 self-center", tone)} aria-hidden />
+      <span className={cn("font-semibold", tone === "text-ink-2" ? "text-ink" : tone)}>{title}</span>
+      <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums">{n}</span>
+      {note && <span className="truncate text-xs text-ink-3">{note}</span>}
+    </h3>
+  );
+}
+
+/** "Báo lại": a ticket I own reached Fixed / Done (seen by the YouTrack watch); answer whoever asked about it.
+ *  "Trả lời" opens the reply with a line; the item goes once that reply is sent (or on X). */
+function LoopBack({ range }: { range: string }) {
+  const items = useLoopItems();
+  const chats = useChats(range).data?.items;
+  if (!items.length) return null;
+  return (
+    <section aria-labelledby="pending-loop">
+      <SectionHead id="pending-loop" icon={Megaphone} tone="text-hl-2" title="Báo lại" n={items.length} note="ticket của bạn đã xong, người hỏi chưa biết" className="px-4 @xl:px-5" />
+      <ul className="grid divide-y divide-rule border-y border-rule">
+        {items.map((l) => <LoopRow key={loopKey(l)} l={l} chat={chats?.find((c) => c.chat_id === l.chat_id)?.title} />)}
+      </ul>
+    </section>
+  );
+}
+
+function LoopRow({ l, chat }: { l: LoopItem; chat?: string }) {
+  // The text is read when shown (never stored in the browser); the user reads it here, so no AI consent check.
+  const m = useQuery({
+    queryKey: ["message", l.chat_id, l.message_id, "read"],
+    queryFn: ({ signal }) => getMessage(l.chat_id, l.message_id, { signal }),
+    staleTime: 5 * 60_000,
+  }).data;
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5 text-sm @xl:px-5">
+      <span className="grid min-w-0 flex-1 gap-0.5">
+        <span className="flex min-w-0 gap-2 text-xs text-ink-3">
+          <b className="font-mono font-semibold text-ink">{l.ticket}</b><span className="shrink-0">{l.state}</span>{chat && <span className="truncate">{chat}</span>}
+        </span>
+        <span className="truncate text-ink-2">
+          {m ? <>{!m.outgoing && m.sender_name && <b className="font-medium text-ink">{m.sender_name}: </b>}{m.text}</> : <span className="text-ink-3">Đang tải tin…</span>}
+        </span>
+      </span>
+      <Button size="xs" variant="outline" onClick={() => void openReplyById(l.chat_id, l.message_id, `${l.ticket} đã chuyển ${l.state}, bạn kiểm tra lại giúp mình nhé.`)}>
+        <Reply /> Trả lời
+      </Button>
+      <Hint side="bottom" text="Bỏ qua, không báo lại tin này">
+        <Button size="icon-xs" variant="ghost" aria-label="Bỏ qua" onClick={() => doneLoopItem(l)}><X /></Button>
+      </Hint>
+    </li>
+  );
 }
 
 /** Loading rows in the shape of a group's message list: the wait, the sender, two lines of message. */
@@ -201,21 +295,6 @@ export function RowsSkeleton({ rows = 4 }: { rows?: number }) {
             <Skeleton className="h-3.5 w-full max-w-xl" />
             <Skeleton className="h-3.5 max-w-md" style={{ width: `${70 - i * 10}%` }} />
           </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** Loading cards in the shape of the to-do list: group and sender, two lines of message. */
-function CardsSkeleton({ rows = 3 }: { rows?: number }) {
-  return (
-    <ul aria-label="Đang tải…" className="mx-auto grid max-w-4xl gap-2.5 px-3 py-4 md:px-5">
-      {Array.from({ length: rows }, (_, i) => (
-        <li key={i} className="grid gap-2.5 rounded-[var(--radius-card)] border border-rule bg-cotton p-4">
-          <div className="flex gap-2"><Skeleton className="h-5 w-24 rounded-full" /><Skeleton className="h-5 w-28" /><Skeleton className="h-5 w-16 rounded-full" /></div>
-          <Skeleton className="h-3.5 w-full max-w-xl" />
-          <Skeleton className="h-3.5 max-w-md" style={{ width: `${70 - i * 10}%` }} />
         </li>
       ))}
     </ul>

@@ -3,7 +3,7 @@ from conftest import ORIGIN, msg
 
 def test_cross_origin_requests_rejected(client):
     for headers in ({"Origin": "http://evil.test"}, {}, {"Origin": "http://localhost:8765"}):
-        r = client.put("/api/settings/consent", json={"ai_require_consent": False}, headers=headers)
+        r = client.put("/api/ai/prefs", json={"provider": "claude"}, headers=headers)
         assert r.status_code == 403
     assert client.get("/api/status", headers={"Origin": "http://evil.test"}).status_code == 403
     assert client.get("/api/status", headers={"Origin": ORIGIN}).status_code == 200

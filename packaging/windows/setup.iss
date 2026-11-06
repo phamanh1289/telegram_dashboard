@@ -23,6 +23,11 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=Telegram Dashboard
+; {app} goes on the user PATH so `mydashboard start` works in a new cmd/PowerShell window
+ChangesEnvironment=yes
+
+[Registry]
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}"; Check: NeedsAddPath(ExpandConstant('{app}'))
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
@@ -41,3 +46,12 @@ Filename: "{app}\Start Dashboard Telegram.bat"; Description: "Open Telegram Dash
 ; versions added later by in-app updates are not in the install log
 Type: filesandordirs; Name: "{app}\versions"
 Type: files; Name: "{app}\current"
+
+[Code]
+function NeedsAddPath(Dir: string): Boolean;
+var Cur: string;
+begin
+  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', Cur) then
+    Cur := '';
+  Result := Pos(';' + Uppercase(Dir) + ';', ';' + Uppercase(Cur) + ';') = 0;
+end;

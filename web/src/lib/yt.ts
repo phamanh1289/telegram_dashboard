@@ -36,7 +36,7 @@ export type Detail = Ticket & { description: string; comments: Comment[]; links:
 export type Config = { base: string; mock: boolean; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
 export type Sprint = { name: string; start: number; finish: number };
 export type Person = { login: string; name: string };
-export type Mention = { chat_id: string; chat: string; from: string | null; text: string; date: number };
+export type Mention = { chat_id: string; chat: string; from: string | null; text: string; date: number; message_id: string; outgoing: boolean; reply_to_id: string | null };
 export type AiText = { text: string; draft?: string };
 export type Field = "State" | "Priority" | "Type";
 /** One State change from the activity log (oldest first). */
@@ -52,7 +52,7 @@ export const aiReqs = new WeakMap<AbortSignal, AiReq>();
 
 /** /api/yt/* call; the YouTrack router answers errors as {error: "text"}, the shared API as {error: {code, detail}}. */
 export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal } = {}): Promise<T> {
-  if (init.signal && /^\/ai\/(ticket|data|tickets|promises)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
+  if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
@@ -74,6 +74,9 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
   return body as T;
 }
 const enc = encodeURIComponent;
+/** The project to use: `wanted` while it exists, else VA, else the first one (YouTrack tab and the ticket form). */
+export const resolveProject = (ps: { shortName: string }[] | undefined, wanted: string) =>
+  !ps?.length || ps.some((p) => p.shortName === wanted) ? wanted : ps.find((p) => p.shortName === "VA")?.shortName ?? ps[0].shortName;
 export type AiNotes = Record<"dev" | "qa" | "po", string>;
 export type SavedPrompt = { name: string; text: string };
 /** Which session the buttons are for: the role and one ticket or several. */
@@ -110,7 +113,6 @@ export const yt = {
   aiData: (kind: "report" | "notes" | "ask" | "weekly" | "team" | "release", data: unknown, signal?: AbortSignal, question = "") => ytApi<AiText>("/ai/data", { json: { kind, data, question }, signal }),
   aiTickets: (ids: string[], scope: string, kind: "review" | "today" | "summary" | "ask" | "standup" | "plan" | "testcases" | "triage" | "regression" | "groom" | "quality", signal?: AbortSignal, ask = "", stats?: unknown, since = 0, changes: string[] = [], folder = "") =>
     ytApi<AiText>("/ai/tickets", { json: { ids, scope, kind, ask, stats, since, changes, folder }, signal }),
-  aiPromises: (since: number, signal?: AbortSignal) => ytApi<AiText>("/ai/promises", { json: { since }, signal }),
   aiFollow: (req: AiReq, history: AiTurn[], question: string, signal?: AbortSignal) =>
     ytApi<AiText>("/ai/followup", { json: { path: req.path, body: req.json, history: history.slice(-12), question }, signal }),
   aiDraft: (text: string, types: string[], priorities: string[]) =>
@@ -343,7 +345,8 @@ const wordsOf = (i: Ticket) => {
   if (!w) words.set(i, (w = new Set(fold((i.summary || "").replace(TAGRE, " ")).split(/[^a-z0-9]+/).filter((x) => x.length >= 3 && !STOP.has(x)))));
   return w;
 };
-/** Up to `n` tickets whose titles look like this one's, best first: [ticket, score 0..1]. */
+/** Up to `n` tickets whose titles look like this one's, best first: [ticket, score 0..1]. Local, against loaded rows;
+ *  free text with no rows loaded (Telegram side) goes through `useOpenSimilar` (ticket-form) instead. */
 export function similar(t: Pick<Ticket, "id" | "summary">, rows: Ticket[], n = 6): [Ticket, number][] {
   const me = wordsOf(t as Ticket), tag = tagsOf(t as Ticket)[0];
   if (me.size < 2) return [];

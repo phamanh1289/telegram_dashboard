@@ -37,7 +37,8 @@ INSTALL = {
     "antigravity": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 }
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-PICKS = ("model", "effort", "task_model", "task_effort")
+PICKS = ("model", "effort", "task_model", "task_effort", "brief_model", "brief_effort",
+         "yt_model", "yt_effort", "yt_task_model", "yt_task_effort")  # fmt: skip
 MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*$")  # an alias or id, never a flag
 CLAUDE_MODELS = [
     ("haiku", "Haiku", "Nhanh, tiết kiệm hạn mức"),
@@ -70,7 +71,9 @@ PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
 DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
         # files that run code later (on folder open, commit, cd) or load tools into the next session
-        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json)")
+        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
+        # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
+        "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)")
 
 
 # ---- prefs: which CLI, and each CLI's model/effort ----
@@ -82,14 +85,16 @@ def prefs(settings) -> dict:
     saved = _read_json(settings.claude_prefs_path)
     old = saved.get("by")
     by_saved = old if isinstance(old, dict) else {"claude": saved}
-    env = {"model": settings.ai_model, "effort": settings.ai_effort,
-           "task_model": settings.ai_task_model, "task_effort": settings.ai_task_effort}  # fmt: skip
+    env = dict.fromkeys(PICKS, "") | {
+        "model": settings.ai_model, "effort": settings.ai_effort,
+        "task_model": settings.ai_task_model, "task_effort": settings.ai_task_effort,
+    }  # fmt: skip
     by = {}
     for p in PROVIDERS:
         got = by_saved.get(p) if isinstance(by_saved.get(p), dict) else {}
         base = env if p == "claude" else dict.fromkeys(PICKS, "")
         by[p] = {k: got[k] if isinstance(got.get(k), str) else base[k] for k in PICKS}
-    for k in ("model", "task_model"):  # full ids (claude-haiku-5-5) -> the alias the CLI knows
+    for k in (k for k in PICKS if k.endswith("model")):  # full ids (claude-haiku-5-5) -> the alias the CLI knows
         by["claude"][k] = re.sub(r"^claude-(haiku|sonnet|opus|fable)\b.*", r"\1", by["claude"][k])
     at = saved.get("fallback_at")
     # Gemini CLI's Google login is gone: its pick moves to Antigravity
@@ -112,14 +117,22 @@ def chosen(settings) -> str:
     return prefs(settings)["provider"]
 
 
-def run_choice(settings, task: bool = False, provider: str | None = None) -> tuple[str, str, bool]:
+def run_choice(
+    settings, task: bool = False, provider: str | None = None, brief: bool = False, yt: bool = False
+) -> tuple[str, str, bool]:
     """Model, effort and whether the model was stepped down, for `provider` (default: the picked
-    CLI): drafts/summaries/digests, or tasks/AI Agent. Claude only: with fallback on, a window at or
-    past `fallback_at`% runs the cheap model."""
+    CLI): drafts/summaries, Briefing/Digest (`brief`; "" = same as drafts), or tasks/AI Agent.
+    `yt`: a YouTrack run, on its own picks (yt_* light, yt_task_* heavy; "" = the Telegram pick).
+    Claude only: with fallback on, a window at or past `fallback_at`% runs the cheap model."""
     p = prefs(settings)
     provider = provider or p["provider"]
     c = p["by"][provider]
     model, effort = (c["task_model"], c["task_effort"]) if task else (c["model"], c["effort"])
+    if brief and not task:
+        model, effort = c["brief_model"] or model, c["brief_effort"] or effort
+    if yt:
+        k = "yt_task" if task else "yt"
+        model, effort = c[f"{k}_model"] or model, c[f"{k}_effort"] or effort
     if provider != "claude":
         return model, effort if provider == "codex" else "", False  # Antigravity's models carry their level
     cheap = "sonnet" if task else "haiku"
@@ -238,8 +251,10 @@ def stdin(p: str, text: str) -> bytes:
 
 
 def _data_deny(settings) -> str:
-    """Read rule for this app's data dir (Telegram session, tokens): prompts carry others' text."""
-    return f"Read(/{settings.data_dir.resolve()}/**)"
+    """Rules for this app's data dir (Telegram session, tokens): prompts carry others' text. Read() also
+    binds reader commands in Bash; the Bash rules catch a command naming the dir or its secrets."""
+    d = settings.data_dir.resolve()
+    return f"Read(/{d}/**),Bash(*{d}*),Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
 
 
 def is_claude(cmd: list[str]) -> bool:
@@ -280,12 +295,16 @@ def ask_cmd(
     return [*_agy_base(settings, "read", model), *(["--add-dir", read_dir] if read_dir else [])]
 
 
-def task_cmd(settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str) -> list[str]:
-    """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands."""
+def task_cmd(
+    settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str, read_dir: str | None = None
+) -> list[str]:
+    """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
+    `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere)."""
+    add = ["--add-dir", read_dir] if read_dir else []
     if p == "claude":
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
                 "--permission-mode", PERMISSION[mode], "--strict-mcp-config", "--allowedTools", ALLOW[mode],
-                "--disallowedTools", DENY, _data_deny(settings),
+                "--disallowedTools", DENY, _data_deny(settings), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
         sandbox = ["-c", f'sandbox_mode="{"read-only" if mode == "plan" else "workspace-write"}"']
@@ -293,7 +312,7 @@ def task_cmd(settings, p: str, mode: str, sid: str, resume: bool, model: str, ef
         return [*head, *_codex_base(settings, model, effort), *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
     return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, shell=mode != "plan"), *edit,
-            *(["--conversation", sid] if resume else [])]  # fmt: skip
+            *add, *(["--conversation", sid] if resume else [])]  # fmt: skip
 
 
 # ---- output: JSON events -> display items ----
@@ -356,7 +375,8 @@ def _claude_items(ev: dict, st: dict) -> list[dict]:
                 c = b.get("content")
                 text = c if isinstance(c, str) else " ".join(x.get("text", "") for x in c or [] if isinstance(x, dict))
                 out.append({"kind": "tool_result", "text": text.strip()[:400], "error": bool(b.get("is_error"))})
-    elif kind == "result":
+    elif kind == "result" and (ev.get("num_turns") != 0 or ev.get("result") or ev.get("is_error")):
+        # a resumed session can open with an empty 0-turn result before the real turn: not an end
         out.append({"kind": "result", "text": str(ev.get("result") or ""), "error": bool(ev.get("is_error")),
                     "final": ev})  # fmt: skip
     return out

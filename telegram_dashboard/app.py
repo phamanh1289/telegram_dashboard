@@ -46,13 +46,13 @@ from .models import (
     AiTestResult,
     AiTicketDraft,
     AiTicketRequest,
+    BriefingAskRequest,
     BriefingItem,
     ChangesPage,
     ChatsResponse,
     ClaudeAccount,
     ClaudeLoginCode,
     ClaudeLoginStarted,
-    ConsentPref,
     DigestConsent,
     DigestConsentRequest,
     DigestRequest,
@@ -62,6 +62,7 @@ from .models import (
     HandledRequest,
     HistoryPage,
     MessageDTO,
+    MessageRef,
     MessagesPage,
     OutboxDTO,
     PendingItem,
@@ -73,6 +74,7 @@ from .models import (
     RuleDTO,
     RuleRequest,
     SavedDigest,
+    SavedMessageRequest,
     SnoozeRequest,
     StatusDTO,
     TelegramApp,
@@ -132,6 +134,7 @@ def create_app(
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
         app.state.yt = yt_dashboard  # links.py reads YouTrack articles with its token
+        app.state.settings = settings
         await bridge.start()
         auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
         try:
@@ -194,7 +197,6 @@ def create_app(
             state=state,
             detail=s.bridge.detail,
             ai_configured=s.ai.configured,
-            ai_require_consent=settings.ai_require_consent,
             youtrack_configured=settings.youtrack_configured,
             telegram_api_id=settings.telegram_api_id,
             telegram_me=s.bridge.me or None,
@@ -269,7 +271,8 @@ def create_app(
         mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
             raise ApiError(404, "message_not_found")
-        if await s.db.write(s.store.set_handled, chat_id, mid, body.handled) and body.react:
+        by = "me" if body.react else "quiet"
+        if await s.db.write(s.store.set_handled, chat_id, mid, body.handled, by) and body.react:
             s.bridge.react(chat_id, [mid], body.handled)
 
     @app.post("/api/chats/{chat_id}/handled-all")
@@ -336,9 +339,8 @@ def create_app(
 
     async def _draft_extras(request: Request, body: AiDraftRequest):
         """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images).
-        Consent mode: 403 up front, before anything is read."""
+"""
         s = S(request)
-        s.ai.require_read()
         nearby, images = None, []
         ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
         msgs, _c = await s.db.read(s.store.get_messages_by_ids, body.chat_id, ids)
@@ -365,7 +367,7 @@ def create_app(
         async def work(on_text):
             r = await S(request).ai.run(
                 "draft", body.chat_id, body.message_ids, body.instruction, body.project,
-                nearby=nearby, images=images, platform=body.platform, role=body.role, on_text=on_text,
+                nearby=nearby, images=images, platform=body.platform, role=body.role, intro=body.intro, on_text=on_text,
             )  # fmt: skip
             return r.model_dump()
 
@@ -379,7 +381,7 @@ def create_app(
             raise ApiError(422, "ai_agent_missing")
         fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
         prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
-                                        body.instruction, body.platform, fetch=fetch)  # fmt: skip
+                                        body.instruction, body.platform, fetch=fetch, intro=body.intro)  # fmt: skip
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, int(body.confirm_id), body.project, prompt, "plan",
                          kind="deep", title=title)  # fmt: skip
@@ -393,7 +395,7 @@ def create_app(
         fields = {"Type": body.types, "Priority": body.priorities}
         r = await S(request).ai.run(
             "ticket", body.chat_id, body.message_ids, body.instruction, None,
-            nearby=nearby, images=images, platform=body.platform, role=body.role, fields=fields,
+            nearby=nearby, images=images, platform=body.platform, role=body.role, intro=body.intro, fields=fields,
         )  # fmt: skip
         return AiTicketDraft(**parse_ticket(r.text, fields))
 
@@ -467,6 +469,22 @@ def create_app(
         await _known_chat(s, chat_id)
         return _saved(await s.db.read(s.store.get_digest, chat_id))
 
+    @app.get("/api/chats/{chat_id}/evidence")
+    async def evidence(
+        chat_id: str, request: Request, ids: Annotated[list[int], Query(min_length=1, max_length=40)]
+    ) -> list[MessageDTO]:
+        """Live, not stored: the messages a digest item cites plus the ones they reply to (Briefing's
+        item detail shows them as the evidence behind it)."""
+        s = S(request)
+        await _known_chat(s, chat_id)
+        want = {i for i in ids if 0 < i < 2**31}  # Telegram ids are int32
+        msgs = await s.bridge.fetch_ids(chat_id, sorted(want)) if want else []
+        parents = {m.reply_to_id for m in msgs if m.reply_to_id} - want
+        if parents:
+            msgs += await s.bridge.fetch_ids(chat_id, sorted(parents)[:20])
+        keep = {m.message_id: m for m in msgs if m.chat_id == chat_id and not m.deleted}
+        return [to_dto(keep[k]) for k in sorted(keep)]
+
     def _saved(d: dict | None) -> SavedDigest | None:
         if d is None:
             return None
@@ -497,6 +515,26 @@ def create_app(
 
         rows = await s.db.read(s.store.briefing_rows)
         return list(await asyncio.gather(*(item(r) for r in rows)))
+
+    @app.post("/api/briefing/ask", responses={200: {"description": "NDJSON: delta / reset lines, then {done: {text}}"}})
+    async def briefing_ask(body: BriefingAskRequest, request: Request) -> StreamingResponse:
+        """Ask AI across every group's latest digest (no new Telegram reads)."""
+        client_gone.set(request.is_disconnected)
+
+        async def work(on_text):
+            return {"text": await S(request).digest.ask(body.question, body.intro, on_text)}
+
+        return stream_answer(work)
+
+    @app.get("/api/briefing/answered")
+    async def briefing_answered(request: Request) -> dict[str, list[str]]:
+        """chat_id -> digest-cited message ids I have replied to since (Briefing ticks them off)."""
+        return await S(request).digest.answered()
+
+    @app.post("/api/briefing/saved", status_code=204)
+    async def briefing_saved(body: SavedMessageRequest, request: Request) -> None:
+        """Send the briefing (or an AI answer about it) to my own Saved Messages."""
+        await S(request).bridge.send_saved(body.text)
 
     @app.post("/api/digest")
     async def digest(body: DigestRequest, request: Request) -> DigestResult:
@@ -576,10 +614,8 @@ def create_app(
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}")
     async def one_message(chat_id: str, message_id: str, request: Request) -> MessageDTO:
-        """One message by id (a ref pasted into an AI Agent session): the kept copy, else live from
-        Telegram. Consent mode: 403, its text is for the AI."""
+        """One message by id: the kept copy, else live from Telegram."""
         s = S(request)
-        s.ai.require_read()
         mid = int_or_404(message_id, "message_not_found")
         if not 0 < mid < 2**31:  # Telegram ids are int32
             raise ApiError(404, "message_not_found")
@@ -637,8 +673,9 @@ def create_app(
     @app.post("/api/rules")
     async def add_rule(body: RuleRequest, request: Request) -> RuleAdded:
         s = S(request)
-        rule, n = await s.db.write(s.store.add_rule, body.kind, body.value, body.label)
-        return RuleAdded(rule=RuleDTO(**rule), handled=n)
+        rule, cleared = await s.db.write(s.store.add_rule, body.kind, body.value, body.label)
+        refs = [MessageRef(chat_id=c, message_id=str(m)) for c, m in cleared]
+        return RuleAdded(rule=RuleDTO(**rule), handled=len(refs), cleared=refs)
 
     @app.delete("/api/rules/{rule_id}", status_code=204)
     async def remove_rule(rule_id: int, request: Request) -> None:
@@ -690,7 +727,9 @@ def create_app(
     async def ai_test(body: AiTestRequest, request: Request) -> AiTestResult:
         """One tiny run on the picked CLI and model: does it answer, and how fast."""
         t0 = time.monotonic()
-        text = await S(request).ai.ask("Reply with exactly: OK", system="", heavy=body.task, feature="test")
+        text = await S(request).ai.ask(
+            "Reply with exactly: OK", system="", heavy=body.task, brief=body.brief, yt=body.yt, feature="test"
+        )
         return AiTestResult(text=text[:200], ms=round((time.monotonic() - t0) * 1000))
 
     @app.get("/api/ai/accounts")
@@ -744,15 +783,6 @@ def create_app(
         await S(request).bridge.start()  # the run loop stopped at login_required
         return TelegramSignInResult(password_required=False)
 
-    @app.put("/api/settings/consent", status_code=204)
-    async def set_consent(body: ConsentPref, request: Request) -> None:
-        nonlocal settings
-        settings.ensure_data_dir()
-        settings.save_config(ai_require_consent=body.ai_require_consent)
-        settings = replace(settings, ai_require_consent=body.ai_require_consent)
-        ai = S(request).ai
-        ai.settings = replace(ai.settings, ai_require_consent=body.ai_require_consent)
-
     # ---- YouTrack ------------------------------------------------------------
     @app.put("/api/youtrack/auth")
     async def youtrack_auth(body: YouTrackAuth) -> YouTrackUser:
@@ -795,27 +825,46 @@ def create_app(
         yt_dashboard.stale()  # the YouTrack page shows it on its next refresh
         return YouTrackIssue(id=issue_id, url=url, warning=warning)
 
-    @app.get("/api/youtrack/similar")
-    async def youtrack_similar(q: str, project: str = "") -> list[YouTrackIssue]:
-        """Open tickets whose text matches q (YouTrack's own relevance), to spot a duplicate."""
-        words = re.findall(r"\w{3,}", q)[:8]  # plain words only: query syntax chars never reach YQL
-        project = re.sub(r"[^\w-]", "", project) or settings.youtrack_project
-        if not settings.youtrack_configured or not words or not project:
-            return []
-        query = f"project: {project} #Unresolved {' '.join(words)}"  # shortName: no braces
+    async def _find_issues(query: str, top: int) -> list[YouTrackIssue]:
+        """YouTrack's own search (its relevance order); [] on any error: a lookup never blocks the user."""
         try:
             rows = await yt_dashboard.yt(
-                "/api/issues", query=query, fields="idReadable,summary", **{"$top": 5}
+                "/api/issues", query=query, fields="idReadable,summary", **{"$top": top}
             )
         except YtError as e:
-            log.warning("similar tickets not checked: %s %s", e.status, e.message)
-            return []  # a hint only; never blocks creating the ticket
+            log.warning("tickets not looked up: %s %s", e.status, e.message)
+            return []
         base = settings.youtrack_url.rstrip("/")
         return [
             YouTrackIssue(id=i["idReadable"], url=f"{base}/issue/{i['idReadable']}",
                           summary=i.get("summary") or "")
             for i in rows
         ]  # fmt: skip
+
+    def _open_in(project: str, q: str, min_len: int) -> str | None:
+        """YQL for the project's open tickets matching q's words, or None (nothing to search)."""
+        words = re.findall(rf"\w{{{min_len},}}", q)[:8]  # plain words only: query syntax chars never reach YQL
+        project = re.sub(r"[^\w-]", "", project) or settings.youtrack_project
+        if not settings.youtrack_configured or not words or not project:
+            return None
+        return f"project: {project} #Unresolved {' '.join(words)}"  # shortName: no braces
+
+    @app.get("/api/youtrack/similar")
+    async def youtrack_similar(q: str, project: str = "") -> list[YouTrackIssue]:
+        """Open tickets whose text matches q (YouTrack's own relevance): ones possibly related."""
+        query = _open_in(project, q, 3)
+        return await _find_issues(query, 5) if query else []
+
+    @app.get("/api/youtrack/search")
+    async def youtrack_search(q: str, project: str = "") -> list[YouTrackIssue]:
+        """A ticket to comment on: an ID (VA-123) finds that one in any state; words search the
+        project's open tickets (2+ letters: short Vietnamese words count)."""
+        if not settings.youtrack_configured:
+            return []
+        if m := re.fullmatch(r"\s*([A-Za-z][A-Za-z0-9]*-\d+)\s*", q):
+            return await _find_issues(f"issue ID: {m[1].upper()}", 1)
+        query = _open_in(project, q, 2)
+        return await _find_issues(query, 10) if query else []
 
     @app.api_route(
         "/api/{rest:path}",

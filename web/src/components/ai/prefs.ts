@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, api, type ClaudeAccount } from "@/lib/api";
-import { byUnit } from "@/lib/inbox";
+import { byUnit } from "@/lib/time";
 
 // The AI CLIs' shared state: which one runs every AI feature, the catalog, each CLI's picks and logins.
 
 export type Provider = AiPrefs["provider"];
 export type Effort = AiPicks["effort"];
 export const PROVIDERS: Provider[] = ["claude", "codex", "antigravity"];
-const NO_PICKS: AiPicks = { model: "", effort: "", task_model: "", task_effort: "" };
+const NO_PICKS: AiPicks = {
+  model: "", effort: "", task_model: "", task_effort: "", brief_model: "", brief_effort: "",
+  yt_model: "", yt_effort: "", yt_task_model: "", yt_task_effort: "",
+};
 export const EFFORT_LABELS: Record<Effort, string> = { "": "Mặc định", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 
 /** Which CLI runs every AI feature, what each CLI offers, and each CLI's own picks (kept when switching): every AI surface reads this. */
@@ -49,6 +52,8 @@ export function planLabel(a: ClaudeAccount) {
 export const windowName = (label: string) => label.replace(/^5h/, "Phiên 5 giờ").replace(/^1w/, "7 ngày").replace(" · ", ", ");
 
 export const sectionHead = "text-[0.8125rem] font-semibold text-ink";
+/** A raised card on the AI page. */
+export const card = "grid gap-4 rounded-lg bg-cotton p-4 shadow-stock";
 
 /** One shared query; each viewer sets its own poll (react-query runs the shortest). Paused in hidden tabs. */
 export function useClaudeAccount(every: number | false = false) {
@@ -72,6 +77,8 @@ function useOtherAccounts(every: number | false = false) {
 export type AccountView = {
   checking: boolean; installed: boolean; loggedIn: boolean; email?: string | null; plan?: string | null;
   pending: boolean; url?: string | null; install: string; usage: ClaudeAccount["usage"]; usage_at?: string | null;
+  /** "no_token": not live, `usage` is the last reading (Claude only). */
+  usage_error?: string | null;
 };
 
 /** Every CLI's login, keyed by CLI. */
@@ -91,7 +98,7 @@ export function useAccounts(every: number | false = false): Record<Provider, Acc
     claude: {
       checking: !c.data && !c.isError, installed: !c.isError, loggedIn: !!c.data?.loggedIn, email: c.data?.email,
       plan: c.data && planLabel(c.data), pending: !!c.data?.login_pending, url: c.data?.login_url, install: info("claude")?.install ?? "",
-      usage: c.data?.usage ?? [], usage_at: c.data?.usage_at,
+      usage: c.data?.usage ?? [], usage_at: c.data?.usage_at, usage_error: c.data?.usage_error,
     },
     codex: other("codex"),
     antigravity: other("antigravity"),

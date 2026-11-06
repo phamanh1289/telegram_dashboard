@@ -15,6 +15,7 @@ export type Task = S["TaskDTO"];
 export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
+export type HandledAllResponse = S["HandledAllResponse"];
 export type YouTrackIssue = S["YouTrackIssue"];
 export type AiTicketDraft = S["AiTicketDraft"];
 export type ClaudeAccount = S["ClaudeAccount"];
@@ -107,7 +108,13 @@ const COMMON: Record<string, (e: ApiError) => string> = {
   flood_wait: (e) => `Telegram yêu cầu chờ${e.retryAfter ? ` ${e.retryAfter} giây` : ""} rồi thử lại. `,
   telegram_error: (e) => `Telegram báo lỗi${e.detail ? ` (${e.detail})` : ""}, thử lại sau. `,
   task_cancelled: () => "Phiên đã bị dừng khi đang khởi động. ",
-  ai_scope_not_allowed: () => "AI đang không được đọc tin Telegram: tắt “Không cho AI đọc tin Telegram” ở Cài đặt › AI. ",
+  ai_scope_not_allowed: () => "Tin này không còn được theo dõi hoặc đã bị xóa. ",
+};
+
+/** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */
+export const statusQuery = {
+  queryKey: ["status"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Status>("/status", { signal }),
 };
 
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */

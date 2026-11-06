@@ -1,26 +1,27 @@
 "use client";
 
-import { ExternalLink, ListChecks, Moon, Send, Settings, Sun } from "lucide-react";
+import { ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/components/ai";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { api } from "@/lib/api";
-import { toast, type ToastMsg, useNow } from "@/lib/inbox";
+import { api, errorText } from "@/lib/api";
+import { toast, type ToastMsg, Told, useNow } from "@/lib/inbox";
 import { applyTheme, readTheme, useRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { riskOf, useMyTickets } from "@/lib/yt";
 import { Pill } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
 import { GuideButton } from "@/components/guide";
+import { YtLogo } from "@/components/yt-logo";
 
 // Chrome shared by the Telegram and YouTrack modules: the top bar and the toast.
 
 const MODULES = [
   ["telegram", "/", "Telegram", Send, "Chuyển sang Telegram Inbox"],
-  ["youtrack", "/youtrack/", "YouTrack", ListChecks, "Chuyển sang YouTrack"],
+  ["youtrack", "/youtrack/", "YouTrack", YtLogo, "Chuyển sang YouTrack"],
 ] as const;
 
 /** My YouTrack tickets that need attention now, for a badge on the YouTrack switch while on Telegram (same cache key as the YouTrack page). */
@@ -80,7 +81,7 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">
-        <AiQuota />
+        <AiQuota scope={module === "youtrack" ? "youtrack" : "telegram"} />
         <GuideButton module={module} />
         <Hint side="bottom" title="Giao diện" text="Đổi giao diện sáng / tối."><Button size="icon-sm" variant="ghost" aria-label="Đổi giao diện sáng / tối"
           onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
@@ -130,7 +131,7 @@ export function Toaster() {
     const run = flash?.undo;
     if (!run) return;
     setFlash(null);
-    Promise.resolve(run()).then(() => toast({ text: "Đã hoàn tác" }), () => toast({ text: "Không hoàn tác được" }));
+    Promise.resolve(run()).then(() => toast({ text: "Đã hoàn tác" }), (e) => toast({ text: e instanceof Told ? e.message : errorText(e, {}, "Không hoàn tác được") }));
   }
   if (!flash) return null;
   return (

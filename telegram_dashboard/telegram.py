@@ -73,6 +73,7 @@ class Transport(Protocol):
     # Add `emoji` unless we already reacted; None takes back only the bridge's own reaction.
     # Raises SendRejected("retry_after") on a flood wait.
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
+    async def send_saved(self, text: str) -> None: ...  # to my own Saved Messages, in ≤4000-char parts
 
 
 class TelegramBridge:
@@ -198,7 +199,7 @@ class TelegramBridge:
         """Our own reply (from any device) to a kept tag: keep it and mark the tag handled."""
         await self.on_message(m)
         if m.reply_to_id is not None:
-            await self.db.write(self.store.set_handled, m.chat_id, m.reply_to_id, True)
+            await self.db.write(self.store.set_handled, m.chat_id, m.reply_to_id, True, "reply")
 
     async def on_mention(self, m: StoredMessage, title: str, kind: str) -> None:
         """A live tag (new or edited). Notifies only for a tag not seen before and still pending."""
@@ -243,6 +244,12 @@ class TelegramBridge:
 
     async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]:
         return await self.ensure_connected().fetch_ids(chat_id, ids)
+
+    async def send_saved(self, text: str) -> None:
+        try:
+            await self.ensure_connected().send_saved(text)
+        except SendRejected as e:
+            raise ApiError(429, "flood_wait", retry_after=e.retry_after) from e
 
     def react(self, chat_id: str, message_ids: list[int], done: bool) -> None:
         """Mirror "done" on Telegram as a reaction (reopen removes it). Background, best effort:
@@ -689,6 +696,15 @@ class TelethonTransport:
         except (errors.FloodWaitError, errors.SlowModeWaitError) as e:
             raise SendRejected("retry_after", int(e.seconds)) from e
 
+    async def send_saved(self, text: str) -> None:
+        from telethon import errors
+
+        try:
+            for part in chunks(text):
+                await self.client.send_message("me", part, parse_mode="md", link_preview=False)
+        except errors.FloodWaitError as e:
+            raise SendRejected("retry_after", int(e.seconds)) from e
+
     async def send_reply(
         self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage:
@@ -741,6 +757,19 @@ class TelethonTransport:
         if msg_id is not None:
             return SentMessage(message_id=msg_id)
         raise RuntimeError("send result without message id")
+
+
+def chunks(text: str, size: int = 4000) -> list[str]:
+    """Split at line breaks (a longer line is cut) so each part fits one Telegram message."""
+    out, cur = [], ""
+    for line in text.splitlines(keepends=True):
+        for piece in [line[i : i + size] for i in range(0, len(line), size)]:
+            if cur and len(cur) + len(piece) > size:
+                out.append(cur)
+                cur = ""
+            cur += piece
+    out.append(cur)
+    return [p for p in out if p.strip()]
 
 
 async def notify_mac(title: str, subtitle: str, body: str) -> None:

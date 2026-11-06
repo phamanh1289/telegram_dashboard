@@ -137,7 +137,7 @@ export function WorkflowSection() {
       </div>
       {fromYt.isError && <p role="alert" className="text-xs text-error">Không đọc được: {(fromYt.error as Error).message}</p>}
       {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">Chưa có ticket nào ở {fromYt.data.unknown.join(", ")} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.</p> : null}
-      {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? "Chưa có state: cần token YouTrack (mục Tài khoản ở trên)." : null}</p>
+      {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? "Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo)." : null}</p>
         : (
           <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule">
             <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />

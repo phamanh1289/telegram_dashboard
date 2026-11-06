@@ -3,16 +3,17 @@
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/inbox";
-import { getPref, put, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
+import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
-import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, type Sprint, type Ticket, QUICK, UNASSIGNED, yt } from "@/lib/yt";
+import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, type Sprint, type Ticket, QUICK, UNASSIGNED, yt } from "@/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
 
 export type Mode = YtRole;
-export type Page = "home" | "tickets" | "dash" | "people" | "ai";
+export type Page = "home" | "tickets" | "dash" | "release" | "people" | "ai";
+export type Scope = "me" | "team" | "group";
 /** An AI run the AI session starts by itself: `seed` shows a saved answer instead (followed up from there), `onDone` keeps a new one. */
 /** A session that waits for the user's first prompt (dashboard figures): `ask` runs it with that prompt. */
 export type AiStart = { label: string; ask: (q: string, signal: AbortSignal) => ReturnType<AiRun["run"]> };
@@ -35,7 +36,7 @@ export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ti
 }
 
 const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view
-const json = <T,>(k: string, d: T): T => { try { return JSON.parse(getPref(k) ?? "null") ?? d; } catch { return d; } };
+const json = <T,>(k: string, d: T) => readJson(k, d) as T;
 const qp = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
 const FILTER_PARAMS = ["sprint", "assignee", "state", "group", "sort", "everyone", "tier", "quick", "priority", "type", "q"];
 
@@ -80,18 +81,17 @@ function useYtState() {
 
   const [wanted, setProjectRaw] = useState(() => qp().get("project") || getPref("project") || "VA");
   const ps = projects.data; // the saved project no longer exists: fall back to VA, else the first one
-  const project = !ps?.length || ps.some((p) => p.shortName === wanted) ? wanted : ps.find((p) => p.shortName === "VA")?.shortName ?? ps[0].shortName;
+  const project = resolveProject(ps, wanted);
 
   // null: not chosen yet, the page asks first (and loads nothing); `mode` stands in as Dev for the code below
   const role = useRole();
   const mode: Mode = role ?? "dev";
-  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "people" || v === "ai" ? v : "home"; });
+  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "release" || v === "people" || v === "ai" ? v : "home"; });
   const [stored, setStored] = useState<Stored>(initialFilters);
   const [cap, setCap] = useState(CAP);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // ?ticket=VA-1 (a ticket chip in Telegram) opens that ticket's sheet
   const [sheet, setSheet] = useState<Sheet | null>(() => { const t = qp().get("ticket"); return t && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t) ? { kind: "ticket", id: t, nav: [] } : null; });
-  const [tv, setTv] = useState(false);
   const [newTicket, setNewTicket] = useState<string | null>(null); // the create dialog, open with this starting note
 
   const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000 });
@@ -99,16 +99,18 @@ function useYtState() {
   const sprints = useMemo(() => new Map((sprintsQ.data ?? []).map((s) => [s.name, s] as [string, Sprint])), [sprintsQ.data]);
   const loginOf = useMemo(() => new Map((people.data ?? []).map((p) => [p.name, p.login])), [people.data]);
 
-  // Not chosen yet: Dev starts on my tickets, QA and PO on everyone's (QA tests tickets assigned to developers).
-  const assignee = useMemo(() => stored.assignee ?? (mode === "dev" && me ? [me] : []), [stored.assignee, mode, me]);
-  const filters: Filters = useMemo(() => ({ ...stored, assignee }), [stored, assignee]);
-  // the scope presets in the header: My task (me) / My team (me + saved members) / All ("" = a custom pick)
+  // the scope presets in the header: My task (me) / My team (me + saved members) / Group (saved members; none = everyone) ("" = a custom pick)
   const [members, setMembersRaw] = useState<string[]>(() => json<unknown[]>("ytTeam", []).filter((x): x is string => typeof x === "string"));
-  const [teamPick, setTeamPick] = useState(false); // an empty team is just me: remember the click so "My team" stays lit
+  const [group, setGroupRaw] = useState<string[]>(() => json<unknown[]>("ytGroup", []).filter((x): x is string => typeof x === "string"));
+  const [pick, setPick] = useState<Scope | null>(null); // presets with the same people (an empty team is just me): the clicked one stays lit
   const team = useMemo(() => [...new Set([me, ...members].filter((n): n is string => !!n))], [me, members]);
-  const scope = !assignee.length ? "all"
-    : (teamPick || members.length) && assignee.length === team.length && team.every((n) => assignee.includes(n)) ? "team"
-    : assignee.length === 1 && assignee[0] === me ? "me" : "";
+  // Not chosen yet: Dev starts on my tickets, QA and PO on the group (QA tests tickets assigned to developers).
+  const assignee = useMemo(() => stored.assignee ?? (mode === "dev" && me ? [me] : group), [stored.assignee, mode, me, group]);
+  const filters: Filters = useMemo(() => ({ ...stored, assignee }), [stored, assignee]);
+  const lists: Record<Scope, string[] | null> = { me: me ? [me] : null, team: me || members.length ? team : null, group };
+  const same = (l: string[] | null) => !!l && l.length === assignee.length && l.every((n) => assignee.includes(n));
+  const scope: Scope | "" = pick && same(lists[pick]) ? pick
+    : (["me", "team", "group"] as const).find((s) => same(lists[s]) && (s !== "team" || members.length > 0)) ?? "";
 
   // Load only the people the filter shows ('me', 'unassigned', logins); everyone when the filter is empty.
   const whoOf = useCallback((names: string[]) => {
@@ -133,23 +135,30 @@ function useYtState() {
   const loaded = issues.isSuccess && !issues.isPlaceholderData;
   useEffect(() => {
     if (!loaded) return;
-    for (const w of [null, whoOf(team), me ? whoOf([me]) : undefined]) // ponytail: re-fetched at most every 5 min; drop "all" if the project gets huge
+    for (const w of [null, whoOf(team), whoOf(group), me ? whoOf([me]) : undefined]) // ponytail: re-fetched at most every 5 min; drop "all" if the project gets huge
       if (w !== undefined) void qc.prefetchQuery({ ...issuesQuery(w), staleTime: 5 * 60_000 });
-  }, [loaded, qc, issuesQuery, whoOf, team, me]);
+  }, [loaded, qc, issuesQuery, whoOf, team, group, me]);
 
   function setFilters(patch: Partial<Filters>) {
-    if (patch.assignee !== undefined) setTeamPick(false);
+    if (patch.assignee !== undefined) setPick(null);
     setStored((s) => ({ ...s, ...patch, assignee: patch.assignee !== undefined ? patch.assignee : s.assignee }));
     setCap(CAP);
   }
-  function setScope(s: "me" | "team" | "all") {
-    setFilters({ assignee: s === "all" ? [] : s === "team" ? team : me ? [me] : [] });
-    if (s === "team") setTeamPick(true);
+  function setScope(s: Scope) {
+    setFilters({ assignee: lists[s] ?? [] });
+    setPick(s);
   }
   function setMembers(names: string[]) {
     setPref("ytTeam", JSON.stringify(names));
     setMembersRaw(names);
     setStored((st) => ({ ...st, assignee: [...new Set([me, ...names].filter((n): n is string => !!n))] }));
+    setPick("team");
+  }
+  function setGroup(names: string[]) {
+    setPref("ytGroup", JSON.stringify(names));
+    setGroupRaw(names);
+    setStored((st) => ({ ...st, assignee: names }));
+    setPick("group");
   }
   function setProject(p: string) {
     setPref("project", p);
@@ -262,8 +271,8 @@ function useYtState() {
 
   return {
     config: config.data, configError: config.error, projects: projects.data ?? [], project, setProject, me, people: people.data ?? NO_PEOPLE, loginOf,
-    sprints, sprintOptions, peopleOptions, rows, issues, refresh, filters, setFilters, team, members, setMembers, scope, setScope, role, mode, setMode, page, setPage, cap, setCap,
-    picked, setPicked, sheet, setSheet, tv, setTv, newTicket, setNewTicket, aiOn, seen, since, loadSince, sinceBusy: sinceBusy > 0, patchTicket,
+    sprints, sprintOptions, peopleOptions, rows, issues, refresh, filters, setFilters, team, members, setMembers, group, setGroup, scope, setScope, role, mode, setMode, page, setPage, cap, setCap,
+    picked, setPicked, sheet, setSheet, newTicket, setNewTicket, aiOn, seen, since, loadSince, sinceBusy: sinceBusy > 0, patchTicket,
     hiddenCols, setHiddenCols, dense, setDense, view, setView, showRes, setShowRes, hiOn, setHiOn, range, setRange, wip, setWip, agingStates, setAgingStates,
     openTicket: (id: string, list?: Ticket[]) => setSheet((s) => ({ kind: "ticket", id, nav: list ? list.map((i) => i.id) : s?.kind === "ticket" ? s.nav : [] })),
   };

@@ -4,16 +4,18 @@ import { Sparkles } from "lucide-react";
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { similar, type Ticket, yt } from "@/lib/yt";
+import { type Link, similar, type Ticket, yt } from "@/lib/yt";
 import { Label, StatePill } from "./bits";
 import { useYt } from "./state";
 
 // Ticket sheet extras: tickets that look like this one.
 
-/** Tickets with a similar title in the loaded data; the AI can say which are real duplicates. */
-export function Related({ t }: { t: Ticket }) {
+/** Tickets with a similar title in the loaded data; the AI can say which are real duplicates.
+ *  `links`: this ticket's YouTrack links, so one already linked shows how ("duplicates", "relates to"). */
+export function Related({ t, links }: { t: Ticket; links?: Link[] }) {
   const y = useYt();
   const list = useMemo(() => similar(t, y.rows), [t, y.rows]);
+  const linked = useMemo(() => new Map(links?.flatMap((l) => l.issues.map((x) => [x.id, l.rel] as const))), [links]);
   if (!list.length) return null;
   const ids = [t.id, ...list.map(([i]) => i.id)];
   const check = () => y.setSheet({ kind: "work", title: `AI · kiểm tra trùng ${t.id}`, ids, auto: {
@@ -31,7 +33,9 @@ export function Related({ t }: { t: Ticket }) {
         <button key={i.id} type="button" onClick={() => y.openTicket(i.id)} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
           <b className={cn("font-mono text-xs", i.resolved && "text-ink-3 line-through")}>{i.id}</b>
           <span className="truncate">{i.summary}</span>
-          <span className="flex items-center gap-2"><StatePill state={i.state} /><span className="font-mono text-xs text-ink-3">{Math.round(score * 100)}%</span></span>
+          <span className="flex items-center gap-2">
+            {linked.has(i.id) && <em className="rounded bg-paper-2 px-1.5 text-xs text-ink-3 not-italic">đã link · {linked.get(i.id)}</em>}
+            <StatePill state={i.state} /><span className="font-mono text-xs text-ink-3">{Math.round(score * 100)}%</span></span>
         </button>
       ))}
     </section>

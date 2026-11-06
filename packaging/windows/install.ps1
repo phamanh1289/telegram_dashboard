@@ -28,5 +28,6 @@
   Remove-Item $exe -ErrorAction SilentlyContinue
 
   Write-Host "Da cai vao $dir (shortcut 'Telegram Dashboard' o Start Menu va Desktop)." -ForegroundColor Green
+  Write-Host "Hoac mo cmd/PowerShell moi va go: mydashboard start"
   Start-Process (Join-Path $dir 'Start Dashboard Telegram.bat') -WorkingDirectory $dir
 }

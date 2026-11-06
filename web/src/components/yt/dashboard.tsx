@@ -6,7 +6,8 @@ import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Hint } from "@/components/ui/hint";
 import { Pill } from "@/components/ui/segmented";
-import { dm, useNow } from "@/lib/inbox";
+import { useNow } from "@/lib/inbox";
+import { dm } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { AI_MAX, byAs, bySp, DAY, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/lib/yt";
 import { AGE, dashStats, reportData, type Stats } from "@/lib/yt-stats";
@@ -493,17 +494,18 @@ function Columns({ days, series }: { days: number[]; series: { v: number[]; c: s
 }
 
 type Bar = { label: React.ReactNode; v: number; c: string; on: () => void };
-function HBars({ rows, empty, max }: { rows: Bar[]; empty: string; max?: number }) {
+function HBars({ rows, empty, max, label }: { rows: Bar[]; empty: string; max?: number; label?: string }) {
   const m = max ?? Math.max(0, ...rows.map((r) => r.v));
-  return <Stack rows={rows.map((r) => ({ label: r.label, parts: [[r.v, r.c]], text: String(r.v), on: r.on }))} max={m} empty={empty} />;
+  return <Stack rows={rows.map((r) => ({ label: r.label, parts: [[r.v, r.c]], text: String(r.v), on: r.on }))} max={m} empty={empty} label={label} />;
 }
-function Stack({ rows, empty, max }: { rows: { label: React.ReactNode; parts: [number, string][]; text: string; on: () => void }[]; empty: string; max?: number }) {
+/** `label`: the label column's widest (9rem). */
+function Stack({ rows, empty, max, label = "9rem" }: { rows: { label: React.ReactNode; parts: [number, string][]; text: string; on: () => void }[]; empty: string; max?: number; label?: string }) {
   const m = Math.max(1, max ?? Math.max(0, ...rows.map((r) => r.parts.reduce((s, [n]) => s + n, 0))));
   if (!rows.length) return empty ? <p className="text-sm text-ink-3">{empty}</p> : null;
   return (
     <div className="grid gap-1">
       {rows.map((r, k) => (
-        <button key={k} type="button" onClick={r.on} className="grid grid-cols-[minmax(0,9rem)_minmax(0,1fr)_2.5rem] items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
+        <button key={k} type="button" onClick={r.on} style={{ gridTemplateColumns: `minmax(0,${label}) minmax(0,1fr) 2.5rem` }} className="grid items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
           <span className="min-w-0 truncate">{r.label}</span>
           <span className="flex h-2 overflow-hidden rounded-full bg-paper-3">
             {r.parts.map(([n, c], j) => <motion.i key={j} className="h-full" style={{ background: c }} initial={{ width: 0 }} animate={{ width: `${n / m * 100}%` }} transition={{ duration: 0.45 }} />)}
@@ -584,4 +586,4 @@ function Mix({ d }: { d: Stats }) {
   );
 }
 
-export { Attention, Aging, Kpis, Progress, Wip };
+export { Attention, Aging, HBars, Kpis, Progress, Stack, Wip };

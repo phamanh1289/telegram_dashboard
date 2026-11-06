@@ -1,9 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { api, type Message, type PendingItem, type Task } from "@/lib/api";
-import { readOverdueHours } from "@/lib/prefs";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { api, errorText, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/lib/api";
+import { getPref, put, readOverdueHours } from "@/lib/prefs";
+import { byUnit, timeLabel } from "@/lib/time";
 
 /** Pending tags across groups (or the pinned archive); one cache shared by the inbox and the sidebar. */
 export function pendingQuery(range: string, pinned = false) {
@@ -14,47 +15,14 @@ export function pendingQuery(range: string, pinned = false) {
   };
 }
 
-const VN_PARTS = new Intl.DateTimeFormat("en-GB", {
-  timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-});
-const vnParts = (d: Date) => Object.fromEntries(VN_PARTS.formatToParts(d).map((p) => [p.type, p.value]));
-
-/** Vietnam time, 24h: "16:12, hôm nay", "09:05, hôm qua" (snoozes: "ngày mai"), else "16:12, 28/10/2026" (also `full`). */
-export function timeLabel(date: string, full = false) {
-  const p = vnParts(new Date(date));
-  const time = `${p.hour}:${p.minute}`;
-  return full ? `${time}, ${p.day}/${p.month}/${p.year}` : `${time}, ${dayLabel(date).toLocaleLowerCase("vi")}`;
-}
-
-const dayNo = (x: Record<string, string>) => Date.UTC(+x.year, +x.month - 1, +x.day) / 86_400_000;
-
-/** Vietnam calendar day: "Hôm nay", "Hôm qua", "Ngày mai", else "28/10/2026". Also the key for day separators. */
-export function dayLabel(date: string) {
-  const p = vnParts(new Date(date));
-  return { [-1]: "Hôm qua", 0: "Hôm nay", 1: "Ngày mai" }[dayNo(p) - dayNo(vnParts(new Date()))] ?? `${p.day}/${p.month}/${p.year}`;
-}
-
-/** "16:12" in Vietnam time, for rows under a day separator. */
-export const clockLabel = (date: string) => {
-  const p = vnParts(new Date(date));
-  return `${p.hour}:${p.minute}`;
-};
-
 /** Lowercase without accents ("Luận" -> "luan") for forgiving search; anything else becomes its string (null: ""). */
 export const fold = (s: unknown) => String(s ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/đ/gi, "d").toLowerCase();
 
-/** Local calendar day "YYYY-MM-DD" (Swedish locale = ISO order). */
-export const ymd = (t: number | Date = Date.now()) => new Date(t).toLocaleDateString("sv");
-/** Short day "2/11" from a time or a "YYYY-MM-DD" day. */
-export const dm = (d: number | string) => {
-  const [, m, day] = (typeof d === "string" ? d : ymd(d)).split("-");
-  return `${+day}/${+m}`;
-};
-
 /** Message text plus the URLs hidden behind its words, so an agent can open them. */
 export function textWithLinks({ text, links = [] }: Message) {
-  if (!links.length) return text;
-  return `${text}\n\nLiên kết trong tin:\n${links.map((l) => `- "${text.slice(l.offset, l.offset + l.length)}": ${l.url}`).join("\n")}`;
+  const urls = links.filter((l) => l.kind === "link" && l.url); // not bold/code/mentions: those have no URL
+  if (!urls.length) return text;
+  return `${text}\n\nLiên kết trong tin:\n${urls.map((l) => `- "${text.slice(l.offset, l.offset + l.length)}": ${l.url}`).join("\n")}`;
 }
 
 /** Pseudo chat id for the cross-group "to do" inbox. */
@@ -79,16 +47,6 @@ export function useNow() {
     };
   }, []);
   return now;
-}
-
-/** Minutes in the largest whole unit: [12, "phút"], [3, "giờ"], [2, "ngày"]. */
-export const byUnit = (mins: number): [number, string] =>
-  mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
-
-/** "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước" (`t`: ms or ISO). */
-export function ago(t: number | string, now = Date.now()) {
-  const mins = Math.max(0, Math.floor((now - new Date(t).getTime()) / 60_000));
-  return mins < 1 ? "vừa xong" : `${byUnit(mins).join(" ")} trước`;
 }
 
 export function waitLabel(date: string, now: number) {
@@ -144,20 +102,34 @@ export async function copyText(text: string, done = "Đã copy") {
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
 
+/** An error whose message is meant for the user (the toaster shows it as is). */
+export class Told extends Error {}
+/** Undo several tags: every request runs; a partial failure says how many went through. */
+async function undoAll(ps: Promise<unknown>[]) {
+  const res = await Promise.allSettled(ps);
+  const bad = res.filter((r) => r.status === "rejected").length;
+  if (bad) throw new Told(bad < ps.length ? `Chỉ hoàn tác được ${ps.length - bad}/${ps.length} tin, thử lại phần còn lại` : "Không hoàn tác được");
+}
+
 /** Mark done or reopen; marking done offers an undo (for the ones that went through, if some failed).
- *  `react: false` ticks done without mirroring it as a Telegram reaction. */
+ *  `react: false` ticks done without mirroring it as a Telegram reaction. A tag marked done drops its reply draft. */
 export async function setHandled(ms: Message[], handled: boolean, react = true) {
   const res = await Promise.allSettled(ms.map((m) => markHandled(m, handled, react)));
   const ok = ms.filter((_, i) => res[i].status === "fulfilled");
-  const undo = handled && ok.length ? () => Promise.all(ok.map((m) => markHandled(m, false))) : undefined;
+  if (handled) ok.forEach(dropDraft);
+  const undo = handled && ok.length ? () => undoAll(ok.map((m) => markHandled(m, false))) : undefined;
   const failed = res.find((r) => r.status === "rejected");
   if (failed) {
-    toast({ text: ok.length ? `Chỉ cập nhật được ${ok.length}/${ms.length} tin, thử lại phần còn lại` : "Không cập nhật được, thử lại sau", undo });
-    throw failed.reason;
+    toast({ text: ok.length ? `Chỉ cập nhật được ${ok.length}/${ms.length} tin, thử lại phần còn lại` : errorText(failed.reason, {}, "Không cập nhật được, thử lại sau"), undo });
+    throw new PartialError(ms.filter((_, i) => res[i].status === "rejected"));
   }
   if (handled) toast({ text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong", undo });
 }
 
+/** Thrown after a toast already reported it: `failed` are the tags that did not go through (kept selected). */
+export class PartialError extends Error {
+  constructor(public failed: Message[]) { super("partial"); }
+}
 
 export const pin = (m: Message, pinned: boolean) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/pin`, {
@@ -165,12 +137,94 @@ export const pin = (m: Message, pinned: boolean) =>
     json: { pinned },
   });
 
-/** Hide a tag from the to-do list until `until` (null: back now); the toast offers undo. */
-export async function snooze(m: Message, until: Date | null) {
-  const put = (u: Date | null) => api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, { method: "PUT", json: { until: u?.toISOString() ?? null } });
-  await put(until);
-  toast(until ? { text: `Nhắc lại lúc ${timeLabel(until.toISOString())}`, undo: () => put(null) } : { text: "Đã bỏ hoãn" });
+/** Pin several; reports "x/y" when some fail and throws `PartialError` with those. */
+export async function pinAll(ms: Message[]) {
+  const res = await Promise.allSettled(ms.map((m) => pin(m, true)));
+  const failed = ms.filter((_, i) => res[i].status === "rejected");
+  toast({ text: !failed.length ? `Đã ghim ${ms.length} tin` : `Chỉ ghim được ${ms.length - failed.length}/${ms.length} tin, thử lại phần còn lại` });
+  if (failed.length) throw new PartialError(failed);
 }
+
+/** Hide tags from the to-do list until `until` (null: back now); the toast offers undo (for the ones that went through).
+ *  Throws `PartialError` (after its own toast) when some did not go through. */
+export async function snooze(ms: Message[], until: Date | null) {
+  const set = (m: Message, u: Date | null) => api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, { method: "PUT", json: { until: u?.toISOString() ?? null } });
+  const res = await Promise.allSettled(ms.map((m) => set(m, until)));
+  const ok = ms.filter((_, i) => res[i].status === "fulfilled");
+  if (!ok.length) throw (res[0] as PromiseRejectedResult).reason;
+  const undo = until ? () => undoAll(ok.map((m) => set(m, null))) : undefined;
+  if (ok.length < ms.length) {
+    toast({ text: `Chỉ hoãn được ${ok.length}/${ms.length} tin, thử lại phần còn lại`, undo });
+    throw new PartialError(ms.filter((_, i) => res[i].status === "rejected"));
+  }
+  const n = ok.length > 1 ? `${ok.length} tin, ` : "";
+  toast(until ? { text: `Đã hoãn ${n}nhắc lại lúc ${timeLabel(until.toISOString())}`, undo } : { text: "Đã bỏ hoãn" });
+}
+
+/** One message: the kept copy, else live from Telegram. */
+export const getMessage = (chatId: string, messageId: string, { signal }: { signal?: AbortSignal } = {}) =>
+  api<Message>(`/chats/${encodeURIComponent(chatId)}/messages/${messageId}`, { signal });
+
+/** Open the reply panel on a message, optionally with a prefilled line (the inbox shell listens). */
+export const openReply = (m: Message, text?: string) => dispatchEvent(new CustomEvent<{ m: Message; text?: string }>("open-reply", { detail: { m, text } }));
+/** Load one message and open the reply panel on it; false (after a toast) when it could not be loaded. */
+export async function openReplyById(chatId: string, messageId: string, text?: string) {
+  try {
+    openReply(await getMessage(chatId, messageId), text);
+    return true;
+  } catch (e) {
+    toast({ text: errorText(e, {}, "Không mở được tin gốc, thử lại sau") });
+    return false;
+  }
+}
+
+/** Mark every open tag of a group done (within the day range); Undo reopens exactly those, without reactions. */
+export async function markAllHandled(chatId: string, range: string) {
+  const { count, message_ids } = await api<HandledAllResponse>(
+    `/chats/${encodeURIComponent(chatId)}/handled-all${range ? `?${range}` : ""}`, { method: "POST" });
+  const ms = message_ids.map((id) => ({ chat_id: chatId, message_id: String(id) }));
+  ms.forEach(dropDraft);
+  toast({ text: `Đã xử lý ${count} tin`, undo: ms.length ? () => undoAll(ms.map((m) => markHandled(m, false, false))) : undefined });
+}
+
+/** "Luôn bỏ qua {tên}": a sender rule clears their open tags now and later; Undo deletes it and reopens those. */
+export async function ignoreSender(m: Message) {
+  const name = m.sender_name ?? "người này";
+  const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: name } });
+  r.cleared.forEach(dropDraft);
+  toast({
+    text: `Luôn bỏ qua ${name}: đã dọn ${r.cleared.length} tin`,
+    undo: async () => {
+      try { await api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }); } catch {
+        throw new Told("Chưa xóa được quy tắc: xóa ở Công cụ › Quy tắc"); // reopening the tags now would just clear them again
+      }
+      await undoAll(r.cleared.map((c) => markHandled(c, false, false)));
+    },
+  });
+}
+
+// Reply drafts, per tag, in this browser only (never sent to the server). A tag marked done here drops its draft;
+// ponytail: one handled elsewhere (phone, another browser) keeps it until replaced or Settings › "Xóa nháp".
+export const draftKey = (m: { chat_id: string; message_id: string }) => `draft:${msgKey(m)}`;
+/** Store (or, for blank text, drop) a tag's draft; false when this browser refused to store it. */
+export function saveDraft(m: { chat_id: string; message_id: string }, text: string) {
+  const ok = put(draftKey(m), text.trim() ? text : null);
+  dispatchEvent(new Event("drafts"));
+  return ok;
+}
+const dropDraft = (m: { chat_id: string; message_id: string }) => saveDraft(m, "");
+/** Drop the saved drafts of one group (its data was deleted), or all of them (Settings › "Xóa nháp"). */
+export function clearDrafts(chatId?: string) {
+  const prefix = chatId ? `draft:${chatId}:` : "draft:";
+  try { Object.keys(localStorage).filter((k) => k.startsWith(prefix)).forEach((k) => localStorage.removeItem(k)); } catch {}
+  dispatchEvent(new Event("drafts"));
+}
+const onDrafts = (f: () => void) => { addEventListener("drafts", f); addEventListener("storage", f); return () => { removeEventListener("drafts", f); removeEventListener("storage", f); }; };
+/** True while this tag has an unsent reply draft (the row's "Nháp" chip). */
+export const useHasDraft = (m: { chat_id: string; message_id: string }) => useSyncExternalStore(onDrafts, () => !!getPref(draftKey(m)), () => false);
+
+/** The reply form (composer); while it covers the list, list keys stay off. */
+export const COMPOSER = "form[data-composer]";
 
 /** The task list query, without polling: rows read it through `select` (only the inbox shell and AI Agent poll). */
 export const taskListQuery = {
@@ -232,46 +286,47 @@ export const typing = (e: KeyboardEvent) =>
 
 /**
  * j/k move, Enter or r reply, o open in Telegram, x done/reopen, Shift+x done without a reaction, s snooze 1 hour,
- * p pin / unpin, a focus the AI prompt. Ignored while typing. `actions`: false on live (unstored) rows, which only move
- * and open. Returns the focused row's `msgKey`.
+ * p pin / unpin, a focus the AI prompt, Space select (`onPick`). Ignored while typing. `actions`: false on live
+ * (unstored) rows, which only move and open. Returns the focused row's `msgKey`.
  */
 export function useListShortcuts(
   items: Message[],
   onReply: (m: Message) => void,
   actions = true,
+  { onPick, initial = null }: { onPick?: (m: Message) => void; initial?: string | null } = {},
 ) {
-  const [focused, setFocused] = useState<string | null>(null);
+  const [focused, setFocused] = useState<string | null>(initial); // initial: msgKey to start selected (e.g. "Mở nhóm")
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (typing(e) || goKey.armed()) return;
-      // A reply open in the detail view covers the list: only "a" (AI prompt) still applies.
-      if (e.key !== "a" && document.querySelector("form[aria-label='Soạn trả lời']")) return;
-      // Enter on a focused button or link is that control's own click.
-      if (e.key === "Enter" && (e.target as HTMLElement | null)?.closest?.("button, a, [role=menuitem]")) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; // Caps Lock: same keys
+      // A reply open covers the list: only "a" (AI prompt) still applies.
+      if (k !== "a" && document.querySelector(COMPOSER)) return;
+      // Enter / Space on a focused button or link is that control's own click.
+      if ((e.key === "Enter" || e.key === " ") && (e.target as HTMLElement | null)?.closest?.("button, a, [role=menuitem]")) return;
       const actionable = items.filter((m) => !m.deleted);
       const i = actionable.findIndex((m) => msgKey(m) === focused);
       const cur = actionable[i];
       const tag = actions && cur && !cur.outgoing ? cur : null; // tag actions: stored, incoming
-      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; // Caps Lock: same keys
       if (k === "j" || k === "k") {
         const next = actionable[k === "j" ? Math.min(actionable.length - 1, i + 1) : Math.max(0, i < 0 ? actionable.length - 1 : i - 1)];
         if (next) {
           setFocused(msgKey(next));
           scrollToRow(msgKey(next));
         }
-      } else if ((k === "r" || k === "Enter") && cur && actions) onReply(cur);
+      } else if (k === " " && tag && onPick) onPick(tag); else if ((k === "r" || k === "Enter") && cur && actions) onReply(cur);
       else if (k === "o" && cur) openInTelegram(cur);
       else if (k === "x" && tag && !e.shiftKey) setHandled([tag], !tag.handled).catch(() => {}); // the toast already reported it
       else if (k === "x" && tag && !tag.handled) setHandled([tag], true, false).catch(() => {}); // Shift+x: no reaction
-      else if (k === "s" && tag && !tag.handled) snooze(tag, new Date(Date.now() + 3600_000)).catch(() => toast({ text: "Không hoãn được, thử lại" }));
+      else if (k === "s" && tag && !tag.handled) snooze([tag], new Date(Date.now() + 3600_000)).catch((err) => toast({ text: errorText(err, {}, "Không hoãn được, thử lại") }));
       else if (k === "p" && tag) {
-        pin(tag, !tag.pinned).then(() => toast({ text: tag.pinned ? "Đã bỏ ghim" : "Đã ghim" }), () => toast({ text: "Không ghim được, thử lại" }));
+        pin(tag, !tag.pinned).then(() => toast({ text: tag.pinned ? "Đã bỏ ghim" : "Đã ghim" }), (err) => toast({ text: errorText(err, {}, "Không ghim được, thử lại") }));
       } else if (k === "a") (document.getElementById("ai-prompt") as HTMLTextAreaElement | null)?.focus();
       else return;
       e.preventDefault();
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [items, focused, onReply, actions]);
+  }, [items, focused, onReply, actions, onPick]);
   return focused;
 }

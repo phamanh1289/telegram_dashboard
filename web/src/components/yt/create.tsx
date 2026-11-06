@@ -1,7 +1,7 @@
 "use client";
 
 import { createTicket, TicketForm } from "@/components/ticket-form";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DIALOG_SHEET } from "@/components/ui/dialog";
 import { toast } from "@/lib/inbox";
 import { yt } from "@/lib/yt";
 import { useYt } from "./state";
@@ -14,16 +14,16 @@ export function CreateTicket() {
   const start = y.newTicket ?? "";
   return (
     <Dialog open={y.newTicket != null} onOpenChange={(o) => { if (!o) y.setNewTicket(null); }}>
-      <DialogContent className="flex flex-col sm:max-w-2xl">
+      <DialogContent className={DIALOG_SHEET}>
         <TicketForm
           title={<>Tạo ticket <span className="rounded bg-paper-2 px-1.5 font-mono text-xs font-medium text-ink-2">{y.project}</span></>}
           hint="Tự điền, hoặc kể vấn đề cho AI soạn theo mẫu rồi sửa lại trước khi tạo."
           project={y.project}
           initial={{ summary: start.split("\n")[0].slice(0, 200), description: start.includes("\n") ? start : "" }}
-          meta={{ assignee: y.me ? y.loginOf.get(y.me) ?? "" : "" }}
           note={start}
           notePlaceholder="vd. Màn chốt giá trên Android bấm Ký sau bị crash khi chưa có hợp đồng, máy Samsung A52, bản 3.2.1"
           aiOn={y.aiOn}
+          aiKind="yt"
           aiDraft={(note, f) => yt.aiDraft(note, f.types, f.priorities)}
           onSubmit={async (v) => {
             const r = await createTicket(v);
@@ -32,7 +32,6 @@ export function CreateTicket() {
             y.refresh();
             y.openTicket(r.id);
           }}
-          onOpenTicket={y.openTicket}
           demo={!!y.config?.mock}
         />
       </DialogContent>

@@ -23,6 +23,13 @@
       "url": "http://127.0.0.1:3000"
     },
     {
+      "name": "e2e-fixture",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--no-sync", "python", "web/tests/fixture_server.py"],
+      "port": 8766,
+      "url": "http://127.0.0.1:8766"
+    },
+    {
       "name": "api",
       "runtimeExecutable": "uv",
       "runtimeArgs": [

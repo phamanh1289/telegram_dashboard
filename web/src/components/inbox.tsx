@@ -3,28 +3,32 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Newspaper, Pin, RotateCw, Search, Send, SlidersHorizontal, Wifi, WifiOff, X } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Pin, RotateCw, Search, Send, Sparkles, WifiOff, X } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { DeepThinking } from "@/components/deep-think";
-import { BriefingPage } from "@/components/briefing-page";
+import { BriefingGroups, BriefingPage, briefingQuery, hasNews } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
+import { InboxPalette } from "@/components/inbox-palette";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
-import { Kbd, PendingInbox } from "@/components/pending-inbox";
+import { PendingInbox } from "@/components/pending-inbox";
+import { Kbd } from "@/components/ui/kbd";
 import { ShortcutsDialog } from "@/components/settings";
 import { NavPill, Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
-import { api, type Message, type Status } from "@/lib/api";
+import { api, type Message, type Status, statusQuery } from "@/lib/api";
+import type { View } from "@/hooks/use-chat-messages";
 import { ALL, BRIEFING, goKey, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
+import { Segmented } from "@/components/ui/segmented";
+import { AiPlug } from "@/components/ai-plug";
 
 const STATE_LABEL: Record<Status["state"], string> = {
   setup_required: "Chưa cấu hình Telegram: mở Cài đặt Telegram",
@@ -35,21 +39,24 @@ const STATE_LABEL: Record<Status["state"], string> = {
   stopped: "Đã dừng",
 };
 
+/** Sidebar AI plug card: title per state, and the line under it when not connected (connected shows the stream state). */
+const PLUG_LINE: Record<Status["state"], [string, string]> = {
+  connected: ["AI đã kết nối Telegram", ""],
+  connecting: ["AI đang kết nối Telegram…", "Chờ chút nhé"],
+  degraded: ["Mất kết nối Telegram", "Mạng chặn? Bật VPN, đang thử lại"],
+  setup_required: ["Chưa kết nối Telegram", "Bấm để cấu hình"],
+  login_required: ["AI chờ bạn đăng nhập", "Bấm để đăng nhập Telegram"],
+  stopped: ["Đã ngắt kết nối Telegram", "Kết nối Telegram đã dừng"],
+};
+
 const STREAM_LABEL: Record<StreamState, string> = {
   open: "Cập nhật trực tiếp",
   connecting: "Đang nối lại luồng cập nhật…",
   closed: "Luồng cập nhật tạm dừng",
 };
 
-// Same motion as the YouTrack module (yt/app.tsx): a sliding highlight on the active nav item, a fade-and-rise between pages.
-const PAGE_MOTION = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.18 } } as const;
-
 export function App() {
-  const status = useQuery({
-    queryKey: ["status"],
-    queryFn: ({ signal }) => api<Status>("/status", { signal }),
-    retry: 1,
-  });
+  const status = useQuery({ ...statusQuery, retry: 1 });
 
   if (status.isPending) {
     return (
@@ -99,7 +106,14 @@ function Inbox({ status }: { status: Status }) {
   // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
   // (after /status), so state starts from the URL and prefs directly, with no first paint on defaults.
   const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
-  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  // The tag being answered; `external`: opened from elsewhere (Digest, Báo lại, ⌘K), so a send just closes it.
+  const [reply, setReply] = useState<{ m: Message; external: boolean } | null>(null);
+  const replyTo = reply?.m ?? null;
+  const pickReply = useCallback((m: Message) => {
+    setReply({ m, external: false });
+    setDraft(null); // an injected line belongs to the tag it was made for
+  }, []);
+  const [palette, setPalette] = useState(false);
   const [focus, setFocus] = useState<string | null>(null); // item to show in the opened view: a message, or a task on AI Agent
   const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
@@ -126,9 +140,15 @@ function Inbox({ status }: { status: Status }) {
   const [shortcuts, setShortcuts] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const [headSlot, setHeadSlot] = useState<HTMLDivElement | null>(null);
-  // Global keys outside text fields: ? shortcuts, / search, g then i / p / a / b a page (z undo lives in the Toaster).
+  // Global keys outside text fields: ? shortcuts, / search, g then i / p / a / b a page (z undo lives in the Toaster);
+  // ⌘K / Ctrl+K the command palette, from anywhere.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPalette((o) => !o);
+        return;
+      }
       if (typing(e)) return;
       if (goKey.take()) {
         const to = { i: ALL, p: PINNED, a: TASKS, b: BRIEFING }[e.key.toLowerCase()];
@@ -150,20 +170,24 @@ function Inbox({ status }: { status: Status }) {
   const listItems = useRef<Message[]>([]);
   // `dir` 0: after a send / done (the next one, else the last before it); 1 / -1: Alt+↓ / Alt+↑ in the reply panel.
   function advance(dir: 0 | 1 | -1 = 0) {
+    if (reply?.external && !dir) {
+      setReply(null);
+      return;
+    }
     const all = listItems.current;
     const i = all.findIndex((m) => m.chat_id === replyTo?.chat_id && m.message_id === replyTo?.message_id);
     const open = (m: Message, j: number) => j !== i && !m.outgoing && !m.deleted && !m.handled;
     const next = dir < 0 ? all.findLast((m, j) => j < i && open(m, j))
       : all.find((m, j) => j > i && open(m, j)) ?? (dir ? undefined : all.findLast((m, j) => open(m, j)));
     if (dir && !next) return toast({ text: dir > 0 ? "Không còn tag nào phía dưới" : "Không còn tag nào phía trên" });
-    setReplyTo(next ?? null);
+    setReply(next ? { m: next, external: false } : null);
     setDraft(null);
     if (next) requestAnimationFrame(() => scrollToRow(msgKey(next)));
   }
 
   // Stable (setters only): the memoised list rows keep their props.
   const useText = useCallback((m: Message, text: string) => {
-    setReplyTo(m);
+    setReply({ m, external: false });
     setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
   }, []);
 
@@ -171,7 +195,7 @@ function Inbox({ status }: { status: Status }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || document.querySelector("[role=dialog]")) return;
-      setReplyTo(null);
+      setReply(null);
       setDraft(null);
       setSearch("");
       setSearchOpen(false);
@@ -185,7 +209,7 @@ function Inbox({ status }: { status: Status }) {
     setChatId(id);
     setFocus(null); // one-shot: only `go` with a focus id sets it again
     setDigest(false);
-    setReplyTo(null);
+    setReply(null);
     setDraft(null);
     setSearch(""); // a search belongs to the page it was typed on
     const url = new URL(location.href);
@@ -194,7 +218,6 @@ function Inbox({ status }: { status: Status }) {
     history.replaceState(null, "", url);
   }
 
-  const connected = status.state === "connected";
   const chatsData = useChats(range).data?.items ?? [];
   // Phones: the sidebar is an off-canvas sheet; desktop: pinned open or a 64px rail that opens on hover/focus.
   const [menuOpen, setMenuOpen] = useState(false);
@@ -203,31 +226,49 @@ function Inbox({ status }: { status: Status }) {
     else setMenuOpen((v) => !v);
   }
   const [jump, setJump] = useState(0);
-  function go(id: string | null, focusId?: string) {
+  const [focusView, setFocusView] = useState<View>();
+  function go(id: string | null, focusId?: string, view?: View) {
     selectChat(id);
     setFocus(focusId ?? null);
+    setFocusView(view);
     setJump((n) => n + 1);
     setMenuOpen(false);
   }
   // "Mở phiên" on a tagged message (lib/inbox `openTask`)
   const onOpenTask = useEffectEvent((e: Event) => go(TASKS, (e as CustomEvent<string>).detail));
+  // A reply opened from Digest / Briefing / Báo lại (lib/inbox `openReply`), optionally with a first line.
+  const onOpenReply = useEffectEvent((e: Event) => {
+    const { m, text } = (e as CustomEvent<{ m: Message; text?: string }>).detail;
+    setReply({ m, external: true });
+    setDraft(text ? { result: { text, options: [], analysis: "", source_message_ids: [], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() } : null);
+  });
   useEffect(() => {
     addEventListener("open-task", onOpenTask);
-    return () => removeEventListener("open-task", onOpenTask);
+    addEventListener("open-reply", onOpenReply);
+    return () => {
+      removeEventListener("open-task", onOpenTask);
+      removeEventListener("open-reply", onOpenReply);
+    };
   }, []);
 
   const hints: Record<string, string> = {
     [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
     [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
     [TASKS]: "Phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE.",
-    [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
   };
   const views = [
     [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
     [PINNED, "Tag đã ghim", 0, Pin],
     ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as const] : []),
-    ...(status.ai_configured ? [[BRIEFING, "Briefing", 0, Newspaper] as const] : []),
   ] as const;
+  // Groups section: tagged groups, or (AI on) the groups Briefing follows; landing on Briefing shows its tab.
+  const aiOn = status.ai_configured;
+  const [side, setSide] = useState<"tag" | "brief">(chatId === BRIEFING ? "brief" : "tag");
+  const [seenChat, setSeenChat] = useState(chatId);
+  if (seenChat !== chatId) { setSeenChat(chatId); if (chatId === BRIEFING) setSide("brief"); }
+  const showBrief = aiOn && side === "brief";
+  const [briefGroup, setBriefGroup] = useState<string | null>(null); // Briefing: one group's items (null: all)
+  const briefNews = (useQuery({ ...briefingQuery, enabled: aiOn }).data ?? []).filter((i) => i.consent && hasNews(i)).length;
   const offline = status.state !== "connected" || stream !== "open";
   // Shown only once the problem lasts a few seconds: a reconnect blip shouldn't flash a banner.
   const [lasting, setLasting] = useState(false);
@@ -241,7 +282,8 @@ function Inbox({ status }: { status: Status }) {
   // Search and the day range filter tag lists; Briefing, Digest and AI Agent have their own (or none).
   const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && !digest;
   const inGroup = listPage && chatId !== ALL && chatId !== PINNED;
-  const title = views.find(([id]) => id === chatId)?.[1] ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
+  const title = views.find(([id]) => id === chatId)?.[1] ?? (chatId === BRIEFING ? "Briefing" : undefined) ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
+  const openDigest = status.ai_configured ? () => { setReply(null); setFocus(null); setDigest(true); } : undefined;
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
@@ -257,21 +299,22 @@ function Inbox({ status }: { status: Status }) {
         collapsed && "md:[clip-path:inset(0_calc(100%-4rem)_0_0)] md:hover:[clip-path:inset(0_-3rem_0_0)] md:hover:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop",
       )}>
         <h1 className="sr-only">Telegram Dashboard</h1>
-        <div className="mb-2 flex min-h-10 items-center gap-3 px-1.5">
-          <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-board text-board-type"><Send className="size-4" aria-hidden /></span>
+        <div className="flex min-h-10 items-center gap-3 px-1.5">
+          <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-hl text-hl-ink"><Send className="size-4 -translate-x-px translate-y-px" aria-hidden /></span>
           <span className={cn("grid whitespace-nowrap leading-tight", t)}>
-            <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox</span>
+            <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox · có AI trợ lực</span>
           </span>
         </div>
+        <h2 className={cn("mt-2 flex h-7 items-center whitespace-nowrap px-2.5 text-[0.8125rem] font-semibold text-ink-2", t)}>Hộp thư</h2>
         <nav aria-label="Trang" className="grid gap-1">
           {views.map(([id, label, count, Icon]) => (
             <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} aria-label={label}
               className={cn(
-                "relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
+                "group/item relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
                 chatId === id ? "font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
               )}>
               {chatId === id && <NavPill />}
-              <Icon className="relative size-5 shrink-0" aria-hidden />
+              <Icon className="relative size-5 shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none" aria-hidden />
               <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
               {count > 0 && (
                 <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2")}>
@@ -291,29 +334,35 @@ function Inbox({ status }: { status: Status }) {
             </button>
           </div>
         )}
-        <div className="-mx-3 mt-2 min-h-0 flex-1 border-t pt-1">
-          <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} />
-        </div>
-        <div className="-mx-3 grid gap-1 border-t px-3 pt-2">
-          <Hint title="Cài đặt Telegram" text="Tài khoản, hàng chờ, mẫu trả lời, tự đánh dấu đã xử lý.">
-            <Link href="/settings/#telegram"
-              className="flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium text-ink-3 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-              <SlidersHorizontal className="size-5 shrink-0" aria-hidden />
-              <span className={cn("whitespace-nowrap", t)}>Cài đặt Telegram</span>
-            </Link>
-          </Hint>
-          <div className="flex min-h-10 items-center gap-3 px-2.5 text-xs">
-            <Hint text={`${STATE_LABEL[status.state]}. ${STREAM_LABEL[stream]}.`}>
-              <span data-testid="tg-state" className={cn("shrink-0", connected ? "text-ok" : "text-warn")}>
-                {connected ? <Wifi className="size-5" aria-hidden /> : <WifiOff className="size-5" aria-hidden />}
-                <span className="sr-only">{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
-              </span>
-            </Hint>
-            <span className={cn("grid min-w-0 leading-tight", t)}>
-              <span className={cn("truncate font-medium", connected ? "text-ink-2" : "text-warn")}>{connected ? "Đã kết nối" : STATE_LABEL[status.state]}</span>
-              <span data-testid="stream-state" className={cn("truncate", stream === "open" ? "text-ink-3" : "text-warn")}>{STREAM_LABEL[stream]}</span>
-            </span>
+        <div className="-mx-3 mt-2 flex min-h-0 flex-1 flex-col border-t pt-2">
+          {aiOn && (
+            <div className={cn("grid gap-1 px-3 pb-1.5", t)}>
+              <h2 className="flex h-7 items-center whitespace-nowrap px-2.5 text-[0.8125rem] font-semibold text-ink-2">Nhóm</h2>
+              <Segmented id="side-groups" label="Danh sách nhóm" variant="card" value={side}
+                onChange={(v) => { setSide(v); if (v === "brief" && chatId !== BRIEFING) { setBriefGroup(null); go(BRIEFING); } }}
+                items={[
+                  { value: "tag", title: "Nhóm có tin tag bạn chưa xử lý.", label: <>Có tag{pendingTotal > 0 && <span className="font-mono tabular-nums text-ink-3">{pendingTotal}</span>}</> },
+                  { value: "brief", title: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.", label: <><Sparkles className="size-3.5 text-hl" aria-hidden />Briefing{briefNews > 0 && <span className="size-1.5 rounded-full bg-signal" aria-label={`${briefNews} nhóm có tin mới`} />}</> },
+                ]} />
+            </div>
+          )}
+          <div className={cn("min-h-0 flex-1", showBrief && "hidden")}>
+            <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} bare={aiOn} />
           </div>
+          {showBrief && (
+            <div className="min-h-0 flex-1">
+              <BriefingGroups collapsed={collapsed} selected={chatId === BRIEFING ? briefGroup : undefined}
+                onSelect={(id) => { setBriefGroup(id); go(BRIEFING); }} />
+            </div>
+          )}
+        </div>
+        <div className="-mx-3 border-t px-3 pt-2">
+          <AiPlug testId="tg" icon={<Send className="size-4 -translate-x-px translate-y-px" aria-hidden />} sock="bg-info text-cotton" textClass={t}
+            pose={status.state === "connected" ? "on" : status.state === "connecting" ? "try" : "off"} live={stream === "open"}
+            title={PLUG_LINE[status.state][0]} sub={status.state === "connected" ? STREAM_LABEL[stream] : PLUG_LINE[status.state][1]}
+            subWarn={status.state === "connected" ? stream !== "open" : status.state !== "connecting"}
+            href={status.state === "setup_required" || status.state === "login_required" ? "/settings/#telegram" : undefined}
+            hint={{ title: "Kết nối Telegram", text: `${STATE_LABEL[status.state]}. ${STREAM_LABEL[stream]}.` }} />
         </div>
       </aside>
       <div className="hidden md:block" aria-hidden />
@@ -372,55 +421,55 @@ function Inbox({ status }: { status: Status }) {
           </div>
         )}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
-          <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
-            <div className={cn("grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
-            <AnimatePresence mode="wait">
+          <div className={cn("grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock")}>
+            <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
+            {/* No exit wait: the next page mounts at once and rises in (globals.css .page-in); pages the AI made get the .ai-in beam. */}
             {chatId ? (
-              <motion.div key={`${chatId}:${digest}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)]" {...PAGE_MOTION}>
+              <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || digest) && "ai-in")}>
                 {chatId === BRIEFING ? (
-                  <BriefingPage onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
+                  <BriefingPage group={briefGroup} onGroup={setBriefGroup} onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
                   // keyed by focus: "Mở phiên" while already on AI Agent selects the new session
                   <TasksPage key={focus ?? ""} focus={focus} headSlot={headSlot} onOpenGroup={go} onUseText={useText} />
                 ) : chatId === ALL || chatId === PINNED ? (
-                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} onClearSearch={() => setSearch("")} replyTo={replyTo && msgKey(replyTo)} onReply={setReplyTo}
+                  <PendingInbox pinned={chatId === PINNED} range={range} search={search} onClearSearch={() => setSearch("")} replyTo={replyTo && msgKey(replyTo)} onReply={pickReply}
                     onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
                 ) : (
                 <MessageList
-                  onDigest={status.ai_configured ? () => { setReplyTo(null); setFocus(null); setDigest(true); } : undefined}
+                  onDigest={openDigest}
                   onUseText={useText}
                   chatId={chatId}
                   title={title}
                   search={search}
                   focus={focus}
+                  view={focusView}
                   range={range}
                   onBack={() => go(ALL)}
                   replyTo={replyTo && msgKey(replyTo)}
-                  onReply={setReplyTo}
+                  onReply={pickReply}
                   itemsRef={listItems}
                 />
                 )}
-              </motion.div>
+              </div>
             ) : (
-              <motion.div key="empty" className="grid place-items-center p-6" {...PAGE_MOTION}>
+              <div key="empty" className="page-in grid place-items-center p-6">
                 <div className="grid max-w-xs justify-items-center gap-3 text-center">
                   <MessageSquare className="size-6 text-ink-3" aria-hidden />
                   <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
                   <Button size="sm" variant="outline" onClick={() => go(ALL)}>Việc cần xử lý</Button>
                 </div>
-              </motion.div>
+              </div>
             )}
-            </AnimatePresence>
             </div>
             {replyTo && (
-              <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="grid min-h-0 grid-cols-[minmax(0,1fr)] animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
+              <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); }} onDone={() => advance()} onStep={advance}
-              onTaskCreated={(id) => toast({ text: "Đã giao AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
+              onClearReply={() => setReply(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); }} onDone={() => advance()} onStep={advance}
+              onTaskCreated={(id) => { setReply(null); toast({ text: "Đã giao AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
                 // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
-                undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) })} draft={draft}
+                undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) }); }} draft={draft}
               aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />
               </div>
             )}
@@ -429,6 +478,13 @@ function Inbox({ status }: { status: Status }) {
       </div>
       <DeepThinking />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
+      <InboxPalette open={palette} onClose={() => setPalette(false)} chats={chatsData} views={views} range={range}
+        group={inGroup ? chatsData.find((c) => c.chat_id === chatId) ?? null : null} onGo={go} onDigest={inGroup ? openDigest : undefined}
+        onSearch={(q) => {
+          if (!listPage) go(ALL);
+          setSearch(q);
+          setSearchOpen(true);
+        }} />
       <Toaster />
     </div>
   );

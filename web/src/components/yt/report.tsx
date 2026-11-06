@@ -5,7 +5,8 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
-import { toast, useNow, ymd } from "@/lib/inbox";
+import { toast, useNow } from "@/lib/inbox";
+import { ymd } from "@/lib/time";
 import { getPref, onPrefs, readReportAt, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, downloadCsv, downloadText } from "@/lib/utils";
 import { type AiReq, bucket, bugSpike, DAY, inTest, isBug, isBuilt, QUICK, rank, type Ticket, when, yt } from "@/lib/yt";
@@ -21,7 +22,7 @@ import { useYt } from "./state";
 
 const day0 = (s: string) => +new Date(`${s}T00:00`);
 /** Mon-Fri days after today, up to and including the release day. */
-function workDays(now: number, release: string) {
+export function workDays(now: number, release: string) {
   let n = 0;
   for (let t = day0(ymd(now)) + DAY; t <= day0(release); t += DAY) { const w = new Date(t).getDay(); if (w && w < 6) n++; }
   return n;
@@ -192,7 +193,7 @@ export function ReportCard() {
       ) : ai.s.status === "idle" && (
         <p className="text-sm text-ink-2">{by === "day" ? "AI đọc các số liệu trên: ticket nào đã test xong, đang test, chờ test, ai đang giữ, cái gì cần đẩy." : <>AI đọc các số liệu trên: kịp release không, ticket nào chưa bàn giao được cho QC, đang stuck ở đâu, kết quả test, việc trễ, ai quá tải, bug.</>}{y.config?.mock ? " Cần token YouTrack." : ""}</p>
       )}
-      <AiBox ai={ai} ask={false} />
+      <AiBox ai={ai} />
 
       <div className="flex flex-wrap items-center gap-1.5">
         {saved && !busy && <Button size="sm" onClick={() => open(false)}><Sparkles /> Mở phiên AI</Button>}

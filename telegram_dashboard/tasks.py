@@ -1,6 +1,7 @@
 """AI Agent task routes: headless `claude -p` (or Codex/Antigravity) sessions per project (see agent.py)."""
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -8,9 +9,11 @@ from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
 from .errors import ApiError, int_or_404
-from .links import expand
+from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
+
+log = logging.getLogger("telegram_dashboard.tasks")
 
 
 def new_task_id() -> str:
@@ -27,9 +30,10 @@ async def start_task(
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
     try:
-        named = await s.agent.start(task_id, project, await expand(s, prompt), mode, session, False)
+        named = await s.agent.start(task_id, project, await expand(s, prompt, task_id), mode, session, False)
     except BaseException:
         await s.db.write(s.store.delete_task, task_id)
+        await asyncio.to_thread(delete_links, s.settings, task_id)  # link text saved by expand()
         raise
     if named != session:  # Codex / Antigravity name their session once it runs
         await s.db.write(s.store.set_task_session, task_id, named)
@@ -54,8 +58,6 @@ def build_router(settings) -> APIRouter:
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
-        if mid is not None:  # "Giao AI Agent" on a message: its prompt carries the Telegram text
-            s.ai.require_read()
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode)
         return {"id": task_id}
@@ -94,7 +96,7 @@ def build_router(settings) -> APIRouter:
         ai = (row["model"], row["effort"])
         fresh = s.agent.new_session(split_session(row["session_id"] or "")[0])
         session = await s.agent.start(
-            task_id, row["project"], await expand(s, row["prompt"]), row["mode"], fresh, False, ai
+            task_id, row["project"], await expand(s, row["prompt"], task_id), row["mode"], fresh, False, ai
         )  # fmt: skip
         await s.db.write(s.store.set_task_session, task_id, session)
 
@@ -114,9 +116,15 @@ def build_router(settings) -> APIRouter:
         if not row["session_id"]:
             raise ApiError(404, "task_not_found")
         mode = "edit" if body.edit else row["mode"]  # per turn, so a plan can be approved
-        # start() reserves the task before its first await: a double send gets 409 task_busy.
+        if s.agent.running(task_id):  # before expand(): a double send must not rewrite the files a turn reads
+            raise ApiError(409, "task_busy")  # (start() also reserves the task before its first await)
+        if has_links(row["prompt"] or "") and not links_dir(settings, task_id).is_dir():
+            log.info("task %s: saved link content gone, fetching it again", task_id)
+            await expand(s, row["prompt"], task_id, summarize=False)  # re-saves the files earlier turns point at
         ai = (row["model"], row["effort"])
-        await s.agent.start(task_id, row["project"], await expand(s, body.text), mode, row["session_id"], True, ai)
+        await s.agent.start(
+            task_id, row["project"], await expand(s, body.text, task_id), mode, row["session_id"], True, ai
+        )
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:
@@ -133,7 +141,7 @@ def build_router(settings) -> APIRouter:
         cid, mid = row["chat_id"], row["message_id"]
         kept = mid is not None and await s.db.read(s.store.get_message, cid, mid) is not None
         if kept:
-            changed = await s.db.write(s.store.set_handled, cid, mid, body.handled)
+            changed = await s.db.write(s.store.set_handled, cid, mid, body.handled, "me" if body.react else "quiet")
         else:
             changed = await s.db.write(s.store.set_task_done, task_id, body.handled)
         if changed and body.react and mid is not None:
@@ -149,6 +157,6 @@ def build_router(settings) -> APIRouter:
         await s.agent.stop(task_id)
         if not await s.db.write(s.store.delete_task, task_id):
             raise ApiError(404, "task_not_found")
-        delete_task_files(settings, task_id)
+        await asyncio.to_thread(delete_task_files, settings, task_id)
 
     return r

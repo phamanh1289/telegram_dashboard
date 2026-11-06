@@ -31,7 +31,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-(--scrim) duration-(--dur-short) data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+        "scrim fixed inset-0 isolate z-50 bg-(--scrim)",
         className
       )}
       {...props}
@@ -53,7 +53,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid max-h-[min(88dvh,48rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-lg bg-cotton p-5 text-sm text-ink shadow-pop duration-(--dur-short) sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-[0.98] data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-[0.98]",
+          "fixed top-1/2 left-1/2 z-50 grid max-h-[min(88dvh,48rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-lg bg-cotton p-5 text-sm text-ink shadow-pop sm:max-w-md pop",
           className
         )}
         {...props}
@@ -79,6 +79,10 @@ function DialogContent({
     </DialogPortal>
   )
 }
+
+/** `DialogContent` className for a detail page sliding in from the right (full height, no padding: the page lays out its own head / body / foot). */
+const DIALOG_SHEET =
+  "top-0 right-0 left-auto flex h-dvh max-h-none max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-paper p-0 sm:max-w-2xl pop-sheet"
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -157,4 +161,5 @@ export {
   DialogPortal,
   DialogTitle,
   DialogTrigger,
+  DIALOG_SHEET,
 }

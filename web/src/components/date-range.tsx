@@ -5,7 +5,7 @@ import { CalendarDays, ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { dm, ymd } from "@/lib/inbox";
+import { dm, ymd } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /** Inclusive day range as local "YYYY-MM-DD" strings; empty = open end. */

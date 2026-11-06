@@ -29,8 +29,9 @@ def flags_for(model: str, effort: str) -> list[str]:
     return [*(["--model", model] if model else []), *(["--effort", effort] if effort else [])]
 
 
-async def _oauth_token() -> str | None:
-    """The CLI's current claude.ai access token: Keychain on macOS, else .credentials.json."""
+async def _oauth_creds() -> dict:
+    """The CLI's claude.ai login (token, expiry, plan tier), expired or not: Keychain on macOS, else
+    .credentials.json; {} when there is none."""
     raw = ""
     if sys.platform == "darwin":
         got = await run_cli(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"], timeout=5)
@@ -41,10 +42,26 @@ async def _oauth_token() -> str | None:
     try:
         o = json.loads(raw)["claudeAiOauth"]
     except (ValueError, KeyError, TypeError):
-        return None
-    if not isinstance(o, dict) or o.get("expiresAt", 0) <= time.time() * 1000:
-        return None  # expired: the CLI refreshes it on its next run
-    return o.get("accessToken")
+        return {}
+    return o if isinstance(o, dict) else {}
+
+
+async def _oauth_token() -> str | None:
+    """The current access token; None once expired (the CLI refreshes it only when it runs)."""
+    o = await _oauth_creds()
+    return o.get("accessToken") if o.get("expiresAt", 0) > time.time() * 1000 else None
+
+
+# An expired token stays expired until the CLI runs: one tiny Haiku answer wakes it, at most every WAKE_EVERY s.
+WAKE_EVERY = 900.0
+_wake: dict = {"at": 0.0}
+
+
+async def _wake_cli(settings) -> None:
+    if time.monotonic() - _wake["at"] < WAKE_EVERY:
+        return
+    _wake["at"] = time.monotonic()
+    await run_cli([_claude_exe(settings), "-p", "Reply with exactly: OK", "--model", "haiku"], timeout=60)
 
 
 async def _oauth_get(client: httpx.AsyncClient, token: str, path: str) -> dict:
@@ -87,15 +104,17 @@ def quota_now(settings) -> dict[str, float]:
     now, out = datetime.now(UTC), {}
     for key, label in USAGE_WINDOWS.items():
         w = _usage_data(settings).get(key)
-        if not isinstance(w, dict) or not isinstance(w.get("utilization"), int | float):
-            continue
-        try:
-            if w.get("resets_at") and datetime.fromisoformat(w["resets_at"]) <= now:
-                continue
-        except (TypeError, ValueError):
-            pass
-        out[label] = w["utilization"]
+        if isinstance(w, dict) and isinstance(w.get("utilization"), int | float) and not _was_reset(w, now):
+            out[label] = w["utilization"]
     return out
+
+
+def _was_reset(w: dict, now: datetime) -> bool:
+    """A cached window whose reset time has passed: its reading no longer holds."""
+    try:
+        return bool(w.get("resets_at")) and datetime.fromisoformat(w["resets_at"]) <= now
+    except (TypeError, ValueError):
+        return False
 
 
 def refresh_usage() -> bool:
@@ -103,44 +122,52 @@ def refresh_usage() -> bool:
     if time.monotonic() - _usage["at"] < 30:
         return False
     _account_changed()
+    _wake["at"] = 0.0  # an expired token: wake the CLI now, not WAKE_EVERY after the last try
     return True
 
 
 async def _claude_details(settings) -> dict:
-    """Profile + quota from Anthropic's account API; {} when the token or the API is unavailable."""
+    """Profile + quota from Anthropic's account API. With no live token: the last reading on disk, the plan
+    tier from the CLI's login, and `usage_error` saying the numbers are not live."""
+    creds = await _oauth_creds()
     token = await _oauth_token()
-    if not token:
-        return {}
+    if not token and creds:
+        await _wake_cli(settings)
+        token = await _oauth_token()
     cache = settings.data_dir / "claude_usage.json"
     _usage_data(settings)
-    async with httpx.AsyncClient(timeout=10) as c:
-        if time.monotonic() - _profile["at"] >= USAGE_EVERY:
-            _profile["at"] = time.monotonic()
-            _profile["data"] = await _oauth_get(c, token, "profile") or _profile["data"]
-        if time.monotonic() - _usage["at"] >= USAGE_EVERY:
-            _usage["at"] = time.monotonic()
-            if fresh := await _oauth_get(c, token, "usage"):
-                _usage["data"] = fresh | {"fetched_at": datetime.now(UTC).isoformat(timespec="seconds")}
-                settings.ensure_data_dir()
-                write_private_json(cache, _usage["data"])
+    if token:
+        async with httpx.AsyncClient(timeout=10) as c:
+            if time.monotonic() - _profile["at"] >= USAGE_EVERY:
+                _profile["at"] = time.monotonic()
+                _profile["data"] = await _oauth_get(c, token, "profile") or _profile["data"]
+            if time.monotonic() - _usage["at"] >= USAGE_EVERY:
+                _usage["at"] = time.monotonic()
+                if fresh := await _oauth_get(c, token, "usage"):
+                    _usage["data"] = fresh | {"fetched_at": datetime.now(UTC).isoformat(timespec="seconds")}
+                    settings.ensure_data_dir()
+                    write_private_json(cache, _usage["data"])
     profile = _profile["data"]
     acc, org = profile.get("account") or {}, profile.get("organization") or {}
-    usage = _usage["data"]
+    usage, now = _usage["data"], datetime.now(UTC)
     windows = [
         {"label": label, "percent": w["utilization"], "resets_at": w.get("resets_at")}
         for key, label in USAGE_WINDOWS.items()
-        if isinstance(w := usage.get(key), dict) and isinstance(w.get("utilization"), int | float)
+        if isinstance(w := usage.get(key), dict)
+        and isinstance(w.get("utilization"), int | float)
+        and not _was_reset(w, now)
     ]
     extra = usage.get("extra_usage")
     return {
         "name": acc.get("full_name") or acc.get("display_name"),
         "created_at": acc.get("created_at"),
         "org_type": org.get("organization_type"),
-        "rate_tier": org.get("rate_limit_tier"),
+        "rate_tier": org.get("rate_limit_tier") or creds.get("rateLimitTier"),
         "subscription_status": org.get("subscription_status"),
         "extra_usage": extra.get("is_enabled") if isinstance(extra, dict) else None,
         "usage": windows,
         "usage_at": usage.get("fetched_at"),
+        "usage_error": None if token else "no_token",
     }
 
 

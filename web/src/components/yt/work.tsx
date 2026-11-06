@@ -1,16 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Send, Sparkles, X } from "lucide-react";
+import { ArrowUp, FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { AiPromptBox, useFollow } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { Textarea } from "@/components/ui/textarea";
 import { api, type Project } from "@/lib/api";
 import { toast } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { AI_MAX, yt } from "@/lib/yt";
-import { AiBox, StatePill, useAi } from "./bits";
+import { AiBox, StatePill, useAi, YtPicks } from "./bits";
 import { type AiSession, newSessionId, saveSession } from "./history";
 import { type AiAuto, type AiStart, useYt } from "./state";
 import { type Builtin, builtin, fitsCount, PromptsDialog, shownFor, usePrompts } from "./prompts";
@@ -96,12 +96,8 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
     setAdd("");
   }
 
-  // chat-like: newest content at the bottom, kept in view as it streams in
-  const box = useRef<HTMLDivElement>(null);
-  const streamed = ai.s.status === "busy" ? ai.s.text?.length ?? 0 : 0;
-  const bottom = (force: boolean) => { const el = box.current; if (el && (force || el.scrollHeight - el.scrollTop - el.clientHeight < 400)) el.scrollTop = el.scrollHeight; };
-  useEffect(() => bottom(true), [ai.s.status, ai.thread.length]);
-  useEffect(() => bottom(false), [streamed]); // while streaming: follow only if the reader has not scrolled up
+  // chat-like: newest content at the bottom, kept in view as it streams in unless the reader scrolled up
+  const { ref: feedRef, onScroll: onFeedScroll } = useFollow(ai.s.status === "busy" ? ai.s.text?.length ?? 0 : 0, `${ai.s.status}:${ai.thread.length}`); // a new turn or answer: back to the bottom
   const chatting = ai.thread.length > 0 || ai.s.status !== "idle";
 
   const field = "h-8 rounded-md border border-rule bg-cotton px-2 text-sm";
@@ -129,7 +125,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
         </form>
       </div>
 
-      <div ref={box} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" aria-live="polite">
+      <div ref={feedRef} onScroll={onFeedScroll} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" aria-live="polite">
         {!chatting && (
           <p className="m-auto max-w-sm text-center text-sm text-ink-3">
             <Sparkles className="mx-auto mb-2 size-5 text-hl-2" />
@@ -137,45 +133,47 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               : <>Hỏi bất kỳ điều gì về {list.length} ticket ở trên, hoặc chọn một gợi ý bên dưới. Chọn thư mục dự án để AI đọc code.</>}
           </p>
         )}
-        <AiBox ai={ai} ask={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined} />
+        <AiBox ai={ai} stop={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined} />
       </div>
 
-      <form className="grid shrink-0 gap-2 rounded-lg bg-cotton p-3 shadow-stock" onSubmit={(e) => { e.preventDefault(); void send(); }}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {chips.map((n) => {
-            const b = builtin(n);
-            return (
-              <Hint key={n} side="bottom" title={n} text={(b?.hint ?? lib.prompts.find((p) => p.name === n)?.text ?? "").slice(0, 240)}><button type="button" disabled={busy} onClick={() => pick(n)}
-                className="inline-flex h-7 max-w-52 items-center gap-1.5 rounded-full bg-paper-2 px-2.5 text-xs font-medium text-ink-2 ring-1 ring-rule transition-colors duration-(--dur-micro) hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/40 disabled:pointer-events-none disabled:opacity-50">
-                {b ? <Sparkles className="size-3.5 shrink-0 opacity-70" /> : <MessageSquareText className="size-3.5 shrink-0 opacity-70" />}<span className="truncate">{n}</span>
+      <div className="grid shrink-0 gap-1.5">
+        <AiPromptBox aria-label="Yêu cầu cho AI về các ticket đã chọn" autoFocus maxLength={2000} value={prompt} onChange={setPrompt} onSend={() => void send()}
+          running={busy} onStop={ai.stop} stopLabel="Hủy"
+          placeholder={ai.canAsk ? "Hỏi tiếp…" : start && !list.length ? "Hỏi về số liệu này (Enter gửi, Shift+Enter xuống dòng)" : "Hỏi về các ticket này: phụ thuộc, thứ tự làm, ước lượng, rủi ro, test case… (Enter gửi, Shift+Enter xuống dòng)"}
+          top={
+            <div className="flex flex-wrap items-center gap-1.5">
+              {chips.map((n) => {
+                const b = builtin(n);
+                return (
+                  <Hint key={n} side="bottom" title={n} text={(b?.hint ?? lib.prompts.find((p) => p.name === n)?.text ?? "").slice(0, 240)}><button type="button" disabled={busy} onClick={() => pick(n)}
+                    className="inline-flex h-7 max-w-52 items-center gap-1.5 rounded-full bg-paper-2 px-2.5 text-xs font-medium text-ink-2 ring-1 ring-rule transition-colors duration-(--dur-micro) hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/40 disabled:pointer-events-none disabled:opacity-50">
+                    {b ? <Sparkles className="size-3.5 shrink-0 opacity-70" /> : <MessageSquareText className="size-3.5 shrink-0 opacity-70" />}<span className="truncate">{n}</span>
+                  </button></Hint>
+                );
+              })}
+              <Hint side="bottom" text="Mở kho prompt: chạy, ghim, thêm, sửa, xóa"><button type="button" onClick={() => setSaved(true)}
+                className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium border border-dashed border-rule-2 text-ink-3 transition-colors duration-(--dur-micro) hover:border-ink-3 hover:text-ink">
+                <LibraryBig className="size-3.5" />{chips.length ? "Kho prompt" : "Kho prompt: chọn hoặc ghim prompt"}
               </button></Hint>
-            );
-          })}
-          <Hint side="bottom" text="Mở kho prompt: chạy, ghim, thêm, sửa, xóa"><button type="button" onClick={() => setSaved(true)}
-            className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-xs font-medium border border-dashed border-rule-2 text-ink-3 transition-colors duration-(--dur-micro) hover:border-ink-3 hover:text-ink">
-            <LibraryBig className="size-3.5" />{chips.length ? "Kho prompt" : "Kho prompt: chọn hoặc ghim prompt"}
-          </button></Hint>
-          {noted && <Hint side="bottom" title="Instructions của team" text={notes.data![y.mode].slice(0, 300)}><span className="ml-auto rounded-full bg-hl-wash px-2 text-xs leading-5 font-medium text-hl-2">Có instructions {({ dev: "Dev", qa: "QC", po: "PO" })[y.mode]}</span></Hint>}
-          {chatting && <Hint side="bottom" text="Bắt đầu cuộc trò chuyện mới với các ticket này"><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> Cuộc mới</Button></Hint>}
-        </div>
-        <Textarea rows={2} maxLength={2000} value={prompt} onChange={(e) => setPrompt(e.target.value)} aria-label="Yêu cầu cho AI về các ticket đã chọn" autoFocus
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }}
-          className="max-h-48 resize-none"
-          placeholder={ai.canAsk ? "Hỏi tiếp…" : start && !list.length ? "Hỏi về số liệu này (Enter gửi, Shift+Enter xuống dòng)" : "Hỏi về các ticket này: phụ thuộc, thứ tự làm, ước lượng, rủi ro, test case… (Enter gửi, Shift+Enter xuống dòng)"} />
-        <div className="flex flex-wrap items-center gap-2">
-          {!!list.length && <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3"><FolderSearch className="size-3.5 shrink-0" />
+              {noted && <Hint side="bottom" title="Instructions của team" text={notes.data![y.mode].slice(0, 300)}><span className="ml-auto rounded-full bg-hl-wash px-2 text-xs leading-5 font-medium text-hl-2">Có instructions {({ dev: "Dev", qa: "QC", po: "PO" })[y.mode]}</span></Hint>}
+              {chatting && <Hint side="bottom" text="Bắt đầu cuộc trò chuyện mới với các ticket này"><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> Cuộc mới</Button></Hint>}
+            </div>
+          }
+          tools={!!list.length && <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3"><FolderSearch className="size-3.5 shrink-0" />
             <select className={`${field} min-w-0 max-w-56`} value={project} onChange={(e) => setProject(e.target.value)} aria-label="Thư mục code để trace">
               <option value="">Không đọc code</option>
               {folders.map((p) => <option key={p.path} value={p.path}>{p.name}</option>)}
             </select>
           </label>}
-          <Button type="submit" size="sm" className="ml-auto" disabled={!prompt.trim() || busy || (!list.length && !ai.canAsk && !folder && !start)} aria-busy={busy}>
-            <Send /> Gửi
-          </Button>
-        </div>
-        {!!list.length && !ps.isPending && !folders.length && <p className="text-xs text-ink-3">Muốn trace code: thêm thư mục dự án ở Telegram › AI Agent.</p>}
-        {folder && <p className="text-xs text-ink-2">Gợi ý và câu hỏi sẽ đọc code trong {folder.name} (chỉ đọc), trả lời ngay ở trên; chậm hơn, thường 1–3 phút.</p>}
-      </form>
+          actions={<>
+            {/* A follow-up runs like the first request; a new one is heavy with code or over 10 tickets (as the server decides). */}
+            <YtPicks heavy={ai.canAsk ? ai.heavy : !!project || list.length > 10} />
+            {!busy && <Button type="button" size="icon-sm" aria-label="Gửi" onClick={() => void send()} disabled={!prompt.trim() || (!list.length && !ai.canAsk && !folder && !start)}
+              className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)"><ArrowUp /></Button>}
+          </>} />
+        {!!list.length && !ps.isPending && !folders.length && <p className="px-1 text-xs text-ink-3">Muốn trace code: thêm thư mục dự án ở Telegram › AI Agent.</p>}
+        {folder && <p className="px-1 text-xs text-ink-2">Gợi ý và câu hỏi sẽ đọc code trong {folder.name} (chỉ đọc), trả lời ngay ở trên; chậm hơn, thường 1–3 phút.</p>}
+      </div>
       <PromptsDialog open={saved} onOpenChange={setSaved} onPick={pick} role={y.mode} many={list.length > 1} />
     </div>
   );

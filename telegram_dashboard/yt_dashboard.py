@@ -24,6 +24,7 @@ from .ai import TICKET_FORMAT, client_gone, data_json, json_object, parse_ticket
 from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
+from .links import link_block
 
 MAX_FILE = 25 << 20  # ponytail: proxied whole in memory; stream it if videos ever need to play here
 TTL = 50.0  # shorter than the UI refresh (60s) so each refresh sees fresh data
@@ -43,6 +44,17 @@ class YtError(Exception):
     def __init__(self, status: int, message: str):
         super().__init__(message)
         self.status, self.message = status, message
+
+
+class Mention(BaseModel):
+    chat_id: str
+    chat: str | None
+    from_: str | None = Field(alias="from")
+    text: str
+    date: int  # epoch ms
+    message_id: str
+    outgoing: bool
+    reply_to_id: str | None
 
 
 class Assignee(BaseModel):
@@ -88,10 +100,6 @@ class AiTickets(BaseModel):
     folder: str = Field("", max_length=1000)  # a registered code folder: the AI reads it (read-only)
 
 
-class AiPromises(BaseModel):
-    since: int = 0  # epoch ms: read the user's Telegram messages from here
-
-
 class AiDraft(BaseModel):
     text: str = Field(min_length=1, max_length=8000)  # what the user typed / pasted
     types: list[Annotated[str, Field(max_length=100)]] = Field([], max_length=50)  # the project's values
@@ -104,7 +112,7 @@ class AiTurn(BaseModel):
 
 
 class AiFollowup(BaseModel):
-    path: Literal["/ai/ticket", "/ai/data", "/ai/tickets", "/ai/promises"]  # the first request
+    path: Literal["/ai/ticket", "/ai/data", "/ai/tickets"]  # the first request
     body: dict  # its JSON, validated again by that endpoint's model
     history: list[AiTurn] = Field(min_length=1, max_length=12)
     question: str = Field(min_length=1, max_length=2000)
@@ -395,15 +403,6 @@ AI_CODE = (
     "kiện theo nền tảng / feature flag, nơi khác cùng gọi phần code đó (vùng regression). Nêu file / "
     "hàm làm căn cứ ở dạng `path:hàm`. Không thấy code liên quan thì nói rõ và trả lời theo ticket."
 )
-AI_PROMISES = (
-    "Từ <telegram_replies> (tin tôi đã gửi trong các nhóm, cũ trước mới sau), liệt kê những việc "
-    "tôi đã hứa hoặc nhận làm (vd 'để em check', 'mai em gửi', 'ok em làm', 'chiều em fix'). Tính "
-    "hạn từ ngày gửi ('mai' = ngày gửi + 1) và so với Hôm nay. Bỏ việc mà tin sau đó cho thấy đã "
-    "xong. Các nhãn in đậm, theo thứ tự, CHỈ in mục có nội dung: **Quá hạn / hôm nay:**, "
-    "**Sắp tới:**, **Chưa rõ hạn:**. Mỗi dòng '- việc cụ thể (nhóm, ngày hứa; ID ticket nếu có)'. "
-    "Không có việc nào thì chỉ ghi 'Không thấy việc nào bạn đã nhận.' Không bịa; không chắc thì "
-    "ghi '(có vẻ)'."
-)
 AI_FILTER = (
     "Chuyển câu của người dùng trong <ask> thành bộ lọc cho bảng ticket. <options> liệt kê giá trị "
     "hợp lệ. Trả về DUY NHẤT một JSON object (không prose, không code fence): "
@@ -464,6 +463,13 @@ def _normalize(i: dict) -> dict:
         "estimate": f.get("Estimation"),
         "sprints": sprints,
     }
+
+
+def _rel(x: dict) -> str:
+    """A link's name as read from this ticket's side ("is required for", "relates to")."""
+    t = x.get("linkType") or {}
+    side = t.get("targetToSource") if x.get("direction") == "INWARD" else t.get("sourceToTarget")
+    return side or t.get("name") or "liên kết"
 
 
 def _who_clause(who: list[str] | None) -> str:
@@ -730,18 +736,8 @@ class YouTrackDashboard:
         )
 
         def link(x):
-            t = x.get("linkType") or {}
-            rel = (
-                (
-                    t.get("targetToSource")
-                    if x.get("direction") == "INWARD"
-                    else t.get("sourceToTarget")
-                )
-                or t.get("name")
-                or "liên kết"
-            )
             return {
-                "rel": rel,
+                "rel": _rel(x),
                 "issues": [
                     {
                         "id": i["idReadable"],
@@ -773,6 +769,33 @@ class YouTrackDashboard:
                 for a in d.get("attachments") or [] if a.get("id") and not a.get("removed")
             ],  # fmt: skip
         }
+
+    async def trace(self, ids: list[str]) -> dict:
+        """For the release report, per ticket: its links (the linked tickets with their state, type,
+        assignee) and its latest comment. One YouTrack search per 100 tickets."""
+        fields = (
+            "idReadable,comments(text,created,author(fullName,login)),"
+            f"links(direction,linkType(name,sourceToTarget,targetToSource),issues({FIELDS}))"
+        )  # ponytail: every comment comes back to pick the last one; fine for a release's ~100-300 tickets
+
+        async def chunk(part: list[str]):
+            q = "issue id: " + ", ".join(part)
+            return await self.yt("/api/issues", query=q, fields=fields, **{"$top": len(part)})
+
+        out = {}
+        for rows in await asyncio.gather(*(chunk(ids[n : n + 100]) for n in range(0, len(ids), 100))):
+            for d in rows:
+                last = max(d.get("comments") or [], key=lambda c: c.get("created") or 0, default=None)
+                a = (last or {}).get("author") or {}
+                out[d["idReadable"]] = {
+                    "links": [
+                        {"rel": _rel(x), "issues": [_normalize(i) for i in x.get("issues") or []]}
+                        for x in d.get("links") or [] if x.get("issues")
+                    ],
+                    "last": last and {"text": (last.get("text") or "")[:600], "created": last.get("created"),
+                                      "author": a.get("fullName") or a.get("login")},
+                }  # fmt: skip
+        return out
 
     async def file(self, issue_id: str, att: str) -> Response:
         """One attachment's bytes, fetched with the token (the browser has none)."""
@@ -1000,7 +1023,7 @@ async def _ai(
         prompt, heavy = prompt + AI_CODE, True
     try:
         return await ai.ask(f"{head}{prompt}", project=code, system=AI_SYSTEM, heavy=heavy,
-                            on_text=on_text, feature="youtrack")  # fmt: skip
+                            on_text=on_text, feature="youtrack", yt=True)  # fmt: skip
     except ApiError as e:
         msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
@@ -1111,6 +1134,13 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(404, "ticket not found")
         return await svc.cached(f"issue:{i}", lambda: svc.detail(i))
 
+    @r.get("/trace")
+    async def trace(ids: str = ""):
+        keys = sorted({i.upper() for i in ids.split(",") if ID_RE.match(i)})[:300]
+        if svc.mock or not keys:
+            return {}
+        return JSONResponse(await svc.cached(f"trace:{','.join(keys)}", lambda: svc.trace(keys)))
+
     @r.get("/attachment")
     async def attachment(issue: str = Query(), id: str = Query()):
         i = _issue_id(issue)
@@ -1203,13 +1233,17 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         return _normalize(await svc.yt(f"/api/issues/{i}", fields=FIELDS))
 
     @r.get("/mentions")
-    async def mentions(request: Request, id: str = Query()):
-        """Telegram messages (tracked groups) that mention this ticket."""
+    async def mentions(request: Request, id: str = Query()) -> list[Mention]:
+        """Telegram messages (tracked groups) that mention this ticket. `message_id` / `outgoing` /
+        `reply_to_id`: where to answer when the ticket is done (your own mention: the tag it replied to)."""
         s = request.app.state
         rows = await s.db.read(s.store.find_mentions, _issue_id(id))
         return [
-            {"chat_id": m["chat_id"], "chat": m["title"], "from": m["sender_name"],
-             "text": m["text"][:400], "date": m["date"] * 1000}
+            Mention.model_validate({
+                "chat_id": m["chat_id"], "chat": m["title"], "from": m["sender_name"],
+                "text": m["text"][:400], "date": m["date"] * 1000, "message_id": str(m["message_id"]),
+                "outgoing": bool(m["outgoing"]),
+                "reply_to_id": None if m["reply_to_id"] is None else str(m["reply_to_id"])})
             for m in rows
         ]  # fmt: skip
 
@@ -1218,7 +1252,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         if svc.mock:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-        return f"{AI_TICKET[body.kind]}\n<ticket>\n{_ticket_json(d)}\n</ticket>", False
+        ticket = _ticket_json(d)
+        links = ""  # KB / Telegram links in it, read for the AI (no web); a rewrite only keeps the links
+        if body.kind != "rewrite":
+            links = await svc.cached(f"links:{i}", lambda: link_block(request.app.state, ticket, None))
+        return f"{AI_TICKET[body.kind]}\n<ticket>\n{ticket}\n</ticket>{links}", False
 
     async def p_data(body: AiData, request: Request) -> tuple[str, bool]:
         data = data_json(body.data)
@@ -1238,13 +1276,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
         gate = asyncio.Semaphore(WAVE * 2)
         st = request.app.state
-        # Telegram text goes to the AI only without per-message consent (AI_REQUIRE_CONSENT=0).
-        with_tg = not st.ai.settings.ai_require_consent
 
         async def one(i: str) -> str:
             async with gate:
                 d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-            tg = await st.db.read(st.store.find_mentions, i, 5) if with_tg else []
+            tg = await st.db.read(st.store.find_mentions, i, 5)
             return _ticket_json(d, 1200, 6, 500, telegram=[
                 {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                 for m in tg
@@ -1260,7 +1296,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         head = heads.get(body.kind, AI_TICKETS)
         if body.kind == "standup":
             since = body.since // 1000
-            sent = await st.db.read(st.store.my_replies, since) if with_tg else []
+            sent = await st.db.read(st.store.my_replies, since)
             replies = data_json(
                 [{"group": m["title"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                  for m in sent])  # fmt: skip
@@ -1278,17 +1314,6 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             )
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
-
-    async def p_promises(body: AiPromises, request: Request) -> tuple[str, bool]:
-        """What the user promised in Telegram ("mai em gửi") and has not done yet."""
-        st = request.app.state
-        if st.ai.settings.ai_require_consent:  # their own messages, still Telegram data
-            raise YtError(403, "Cần AI_REQUIRE_CONSENT=0: mục này đọc tin bạn gửi trên Telegram")
-        sent = await st.db.read(st.store.my_replies, max(0, body.since // 1000), 80)
-        replies = data_json(
-            [{"group": m["title"], "date": _day(m["date"] * 1000), "text": m["text"][:400]}
-             for m in sent])  # fmt: skip
-        return f"{AI_PROMISES}\n<telegram_replies>{replies}</telegram_replies>", False
 
     def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None):
         async def work(on_text):
@@ -1314,17 +1339,9 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         code = await _code_dir(request, body.folder)
         return answer(request, *await p_tickets(body, request), draft=False, code=code)
 
-    @r.post("/ai/promises")
-    async def ai_promises(body: AiPromises, request: Request):
-        prompt = await p_promises(body, request)  # checks consent first
-        st = request.app.state
-        if not await st.db.read(st.store.my_replies, max(0, body.since // 1000), 1):
-            return {"text": "Chưa có tin nào bạn gửi trong các nhóm đang theo dõi."}
-        return answer(request, *prompt, draft=False)
-
     FOLLOW = {
         "/ai/ticket": (AiTicket, p_ticket), "/ai/data": (AiData, p_data),
-        "/ai/tickets": (AiTickets, p_tickets), "/ai/promises": (AiPromises, p_promises),
+        "/ai/tickets": (AiTickets, p_tickets),
     }  # fmt: skip
 
     @r.post("/ai/followup")

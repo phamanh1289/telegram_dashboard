@@ -4,7 +4,7 @@ import { History, LayoutDashboard, ListChecks, MessageSquareText, Search, Trash2
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
-import { getPref, put } from "@/lib/prefs";
+import { getPref, put, readJson } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { type AiReq, type AiTurn, DAY, when } from "@/lib/yt";
 import { fold } from "@/lib/inbox";
@@ -22,7 +22,8 @@ const MAX = 40; // sessions kept; the oldest drop off
 const TURNS = 12; // the follow-up API reads the last 12 turns, older ones are never sent again
 
 function readIdx(): Meta[] {
-  try { const v = JSON.parse(getPref(IDX) ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+  const v = readJson(IDX, []);
+  return Array.isArray(v) ? v : [];
 }
 
 export const newSessionId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -85,8 +86,8 @@ export function HistoryPage() {
       Chưa có phiên AI nào. Mỗi lần hỏi AI trong tab YouTrack (ticket, dashboard, thành viên) sẽ được lưu ở đây, trên trình duyệt này, để đọc lại và hỏi tiếp.</p>
   );
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[19rem_minmax(0,1fr)]">
-      <nav aria-label="Phiên AI" className="grid content-start gap-2 overflow-y-auto rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-80 lg:sticky lg:top-28 lg:max-h-[calc(100dvh-8rem)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:h-full lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+      <nav aria-label="Phiên AI" className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-80">
         <label className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${idx.length} phiên…`} aria-label="Tìm phiên AI"
@@ -94,7 +95,7 @@ export function HistoryPage() {
         </label>
         <Segmented id="yt-history" label="Loại phiên AI" value={tab} onChange={(t) => { setTab(t); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"]] as const).map(([v, l]) => (
           { value: v, label: <>{l} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
-        <ul className="grid gap-0.5 border-t border-rule pt-1">
+        <ul className="grid min-h-0 flex-1 content-start gap-0.5 overflow-y-auto border-t border-rule pt-1">
           {shown.map((m, i) => {
             const on = m.id === cur?.id, day = dayOf(m.at), Icon = m.ids.length ? ListChecks : LayoutDashboard;
             return (
@@ -117,13 +118,13 @@ export function HistoryPage() {
           })}
           {!shown.length && <li className="px-2 py-4 text-center text-xs text-ink-3">{q ? "Không có phiên nào khớp." : "Chưa có phiên nào loại này."}</li>}
         </ul>
-        <Button size="xs" variant={sure ? "destructive" : "ghost"} className="justify-self-start text-ink-3" disabled={!inTab.length} onBlur={() => setSure(false)}
+        <Button size="xs" variant={sure ? "destructive" : "ghost"} className="self-start text-ink-3" disabled={!inTab.length} onBlur={() => setSure(false)}
           onClick={() => { if (!sure) { setSure(true); return; } remove(inTab.map((m) => m.id)); setSure(false); }}>
           <Trash2 /> {sure ? `Bấm lần nữa để xóa ${inTab.length} phiên` : tab === "all" ? "Xóa tất cả" : `Xóa ${inTab.length} phiên này`}</Button>
       </nav>
 
       {cur && (
-        <section className="flex h-[75dvh] min-h-0 flex-col gap-3 lg:sticky lg:top-28 lg:h-[calc(100dvh-8rem)]">
+        <section className="flex h-[75dvh] min-h-0 flex-col gap-3 lg:h-auto">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h2 className="mr-auto min-w-0 truncate text-lg font-semibold">{cur.title.replace(/^AI · /, "")}</h2>
             <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{cur.n} lượt</span><span>{when(cur.at)}</span></span>

@@ -233,7 +233,7 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
 export function PromptsDialog({ open, onOpenChange, onPick, role, many }: { open: boolean; onOpenChange: (open: boolean) => void; onPick: (name: string) => void; role: YtRole; many: boolean }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(88dvh,42rem)] flex-col sm:max-w-xl">
+      <DialogContent className="ai-in flex h-[min(88dvh,42rem)] flex-col sm:max-w-xl">
         <DialogTitle>Kho prompt</DialogTitle>
         <DialogDescription className="-mt-2">Bấm một prompt để chạy với các ticket đang chọn. Ghim để hiện thành nút. Dùng chung cho cả team.</DialogDescription>
         <div className="-mx-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-1">

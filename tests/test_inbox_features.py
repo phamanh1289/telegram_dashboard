@@ -61,6 +61,7 @@ def test_rules_clear_existing_and_new_tags(client):
         assert client.post("/api/rules", json={"kind": "keyword", "value": blank}, headers=H).status_code == 422
     r = client.post("/api/rules", json={"kind": "sender", "value": "5", "label": "Alice"}, headers=H).json()
     assert r["handled"] == 1 and r["rule"] | {"id": 0} == {"id": 0, "kind": "sender", "value": "5", "label": "Alice"}
+    assert r["cleared"] == [{"chat_id": A, "message_id": "1"}]  # what an Undo reopens
     assert client.get("/api/pending").json() == []
     assert store.store_mentions([("Alpha", "supergroup", msg(A, 5, "@me again", sender="5"), False)]) == []
     assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword", "sender"]
@@ -87,9 +88,6 @@ def test_one_message_kept_else_live(client):
     bridge = client.app.state.bridge
     store.set_tracking(A, True, "Alpha", "supergroup")
     store.apply_message(msg(A, 10, "kept tag"))
-    r = client.get(f"/api/chats/{A}/messages/10")  # a ref for the AI: consent mode keeps it out
-    assert r.status_code == 403 and r.json()["error"]["code"] == "ai_scope_not_allowed"
-    client.put("/api/settings/consent", json={"ai_require_consent": False}, headers=H)
     assert client.get(f"/api/chats/{A}/messages/10").json()["text"] == "kept tag"
     bridge.transport.history[A] = [msg(A, 11, "BE confirm")]
     assert client.get(f"/api/chats/{A}/messages/11").json()["text"] == "BE confirm"
@@ -100,7 +98,7 @@ def test_one_message_kept_else_live(client):
 async def test_draft_includes_context(env, tmp_path):
     env.store.set_tracking(A, True, "Alpha", "supergroup")
     env.store.apply_message(msg(A, 1, "@me what about this?", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="", ai_require_consent=False)
+    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="")
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], nearby=nearby)
     assert "login page crashes" in r.text and "<context>" in r.text
@@ -109,6 +107,29 @@ async def test_draft_includes_context(env, tmp_path):
 def test_youtrack_not_configured(client):
     r = client.post("/api/youtrack/issues", json={"summary": "x"}, headers=H)
     assert r.status_code == 503 and r.json()["error"]["code"] == "youtrack_not_configured"
+
+
+def test_youtrack_search_by_id_or_words(client, monkeypatch):
+    from telegram_dashboard import app as app_mod
+
+    async def whoami(url, token):
+        return {"login": "me", "name": "Me"}
+
+    monkeypatch.setattr(app_mod, "whoami", whoami)
+    client.put("/api/youtrack/auth", json={"url": "https://yt.example/", "token": "perm-good"}, headers=H)
+    seen = []
+
+    async def yt(path, **kw):
+        seen.append(kw["query"])
+        return [{"idReadable": "VA-7", "summary": "Ký HĐMG"}]
+
+    monkeypatch.setattr(client.app.state.yt, "yt", yt)
+    search = lambda q: client.get("/api/youtrack/search", params={"q": q, "project": "VA"}, headers=H).json()  # noqa: E731
+    hit = {"id": "VA-7", "url": "https://yt.example/issue/VA-7", "summary": "Ký HĐMG", "warning": ""}
+    assert search(" va-7 ") == [hit]
+    search("ký hợp đồng {x} #Resolved")  # an ID finds any state; words only open ones, no YQL syntax
+    assert seen == ["issue ID: VA-7", "project: VA #Unresolved ký hợp đồng Resolved"]
+    assert search("  ") == [] and len(seen) == 2
 
 
 def test_youtrack_auth_checks_then_saves(client, settings, monkeypatch):
@@ -332,7 +353,7 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
     fake.write_text("import sys\nsys.stdin.read()\n")
     (tmp_path / "web" / "out").mkdir(parents=True)
     (tmp_path / "web" / "out" / "index.html").write_text("x")
-    cfg = Settings(root=tmp_path, ai_require_consent=False, ai_agent_command="cat", ai_agent_project_command="pwd",
+    cfg = Settings(root=tmp_path, ai_agent_command="cat", ai_agent_project_command="pwd",
                    ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")  # fmt: skip
     proj = tmp_path / "proj"
     proj.mkdir()

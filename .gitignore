@@ -1,4 +1,5 @@
 data/
+agent-links/
 work/
 .env
 .env.*

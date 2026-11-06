@@ -1,21 +1,22 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Select } from "@base-ui/react/select";
-import { ChartColumn, Check, ChevronDown, Copy, ExternalLink, Gauge, History, UserRound } from "lucide-react";
-import { useState } from "react";
+import { ChartColumn, Copy, ExternalLink, Gauge, History, Play, UserRound } from "lucide-react";
+import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dropdown } from "@/components/ui/dropdown";
+import { Dialog, DialogContent, DialogDescription, DialogTitle, DIALOG_SHEET } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
-import { Pill } from "@/components/ui/segmented";
+import { Pill, Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type AiCatalogEntry, api, errorText } from "@/lib/api";
-import { copyText, dayLabel, timeLabel, useNow } from "@/lib/inbox";
+import { copyText, useNow } from "@/lib/inbox";
+import { dayLabel, timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
-import { type Effort, EFFORT_LABELS, meterTone, planName, planTier, type Provider, PROVIDERS, resetIn, sectionHead, useAccounts, useAiPrefs, useClaudeAccount, useRecheck } from "@/components/ai/prefs";
-import { HistoryTab, secs, UsageTab } from "@/components/ai/usage";
+import { card, type Effort, EFFORT_LABELS, meterTone, planName, planTier, type Provider, PROVIDERS, resetIn, sectionHead, useAccounts, useAiPrefs, useClaudeAccount, useRecheck } from "@/components/ai/prefs";
+import { HistoryTab, Quota, secs, UsageTab } from "@/components/ai/usage";
 
 // The AI CLIs (Claude, Codex, Antigravity) in one place: which one runs every AI feature, what each offers (the backend's
 // catalog), each CLI's own model/effort, every CLI's login in one shape, the top-bar pill, the account page.
@@ -24,7 +25,7 @@ import { HistoryTab, secs, UsageTab } from "@/components/ai/usage";
 export { type AccountView, type Provider, useAccounts, useAiPrefs } from "@/components/ai/prefs";
 
 /** Top-bar pill for the AI in use: its quota windows (Antigravity: the model group picked), else its name and login state; opens its account page. */
-export function AiQuota() {
+export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
   const [open, setOpen] = useState(false);
   const { provider, name, p } = useAiPrefs();
   const acc = useAccounts(5 * 60_000)[provider];
@@ -59,7 +60,7 @@ export function AiQuota() {
         )}
       </button>
       </Hint>
-      {open && <AiDialog provider={provider} open={open} onOpenChange={setOpen} />}
+      {open && <AiDialog provider={provider} scope={scope} open={open} onOpenChange={setOpen} />}
     </>
   );
 }
@@ -74,22 +75,33 @@ export function AiAccounts() {
     <>
       {PROVIDERS.map((id) => {
         const a = accounts[id];
+        const name = info(id)?.name ?? id;
+        const dot = a.checking || a.pending ? "bg-ink-3 animate-pulse" : a.installed && a.loggedIn ? "bg-ok" : "bg-signal";
         return (
-          <div key={id} className="grid gap-1">
-            <span className="text-xs font-medium text-ink-2">{info(id)?.name ?? id} CLI{id === provider && <span className="ml-2 font-normal text-ok">đang dùng</span>}</span>
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate">
-                {a.checking ? <span className="text-ink-3">Đang kiểm tra…</span>
-                  : !a.installed ? <span className="text-warn">Chưa cài</span>
-                  : a.loggedIn ? <><span className="text-ok">{a.email ?? "Đã đăng nhập"}</span>{a.plan && <span className="text-ink-3">, {a.plan}</span>}</>
-                  : a.pending ? <span className="text-ink-3">Đang chờ đăng nhập…</span>
-                  : <span className="text-warn">Chưa đăng nhập</span>}
+          <div key={id} className="grid gap-2 py-3 first:pt-1 last:pb-0">
+            <div className="flex items-center gap-3">
+              <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-lg bg-paper-2 text-sm font-semibold text-ink-2 shadow-groove">{name[0]}</span>
+              <span className="grid min-w-0 flex-1 gap-0.5">
+                <span className="flex items-center gap-2 text-sm font-medium text-ink">
+                  {name} CLI
+                  {id === provider && <span className="rounded-full bg-ok-wash px-1.5 text-[0.6875rem] leading-5 font-medium text-ok">Đang dùng</span>}
+                </span>
+                <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                  <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot)} />
+                  <span className="min-w-0 truncate">
+                    {a.checking ? <span className="text-ink-3">Đang kiểm tra…</span>
+                      : !a.installed ? <span className="text-signal-2">Chưa cài</span>
+                      : a.loggedIn ? <><span className="text-ink-2">{a.email ?? "Đã đăng nhập"}</span>{a.plan && <span className="text-ink-3"> · {a.plan}</span>}</>
+                      : a.pending ? <span className="text-ink-3">Đang chờ đăng nhập…</span>
+                      : <span className="text-signal-2">Chưa đăng nhập</span>}
+                  </span>
+                </span>
               </span>
               {!a.checking && (a.installed
-                ? <Button variant="outline" onClick={() => setOpen(id)}>{a.loggedIn ? "Chi tiết" : "Đăng nhập"}</Button>
-                : <Button variant="outline" onClick={recheck}>Đã cài, kiểm tra lại</Button>)}
+                ? <Button size="sm" variant={a.loggedIn ? "ghost" : "outline"} onClick={() => setOpen(id)}>{a.loggedIn ? "Chi tiết" : "Đăng nhập"}</Button>
+                : <Button size="sm" variant="outline" onClick={recheck}>Đã cài, kiểm tra lại</Button>)}
             </div>
-            {!a.checking && !a.installed && a.install && <InstallCmd cmd={a.install} />}
+            {!a.checking && !a.installed && a.install && <div className="pl-12"><InstallCmd cmd={a.install} /></div>}
           </div>
         );
       })}
@@ -116,7 +128,7 @@ const TABS = [["account", "Tài khoản", UserRound], ["usage", "Usage", ChartCo
 type Tab = (typeof TABS)[number][0];
 
 /** One CLI's page: its account and model/effort, its quota and run report, and the history of every run. */
-function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: boolean; onOpenChange: (open: boolean) => void }) {
+function AiDialog({ provider, scope, open, onOpenChange }: { provider: Provider; scope?: AiScope; open: boolean; onOpenChange: (open: boolean) => void }) {
   const { provider: picked, info } = useAiPrefs();
   const [tab, setTab] = useState<Tab>("account");
   const [days, setDays] = useState<number>(7); // shared by Usage and History
@@ -124,7 +136,7 @@ function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* A detail page sliding in from the right; head and foot stay put, only the body scrolls. */}
-      <DialogContent className="top-0 right-0 left-auto flex h-dvh max-h-none max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none bg-paper p-0 ease-(--ease-out) sm:max-w-2xl data-open:zoom-in-100 data-open:slide-in-from-right data-closed:zoom-out-100 data-closed:slide-out-to-right">
+      <DialogContent className={cn(DIALOG_SHEET, "ai-in")}>
         <header className="grid gap-3 border-b border-rule bg-paper-2 px-5 pt-5">
           <span className="grid gap-1 pr-8">
             <DialogTitle className="flex items-center gap-2">
@@ -154,8 +166,7 @@ function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: 
             : tab === "history" ? <HistoryTab days={days} setDays={setDays} />
             : <>
               {provider === "claude" ? <ClaudeAccountCard /> : <CliAccountCard provider={provider} />}
-              <PrefsSection provider={provider} />
-              {provider === "claude" && <ClaudeDetails />}
+              <PrefsSection provider={provider} scope={scope} />
             </>}
         </div>
       </DialogContent>
@@ -163,10 +174,10 @@ function AiDialog({ provider, open, onOpenChange }: { provider: Provider; open: 
   );
 }
 
-/** Avatar, who is signed in, then the plan badges. */
-function Identity({ name, email, children }: { name?: string | null; email?: string | null; children?: React.ReactNode }) {
+/** Avatar and who is signed in, the plan badges under it, the account actions on the right. */
+function Identity({ name, email, actions, children }: { name?: string | null; email?: string | null; actions?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3">
+    <div className="flex flex-wrap items-start gap-x-3 gap-y-3">
       <span aria-hidden className="grid size-11 shrink-0 place-items-center rounded-full bg-hl-wash text-lg font-semibold text-hl-2">
         {(name ?? email ?? "?").trim()[0]?.toUpperCase()}
       </span>
@@ -177,12 +188,39 @@ function Identity({ name, email, children }: { name?: string | null; email?: str
         </span>
         {children && <span className="flex flex-wrap items-center gap-1.5 text-xs">{children}</span>}
       </span>
+      {actions && <span className="flex shrink-0 gap-1 max-sm:basis-full max-sm:pl-14">{actions}</span>}
     </div>
   );
 }
 
-const card = "grid gap-4 rounded-lg bg-cotton p-4 shadow-stock";
-const badge = "rounded-full bg-hl-wash px-2 py-0.5 font-medium text-hl-2";
+/** The plan and organisation facts, label over value, in a compact grid. */
+function Facts({ rows }: { rows: [string, React.ReactNode][] }) {
+  const shown = rows.filter((r) => r[1] != null && r[1] !== "");
+  if (!shown.length) return null;
+  return (
+    <section aria-label="Gói và tổ chức" className="grid gap-2.5">
+      <h3 className={sectionHead}>Gói và tổ chức</h3>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs sm:grid-cols-3">
+        {shown.map(([k, v]) => (
+          <div key={k} className="grid min-w-0 gap-0.5">
+            <dt className="text-ink-3">{k}</dt>
+            <dd className="truncate font-medium text-ink">{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+// The account card: who and which plan, then the quota left, then the plan's facts, a rule between each part.
+const accountCard = cn(card, "gap-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) [&>*+*]:border-t [&>*+*]:border-rule [&>*+*]:pt-4");
+const badge = "rounded-full bg-hl-wash px-2 py-0.5 font-medium whitespace-nowrap text-hl-2";
+const status = (s: string) => (
+  <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", s === "active" ? "text-ok" : "text-ink-2")}>
+    <span aria-hidden className={cn("size-1.5 rounded-full", s === "active" ? "bg-ok" : "bg-ink-3")} />
+    {s === "active" ? "Đang hoạt động" : s}
+  </span>
+);
 
 /** `claude auth login` opens Anthropic's sign-in in the browser; the CLI keeps the token, never this page. */
 function ClaudeAccountCard() {
@@ -200,42 +238,39 @@ function ClaudeAccountCard() {
   });
   const a = acc.data;
   if (acc.isError) return <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>;
-  if (!a) return <div role="status" aria-label="Đang kiểm tra…" className="grid gap-3"><Skeleton className="h-24" /><Skeleton className="h-32" /></div>;
+  if (!a) return <div role="status" aria-label="Đang kiểm tra…" className="grid gap-3"><Skeleton className="h-48" /><Skeleton className="h-40" /></div>;
   const url = a.login_url ?? login.data?.url;
   const tier = planTier(a);
+  const loginBtn = (
+    <Button variant={a.loggedIn ? "outline" : "default"} size="sm" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
+      {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
+    </Button>
+  );
   return (
-    <div className="grid gap-6 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
-      <section aria-label="Tài khoản" className={card}>
+    <section aria-label="Tài khoản" className={accountCard}>
+      <div className="grid gap-3">
         {a.loggedIn ? (
-          <Identity name={a.name} email={a.email}>
-            <span className={badge}>{planName(a)}</span>
-            {tier && <span className="rounded-full bg-paper-3 px-2 py-0.5 font-medium text-ink">Hạn mức Max <span className="font-mono">{tier}</span></span>}
-            {a.subscription_status && (
-              <span className={cn("px-1", a.subscription_status === "active" ? "text-ok" : "text-ink-2")}>
-                {a.subscription_status === "active" ? "Đang hoạt động" : a.subscription_status}
-              </span>
-            )}
-          </Identity>
-        ) : (
-          <div className="grid gap-1">
-            <p className="font-semibold text-ink">Chưa đăng nhập</p>
-            <p className="text-xs text-ink-2">Đăng nhập để dùng Claude cho tóm tắt, soạn nháp, Digest, YouTrack và AI Agent.</p>
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-2 border-t border-rule pt-3">
-          <Button variant={a.loggedIn ? "outline" : "default"} size="sm" aria-busy={login.isPending} disabled={login.isPending || a.login_pending} onClick={() => login.mutate()}>
-            {a.login_pending ? "Đang chờ trình duyệt…" : a.loggedIn ? "Đổi tài khoản" : "Đăng nhập Claude"}
-          </Button>
-          {a.loggedIn && (
+          <Identity name={a.name} email={a.email} actions={<>
+            {loginBtn}
             <Button variant="ghost" size="sm" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending}
               onClick={() => (confirmOut ? logout.mutate() : setConfirmOut(true))} onBlur={() => setConfirmOut(false)}>
               {confirmOut ? "Bấm lần nữa để đăng xuất" : "Đăng xuất"}
             </Button>
-          )}
-        </div>
+          </>}>
+            <span className={badge}>{planName(a)}{tier && <> · <span className="font-mono">{tier}</span></>}</span>
+            {a.subscription_status && status(a.subscription_status)}
+          </Identity>
+        ) : (
+          <div className="grid justify-items-start gap-3">
+            <span className="grid gap-1">
+              <span className="font-semibold text-ink">Chưa đăng nhập</span>
+              <span className="text-xs text-ink-2">Đăng nhập để dùng Claude cho tóm tắt, soạn nháp, Digest, YouTrack và AI Agent.</span>
+            </span>
+            {loginBtn}
+          </div>
+        )}
         {a.login_pending && (
-          <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
+          <form className="grid gap-2 rounded-md bg-paper-2 p-3" onSubmit={(e) => { e.preventDefault(); paste.mutate(); }}>
             <p className="text-xs text-ink-2">
               Hoàn tất đăng nhập ở tab trình duyệt vừa mở.{url && <> Không thấy tab? <a href={url} target="_blank" rel="noreferrer" className="text-hl-2 underline decoration-hl underline-offset-[3px]">Mở trang đăng nhập</a>, rồi dán mã trang đó hiện ra vào đây.</>}
             </p>
@@ -248,8 +283,17 @@ function ClaudeAccountCard() {
         )}
         {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
         {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
-      </section>
-    </div>
+      </div>
+      {a.loggedIn && <Quota provider="claude" />}
+      {a.loggedIn && <Facts rows={[
+        ["Gói", tier ? `${planName(a)}, hạn mức Max ${tier}` : planName(a)],
+        ["Dùng thêm ngoài hạn mức", a.extra_usage == null ? null : a.extra_usage ? "Bật" : "Tắt"],
+        ["Tổ chức", a.orgName],
+        ["Loại tổ chức", a.org_type?.replace(/^claude_/, "")],
+        ["Đăng nhập qua", a.authMethod],
+        ["Tạo tài khoản", a.created_at && dayLabel(a.created_at)],
+      ]} />}
+    </section>
   );
 }
 
@@ -261,227 +305,257 @@ function CliAccountCard({ provider }: { provider: Provider }) {
   const login = useMutation({ mutationFn: () => api<{ url: string | null }>(`/ai/${provider}/login`, { method: "POST" }), onSettled: recheck });
   const logout = useMutation({ mutationFn: () => api(`/ai/${provider}/logout`, { method: "POST" }), onSettled: recheck });
   const name = info(provider)?.name ?? provider;
-  if (a.checking) return <div role="status" aria-label="Đang kiểm tra…"><Skeleton className="h-24" /></div>;
+  if (a.checking) return <div role="status" aria-label="Đang kiểm tra…"><Skeleton className="h-40" /></div>;
   return (
-    <div className="grid gap-6 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
-    <section aria-label="Tài khoản" className={card}>
-      {a.loggedIn ? (
-        <Identity email={a.email}>{a.plan && <span className={badge}>{a.plan}</span>}</Identity>
-      ) : (
-        <div className="grid gap-1">
-          <p className="font-semibold text-ink">{a.installed ? "Chưa đăng nhập" : `Chưa cài ${name} CLI`}</p>
-          <p className="text-xs text-ink-2">{a.installed ? `Đăng nhập để dùng ${name} cho tóm tắt, soạn nháp, Digest, YouTrack và AI Agent.` : "Cài bằng lệnh dưới trong Terminal, rồi kiểm tra lại."}</p>
-        </div>
-      )}
-      {!a.installed && <InstallCmd cmd={a.install} />}
-      <div className="flex flex-wrap gap-2 border-t border-rule pt-3">
-        {!a.installed ? <Button variant="outline" size="sm" onClick={recheck}>Đã cài, kiểm tra lại</Button>
-          : !a.loggedIn ? (
-            <Button size="sm" aria-busy={login.isPending} disabled={login.isPending || a.pending} onClick={() => login.mutate()}>
-              {a.pending ? "Đang chờ trình duyệt…" : `Đăng nhập ${name}`}
-            </Button>
-          ) : provider === "codex" && (
+    <section aria-label="Tài khoản" className={accountCard}>
+      <div className="grid gap-3">
+        {a.loggedIn ? (
+          <Identity email={a.email} actions={provider === "codex" && (
             <Button variant="ghost" size="sm" className="hover:bg-error-wash hover:text-error" disabled={logout.isPending} onClick={() => logout.mutate()}>Đăng xuất</Button>
-          )}
-      </div>
-      {a.pending && a.url && (
-        <a href={a.url} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-hl-2 underline decoration-hl underline-offset-[3px]">
-          Trình duyệt không tự mở? Mở trang đăng nhập <ExternalLink className="size-3" aria-hidden />
-        </a>
-      )}
-      {provider === "antigravity" && a.installed && !a.loggedIn && (
-        <p className="text-xs text-ink-3">Đăng nhập mở Terminal chạy <code>agy</code>; đăng nhập Google trong trình duyệt, xong thì đóng Terminal.</p>
-      )}
-      {provider === "antigravity" && a.loggedIn && <p className="text-xs text-ink-3">Đổi tài khoản: gõ <code>/logout</code> trong <code>agy</code> rồi đăng nhập lại.</p>}
-      {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh {provider}. Thử lại sau.</p>}
-    </section>
-    </div>
-  );
-}
-
-/** The organisation side of the Claude account, from Anthropic's account API. */
-function ClaudeDetails() {
-  const { data: a } = useClaudeAccount();
-  const rows = (a?.loggedIn ? [
-    ["Tổ chức", a.orgName],
-    ["Loại tổ chức", a.org_type?.replace(/^claude_/, "")],
-    ["Dùng thêm ngoài hạn mức", a.extra_usage == null ? null : a.extra_usage ? "Bật" : "Tắt"],
-    ["Đăng nhập qua", a.authMethod],
-    ["Tạo tài khoản", a.created_at && dayLabel(a.created_at)],
-  ] : []).filter((r): r is [string, string] => !!r[1]);
-  if (!rows.length) return null;
-  return (
-    <section className="grid gap-2.5">
-      <h3 className={sectionHead}>Chi tiết tài khoản</h3>
-      <dl className="grid divide-y divide-rule rounded-lg bg-cotton px-4 text-sm shadow-stock">
-        {rows.map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-4 py-2.5">
-            <dt className="shrink-0 text-ink-2">{k}</dt>
-            <dd className="min-w-0 truncate text-right text-ink">{v}</dd>
+          )}>
+            {a.plan && <span className={badge}>{a.plan}</span>}
+          </Identity>
+        ) : (
+          <div className="grid justify-items-start gap-3">
+            <span className="grid gap-1">
+              <span className="font-semibold text-ink">{a.installed ? "Chưa đăng nhập" : `Chưa cài ${name} CLI`}</span>
+              <span className="text-xs text-ink-2">{a.installed ? `Đăng nhập để dùng ${name} cho tóm tắt, soạn nháp, Digest, YouTrack và AI Agent.` : "Cài bằng lệnh dưới trong Terminal, rồi kiểm tra lại."}</span>
+            </span>
+            {!a.installed && <InstallCmd cmd={a.install} />}
+            {!a.installed ? <Button variant="outline" size="sm" onClick={recheck}>Đã cài, kiểm tra lại</Button> : (
+              <Button size="sm" aria-busy={login.isPending} disabled={login.isPending || a.pending} onClick={() => login.mutate()}>
+                {a.pending ? "Đang chờ trình duyệt…" : `Đăng nhập ${name}`}
+              </Button>
+            )}
           </div>
-        ))}
-      </dl>
+        )}
+        {a.pending && a.url && (
+          <a href={a.url} target="_blank" rel="noreferrer" className="inline-flex w-fit items-center gap-1 text-xs text-hl-2 underline decoration-hl underline-offset-[3px]">
+            Trình duyệt không tự mở? Mở trang đăng nhập <ExternalLink className="size-3" aria-hidden />
+          </a>
+        )}
+        {provider === "antigravity" && a.installed && !a.loggedIn && (
+          <p className="text-xs text-ink-3">Đăng nhập mở Terminal chạy <code>agy</code>; đăng nhập Google trong trình duyệt, xong thì đóng Terminal.</p>
+        )}
+        {provider === "antigravity" && a.loggedIn && <p className="text-xs text-ink-3">Đổi tài khoản: gõ <code>/logout</code> trong <code>agy</code> rồi đăng nhập lại.</p>}
+        {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh {provider}. Thử lại sau.</p>}
+      </div>
+      {a.loggedIn && <Quota provider={provider} />}
     </section>
   );
 }
 
 const THRESHOLDS = [70, 80, 90, 95].map((n) => ({ value: String(n), label: `${n}%` }));
 
-/** One CLI's model dropdown and effort slider, both from its catalog entry (no efforts: the CLI takes none, no slider). */
-export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass }: {
+/** Which saved picks a run uses: model key, effort key, name, why. */
+export type RunKind = "chat" | "brief" | "task" | "yt" | "yt_task";
+const KINDS = {
+  chat: ["model", "effort", "Tóm tắt, soạn nháp", "Chạy thường xuyên: nên chọn model nhanh."],
+  brief: ["brief_model", "brief_effort", "Briefing và Digest", "Đọc nhiều tin một lần. “Như tóm tắt”: dùng lựa chọn dòng trên."],
+  task: ["task_model", "task_effort", "Task và AI Agent", "Đọc code, lập kế hoạch: cần model mạnh."],
+  yt: ["yt_model", "yt_effort", "Hỏi AI, báo cáo, soạn ticket", "AI YouTrack hằng ngày: hỏi, báo cáo, lọc và soạn ticket."],
+  yt_task: ["yt_task_model", "yt_task_effort", "Đọc code, nhiều ticket", "AI YouTrack đọc code dự án hoặc trên 10 ticket một lần: cần model mạnh."],
+} as const;
+/** What "" means for a kind when it is not the CLI default: [label, hint] (Briefing and YouTrack fall back to a Telegram row). */
+const INHERITS: Partial<Record<RunKind, readonly [string, string]>> = {
+  brief: ["Như tóm tắt", "Dùng lựa chọn của tóm tắt, soạn nháp"],
+  yt: ["Như Telegram", "Dùng lựa chọn của tóm tắt, soạn nháp"],
+  yt_task: ["Như Telegram", "Dùng lựa chọn của Task và AI Agent"],
+};
+/** The module whose runs a picks list sets: Telegram's or YouTrack's AI features. */
+export type AiScope = "telegram" | "youtrack";
+const SCOPES: Record<AiScope, RunKind[]> = { telegram: ["chat", "brief", "task"], youtrack: ["yt", "yt_task"] };
+
+/** One CLI's model dropdown and effort slider, both from its catalog entry (no efforts: the CLI takes none, no slider).
+ *  `inherit`: what "" means here when it is not the CLI default (Briefing: the "chat" picks). `bare`: no "Effort" caption (a table with a header). */
+export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass, inherit, bare, variant = "full" }: {
   c: AiCatalogEntry; label: string; model: string; effort: Effort;
-  onModel: (v: string) => void; onEffort: (v: Effort) => void; modelClass?: string; effortClass?: string;
+  onModel: (v: string) => void; onEffort: (v: Effort) => void; modelClass?: string; effortClass?: string; inherit?: readonly [string, string]; bare?: boolean;
+  variant?: EffortVariant;
 }) {
   // A saved id the CLI no longer lists still shows, so the dropdown never looks empty.
-  const models = c.models.some((o) => o.value === model) ? c.models : [...c.models, { value: model, label: model, hint: "Không còn trong danh sách của CLI" }];
+  let models = c.models.some((o) => o.value === model) ? c.models : [...c.models, { value: model, label: model, hint: "Không còn trong danh sách của CLI" }];
+  if (inherit) models = models.map((o) => (o.value === "" ? { ...o, label: inherit[0], hint: inherit[1] } : o));
   return (
     <>
       <span className={modelClass}><Dropdown label={`Model ${c.name} cho ${label}`} value={model} onChange={onModel} options={models} /></span>
-      {c.efforts.length > 0 && <EffortSlider label={`Effort ${c.name} cho ${label}`} steps={c.efforts} value={effort} onChange={onEffort} className={effortClass} />}
+      {c.efforts.length > 0 && <EffortSlider label={`Effort ${c.name} cho ${label}`} steps={c.efforts} value={effort} onChange={onEffort} className={effortClass} inherit={inherit?.[0]} bare={bare} variant={variant} />}
     </>
   );
 }
 
-/** Model + effort of the AI in use, inline (reply panel, AI Agent); the same saved picks as its AI page. */
-export function ModelEffortPicker({ task = false, compact = false, className }: { task?: boolean; compact?: boolean; className?: string }) {
+/** Model + effort of the AI in use, inline (reply panel, AI Agent, Briefing); the same saved picks as its AI page.
+ *  Short (the effort's name only) by default, for prompt boxes; `variant="full"` adds the slider (settings). */
+export function ModelEffortPicker({ kind = "chat", compact = false, className, variant = "short" }: {
+  kind?: RunKind; compact?: boolean; className?: string; variant?: EffortVariant;
+}) {
   const { p, isError, save, provider, info, picks, setPicks } = useAiPrefs();
   const c = info(provider);
   if (!p || !c) return isError ? <span role="alert" className={cn("text-xs text-error", className)}>Không đọc được model/effort</span> : null;
-  const [m, e, what] = task ? (["task_model", "task_effort", "Task và AI Agent"] as const) : (["model", "effort", "tóm tắt và soạn nháp"] as const);
+  const [m, e, what] = KINDS[kind];
   const k = picks();
   return (
     <span role="group" aria-label={`${c.name}: model và effort cho ${what}`} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
       {!compact && <span className="text-xs font-medium text-ink-3">{c.name}</span>}
       <Picks c={c} label={what} model={k[m]} effort={k[e]} onModel={(v) => setPicks(provider, { [m]: v })} onEffort={(v) => setPicks(provider, { [e]: v })}
-        modelClass={compact ? "w-24" : "w-32"} effortClass={compact ? "w-20" : "w-28"} />
+        modelClass={compact ? "w-28" : "w-32"} effortClass={compact ? "w-20" : "w-28"} inherit={INHERITS[kind]} variant={variant} />
       {save.isError && <span role="alert" className="text-xs text-error">Không lưu được, thử lại</span>}
     </span>
   );
 }
 
-/** One CLI's model + effort for each kind of run (kept per CLI), and Claude's step-down near the quota. */
-function PrefsSection({ provider }: { provider: Provider }) {
+// Each run kind on one row: what it is on the left, model and effort on the right in aligned columns.
+const PICK_ROW = "grid items-center gap-x-4 gap-y-2 sm:grid-cols-[minmax(0,1fr)_25rem]";
+const PICK_COLS = "grid grid-cols-[8.25rem_minmax(0,1fr)] items-center gap-2";
+
+/** One CLI's model + effort for each kind of run of one module (kept per CLI), and Claude's step-down near the quota.
+ *  `scope`: which module's runs it opens on; a Telegram / YouTrack switch moves between them unless `fixed`.
+ *  `plain`: rows only, for a host card (Settings). */
+export function PrefsSection({ provider, plain = false, scope: initial = "telegram", fixed = false }: {
+  provider: Provider; plain?: boolean; scope?: AiScope; fixed?: boolean;
+}) {
   const { p, save, set, provider: picked, info, picks, setPicks } = useAiPrefs();
+  const [scope, setScope] = useState<AiScope>(initial);
   const c = info(provider);
   if (!p || !c) return null;
   const k = picks(provider);
-  const groups = [
-    ["Tóm tắt, soạn nháp, Digest", "Chạy thường xuyên, nên chọn model nhanh.", "model", "effort"],
-    ["Task và AI Agent", "Đọc code, lập kế hoạch, và AI YouTrack đọc trên 10 ticket: cần model mạnh hơn.", "task_model", "task_effort"],
-  ] as const;
+  const pad = plain ? "py-3 first:pt-1" : "px-4 py-3";
+  const tabs = !fixed && (
+    <Segmented id={`ai-scope-${plain ? "plain" : "page"}`} label="Model và effort cho module" value={scope} onChange={setScope}
+      items={[{ value: "telegram", label: "Telegram", title: "Tóm tắt, soạn nháp, Briefing, Digest, Task, AI Agent" },
+        { value: "youtrack", label: "YouTrack", title: "AI YouTrack: hỏi, báo cáo, soạn ticket, đọc code" }]} />
+  );
   return (
     <section className="grid gap-2.5">
-      <h3 className={sectionHead}>Model và effort</h3>
-      <ul className="grid divide-y divide-rule rounded-lg bg-cotton shadow-stock">
-        {groups.map(([title, hint, m, e]) => (
-          <li key={m} className="grid gap-3 p-4">
-            <span className="grid gap-0.5">
-              <span className="text-sm font-medium text-ink">{title}</span>
-              <span className="text-xs text-ink-2">{hint}</span>
+      {!plain ? (
+        <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <span className="flex items-center gap-3">
+            <h3 className={sectionHead}>Model và effort</h3>
+            {tabs}
+          </span>
+          <span className="text-xs text-ink-3">Áp dụng từ lần chạy kế tiếp</span>
+        </span>
+      ) : tabs && <span className="flex">{tabs}</span>}
+      <ul key={scope} className={cn("grid divide-y divide-rule animate-in fade-in-0 duration-(--dur-short)", !plain && "rounded-lg bg-cotton shadow-stock")}>
+        <li aria-hidden className={cn(PICK_ROW, "hidden py-2 text-[0.6875rem] text-ink-3 sm:grid", !plain && "px-4")}>
+          <span>Dùng cho</span>
+          <span className={PICK_COLS}><span>Model</span>{c.efforts.length > 0 && <span>Effort</span>}</span>
+        </li>
+        {SCOPES[scope].map((kind) => { const [m, e, title, hint] = KINDS[kind]; return (
+          <li key={m} className={cn(PICK_ROW, pad)}>
+            <span className="grid min-w-0 gap-0.5">
+              <span className="flex flex-wrap items-center gap-x-2 text-sm font-medium text-ink">
+                {title}
+                {provider === picked && <TestRun kind={kind} />}
+              </span>
+              <span className="text-xs text-ink-3">{hint}</span>
             </span>
-            <span className="grid items-center gap-2 sm:grid-cols-2">
-              <Picks c={c} label={title} model={k[m]} effort={k[e]} onModel={(v) => setPicks(provider, { [m]: v })} onEffort={(v) => setPicks(provider, { [e]: v })} effortClass="flex-1" />
+            <span className={PICK_COLS}>
+              <Picks c={c} label={title} model={k[m]} effort={k[e]} onModel={(v) => setPicks(provider, { [m]: v })} onEffort={(v) => setPicks(provider, { [e]: v })}
+                bare inherit={INHERITS[kind]} />
             </span>
-            {provider === picked && <TestRun task={m === "task_model"} />}
           </li>
-        ))}
-        {c.quota && <li className="grid gap-3 p-4">
-          <label className="flex items-start gap-3">
+        ); })}
+        {c.quota && <li className={cn(PICK_ROW, pad)}>
+          <label className={cn("flex items-start gap-3", !p.fallback && "sm:col-span-2")}>
             <Checkbox className="mt-0.5" checked={p.fallback} onCheckedChange={(v) => set({ fallback: !!v })} />
             <span className="grid gap-0.5">
               <span className="text-sm font-medium text-ink">Tự hạ model khi gần hết hạn mức</span>
-              <span className="text-xs text-ink-2">Khi một cửa sổ hạn mức chạm ngưỡng: tóm tắt, soạn nháp, Digest chạy Haiku; Task và AI Agent chạy Sonnet.</span>
+              <span className="text-xs text-ink-3">Chạm ngưỡng (mọi module): việc nhẹ chạy Haiku; Task, AI Agent, AI YouTrack đọc code chạy Sonnet.</span>
             </span>
           </label>
           {p.fallback && (
-            <span className="flex items-center gap-2 pl-7 text-xs text-ink-3">
-              Ngưỡng
-              <span className="w-24">
-                <Dropdown label="Ngưỡng tự hạ model" value={String(p.fallback_at)} onChange={(v) => set({ fallback_at: Number(v) })} options={THRESHOLDS} />
-              </span>
+            <span className={cn(PICK_COLS, "text-xs text-ink-3 animate-in fade-in-0 duration-(--dur-short)")}>
+              <Dropdown label="Ngưỡng tự hạ model" value={String(p.fallback_at)} onChange={(v) => set({ fallback_at: Number(v) })} options={THRESHOLDS} />
+              <span>ngưỡng hạn mức</span>
             </span>
           )}
         </li>}
       </ul>
-      <p className="text-xs text-ink-2">
-        {c.efforts.length ? "Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn." : `${c.name} CLI không có tùy chọn effort.`} Mỗi AI giữ lựa chọn riêng; áp dụng từ lần chạy kế tiếp.
+      <p className="text-xs text-ink-3">
+        {c.efforts.length ? "Model mạnh hơn, effort cao hơn: chậm hơn và tốn hạn mức hơn." : `${c.name} CLI không có tùy chọn effort.`} Mỗi AI giữ lựa chọn riêng.
       </p>
       {save.isError && <p role="alert" className="text-xs text-error">Không lưu được lựa chọn. Thử lại.</p>}
     </section>
   );
 }
 
-/** Stepped slider in the accent colour over the CLI's own steps: a native range for input and a11y, drawn by `.effort` (globals.css). */
-function EffortSlider({ label, steps, value, onChange, className }: {
-  label: string; steps: Effort[]; value: Effort; onChange: (v: Effort) => void; className?: string;
+const THUMB = 20; // px, the drawn thumb (.effort --t)
+
+/** How an effort pick shows: "full" = slider + the level's name (settings, the AI page); "short" = the name only, a click
+ *  lists the levels (inside prompt boxes, where room is tight). */
+export type EffortVariant = "full" | "short";
+
+/** Stepped slider in the accent: drag it freely, it glides to the nearest step on release (only then saved); arrows step it.
+ *  Drawn by `.effort` (globals.css); a native range underneath keeps the keyboard and a11y. `short`: the level chip alone. */
+function EffortSlider({ label, steps, value, onChange, className, inherit, bare, variant = "full" }: {
+  label: string; steps: Effort[]; value: Effort; onChange: (v: Effort) => void; className?: string; inherit?: string; bare?: boolean;
+  variant?: EffortVariant;
 }) {
+  const input = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState<number | null>(null); // free position (0…last) while the pointer holds it
   const i = Math.max(0, steps.indexOf(value)); // a step this CLI doesn't take reads as its default
   const last = Math.max(1, steps.length - 1);
+  const pos = drag ?? i;
+  const near = Math.round(pos);
+  const name = (v: Effort) => (v === "" && inherit ? inherit : EFFORT_LABELS[v]);
+  const at = (e: React.PointerEvent<HTMLElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (e.clientX - r.left - THUMB / 2) / (r.width - THUMB))) * last;
+  };
+  const drop = () => {
+    if (drag == null) return;
+    setDrag(null);
+    if (steps[Math.round(drag)] !== value) onChange(steps[Math.round(drag)]);
+  };
+  // The level's name, deepening with it like the fill; a click lists every level to pick one without sliding.
+  const chip = (
+    <Dropdown label={`${label}: chọn mức`} value={steps[near]} onChange={(v) => onChange(v as Effort)}
+      options={steps.map((v) => ({ value: v, label: name(v) }))}
+      trigger={cn("flex h-7 shrink-0 cursor-pointer items-center justify-center gap-0.5 rounded-full pr-1.5 pl-2 text-xs font-medium whitespace-nowrap transition-[background-color,box-shadow] duration-(--dur-short) hover:shadow-groove data-popup-open:shadow-groove",
+        variant === "short" ? "min-w-[4.5rem]" : "w-[6.5rem]", steps[near] !== "" ? "text-hl-2" : "bg-paper-3 text-ink-2")}
+      style={steps[near] !== "" ? { background: `color-mix(in oklch, var(--color-hl) ${Math.round((near / last) * 30)}%, var(--color-hl-wash))` } : undefined} />
+  );
+  if (variant === "short") return chip;
   return (
-    <label className="flex min-w-0 items-center gap-2.5 text-xs text-ink-3">
-      Effort
-      <span className={cn("effort", className)} style={{ "--pct": i / last } as React.CSSProperties}>
-        {steps.map((v, k) => <span key={v} aria-hidden className="effort-tick" data-on={k <= i || undefined} style={{ "--k": k / last } as React.CSSProperties} />)}
+    <span className="flex min-w-0 items-center gap-2.5 text-xs text-ink-3">
+      {!bare && <span aria-hidden>Effort</span>}
+      <span className={cn("effort", className)} data-drag={drag != null || undefined} style={{ "--pct": pos / last } as React.CSSProperties}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          input.current?.focus({ preventScroll: true });
+          setDrag(at(e));
+        }}
+        onPointerMove={(e) => drag != null && setDrag(at(e))} onPointerUp={drop} onPointerCancel={() => setDrag(null)}>
+        {/* Dots on the inner steps only: the track's ends already mark the first and last. */}
+        {steps.map((v, k) => k > 0 && k < last && <span key={v} aria-hidden className="effort-tick" data-on={k <= pos || undefined} style={{ "--k": k / last } as React.CSSProperties} />)}
         <span aria-hidden className="effort-thumb" />
-        <input type="range" min={0} max={steps.length - 1} step={1} value={i} aria-label={label} aria-valuetext={EFFORT_LABELS[steps[i]]}
+        <input ref={input} type="range" min={0} max={steps.length - 1} step={1} value={i} aria-label={label} aria-valuetext={name(steps[i])}
           onChange={(ev) => onChange(steps[Number(ev.target.value)])} />
       </span>
-      <span className="w-16 shrink-0 font-medium text-ink">{EFFORT_LABELS[steps[i]]}</span>
-    </label>
-  );
-}
-
-const DEFAULT = "\u0000default"; // Select reads "" as nothing chosen; "" (the CLI default) is a real choice here
-
-/** Compact select: the popup scales in from the trigger, the chosen item carries a check. */
-function Dropdown({ label, value, onChange, options }: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string; hint?: string }[];
-}) {
-  const enc = (v: string) => (v === "" ? DEFAULT : v);
-  const items = options.map((o) => ({ ...o, value: enc(o.value) }));
-  return (
-    <Select.Root items={items} value={enc(value)} onValueChange={(v) => v != null && onChange(v === DEFAULT ? "" : v)}>
-      <Select.Trigger aria-label={label}
-        className="group flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-2.5 text-xs font-medium text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus) data-popup-open:border-hl">
-        <Select.Value className="truncate" placeholder="Chọn" />
-        <Select.Icon><ChevronDown aria-hidden className="size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out) group-data-popup-open:rotate-180" /></Select.Icon>
-      </Select.Trigger>
-      <Select.Portal>
-        <Select.Positioner sideOffset={6} alignItemWithTrigger={false} className="z-50 outline-none">
-          <Select.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-            {items.map((o) => (
-              <Select.Item key={o.value} value={o.value}
-                className="grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2">
-                <span className="grid">
-                  <Select.ItemText className="font-medium">{o.label}</Select.ItemText>
-                  {o.hint && <span className="text-xs whitespace-nowrap text-ink-3">{o.hint}</span>}
-                </span>
-                <Select.ItemIndicator><Check aria-hidden className="size-4 text-hl" /></Select.ItemIndicator>
-              </Select.Item>
-            ))}
-          </Select.Popup>
-        </Select.Positioner>
-      </Select.Portal>
-    </Select.Root>
+      {chip}
+    </span>
   );
 }
 
 /** One tiny run on the AI in use and the group's model: does it answer, how fast. It lands in the run log too. */
-function TestRun({ task }: { task: boolean }) {
+function TestRun({ kind }: { kind: RunKind }) {
   const qc = useQueryClient();
   const t = useMutation({
-    mutationFn: () => api<{ text: string; ms: number }>("/ai/test", { method: "POST", json: { task } }),
+    mutationFn: () => api<{ text: string; ms: number }>("/ai/test", { method: "POST", json: { task: kind === "task" || kind === "yt_task", brief: kind === "brief", yt: kind.startsWith("yt") } }),
     onSettled: () => void qc.invalidateQueries({ queryKey: ["ai-runs"] }),
   });
   return (
-    <span className="flex items-center gap-2 text-xs">
-      <Button variant="outline" size="sm" aria-busy={t.isPending} disabled={t.isPending} onClick={() => t.mutate()}>{t.isPending ? "Đang thử…" : "Thử model"}</Button>
-      <span aria-live="polite">
+    <span className="flex items-center gap-1.5 text-xs font-normal">
+      <Hint side="bottom" text="Chạy một câu hỏi nhỏ bằng model này: có trả lời không, nhanh chậm thế nào">
+        <Button variant="ghost" size="xs" className="h-6 px-1.5 text-ink-3" aria-busy={t.isPending} disabled={t.isPending} onClick={() => t.mutate()}>
+          <Play aria-hidden className={cn("size-3", t.isPending && "animate-pulse")} />{t.isPending ? "Đang thử…" : "Thử"}
+        </Button>
+      </Hint>
+      <span aria-live="polite" className="animate-in fade-in-0 duration-(--dur-short)">
         {t.isError ? <span className="text-error">{errorText(t.error, {}, "Không chạy được, xem tab History.")}</span>
-          : t.data && <span className="text-ok">Trả lời sau <span className="font-mono tabular-nums">{secs(t.data.ms)}</span></span>}
+          : t.data && <span className="text-ok">✓ <span className="font-mono tabular-nums">{secs(t.data.ms)}</span></span>}
       </span>
     </span>
   );

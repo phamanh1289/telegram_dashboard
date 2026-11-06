@@ -183,17 +183,21 @@
 {
 "id": "view-briefing",
 "tab": "telegram",
-"area": "Thanh bên › Briefing",
+"area": "Thanh bên › Nhóm › Briefing",
 "title": "Briefing (tóm tắt nhanh mọi nhóm)",
 "what": "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn. Chỉ hiện khi đã cấu hình AI.",
 "how": [
 {
-"t": "Bấm \"Briefing\" ở thanh bên",
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Bấm nút tóm tắt ở góc phải trên để chạy tóm tắt các nhóm có tin mới",
-"at": "css:section[aria-label=\"Briefing\"] > div:first-child > div > button:last-child"
+"t": "Bấm một nhóm trong tab Briefing để chỉ xem việc của nhóm đó; \"Tất cả nhóm\" để xem lại tất cả",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
+},
+{
+"t": "Bấm \"Tóm tắt N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới",
+"at": "css:#briefing-run"
 }
 ],
 "keys": "briefing tom tat cac nhom tong quan tóm tắt nhanh overview"
@@ -201,11 +205,11 @@
 {
 "id": "group-list",
 "tab": "telegram",
-"area": "Thanh bên › Nhóm có tag",
+"area": "Thanh bên › Nhóm › Có tag",
 "title": "Danh sách nhóm có tag",
 "what": "Liệt kê các nhóm có tin tag bạn trong khoảng ngày đang lọc, kèm số tin chưa xử lý của từng nhóm và tổng \"chưa xử lý\".",
 "how": [
-"Xem mục \"Nhóm có tag\" ở thanh bên: mỗi nhóm kèm số tin chưa xử lý, đầu mục là tổng \"chưa xử lý\"",
+"Xem mục \"Nhóm\" ở thanh bên, tab \"Có tag\": mỗi nhóm kèm số tin chưa xử lý, tổng nằm trên tab (chưa cấu hình AI thì mục này tên \"Nhóm có tag\")",
 {
 "t": "Bấm tên một nhóm để mở danh sách tin của nhóm đó",
 "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
@@ -246,29 +250,11 @@
 "title": "Trạng thái kết nối Telegram",
 "what": "Cho biết đã kết nối Telegram chưa (Đã kết nối / Mất kết nối, đang thử lại / Cần đăng nhập…) và luồng cập nhật trực tiếp có đang chạy không.",
 "how": [
-"Xem biểu tượng wifi ở cuối thanh bên: \"Đã kết nối\" hoặc lý do chưa kết nối",
-{
-"t": "Nếu báo \"Cần đăng nhập\" hoặc \"Chưa cấu hình Telegram\", bấm \"Cài đặt Telegram\"",
-"at": "Cài đặt Telegram"
-},
+"Xem thẻ ở cuối thanh bên: robot AI cắm dây vào Telegram là đã kết nối (xung chạy dọc dây = đang cập nhật trực tiếp); dây tuột, xám là mất kết nối",
+"Nếu báo \"AI chờ bạn đăng nhập\" hoặc \"Chưa có dây Telegram\", bấm vào thẻ đó để mở Cài đặt Telegram",
 "Làm theo mục \"Tài khoản Telegram\": nhập API ID/Hash rồi đăng nhập"
 ],
-"keys": "trang thai ket noi connected wifi mat ket noi cap nhat truc tiep stream status"
-},
-{
-"id": "sidebar-tg-settings",
-"tab": "telegram",
-"area": "Thanh bên › Cài đặt Telegram",
-"title": "Lối tắt Cài đặt Telegram",
-"what": "Mở thẳng mục Telegram trong Cài đặt. Lần đầu chạy (chưa cấu hình / chưa đăng nhập) app tự chuyển tới đây.",
-"how": [
-{
-"t": "Bấm \"Cài đặt Telegram\" ở cuối thanh bên",
-"at": "Cài đặt Telegram"
-},
-"Trang Cài đặt mở thẳng ở mục Telegram"
-],
-"keys": "cai dat telegram settings dang nhap telegram cấu hình lần đầu"
+"keys": "trang thai ket noi connected robot cam day wifi mat ket noi cap nhat truc tiep stream status"
 },
 {
 "id": "global-search",
@@ -556,92 +542,139 @@
 "what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất).",
 "how": [
 {
-"t": "Bấm \"Briefing\" ở thanh bên",
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Bấm \"Tóm tắt N nhóm\" để tóm tắt lần lượt các nhóm có tin mới",
-"at": "css:section[aria-label=\"Briefing\"] > div:first-child > div > button:last-child"
+"t": "Bấm \"Tóm tắt N nhóm\" để tóm tắt lần lượt các nhóm có tin mới; dải tiến độ hiện nhóm đang chạy",
+"at": "css:#briefing-run"
+},
+"Bấm nút dừng tròn đỏ trên dải tiến độ để hủy giữa chừng",
+{
+"t": "Muốn tóm tắt một nhóm: bấm biểu tượng ✦ trên chip của nhóm đó (hàng chip dưới tiêu đề)",
+"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Tóm tắt \"]"
 },
 {
-"t": "Bấm \"Dừng\" để hủy giữa chừng",
-"at": "css:section[aria-label=\"Briefing\"] > div:first-child > div > button:last-child"
+"t": "Đổi model / effort riêng cho Briefing ở dưới ô hỏi của Trợ lý Briefing",
+"at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
 },
 {
 "t": "Bấm biểu tượng xoay \"Kiểm tra lại\" để kiểm tra tin mới",
 "at": "Kiểm tra lại"
 }
 ],
-"keys": "briefing tom tat tat ca nhom run all dung kiem tra lai tin moi"
+"keys": "briefing tom tat tat ca nhom run all dung kiem tra lai tin moi tom tat mot nhom model effort rieng"
+},
+{
+"id": "briefing-ask",
+"tab": "telegram",
+"area": "Briefing › Trợ lý Briefing",
+"title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
+"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\") là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm một thẻ gợi ý, hoặc gõ câu hỏi vào ô \"Hỏi về mọi nhóm…\" rồi Enter",
+"at": "Hỏi AI về các nhóm"
+},
+"Bấm nút dừng khi AI đang trả lời để hủy; biểu tượng thùng rác ở đầu khung để xóa hội thoại"
+],
+"keys": "hoi ai briefing hom nay can lam gi standup blocker rui ro ai dang cho toi tong hop cac nhom chat ai"
 },
 {
 "id": "briefing-confirmations",
 "tab": "telegram",
-"area": "Briefing › Chờ bạn chốt",
-"title": "Câu hỏi chờ bạn chốt / chờ confirm",
-"what": "Gom các câu hỏi cần confirm từ bản tóm tắt mới nhất của mọi nhóm; câu hỏi dành cho bạn (theo tên YouTrack, PO/PM với vai trò PO) lên đầu.",
+"area": "Briefing › Việc cần xử lý",
+"title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
+"what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật.",
 "how": [
 {
-"t": "Bấm \"Briefing\" ở thanh bên",
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
 "at": "Briefing"
 },
-"Xem khối \"Chờ bạn chốt\" (câu hỏi dành cho bạn) và \"Chờ người khác confirm\" / \"Cần confirm\"",
 {
-"t": "Bấm tên nhóm cạnh một câu hỏi để mở tóm tắt của nhóm đó",
-"at": "css:section[aria-label=\"Briefing\"] > div > section > ul button"
+"t": "Chọn tab: Cần bạn, Cần confirm, Việc cần làm, Đã chốt, Thay đổi (số bên cạnh là mục chưa xử lý)",
+"at": "css:[aria-label=\"Lọc việc\"]"
+},
+{
+"t": "Bấm \"Trả lời\" / \"Tạo ticket\" ngay dưới mục, hoặc bấm tên nhóm để mở tóm tắt của nhóm",
+"at": "css:ul[aria-label=\"Việc cần xử lý\"]"
+},
+{
+"t": "Bấm vòng tròn đầu dòng để đánh dấu đã xử lý; \"Đã xử lý N\" ở cuối để xem lại / bỏ đánh dấu",
+"at": "Đánh dấu đã xử lý"
 }
 ],
-"keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions"
+"keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung"
 },
 {
 "id": "briefing-group-cards",
 "tab": "telegram",
-"area": "Briefing › Danh sách nhóm",
-"title": "Xem tóm tắt từng nhóm và copy tất cả",
-"what": "Mỗi nhóm hiện \"Có tin mới\" / \"Không có tin mới\", số mục cần confirm, đã chốt…; mở ra để xem bản tóm tắt. Có thể chép mọi bản tóm tắt thành một Markdown.",
+"area": "Briefing › Hàng chip nhóm",
+"title": "Trạng thái từng nhóm, lọc theo nhóm và copy tất cả",
+"what": "Mỗi nhóm là một chip dưới tiêu đề: chấm vàng = có tin mới, xanh = đã cập nhật, số = mục chưa xử lý. Bấm chip để chỉ xem việc của nhóm đó; mũi tên ↗ mở trang Tóm tắt đầy đủ của nhóm. Có thể chép mọi bản tóm tắt thành một Markdown.",
 "how": [
 {
-"t": "Bấm \"Briefing\" ở thanh bên",
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Bấm dòng tóm tắt dưới tên nhóm để mở / đóng chi tiết",
-"at": "css:section[aria-label=\"Briefing\"] li details > summary"
+"t": "Bấm chip của một nhóm để lọc danh sách việc theo nhóm đó; bấm \"Tất cả nhóm\" để bỏ lọc",
+"at": "css:[aria-label=\"Lọc theo nhóm\"]"
 },
 {
-"t": "Bấm tên nhóm để mở trang Tóm tắt của nhóm",
-"at": "Mở tóm tắt của nhóm"
+"t": "Bấm ↗ trên chip để mở trang Tóm tắt của nhóm",
+"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Mở \"]"
 },
 {
 "t": "Bấm \"Copy tất cả\" để chép Markdown của mọi nhóm",
 "at": "Copy tất cả"
 }
 ],
-"keys": "copy tat ca briefing markdown co tin moi nhom tom tat chi tiet"
+"keys": "copy tat ca briefing markdown co tin moi nhom chip loc theo nhom trang thai"
+},
+{
+"id": "briefing-saved",
+"tab": "telegram",
+"area": "Briefing › Gửi vào Saved Messages",
+"title": "Gửi briefing vào Saved Messages",
+"what": "Gửi các mục chưa xử lý của mọi nhóm (cần confirm, việc cần làm, đã chốt, thay đổi) thành một tin vào Saved Messages trên Telegram của bạn, để đọc trên điện thoại. Câu trả lời của Hỏi AI cũng gửi được.",
+"how": [
+{
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
+"at": "Briefing"
+},
+{
+"t": "Bấm biểu tượng máy bay giấy \"Gửi vào Saved Messages\" ở góc phải trên",
+"at": "Gửi vào Saved Messages"
+},
+"Hoặc trong câu trả lời của Hỏi AI, bấm \"Gửi Saved Messages\""
+],
+"keys": "saved messages gui telegram tin nhan da luu dien thoai briefing gui cho minh"
 },
 {
 "id": "briefing-add-group",
 "tab": "telegram",
-"area": "Briefing › Tóm tắt nhóm chưa tag",
+"area": "Briefing › Hàng chip nhóm › Thêm",
 "title": "Thêm nhóm chưa tag vào Briefing",
-"what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép nằm ở \"Chưa cho phép AI\".",
+"what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép AI nằm đầu danh sách trong \"Thêm\".",
 "how": [
 {
-"t": "Bấm \"Briefing\" ở thanh bên",
+"t": "Ở mục \"Nhóm\" của thanh bên, bấm tab \"Briefing\" (chấm cam = có nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Ở cuối trang, bấm \"Tóm tắt nhóm chưa tag\"",
-"at": "Tóm tắt nhóm chưa tag"
+"t": "Bấm chip \"+ Thêm\" ở cuối hàng chip nhóm",
+"at": "Thêm nhóm"
 },
 {
-"t": "Gõ vào ô \"Tìm nhóm…\"",
+"t": "Gõ vào ô \"Tìm nhóm Telegram…\"",
 "at": "Tìm nhóm"
 },
-{
-"t": "Bấm tên một nhóm trong danh sách",
-"at": "css:section[aria-label=\"Briefing\"] > div > details:last-of-type ul button"
-},
+"Bấm tên một nhóm (nhóm \"Chưa cho phép AI\" ở trên cùng)",
 {
 "t": "Trong trang Tóm tắt, bấm \"Cho phép\" để nhóm có mặt ở Briefing",
 "at": "Cho phép"
@@ -893,34 +926,33 @@
 {
 "id": "deep-thinking",
 "tab": "telegram",
-"area": "Dòng tin › Đối chiếu BE",
-"title": "Đối chiếu BE (đối chiếu BE confirm với code)",
-"what": "Chọn một tin là BE confirm; tin nó trả lời là câu hỏi. AI đọc hai tin, so với code dự án: đã adapt chưa, còn thiếu gì, cần thay đổi gì. Chạy thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE. Tin đã chạy hiện nhãn xanh \"Đã đối chiếu BE\" (\"Đang đối chiếu BE\" khi đang chạy) và viền xanh trong Ngữ cảnh; bấm nhãn để mở phiên.",
+"area": "Dòng tin, Briefing › Đối chiếu BE",
+"title": "Đối chiếu BE (soi câu trả lời của BE với code)",
+"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả.",
 "how": [
 {
-"t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" (rê chuột vào nút Xong của tin để hiện)",
+"t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing.",
 "at": "Đối chiếu BE"
 },
 {
-"t": "Kiểm tra dòng \"Hỏi BE:\"; bấm \"Đổi\" để chọn tin hỏi khác.",
+"t": "Xem thẻ \"1 · Câu hỏi\"; sai thì bấm \"Đổi tin hỏi\" và chọn lại.",
 "at": [
-"Đổi",
+"Đổi tin hỏi",
 "css:ul[aria-label=\"Chọn tin hỏi\"] button"
 ]
 },
 {
-"t": "Chọn \"Dự án\".",
+"t": "Chọn \"Dự án\" (hoặc Thêm).",
 "at": "css:select[aria-label=\"Dự án tham chiếu cho AI\"]"
 },
 {
-"t": "Nhập \"Yêu cầu thêm\" nếu cần.",
+"t": "Bấm \"Yêu cầu thêm\" nếu muốn khoanh vùng.",
 "at": "Yêu cầu thêm"
 },
 {
-"t": "Bấm \"Phân tích\".",
+"t": "Bấm \"Phân tích\"; tiếp tục làm việc khác, bấm \"Xem\" trên thông báo hoặc nhãn trên tin để mở kết quả.",
 "at": "Phân tích"
-},
-"Nếu bị chặn quyền, bấm \"Cho phép AI đọc nhóm này 30 ngày và chạy lại\"."
+}
 ],
 "keys": "deep thinking phan tich be confirm backend trace code bo nao brain"
 },
@@ -941,7 +973,7 @@
 },
 {
 "t": "Bấm \"Gửi\" (hoặc nhấn ⌘/Ctrl+Enter).",
-"at": "css:form[aria-label=\"Soạn trả lời\"] button[type=submit]"
+"at": "css:form[data-composer] button[type=submit]"
 },
 "Gửi xong tự mở tin chưa xử lý kế tiếp. Nhấn Esc hoặc bấm X \"Đóng (Esc)\" để đóng khung."
 ],
@@ -1052,7 +1084,7 @@
 },
 {
 "t": "Bấm \"Giao AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
-"at": "css:form[aria-label=\"Soạn trả lời\"] button[aria-label=\"AI Agent\"]"
+"at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
 },
 {
 "t": "Chọn \"Dự án\".",
@@ -1089,7 +1121,7 @@
 },
 {
 "t": "Bấm \"Tạo ticket\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
-"at": "css:form[aria-label=\"Soạn trả lời\"] button[aria-label=\"YouTrack\"]"
+"at": "css:form[data-composer] button[aria-label=\"YouTrack\"]"
 },
 {
 "t": "Bấm \"AI soạn\" để AI viết tiêu đề, Type/Priority, mô tả (nếu có AI).",
@@ -1128,25 +1160,6 @@
 }
 ],
 "keys": "ticket lien quan related chen link youtrack goi y"
-},
-{
-"id": "composer-templates",
-"tab": "telegram",
-"area": "Khung Trả lời › Mẫu trả lời nhanh",
-"title": "Chèn mẫu trả lời nhanh",
-"what": "Các mẫu trả lời đã lưu trong Cài đặt hiện thành nút phía trên ô trả lời; bấm để chèn.",
-"how": [
-{
-"t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
-"at": "css:[data-testid=\"message\"]"
-},
-{
-"t": "Bấm một mẫu trả lời nhanh phía trên ô trả lời để chèn.",
-"at": "css:[aria-label=\"Mẫu trả lời nhanh\"] button"
-},
-"Thêm/xóa mẫu ở Cài đặt › Telegram › Mẫu trả lời nhanh."
-],
-"keys": "mau tra loi nhanh templates quick reply chen mau"
 },
 {
 "id": "composer-model-effort",
@@ -1360,6 +1373,22 @@
 "keys": "thong bao notification tag moi desktop push trinh duyet"
 },
 {
+"id": "settings-search",
+"tab": "settings",
+"area": "Cài đặt › Tìm cài đặt",
+"title": "Tìm một cài đặt",
+"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt.",
+"how": [
+{
+"t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
+"at": "Tìm cài đặt"
+},
+"Gõ vài chữ, ví dụ \"qua han\", \"prompt\", \"model\"",
+"Dùng ↑ ↓ chọn rồi Enter, hoặc bấm một kết quả"
+],
+"keys": "tim cai dat search settings nhay toi"
+},
+{
 "id": "settings-role",
 "tab": "settings",
 "area": "Cài đặt › Chung › Vai trò",
@@ -1371,8 +1400,8 @@
 "at": "css:[aria-label=\"Vai trò\"]"
 },
 {
-"t": "Bấm \"Xóa vai trò\" để bỏ chọn",
-"at": "Xóa vai trò"
+"t": "Bấm \"Bỏ chọn vai trò\" để bỏ chọn",
+"at": "Bỏ chọn vai trò"
 }
 ],
 "keys": "vai tro role dev qa qc po pm xoa vai tro"
@@ -1447,7 +1476,7 @@
 {
 "id": "settings-overdue",
 "tab": "settings",
-"area": "Cài đặt › Telegram › Hàng chờ",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
 "title": "Ngưỡng quá hạn",
 "what": "Tin tag chờ lâu hơn ngưỡng (1, 2, 4, 8 hoặc 24 giờ) hiện màu hổ phách là quá hạn.",
 "how": [
@@ -1465,7 +1494,7 @@
 {
 "id": "settings-notify",
 "tab": "settings",
-"area": "Cài đặt › Telegram › Hàng chờ",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
 "title": "Bật thông báo khi có tag mới",
 "what": "Bật thông báo trình duyệt khi có tag mới lúc tab đang ẩn.",
 "how": [
@@ -1483,7 +1512,7 @@
 {
 "id": "settings-row-actions",
 "tab": "settings",
-"area": "Cài đặt › Telegram › Hàng chờ",
+"area": "Cài đặt › Telegram › Hàng chờ và thông báo",
 "title": "Nút thao tác trên tin",
 "what": "Chọn hiện nút Ghim, Ngữ cảnh, Mở Telegram \"Khi rê vào nút Xong\" hay \"Luôn hiện\".",
 "how": [
@@ -1501,7 +1530,7 @@
 {
 "id": "settings-reply",
 "tab": "settings",
-"area": "Cài đặt › Telegram › Trả lời",
+"area": "Cài đặt › Telegram › AI cho Telegram",
 "title": "Nền tảng tóm tắt",
 "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Mobile chung, Không giới hạn).",
 "how": [
@@ -1517,74 +1546,22 @@
 "keys": "mo san tom tat nen tang android ios mobile platform tra loi"
 },
 {
-"id": "settings-digest-teams",
+"id": "settings-briefing-model",
 "tab": "settings",
-"area": "Cài đặt › Telegram › Tóm tắt nhóm",
-"title": "Team cho Digest",
-"what": "Danh sách team (tối đa 10, cách nhau dấu phẩy) mà Digest xét ở mục Ảnh hưởng team.",
+"area": "Cài đặt › Telegram › AI cho Telegram",
+"title": "Model và effort riêng cho Briefing / Digest",
+"what": "Briefing và Digest (tóm tắt cả nhóm) chạy model/effort riêng; để \"Như tóm tắt\" thì dùng lựa chọn của tóm tắt, soạn nháp. Cũng chỉnh được ngay trên trang Briefing và ở Cài đặt › AI › Model và effort.",
 "how": [
 {
 "t": "Chọn mục \"Telegram\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
 },
 {
-"t": "Gõ tên team cách nhau dấu phẩy vào ô \"Team cho Digest\"",
-"at": "Team cho Digest"
+"t": "Ở \"Model cho Briefing và Digest\", chọn model và kéo effort",
+"at": "css:[aria-label$=\"model và effort cho Briefing và Digest\"]"
 }
 ],
-"keys": "team digest anh huong team tom tat nhom danh sach team"
-},
-{
-"id": "settings-templates",
-"tab": "settings",
-"area": "Cài đặt › Telegram › Mẫu trả lời nhanh",
-"title": "Quản lý mẫu trả lời nhanh",
-"what": "Thêm/xóa các câu trả lời mẫu hiện dưới ô trả lời.",
-"how": [
-{
-"t": "Chọn mục \"Telegram\"",
-"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
-},
-{
-"t": "Gõ mẫu mới vào ô \"Mẫu trả lời mới\"",
-"at": "Mẫu trả lời mới"
-},
-{
-"t": "Bấm \"Thêm\"",
-"at": "css:form:has(input[aria-label=\"Mẫu trả lời mới\"]) button[type=\"submit\"]"
-},
-{
-"t": "Bấm thùng rác cạnh mẫu để xóa",
-"at": "css:button[aria-label^=\"Xóa mẫu\"]"
-}
-],
-"keys": "mau tra loi nhanh templates them xoa quick reply"
-},
-{
-"id": "settings-auto-handle-rules",
-"tab": "settings",
-"area": "Cài đặt › Telegram › Tự đánh dấu “đã xử lý”",
-"title": "Quy tắc tự đánh dấu đã xử lý",
-"what": "Tin tag khớp từ khóa (vd. #TB) tự chuyển sang Đã xử lý, không báo; khi thêm sẽ dọn luôn các tin đang chờ khớp.",
-"how": [
-{
-"t": "Chọn mục \"Telegram\"",
-"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
-},
-{
-"t": "Nhập từ khóa (vd. #TB) vào ô \"Từ khóa\"",
-"at": "Từ khóa"
-},
-{
-"t": "Bấm \"Thêm\"",
-"at": "css:form:has(input[aria-label=\"Từ khóa\"]) button[type=\"submit\"]"
-},
-{
-"t": "Bấm thùng rác \"Xóa quy tắc\" để xóa",
-"at": "css:button[aria-label=\"Xóa quy tắc\"]"
-}
-],
-"keys": "quy tac tu dong da xu ly tu khoa rules keyword bot thong bao auto handle"
+"keys": "briefing digest model effort rieng tom tat nhom nhu tom tat"
 },
 {
 "id": "settings-ai-accounts",
@@ -1631,36 +1608,18 @@
 "keys": "dung ai nao provider claude codex antigravity chon ai"
 },
 {
-"id": "settings-ai-consent",
-"tab": "settings",
-"area": "Cài đặt › AI › Quyền đọc tin",
-"title": "Không cho AI đọc tin Telegram",
-"what": "Bật: mọi tính năng AI trên tin Telegram tắt (tóm tắt, soạn nháp, tạo ticket bằng AI, Đối chiếu BE, Giao AI Agent từ tin tag). Tắt khi dùng cá nhân để AI đọc tin tag, tin xung quanh và tin bạn từng gửi, viết nháp đúng giọng.",
-"how": [
-{
-"t": "Chọn mục \"AI\"",
-"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
-},
-{
-"t": "Bật/tắt \"Không cho AI đọc tin Telegram\"",
-"at": "Không cho AI đọc tin Telegram"
-}
-],
-"keys": "quyen doc tin consent hoi truoc ai doc tin rieng tu privacy"
-},
-{
 "id": "settings-github-update",
 "tab": "settings",
-"area": "Cài đặt › GitHub › Cập nhật",
+"area": "Cài đặt › Cập nhật",
 "title": "Cập nhật app và tự động cập nhật",
 "what": "Kiểm tra và cài bản mới từ GitHub, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
 "how": [
 {
-"t": "Chọn mục \"GitHub\"",
+"t": "Chọn mục \"Cập nhật\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
 },
 {
-"t": "Bấm \"Kiểm tra\"",
+"t": "Bấm biểu tượng xoay \"Kiểm tra\" để kiểm tra lại",
 "at": "Kiểm tra"
 },
 {
@@ -1679,12 +1638,17 @@
 "tab": "settings",
 "area": "Cài đặt › YouTrack",
 "title": "Kết nối YouTrack và cấu hình AI cho YouTrack",
-"what": "Nhập URL và token YouTrack (dùng cho nút tạo ticket từ Telegram); thêm Instructions cho AI theo vai trò, Kho prompt và lịch Báo cáo release.",
+"what": "Ba nhóm: Kết nối và báo cáo (URL, token YouTrack, lịch Báo cáo release), AI và prompt (Instructions cho AI theo vai trò, Kho prompt), Workflow.",
 "how": [
 {
 "t": "Chọn mục \"YouTrack\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
 },
+{
+"t": "Chọn \"Kết nối và báo cáo\"",
+"at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+},
+"Đã kết nối thì bấm \"Đổi URL / token\" để hiện ô nhập",
 {
 "t": "Nhập \"URL YouTrack\"",
 "at": "URL YouTrack"
@@ -1694,7 +1658,7 @@
 "at": "Token YouTrack"
 },
 {
-"t": "Bấm \"Lưu\"",
+"t": "Bấm \"Lưu\" (hoặc \"Cập nhật\")",
 "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
 },
 {
@@ -1709,15 +1673,23 @@
 "tab": "settings",
 "area": "Cài đặt › Phím tắt",
 "title": "Bảng phím tắt",
-"what": "Danh sách phím tắt của Telegram Inbox (cũng mở nhanh bằng ? trong Inbox).",
+"what": "Phím tắt của Telegram Inbox và YouTrack, chia theo nhóm (Di chuyển, Xử lý tin, Trả lời…), có ô tìm. Trong Inbox nhấn ? để mở nhanh.",
 "how": [
 {
 "t": "Chọn mục \"Phím tắt\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#shortcuts\"]"
 },
+{
+"t": "Chọn \"Telegram Inbox\" hoặc \"YouTrack\"",
+"at": "css:[aria-label=\"Phím tắt của\"]"
+},
+{
+"t": "Gõ vào ô \"Tìm phím tắt\" để lọc",
+"at": "Tìm phím tắt"
+},
 "Hoặc nhấn ? khi đang ở Inbox"
 ],
-"keys": "phim tat shortcuts bang phim tat keyboard"
+"keys": "phim tat shortcuts bang phim tat keyboard tim phim tat youtrack"
 },
 {
 "id": "yt-chon-vai-tro",
@@ -1731,8 +1703,8 @@
 "at": "Cài đặt"
 },
 {
-"t": "Bấm \"Xóa vai trò\" (nếu đang có vai trò)",
-"at": "Xóa vai trò"
+"t": "Bấm \"Bỏ chọn vai trò\" (nếu đang có vai trò)",
+"at": "Bỏ chọn vai trò"
 },
 {
 "t": "Quay lại module \"YouTrack\" ở thanh trên",
@@ -1821,37 +1793,6 @@
 "Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team"
 ],
 "keys": "rui ro rủi ro risk badge huy hieu huy hiệu qua han quá hạn toi han tới hạn blocked dung lau đứng lâu"
-},
-{
-"id": "yt-che-do-tv",
-"tab": "youtrack",
-"area": "Thanh bên › cuối",
-"title": "Chế độ TV",
-"what": "Hiện trang toàn màn hình, chữ lớn hơn (125%), ẩn thanh trên và thanh bên — hợp để chiếu dashboard lên TV.",
-"how": [
-{
-"t": "Bấm \"Chế độ TV\" ở cuối thanh bên",
-"at": "Chế độ TV"
-},
-"Thông báo \"Chế độ TV, nhấn Esc để thoát\" hiện ra",
-"Nhấn Esc (thoát toàn màn hình) để quay lại bình thường"
-],
-"keys": "che do tv chế độ tv tv mode toan man hinh toàn màn hình fullscreen trinh chieu trình chiếu esc"
-},
-{
-"id": "yt-in-pdf",
-"tab": "youtrack",
-"area": "Thanh bên › cuối",
-"title": "In / PDF trang đang xem",
-"what": "In hoặc lưu PDF trang đang xem; thanh trên, thanh bên, bộ lọc và nút AI tự ẩn khi in.",
-"how": [
-{
-"t": "Bấm \"In / PDF\" ở cuối thanh bên",
-"at": "In / PDF"
-},
-"Trong hộp thoại in, chọn máy in hoặc \"Lưu dạng PDF\""
-],
-"keys": "in pdf print luu pdf lưu pdf xuat pdf xuất pdf"
 },
 {
 "id": "yt-lich-su-ai",
@@ -2185,7 +2126,7 @@
 "tab": "youtrack",
 "area": "Trang chủ (Dev/QA/PO) › AI Studio",
 "title": "AI Studio trên trang chủ",
-"what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup, Việc đã hứa. QA: Test case, Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
+"what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case, Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
 "how": [
 {
 "t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",
@@ -2202,14 +2143,14 @@
 },
 "Nhấn Esc. \"Làm lại\" chạy lại, \"Xóa\" xóa nội dung đã lưu"
 ],
-"keys": "ai studio ke hoach kế hoạch standup viec da hua việc đã hứa test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes"
+"keys": "ai studio ke hoach kế hoạch standup test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes"
 },
 {
 "id": "yt-ai-standup-dev",
 "tab": "youtrack",
 "area": "Hôm nay (Dev) › AI Studio",
-"title": "Standup và Việc đã hứa (Dev)",
-"what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Việc đã hứa: việc bạn hứa trong nhóm Telegram 7 ngày qua mà chưa thấy xong. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt.",
+"title": "Standup và Kế hoạch (Dev)",
+"what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt.",
 "how": [
 {
 "t": "Ở thẻ \"AI Studio\" bấm tab \"Standup\"",
@@ -2224,11 +2165,11 @@
 "at": "Copy"
 },
 {
-"t": "Nhấn Esc, rồi bấm tab \"Việc đã hứa\" để xem việc bạn hứa trên Telegram (tab \"Kế hoạch\" dùng tương tự)",
-"at": "Việc đã hứa"
+"t": "Nhấn Esc, rồi bấm tab \"Kế hoạch\" để AI chọn việc làm ngay (dùng tương tự)",
+"at": "Kế hoạch"
 }
 ],
-"keys": "standup viec da hua việc đã hứa promises ke hoach kế hoạch plan hom qua hôm qua vuong mac vướng mắc telegram"
+"keys": "standup ke hoach kế hoạch plan hom qua hôm qua vuong mac vướng mắc telegram"
 },
 {
 "id": "yt-trang-kiem-thu-qa",
@@ -3302,6 +3243,10 @@
 {
 "t": "Chọn mục \"YouTrack\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+},
+{
+"t": "Chọn \"AI và prompt\"",
+"at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
 },
 {
 "t": "Nhập hướng dẫn vào ô \"Instructions cho AI\"",

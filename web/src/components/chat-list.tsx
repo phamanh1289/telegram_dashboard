@@ -27,7 +27,7 @@ export function Avatar({ name, className }: { name: string; className?: string }
 }
 
 /** While collapsed to a rail, text beyond the avatars waits for the rail to open (hover or focus). */
-const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
+export const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
 
 /** Count on the avatar while the list is a narrow rail. */
 function RailBadge({ n }: { n: number }) {
@@ -53,8 +53,11 @@ export function ChatList({
   onSelect,
   range,
   collapsed,
+  bare,
 }: {
   range: string;
+  /** No "Nhóm có tag" heading: the caller titles the list (the sidebar's tabs). */
+  bare?: boolean;
   collapsed: boolean;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -70,14 +73,14 @@ export function ChatList({
 
   return (
     <nav aria-label="Nhóm có tag" className="flex h-full min-h-0 flex-col">
-      <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && railHide)}>
+      {!bare && <h2 className={cn("flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-5 text-[0.8125rem] font-semibold tracking-normal text-ink-2", collapsed && railHide)}>
         Nhóm có tag
         {pendingTotal > 0 && (
           <span className="ml-auto font-normal text-ink-3">
             <span className="font-mono text-ink-2 tabular-nums">{pendingTotal}</span> chưa xử lý
           </span>
         )}
-      </h2>
+      </h2>}
       <motion.div layoutScroll className="no-scrollbar min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {chats.isPending && (
           <ul aria-label="Đang tải nhóm" className="grid gap-1 px-3 pt-1">

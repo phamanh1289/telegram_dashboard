@@ -136,9 +136,6 @@ class Settings:
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
-    # On: inbox AI (drafts, tickets, deep thinking, message refs) may not read Telegram text
-    # (Telegram API Terms). Off only for personal use. Digest has its own per-chat consent.
-    ai_require_consent: bool = True
 
     @property
     def data_dir(self) -> Path:
@@ -197,7 +194,6 @@ class Settings:
         env = os.environ
         conf = _read_json(data_root(root) / "config.json")
         api_id = str(conf.get("telegram_api_id") or env.get("TELEGRAM_API_ID", "")).strip()
-        consent = conf.get("ai_require_consent", env.get("AI_REQUIRE_CONSENT", "1").strip() != "0")
         saved = _read_json(data_root(root) / "youtrack.json")
         return cls(
             root=root,
@@ -223,5 +219,4 @@ class Settings:
             or env.get("YT_TOKEN")
             or None,
             youtrack_project=env.get("YOUTRACK_PROJECT") or None,
-            ai_require_consent=bool(consent),
         )

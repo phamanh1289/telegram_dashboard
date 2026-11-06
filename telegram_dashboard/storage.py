@@ -183,6 +183,8 @@ def _row_to_message(r: sqlite3.Row) -> StoredMessage:
         media_kind=r["media_kind"],
         deleted=bool(r["deleted"]),
         handled=bool(r["handled"]),
+        handled_by=r["handled_by"],
+        handled_at=_dt(r["handled_at"]),
         snoozed_until=_dt(r["snoozed_until"]),
         pinned=bool(r["pinned"]),
         links=json.loads(r["links"]),
@@ -261,8 +263,14 @@ def _drop_grants(c: sqlite3.Connection) -> None:
     c.execute("DROP TABLE IF EXISTS ai_permissions")
 
 
+def _handled_by(c: sqlite3.Connection) -> None:
+    """How and when a tag got handled ("Đã xử lý" says why; only Xong leaves a reaction)."""
+    _add_cols(c, "messages", {"handled_by": "TEXT NOT NULL DEFAULT ''", "handled_at": "INTEGER"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
+    _handled_by,
 ]  # fmt: skip
 
 
@@ -364,6 +372,18 @@ class Store:
         sql = f"UPDATE messages SET {col}=?1 WHERE chat_id=?2 AND message_id=?3 AND deleted=0"
         cur = c.execute(sql + (f" AND {col} IS NOT ?1" if only_change else ""),
                         (value, chat_id, message_id))  # fmt: skip
+        if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
+            self._record(c, chat_id, message_id, "edit", chat["generation"])
+        return bool(cur.rowcount)
+
+    def _mark(self, c: sqlite3.Connection, chat_id: str, message_id: int, handled: bool, by: str) -> bool:
+        """Handled or not, with how (HANDLED_BY) and when, so the row can say why it is done; reopening clears
+        both. Emits an edit change; True only when it flipped."""
+        cur = c.execute(
+            "UPDATE messages SET handled=?1, handled_by=?2, handled_at=?3 "
+            "WHERE chat_id=?4 AND message_id=?5 AND deleted=0 AND handled IS NOT ?1",
+            (int(handled), by if handled else "", now_ts() if handled else None, chat_id, message_id),
+        )
         if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
             self._record(c, chat_id, message_id, "edit", chat["generation"])
         return bool(cur.rowcount)
@@ -575,7 +595,7 @@ class Store:
                 if not new:
                     continue
                 if replied or _rule_matches(rules, m):
-                    self._set_col(c, m.chat_id, m.message_id, "handled", 1, only_change=True)
+                    self._mark(c, m.chat_id, m.message_id, True, "reply" if replied else "rule")
                 else:
                     fresh.append(m.message_id)
         return fresh
@@ -625,10 +645,10 @@ class Store:
                 touched.append(cid)
         return touched
 
-    def set_handled(self, chat_id: str, message_id: int, handled: bool) -> bool:
-        """Mark a kept message handled or not; emits an edit change when it flips."""
+    def set_handled(self, chat_id: str, message_id: int, handled: bool, by: str = "me") -> bool:
+        """Mark a kept message handled or not (`by`: one of HANDLED_BY); emits an edit change when it flips."""
         with self._conn(write=True) as c:
-            return self._set_col(c, chat_id, message_id, "handled", int(handled), only_change=True)
+            return self._mark(c, chat_id, message_id, handled, by)
 
     def set_snooze(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
         with self._conn(write=True) as c:
@@ -671,9 +691,9 @@ class Store:
             if chat is None or not chat["tracking"]:
                 return []
             ids = sorted(r[0] for r in c.execute(
-                f"UPDATE messages AS m SET handled=1 WHERE m.chat_id=?1 AND {PENDING} "
+                f"UPDATE messages AS m SET handled=1, handled_by='all', handled_at=?4 WHERE m.chat_id=?1 AND {PENDING} "
                 "AND (?2 IS NULL OR m.date>=?2) AND (?3 IS NULL OR m.date<?3) RETURNING message_id",
-                (chat_id, _ts(since), _ts(until)),
+                (chat_id, _ts(since), _ts(until), now_ts()),
             ).fetchall())  # fmt: skip
             for i in ids:
                 self._record(c, chat_id, i, "edit", chat["generation"])
@@ -884,7 +904,7 @@ class Store:
                 if chat is not None and chat["tracking"]:
                     self._upsert_message(c, sent, chat)
             if status == "sent":  # replying from the dashboard handles the tag
-                self._set_col(c, r["chat_id"], r["reply_to_message_id"], "handled", 1, True)
+                self._mark(c, r["chat_id"], r["reply_to_message_id"], True, "dashboard")
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             )
@@ -910,9 +930,9 @@ class Store:
             rows = c.execute("SELECT * FROM rules WHERE kind IN ('keyword','sender') ORDER BY id")
             return [dict(r) for r in rows]
 
-    def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, int]:
+    def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, list[tuple[str, int]]]:
         """Save a rule (keyword: text in the tag, any case; sender: a sender id) and clear the
-        pending tags it already matches."""
+        pending tags it already matches; returns the rule and the (chat_id, message_id) it cleared."""
         value = value.strip().lower() if kind == "keyword" else value.strip()
         if not value:  # "" is in every text: it would clear every tag
             raise ApiError(422, "rule_value_empty")
@@ -926,12 +946,13 @@ class Store:
                 c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
             )
             rows = c.execute("SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0").fetchall()
-            n = sum(
-                self._set_col(c, r["chat_id"], r["message_id"], "handled", 1, True)
-                for r in rows
-                if _rule_matches([rule], _row_to_message(r))
-            )
-        return rule, n
+            cleared = []
+            for r in rows:  # a matching tag is cleared here, then listed for the Undo
+                if _rule_matches([rule], _row_to_message(r)) and self._mark(
+                    c, r["chat_id"], r["message_id"], True, "rule"
+                ):
+                    cleared.append((r["chat_id"], r["message_id"]))
+        return rule, cleared
 
     def remove_rule(self, rule_id: int) -> None:
         with self._conn(write=True) as c:
@@ -991,7 +1012,7 @@ class Store:
         word = re.compile(rf"(?<![\w-]){re.escape(needle)}(?!\d)", re.I)  # VA-12 must not match VA-123
         with self._conn() as c:
             rows = c.execute(
-                "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, c.title "
+                "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, m.outgoing, m.reply_to_id, c.title "
                 "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
                 "AND m.text LIKE ? ESCAPE '\\' ORDER BY m.date DESC LIMIT ?",
                 (_like(needle), limit * 3),

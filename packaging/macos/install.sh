@@ -26,6 +26,22 @@ cp "$src/Start Dashboard Telegram.command" "$DEST/"
 printf %s "$ver" >"$DEST/current"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
+# `mydashboard start` in Terminal: a tiny command in ~/.local/bin, put on PATH via ~/.zprofile.
+bin="$HOME/.local/bin"
+mkdir -p "$bin"
+cat >"$bin/mydashboard" <<EOF
+#!/bin/bash
+case "\${1:-start}" in
+  start) exec $(printf %q "$DEST/Start Dashboard Telegram.command") ;;
+  *) echo "Dùng: mydashboard start"; exit 2 ;;
+esac
+EOF
+chmod +x "$bin/mydashboard"
+case ":$PATH:" in
+  *":$bin:"*) ;;
+  *) grep -qs '.local/bin' "$HOME/.zprofile" || echo 'export PATH="$HOME/.local/bin:$PATH"' >>"$HOME/.zprofile" ;;
+esac
+
 # A tiny .app beside the folder: Spotlight, Launchpad and Applications list only app bundles.
 app="$(dirname "$DEST")/Telegram Dashboard.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -46,5 +62,6 @@ EOF
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" 2>/dev/null || true
 
 echo "Đã cài ${tag} vào: ${DEST}"
-echo "Lần sau mở: gõ \"Telegram Dashboard\" trong Spotlight / Launchpad (hoặc kéo app vào Dock)."
+echo "Lần sau mở: gõ \"Telegram Dashboard\" trong Spotlight / Launchpad (hoặc kéo app vào Dock),"
+echo "hoặc mở Terminal mới và gõ: mydashboard start"
 open "$app"

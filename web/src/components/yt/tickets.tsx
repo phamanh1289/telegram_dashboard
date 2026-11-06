@@ -8,8 +8,9 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
-import { ago, copyText, fold, toast, useNow } from "@/lib/inbox";
-import { getPref, setPref } from "@/lib/prefs";
+import { copyText, fold, toast, useNow } from "@/lib/inbox";
+import { ago } from "@/lib/time";
+import { readJson, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { activePool, bucket, type ColKey, COLS, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, PCOL, rank, shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt } from "@/lib/yt";
 import { period } from "@/lib/yt-stats";
@@ -373,7 +374,7 @@ export async function aiFilterApply(y: Yt, text: string) {
 
 /** A named set of filters + table / board, per browser; also listed in ⌘K. */
 export type SavedView = { name: string; f: Omit<Filters, "assignee"> & { assignee: string[] }; view: "table" | "board" };
-export const readViews = (): SavedView[] => { try { const v = JSON.parse(getPref("ytViews") ?? "[]"); return Array.isArray(v) ? v : []; } catch { return []; } };
+export const readViews = (): SavedView[] => { const v = readJson("ytViews", []); return Array.isArray(v) ? v : []; };
 export function applyView(y: Yt, v: SavedView) {
   y.setFilters(v.f);
   y.setView(v.view);

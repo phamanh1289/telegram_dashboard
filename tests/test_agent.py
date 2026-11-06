@@ -51,6 +51,10 @@ async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):
     assert not r.running("t1") and r.pumps == {}  # nothing left to write into a reopened log
     items, _ = r.read("t1")
     assert [i["kind"] for i in items] == ["user", "result"] and items[1]["error"]
+    assert items[1]["text"] == "Đã dừng."  # not "mã 143": say who stopped it
+    await r.start("t1", str(tmp_path), "again", "plan", "s1", True)
+    await r.stop_all()  # server shutdown / restart
+    assert r.read("t1")[0][-1]["text"].startswith("Server khởi động lại")
 
 
 async def test_failed_spawn_and_corrupt_log(tmp_path):
@@ -70,6 +74,15 @@ async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch
     items, _ = r.read("t1")
     assert [i["kind"] for i in items] == ["user", "result"] and not items[1]["error"]
     assert not r.running("t1") and read_task_result(r.settings, "t1") == "ok"
+
+
+async def test_empty_zero_turn_result_on_resume_does_not_end_the_turn(tmp_path, monkeypatch):
+    monkeypatch.setattr("telegram_dashboard.agent.AFTER_RESULT_IDLE", 0.2)  # AI-7182ea: killed mid-turn
+    r = runner(tmp_path, "#!/bin/sh\ncat >/dev/null\necho '{\"type\":\"result\",\"result\":\"\",\"num_turns\":0}'\n"
+               "sleep 0.5\necho '{\"type\":\"result\",\"result\":\"ok\",\"num_turns\":3}'\n")  # fmt: skip
+    await r.start("t1", str(tmp_path), "hi", "plan", "s1", True)
+    await asyncio.wait_for(r.pumps["t1"], 5)
+    assert [(i["kind"], i.get("text")) for i in r.read("t1")[0]] == [("user", "hi"), ("result", "ok")]
 
 
 async def test_stop_while_starting_cancels_the_launch(tmp_path):

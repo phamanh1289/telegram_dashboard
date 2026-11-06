@@ -3,8 +3,9 @@
 import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getPref, setPref } from "@/lib/prefs";
-import { type Ticket } from "@/lib/yt";
-import { ago } from "@/lib/inbox";
+import { addLoopItems } from "@/lib/report-back";
+import { type Ticket, yt } from "@/lib/yt";
+import { ago } from "@/lib/time";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
 
@@ -19,6 +20,25 @@ const emit = () => subs.forEach((f) => f());
 const sub = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
 type Snap = { state: string | null; assignee: string | null; updated: number };
+const FINISHED = /^(fixed|done|resolved|verified|closed)$/i; // whole state names: not "Unresolved" / "Not fixed"
+
+const note = (id: string, text: string) => {
+  events = [{ id, text, at: Date.now() }, ...events].slice(0, 40);
+  unread += 1;
+  emit();
+};
+
+/** A ticket of mine reached Fixed / Done: queue "Báo lại" for the Telegram messages that mention it (to-do list). */
+function loopBack(i: Ticket) {
+  yt.mentions(i.id).then((ms) => {
+    // My own "đã tạo VA-1" answers the tag it replied to; one not sent as a reply is answered in its own thread.
+    const n = addLoopItems(ms.map((m) => ({ ticket: i.id, state: i.state ?? "Done", chat_id: m.chat_id, message_id: (m.outgoing && m.reply_to_id) || m.message_id })));
+    if (n) note(i.id, `Báo lại trên Telegram: ${n} tin nhắc ticket này (xem Việc cần xử lý)`);
+  }, (e) => {
+    console.warn("Báo lại: mentions", i.id, e); // runs once per state change: say so instead of missing it silently
+    note(i.id, "Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại");
+  });
+}
 
 /** Runs in the shell: diffs each refreshed list for the same scope. */
 export function useWatch() {
@@ -33,6 +53,10 @@ export function useWatch() {
     const p = prev.current;
     prev.current = { key, m };
     if (!p || p.key !== key) return; // first load or another scope: nothing to compare with
+    for (const i of data) {
+      const o = p.m.get(i.id); // mine and open last time (my own move to Fixed counts too)
+      if (o && o.state !== i.state && (i.resolved || FINISHED.test(i.state ?? ""))) loopBack(i);
+    }
     const now = Date.now(), out: Event[] = [];
     for (const i of data.filter(mine)) {
       const o = p.m.get(i.id);

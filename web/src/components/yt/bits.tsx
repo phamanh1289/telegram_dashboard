@@ -1,15 +1,16 @@
 "use client";
 
 import { Popover as BasePopover } from "@base-ui/react/popover";
-import { Check, ChevronDown, Copy, MessageSquareText, SendHorizontal, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Copy, MessageSquareText, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { createContext, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, Fragment, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { AiBot, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble } from "@/components/ai/chat";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
-import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, yt } from "@/lib/yt";
+import { ModelEffortPicker } from "@/components/ai";
 import { copyText, fold } from "@/lib/inbox";
 import { useYt } from "./state";
 
@@ -264,30 +265,29 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
     setS(last ? { status: "done", text: last.a } : { status: "idle" });
   };
   const cancel = () => { ctl.current?.abort(); ctl.current = null; setReq(null); setThread([]); setQ(""); setS({ status: "idle" }); };
-  return { s, thread, q, canAsk: !!req && thread.length > 0, run, ask, seed, stop, cancel, set: setS };
+  return { s, thread, q, canAsk: !!req && thread.length > 0, heavy: heavyReq(req), run, ask, seed, stop, cancel, set: setS };
 }
 
-const AskLine = ({ q }: { q: string }) => (
-  <p className="ml-auto w-fit max-w-[85%] rounded-lg bg-paper-3 px-2.5 py-1.5 whitespace-pre-wrap text-ink">{q}</p>
-);
+/** Whether a YouTrack AI request runs heavy on the server (yt_dashboard): it reads code, or sends over 10 tickets.
+ *  A follow-up runs like its first request. */
+export function heavyReq(req: AiReq | null) {
+  const j = (req?.json ?? {}) as { folder?: string; ids?: unknown[] };
+  return !!j.folder || (req?.path === "/ai/tickets" && (j.ids?.length ?? 0) > 10);
+}
 
-/** The follow-up box under an answer. Enter sends, Shift+Enter breaks the line (not while an IME is composing). */
-function AskBox({ ai }: { ai: ReturnType<typeof useAi> }) {
-  const [text, setText] = useState("");
-  const send = () => { const t = text.trim(); if (!t) return; setText(""); void ai.ask(t); };
+/** The model + effort (short) a YouTrack prompt box will run on: the light picks, or the heavy ones (code, many tickets). */
+export function YtPicks({ heavy, className }: { heavy: boolean; className?: string }) {
   return (
-    <form className="mt-2 flex items-end gap-1.5" onSubmit={(e) => { e.preventDefault(); send(); }}>
-      <Textarea rows={1} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} aria-label="Hỏi tiếp AI"
-        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); } }}
-        placeholder="Hỏi tiếp, vd. viết ngắn hơn, dịch sang tiếng Anh, chi tiết VA-12…" className="min-h-9 resize-none bg-cotton text-sm" />
-      <Button type="submit" size="icon-sm" aria-label="Gửi" disabled={!text.trim()}><SendHorizontal /></Button>
-    </form>
+    <Hint side="bottom" text={`Model và effort cho lượt này: ${heavy ? "Đọc code, nhiều ticket" : "Hỏi AI, báo cáo, soạn ticket"}. Đổi ở đây hoặc Cài đặt › YouTrack › AI và prompt.`}>
+      <span className={cn("flex", className)}><ModelEffortPicker kind={heavy ? "yt_task" : "yt"} compact className="gap-x-1.5" /></span>
+    </Hint>
   );
 }
 
-/** `ids={false}`: ticket IDs stay plain text (in the AI sheet, opening one would replace the answer). */
-/** `ask={false}`: no follow-up box inside (the page has its own composer). */
-export function AiBox({ ai, className, onClose, onUse, ids = true, ask = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; ids?: boolean; ask?: boolean }) {
+/** An AI run as a conversation, the AI Agent look: asks in bubbles, answers in result cards, the live turn thinking or
+ *  writing. `ids={false}`: ticket IDs stay plain text (in the AI sheet, opening one would replace the answer).
+ *  `stop={false}`: no stop button by the live turn (the page's prompt box has its own). */
+export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; ids?: boolean; stop?: boolean }) {
   const y = useYt();
   const s = ai.s;
   if (s.status === "idle") return null;
@@ -295,63 +295,39 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, ask = true }:
   const close = () => { ai.cancel(); onClose?.(); };
   const turns = s.status === "done" ? ai.thread.slice(0, -1) : ai.thread; // done: the last turn is drawn below with its actions
   const lastQ = s.status === "done" ? ai.thread.at(-1)?.q : ai.q;
+  const closeBtn = <Button size="icon-xs" variant="ghost" aria-label="Đóng" onClick={close}><X /></Button>;
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} aria-live="polite"
-      className={cn("relative grid gap-2 rounded-lg border border-hl/30 bg-hl-wash/40 p-3 text-sm", s.status === "error" && !ai.thread.length && "border-error/30 bg-error-wash", className)}>
+    <div aria-live="polite" className={cn("grid grid-cols-[minmax(0,1fr)] gap-3", className)}>
       {turns.map((t, k) => (
-        <div key={k} className="grid gap-2 border-b border-rule pb-2">
-          {t.q && <AskLine q={t.q} />}
-          <Markdown text={t.a} onTicket={open} />
-        </div>
+        <Fragment key={k}>
+          {t.q && <UserBubble>{t.q}</UserBubble>}
+          <AiResultCard dim><Markdown text={t.a} onTicket={open} /></AiResultCard>
+        </Fragment>
       ))}
-      {lastQ && <AskLine q={lastQ} />}
-      {s.status === "busy" ? (
-        <div>
-          <div className="flex items-center gap-2 text-ink-2">
-            <Sparkles className="size-4 animate-pulse text-hl-2" aria-hidden /><span>{s.label}…</span>
-            <Button size="xs" variant="ghost" className="ml-auto" onClick={ai.stop}>Hủy</Button>
-          </div>
-          {s.text?.trim() && <Markdown text={s.text.replace(/\n\s*={3,}\s*(\n|$)/, "\n\n")} className="mt-2 text-ink-2" />}
+      {lastQ && <UserBubble>{lastQ}</UserBubble>}
+      {s.status === "busy" ? <>
+        {s.text?.trim() && <Markdown text={s.text.replace(/\n\s*={3,}\s*(\n|$)/, "\n\n")} className="px-0.5 text-ink animate-in fade-in-0 duration-(--dur-short)" />}
+        <div className="flex items-center gap-2">
+          {s.text?.trim() ? <AiWriting /> : <AiThinking label={s.label} className="min-w-0 flex-1" />}
+          {stop && <span className="ml-auto"><AiStop onClick={ai.stop} label="Hủy" /></span>}
         </div>
-      ) : s.status === "error" ? (
-        <div>
-          <div className="flex items-start gap-2 text-error"><span className="flex-1">{s.error}</span>
-            <Button size="icon-xs" variant="ghost" aria-label="Đóng" onClick={close}><X /></Button></div>
-          {ask && ai.canAsk && <AskBox ai={ai} />}
-        </div>
+      </> : s.status === "error" ? (
+        <AiResultCard error actions={closeBtn}>{s.error}</AiResultCard>
       ) : (
-        <div>
+        <AiResultCard actions={<>
+          {onUse && <Hint side="bottom" text="Đặt vào ô bình luận để sửa rồi gửi lên YouTrack"><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> Đưa vào bình luận</Button></Hint>}
+          <Button size="xs" variant="ghost" onClick={() => void copyText(s.text)}><Copy /> Copy</Button>
+          {closeBtn}
+        </>}>
           <Markdown text={s.text} onTicket={open} />
-          <div className="mt-2 flex justify-end gap-1">
-            {onUse && <Hint side="bottom" text="Đặt vào ô bình luận để sửa rồi gửi lên YouTrack"><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> Đưa vào bình luận</Button></Hint>}
-            <Button size="xs" variant="ghost" onClick={() => void copyText(s.text)}><Copy /> Copy</Button>
-            <Button size="icon-xs" variant="ghost" aria-label="Đóng" onClick={close}><X /></Button>
-          </div>
-          {ask && ai.canAsk && <AskBox ai={ai} />}
-        </div>
+        </AiResultCard>
       )}
-    </motion.div>
+    </div>
   );
 }
 
 /** Set by the dashboard: a card there gets an AI button that opens a chat about that one report. */
 export const CardAi = createContext<((title: string) => void) | null>(null);
-
-/** A little robot head: blinking eyes, a glowing antenna, an arm that waves while it is shown. */
-export const AiBot = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 32 32" aria-hidden className={className}>
-    <line x1="16" y1="3.5" x2="16" y2="8" stroke="var(--color-hl-2)" strokeWidth="1.6" strokeLinecap="round" />
-    <circle cx="16" cy="3.2" r="2" fill="var(--color-hl)" className="ai-glow" />
-    <rect x="3.5" y="13" width="2.5" height="6" rx="1.25" fill="var(--color-hl-2)" />
-    <rect x="26" y="13" width="2.5" height="6" rx="1.25" fill="var(--color-hl-2)" />
-    <rect x="6" y="8" width="20" height="16" rx="6" fill="var(--color-hl)" />
-    <rect x="9" y="11.5" width="14" height="8.5" rx="4.25" fill="var(--color-cotton)" />
-    <g className="ai-blink"><circle cx="13" cy="15.5" r="1.6" fill="var(--color-hl-2)" /><circle cx="19" cy="15.5" r="1.6" fill="var(--color-hl-2)" /></g>
-    <path d="M14.2 18.2q1.8 1.2 3.6 0" stroke="var(--color-hl-2)" strokeWidth="1.1" fill="none" strokeLinecap="round" />
-    <rect x="11" y="25" width="10" height="6" rx="2.5" fill="var(--color-hl-2)" />
-    <path d="M26 27.5q3-1 3.5-5" stroke="var(--color-hl-2)" strokeWidth="2" fill="none" strokeLinecap="round" className="ai-wave" />
-  </svg>
-);
 
 /** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. */
 export function AiAsk({ label, onClick, hint = "Hỏi mình về số liệu này nhé!", big }: { label: string; onClick: () => void; hint?: string; big?: boolean }) {

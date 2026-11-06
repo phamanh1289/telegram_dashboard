@@ -207,7 +207,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         </motion.section>
       )}
 
-      <motion.div variants={fade}><Related t={i} /></motion.div>
+      <motion.div variants={fade}><Related t={i} links={d.data?.links} /></motion.div>
 
       {!!d.data?.links.length && (
         <motion.section variants={fade} className="grid gap-1.5">
