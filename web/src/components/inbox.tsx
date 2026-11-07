@@ -3,31 +3,32 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Inbox as InboxIcon, Menu, MessageSquare, Pin, RotateCw, Search, Send, Sparkles, WifiOff, X } from "lucide-react";
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Bot, ChevronRight, Inbox as InboxIcon, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, RotateCw, Search, Send, Sparkles, WifiOff, X } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { DeepThinking } from "@/components/deep-think";
 import { BriefingGroups, BriefingPage, briefingQuery, hasNews } from "@/components/briefing-page";
 import { DigestPage } from "@/components/digest-page";
+import { qaGroupsQuery, QaGroups, QaPage, type QaDays, useQaNews, useQaRecent } from "@/components/qa-page";
 import { InboxPalette } from "@/components/inbox-palette";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
 import { PendingInbox } from "@/components/pending-inbox";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutsDialog } from "@/components/settings";
-import { NavPill, Toaster, TopBar } from "@/components/shell";
+import { Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status, statusQuery } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
-import { ALL, BRIEFING, goKey, msgKey, openTask, PINNED, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { ALL, BRIEFING, goKey, msgKey, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
-import { Segmented } from "@/components/ui/segmented";
+import { Pill } from "@/components/ui/segmented";
 import { AiPlug } from "@/components/ai-plug";
 
 const STATE_LABEL: Record<Status["state"], string> = {
@@ -54,6 +55,19 @@ const STREAM_LABEL: Record<StreamState, string> = {
   connecting: "Đang nối lại luồng cập nhật…",
   closed: "Luồng cập nhật tạm dừng",
 };
+
+type NavItem = readonly [id: string, label: string, count: number, icon: LucideIcon];
+
+/** Sidebar section title; on the closed rail it gives way to a short rule so the sections still read apart. */
+function SideHeading({ label, extra, fade, rail }: { label: string; extra?: ReactNode; fade: string; rail: boolean }) {
+  return (
+    <h2 className="relative mt-2 flex h-7 items-center gap-2 whitespace-nowrap px-2.5 text-[0.6875rem] font-semibold uppercase tracking-[0.06em] text-ink-3">
+      {rail && <span aria-hidden className="absolute inset-x-3 top-1/2 hidden h-px bg-rule-2 md:block md:group-hover/side:hidden md:group-focus-within/side:hidden" />}
+      <span className={fade}>{label}</span>
+      {extra && <span className={cn("ml-auto font-normal normal-case tracking-normal", fade)}>{extra}</span>}
+    </h2>
+  );
+}
 
 export function App() {
   const status = useQuery({ ...statusQuery, retry: 1 });
@@ -97,6 +111,8 @@ export function App() {
   }
   return <Inbox status={status.data} />;
 }
+
+const NO_CODES: ReadonlyMap<string, string> = new Map(); // Q&A page: its cards already say the code
 
 function Inbox({ status }: { status: Status }) {
   const stream = useSync(status.cursor);
@@ -242,33 +258,67 @@ function Inbox({ status }: { status: Status }) {
     setReply({ m, external: true });
     setDraft(text ? { result: { text, options: [], analysis: "", source_message_ids: [], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() } : null);
   });
+  // A "#QA…" badge on a message (lib/inbox `openQa`): that thread in its group's Q&A.
+  const onOpenQa = useEffectEvent((e: Event) => {
+    const { chatId: id, code } = (e as CustomEvent<{ chatId: string; code: string }>).detail;
+    setQaGroup(id);
+    go(QA, code);
+  });
+  // "Trả lời bằng Q&A" on a message (lib/inbox `answerQa`): its group's Q&A, replying to it.
+  const onQaAnswer = useEffectEvent((e: Event) => {
+    setReply(null);
+    setQaGroup((e as CustomEvent<Message>).detail.chat_id);
+    go(QA);
+  });
+  useEffect(() => {
+    addEventListener("qa-answer", onQaAnswer);
+    return () => removeEventListener("qa-answer", onQaAnswer);
+  }, []);
   useEffect(() => {
     addEventListener("open-task", onOpenTask);
     addEventListener("open-reply", onOpenReply);
+    addEventListener("open-qa", onOpenQa);
     return () => {
       removeEventListener("open-task", onOpenTask);
       removeEventListener("open-reply", onOpenReply);
+      removeEventListener("open-qa", onOpenQa);
     };
   }, []);
 
   const hints: Record<string, string> = {
     [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
+    [QA]: "Đăng câu hỏi vào nhóm bất kỳ (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời. Số: trả lời mới cộng câu của bạn chưa ai trả lời quá ngưỡng nhắc.",
     [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
+    [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
     [TASKS]: "Phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE.",
   };
-  const views = [
-    [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
-    [PINNED, "Tag đã ghim", 0, Pin],
-    ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as const] : []),
-  ] as const;
-  // Groups section: tagged groups, or (AI on) the groups Briefing follows; landing on Briefing shows its tab.
+  const countSr: Record<string, string> = { [TASKS]: "đang chạy", [BRIEFING]: "nhóm có tin mới", [QA]: "trả lời mới hoặc câu cần nhắc" };
   const aiOn = status.ai_configured;
-  const [side, setSide] = useState<"tag" | "brief">(chatId === BRIEFING ? "brief" : "tag");
-  const [seenChat, setSeenChat] = useState(chatId);
-  if (seenChat !== chatId) { setSeenChat(chatId); if (chatId === BRIEFING) setSide("brief"); }
-  const showBrief = aiOn && side === "brief";
+  const [qaGroup, setQaGroup] = useState<string | null>(null); // Q&A: the group picked (null: none yet)
+  const qaLast = useQaRecent()[0];
+  const qaShown = qaGroup ?? qaLast ?? null; // none picked: the one you asked last
+  const [qaDays, setQaDays] = useState<QaDays>(7);
+  // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges).
+  const qa = useQaNews(qaDays, chatId === QA);
   const [briefGroup, setBriefGroup] = useState<string | null>(null); // Briefing: one group's items (null: all)
   const briefNews = (useQuery({ ...briefingQuery, enabled: aiOn }).data ?? []).filter((i) => i.consent && hasNews(i)).length;
+  // Sidebar sections; `views` (all pages, flat) also feeds the header title, g-keys and ⌘K.
+  const sections: { label: string; items: NavItem[] }[] = [
+    { label: "Hộp thư", items: [
+      [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
+      [QA, "Q&A", qa.total + qa.lateTotal, MessageCircleQuestion],
+      [PINNED, "Tag đã ghim", 0, Pin],
+    ] },
+    { label: "Trợ lý AI", items: [
+      ...(aiOn ? [[BRIEFING, "Briefing", briefNews, Sparkles] as NavItem] : []),
+      ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
+    ] },
+  ];
+  const views = sections.flatMap((s) => s.items);
+  // Groups section follows the open page: Briefing's followed groups, Q&A's groups, else the tagged groups.
+  const showBrief = aiOn && chatId === BRIEFING;
+  const showQa = chatId === QA;
+  const qaTitle = useQuery({ ...qaGroupsQuery, enabled: showQa }).data?.find((g) => showQa && g.chat_id === qaShown)?.title;
   const offline = status.state !== "connected" || stream !== "open";
   // Shown only once the problem lasts a few seconds: a reconnect blip shouldn't flash a banner.
   const [lasting, setLasting] = useState(false);
@@ -280,9 +330,9 @@ function Inbox({ status }: { status: Status }) {
   const banner = offline && lasting;
   const filtering = !!(days.from || days.to);
   // Search and the day range filter tag lists; Briefing, Digest and AI Agent have their own (or none).
-  const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && !digest;
+  const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && chatId !== QA && !digest;
   const inGroup = listPage && chatId !== ALL && chatId !== PINNED;
-  const title = views.find(([id]) => id === chatId)?.[1] ?? (chatId === BRIEFING ? "Briefing" : undefined) ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
+  const title = views.find(([id]) => id === chatId)?.[1] ?? (chatId === BRIEFING ? "Briefing" : chatId === QA ? "Q&A" : undefined) ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
   const openDigest = status.ai_configured ? () => { setReply(null); setFocus(null); setDigest(true); } : undefined;
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
@@ -305,23 +355,29 @@ function Inbox({ status }: { status: Status }) {
             <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox · có AI trợ lực</span>
           </span>
         </div>
-        <h2 className={cn("mt-2 flex h-7 items-center whitespace-nowrap px-2.5 text-[0.8125rem] font-semibold text-ink-2", t)}>Hộp thư</h2>
-        <nav aria-label="Trang" className="grid gap-1">
-          {views.map(([id, label, count, Icon]) => (
-            <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={chatId === id ? "page" : undefined} onClick={() => go(id)} aria-label={label}
-              className={cn(
-                "group/item relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
-                chatId === id ? "font-semibold text-hl-2" : "text-ink-3 hover:bg-paper-3 hover:text-ink",
-              )}>
-              {chatId === id && <NavPill />}
-              <Icon className="relative size-5 shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none" aria-hidden />
-              <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
-              {count > 0 && (
-                <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : "bg-paper-3 text-ink-2")}>
-                  <span className="sr-only">(</span>{count}<span className="sr-only">{id === TASKS ? " đang chạy)" : ")"}</span>
-                </span>
-              )}
-            </button></Hint>
+        <nav aria-label="Trang" className="grid gap-0.5">
+          {sections.filter((s) => s.items.length).map((s) => (
+            <section key={s.label} aria-label={s.label} className="grid gap-0.5">
+              <SideHeading label={s.label} fade={t} rail={collapsed} />
+              {s.items.map(([id, label, count, Icon]) => (
+                <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={chatId === id ? "page" : undefined} aria-label={label}
+                  onClick={() => { if (id === BRIEFING) setBriefGroup(null); go(id); }}
+                  className={cn(
+                    "group/item relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
+                    chatId === id ? "font-semibold text-hl-2" : "text-ink-2 hover:bg-paper-3 hover:text-ink",
+                  )}>
+                  {chatId === id && <Pill id="tg-page" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
+                  <Icon className={cn("relative size-[1.125rem] shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none", chatId !== id && "text-ink-3 group-hover/item:text-ink-2")} aria-hidden />
+                  <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
+                  {count > 0 && (
+                    <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : id === BRIEFING ? "bg-signal-wash text-signal-2" : "bg-paper-3 text-ink-2")}>
+                      <span className="sr-only">(</span>{count}<span className="sr-only">{countSr[id] ? ` ${countSr[id]})` : ")"}</span>
+                    </span>
+                  )}
+                  {collapsed && count > 0 && <span aria-hidden className="absolute top-1.5 left-7 size-2 rounded-full bg-signal ring-2 ring-paper-2 md:group-hover/side:hidden md:group-focus-within/side:hidden max-md:hidden" />}
+                </button></Hint>
+              ))}
+            </section>
           ))}
         </nav>
         {filtering && (
@@ -334,21 +390,21 @@ function Inbox({ status }: { status: Status }) {
             </button>
           </div>
         )}
-        <div className="-mx-3 mt-2 flex min-h-0 flex-1 flex-col border-t pt-2">
-          {aiOn && (
-            <div className={cn("grid gap-1 px-3 pb-1.5", t)}>
-              <h2 className="flex h-7 items-center whitespace-nowrap px-2.5 text-[0.8125rem] font-semibold text-ink-2">Nhóm</h2>
-              <Segmented id="side-groups" label="Danh sách nhóm" variant="card" value={side}
-                onChange={(v) => { setSide(v); if (v === "brief" && chatId !== BRIEFING) { setBriefGroup(null); go(BRIEFING); } }}
-                items={[
-                  { value: "tag", title: "Nhóm có tin tag bạn chưa xử lý.", label: <>Có tag{pendingTotal > 0 && <span className="font-mono tabular-nums text-ink-3">{pendingTotal}</span>}</> },
-                  { value: "brief", title: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.", label: <><Sparkles className="size-3.5 text-hl" aria-hidden />Briefing{briefNews > 0 && <span className="size-1.5 rounded-full bg-signal" aria-label={`${briefNews} nhóm có tin mới`} />}</> },
-                ]} />
+        <div className="-mx-3 mt-2 flex min-h-0 flex-1 flex-col border-t pt-1">
+          <div className="px-3">
+            <SideHeading fade={t} rail={collapsed}
+              label={showBrief ? "Nhóm · Briefing" : showQa ? "Nhóm · Q&A" : "Nhóm có tag"}
+              extra={!showBrief && !showQa && pendingTotal > 0 && <><span className="font-mono tabular-nums text-ink-2">{pendingTotal}</span> chưa xử lý</>} />
+          </div>
+          <div className={cn("min-h-0 flex-1", (showBrief || showQa) && "hidden")}>
+            <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} bare />
+          </div>
+          {showQa && (
+            <div className="min-h-0 flex-1">
+              <QaGroups days={qaDays} collapsed={collapsed} selected={chatId === QA ? qaShown : undefined}
+                onSelect={(id) => { setQaGroup(id); go(QA); }} />
             </div>
           )}
-          <div className={cn("min-h-0 flex-1", showBrief && "hidden")}>
-            <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} bare={aiOn} />
-          </div>
           {showBrief && (
             <div className="min-h-0 flex-1">
               <BriefingGroups collapsed={collapsed} selected={chatId === BRIEFING ? briefGroup : undefined}
@@ -368,14 +424,17 @@ function Inbox({ status }: { status: Status }) {
       <div className="hidden md:block" aria-hidden />
 
       <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
-        <header className="flex min-h-14 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
+        <header className="flex min-h-14 min-w-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
           <Hint side="bottom" text="Thu gọn / mở rộng menu">
             <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
               aria-label="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
               <Menu />
             </Button>
           </Hint>
-          <h2 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-[-0.01em] sm:flex-none">{title}</h2>
+          <h2 className="flex min-w-0 flex-1 items-center gap-1.5 text-lg font-semibold tracking-[-0.01em] sm:flex-initial">
+            <span className={cn("truncate", qaTitle && "shrink-0")}>{title}</span>
+            {qaTitle && <><ChevronRight className="size-4 shrink-0 text-ink-3" aria-hidden /><span className="min-w-0 truncate font-medium text-ink-2">{qaTitle}</span></>}
+          </h2>
           {/* AI Agent puts its session tabs here (portal) instead of search and range, which it doesn't use. */}
           <div ref={setHeadSlot} className={cn("min-w-0 flex-1", chatId !== TASKS && "hidden")} />
           {listPage && <div className={cn("ml-auto flex min-w-0 flex-1 items-center justify-end gap-2", searchOpen && "max-sm:order-last max-sm:basis-full")}>
@@ -421,12 +480,15 @@ function Inbox({ status }: { status: Status }) {
           </div>
         )}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
+          <QaCodes.Provider value={chatId === QA ? NO_CODES : qa.codes}>
           <div className={cn("grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock")}>
             <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
             {/* No exit wait: the next page mounts at once and rises in (globals.css .page-in); pages the AI made get the .ai-in beam. */}
             {chatId ? (
               <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || digest) && "ai-in")}>
-                {chatId === BRIEFING ? (
+                {chatId === QA ? (
+                  <QaPage key={qaShown} focus={focus} group={qaShown} onGroup={setQaGroup} days={qaDays} onDays={setQaDays} onBack={() => go(ALL)} />
+                ) : chatId === BRIEFING ? (
                   <BriefingPage group={briefGroup} onGroup={setBriefGroup} onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
                 ) : chatId === TASKS ? (
                   // keyed by focus: "Mở phiên" while already on AI Agent selects the new session
@@ -466,7 +528,7 @@ function Inbox({ status }: { status: Status }) {
             {replyTo && (
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReply(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); }} onDone={() => advance()} onStep={advance}
+              onClearReply={() => setReply(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
               onTaskCreated={(id) => { setReply(null); toast({ text: "Đã giao AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
                 // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
                 undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) }); }} draft={draft}
@@ -474,6 +536,7 @@ function Inbox({ status }: { status: Status }) {
               </div>
             )}
           </div>
+          </QaCodes.Provider>
         </div>
       </div>
       <DeepThinking />

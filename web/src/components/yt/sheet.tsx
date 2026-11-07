@@ -83,7 +83,7 @@ export function Sheet() {
               )}
               {s.kind === "ticket" && y.aiOn && (
                 <Hint side="bottom" text="Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code"><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="AI cho ticket này"
-                  onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids: [s.id] })}><Sparkles /></Button></Hint>
+                  onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [s.id] })}><Sparkles /></Button></Hint>
               )}
               <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(s.kind === "ticket" && y.aiOn) && "ml-auto")} onClick={close} aria-label="Đóng (Esc)"><X /></Button>
             </div>

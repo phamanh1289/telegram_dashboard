@@ -7,8 +7,12 @@ const isBuild = process.env.NODE_ENV === "production";
 const config: NextConfig = isBuild
   ? { output: "export", images: { unoptimized: true }, trailingSlash: true } // /youtrack/ -> out/youtrack/index.html
   : {
+      // API_ORIGIN: a second dev server against another backend (a fixture) while the live app keeps :8765;
+      // its own distDir, since `next dev` locks `.next/dev` per folder.
+      ...(process.env.API_ORIGIN && { distDir: ".next/fixture" }),
       async rewrites() {
-        return [{ source: "/api/:path*", destination: "http://127.0.0.1:8765/api/:path*" }];
+        const api = process.env.API_ORIGIN ?? "http://127.0.0.1:8765";
+        return [{ source: "/api/:path*", destination: `${api}/api/:path*` }];
       },
     };
 

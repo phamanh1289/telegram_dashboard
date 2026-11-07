@@ -70,6 +70,28 @@ export function chatTitle(qc: QueryClient, chatId: string) {
   }
 }
 
+/** A group's ID from its title in any loaded group list (attached messages from another group name it by title). */
+export function chatByTitle(qc: QueryClient, title: string) {
+  for (const [, d] of qc.getQueriesData<ChatsResponse>({ queryKey: ["chats"] })) {
+    const c = d?.items.find((c) => c.title === title);
+    if (c) return c.chat_id;
+  }
+}
+
+/** One quoted message of a sent prompt's attached block (see withAttachments). */
+export type Attached = { id: string; who: string; when: string; group?: string; media?: string; body: string };
+const ATTACHED = /^\[#(\d+)\] (.*), (\d\d:\d\d, \d\d\/\d\d\/\d{4})(?: \(nhóm (.+?)\))?(?: \[kèm (\w+)\])?:$/;
+
+/** The attached block split back into its messages; a block it can't read stays one plain item. */
+export function parseAttachments(block: string): Attached[] {
+  return block.split(/\n\n(?=\[#\d+\] )/).map((part) => {
+    const [head, ...lines] = part.split("\n");
+    const m = ATTACHED.exec(head);
+    const body = lines.map((l) => l.replace(/^> ?/, "")).join("\n");
+    return m ? { id: m[1], who: m[2], when: m[3], group: m[4], media: m[5], body } : { id: "", who: "", when: "", body: part };
+  });
+}
+
 /** The prompt sent: what was typed, then each attached message quoted, "[#id]" matching the marks in the text. */
 export function withAttachments(text: string, msgs: Message[], home: string | null, title: (chatId: string) => string | undefined) {
   if (!msgs.length) return text;

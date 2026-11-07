@@ -24,7 +24,7 @@ import { useYt } from "./state";
 // Open tickets linked to the scope but outside it count too: they can hold the release. The whole project, not the header's
 // people filter. The go-live day is the AI release report's one (`ytRelease:<project>`).
 
-type Trace = Record<string, { links: { rel: string; issues: Ticket[] }[]; last: { text: string; created: number; author: string | null } | null }>;
+type Trace = Record<string, { desc?: string; links:{ rel: string; issues: Ticket[] }[]; last: { text: string; created: number; author: string | null } | null }>;
 type St = "block" | "po" | "todo" | "doing" | "qc" | "ready" | "done";
 const ST: Record<St, { label: string; chip: string; bar: string; next: (i: Ticket, day: string) => string }> = {
   block: { label: "Blocked", chip: "bg-error-wash text-error", bar: "var(--color-error)", next: () => "Gỡ block" },
@@ -44,7 +44,7 @@ const shipped = (s: St) => s === "ready" || s === "done";
 /** One thing that threatens the release; `key` groups them in the verdict. */
 type Why = { sev: "bad" | "warn"; key: keyof typeof WHY; text: string };
 const WHY = {
-  passed: "ticket chưa xong khi đã qua go-live", block: "ticket bị block", late: "ticket chưa tới QC khi sắp go-live", crit: "bug Critical / Highest chưa xong",
+  passed: "ticket chưa xong khi đã qua go-live", block: "ticket bị block", wait: "ticket chờ ticket khác chưa xong", late: "ticket chưa tới QC khi sắp go-live", crit: "bug Critical / Highest chưa xong",
   linkbug: "bug liên kết còn mở", outside: "ticket liên kết nằm ngoài phạm vi", start: "ticket chưa bắt đầu", due: "ticket có hạn sau go-live",
   owner: "ticket chưa có người làm", noqc: "ticket chờ test chưa có QC", stale: "ticket đứng yên quá 3 ngày",
 } as const;
@@ -54,7 +54,10 @@ const day0 = (s: string) => +new Date(`${s}T00:00`);
 const fmtDay = (s: string) => new Date(day0(s)).toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
 const fmtShort = (s: string) => new Date(day0(s)).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
 const plain = (s: string) => s.replace(/!\[[^\]]*\]\([^)]*\)(\{[^}]*\})?/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/[*`#>_]/g, "").replace(/\s+/g, " ").trim();
-const usePrefValue = (key: string) => useSyncExternalStore(onPrefs, () => getPref(key) ?? "", () => "");
+const brief = (s?: string) => { const t = plain(s ?? ""); return t.length > 200 ? `${t.slice(0, 197)}…` : t; };
+/** Link names (read from this ticket's side) meaning "can't ship before the other one": YouTrack's Depend and Subtask. */
+const WAIT_RE = /depends on|blocked by|parent for/i;
+const usePrefValue =(key: string) => useSyncExternalStore(onPrefs, () => getPref(key) ?? "", () => "");
 
 export function ReleasePage() {
   const y = useYt();
@@ -112,6 +115,9 @@ export function ReleasePage() {
     return [...m.values()];
   }, [rows, tr]);
 
+  // the unshipped tickets this one waits on (depends on / blocked by / its subtasks)
+  const waitsOf = (id: string) => (tr[id]?.links ?? []).filter((l) => WAIT_RE.test(l.rel)).flatMap((l) => l.issues).filter((x) => !shipped(statusOf(x)));
+
   function whyOf(i: Ticket, out?: string[]): Why[] {
     const s = statusOf(i), w: Why[] = [];
     if (shipped(s)) return w;
@@ -122,7 +128,12 @@ export function ReleasePage() {
     if (!passed && left <= 1 && ["po", "todo", "doing", "block"].includes(s)) w.push({ sev: "bad", key: "late", text: left ? "Chưa tới QC, còn 1 ngày" : "Chưa tới QC, go-live hôm nay" });
     else if (!passed && left <= 3 && (s === "po" || s === "todo")) w.push({ sev: "warn", key: "start", text: `Chưa bắt đầu, còn ${left} ngày` });
     if (crit && !out) w.push({ sev: "bad", key: "crit", text: `Bug ${i.priority}` });
-    for (const x of (tr[i.id]?.links ?? []).flatMap((l) => l.issues)) if (!x.resolved && isBug(x)) w.push({ sev: rank(x) <= 1 ? "bad" : "warn", key: "linkbug", text: `Bug ${x.id} chưa xong` });
+    const waits = waitsOf(i.id);
+    for (const x of waits) {
+      const xs = statusOf(x), far = xs === "block" || passed || (left <= 3 && ["po", "todo", "doing"].includes(xs));
+      w.push({ sev: far ? "bad" : "warn", key: "wait", text: `Chờ ${x.id} (${ST[xs].label}${x.assignee ? `, ${shortName(x.assignee)}` : ""})` });
+    }
+    for (const x of (tr[i.id]?.links ?? []).flatMap((l) => l.issues)) if (!x.resolved && isBug(x) && !waits.some((y) => y.id === x.id)) w.push({ sev: rank(x) <= 1 ? "bad" : "warn", key: "linkbug", text: `Bug ${x.id} chưa xong` });
     if (i.due && i.due > rel) w.push({ sev: "warn", key: "due", text: `Hạn ${new Date(i.due).toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" })}, sau go-live` });
     if (!i.assignee) w.push({ sev: "warn", key: "owner", text: "Chưa có người làm" });
     if (s === "qc" && !i.qc) w.push({ sev: "warn", key: "noqc", text: "Chưa có QC" });
@@ -163,6 +174,25 @@ export function ReleasePage() {
   };
   const v = level && V[level];
 
+  // the bottleneck: the stage, the person and the ticket holding the most unfinished work
+  const open = [...scoped, ...extra].filter((r) => !shipped(r.s));
+  const most = (key: (r: Row) => string) => {
+    const m = new Map<string, Row[]>();
+    for (const r of open) { const k = key(r); m.set(k, [...(m.get(k) ?? []), r]); }
+    return [...m].sort((a, b) => b[1].length - a[1].length)[0];
+  };
+  const stage = most((r) => r.s), owner = most((r) => (r.s === "qc" ? (r.i.qc ?? "Chưa có QC") : (r.i.assignee ?? "Chưa có người")));
+  const holds = new Map<string, { i: Ticket; is: Ticket[] }>();
+  for (const r of open) for (const x of waitsOf(r.i.id)) { const e = holds.get(x.id) ?? { i: x, is: [] }; e.is.push(r.i); holds.set(x.id, e); }
+  const blocker = [...holds.values()].sort((a, b) => b.is.length - a.is.length)[0];
+  const necks: { label: string; text: string; is: Ticket[] }[] = [];
+  if (stage) necks.push({ label: "Giai đoạn", text: `${stage[1].length}/${open.length} ticket chưa xong đang ở ${ST[stage[0] as St].label}`, is: stage[1].map((r) => r.i) });
+  if (owner && owner[1].length > 1) {
+    const k = owner[1].filter((r) => r.why.length).length;
+    necks.push({ label: "Người", text: `${owner[0]} giữ ${owner[1].length}/${open.length} ticket chưa xong${k ? `, ${k} có vấn đề` : ""}`, is: owner[1].map((r) => r.i) });
+  }
+  if (blocker) necks.push({ label: "Ticket chặn", text: `${blocker.i.id} (${ST[statusOf(blocker.i)].label}) chặn ${blocker.is.length} ticket: ${blocker.is.slice(0, 3).map((i) => i.id).join(", ")}${blocker.is.length > 3 ? "…" : ""}`, is: [blocker.i, ...blocker.is] });
+
   const view = pick === "act" && !act.length ? "all" : pick ?? (act.length ? "act" : "all");
   const shown = view === "act" ? act : scoped.filter((r) => view === "all" || r.s === view)
     .sort((a, b) => FLOW.indexOf(a.s) - FLOW.indexOf(b.s) || rank(a.i) - rank(b.i));
@@ -175,10 +205,11 @@ export function ReleasePage() {
     const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\n/g, " ");
     const head = `# Go-live ${fmtDay(day)}: ${y.project}\n\n**${v?.text ?? "Chưa có ticket"}** · ${ready}/${rows.length} sẵn sàng · còn ${left} ngày làm việc · ${scopeText} · tạo lúc ${when(now)}\n`;
     const why = summary ? `\n**Tóm tắt:** ${summary}\n${reasons.map((r) => `\n- ${r.n} ${WHY[r.k]}: ${r.is.map((i) => i.id).join(", ")}`).join("")}\n` : "";
-    const todo = act.length ? `\n## Cần xử lý\n\n| Ticket | Vấn đề | Việc tiếp theo | Ai | Giai đoạn |\n|---|---|---|---|---|\n${act.map((r) =>
-      `| ${r.i.id} ${cell(titleOf(r.i))} | ${cell(r.why.map((w) => w.text).join("; "))} | ${cell(ST[r.s].next(r.i, day))} | ${r.i.assignee ?? "—"}${r.i.qc ? ` / QC ${r.i.qc}` : ""} | ${ST[r.s].label} |`).join("\n")}\n` : "";
+    const neck = necks.length ? `\n**Nút thắt:**\n${necks.map((x) => `\n- ${x.label}: ${x.text}`).join("")}\n` : "";
+    const todo = act.length ? `\n## Cần xử lý\n\n| Ticket | Mô tả | Vấn đề | Việc tiếp theo | Ai | Giai đoạn |\n|---|---|---|---|---|---|\n${act.map((r) =>
+      `| ${r.i.id} ${cell(titleOf(r.i))} | ${cell(brief(tr[r.i.id]?.desc)) || "—"} |${cell(r.why.map((w) => w.text).join("; "))} | ${cell(ST[r.s].next(r.i, day))} | ${r.i.assignee ?? "—"}${r.i.qc ? ` / QC ${r.i.qc}` : ""} | ${ST[r.s].label} |`).join("\n")}\n` : "";
     const flow = FLOW.filter((s) => n(s)).map((s) => `\n### ${ST[s].label} (${n(s)})\n\n${scoped.filter((r) => r.s === s).map((r) => `- ${r.i.id} ${titleOf(r.i)} (${r.i.assignee ?? "chưa có người"})`).join("\n")}\n`).join("");
-    downloadText(`${head}${why}${todo}\n## Theo giai đoạn\n${flow}`, `go-live-${y.project}-${day}.md`);
+    downloadText(`${head}${why}${neck}${todo}\n## Theo giai đoạn\n${flow}`, `go-live-${y.project}-${day}.md`);
   }
   const askAi = () => y.setSheet({ kind: "work", title: `AI · Go-live ${fmtShort(day)}`, ids: [...act.map((r) => r.i.id), ...scoped.filter((r) => !shipped(r.s) && !r.why.length).map((r) => r.i.id)].slice(0, AI_MAX) });
 
@@ -248,6 +279,19 @@ export function ReleasePage() {
             {reasons.length > 6 && <li className="text-ink-3">và {reasons.length - 6} lý do nhẹ hơn, xem Cần xử lý</li>}
           </ul>
         )}
+        {necks.length > 0 && !loading && (
+          <div className="grid gap-1 border-t border-rule/60 pt-3 text-sm">
+            <p className="font-semibold text-ink">Nút thắt</p>
+            <ul className="grid gap-1">
+              {necks.map((x) => (
+                <li key={x.label} className="flex items-baseline gap-2">
+                  <span className="w-24 shrink-0 text-xs text-ink-3">{x.label}</span>
+                  <button type="button" className="min-w-0 text-left text-ink hover:text-hl-2 hover:underline" onClick={() => list(`Nút thắt · ${x.label}`, x.is)}>{x.text}</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       {/* what to do about it */}
@@ -281,7 +325,7 @@ export function ReleasePage() {
           : (
             <ul className="grid grid-cols-1">
               {shown.map(({ i, s, why, out }, k) => {
-                const c = tr[i.id]?.last, tag = tagsOf(i)[0];
+                const c = tr[i.id]?.last, tag = tagsOf(i)[0], desc = brief(tr[i.id]?.desc);
                 // other pages stay in the DOM, hidden on screen: In / PDF prints the whole list
                 return (
                   <li key={i.id} className={cn(Math.floor(k / PAGE) === pg ? "grid" : "hidden print:grid", "grid-cols-1 gap-x-6 gap-y-1.5 border-b border-rule/60 py-3 last:border-0 sm:grid-cols-[minmax(0,1fr)_13rem_6.5rem]")}>
@@ -292,6 +336,7 @@ export function ReleasePage() {
                         {tag && <Tag name={tag} />}
                         <span className="min-w-0 text-sm text-ink">{titleOf(i)}</span>
                       </p>
+                      {desc && <p className="line-clamp-2 text-xs text-ink-2">{desc}</p>}
                       {why.length > 0 && (
                         <ul className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs font-medium">
                           {why.map((w) => <li key={w.text} className={cn("inline-flex items-center gap-1", w.sev === "bad" ? "text-error" : "text-warn")}>

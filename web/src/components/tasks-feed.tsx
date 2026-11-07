@@ -1,10 +1,12 @@
 "use client";
 
-import { Bot, ChevronDown, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
-import { memo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Bot, ChevronDown, ExternalLink, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
+import { createContext, memo, use, useState } from "react";
 import { AiResultCard, dur, UserBubble } from "@/components/ai/chat";
 import { Markdown } from "@/components/markdown";
-import { splitAttachments } from "@/lib/attach";
+import { Hint } from "@/components/ui/hint";
+import { type Attached, chatByTitle, parseAttachments, splitAttachments } from "@/lib/attach";
 import { cn } from "@/lib/utils";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results.
@@ -156,17 +158,49 @@ function TurnTimeline({ took, tools }: { took: number; tools: number }) {
 
 const AI_TEXT = "text-[0.9375rem] leading-[1.6]";
 
-/** A prompt the user sent; attached messages fold under it. */
+/** Opens a message in its group (AI Agent: the session's group is `home`, attached messages of others name it by title). */
+export const OpenAttached = createContext<{ home: string | null; open: (chatId: string, messageId: string) => void } | null>(null);
+
+/** One attached message: who, when, which group if not the session's, its text; ↗ opens it in the group. */
+function AttachedCard({ a }: { a: Attached }) {
+  const ctx = use(OpenAttached);
+  const qc = useQueryClient();
+  const chat = a.id ? (a.group ? chatByTitle(qc, a.group) : ctx?.home) : null;
+  return (
+    <li className="grid gap-1 rounded-lg border border-rule bg-cotton px-2.5 py-2">
+      {a.id && (
+        <p className="flex min-w-0 items-center gap-1.5 text-ink-3">
+          <span className="shrink-0 font-mono tabular-nums">#{a.id}</span>
+          <span className="truncate font-medium text-ink-2">{a.who}</span>
+          <span className="shrink-0">{a.when}</span>
+          {a.group && <span className="truncate rounded-sm bg-paper-2 px-1">{a.group}</span>}
+          {a.media && <span className="shrink-0 rounded-sm bg-paper-2 px-1">{a.media}</span>}
+          {ctx && chat && (
+            <Hint side="bottom" text="Mở tin này trong nhóm Telegram">
+              <button type="button" aria-label={`Mở tin #${a.id} trong nhóm`} onClick={() => ctx.open(chat, a.id)}
+                className="-my-1 ml-auto grid size-6 shrink-0 place-items-center rounded-md transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+                <ExternalLink className="size-3.5" aria-hidden />
+              </button>
+            </Hint>
+          )}
+        </p>
+      )}
+      <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words text-[0.8125rem] leading-relaxed text-ink">{a.body}</p>
+    </li>
+  );
+}
+
+/** A prompt the user sent; attached messages fold under it, one card each. */
 function UserTurn({ text }: { text: string }) {
   const [said, attached] = splitAttachments(text);
-  const n = attached.match(/^\[#\d+\] /gm)?.length ?? 0;
+  const items = attached ? parseAttachments(attached) : [];
   return (
     <UserBubble className={AI_TEXT}>
       {said && <p>{said}</p>}
-      {attached && (
-        <details className={cn("text-xs text-ink-2", said && "mt-1.5")}>
-          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-ink"><Paperclip className="size-3" aria-hidden /> {n} tin đính kèm</summary>
-          <p className="mt-1 border-l-2 border-hl/40 pl-2">{attached}</p>
+      {items.length > 0 && (
+        <details className={cn("whitespace-normal text-xs text-ink-2", said && "mt-1.5")}>
+          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-ink"><Paperclip className="size-3" aria-hidden /> {items.length} tin đính kèm</summary>
+          <ul className="mt-1.5 grid gap-1.5">{items.map((a, i) => <AttachedCard key={a.id || i} a={a} />)}</ul>
         </details>
       )}
     </UserBubble>

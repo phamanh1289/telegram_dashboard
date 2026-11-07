@@ -1,8 +1,8 @@
 "use client";
 
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, Clock3, CornerDownRight, ExternalLink, FolderGit2, Loader2, MessageSquarePlus, MessagesSquare, Paperclip, PenLine, Pin, RotateCcw, UserX, Users } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, Clock3, CornerDownRight, ExternalLink, FolderGit2, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, RotateCcw, UserX, Users } from "lucide-react";
+import { memo, useContext, useMemo, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { CommentDialog } from "@/components/composer-dialogs";
@@ -10,10 +10,11 @@ import { DeepBadge, DeepPick, useDeepTask } from "@/components/deep-think";
 import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
+import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Message, statusQuery, type Task } from "@/lib/api";
 import { attach, messageQuery, sameRef } from "@/lib/attach";
-import { copyText, dbId, ignoreSender, msgKey, openTask, PartialError, pin, sessionId, setHandled, smooth, snooze, taskListQuery, telegramLink, toast, useHasDraft, useNow, useTaskList, waitLabel } from "@/lib/inbox";
+import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sessionId, SESSION_CODE, setHandled, smooth, snooze, taskListQuery, telegramLink, toast, useHasDraft, useNow, useTaskList, waitLabel } from "@/lib/inbox";
 import { clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
 import { readOverdueHours, useRole } from "@/lib/prefs";
 import { useRetest, yt } from "@/lib/yt";
@@ -130,6 +131,10 @@ export type MessageItemProps = {
   onReply: (m: Message) => void;
   onUseText: (m: Message, text: string) => void; // put a task result into the composer
   live?: boolean; // read live from Telegram, not stored: no tag actions, no reply panel
+  liveReply?: boolean; // live, yet a click still picks it to reply to (Q&A threads)
+  fresh?: boolean; // arrived since you last looked (Q&A threads): a "Mới" pill
+  bare?: boolean; // Q&A thread: no ID, "trả lời #…" or #QA badge (the order is the chain, the thread names its code)
+  extra?: React.ReactNode; // a page's own control before the row actions (Q&A: "Chốt" this answer)
   picked?: boolean; // in the to-do list's multi-selection
   onPick?: (m: Message) => void; // Shift+click: add to / drop from the selection
 };
@@ -148,7 +153,7 @@ export const MessageItem = memo(function MessageItem(props: MessageItemProps) {
 });
 
 function MessageRow({
-  m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, onUseText, live, picked, onPick,
+  m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, onUseText, live, liveReply, fresh, bare, extra, picked, onPick,
 }: MessageItemProps) {
   const hasDraft = useHasDraft(m);
   const [showContext, setShowContext] = useState(false);
@@ -174,7 +179,7 @@ function MessageRow({
         selected && "bg-linear-to-r from-hl-wash to-hl-wash/35 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-hl",
         picked && "bg-hl-wash/60 ring-2 ring-inset ring-hl",
         !head && !groupTitle && "pt-1.5",
-        !live && "cursor-pointer",
+        (!live || liveReply) && "cursor-pointer",
       )}
       onClick={(e) => {
         // Click anywhere on the row opens the reply panel (not on links/buttons or while selecting text).
@@ -185,7 +190,7 @@ function MessageRow({
           return onPick(m);
         }
         const selecting = !!sel?.toString() && !!sel.anchorNode && e.currentTarget.contains(sel.anchorNode);
-        if (live || selecting) return;
+        if ((live && !liveReply) || selecting) return;
         onReply(m);
       }}
     >
@@ -198,13 +203,15 @@ function MessageRow({
       <div className="min-w-0">
         {/* Header, beside the avatar. Line 1: who, in which group, status and badges. Line 2: when, the ID, the message it
             answers. Right: only the hover actions. */}
-        <div className="mb-1.5 flex items-start gap-x-3">
-          <div className="grid min-w-0 flex-1 gap-0.5">
+        {/* Wraps: on a narrow row (phone, Q&A card) the strip drops below the header instead of squeezing the name. */}
+        <div className="mb-1.5 flex flex-wrap items-start gap-x-3 gap-y-1.5">
+          <div className="grid min-w-0 flex-1 basis-44 gap-0.5">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 empty:hidden">
             {(head || groupTitle) && (
               <span className={cn("min-w-0 truncate text-sm font-semibold", m.outgoing && "text-ink-2")}
                 style={m.outgoing ? undefined : { color: `var(--cat-${hueOf(name)})` }}>{name}</span>
             )}
+            {fresh && <span className={cn(PILL, "bg-hl text-hl-ink")}>Mới</span>}
             {m.pinned && (head || groupTitle) && <Pin className="size-3.5 shrink-0 fill-current text-ink-2" role="img" aria-label="Đã ghim" />}
             {groupTitle && (
               <span className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs text-ink-3">
@@ -239,19 +246,20 @@ function MessageRow({
               </Hint>
             )}
             <DeepBadge m={m} />
+            <AnswersFor m={m} qa={!bare} />
           </div>
             <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs leading-5 text-ink-3">
               <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap tabular-nums">
                 {clock ? clockLabel(m.date) : timeLabel(m.date)}{m.edit_date && " · đã sửa"}
               </time>
-              <Hint side="bottom" title={`ID ${dbId(m)}`} text="Bấm để chép ID. Dán vào ô nhắn của một phiên AI Agent để đính kèm tin này (hoặc gửi kèm khi báo lỗi).">
+              {!bare && <Hint side="bottom" title={`ID ${dbId(m)}`} text="Bấm để chép ID. Dán vào ô nhắn của một phiên AI Agent để đính kèm tin này (hoặc gửi kèm khi báo lỗi).">
                 <button type="button" aria-label={`Chép ID ${dbId(m)}`}
                   onClick={() => void copyText(dbId(m), `Đã chép ID ${dbId(m)}, dán vào phiên AI để đính kèm`)}
                   className="whitespace-nowrap rounded-md bg-paper-2 px-1.5 font-mono text-[0.6875rem] leading-5 tabular-nums transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
                   #{m.message_id}
                 </button>
-              </Hint>
-              {m.reply_to_id && (
+              </Hint>}
+              {m.reply_to_id && !bare && (
                 <Hint side="bottom" text="Tới tin gốc trong danh sách">
                   <button type="button" aria-label={`Tới tin gốc #${m.reply_to_id}`} onClick={(e) => jumpTo(e.currentTarget, m.reply_to_id!)}
                     className="inline-flex items-center gap-1 rounded-sm hover:text-hl-2">
@@ -261,18 +269,9 @@ function MessageRow({
               )}
             </span>
           </div>
-          <div className="flex shrink-0 items-center text-xs leading-5">
-            {/* Actions, laid out right to left: the first (Xong, or the Telegram link on your own messages) sits at the
-                edge and the rest tuck behind it until the row is hovered or selected (globals.css; always shown per
-                Settings and on touch screens); always in the tab order. Replying is a click on the row (or Enter / r).
-                Negative margin so the 30px targets don't make the line taller. */}
-            <div className="row-actions flex flex-row-reverse items-center gap-0.5 -my-1.5">
-              {!m.outgoing && !live && <MessageActions m={m} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />}
-              <DeepPick m={m} />
-              {!m.outgoing && !live && <CommentPick m={m} />}
-              <AttachPick m={m} />
-              <TgLink m={m} />
-            </div>
+          <div className="ml-auto flex shrink-0 items-center text-xs leading-5">
+            {extra}
+            <RowActions m={m} tag={!m.outgoing && !live} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         </div>
         {m.media_kind === "photo" && !photoFailed ? (
@@ -330,39 +329,143 @@ const DONE_BY: Record<Message["handled_by"], string> = {
 /** Status / badge pill in the row header. */
 const PILL = "inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 text-xs leading-5 font-medium";
 
-/** Row button (YouTrack set up): find a ticket and add this tag to it as a comment, no new ticket (CommentDialog). */
-function CommentPick({ m }: { m: Message }) {
-  const [open, setOpen] = useState(false);
-  const on = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
-  if (!on) return null;
+/** Thin rule between action groups in the hover strip. */
+const Sep = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-rule-2" />;
+
+/** Hover strip, laid out right to left: the first child (Xong; Đối chiếu BE on your own / live messages) sits at the
+ *  edge and the rest tuck behind it until the row is hovered or selected (globals.css; always shown per Settings and on
+ *  touch screens); always in the tab order. Groups: Xong | Hoãn, Ngữ cảnh | AI | ⋯ (rarer actions, spelled out with
+ *  their keys). Replying is a click on the row (or Enter / r). Negative margin so the 30px targets don't make the line taller. */
+function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag: boolean; showContext: boolean; onToggleContext: () => void }) {
+  const { done, pinned, mark, togglePin } = useTagMark(m);
+  const [comment, setComment] = useState(false);
+  const yt = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
+  const link = telegramLink(m);
   return (
-    <>
-      <Hint side="bottom" title="Thêm comment vào ticket"
-        text="Tìm ticket YouTrack có sẵn và gửi tin này (toàn bộ nội dung, kèm link tin gốc) làm comment. Không tạo ticket mới.">
-        <button type="button" aria-label="Thêm comment vào ticket YouTrack" onClick={() => setOpen(true)}
-          className="relative inline-flex size-[30px] items-center justify-center rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-paper-3 hover:text-ink">
-          <MessageSquarePlus className="size-3.5" aria-hidden />
-        </button>
-      </Hint>
-      {/* Portalled, but React events still bubble to the row: clicks inside must not open the reply panel. */}
-      <span className="contents" onClick={(e) => e.stopPropagation()}>
-        <CommentDialog m={m} open={open} onOpenChange={setOpen} onDone={() => setOpen(false)} />
-      </span>
-    </>
+    <div role="toolbar" aria-label={`Thao tác tin #${m.message_id}`} className="row-actions flex flex-row-reverse items-center gap-0.5 -my-1.5">
+      {tag && (
+        <>
+          <Hint side="bottom" title={done ? "Mở lại (x)" : "Xong (x)"}
+            text={done ? "Đánh dấu chưa xử lý." : "Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Không thả reaction: Shift+bấm (Shift+x) hoặc menu ⋯."}>
+            <Button type="button" size="xs" variant="ghost" aria-busy={mark.isPending} disabled={mark.isPending} aria-label={done ? "Mở lại" : "Xong"}
+              className={cn("font-medium", !done && "text-ok hover:bg-ok-wash hover:text-ok")}
+              onClick={(e) => mark.mutate({ handled: !done, react: !e.shiftKey })}>
+              {done ? <RotateCcw /> : <CheckCheck />}<span className="row-label">{done ? "Mở lại" : "Xong"}</span>
+            </Button>
+          </Hint>
+          <Sep />
+          {!done && <SnoozeMenu ms={[m]} />}
+          <Hint side="bottom" title="Ngữ cảnh" text="Xem các tin trước / sau trong nhóm.">
+            <Button type="button" size="icon-xs" variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
+              aria-label="Ngữ cảnh" aria-expanded={showContext} onClick={onToggleContext}>
+              <MessagesSquare />
+            </Button>
+          </Hint>
+          <Sep />
+        </>
+      )}
+      <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />
+      <AttachPick m={m} />
+      <Sep />
+      <Menu.Root>
+        {/* Opens on hover (no Hint: the menu itself spells every action out); click / Enter still work. */}
+        <Menu.Trigger aria-label="Thêm thao tác" openOnHover delay={150} closeDelay={200} onClick={(e) => e.stopPropagation()}
+          render={<Button type="button" size="icon-xs" variant="ghost" className="data-popup-open:bg-paper-3 data-popup-open:text-ink" />}>
+          <MoreHorizontal />
+        </Menu.Trigger>
+        <Menu.Portal>
+          <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
+            {/* Portalled, but React events still bubble to the row: a click here must not open the reply panel. */}
+            <Menu.Popup onClick={(e) => e.stopPropagation()} className={cn(MENU_POPUP, "w-72 text-sm")}>
+              {tag && !done && (
+                <MoreItem icon={<Check />} keys="⇧ X" disabled={mark.isPending} onClick={() => mark.mutate({ handled: true, react: false })}>Xong, không thả reaction</MoreItem>
+              )}
+              {tag && (
+                <MoreItem icon={<Pin className={cn(pinned && "fill-current")} />} keys="P" disabled={togglePin.isPending} onClick={() => togglePin.mutate()}>
+                  {pinned ? "Bỏ ghim" : "Ghim lên đầu"}
+                </MoreItem>
+              )}
+              {tag && yt && <MoreItem icon={<MessageSquarePlus />} onClick={() => setComment(true)}>Comment vào ticket YouTrack</MoreItem>}
+              {tag && <Menu.Separator className="my-0.5 h-px bg-rule" />}
+              {!m.outgoing && <MoreItem icon={<MessageCircleQuestion />} onClick={() => answerQa(m)}>Trả lời bằng Q&A</MoreItem>}
+              <MoreItem icon={<ExternalLink />} keys="O" onClick={() => openInTelegram(m)}>{link.exact ? "Mở trong Telegram" : "Mở nhóm trên Telegram Web"}</MoreItem>
+              {link.exact && <MoreItem icon={<Globe />} onClick={() => window.open(link.web, "_blank", "noreferrer")}>Mở bằng Telegram Web</MoreItem>}
+              <MoreItem icon={<Hash />} onClick={() => void copyText(dbId(m), `Đã chép ID ${dbId(m)}, dán vào phiên AI để đính kèm`)}>Chép ID tin</MoreItem>
+            </Menu.Popup>
+          </Menu.Positioner>
+        </Menu.Portal>
+      </Menu.Root>
+      {comment && (
+        <span className="contents" onClick={(e) => e.stopPropagation()}>
+          <CommentDialog m={m} open onOpenChange={setComment} onDone={() => setComment(false)} />
+        </span>
+      )}
+    </div>
+  );
+}
+
+function MoreItem({ icon, keys, children, ...rest }: { icon: React.ReactNode; keys?: string; children: React.ReactNode; disabled?: boolean; onClick: () => void }) {
+  return (
+    <Menu.Item {...rest} className={cn("flex items-center gap-2.5 text-ink-2 data-highlighted:text-ink data-disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3", MENU_ITEM)}>
+      {icon}<span className="min-w-0 flex-1 truncate">{children}</span>{keys && <Kbd>{keys}</Kbd>}
+    </Menu.Item>
   );
 }
 
 /** Row button: attach this message to the next prompt of a Doing AI Agent session, Giao AI Agent or Đối chiếu BE
  *  (this group's first). Always shown, so the feature is found; with no Doing session the menu says so. The session
  *  list lives in the popup, so rows don't each watch the task list. */
-const AI_CODE = /#AI-(\w{6})\b/gi;
-/** The session this message, or the one it replies to, names with "#AI-97c501" (a copied ask ends with it): the BE's
+/** The session this message, or the one it replies to, names with "#REF-97c501" (a copied ask ends with it): the BE's
  *  answer goes back to the session that asked. */
 async function namedSession(qc: QueryClient, m: Message) {
   const tasks = (await qc.ensureQueryData(taskListQuery)).filter((t) => t.mode !== "terminal");
-  const find = (text?: string | null) => [...(text ?? "").matchAll(AI_CODE)]
-    .map((x) => tasks.find((t) => sessionId(t).toLowerCase() === `ai-${x[1].toLowerCase()}`)).filter(Boolean).at(-1);
+  const find = (text?: string | null) => [...(text ?? "").matchAll(SESSION_CODE)]
+    .map((x) => tasks.find((t) => t.id.slice(-6).toLowerCase() === x[1].toLowerCase())).filter(Boolean).at(-1);
   return find(m.text) ?? (m.reply_to_id ? find((await qc.fetchQuery(messageQuery({ chat_id: m.chat_id, message_id: m.reply_to_id })).catch(() => null))?.text) : undefined);
+}
+
+/** Session id tails named in a text ("#REF-97c501", or the old "#AI-…"), lowercase. */
+const sessionTails = (text?: string | null) => [...(text ?? "").matchAll(SESSION_CODE)].map((x) => x[1].toLowerCase());
+
+/** Badges for what this message answers: the AI Agent session and the Q&A questions it names, from its own text (no
+ *  reads), plus the Q&A thread it sits in when the groups asked lately were read (`QaCodes`). A session badge opens the session, its clip attaches the message; a Q&A badge opens the question. A code
+ *  only in the replied-to message is read when the row's clip (AttachPick) is hovered, never on render. */
+function AnswersFor({ m, qa }: { m: Message; qa: boolean }) {
+  const own = useMemo(() => sessionTails(m.text), [m.text]);
+  const inThread = useContext(QaCodes).get(msgKey(m))?.slice(3); // a reply in a thread, code or not
+  const qas = useMemo(() => qa ? [...new Set([...m.text.matchAll(QA_CODE)].map((x) => x[1]).concat(inThread ?? []))] : [], [m.text, inThread, qa]);
+  return <>
+    {own.length > 0 && <SessionBadge m={m} tails={own} />}
+    {qas.map((id) => (
+      <Hint key={id} side="bottom" text={`Tin này thuộc Q&A #QA${id}. Bấm để mở cả chuỗi ở trang Q&A.`}>
+        <button type="button" onClick={() => openQa(m.chat_id, `#QA${id}`)}
+          className={cn(PILL, "bg-info-wash text-info transition-colors duration-(--dur-micro) hover:bg-info hover:text-cotton")}>
+          <MessageCircleQuestion className="size-3" aria-hidden /><span className="font-mono">#QA{id}</span>
+        </button>
+      </Hint>
+    ))}
+  </>;
+}
+
+function SessionBadge({ m, tails }: { m: Message; tails: string[] }) {
+  const t = useTaskList().data?.filter((x) => x.mode !== "terminal").findLast((x) => tails.includes(x.id.slice(-6).toLowerCase()));
+  if (!t) return null;
+  const name = sessionId(t);
+  return (
+    <span className={cn(PILL, "gap-0 overflow-hidden bg-hl-wash p-0 text-hl-2 ring-1 ring-inset ring-hl/30")}>
+      <Hint side="bottom" title={name} text={`Tin này có mã phiên AI Agent ${name}${t.title ? ` (${t.title})` : ""}. Bấm để mở phiên.`}>
+        <button type="button" onClick={() => openTask(t.id)} className="inline-flex items-center gap-1 py-px pr-1.5 pl-2 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink">
+          <Bot className="size-3" aria-hidden /><span className="font-mono">{name}</span>
+        </button>
+      </Hint>
+      <Hint side="bottom" text={`Đính kèm tin này vào lượt nhắn tiếp của phiên ${name}`}>
+        <button type="button" aria-label={`Đính kèm vào phiên ${name}`} onClick={() => attachTo(t, m)}
+          className="grid place-items-center self-stretch border-l border-hl/30 px-1.5 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink">
+          <Paperclip className="size-3" aria-hidden />
+        </button>
+      </Hint>
+    </span>
+  );
 }
 
 function attachTo(t: Task, m: Message) {
@@ -372,20 +475,41 @@ function attachTo(t: Task, m: Message) {
   openTask(t.id);
 }
 
-/** A message naming a session (#AI-…) attaches to it at once; otherwise the menu of open sessions. */
+/** A message naming a session (#REF-…) attaches to it at once; otherwise the menu of open sessions. */
 function AttachPick({ m }: { m: Message }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  // Hovering (or focusing) the clip reads the replied-to message once, only when this one names no session itself.
+  const [peek, setPeek] = useState(false);
+  const own = useMemo(() => sessionTails(m.text), [m.text]);
+  const parent = useQuery({
+    ...messageQuery({ chat_id: m.chat_id, message_id: m.reply_to_id ?? "" }),
+    enabled: peek && !own.length && !!m.reply_to_id,
+  });
+  const tails = own.length ? own : sessionTails(parent.data?.text);
+  const named = useQuery({
+    ...taskListQuery, enabled: peek && tails.length > 0,
+    select: (ts) => ts.filter((t) => t.mode !== "terminal").findLast((t) => tails.includes(t.id.slice(-6).toLowerCase())),
+  }).data;
+  const name = named && sessionId(named);
   const toggle = (next: boolean) => {
     if (!next) return setOpen(false);
+    if (named) return attachTo(named, m);
     void namedSession(qc, m).catch(() => undefined).then((t) => (t ? attachTo(t, m) : setOpen(true)));
   };
   return (
     <Menu.Root open={open} onOpenChange={toggle}>
-      <Hint side="bottom" text="Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent. Tin (hoặc tin gốc nó trả lời) có mã #AI-… thì tự vào đúng phiên đó.">
-        <Menu.Trigger aria-label="Đính kèm vào phiên AI" onClick={(e) => e.stopPropagation()}
-          className="relative inline-flex size-[30px] items-center justify-center rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink">
-          <Paperclip className="size-3.5" aria-hidden />
+      <Hint side="bottom" title={name || undefined} text={named
+        ? `Bấm để đính kèm tin này vào phiên ${name}${named.title ? ` (${named.title})` : ""}: ${own.length ? "tin này" : "tin gốc nó trả lời"} có mã phiên đó.`
+        : parent.isFetching ? "Đang xem tin gốc có mã phiên #REF-… không…"
+        : "Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent. Tin (hoặc tin gốc nó trả lời) có mã #REF-… thì tự vào đúng phiên đó."}>
+        <Menu.Trigger aria-label={name ? `Đính kèm vào phiên ${name}` : "Đính kèm vào phiên AI"} aria-busy={parent.isFetching}
+          onClick={(e) => e.stopPropagation()} onPointerEnter={() => setPeek(true)} onFocus={() => setPeek(true)}
+          className={cn("relative inline-flex h-[30px] min-w-[30px] items-center justify-center gap-1 rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-hl-wash hover:text-hl-2 data-popup-open:bg-hl-wash data-popup-open:text-hl-2",
+            named && "bg-hl-wash px-2 text-hl-2")}>
+          {parent.isFetching ? <Loader2 className="size-3.5 animate-spin" aria-hidden />
+            : named ? <><Bot className="size-3.5" aria-hidden /><span className="font-mono text-[0.6875rem]">{name}</span></>
+            : <Paperclip className="size-3.5" aria-hidden />}
         </Menu.Trigger>
       </Hint>
       <Menu.Portal>
@@ -431,25 +555,6 @@ function AttachList({ m }: { m: Message }) {
   );
 }
 
-/** Opens the message in the Telegram app (Alt+click: the web app); basic groups have no message links, so the group. */
-function TgLink({ m }: { m: Message }) {
-  const link = telegramLink(m);
-  return (
-    <Hint side="bottom" title="Mở Telegram (o)" text={link.exact ? "Mở tin này trong app Telegram (Alt+bấm: mở bản web)" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>
-    <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })}
-      onClick={(e) => {
-        if (e.altKey && link.exact) {
-          e.preventDefault();
-          window.open(link.web, "_blank", "noreferrer");
-        }
-      }}
-      className="relative inline-flex size-[30px] items-center pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 justify-center rounded-md text-ink-2 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-      <ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">Mở Telegram</span>
-    </a>
-    </Hint>
-  );
-}
-
 /** Like Telegram's reply header: scroll to the quoted message when it is in this list and flash it. */
 function jumpTo(from: Element, id: string) {
   if (!revealMessage(from.closest("ol"), id)) toast({ text: `Tin #${id} không có trong danh sách (chỉ lưu tin tag/reply bạn)` });
@@ -473,17 +578,8 @@ function MessageText({ m, dim }: { m: Message; dim: boolean }) {
   );
 }
 
-/** Xong / hoãn / ghim / ngữ cảnh, on the hover row and in the reply panel header. */
-export function MessageActions({
-  m, showContext, onToggleContext, onDone, labels,
-}: {
-  m: Message;
-  showContext: boolean;
-  onToggleContext: () => void;
-  onDone?: () => void;
-  labels?: boolean; // spelled-out buttons (to-do cards) instead of the icon strip
-}) {
-  const size = labels ? "xs" : "icon-xs";
+/** Xong / pin state and mutations of one tag, for the hover strip and the reply panel header. */
+function useTagMark(m: Message, onDone?: () => void) {
   // Local overrides keep the buttons right when `m` is a stale snapshot (reply panel). The handled override
   // only holds while m.handled is still what it was when we clicked, so an undo from the toast shows through.
   const [over, setOver] = useState<{ handled?: boolean; from?: boolean; pinned?: boolean }>({});
@@ -502,40 +598,46 @@ export function MessageActions({
     onSuccess: () => setOver((o) => ({ ...o, pinned: !pinned })),
     onError: (e) => toast({ text: errorText(e, {}, pinned ? "Không bỏ ghim được, thử lại" : "Không ghim được, thử lại") }),
   });
+  return { done, pinned, mark, togglePin };
+}
+
+/** Xong / hoãn / ghim / ngữ cảnh as spelled-out buttons, in the reply panel header. */
+export function MessageActions({
+  m, showContext, onToggleContext, onDone,
+}: {
+  m: Message;
+  showContext: boolean;
+  onToggleContext: () => void;
+  onDone?: () => void;
+}) {
+  const { done, pinned, mark, togglePin } = useTagMark(m, onDone);
   return (
     <>
       <Hint side="bottom" title={done ? "Mở lại (x)" : "Xong (x)"}
-        text={done ? "Đánh dấu chưa xử lý." : "Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Không muốn thả reaction: nút ✓ bên cạnh, hoặc Shift+bấm (Shift+x)."}>
-        <Button type="button" size={size} variant="ghost" className={cn(!done && "hover:bg-ok-wash hover:text-ok", labels && !done && "text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
+        text={done ? "Đánh dấu chưa xử lý." : "Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Không muốn thả reaction: Shift+bấm (Shift+x)."}>
+        <Button type="button" size="xs" variant="ghost" className={cn(!done && "text-ok hover:bg-ok-wash hover:text-ok")} aria-busy={mark.isPending} disabled={mark.isPending}
           aria-label={done ? "Mở lại" : "Xong"}
           onClick={(e) => mark.mutate({ handled: !done, react: !e.shiftKey })}>
-          {done ? <RotateCcw /> : <CheckCheck />}{labels && (done ? "Mở lại" : "Xong")}
+          {done ? <RotateCcw /> : <CheckCheck />}{done ? "Mở lại" : "Xong"}
         </Button>
       </Hint>
-      {/* The hover strip spells out Shift+Xong next to Xong (the reply panel keeps just Xong; Shift still works there). */}
-      {!done && !labels && (
-        <Hint side="bottom" title="Xong không reaction (Shift+x)"
-          text="Đánh dấu xong nhưng không thả reaction trên Telegram, vd. đã xử lý nơi khác hoặc không muốn báo cho người gửi.">
-          <Button type="button" size={size} variant="ghost" className="hover:bg-ok-wash hover:text-ok" aria-busy={mark.isPending} disabled={mark.isPending}
-            aria-label="Xong không reaction" onClick={() => mark.mutate({ handled: true, react: false })}>
-            <Check />
-          </Button>
-        </Hint>
-      )}
-      {!done && <SnoozeMenu ms={[m]} label={labels} />}
+      {!done && <SnoozeMenu ms={[m]} label />}
       {(!done || pinned) && (
         <Hint side="bottom" title={pinned ? "Bỏ ghim (p)" : "Ghim (p)"} text={pinned ? "Bỏ ghim tin này." : "Ghim lên đầu danh sách; giữ ở Tag đã ghim kể cả khi đã xử lý."}>
-          <Button type="button" size={size} variant="ghost" className={cn(pinned && "text-ink")}
+          <Button type="button" size="xs" variant="ghost" className={cn(pinned && "text-ink")}
             disabled={togglePin.isPending} aria-label={pinned ? "Bỏ ghim" : "Ghim"} aria-pressed={pinned} onClick={() => togglePin.mutate()}>
-            <Pin className={cn(pinned && "fill-current")} />{labels && (pinned ? "Bỏ ghim" : "Ghim")}
+            <Pin className={cn(pinned && "fill-current")} />{pinned ? "Bỏ ghim" : "Ghim"}
           </Button>
         </Hint>
       )}
       <Hint side="bottom" title="Ngữ cảnh" text="Xem các tin trước / sau trong nhóm.">
-        <Button type="button" size={size} variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
+        <Button type="button" size="xs" variant="ghost" className={cn(showContext && "bg-paper-3 text-ink")}
           aria-label="Ngữ cảnh" aria-expanded={showContext} onClick={onToggleContext}>
-          <MessagesSquare />{labels && "Ngữ cảnh"}
+          <MessagesSquare />Ngữ cảnh
         </Button>
+      </Hint>
+      <Hint side="bottom" title="Trả lời bằng Q&A" text="Trả lời ở trang Q&A: câu trả lời kèm mã #QA…, tin này đứng đầu một chuỗi Q&A để xem lại cả hỏi lẫn đáp. Tin đã nằm trong một chuỗi thì trả lời vào chuỗi đó, không thêm mã.">
+        <Button type="button" size="xs" variant="ghost" onClick={() => answerQa(m)}><MessageCircleQuestion />Q&A</Button>
       </Hint>
     </>
   );
@@ -567,7 +669,7 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
     <Menu.Root open={open} onOpenChange={setOpen}>
       <Hint side="bottom" title="Hoãn (s: 1 giờ)" text={snoozed ? `Đang hoãn tới ${timeLabel(one!.snoozed_until!, true)}.` : "Ẩn khỏi Việc cần xử lý, tự hiện lại sau; hoặc luôn bỏ qua người gửi."}>
         <Menu.Trigger aria-label="Hoãn" onClick={(e) => e.stopPropagation()}
-          render={<Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info", "data-popup-open:bg-paper-3")} />}>
+          render={<Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info", "hover:bg-info-wash hover:text-info data-popup-open:bg-info-wash data-popup-open:text-info")} />}>
           <AlarmClock />{label && "Hoãn"}
         </Menu.Trigger>
       </Hint>

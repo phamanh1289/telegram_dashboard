@@ -1,20 +1,21 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Square, Trash2, Users } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, ExternalLink, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Send, Square, Trash2, Users } from "lucide-react";
+import { createContext, type ReactNode, use, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui/react/menu";
 import { AiBot, AiThinking, useFollow } from "@/components/ai/chat";
-import { AskTag, Markdown } from "@/components/markdown";
-import { EventItem, groupEvents, type TaskEvent, type TaskLog, ToolGroup } from "@/components/tasks-feed";
+import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
+import { EventItem, groupEvents, OpenAttached, type TaskEvent, type TaskLog, ToolGroup } from "@/components/tasks-feed";
+import { SEND_ERRORS } from "@/components/composer";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, type Message, type Task } from "@/lib/api";
+import { api, ApiError, errorText, type Message, type Outbox, type Task } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
 import { ALL, copyText, sessionId, sessionMatches, toast, useNow, useTaskList } from "@/lib/inbox";
 import { ago, timeLabel } from "@/lib/time";
@@ -164,6 +165,62 @@ function MenuRow({ icon: Icon, label, hint, tone, disabled, onClick }: {
   );
 }
 
+/** Where an ask goes: a new message in the session's group (the tagged message's topic). */
+const AskTarget = createContext<{ taskId: string; chatId: string; messageId: string } | null>(null);
+
+/** The same ask in the same session always gets the same request ID: the outbox then says, on any later visit,
+ *  whether it went out, and a second click can't post it twice. */
+async function askRequestId(taskId: string, text: string) {
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}\n${text}`))).slice(0, 16);
+  h[6] = (h[6] & 0x0f) | 0x80; // UUID v8 (custom), RFC variant
+  h[8] = (h[8] & 0x3f) | 0x80;
+  const x = [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+/** Send button of one ask: posts it to the group; remembers (via the outbox) that it was sent. */
+function PostAsk({ text }: { text: string }) {
+  const at = use(AskTarget)!;
+  const qc = useQueryClient();
+  const rid = useQuery({ queryKey: ["ask-id", at.taskId, text], queryFn: () => askRequestId(at.taskId, text), staleTime: Infinity });
+  const key = ["outbox", rid.data];
+  const rec = useQuery({
+    queryKey: key, enabled: !!rid.data, staleTime: Infinity, retry: false,
+    queryFn: ({ signal }) => api<Outbox>(`/outbox/${rid.data}`, { signal })
+      .catch((e) => { if (e instanceof ApiError && e.status === 404) return null; throw e; }), // never sent
+  });
+  const status = rec.data?.status;
+  const send = useMutation({
+    mutationFn: () => api<Outbox>("/messages/reply", { method: "POST", json: {
+      request_id: rid.data!, chat_id: at.chatId, reply_to_message_id: at.messageId, text,
+      retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
+      quote: false, // a new message in the tag's group / topic, not a reply
+    } }),
+    onSuccess: (r) => {
+      qc.setQueryData(key, r);
+      toast({ text: r.status === "sent" ? "Đã gửi vào nhóm" : "Đang gửi vào nhóm…" });
+    },
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: key });
+      toast({ text: errorText(e, SEND_ERRORS, "Gửi thất bại.") });
+    },
+  });
+  const sent = status === "sent";
+  const busy = send.isPending || status === "pending" || status === "sending";
+  const hint = sent ? "Đã gửi vào nhóm" : busy ? "Đang gửi…" : status === "unknown" ? "Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại"
+    : "Gửi ngay ý này thành tin mới trong nhóm";
+  return (
+    <Hint text={hint}>
+      <button type="button" aria-label={sent ? "Đã gửi vào nhóm" : "Gửi ý này vào nhóm"} aria-busy={busy} disabled={sent || busy || !rid.data}
+        onClick={() => send.mutate()} className={cn(ASK_BTN, sent && "text-ok", status === "unknown" && "text-warn")}>
+        {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : sent ? <CheckCheck className="size-3.5" aria-hidden /> : <Send className="size-3.5" aria-hidden />}
+      </button>
+    </Hint>
+  );
+}
+
+const postAsk = (text: string) => <PostAsk text={text} />;
+
 /** The selected session: a slim title bar with one action menu, the scrolling conversation, the composer pinned at the bottom. */
 function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
   t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string, view?: View) => void; onUseText: (m: Message, text: string) => void;
@@ -183,12 +240,31 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
     onError: () => toast({ text: "Không cập nhật được, thử lại sau" }),
   });
 
+  // Đối chiếu BE sits on a BE reply, not a kept tag: only Cả nhóm has it.
+  const tagView: View = t.kind === "deep" || isDone(t) ? "live" : "pending";
+  const openTag = () => onOpenGroup(t.chat_id!, t.message_id ?? undefined, tagView);
+
+  const openAttached = useMemo(() => ({
+    home: t.chat_id, open: (chatId: string, messageId: string) => onOpenGroup(chatId, messageId, "live"),
+  }), [t.chat_id, onOpenGroup]);
+  // Stable per session row, so the memoised answers don't re-render on every poll.
+  const { id, chat_id, message_id } = t;
+  const target = useMemo(() => (chat_id && message_id ? { taskId: id, chatId: chat_id, messageId: message_id } : null), [id, chat_id, message_id]);
+
   const head = <>
     {(t.title || t.message_text || t.chat_title) && (
       <div className="rounded-xl border-l-2 border-hl bg-paper-2 px-3.5 py-2.5 animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short)">
         <p className="mb-1 flex flex-wrap items-center gap-x-2.5 text-xs text-ink-3">
           {t.sender_name && <span className="font-medium text-ink-2">{t.sender_name}</span>}
           {t.chat_title && <span className="inline-flex items-center gap-1"><Users className="size-3" aria-hidden /> {t.chat_title}</span>}
+          {tag && (
+            <Hint side="bottom" text="Mở tin này trong nhóm Telegram">
+              <button type="button" aria-label="Mở tin trong nhóm" onClick={openTag}
+                className="-my-1 ml-auto grid size-6 place-items-center rounded-md text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+                <ExternalLink className="size-3.5" aria-hidden />
+              </button>
+            </Hint>
+          )}
         </p>
         <p className="line-clamp-3 max-w-[70ch] whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.55] text-ink">{t.title || t.message_text}</p>
       </div>
@@ -228,14 +304,14 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
                   <MenuRow icon={RotateCcw} label="Mở lại" hint="Tin tag chưa xử lý, phiên về Doing" disabled={mark.isPending}
                     onClick={() => mark.mutate({ handled: false, react: true })} />
                 ) : <>
-                  <MenuRow icon={CheckCheck} tone="ok" label="Done" hint="Đã xử lý, thả reaction trên Telegram" disabled={mark.isPending}
+                  <MenuRow icon={CheckCheck} tone="ok" label="Done" hint="Tin tag và tin đính kèm đã xử lý, thả reaction" disabled={mark.isPending}
                     onClick={() => mark.mutate({ handled: true, react: true })} />
-                  <MenuRow icon={Check} tone="ok" label="Done không reaction" hint="Đã xử lý, không thả reaction" disabled={mark.isPending}
+                  <MenuRow icon={Check} tone="ok" label="Done không reaction" hint="Tin tag và tin đính kèm đã xử lý, không reaction" disabled={mark.isPending}
                     onClick={() => mark.mutate({ handled: true, react: false })} />
                 </>)}
                 {tag && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 {t.result && tag && <MenuRow icon={MessageSquare} label="Dùng làm nháp trả lời" hint="Kết quả thành nháp trả lời tin tag" onClick={() => onUseText(tag, t.result!)} />}
-                {t.chat_id && <MenuRow icon={Users} label="Mở nhóm" hint={isDone(t) ? "Cả nhóm, cuộn tới tin đã giao AI Agent" : "Chưa xử lý, cuộn tới tin đã giao AI Agent"} onClick={() => onOpenGroup(t.chat_id!, t.message_id ?? undefined, isDone(t) ? "live" : "pending")} />}
+                {t.chat_id && <MenuRow icon={Users} label="Mở nhóm" hint={tagView === "live" ? "Cả nhóm, cuộn tới tin đã giao AI Agent" : "Chưa xử lý, cuộn tới tin đã giao AI Agent"} onClick={openTag} />}
                 {(t.chat_id || (t.result && tag)) && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 <MenuRow icon={Trash2} tone="error" label="Xóa phiên" hint="Hỏi xác nhận trước khi xóa" disabled={remove.isPending}
                   onClick={() => confirm("Xóa phiên này khỏi danh sách?") && remove.mutate()} />
@@ -247,6 +323,9 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
       {remove.isError && <p role="alert" className="border-b px-4 py-1.5 text-xs text-error">Xóa thất bại, thử lại.</p>}
 
       <AskTag value={sessionId(t)}>
+      <AskTarget value={target}>
+      <AskPost value={target && postAsk}>
+      <OpenAttached value={openAttached}>
       {t.mode !== "terminal" ? <ChatPanel t={t} head={head} /> : ( // old Terminal tasks: prompt and result only
         <Feed follow={t.result}>
           {head}
@@ -257,6 +336,9 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
           </section>
         </Feed>
       )}
+      </OpenAttached>
+      </AskPost>
+      </AskTarget>
       </AskTag>
     </div>
   );
@@ -338,7 +420,7 @@ export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
               <span className="relative">
                 <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
                 <Input type="search" value={find} onChange={(e) => setFind(e.target.value)} aria-label="Tìm phiên"
-                  placeholder="Tìm theo ID (AI-…) hoặc nội dung" className="h-8 pl-8 text-xs md:text-xs" />
+                  placeholder="Tìm theo ID (REF-…) hoặc nội dung" className="h-8 pl-8 text-xs md:text-xs" />
               </span>
               {!searching && <Segmented id="agent-filter" label="Lọc phiên" value={filter} onChange={setFilter} className="w-full [&>button]:flex-1"
                 items={FILTERS.map(([id, label]) => ({ value: id, label: <>{label} <span className="font-mono tabular-nums opacity-70">{count[id]}</span></> }))} />}

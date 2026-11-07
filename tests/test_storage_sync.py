@@ -293,12 +293,13 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     path = tmp_path / "prev.sqlite3"
     Store(path).set_tracking(A, True, "Team", "supergroup")
     c = sqlite3.connect(path)
-    c.executescript("ALTER TABLE messages DROP COLUMN handled_by; ALTER TABLE messages DROP COLUMN handled_at;")
+    c.executescript("ALTER TABLE outbox DROP COLUMN quote;")
     c.execute(f"PRAGMA user_version={len(MIGRATIONS) - 1}")
     c.close()
     store = Store(path)
     store.apply_message(msg(A, 1, "@me hi", sender="7"))
-    assert store.set_handled(A, 1, True, "quiet") and store.get_message(A, 1).handled_by == "quiet"
+    store.outbox_create("r1", A, 1, "hỏi BE", 1, quote=False)
+    assert store.outbox_claim("r1", False)["reply_to"] is None  # a new message, not a reply
 
 
 def test_my_replies_keeps_the_newest_oldest_first(env):

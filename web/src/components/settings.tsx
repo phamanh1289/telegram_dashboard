@@ -17,7 +17,7 @@ import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
 import { api, ApiError, errorText, statusQuery } from "@/lib/api";
 import { clearDrafts, fold, toast } from "@/lib/inbox";
-import { ACCENTS, applyRowActions, applyTheme, INTRO_MAX, type Look, onPrefs, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, type ReportAt, saveLook, saveReportAt, saveYtRole, setPref, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
+import { ACCENTS, applyRowActions, applyTheme, INTRO_MAX, type Look, onPrefs, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, type ReportAt, saveLook, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
 import { clearLoopItems } from "@/lib/report-back";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -143,6 +143,8 @@ const ENTRIES: Entry[] = [
   { t: "Tóm tắt theo nền tảng", g: "telegram", card: "AI cho Telegram", k: "android ios mobile platform" },
   { t: "Model và effort cho Briefing, Digest", g: "telegram", card: "AI cho Telegram", k: "tom tat nhom" },
   { t: "Ngưỡng quá hạn", g: "telegram", card: "Hàng chờ và thông báo", k: "overdue gio cho lau" },
+  { t: "Nhắc câu hỏi Q&A chưa ai trả lời", g: "telegram", card: "Hàng chờ và thông báo", k: "qa remind nhac lai phut canh bao" },
+  { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Hàng chờ và thông báo", k: "qa tag nguoi duoc hoi tra loi" },
   { t: "Thông báo khi có tag mới", g: "telegram", card: "Hàng chờ và thông báo", k: "notification bao" },
   { t: "Nút thao tác trên tin", g: "telegram", card: "Hàng chờ và thông báo", k: "ghim ngu canh mo telegram hover" },
   { t: "Xóa nháp và danh sách Báo lại", g: "telegram", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
@@ -382,6 +384,8 @@ function HueSlider({ label, value, onChange }: { label: string; value: number; o
 /** Telegram-only preferences: account, who you are for the AI, Briefing's model, the queue. */
 function TelegramGroup() {
   const [overdue, setOverdue] = useState(readOverdueHours);
+  const qaRemind = useQaRemind();
+  const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "any" as const);
   const [rowActions, setRowActions] = useState(readRowActions);
   const [platform, setPlatform] = useState(readPlatform);
   const [notify, setNotify] = useState(readNotify);
@@ -421,7 +425,15 @@ function TelegramGroup() {
         <Segmented id="set-overdue" variant="card" label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
           items={OVERDUE_CHOICES.map((h) => ({ value: h, label: `${h} giờ` }))} />
       </Row>
-      <Row label="Thông báo khi có tag mới" desc={notifyNote ? <span role="alert" className="text-warn">{notifyNote}</span> : "Khi tab đang ẩn; giữ luồng cập nhật chạy nền."}>
+      <Row label="Nhắc câu hỏi Q&A chưa ai trả lời" desc="Câu hỏi bạn đăng ở Q&A mà chưa ai trả lời sau khoảng này (tính từ tin cuối của bạn trong chuỗi): trang Q&A báo và cho nhắc lại ngay trong nhóm. Đổi nhanh được ở trang Q&A." stack>
+        <Segmented id="set-qa-remind" variant="card" label="Nhắc câu hỏi Q&A chưa ai trả lời" value={qaRemind} onChange={(v) => setPref("qaRemindMins", String(v))}
+          items={QA_REMIND_CHOICES.map((m) => ({ value: m, label: qaRemindLabel(m) }))} />
+      </Row>
+      <Row label="Câu hỏi Q&A tính là đã trả lời khi" desc="“Người được tag”: chỉ khi chính người câu hỏi tag (@tên) trả lời; câu không tag ai thì ai trả lời cũng tính. Chốt câu trả lời thì luôn tính là xong." stack>
+        <Segmented id="set-qa-answer-by" variant="card" label="Câu hỏi Q&A tính là đã trả lời khi" value={qaAnswerBy} onChange={(v) => setPref("qaAnswerBy", v)}
+          items={[{ value: "any", label: "Bất kỳ ai khác trả lời" }, { value: "tagged", label: "Người được tag trả lời" }]} />
+      </Row>
+      <Row label="Thông báo khi có tag mới" desc={notifyNote ? <span role="alert" className="text-warn">{notifyNote}</span> : "Khi tab đang ẩn: tag mới, và câu hỏi Q&A của bạn quá ngưỡng nhắc mà chưa ai trả lời. Giữ luồng cập nhật chạy nền."}>
         <Switch label="Thông báo khi có tag mới" checked={notify} onChange={(v) => void toggleNotify(v)} />
       </Row>
       <Row label="Nút thao tác trên tin" desc="Ghim, ngữ cảnh, mở Telegram. Màn hình cảm ứng luôn hiện." stack>

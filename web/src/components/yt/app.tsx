@@ -12,7 +12,7 @@ import { fold, useNow } from "@/lib/inbox";
 import { getPref, saveYtRole, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, durShort } from "@/lib/utils";
 import { QUICK, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
-import { Avatar, MultiSelect, POP } from "./bits";
+import { Avatar, MultiSelect, POP, YtFetching } from "./bits";
 import { DashboardPage } from "./dashboard";
 import { DevHome, PoHome, QaHome } from "./home";
 import { CreateTicket } from "./create";
@@ -160,7 +160,7 @@ function Shell() {
             </AnimatePresence>
             <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: y.issues.isPlaceholderData ? 0.55 : 1, y: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
               aria-busy={y.issues.isPlaceholderData} className={cn(y.page === "ai" && "relative lg:min-h-0 lg:flex-1", y.page === "ai" && !y.issues.isPlaceholderData && "ai-in", y.issues.isPlaceholderData && "shimmer pointer-events-none select-none")}>
-              {y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "release" ? <ReleasePage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
+              {y.issues.isPending ? <YtFetching /> : y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "release" ? <ReleasePage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
             </motion.div>
         </main>
       </div>

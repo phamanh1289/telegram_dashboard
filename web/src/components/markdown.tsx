@@ -70,21 +70,31 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
         else if (n.type === "paragraph") mark(n);
       }
     }
+    // a quote opening with "@be_bot": a message to send, wherever it sits (e.g. after "Tin gửi BE:" in prose, no ask label)
+    for (const n of root.children ?? []) {
+      if (n.type !== "blockquote" || n.data?.hProperties?.dataCopy != null) continue;
+      const text = raw(n.position?.start.offset, n.position?.end.offset);
+      if (/^@\w+/.test(text)) mark(n, text);
+    }
   };
 }
 const ASK_PLUGINS = [remarkGfm, remarkAsks, remarkBreaks]; // breaks after asks: they reach a fenced message turned quote
-/** The AI Agent session's ID ("AI-97c501"): copied asks end with "#AI-97c501", so the tagged reply finds its session. */
+/** The AI Agent session's ID ("REF-97c501"): copied asks end with "#REF-97c501", so the tagged reply finds its session. */
 export const AskTag = createContext("");
+/** The send button next to each ask's copy button (AI Agent: post it to the session's group); null: none. */
+export const AskPost = createContext<((text: string) => ReactNode) | null>(null);
+export const ASK_BTN = "ml-1 inline-grid size-5 place-items-center rounded-sm align-[-0.2em] text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink";
 function CopyAsk({ text }: { text: unknown }) {
   const tag = use(AskTag);
-  return typeof text !== "string" ? null : (
-  <Hint text="Copy ý này để hỏi / confirm">
-    <button type="button" aria-label="Copy ý này" onClick={() => void copyText(tag ? `${text}\n\n#${tag}` : text)}
-      className="ml-1 inline-grid size-5 place-items-center rounded-sm align-[-0.2em] text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-      <Copy className="size-3.5" aria-hidden />
-    </button>
-  </Hint>
-  );
+  const post = use(AskPost);
+  if (typeof text !== "string") return null;
+  const full = tag ? `${text}\n\n#${tag}` : text;
+  return <>
+    <Hint text="Copy ý này để hỏi / confirm">
+      <button type="button" aria-label="Copy ý này" onClick={() => void copyText(full)} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
+    </Hint>
+    {post?.(full)}
+  </>;
 }
 
 const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
@@ -96,6 +106,7 @@ const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a
  * Memoised: a long AI Agent log re-renders on every poll, but its old answers keep the same text.
  */
 export const Markdown = memo(function Markdown({ text, className, onTicket, asks }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void; asks?: boolean }) {
+  const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
   let src = text ?? "";
   if (onTicket) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
   const components: Components = {
@@ -110,8 +121,8 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
       li: ({ node, children, ...p }) => <li {...p}>{children}<CopyAsk text={node?.properties.dataCopy} /></li>,
       p: ({ node, children, ...p }) => <p {...p}>{children}<CopyAsk text={node?.properties.dataCopy} /></p>,
       // a message to send as is: the button sits top-right of the quote / code block
-      blockquote: ({ node, children, ...p }) => <blockquote {...p} className={cn(node?.properties.dataCopy != null && "relative pr-7")}>{children}{node?.properties.dataCopy != null && <span className="absolute top-0 right-0"><CopyAsk text={node.properties.dataCopy} /></span>}</blockquote>,
-      pre: ({ node, children, ...p }) => <pre {...p} className={cn(node?.properties.dataCopy != null && "relative pr-7")}>{children}{node?.properties.dataCopy != null && <span className="absolute top-1 right-1"><CopyAsk text={node.properties.dataCopy} /></span>}</pre>,
+      blockquote: ({ node, children, ...p }) => <blockquote {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-0 right-0 flex"><CopyAsk text={node.properties.dataCopy} /></span>}</blockquote>,
+      pre: ({ node, children, ...p }) => <pre {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-1 right-1 flex"><CopyAsk text={node.properties.dataCopy} /></span>}</pre>,
     }),
   };
   return (

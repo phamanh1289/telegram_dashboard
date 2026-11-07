@@ -201,7 +201,7 @@ export function TicketsPage() {
           </table>
           {more && <div ref={endRef} role="status" className="px-3 py-3 text-center text-xs text-ink-3">Đang hiện {fmt(shown.length)} / {fmt(shownAll.length)}…</div>}
         </div>
-      ) : y.issues.isPending ? <TableSkeleton /> : (
+      ) : (
         <Empty anyFilter={anyFilter} />
       )}
       {y.view === "table" && <HoverPreview el={tbody} />}
@@ -342,7 +342,7 @@ function BulkBar() {
       <Button size="sm" variant="outline" disabled={busy} aria-busy={busy} onClick={() => void apply()}>Áp dụng</Button>
       {y.aiOn && (
         <Hint side="bottom" text="Hỏi AI về các ticket đã chọn, có thể trace code trong thư mục dự án"><Button size="sm" variant="outline"
-          onClick={() => y.setSheet({ kind: "work", title: "AI · ticket đã chọn", ids })}><Sparkles /> AI</Button></Hint>
+          onClick={() => y.setSheet({ kind: "work", title: "AI", ids })}><Sparkles /> AI</Button></Hint>
       )}
       <Button size="sm" variant="ghost" className="ml-auto text-board-type hover:bg-board-type/15 hover:text-board-type" onClick={() => y.setPicked(new Set())}>Bỏ chọn</Button>
     </motion.div>
@@ -691,26 +691,6 @@ function Empty({ anyFilter }: { anyFilter: boolean }) {
         <Button onClick={() => void find()}>Tìm toàn cục</Button>
       </div>
       <p role="status" className="text-xs text-ink-3">{msg}</p>
-    </div>
-  );
-}
-
-function TableSkeleton() {
-  // table-shaped rows (check, id, avatar, title, chips) under one shimmer sweep, fading in one after another
-  return (
-    <div role="status" aria-label="Đang tải…" className="shimmer grid rounded-lg bg-cotton shadow-stock">
-      <div className="h-9 border-b border-rule bg-paper-2" />
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((k) => (
-        <motion.div key={k} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1 - k * 0.09, y: 0 }} transition={{ delay: k * 0.05, duration: 0.3 }}
-          className="flex items-center gap-3 border-b border-rule/60 px-3 py-2.5 last:border-0">
-          <span className="size-4 rounded bg-paper-3" />
-          <span className="h-3.5 w-14 rounded bg-paper-3" />
-          <span className="size-6 rounded-full bg-paper-3" />
-          <span className="h-3.5 rounded bg-paper-3" style={{ width: `${30 + ((k * 37) % 35)}%` }} />
-          <span className="ml-auto h-5 w-16 rounded-full bg-paper-3 max-sm:hidden" />
-          <span className="h-5 w-12 rounded-full bg-paper-3 max-sm:hidden" />
-        </motion.div>
-      ))}
     </div>
   );
 }

@@ -163,7 +163,10 @@
   :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > * { opacity: 1; transform: none; }
   /* Out from the edge: nearest first. Tucking back has no delay. */
   :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(3) { transition-delay: 30ms; }
-  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(4) { transition-delay: 60ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(n+5) { transition-delay: 60ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(n+7) { transition-delay: 90ms; }
+  /* Tucked: the edge button (Xong) is just its icon; out, it spells itself. */
+  :root:not([data-row-actions="always"]) .row-actions:not(:is([data-selected="true"] *, :hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-label { display: none; }
 }
 
 
@@ -230,7 +233,7 @@
 .ai-in::after { content: ""; position: absolute; inset-inline: 0; top: 0; z-index: 1; height: 40%; pointer-events: none; opacity: 0;
   background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--color-hl) 70%, transparent) 35%, color-mix(in oklch, var(--color-info) 70%, transparent) 65%, transparent) bottom / 100% 1px no-repeat,
     linear-gradient(180deg, transparent, color-mix(in oklch, var(--color-hl) 7%, transparent) 70%, color-mix(in oklch, var(--color-info) 12%, transparent));
-  animation: ai-scan 1s var(--ease-emph) 80ms both; }
+  animation: ai-scan 1s var(--ease-emph) 80ms backwards; } /* not both: kept at 260% it would stretch the page scroll */
 @keyframes ai-scan { from { translate: 0 -100%; opacity: 1; } 70% { opacity: 1; } to { translate: 0 260%; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .ai-in::after { animation: none; } }
 @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; } }
@@ -240,6 +243,11 @@
 .ai-hop { animation: ai-hop 1.2s ease-in-out infinite; }
 .ai-dot { animation: ai-dot 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ai-hop, .ai-dot { animation: none; } }
+/* YouTrack first load: ticket cards arc from the stack into the robot */
+.yt-fly { opacity: 0; animation: yt-fly 1.8s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
+@keyframes yt-fly { 0% { opacity: 0; transform: translate(0, 0) rotate(-8deg); } 12% { opacity: 1; }
+  50% { transform: translate(110px, -38px) rotate(10deg) scale(1.05); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(222px, 0) rotate(-4deg) scale(0.3); } }
+@media (prefers-reduced-motion: reduce) { .yt-fly { animation: none; } }
 
 /* Loading shimmer: a brand-tinted light sweeping across skeletons and rows still loading. clip, not hidden: sticky headers inside keep working */
 .shimmer { position: relative; overflow: clip; }

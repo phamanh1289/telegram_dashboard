@@ -474,7 +474,7 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     def handler(req):
         seen.append(parse_qs(req.url.query.decode())["query"][0])
         return httpx.Response(200, json=[{
-            "idReadable": "VA-1",
+            "idReadable": "VA-1", "description": "Cho phép xuất PDF.",
             "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}}],
             "links": [{"direction": "INWARD", "linkType": {"name": "Depend", "targetToSource": "is required for"},
                        "issues": [issue(9, "In Progress")]}, {"direction": "OUTWARD", "issues": []}],
@@ -488,5 +488,6 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     assert seen == ["issue id: VA-1, VA-2"]  # bad ids dropped, one search
     t = out["VA-1"]
     assert t["last"] == {"text": "new", "created": 5, "author": "B"}
+    assert t["desc"] == "Cho phép xuất PDF."
     assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
     assert t["links"][0]["issues"][0]["state"] == "In Progress"

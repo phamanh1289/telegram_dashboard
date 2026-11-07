@@ -113,7 +113,8 @@ export interface paths {
         get?: never;
         /**
          * Task Handled
-         * @description Done / reopen: on the kept tag when the message is one, else on the session itself.
+         * @description Done / reopen: on the kept tag when the message is one, else on the session itself; and on every
+         *     kept message attached to its turns.
          */
         put: operations["task_handled_api_tasks__task_id__handled_put"];
         post?: never;
@@ -610,6 +611,55 @@ export interface paths {
         get: operations["briefing_api_briefing_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Qa
+         * @description Q&A threads of one group over the last `days`, live from Telegram (not stored, no AI), latest activity first.
+         *     Tags we keep come as their stored copy (kept, with done / pin state), so the row offers its tag actions.
+         */
+        get: operations["qa_api_qa_get"];
+        put?: never;
+        /**
+         * Qa Post
+         * @description Post a question to any group the account is in, the text then a "#QA…" line; with `reply_to`, a reply in
+         *     its thread as typed, or (`start`) an answer to someone's question that opens a thread on it. Answering a tag
+         *     we keep marks it done, like a reply from the reply panel. `start` on a message already in a thread (up its reply
+         *     chain) answers in that thread as typed: no second code. A question / answer that tags nobody (@username) goes
+         *     out as a plain message: no code, no Q&A.
+         */
+        post: operations["qa_post_api_qa_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Qa Summary
+         * @description AI conclusion of one Q&A thread (question, answer, what is still open), for a ticket or a recap.
+         */
+        post: operations["qa_summary_api_qa_summary_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2116,6 +2166,8 @@ export interface components {
              * @default false
              */
             kept: boolean;
+            /** Sender Username */
+            sender_username?: string | null;
         };
         /** MessageRef */
         MessageRef: {
@@ -2178,6 +2230,59 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** QaItem */
+        QaItem: {
+            /** Code */
+            code: string;
+            /** Chat Title */
+            chat_title: string;
+            question: components["schemas"]["MessageDTO"];
+            /** Answers */
+            answers: components["schemas"]["MessageDTO"][];
+        };
+        /** QaPostRequest */
+        QaPostRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Text */
+            text: string;
+            /** Reply To */
+            reply_to?: string | null;
+            /**
+             * Start
+             * @default false
+             */
+            start: boolean;
+        };
+        /** QaPosted */
+        QaPosted: {
+            /** Message Id */
+            message_id: string;
+            /** Code */
+            code: string | null;
+            /**
+             * Joined
+             * @default false
+             */
+            joined: boolean;
+        };
+        /**
+         * QaSummaryRequest
+         * @description One Q&A thread for the AI to conclude: its message ids as the page lists them (the question first).
+         */
+        QaSummaryRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Ids */
+            message_ids: string[];
+            /** Accepted Id */
+            accepted_id?: string | null;
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
+        };
         /** ReplyRequest */
         ReplyRequest: {
             /**
@@ -2196,6 +2301,11 @@ export interface components {
              * @default false
              */
             retry_unknown: boolean;
+            /**
+             * Quote
+             * @default true
+             */
+            quote: boolean;
         };
         /** RuleAdded */
         RuleAdded: {
@@ -2373,10 +2483,22 @@ export interface components {
             /** Text */
             text: string;
             /**
+             * Refs
+             * @default []
+             */
+            refs: components["schemas"]["TaskRef"][];
+            /**
              * Edit
              * @default false
              */
             edit: boolean;
+        };
+        /** TaskRef */
+        TaskRef: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: string;
         };
         /** TaskRequest */
         TaskRequest: {
@@ -3603,6 +3725,104 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BriefingItem"][];
+                };
+            };
+        };
+    };
+    qa_api_qa_get: {
+        parameters: {
+            query: {
+                chat_id: string;
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_post_api_qa_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaPostRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaPosted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_summary_api_qa_summary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: {text}} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

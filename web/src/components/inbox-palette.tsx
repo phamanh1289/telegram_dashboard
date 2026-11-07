@@ -38,7 +38,7 @@ function Body({ onClose, chats, views, group, range, onGo, onDigest, onSearch }:
   if (id) {
     out.push({ key: `yt:${id}`, group: "YouTrack", icon: <Bug />, label: <>Mở ticket <b className="font-mono">{id}</b></>, run: go(() => router.push(`/youtrack/?ticket=${id}`)) });
   }
-  if (/^#?ai-?\w/i.test(t)) {
+  if (/^#?(?:ref|ai)-?\w/i.test(t)) {
     for (const s of (tasks ?? []).filter((x) => sessionMatches(x, t)).slice(0, 6)) {
       out.push({ key: `ai:${s.id}`, group: "Phiên AI Agent", icon: <Bot />, hint: s.chat_title ?? undefined,
         label: <><b className="font-mono">{sessionId(s)}</b> {s.title || s.message_text || s.prompt}</>, run: go(() => onGo(TASKS, s.id)) });
@@ -59,5 +59,5 @@ function Body({ onClose, chats, views, group, range, onGo, onDigest, onSearch }:
   }
   if (t) out.push({ key: "search", group: "Tìm", icon: <Search />, label: <>Tìm tin tag: <b>“{t}”</b></>, hint: group ? `trong ${group.title}` : "ở mọi nhóm", run: go(() => onSearch(t)) });
   return <PaletteList q={q} onQuery={setQ} items={out} label="Lệnh nhanh: nhóm, trang, ticket, phiên AI"
-    placeholder="Gõ tên nhóm, trang, VA-123, AI-xxxxxx… hoặc chữ cần tìm" />;
+    placeholder="Gõ tên nhóm, trang, VA-123, REF-xxxxxx… hoặc chữ cần tìm" />;
 }

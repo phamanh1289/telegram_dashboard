@@ -125,6 +125,9 @@ def build_router(settings) -> APIRouter:
         await s.agent.start(
             task_id, row["project"], await expand(s, body.text, task_id), mode, row["session_id"], True, ai
         )
+        refs = [(x.chat_id, int(x.message_id)) for x in body.refs if x.message_id.isdigit()]
+        if refs:
+            await s.db.write(s.store.add_task_refs, task_id, refs)
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:
@@ -135,7 +138,8 @@ def build_router(settings) -> APIRouter:
 
     @r.put("/{task_id}/handled", status_code=204)
     async def task_handled(task_id: str, body: HandledRequest, request: Request) -> None:
-        """Done / reopen: on the kept tag when the message is one, else on the session itself."""
+        """Done / reopen: on the kept tag when the message is one, else on the session itself; and on every
+        kept message attached to its turns."""
         s = request.app.state
         row = await _task(s, task_id)
         cid, mid = row["chat_id"], row["message_id"]
@@ -146,6 +150,10 @@ def build_router(settings) -> APIRouter:
             changed = await s.db.write(s.store.set_task_done, task_id, body.handled)
         if changed and body.react and mid is not None:
             s.bridge.react(cid, [mid], body.handled)
+        by = "me" if body.react else "quiet"
+        for rc, mids in (await s.db.write(s.store.mark_task_refs, task_id, body.handled, by)).items():
+            if body.react:
+                s.bridge.react(rc, mids, body.handled)
 
     @r.post("/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

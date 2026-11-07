@@ -37,7 +37,7 @@ type Outcome =
 
 export type DraftInjection = { result: AiResult; chatId: string; nonce: number };
 
-const ERRORS: Record<string, string> = {
+export const SEND_ERRORS: Record<string, string> = {
   not_tracking: "Nhóm không còn được theo dõi.",
   reply_not_found: "Tin đích không còn hoặc không thuộc nhóm này.",
   not_connected: "Chưa kết nối Telegram. Bản nháp vẫn được giữ.",
@@ -165,7 +165,7 @@ export function Composer({
         unsure.current = false;
         saveDraft(replyTo, latest.current);
         const until = err.retryAfter ? Date.now() + err.retryAfter * 1000 : undefined;
-        setOutcome({ kind: "error", message: errorText(err, ERRORS, "Gửi thất bại."), until });
+        setOutcome({ kind: "error", message: errorText(err, SEND_ERRORS, "Gửi thất bại."), until });
       } else {
         setOutcome({ kind: "unknown", reason: err instanceof ApiError ? "Máy chủ local gặp lỗi khi gửi." : "Không liên lạc được máy chủ local." });
       }
@@ -237,7 +237,7 @@ export function Composer({
       setOutcome({ kind: "sent" });
     } else if (rec.status === "failed") {
       setRequestId(null);
-      setOutcome({ kind: "error", message: ERRORS[rec.error_code ?? ""] ?? "Gửi thất bại." });
+      setOutcome({ kind: "error", message: SEND_ERRORS[rec.error_code ?? ""] ?? "Gửi thất bại." });
     } else {
       setOutcome({
         kind: "unknown",
@@ -345,7 +345,7 @@ export function Composer({
         {/* Narrow: Mở Telegram stays on the name row, the actions take the next row whole. */}
         {!replyTo.outgoing && (
           <div className="order-last flex w-full flex-wrap items-center gap-0.5 sm:order-none sm:w-auto">
-            <MessageActions m={replyTo} labels showContext={showContext} onDone={onDone} onToggleContext={() => setShowContext((v) => !v)} />
+            <MessageActions m={replyTo} showContext={showContext} onDone={onDone} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         )}
         <Hint side="bottom" title="Mở Telegram" text={link.exact ? "Mở tin này trong app Telegram" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>

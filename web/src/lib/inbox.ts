@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api, errorText, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/lib/api";
 import { getPref, put, readOverdueHours } from "@/lib/prefs";
 import { byUnit, timeLabel } from "@/lib/time";
@@ -33,6 +33,8 @@ export const PINNED = "__pinned__";
 export const TASKS = "__tasks__";
 /** Pseudo chat id for the cross-group Digest briefing. */
 export const BRIEFING = "__briefing__";
+/** Pseudo chat id for the cross-group Q&A page. */
+export const QA = "__qa__";
 
 /** Current time, refreshed every minute and when a preference changes (keeps render pure). */
 export function useNow() {
@@ -240,12 +242,31 @@ export function useTaskList() {
   });
 }
 
-/** Short ID of an AI Agent session ("AI-e03a28"): the random tail of its id, shown and searched. */
-export const sessionId = (t: { id: string }) => `AI-${t.id.slice(-6)}`;
+/** Short ID of an AI Agent session ("REF-e03a28"): the random tail of its id, shown and searched. A neutral prefix, so
+ *  asks posted to groups don't read as AI-made; asks posted before carry the old "AI-". */
+export const sessionId = (t: { id: string }) => `REF-${t.id.slice(-6)}`;
+/** "#REF-97c501" (or the old "#AI-97c501") in a message; group 1 is the session id's tail. */
+export const SESSION_CODE = /#(?:REF|AI)-(\w{6})\b/gi;
+/** "#QA128734" in a message: the Q&A question with that id in the message's own group. */
+export const QA_CODE = /#QA(\d+)\b/gi;
+/** Answer someone's message with Q&A: the Q&A page of its group opens replying to it (the reply gets a code line and
+ *  the message leads the new thread). Held until that group's page takes it, so it works whether or not it is open. */
+let qaAnswer: Message | null = null;
+export const answerQa = (m: Message) => { qaAnswer = m; dispatchEvent(new CustomEvent<Message>("qa-answer", { detail: m })); };
+export function takeQaAnswer(chatId: string) {
+  const m = qaAnswer?.chat_id === chatId ? qaAnswer : null;
+  if (m) qaAnswer = null;
+  return m;
+}
+/** `msgKey` → "#QA…" of every message in a Q&A thread of the groups asked lately (Q&A page `useQaNews`): a tag that
+ *  answers one shows its badge even without the code in its text. Empty on the Q&A page itself (the card says it). */
+export const QaCodes = createContext<ReadonlyMap<string, string>>(new Map());
+/** Open the Q&A page on one thread: its group and "#QA…" code (the inbox shell listens). */
+export const openQa = (chatId: string, code: string) => dispatchEvent(new CustomEvent<{ chatId: string; code: string }>("open-qa", { detail: { chatId, code } }));
 
-/** Search the sessions: by ID (with or without "AI-"), title, tagged text, request or group. */
+/** Search the sessions: by ID (with or without "REF-" / "AI-"), title, tagged text, request or group. */
 export function sessionMatches(t: Task, q: string) {
-  const s = q.trim().toLowerCase().replace(/^#?ai-/, "");
+  const s = q.trim().toLowerCase().replace(/^#?(?:ref|ai)-/, "");
   return !s || t.id.includes(s) || [t.title, t.message_text, t.prompt, t.chat_title].some((v) => v?.toLowerCase().includes(s));
 }
 

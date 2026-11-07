@@ -46,6 +46,14 @@ async def test_concurrent_same_uuid_one_rpc(ready):
     assert target.handled  # a reply sent from the dashboard handles the tag
 
 
+async def test_new_message_next_to_the_tag(ready):
+    """quote=False (AI Agent asks): a new message in the tag's group, not a reply; the tag stays open."""
+    r = ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="5", text="hỏi BE", quote=False)
+    assert (await ready.bridge.submit_reply(r)).status == "sent"
+    assert ready.fake.send_calls[-1]["reply_to"] is None
+    assert not ready.store.get_message(A, 5).handled
+
+
 async def test_same_uuid_changed_payload_conflicts(ready):
     rid = uuid.uuid4()
     await ready.bridge.submit_reply(req(rid=rid))

@@ -75,7 +75,8 @@ CREATE TABLE IF NOT EXISTS outbox (
   updated_at INTEGER NOT NULL,
   code TEXT,                       -- short trace code shown to the user, e.g. R-1A2B3C4D
   sent_text TEXT NOT NULL DEFAULT '',  -- no longer written, cleared on startup
-  sent_at INTEGER
+  sent_at INTEGER,
+  quote INTEGER NOT NULL DEFAULT 1  -- 0: a new message in the tag's group / topic, not a reply to it
 );
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -99,6 +100,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   model TEXT,
   effort TEXT,
   done INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS task_refs (  -- messages attached to a session's turns: Done on the session ticks them too
+  task_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  PRIMARY KEY (task_id, chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS projects (
   path TEXT PRIMARY KEY,
@@ -268,9 +275,14 @@ def _handled_by(c: sqlite3.Connection) -> None:
     _add_cols(c, "messages", {"handled_by": "TEXT NOT NULL DEFAULT ''", "handled_at": "INTEGER"})
 
 
+def _outbox_quote(c: sqlite3.Connection) -> None:
+    """A send can be a new message next to the tag (AI Agent asks) instead of a reply to it."""
+    _add_cols(c, "outbox", {"quote": "INTEGER NOT NULL DEFAULT 1"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
-    _handled_by,
+    _handled_by, _outbox_quote,
 ]  # fmt: skip
 
 
@@ -819,10 +831,10 @@ class Store:
         )
 
     def outbox_create(
-        self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int
+        self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int, quote: bool = True
     ) -> tuple[OutboxDTO, bool]:
         """Returns (record, created). Same id with different payload => 409."""
-        h = content_hash(f"{chat_id}\n{reply_to}\n{text}")
+        h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew"))
         with self._conn(write=True) as c:
             row = c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             if row is not None:
@@ -838,8 +850,8 @@ class Store:
             ts = now_ts()
             c.execute(
                 "INSERT INTO outbox (request_id,chat_id,reply_to_message_id,text,text_hash,"
-                "random_id,status,created_at,updated_at,code) VALUES (?,?,?,?,?,?,'pending',?,?,?)",
-                (request_id, chat_id, reply_to, text, h, random_id, ts, ts, reply_code(request_id)),
+                "random_id,status,created_at,updated_at,code,quote) VALUES (?,?,?,?,?,?,'pending',?,?,?,?)",
+                (request_id, chat_id, reply_to, text, h, random_id, ts, ts, reply_code(request_id), int(quote)),
             )
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
@@ -871,7 +883,7 @@ class Store:
             topic = self._msg(c, r["chat_id"], r["reply_to_message_id"])
             return {
                 "chat_id": r["chat_id"],
-                "reply_to": r["reply_to_message_id"],
+                "reply_to": r["reply_to_message_id"] if r["quote"] else None,  # None: a new message
                 "text": r["text"],
                 "random_id": r["random_id"],
                 "topic_id": None if topic is None else topic["topic_id"],
@@ -903,7 +915,7 @@ class Store:
                 chat = self._chat(c, sent.chat_id)
                 if chat is not None and chat["tracking"]:
                     self._upsert_message(c, sent, chat)
-            if status == "sent":  # replying from the dashboard handles the tag
+            if status == "sent" and r["quote"]:  # replying from the dashboard handles the tag
                 self._mark(c, r["chat_id"], r["reply_to_message_id"], True, "dashboard")
             return self._outbox_dto(
                 c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
@@ -1004,7 +1016,22 @@ class Store:
 
     def delete_task(self, task_id: str) -> bool:
         with self._conn(write=True) as c:
+            c.execute("DELETE FROM task_refs WHERE task_id=?", (task_id,))
             return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
+
+    def add_task_refs(self, task_id: str, refs: list[tuple[str, int]]) -> None:
+        with self._conn(write=True) as c:
+            c.executemany("INSERT OR IGNORE INTO task_refs VALUES (?,?,?)", [(task_id, cid, mid) for cid, mid in refs])
+
+    def mark_task_refs(self, task_id: str, handled: bool, by: str) -> dict[str, list[int]]:
+        """Done / reopen every kept message attached to the session; the ones that flipped, per chat."""
+        out: dict[str, list[int]] = {}
+        with self._conn(write=True) as c:
+            refs = c.execute("SELECT chat_id, message_id FROM task_refs WHERE task_id=?", (task_id,)).fetchall()
+            for cid, mid in refs:
+                if self._mark(c, cid, mid, handled, by):
+                    out.setdefault(cid, []).append(mid)
+        return out
 
     # ---- projects ------------------------------------------------------
     def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:

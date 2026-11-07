@@ -46,7 +46,8 @@ function SessionAi({ t, disabled }: { t: Task; disabled: boolean }) {
 
 // Queued prompts per task, kept outside the panel so switching sessions doesn't drop them.
 // ponytail: client-only, drains only while that session is open and lost on reload; move server-side if that matters.
-const queues = new Map<string, string[]>();
+type Queued = { line: string; refs: Ref[] }; // refs: sent along so Done on the session ticks them too
+const queues = new Map<string, Queued[]>();
 
 /** One attached message above the composer: who and when, two lines of it; or why it can't be read. */
 function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Message>; other: boolean; onRemove: () => void }) {
@@ -91,8 +92,8 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
     setRefs(id, attach(id, []).filter((x) => !r.some((y) => sameRef(x, y)))); // attach(id, []): the draft as it is now
   };
   const send = useMutation({
-    mutationFn: ({ line }: { line: string; queued?: boolean }) =>
-      api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, edit: plan && edit } }),
+    mutationFn: ({ line, refs }: Queued & { queued?: boolean }) =>
+      api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit } }),
     // Awaited so the mutation stays pending until the task list shows the new turn running: the queue can't fire twice.
     // Here, not per-mutate, so a sent queued prompt leaves the queue even if the panel unmounted meanwhile.
     onSuccess: async (_, { queued }) => {
@@ -102,16 +103,16 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
     },
   });
   const submit = () => {
-    if (ready && !running && !send.isPending) send.mutate({ line }, { onSuccess: sentOnly(text, refs) });
+    if (ready && !running && !send.isPending) send.mutate({ line, refs }, { onSuccess: sentOnly(text, refs) });
   };
   // Cmd/Ctrl+Enter queues the prompt; queued prompts run one per turn, in order, once the AI is idle.
-  const [queue, setQueueState] = useState<string[]>(() => queues.get(id) ?? []);
-  const setQueue = (f: (q: string[]) => string[]) => {
+  const [queue, setQueueState] = useState<Queued[]>(() => queues.get(id) ?? []);
+  const setQueue = (f: (q: Queued[]) => Queued[]) => {
     const next = f(queues.get(id) ?? []);
     queues.set(id, next);
     setQueueState(next);
   };
-  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, line]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
+  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
   /** A paste of message IDs / links only: attach them and leave a "[#id]" mark at the caret, so the sentence still reads. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const add = parseRefs(e.clipboardData.getData("text"), t.chat_id);
@@ -130,14 +131,14 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
   };
   useEffect(() => {
     // Sent prompts leave the queue on success; a failed send stays first and pauses the queue until the next manual send.
-    if (!running && !send.isPending && !send.isError && queue.length) send.mutate({ line: queue[0], queued: true });
+    if (!running && !send.isPending && !send.isError && queue.length) send.mutate({ ...queue[0], queued: true });
   });
   const busy = send.error instanceof ApiError && send.error.code === "task_busy";
 
   return <>
     {queue.length > 0 && (
       <ol aria-label="Hàng đợi" className="grid gap-1">
-        {queue.map((line, i) => (
+        {queue.map(({ line }, i) => (
           <li key={i} className="flex items-center gap-2 rounded-lg bg-paper-2 px-2.5 py-1 text-xs text-ink-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
             <span className="shrink-0 font-mono tabular-nums text-ink-3">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate" title={line}>{line}</span>

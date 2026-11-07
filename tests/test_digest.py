@@ -435,3 +435,84 @@ def test_briefing_saved_sends_to_me(settings):
         app.state.bridge.state = "connected"
         assert c.post("/api/briefing/saved", json={"text": "**Briefing**"}).status_code == 204
         assert fake.saved == ["**Briefing**"]
+
+
+def test_qa_threads_and_post(settings):
+    fake = FakeTransport()
+    now = datetime.now(UTC)
+
+    def msg(mid, text, ago, reply=None, sender="7"):
+        return StoredMessage(chat_id=A, message_id=mid, sender_id=sender, sender_name=f"U{sender}", text=text,
+                             date=now - timedelta(hours=ago), reply_to_id=reply)  # fmt: skip
+
+    fake.history[A] = [msg(1, "staging lỗi?\n#QA11", 5), msg(2, "không nhé", 4, reply=1, sender="8"),
+                       msg(3, "chắc chưa?", 3.5, reply=2), msg(4, "chắc", 3, reply=3, sender="8"),
+                       msg(5, "Deploy?\n#QA22", 2), msg(6, "ok", 1), msg(9, "cũ\n#QA9", 24 * 9)]  # fmt: skip
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.store.set_tracking(A, True, title="Orders", kind="supergroup")
+        app.state.bridge.state = "degraded"
+        assert c.get("/api/qa", params={"chat_id": A}).json() == []  # offline: nothing to read
+        app.state.bridge.state = "connected"
+        app.state.store.apply_message(fake.history[A][1])  # a kept tag keeps its tag actions
+        items = c.get("/api/qa", params={"chat_id": A}).json()
+        got = [(i["code"], [a["message_id"] for a in i["answers"]]) for i in items]
+        assert got == [("#QA22", []), ("#QA11", ["2", "3", "4"])]  # the whole reply chain, latest activity first
+        assert items[1]["chat_title"] == "Orders" and items[1]["answers"][0]["kept"]
+        assert len(c.get("/api/qa", params={"chat_id": A, "days": 10}).json()) == 3
+
+        r = c.post("/api/qa", json={"chat_id": A, "text": " @minh_be có ai biết? "})
+        assert r.status_code == 201 and r.json()["code"].startswith("#QA")
+        sent = fake.send_calls[-1]
+        assert sent["text"] == f"@minh_be có ai biết?\n{r.json()['code']}" and sent["reply_to"] is None
+        r = c.post("/api/qa", json={"chat_id": A, "text": "Có ai biết?"})  # tags nobody: a plain message
+        assert r.json()["code"] is None and fake.send_calls[-1]["text"] == "Có ai biết?"
+        r = c.post("/api/qa", json={"chat_id": A, "text": "cảm ơn", "reply_to": "4"})
+        assert r.json()["code"] is None and fake.send_calls[-1] | {"random_id": 0} == dict(
+            chat_id=A, reply_to=4, text="cảm ơn", random_id=0, topic_id=None)  # fmt: skip
+        assert c.post("/api/qa", json={"chat_id": "-999", "text": "x"}).status_code == 404
+
+        # Someone asked me (a kept tag, older than the range); I answer with Q&A: their question leads the thread.
+        ask = msg(20, "A hỏi: staging ở đâu?", 24 * 9, sender="9")
+        fake.history[A].append(ask)
+        app.state.store.apply_message(ask)
+        r = c.post("/api/qa", json={"chat_id": A, "text": "@user_nine ở đây", "reply_to": "20", "start": True}).json()
+        assert fake.send_calls[-1]["text"] == f"@user_nine ở đây\n{r['code']}" and fake.send_calls[-1]["reply_to"] == 20
+        assert app.state.store.get_message(A, 20).handled  # answered from Q&A: the tag is done
+        fake.history[A].append(msg(21, f"@user_nine ở đây\n{r['code']}", 0.1, reply=20, sender="1"))
+        got = {i["code"]: [i["question"]["message_id"]] + [a["message_id"] for a in i["answers"]]
+               for i in c.get("/api/qa", params={"chat_id": A}).json()}  # fmt: skip
+        assert got[r["code"]] == ["20", "21"] and not r["joined"]
+
+        # A reply deep in #QA11's chain (4 → 3 → 2 → 1), answered with Q&A: into #QA11, as typed, no second code.
+        r = c.post("/api/qa", json={"chat_id": A, "text": "ok nhé", "reply_to": "4", "start": True}).json()
+        assert r["code"] == "#QA11" and r["joined"]
+        assert fake.send_calls[-1]["text"] == "ok nhé" and fake.send_calls[-1]["reply_to"] == 4
+        r = c.post("/api/qa", json={"chat_id": A, "text": "ok", "reply_to": "6", "start": True}).json()
+        assert r["code"] is None and not r["joined"] and fake.send_calls[-1]["text"] == "ok"  # untagged: plain
+
+
+def test_qa_summary_reads_the_thread_and_builds_on_the_accepted_answer(settings, monkeypatch):
+    fake = FakeTransport()
+    now = datetime.now(UTC)
+    fake.history[A] = [StoredMessage(chat_id=A, message_id=i, sender_id=s, sender_name=n, text=t, date=now,
+                                     outgoing=s == "1") for i, s, n, t in [  # fmt: skip
+        (1, "1", "Tôi", "@minh_be API login trả 500?\n#QA11"), (2, "8", "Minh", "Do thiếu district"),
+        (3, "9", "Hà", "đã fix")]]
+    seen = {}
+
+    async def ask(self, user, *a, **kw):
+        seen["user"], seen["kw"] = user, kw
+        return "**Kết luận:** thiếu district"
+
+    monkeypatch.setattr("telegram_dashboard.ai.AiService.ask", ask)
+    monkeypatch.setattr("telegram_dashboard.ai.AiService.configured", property(lambda self: True))
+    app = create_app(settings, transport=fake)
+    with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
+        app.state.store.set_tracking(A, True, title="Orders", kind="supergroup")
+        app.state.bridge.state = "connected"
+        r = c.post("/api/qa/summary", json={"chat_id": A, "message_ids": ["1", "2", "3"], "accepted_id": "2"})
+        assert json.loads(r.text.strip().splitlines()[-1]) == {"done": {"text": "**Kết luận:** thiếu district"}}
+        assert "API login trả 500?" in seen["user"] and "đã fix" in seen["user"]  # live reads: none of them stored
+        assert '"accepted": true' in seen["user"] and seen["kw"]["feature"] == "qa-summary"
+        assert c.post("/api/qa/summary", json={"chat_id": "-999", "message_ids": ["1"]}).status_code == 404

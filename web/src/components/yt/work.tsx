@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronRight, FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Sparkles, X } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AiPromptBox, useFollow } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
@@ -9,11 +10,15 @@ import { Hint } from "@/components/ui/hint";
 import { api, type Project } from "@/lib/api";
 import { toast } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
-import { AI_MAX, yt } from "@/lib/yt";
+import { cn } from "@/lib/utils";
+import { AI_MAX, type Ticket, yt } from "@/lib/yt";
 import { AiBox, StatePill, useAi, YtPicks } from "./bits";
 import { type AiSession, newSessionId, saveSession } from "./history";
 import { type AiAuto, type AiStart, useYt } from "./state";
 import { type Builtin, builtin, fitsCount, PromptsDialog, shownFor, usePrompts } from "./prompts";
+
+/** A ticket ID or a bare number (of the current project), several per text. */
+const TICKET_RE = /[A-Z][A-Z0-9_]*-\d+|\b\d+\b/gi;
 
 // Many tickets picked → AI: the tickets quoted, one prompt about them, follow-ups in the box. A folder: the AI also
 // reads that code (read-only). Every session stays in the YouTrack tab (its history), never in Telegram › AI Agent.
@@ -37,8 +42,12 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const [project, setProjectState] = useState(() => getPref(`ytFolder:${y.project}`) ?? "");
   const setProject = (p: string) => { setProjectState(p); setPref(`ytFolder:${y.project}`, p || null); };
   const [add, setAdd] = useState("");
+  const [found, setFound] = useState<Record<string, Ticket>>({}); // added tickets outside the loaded scope, looked up
+  const [looking, setLooking] = useState(false);
+  const [openList, setOpenList] = useState<boolean | null>(null); // the ticket list unfolded; null = auto, folded by every run
+  const calm = useReducedMotion();
   const list = ids.slice(0, AI_MAX);
-  const rows = list.map((id) => y.rows.find((i) => i.id === id) ?? { id, summary: null, state: null, type: null });
+  const rows = list.map((id) => y.rows.find((i) => i.id === id) ?? found[id] ?? { id, summary: null, state: null, type: null });
   const scope = `${list.length} ticket đã chọn`;
   const busy = ai.s.status === "busy";
   const folders = ps.data ?? [];
@@ -56,6 +65,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
       : k === "summary" || k === "review" ? yt.aiTickets(list, scope, k, sig, "", undefined, 0, [], dir)
       : k === "testcases" ? (one ? yt.aiTickets([one], one, "testcases", sig, "", undefined, 0, [], dir) : yt.aiTickets(list.slice(0, 10), scope, "testcases", sig, "", undefined, 0, [], dir))
       : yt.aiTicket(one!, k, sig, dir);
+    setOpenList(false); // the answer gets the room
     void ai.run({ label: `AI: ${b.name.toLowerCase()}`, run });
   }
   /** A built-in runs its job, a saved prompt is sent as the question. */
@@ -78,6 +88,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   async function send(text = prompt) {
     const ask = text.trim();
     if (!ask || busy) return;
+    setOpenList(false); // the answer gets the room
     if (ai.canAsk) { setPrompt(""); void ai.ask(ask); return; } // same chat: a follow-up (same folder as its first run)
     if (!list.length) { // a session about figures: the first prompt starts it, then follow-ups
       if (start) { setPrompt(""); void ai.run({ label: start.label, q: ask, run: (sig) => start.ask(ask, sig) }); }
@@ -89,40 +100,84 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
 
   // the AI chat is about one ticket set: changing the set starts a new one
   function change(next: string[]) { if (!busy) { ai.cancel(); setIds(next); } }
-  function addTicket() {
-    const id = add.trim().toUpperCase();
-    if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(id)) { toast({ text: "ID ticket dạng ABC-123" }); return; }
-    if (!ids.includes(id)) change([...ids, id]);
+  /** Add every ticket ID in the text (one, or many: "VA-1, VA-2"); the ones outside the loaded list are looked up first. */
+  async function addIds(text: string) {
+    // a bare number is a ticket of the current project: "123" = "VA-123"
+    const want = [...new Set((text.toUpperCase().match(TICKET_RE) ?? []).map((t) => (/^\d+$/.test(t) ? `${y.project}-${t}` : t)))].filter((id) => !ids.includes(id));
+    if (!want.length) { if (!text.match(TICKET_RE)) toast({ text: `Nhập số ticket (123) hoặc ID (${y.project}-123)` }); setAdd(""); return; }
     setAdd("");
+    const unknown = want.filter((id) => !y.rows.some((i) => i.id === id));
+    setLooking(true);
+    const got = (await Promise.all(unknown.map((id) => yt.detail(id).then((t): Ticket => t, () => null)))).filter((t): t is Ticket => !!t);
+    setLooking(false);
+    setFound((f) => ({ ...f, ...Object.fromEntries(got.map((t) => [t.id, t])) }));
+    const ok = want.filter((id) => !unknown.includes(id) || got.some((t) => t.id === id));
+    if (ok.length) change([...new Set([...ids, ...ok])]);
+    if (ok.length < want.length) toast({ text: `Không tìm thấy: ${want.filter((id) => !ok.includes(id)).join(", ")}` });
   }
 
   // chat-like: newest content at the bottom, kept in view as it streams in unless the reader scrolled up
   const { ref: feedRef, onScroll: onFeedScroll } = useFollow(ai.s.status === "busy" ? ai.s.text?.length ?? 0 : 0, `${ai.s.status}:${ai.thread.length}`); // a new turn or answer: back to the bottom
   const chatting = ai.thread.length > 0 || ai.s.status !== "idle";
+  const unfolded = openList ?? (!chatting && rows.length <= 4); // auto until toggled: the answer gets the room
+  const openOne = (id: string) => y.openTicket(id, list.map((x) => y.rows.find((i) => i.id === x) ?? found[x]).filter((i): i is Ticket => !!i));
 
   const field = "h-8 rounded-md border border-rule bg-cotton px-2 text-sm";
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      {ids.length > AI_MAX && <p className="text-xs text-warn">Chỉ đọc {AI_MAX} / {ids.length} ticket đầu.</p>}
-      <div className="grid shrink-0 gap-1">
-        {!!rows.length && <blockquote className="grid max-h-40 gap-0.5 overflow-y-auto border-l-2 border-hl/50 pl-3" aria-label="Ticket đã chọn">
-          {rows.map((r) => (
-            <div key={r.id} className="group grid grid-cols-[minmax(0,1fr)_auto] items-center rounded hover:bg-paper-2">
-              <button type="button" onClick={() => y.openTicket(r.id, list.map((id) => y.rows.find((i) => i.id === id)!).filter(Boolean))}
-                className="grid grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-2 px-1 py-1 text-left text-sm">
-                <b className="font-mono text-xs">{r.id}</b><span className="truncate text-ink-2">{r.summary}</span>{r.state && <StatePill state={r.state} />}
-              </button>
-              {ids.length > 1 && <Button type="button" size="icon-xs" variant="ghost" disabled={busy} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                onClick={() => change(ids.filter((x) => x !== r.id))} aria-label={`Bỏ ${r.id}`}><X /></Button>}
-            </div>
-          ))}
-        </blockquote>}
-        <form className="flex items-center gap-1.5 pl-3" onSubmit={(e) => { e.preventDefault(); addTicket(); }}>
-          <input list="work-add-ids" value={add} onChange={(e) => setAdd(e.target.value)} maxLength={40} aria-label="Thêm ticket theo ID" placeholder="Thêm ticket: ABC-123"
-            className="h-7 w-44 rounded-md border border-rule bg-cotton px-2 font-mono text-xs" />
-          <datalist id="work-add-ids">{y.rows.filter((i) => !ids.includes(i.id)).slice(0, 500).map((i) => <option key={i.id} value={i.id}>{i.summary}</option>)}</datalist>
-          <Button type="submit" size="icon-xs" variant="ghost" disabled={!add.trim() || busy || ids.length >= AI_MAX} aria-label="Thêm ticket"><Plus /></Button>
-        </form>
+      {/* the tickets: one slim line (count, the ids, an add box) that never crowds the answer. "N ticket" unfolds the full
+          list (id, title, state) within a third of the screen; it folds again when a prompt is sent */}
+      <div className="grid shrink-0 rounded-[var(--radius-card)] bg-paper-2/60 shadow-edge">
+        <div className="flex h-9 items-center gap-1 px-1">
+          {!!rows.length && <Hint side="bottom" text={unfolded ? "Thu gọn danh sách ticket" : "Xem tiêu đề, trạng thái từng ticket"}><button type="button" onClick={() => setOpenList(!unfolded)} aria-expanded={unfolded} aria-controls="work-tickets"
+            className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-ink-2 hover:bg-paper-3 hover:text-ink">
+            <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", unfolded && "rotate-90")} aria-hidden /><span className="tabular-nums">{rows.length}</span> ticket</button></Hint>}
+          <div className="relative min-w-0 flex-1 self-stretch">
+            <AnimatePresence initial={false}>
+              {!unfolded && (
+                <motion.div key="chips" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: calm ? 0 : 0.15 }}
+                  className="no-scrollbar absolute inset-0 flex items-center gap-1 overflow-x-auto [mask-image:linear-gradient(to_right,black_calc(100%-1.5rem),transparent)] pr-6">
+                  {rows.map((r) => (
+                    <span key={r.id} className={cn("inline-flex h-6 shrink-0 items-center rounded-full bg-cotton pl-2 font-mono text-xs shadow-edge", ids.length > 1 ? "pr-0.5" : "pr-2")}>
+                      <Hint side="bottom" text={r.summary ?? r.id}><button type="button" onClick={() => openOne(r.id)} className="hover:text-hl-2">{r.id}</button></Hint>
+                      {ids.length > 1 && <button type="button" disabled={busy} onClick={() => change(ids.filter((x) => x !== r.id))} aria-label={`Bỏ ${r.id}`}
+                        className="ml-0.5 grid size-5 place-items-center rounded-full text-ink-3 hover:bg-paper-3 hover:text-ink"><X className="size-3" /></button>}
+                    </span>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          <form className="relative shrink-0" onSubmit={(e) => { e.preventDefault(); void addIds(add); }}>
+            {/* Enter adds; a suggestion picked (not typed) adds at once; a paste with several numbers / IDs adds them all */}
+            <Plus className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
+            <input list="work-add-ids" value={add} disabled={looking || busy || ids.length >= AI_MAX} maxLength={500} aria-label="Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
+              placeholder={looking ? "Đang tìm…" : "Thêm 123, 456"}
+              onChange={(e) => { const t = (e.nativeEvent as InputEvent).inputType; if ((!t || t === "insertReplacementText") && y.rows.some((i) => i.id === e.target.value)) void addIds(e.target.value); else setAdd(e.target.value); }}
+              onPaste={(e) => { const t = e.clipboardData.getData("text"); if ((t.match(TICKET_RE) ?? []).length > 1) { e.preventDefault(); void addIds(t); } }}
+              className="h-7 w-32 rounded-md border border-transparent bg-cotton pr-2 pl-6 font-mono text-xs transition-[width,border-color] duration-(--dur-short) placeholder:font-sans hover:border-rule focus:w-44 focus:border-hl disabled:opacity-60" />
+            <datalist id="work-add-ids">{y.rows.filter((i) => !ids.includes(i.id)).slice(0, 500).map((i) => <option key={i.id} value={i.id}>{i.summary}</option>)}</datalist>
+          </form>
+        </div>
+        <AnimatePresence initial={false}>
+          {unfolded && !!rows.length && (
+            <motion.div key="list" id="work-tickets" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: calm ? 0 : 0.22, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
+              <ul aria-label="Ticket của phiên" className="grid max-h-[min(14rem,30dvh)] gap-px overflow-y-auto border-t border-rule/70 p-1">
+                {rows.map((r) => (
+                  <li key={r.id} className="group grid grid-cols-[minmax(0,1fr)_auto] items-center rounded-md hover:bg-cotton">
+                    <button type="button" onClick={() => openOne(r.id)} className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-2 px-1.5 py-1 text-left text-sm">
+                      <b className="font-mono text-xs font-medium text-ink-2">{r.id}</b><span className="truncate">{r.summary ?? "—"}</span>{r.state && <StatePill state={r.state} />}
+                    </button>
+                    {ids.length > 1 && <Button type="button" size="icon-xs" variant="ghost" disabled={busy} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={() => change(ids.filter((x) => x !== r.id))} aria-label={`Bỏ ${r.id}`}><X /></Button>}
+                  </li>
+                ))}
+              </ul>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {ids.length > AI_MAX && <p className="border-t border-rule/70 px-2 py-1 text-xs text-warn">Chỉ đọc {AI_MAX} / {ids.length} ticket đầu.</p>}
       </div>
 
       <div ref={feedRef} onScroll={onFeedScroll} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" aria-live="polite">

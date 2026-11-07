@@ -69,6 +69,10 @@ from .models import (
     PinRequest,
     ProjectDTO,
     ProjectRequest,
+    QaItem,
+    QaPosted,
+    QaPostRequest,
+    QaSummaryRequest,
     ReplyRequest,
     RuleAdded,
     RuleDTO,
@@ -77,6 +81,7 @@ from .models import (
     SavedMessageRequest,
     SnoozeRequest,
     StatusDTO,
+    StoredMessage,
     TelegramApp,
     TelegramPhone,
     TelegramSignIn,
@@ -87,6 +92,7 @@ from .models import (
     YouTrackUser,
     to_dto,
 )
+from .qa import chain_code, find_threads, has_tag, names_code, qa_code
 from .storage import Db, Store, _dt, parse_cursor
 from .tasks import build_router as build_task_router
 from .tasks import new_task_id, start_task
@@ -95,7 +101,8 @@ from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 
 log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
-LIVE_READS = 4  # parallel Telegram calls in /api/briefing
+LIVE_READS = 4  # parallel Telegram calls in /api/briefing and /api/qa
+QA_SCAN = 600  # newest messages read per group for Q&A
 
 
 GUIDE_PROMPT = (
@@ -515,6 +522,71 @@ def create_app(
 
         rows = await s.db.read(s.store.briefing_rows)
         return list(await asyncio.gather(*(item(r) for r in rows)))
+
+    @app.get("/api/qa")
+    async def qa(
+        chat_id: str, request: Request, days: Annotated[int, Query(ge=1, le=30)] = 7
+    ) -> list[QaItem]:
+        """Q&A threads of one group over the last `days`, live from Telegram (not stored, no AI), latest activity first.
+        Tags we keep come as their stored copy (kept, with done / pin state), so the row offers its tag actions."""
+        s = S(request)
+        if s.bridge.state != "connected":
+            return []
+        await _known_chat(s, chat_id)
+        until = datetime.now(UTC)
+        msgs = await s.bridge.fetch_range(chat_id, until - timedelta(days=days), until, QA_SCAN)
+        # A question answered with Q&A may be older than the range: read it so it still leads its thread.
+        older = {m.reply_to_id for m in msgs if m.reply_to_id and names_code(m.text)} - {m.message_id for m in msgs}
+        if older:
+            msgs += await s.bridge.fetch_ids(chat_id, sorted(older)[-20:])
+        ids = [m.message_id for m in msgs]
+        kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids) if ids else ([], "")
+        mine = {k.message_id: k for k in kept}
+        title = (await s.db.read(s.store.get_chat, chat_id) or {}).get("title") or chat_id
+
+        def dto(m: StoredMessage) -> MessageDTO:
+            k = mine.get(m.message_id)  # the stored copy has no @username (never stored): the live one's
+            return to_dto(k).model_copy(update={"kept": True, "sender_username": m.sender_username}) if k else to_dto(m)
+
+        threads = [QaItem(code=code, chat_title=title, question=dto(ms[0]), answers=[dto(m) for m in ms[1:]])
+                   for code, ms in find_threads(msgs)]  # fmt: skip
+        return sorted(threads, key=lambda i: (i.answers or [i.question])[-1].date, reverse=True)
+
+    @app.post("/api/qa", status_code=201)
+    async def qa_post(body: QaPostRequest, request: Request) -> QaPosted:
+        """Post a question to any group the account is in, the text then a "#QA…" line; with `reply_to`, a reply in
+        its thread as typed, or (`start`) an answer to someone's question that opens a thread on it. Answering a tag
+        we keep marks it done, like a reply from the reply panel. `start` on a message already in a thread (up its reply
+        chain) answers in that thread as typed: no second code. A question / answer that tags nobody (@username) goes
+        out as a plain message: no code, no Q&A."""
+        s = S(request)
+        await _known_chat(s, body.chat_id)
+        reply_to = None if body.reply_to is None else int_or_404(body.reply_to, "reply_not_found")
+        joined = None
+        if reply_to is not None and body.start:
+            joined = await chain_code(lambda ids: s.bridge.fetch_ids(body.chat_id, ids), reply_to)
+        opens = (reply_to is None or body.start) and not joined and has_tag(body.text)
+        code = qa_code(datetime.now(UTC)) if opens else None
+        text = body.text.strip() + (f"\n{code}" if code else "")
+        mid = await s.bridge.send_direct(body.chat_id, reply_to, text)
+        if reply_to:
+            await s.db.write(s.store.set_handled, body.chat_id, reply_to, True, "dashboard")
+        return QaPosted(message_id=str(mid), code=joined or code, joined=bool(joined))
+
+    @app.post("/api/qa/summary", responses={200: {"description": "NDJSON: delta / reset lines, then {done: {text}}"}})
+    async def qa_summary(body: QaSummaryRequest, request: Request) -> StreamingResponse:
+        """AI conclusion of one Q&A thread (question, answer, what is still open), for a ticket or a recap."""
+        client_gone.set(request.is_disconnected)
+        s = S(request)
+        await _known_chat(s, body.chat_id)
+        ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
+        accepted = None if body.accepted_id is None else int_or_404(body.accepted_id, "message_not_found")
+        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+
+        async def work(on_text):
+            return {"text": await s.ai.qa_summary(body.chat_id, ids, fetch, accepted, body.intro, on_text)}
+
+        return stream_answer(work)
 
     @app.post("/api/briefing/ask", responses={200: {"description": "NDJSON: delta / reset lines, then {done: {text}}"}})
     async def briefing_ask(body: BriefingAskRequest, request: Request) -> StreamingResponse:

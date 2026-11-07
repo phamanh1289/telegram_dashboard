@@ -29,6 +29,8 @@ export type DigestResult = S["DigestResult"];
 export type DigestItem = S["DigestItem"];
 export type HistoryPage = S["HistoryPage"];
 export type BriefingItem = S["BriefingItem"];
+export type QaItem = S["QaItem"];
+export type QaPosted = S["QaPosted"];
 export type SavedDigest = S["SavedDigest"];
 export type GroupInfo = S["GroupInfo"];
 

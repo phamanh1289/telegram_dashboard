@@ -2,7 +2,7 @@
 
 import { type InfiniteData, type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type Status, type Task } from "@/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/lib/api";
 import { msgKey } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
@@ -70,6 +70,12 @@ function patchEdit(qc: QueryClient, m: Message) {
   return true;
 }
 
+function inQa(qc: QueryClient, it: ChangeItem) {
+  const ids = [it.message_id, it.message?.reply_to_id].filter(Boolean);
+  return ids.length > 0 && qc.getQueriesData<QaItem[]>({ queryKey: ["qa", it.chat_id] })
+    .some(([, d]) => d?.some((i) => [i.question, ...i.answers].some((m) => ids.includes(m.message_id))));
+}
+
 /** Apply one /changes page to the caches; each query is invalidated once per page, not once per item. */
 export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   if (!items.length) return;
@@ -90,6 +96,9 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
   const tasks = new Set((qc.getQueryData<Task[]>(["tasks"]) ?? []).map(msgKey));
   if (items.some((it) => tasks.has(msgKey(it)))) void qc.invalidateQueries({ queryKey: ["tasks"] });
+  // A tag in a Q&A thread changed (done, snoozed, pinned) or a new tag answers one: that group's Q&A reads again now,
+  // not at its next poll. Only groups with a cached thread holding it (Q&A reads Telegram live).
+  for (const chat of new Set(items.filter((it) => inQa(qc, it)).map((it) => it.chat_id))) void qc.invalidateQueries({ queryKey: ["qa", chat] });
   listeners.forEach((cb) => cb(items));
   notifyNew(items);
 }

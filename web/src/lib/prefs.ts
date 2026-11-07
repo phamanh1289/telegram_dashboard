@@ -93,6 +93,19 @@ export function readOverdueHours() {
   return n > 0 ? n : 4;
 }
 
+/** Minutes a Q&A question of yours may go unanswered before the Q&A page asks you to nudge the group (0: never). */
+export const QA_REMIND_CHOICES = [0, 15, 30, 60, 120, 240] as const;
+export function readQaRemind(): number {
+  const v = getPref("qaRemindMins");
+  return v !== null && (QA_REMIND_CHOICES as readonly number[]).includes(Number(v)) ? Number(v) : 30;
+}
+export const qaRemindLabel = (m: number) => (m === 0 ? "Tắt" : m < 60 ? `${m} phút` : `${m / 60} giờ`);
+/** The Q&A nudge threshold, live (Settings and the Q&A page both change it). */
+export const useQaRemind = () => useSyncExternalStore(onPrefs, readQaRemind, () => 30);
+/** When a Q&A question counts as answered: a reply from anyone but the asker, or only from someone it tagged. */
+export type QaAnswerBy = "any" | "tagged";
+export const readQaAnswerBy = (): QaAnswerBy => (getPref("qaAnswerBy") === "tagged" ? "tagged" : "any");
+
 /** Row actions (ghim, ngữ cảnh, mở Telegram): tucked behind Xong until it is hovered, or always shown. */
 export type RowActionsPref = "hover" | "always";
 export function readRowActions(): RowActionsPref {

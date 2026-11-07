@@ -287,9 +287,10 @@ export const ticketId = (s: string, project: string) => { s = s.trim().toUpperCa
 
 // ---------- Dev "Hôm nay": my open tickets ranked by what should be done first, with the reasons ----------
 export type Focus = { i: Ticket; score: number; why: string[] };
-export function todayList(rows: Ticket[], me: string | null, since: (i: Ticket) => number | null, now: number): Focus[] {
+/** `ours`: the tickets of the header scope (My task / My team / Group); plus the ones waiting for me to test. */
+export function todayList(rows: Ticket[], me: string | null, ours: (i: Ticket) => boolean, since: (i: Ticket) => number | null, now: number): Focus[] {
   if (!me) return [];
-  return rows.filter((i) => !i.resolved && (i.assignee === me || (i.qc === me && bucket(i) === 2))).map((i) => {
+  return rows.filter((i) => !i.resolved && (ours(i) || (i.qc === me && bucket(i) === 2))).map((i) => {
     const why: string[] = [];
     let score = 0;
     if (isBlocked(i)) { score += 50; why.push("Blocked"); }

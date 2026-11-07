@@ -68,8 +68,8 @@ class Transport(Protocol):
     ) -> list[StoredMessage]: ...  # newest `limit` in [since, until), oldest first
     async def fetch_ids(self, chat_id: str, ids: list[int]) -> list[StoredMessage]: ...
     async def send_reply(
-        self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
-    ) -> SentMessage: ...
+        self, chat_id: str, reply_to: int | None, text: str, random_id: int, topic_id: int | None
+    ) -> SentMessage: ...  # reply_to None: a new message (in topic_id, if any)
     # Add `emoji` unless we already reacted; None takes back only the bridge's own reaction.
     # Raises SendRejected("retry_after") on a flood wait.
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
@@ -251,6 +251,17 @@ class TelegramBridge:
         except SendRejected as e:
             raise ApiError(429, "flood_wait", retry_after=e.retry_after) from e
 
+    async def send_direct(self, chat_id: str, reply_to: int | None, text: str) -> int:
+        """Post to any group the account is in, tracked or not, outside the outbox (Q&A); the new message's id.
+        ponytail: no retry bookkeeping like the outbox; a timeout surfaces as an error and the user resends."""
+        try:
+            async with self._send_lock:
+                sent = await self.ensure_connected().send_reply(chat_id, reply_to, text, secrets.randbits(63), None)
+        except SendRejected as e:
+            raise ApiError({"retry_after": 429, "forbidden": 403, "reply_not_found": 404}.get(e.code, 502), e.code,
+                           retry_after=e.retry_after) from e  # fmt: skip
+        return sent.message_id
+
     def react(self, chat_id: str, message_ids: list[int], done: bool) -> None:
         """Mirror "done" on Telegram as a reaction (reopen removes it). Background, best effort:
         a group that forbids reactions or a dropped connection never fails the mark itself."""
@@ -296,7 +307,7 @@ class TelegramBridge:
         except ValueError:
             raise ApiError(404, "reply_not_found") from None
         rec, _ = await self.db.write(
-            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63)
+            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote
         )
         if rec.status in ("sent", "sending") or (rec.status == "unknown" and not req.retry_unknown):
             return rec
@@ -436,13 +447,14 @@ class TelethonTransport:
     async def _convert(self, msg) -> StoredMessage:
         from telethon import utils
 
-        name = None
+        name = username = None
         try:  # the cached sender first: get_sender() is a network call when it is missing or "min"
             sender = msg.sender or await msg.get_sender()
             name = utils.get_display_name(sender) if sender else None
+            username = getattr(sender, "username", None)
         except Exception as e:  # stored without a sender name
             log.debug("sender of message %s not resolved: %s", msg.id, type(e).__name__)
-        return raw_to_stored(msg, str(msg.chat_id), name)
+        return raw_to_stored(msg, str(msg.chat_id), name).model_copy(update={"sender_username": username})
 
     async def _on_new(self, event, edit: bool = False) -> None:
         from telethon import utils
@@ -706,7 +718,7 @@ class TelethonTransport:
             raise SendRejected("retry_after", int(e.seconds)) from e
 
     async def send_reply(
-        self, chat_id: str, reply_to: int, text: str, random_id: int, topic_id: int | None
+        self, chat_id: str, reply_to: int | None, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage:
         from telethon import errors
         from telethon.tl import functions, types
@@ -718,9 +730,10 @@ class TelethonTransport:
                     peer=peer,
                     message=text,
                     random_id=random_id,
-                    reply_to=types.InputReplyToMessage(
-                        reply_to_msg_id=reply_to, top_msg_id=topic_id
-                    ),
+                    # a new message in a forum topic still "replies" to the topic's top message
+                    reply_to=types.InputReplyToMessage(reply_to_msg_id=reply_to, top_msg_id=topic_id)
+                    if reply_to
+                    else types.InputReplyToMessage(reply_to_msg_id=topic_id) if topic_id else None,
                 )
             )
         except (errors.FloodWaitError, errors.SlowModeWaitError) as e:

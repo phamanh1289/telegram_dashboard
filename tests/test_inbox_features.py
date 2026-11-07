@@ -173,6 +173,13 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     client.put("/api/tasks/t1/handled", json=done, headers=H)  # now on the tag
     assert store.get_message(A, 4).handled
     assert client.get("/api/tasks").json()[0]["handled"] is True  # the task follows its tag
+    # Messages attached to its turns follow the session's Done / reopen (only kept ones; others are no-ops).
+    store.apply_message(msg(A, 5, "@me BE: API đã sửa"))
+    store.add_task_refs("t1", [(A, 5), (A, 99)])
+    client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
+    assert not store.get_message(A, 5).handled
+    client.put("/api/tasks/t1/handled", json=done, headers=H)
+    assert store.get_message(A, 4).handled and store.get_message(A, 5).handled
     p = task_result_path(settings, "t1")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("Đã sửa crash login iOS, PR #42")
@@ -323,7 +330,10 @@ def test_headless_task_runs_and_resumes(tmp_path):
         last = ev["items"][-1]["text"]
         assert "--model sonnet --effort medium" in last and "--permission-mode plan" in last and "--session-id" in last
         assert c.get("/api/tasks").json()[0]["running"] is False
-        assert c.post(f"/api/tasks/{task['id']}/message", json={"text": "tiếp"}, headers=H).status_code == 204
+        tiep = {"text": "tiếp", "refs": [{"chat_id": A, "message_id": "7"}]}
+        assert c.post(f"/api/tasks/{task['id']}/message", json=tiep, headers=H).status_code == 204
+        with c.app.state.store._conn() as db:  # attached messages kept with the session for its Done
+            assert [tuple(r) for r in db.execute("SELECT chat_id, message_id FROM task_refs")] == [(A, 7)]
         for _ in range(100):
             ev = c.get(f"/api/tasks/{task['id']}/events").json()
             if len(ev["items"]) == 6 and not ev["running"]:

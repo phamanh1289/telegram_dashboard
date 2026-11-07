@@ -44,6 +44,7 @@ class StoredMessage(BaseModel):
     snoozed_until: datetime | None = None  # hidden from pending until then
     pinned: bool = False  # sticks to the top of the pending list
     links: list[LinkSpan] = []  # Telegram formatting entities (UTF-16 offsets)
+    sender_username: str | None = None  # live reads only (never stored): Q&A matches it against the question's @tags
 
 
 class GroupInfo(BaseModel):
@@ -78,6 +79,7 @@ class MessageDTO(BaseModel):
     pinned: bool = False
     links: list[LinkSpan] = []
     kept: bool = False  # live pages: a tag/reply we store (handled in the tag lists; Cả nhóm hides it)
+    sender_username: str | None = None  # live reads (Q&A): "answered by the one tagged"
 
 
 class ChatDTO(BaseModel):
@@ -140,6 +142,7 @@ class ReplyRequest(BaseModel):
     reply_to_message_id: str
     text: str
     retry_unknown: bool = False
+    quote: bool = True  # False: a new message in the group (and topic) of reply_to, not a reply to it
 
     @field_validator("text")
     @classmethod
@@ -475,8 +478,14 @@ class TaskRequest(BaseModel):
     message_id: str | None = None
 
 
+class TaskRef(BaseModel):
+    chat_id: str = Field(max_length=32)
+    message_id: str = Field(max_length=16)
+
+
 class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=16000)  # 8000 typed + attached messages
+    refs: list[TaskRef] = Field(default=[], max_length=5)  # the attached messages: Done on the session ticks them
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
 
 
@@ -578,6 +587,35 @@ class SavedMessageRequest(BaseModel):
     text: str = Field(min_length=1, max_length=20_000)
 
 
+class QaItem(BaseModel):
+    code: str  # "#QA27012345": the line the dashboard adds under a question; answers may name it
+    chat_title: str
+    question: MessageDTO
+    answers: list[MessageDTO]  # the reply chain under the question (and messages naming its code), oldest first
+
+
+class QaPostRequest(BaseModel):
+    chat_id: str
+    text: str = Field(min_length=1, max_length=4000)  # room for the code line under Telegram's 4096
+    reply_to: str | None = None  # None: a new question (gets a code line); else a reply in its thread, as typed
+    start: bool = False  # with reply_to: answer someone's question with Q&A (code line; their message leads the thread)
+
+
+class QaSummaryRequest(BaseModel):
+    """One Q&A thread for the AI to conclude: its message ids as the page lists them (the question first)."""
+
+    chat_id: str
+    message_ids: list[str] = Field(min_length=1, max_length=500)
+    accepted_id: str | None = None  # the answer the user marked ("Chốt"): the conclusion builds on it
+    intro: str = Field("", max_length=2000)
+
+
+class QaPosted(BaseModel):
+    message_id: str
+    code: str | None  # the new question's code, or (joined) the thread the answer went into
+    joined: bool = False  # `start` on a message already in a thread: answered there, no new code
+
+
 class BriefingItem(BaseModel):
     chat_id: str
     title: str
@@ -610,4 +648,5 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         snoozed_until=m.snoozed_until,
         pinned=m.pinned,
         links=m.links,
+        sender_username=m.sender_username,
     )

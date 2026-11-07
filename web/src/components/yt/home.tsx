@@ -2,13 +2,13 @@
 
 import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { copyText, useNow } from "@/lib/inbox";
 import { ymd } from "@/lib/time";
 import { getPref, put, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, when, yt } from "@/lib/yt";
+import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, UNASSIGNED, when, yt } from "@/lib/yt";
 import { Card, Label, Markdown, Prio, StatePill, Tag } from "./bits";
 import { Segmented } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
@@ -100,14 +100,18 @@ type Lens = "all" | "doing" | "qc" | "block" | "test";
 export function DevHome() {
   const y = useYt();
   const now = useNow();
-  const list = useMemo(() => todayList(y.rows, y.me, y.since, now), [y.rows, y.me, y.since, now]);
-  const mine = useMemo(() => y.rows.filter((i) => !i.resolved && i.assignee === y.me), [y.rows, y.me]);
+  // the header scope (My task / My team / Group): its people's tickets; no one picked = everyone
+  const names = y.filters.assignee;
+  const ours = useCallback((i: Ticket) => !names.length || names.includes(i.assignee ?? UNASSIGNED), [names]);
+  const whose = y.scope === "me" ? "của bạn" : "trong phạm vi";
+  const list = useMemo(() => todayList(y.rows, y.me, ours, y.since, now), [y.rows, y.me, ours, y.since, now]);
+  const mine = useMemo(() => y.rows.filter((i) => !i.resolved && ours(i)), [y.rows, ours]);
   const { loadSince } = y;
   useEffect(() => { const doing = mine.filter((i) => bucket(i) === 1); if (doing.length) loadSince(doing); }, [mine, loadSince]);
   const [lens, setLens] = useState<Lens>("all");
   const LENS: Record<Lens, [string, (i: Ticket) => boolean]> = {
-    all: ["Đang mở", (i) => i.assignee === y.me], doing: ["Đang làm", (i) => i.assignee === y.me && bucket(i) === 1],
-    qc: ["Chờ QC", (i) => i.assignee === y.me && bucket(i) === 2], block: ["Blocked", (i) => i.assignee === y.me && isBlocked(i)],
+    all: ["Đang mở", ours], doing: ["Đang làm", (i) => ours(i) && bucket(i) === 1],
+    qc: ["Chờ QC", (i) => ours(i) && bucket(i) === 2], block: ["Blocked", (i) => ours(i) && isBlocked(i)],
     test: ["Chờ bạn test", (i) => i.qc === y.me && i.assignee !== y.me && bucket(i) === 2],
   };
   const shown = lens === "all" ? list : list.filter((x) => LENS[lens][1](x.i));
@@ -118,7 +122,7 @@ export function DevHome() {
     d.setDate(d.getDate() - (d.getDay() === 1 ? 3 : 1));
     const since = d.getTime();
     const done = y.rows.filter((i) => i.assignee === y.me && i.updated >= since).sort((a, b) => b.updated - a.updated);
-    return { since, ids: [...new Set([...done, ...list.map((x) => x.i)].map((i) => i.id))].slice(0, AI_MAX) };
+    return { since, ids: [...new Set([...done, ...list.map((x) => x.i).filter((i) => i.assignee === y.me || i.qc === y.me)].map((i) => i.id))].slice(0, AI_MAX) }; // standup stays mine
   }, [y.rows, y.me, list, now]);
   const risky = mine.map((i) => [i, riskOf(i, now)] as const).filter((x): x is readonly [Ticket, string] => !!x[1]);
   if (!y.me) return <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong Cài đặt › YouTrack, hoặc đổi vai trò trong Cài đặt › Chung.</p>;
@@ -142,7 +146,7 @@ export function DevHome() {
           </div>
         )}
         <Card title="Hôm nay làm gì" meta={lens === "all" ? `${list.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
-          <FocusList key={lens} list={shown} top={lens === "all" ? "Làm ngay" : ""} empty={lens === "all" ? "Không có ticket nào đang mở của bạn." : "Không có ticket nào ở mục này."} />
+          <FocusList key={lens} list={shown} top={lens === "all" ? "Làm ngay" : ""} empty={lens === "all" ? `Không có ticket nào đang mở ${whose}.` : "Không có ticket nào ở mục này."} />
         </Card>
       </div>
       <div className="grid content-start gap-4">
@@ -150,13 +154,13 @@ export function DevHome() {
           <AiStudio key={`dev:${y.project}`} id={`dev:${y.project}`} tabs={[
             { k: "today", label: "Kế hoạch", busy: `AI đang đọc ${Math.min(list.length, AI_MAX)} ticket`, disabled: list.length ? undefined : "Không có ticket nào để lập kế hoạch.",
               hint: "AI đọc mô tả, bình luận và tin Telegram của các ticket trên để chọn việc làm ngay, việc cần trả lời, chỗ đang kẹt.",
-              ids: list.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(list.slice(0, AI_MAX).map((x) => x.i.id), `Ticket của ${y.me}`, "today", sig) },
+              ids: list.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(list.slice(0, AI_MAX).map((x) => x.i.id), y.scope === "me" ? `Ticket của ${y.me}` : `Ticket của ${names.join(", ") || "cả nhóm"}`, "today", sig) },
             { k: "standup", label: "Standup", busy: "AI đang viết standup", disabled: standup.ids.length ? undefined : "Chưa có ticket nào của bạn.",
               hint: "Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Dán thẳng vào nhóm.",
               ids: standup.ids, run: (sig) => yt.aiTickets(standup.ids, `Ticket của ${y.me}`, "standup", sig, "", undefined, standup.since) },
           ]} />
         )}
-        <Card title="Mới cập nhật" meta="ticket của bạn">
+        <Card title="Mới cập nhật" meta={`ticket ${whose}`}>
           {recent.length ? (
             <ul className="grid gap-0.5">
               {recent.map((i) => (
