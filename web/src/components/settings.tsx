@@ -1,15 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronDown, Download, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, GitBranch, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
-import { AiFetching } from "@/components/ai/fetching";
+import { AiFetching, UpdateHero } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
@@ -919,36 +919,8 @@ function UpdateSection() {
       {restartFailed && <p role="alert" className="text-xs text-error">Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.</p>}
     </div>
     {d && (
-      <ConfirmDialog open={ask} onOpenChange={setAsk} tone="default" icon={Download} busy={busy} onConfirm={() => run.mutate()}
-        title={busy ? "Đang cập nhật app" : "Cập nhật app?"}
-        description={busy ? "Giữ trang này mở: xong sẽ tự tải lại." : `Lấy bản mới từ ${d.branch}, rồi khởi động lại server.`}
-        items={busy ? undefined : d.commits.map((c) => ({ id: c.sha, tag: c.sha, label: c.subject }))} unit="bản"
-        confirmLabel={restarting ? "Đang khởi động lại…" : run.isPending ? "Đang cập nhật…" : "Cập nhật"}
-        error={run.isError ? err(run.error) : undefined}>
-        {busy ? (
-          <AiFetching kind="update" project={latest} className="min-h-0 py-2"
-            lines={restarting ? ["Đã cài bản mới", "Đang khởi động lại server", "Sắp tải lại trang"] : undefined} />
-        ) : <>
-          <dl className="grid grid-cols-[1fr_1fr_auto] items-end gap-x-4 gap-y-1">
-            <dt className="text-xs text-ink-3">Đang dùng</dt><dt className="text-xs text-ink-3">Mới nhất</dt>
-            <dd className="row-span-2 self-center rounded-full bg-ok-wash px-2.5 py-1 font-mono text-xs font-semibold text-ok">Có bản mới</dd>
-            <dd className="truncate font-mono text-sm text-ink">{d.current}</dd><dd className="truncate font-mono text-sm text-ink">{latest}</dd>
-          </dl>
-          <div className="grid gap-1">
-            <span className="text-xs text-ink-3">Sẽ chạy</span>
-            <code className="rounded-md bg-paper-2 px-2.5 py-1.5 font-mono text-xs break-words text-ink-2 shadow-groove">
-              {release ? `tải gói ${latest} từ GitHub Releases → kiểm sha256 + chữ ký → cài vào versions/` : `git pull --ff-only (${d.branch}) → uv sync / npm ci / npm run build khi cần`}
-            </code>
-          </div>
-          <div className="flex items-start justify-between gap-3 border-t border-rule pt-3">
-            <div className="grid gap-0.5">
-              <span className="text-sm font-medium text-ink">Khởi động lại sau khi cập nhật</span>
-              <span className="text-xs text-ink-3">Bắt buộc: server chạy code cũ tới khi khởi động lại. Trang tự tải lại; task AI Agent đang chạy thì đợi xong.</span>
-            </div>
-            <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-ok" />
-          </div>
-        </>}
-      </ConfirmDialog>
+      <UpdateDialog open={ask} onOpenChange={setAsk} info={d} latest={latest} release={release} phase={restarting ? "restart" : run.isPending ? "install" : "idle"}
+        error={run.isError ? err(run.error) : undefined} onConfirm={() => run.mutate()} />
     )}
     {d && (
       <Row label="Tự động cập nhật" desc="Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.">
@@ -956,6 +928,114 @@ function UpdateSection() {
       </Row>
     )}
   </>;
+}
+
+type UpdatePhase = "idle" | "install" | "restart";
+type Tip = { area: string; title: string; what: string };
+
+/** While the update runs: how long it has been, and a tip from the user guide every 6s (loaded only now: guide.json is big). */
+function WaitTips() {
+  const [tips, setTips] = useState<Tip[]>([]);
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    void import("@/lib/guide.json").then((m) => setTips((m.default as Tip[]).filter((t) => t.title && t.what).sort(() => Math.random() - 0.5)));
+    const t = setInterval(() => setSec((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const tip = tips[Math.floor(sec / 6) % (tips.length || 1)];
+  return (
+    <div className="grid gap-1.5 rounded-lg border border-rule bg-paper-2 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-xs text-ink-3">
+        <Lightbulb aria-hidden className="size-3.5 text-warn" />Trong lúc chờ, bạn có biết
+        <span className="ml-auto font-mono tabular-nums">{String(Math.floor(sec / 60)).padStart(2, "0")}:{String(sec % 60).padStart(2, "0")}</span>
+      </div>
+      {tip ? (
+        <div key={tip.title} className="grid min-h-14 gap-0.5 animate-in fade-in-0 slide-in-from-right-3 duration-(--dur-short)">
+          <span className="text-[11px] text-hl-2">{tip.area}</span>
+          <span className="text-sm font-medium text-ink">{tip.title}</span>
+          <span className="line-clamp-2 text-xs text-ink-2">{tip.what}</span>
+        </div>
+      ) : <div className="min-h-14" />}
+    </div>
+  );
+}
+
+/** Hero first: GitHub → robot → app (at rest), versions, what's new folded; once confirmed the same hero runs (AI pulls
+ *  the release) over a stepper of the two phases the server really reports (install, restart). */
+function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, error, onConfirm }: {
+  open: boolean; onOpenChange: (o: boolean) => void; info: UpdateInfo; latest: string; release: boolean
+  phase: UpdatePhase; error?: string; onConfirm: () => void
+}) {
+  const busy = phase !== "idle";
+  const stages: [string, UpdatePhase][] = [["Kéo & cài bản mới", "install"], ["Khởi động lại", "restart"], ["Tải lại trang", "idle"]];
+  const at = stages.findIndex(([, p]) => p === phase);
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
+      <DialogContent showCloseButton={!busy} className="gap-5 sm:max-w-md">
+        <div className="-mx-(--dlg-p) -mt-(--dlg-p) grid justify-items-center bg-radial-[at_50%_70%] from-hl-wash to-transparent to-70% px-(--dlg-p) pt-6">
+          {busy
+            ? <AiFetching kind={phase === "restart" ? "restart" : "update"} project={latest} className="min-h-0 py-0" />
+            : <UpdateHero className="animate-in fade-in-0 zoom-in-95 duration-(--dur-short)" />}
+        </div>
+        <div className="grid justify-items-center gap-1.5 text-center">
+          <div className="flex items-center gap-2.5 font-mono text-lg">
+            <span className="text-ink-3">{d.current}</span>
+            <ArrowRight aria-hidden className="size-4 text-ink-3" />
+            <span className="font-semibold text-ink">{latest}</span>
+          </div>
+          <DialogTitle className="pr-0">{busy ? <>Đang cập nhật lên <span className="font-mono">{latest}</span></> : <>Có {d.behind} bản mới trên GitHub</>}</DialogTitle>
+          <DialogDescription>{busy ? "Giữ trang này mở, xong sẽ tự tải lại." : release ? "Tải gói đã ký từ GitHub Releases, kiểm checksum + chữ ký rồi mới cài." : `git pull từ ${d.branch}, build lại khi cần.`}</DialogDescription>
+        </div>
+        {busy ? <>
+          <ol className="flex items-start">
+            {stages.map(([label], i) => {
+              const done = i < at, now = i === at;
+              return (
+                <li key={label} className="relative grid flex-1 justify-items-center gap-1.5 text-center">
+                  {i > 0 && <span aria-hidden className={cn("absolute top-3 right-[calc(50%+1rem)] left-[calc(-50%+1rem)] h-px", done || now ? "bg-hl" : "bg-rule")} />}
+                  <span className={cn("relative grid size-6 place-items-center rounded-full border text-[11px] font-semibold [&_svg]:size-3.5",
+                    done ? "border-ok bg-ok text-cotton" : now ? "border-hl bg-hl-wash text-hl-2" : "border-rule bg-cotton text-ink-3")}>
+                    {done ? <Check /> : now ? <Loader2 className="animate-spin" /> : i + 1}
+                  </span>
+                  <span className={cn("text-xs", now ? "font-medium text-ink" : "text-ink-3")}>{label}</span>
+                </li>
+              );
+            })}
+          </ol>
+          <WaitTips />
+        </> : <div className="grid gap-2">
+          {!!d.commits.length && (
+            <details className="group rounded-lg border border-rule">
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-2 select-none hover:bg-paper-2 [&::-webkit-details-marker]:hidden">
+                <ChevronDown aria-hidden className="size-4 -rotate-90 text-ink-3 transition-transform group-open:rotate-0" />
+                Có gì mới <span className="text-ink-3">({d.commits.length})</span>
+              </summary>
+              <ul className="grid max-h-36 grid-cols-1 overflow-y-auto border-t border-rule py-1 text-xs">
+                {d.commits.map((c, i) => (
+                  <li key={c.sha} className="flex items-center gap-2.5 px-3 py-1.5">
+                    <span className={cn("shrink-0 font-mono", i ? "text-ink-3" : "text-hl-2")}>{c.sha}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-2">{c.subject}</span>
+                    <span className="shrink-0 text-ink-3 tabular-nums">{c.when}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <Hint text="Server chạy code cũ tới khi khởi động lại, nên luôn khởi động lại sau khi cài; đang có task AI Agent thì đợi task xong.">
+            <p tabIndex={0} className="flex w-fit items-center gap-2 rounded px-3 text-xs text-ink-3 outline-none focus-visible:ring-2 focus-visible:ring-hl"><RotateCw aria-hidden className="size-3.5" />Tự khởi động lại server sau khi cài</p>
+          </Hint>
+          {error && <p role="alert" className="flex gap-2 rounded-lg bg-error-wash px-3 py-2 text-xs text-error"><TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />{error}</p>}
+        </div>}
+        <DialogFooter className="border-t-0 bg-transparent pt-0 sm:justify-stretch [&>*]:sm:flex-1">
+          <DialogClose disabled={busy} render={<Button variant="outline" />}>Hủy</DialogClose>
+          <Button aria-busy={busy} disabled={busy} onClick={onConfirm}>
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />}
+            {phase === "restart" ? "Đang khởi động lại…" : busy ? "Đang cập nhật…" : error ? "Thử lại" : `Cập nhật lên ${latest}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ---- Phím tắt -----------------------------------------------------------------------------------

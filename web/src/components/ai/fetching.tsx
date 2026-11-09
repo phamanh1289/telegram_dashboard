@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileText, GitBranch, MessageCircleQuestion, PackageCheck, Rocket, Send, Server, Sparkles } from "lucide-react";
+import { Check, FileText, GitBranch, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Send, Server, ShieldCheck, Sparkles } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -23,6 +23,7 @@ const LINES: Record<FetchKind, string[]> = {
   digest: ["AI đang đọc hội thoại của nhóm", "Đang ghép câu hỏi với câu trả lời", "Đang gom theo chủ đề, đánh dấu trao đổi với BE", "Đang tìm việc cần confirm, điều đã chốt", "Sắp xong rồi"],
   today: ["AI đang gom việc của bạn", "Đang đọc tag chờ và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   update: ["AI đang kết nối GitHub", "Đang kéo bản mới về", "Đang kiểm checksum và chữ ký", "Đang cài bản mới", "Sắp xong rồi"],
+  restart: ["Đã cài bản mới", "Đang khởi động lại server", "Đang chờ server lên lại", "Sắp tải lại trang"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -57,6 +58,19 @@ export function AiFetching({ kind, project = "", lines, cover, className }: { ki
         <AiThinking lines={lines ?? LINES[kind]} className="w-72 max-w-full justify-center [&>svg]:hidden" />
         <span className="ai-bar h-1 w-56 max-w-full rounded-full" />
       </div>
+    </div>
+  );
+}
+
+/** The update scene at rest (same 320 × 160 box as the running one): GitHub, the robot, the app, joined by dashed links. */
+export function UpdateHero({ className }: { className?: string }) {
+  return (
+    <div aria-hidden className={cn("relative h-40 w-80", className)}>
+      <span className="absolute top-[70px] right-[198px] left-[66px] border-t-2 border-dashed border-rule-2" />
+      <span className="absolute top-[70px] right-[66px] left-[198px] border-t-2 border-dashed border-rule-2" />
+      <Tile label="GitHub" className="top-1/2 left-1 -translate-y-1/2"><GitHubMark /></Tile>
+      <Bot className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
+      <Tile label="App" className="top-1/2 right-1 -translate-y-1/2"><PackageCheck className="size-8 text-ok" /></Tile>
     </div>
   );
 }
@@ -109,6 +123,7 @@ function Tile({ children, label, className }: { children: ReactNode; label: stri
 const Tg = ({ className = "size-9", icon = "size-5" }: { className?: string; icon?: string }) => (
   <span className={cn("grid place-items-center rounded-full bg-info text-cotton", className)}><Send className={cn("-translate-x-px translate-y-px", icon)} /></span>
 );
+const GitHubMark = () => <span className="grid size-9 place-items-center rounded-full bg-ink text-cotton"><GitBranch className="size-5" /></span>;
 const Line = ({ w, className }: { w: string | number; className?: string }) => <span className={cn("block h-1 rounded-full bg-ink-3/25", className)} style={{ width: w }} />;
 /** A soft cone pointing at the robot (wide at the data, narrow at the robot). */
 const Cone = ({ className }: { className: string }) => (
@@ -321,15 +336,53 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // handing a message to the agent: the message, its tickets and links fly into the robot, which loads them line by line into the session
-  // update: the release (tag, zip, checksum, signature) streams from GitHub into the robot, which hands the checked package to the app
+  // update: GitHub broadcasts the release; files stream along flowing beams into the robot, pass the signature gate as checked
+  // packages and fill the app, which pops the new version with a burst of sparks
   update: ({ p }) => <>
-    <Cone className="inset-y-7 right-1/2 left-12" />
-    {([[p || "Release", C.hl], [".zip", C.info], ["sha256", C.ok], ["chữ ký", C.hl2], ["commits", C.warn]] as const)
-      .map(([t, c], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={k % 2 ? "M44 80C84 130 124 120 160 80" : "M44 80C84 30 124 40 160 80"}>{t}</Fly>)}
-    {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.6} dur={1.6} path="M196 80H262" className="size-1.5 rounded-full bg-ok" />)}
-    <Tile label="GitHub" className="top-1/2 left-1 -translate-y-1/2"><span className="grid size-9 place-items-center rounded-full bg-ink text-cotton"><GitBranch className="size-5" /></span></Tile>
+    <svg viewBox="0 0 320 160" className="absolute inset-0 size-full overflow-visible" fill="none" strokeWidth="1.5" strokeLinecap="round">
+      <path className="ai-beam" d="M58 64C96 26 128 34 146 66" stroke={C.hl} opacity="0.55" />
+      <path className="ai-beam" d="M58 76C96 116 128 112 146 92" stroke={C.info} opacity="0.55" />
+      <path className="ai-beam" d="M186 80C214 62 236 60 260 68" stroke={C.ok} opacity="0.6" />
+    </svg>
+    {([[p || "Release", C.hl], [".zip", C.info], ["sha256", C.ok], ["chữ ký", C.hl2], ["app/", C.warn], ["web/", C.info], ["VERSION", C.hl], ["uv.lock", C.ok]] as const)
+      .map(([t, c], k) => <Fly key={t} k={k} dot={c} gap={0.4} dur={3.2} path={k % 2 ? "M44 80C84 130 124 120 160 80" : "M44 80C84 30 124 40 160 80"}>{t}</Fly>)}
+    {[0, 1, 2].map((k) => <Fly key={`pk${k}`} k={k} gap={0.8} dur={2.4} path="M186 80C214 62 236 60 266 68"><ShieldCheck className="size-3 text-ok" />ok</Fly>)}
+    <span className="absolute top-[40px] left-[222px] h-[60px] w-0.5 animate-pulse rounded-full bg-linear-to-b from-transparent via-ok to-transparent" />
+    <span className="absolute top-[42px] left-1 size-14 animate-ping rounded-xl border-2 border-hl/40 [animation-duration:1.8s]" />
+    <Tile label="GitHub" className="top-1/2 left-1 -translate-y-1/2"><GitHubMark /></Tile>
     <Bot ring className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
-    <Tile label="App" className="top-1/2 right-1 -translate-y-1/2"><PackageCheck className="size-8 text-ok" /></Tile>
+    <span className="absolute top-[42px] right-1 size-14 animate-ping rounded-xl border-2 border-ok/40 [animation-duration:2.4s]" />
+    <Tile label="App" className="top-1/2 right-1 -translate-y-1/2">
+      <span className="fx-grow absolute inset-1 rounded-lg bg-ok/20" style={v({ "--fx-d": "2.4s" })} />
+      <PackageCheck className="relative size-8 text-ok" />
+    </Tile>
+    {[[-26, -22, C.ok], [0, -34, C.hl], [26, -22, C.info], [30, 6, C.warn], [-30, 6, C.hl2], [0, 30, C.ok]].map(([dx, dy, c], k) => (
+      <span key={k} className="ai-packet absolute top-[70px] left-[288px] size-1.5 rounded-full" style={v({ background: c, "--dx": `${dx}px`, "--dy": `${dy}px`, animationDelay: `${0.15 + k * 0.17}s` })} />
+    ))}
+    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "3.2s" })}><Check className="size-3" />{p || "mới"}</span>
+  </>,
+
+  // restart: the robot reboots the server: the power ring spins, rack lights blink back on one by one, the new version checks in
+  restart: ({ p }) => <>
+    <svg viewBox="0 0 320 160" className="absolute inset-0 size-full" fill="none" strokeWidth="1.5" strokeLinecap="round">
+      <path className="ai-beam" d="M104 80H196" stroke={C.hl} opacity="0.6" />
+    </svg>
+    {[0, 1, 2].map((k) => <Fly key={k} k={k} gap={0.5} dur={1.5} path="M104 80H196" className="size-1.5 rounded-full bg-hl" />)}
+    <Bot ring className="top-1/2 left-4 size-24 -translate-y-1/2" />
+    <div className="absolute top-1/2 right-6 size-28 -translate-y-1/2">
+      <span className="absolute inset-0 rounded-full border-2 border-dashed border-ok/40" />
+      <span className="ai-spin absolute inset-0 [animation-duration:1.4s]"><RotateCw className="absolute -top-2 left-1/2 size-4 -translate-x-1/2 text-ok" /></span>
+      <div className="absolute inset-5 grid content-center gap-1.5 rounded-xl border border-rule bg-cotton p-2 shadow-stock">
+        {[0, 1, 2].map((r) => (
+          <div key={r} className="flex items-center gap-1 rounded bg-paper-2 px-1.5 py-1">
+            <span className="size-1.5 animate-pulse rounded-full bg-ok" style={{ animationDelay: `${r * 0.3}s` }} />
+            <span className="size-1.5 animate-pulse rounded-full bg-hl" style={{ animationDelay: `${r * 0.3 + 0.15}s` }} />
+            <Line w={24} className="ml-auto" />
+          </div>
+        ))}
+      </div>
+    </div>
+    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "2.6s" })}><Check className="size-3" />{p || "mới"}</span>
   </>,
 
   agent: ({ p }) => {

@@ -304,7 +304,12 @@
 @keyframes sk-pop { from { scale: 0; opacity: 0; } }
 .sk-caret { animation: sk-caret 1s steps(1) infinite; }
 @keyframes sk-caret { 50% { opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .ai-float, .ai-shadow, .ai-halo, .ai-beam, .ai-packet, .sk-grow, .sk-pop, .sk-caret { animation: none; } }
+/* the robot's orbiting sparkle (Bot ring in ai/fetching.tsx) */
+.ai-spin { animation: ai-spin 3s linear infinite; }
+@keyframes ai-spin { to { rotate: 360deg; } }
+.ai-twinkle { animation: ai-twinkle 1.2s ease-in-out infinite; }
+@keyframes ai-twinkle { 50% { scale: 0.55; opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .ai-float, .ai-shadow, .ai-halo, .ai-beam, .ai-packet, .sk-grow, .sk-pop, .sk-caret, .ai-spin, .ai-twinkle { animation: none; } }
 /* ConfirmDialog danger badge (ui/dialog.tsx): the icon inside shakes once as it opens. */
 .confirm-shake svg { animation: confirm-shake 0.6s ease-in-out 0.15s; }
 @keyframes confirm-shake { 20%, 60% { rotate: -14deg; } 40%, 80% { rotate: 12deg; } }

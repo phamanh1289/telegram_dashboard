@@ -1811,7 +1811,7 @@
 },
 {
 "t": "Xem bản mới và lệnh sẽ chạy trong hộp xác nhận, bấm \"Cập nhật\" để cài",
-"at": "css:[role=\"alertdialog\"]"
+"at": "css:[role=\"dialog\"]"
 },
 {
 "t": "Bật \"Tự động cập nhật\" nếu muốn",
