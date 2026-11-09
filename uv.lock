@@ -352,7 +352,7 @@ wheels = [
 
 [[package]]
 name = "telegram-dashboard"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
