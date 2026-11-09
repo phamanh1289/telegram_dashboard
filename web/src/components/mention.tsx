@@ -1,20 +1,34 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState, type KeyboardEvent, type RefObject, type SyntheticEvent } from "react";
+import { useState, type KeyboardEvent, type SyntheticEvent } from "react";
 import { Avatar } from "@/components/chat-list";
 import { api, errorText, type Member } from "@/lib/api";
 import { fold } from "@/lib/inbox";
+import { type Person, yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 
-// "@" in the reply box: pick someone in the group. A @username goes as typed text (Telegram links it itself); someone
-// without one shows as "@Name" in the box and is sent as [Name](tg://user?id=N), which the server turns into a mention
-// entity (telegram.split_mentions). ponytail: the "@Name" → id map lives in this component only: a reopened draft
-// sends the name as plain text; persist it with the draft if that bites.
+// "@" in a box that posts somewhere people get tagged: pick a member. A @username / @login goes as typed text (Telegram
+// and YouTrack link it themselves); a Telegram member without a username shows as "@Name" in the box and is sent as
+// [Name](tg://user?id=N), which the server turns into a mention entity (telegram.split_mentions). ponytail: the
+// "@Name" → id map lives in this component only: a reopened draft sends the name as plain text; persist it if that bites.
 
-const QUERY = /(?:^|\s)@([^\s@]{0,32})$/; // the "@word" right before the caret
+const QUERY = /(?:^|\s)@([^\s@]{0,32}(?: [^\s@]{0,32}){0,3})$/; // "@Lan Q" right before the caret: a full name has spaces
 const SHOWN = 8;
-const ERRORS = { members_hidden: "Nhóm ẩn danh sách thành viên, gõ @username để tag." };
+
+/** Where the "@" list comes from; `select` maps the cached data, so a shared query key keeps its own shape. */
+export type MentionSource<T> = { queryKey: readonly unknown[]; queryFn: () => Promise<T>; select: (d: T) => Member[]; errors?: Record<string, string> };
+const same = (m: Member[]) => m;
+/** The Telegram group's members (inbox reply, Q&A). */
+export const groupMembers = (chatId: string): MentionSource<Member[]> => ({
+  queryKey: ["members", chatId], queryFn: () => api<Member[]>(`/chats/${encodeURIComponent(chatId)}/members`), select: same,
+  errors: { members_hidden: "Nhóm ẩn danh sách thành viên, gõ @username để tag." },
+});
+const asMembers = (l: Person[]) => l.map((p) => ({ user_id: p.login, name: p.name, username: p.login }));
+/** The YouTrack project's team (comments, ticket description): same key as the Assignee picker's list. */
+export const ytPeople = (project: string): MentionSource<Person[]> => ({
+  queryKey: ["yt", "people", project], queryFn: () => yt.people(project), select: asMembers,
+});
 
 /** Members matching what follows "@", best first. */
 function rank(members: Member[], q: string): Member[] {
@@ -32,22 +46,21 @@ function rank(members: Member[], q: string): Member[] {
 
 const label = (m: Member) => `@${m.name.replace(/[[\]\n]/g, "").slice(0, 64)}`;
 
-export function useMention(chatId: string, text: string, setText: (s: string) => void, box: RefObject<HTMLTextAreaElement | null>) {
+/** Wire onto a textarea: `ref={attach}`, `track` (onChange + onSelect), `onKeyDown` first; `popup` inside a `relative` parent.
+ *  Send `wire(text)`. Used by the inbox reply box, Q&A (AiPromptBox `mention`), YouTrack comments and ticket description. */
+export function useMention<T>(source: MentionSource<T>, text: string, setText: (s: string) => void) {
+  const [box, setBox] = useState<HTMLTextAreaElement | null>(null); // callback ref: the textarea, for focus after a pick
   const [caret, setCaret] = useState<number | null>(null);
   const [closed, setClosed] = useState(-1); // where the "@" Esc dismissed starts: stays shut until another "@"
   const [at, setAt] = useState(0);
   const [named, setNamed] = useState<Record<string, string>>({}); // "@Name" → user id
   const q = caret == null ? undefined : text.slice(0, caret).match(QUERY)?.[1];
   const start = q == null || caret == null ? -1 : caret - q.length - 1;
-  const open = start >= 0 && start !== closed;
-  const members = useQuery({
-    queryKey: ["members", chatId],
-    queryFn: () => api<Member[]>(`/chats/${encodeURIComponent(chatId)}/members`),
-    enabled: open,
-    staleTime: 5 * 60_000,
-    retry: false,
-  });
-  const shown = open ? rank(members.data ?? [], q ?? "") : [];
+  const asking = start >= 0 && start !== closed;
+  const members = useQuery({ queryKey: source.queryKey, queryFn: source.queryFn, select: source.select, enabled: asking, staleTime: 5 * 60_000, retry: false });
+  const shown = asking ? rank(members.data ?? [], q ?? "") : [];
+  // Past a space only while someone still matches: "@minh_be xem giúp" goes back to plain typing.
+  const open = asking && (!q?.includes(" ") || shown.length > 0);
   const cur = Math.min(at, Math.max(shown.length - 1, 0));
 
   const track = (e: SyntheticEvent<HTMLTextAreaElement>) => {
@@ -62,7 +75,7 @@ export function useMention(chatId: string, text: string, setText: (s: string) =>
     setText(`${text.slice(0, start)}${tag} ${text.slice(caret)}`);
     const pos = start + tag.length + 1;
     setCaret(null);
-    requestAnimationFrame(() => { box.current?.focus(); box.current?.setSelectionRange(pos, pos); });
+    requestAnimationFrame(() => { box?.focus(); box?.setSelectionRange(pos, pos); });
   }
 
   /** True when the popup took the key (the box must not act on it). */
@@ -74,6 +87,7 @@ export function useMention(chatId: string, text: string, setText: (s: string) =>
     else if (shown.length && (e.key === "Enter" || e.key === "Tab") && !e.ctrlKey && !e.metaKey) pick(shown[cur]);
     else return false;
     e.preventDefault();
+    e.stopPropagation(); // a dialog / sheet must not close on the Esc meant for the list
     return true;
   }
 
@@ -82,7 +96,7 @@ export function useMention(chatId: string, text: string, setText: (s: string) =>
     Object.entries(named).sort(([a], [b]) => b.length - a.length)
       .reduce((t, [tag, id]) => t.split(tag).join(`[${tag.slice(1)}](tg://user?id=${id})`), s);
 
-  const status = members.isPending ? "Đang tải thành viên…" : members.isError ? errorText(members.error, ERRORS)
+  const status = members.isPending ? "Đang tải thành viên…" : members.isError ? errorText(members.error, source.errors ?? {})
     : shown.length ? "" : "Không thấy ai khớp.";
   const popup = open && (
     <div role="listbox" aria-label="Tag thành viên" className="absolute bottom-full left-0 z-20 mb-1 w-72 max-w-full overflow-hidden rounded-[var(--radius-card)] border border-rule-2 bg-cotton py-1 shadow-lg">
@@ -99,5 +113,6 @@ export function useMention(chatId: string, text: string, setText: (s: string) =>
     </div>
   );
 
-  return { track, onKeyDown, wire, popup, open };
+  return { attach: setBox, track, onKeyDown, wire, popup, open };
 }
+export type Mention = ReturnType<typeof useMention<unknown>>;

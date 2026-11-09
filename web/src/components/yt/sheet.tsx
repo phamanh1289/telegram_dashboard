@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { ImageView } from "@/components/markdown";
 import { useEffect, useRef, useState } from "react";
+import { useMention, ytPeople } from "@/components/mention";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -137,7 +138,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
-  const box = useRef<HTMLTextAreaElement>(null);
+  const { attach, ...mention } = useMention(ytPeople(id.split("-")[0]), comment, setComment); // "@" tags the project's team
   const now = useNow();
 
   async function send() {
@@ -260,9 +261,11 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         ))}
         {d.data && !d.data.comments.length && <p className="text-sm text-ink-3 italic">Chưa có bình luận</p>}
         {write && (
-          <div className="grid gap-2">
-            <Textarea ref={box} rows={3} maxLength={20000} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Bình luận mới" placeholder="Viết bình luận (gửi lên YouTrack, ⌘↵ gửi)…"
-              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !sending) { e.preventDefault(); void send(); } }} />
+          <div className="relative grid gap-2">
+            {mention.popup}
+            <Textarea ref={attach} rows={3} maxLength={20000} value={comment} aria-label="Bình luận mới" placeholder="Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag)…"
+              onChange={(e) => { setComment(e.target.value); mention.track(e); }} onSelect={mention.track}
+              onKeyDown={(e) => { if (mention.onKeyDown(e)) return; if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !sending) { e.preventDefault(); void send(); } }} />
             <Button size="sm" className="justify-self-end" disabled={!comment.trim() || sending} aria-busy={sending} onClick={() => void send()}><MessageSquareText /> Gửi bình luận</Button>
           </div>
         )}

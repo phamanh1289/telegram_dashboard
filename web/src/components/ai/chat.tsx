@@ -2,6 +2,7 @@
 
 import { Bug, Check, CheckCircle2, CircleAlert, Code, ListChecks, Loader2, type LucideIcon, PenLine, ScrollText, Square } from "lucide-react";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import type { Mention } from "@/components/mention";
 import { Hint } from "@/components/ui/hint";
 import { cn } from "@/lib/utils";
 
@@ -227,21 +228,25 @@ export function AiStop({ onClick, busy, label = "Dừng", hint = "Dừng AI" }: 
  * The prompt box: one rounded field, the ring orbits while the AI runs. Enter sends, Shift+Enter breaks the line,
  * ⌘/Ctrl+Enter calls `onModEnter` when given. `top`: chips / attachments above the text; `tools`: left of the bottom
  * row (model picker…); `actions`: right of it (picker, send / queue), then the stop button while `running`.
- * A plain div, never a form: it may sit inside another form (the reply).
+ * A plain div, never a form: it may sit inside another form (the reply). `mention` (useMention): "@" lists the group's
+ * members; only for a box whose text goes to Telegram.
  */
-export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onStop, stopping, stopHint, stopLabel, top, tools, actions, className, ...field }: {
+export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onStop, stopping, stopHint, stopLabel, top, tools, actions, className, mention, ...field }: {
   value: string; onChange: (v: string) => void; onSend: () => void; onModEnter?: () => void;
   running?: boolean; onStop?: () => void; stopping?: boolean; stopHint?: string; stopLabel?: string;
-  top?: ReactNode; tools?: ReactNode; actions?: ReactNode; className?: string;
+  top?: ReactNode; tools?: ReactNode; actions?: ReactNode; className?: string; mention?: Mention;
   id?: string; "aria-label": string; placeholder?: string; maxLength?: number; autoFocus?: boolean;
   onPaste?: React.ClipboardEventHandler<HTMLTextAreaElement>;
 }) {
   return (
-    <div className={cn("rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
+    <div className={cn("relative rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
       running && "ai-ring", className)}>
+      {mention?.popup}
       {top && <div className="relative px-3 pt-3">{top}</div>}
-      <textarea {...field} rows={2} value={value} onChange={(e) => onChange(e.target.value)}
+      <textarea {...field} ref={mention?.attach} rows={2} value={value}
+        onChange={(e) => { onChange(e.target.value); mention?.track(e); }} onSelect={mention?.track}
         onKeyDown={(e) => {
+          if (mention?.onKeyDown(e)) return;
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
           e.preventDefault();
           if ((e.metaKey || e.ctrlKey) && onModEnter) onModEnter();

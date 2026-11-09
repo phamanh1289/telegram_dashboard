@@ -20,6 +20,7 @@ import { api, errorText, type YouTrackIssue } from "@/lib/api";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { resolveProject, yt, ytMeQuery, ytProjectsQuery } from "@/lib/yt";
+import { useMention, ytPeople } from "@/components/mention";
 
 // The one "create a ticket" form, for the YouTrack tab and the Telegram composer. Two ways in:
 // Thủ công (type it) and AI (a rough note → summary, Type / Priority, templated description), then review and create.
@@ -231,6 +232,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const assignee = meta.assignee ?? me.data?.login ?? "";
   const fields = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !!project && !demo });
   const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000, enabled: !!project });
+  const { attach, ...mention } = useMention(ytPeople(project), desc, setDesc); // "@" in the description tags the team
   const q = useDeferredValue(summary.trim());
   const similar = useOpenSimilar(q, { project, enabled: q.length > 8 });
 
@@ -348,10 +350,12 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
                 </div>
                 <AnimatePresence mode="wait" initial={false}>
                   {view === "write" ? (
-                    <motion.div key="write" className="flex min-h-0 flex-1 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
-                      <Textarea aria-label="Mô tả ticket" maxLength={20000} value={desc} onChange={(e) => setDesc(e.target.value)}
+                    <motion.div key="write" className="relative flex min-h-0 flex-1 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
+                      {mention.popup}
+                      <Textarea ref={attach} aria-label="Mô tả ticket" maxLength={20000} value={desc}
+                        onChange={(e) => { setDesc(e.target.value); mention.track(e); }} onSelect={mention.track} onKeyDown={mention.onKeyDown}
                         className={cn("min-h-24 flex-1 resize-none overflow-y-auto field-sizing-fixed", format === "md" && "font-mono text-[0.8125rem] md:text-[0.8125rem]")}
-                        placeholder={format === "md" ? "Mô tả (Markdown): ## Bước tái hiện, - danh sách, **đậm**…" : "Mô tả"} />
+                        placeholder={format === "md" ? "Mô tả (Markdown): ## Bước tái hiện, - danh sách, **đậm**, @ để tag…" : "Mô tả (@ để tag người)"} />
                     </motion.div>
                   ) : (
                     <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}

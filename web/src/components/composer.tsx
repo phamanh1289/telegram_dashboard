@@ -12,7 +12,7 @@ import { useOpenSimilar } from "@/components/ticket-form";
 import { DeepBadge, DeepPick } from "@/components/deep-think";
 import { RemindPick, remindAt } from "@/components/remind";
 import { Snippets } from "@/components/snippets";
-import { useMention } from "@/components/mention";
+import { groupMembers, useMention } from "@/components/mention";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
@@ -94,8 +94,7 @@ export function Composer({
   const warned = useRef(false); // Esc once more leaves without a saved draft
   const [remindAfter, setRemindAfter] = useState(""); // RemindPick: reopen this tag at that time once the reply is sent
   const [snips, setSnips] = useState(false);
-  const box = useRef<HTMLTextAreaElement>(null);
-  const mention = useMention(chatId, text, setText, box);
+  const { attach, ...mention } = useMention(groupMembers(chatId), text, setText);
   const [pane, setPane] = useState<"reply" | "ai">("reply"); // narrow (split view, phones): one pane at a time
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
   const [targetDeleted, setTargetDeleted] = useState(false);
@@ -513,7 +512,7 @@ export function Composer({
           <div className="relative grid rounded-[var(--radius-card)] border border-rule-2 bg-cotton transition-[border-color] duration-(--dur-micro) hover:border-ink-3 has-[textarea:focus-visible]:border-hl">
             {mention.popup}
             <Textarea
-              ref={box}
+              ref={attach}
               aria-label="Nội dung trả lời"
               className="max-h-[40vh] min-h-16 resize-none border-0 bg-transparent hover:border-0 focus-visible:outline-none"
               value={text}

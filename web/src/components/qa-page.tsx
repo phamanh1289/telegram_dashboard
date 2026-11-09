@@ -7,6 +7,7 @@ import { AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting } from "@/comp
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
 import { Markdown } from "@/components/markdown";
+import { groupMembers, useMention } from "@/components/mention";
 import { MessageItem } from "@/components/message-item";
 import { NavPill } from "@/components/shell";
 import { AiAsk } from "@/components/yt/bits";
@@ -95,7 +96,7 @@ const waiting = (i: QaItem) => !i.done && !answered(i);
 
 /** A Telegram @username (not an e-mail address): only a message that tags someone opens a Q&A (backend `has_tag`). */
 const TAG = /(?<![\w.])@(\w{5,32})/g;
-const hasTag = (s: string) => new RegExp(TAG.source).test(s);
+const hasTag = (s: string) => new RegExp(TAG.source).test(s) || s.includes("](tg://user?id="); // or tagged by name (@ popup)
 /** Answered: you marked an answer, or someone other than the asker replied (the asker's own "up" / thanks is no
  *  answer); with Cài đặt › "Người được tag", only a reply from someone the question tagged (@username or a name
  *  mention) counts, when it tagged anyone. Reads its prefs live: pages re-render on a prefs change (`useNow`). */
@@ -501,12 +502,16 @@ function draftStore(key: string) {
 type Draft = ReturnType<typeof draftStore>;
 
 /** The Q&A prompt box: the only part that re-renders as you type. */
-function QaBox({ draft, onSend, busy, to, title, top }: {
-  draft: Draft; onSend: () => void; busy: boolean; to: Message | null; title?: string; top: (text: string) => React.ReactNode;
+function QaBox({ chatId, draft, onSend, busy, to, title, top }: {
+  chatId: string; draft: Draft; onSend: (text: string) => void; busy: boolean; to: Message | null; title?: string;
+  top: (text: string) => React.ReactNode;
 }) {
-  const text = useSyncExternalStore(draft.sub, draft.get, draft.get);
+  const typed = useSyncExternalStore(draft.sub, draft.get, draft.get);
+  const mention = useMention(groupMembers(chatId), typed, draft.set);
+  const text = mention.wire(typed); // as sent: a member tagged by name counts as a tag
+  const send = () => onSend(text);
   return (
-    <AiPromptBox className="mx-auto max-w-3xl" value={text} onChange={draft.set} onSend={onSend} maxLength={4000}
+    <AiPromptBox className="mx-auto max-w-3xl" value={typed} onChange={draft.set} onSend={send} maxLength={4000} mention={mention}
       aria-label={to ? "Trả lời trong chuỗi" : "Câu hỏi mới"}
       placeholder={to ? `Trả lời ${who(to)}…` : `Hỏi ${title ?? "nhóm"}… (tag @tên người được hỏi)`}
       top={top(text)}
@@ -515,7 +520,7 @@ function QaBox({ draft, onSend, busy, to, title, top }: {
         : <span className="text-ink-3">Tag người được hỏi (<span className="font-mono">@tên</span>) để mở Q&A; không tag thì gửi như tin thường</span>)}
       actions={
         <Hint side="bottom" text={`${to ? "Gửi trả lời" : "Đăng câu hỏi vào nhóm"} (Enter, Shift+Enter xuống dòng)`}>
-          <Button size="sm" className="rounded-full bg-hl" disabled={!text.trim() || busy} aria-busy={busy} onClick={onSend}>
+          <Button size="sm" className="rounded-full bg-hl" disabled={!text.trim() || busy} aria-busy={busy} onClick={send}>
             <Send />{to ? "Trả lời" : "Đăng"}
           </Button>
         </Hint>
@@ -656,7 +661,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     },
     onError: (e) => toast({ text: errorText(e, { forbidden: "Nhóm không cho bạn gửi tin", reply_not_found: "Tin được trả lời không còn" }, "Không gửi được, thử lại") }),
   });
-  const send = () => { const t = draft.get(); if (t.trim() && !post.isPending) post.mutate(t); };
+  const send = (t: string) => { if (t.trim() && !post.isPending) post.mutate(t); };
 
   const s = fold(find.trim());
   const shown = items.filter(FILTERS.find(([f]) => f === filter)![2])
@@ -780,8 +785,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
               </div>
             </div>
           )}
-          <div ref={box} className="shrink-0 border-t px-3 py-3 @4xl/qa:px-5" onKeyDown={(e) => { if (e.key === "Escape" && target) { e.preventDefault(); setTarget(null); } }}>
-            <QaBox draft={draft} onSend={send} busy={post.isPending} to={to} title={title}
+          <div ref={box} className="shrink-0 border-t px-3 py-3 @4xl/qa:px-5" onKeyDown={(e) => { if (e.key === "Escape" && target && !e.defaultPrevented) { e.preventDefault(); setTarget(null); } }}>
+            <QaBox chatId={chatId} draft={draft} onSend={send} busy={post.isPending} to={to} title={title}
               top={(text) => to && (
                 <div className="flex items-center gap-2 rounded-md border-l-[3px] border-hl bg-paper-2 py-1 pr-1 pl-2.5 text-xs">
                   <Reply className="size-3.5 shrink-0 text-hl-2" aria-hidden />

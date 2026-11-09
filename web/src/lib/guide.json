@@ -1068,11 +1068,11 @@
 {
 "id": "composer-mention",
 "tab": "telegram",
-"area": "Ô trả lời › @",
+"area": "Ô trả lời, Q&A › @",
 "title": "Tag thành viên nhóm bằng @",
-"what": "Gõ @ trong ô trả lời để mở danh sách thành viên của nhóm, gõ tiếp để lọc theo tên hoặc username. Người có username được chèn @username; người không có username hiện “tag theo tên” và vẫn được Telegram báo như một tag. Nhóm ẩn danh sách thành viên thì gõ @username bằng tay.",
+"what": "Gõ @ trong ô trả lời (Việc cần xử lý) hoặc ô hỏi / trả lời của Q&A để mở danh sách thành viên của nhóm, gõ tiếp để lọc theo tên hoặc username. Người có username được chèn @username; người không có username hiện “tag theo tên” và vẫn được Telegram báo như một tag. Ở Q&A, tag theo tên cũng mở chuỗi #QA như tag @username. Nhóm ẩn danh sách thành viên thì gõ @username bằng tay.",
 "how": [
-"Gõ @ rồi vài chữ của tên trong ô trả lời",
+"Gõ @ rồi vài chữ của tên trong ô trả lời hoặc ô Q&A",
 "↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
 ],
 "keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên username goi y gợi ý"
@@ -3147,7 +3147,7 @@
 "tab": "youtrack",
 "area": "Bảng bên › Ticket › Bình luận",
 "title": "Gửi bình luận lên YouTrack",
-"what": "Viết và gửi bình luận lên ticket ngay từ dashboard.",
+"what": "Viết và gửi bình luận lên ticket ngay từ dashboard. Gõ @ để tag thành viên của project (chèn @login, YouTrack báo cho người đó).",
 "how": [
 {
 "t": "Bấm \"Ticket\"",
@@ -3158,7 +3158,7 @@
 "at": "css:tbody tr[data-id]"
 },
 {
-"t": "Cuộn xuống, gõ vào ô \"Bình luận mới\"",
+"t": "Cuộn xuống, gõ vào ô \"Bình luận mới\" (gõ @ rồi vài chữ của tên để tag người)",
 "at": "Bình luận mới"
 },
 {
@@ -3167,6 +3167,18 @@
 }
 ],
 "keys": "binh luan bình luận comment gui binh luan gửi bình luận tra loi trả lời"
+},
+{
+"id": "yt-mention",
+"tab": "youtrack",
+"area": "Bình luận, Tạo ticket › Mô tả › @",
+"title": "Tag thành viên YouTrack bằng @",
+"what": "Gõ @ trong ô bình luận của ticket hoặc ô mô tả khi tạo ticket để mở danh sách thành viên (team của project), gõ tiếp để lọc theo tên hoặc login. Chọn một người sẽ chèn @login; YouTrack báo cho người được tag.",
+"how": [
+"Gõ @ rồi vài chữ của tên trong ô \"Bình luận mới\" hoặc ô mô tả (Tạo ticket › Thủ công)",
+"↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
+],
+"keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên login youtrack binh luan bình luận mo ta mô tả tao ticket tạo ticket"
 },
 {
 "id": "yt-ticket-giong",
