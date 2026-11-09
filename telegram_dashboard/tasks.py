@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
-from .ai import ASK_STYLE
+from .ai import ASK_MSG, ASK_STYLE
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
@@ -31,8 +31,8 @@ async def start_task(
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
     try:
-        # its questions to BE / PO / QC follow the same role style as every other AI text (CLAUDE.md)
-        text = await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_STYLE.strip()}"
+        # its questions to BE / PO / QC: one post-ready format for every session, in the role style of every AI text
+        text = await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_MSG}{ASK_STYLE}"
         named = await s.agent.start(task_id, project, text, mode, session, False)
     except BaseException:
         await s.db.write(s.store.delete_task, task_id)
@@ -156,6 +156,7 @@ def build_router(settings) -> APIRouter:
         for rc, mids in (await s.db.write(s.store.mark_task_refs, task_id, body.handled, by)).items():
             if body.react:
                 s.bridge.react(rc, mids, body.handled)
+        await s.db.write(s.store.mark_task_qa, task_id, body.handled)  # a #QA code in them: that Q&A follows
 
     @r.post("/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

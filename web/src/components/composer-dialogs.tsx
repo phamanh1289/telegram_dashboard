@@ -59,11 +59,8 @@ const UNDERSTAND =
   "1. Hiểu yêu cầu: tin thuộc loại gì (thay đổi API/BE, bug, tính năng, câu hỏi…), phần nào dành cho tôi. " +
   "Phần của team khác thì bỏ qua, trừ khi nó ảnh hưởng tới tôi.\n";
 const NOTHING = "Nếu tin không cần làm gì với dự án này, nói thẳng một câu rồi dừng.";
-/** How the questions are written: ready to paste into the group as is. */
-const ASK_MSG =
-  "gom theo người được hỏi (BE/PO/QC): mỗi người một tin viết sẵn để gửi thẳng vào nhóm, viết dạng trích dẫn (`> `), không dùng khối code. " +
-  "Mở đầu chỉ bằng @tag người đó, không chào / gọi (\"ơi\"), không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); " +
-  "không ghi lại (BE)/(PO)/(QC) ở từng câu.\n";
+/** How the questions are written (ready to post, one per person): ASK_MSG in ai.py, appended to every session by the BE. */
+const ASK_MSG = "viết theo \"Cách viết câu hỏi\" ở cuối.\n";
 /** Only when the user typed no request of their own: what to do and how to answer, per mode. */
 const DEFAULT_TASK = {
   plan:

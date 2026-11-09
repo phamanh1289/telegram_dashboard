@@ -4,6 +4,7 @@ import { createTicket, TicketForm } from "@/components/ticket-form";
 import { Dialog, DialogContent, DIALOG_SHEET } from "@/components/ui/dialog";
 import { toast } from "@/lib/inbox";
 import { yt } from "@/lib/yt";
+import { saveOneShot } from "./history";
 import { useYt } from "./state";
 
 // A new ticket from the YouTrack tab: typed by hand, or a rough note the AI turns into summary / Type / Priority / description.
@@ -24,7 +25,12 @@ export function CreateTicket() {
           notePlaceholder="vd. Màn chốt giá trên Android bấm Ký sau bị crash khi chưa có hợp đồng, máy Samsung A52, bản 3.2.1"
           aiOn={y.aiOn}
           aiKind="yt"
-          aiDraft={(note, f, signal) => yt.aiDraft(note, f.types, f.priorities, signal)}
+          aiDraft={async (note, f, signal) => {
+            const done = saveOneShot(`AI · Soạn ticket ${y.project}`, note, "AI soạn ticket");
+            const d = await yt.aiDraft(note, f.types, f.priorities, signal);
+            done(`**${d.summary}**\n\n${[d.type && `Type: ${d.type}`, d.priority && `Priority: ${d.priority}`].filter(Boolean).join(" · ")}\n\n${d.description}`);
+            return d;
+          }}
           onSubmit={async (v) => {
             const r = await createTicket(v);
             toast({ text: r.warning ? `Đã tạo ${r.id}. ${r.warning}` : `Đã tạo ${r.id}` });

@@ -24,6 +24,7 @@ from .models import (
     StoredMessage,
     to_dto,
 )
+from .qa import codes as qa_codes
 from .qa import has_tag, qa_code
 
 log = logging.getLogger("telegram_dashboard.storage")
@@ -1090,6 +1091,25 @@ class Store:
                 if self._mark(c, cid, mid, handled, by):
                     out.setdefault(cid, []).append(mid)
         return out
+
+    def mark_task_qa(self, task_id: str, handled: bool) -> None:
+        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name. Done never
+        overwrites a removed thread; reopen clears only a 'done' mark."""
+        with self._conn(write=True) as c:
+            rows = c.execute(
+                "SELECT m.chat_id, m.text FROM messages m JOIN tasks t "
+                "ON t.chat_id=m.chat_id AND t.message_id=m.message_id WHERE t.id=? "
+                "UNION ALL SELECT m.chat_id, m.text FROM messages m JOIN task_refs r "
+                "ON r.chat_id=m.chat_id AND r.message_id=m.message_id WHERE r.task_id=?",
+                (task_id, task_id),
+            ).fetchall()
+            for cid, text in rows:
+                for code in qa_codes(text):
+                    if handled:
+                        c.execute("INSERT INTO qa_marks VALUES (?,?,'done',?) ON CONFLICT DO NOTHING",
+                                  (cid, code, now_ts()))  # fmt: skip
+                    else:
+                        c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=? AND state='done'", (cid, code))
 
     # ---- projects ------------------------------------------------------
     def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:

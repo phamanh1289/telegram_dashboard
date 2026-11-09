@@ -180,6 +180,15 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     assert not store.get_message(A, 5).handled
     client.put("/api/tasks/t1/handled", json=done, headers=H)
     assert store.get_message(A, 4).handled and store.get_message(A, 5).handled
+    # A #QA code in the tag / an attached message: that Q&A thread follows Done / reopen; a removed one stays removed.
+    store.apply_message(msg(A, 6, "@me đã trả lời\n#QA11 #qa22"))
+    store.add_task_refs("t1", [(A, 6)])
+    store.set_qa_mark(A, "#QA22", "deleted")
+    client.put("/api/tasks/t1/handled", json=done, headers=H)
+    assert store.qa_marks(A) == {"#QA11": "done", "#QA22": "deleted"}
+    client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
+    assert store.qa_marks(A) == {"#QA22": "deleted"}
+    client.put("/api/tasks/t1/handled", json=done, headers=H)
     p = task_result_path(settings, "t1")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("Đã sửa crash login iOS, PR #42")

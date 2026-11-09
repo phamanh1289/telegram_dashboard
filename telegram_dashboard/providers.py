@@ -76,14 +76,19 @@ PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
                    "repo.maven.apache.org", "repo1.maven.org", "maven.google.com", "dl.google.com",
                    "*.gradle.org", "jitpack.io"]  # fmt: skip
+# Gradle's cache in its own folder: ~/.gradle (init scripts, gradle.properties) would let a sandboxed run plant code
+# that the user's own builds run later, outside any sandbox. ponytail: deps download once more into this cache.
+GRADLE_HOME = str(Path.home() / ".cache" / "telegram_dashboard" / "gradle")
 SANDBOX = json.dumps({"sandbox": {
     "enabled": True,
     "failIfUnavailable": sys.platform != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
     "autoAllowBashIfSandboxed": True,
     "allowUnsandboxedCommands": False,  # the model can't opt a command out
     "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
-}})
+    "filesystem": {"allowWrite": [GRADLE_HOME]},
+}, "env": {"GRADLE_USER_HOME": GRADLE_HOME}})
 ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
+SHELL_TOOLS = "Read,Grep,Glob,Bash"  # an answer that may run commands, never Edit/Write
 DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
         # files that run code later (on folder open, commit, cd) or load tools into the next session
         "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
@@ -295,13 +300,20 @@ def is_claude(cmd: list[str]) -> bool:
 
 
 def ask_cmd(
-    settings, p: str, *, tools: bool, read_dir: str | None, model: str, effort: str, stream: bool = False
+    settings, p: str, *, tools: bool, read_dir: str | None, model: str, effort: str, stream: bool = False,
+    shell: bool = False,
 ) -> list[str]:
-    """One read-only answer (prompt on stdin). `tools`: may read the project (cwd); else none.
-    `read_dir`: another folder it may read (photos). `stream`: Claude sends the answer as it writes."""
+    """One answer (prompt on stdin), no file edits. `tools`: may read the project (cwd); else none.
+    `read_dir`: another folder it may read (photos). `stream`: Claude sends the answer as it writes.
+    `shell` (with `tools`): may also run commands (build, test) in the sandbox: writes only in the project,
+    network only to package registries. Antigravity has no sandbox: no shell there."""
+    shell = shell and tools
     if p == "claude":
         try:
-            cmd = shlex.split(settings.ai_agent_project_command if tools else settings.ai_agent_command)
+            cmd = (
+                [*exe(settings, p), "-p", "--tools", SHELL_TOOLS, "--allowedTools", SHELL_TOOLS, "--settings", SANDBOX]
+                if shell else shlex.split(settings.ai_agent_project_command if tools else settings.ai_agent_command)
+            )  # fmt: skip
         except ValueError:
             raise ApiError(502, "ai_provider_error") from None
         cmd += flags_for(model, effort)
@@ -310,7 +322,7 @@ def ask_cmd(
                 cmd.append("--strict-mcp-config")  # the user's MCP servers would bring tools back
             cmd += ["--output-format", "stream-json", "--verbose", *(["--include-partial-messages"] if stream else [])]
             if tools:
-                cmd += ["--disallowedTools", _data_deny(settings)]
+                cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
         return [*cmd, *(["--add-dir", read_dir] if read_dir else [])]
     if p == "codex":
         off = [] if tools else ["--disable", "shell_tool", "--disable", "unified_exec"]
@@ -320,7 +332,7 @@ def ask_cmd(
             *_codex_base(settings, model, effort),
             "--ephemeral",
             "-s",
-            "read-only",
+            "workspace-write" if shell else "read-only",
             *off,
             "-",
         ]

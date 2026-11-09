@@ -13,6 +13,7 @@ import { type AiReq, bucket, bugSpike, DAY, inTest, isBug, isBuilt, QUICK, rank,
 import { reportData } from "@/lib/yt-stats";
 import { AiBox, Card, Markdown, Menu, useAi } from "./bits";
 import { useQc, useStats } from "./dashboard";
+import { useHistory } from "./history";
 import { useYt } from "./state";
 
 // The release report: written by the AI from the dashboard's own figures, for the role picked in Settings and the project
@@ -36,7 +37,6 @@ export function ReportCard() {
   const d = useStats();
   const qc = useQc();
   const now = useNow();
-  const ai = useAi();
   const at = useSyncExternalStore(onPrefs, () => getPref("ytReportAt") ?? "", () => "");
   const sched = useMemo(() => readReportAt(), [at]); // eslint-disable-line react-hooks/exhaustive-deps -- re-read on change
   const relKey = `ytRelease:${y.project}`;
@@ -49,9 +49,10 @@ export function ReportCard() {
   const [ver, setVer] = useState(0);
   const [full, setFull] = useState(false); // a long report stays folded on the home page
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
-  const busy = ai.s.status === "busy";
   const role = YT_ROLES.find(([r]) => r === y.mode)?.[1] ?? y.mode;
   const title = `Báo cáo ${y.project} · ${role} · ${ymd(saved?.at ?? now)}`;
+  const ai = useAi(useHistory(`AI · ${title}`, []).onTurn); // the scheduled run is in the history too, to follow up
+  const busy = ai.s.status === "busy";
 
   // the tickets the report names, also the CSV
   const lists = useMemo(() => {

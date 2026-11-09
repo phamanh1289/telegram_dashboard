@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import providers
-from .ai import ASK_STYLE, TICKET_FORMAT, client_gone, data_json, json_object, parse_ticket, stream_answer
+from .ai import ASK_STYLE, TICKET_FORMAT, AiJobs, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
@@ -78,6 +78,7 @@ class AiTicket(BaseModel):
     id: str
     kind: Literal["brief", "ready", "reply", "rewrite", "split"]
     folder: str = Field("", max_length=1000)  # a registered code folder: the AI reads it (read-only)
+    shell: bool = False  # with a folder: may also run commands there (build, test) in the sandbox
 
 
 class AiData(BaseModel):
@@ -99,6 +100,7 @@ class AiTickets(BaseModel):
     # kind "review": what moved since the last brief, computed on the page ("VA-1: Open → QC")
     changes: list[Annotated[str, Field(max_length=300)]] = Field([], max_length=200)
     folder: str = Field("", max_length=1000)  # a registered code folder: the AI reads it (read-only)
+    shell: bool = False  # with a folder: may also run commands there (build, test) in the sandbox
 
 
 class AiDraft(BaseModel):
@@ -404,6 +406,9 @@ AI_CODE = (
     "kiện theo nền tảng / feature flag, nơi khác cùng gọi phần code đó (vùng regression). Nêu file / "
     "hàm làm căn cứ ở dạng `path:hàm`. Không thấy code liên quan thì nói rõ và trả lời theo ticket."
 )
+# The user let this run use a shell (sandbox: writes only in the project, network only to package registries).
+# TODO(human): AI_SHELL, the rules for running commands
+AI_SHELL = ""
 AI_FILTER = (
     "Chuyển câu của người dùng trong <ask> thành bộ lọc cho bảng ticket. <options> liệt kê giá trị "
     "hợp lệ. Trả về DUY NHẤT một JSON object (không prose, không code fence): "
@@ -491,6 +496,7 @@ class YouTrackDashboard:
     def __init__(self, settings):
         env = os.environ
         self.notes_path = settings.data_dir / "yt_ai.json"
+        self.jobs = AiJobs()  # background AI runs (the page may leave and come back)
         self.prompts_path = settings.data_dir / "yt_prompts.json"
         self.workflow_path = settings.data_dir / "yt_workflow.json"
         self.base = (settings.youtrack_url or "").rstrip("/")
@@ -581,6 +587,7 @@ class YouTrackDashboard:
         self._trans_until.clear()
 
     async def aclose(self) -> None:
+        await self.jobs.stop_all()
         for c in [*self._retired, self._client]:
             if c:
                 await c.aclose()
@@ -1049,28 +1056,32 @@ async def _ai(
     on_text=None,
     notes: bool = True,
     code: str | None = None,
+    shell: bool = False,
+    detached: bool = False,
 ) -> str:
     ai = request.app.state.ai
     name = lambda: providers.NAMES[providers.chosen(ai.settings)]  # noqa: E731  only on errors
     if not ai.configured:
         raise YtError(503, f"Chưa cài {name()} CLI, xem Cài đặt › AI")
-    client_gone.set(request.is_disconnected)  # closing the drawer / Hủy stops the run
+    if not detached:  # a background run (AiJobs) is stopped by its id only
+        client_gone.set(request.is_disconnected)  # closing the drawer / Hủy stops the run
     head = f"Hôm nay: {datetime.now(VN).date()}\n{await _whoami(svc)}"
     if notes:  # not for answers that must be bare JSON (the filter)
         head += _team_notes(svc, request)
     if code:  # reading code takes a while: the task model and its longer timeout
-        prompt, heavy = prompt + AI_CODE, True
+        prompt, heavy = prompt + AI_CODE + (AI_SHELL if shell else ""), True
     try:
         return await ai.ask(f"{head}{prompt}", project=code, system=AI_SYSTEM, heavy=heavy,
-                            on_text=on_text, feature="youtrack", yt=True)  # fmt: skip
+                            on_text=on_text, feature="youtrack", yt=True, shell=shell and bool(code))  # fmt: skip
     except ApiError as e:
         msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
 
 
 async def _code_dir(request: Request, folder: str) -> str | None:
-    """Only a folder registered in Telegram › AI Agent may be read: never a path from the page."""
-    if not folder:
+    """Only a folder registered in Telegram › AI Agent may be read: never a path from the page.
+    Code is a Dev tool: QA / PO runs read the tickets only (a Dev session continued as QA drops it)."""
+    if not folder or _role(request) != "dev":
         return None
     st = request.app.state
     if folder not in {p["path"] for p in await st.db.read(st.store.list_projects)}:
@@ -1350,20 +1361,43 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
 
-    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None):
+    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
+        """The AI answer, streamed. With header X-Ai-Job (an id the page picked): a background run the page can
+        leave and read again (GET /ai/job/{id}); without: it stops when the page goes."""
+        job = request.headers.get("x-ai-job", "")
+        if job and not svc.jobs.free(job):
+            raise YtError(409, "Mã lượt AI không hợp lệ hoặc đã dùng, gửi lại")
+
         async def work(on_text):
-            text = await _ai(svc, request, prompt, heavy, on_text, code=code)
+            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=bool(job))
             if not draft:
                 return {"text": text}
             brief, _, rest = text.partition("\n===")  # a ticket answer may end with a comment draft
             return {"text": brief.strip(), "draft": rest.strip()}
 
-        return stream_answer(work)
+        return svc.jobs.start(job, work) if job else stream_answer(work)
+
+    @r.get("/ai/jobs")
+    async def ai_jobs():
+        """running / done / error of each background AI run kept (the history marks its sessions)."""
+        return svc.jobs.status()
+
+    @r.get("/ai/job/{job_id}")
+    async def ai_job(job_id: str):
+        """A background AI run read again from the start (a reload, the history), live if it still runs."""
+        got = svc.jobs.attach(job_id)
+        if got is None:
+            raise YtError(404, "Lượt AI này không còn trên máy chủ (khởi động lại, hoặc xong quá 1 giờ): chạy lại")
+        return got
+
+    @r.delete("/ai/job/{job_id}", status_code=204)
+    async def ai_job_stop(job_id: str):
+        svc.jobs.stop(job_id)
 
     @r.post("/ai/ticket")
     async def ai_ticket(body: AiTicket, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_ticket(body, request), draft=True, code=code)
+        return answer(request, *await p_ticket(body, request), draft=True, code=code, shell=body.shell)
 
     @r.post("/ai/data")
     async def ai_data(body: AiData, request: Request):
@@ -1372,7 +1406,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.post("/ai/tickets")
     async def ai_tickets(body: AiTickets, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_tickets(body, request), draft=False, code=code)
+        return answer(request, *await p_tickets(body, request), draft=False, code=code, shell=body.shell)
 
     FOLLOW = {
         "/ai/ticket": (AiTicket, p_ticket), "/ai/data": (AiData, p_data),
@@ -1392,7 +1426,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         code = await _code_dir(request, getattr(first, "folder", ""))  # a code session stays one
         turns = data_json([t.model_dump() for t in body.history])
         prompt += f"{AI_FOLLOWUP}\n<history>{turns}</history>\n<ask>{body.question}</ask>"
-        return answer(request, prompt, heavy, draft=body.path == "/ai/ticket", code=code)
+        return answer(request, prompt, heavy, draft=body.path == "/ai/ticket", code=code,
+                      shell=getattr(first, "shell", False))  # fmt: skip
 
     @r.post("/ai/draft")
     async def ai_draft(body: AiDraft, request: Request):

@@ -167,12 +167,14 @@ class FakeAgent:
     def __init__(self, reply="draft text", on_call=None, exc=None):
         self.calls: list[str] = []
         self.projects: list[str | None] = []  # the folder each run could read
+        self.shells: list[bool] = []  # each run could run commands there (sandboxed)
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
     async def __call__(self, prompt, project=None, read_dir=None, system=None, heavy=False, on_text=None, feature=None,
-                       brief=False, yt=False):
+                       brief=False, yt=False, shell=False):
         self.calls.append(prompt)
         self.projects.append(project)
+        self.shells.append(shell)
         if self.on_call:
             self.on_call()
         if self.exc:

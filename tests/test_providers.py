@@ -86,6 +86,23 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert f"Read(/{s.data_dir.resolve().as_posix()}/**)" in deny and "Read(~/.ssh/**)" in deny
 
 
+def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):
+    import json
+
+    from telegram_dashboard.providers import ask_cmd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    s = Settings(root=tmp_path)
+    c = ask_cmd(s, "claude", tools=True, read_dir=None, model="", effort="", shell=True)
+    assert c[c.index("--tools") + 1] == "Read,Grep,Glob,Bash" and "Edit" not in c[c.index("--allowedTools") + 1]
+    box = json.loads(c[c.index("--settings") + 1])["sandbox"]
+    assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
+    assert "Bash(curl:*)" in c[c.index("--disallowedTools") + 1] and "--strict-mcp-config" in c
+    assert "Bash" not in " ".join(ask_cmd(s, "claude", tools=False, read_dir=None, model="", effort="", shell=True))
+    assert "workspace-write" in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="", shell=True)
+    assert "read-only" in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="")
+
+
 def test_antigravity_no_tool_answers_get_no_tools(tmp_path, monkeypatch):
     from telegram_dashboard.providers import ask_cmd
 

@@ -1300,7 +1300,7 @@
 "tab": "telegram",
 "area": "AI Agent › Bộ lọc",
 "title": "Lọc phiên AI Agent",
-"what": "Chuyển giữa loại phiên \"Giao AI Agent\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý); hiện số phiên đang chạy.",
+"what": "Chuyển giữa loại phiên \"Giao AI Agent\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý; Done một phiên cũng đánh dấu xong tin đính kèm, và Q&A có mã #QA… trong tin tag / tin đính kèm, mở lại thì bỏ theo); hiện số phiên đang chạy.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1949,7 +1949,7 @@
 "tab": "youtrack",
 "area": "Thanh bên › Lịch sử AI",
 "title": "Lịch sử AI",
-"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp.",
+"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong khi trang đã tải lại thì hiện \"Đã xong, mở để xem\", kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt).",
 "how": [
 {
 "t": "Bấm \"Lịch sử AI\" trên thanh bên (chỉ hiện khi AI bật)",
@@ -1966,6 +1966,14 @@
 {
 "t": "Bấm một phiên để mở lại và hỏi tiếp",
 "at": "css:aside[role=\"dialog\"] li.group > button"
+},
+{
+"t": "Phiên \"Chưa xong\": mở ra, bấm \"Chạy lại\" để chạy lại lượt chưa có trả lời",
+"at": "Chạy lại"
+},
+{
+"t": "Đổi tên: rê vào tên phiên đang mở, bấm bút chì, gõ tên rồi Enter (Esc để hủy)",
+"at": "Đổi tên phiên"
 },
 {
 "t": "Xóa một phiên: bấm thùng rác khi rê vào phiên",
@@ -3348,8 +3356,8 @@
 "id": "yt-trace-code",
 "tab": "youtrack",
 "area": "Bảng bên › Phiên AI › Thư mục code",
-"title": "Trace code trong thư mục dự án",
-"what": "Chọn thư mục dự án để AI đọc code (chỉ đọc) khi trả lời. Vai trò Dev có thể giao câu hỏi tự do cho AI Agent trace code, chọn “Chỉ phân tích” hoặc “Cho phép sửa code”.",
+"title": "Trace code trong thư mục dự án (Dev)",
+"what": "Chỉ ở vai trò Dev (QA / PO: AI chỉ đọc ticket). Chọn thư mục dự án để AI đọc code khi trả lời. Bật \"Chạy lệnh\" để AI được build / test / chạy gradle trong sandbox (chỉ ghi trong thư mục đó, mạng chỉ tới kho thư viện, không sửa code). Vai trò Dev có thể giao câu hỏi tự do cho AI Agent trace code, chọn “Chỉ phân tích” hoặc “Cho phép sửa code”.",
 "how": [
 {
 "t": "Bấm \"Ticket\"",
@@ -3364,8 +3372,12 @@
 "at": "AI cho ticket này"
 },
 {
-"t": "Chọn thư mục ở ô \"Thư mục code để trace\"",
-"at": "Thư mục code để trace"
+"t": "Chọn thư mục ở ô dự án (giống tab Telegram; \"Thêm thư mục…\" để thêm mới, \"Không đọc code\" để bỏ)",
+"at": "Dự án tham chiếu cho AI"
+},
+{
+"t": "Muốn AI build / test / chạy gradle: bấm \"Chạy lệnh\"",
+"at": "Cho AI chạy lệnh"
 },
 {
 "t": "Dev: chọn \"Chế độ\" (Chỉ phân tích / Cho phép sửa code)",
@@ -3380,7 +3392,7 @@
 "at": "Giao"
 }
 ],
-"keys": "trace code doc code đọc code thu muc du an thư mục dự án ai agent sua code sửa code chi phan tich chỉ phân tích codebase"
+"keys": "chay lenh chạy lệnh build gradle shell test sandbox trace code doc code đọc code thu muc du an thư mục dự án ai agent sua code sửa code chi phan tich chỉ phân tích codebase"
 },
 {
 "id": "yt-kho-prompt",

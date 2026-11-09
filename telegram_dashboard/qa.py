@@ -20,6 +20,11 @@ def names_code(text: str) -> bool:
     return bool(_CODE.search(text))
 
 
+def codes(text: str) -> set[str]:
+    """Every "#QA…" code a message names, as the Q&A list keys them."""
+    return {f"#QA{d}" for d in _CODE.findall(text)}
+
+
 _TAG = re.compile(r"(?<![\w.])@[A-Za-z0-9_]{5,32}")  # a Telegram @username, not an e-mail address
 
 

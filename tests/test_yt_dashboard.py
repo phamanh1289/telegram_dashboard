@@ -415,6 +415,12 @@ async def test_ai_reads_only_a_registered_code_folder():
                   "history": [{"q": "", "a": "ok"}], "question": "thêm"}  # fmt: skip
         await c.post("/api/yt/ai/followup", json=follow)
         assert agent.projects[-1] == "/code/ios"  # the follow-up reads the same folder
+        assert agent.shells == [False, False]  # commands only when asked
+        follow["body"]["shell"] = True
+        await c.post("/api/yt/ai/followup", json=follow)
+        assert agent.shells[-1] is True  # a session that may run commands stays one
+        await c.post("/api/yt/ai/followup", json=follow, headers={"X-Yt-Role": "qa"})
+        assert agent.projects[-1] is None and agent.shells[-1] is False  # code is a Dev tool
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"})
         assert agent.projects[-1] is None
         try:
@@ -423,7 +429,7 @@ async def test_ai_reads_only_a_registered_code_folder():
             assert e.status == 403
         else:
             raise AssertionError("expected YtError")
-        assert len(agent.calls) == 3
+        assert len(agent.calls) == 5
 
 
 async def test_who_lists_come_from_the_cached_whole_project():
@@ -530,3 +536,33 @@ async def test_statesince_reads_project_transitions_once_then_falls_back_per_tic
     assert calls.count("/api/activitiesPage") == 1
     await svc.since_all(["VA-1@400", "VA-2@250"])
     assert calls.count("/api/activitiesPage") == 1  # cached: no second project read
+
+
+async def test_an_ai_run_with_a_job_id_can_be_read_again_and_the_id_is_used_once():
+    import json
+
+    svc = make(lambda req: httpx.Response(200, json={
+        **issue(1), "description": "d", "comments": [], "links": [], "login": None}))  # fmt: skip
+    agent = FakeAgent("ok")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=None)
+    job = {"X-Ai-Job": "sess1-turn1"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"}, headers=job)
+        assert json.loads(r.text.splitlines()[-1]) == {"done": {"text": "ok", "draft": ""}}
+        again = await c.get("/api/yt/ai/job/sess1-turn1")
+        assert again.text == r.text and (await c.get("/api/yt/ai/jobs")).json() == {"sess1-turn1": "done"}
+        try:
+            await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"}, headers=job)
+        except YtError as e:
+            assert e.status == 409
+        else:
+            raise AssertionError("expected YtError")
+        try:
+            await c.get("/api/yt/ai/job/gone-12345")
+        except YtError as e:
+            assert e.status == 404
+        else:
+            raise AssertionError("expected YtError")
+    await svc.aclose()

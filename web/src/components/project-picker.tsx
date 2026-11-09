@@ -22,8 +22,9 @@ const ITEM = "flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 
 /**
  * The one project-folder picker (AI reads code there): a field opening a menu of the registered folders,
  * then "Thêm thư mục…" (Finder; a typed path when that can't open) and "Gỡ khỏi danh sách". The caller stores the choice.
+ * `none`: the folder is optional, an item with that label picks "" (no code read).
  */
-export function ProjectPicker({ value, onChange, className }: { value: string; onChange: (path: string) => void; className?: string }) {
+export function ProjectPicker({ value, onChange, className, none }: { value: string; onChange: (path: string) => void; className?: string; none?: string }) {
   const qc = useQueryClient();
   const projects = useProjects();
   const items = projects.data ?? [];
@@ -44,7 +45,7 @@ export function ProjectPicker({ value, onChange, className }: { value: string; o
     onSettled: refresh,
   });
   const label = pick.isPending ? "Đang chọn thư mục…" : current?.name
-    ?? (projects.isPending ? "Đang tải dự án…" : projects.isError ? "Không tải được dự án" : "Chọn dự án");
+    ?? (projects.isPending ? "Đang tải dự án…" : projects.isError ? "Không tải được dự án" : none ?? "Chọn dự án");
 
   return (
     <>
@@ -72,10 +73,19 @@ export function ProjectPicker({ value, onChange, className }: { value: string; o
                 <Menu.Item closeOnClick={false} className={cn(ITEM, "text-error")} onClick={() => void projects.refetch()}>
                   <RotateCcw /> Không tải được danh sách · Thử lại
                 </Menu.Item>
-              ) : !items.length ? (
+              ) : !items.length && !none ? (
                 <p className="mx-1 rounded-md border border-dashed border-rule-2 px-2.5 py-2 text-xs text-ink-2">Chưa có dự án nào. Thêm thư mục code trên máy để AI đọc.</p>
               ) : (
                 <Menu.RadioGroup value={current?.path ?? ""} onValueChange={(v) => onChange(String(v))}>
+                  {none && (
+                    <Menu.RadioItem value="" closeOnClick className={cn(ITEM, "group/item")}>
+                      <X className="group-data-checked/item:text-hl-2" aria-hidden />
+                      <span className="min-w-0 flex-1 truncate font-medium">{none}</span>
+                      <Menu.RadioItemIndicator keepMounted className="shrink-0 transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-unchecked:scale-50 data-unchecked:opacity-0">
+                        <Check className="size-4 text-hl" aria-hidden />
+                      </Menu.RadioItemIndicator>
+                    </Menu.RadioItem>
+                  )}
                   {items.map((p) => (
                     <Menu.RadioItem key={p.path} value={p.path} closeOnClick className={cn(ITEM, "group/item")}>
                       <FolderGit2 className="group-data-checked/item:text-hl-2" aria-hidden />

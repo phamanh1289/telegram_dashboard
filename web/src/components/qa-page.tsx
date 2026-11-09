@@ -141,7 +141,7 @@ const isLate = (i: QaItem, mins: number, now: number, muted: readonly string[]) 
 /** The nudge put in the box: the people the question tagged, else everyone (a reply to the question, so it is quoted). */
 function nudgeText(i: QaItem) {
   const ats = [...new Set([...i.question.text.matchAll(TAG)].map((x) => `@${x[1]}`))].join(" ");
-  return `${ats || "Mọi người"} xem giúp mình câu hỏi này với ạ.`;
+  return `${ats || "Mọi người"} check giúp phần này.`;
 }
 /** A desktop notification once per wait ("code@your last message") when one of your questions turns late while the
  *  tab is hidden (Cài đặt › Thông báo); a late one seen while the tab is visible is only marked, never notified later. */
@@ -223,24 +223,25 @@ function State({ i, now, late }: { i: QaItem; now: number; late?: boolean }) {
   const w = waitLabel(i.question.date, now);
   return (
     <span className={cn(PILL, late ? "bg-signal-wash text-signal-2" : "bg-warn-wash text-warn")}>
-      {late ? <BellRing aria-hidden /> : <Clock3 aria-hidden />}{late ? "Quá hạn" : "Chờ"} <span className="font-mono tabular-nums">{w.n}</span> {w.unit}
+<Clock3 aria-hidden />{late ? "Quá hạn" : "Chờ"} <span className="font-mono tabular-nums">{w.n}</span> {w.unit}
     </span>
   );
 }
 
 /** One question in the list: its text, then its state and the latest reply (or who asked), new replies at the end.
- *  `late`: signal mark, and the nudge / mute buttons beside it (siblings of the row button, never inside it). */
+ *  `late`: signal mark, and the nudge / mute buttons in their own column on the right (siblings of the row button,
+ *  never inside it, never over its text). */
 function Row({ i, now, on, news, late, onOpen, onNudge, onMute }: {
   i: QaItem; now: number; on: boolean; news: number; late: boolean; onOpen: () => void; onNudge: () => void; onMute: () => void;
 }) {
   const end = accepted(i) ?? i.answers.at(-1); // a settled thread previews its answer
   const at = latest(i).date;
   return (
-    <li className="relative">
+    <li className={cn("relative flex transition-colors duration-(--dur-micro) hover:bg-paper-2",
+      (on || late) && "before:absolute before:inset-y-0 before:left-0 before:w-[3px]",
+      on ? "bg-hl-wash before:bg-hl hover:bg-hl-wash" : late && "bg-signal-wash/50 before:bg-signal")}>
       <button type="button" data-qa={i.code} aria-current={on || undefined} onClick={onOpen}
-        className={cn("relative grid w-full gap-1.5 px-4 py-2.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2",
-          (on || late) && "before:absolute before:inset-y-0 before:left-0 before:w-[3px]",
-          on ? "bg-hl-wash before:bg-hl hover:bg-hl-wash" : late && "bg-signal-wash/50 before:bg-signal", late && "pr-20")}>
+        className={cn("grid min-w-0 flex-1 grid-cols-1 gap-1.5 py-2.5 pl-4 text-left", late ? "pr-1" : "pr-4")}>
         <span className="flex items-start gap-3">
           <span className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-snug text-ink", news ? "font-semibold" : "font-medium")}>{gist(i.question)}</span>
           <time dateTime={at} title={timeLabel(at, true)} className="shrink-0 pt-px font-mono text-xs text-ink-3 tabular-nums">{clockLabel(at)}</time>
@@ -254,12 +255,12 @@ function Row({ i, now, on, news, late, onOpen, onNudge, onMute }: {
         </span>
       </button>
       {late && (
-        <span className="absolute right-2.5 bottom-2 flex items-center gap-0.5">
+        <span className="flex shrink-0 flex-col items-center justify-center gap-1 border-l border-rule/60 px-1.5">
           <Hint side="bottom" text="Nhắc lại trong nhóm: soạn sẵn tin trả lời vào câu hỏi này (tag lại người được hỏi), Enter để gửi">
-            <Button size="icon-xs" variant="ghost" className="text-signal-2" aria-label={`Nhắc lại ${i.code}`} onClick={onNudge}><BellRing /></Button>
+            <Button size="icon-xs" variant="ghost" className="text-signal-2 hover:bg-signal-wash" aria-label={`Nhắc lại ${i.code}`} onClick={onNudge}><BellRing /></Button>
           </Hint>
           <Hint side="bottom" text="Bỏ qua: không nhắc câu này nữa">
-            <Button size="icon-xs" variant="ghost" aria-label={`Bỏ qua nhắc ${i.code}`} onClick={onMute}><BellOff /></Button>
+            <Button size="icon-xs" variant="ghost" className="text-ink-3" aria-label={`Bỏ qua nhắc ${i.code}`} onClick={onMute}><BellOff /></Button>
           </Hint>
         </span>
       )}

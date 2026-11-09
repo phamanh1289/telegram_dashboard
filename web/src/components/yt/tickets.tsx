@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { activePool, bucket, type ColKey, COLS, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, PCOL, rank, shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt, ytDetailQuery } from "@/lib/yt";
 import { period } from "@/lib/yt-stats";
 import { Avatar, MultiSelect, Person, Picker, Popover, Prio, StatePill, Tag, TypeTag } from "./bits";
+import { saveOneShot } from "./history";
 import { type AssigneeActs, AssigneePicker } from "./sheet";
 import { CAP_STEP, saveTicket, useYt, type Yt } from "./state";
 import { useFlow } from "./workflow";
@@ -120,7 +121,7 @@ export function TicketsPage() {
   };
 
   return (
-    <section aria-label="Ticket" className="grid gap-3">
+    <section aria-label="Ticket" className="grid gap-3 md:flex md:min-h-0 md:flex-1 md:flex-col">
       <div className="flex flex-wrap items-center gap-2">
         <label className="relative min-w-56 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
@@ -159,8 +160,8 @@ export function TicketsPage() {
       <AnimatePresence>{y.picked.size > 0 && <BulkBar key="bulk" />}</AnimatePresence>
 
       {y.view === "board" && shownAll.length > 0 ? <Board rows={shownAll} onOpen={open} /> : parts.some((p) => p[1].length) ? (
-        // its own scroll area (both ways) from md up: wide tables keep their right-hand columns and the sticky headers still work
-        <div className="overflow-x-auto rounded-lg bg-cotton shadow-stock md:max-h-[calc(100dvh-var(--yt-top)-1rem)] md:overflow-y-auto">
+        // its own scroll area (both ways) from md up, shrunk to the space left under the filters: wide tables keep their right-hand columns and the sticky headers still work
+        <div className="overflow-x-auto rounded-lg bg-cotton shadow-stock md:min-h-0 md:overflow-y-auto">
           <table className="w-full border-collapse text-sm">
             <thead className="z-10 bg-cotton text-left text-xs text-ink-3 shadow-[inset_0_-1px_0_var(--color-rule)] md:sticky md:top-0">
               <tr>
@@ -340,7 +341,7 @@ function BulkBar() {
         {busy && <span role="status" className="text-xs opacity-80">Đang cập nhật…</span>}
       </>}
       {y.aiOn && (
-        <Hint side="bottom" text="Hỏi AI về các ticket đã chọn, có thể trace code trong thư mục dự án"><Button size="sm" variant="outline"
+        <Hint side="bottom" text={`Hỏi AI về các ticket đã chọn${y.mode === "dev" ? ", có thể trace code trong thư mục dự án" : ""}`}><Button size="sm" variant="outline"
           onClick={() => y.setSheet({ kind: "work", title: "AI", ids })}><Sparkles /> AI</Button></Hint>
       )}
       <Button size="sm" variant="ghost" className="ml-auto text-board-type hover:bg-board-type/15 hover:text-board-type" onClick={() => y.setPicked(new Set())}>Bỏ chọn</Button>
@@ -362,10 +363,15 @@ export async function aiFilterApply(y: Yt, text: string) {
   const options = { state: uniq("state"), priority: uniq("priority"), type: uniq("type"), assignee: y.peopleOptions, sprint: y.sprintOptions.slice(0, 40),
     me: y.me, current_sprint: [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now: Date.now() }).set][0] ?? null };
   setFilterBusy(true);
+  const done = saveOneShot(`AI · Lọc: ${t.slice(0, 60)}`, t, "AI lọc ticket");
   try {
     const r = await yt.aiFilter(t, options);
     const pick = (k: keyof typeof options) => (Array.isArray(r[k]) ? (r[k] as unknown[]).filter((v): v is string => typeof v === "string" && (options[k] as string[]).includes(v)) : []);
-    y.setFilters({ state: pick("state"), priority: pick("priority"), type: pick("type"), assignee: pick("assignee"), sprint: pick("sprint"), q: typeof r.q === "string" ? r.q.slice(0, 100) : "", tier: null, quick: null });
+    const f = { state: pick("state"), priority: pick("priority"), type: pick("type"), assignee: pick("assignee"), sprint: pick("sprint"), q: typeof r.q === "string" ? r.q.slice(0, 100) : "" };
+    y.setFilters({ ...f, tier: null, quick: null });
+    const rows = ([["State", f.state], ["Priority", f.priority], ["Type", f.type], ["Assignee", f.assignee], ["Sprint", f.sprint], ["Tìm", f.q ? [f.q] : []]] as const)
+      .filter(([, v]) => v.length).map(([k, v]) => `- **${k}:** ${v.join(", ")}`);
+    done(rows.length ? `Bộ lọc AI đã đặt:\n${rows.join("\n")}` : "AI không đặt được bộ lọc nào từ câu này.");
     toast({ text: "AI đã đặt bộ lọc, xem các chip bên dưới" });
   } catch (e) { toast({ text: `AI lọc lỗi: ${(e as Error).message}` }); }
   finally { setFilterBusy(false); }

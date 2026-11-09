@@ -151,7 +151,9 @@ function Shell() {
           </>
 
         {/* AI history is a chat: on wide screens the page fits the viewport and only its panes scroll */}
-        <main ref={mainRef} className={cn("min-w-0 px-3 pb-10 sm:px-5", y.page === "ai" && "lg:flex lg:h-[calc(100dvh-2.75rem)] lg:flex-col lg:pb-4")}>
+        <main ref={mainRef} className={cn("min-w-0 px-3 pb-10 sm:px-5", y.page === "ai" && "lg:flex lg:h-[calc(100dvh-2.75rem)] lg:flex-col lg:pb-4",
+          // tickets: from md up the page fits the viewport, so header, filters and bulk bar stay put and only the table scrolls
+          y.page === "tickets" && "md:flex md:h-[calc(100dvh-2.75rem)] md:flex-col md:pb-4")}>
           <Header title={title} onPalette={() => setPal(true)} />
           {(y.configError || y.issues.isError || y.sinceError) && (() => {
             const e = (y.configError ?? (y.issues.isError ? y.issues.error : y.sinceError)) as Error, text = loadError(e);
@@ -178,7 +180,7 @@ function Shell() {
               )}
             </AnimatePresence>
             <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: dim ? 0.55 : 1, y: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
-              aria-busy={dim} className={cn(y.page === "ai" && "relative lg:min-h-0 lg:flex-1", y.page === "ai" && !dim && "ai-in", dim && "shimmer pointer-events-none select-none")}>
+              aria-busy={dim} className={cn(y.page === "ai" && "relative lg:min-h-0 lg:flex-1", y.page === "tickets" && "md:flex md:min-h-0 md:flex-1 md:flex-col", y.page === "ai" && !dim && "ai-in", dim && "shimmer pointer-events-none select-none")}>
               {wait ? <YtFetching /> : y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "release" ? <ReleasePage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
             </motion.div>
         </main>

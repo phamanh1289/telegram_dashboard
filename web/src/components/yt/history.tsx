@@ -1,27 +1,40 @@
 "use client";
 
-import { ChevronRight, History, LayoutDashboard, ListChecks, MessageSquareText, Search, Trash2 } from "lucide-react";
+import { ChevronRight, History, LayoutDashboard, ListChecks, MessageSquareText, Pencil, Search, Trash2 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { getPref, put, readJson } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { type AiReq, type AiTurn, DAY, when } from "@/lib/yt";
-import { fold } from "@/lib/inbox";
+import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/lib/yt";
+import { useQuery } from "@tanstack/react-query";
+import type { AiPending } from "./bits";
+import { fold, toast } from "@/lib/inbox";
 import { WorkView } from "./work";
 
 // The YouTrack tab's AI history (apart from Telegram's AI Agent tasks), per browser. A small index lists the sessions,
 // each session is its own key: the list never parses an answer, a turn rewrites one session + the index.
 
-export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[] };
-type Meta = { id: string; title: string; ids: string[]; q: string; n: number; at: number };
+/** `pending`: the last turn, saved as it started, never answered (the page closed, an error). */
+export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[]; pending?: AiPending };
+// name: set by the user; pending: the last turn has no answer (job: its server run, maybe still going after a reload)
+type Meta = { id: string; title: string; name?: string; ids: string[]; q: string; n: number; at: number; pending?: boolean; job?: string };
 
 const IDX = "ytAiIdx";
 const KEY = (id: string) => `ytAiS:${id}`;
 const MAX = 40; // sessions kept; the oldest drop off
 const TURNS = 12; // the follow-up API reads the last 12 turns, older ones are never sent again
 const TTL = 14 * DAY; // ticket text, names, comments: not kept in the browser longer than this
+const DONE = "ytAiDone"; // a run whose view was closed has ended (detail: session id): the history shows it afresh
+
+/** Runs this page reads, their view open or closed: session id -> stop. After a reload the server's run goes on
+ *  (AiJobs): the session keeps its job id, opening it reads the run again. */
+const running = new Map<string, () => void>();
+export const isRunning = (id: string) => running.has(id);
+export const stopRun = (id: string) => running.get(id)?.();
+const changed = () => dispatchEvent(new Event(IDX));
 
 function readIdx(): Meta[] {
   const v = readJson(IDX, []);
@@ -40,10 +53,12 @@ export const newSessionId = () => Date.now().toString(36) + Math.random().toStri
 /** Keep a session after each answered turn; storage full: drop the oldest sessions and try again. */
 export function saveSession(s: AiSession) {
   const thread = s.thread.slice(-TURNS);
-  const q = [...thread].reverse().find((t) => t.q)?.q ?? thread[0]?.a ?? "";
-  const meta: Meta = { id: s.id, title: s.title, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now() };
+  const q = s.pending?.q || [...thread].reverse().find((t) => t.q)?.q || thread[0]?.a || s.pending?.label || "";
   prune();
-  let idx = [meta, ...readIdx().filter((m) => m.id !== s.id)];
+  const old = readIdx();
+  const name = old.find((m) => m.id === s.id)?.name; // a rename outlives the next turn
+  const meta: Meta = { id: s.id, title: s.title, name, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now(), pending: s.pending ? true : undefined, job: s.pending?.job };
+  let idx = [meta, ...old.filter((m) => m.id !== s.id)];
   const body = JSON.stringify({ ...s, thread });
   for (let tries = 0; ; tries++) {
     for (const m of idx.slice(MAX)) put(KEY(m.id), null);
@@ -55,12 +70,55 @@ export function saveSession(s: AiSession) {
   }
 }
 
+/** A useAi `onTurn` that keeps the conversation in the history: a new entry per conversation, each turn saved as it
+ *  starts (pending) and again with its answer. `againRef.current = true` before re-running a saved first turn: the same
+ *  entry goes on. `resumeId`: the entry being continued. */
+export function useHistory(title: string, ids: string[], resumeId = "") {
+  const sid = useRef(resumeId);
+  const again = useRef(false);
+  const alive = useRef(true); // the view that started the run is still open
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const onTurn = (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => {
+    if ((first && pending && !again.current) || !sid.current) sid.current = newSessionId();
+    const id = sid.current;
+    if (!pending && !readIdx().some((m) => m.id === id)) return; // deleted while it ran: stays deleted
+    if (pending) again.current = false;
+    saveSession({ id, title, ids: ids.slice(0, AI_MAX), req, thread, pending });
+    if (!pending) return;
+    if (stop) running.set(id, stop);
+    changed();
+    return () => {
+      running.delete(id);
+      if (!alive.current) { // its view was closed: tell where the answer is
+        dispatchEvent(new CustomEvent(DONE, { detail: id }));
+        const m = readIdx().find((x) => x.id === id);
+        if (m && !m.pending) toast({ text: `AI đã trả lời “${nameOf(m)}”, xem ở Lịch sử AI` });
+      }
+      changed();
+    };
+  };
+  return { onTurn, againRef: again };
+}
+
+/** A one-shot AI use with no follow-up (AI filter, ticket draft): kept as it starts, then with its result as text. */
+export function saveOneShot(title: string, q: string, label: string) {
+  const id = newSessionId();
+  saveSession({ id, title, ids: [], req: null, thread: [], pending: { q, label } });
+  return (a: string) => saveSession({ id, title, ids: [], req: null, thread: [{ q, a }] });
+}
+
 function loadSession(id: string): AiSession | null {
   try { return JSON.parse(getPref(KEY(id)) ?? "null"); } catch { return null; }
 }
 
+/** The user's own name for a session ("": back to the automatic one). */
+function rename(id: string, name: string) {
+  put(IDX, JSON.stringify(readIdx().map((m) => (m.id === id ? { ...m, name: name.trim().slice(0, 120) || undefined } : m))));
+  dispatchEvent(new Event(IDX));
+}
+
 function drop(ids: string[]) {
-  for (const id of ids) put(KEY(id), null);
+  for (const id of ids) { running.get(id)?.(); put(KEY(id), null); } // a run of a deleted session stops
   put(IDX, JSON.stringify(readIdx().filter((m) => !ids.includes(m.id))));
 }
 
@@ -74,9 +132,18 @@ function dayOf(at: number) {
 }
 
 /** The session's name: its title, or (a ticket session, whose title said nothing) its tickets. */
-function nameOf(m: { title: string; ids: string[] }) {
+function nameOf(m: { title: string; name?: string; ids: string[] }) {
+  if (m.name) return m.name;
   const t = m.title.replace(/^AI( · )?/, "").trim();
   return t && t !== "ticket đã chọn" ? t : m.ids.length ? `${m.ids.slice(0, 3).join(", ")}${m.ids.length > 3 ? ` +${m.ids.length - 3}` : ""}` : "Phiên AI";
+}
+
+/** A session whose last turn has no answer yet: running (here, or on the server since a reload), answered on the
+ *  server (opening it reads the answer), or stopped. */
+function PendingTag({ m, job }: { m: Meta; job?: "running" | "done" | "error" }) {
+  return isRunning(m.id) || job === "running" ? <b className="font-medium text-hl-2">Đang chạy · </b>
+    : job === "done" ? <b className="font-medium text-ok">Đã xong, mở để xem · </b>
+    : <b className="font-medium text-warn">Chưa xong · </b>;
 }
 
 /** A page like Thành viên: the sessions on a rail, the picked one on the right, where the chat goes on. */
@@ -88,10 +155,19 @@ export function HistoryPage() {
   const [sel, setSel] = useState("");
   const [sure, setSure] = useState(false);
   const [sureDay, setSureDay] = useState(""); // the day whose delete waits for a second click
+  const [editing, setEditing] = useState<string | null>(null); // the open session's name being edited
+  const [ver, setVer] = useState<Record<string, number>>({}); // a background run ended: its session is read again
+  // the server's background runs (after a reload: which "Chưa xong" sessions still run, or wait with their answer)
+  const jobs = useQuery({ queryKey: ["yt", "ai-jobs", idx.filter((m) => m.pending).length], queryFn: () => yt.aiJobStatus(), enabled: idx.some((m) => m.job) });
+  useEffect(() => {
+    const f = (e: Event) => { const id = (e as CustomEvent<string>).detail; setVer((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 })); };
+    addEventListener(DONE, f); return () => removeEventListener(DONE, f);
+  }, []);
+  const cancelEdit = useRef(false); // Esc: the blur that follows must not save
   const inTab = useMemo(() => (tab === "all" ? idx : idx.filter((m) => tabOf(m) === tab)), [idx, tab]);
   const shown = useMemo(() => {
     const k = fold(q.trim());
-    return k ? inTab.filter((m) => fold(`${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
+    return k ? inTab.filter((m) => fold(`${m.name ?? ""} ${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
   }, [inTab, q]);
   const groups = useMemo(() => {
     const g: [string, Meta[]][] = [];
@@ -101,7 +177,8 @@ export function HistoryPage() {
   const [shut, setShut] = useState<string[]>([]); // folded days (a search unfolds all)
   const calm = useReducedMotion();
   const cur = idx.find((m) => m.id === sel) ?? shown[0];
-  const s = useMemo(() => (cur ? loadSession(cur.id) : null), [cur?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- a new turn must not reload the open chat
+  const v = cur ? ver[cur.id] ?? 0 : 0;
+  const s = useMemo(() => (cur ? loadSession(cur.id) : null), [cur?.id, v]); // eslint-disable-line react-hooks/exhaustive-deps -- a new turn must not reload the open chat; a background run's end does
   const n = (t: Tab) => (t === "all" ? idx.length : idx.filter((m) => tabOf(m) === t).length);
   const remove = (ids: string[]) => { drop(ids); setIdx(readIdx()); };
 
@@ -151,7 +228,7 @@ export function HistoryPage() {
                               <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
                               <span className="grid min-w-0">
                                 <span className={cn("truncate text-sm", on && "font-medium")}>{nameOf(m)}</span>
-                                <span className="truncate text-xs text-ink-3">{m.q.replace(/[*_#`>]/g, "") || `${m.n} lượt`}</span>
+                                <span className="truncate text-xs text-ink-3">{m.pending && <PendingTag m={m} job={m.job ? jobs.data?.[m.job] : undefined} />}{m.q.replace(/[*_#`>]/g, "") || `${m.n} lượt`}</span>
                               </span>
                             </button>
                             <Button size="icon-xs" variant="ghost" className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
@@ -175,10 +252,26 @@ export function HistoryPage() {
       {cur && (
         <section className="flex h-[75dvh] min-h-0 flex-col gap-3 lg:h-auto">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 className="mr-auto min-w-0 truncate text-lg font-semibold">{nameOf(cur)}</h2>
+            {editing !== null ? (
+              <form className="mr-auto min-w-0 flex-1" onSubmit={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); }}>
+                <input autoFocus value={editing} onChange={(e) => setEditing(e.target.value)} maxLength={120} aria-label="Tên phiên AI"
+                  placeholder={nameOf({ ...cur, name: undefined })} onFocus={(e) => e.target.select()}
+                  onBlur={() => { if (!cancelEdit.current) rename(cur.id, editing); cancelEdit.current = false; setEditing(null); }}
+                  onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancelEdit.current = true; e.currentTarget.blur(); } }}
+                  className="h-8 w-full rounded-md border border-hl bg-paper px-2 text-lg font-semibold" />
+              </form>
+            ) : (
+              <h2 className="group/name mr-auto flex min-w-0 items-center gap-1 text-lg font-semibold">
+                <span className="truncate">{nameOf(cur)}</span>
+                <Hint side="bottom" text="Đổi tên phiên (để trống: về tên tự đặt)">
+                  <Button size="icon-xs" variant="ghost" aria-label="Đổi tên phiên" onClick={() => setEditing(cur.name ?? nameOf(cur))}
+                    className="shrink-0 text-ink-3 opacity-0 group-hover/name:opacity-100 focus-visible:opacity-100"><Pencil /></Button>
+                </Hint>
+              </h2>
+            )}
             <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{cur.n} lượt</span><span>{when(cur.at)}</span></span>
           </div>
-          {s ? <WorkView key={cur.id} title={cur.title} ids={s.ids} resume={s} />
+          {s ? <WorkView key={`${cur.id}:${v}`} title={cur.title} ids={s.ids} resume={s} />
             : <p className="m-auto text-sm text-ink-3">Phiên này không còn trong bộ nhớ trình duyệt. <Button size="xs" variant="ghost" onClick={() => remove([cur.id])}>Xóa khỏi danh sách</Button></p>}
         </section>
       )}

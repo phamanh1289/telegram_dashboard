@@ -1,20 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUp, ChevronRight, FolderSearch, LibraryBig, MessageSquareText, Plus, RotateCcw, Sparkles, X } from "lucide-react";
+import { ArrowUp, ChevronRight, LibraryBig, SquareTerminal, MessageSquareText, Plus, RotateCcw, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { AiPromptBox, useFollow } from "@/components/ai/chat";
+import { AiPromptBox, AiStop, AiThinking, UserBubble, useFollow } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
-import { Dropdown } from "@/components/ui/dropdown";
+import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Hint } from "@/components/ui/hint";
-import { api, type Project } from "@/lib/api";
 import { toast } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type Ticket, yt } from "@/lib/yt";
 import { AiBox, StatePill, useAi, YtPicks } from "./bits";
-import { type AiSession, newSessionId, saveSession } from "./history";
+import { type AiSession, isRunning, stopRun, useHistory } from "./history";
 import { type AiAuto, type AiStart, useYt } from "./state";
 import { type Builtin, builtin, fitsCount, PromptsDialog, shownFor, usePrompts } from "./prompts";
 
@@ -27,14 +26,22 @@ const TICKET_RE = /[A-Z][A-Z0-9_]*-\d+|\b\d+\b/gi;
 /** The AI session every AI action opens: `auto` is the run it starts with (or a saved answer to show), then the chat goes on here. */
 export function WorkView({ title, ids: initial, auto, start, resume }: { title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession }) {
   const y = useYt();
-  // every answered turn is kept in the history; a new conversation (run, Cuộc mới, other tickets) gets a new entry
+  // every turn is kept in the history as it starts (pending), then with its answer; a new conversation (run, Cuộc mới,
+  // other tickets) gets a new entry
   const [ids, setIds] = useState(initial);
-  const sid = useRef(resume?.id ?? "");
-  const ai = useAi((req, thread, first) => {
-    if (first || !sid.current) sid.current = newSessionId();
-    saveSession({ id: sid.current, title, ids: ids.slice(0, AI_MAX), req, thread });
-  });
-  const ps = useQuery({ queryKey: ["projects"], queryFn: ({ signal }) => api<Project[]>("/projects", { signal }) });
+  const { onTurn, againRef } = useHistory(title, ids, resume?.id);
+  const ai = useAi(onTurn);
+  const [retry, setRetry] = useState(resume?.pending); // a saved turn that never got its answer
+  const attached = useRef(false);
+  const viewOnly = !!resume && !resume.req && !initial.length; // a saved AI filter / ticket draft: nothing to ask on
+  function rerun() {
+    const p = retry!, r = resume!.req!;
+    setRetry(undefined);
+    if (resume!.thread.length) { void ai.ask(p.q); return; } // a follow-up: asked again on the seeded thread
+    againRef.current = true;
+    void ai.run({ label: p.label, q: p.q, run: (sig) => yt.aiAgain(r, sig) });
+  }
+  const ps = useProjects();
   const notes = useQuery({ queryKey: ["yt", "notes"], queryFn: () => yt.notes(), staleTime: 60_000 });
   const noted = !!notes.data?.[y.mode]?.trim(); // this role's team instructions go into every prompt
   const [prompt, setPrompt] = useState("");
@@ -42,6 +49,9 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   // "": no folder, the AI reads the tickets only; remembered per YouTrack project
   const [project, setProjectState] = useState(() => getPref(`ytFolder:${y.project}`) ?? "");
   const setProject = (p: string) => { setProjectState(p); setPref(`ytFolder:${y.project}`, p || null); };
+  // the AI may also run commands in that folder (build, test, gradle), sandboxed; off by default
+  const [shell, setShellState] = useState(() => getPref(`ytShell:${y.project}`) === "1");
+  const setShell = (on: boolean) => { setShellState(on); setPref(`ytShell:${y.project}`, on ? "1" : null); };
   const [add, setAdd] = useState("");
   const [found, setFound] = useState<Record<string, Ticket>>({}); // added tickets outside the loaded scope, looked up
   const [looking, setLooking] = useState(false);
@@ -52,20 +62,23 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const scope = `${list.length} ticket đã chọn`;
   const busy = ai.s.status === "busy";
   const folders = ps.data ?? [];
-  // no tickets (a report, figures): no code to read
-  const folder = list.length ? folders.find((p) => p.path === project) : undefined;
-  const dir = folder?.path ?? ""; // read-only, the answer streams here
+  // code (read, run commands) is Dev only; no tickets (a report, figures): no code to read
+  const dev = y.mode === "dev";
+  const folder = list.length && dev ? folders.find((p) => p.path === project) : undefined;
+  const dir = folder?.path ?? ""; // no edits, the answer streams here
+  const sh = !!dir && shell;
 
   const one = list.length === 1 ? list[0] : null;
   const { lib } = usePrompts();
   const fits = (b: Builtin) => list.length > 0 && fitsCount(b, list.length > 1);
   function runBuiltin(b: Builtin) {
+    setRetry(undefined);
     const k = b.kind;
     const run = (sig: AbortSignal) =>
       k === "notes" ? yt.aiData("notes", rows.map((r) => ({ id: r.id, type: r.type, summary: r.summary })), sig)
-      : k === "summary" || k === "review" ? yt.aiTickets(list, scope, k, sig, "", undefined, 0, [], dir)
-      : k === "testcases" ? (one ? yt.aiTickets([one], one, "testcases", sig, "", undefined, 0, [], dir) : yt.aiTickets(list.slice(0, 10), scope, "testcases", sig, "", undefined, 0, [], dir))
-      : yt.aiTicket(one!, k, sig, dir);
+      : k === "summary" || k === "review" ? yt.aiTickets(list, scope, k, sig, "", undefined, 0, [], dir, sh)
+      : k === "testcases" ? (one ? yt.aiTickets([one], one, "testcases", sig, "", undefined, 0, [], dir, sh) : yt.aiTickets(list.slice(0, 10), scope, "testcases", sig, "", undefined, 0, [], dir, sh))
+      : yt.aiTicket(one!, k, sig, dir, sh);
     setOpenList(false); // the answer gets the room
     void ai.run({ label: `AI: ${b.name.toLowerCase()}`, run });
   }
@@ -80,7 +93,17 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const chips = !list.length ? [] : shownFor(lib, `${y.mode}:${list.length > 1 ? "many" : "one"}`).filter((n) => { const b = builtin(n); return b ? fits(b) : lib.prompts.some((p) => p.name === n); });
   // the run this session was opened for (once), or the saved answer it shows
   useEffect(() => {
-    if (resume) { ai.seed(resume.thread, resume.req); return; }
+    if (resume) {
+      ai.seed(resume.thread, resume.req);
+      const p = resume.pending;
+      // a turn whose page was reloaded / closed: its server run may still go on, or hold the answer
+      if (p?.job && !isRunning(resume.id) && !attached.current) {
+        attached.current = true; // once: a second effect run (Strict Mode) would abort it, and so stop the server's run
+        againRef.current = true;
+        void ai.attach({ ...p, job: p.job }, resume.req, resume.thread).then((r) => { if (r) setRetry(undefined); });
+      }
+      return;
+    }
     if (!auto) return;
     if (auto.seed) { ai.seed([{ q: "", a: auto.seed.text }], auto.seed.req); return; }
     void ai.run(auto).then((r) => { if (r?.text) auto.onDone?.({ text: r.text, req: r.req }); });
@@ -89,6 +112,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   async function send(text = prompt) {
     const ask = text.trim();
     if (!ask || busy) return;
+    setRetry(undefined);
     setOpenList(false); // the answer gets the room
     if (ai.canAsk) { setPrompt(""); void ai.ask(ask); return; } // same chat: a follow-up (same folder as its first run)
     if (!list.length) { // a session about figures: the first prompt starts it, then follow-ups
@@ -96,7 +120,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
       return;
     }
     setPrompt("");
-    void ai.run({ label: dir ? `AI đang đọc ${list.length} ticket và code ${folder!.name}` : `AI đang đọc ${list.length} ticket`, q: ask, run: (sig) => yt.aiTickets(list, scope, "ask", sig, ask, undefined, 0, [], dir) });
+    void ai.run({ label: dir ? `AI đang đọc ${list.length} ticket và code ${folder!.name}` : `AI đang đọc ${list.length} ticket`, q: ask, run: (sig) => yt.aiTickets(list, scope, "ask", sig, ask, undefined, 0, [], dir, sh) });
   }
 
   // the AI chat is about one ticket set: changing the set starts a new one
@@ -182,17 +206,31 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
       </div>
 
       <div ref={feedRef} onScroll={onFeedScroll} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto" aria-live="polite">
-        {!chatting && (
+        {!chatting && !retry && (
           <p className="m-auto max-w-sm text-center text-sm text-ink-3">
             <Sparkles className="mx-auto mb-2 size-5 text-hl-2" />
             {start && !list.length ? <>Hỏi AI về “{title.replace(/^AI · /, "")}”: số liệu đang nói gì, bất thường, nguyên nhân, việc nên làm… Nhập câu hỏi rồi Enter.</>
-              : <>Hỏi bất kỳ điều gì về {list.length} ticket ở trên, hoặc chọn một gợi ý bên dưới. Chọn thư mục dự án để AI đọc code.</>}
+              : <>Hỏi bất kỳ điều gì về {list.length} ticket ở trên, hoặc chọn một gợi ý bên dưới.{dev && " Chọn thư mục dự án để AI đọc code."}</>}
           </p>
         )}
         <AiBox ai={ai} stop={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined} />
+        {retry && ai.s.status !== "busy" && <>
+          {retry.q && <UserBubble>{retry.q}</UserBubble>}
+          {resume && isRunning(resume.id) ? ( // started in a view since closed: it goes on, this view shows its end
+            <div className="flex items-center gap-2">
+              <AiThinking label={`${retry.label} (chạy nền, kết quả hiện ở đây khi xong)`} />
+              <AiStop onClick={() => stopRun(resume.id)} label="Dừng" hint="Dừng lượt AI đang chạy nền" />
+            </div>
+          ) : (
+            <p className="flex flex-wrap items-center gap-2 text-sm text-ink-3">
+              {retry.q ? "Câu hỏi này" : retry.label} chưa có trả lời (bị dừng, lỗi, hoặc trang đã tải lại).
+              {resume?.req && <Button type="button" size="xs" variant="outline" onClick={rerun}><RotateCcw /> Chạy lại</Button>}
+            </p>
+          )}
+        </>}
       </div>
 
-      <div className="grid shrink-0 gap-1.5">
+      {viewOnly ? <p className="shrink-0 px-1 text-xs text-ink-3">Phiên này (lọc / soạn ticket bằng AI) chỉ để xem lại, không hỏi tiếp được.</p> : <div className="grid shrink-0 gap-1.5">
         <AiPromptBox aria-label="Yêu cầu cho AI về các ticket đã chọn" autoFocus maxLength={2000} value={prompt} onChange={setPrompt} onSend={() => void send()}
           running={busy} onStop={ai.stop} stopLabel="Hủy"
           placeholder={ai.canAsk ? "Hỏi tiếp…" : start && !list.length ? "Hỏi về số liệu này (Enter gửi, Shift+Enter xuống dòng)" : "Hỏi về các ticket này: phụ thuộc, thứ tự làm, ước lượng, rủi ro, test case… (Enter gửi, Shift+Enter xuống dòng)"}
@@ -215,20 +253,24 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               {chatting && <Hint side="bottom" text="Bắt đầu cuộc trò chuyện mới với các ticket này"><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> Cuộc mới</Button></Hint>}
             </div>
           }
-          tools={!!list.length && <Hint side="bottom" text="Thư mục dự án để AI đọc code (chỉ đọc) khi trả lời"><span className="min-w-0 max-w-56">
-            <Dropdown label="Thư mục code để trace" value={project} onChange={setProject} className="h-7 w-auto max-w-56"
-              prefix={<FolderSearch aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
-              options={[{ value: "", label: "Không đọc code" }, ...folders.map((p) => ({ value: p.path, label: p.name }))]} />
-          </span></Hint>}
+          tools={!!list.length && dev && <>
+            <Hint side="bottom" text="Thư mục dự án để AI đọc code khi trả lời"><span className="min-w-0 max-w-56">
+              <ProjectPicker value={project} onChange={setProject} none="Không đọc code" className="h-7 max-w-56" />
+            </span></Hint>
+            {folder && <Hint side="bottom" title={shell ? "AI được chạy lệnh" : "AI chỉ đọc code"}
+              text="Bật: AI được chạy lệnh trong thư mục dự án (build, test, gradle…) trong sandbox: chỉ ghi trong thư mục đó, mạng chỉ tới kho thư viện (Maven, npm, PyPI); không sửa code. Antigravity không có sandbox nên vẫn chỉ đọc.">
+              <Button type="button" size="xs" variant="ghost" aria-pressed={shell} aria-label="Cho AI chạy lệnh" disabled={busy} onClick={() => setShell(!shell)}
+                className={cn("h-7 rounded-full", shell && "bg-hl-wash text-hl-2 hover:bg-hl-wash")}><SquareTerminal /> Chạy lệnh</Button>
+            </Hint>}
+          </>}
           actions={<>
             {/* A follow-up runs like the first request; a new one is heavy with code or over 10 tickets (as the server decides). */}
-            <YtPicks heavy={ai.canAsk ? ai.heavy : !!project || list.length > 10} />
+            <YtPicks heavy={ai.canAsk ? ai.heavy : !!dir || list.length > 10} />
             {!busy && <Hint text="Gửi cho AI (Enter)"><Button type="button" size="icon-sm" aria-label="Gửi" onClick={() => void send()} disabled={!prompt.trim() || (!list.length && !ai.canAsk && !folder && !start)}
               className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)"><ArrowUp /></Button></Hint>}
           </>} />
-        {!!list.length && ps.isSuccess && !folders.length && <p className="px-1 text-xs text-ink-3">Muốn trace code: thêm thư mục dự án ở Telegram › AI Agent.</p>}
-        {folder && <p className="px-1 text-xs text-ink-2">Gợi ý và câu hỏi sẽ đọc code trong {folder.name} (chỉ đọc), trả lời ngay ở trên; chậm hơn, thường 1–3 phút.</p>}
-      </div>
+        {folder && <p className="px-1 text-xs text-ink-2">Gợi ý và câu hỏi sẽ đọc code trong {folder.name} ({shell ? "được chạy lệnh trong sandbox" : "chỉ đọc"}), trả lời ngay ở trên; chậm hơn, thường 1–3 phút{shell ? ", lâu hơn nếu build" : ""}.</p>}
+      </div>}
       <PromptsDialog open={saved} onOpenChange={setSaved} onPick={pick} role={y.mode} many={list.length > 1} />
     </div>
   );

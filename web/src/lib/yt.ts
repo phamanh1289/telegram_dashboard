@@ -53,16 +53,22 @@ export const aiParts = new WeakMap<AbortSignal, (text: string) => void>();
 export type AiReq = { path: string; json: unknown };
 export type AiTurn = { q: string; a: string };
 export const aiReqs = new WeakMap<AbortSignal, AiReq>();
+/** The background-run id of an AI call (header X-Ai-Job): the server runs it on when the page goes; aborting stops it. */
+export const aiJobs = new WeakMap<AbortSignal, string>();
+export const newJobId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /** /api/yt/* call; the YouTrack router answers errors as {error: "text"}, the shared API as {error: {code, detail}}. */
 export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
+  const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
+  // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, the run goes on)
+  if (job) init.signal!.addEventListener("abort", () => void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}), { once: true });
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
     signal: init.signal,
-    headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}) },
+    headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
   if (res.ok && res.headers.get("content-type")?.includes("ndjson")) { // an AI answer, streamed as Claude writes it
@@ -115,10 +121,16 @@ export const yt = {
   youtrackFlow: (p: string) => ytApi<{ edges: [string, string][]; unknown: string[] }>(`/workflow/youtrack?project=${enc(p)}`),
   setField: (id: string, name: Field, value: string) => ytApi<Ticket>("/issue/field", { json: { id, name, value } }),
   mentions: (id: string) => ytApi<Mention[]>(`/mentions?id=${enc(id)}`),
-  aiTicket: (id: string, kind: AiTicketKind, signal?: AbortSignal, folder = "") => ytApi<AiText>("/ai/ticket", { json: { id, kind, folder }, signal }),
+  aiTicket: (id: string, kind: AiTicketKind, signal?: AbortSignal, folder = "", shell = false) => ytApi<AiText>("/ai/ticket", { json: { id, kind, folder, shell }, signal }),
   aiData: (kind: "report" | "notes" | "ask" | "weekly" | "team" | "release", data: unknown, signal?: AbortSignal, question = "") => ytApi<AiText>("/ai/data", { json: { kind, data, question }, signal }),
-  aiTickets: (ids: string[], scope: string, kind: "review" | "today" | "summary" | "ask" | "standup" | "plan" | "testcases" | "triage" | "regression" | "groom" | "quality", signal?: AbortSignal, ask = "", stats?: unknown, since = 0, changes: string[] = [], folder = "") =>
-    ytApi<AiText>("/ai/tickets", { json: { ids, scope, kind, ask, stats, since, changes, folder }, signal }),
+  aiTickets: (ids: string[], scope: string, kind: "review" | "today" | "summary" | "ask" | "standup" | "plan" | "testcases" | "triage" | "regression" | "groom" | "quality", signal?: AbortSignal, ask = "", stats?: unknown, since = 0, changes: string[] = [], folder = "", shell = false) =>
+    ytApi<AiText>("/ai/tickets", { json: { ids, scope, kind, ask, stats, since, changes, folder, shell }, signal }),
+  /** A background run read again from its start, live if it still runs (after a reload). */
+  aiJob: (id: string, signal?: AbortSignal) => ytApi<AiText>(`/ai/job/${encodeURIComponent(id)}`, { signal }),
+  /** running / done / error of each background run the server keeps. */
+  aiJobStatus: () => ytApi<Record<string, "running" | "done" | "error">>("/ai/jobs"),
+  /** A saved first request sent again (a history session whose answer never came). */
+  aiAgain: (req: AiReq, signal?: AbortSignal) => ytApi<AiText>(req.path, { json: req.json, signal }),
   aiFollow: (req: AiReq, history: AiTurn[], question: string, signal?: AbortSignal) =>
     ytApi<AiText>("/ai/followup", { json: { path: req.path, body: req.json, history: history.slice(-12), question }, signal }),
   aiDraft: (text: string, types: string[], priorities: string[], signal?: AbortSignal) =>

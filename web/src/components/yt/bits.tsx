@@ -3,14 +3,14 @@
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { Check, ChevronDown, Copy, MessageSquareText, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { createContext, Fragment, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, Fragment, use, useId, useLayoutEffect, useRef, useState } from "react";
 import { AiBot, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble } from "@/components/ai/chat";
 import { AiFetching } from "@/components/ai/fetching";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { cn } from "@/lib/utils";
-import { aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, yt } from "@/lib/yt";
+import { aiJobs, aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, newJobId, yt } from "@/lib/yt";
 import { ModelEffortPicker } from "@/components/ai";
 import { copyText, fold } from "@/lib/inbox";
 import { useYt } from "./state";
@@ -212,31 +212,42 @@ export function Markdown({ text, className, onTicket, files }: { text: string | 
 }
 
 // ---------- AI ----------
+/** A turn saved as it starts, before (or without) its answer. */
+export type AiPending = { q: string; label: string; job?: string }; // job: its background run on the server
 export type AiRun = { label: string; q?: string; run: (signal: AbortSignal) => Promise<{ text: string; draft?: string }> };
 type AiState = { status: "idle" } | { status: "busy"; label: string; text?: string } | { status: "done"; text: string; draft?: string } | { status: "error"; error: string };
 
-/** One AI run at a time per box: busy line with Hủy, then the answer with Copy. Aborts on unmount / new run.
+/** One AI run at a time per box: busy line with Hủy, then the answer with Copy. Aborts on a new run or Hủy; closing the
+ *  view does not (the run goes on in the background and lands in the history: `onTurn`).
  *  After an answer, `ask` sends a follow-up: the first request again (same data) + the thread so far + the question.
- *  `onTurn`: each answered turn (`first`: a new conversation), for the history. */
-export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean) => void) {
+ *  `onTurn`: each turn for the history (`first`: a new conversation): once as it starts (`pending`: its question and
+ *  label, not answered yet, kept if it never is; `stop` aborts it) and again with the answer. What the start call
+ *  returns is called when the run ends, however it ends. */
+export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => void | (() => void)) {
   const [s, setS] = useState<AiState>({ status: "idle" });
   const [thread, setThread] = useState<AiTurn[]>([]); // finished turns; when done, the last one is `s.text`
   const [q, setQ] = useState(""); // the follow-up being answered (busy / error)
   const [req, setReq] = useState<AiReq | null>(null); // the first request, sent again with each follow-up
   const ctl = useRef<AbortController | null>(null);
-  useEffect(() => () => ctl.current?.abort(), []);
-  async function start(label: string, run: AiRun["run"], ask: string, first = false) {
+  /** `at`: reading again a turn saved before a reload (its request, the thread before it, its server run id). */
+  async function start(label: string, run: AiRun["run"], ask: string, first = false, at?: { req: AiReq | null; thread: AiTurn[]; job: string }) {
     ctl.current?.abort();
     const c = (ctl.current = new AbortController());
     setQ(ask);
     setS({ status: "busy", label });
     aiParts.set(c.signal, (text) => { if (c === ctl.current) setS({ status: "busy", label, text }); });
+    const job = at?.job ?? newJobId();
+    aiJobs.set(c.signal, job); // the server runs it on if this page goes (a reload: read again by `job`)
+    let settle: void | (() => void) = undefined;
     try {
-      const out = await run(c.signal);
+      const p = run(c.signal); // ytApi notes the request (aiReqs) before its first await
+      const r = at ? at.req : first ? aiReqs.get(c.signal) ?? null : req;
+      const before = at ? at.thread : first ? [] : thread;
+      settle = onTurn?.(r, before, first, { q: ask, label, job }, () => c.abort());
+      const out = await p;
       if (c === ctl.current) {
         const text = out.text || "(trống)";
-        const r = first ? aiReqs.get(c.signal) ?? null : req;
-        const next = [...(first ? [] : thread), { q: ask, a: text }];
+        const next = [...before, { q: ask, a: text }];
         setReq(r);
         setThread(next);
         setQ("");
@@ -246,6 +257,8 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
       }
     } catch (e) {
       if (c === ctl.current && (e as Error).name !== "AbortError") setS({ status: "error", error: (e as Error).message });
+    } finally {
+      settle?.();
     }
   }
   const run = (r: AiRun) => { setReq(null); setThread([]); return start(r.label, r.run, r.q ?? "", true); }; // `q`: the user's own prompt, shown above the answer
@@ -253,6 +266,9 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
     const r = req, h = thread;
     if (r && h.length) return start("AI đang trả lời", (sig) => yt.aiFollow(r, h, text, sig), text);
   };
+  /** Read again a turn that ran on in the server after a reload (live if it still runs), then go on as usual. */
+  const attach = (p: AiPending & { job: string }, r: AiReq | null, t: AiTurn[]) =>
+    start(p.label, (sig) => yt.aiJob(p.job, sig), p.q, !t.length, { req: r, thread: t, job: p.job });
   /** Show a saved exchange as if just run, so it can be followed up (`r`: its request, if kept). */
   const seed = (t: AiTurn[], r: AiReq | null) => {
     const last = t.at(-1);
@@ -266,7 +282,7 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
     setS(last ? { status: "done", text: last.a } : { status: "idle" });
   };
   const cancel = () => { ctl.current?.abort(); ctl.current = null; setReq(null); setThread([]); setQ(""); setS({ status: "idle" }); };
-  return { s, thread, q, canAsk: !!req && thread.length > 0, heavy: heavyReq(req), run, ask, seed, stop, cancel, set: setS };
+  return { s, thread, q, canAsk: !!req && thread.length > 0, heavy: heavyReq(req), run, ask, attach, seed, stop, cancel, set: setS };
 }
 
 /** Whether a YouTrack AI request runs heavy on the server (yt_dashboard): it reads code, or sends over 10 tickets.

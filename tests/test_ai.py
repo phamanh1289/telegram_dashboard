@@ -432,7 +432,7 @@ async def test_deep_traces_question_and_confirm_in_the_project(env, tmp_path):
 
     p, title = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
     assert fetched == [[4]] and title == "Hỏi: BE ơi API trả field gì?\nBE: BE confirm: field is `status`"
-    assert "Đã adapt" in p
+    assert "Đã adapt" in p and "**Cần hỏi lại**" in p and "⚠ Giả định" in p  # no intro: says who it assumes
     assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.rindex("BE confirm")
     await expect("ai_scope_not_allowed", svc.deep(A, "5", "5", str(proj)))
     await expect("message_not_found", svc.deep(A, "4", "5", str(proj)))  # offline: no fetch
@@ -529,3 +529,31 @@ def test_youtrack_runs_have_their_own_picks(settings):
     providers.save_prefs(settings, p)
     assert pick(yt=True) == ("opus", "low") and pick(yt=True, task=True) == ("sonnet", "max")
     assert pick() == ("haiku", "low") and pick(task=True) == ("sonnet", "high")  # Telegram runs untouched
+
+
+async def test_a_background_ai_run_outlives_its_reader_and_is_read_again_from_the_start():
+    import json
+
+    from telegram_dashboard.ai import AiJobs
+
+    jobs, gate = AiJobs(), asyncio.Event()
+
+    async def work(on_text):
+        on_text("Xin ")
+        await gate.wait()
+        on_text("chào")
+        return {"text": "Xin chào"}
+
+    lines = jobs.start("job-12345678", work).body_iterator
+    assert json.loads(await anext(lines)) == {"delta": "Xin "}
+    await lines.aclose()  # the page left
+    assert jobs.status() == {"job-12345678": "running"} and not jobs.free("job-12345678") and not jobs.free("BAD")
+    gate.set()
+    await jobs._jobs["job-12345678"].task
+    got = [json.loads(x) async for x in jobs.attach("job-12345678").body_iterator]
+    assert got == [{"delta": "Xin "}, {"delta": "chào"}, {"done": {"text": "Xin chào"}}]
+
+    jobs.start("job-87654321", lambda on_text: asyncio.Event().wait())
+    jobs.stop("job-87654321")
+    await asyncio.gather(jobs._jobs["job-87654321"].task, return_exceptions=True)
+    assert jobs.status()["job-87654321"] == "error" and jobs.attach("nope-0000") is None
