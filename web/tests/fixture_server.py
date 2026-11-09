@@ -35,7 +35,7 @@ AGENT = "sh -c \"cat >/dev/null; echo 'Bản nháp AI: cảm ơn mọi người!
 # Consent mode off: the inbox AI may read the seeded tags (the AI-draft test needs it).
 settings = Settings(
     root=tmp, port=PORT, ai_agent_command=AGENT, ai_model="",
-    app_origin=f"http://127.0.0.1:{PORT}",
+    app_origin=os.environ.get("APP_ORIGIN", f"http://127.0.0.1:{PORT}"),  # web-fixture (next dev :3002) proxies here
 )
 
 fake = FakeTransport(

@@ -1,15 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, BrainCircuit, CheckCheck, CornerDownRight, Loader2, Plus } from "lucide-react";
+import { ArrowDown, BrainCircuit, CheckCheck, CornerDownRight, Loader2 } from "lucide-react";
 import { type ReactNode, useCallback, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
+import { AiPromptBox } from "@/components/ai/chat";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { IntroNotice } from "@/components/composer-dialogs";
-import { Textarea } from "@/components/ui/textarea";
 import { api, errorText, type Message, type Task } from "@/lib/api";
 import { getMessage, openTask, taskListQuery, toast } from "@/lib/inbox";
 import { readAgentProject, readIntro, readPlatform, setPref } from "@/lib/prefs";
@@ -135,7 +135,6 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
   const [project, setProject] = useState(readAgentProject);
   const projects = useProjects();
   const projectOk = !!projects.data?.some((p) => p.path === project);
-  const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const qc = useQueryClient();
   const chooseProject = (p: string) => { setProject(p); setPref("agentProject", p); };
@@ -204,20 +203,7 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
         </div>
 
         <div className="grid gap-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium text-ink-2">Dự án</span>
-            <ProjectPicker value={project} onChange={chooseProject} />
-            {!noteOpen && (
-              <Button type="button" size="xs" variant="ghost" className="ml-auto text-ink-3" onClick={() => setNoteOpen(true)}>
-                <Plus aria-hidden /> Yêu cầu thêm
-              </Button>
-            )}
-          </div>
-          {noteOpen && (
-            <Textarea autoFocus aria-label="Yêu cầu thêm" className="min-h-16 resize-none text-sm md:text-sm" maxLength={2000} value={note}
-              onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: chỉ xét màn thanh toán" />
-          )}
-          <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
+          <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
           <IntroNotice compact />
         </div>
 
@@ -233,13 +219,20 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
           </p>
         )}
 
-        <DialogFooter className="items-center">
-          {blocker && !before.isPending && <span className="text-xs text-ink-3 sm:mr-auto">{blocker}</span>}
-          <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
-          <Button type="button" aria-busy={run.isPending} disabled={!!blocker || run.isPending} onClick={() => run.mutate()}>
-            {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <BrainCircuit />} Phân tích
-          </Button>
-        </DialogFooter>
+        <AiPromptBox aria-label="Yêu cầu thêm" placeholder="Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán" maxLength={2000}
+          value={note} onChange={setNote} onSend={() => { if (!blocker && !run.isPending) run.mutate(); }} running={run.isPending}
+          tools={<>
+            <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
+            {blocker && !before.isPending && <span className="text-ink-3">{blocker}</span>}
+          </>}
+          actions={
+            <Hint text="Giao AI Agent đối chiếu câu trả lời của BE với code dự án (Enter)" side="bottom">
+              <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" aria-busy={run.isPending}
+                disabled={!!blocker || run.isPending} onClick={() => run.mutate()}>
+                {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <BrainCircuit aria-hidden />} Phân tích
+              </Button>
+            </Hint>
+          } />
       </DialogContent>
     </Dialog>
   );

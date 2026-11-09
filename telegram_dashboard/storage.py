@@ -2,10 +2,13 @@
 
 import asyncio
 import hashlib
+import itertools
 import json
 import logging
+import math
 import re
 import sqlite3
+import statistics
 import threading
 import uuid
 from contextlib import contextmanager
@@ -21,6 +24,7 @@ from .models import (
     StoredMessage,
     to_dto,
 )
+from .qa import has_tag, qa_code
 
 log = logging.getLogger("telegram_dashboard.storage")
 
@@ -130,6 +134,13 @@ CREATE TABLE IF NOT EXISTS digests (
   result TEXT NOT NULL,              -- latest DigestResult JSON (dropped with the consent)
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS qa_marks (  -- a Q&A thread (live from Telegram, never stored) you closed or removed
+  chat_id TEXT NOT NULL,
+  code TEXT NOT NULL,                  -- "#QA27012345"
+  state TEXT NOT NULL CHECK (state IN ('done', 'deleted')),
+  at INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, code)
+);
 """
 
 
@@ -194,6 +205,7 @@ def _row_to_message(r: sqlite3.Row) -> StoredMessage:
         handled_at=_dt(r["handled_at"]),
         snoozed_until=_dt(r["snoozed_until"]),
         pinned=bool(r["pinned"]),
+        priority=bool(r["priority"]),
         links=json.loads(r["links"]),
     )
 
@@ -232,7 +244,7 @@ def _add_missing_columns(c: sqlite3.Connection) -> None:
     _add_cols(c, "outbox", {"code": "TEXT", "sent_text": "TEXT NOT NULL DEFAULT ''", "sent_at": "INTEGER"})
     for (rid,) in c.execute("SELECT request_id FROM outbox WHERE code IS NULL").fetchall():
         c.execute("UPDATE outbox SET code=? WHERE request_id=?", (reply_code(rid), rid))
-    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS outbox_code ON outbox(code)")
+    c.execute("DROP INDEX IF EXISTS outbox_code")  # display-only code: a 32-bit collision must not fail a send
     c.execute("UPDATE outbox SET sent_text='' WHERE sent_text!=''")  # no longer kept
 
 
@@ -280,9 +292,15 @@ def _outbox_quote(c: sqlite3.Connection) -> None:
     _add_cols(c, "outbox", {"quote": "INTEGER NOT NULL DEFAULT 1"})
 
 
+def _priority(c: sqlite3.Connection) -> None:
+    """A tag from a "Luôn ưu tiên" sender (rules kind 'priority'): sorts first in the to-do list. Kept on the row
+    (set on insert and when the rule changes) so every read, the change feed included, carries it."""
+    _add_cols(c, "messages", {"priority": "INTEGER NOT NULL DEFAULT 0"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
-    _handled_by, _outbox_quote,
+    _handled_by, _outbox_quote, _priority,
 ]  # fmt: skip
 
 
@@ -516,15 +534,17 @@ class Store:
     def list_chats(
         self, since: datetime | None = None, until: datetime | None = None
     ) -> tuple[list[ChatDTO], str]:
-        """With a range, only chats that have a kept message in [since, until)."""
+        """With a range, only chats that have a kept message in [since, until). Groups with a tag waiting first, the
+        one waiting longest on top (what needs you first), then by title."""
+        mine = (f"FROM messages m WHERE m.chat_id=chats.chat_id AND {PENDING} "
+                "AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)")  # fmt: skip
         with self._conn() as c:
             rows = c.execute(
-                "SELECT *, (SELECT COUNT(*) FROM messages m WHERE m.chat_id=chats.chat_id "
-                f"AND {PENDING} AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)) "
-                "AS pending FROM chats WHERE (?1 IS NULL AND ?2 IS NULL) OR EXISTS (SELECT 1 "
+                f"SELECT *, (SELECT COUNT(*) {mine}) AS pending, (SELECT MIN(m.date) {mine}) AS oldest "
+                "FROM chats WHERE (?1 IS NULL AND ?2 IS NULL) OR EXISTS (SELECT 1 "
                 "FROM messages m WHERE m.chat_id=chats.chat_id AND m.deleted=0 "
                 "AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)) "
-                "ORDER BY pending=0, title COLLATE NOCASE",
+                "ORDER BY pending=0, oldest, title COLLATE NOCASE",
                 (_ts(since), _ts(until)),
             ).fetchall()
             cursor = self._cursor(c)
@@ -539,6 +559,7 @@ class Store:
                 tracked_at=_dt(r["tracked_at"]),
                 generation=r["generation"],
                 pending_count=r["pending"],
+                oldest_pending=_dt(r["oldest"]),
             )
             for r in rows
         ], cursor
@@ -556,6 +577,8 @@ class Store:
                 "topic_id,outgoing,media_kind,links,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                 (*values, m.chat_id, m.message_id),
             )
+            c.execute("UPDATE messages SET priority=1 WHERE chat_id=? AND message_id=? AND sender_id IN "
+                      "(SELECT value FROM rules WHERE kind='priority')", (m.chat_id, m.message_id))  # fmt: skip
             self._record(c, m.chat_id, m.message_id, "new", chat["generation"])
             return True
         if existing["deleted"]:
@@ -666,6 +689,15 @@ class Store:
         with self._conn(write=True) as c:
             return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
 
+    def remind(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
+        """"Nhắc lại sau": reopen a kept tag and hide it until `until` (None: back now), in one write, so it comes
+        back to the to-do list then. False when the message is not kept (or deleted)."""
+        with self._conn(write=True) as c:
+            if self._msg(c, chat_id, message_id) is None:
+                return False
+            self._mark(c, chat_id, message_id, False, "")
+            return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
+
     def set_pinned(self, chat_id: str, message_id: int, pinned: bool) -> bool:
         with self._conn(write=True) as c:
             return self._set_col(c, chat_id, message_id, "pinned", int(pinned))
@@ -683,12 +715,12 @@ class Store:
     def list_pending(
         self, since: datetime | None = None, until: datetime | None = None, limit: int = 300
     ) -> list[tuple[str, MessageDTO]]:
-        """Pending tags across all chats, pinned first then oldest: (chat title, message)."""
+        """Pending tags across all chats, pinned first, then priority senders, then oldest: (chat title, message)."""
         with self._conn() as c:
             rows = c.execute(
                 "SELECT m.*, c.title AS chat_title FROM messages m JOIN chats c USING (chat_id) "
                 f"WHERE c.tracking=1 AND {PENDING} AND (?1 IS NULL OR m.date>=?1) "
-                "AND (?2 IS NULL OR m.date<?2) ORDER BY m.pinned DESC, m.date LIMIT ?3",
+                "AND (?2 IS NULL OR m.date<?2) ORDER BY m.pinned DESC, m.priority DESC, m.date LIMIT ?3",
                 (_ts(since), _ts(until), limit),
             ).fetchall()
         return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
@@ -831,10 +863,12 @@ class Store:
         )
 
     def outbox_create(
-        self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int, quote: bool = True
+        self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int, quote: bool = True,
+        *, qa: bool = False,
     ) -> tuple[OutboxDTO, bool]:
-        """Returns (record, created). Same id with different payload => 409."""
-        h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew"))
+        """Returns (record, created). Same id with different payload => 409. `qa`: a "#QA…" line under a text that
+        tags someone, minted once here (the hash is over the text as typed), so a retry sends the same code."""
+        h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew") + ("\nqa" if qa else ""))
         with self._conn(write=True) as c:
             row = c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             if row is not None:
@@ -848,6 +882,8 @@ class Store:
             if target is None or target["deleted"]:
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
+            if qa and has_tag(text):
+                text = f"{text.strip()}\n{qa_code(datetime.now(UTC))}"
             c.execute(
                 "INSERT INTO outbox (request_id,chat_id,reply_to_message_id,text,text_hash,"
                 "random_id,status,created_at,updated_at,code,quote) VALUES (?,?,?,?,?,?,'pending',?,?,?,?)",
@@ -939,16 +975,23 @@ class Store:
     # ---- auto-handle rules ---------------------------------------------
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM rules WHERE kind IN ('keyword','sender') ORDER BY id")
+            rows = c.execute("SELECT * FROM rules WHERE kind IN ('keyword','sender','priority') ORDER BY id")
             return [dict(r) for r in rows]
 
     def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, list[tuple[str, int]]]:
         """Save a rule (keyword: text in the tag, any case; sender: a sender id) and clear the
-        pending tags it already matches; returns the rule and the (chat_id, message_id) it cleared."""
+        pending tags it already matches; returns the rule and the (chat_id, message_id) it cleared.
+        `priority` (a sender id) clears nothing: that sender's tags sort first from now on."""
         value = value.strip().lower() if kind == "keyword" else value.strip()
         if not value:  # "" is in every text: it would clear every tag
             raise ApiError(422, "rule_value_empty")
         with self._conn(write=True) as c:
+            # one sender is either ignored or prioritised, never both: the new rule replaces the other
+            if kind == "priority":
+                c.execute("DELETE FROM rules WHERE kind='sender' AND value=?", (value,))
+            elif kind == "sender":
+                c.execute("DELETE FROM rules WHERE kind='priority' AND value=?", (value,))
+                self._set_priority(c, value, False)
             c.execute(
                 "INSERT INTO rules (kind,value,label) VALUES (?,?,?) "
                 "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label",
@@ -957,6 +1000,9 @@ class Store:
             rule = dict(
                 c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
             )
+            if kind == "priority":
+                self._set_priority(c, value, True)
+                return rule, []
             rows = c.execute("SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0").fetchall()
             cleared = []
             for r in rows:  # a matching tag is cleared here, then listed for the Undo
@@ -968,7 +1014,19 @@ class Store:
 
     def remove_rule(self, rule_id: int) -> None:
         with self._conn(write=True) as c:
-            c.execute("DELETE FROM rules WHERE id=?", (rule_id,))
+            r = c.execute("DELETE FROM rules WHERE id=? RETURNING kind, value", (rule_id,)).fetchone()
+            if r and r["kind"] == "priority":
+                self._set_priority(c, r["value"], False)
+
+    def _set_priority(self, c: sqlite3.Connection, sender_id: str, on: bool) -> None:
+        """Flag (or unflag) a sender's kept messages; an edit change each, so open lists re-sort."""
+        rows = c.execute(
+            "UPDATE messages SET priority=?1 WHERE sender_id=?2 AND deleted=0 AND priority IS NOT ?1 "
+            "RETURNING chat_id, message_id", (int(on), sender_id),
+        ).fetchall()  # fmt: skip
+        for r in rows:
+            if (chat := self._chat(c, r["chat_id"])) is not None:
+                self._record(c, r["chat_id"], r["message_id"], "edit", chat["generation"])
 
     # ---- tasks ---------------------------------------------------------
     def add_task(
@@ -1001,7 +1059,7 @@ class Store:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, "
-                "COALESCE(m.handled, t.done) AS handled "  # not a kept tag: the session's own Done
+                "CASE WHEN m.deleted=0 THEN m.handled ELSE t.done END AS handled "  # else: the session's own Done
                 "FROM tasks t LEFT JOIN chats c ON c.chat_id=t.chat_id "
                 "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
                 "WHERE ?1 IS NULL OR t.chat_id=?1 ORDER BY t.created_at DESC LIMIT 200",
@@ -1038,13 +1096,50 @@ class Store:
         """Stored messages of tracked chats that mention `needle` (a ticket ID), newest first."""
         word = re.compile(rf"(?<![\w-]){re.escape(needle)}(?!\d)", re.I)  # VA-12 must not match VA-123
         with self._conn() as c:
-            rows = c.execute(
+            rows = c.execute(  # no SQL LIMIT: VA-10..VA-1999 must not crowd out VA-1's real mentions
                 "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, m.outgoing, m.reply_to_id, c.title "
                 "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
-                "AND m.text LIKE ? ESCAPE '\\' ORDER BY m.date DESC LIMIT ?",
-                (_like(needle), limit * 3),
+                "AND m.text LIKE ? ESCAPE '\\' ORDER BY m.date DESC",
+                (_like(needle),),
+            )
+            return [dict(r) for r in itertools.islice((r for r in rows if word.search(r["text"])), limit)]
+
+    def week_stats(self, now: datetime | None = None) -> dict:
+        """"Tuần của tôi": tags received in the last 7 days and the 7 before, how they got handled and how fast
+        (handled_at - date; rule auto-handles and rows from before handled_at was kept are left out of the timing),
+        and this week's slowest groups by median time to handle (2+ timed tags)."""
+        end = _ts(now or datetime.now(UTC))
+        week = 7 * 86400
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.chat_id, c.title, m.date, m.handled, m.handled_by, m.handled_at FROM messages m "
+                "JOIN chats c USING (chat_id) WHERE m.outgoing=0 AND m.deleted=0 AND m.date>=? AND m.date<?",
+                (end - 2 * week, end),
             ).fetchall()
-        return [dict(r) for r in rows if word.search(r["text"])][:limit]
+
+        def mins(rs) -> list[float]:
+            return sorted((r["handled_at"] - r["date"]) / 60 for r in rs
+                          if r["handled"] and r["handled_at"] and r["handled_by"] not in ("", "rule"))  # fmt: skip
+
+        def numbers(rs) -> dict:
+            how = [r["handled_by"] for r in rs if r["handled"]]
+            t = mins(rs)
+            return {
+                "received": len(rs), "handled": sum(h != "rule" for h in how), "auto": how.count("rule"),
+                "replied": sum(h in ("reply", "dashboard") for h in how),
+                "marked": sum(h in ("me", "quiet", "all") for h in how),
+                "median_min": statistics.median(t) if t else None,
+                "p90_min": t[math.ceil(0.9 * len(t)) - 1] if t else None,  # nearest rank
+            }  # fmt: skip
+
+        cur = [r for r in rows if r["date"] >= end - week]
+        by: dict[str, list] = {}
+        for r in cur:
+            by.setdefault(r["chat_id"], []).append(r)
+        slow = [{"chat_id": cid, "title": rs[0]["title"], "handled": len(t), "median_min": statistics.median(t)}
+                for cid, rs in by.items() if len(t := mins(rs)) >= 2]  # fmt: skip
+        slow.sort(key=lambda g: -g["median_min"])
+        return {"cur": numbers(cur), "prev": numbers([r for r in rows if r["date"] < end - week]), "slow": slow[:5]}
 
     def my_replies(self, since: int, limit: int = 40, chat_id: str | None = None) -> list[dict]:
         """What the user sent in tracked groups (or one group) since a unix time, oldest first:
@@ -1070,6 +1165,19 @@ class Store:
     def remove_project(self, path: str) -> None:
         with self._conn(write=True) as c:
             c.execute("DELETE FROM projects WHERE path=?", (path,))
+
+    def qa_marks(self, chat_id: str) -> dict[str, str]:
+        """Thread code -> 'done' / 'deleted' for one group."""
+        with self._conn() as c:
+            rows = c.execute("SELECT code, state FROM qa_marks WHERE chat_id=?", (chat_id,))
+            return {r["code"]: r["state"] for r in rows}
+
+    def set_qa_mark(self, chat_id: str, code: str, state: str | None) -> None:
+        with self._conn(write=True) as c:
+            if state:
+                c.execute("INSERT OR REPLACE INTO qa_marks VALUES (?,?,?,?)", (chat_id, code, state, now_ts()))
+            else:
+                c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=?", (chat_id, code))
 
     def has_project(self, path: str) -> bool:
         with self._conn() as c:
@@ -1112,18 +1220,27 @@ class Store:
                     (chat_id, _ts(expires_at), now_ts()),
                 )
 
+    def save_consented_digest(self, chat_id: str, last_id: int, last_date: datetime, result: str) -> bool:
+        """Save a digest only while the chat's consent still holds, checked in the same transaction (a revoke
+        during the AI run drops the result). False: not saved."""
+        with self._conn(write=True) as c:
+            if c.execute("SELECT 1 FROM digest_consents WHERE chat_id=? AND expires_at>?",
+                         (chat_id, now_ts())).fetchone() is None:  # fmt: skip
+                return False
+            self._save_digest(c, chat_id, last_id, last_date, result)
+            return True
+
     def save_digest(self, chat_id: str, last_id: int, last_date: datetime, result: str) -> None:
         with self._conn(write=True) as c:
-            old = c.execute(
-                "SELECT last_message_id, last_date FROM digests WHERE chat_id=?", (chat_id,)
-            ).fetchone()
-            last_ts = _ts(last_date)
-            if old and old["last_message_id"] > last_id:  # an older stretch: keep the cursor
-                last_id, last_ts = old["last_message_id"], old["last_date"]
-            c.execute(
-                "INSERT OR REPLACE INTO digests VALUES (?,?,?,?,?)",
-                (chat_id, last_id, last_ts, result, now_ts()),
-            )
+            self._save_digest(c, chat_id, last_id, last_date, result)
+
+    @staticmethod
+    def _save_digest(c: sqlite3.Connection, chat_id: str, last_id: int, last_date: datetime, result: str) -> None:
+        old = c.execute("SELECT last_message_id, last_date FROM digests WHERE chat_id=?", (chat_id,)).fetchone()
+        last_ts = _ts(last_date)
+        if old and old["last_message_id"] > last_id:  # an older stretch: keep the cursor
+            last_id, last_ts = old["last_message_id"], old["last_date"]
+        c.execute("INSERT OR REPLACE INTO digests VALUES (?,?,?,?,?)", (chat_id, last_id, last_ts, result, now_ts()))
 
     def get_digest(self, chat_id: str) -> dict | None:
         with self._conn() as c:

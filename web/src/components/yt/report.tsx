@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { toast, useNow } from "@/lib/inbox";
 import { ymd } from "@/lib/time";
-import { getPref, onPrefs, readReportAt, setPref, YT_ROLES } from "@/lib/prefs";
+import { getPref, onPrefs, put, readReportAt, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, downloadCsv, downloadText } from "@/lib/utils";
 import { type AiReq, bucket, bugSpike, DAY, inTest, isBug, isBuilt, QUICK, rank, type Ticket, when, yt } from "@/lib/yt";
 import { reportData } from "@/lib/yt-stats";
@@ -116,14 +116,15 @@ export function ReportCard() {
     label: "AI đang viết báo cáo", run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined, onDone: (r) => keep(r.text, r.req, rel),
   } }); };
 
-  // the schedule: once a day, on picked weekdays, after the picked time; one try per day and key (an error is not retried)
-  const tried = useRef("");
+  // the schedule: once a day, on picked weekdays, after the picked time; one try per day and key (an error is not retried),
+  // kept in localStorage: this card remounts on every page switch and a reload must not start another paid run either
   const hhmm = new Date(now).toTimeString().slice(0, 5);
   const due = sched.on && sched.days.includes((new Date(now).getDay() + 6) % 7) && hhmm >= sched.time;
   const ready = y.aiOn && !y.config?.mock && y.rows.length > 0 && !qc.q.isLoading;
   useEffect(() => {
-    if (due && ready && !saved && !busy && tried.current !== key) { tried.current = key; void go(); }
-  }); // no deps: checked every render (useNow ticks each minute); `tried` keeps it to one run a day
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- starting the scheduled run is this effect's job
+    if (due && ready && !saved && !busy && getPref("ytReportTried") !== key) { put("ytReportTried", key); void go(); }
+  }); // no deps: checked every render (useNow ticks each minute); the stored key keeps it to one run a day
 
   const view = useRef<HTMLDivElement>(null);
   const file = `bao-cao-${y.project}-${y.mode}-${ymd(saved?.at ?? now)}`;

@@ -19,12 +19,25 @@ Tag `vX.Y.Z` được push → `.github/workflows/release.yml` build trên `wind
 App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`telegram_dashboard/updater.py`,
 `REPO`): Cài đặt › Cập nhật hiện "Có N bản mới trên GitHub Releases" → bấm Cập nhật (hoặc bật tự động).
 **Tên file asset phải kết thúc `-<platform>.zip`** (`windows-x64`, `macos-arm64`), updater tìm theo đuôi này.
+Mỗi zip có thêm `<zip>.sig` (CI ký RSA bằng secret `RELEASE_SIGNING_KEY`); updater chỉ cài khi chữ ký khớp
+`telegram_dashboard/release_key.pem`. Thiếu secret → job `release` fail (không bao giờ phát hành bản không ký).
+
+## Một lần duy nhất: secret ký gói
+
+Khóa riêng nằm ngoài repo ở `~/.config/telegram-dashboard/release_signing_key.pem` (0600, không commit, không in ra).
+Trước release đầu tiên có chữ ký, **user tự chạy** (agent không chạy, đây là thao tác lên GitHub):
+```bash
+gh secret set RELEASE_SIGNING_KEY < ~/.config/telegram-dashboard/release_signing_key.pem
+```
+Mất khóa riêng → tạo cặp mới, commit `release_key.pem` mới, set lại secret; bản đã cài với khóa cũ phải cài lại
+bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa khác).
 
 ## Các bước
 
 1. **Kiểm tra sạch**: `git status` sạch, đang ở nhánh sẽ release (mặc định `master`; nhánh khác chỉ khi
    user nói rõ). `git pull --ff-only`.
 2. **Test**: `uv run --no-sync pytest -q`, `npm run typecheck`, `npm run build`. Lỗi → dừng, báo user.
+   Kiểm tra secret đã có: `gh secret list | grep RELEASE_SIGNING_KEY` (chưa có → xem mục "Một lần duy nhất").
 3. **Tính version mới**:
    ```bash
    git fetch --tags
@@ -45,7 +58,8 @@ App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`te
 5. **Push** (hỏi user trước — đây là thao tác công khai): `git push origin HEAD` rồi `git push origin vX.Y.Z`.
 6. **Theo dõi CI**: `gh run list --workflow release.yml -L 1`, `gh run watch <id>` (cần `gh auth login`;
    không có thì đưa user link `https://github.com/phamanh1289/telegram_dashboard/actions`).
-7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 5 file ở trên.
+7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 5 file ở trên
+   và 2 file `.zip.sig`.
    Báo user link release `https://github.com/phamanh1289/telegram_dashboard/releases/tag/vX.Y.Z`.
 
 ## Khi CI lỗi

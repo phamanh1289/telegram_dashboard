@@ -15,7 +15,7 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from telethon import errors as tg_errors
 
-from . import providers, updater
+from . import privacy, providers, updater
 from .agent import AgentRunner
 from .ai import AiService, client_gone, parse_ticket, pick_folder, stream_answer
 from .auth import LocalGuardMiddleware
@@ -61,6 +61,7 @@ from .models import (
     HandledAllResponse,
     HandledRequest,
     HistoryPage,
+    Member,
     MessageDTO,
     MessageRef,
     MessagesPage,
@@ -70,6 +71,7 @@ from .models import (
     ProjectDTO,
     ProjectRequest,
     QaItem,
+    QaMarkRequest,
     QaPosted,
     QaPostRequest,
     QaSummaryRequest,
@@ -86,6 +88,7 @@ from .models import (
     TelegramPhone,
     TelegramSignIn,
     TelegramSignInResult,
+    WeekStats,
     YouTrackAuth,
     YouTrackIssue,
     YouTrackRequest,
@@ -102,7 +105,9 @@ from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
 LIVE_READS = 4  # parallel Telegram calls in /api/briefing and /api/qa
+QA_TTL = 30.0  # seconds a group's live Q&A read is reused: every page polls each followed group
 QA_SCAN = 600  # newest messages read per group for Q&A
+MEMBERS_TTL = 300.0  # seconds a group's member list (reply box @ popup) is reused
 
 
 GUIDE_PROMPT = (
@@ -160,7 +165,8 @@ def create_app(
     yt_dashboard = YouTrackDashboard(settings)
     app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
     app.add_middleware(
-        LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin
+        LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin,
+        token=settings.api_token,
     )
 
     @app.exception_handler(ApiError)
@@ -185,6 +191,7 @@ def create_app(
     app.include_router(build_router(yt_dashboard), include_in_schema=False)
     app.include_router(build_task_router(settings))
     app.include_router(updater.build_router(settings))
+    app.include_router(privacy.build_router(settings))
 
     def S(request: Request):
         return request.app.state
@@ -523,6 +530,42 @@ def create_app(
         rows = await s.db.read(s.store.briefing_rows)
         return list(await asyncio.gather(*(item(r) for r in rows)))
 
+    member_reads: dict[str, tuple[float, list[Member]]] = {}
+    members_live = asyncio.Semaphore(LIVE_READS)
+
+    @app.get("/api/chats/{chat_id}/members")
+    async def members(chat_id: str, request: Request) -> list[Member]:
+        """The group's members, live from Telegram, reused for MEMBERS_TTL: the reply box's @ popup."""
+        s = S(request)
+        if (hit := member_reads.get(chat_id)) and time.monotonic() - hit[0] < MEMBERS_TTL:
+            return hit[1]
+        async with members_live:
+            out = await s.bridge.members(chat_id)
+        if len(member_reads) > 50:
+            member_reads.clear()
+        member_reads[chat_id] = (time.monotonic(), out)
+        return out
+
+    qa_reads: dict[tuple[str, int], tuple[float, list[StoredMessage]]] = {}
+    qa_live = asyncio.Semaphore(LIVE_READS)  # shared by every /api/qa call: 8 groups load at once
+
+    async def _qa_msgs(s, chat_id: str, days: int) -> list[StoredMessage]:
+        """The group's messages over `days`, live from Telegram, reused for QA_TTL."""
+        k = (chat_id, days)
+        if (hit := qa_reads.get(k)) and time.monotonic() - hit[0] < QA_TTL:
+            return hit[1]
+        async with qa_live:
+            until = datetime.now(UTC)
+            msgs = await s.bridge.fetch_range(chat_id, until - timedelta(days=days), until, QA_SCAN)
+            # A question answered with Q&A may be older than the range: read it so it still leads its thread.
+            older = {m.reply_to_id for m in msgs if m.reply_to_id and names_code(m.text)} - {m.message_id for m in msgs}
+            if older:
+                msgs += await s.bridge.fetch_ids(chat_id, sorted(older)[-20:])
+        if len(qa_reads) > 100:
+            qa_reads.clear()
+        qa_reads[k] = (time.monotonic(), msgs)
+        return msgs
+
     @app.get("/api/qa")
     async def qa(
         chat_id: str, request: Request, days: Annotated[int, Query(ge=1, le=30)] = 7
@@ -533,12 +576,7 @@ def create_app(
         if s.bridge.state != "connected":
             return []
         await _known_chat(s, chat_id)
-        until = datetime.now(UTC)
-        msgs = await s.bridge.fetch_range(chat_id, until - timedelta(days=days), until, QA_SCAN)
-        # A question answered with Q&A may be older than the range: read it so it still leads its thread.
-        older = {m.reply_to_id for m in msgs if m.reply_to_id and names_code(m.text)} - {m.message_id for m in msgs}
-        if older:
-            msgs += await s.bridge.fetch_ids(chat_id, sorted(older)[-20:])
+        msgs = await _qa_msgs(s, chat_id, days)
         ids = [m.message_id for m in msgs]
         kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids) if ids else ([], "")
         mine = {k.message_id: k for k in kept}
@@ -548,9 +586,19 @@ def create_app(
             k = mine.get(m.message_id)  # the stored copy has no @username (never stored): the live one's
             return to_dto(k).model_copy(update={"kept": True, "sender_username": m.sender_username}) if k else to_dto(m)
 
-        threads = [QaItem(code=code, chat_title=title, question=dto(ms[0]), answers=[dto(m) for m in ms[1:]])
-                   for code, ms in find_threads(msgs)]  # fmt: skip
+        marks = await s.db.read(s.store.qa_marks, chat_id)
+        threads = [QaItem(code=code, chat_title=title, question=dto(ms[0]), answers=[dto(m) for m in ms[1:]],
+                          done=marks.get(code) == "done")
+                   for code, ms in find_threads(msgs) if marks.get(code) != "deleted"]  # fmt: skip
         return sorted(threads, key=lambda i: (i.answers or [i.question])[-1].date, reverse=True)
+
+    @app.put("/api/qa/mark", status_code=204)
+    async def qa_mark(body: QaMarkRequest, request: Request) -> None:
+        """Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
+        null undoes."""
+        s = S(request)
+        await _known_chat(s, body.chat_id)
+        await s.db.write(s.store.set_qa_mark, body.chat_id, body.code, body.state)
 
     @app.post("/api/qa", status_code=201)
     async def qa_post(body: QaPostRequest, request: Request) -> QaPosted:
@@ -569,6 +617,8 @@ def create_app(
         code = qa_code(datetime.now(UTC)) if opens else None
         text = body.text.strip() + (f"\n{code}" if code else "")
         mid = await s.bridge.send_direct(body.chat_id, reply_to, text)
+        for k in [k for k in qa_reads if k[0] == body.chat_id]:  # the page refetches: show the post
+            qa_reads.pop(k)
         if reply_to:
             await s.db.write(s.store.set_handled, body.chat_id, reply_to, True, "dashboard")
         return QaPosted(message_id=str(mid), code=joined or code, joined=bool(joined))
@@ -663,6 +713,20 @@ def create_app(
         mid = int_or_404(message_id, "message_not_found")
         if not await s.db.write(s.store.set_snooze, chat_id, mid, body.until):
             raise ApiError(404, "message_not_found")
+
+    @app.put("/api/chats/{chat_id}/messages/{message_id}/remind", status_code=204)
+    async def remind(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:
+        """"Nhắc lại sau": reopen a tag (e.g. just answered "để mình check") and hide it until `until`; it comes
+        back to Việc cần xử lý then. No reaction change on Telegram."""
+        s = S(request)
+        mid = int_or_404(message_id, "message_not_found")
+        if not await s.db.write(s.store.remind, chat_id, mid, body.until):
+            raise ApiError(404, "message_not_found")
+
+    @app.get("/api/stats/week")
+    async def week_stats(request: Request) -> WeekStats:
+        s = S(request)
+        return WeekStats(**await s.db.read(s.store.week_stats))
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/pin", status_code=204)
     async def pin(chat_id: str, message_id: str, body: PinRequest, request: Request) -> None:
@@ -898,12 +962,15 @@ def create_app(
         return YouTrackIssue(id=issue_id, url=url, warning=warning)
 
     async def _find_issues(query: str, top: int) -> list[YouTrackIssue]:
-        """YouTrack's own search (its relevance order); [] on any error: a lookup never blocks the user."""
+        """YouTrack's own search (its relevance order); [] when it refuses the query (400). A bad token /
+        no YouTrack is raised: "no matching ticket" would make the user file a duplicate."""
         try:
             rows = await yt_dashboard.yt(
                 "/api/issues", query=query, fields="idReadable,summary", **{"$top": top}
             )
         except YtError as e:
+            if e.status != 400:
+                raise
             log.warning("tickets not looked up: %s %s", e.status, e.message)
             return []
         base = settings.youtrack_url.rstrip("/")

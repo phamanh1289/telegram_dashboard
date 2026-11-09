@@ -12,7 +12,8 @@ import { getPref, onPrefs, setPref } from "@/lib/prefs";
 import { ago, ymd } from "@/lib/time";
 import { cn, downloadText } from "@/lib/utils";
 import { AI_MAX, bucket, DAY, isBlocked, isBug, isBuilt, needsPo, rank, shortName, shortSp, tagsOf, type Ticket, titleOf, when, ytApi } from "@/lib/yt";
-import { AiAsk, Card, Menu, MultiSelect, Person, Tag } from "./bits";
+import { useAiWait } from "@/components/ai/fetching";
+import { AiAsk, Card, Menu, MultiSelect, Person, Tag, YtFetching } from "./bits";
 import { HBars, Stack } from "./dashboard";
 import { PAGE, Pager } from "./home";
 import { workDays } from "./report";
@@ -213,8 +214,8 @@ export function ReleasePage() {
   }
   const askAi = () => y.setSheet({ kind: "work", title: `AI · Go-live ${fmtShort(day)}`, ids: [...act.map((r) => r.i.id), ...scoped.filter((r) => !shipped(r.s) && !r.why.length).map((r) => r.i.id)].slice(0, AI_MAX) });
 
+  const loading = useAiWait(all.isPending || (ids.length > 0 && trace.isPending && !trace.isError));
   if (y.config?.mock) return <p className="text-sm text-ink-2">Cần token YouTrack để theo dõi release.</p>;
-  const loading = all.isPending || (ids.length > 0 && trace.isPending && !trace.isError);
   return (
     <div className="grid grid-cols-1 gap-4">
       {/* the question: which release (scope + go-live day) */}
@@ -242,7 +243,7 @@ export function ReleasePage() {
       <section aria-label="Kết luận release" className={cn("grid gap-4 rounded-[var(--radius-card)] p-5 shadow-stock", v?.bg ?? "bg-cotton")}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="grid gap-1">
-            <p className="text-xs font-semibold tracking-wide text-ink-3 uppercase">Go-live {fmtDay(day)} · {y.project}</p>
+            <p className="text-xs font-semibold text-ink-3">Go-live {fmtDay(day)} · {y.project}</p>
             {loading ? <Skeleton className="h-9 w-64" /> : (
               <h2 className={cn("flex items-center gap-2 text-2xl font-semibold sm:text-3xl", v?.fg ?? "text-ink-2")}>
                 {v && <v.icon className="size-7 shrink-0" aria-hidden />}{v?.text ?? "Chưa có ticket trong phạm vi"}
@@ -315,7 +316,7 @@ export function ReleasePage() {
             <Button size="xs" variant="outline" className="ml-auto" onClick={() => void trace.refetch()}>Thử lại</Button>
           </p>
         )}
-        {loading ? <div className="grid gap-2">{[0, 1, 2, 3].map((k) => <Skeleton key={k} className="h-16 w-full" />)}</div>
+        {loading ? <YtFetching kind="release" />
           : all.isError ? (
             <p role="alert" className="flex flex-wrap items-center gap-2 rounded-md bg-error-wash px-3 py-2 text-sm text-error">
               Không đọc được ticket từ YouTrack: {all.error.message}
@@ -369,7 +370,7 @@ export function ReleasePage() {
   );
 }
 
-const H = ({ children }: { children: React.ReactNode }) => <h4 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{children}</h4>;
+const H = ({ children }: { children: React.ReactNode }) => <h4 className="text-xs font-semibold text-ink-3">{children}</h4>; // sentence case (DESIGN.md)
 const Dot = ({ c }: { c: string }) => <i aria-hidden className="mr-1.5 inline-block size-2 rounded-[2px]" style={{ background: c }} />;
 
 /** The scope at a glance: tickets per stage, per person (stacked by stage), and per risk reason. A bar opens its tickets. */

@@ -43,6 +43,7 @@ class StoredMessage(BaseModel):
     handled_at: datetime | None = None
     snoozed_until: datetime | None = None  # hidden from pending until then
     pinned: bool = False  # sticks to the top of the pending list
+    priority: bool = False  # from a "Luôn ưu tiên" sender: sorts first among pending tags
     links: list[LinkSpan] = []  # Telegram formatting entities (UTF-16 offsets)
     sender_username: str | None = None  # live reads only (never stored): Q&A matches it against the question's @tags
 
@@ -52,6 +53,13 @@ class GroupInfo(BaseModel):
     title: str
     kind: ChatKind
     migrated: bool = False
+
+
+class Member(BaseModel):
+    """A group member the reply box can tag (@ popup): by @username, or by name when there is none."""
+    user_id: str
+    name: str
+    username: str | None = None
 
 
 class SentMessage(BaseModel):
@@ -77,6 +85,7 @@ class MessageDTO(BaseModel):
     handled_at: datetime | None = None
     snoozed_until: datetime | None = None
     pinned: bool = False
+    priority: bool = False  # sender is in "Luôn ưu tiên" (Cài đặt › Telegram): shows first, overdue sooner
     links: list[LinkSpan] = []
     kept: bool = False  # live pages: a tag/reply we store (handled in the tag lists; Cả nhóm hides it)
     sender_username: str | None = None  # live reads (Q&A): "answered by the one tagged"
@@ -94,6 +103,7 @@ class ChatDTO(BaseModel):
     generation: int = 0
     initial_history_limit: int = 50
     pending_count: int = 0  # tags not handled yet
+    oldest_pending: datetime | None = None  # the longest-waiting of them (the sidebar shows its age)
 
 
 class ChatsResponse(BaseModel):
@@ -143,6 +153,7 @@ class ReplyRequest(BaseModel):
     text: str
     retry_unknown: bool = False
     quote: bool = True  # False: a new message in the group (and topic) of reply_to, not a reply to it
+    qa: bool = False  # a "#QA…" line under the text when it tags someone (@username): Q&A follows it
 
     @field_validator("text")
     @classmethod
@@ -218,15 +229,43 @@ class PendingItem(BaseModel):
     message: MessageDTO
 
 
+class WeekNumbers(BaseModel):
+    received: int  # tags (and replies to you) that came in
+    handled: int  # of those, handled by you (replied or marked done), rule auto-handles excluded
+    replied: int
+    marked: int  # Xong / Xong không reaction / Xong cả nhóm, without a reply
+    auto: int  # cleared by a "Luôn bỏ qua" rule
+    median_min: float | None  # minutes from the tag to handled
+    p90_min: float | None
+
+
+class SlowGroup(BaseModel):
+    chat_id: str
+    title: str
+    handled: int
+    median_min: float
+
+
+class WeekStats(BaseModel):
+    """"Tuần của tôi": the last 7 days (`cur`), the 7 before (`prev`), this week's slowest groups."""
+
+    cur: WeekNumbers
+    prev: WeekNumbers
+    slow: list[SlowGroup]
+
+
+RuleKind = Literal["keyword", "sender", "priority"]  # priority: a sender whose tags sort first (nothing is cleared)
+
+
 class RuleDTO(BaseModel):
     id: int
-    kind: Literal["keyword", "sender"]
-    value: str  # keyword: lowercase text; sender: the sender's id
-    label: str  # sender: the sender's name
+    kind: RuleKind
+    value: str  # keyword: lowercase text; sender / priority: the sender's id
+    label: str  # sender / priority: the sender's name
 
 
 class RuleRequest(BaseModel):
-    kind: Literal["keyword", "sender"]
+    kind: RuleKind
     value: str = Field(min_length=1, max_length=200, pattern=r"\S")  # never blank: "" matches every tag
     label: str = Field(default="", max_length=200)
 
@@ -592,6 +631,13 @@ class QaItem(BaseModel):
     chat_title: str
     question: MessageDTO
     answers: list[MessageDTO]  # the reply chain under the question (and messages naming its code), oldest first
+    done: bool = False  # you marked it Xong: no nudge, not waiting (removed threads are not listed at all)
+
+
+class QaMarkRequest(BaseModel):
+    chat_id: str
+    code: str = Field(pattern=r"^#QA\d+$")
+    state: Literal["done", "deleted"] | None  # None: back to normal
 
 
 class QaPostRequest(BaseModel):
@@ -599,6 +645,13 @@ class QaPostRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)  # room for the code line under Telegram's 4096
     reply_to: str | None = None  # None: a new question (gets a code line); else a reply in its thread, as typed
     start: bool = False  # with reply_to: answer someone's question with Q&A (code line; their message leads the thread)
+
+    @field_validator("text")
+    @classmethod
+    def _utf16_len(cls, v: str) -> str:
+        if utf16_len(v) > 4000:  # Telegram counts UTF-16 units: emoji take two
+            raise ValueError("text must be at most 4000 UTF-16 code units")
+        return v
 
 
 class QaSummaryRequest(BaseModel):
@@ -647,6 +700,7 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         handled_at=m.handled_at,
         snoozed_until=m.snoozed_until,
         pinned=m.pinned,
+        priority=m.priority,
         links=m.links,
         sender_username=m.sender_username,
     )

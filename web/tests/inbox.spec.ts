@@ -229,10 +229,12 @@ test("an AI draft fills the reply box and is never sent on its own", async ({ pa
   await open(page);
   const calls = (await ctl("/state")).send_calls;
   await row(page, 112).locator("p").first().click();
+  const aiPane = page.getByRole("group", { name: "Khung" }).getByText("Trợ lý AI"); // narrow reply (split view): AI is a pane
+  if (await aiPane.isVisible()) await aiPane.click();
   const ask = page.getByRole("button", { name: "Tóm tắt & gợi ý" });
   await ask.click();
   await expect(reply(page)).toHaveValue("Bản nháp AI: cảm ơn mọi người!");
-  await expect(ask).toBeEnabled(); // the AI run has settled
+  await expect(reply(page)).toBeVisible(); // the run settled with one draft: the reply shows it (narrow: its pane comes back)
   await expect(page.getByRole("button", { name: "Gửi", exact: true })).toBeEnabled(); // waiting for the user
   expect((await ctl("/state")).send_calls).toBe(calls);
 });

@@ -461,6 +461,15 @@ def test_qa_threads_and_post(settings):
         assert items[1]["chat_title"] == "Orders" and items[1]["answers"][0]["kept"]
         assert len(c.get("/api/qa", params={"chat_id": A, "days": 10}).json()) == 3
 
+        # Xong / removed: stored per group, read back on every list; null undoes.
+        mark = lambda code, state: c.put("/api/qa/mark", json={"chat_id": A, "code": code, "state": state})  # noqa: E731
+        assert mark("#QA11", "done").status_code == 204 and mark("#QA22", "deleted").status_code == 204
+        assert [(i["code"], i["done"]) for i in c.get("/api/qa", params={"chat_id": A}).json()] == [("#QA11", True)]
+        assert mark("#QA11", None).status_code == 204 and mark("#QA22", None).status_code == 204
+        assert [i["done"] for i in c.get("/api/qa", params={"chat_id": A}).json()] == [False, False]
+        assert mark("QA1", "done").status_code == 422 and mark("#QA1", "x").status_code == 422
+        assert c.put("/api/qa/mark", json={"chat_id": "-999", "code": "#QA1", "state": "done"}).status_code == 404
+
         r = c.post("/api/qa", json={"chat_id": A, "text": " @minh_be có ai biết? "})
         assert r.status_code == 201 and r.json()["code"].startswith("#QA")
         sent = fake.send_calls[-1]

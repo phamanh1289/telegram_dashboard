@@ -11,13 +11,14 @@ import { EventItem, groupEvents, OpenAttached, type TaskEvent, type TaskLog, Too
 import { SEND_ERRORS } from "@/components/composer";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorText, type Message, type Outbox, type Task } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
-import { ALL, copyText, sessionId, sessionMatches, toast, useNow, useTaskList } from "@/lib/inbox";
+import { ALL, copyText, openReply, sessionId, sessionMatches, toast, useNow, useTaskList } from "@/lib/inbox";
 import { ago, timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -34,7 +35,7 @@ function asMessage(t: Task): Message {
   return {
     chat_id: t.chat_id!, message_id: t.message_id!, sender_id: null, sender_name: t.sender_name ?? null, text: t.message_text ?? "", date: t.created_at,
     edit_date: null, reply_to_id: null, topic_id: null, outgoing: false, media_kind: null, deleted: false,
-    handled: t.handled ?? false, handled_by: "", pinned: false, links: [], kept: true,
+    handled: t.handled ?? false, handled_by: "", pinned: false, priority: false, links: [], kept: true,
   };
 }
 
@@ -123,17 +124,27 @@ function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
 }
 
 /** One card in the session list: status, what it is about, group and age. */
-function TaskRow({ t, now, active, mixed, onSelect }: { t: Task; now: number; active: boolean; mixed: boolean; onSelect: () => void }) {
+function TaskRow({ t, now, active, mixed, picked, onSelect }: {
+  t: Task; now: number; active: boolean; mixed: boolean; picked?: boolean; onSelect: () => void; // picked set = picking mode (bulk delete)
+}) {
   const s = statusOf(t);
+  const picking = picked !== undefined;
   return (
     <li>
-      <button type="button" aria-current={active || undefined} onClick={onSelect}
+      <button type="button" aria-current={(!picking && active) || undefined} aria-pressed={picking ? picked : undefined} onClick={onSelect}
         className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1 rounded-lg px-2.5 py-2 text-left transition-[background-color,box-shadow] duration-(--dur-micro)",
-          active ? "bg-hl-wash shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-hl)_35%,transparent)]" : "hover:bg-paper-2")}>
-        <span className="relative row-span-2 mt-0.5 grid size-4 place-items-center">
-          {s === "running" && <span className="absolute inset-0 animate-ping rounded-full bg-hl/30" aria-hidden />}
-          <StatusIcon s={s} className="size-4" /><span className="sr-only">{STATUS_LABEL[s]}</span>
-        </span>
+          (picking ? picked : active) ? "bg-hl-wash shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-hl)_35%,transparent)]" : "hover:bg-paper-2")}>
+        {picking ? (
+          <span aria-hidden className={cn("row-span-2 mt-0.5 grid size-4 place-items-center rounded-sm border transition-[background-color,border-color] duration-(--dur-micro)",
+            picked ? "border-board bg-board text-board-type" : "border-rule-2 bg-cotton")}>
+            {picked && <Check className="size-3.5" />}
+          </span>
+        ) : (
+          <span className="relative row-span-2 mt-0.5 grid size-4 place-items-center">
+            {s === "running" && <span className="absolute inset-0 animate-ping rounded-full bg-hl/30" aria-hidden />}
+            <StatusIcon s={s} className="size-4" /><span className="sr-only">{STATUS_LABEL[s]}</span>
+          </span>
+        )}
         <span className={cn("line-clamp-2 text-[0.8125rem] font-medium leading-snug", t.handled ? "text-ink-3" : "text-ink")}>{t.title || t.message_text || t.prompt}</span>
         <span className="flex min-w-0 flex-wrap gap-x-2.5 text-xs text-ink-3">
           <span className="shrink-0 font-mono tabular-nums">{sessionId(t)}</span>
@@ -195,6 +206,7 @@ function PostAsk({ text }: { text: string }) {
       request_id: rid.data!, chat_id: at.chatId, reply_to_message_id: at.messageId, text,
       retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
       quote: false, // a new message in the tag's group / topic, not a reply
+      qa: true, // tags someone: a #QA line, so the Q&A tab follows the answer
     } }),
     onSuccess: (r) => {
       qc.setQueryData(key, r);
@@ -208,7 +220,7 @@ function PostAsk({ text }: { text: string }) {
   const sent = status === "sent";
   const busy = send.isPending || status === "pending" || status === "sending";
   const hint = sent ? "Đã gửi vào nhóm" : busy ? "Đang gửi…" : status === "unknown" ? "Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại"
-    : "Gửi ngay ý này thành tin mới trong nhóm";
+    : "Gửi ngay ý này thành tin mới trong nhóm (có @tên: thêm mã #QA để Q&A theo dõi trả lời)";
   return (
     <Hint text={hint}>
       <button type="button" aria-label={sent ? "Đã gửi vào nhóm" : "Gửi ý này vào nhóm"} aria-busy={busy} disabled={sent || busy || !rid.data}
@@ -222,13 +234,14 @@ function PostAsk({ text }: { text: string }) {
 const postAsk = (text: string) => <PostAsk text={text} />;
 
 /** The selected session: a slim title bar with one action menu, the scrolling conversation, the composer pinned at the bottom. */
-function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
-  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string, view?: View) => void; onUseText: (m: Message, text: string) => void;
+function TaskDetail({ t, now, onBack, onOpenGroup }: {
+  t: Task; now: number; onBack: () => void; onOpenGroup: (chatId: string, messageId?: string, view?: View) => void;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ["tasks"] });
-  const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: refresh });
+  const [asking, setAsking] = useState(false); // "Xóa phiên" confirm
+  const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: () => { setAsking(false); return refresh(); } });
   // Done: on the tagged message, or on the session itself when its message is not a kept tag (Đối chiếu BE on any
   // reply); the session moves to the Done tab.
   const tag = t.chat_id && t.message_id ? asMessage(t) : null;
@@ -310,15 +323,19 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
                     onClick={() => mark.mutate({ handled: true, react: false })} />
                 </>)}
                 {tag && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
-                {t.result && tag && <MenuRow icon={MessageSquare} label="Dùng làm nháp trả lời" hint="Kết quả thành nháp trả lời tin tag" onClick={() => onUseText(tag, t.result!)} />}
+                {t.result && tag && <MenuRow icon={MessageSquare} label="Dùng làm nháp trả lời" hint="Kết quả thành nháp trả lời tin tag" onClick={() => openReply(tag, t.result!)} />}
                 {t.chat_id && <MenuRow icon={Users} label="Mở nhóm" hint={tagView === "live" ? "Cả nhóm, cuộn tới tin đã giao AI Agent" : "Chưa xử lý, cuộn tới tin đã giao AI Agent"} onClick={openTag} />}
                 {(t.chat_id || (t.result && tag)) && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 <MenuRow icon={Trash2} tone="error" label="Xóa phiên" hint="Hỏi xác nhận trước khi xóa" disabled={remove.isPending}
-                  onClick={() => confirm("Xóa phiên này khỏi danh sách?") && remove.mutate()} />
+                  onClick={() => setAsking(true)} />
               </Menu.Popup>
             </Menu.Positioner>
           </Menu.Portal>
         </Menu.Root>
+        <ConfirmDialog open={asking} onOpenChange={setAsking} busy={remove.isPending} onConfirm={() => remove.mutate()}
+          title="Xóa phiên này?" confirmLabel="Xóa phiên"
+          description={t.running ? "Phiên đang chạy sẽ bị dừng rồi xóa. Không hoàn tác được." : "Phiên biến khỏi danh sách AI Agent. Không hoàn tác được."}
+          items={[{ id: t.id, tag: sessionId(t), label: t.title || t.message_text || t.prompt }]} />
       </div>
       {remove.isError && <p role="alert" className="border-b px-4 py-1.5 text-xs text-error">Xóa thất bại, thử lại.</p>}
 
@@ -345,10 +362,10 @@ function TaskDetail({ t, now, onBack, onOpenGroup, onUseText }: {
 }
 
 /** Every task handed to the AI: session tabs up in the page header, the list on the left, the selected session on the right. */
-export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
+export function TasksPage({ focus, headSlot, onOpenGroup }: {
   focus?: string | null; // task to select on open ("Mở phiên" from a tagged message)
   headSlot: HTMLElement | null; // the page header, where the session tabs go
-  onOpenGroup: (chatId: string, messageId?: string, view?: View) => void; onUseText: (m: Message, text: string) => void;
+  onOpenGroup: (chatId: string, messageId?: string, view?: View) => void;
 }) {
   const q = useTaskList();
   const now = useNow();
@@ -370,6 +387,22 @@ export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
   // "Mở phiên" on a session that is gone: say so rather than open another one.
   const gone = !!focus && sel === focus && q.isSuccess && !every.some((t) => t.id === focus);
   const cur = gone ? undefined : (rows.find((t) => t.id === sel) ?? rows[0]);
+  // Done tab: pick several finished sessions and delete them at once (one DELETE per session, as the menu does).
+  const qc = useQueryClient();
+  const [pick, setPick] = useState<Set<string> | null>(null);
+  const picking = !!pick && filter === "done" && !searching;
+  const chosen = picking ? rows.filter((t) => pick.has(t.id)) : [];
+  const toggle = (id: string) => setPick((p) => { const n = new Set(p); if (!n.delete(id)) n.add(id); return n; });
+  const [askMany, setAskMany] = useState(false); // the "Xóa N phiên" confirm
+  const removeMany = useMutation({
+    mutationFn: (ids: string[]) => Promise.allSettled(ids.map((id) => api<void>(`/tasks/${id}`, { method: "DELETE" }))),
+    onSuccess: (res) => {
+      const failed = res.filter((r) => r.status === "rejected").length;
+      toast({ text: failed ? `Xóa lỗi ${failed}/${res.length} phiên, thử lại.` : `Đã xóa ${res.length} phiên` });
+      if (!failed) setPick(null);
+    },
+    onSettled: () => { setAskMany(false); return qc.invalidateQueries({ queryKey: ["tasks"] }); },
+  });
 
   return (
     <section aria-label="AI Agent" className="flex min-h-0 flex-col">
@@ -424,14 +457,37 @@ export function TasksPage({ focus, headSlot, onOpenGroup, onUseText }: {
               </span>
               {!searching && <Segmented id="agent-filter" label="Lọc phiên" value={filter} onChange={setFilter} className="w-full [&>button]:flex-1"
                 items={FILTERS.map(([id, label]) => ({ value: id, label: <>{label} <span className="font-mono tabular-nums opacity-70">{count[id]}</span></> }))} />}
+              {!searching && filter === "done" && rows.length > 0 && (picking ? (
+                <div className="flex items-center gap-1.5">
+                  <Button size="xs" variant="ghost" onClick={() => setPick(chosen.length === rows.length ? new Set() : new Set(rows.map((t) => t.id)))}>
+                    <CheckCheck /> {chosen.length === rows.length ? "Bỏ chọn" : "Chọn tất cả"}
+                  </Button>
+                  <span className="flex-1" />
+                  <Button size="xs" variant="ghost" disabled={removeMany.isPending} onClick={() => setPick(null)}>Hủy</Button>
+                  <Button size="xs" variant="destructive" disabled={!chosen.length || removeMany.isPending} aria-busy={removeMany.isPending}
+                    onClick={() => setAskMany(true)}>
+                    {removeMany.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />} Xóa <span className="font-mono tabular-nums">{chosen.length}</span>
+                  </Button>
+                </div>
+              ) : (
+                <Hint text="Chọn nhiều phiên đã xong để xóa một lần">
+                  <Button size="xs" variant="ghost" className="justify-self-end text-ink-3" onClick={() => setPick(new Set())}><Trash2 /> Xóa nhiều phiên</Button>
+                </Hint>
+              ))}
             </div>
+            <ConfirmDialog open={askMany} onOpenChange={setAskMany} busy={removeMany.isPending} onConfirm={() => removeMany.mutate(chosen.map((t) => t.id))}
+              title={<>Xóa <span className="font-mono tabular-nums">{chosen.length}</span> phiên đã xong?</>}
+              description="Các phiên này biến khỏi danh sách AI Agent. Không hoàn tác được." unit="phiên"
+              confirmLabel={<>Xóa <span className="font-mono tabular-nums">{chosen.length}</span> phiên</>}
+              items={chosen.map((t) => ({ id: t.id, tag: sessionId(t), label: t.title || t.message_text || t.prompt }))} />
             <ul aria-label="Danh sách phiên" className="grid min-h-0 flex-1 content-start gap-0.5 overflow-y-auto px-2 pb-2">
-              {rows.map((t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur?.id} mixed={searching} onSelect={() => setSel(t.id)} />)}
+              {rows.map((t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur?.id} mixed={searching}
+                picked={picking ? pick.has(t.id) : undefined} onSelect={() => (picking ? toggle(t.id) : setSel(t.id))} />)}
               {rows.length === 0 && <li className="px-2 py-6 text-center text-xs text-ink-3">{searching ? "Không có phiên nào khớp." : "Không có phiên nào khớp bộ lọc."}</li>}
             </ul>
           </aside>
           <div className={cn("min-h-0 min-w-0 flex-1 flex-col", sel ? "flex" : "hidden md:flex")}>
-            {cur ? <TaskDetail key={cur.id} t={cur} now={now} onBack={() => setSel(null)} onOpenGroup={onOpenGroup} onUseText={onUseText} />
+            {cur ? <TaskDetail key={cur.id} t={cur} now={now} onBack={() => setSel(null)} onOpenGroup={onOpenGroup} />
               : gone ? (
                 <div role="status" className="grid justify-items-start gap-2 p-5 text-sm text-ink-2">
                   <p>Phiên này không còn (có thể đã bị xóa).</p>

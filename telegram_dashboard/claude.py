@@ -7,9 +7,11 @@ show the account's profile and quota; it never refreshes, stores or sends it to 
 import asyncio
 import contextlib
 import json
+import logging
 import os
 import re
 import shlex
+import shutil
 import sys
 import time
 from datetime import UTC, datetime, timedelta
@@ -19,6 +21,8 @@ import httpx
 
 from .config import _read_json, child_env, run_cli, write_private_json
 from .errors import ApiError
+
+log = logging.getLogger("telegram_dashboard.claude")
 
 _login: dict = {"proc": None, "url": None}
 _login_lock = asyncio.Lock()  # two clicks must not start two `claude auth login`
@@ -192,7 +196,10 @@ def _account_changed() -> None:
 
 async def claude_account(settings) -> dict:
     """`claude auth status --json` plus whether a dashboard-started login is still waiting."""
-    got = await run_cli([_claude_exe(settings), "auth", "status", "--json"], timeout=15)
+    exe = _claude_exe(settings)
+    got = await run_cli([exe, "auth", "status", "--json"], timeout=15)
+    if got is None and shutil.which(exe):  # installed but silent: e.g. a Keychain prompt waiting
+        raise ApiError(504, "claude_cli_timeout")
     try:
         data = json.loads(got[1]) if got else None
     except ValueError:
@@ -200,7 +207,11 @@ async def claude_account(settings) -> dict:
     if not isinstance(data, dict):
         raise ApiError(502, "claude_cli_unavailable")
     if data.get("loggedIn") and data.get("authMethod") == "claude.ai":
-        data |= await _claude_details(settings)
+        try:
+            data |= await _claude_details(settings)
+        except Exception:  # plan / usage are extras: the account itself is still known
+            log.warning("claude account details failed", exc_info=True)
+            data["usage_error"] = "fetch_failed"
     pending = _login_pending()
     return {**data, "login_pending": pending, "login_url": _login["url"] if pending else None}
 
@@ -223,18 +234,29 @@ async def claude_login(settings) -> str | None:
         except OSError:
             raise ApiError(502, "claude_cli_unavailable") from None
         _login.update(proc=proc, url=None)
+        last = [""]
 
         async def read_url() -> None:
             async for line in proc.stdout:
-                if m := _LOGIN_URL.search(line.decode(errors="replace")):
+                last[0] = line.decode(errors="replace").strip() or last[0]
+                if m := _LOGIN_URL.search(last[0]):
                     _login["url"] = m.group(0)
                     return
 
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(read_url(), 10)
+        if not _login["url"]:
+            await login_failed(proc, last[0], "claude_login_failed")
         # ponytail: an abandoned login keeps the CLI waiting until the next login/logout kills it.
         spawn(proc.wait())  # reap it when it finishes
         return _login["url"]
+
+
+async def login_failed(proc, last: str, code: str) -> None:
+    """A login CLI that quit with an error before giving a URL: say why, instead of the click doing nothing."""
+    with contextlib.suppress(TimeoutError):
+        if await asyncio.wait_for(proc.wait(), 0.5):
+            raise ApiError(502, code, detail=last[-300:] or None)
 
 
 async def claude_login_code(code: str) -> None:
@@ -311,8 +333,8 @@ async def _note_run(settings, feature, choice, final, seconds, error) -> None:
         fd = os.open(_runs_path(settings), os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
         with os.fdopen(fd, "a") as fh:
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-    except OSError:
-        pass
+    except OSError as e:  # the run itself is fine; only Settings › AI's history misses it
+        log.warning("run log not written: %s", type(e).__name__)
 
 
 def claude_runs(settings, days: int) -> list[dict]:

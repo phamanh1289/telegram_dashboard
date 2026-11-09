@@ -1,19 +1,21 @@
 "use client";
 
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Trash2 } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Trash2, UserCheck } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { copyText, useNow } from "@/lib/inbox";
+import { copyText, toast, Told, useNow } from "@/lib/inbox";
 import { ymd } from "@/lib/time";
 import { getPref, put, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, tagsOf, type Ticket, titleOf, todayList, UNASSIGNED, when, yt } from "@/lib/yt";
+import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, shortName, tagsOf, type Ticket, titleOf, todayList, UNASSIGNED, when, yt } from "@/lib/yt";
 import { Card, Label, Markdown, Prio, StatePill, Tag } from "./bits";
 import { Segmented } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
 import { Aging, Attention, Kpis, Progress, useQc, useStats, Wip } from "./dashboard";
 import { ReportCard } from "./report";
+import { setPerson } from "./sheet";
 import { useYt } from "./state";
 
 // Each mode's home: Dev "Hôm nay" (my tickets in the order to do them), QA "Kiểm thử" (what to test / triage first),
@@ -95,7 +97,7 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
   );
 }
 
-type Lens = "all" | "doing" | "qc" | "block" | "test";
+type Lens = "all" | "risk" | "doing" | "qc" | "block" | "test";
 
 export function DevHome() {
   const y = useYt();
@@ -110,11 +112,15 @@ export function DevHome() {
   useEffect(() => { const doing = mine.filter((i) => bucket(i) === 1); if (doing.length) loadSince(doing); }, [mine, loadSince]);
   const [lens, setLens] = useState<Lens>("all");
   const LENS: Record<Lens, [string, (i: Ticket) => boolean]> = {
-    all: ["Đang mở", ours], doing: ["Đang làm", (i) => ours(i) && bucket(i) === 1],
+    all: ["Đang mở", ours], risk: ["Cần xử lý ngay", (i) => ours(i) && !!riskOf(i, now)],
+    doing: ["Đang làm", (i) => ours(i) && bucket(i) === 1],
     qc: ["Chờ QC", (i) => ours(i) && bucket(i) === 2], block: ["Blocked", (i) => ours(i) && isBlocked(i)],
     test: ["Chờ bạn test", (i) => i.qc === y.me && i.assignee !== y.me && bucket(i) === 2],
   };
-  const shown = lens === "all" ? list : list.filter((x) => LENS[lens][1](x.i));
+  // the risk lens leads each row with why it is urgent (riskOf), the rest keep their ranking reasons
+  const shown = lens === "all" ? list : lens === "risk"
+    ? list.filter((x) => LENS.risk[1](x.i)).map((x) => { const r = riskOf(x.i, now)!; return { ...x, why: [r, ...x.why.filter((w) => w !== r)] }; })
+    : list.filter((x) => LENS[lens][1](x.i));
   // Standup: what changed since the last working day (Friday on Mondays) plus today's top picks.
   const standup = useMemo(() => {
     const d = new Date(now);
@@ -124,8 +130,11 @@ export function DevHome() {
     const done = y.rows.filter((i) => i.assignee === y.me && i.updated >= since).sort((a, b) => b.updated - a.updated);
     return { since, ids: [...new Set([...done, ...list.map((x) => x.i).filter((i) => i.assignee === y.me || i.qc === y.me)].map((i) => i.id))].slice(0, AI_MAX) }; // standup stays mine
   }, [y.rows, y.me, list, now]);
-  const risky = mine.map((i) => [i, riskOf(i, now)] as const).filter((x): x is readonly [Ticket, string] => !!x[1]);
-  if (!y.me) return <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong Cài đặt › YouTrack, hoặc đổi vai trò trong Cài đặt › Chung.</p>;
+  if (!y.me) return (
+    <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">
+      Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong <Link href="/settings/#youtrack" className="text-hl-2 underline underline-offset-2">Cài đặt › YouTrack</Link>, hoặc đổi vai trò trong <Link href="/settings/#general" className="text-hl-2 underline underline-offset-2">Cài đặt › Chung</Link>.
+    </p>
+  );
   const recent = [...mine].sort((a, b) => b.updated - a.updated).slice(0, 5);
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
@@ -133,18 +142,7 @@ export function DevHome() {
         {/* the figures are the list's lens: one card, a click narrows "Hôm nay làm gì" below */}
         <LensBar label="Lọc danh sách hôm nay" value={lens} onChange={setLens} lenses={(Object.keys(LENS) as Lens[]).map((l) => [l, LENS[l][0],
           l === "all" ? mine.length : l === "test" ? y.rows.filter((i) => !i.resolved && LENS.test[1](i)).length : mine.filter(LENS[l][1]).length,
-          l === "block" ? "text-error" : l === "test" ? "text-signal-2" : ""])} />
-        {risky.length > 0 && (
-          <div role="alert" className="flex flex-wrap items-center gap-1.5 rounded-lg border border-error/25 bg-error-wash/40 px-3 py-2">
-            <span className="mr-1 inline-flex items-center gap-1.5 text-sm font-semibold text-error"><AlertTriangle className="size-4" />{risky.length} cần xử lý ngay</span>
-            {risky.map(([i, why]) => (
-              <Hint key={i.id} side="bottom" text={i.summary ?? i.id}><button type="button" onClick={() => y.openTicket(i.id, risky.map(([t]) => t))}
-                className="inline-flex items-center gap-1.5 rounded-full bg-cotton px-2.5 py-0.5 text-xs shadow-edge hover:bg-paper-2">
-                <b className="font-mono">{i.id}</b><span className="text-error">{why}</span>
-              </button></Hint>
-            ))}
-          </div>
-        )}
+          l === "block" ? "text-error" : l === "test" || l === "risk" ? "text-signal-2" : ""])} />
         <Card title="Hôm nay làm gì" meta={lens === "all" ? `${list.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
           <FocusList key={lens} list={shown} top={lens === "all" ? "Làm ngay" : ""} empty={lens === "all" ? `Không có ticket nào đang mở ${whose}.` : "Không có ticket nào ở mục này."} />
         </Card>
@@ -302,9 +300,9 @@ export function QaHome() {
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
       <div className="grid content-start gap-4">
         {(spike.spike || spike.mods.length > 0) && (
-          <button type="button" role="alert" onClick={() => y.setSheet({ kind: "list", title: "Bug mới 7 ngày", rows: spike.rows })}
-            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-error/25 bg-error-wash/40 px-3 py-2 text-left text-sm hover:bg-error-wash/60">
-            <AlertTriangle className="size-4 text-error" aria-hidden />
+          <button type="button" onClick={() => y.setSheet({ kind: "list", title: "Bug mới 7 ngày", rows: spike.rows })}
+            className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-signal-wash px-3 py-2 text-left text-sm text-signal-ink shadow-edge hover:bg-signal-wash/70">
+            <AlertTriangle className="size-4 text-signal-2" aria-hidden />
             <b>Bug tăng đột biến:</b>
             <span>{spike.n} bug mới 7 ngày (trung bình {spike.avg}/tuần)</span>
             {spike.mods.slice(0, 4).map(([m, n]) => <span key={m} className="rounded-full bg-paper-3 px-2 text-xs leading-5 font-medium">{m}: {n}</span>)}
@@ -492,19 +490,41 @@ function QcSplit({ open }: { open: Ticket[] }) {
       return { i, who, n };
     });
   }, [y.rows, open]);
+  const [busy, setBusy] = useState(false);
   if (!plan.length) return null;
   const text = ["Đề xuất chia QC:", ...plan.map((x) => `- ${x.i.id} ${titleOf(x.i).slice(0, 60)} → ${x.who}`)].join("\n");
+  const write = !y.config?.mock;
+  const login = (who: string) => y.loginOf.get(who);
+  /** Every suggestion at once (5 calls at a time); one toast puts them all back. */
+  async function all() {
+    setBusy(true);
+    const done: string[] = [], fail: string[] = [], todo = plan.filter((x) => login(x.who));
+    for (let k = 0; k < todo.length; k += 5) await Promise.all(todo.slice(k, k + 5).map((x) =>
+      yt.setAssignee(x.i.id, login(x.who)!, "QC").then((t) => { void y.patchTicket(t); done.push(x.i.id); }, (e: Error) => { fail.push(`${x.i.id}: ${e.message}`); })));
+    setBusy(false);
+    const noLogin = plan.length - todo.length; // the suggested person is not in the project's team list
+    const why = [noLogin ? `${noLogin} chưa có login YouTrack của người được gợi ý` : "", fail.length ? `lỗi ${fail.length} — ${fail[0]}` : ""].filter(Boolean).join("; ");
+    toast({ text: `Đã gán QC ${done.length}/${plan.length} ticket${why ? ` (${why})` : ""}`, undo: done.length ? async () => {
+      const bad: string[] = [];
+      for (const id of done) await yt.setAssignee(id, null, "QC").then(y.patchTicket, (e: Error) => { bad.push(`${id}: ${e.message}`); });
+      if (bad.length) throw new Told(`${bad.length < done.length ? `Chỉ hoàn tác được ${done.length - bad.length}/${done.length} ticket` : "Không hoàn tác được"} — ${bad[0]}`);
+    } : undefined });
+  }
   return (
-    <Card title="Gợi ý chia QC" meta={<Button size="xs" variant="ghost" onClick={() => void copyText(text, "Đã chép phân công")}><Copy /> Copy</Button>}>
-      <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm để mở ticket và gán.</p>
+    <Card title="Gợi ý chia QC" meta={<span className="flex items-center gap-1">
+      {write && <Hint side="bottom" text="Gán QC cho mọi ticket theo gợi ý dưới đây"><Button size="xs" variant="ghost" disabled={busy} aria-busy={busy} onClick={() => void all()}><UserCheck /> Gán hết</Button></Hint>}
+      <Button size="xs" variant="ghost" onClick={() => void copyText(text, "Đã chép phân công")}><Copy /> Copy</Button>
+    </span>}>
+      <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm “Gán” để đặt QC trên YouTrack.</p>
       <ol className="grid grid-cols-1 divide-y divide-rule/60">
-        {plan.slice(0, 12).map(({ i, who, n }) => (
-          <li key={i.id}>
-            <button type="button" onClick={() => y.openTicket(i.id, plan.map((x) => x.i))} className="flex w-full items-baseline gap-2 py-1.5 text-left text-sm hover:bg-paper-2">
-              <span className="shrink-0 font-mono text-xs text-ink-3">{i.id}</span>
-              <span className="min-w-0 flex-1 truncate">{titleOf(i)}</span>
-              <span className="shrink-0 text-xs"><b className="font-medium">{who}</b> <span className="text-ink-3">đang giữ {n}</span></span>
+        {plan.slice(0, 12).map((x) => (
+          <li key={x.i.id} className="flex items-center gap-2">
+            <button type="button" onClick={() => y.openTicket(x.i.id, plan.map((p) => p.i))} className="flex min-w-0 flex-1 items-baseline gap-2 py-1.5 text-left text-sm hover:text-hl-2">
+              <span className="shrink-0 font-mono text-xs text-ink-3">{x.i.id}</span>
+              <span className="min-w-0 flex-1 truncate">{titleOf(x.i)}</span>
+              <span className="shrink-0 text-xs"><b className="font-medium">{shortName(x.who)}</b> <span className="text-ink-3">đang giữ {x.n}</span></span>
             </button>
+            {write && login(x.who) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void setPerson(y, x.i, "QC", login(x.who)!)} aria-label={`Gán QC ${x.i.id} cho ${x.who}`}>Gán</Button>}
           </li>
         ))}
       </ol>

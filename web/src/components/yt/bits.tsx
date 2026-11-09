@@ -5,6 +5,7 @@ import { Check, ChevronDown, Copy, MessageSquareText, Sparkles, X } from "lucide
 import { AnimatePresence, motion } from "motion/react";
 import { createContext, Fragment, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { AiBot, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble } from "@/components/ai/chat";
+import { AiFetching } from "@/components/ai/fetching";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
@@ -398,37 +399,7 @@ export function Menu({ label, items, align = "left", title, className }: {
   );
 }
 
-const FETCH_LINES = ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"];
-
-/** First load: the robot pulls tickets off the YouTrack stack, centered on the page. */
-export function YtFetching() {
-  const card = "h-6 w-11 rounded-md border border-rule bg-cotton shadow-stock";
-  return (
-    <div className="grid min-h-[60vh] place-items-center">
-      <div className="grid justify-items-center gap-6 animate-in fade-in-0 zoom-in-95 duration-(--dur-long)">
-        <div aria-hidden className="relative h-28 w-72">
-          <div className="absolute top-1/2 left-0 -translate-y-1/2">
-            {[2, 1, 0].map((k) => (
-              <span key={k} className={cn(card, "absolute block")} style={{ translate: `${k * 3}px ${-k * 4}px`, rotate: `${-6 + k * 4}deg` }}>
-                <span className="absolute inset-y-1 left-1 w-0.5 rounded-full bg-hl" />
-                <span className="absolute top-1.5 left-2.5 h-1 w-6 rounded-full bg-paper-3" /><span className="absolute top-3 left-2.5 h-1 w-4 rounded-full bg-paper-3" />
-              </span>
-            ))}
-            <span className="absolute top-8 left-0 font-mono text-[10px] font-semibold tracking-wide text-ink-3">YouTrack</span>
-          </div>
-          {[0, 1, 2, 3].map((k) => (
-            <span key={k} className={cn(card, "yt-fly absolute top-1/2 left-0 -mt-3")} style={{ animationDelay: `${k * 0.45}s`, background: k % 2 ? undefined : "var(--color-hl-wash)" }}>
-              <span className="absolute top-1.5 left-1.5 h-1 w-6 rounded-full bg-hl/50" /><span className="absolute top-3 left-1.5 h-1 w-4 rounded-full bg-paper-3" />
-            </span>
-          ))}
-          <div className="absolute top-1/2 right-0 grid size-24 -translate-y-1/2 place-items-center">
-            <span className="absolute inset-3 animate-ping rounded-full bg-hl/15 [animation-duration:1.8s]" />
-            <span className="absolute inset-1 rounded-full bg-hl-wash" />
-            <AiBot className="ai-hop relative size-16 drop-shadow-md [animation-duration:1.6s]" />
-          </div>
-        </div>
-        <AiThinking lines={FETCH_LINES} className="w-72 justify-center [&>svg]:hidden" />
-      </div>
-    </div>
-  );
+/** Waiting on YouTrack: the feature's AI scene (tickets: first load / a scope not warmed yet, release, people), with this project's ticket IDs. */
+export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people"; className?: string }) {
+  return <AiFetching kind={kind} project={useYt().project} className={className} />;
 }

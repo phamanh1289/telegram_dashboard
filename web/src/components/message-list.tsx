@@ -5,16 +5,10 @@ import { Menu } from "@base-ui/react/menu";
 import { ArrowDown, ArrowLeft, CheckCheck, Ellipsis, RotateCw, Sparkles, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { MessageItem, revealMessage } from "@/components/message-item";
-import { RowsSkeleton } from "@/components/pending-inbox";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dropdown } from "@/components/ui/dropdown";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { useChatMessages, type View } from "@/hooks/use-chat-messages";
 import { api, ApiError, errorText, type Message } from "@/lib/api";
@@ -65,7 +59,7 @@ export function MessageList({
     return () => clearTimeout(t);
   }, [search]);
 
-  const query = useChatMessages(chatId, q, range, view);
+  const { query, pollError } = useChatMessages(chatId, q, range, view);
   // Cả nhóm leaves out tags (handled in Chưa / Đã xử lý), except the one opened here to be shown.
   const all = useMemo(
     () => (query.data ? [...query.data.pages].reverse().flatMap((p) => p.items) : [])
@@ -89,6 +83,7 @@ export function MessageList({
   const atBottom = useRef(true);
   const [far, setFar] = useState(false); // scrolled up more than a screen: offer the jump back down
   const anchor = useRef<number | null>(null);
+  const wait = useAiWait(query.isPending);
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -137,11 +132,8 @@ export function MessageList({
         ]} />
         <div className="ml-auto flex items-center gap-1">
         {(senders.length > 1 || sender) && (
-          <select aria-label="Lọc theo người gửi" value={sender} onChange={(e) => setSender(e.target.value)}
-            className={cn("h-[30px] max-w-40 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", sender && "border-hl text-hl-2")}>
-            <option value="">Mọi người gửi</option>
-            {senders.map(([k, name]) => <option key={k} value={k}>{name}</option>)}
-          </select>
+          <Dropdown label="Lọc theo người gửi" value={sender} onChange={setSender} className={cn("h-[30px] w-auto max-w-40", sender && "border-hl text-hl-2")}
+            options={[{ value: "", label: "Mọi người gửi" }, ...senders.map(([k, name]) => ({ value: k, label: name }))]} />
         )}
         {!q && pendingOnly && items.length > 0 && (
           <Hint side="bottom" text="Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý (có Hoàn tác).">
@@ -161,6 +153,12 @@ export function MessageList({
         </div>
       </div>
       <div className="relative flex min-h-0 flex-1 flex-col">
+      {pollError != null && (
+        <p role="status" className="border-b bg-warn-wash px-5 py-1.5 text-xs text-ink-2">
+          Không cập nhật được tin mới: {errorText(pollError, {}, "lỗi kết nối.")} Đang thử lại mỗi 10 giây.
+        </p>
+      )}
+      {wait && <AiFetching kind="chat" cover lines={live ? ["AI đang kết nối Telegram", "Đang đọc trực tiếp tin của nhóm", "Đang gom tin, reply, người gửi", "Sắp xong rồi"] : undefined} />}
       <div
         ref={box}
         data-testid="timeline"
@@ -184,7 +182,6 @@ export function MessageList({
             {live ? "Đầu cuộc trò chuyện." : "Chỉ lưu tin tag/reply bạn (nạp lại 14 ngày gần nhất mỗi lần kết nối)."}
           </p>
         )}
-        {query.isPending && <RowsSkeleton />}
         {error === "not_tracking" && <p className="px-5 py-6 text-sm text-ink-2">Nhóm không còn được theo dõi.</p>}
         {error && error !== "not_tracking" && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">
@@ -241,22 +238,11 @@ export function MessageList({
         </Hint>
       )}
       </div>
-      <Dialog open={confirmAll} onOpenChange={setConfirmAll}>
-        <DialogContent>
-          <DialogTitle>Đánh dấu tất cả là đã xử lý?</DialogTitle>
-          <DialogDescription>
-            {query.hasNextPage ? "Mọi" : `${items.length}`} tin chưa xử lý trong nhóm này
-            {range ? " (trong khoảng ngày đang lọc)" : ""} sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.
-          </DialogDescription>
-          {markAll.isError && <p role="alert" className="text-sm text-error">Không cập nhật được.</p>}
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
-            <Button aria-busy={markAll.isPending} disabled={markAll.isPending} onClick={() => markAll.mutate()}>
-              <CheckCheck /> Xong tất cả
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog open={confirmAll} onOpenChange={setConfirmAll} tone="default" icon={CheckCheck}
+        title="Đánh dấu tất cả là đã xử lý?" confirmLabel="Xong tất cả"
+        description={<>{query.hasNextPage ? "Mọi" : `${items.length}`} tin chưa xử lý trong nhóm này
+          {range ? " (trong khoảng ngày đang lọc)" : ""} sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.</>}
+        busy={markAll.isPending} error={markAll.isError && "Không cập nhật được."} onConfirm={() => markAll.mutate()} />
     </section>
   );
 }
@@ -295,23 +281,10 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      <Dialog open={confirm} onOpenChange={setConfirm}>
-        <DialogContent>
-          <DialogTitle>Xóa dữ liệu nhóm?</DialogTitle>
-          <DialogDescription>
-            Xóa tin đã lưu của “{title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.
-            Tin đang gửi có thể đã tới Telegram và không thu hồi được.
-          </DialogDescription>
-          {purge.isError && <p role="alert" className="text-sm text-error">Không xóa được dữ liệu nhóm. Thử lại.</p>}
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Hủy</DialogClose>
-            <Button variant="destructive" className="bg-error-wash hover:bg-error-wash" aria-busy={purge.isPending} disabled={purge.isPending}
-              onClick={() => purge.mutate()}>
-              Xóa dữ liệu
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog open={confirm} onOpenChange={setConfirm} title="Xóa dữ liệu nhóm?" confirmLabel="Xóa dữ liệu"
+        description={<>Xóa tin đã lưu của “{title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.
+          Tin đang gửi có thể đã tới Telegram và không thu hồi được.</>}
+        busy={purge.isPending} error={purge.isError && "Không xóa được dữ liệu nhóm. Thử lại."} onConfirm={() => purge.mutate()} />
     </>
   );
 }

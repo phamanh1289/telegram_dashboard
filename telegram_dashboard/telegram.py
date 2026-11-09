@@ -3,7 +3,9 @@
 import asyncio
 import logging
 import os
+import re
 import secrets
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
@@ -11,7 +13,7 @@ from typing import Protocol
 from .ai import _applescript_str
 from .config import run_cli
 from .errors import ApiError
-from .models import GroupInfo, LinkSpan, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
+from .models import GroupInfo, LinkSpan, Member, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
 from .storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -21,6 +23,8 @@ RETRY_DELAY = 5.0
 WATCH_INTERVAL = 20.0
 # ponytail: fixed look-back for tags on connect; make it a setting if 14 days is not enough.
 BACKFILL_DAYS = 14
+NOTIFY_PREVIEW = False  # message text in tag banners (Settings › Telegram; privacy.py sets it)
+BACKFILL_RETRY = 300.0  # seconds before retrying a backfill that failed (a flood wait says its own)
 BACKFILL_MARGIN = timedelta(hours=1)  # a reconnect looks back from the last full backfill, minus this
 
 
@@ -31,9 +35,9 @@ class LoginRequired(Exception):
 class PartialBackfill(Exception):
     """The mention scan stopped early (flood wait): `found` is what it read before."""
 
-    def __init__(self, found: list):
+    def __init__(self, found: list, wait: int = 0):
         super().__init__(len(found))
-        self.found = found
+        self.found, self.wait = found, wait
 
 
 class SendRejected(Exception):
@@ -74,6 +78,7 @@ class Transport(Protocol):
     # Raises SendRejected("retry_after") on a flood wait.
     async def send_reaction(self, chat_id: str, message_id: int, emoji: str | None) -> None: ...
     async def send_saved(self, text: str) -> None: ...  # to my own Saved Messages, in ≤4000-char parts
+    async def members(self, chat_id: str) -> list[Member]: ...  # people in the group, not me; 403 members_hidden
 
 
 class TelegramBridge:
@@ -92,6 +97,7 @@ class TelegramBridge:
         self._send_lock = asyncio.Lock()
         self.reaction = reaction  # emoji mirrored on Telegram when a tag is marked done ("" = off)
         self._react_lock = asyncio.Lock()
+        self._swap_lock = asyncio.Lock()  # two credential saves must not leave two clients on one session
         self._bg: set[asyncio.Task] = set()  # reactions, notifications
         self.me = ""  # logged-in account (@username or name), set by the transport on connect
         self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
@@ -110,10 +116,11 @@ class TelegramBridge:
 
     async def set_transport(self, transport: Transport) -> None:
         """Swap in a transport built from new API credentials (Settings) and connect it."""
-        await self.stop()
-        self.transport = transport
-        transport.attach(self)
-        await self.start()
+        async with self._swap_lock:
+            await self.stop()
+            self.transport = transport
+            transport.attach(self)
+            await self.start()
 
     async def stop(self) -> None:
         tasks = [t for t in [self._main, *self._bg] if t]
@@ -139,6 +146,7 @@ class TelegramBridge:
         assert self.transport is not None
         self._set_state("connecting")
         up = False  # connected and backfilled
+        backfill_at = None  # monotonic time to retry a backfill that failed / was cut short
         while True:
             if up and not self.transport.is_connected():
                 up = False
@@ -157,7 +165,9 @@ class TelegramBridge:
                 else:
                     up = True
                     self._set_state("connected")
-                    await self.backfill_mentions()  # its dialog scan also warms the entity cache
+                    backfill_at = await self.backfill_mentions()  # its dialog scan also warms the entity cache
+            elif backfill_at is not None and time.monotonic() >= backfill_at:
+                backfill_at = await self.backfill_mentions()
             # ponytail: liveness polling; Telethon 1.x exposes no reconnect event.
             await asyncio.sleep(WATCH_INTERVAL if up else self.retry_delay)
 
@@ -170,6 +180,9 @@ class TelegramBridge:
     async def list_groups(self) -> list[GroupInfo]:
         return await self.ensure_connected().list_groups()
 
+    async def members(self, chat_id: str) -> list[Member]:
+        return await self.ensure_connected().members(chat_id)
+
     # ---- live updates (called by transport) ----------------------------
     async def on_message(self, m: StoredMessage) -> None:
         try:
@@ -178,22 +191,28 @@ class TelegramBridge:
             log.warning("live message not stored (chat %s, message %s): %s", m.chat_id,
                         m.message_id, type(e).__name__)  # fmt: skip
 
-    async def backfill_mentions(self) -> None:
+    async def backfill_mentions(self) -> float | None:
         """Pull recent tags/replies to us (read or unread); nothing else is fetched. A reconnect
-        looks back only to the last complete backfill (Telethon's catch-up replays the rest)."""
+        looks back only to the last complete backfill (Telethon's catch-up replays the rest).
+        Cut short / failed: the monotonic time `_run` retries it at (status detail says so meanwhile)."""
         started = datetime.now(UTC)
         cutoff = max(started - timedelta(days=BACKFILL_DAYS), self._backfilled_at - BACKFILL_MARGIN)
+        retry = None
         try:
             try:
-                found, complete = await self.ensure_connected().fetch_mentions(cutoff), True
-            except PartialBackfill as e:  # keep what it read; the next connect looks back as far again
+                found = await self.ensure_connected().fetch_mentions(cutoff)
+            except PartialBackfill as e:  # keep what it read; the retry looks back as far again
                 log.warning("mention backfill cut short after %d tags", len(e.found))
-                found, complete = e.found, False
+                found, retry = e.found, e.wait + 5
             await self.db.write(self.store.store_mentions, found)
-            if complete:
+            if retry is None:
                 self._backfilled_at = started
         except Exception as e:
             log.warning("mention backfill failed: %s: %s", type(e).__name__, e)
+            retry = BACKFILL_RETRY
+        if self.state == "connected":
+            self._set_state("connected", None if retry is None else "backfill_partial")
+        return None if retry is None else time.monotonic() + retry
 
     async def on_my_reply(self, m: StoredMessage) -> None:
         """Our own reply (from any device) to a kept tag: keep it and mark the tag handled."""
@@ -212,7 +231,9 @@ class TelegramBridge:
             )  # fmt: skip
             return
         if fresh and self.notify:
-            self._spawn(notify_mac(f"Tag mới · {title}", m.sender_name or "", m.text))
+            # the text only when Settings allow it: banners show on the lock screen / Notification Center
+            body = m.text if NOTIFY_PREVIEW else "Mở dashboard để xem nội dung"
+            self._spawn(notify_mac(f"Tag mới · {title}", m.sender_name or "", body))
 
     # ---- live reads (not stored) ---------------------------------------
     async def fetch_context(self, chat_id: str, message_id: int) -> list[StoredMessage]:
@@ -253,13 +274,21 @@ class TelegramBridge:
 
     async def send_direct(self, chat_id: str, reply_to: int | None, text: str) -> int:
         """Post to any group the account is in, tracked or not, outside the outbox (Q&A); the new message's id.
-        ponytail: no retry bookkeeping like the outbox; a timeout surfaces as an error and the user resends."""
+        ponytail: no retry bookkeeping like the outbox; a timeout surfaces as `delivery_unknown` (it may have
+        posted) so the user checks the group before resending."""
+        t = self.ensure_connected()
         try:
             async with self._send_lock:
-                sent = await self.ensure_connected().send_reply(chat_id, reply_to, text, secrets.randbits(63), None)
+                sent = await asyncio.wait_for(
+                    t.send_reply(chat_id, reply_to, text, secrets.randbits(63), None), SEND_TIMEOUT
+                )
         except SendRejected as e:
-            raise ApiError({"retry_after": 429, "forbidden": 403, "reply_not_found": 404}.get(e.code, 502), e.code,
+            code = "flood_wait" if e.code == "retry_after" else e.code
+            raise ApiError({"retry_after": 429, "forbidden": 403, "reply_not_found": 404}.get(e.code, 502), code,
                            retry_after=e.retry_after) from e  # fmt: skip
+        except Exception as e:  # timeout, connection loss: Telegram may have posted it already
+            log.warning("direct send result unknown: %s", type(e).__name__)
+            raise ApiError(504, "delivery_unknown") from e
         return sent.message_id
 
     def react(self, chat_id: str, message_ids: list[int], done: bool) -> None:
@@ -307,7 +336,7 @@ class TelegramBridge:
         except ValueError:
             raise ApiError(404, "reply_not_found") from None
         rec, _ = await self.db.write(
-            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote
+            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote, qa=req.qa
         )
         if rec.status in ("sent", "sending") or (rec.status == "unknown" and not req.retry_unknown):
             return rec
@@ -345,7 +374,7 @@ class TelegramBridge:
         msg = sent.message or StoredMessage(
             chat_id=job["chat_id"],
             message_id=sent.message_id,
-            text=job["text"],
+            text=split_mentions(job["text"])[0],
             date=datetime.now(UTC),
             reply_to_id=job["reply_to"],
             topic_id=job["topic_id"],
@@ -621,7 +650,7 @@ class TelethonTransport:
                 out += [(title, kind, await self._convert(m), m.id in replied) for m in tags]
         except errors.FloodWaitError as e:  # keep what we have; the next connect tries again
             log.warning("mention backfill cut short by a %ss flood wait", e.seconds)
-            raise PartialBackfill(out) from e
+            raise PartialBackfill(out, e.seconds) from e
         return out
 
     async def fetch_context(
@@ -654,6 +683,19 @@ class TelethonTransport:
             return True
         finally:
             tmp.unlink(missing_ok=True)
+
+    async def members(self, chat_id: str) -> list[Member]:
+        from telethon import errors, utils
+
+        try:  # ponytail: first 1000 only; a bigger group would need a server-side search per typed name
+            users = await self.client.get_participants(int(chat_id), limit=1000)
+        except (errors.ChatAdminRequiredError, errors.ChannelPrivateError) as e:
+            raise ApiError(403, "members_hidden") from e
+        return [
+            Member(user_id=str(u.id), name=utils.get_display_name(u) or str(u.id), username=u.username or None)
+            for u in users
+            if not (u.is_self or u.deleted)
+        ]
 
     async def latest_id(self, chat_id: str) -> int:
         msgs = await self.client.get_messages(int(chat_id), limit=1)
@@ -717,12 +759,28 @@ class TelethonTransport:
         except errors.FloodWaitError as e:
             raise SendRejected("retry_after", int(e.seconds)) from e
 
+    async def _mention_entities(self, tags: list[tuple[int, int, int]]) -> list:
+        from telethon import utils
+        from telethon.tl import types
+
+        out = []
+        for off, length, uid in tags:
+            try:  # known from the members list (session cache); unknown: the name goes as plain text
+                user = utils.get_input_user(await self.client.get_input_entity(uid))
+            except (ValueError, TypeError):
+                log.info("mention of %s sent as plain text: user not cached", uid)
+                continue
+            out.append(types.InputMessageEntityMentionName(off, length, user))
+        return out
+
     async def send_reply(
         self, chat_id: str, reply_to: int | None, text: str, random_id: int, topic_id: int | None
     ) -> SentMessage:
         from telethon import errors
         from telethon.tl import functions, types
 
+        text, tags = split_mentions(text)
+        entities = await self._mention_entities(tags)
         try:
             peer = await self.client.get_input_entity(int(chat_id))
             result = await self.client(
@@ -730,6 +788,7 @@ class TelethonTransport:
                     peer=peer,
                     message=text,
                     random_id=random_id,
+                    entities=entities or None,
                     # a new message in a forum topic still "replies" to the topic's top message
                     reply_to=types.InputReplyToMessage(reply_to_msg_id=reply_to, top_msg_id=topic_id)
                     if reply_to
@@ -770,6 +829,27 @@ class TelethonTransport:
         if msg_id is not None:
             return SentMessage(message_id=msg_id)
         raise RuntimeError("send result without message id")
+
+
+_MENTION = re.compile(r"\[([^\[\]\n]{1,64})\]\(tg://user\?id=(\d{1,20})\)")
+
+
+def _u16(s: str) -> int:
+    return len(s.encode("utf-16-le")) // 2
+
+
+def split_mentions(text: str) -> tuple[str, list[tuple[int, int, int]]]:
+    """`[Name](tg://user?id=N)` (the reply box's tag of someone without a @username) -> the text with just "Name",
+    and (offset, length, user_id) per tag in UTF-16 units, as Telegram entities count."""
+    out, ents, at = [], [], 0
+    for m in _MENTION.finditer(text):
+        out.append(text[at : m.start()])
+        off = _u16("".join(out))
+        out.append(m[1])
+        ents.append((off, _u16(m[1]), int(m[2])))
+        at = m.end()
+    out.append(text[at:])
+    return "".join(out), ents
 
 
 def chunks(text: str, size: int = 4000) -> list[str]:

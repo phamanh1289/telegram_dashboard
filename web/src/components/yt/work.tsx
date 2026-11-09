@@ -6,6 +6,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { AiPromptBox, useFollow } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { api, type Project } from "@/lib/api";
 import { toast } from "@/lib/inbox";
@@ -108,12 +109,13 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
     setAdd("");
     const unknown = want.filter((id) => !y.rows.some((i) => i.id === id));
     setLooking(true);
-    const got = (await Promise.all(unknown.map((id) => yt.detail(id).then((t): Ticket => t, () => null)))).filter((t): t is Ticket => !!t);
+    const res = await Promise.all(unknown.map((id) => yt.detail(id).then((t): Ticket => t, (e: Error) => `${id}: ${e.message}`)));
+    const got = res.filter((t): t is Ticket => typeof t !== "string"), why = res.find((t): t is string => typeof t === "string");
     setLooking(false);
     setFound((f) => ({ ...f, ...Object.fromEntries(got.map((t) => [t.id, t])) }));
     const ok = want.filter((id) => !unknown.includes(id) || got.some((t) => t.id === id));
     if (ok.length) change([...new Set([...ids, ...ok])]);
-    if (ok.length < want.length) toast({ text: `Không tìm thấy: ${want.filter((id) => !ok.includes(id)).join(", ")}` });
+    if (ok.length < want.length) toast({ text: `Không thêm được ${want.filter((id) => !ok.includes(id)).join(", ")}${why ? ` (${why})` : ""}` });
   }
 
   // chat-like: newest content at the bottom, kept in view as it streams in unless the reader scrolled up
@@ -122,7 +124,6 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const unfolded = openList ?? (!chatting && rows.length <= 4); // auto until toggled: the answer gets the room
   const openOne = (id: string) => y.openTicket(id, list.map((x) => y.rows.find((i) => i.id === x) ?? found[x]).filter((i): i is Ticket => !!i));
 
-  const field = "h-8 rounded-md border border-rule bg-cotton px-2 text-sm";
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       {/* the tickets: one slim line (count, the ids, an add box) that never crowds the answer. "N ticket" unfolds the full
@@ -214,19 +215,18 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               {chatting && <Hint side="bottom" text="Bắt đầu cuộc trò chuyện mới với các ticket này"><Button type="button" size="xs" variant="ghost" className={noted ? "" : "ml-auto"} disabled={busy} onClick={ai.cancel}><RotateCcw /> Cuộc mới</Button></Hint>}
             </div>
           }
-          tools={!!list.length && <label className="flex min-w-0 items-center gap-1.5 text-xs text-ink-3"><FolderSearch className="size-3.5 shrink-0" />
-            <select className={`${field} min-w-0 max-w-56`} value={project} onChange={(e) => setProject(e.target.value)} aria-label="Thư mục code để trace">
-              <option value="">Không đọc code</option>
-              {folders.map((p) => <option key={p.path} value={p.path}>{p.name}</option>)}
-            </select>
-          </label>}
+          tools={!!list.length && <Hint side="bottom" text="Thư mục dự án để AI đọc code (chỉ đọc) khi trả lời"><span className="min-w-0 max-w-56">
+            <Dropdown label="Thư mục code để trace" value={project} onChange={setProject} className="h-7 w-auto max-w-56"
+              prefix={<FolderSearch aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
+              options={[{ value: "", label: "Không đọc code" }, ...folders.map((p) => ({ value: p.path, label: p.name }))]} />
+          </span></Hint>}
           actions={<>
             {/* A follow-up runs like the first request; a new one is heavy with code or over 10 tickets (as the server decides). */}
             <YtPicks heavy={ai.canAsk ? ai.heavy : !!project || list.length > 10} />
-            {!busy && <Button type="button" size="icon-sm" aria-label="Gửi" onClick={() => void send()} disabled={!prompt.trim() || (!list.length && !ai.canAsk && !folder && !start)}
-              className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)"><ArrowUp /></Button>}
+            {!busy && <Hint text="Gửi cho AI (Enter)"><Button type="button" size="icon-sm" aria-label="Gửi" onClick={() => void send()} disabled={!prompt.trim() || (!list.length && !ai.canAsk && !folder && !start)}
+              className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)"><ArrowUp /></Button></Hint>}
           </>} />
-        {!!list.length && !ps.isPending && !folders.length && <p className="px-1 text-xs text-ink-3">Muốn trace code: thêm thư mục dự án ở Telegram › AI Agent.</p>}
+        {!!list.length && ps.isSuccess && !folders.length && <p className="px-1 text-xs text-ink-3">Muốn trace code: thêm thư mục dự án ở Telegram › AI Agent.</p>}
         {folder && <p className="px-1 text-xs text-ink-2">Gợi ý và câu hỏi sẽ đọc code trong {folder.name} (chỉ đọc), trả lời ngay ở trên; chậm hơn, thường 1–3 phút.</p>}
       </div>
       <PromptsDialog open={saved} onOpenChange={setSaved} onPick={pick} role={y.mode} many={list.length > 1} />

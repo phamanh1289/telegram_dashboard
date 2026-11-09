@@ -196,3 +196,12 @@ async def test_send_code_retries_once_after_phone_migrate(tmp_path):
     c._sender, c.is_connected, c.is_user_authorized, c._switch_dc = Sender(), lambda: True, noop, noop
     await t.send_code("+84900000000")
     assert t._code_hash == "h" and len(calls) == 2
+
+
+def test_split_mentions_utf16_offsets():
+    from telegram_dashboard.telegram import split_mentions
+
+    text, ents = split_mentions("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
+    assert text == "😀 hỏi Lan QA và Minh nhé"
+    assert ents == [(7, 6, 43), (17, 4, 42)]  # 😀 is 2 UTF-16 units, as Telegram and JS count
+    assert split_mentions("không tag [x](https://a.b)") == ("không tag [x](https://a.b)", [])

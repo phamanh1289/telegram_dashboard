@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-from .config import Settings
+from .config import RUN_DIR, Settings, api_token_path, ensure_api_token
 
 
 def _login(settings: Settings) -> int:
@@ -56,10 +56,9 @@ def _claim(settings: Settings) -> Settings | None:
 
     global _lock
     settings.ensure_data_dir()
-    run_dir = Path.home() / ".telegram_dashboard"  # outside every install's data/
-    run_dir.mkdir(mode=0o700, exist_ok=True)
-    port_file = run_dir / "server.port"
-    _lock = open(run_dir / "server.lock", "a")  # noqa: SIM115 (held until exit)
+    RUN_DIR.mkdir(mode=0o700, exist_ok=True)  # outside every install's data/
+    port_file = RUN_DIR / "server.port"
+    _lock = open(RUN_DIR / "server.lock", "a")  # noqa: SIM115 (held until exit)
     for _ in range(25):  # a restarting server may still be exiting
         try:
             if sys.platform == "win32":
@@ -77,7 +76,7 @@ def _claim(settings: Settings) -> Settings | None:
         port = port_file.read_text().strip() if port_file.is_file() else str(settings.port)
         url = f"http://{settings.host}:{port}"
         print(f"Dashboard đã chạy ở {url} — mở trình duyệt tới đó.", flush=True)
-        webbrowser.open(url)
+        webbrowser.open(_with_token(url))
         return None
     if not os.environ.get("APP_ORIGIN"):  # dev sets it: Next proxies /api to the fixed port
         for port in range(settings.port, settings.port + 20):
@@ -99,6 +98,8 @@ def _claim(settings: Settings) -> Settings | None:
 
 
 def _serve(settings: Settings) -> int:
+    import dataclasses
+
     import uvicorn
 
     from .app import create_app
@@ -106,15 +107,17 @@ def _serve(settings: Settings) -> int:
     claimed = _claim(settings)
     if claimed is None:
         return 0
-    settings = claimed
+    settings = dataclasses.replace(claimed, api_token=ensure_api_token())
+    link = _with_token(settings.app_origin)
     if os.environ.get("TD_OPEN"):  # packaged launcher, first start: open the page once it serves
         import threading
         import webbrowser
 
-        threading.Timer(2, webbrowser.open, [settings.app_origin]).start()
+        threading.Timer(2, webbrowser.open, [link]).start()
     if not settings.static_dir.is_dir():
         print("Chưa có web/out — chạy `npm run build` (UI sẽ trả 503).", file=sys.stderr)
-    print(f"Mở {settings.app_origin}", flush=True)
+    # the link carries the API token once (the page swaps it for a cookie); plain URL works after that
+    print(f"Mở {link}", flush=True)
     from . import updater
 
     updater.prune_versions()
@@ -139,6 +142,27 @@ def _serve(settings: Settings) -> int:
     return 0
 
 
+def _with_token(url: str) -> str:
+    """`url` with the local API token (auth.py) when there is one: the page trades it for a cookie."""
+    try:
+        tok = api_token_path().read_text().strip()
+    except OSError:
+        return url
+    return f"{url}/?t={tok}" if tok else url
+
+
+def _open(settings: Settings) -> int:
+    """`mydashboard open` / launchers: open the running server, signing this browser in."""
+    import webbrowser
+
+    port_file = RUN_DIR / "server.port"
+    port = port_file.read_text().strip() if port_file.is_file() else str(settings.port)
+    origin = os.environ.get("APP_ORIGIN") or f"http://{settings.host}:{port}"
+    webbrowser.open(_with_token(origin))
+    print(f"Đã mở {origin}", flush=True)
+    return 0
+
+
 def _export_openapi(settings: Settings, output: str) -> int:
     from .app import create_app
 
@@ -154,6 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("login")
     sub.add_parser("serve")
+    sub.add_parser("open")
     ex = sub.add_parser("export-openapi")
     ex.add_argument("--output", default="work/openapi.json")
     args = p.parse_args(argv)
@@ -162,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
         return _login(settings)
     if args.cmd == "serve":
         return _serve(settings)
+    if args.cmd == "open":
+        return _open(settings)
     return _export_openapi(settings, args.output)
 
 

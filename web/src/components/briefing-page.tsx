@@ -1,15 +1,16 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheckBig, ClipboardList, Copy, GitCompareArrows, ListTodo, Loader2,
   type LucideIcon, MessageCircleQuestion, Plus, RotateCw, Send, ShieldCheck, Sparkles, Sun, Trash2, TriangleAlert, UserRound, Users,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
 import { AiBot, AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
 import { DeepItemAction } from "@/components/deep-think";
 import { NavPill } from "@/components/shell";
@@ -21,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { WeekStatsCard } from "@/components/week-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, type BriefingItem, type DigestItem, type DigestResult, errorText, type GroupInfo, type Message, statusQuery } from "@/lib/api";
 import { copyText, toast } from "@/lib/inbox";
@@ -39,6 +41,56 @@ export const briefingQuery = {
   queryKey: ["briefing"],
   queryFn: ({ signal }: { signal: AbortSignal }) => api<BriefingItem[]>("/briefing", { signal }),
 };
+
+// The batch run lives outside the page: switching to another view (to triage tags meanwhile) keeps it going, and coming
+// back shows its progress. Stop is explicit (AiStop), or the tab closing.
+type BriefRun = { runs: Record<string, RunState>; batch: { done: number; total: number } | null };
+let brief: BriefRun = { runs: {}, batch: null };
+let briefStop: AbortController | null = null;
+const briefSubs = new Set<() => void>();
+const setBrief = (f: (b: BriefRun) => BriefRun) => { brief = f(brief); briefSubs.forEach((n) => n()); };
+const subBrief = (f: () => void) => { briefSubs.add(f); return () => { briefSubs.delete(f); }; };
+/** The Briefing batch (per-group status, progress; `batch` null: nothing running), wherever it is read. */
+export const useBriefRun = () => useSyncExternalStore(subBrief, () => brief, () => brief);
+const stopBrief = () => briefStop?.abort();
+
+/** One group at a time: keeps the AI provider and Telegram calm, and each result lands as it comes.
+ *  Aborting is the stop: the server sees the request go and kills that AI run. */
+async function runBrief(qc: QueryClient, groups: BriefingItem[]) {
+  if (brief.batch) return; // one batch at a time
+  const stop = (briefStop = new AbortController()).signal;
+  setBrief((b) => ({ ...b, batch: { done: 0, total: groups.length } }));
+  const until = new Date().toISOString();
+  const teams = readDigestTeams();
+  const status = (id: string, r: RunState) => setBrief((b) => ({ ...b, runs: { ...b.runs, [id]: r } }));
+  for (const it of groups) {
+    if (stop.aborted) break;
+    status(it.chat_id, { status: "running" });
+    try {
+      await api<DigestResult>("/digest", {
+        method: "POST",
+        json: {
+          chat_id: it.chat_id,
+          since: it.saved?.last_date ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
+          until,
+          message_ids: [],
+          after_id: it.saved ? Number(it.saved.last_message_id) : null,
+          teams,
+          intro: readIntro(),
+        },
+        signal: stop,
+      });
+      status(it.chat_id, { status: "done" });
+    } catch (e) {
+      status(it.chat_id, { status: "error", error: stop.aborted ? "Đã dừng." : digestError(e) });
+    }
+    setBrief((b) => ({ ...b, batch: b.batch && { ...b.batch, done: b.batch.done + 1 } }));
+    void qc.invalidateQueries({ queryKey: ["digest-saved", it.chat_id] });
+    void qc.invalidateQueries({ queryKey: ["briefing"] }); // each group fills in as its digest lands
+    void qc.invalidateQueries({ queryKey: ["briefing-answered"] });
+  }
+  setBrief((b) => ({ ...b, batch: null }));
+}
 
 /** Telegram has messages newer than the last digest (or there was none yet). */
 export const hasNews = (i: BriefingItem) =>
@@ -504,15 +556,12 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
 }) {
   const qc = useQueryClient();
   const list = useQuery(briefingQuery);
-  const [runs, setRuns] = useState<Record<string, RunState>>({});
-  const [batch, setBatch] = useState<{ done: number; total: number } | null>(null); // null: nothing running
+  const wait = useAiWait(list.isPending);
+  const { runs, batch } = useBriefRun(); // null batch: nothing running
   const [adding, setAdding] = useState(false);
   const [tab, setTab] = useState<Tab | null>(null); // null: the first tab with something left
   const [showDone, setShowDone] = useState(false);
   const [pane, setPane] = useState<"todo" | "ai">("todo"); // phones: one pane at a time
-  // Aborting the request is the stop: the server sees the browser go and kills that AI run. Leaving the page stops too.
-  const abort = useRef<AbortController | null>(null);
-  useEffect(() => () => abort.current?.abort(), []);
 
   const items = list.data ?? [];
   const allowed = items.filter((i) => i.consent);
@@ -565,40 +614,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
     onError: (e) => toast({ text: errorText(e, { not_connected: "Telegram chưa kết nối." }, "Không gửi được, thử lại sau") }),
   });
 
-  // One group at a time: keeps the AI provider and Telegram calm, and each result lands as it comes.
-  async function run(groups: BriefingItem[]) {
-    const stop = (abort.current = new AbortController()).signal;
-    setBatch({ done: 0, total: groups.length });
-    const until = new Date().toISOString();
-    const teams = readDigestTeams();
-    for (const it of groups) {
-      if (stop.aborted) break;
-      setRuns((s) => ({ ...s, [it.chat_id]: { status: "running" } }));
-      try {
-        await api<DigestResult>("/digest", {
-          method: "POST",
-          json: {
-            chat_id: it.chat_id,
-            since: it.saved?.last_date ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
-            until,
-            message_ids: [],
-            after_id: it.saved ? Number(it.saved.last_message_id) : null,
-            teams,
-            intro: readIntro(),
-          },
-          signal: stop,
-        });
-        setRuns((s) => ({ ...s, [it.chat_id]: { status: "done" } }));
-      } catch (e) {
-        setRuns((s) => ({ ...s, [it.chat_id]: { status: "error", error: stop.aborted ? "Đã dừng." : digestError(e) } }));
-      }
-      setBatch((b) => b && { ...b, done: b.done + 1 });
-      void qc.invalidateQueries({ queryKey: ["digest-saved", it.chat_id] });
-      void qc.invalidateQueries({ queryKey: ["briefing"] }); // each group fills in as its digest lands
-      void qc.invalidateQueries({ queryKey: ["briefing-answered"] });
-    }
-    setBatch(null);
-  }
+  const run = (groups: BriefingItem[]) => runBrief(qc, groups);
 
   async function copyAll() {
     const parts = allowed.filter((i) => i.saved).map((i) => toMarkdown(i.saved!.result, i.title).replace(/^# /, "## "));
@@ -652,14 +668,15 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
             <span className="ml-1.5">{runButton}</span>
           </div>
         </header>
+        <WeekStatsCard />
 
         <AnimatePresence initial={false}>
           {batch && (
             <motion.div key="progress" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2, ease: EASE }}
               className="grid shrink-0 gap-1.5 border-b bg-hl-wash/40 px-3 py-2 md:px-5">
               <div className="flex items-center gap-3">
-                <AiThinking className="min-w-0 flex-1" label={`Đang tóm tắt ${now?.title ?? "…"} · ${Math.min(batch.done + 1, batch.total)}/${batch.total}`} />
-                <AiStop onClick={() => abort.current?.abort()} label="Dừng tóm tắt" hint="Dừng tóm tắt (nhóm đang chạy bị hủy)" />
+                <AiThinking className="min-w-0 flex-1" label={`Đang tóm tắt ${now?.title ?? "…"} (${Math.min(batch.done + 1, batch.total)}/${batch.total})`} />
+                <AiStop onClick={stopBrief} label="Dừng tóm tắt" hint="Dừng tóm tắt (nhóm đang chạy bị hủy)" />
               </div>
               <div role="progressbar" aria-label="Tiến độ tóm tắt" aria-valuemin={0} aria-valuemax={batch.total} aria-valuenow={batch.done}
                 className="h-1 overflow-hidden rounded-full bg-paper-3">
@@ -689,11 +706,8 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
 
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
           <div className={cn("flex min-h-0 flex-col", summarized && pane === "ai" && "max-lg:hidden")}>
-            {list.isPending ? (
-              <div className="grid content-start gap-3 p-3 md:p-5">
-                <Skeleton className="h-8 w-80 max-w-full" />
-                {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
+            {wait ? (
+              <AiFetching kind="brief" />
             ) : list.isError ? (
               <p role="alert" className="flex items-center gap-2 p-5 text-sm text-error">
                 {digestError(list.error)}
@@ -711,9 +725,9 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
                 <div className="shrink-0 overflow-x-auto px-3 pt-3 [scrollbar-width:none] md:px-5">
                   <Segmented id="brief-tab" label="Lọc việc" value={cur} className="w-max"
                     onChange={(v) => { setTab(v); setShowDone(false); }}
-                    items={tabs.map(([v, l, dot]) => ({
+                    items={tabs.map(([v, l]) => ({
                       value: v,
-                      label: <span className="flex items-center gap-1.5"><span aria-hidden className={cn("size-1.5 rounded-full", dot)} />{l}<span className="font-mono tabular-nums opacity-70">{left(v)}</span></span>,
+                      label: <span className="flex items-center gap-1.5">{l}<span className="font-mono tabular-nums opacity-70">{left(v)}</span></span>,
                       title: v === "mine" ? "Câu hỏi chờ bạn trả lời và việc giao cho bạn (theo tên YouTrack / vai trò PO)" : undefined,
                     }))} />
                 </div>

@@ -51,10 +51,10 @@ export function useNow() {
   return now;
 }
 
-export function waitLabel(date: string, now: number) {
+export function waitLabel(date: string, now: number, priority = false) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
   const [n, unit] = byUnit(mins);
-  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= readOverdueHours() * 60 };
+  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= readOverdueHours() * 60 * (priority ? 0.5 : 1) }; // priority sender: half the wait
 }
 
 /**
@@ -198,11 +198,26 @@ export async function ignoreSender(m: Message) {
     text: `Luôn bỏ qua ${name}: đã dọn ${r.cleared.length} tin`,
     undo: async () => {
       try { await api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }); } catch {
-        throw new Told("Chưa xóa được quy tắc: xóa ở Công cụ › Quy tắc"); // reopening the tags now would just clear them again
+        throw new Told("Chưa xóa được quy tắc: xóa ở Cài đặt › Telegram › Luôn bỏ qua"); // reopening the tags now would just clear them again
       }
       await undoAll(r.cleared.map((c) => markHandled(c, false, false)));
     },
   });
+}
+
+/** "Luôn ưu tiên {tên}": their tags sort first in Việc cần xử lý and turn overdue at half the time (replaces a "Luôn bỏ
+ *  qua" on the same sender); Undo deletes the rule. */
+export async function prioritizeSender(m: Message) {
+  const name = m.sender_name ?? "người này";
+  const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "priority", value: m.sender_id, label: name } });
+  toast({ text: `Luôn ưu tiên ${name}: tin của họ lên đầu danh sách`, undo: () => api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }) });
+}
+
+/** "Nhắc lại sau": reopen a tag (answered or done) and keep it hidden until `until`, when it comes back to Việc cần xử
+ *  lý ("để mình check rồi báo" stays on your list). Undo marks it done again, quietly. */
+export async function remind(m: Pick<Message, "chat_id" | "message_id">, until: Date) {
+  await api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/remind`, { method: "PUT", json: { until: until.toISOString() } });
+  toast({ text: `Sẽ nhắc lại tin này lúc ${timeLabel(until.toISOString())}`, undo: () => markHandled(m, true, false) });
 }
 
 // Reply drafts, per tag, in this browser only (never sent to the server). A tag marked done here drops its draft;
@@ -317,9 +332,16 @@ export function useListShortcuts(
   { onPick, initial = null }: { onPick?: (m: Message) => void; initial?: string | null } = {},
 ) {
   const [focused, setFocused] = useState<string | null>(initial); // initial: msgKey to start selected (e.g. "Mở nhóm")
+  // The focused row left the list (done, snoozed, a bulk action): the row now at its place takes the cursor.
+  const [prev, setPrev] = useState(items);
+  if (prev !== items) {
+    setPrev(items);
+    const old = prev.findIndex((m) => msgKey(m) === focused);
+    if (old >= 0 && items.length && !items.some((m) => msgKey(m) === focused)) setFocused(msgKey(items[Math.min(old, items.length - 1)]));
+  }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (typing(e) || goKey.armed()) return;
+      if (typing(e) || goKey.armed() || e.defaultPrevented) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; // Caps Lock: same keys
       // A reply open covers the list: only "a" (AI prompt) still applies.
       if (k !== "a" && document.querySelector(COMPOSER)) return;
@@ -349,5 +371,14 @@ export function useListShortcuts(
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [items, focused, onReply, actions, onPick]);
+  // A row reached with Tab (or a click on its controls) becomes the cursor row, so x / s / p act on what has focus.
+  useEffect(() => {
+    const onFocus = (e: FocusEvent) => {
+      const k = (e.target as HTMLElement | null)?.closest?.("[data-key]")?.getAttribute("data-key");
+      if (k && items.some((m) => msgKey(m) === k)) setFocused(k);
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => document.removeEventListener("focusin", onFocus);
+  }, [items]);
   return focused;
 }

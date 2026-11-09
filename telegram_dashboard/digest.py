@@ -161,12 +161,6 @@ class DigestService:
         prompt += about_user(req.intro)
         prompt += f"\n<messages>\n{data_json(context)}\n</messages>"
         text = await self.ai.ask(prompt, feature="digest", brief=True)
-        if not await self._consented(req.chat_id):
-            raise ApiError(
-                409, "ai_permission_changed",
-                detail="Quyền đã đổi trong lúc xử lý; kết quả bị bỏ. "
-                "Dữ liệu đã gửi provider không thể thu hồi.",
-            )  # fmt: skip
         parsed = parse_result(text, {c["id"] for c in context})
         result = DigestResult(
             **(parsed or {}),
@@ -176,10 +170,15 @@ class DigestService:
             until=until,
         )
         newest = max(msgs, key=lambda m: m.message_id)
-        await self.db.write(
-            self.store.save_digest, req.chat_id, newest.message_id, newest.date,
-            result.model_dump_json(),
-        )  # fmt: skip
+        # consent re-checked in the save's own transaction: a revoke during the AI run drops the result
+        if not await self.db.write(
+            self.store.save_consented_digest, req.chat_id, newest.message_id, newest.date, result.model_dump_json(),
+        ):  # fmt: skip
+            raise ApiError(
+                409, "ai_permission_changed",
+                detail="Quyền đã đổi trong lúc xử lý; kết quả bị bỏ. "
+                "Dữ liệu đã gửi provider không thể thu hồi.",
+            )  # fmt: skip
         return result
 
     async def ask(self, question: str, intro: str = "", on_text=None) -> str:

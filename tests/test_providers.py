@@ -60,15 +60,40 @@ def test_sessions_resume_in_the_cli_that_started_them(tmp_path, monkeypatch):
     assert cmd[cmd.index("-m") + 1] == "gpt-6.1-sol"
     g = task_cmd(s, "antigravity", "edit", "c1", False, "gemini-x", "")
     assert "--conversation" not in g and g[g.index("--model") + 1] == "gemini-x"
-    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit-shell"
-    assert '"write_file(*)"' not in g[g.index("--settings") + 1]
+    assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit"
+    gp = g[g.index("--settings") + 1]
+    assert '"write_file(*)"' not in gp and '"command(*)"' in gp and '"allow"' not in gp  # agy: no sandbox, no shell
+    assert f'read_file({s.data_dir.resolve()})' in gp
     r = task_cmd(s, "antigravity", "plan", "c1", True, "", "")
     assert r[-2:] == ["--conversation", "c1"] and "--model" not in r and "--mode" not in r
     perms = r[r.index("--settings") + 1]
     assert '"write_file(*)"' in perms and '"mcp(*)"' in perms and '"command(*)"' in perms
-    assert '"allow"' not in perms  # plan carries others' text: no shell
-    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-edit-shell.md").read_text()
-    assert "run_command" in agent and "write_to_file" in agent
+    agent = (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-edit.md").read_text()
+    assert "run_command" not in agent and "write_to_file" in agent
+
+
+def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tools_only(tmp_path):
+    import json
+
+    s = Settings(root=tmp_path)
+    e = task_cmd(s, "claude", "edit", "sid", False, "", "")
+    box = json.loads(e[e.index("--settings") + 1])["sandbox"]
+    assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
+    assert "--tools" not in e
+    p = task_cmd(s, "claude", "plan", "sid", False, "", "")
+    assert p[p.index("--tools") + 1] == "Read,Grep,Glob" and "--settings" not in p
+    deny = p[p.index("--disallowedTools") + 2]
+    assert f"Read(/{s.data_dir.resolve().as_posix()}/**)" in deny and "Read(~/.ssh/**)" in deny
+
+
+def test_antigravity_no_tool_answers_get_no_tools(tmp_path, monkeypatch):
+    from telegram_dashboard.providers import ask_cmd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    s = Settings(root=tmp_path)
+    c = ask_cmd(s, "antigravity", tools=False, read_dir=None, model="", effort="")
+    assert c[c.index("--agent") + 1] == "telegram-dashboard-none" and "read_file(*)" in c[c.index("--settings") + 1]
+    assert "tools: []" in (tmp_path / ".gemini/antigravity-cli/agents/telegram-dashboard-none.md").read_text()
 
 
 def test_a_failed_run_says_why_in_the_clis_words():

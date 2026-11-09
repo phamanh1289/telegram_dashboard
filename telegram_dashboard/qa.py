@@ -25,7 +25,7 @@ _TAG = re.compile(r"(?<![\w.])@[A-Za-z0-9_]{5,32}")  # a Telegram @username, not
 
 def has_tag(text: str) -> bool:
     """Tags someone: only such a message opens a Q&A (an untagged one goes out as a plain message)."""
-    return bool(_TAG.search(text))
+    return bool(_TAG.search(text)) or "](tg://user?id=" in text  # or a tag by name (split_mentions)
 
 
 Fetch = Callable[[list[int]], Awaitable[list[StoredMessage]]]
@@ -83,5 +83,6 @@ if __name__ == "__main__":
     assert got == [("#QA11", [1, 3, 4, 5, 12]), ("#QA22", [6, 7]), ("#QA33", [9, 10, 11])], got  # 12: stays
     assert qa_code(datetime(2026, 1, 1, 0, 1, tzinfo=UTC)) == "#QA60"
     assert has_tag("@minh_be xem giúp") and has_tag("hỏi @MinhBE nhé")
+    assert has_tag("hỏi [Minh](tg://user?id=42) nhé")
     assert not has_tag("mail a.b@citics.vn") and not has_tag("@abc ngắn") and not has_tag("không tag ai")
     print("ok")

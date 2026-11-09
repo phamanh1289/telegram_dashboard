@@ -98,6 +98,17 @@ async def test_migrated_group_stops_ingest(env):
     assert chat["migrated_to"] == "-1009" and not chat["tracking"]
 
 
+def test_outbox_qa_mints_one_code_for_a_tagged_ask(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1))
+    env.store.outbox_create("r1", A, 1, "@nam_be API trả field gì?", 1, quote=False, qa=True)
+    sent = env.store.outbox_claim("r1")["text"]
+    assert sent.startswith("@nam_be API trả field gì?\n#QA"), sent
+    env.store.outbox_create("r1", A, 1, "@nam_be API trả field gì?", 1, quote=False, qa=True)  # retry: no 409
+    env.store.outbox_create("r2", A, 1, "hỏi chung", 2, quote=False, qa=True)
+    assert env.store.outbox_claim("r2")["text"] == "hỏi chung"  # tags nobody: plain message
+
+
 def test_purge_clears_outbox_content_and_blocks_late_callback(env):
     env.track(A)
     env.store.apply_message(msg(A, 1))
@@ -293,11 +304,12 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     path = tmp_path / "prev.sqlite3"
     Store(path).set_tracking(A, True, "Team", "supergroup")
     c = sqlite3.connect(path)
-    c.executescript("ALTER TABLE outbox DROP COLUMN quote;")
+    c.executescript("ALTER TABLE messages DROP COLUMN priority;")  # the newest step's column
     c.execute(f"PRAGMA user_version={len(MIGRATIONS) - 1}")
     c.close()
     store = Store(path)
     store.apply_message(msg(A, 1, "@me hi", sender="7"))
+    assert store.get_message(A, 1).priority is False
     store.outbox_create("r1", A, 1, "hỏi BE", 1, quote=False)
     assert store.outbox_claim("r1", False)["reply_to"] is None  # a new message, not a reply
 

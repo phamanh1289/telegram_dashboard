@@ -3,8 +3,7 @@
 import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getPref, setPref } from "@/lib/prefs";
-import { addLoopItems } from "@/lib/report-back";
-import { type Ticket, yt } from "@/lib/yt";
+import { checkLoopBack, type Ticket } from "@/lib/yt";
 import { ago } from "@/lib/time";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
@@ -20,25 +19,12 @@ const emit = () => subs.forEach((f) => f());
 const sub = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
 type Snap = { state: string | null; assignee: string | null; updated: number };
-const FINISHED = /^(fixed|done|resolved|verified|closed)$/i; // whole state names: not "Unresolved" / "Not fixed"
 
 const note = (id: string, text: string) => {
   events = [{ id, text, at: Date.now() }, ...events].slice(0, 40);
   unread += 1;
   emit();
 };
-
-/** A ticket of mine reached Fixed / Done: queue "Báo lại" for the Telegram messages that mention it (to-do list). */
-function loopBack(i: Ticket) {
-  yt.mentions(i.id).then((ms) => {
-    // My own "đã tạo VA-1" answers the tag it replied to; one not sent as a reply is answered in its own thread.
-    const n = addLoopItems(ms.map((m) => ({ ticket: i.id, state: i.state ?? "Done", chat_id: m.chat_id, message_id: (m.outgoing && m.reply_to_id) || m.message_id })));
-    if (n) note(i.id, `Báo lại trên Telegram: ${n} tin nhắc ticket này (xem Việc cần xử lý)`);
-  }, (e) => {
-    console.warn("Báo lại: mentions", i.id, e); // runs once per state change: say so instead of missing it silently
-    note(i.id, "Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại");
-  });
-}
 
 /** Runs in the shell: diffs each refreshed list for the same scope. */
 export function useWatch() {
@@ -48,15 +34,12 @@ export function useWatch() {
   const key = `${y.project}:${y.filters.assignee.join()}`;
   useEffect(() => {
     if (!data || !y.me || y.issues.isPlaceholderData) return;
+    checkLoopBack(y.project, y.me, data, note); // Fixed / Done → "Báo lại", shared with the Telegram shell's watch
     const mine = (i: Ticket) => !i.resolved && (i.assignee === y.me || i.qc === y.me);
     const m = new Map(data.filter(mine).map((i) => [i.id, { state: i.state, assignee: i.assignee, updated: i.updated }]));
     const p = prev.current;
     prev.current = { key, m };
     if (!p || p.key !== key) return; // first load or another scope: nothing to compare with
-    for (const i of data) {
-      const o = p.m.get(i.id); // mine and open last time (my own move to Fixed counts too)
-      if (o && o.state !== i.state && (i.resolved || FINISHED.test(i.state ?? ""))) loopBack(i);
-    }
     const now = Date.now(), out: Event[] = [];
     for (const i of data.filter(mine)) {
       const o = p.m.get(i.id);
@@ -95,7 +78,7 @@ export function WatchBell() {
     <span onPointerDown={() => { if (unread) { unread = 0; emit(); } }}>
       <Popover align="right" chevron={false} title="Thay đổi trên ticket của bạn" className="px-2"
         label={<span className="relative inline-flex">{n ? <BellRing className="size-4 text-signal-2" /> : <Bell className="size-4" />}
-          {n > 0 && <b className="absolute -top-1.5 -right-2 rounded-full bg-signal px-1 font-mono text-xs leading-4 text-(--color-signal-ink)">{n}</b>}</span>}>
+          {n > 0 && <b className="absolute -top-1.5 -right-2 rounded-full bg-signal px-1 font-mono text-xs leading-4 text-white">{n}</b>}</span>}>
         {(close) => (
           <div className="grid">
             <div className="flex items-center gap-2 border-b border-rule px-3 py-2 text-xs">

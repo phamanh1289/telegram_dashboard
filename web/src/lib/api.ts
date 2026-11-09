@@ -33,6 +33,7 @@ export type QaItem = S["QaItem"];
 export type QaPosted = S["QaPosted"];
 export type SavedDigest = S["SavedDigest"];
 export type GroupInfo = S["GroupInfo"];
+export type Member = S["Member"];
 
 export class ApiError extends Error {
   constructor(
@@ -42,6 +43,8 @@ export class ApiError extends Error {
     public detail: string | null = null,
   ) {
     super(code);
+    // No token cookie (auth.py): the shell shows the unlock screen (components/auth-gate).
+    if (code === "auth_required" && typeof window !== "undefined") dispatchEvent(new Event("auth-required"));
   }
 }
 
@@ -108,6 +111,11 @@ export async function apiStream<T>(path: string, json: unknown, signal?: AbortSi
 /** Codes any call may answer, worded once; a caller's `map` wins over these. */
 const COMMON: Record<string, (e: ApiError) => string> = {
   flood_wait: (e) => `Telegram yêu cầu chờ${e.retryAfter ? ` ${e.retryAfter} giây` : ""} rồi thử lại. `,
+  claude_cli_timeout: () => "Lệnh claude không trả lời sau 15 giây (có thể đang chờ mở khóa Keychain), thử lại. ",
+  claude_login_failed: () => "Lệnh đăng nhập claude dừng ngay. ",
+  ai_login_failed: () => "Lệnh đăng nhập dừng ngay. ",
+  auth_required: () => "Trình duyệt này chưa được mở khóa: mở lại app bằng Start Dashboard. ",
+  delivery_unknown: () => "Chưa rõ đã gửi chưa (mất kết nối giữa chừng). Xem nhóm trước khi gửi lại. ",
   telegram_error: (e) => `Telegram báo lỗi${e.detail ? ` (${e.detail})` : ""}, thử lại sau. `,
   task_cancelled: () => "Phiên đã bị dừng khi đang khởi động. ",
   ai_scope_not_allowed: () => "Tin này không còn được theo dõi hoặc đã bị xóa. ",
@@ -119,8 +127,11 @@ export const statusQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Status>("/status", { signal }),
 };
 
+/** Codes whose `detail` is the CLI's own words, worth showing after ours. */
+const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_login_failed", "ai_login_failed"]);
+
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
 export function errorText(e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") {
   const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || fallback;
-  return e instanceof ApiError && e.code === "ai_provider_error" && e.detail ? `${text.trimEnd()} (${e.detail}) ` : text;
+  return e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail ? `${text.trimEnd()} (${e.detail}) ` : text;
 }

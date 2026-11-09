@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Bookmark, Filter, Plus, Search, Sparkles } from "lucide-react";
+import { ArrowRight, Bookmark, Eye, Filter, Plus, Search, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { matches, PaletteDialog, type PaletteItem, PaletteList } from "@/components/ui/palette";
 import { fold, useNow } from "@/lib/inbox";
@@ -10,7 +10,7 @@ import { reportData } from "@/lib/yt-stats";
 import { StatePill } from "./bits";
 import { useStats } from "./dashboard";
 import { type Page, useYt } from "./state";
-import { aiFilterApply, applyView, readViews } from "./tickets";
+import { aiFilterApply, applyRoleView, applyView, readViews, roleViews } from "./tickets";
 
 // ⌘K anywhere in the YouTrack tab: open a ticket, go to a page, switch mode, and the one place to ask the AI about the
 // current scope or turn a sentence into ticket filters.
@@ -45,6 +45,7 @@ function Body({ onClose }: { onClose: () => void }) {
     }
     if (t && !y.config?.mock) out.push({ key: "create", group: "Tạo", icon: <Plus />, label: <>Tạo ticket: <b>“{t.slice(0, 80)}”</b></>, hint: y.aiOn ? "AI soạn tiêu đề, Type, Priority và mô tả theo mẫu" : undefined, run: go(() => y.setNewTicket(t)) });
     for (const v of readViews()) if (matches(terms, v.name)) out.push({ key: `view:${v.name}`, group: "View đã lưu", icon: <Bookmark />, label: v.name, run: go(() => applyView(y, v)) });
+    if (y.mode !== "dev" || y.me) for (const v of roleViews(y)) if (matches(terms, `${v[0]} góc nhìn view`)) out.push({ key: `role:${v[0]}`, group: "Góc nhìn", icon: <Eye />, label: v[0], hint: v[1], run: go(() => applyRoleView(y, v)) });
     const id = t && ticketId(t, y.project);
     if (id) out.push({ key: `id:${id}`, group: "Ticket", icon: <ArrowRight />, label: <>Mở <b className="font-mono">{id}</b></>, run: go(() => y.openTicket(id)) });
     if (terms.length) {
@@ -55,7 +56,8 @@ function Body({ onClose }: { onClose: () => void }) {
       if (y.page !== "tickets") out.push({ key: "search", group: "Ticket", icon: <Search />, label: <>Tìm “{t}” trong bảng ticket</>, run: go(() => { y.setPage("tickets"); y.setFilters({ q: t }); }) });
     }
     const nav: [string, () => void][] = [
-      ...(Object.keys(PAGE_LABEL) as Page[]).filter((p) => p !== "ai" || y.aiOn).map((p) => [`Đi tới ${p === "home" ? ({ dev: "Hôm nay", qa: "Kiểm thử", po: "Brief" } as const)[y.mode] : PAGE_LABEL[p]}`, () => y.setPage(p)] as [string, () => void]),
+      ...(([["me", "Của tôi"], ["team", "Team"], ["group", "Nhóm chọn"]] as const).filter(([s]) => s === "group" || y.me).map(([s, l]) => [`Phạm vi: ${l}`, () => y.setScope(s)] as [string, () => void])),
+      ...(Object.keys(PAGE_LABEL) as Page[]).filter((p) => p !== "ai" || y.aiOn).map((p) => [`Đi tới ${p === "home" ? ({ dev: "Hôm nay", qa: "Kiểm thử", po: "Tổng quan" } as const)[y.mode] : PAGE_LABEL[p]}`, () => y.setPage(p)] as [string, () => void]),
       ["Làm mới dữ liệu", y.refresh],
       ...(!y.config?.mock ? [["Tạo ticket mới", () => y.setNewTicket("")] as [string, () => void]] : []),
     ];

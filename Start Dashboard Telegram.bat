@@ -33,7 +33,8 @@ set ANTHROPIC_API_KEY=
 set ANTHROPIC_AUTH_TOKEN=
 set ANTHROPIC_MODEL=
 
-start "" cmd /c "timeout /t 5 >nul & start http://127.0.0.1:8765"
+rem Opens the browser with the API token once (?t=..., traded for a cookie); plain URLs work after that.
+start "" /min cmd /c "timeout /t 5 >nul & uv run --no-sync python -m telegram_dashboard open"
 echo.
 echo  Dashboard: http://127.0.0.1:8765   (Ctrl+C hoac dong cua so de dung)
 echo.

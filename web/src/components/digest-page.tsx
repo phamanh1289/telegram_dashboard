@@ -5,12 +5,13 @@ import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, Shield
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { IssueDialog } from "@/components/composer-dialogs";
 import { AiThinking } from "@/components/ai/chat";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { DeepItemAction, DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
-import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
 import { copyText, getMessage, openReplyById, smooth, toast } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
@@ -139,6 +140,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     staleTime: 60_000,
   });
   const items = useMemo(() => history.data?.items ?? [], [history.data]);
+  const wait = useAiWait(history.isPending);
   const run = useMutation({
     mutationFn: () =>
       api<DigestResult>("/digest", {
@@ -234,10 +236,8 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         <div role="note" className="flex flex-wrap items-center gap-3 border-b bg-hl-wash/50 px-3 py-2.5 text-sm md:px-5">
           <ShieldCheck className="size-4 shrink-0 text-hl-2" aria-hidden />
           <span className="min-w-0 flex-1">Cho phép AI đọc tin của nhóm này để tóm tắt. Nội dung đã gửi cho AI provider không thu hồi được.</span>
-          <select aria-label="Thời hạn cho phép" value={consentDays} onChange={(e) => setConsentDays(Number(e.target.value))}
-            className="h-[30px] rounded-[var(--radius-input)] border border-rule-2 bg-cotton px-2 text-xs text-ink">
-            {CONSENT_DAYS.map((d) => <option key={d} value={d}>{d} ngày</option>)}
-          </select>
+          <Dropdown label="Thời hạn cho phép" value={String(consentDays)} onChange={(v) => setConsentDays(Number(v))} className="h-[30px] w-auto"
+            options={CONSENT_DAYS.map((d) => ({ value: String(d), label: `${d} ngày` }))} />
           <Button size="xs" aria-busy={setConsent.isPending} disabled={setConsent.isPending} onClick={() => setConsent.mutate(true)}>Cho phép</Button>
         </div>
       )}
@@ -274,20 +274,18 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         </div>
 
         <ol aria-label="Hội thoại" className="grid content-start divide-y divide-rule lg:order-1 lg:min-h-0 lg:overflow-y-auto">
-          {history.isPending && [0, 1, 2, 3, 4].map((i) => (
-            <li key={i} className="grid gap-2 px-3 py-3 md:px-5"><Skeleton className="h-3 w-32" /><Skeleton className="h-3.5 w-4/5" /></li>
-          ))}
+          {wait && <li><AiFetching kind="history" /></li>}
           {history.isError && (
             <li role="alert" className="flex items-center gap-2 px-3 py-3 text-sm text-error md:px-5">
               {digestError(history.error)}
               <Button size="xs" variant="outline" className="ml-auto" onClick={() => void history.refetch()}><RotateCw /> Thử lại</Button>
             </li>
           )}
-          {history.data?.truncated && (
+          {!wait && history.data?.truncated && (
             <li className="px-3 py-2 text-xs text-warn md:px-5">Chỉ hiện {items.length} tin mới nhất; thu hẹp khoảng thời gian để tóm tắt đủ.</li>
           )}
-          {history.data && !items.length && <li className="px-3 py-6 text-sm text-ink-3 md:px-5">Không có tin nào trong {label.toLowerCase()}.</li>}
-          {items.map((m, i) => (
+          {!wait && history.data && !items.length && <li className="px-3 py-6 text-sm text-ink-3 md:px-5">Không có tin nào trong {label.toLowerCase()}.</li>}
+          {!wait && items.map((m, i) => (
             <Fragment key={m.message_id}>
               <Row m={m} checked={picked.has(m.message_id)} lit={lit === m.message_id} old={isOld(m)}
                 onToggle={(shift) => toggle(i, shift)} />

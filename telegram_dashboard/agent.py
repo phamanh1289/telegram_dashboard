@@ -7,12 +7,14 @@ so a task runs with a fixed permission mode: `plan` (read-only) or `acceptEdits`
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
 from pathlib import Path
 
 from . import providers
+from .ai import cli_reason
 from .claude import note_run
 from .config import child_env, kill_tree, on_path
 from .errors import ApiError
@@ -21,6 +23,7 @@ from .links import delete_links, links_dir
 log = logging.getLogger("telegram_dashboard.agent")
 
 STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file read
+EXIT_GRACE = 10  # seconds after the CLI exits before what it left holding its pipes is killed
 # After a result the CLI can linger (background agents, hooks): quiet this long = the turn is over.
 AFTER_RESULT_IDLE = 20.0
 
@@ -70,6 +73,11 @@ class AgentRunner:
 
     def running(self, task_id: str) -> bool:
         return task_id in self.procs or task_id in self._starting
+
+    @property
+    def busy(self) -> bool:
+        """Any task running or still starting (an update must not restart under it)."""
+        return bool(self.procs or self._starting)
 
     def read(self, task_id: str, after: int = 0) -> tuple[list[dict], int]:
         """(items after line `after`, total lines). Only whole lines: the pump may be mid-write."""
@@ -126,9 +134,9 @@ class AgentRunner:
                 proc.stdin.close()
             except OSError:  # the CLI quit at once (bad flag, unknown session): stderr says why
                 kill_tree(proc)
-                err = (await proc.communicate())[1].decode(errors="replace")[-300:]
-                log.warning("agent for task %s exited: %s", task_id, err)
-                raise ApiError(502, "task_launch_failed") from None
+                err = (await proc.communicate())[1]
+                log.warning("agent for task %s exited: %s", task_id, err.decode(errors="replace")[-300:])
+                raise ApiError(502, "task_launch_failed", detail=cli_reason(None, err)) from None
             if provider in providers.OTHERS and not resume:  # its first event names the new session
                 session_id = await self._new_thread(task_id, proc, provider)
             if task_id in self._cancel:
@@ -167,9 +175,9 @@ class AgentRunner:
             thread = ""
         if not thread:
             kill_tree(proc)
-            err = (await proc.communicate())[1].decode(errors="replace")[-300:]
-            log.warning("%s for task %s gave no session: %s", provider, task_id, err)
-            raise ApiError(502, "task_launch_failed")
+            err = (await proc.communicate())[1]
+            log.warning("%s for task %s gave no session: %s", provider, task_id, err.decode(errors="replace")[-300:])
+            raise ApiError(502, "task_launch_failed", detail=cli_reason(None, err))
         return f"{provider}:{thread}"
 
     def _items(self, task_id: str, provider: str, ev: dict, st: dict) -> list[dict]:
@@ -185,6 +193,7 @@ class AgentRunner:
                     provider="claude") -> None:  # fmt: skip
         got_result, t0, st = False, time.monotonic(), {}
         err = asyncio.create_task(proc.stderr.read())
+        reap = asyncio.create_task(self._reap_after_exit(proc))
         try:
             # once a result is in, a CLI that stays alive but silent is done, not "running"
             idle = lambda: AFTER_RESULT_IDLE if got_result else None  # noqa: B023, E731 (reads it live)
@@ -218,10 +227,19 @@ class AgentRunner:
             if proc.returncode is None:
                 await proc.wait()
             err.cancel()
+            reap.cancel()
             if self.procs.get(task_id) is proc:
                 del self.procs[task_id]
             if self.pumps.get(task_id) is asyncio.current_task():
                 del self.pumps[task_id]
+
+    @staticmethod
+    async def _reap_after_exit(proc) -> None:
+        """The CLI exited but a command it started still holds stdout/stderr: the pump would wait on
+        the pipe forever (task stuck "running"). Kill what's left after a grace period."""
+        await proc.wait()
+        await asyncio.sleep(EXIT_GRACE)
+        kill_tree(proc)
 
     async def stop(self, task_id: str, why: str = "Đã dừng.") -> None:
         """Stop the run (and what it started) and wait until its pump is done, so nothing writes to
@@ -231,13 +249,13 @@ class AgentRunner:
             if (starting := self._starting[task_id]) is not None:
                 kill_tree(starting)
         proc = self.procs.get(task_id)
-        if proc and proc.returncode is None:
+        if proc:
             self._why[task_id] = why
-            kill_tree(proc, term=True)
-            try:
-                await asyncio.wait_for(proc.wait(), 5)
-            except TimeoutError:
-                kill_tree(proc)
+            if proc.returncode is None:
+                kill_tree(proc, term=True)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(proc.wait(), 5)
+            kill_tree(proc)  # also what it left behind holding the output pipe (the pump waits on it)
         if pump := self.pumps.get(task_id):
             await asyncio.gather(pump, return_exceptions=True)
 

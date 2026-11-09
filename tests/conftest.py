@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import Hub
-from telegram_dashboard.models import GroupInfo, SentMessage, StoredMessage
+from telegram_dashboard.models import GroupInfo, Member, SentMessage, StoredMessage
 from telegram_dashboard.storage import Db, Store
 from telegram_dashboard.telegram import TelegramBridge
 
@@ -97,6 +97,10 @@ class FakeTransport:
         if self.send_impl:
             return await self.send_impl(call)
         return SentMessage(message_id=1000 + len(self.send_calls))
+
+    async def members(self, chat_id):
+        return [Member(user_id="42", name="Minh BE", username="minh_be"), Member(user_id="43", name="Lan QA"),
+                Member(user_id="44", name="Trần Lan Anh", username="lananh_po"), Member(user_id="45", name="Đức Mobile")]
 
     async def send_reaction(self, chat_id, message_id, emoji):
         self.reactions.append((chat_id, message_id, emoji))

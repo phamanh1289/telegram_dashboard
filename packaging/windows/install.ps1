@@ -23,6 +23,12 @@
 
   Write-Host "Tai Telegram Dashboard $($rel.tag_name)..."
   Invoke-WebRequest $asset.browser_download_url -OutFile $exe -UseBasicParsing
+  # GitHub's sha256 of the asset: a corrupted or swapped download is never run
+  $got = 'sha256:' + (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+  if ($got -ne $asset.digest) {
+    Remove-Item $exe -ErrorAction SilentlyContinue
+    throw 'Bo cai tai ve sai checksum: khong cai.'
+  }
   Write-Host 'Dang cai...'
   Start-Process $exe -ArgumentList '/SILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/TASKS=desktopicon' -Wait
   Remove-Item $exe -ErrorAction SilentlyContinue

@@ -11,7 +11,8 @@ import { fold, useNow } from "@/lib/inbox";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, bucket, DAY, isBlocked, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
-import { Avatar, Card, Prio, StatePill, YtPicks } from "./bits";
+import { useAiWait } from "@/components/ai/fetching";
+import { Avatar, Card, Prio, StatePill, YtFetching, YtPicks } from "./bits";
 import { useYt } from "./state";
 
 // Members: a rail with everyone's load, the team side by side, or one person (figures, tickets, an AI on your own prompt).
@@ -105,6 +106,7 @@ export function PeoplePage() {
   const setDays = (d: number) => { setDaysState(d); setPref("ytPeopleDays", String(d)); };
   // everyone's tickets in one query (the same cache as the All scope): rail, team and person read from it
   const data = useQuery({ queryKey: ["yt", "issues", y.project, "*"], queryFn: ({ signal }) => yt.issues(y.project, null, signal), staleTime: 60_000 });
+  const wait = useAiWait(data.isPending);
   const stats = useMemo(() => {
     const by = new Map<string, Ticket[]>();
     for (const i of data.data ?? []) if (i.assignee) by.set(i.assignee, [...(by.get(i.assignee) ?? []), i]);
@@ -142,9 +144,10 @@ export function PeoplePage() {
         </ul>
       </nav>
       {data.isError ? <p role="alert" className="text-sm text-error">Không tải được ticket: {(data.error as Error).message}</p>
+        : wait ? <YtFetching kind="people" />
         : !person ? <p className="text-sm text-ink-3">Chưa có danh sách thành viên.</p>
-        : person === TEAM ? <TeamView stats={stats} max={max} days={days} setDays={setDays} loading={data.isPending} onPick={pick} />
-        : <PersonView key={person} name={person} s={stats.get(person)!} days={days} setDays={setDays} loading={data.isPending} />}
+        : person === TEAM ? <TeamView stats={stats} max={max} days={days} setDays={setDays} onPick={pick} />
+        : <PersonView key={person} name={person} s={stats.get(person)!} days={days} setDays={setDays} />}
     </div>
   );
 }
@@ -159,7 +162,7 @@ const COLS: [string, (s: Stats) => number | null][] = [["Đang mở", (s) => s.o
   ["Quá hạn", (s) => s.overdue.length], ["Không cập nhật >7 ngày", (s) => s.stale.length], ["Xong trong kỳ", (s) => s.done.length], ["Bug mở", (s) => s.bugs.length], ["Lead time (ngày)", (s) => s.lead]];
 
 /** Everyone side by side: a load bar, what's at risk, output; a click opens the person, the AI reads it for rebalancing. */
-function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<string, Stats>; max: number; days: number; setDays: (d: number) => void; loading: boolean; onPick: (n: string) => void }) {
+function TeamView({ stats, max, days, setDays, onPick }: { stats: Map<string, Stats>; max: number; days: number; setDays: (d: number) => void; onPick: (n: string) => void }) {
   const y = useYt();
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>(() => (getPref("ytPeopleSort") as never) || "open");
   const f = (SORTS.find((x) => x.value === sort) ?? SORTS[0]).f;
@@ -174,7 +177,7 @@ function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<s
   return (
     <div className="grid content-start gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="mr-auto grid"><h2 className="text-lg font-semibold">Cả team</h2><span className="text-xs text-ink-3">{loading ? "Đang tải ticket cả team…" : `${rows.length} người có ticket`}</span></div>
+        <div className="mr-auto grid"><h2 className="text-lg font-semibold">Cả team</h2><span className="text-xs text-ink-3">{`${rows.length} người có ticket`}</span></div>
         <Period days={days} setDays={setDays} />
         {y.aiOn && <Button size="sm" onClick={run} disabled={!rows.length}><Sparkles /> AI chia việc</Button>}
       </div>
@@ -216,7 +219,7 @@ function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<s
             );
           })}
         </ul>
-        {!rows.length && !loading && <p className="text-sm text-ink-3">Chưa ai có ticket trong kỳ này.</p>}
+        {!rows.length && <p className="text-sm text-ink-3">Chưa ai có ticket trong kỳ này.</p>}
       </section>
     </div>
   );
@@ -224,7 +227,7 @@ function TeamView({ stats, max, days, setDays, loading, onPick }: { stats: Map<s
 
 const LISTS = [["open", "Đang mở"], ["attn", "Cần chú ý"], ["done", "Đã xong"]] as const;
 
-function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stats; days: number; setDays: (d: number) => void; loading: boolean }) {
+function PersonView({ name, s, days, setDays }: { name: string; s: Stats; days: number; setDays: (d: number) => void }) {
   const y = useYt();
   const now = useNow();
   const [list, setList] = useState<(typeof LISTS)[number][0]>("open");
@@ -251,7 +254,7 @@ function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stat
         <Avatar name={name} className="size-11 text-sm" />
         <div className="mr-auto grid">
           <h2 className="text-lg font-semibold">{name}{name === y.me && <span className="font-normal text-ink-3"> (tôi)</span>}</h2>
-          <span className="text-xs text-ink-3">{loading ? "Đang tải ticket…" : `${s.open.length + s.done.length} ticket, lịch sử ${y.config?.hist ?? ""} ngày`}</span>
+          <span className="text-xs text-ink-3">{`${s.open.length + s.done.length} ticket, lịch sử ${y.config?.hist ?? ""} ngày`}</span>
         </div>
         <Period days={days} setDays={setDays} />
       </div>
@@ -277,13 +280,6 @@ function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stat
 
         {y.aiOn && (
           <Card title={<span className="inline-flex items-center gap-1.5"><Sparkles className="size-4 text-hl-2" />Hỏi AI về {shortName(name)}</span>} className="border border-hl/25 xl:sticky xl:top-28">
-            <div className="flex flex-wrap gap-1.5">
-              {PRESETS.map(([label, hint, make]) => (
-                <Hint key={label} title={label} text={`${hint} Bấm để chạy ngay.`} side="bottom">
-                  <Button size="sm" variant="outline" disabled={!ids.length} onClick={() => { const p = make(name, days); setPrompt(p); run(p); }}>{label}</Button>
-                </Hint>
-              ))}
-            </div>
             <div className="grid gap-1.5">
               <span className="text-xs text-ink-3">Ticket gửi cho AI</span>
               <Segmented id="people-ai-scope" label="Ticket gửi cho AI" value={scope} onChange={setScope} items={SCOPES.map((x) => ({ ...x }))} className="w-fit" />
@@ -291,8 +287,17 @@ function PersonView({ name, s, days, setDays, loading }: { name: string; s: Stat
             </div>
             <AiPromptBox aria-label="Yêu cầu cho AI" maxLength={2000} value={prompt} onChange={setPrompt} onSend={() => run()}
               placeholder="Nhập yêu cầu: tóm tắt, review, đánh giá… AI chỉ dựa trên ticket và số liệu của người này."
+              top={( // presets fill the box and run: AI buttons live inside the prompt box (CLAUDE.md)
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESETS.map(([label, hint, make]) => (
+                    <Hint key={label} title={label} text={`${hint} Bấm để chạy ngay.`} side="bottom">
+                      <Button size="xs" variant="outline" className="rounded-full" disabled={!ids.length} onClick={() => { const p = make(name, days); setPrompt(p); run(p); }}>{label}</Button>
+                    </Hint>
+                  ))}
+                </div>
+              )}
               tools={<YtPicks heavy={Math.min(ids.length, AI_MAX) > 10} />}
-              actions={<Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button>} />
+              actions={<Hint side="bottom" text="Gửi yêu cầu cho AI (Enter)"><Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" disabled={!prompt.trim() || !ids.length} onClick={() => run()}><Sparkles /> Phân tích</Button></Hint>} />
           </Card>
         )}
       </div>

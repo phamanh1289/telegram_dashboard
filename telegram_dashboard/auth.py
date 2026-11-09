@@ -1,19 +1,33 @@
+import hmac
+import json
+from http.cookies import CookieError, SimpleCookie
 from urllib.parse import urlsplit
 
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 CROSS_SITE = {"cross-site", "same-site"}  # Sec-Fetch-Site of a request another page made
+COOKIE_AGE = 400 * 86400  # browsers cap cookie lifetime at 400 days
+
+
+def _json(status: int, code: str, headers: dict | None = None) -> JSONResponse:
+    return JSONResponse({"error": {"code": code}}, status_code=status,
+                        headers={"Cache-Control": "private, no-store", **(headers or {})})  # fmt: skip
 
 
 class LocalGuardMiddleware:
-    """Host/Origin checks and no-store headers for /api. Pure ASGI so SSE is not buffered."""
+    """Host/Origin checks and no-store headers for /api. Pure ASGI so SSE is not buffered.
+    `token`: /api also needs the `td_auth_<port>` cookie, which `POST /api/auth {token}` sets. Host/Origin only stop
+    web pages; the token stops other local processes (an AI agent's shell, another OS user). The browser gets it
+    once from a `?t=` link the server / launcher opens (the page posts it here); None = off (tests, fixtures)."""
 
-    def __init__(self, app: ASGIApp, host_header: str, app_origin: str):
+    def __init__(self, app: ASGIApp, host_header: str, app_origin: str, token: str | None = None):
         self.app = app
         self.host_header = host_header
         self.app_origin = app_origin
+        self.token = token
+        self.cookie = f"td_auth_{host_header.rsplit(':', 1)[-1]}"  # per port: two installs never clash
         # The dev proxy (Next) rewrites Host; the browser's Host arrives as X-Forwarded-Host.
         self.forwarded_hosts = {host_header, urlsplit(app_origin).netloc}
 
@@ -37,13 +51,14 @@ class LocalGuardMiddleware:
             elif origin is not None and origin != self.app_origin:
                 problem = (403, "invalid_origin")
         if problem:
-            resp = JSONResponse(
-                {"error": {"code": problem[1]}}, status_code=problem[0],
-                headers={"Cache-Control": "private, no-store"},
-            )  # fmt: skip
-            return await resp(scope, receive, send)
+            return await _json(*problem)(scope, receive, send)
 
         is_api = scope["path"].startswith("/api")
+        if self.token and is_api:
+            if scope["path"] == "/api/auth":
+                return await self._login(scope, receive, send)
+            if not self._signed_in(headers.get("cookie", "")):
+                return await _json(401, "auth_required")(scope, receive, send)
 
         async def send_wrapper(message: Message) -> None:
             if is_api and message["type"] == "http.response.start":
@@ -65,3 +80,31 @@ class LocalGuardMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_wrapper)
+
+    def _signed_in(self, cookie_header: str) -> bool:
+        try:
+            got = SimpleCookie(cookie_header).get(self.cookie)
+        except CookieError:
+            return False
+        return got is not None and hmac.compare_digest(got.value.encode(), self.token.encode())
+
+    async def _login(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["method"] != "POST":
+            return await _json(405, "method_not_allowed")(scope, receive, send)
+        body = b""
+        while True:  # a token is ~43 chars: anything long is not one
+            m = await receive()
+            body += m.get("body", b"")
+            if len(body) > 4096:
+                return await _json(413, "too_large")(scope, receive, send)
+            if not m.get("more_body"):
+                break
+        try:
+            token = json.loads(body or b"{}").get("token")
+        except (ValueError, AttributeError):
+            token = None
+        if not isinstance(token, str) or not hmac.compare_digest(token.strip().encode(), self.token.encode()):
+            return await _json(401, "auth_invalid")(scope, receive, send)
+        cookie = f"{self.cookie}={self.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={COOKIE_AGE}"
+        resp = Response(status_code=204, headers={"Cache-Control": "private, no-store", "Set-Cookie": cookie})
+        await resp(scope, receive, send)

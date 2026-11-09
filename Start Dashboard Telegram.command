@@ -57,6 +57,9 @@ server_pids() {
 
 running() { [ -n "$(server_pids)" ]; }
 
+# The browser opens with the API token once (?t=…, traded for a cookie): plain URLs work after that.
+open_app() { .venv/bin/python -m telegram_dashboard open >/dev/null 2>&1 || open "$URL"; }
+
 start() {
   if running; then warn "Server đã chạy rồi — ${URL}"; return; fi
   build_if_stale
@@ -123,7 +126,7 @@ menu() {
 
 step "Khởi động"
 start
-running && open "$URL"
+running && open_app
 
 while true; do
   menu
@@ -132,7 +135,7 @@ while true; do
     1) step "Start"; start ;;
     2) step "Stop"; stop ;;
     3) step "Restart"; stop; start ;;
-    4) open "$URL"; ok "Đã mở ${URL}" ;;
+    4) open_app; ok "Đã mở ${URL}" ;;
     5) step "Log gần nhất (${LOG})"; tail -n 40 "$LOG" | sed "s/^/    ${D}│${R} /" ;;
     0 | esc) step "Thoát"; stop; ok "Tạm biệt!"; exit 0 ;;
     *) err "Không có lựa chọn \"$key\"." ;;

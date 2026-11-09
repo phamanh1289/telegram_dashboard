@@ -237,7 +237,7 @@ function ClaudeAccountCard() {
     onSettled: refresh,
   });
   const a = acc.data;
-  if (acc.isError) return <p role="alert" className="text-sm text-error">Không chạy được lệnh <code>claude</code> trên máy này.</p>;
+  if (acc.isError) return <p role="alert" className="text-sm text-error">{errorText(acc.error, {}, "Không chạy được lệnh claude trên máy này.")}</p>;
   if (!a) return <div role="status" aria-label="Đang kiểm tra…" className="grid gap-3"><Skeleton className="h-48" /><Skeleton className="h-40" /></div>;
   const url = a.login_url ?? login.data?.url;
   const tier = planTier(a);
@@ -281,8 +281,11 @@ function ClaudeAccountCard() {
             </div>
           </form>
         )}
-        {paste.isError && <p role="alert" className="text-xs text-error">Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.</p>}
-        {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">Không chạy được lệnh claude. Thử lại sau.</p>}
+        {paste.isError && <p role="alert" className="text-xs text-error">{errorText(paste.error, {
+          claude_login_timeout: "Claude chưa xác nhận mã sau một lúc chờ. Bấm đăng nhập lại.",
+          claude_login_not_started: "Phiên đăng nhập đã đóng (ví dụ sau khi khởi động lại). Bấm đăng nhập lại.",
+        }, "Mã không hợp lệ hoặc đã hết hạn. Bấm đăng nhập lại.")}</p>}
+        {(login.isError || logout.isError) && <p role="alert" className="text-xs text-error">{errorText(login.error ?? logout.error, {}, "Không chạy được lệnh claude. Thử lại sau.")}</p>}
       </div>
       {a.loggedIn && <Quota provider="claude" />}
       {a.loggedIn && <Facts rows={[

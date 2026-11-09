@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ExternalLink, MessageSquareText, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { ImageView } from "@/components/markdown";
@@ -10,10 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "@/lib/inbox";
+import { toast, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { type Detail, fileUrl, issueUrl, shortName, type Ticket, when, yt } from "@/lib/yt";
-import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill } from "./bits";
+import { AI_MAX, type Detail, type Field, fileUrl, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
+import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
 import { saveTicket, selfEdits, useYt, type Yt } from "./state";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
@@ -85,7 +85,11 @@ export function Sheet() {
                 <Hint side="bottom" text="Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code"><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label="AI cho ticket này"
                   onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [s.id] })}><Sparkles /></Button></Hint>
               )}
-              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(s.kind === "ticket" && y.aiOn) && "ml-auto")} onClick={close} aria-label="Đóng (Esc)"><X /></Button>
+              {s.kind === "list" && y.aiOn && s.rows.length > 0 && (
+                <Hint side="bottom" text={`Hỏi AI về ${Math.min(s.rows.length, AI_MAX)} ticket trong danh sách này (ưu tiên ticket đang mở)`}><Button size="sm" variant="ghost" className="ml-auto"
+                  onClick={() => y.setSheet({ kind: "work", title: `AI · ${s.title}`, ids: [...s.rows].sort((a, b) => +!!a.resolved - +!!b.resolved).slice(0, AI_MAX).map((i) => i.id) })}><Sparkles /> Hỏi AI</Button></Hint>
+              )}
+              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(y.aiOn && (s.kind === "ticket" || (s.kind === "list" && s.rows.length > 0))) && "ml-auto")} onClick={close} aria-label="Đóng (Esc)"><X /></Button>
             </div>
             <div className={cn("min-h-0 flex-1 p-4 sm:p-5", s.kind === "work" ? "flex flex-col" : "overflow-y-auto")}>{/* work: a chat, it scrolls its own middle */}
               {s.kind === "ticket" ? <TicketView key={s.id} id={s.id} draft={s.comment} />
@@ -127,13 +131,14 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const y = useYt();
   const qc = useQueryClient();
   const row = y.rows.find((i) => i.id === id);
-  const d = useQuery({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id), staleTime: 60_000 });
+  const d = useQuery(ytDetailQuery(id));
   const mentions = useQuery({ queryKey: ["yt", "mentions", id], queryFn: () => yt.mentions(id), staleTime: 60_000 });
   const i: Ticket | Detail | undefined = d.data ?? row;
   const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
   const box = useRef<HTMLTextAreaElement>(null);
+  const now = useNow();
 
   async function send() {
     const t = comment.trim();
@@ -163,8 +168,10 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const said = [d.data?.description, ...(d.data?.comments.map((c) => c.text) ?? [])].join("\n");
   const loose = files.filter((a) => !said.includes(`(${a.name}`) && !said.includes(`(${encodeURI(a.name)}`)); // not shown inline in any text
   const meta: [string, React.ReactNode][] = [
-    ["State", <StateSelect key="s" ticket={i} />], ["Assignee", <AssigneeSelect key="a" ticket={i} />], ["Priority", <Prio key="p" p={i.priority} />],
-    ["QC", i.qc || "—"], ["Sprint", i.sprints.join(", ") || "—"], ...(i.due ? [["Hạn", when(i.due)] as [string, string]] : []),
+    ["State", <FieldSelect key="s" ticket={i} name="State" />], ["Assignee", <AssigneeSelect key="a" ticket={i} />], ["Priority", <FieldSelect key="p" ticket={i} name="Priority" />],
+    ["QC", <AssigneePicker key="q" ticket={i} acts={y} field="QC" className="-ml-1.5" />], ["Type", <FieldSelect key="t" ticket={i} name="Type" />],
+    ["Sprint", i.sprints.join(", ") || "—"], ...(i.due ? [["Hạn", <span key="d" className={cn(i.due < now && !i.resolved && "font-medium text-error")}>{when(i.due)}</span>] as [string, React.ReactNode]] : []),
+    ...(i.estimate ? [["Estimate", `${+(i.estimate / 60).toFixed(1)}h`] as [string, string]] : []),
     ["Tạo", when(i.created)], ["Cập nhật", when(i.updated)], ["Reporter", d.data?.reporter || (d.isPending ? "…" : "—")],
   ];
   return (
@@ -225,11 +232,20 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       {!!mentions.data?.length && (
         <motion.section variants={fade} className="grid gap-1.5">
           <Label>Nhắc trên Telegram ({mentions.data.length})</Label>
-          {mentions.data.map((m, k) => (
-            <Link key={k} href={`/?chat=${encodeURIComponent(m.chat_id)}`} className="grid gap-0.5 rounded-lg bg-cotton p-2.5 text-sm no-underline shadow-edge hover:bg-paper-2">
-              <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{m.chat}</span><span>{m.from || "?"}</span><time className="ml-auto">{when(m.date)}</time></small>
-              <span className="line-clamp-3">{m.text}</span>
-            </Link>
+          {mentions.data.map((m) => (
+            <div key={`${m.chat_id}:${m.message_id}`} className="grid rounded-lg bg-cotton text-sm shadow-edge">
+              <Link href={`/?chat=${encodeURIComponent(m.chat_id)}&msg=${encodeURIComponent(m.message_id)}`} className="grid gap-0.5 rounded-t-lg p-2.5 pb-1.5 no-underline hover:bg-paper-2">
+                <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{m.chat}</span><span>{m.from || "?"}</span><time className="ml-auto">{when(m.date)}</time></small>
+                <span className="line-clamp-3">{m.text}</span>
+              </Link>
+              {/* Q&A in that group, the box prefilled (inbox reads ?qa= / ?ask=): the post gets a #QA code and nudges */}
+              <Hint side="bottom" text="Đăng câu hỏi Q&A vào nhóm này (kèm mã #QA, có nhắc khi chưa ai trả lời)">
+                <Link href={`/?qa=${encodeURIComponent(m.chat_id)}&ask=${encodeURIComponent(`Về ${i.id} ${i.summary ?? ""}: `)}`}
+                  className="inline-flex items-center gap-1 justify-self-start rounded-md px-2.5 py-1 text-xs text-hl-2 no-underline hover:bg-paper-2">
+                  <MessageCircleQuestion className="size-3.5" aria-hidden /> Hỏi lại trong nhóm
+                </Link>
+              </Hint>
+            </div>
           ))}
         </motion.section>
       )}
@@ -237,7 +253,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       <motion.section variants={fade} className="grid gap-2">
         <Label>Bình luận ({d.data?.comments.length ?? "…"})</Label>
         {d.data?.comments.map((c, k) => (
-          <div key={k} className="grid gap-1 rounded-lg bg-cotton p-3 shadow-edge">
+          <div key={c.id ?? k} className="grid gap-1 rounded-lg bg-cotton p-3 shadow-edge">
             <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{c.author || "—"}</span><time className="ml-auto">{when(c.created)}</time></small>
             <Markdown text={c.text} files={{ issue: id, list: files, comment: c.id }} />
           </div>
@@ -245,7 +261,8 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         {d.data && !d.data.comments.length && <p className="text-sm text-ink-3 italic">Chưa có bình luận</p>}
         {write && (
           <div className="grid gap-2">
-            <Textarea ref={box} rows={3} maxLength={20000} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Bình luận mới" placeholder="Viết bình luận (gửi lên YouTrack)…" />
+            <Textarea ref={box} rows={3} maxLength={20000} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Bình luận mới" placeholder="Viết bình luận (gửi lên YouTrack, ⌘↵ gửi)…"
+              onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !sending) { e.preventDefault(); void send(); } }} />
             <Button size="sm" className="justify-self-end" disabled={!comment.trim() || sending} aria-busy={sending} onClick={() => void send()}><MessageSquareText /> Gửi bình luận</Button>
           </div>
         )}
@@ -255,59 +272,76 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
 }
 const fade = { h: { opacity: 0, y: 6 }, v: { opacity: 1, y: 0 } };
 
-/** Change the assignee; the toast offers to put it back. */
+/** Change the assignee; "Nhận" takes it. The toast offers to put it back. */
 export function AssigneeSelect({ ticket }: { ticket: Ticket }) {
   const y = useYt(), me = y.me ? y.loginOf.get(y.me) : undefined;
-  const cur = ticket.assigneeLogin ?? (ticket.assignee ? y.loginOf.get(ticket.assignee) ?? "" : "");
   return (
     <span className="flex min-w-0 items-center gap-1">
       <AssigneePicker ticket={ticket} acts={y} className="-ml-1.5" />
-      {me && cur !== me && !y.config?.mock && (
-        <Button size="xs" variant="ghost" className="shrink-0 text-ink-3" onClick={() => void setAssignee(y, ticket, me, cur)}>Nhận</Button>
+      {me && userLogin(y, ticket, "Assignee") !== me && !y.config?.mock && (
+        <Button size="xs" variant="ghost" className="shrink-0 text-ink-3" onClick={() => void setPerson(y, ticket, "Assignee", me)}>Nhận</Button>
       )}
     </span>
   );
 }
 /** The same picker fed by props: a memoized table row must not subscribe to the whole YouTrack context. */
 export type AssigneeActs = Pick<Yt, "people" | "loginOf" | "patchTicket" | "config" | "me">;
-export function AssigneePicker({ ticket, className, acts: y }: { ticket: Ticket; className?: string; acts: AssigneeActs }) {
-  const label = ticket.assignee ? <Person name={ticket.assignee} />
-    : <span className="inline-flex items-center gap-1.5 text-ink-3"><i aria-hidden className="size-6 shrink-0 rounded-full border border-dashed border-rule-2" />Chưa assign</span>;
+/** The two single-user fields: the ticket keys they live in and their empty label. */
+const USER = {
+  Assignee: { name: "assignee", login: "assigneeLogin", empty: "Chưa assign" },
+  QC: { name: "qc", login: "qcLogin", empty: "Chưa có QC" },
+} as const;
+const userLogin = (y: AssigneeActs, t: Ticket, f: UserField) => { const u = USER[f], n = t[u.name]; return t[u.login] ?? (n ? y.loginOf.get(n) ?? "" : ""); };
+const Nobody = ({ text }: { text: string }) => <span className="inline-flex items-center gap-1.5 text-ink-3"><i aria-hidden className="size-6 shrink-0 rounded-full border border-dashed border-rule-2" />{text}</span>;
+
+export function AssigneePicker({ ticket, className, acts: y, field = "Assignee" }: { ticket: Ticket; className?: string; acts: AssigneeActs; field?: UserField }) {
+  const u = USER[field], who = ticket[u.name];
+  const label = who ? <Person name={who} /> : <Nobody text={u.empty} />;
   if (y.config?.mock) return <span className={cn("inline-flex px-1.5", className)}>{label}</span>;
-  const cur = ticket.assigneeLogin ?? (ticket.assignee ? y.loginOf.get(ticket.assignee) ?? "" : "");
+  const cur = userLogin(y, ticket, field);
   const meLogin = y.me ? y.loginOf.get(y.me) : undefined;
-  const team = y.people.some((p) => p.login === cur) || !cur ? y.people : [...y.people, { login: cur, name: ticket.assignee ?? cur }];
+  const team = y.people.some((p) => p.login === cur) || !cur ? y.people : [...y.people, { login: cur, name: who ?? cur }];
   const opt = (p: { login: string; name: string }) => ({ v: p.login, text: p.name, node: <><Avatar name={p.name} /><span className="truncate">{p.name}</span></>, hint: p.login === meLogin ? "Tôi" : undefined });
   const options = [
     ...team.filter((p) => p.login === meLogin).map(opt), // me first: taking a ticket is the common case
-    { v: "", text: "Chưa assign bỏ assign", node: <><i aria-hidden className="size-6 shrink-0 rounded-full border border-dashed border-rule-2" /><span className="text-ink-2">Chưa assign</span></> },
+    { v: "", text: `${u.empty} bỏ chọn`, node: <Nobody text={u.empty} /> },
     ...team.filter((p) => p.login !== meLogin).map(opt),
   ];
-  return <Picker label={label} title={`Đổi assignee ${ticket.id}`} value={cur} options={options} search="Tìm người…" className={className}
-    onPick={(login) => void setAssignee(y, ticket, login, cur)} />;
+  return <Picker label={label} title={`Đổi ${field} ${ticket.id}`} value={cur} options={options} search="Tìm người…" className={className}
+    onPick={(login) => void setPerson(y, ticket, field, login)} />;
 }
-async function setAssignee(y: AssigneeActs, t: Ticket, login: string, prev: string) {
-  const name = (l: string) => y.people.find((p) => p.login === l)?.name ?? (l === prev ? t.assignee : null) ?? null;
-  const local = (l: string) => ({ assignee: name(l), assigneeLogin: l || null });
-  const go = (from: Ticket, l: string) => saveTicket(y.patchTicket, from, local(l), () => yt.setAssignee(t.id, l || null));
-  if (await go(t, login)) toast({ text: `${t.id} → ${name(login) ?? "Chưa assign"}`, undo: () => void go({ ...t, ...local(login) }, prev) });
+/** Set Assignee / QC at once, settle on YouTrack's answer; the toast offers to put it back. False on error. */
+export async function setPerson(y: AssigneeActs, t: Ticket, field: UserField, login: string) {
+  const u = USER[field], prev = userLogin(y, t, field);
+  const name = (l: string) => y.people.find((p) => p.login === l)?.name ?? (l === prev ? t[u.name] : null) ?? null;
+  const local = (l: string): Partial<Ticket> => ({ [u.name]: name(l), [u.login]: l || null });
+  const go = (from: Ticket, l: string) => saveTicket(y.patchTicket, from, local(l), () => yt.setAssignee(t.id, l || null, field));
+  const ok = await go(t, login);
+  if (ok) toast({ text: `${t.id} ${field === "QC" ? "QC " : ""}→ ${name(login) ?? u.empty}`, undo: () => void go({ ...t, ...local(login) }, prev) });
+  return ok;
 }
 
-/** State, changed through YouTrack (follows the team's workflow); shown at once, the toast offers to put it back. */
-function StateSelect({ ticket }: { ticket: Ticket }) {
+/** State / Priority / Type, changed through YouTrack (State follows the team's workflow); shown at once, the toast offers to put it back. */
+const FIELD = {
+  State: { key: "state", node: (v: string | null) => <StatePill state={v} /> },
+  Priority: { key: "priority", node: (v: string | null) => <Prio p={v} /> },
+  Type: { key: "type", node: (v: string | null) => <TypeTag type={v} /> },
+} as const;
+function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const y = useYt();
   const project = ticket.id.split("-")[0];
   const opts = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !y.config?.mock });
-  const cur = ticket.state ?? "";
-  const flow = useFlow(project)(cur); // the team's arrows out of this state; null: no rule
-  const all = opts.data?.State ?? [];
+  const { key, node } = FIELD[name], cur = ticket[key] ?? "";
+  const flowOf = useFlow(project);
+  const flow = name === "State" ? flowOf(cur) : null; // the team's arrows out of this state; null: no rule
+  const all = opts.data?.[name] ?? [];
   const values = flow ? all.filter((v) => v === cur || flow.includes(v)) : all;
-  if (!values.length) return <StatePill state={ticket.state} />;
-  const options = (values.includes(cur) || !cur ? values : [cur, ...values]).map((v) => ({ v, node: <StatePill state={v} /> }));
+  if (!values.length) return node(ticket[key]);
+  const options = (values.includes(cur) || !cur ? values : [cur, ...values]).map((v) => ({ v, node: node(v) }));
   async function change(v: string) {
-    const go = (from: Ticket, to: string) => saveTicket(y.patchTicket, from, { state: to }, () => yt.setField(ticket.id, "State", to));
-    if (await go(ticket, v)) toast({ text: `${ticket.id} State → ${v}`, undo: cur ? () => void go({ ...ticket, state: v }, cur) : undefined });
+    const go = (from: Ticket, to: string) => saveTicket(y.patchTicket, from, { [key]: to }, () => yt.setField(ticket.id, name, to));
+    if (await go(ticket, v)) toast({ text: `${ticket.id} ${name} → ${v}`, undo: cur ? () => void go({ ...ticket, [key]: v }, cur) : undefined });
   }
-  return <Picker label={<StatePill state={ticket.state} />} title={`Đổi State ${ticket.id}`} value={cur} options={options} onPick={(v) => void change(v)}
+  return <Picker label={node(ticket[key])} title={`Đổi ${name} ${ticket.id}`} value={cur} options={options} onPick={(v) => void change(v)}
     foot={flow && all.length > values.length ? (flow.length ? `Theo workflow của team: chỉ hiện các bước đi tiếp từ ${cur || "—"}` : `Workflow của team: ${cur || "—"} là bước cuối`) : undefined} />;
 }

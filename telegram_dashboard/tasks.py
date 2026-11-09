@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Request
 
 from .agent import delete_task_files, read_task_prompt, read_task_result
+from .ai import ASK_STYLE
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
@@ -30,7 +31,9 @@ async def start_task(
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
     try:
-        named = await s.agent.start(task_id, project, await expand(s, prompt, task_id), mode, session, False)
+        # its questions to BE / PO / QC follow the same role style as every other AI text (CLAUDE.md)
+        text = await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_STYLE.strip()}"
+        named = await s.agent.start(task_id, project, text, mode, session, False)
     except BaseException:
         await s.db.write(s.store.delete_task, task_id)
         await asyncio.to_thread(delete_links, s.settings, task_id)  # link text saved by expand()
@@ -95,9 +98,8 @@ def build_router(settings) -> APIRouter:
         await s.agent.stop(task_id)
         ai = (row["model"], row["effort"])
         fresh = s.agent.new_session(split_session(row["session_id"] or "")[0])
-        session = await s.agent.start(
-            task_id, row["project"], await expand(s, row["prompt"], task_id), row["mode"], fresh, False, ai
-        )  # fmt: skip
+        text = await expand(s, row["prompt"], task_id, chat_id=row["chat_id"])
+        session = await s.agent.start(task_id, row["project"], text, row["mode"], fresh, False, ai)
         await s.db.write(s.store.set_task_session, task_id, session)
 
     @r.get("/{task_id}/events")
@@ -120,11 +122,10 @@ def build_router(settings) -> APIRouter:
             raise ApiError(409, "task_busy")  # (start() also reserves the task before its first await)
         if has_links(row["prompt"] or "") and not links_dir(settings, task_id).is_dir():
             log.info("task %s: saved link content gone, fetching it again", task_id)
-            await expand(s, row["prompt"], task_id, summarize=False)  # re-saves the files earlier turns point at
+            await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])  # re-saves earlier files
         ai = (row["model"], row["effort"])
-        await s.agent.start(
-            task_id, row["project"], await expand(s, body.text, task_id), mode, row["session_id"], True, ai
-        )
+        text = await expand(s, body.text, task_id, chat_id=row["chat_id"])
+        await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, ai)
         refs = [(x.chat_id, int(x.message_id)) for x in body.refs if x.message_id.isdigit()]
         if refs:
             await s.db.write(s.store.add_task_refs, task_id, refs)
@@ -143,7 +144,8 @@ def build_router(settings) -> APIRouter:
         s = request.app.state
         row = await _task(s, task_id)
         cid, mid = row["chat_id"], row["message_id"]
-        kept = mid is not None and await s.db.read(s.store.get_message, cid, mid) is not None
+        msg = None if mid is None else await s.db.read(s.store.get_message, cid, mid)
+        kept = msg is not None and not msg.deleted  # a tag deleted on Telegram: Done goes on the session
         if kept:
             changed = await s.db.write(s.store.set_handled, cid, mid, body.handled, "me" if body.react else "quiet")
         else:

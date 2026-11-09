@@ -21,10 +21,18 @@ const IDX = "ytAiIdx";
 const KEY = (id: string) => `ytAiS:${id}`;
 const MAX = 40; // sessions kept; the oldest drop off
 const TURNS = 12; // the follow-up API reads the last 12 turns, older ones are never sent again
+const TTL = 14 * DAY; // ticket text, names, comments: not kept in the browser longer than this
 
 function readIdx(): Meta[] {
   const v = readJson(IDX, []);
-  return Array.isArray(v) ? v : [];
+  return Array.isArray(v) ? v.filter((m: Meta) => Date.now() - m.at < TTL) : [];
+}
+
+/** Sessions older than TTL: off the list (readIdx) and out of storage. */
+function prune() {
+  const v = readJson(IDX, []);
+  const old = Array.isArray(v) ? (v as Meta[]).filter((m) => Date.now() - m.at >= TTL).map((m) => m.id) : [];
+  if (old.length) drop(old);
 }
 
 export const newSessionId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -34,6 +42,7 @@ export function saveSession(s: AiSession) {
   const thread = s.thread.slice(-TURNS);
   const q = [...thread].reverse().find((t) => t.q)?.q ?? thread[0]?.a ?? "";
   const meta: Meta = { id: s.id, title: s.title, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now() };
+  prune();
   let idx = [meta, ...readIdx().filter((m) => m.id !== s.id)];
   const body = JSON.stringify({ ...s, thread });
   for (let tries = 0; ; tries++) {
@@ -73,11 +82,12 @@ function nameOf(m: { title: string; ids: string[] }) {
 /** A page like Thành viên: the sessions on a rail, the picked one on the right, where the chat goes on. */
 export function HistoryPage() {
   const [idx, setIdx] = useState(readIdx);
-  useEffect(() => { const f = () => setIdx(readIdx()); addEventListener(IDX, f); return () => removeEventListener(IDX, f); }, []);
+  useEffect(() => { prune(); const f = () => setIdx(readIdx()); addEventListener(IDX, f); return () => removeEventListener(IDX, f); }, []);
   const [q, setQ] = useState("");
   const [tab, setTab] = useState<Tab>("all");
   const [sel, setSel] = useState("");
   const [sure, setSure] = useState(false);
+  const [sureDay, setSureDay] = useState(""); // the day whose delete waits for a second click
   const inTab = useMemo(() => (tab === "all" ? idx : idx.filter((m) => tabOf(m) === tab)), [idx, tab]);
   const shown = useMemo(() => {
     const k = fold(q.trim());
@@ -115,11 +125,19 @@ export function HistoryPage() {
             const off = !q.trim() && shut.includes(day);
             return (
               <section key={day} aria-label={day}>
-                <button type="button" aria-expanded={!off} onClick={() => setShut((x) => (off ? x.filter((d) => d !== day) : [...x, day]))}
-                  className="sticky top-0 z-10 flex w-full items-center gap-1.5 bg-cotton px-1.5 pt-2.5 pb-1.5 text-[11px] font-semibold tracking-wider text-ink-3 uppercase hover:text-ink">
-                  <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", !off && "rotate-90")} aria-hidden />{day}
-                  <span className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-[10px] font-medium tabular-nums">{ms.length}</span>
-                </button>
+                <div className="group/day sticky top-0 z-10 flex items-center gap-1 bg-cotton pt-1">
+                  <button type="button" aria-expanded={!off} onClick={() => setShut((x) => (off ? x.filter((d) => d !== day) : [...x, day]))}
+                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 pt-1.5 pb-1.5 text-xs font-semibold text-ink-3 hover:text-ink">
+                    <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", !off && "rotate-90")} aria-hidden />{day}
+                    <span className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-[10px] font-medium tabular-nums">{ms.length}</span>
+                  </button>
+                  {/* delete this day's sessions (those shown: tab + search); two clicks like "Xóa tất cả" */}
+                  <Button size="xs" variant={sureDay === day ? "destructive" : "ghost"} onBlur={() => setSureDay("")}
+                    className={cn(sureDay !== day && "text-ink-3 opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100")}
+                    aria-label={`Xóa ${ms.length} phiên ${day.toLowerCase()}`}
+                    onClick={() => { if (sureDay !== day) { setSureDay(day); return; } remove(ms.map((m) => m.id)); setSureDay(""); }}>
+                    <Trash2 />{sureDay === day && `Xóa ${ms.length}?`}</Button>
+                </div>
                 <AnimatePresence initial={false}>
                   {!off && (
                     <motion.ul initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}

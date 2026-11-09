@@ -42,10 +42,12 @@ const closed = () => { shown = Math.max(0, shown - 1); closedAt = Date.now(); };
  */
 export function Hint({ title, text, side = "right", children }: { title?: string; text: string; side?: Side; children: ReactElement<Record<string, unknown>> }) {
   const [at, setAt] = useState<DOMRect | null>(null);
+  // The portal exists only while the note shows or animates out: a long list has thousands of closed Hints.
+  const [mounted, setMounted] = useState(false);
   const id = useId();
   useEffect(() => cancel, []);
   useEffect(() => { if (!at) return; opened(); return closed; }, [at]); // also on unmount, so "warm" never sticks
-  const later = (el: Element) => schedule(() => setAt(el.getBoundingClientRect()));
+  const later = (el: Element) => schedule(() => { setMounted(true); setAt(el.getBoundingClientRect()); });
   const hide = () => { cancel(); setAt(null); };
   const right = side === "right";
   // Measure the note, then flip to the other side / slide along the edge so it never runs off-screen or gets squeezed.
@@ -77,8 +79,8 @@ export function Hint({ title, text, side = "right", children }: { title?: string
         onBlur: (e: FocusEvent) => { own.onBlur?.(e); hide(); },
         "aria-describedby": at ? id : undefined, // screen readers hear the note with the control
       })}
-      {typeof document !== "undefined" && createPortal(
-        <AnimatePresence>
+      {(mounted || at) && createPortal(
+        <AnimatePresence onExitComplete={() => setMounted(false)}>
           {at && (
             <motion.div ref={box} key="hint" id={id} role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: off } : { y: off }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, scale: 0.6, ...(right ? { x: off * 0.8 } : { y: off * 0.8 }) }} transition={{ type: "spring", stiffness: 520, damping: 22 }}

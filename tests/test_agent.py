@@ -12,7 +12,8 @@ from telegram_dashboard.providers import ALLOW, DENY
 # CLI args; the other keeps the turn running.
 LONG = """#!/bin/sh
 cat >/dev/null
-printf '{"type":"result","result":"%s %s"}\\n' "$(head -c 100000 /dev/zero | tr '\\0' x)" "$*"
+args=$(printf '%s' "$*" | sed 's/"/\\\\"/g')
+printf '{"type":"result","result":"%s %s"}\\n' "$(head -c 100000 /dev/zero | tr '\\0' x)" "$args"
 """
 SLOW = "#!/bin/sh\ncat >/dev/null\nexec sleep 30\n"
 
@@ -37,6 +38,7 @@ async def test_long_output_line_and_locked_down_flags(tmp_path):
     text = items[1]["text"]  # the line was over asyncio's default 64 KiB limit
     assert f"--permission-mode acceptEdits --strict-mcp-config --allowedTools {ALLOW['edit']} " in text
     assert f"--disallowedTools {DENY}" in text
+    assert '--settings {"sandbox": {"enabled": true' in text  # edit turns: Bash in the sandbox
 
 
 async def test_one_turn_at_a_time_and_stop_waits_for_the_pump(tmp_path):

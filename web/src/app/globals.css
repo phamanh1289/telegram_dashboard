@@ -223,7 +223,7 @@
 .pop, .scrim { transition-property: opacity, scale, translate; transition-duration: var(--dur-long); transition-timing-function: var(--ease-emph); }
 .pop[data-ending-style], .scrim[data-ending-style] { transition-duration: var(--dur-short); transition-timing-function: var(--ease-in); }
 .scrim:is([data-starting-style], [data-ending-style]) { opacity: 0; }
-.pop:is([data-starting-style], [data-ending-style]) { opacity: 0; scale: 0.96; translate: -50% calc(-50% + 0.75rem); }
+.pop:is([data-starting-style], [data-ending-style]) { opacity: 0; scale: 0.96; translate: 0 0.75rem; }
 .pop-top:is([data-starting-style], [data-ending-style]) { translate: -50% -0.75rem; }
 .pop-sheet:is([data-starting-style], [data-ending-style]) { opacity: 1; scale: 1; translate: 100% 0; }
 @media (prefers-reduced-motion: reduce) { .pop, .scrim { transition-property: opacity; } }
@@ -243,11 +243,25 @@
 .ai-hop { animation: ai-hop 1.2s ease-in-out infinite; }
 .ai-dot { animation: ai-dot 0.9s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .ai-hop, .ai-dot { animation: none; } }
-/* YouTrack first load: ticket cards arc from the stack into the robot */
-.yt-fly { opacity: 0; animation: yt-fly 1.8s cubic-bezier(0.5, 0, 0.3, 1) infinite; }
-@keyframes yt-fly { 0% { opacity: 0; transform: translate(0, 0) rotate(-8deg); } 12% { opacity: 1; }
-  50% { transform: translate(110px, -38px) rotate(10deg) scale(1.05); } 85% { opacity: 1; } 100% { opacity: 0; transform: translate(222px, 0) rotate(-4deg) scale(0.3); } }
-@media (prefers-reduced-motion: reduce) { .yt-fly { animation: none; } }
+/* AiFetching (ai/fetching.tsx): data samples ride an arc (offset-path, set inline) out of the source (YouTrack, Telegram) into the robot; a light runs along the bar */
+.ai-sample { opacity: 0; offset-rotate: 0deg; animation: ai-sample 3.2s cubic-bezier(0.45, 0, 0.25, 1) infinite; }
+@keyframes ai-sample { 0% { offset-distance: 0%; opacity: 0; scale: 0.6; } 12% { opacity: 1; scale: 1; } 78% { opacity: 1; scale: 1; } 100% { offset-distance: 100%; opacity: 0; scale: 0.3; } }
+.ai-bar { background: linear-gradient(90deg, transparent, var(--color-hl), var(--color-info), transparent) -70% 0 / 40% 100% no-repeat var(--color-paper-3); animation: ai-bar 1.6s ease-in-out infinite; }
+@keyframes ai-bar { to { background-position: 170% 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-sample, .ai-bar { animation: none; } }
+/* AiFetching scenes: fx-step pops in, stays, fades (stagger with delays); fx-grow a load bar rising and falling; fx-scroll a chat
+   scrolling by (content doubled, so -50% loops seamlessly); fx-scan / fx-sweep a reading line / range moving by --fx-y / --fx-x */
+.fx-step { animation: fx-step var(--fx-d, 4s) ease-out infinite backwards; }
+@keyframes fx-step { 0% { opacity: 0; translate: 0 6px; scale: 0.9; } 10% { opacity: 1; translate: 0 0; scale: 1; } 80% { opacity: 1; } 95%, 100% { opacity: 0; } }
+.fx-grow { transform-origin: bottom; animation: fx-grow var(--fx-d, 3s) ease-in-out infinite alternate backwards; }
+@keyframes fx-grow { from { scale: 1 0.2; } to { scale: 1 1; } }
+.fx-scroll { animation: fx-scroll 7s linear infinite; }
+@keyframes fx-scroll { to { translate: 0 -50%; } }
+.fx-scan { animation: fx-scan 2.4s ease-in-out infinite alternate; }
+@keyframes fx-scan { to { translate: 0 var(--fx-y, 100px); } }
+.fx-sweep { animation: fx-sweep 4s ease-in-out infinite alternate; }
+@keyframes fx-sweep { to { translate: var(--fx-x, 100px) 0; } }
+@media (prefers-reduced-motion: reduce) { .fx-step, .fx-grow, .fx-scroll, .fx-scan, .fx-sweep { animation: none; } }
 
 /* Loading shimmer: a brand-tinted light sweeping across skeletons and rows still loading. clip, not hidden: sticky headers inside keep working */
 .shimmer { position: relative; overflow: clip; }
@@ -272,6 +286,29 @@
 .hint-rays { animation: hint-rays 0.9s ease-in-out infinite alternate; }
 @keyframes hint-rays { from { opacity: 0.35; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .ai-chip, .ai-blink, .ai-wave, .ai-glow, .hint-rays { animation: none; } }
+/* AiIdle (ai/chat.tsx): the robot bobs over a shadow that shrinks as it rises, the glow breathes, a dotted beam and a
+   packet run from it to the skill in hand; that skill's card writes itself out (sk-*). */
+.ai-float { animation: ai-float 3s ease-in-out infinite; }
+@keyframes ai-float { 50% { translate: 0 -8px; } }
+.ai-shadow { animation: ai-shadow 3s ease-in-out infinite; }
+@keyframes ai-shadow { 50% { scale: 0.6; opacity: 0.4; } }
+.ai-halo { animation: ai-halo 3s ease-in-out infinite; }
+@keyframes ai-halo { 50% { scale: 1.25; opacity: 0.6; } }
+.ai-beam { stroke-dasharray: 2 5; animation: ai-beam 0.5s linear infinite; }
+@keyframes ai-beam { to { stroke-dashoffset: -7; } }
+.ai-packet { opacity: 0; animation: ai-packet 1.1s ease-in 0.15s infinite; }
+@keyframes ai-packet { from { translate: 0 0; scale: 0.4; opacity: 0; } 25% { opacity: 1; } to { translate: var(--dx) var(--dy); scale: 1; opacity: 0; } }
+.sk-grow { transform-origin: left; animation: sk-grow 0.5s var(--ease-out) both; }
+@keyframes sk-grow { from { scale: 0 1; } }
+.sk-pop { animation: sk-pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes sk-pop { from { scale: 0; opacity: 0; } }
+.sk-caret { animation: sk-caret 1s steps(1) infinite; }
+@keyframes sk-caret { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ai-float, .ai-shadow, .ai-halo, .ai-beam, .ai-packet, .sk-grow, .sk-pop, .sk-caret { animation: none; } }
+/* ConfirmDialog danger badge (ui/dialog.tsx): the icon inside shakes once as it opens. */
+.confirm-shake svg { animation: confirm-shake 0.6s ease-in-out 0.15s; }
+@keyframes confirm-shake { 20%, 60% { rotate: -14deg; } 40%, 80% { rotate: 12deg; } }
+@media (prefers-reduced-motion: reduce) { .confirm-shake svg { animation: none; } }
 
 /* AI Agent session (tasks-page): a gradient ring orbits the box while the AI works; status text shimmers. */
 @property --ai-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }

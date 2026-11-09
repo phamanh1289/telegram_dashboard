@@ -11,7 +11,7 @@ import { api, errorText } from "@/lib/api";
 import { toast, type ToastMsg, Told, useNow } from "@/lib/inbox";
 import { applyTheme, readTheme, useRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { riskOf, useMyTickets } from "@/lib/yt";
+import { riskOf, useMyTickets, useWatchGlobal } from "@/lib/yt";
 import { Pill } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
 import { GuideButton } from "@/components/guide";
@@ -51,6 +51,8 @@ function useUpdateState() {
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
 export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
+  // "Báo lại" also while on Telegram: a ticket of mine reaching Fixed / Done queues its Telegram mentions (same 5-min poll).
+  useWatchGlobal(module === "telegram", (id, text) => toast({ text: `${id}: ${text}` }));
   const behind = useUpdateState();
   const router = useRouter();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
@@ -76,7 +78,7 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
             className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
             <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
             {/* "Needs you" is signal, the same as the Telegram rail's counts. */}
-            {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-[18px] text-signal-ink tabular-nums">{risk.length}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
+            {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-[18px] text-white tabular-nums">{risk.length}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
           </Link></Hint>
         ))}
       </nav>

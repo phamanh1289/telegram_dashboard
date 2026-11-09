@@ -4,14 +4,19 @@ import { Plus, CalendarCheck, Rocket, History, ClipboardList, FlaskConical, Layo
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Toaster, TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
 import { Button } from "@/components/ui/button";
-import { fold, useNow } from "@/lib/inbox";
+import { Dropdown } from "@/components/ui/dropdown";
+import { fold, goKey, typing, useNow } from "@/lib/inbox";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { ShortcutList, YT_KEYS } from "@/components/shortcuts";
 import { getPref, saveYtRole, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, durShort } from "@/lib/utils";
 import { QUICK, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
+import { useAiWait } from "@/components/ai/fetching";
 import { Avatar, MultiSelect, POP, YtFetching } from "./bits";
 import { DashboardPage } from "./dashboard";
 import { DevHome, PoHome, QaHome } from "./home";
@@ -29,6 +34,7 @@ import { Hint } from "@/components/ui/hint";
 import { AiPlug } from "@/components/ai-plug";
 
 const noop = () => () => {};
+const G_PAGES: Record<string, Page> = { h: "home", t: "tickets", d: "dash", r: "release", p: "people", a: "ai" };
 export function YouTrackApp() {
   // State starts from the URL and localStorage: render in the browser only (the static export prerenders an empty shell).
   const client = useSyncExternalStore(noop, () => true, () => false);
@@ -38,7 +44,7 @@ export function YouTrackApp() {
 const PAGES: Record<Mode, [Page, string, typeof ListChecks][]> = {
   dev: [["home", "Hôm nay", CalendarCheck], ["tickets", "Ticket", ListChecks], ["dash", "Dashboard", LayoutDashboard], ["release", "Release", Rocket], ["people", "Thành viên", UserSearch]],
   qa: [["home", "Kiểm thử", FlaskConical], ["tickets", "Ticket", ListChecks], ["dash", "Dashboard", LayoutDashboard], ["release", "Release", Rocket], ["people", "Thành viên", UserSearch]],
-  po: [["home", "Brief", ClipboardList], ["dash", "Dashboard", LayoutDashboard], ["release", "Release", Rocket], ["people", "Thành viên", UserSearch], ["tickets", "Ticket", ListChecks]],
+  po: [["home", "Tổng quan", ClipboardList], ["dash", "Dashboard", LayoutDashboard], ["release", "Release", Rocket], ["people", "Thành viên", UserSearch], ["tickets", "Ticket", ListChecks]],
 };
 /** What each sidebar page is for, in its hover hint ("home" per role). */
 const PAGE_HINT: Record<string, string> = {
@@ -56,10 +62,23 @@ function Shell() {
   const y = useYt();
   const [collapsed, setCollapsed] = useState(() => getPref("ytSide") === "1");
   const { asideRef, mainRef, markSlide } = useSideSlide(collapsed);
+  // first load and a scope / project not warmed yet: the AI fetch scene; the AI chat page keeps its thread, dimmed under a bar
+  const wait = useAiWait(y.issues.isPending || (y.issues.isPlaceholderData && y.page !== "ai"));
+  const dim = y.issues.isPlaceholderData && !wait;
   const [menu, setMenu] = useState(false);
   const [pal, setPal] = useState(false);
+  const [keys, setKeys] = useState(false); // the "?" shortcut sheet
+  // ⌘K palette, "?" shortcut sheet, g then h/t/d/r/p/a: the pages (as Telegram's g-keys)
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPal((o) => !o); return; }
+    if (typing(e)) return;
+    if (e.key === "?") { e.preventDefault(); setKeys(true); return; }
+    if (e.key === "g") { goKey.arm(); return; }
+    const to = G_PAGES[e.key];
+    if (to && (to !== "ai" || y.aiOn) && goKey.take()) { e.preventDefault(); y.setPage(to); }
+  });
   useEffect(() => {
-    const k = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPal((o) => !o); } };
+    const k = (e: KeyboardEvent) => onKey(e);
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
   }, []);
@@ -103,11 +122,13 @@ function Shell() {
                 <span className={cn("grid leading-tight", fade)}><span className="text-sm font-semibold">YouTrack</span><span className="text-xs text-ink-3">{y.projects.find((p) => p.shortName === y.project)?.name ?? y.project}</span></span>
                 <Button size="icon-xs" variant="ghost" className="ml-auto md:hidden" aria-label="Đóng menu" onClick={() => setMenu(false)}><X /></Button>
               </div>
-              {/* the project rarely changes: it sits here, not in the page header */}
-              <select value={y.project} onChange={(e) => y.setProject(e.target.value)} aria-label="Project"
-                className={cn("mb-2 h-8 w-full rounded-md border border-rule bg-cotton px-2 text-sm", collapsed && "md:hidden")}>
-                {(y.projects.length ? y.projects : [{ shortName: y.project, name: y.project }]).map((p) => <option key={p.shortName} value={p.shortName}>{p.shortName} ({p.name})</option>)}
-              </select>
+              {/* project and role rarely change: they sit here, not in the page header; the role stays in sight and switches in place */}
+              <div className={cn("mb-2 grid gap-1.5", collapsed && "md:hidden")}>
+                <Dropdown label="Project" value={y.project} onChange={y.setProject} className="text-sm" prefix={<span className="shrink-0 font-normal text-ink-3">Project</span>}
+                  options={(y.projects.length ? y.projects : [{ shortName: y.project, name: y.project }]).map((p) => ({ value: p.shortName, label: p.shortName, hint: p.name }))} />
+                <Dropdown label="Vai trò hiện tại" value={y.mode} onChange={(r) => y.setMode(r as Mode)} className="text-sm" prefix={<span className="shrink-0 font-normal text-ink-3">Vai trò</span>}
+                  options={YT_ROLES.map(([r, name]) => ({ value: r, label: name, hint: `Trang chủ: ${PAGES[r][0][1]}` }))} />
+              </div>
               <nav aria-label="Trang" className="mt-2 grid grid-cols-1 gap-1">
                 {pages.map(([p, label, Icon]) => (
                   <Hint key={p} title={label} text={`${PAGE_HINT[p === "home" ? y.mode : p] ?? ""}${p === "home" && risk > 0 ? ` ${risk} ticket cần xử lý ngay (quá hạn, tới hạn, blocked, đứng lâu).` : ""}`}><button type="button" aria-current={y.page === p ? "page" : undefined} onClick={() => go(p)} aria-label={label}
@@ -116,7 +137,7 @@ function Shell() {
                     {y.page === p && <Pill id="yt-nav" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
                     <Icon className="relative size-5 shrink-0" aria-hidden /><span className={cn("relative flex-1", fade)}>{label}</span>
                     {p === "home" && risk > 0 && <span
-                      className={cn("relative rounded-full bg-signal px-1.5 font-mono text-xs leading-[18px] text-signal-ink tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
+                      className={cn("relative rounded-full bg-signal px-1.5 font-mono text-xs leading-[18px] text-white tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
                   </button></Hint>
                 ))}
               </nav>
@@ -132,8 +153,8 @@ function Shell() {
         {/* AI history is a chat: on wide screens the page fits the viewport and only its panes scroll */}
         <main ref={mainRef} className={cn("min-w-0 px-3 pb-10 sm:px-5", y.page === "ai" && "lg:flex lg:h-[calc(100dvh-2.75rem)] lg:flex-col lg:pb-4")}>
           <Header title={title} onPalette={() => setPal(true)} />
-          {(y.configError || y.issues.isError) && (() => {
-            const e = (y.configError ?? y.issues.error) as Error, text = loadError(e);
+          {(y.configError || y.issues.isError || y.sinceError) && (() => {
+            const e = (y.configError ?? (y.issues.isError ? y.issues.error : y.sinceError)) as Error, text = loadError(e);
             return (
               <div role="alert" className="mb-3 flex items-center gap-3 rounded-md bg-error-wash px-3 py-2 text-sm text-error">
                 <span className="grid flex-1 gap-0.5">{text}{e.message !== text && <span className="text-xs opacity-80">Chi tiết: {e.message}</span>}</span>
@@ -142,10 +163,8 @@ function Shell() {
             );
           })()}
           <FilterChips />
-            {/* while another scope loads, the old rows stay (keepPreviousData) but dimmed, so the swap is expected */}
-            {/* a scope not warmed yet (first load): a sliding bar + a light fade, the old rows stay readable */}
             <AnimatePresence>
-              {y.issues.isPlaceholderData && (
+              {dim && (
                 <motion.div key="bar" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="sticky top-[var(--yt-top)] z-10 -mt-3 mb-2.5 h-0.5">
                   <div className="h-full overflow-hidden rounded-full bg-paper-3">
                     <motion.div className="h-full w-1/3 rounded-full bg-hl" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
@@ -158,14 +177,27 @@ function Shell() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: y.issues.isPlaceholderData ? 0.55 : 1, y: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
-              aria-busy={y.issues.isPlaceholderData} className={cn(y.page === "ai" && "relative lg:min-h-0 lg:flex-1", y.page === "ai" && !y.issues.isPlaceholderData && "ai-in", y.issues.isPlaceholderData && "shimmer pointer-events-none select-none")}>
-              {y.issues.isPending ? <YtFetching /> : y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "release" ? <ReleasePage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
+            <motion.div key={`${y.mode}:${y.page}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: dim ? 0.55 : 1, y: 0 }} transition={{ duration: 0.3, ease: [0.2, 0, 0, 1] }}
+              aria-busy={dim} className={cn(y.page === "ai" && "relative lg:min-h-0 lg:flex-1", y.page === "ai" && !dim && "ai-in", dim && "shimmer pointer-events-none select-none")}>
+              {wait ? <YtFetching /> : y.page === "tickets" ? <TicketsPage /> : y.page === "dash" ? <DashboardPage /> : y.page === "release" ? <ReleasePage /> : y.page === "people" ? <PeoplePage /> : y.page === "ai" && y.aiOn ? <HistoryPage /> : y.mode === "dev" ? <DevHome /> : y.mode === "qa" ? <QaHome /> : <PoHome />}
             </motion.div>
         </main>
       </div>
       <Sheet />
       <Palette open={pal} onClose={() => setPal(false)} />
+      <Dialog open={keys} onOpenChange={setKeys}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogTitle>Phím tắt YouTrack</DialogTitle>
+          <div className="grid max-h-[70vh] gap-x-8 gap-y-5 overflow-y-auto md:grid-cols-2">
+            {YT_KEYS.map(([name, list]) => (
+              <section key={name} aria-label={name} className="grid content-start gap-1">
+                <h3 className="text-xs font-semibold text-ink-3">{name}</h3>
+                <ShortcutList list={list} />
+              </section>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
       <CreateTicket />
       <Toaster />
     </div>
@@ -200,7 +232,7 @@ function RolePicker() {
       <div className="grid w-full max-w-3xl gap-5">
         <div className="grid gap-1 text-center">
           <h1 className="text-xl font-semibold">Bạn dùng YouTrack với vai trò nào?</h1>
-          <p className="text-sm text-ink-2">Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi hoặc xóa bất cứ lúc nào trong Cài đặt › Chung.</p>
+          <p className="text-sm text-ink-2">Trang chủ, góc nhìn Ticket, Dashboard và AI (cả tóm tắt bên Telegram) sẽ theo vai trò này. Đổi bất cứ lúc nào ở ô Vai trò trên thanh bên, hoặc xóa trong Cài đặt › Chung.</p>
         </div>
         <div role="radiogroup" aria-label="Vai trò" className="grid gap-3 sm:grid-cols-3">
           {YT_ROLES.map(([r, name, what]) => {
@@ -242,12 +274,15 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
   }, []);
   const a = y.filters.assignee, { scope } = y;
   const [open, setOpen] = useState<Scope | null>(null); // the preset whose member editor is open
-  const scopes = [["me", "My task"], ["team", "My team"], ["group", "Group"]] as const;
-  const updated = y.issues.dataUpdatedAt ? new Date(y.issues.dataUpdatedAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--:--";
+  const scopes = [["me", "Của tôi"], ["team", "Team"], ["group", "Nhóm chọn"]] as const;
+  // fetch status read here, not through the provider (it does not re-render on it): re-renders on each fetch start / end
+  const fetching = useIsFetching({ queryKey: ["yt", "issues", y.project] }) > 0;
+  const at = useQueryClient().getQueryState(y.issuesKey)?.dataUpdatedAt;
+  const updated = at ? new Date(at).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "--:--";
   return (
     <header ref={ref} className="yt-noprint sticky top-11 z-20 -mx-3 mb-3 flex flex-wrap items-center gap-2 bg-paper/90 px-3 py-2.5 backdrop-blur sm:-mx-5 sm:px-5">
-      <h1 className="mr-auto text-lg font-semibold max-xl:sr-only">{title}</h1>
-      <Hint side="bottom" text="My task: ticket bạn được assign hoặc làm QC. My team: bạn và thành viên đã thêm. Group: nhóm người bạn chọn (chưa chọn ai: tất cả mọi người)."><div role="group" aria-label="Phạm vi" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove max-sm:order-last max-sm:w-full">
+      <h1 className="mr-auto text-base font-semibold xl:text-lg">{title}</h1>
+      <Hint side="bottom" text="Của tôi: ticket bạn được assign hoặc làm QC. Team: bạn và thành viên đã thêm. Nhóm chọn: những người bạn chọn (chưa chọn ai: tất cả mọi người)."><div role="group" aria-label="Phạm vi" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove max-sm:order-last max-sm:w-full">
         {scopes.map(([s, l]) => {
           const on = scope === s, team = s !== "me", n = s === "team" ? y.team.length : y.group.length;
           const btn = (
@@ -268,7 +303,7 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
                   <BasePopover.Trigger render={btn} />
                   <BasePopover.Portal>
                     <BasePopover.Positioner sideOffset={6} align="start" className="z-40 outline-none">
-                      <BasePopover.Popup aria-label={s === "team" ? "Team của tôi" : "Group"} className={cn(POP, "p-1")}><TeamMenu group={s === "group"} /></BasePopover.Popup>
+                      <BasePopover.Popup aria-label={s === "team" ? "Team của tôi" : "Nhóm chọn"} className={cn(POP, "p-1")}><TeamMenu group={s === "group"} /></BasePopover.Popup>
                     </BasePopover.Positioner>
                   </BasePopover.Portal>
                 </BasePopover.Root>
@@ -284,8 +319,8 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
         {y.aiOn ? <Sparkles className="text-hl-2" /> : <Search />}<span className="max-xl:hidden">{y.aiOn ? "Tìm, hỏi AI" : "Tìm"}</span><kbd className="font-mono text-xs max-lg:hidden">⌘K</kbd>
       </Button></Hint>
       <WatchBell />
-      <Hint side="bottom" text={`Cập nhật lúc ${updated}, tự làm mới mỗi phút. Bấm để làm mới ngay.`}><Button size="sm" variant="outline" onClick={y.refresh} aria-busy={y.issues.isFetching} aria-label="Làm mới" className="tabular-nums">
-        <RotateCw className={cn(y.issues.isFetching && "animate-spin")} /><span className="max-xl:hidden">{updated}</span>
+      <Hint side="bottom" text={`Cập nhật lúc ${updated}, tự làm mới mỗi phút. Bấm để làm mới ngay.`}><Button size="sm" variant="outline" onClick={y.refresh} aria-busy={fetching} aria-label="Làm mới" className="tabular-nums">
+        <RotateCw className={cn(fetching && "animate-spin")} /><span className="max-xl:hidden">{updated}</span>
       </Button></Hint>
     </header>
   );
@@ -301,7 +336,7 @@ function TeamMenu({ group }: { group: boolean }) {
   const row = "flex items-center gap-2 rounded px-2 py-1.5 text-sm";
   return (
     <>
-      <div className="px-2 pt-1.5 pb-1"><p className="text-sm font-semibold">{group ? "Group" : "Team của tôi"}</p><p className="text-xs text-ink-3">{group ? "Tab Group lọc ticket của các thành viên này; chưa chọn ai thì hiện tất cả." : "Tab My team lọc ticket của cả team."} Lưu cho lần sau.</p></div>
+      <div className="px-2 pt-1.5 pb-1"><p className="text-sm font-semibold">{group ? "Nhóm chọn" : "Team của tôi"}</p><p className="text-xs text-ink-3">{group ? "Tab Nhóm chọn lọc ticket của các thành viên này; chưa chọn ai thì hiện tất cả." : "Tab Team lọc ticket của cả team."} Lưu cho lần sau.</p></div>
       <div className="grid max-h-44 overflow-y-auto">
         {!group && y.me && <div className={row}><Avatar name={y.me} /><span className="flex-1 truncate">{y.me}</span><span className="text-xs text-ink-3">Bạn</span></div>}
         <AnimatePresence initial={false}>
@@ -365,8 +400,8 @@ function YtPlug({ fade }: { fade: string }) {
   const pose = y.config?.mock || failed ? "off" : y.issues.data ? "on" : "try";
   const [title, sub] = y.config?.mock ? ["Chưa kết nối YouTrack", "Bấm để thêm token"]
     : failed ? ["Mất kết nối YouTrack", "Không gọi được YouTrack, đang thử lại"]
-    : pose === "try" ? ["AI đang kết nối YouTrack…", "Đang tải ticket"]
-    : ["AI đã kết nối YouTrack", y.me ? `Bạn: ${y.me}` : "Cập nhật mỗi phút"];
+    : pose === "try" ? ["Đang kết nối YouTrack…", "Đang tải ticket"]
+    : ["Đã kết nối YouTrack", y.me ? `Bạn: ${y.me}` : "Cập nhật mỗi phút"];
   return (
     <AiPlug testId="yt" icon={<YtLogo className="size-6" />} sock="bg-paper-3" textClass={fade} pose={pose} live={!y.issues.isError}
       title={title} sub={sub} subWarn={pose === "off"} href={y.config?.mock ? "/settings/#youtrack" : undefined}

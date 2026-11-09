@@ -8,11 +8,12 @@ import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
+import { type ShortcutGroup, ShortcutList, TG_KEYS, YT_KEYS } from "@/components/shortcuts";
+import { RulesSection } from "@/components/tools-menu";
 import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
 import { api, ApiError, errorText, statusQuery } from "@/lib/api";
@@ -147,6 +148,7 @@ const ENTRIES: Entry[] = [
   { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Hàng chờ và thông báo", k: "qa tag nguoi duoc hoi tra loi" },
   { t: "Thông báo khi có tag mới", g: "telegram", card: "Hàng chờ và thông báo", k: "notification bao" },
   { t: "Nút thao tác trên tin", g: "telegram", card: "Hàng chờ và thông báo", k: "ghim ngu canh mo telegram hover" },
+  { t: "Luôn bỏ qua người gửi / từ khóa", g: "telegram", card: "Luôn bỏ qua", k: "tat bat lai thong bao mute quy tac rule tu danh dau da xu ly" },
   { t: "Xóa nháp và danh sách Báo lại", g: "telegram", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
   { t: "Tài khoản YouTrack, URL và token", g: "youtrack", card: "Tài khoản YouTrack", view: "connect", k: "ket noi" },
   { t: "Báo cáo release tự động", g: "youtrack", card: "Báo cáo release", view: "connect", k: "report lich hang ngay" },
@@ -382,7 +384,22 @@ function HueSlider({ label, value, onChange }: { label: string; value: number; o
 // ---- Telegram -----------------------------------------------------------------------------------
 
 /** Telegram-only preferences: account, who you are for the AI, Briefing's model, the queue. */
+/** Server-side privacy switches (telegram_dashboard/privacy.py, data/config.json). */
+type Privacy = { redact: boolean; notify_preview: boolean };
+function usePrivacy() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["privacy"], queryFn: ({ signal }) => api<Privacy>("/privacy", { signal }), retry: false });
+  const m = useMutation({
+    mutationFn: (v: Privacy) => api<Privacy>("/privacy", { method: "PUT", json: v }),
+    onSuccess: (v) => qc.setQueryData(["privacy"], v),
+    onError: (e) => toast({ text: errorText(e, {}, "Không lưu được, thử lại") }),
+  });
+  const p = (m.isPending && m.variables) || q.data;
+  return { p, set: (patch: Partial<Privacy>) => p && m.mutate({ ...p, ...patch }), busy: m.isPending };
+}
+
 function TelegramGroup() {
+  const privacy = usePrivacy();
   const [overdue, setOverdue] = useState(readOverdueHours);
   const qaRemind = useQaRemind();
   const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "any" as const);
@@ -436,10 +453,19 @@ function TelegramGroup() {
       <Row label="Thông báo khi có tag mới" desc={notifyNote ? <span role="alert" className="text-warn">{notifyNote}</span> : "Khi tab đang ẩn: tag mới, và câu hỏi Q&A của bạn quá ngưỡng nhắc mà chưa ai trả lời. Giữ luồng cập nhật chạy nền."}>
         <Switch label="Thông báo khi có tag mới" checked={notify} onChange={(v) => void toggleNotify(v)} />
       </Row>
+      {privacy.p && (
+        <Row label="Hiện nội dung tin trong thông báo macOS" desc="Banner macOS khi có tag mới (cả trên màn hình khóa, Notification Center). Tắt: chỉ hiện nhóm và người gửi.">
+          <Switch label="Hiện nội dung tin trong thông báo macOS" checked={privacy.p.notify_preview} disabled={privacy.busy} onChange={(v) => privacy.set({ notify_preview: v })} />
+        </Row>
+      )}
       <Row label="Nút thao tác trên tin" desc="Ghim, ngữ cảnh, mở Telegram. Màn hình cảm ứng luôn hiện." stack>
         <Segmented id="set-row-actions" variant="card" label="Nút thao tác trên tin" value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
           items={[{ value: "hover", label: "Khi rê vào nút Xong" }, { value: "always", label: "Luôn hiện" }]} />
       </Row>
+    </Card>
+
+    <Card title="Luôn bỏ qua" info="Người gửi (thêm bằng “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo. Xóa một dòng để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
+      <RulesSection />
     </Card>
 
     <Card title="Dữ liệu trên trình duyệt này">
@@ -762,6 +788,7 @@ function ReportSection() {
 
 function AiGroup() {
   const { p } = useAiPrefs();
+  const privacy = usePrivacy();
   return <>
     <Card title="Dùng AI nào" info="Áp dụng cho mọi tính năng AI: tóm tắt, soạn nháp, Briefing, Digest, YouTrack, Task và AI Agent. Mỗi AI giữ model và effort riêng, đổi qua lại không mất lựa chọn.">
       <ProviderSection />
@@ -773,6 +800,16 @@ function AiGroup() {
     )}
     <Card title="Tài khoản" info="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập. Chi tiết: hạn mức, usage và lịch sử chạy.">
       <AiAccounts />
+    </Card>
+    <Card title="Quyền riêng tư">
+      <p className="py-2 text-xs text-ink-2">
+        Tin nhắn của người khác (nhóm Telegram) và nội dung ticket được gửi tới AI đang chọn ({p ? p.provider : "Claude"}) khi bạn dùng tóm tắt, soạn nháp, Briefing, Q&amp;A, YouTrack AI hay AI Agent; nhà cung cấp xử lý theo điều khoản của họ.
+      </p>
+      {privacy.p && (
+        <Row label="Ẩn SĐT / email khi gửi AI" desc="Thay số điện thoại và email trong tin nhắn, ticket, nội dung link bằng [SĐT] / [email] trước khi gửi (nháp, tóm tắt, Briefing, Q&A, YouTrack AI). Lời dặn bạn tự gõ cho AI Agent gửi nguyên văn.">
+          <Switch label="Ẩn SĐT / email khi gửi AI" checked={privacy.p.redact} disabled={privacy.busy} onChange={(v) => privacy.set({ redact: v })} />
+        </Row>
+      )}
     </Card>
   </>;
 }
@@ -797,7 +834,7 @@ function ProviderSection() {
 
 // ---- Cập nhật -----------------------------------------------------------------------------------
 
-type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
+type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
 
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 function UpdateSection() {
@@ -824,9 +861,10 @@ function UpdateSection() {
   const auto = useMutation({
     mutationFn: (on: boolean) => api("/update/auto", { method: "PUT", json: { on } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["update"] }),
+    onError: (e) => toast({ text: errorText(e, {}, "Không đổi được tự cập nhật, thử lại") }),
   });
   const d = info.data;
-  const err = (e: unknown) => (e instanceof ApiError && e.detail) || "Không kết nối được GitHub.";
+  const err = (e: unknown) => (e instanceof ApiError && (e.detail || `Cập nhật lỗi (${e.code}).`)) || "Không kết nối được GitHub.";
   return <>
     <div className="grid gap-2.5 py-3 first:pt-1">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -853,6 +891,7 @@ function UpdateSection() {
           ))}
         </ul>
       )}
+      {d?.error && !run.isPending && <p role="alert" className="text-xs text-warn">Lần tự cập nhật gần nhất lỗi: {d.error}</p>}
       {d?.dirty && <p className="text-xs text-warn">Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.</p>}
       {(info.isError || run.isError) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
       {restartFailed && <p role="alert" className="text-xs text-error">Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.</p>}
@@ -866,60 +905,6 @@ function UpdateSection() {
 }
 
 // ---- Phím tắt -----------------------------------------------------------------------------------
-
-function Keycap({ children }: { children: React.ReactNode }) {
-  return <kbd className="inline-grid h-6 min-w-6 place-items-center rounded-md border border-rule-2 border-b-2 bg-cotton px-1.5 font-mono text-[0.6875rem] font-medium text-ink shadow-stock">{children}</kbd>;
-}
-const k = (...keys: string[]) => <span className="inline-flex items-center gap-1">{keys.map((x, i) => <Keycap key={i}>{x}</Keycap>)}</span>;
-const plus = (...parts: React.ReactNode[]) => <span className="inline-flex items-center gap-1">{parts.map((x, i) => <span key={i} className="inline-flex items-center gap-1">{i > 0 && <span className="text-ink-3">+</span>}{x}</span>)}</span>;
-const or = (...parts: React.ReactNode[]) => <span className="inline-flex items-center gap-1">{parts.map((x, i) => <span key={i} className="inline-flex items-center gap-1">{i > 0 && <span className="text-ink-3">/</span>}{x}</span>)}</span>;
-const MOD_KEY = "⌘/Ctrl";
-
-type Shortcut = [React.ReactNode, string];
-type ShortcutGroup = [string, Shortcut[]];
-
-const TG_KEYS: ShortcutGroup[] = [
-  ["Di chuyển", [
-    [or(k("j"), k("k")), "Chọn tin dưới / trên (màn rộng, khi đang trả lời: sang tin đó luôn)"],
-    [plus(k("Alt"), or(k("↑"), k("↓"))), "Sang tag trước / kế (khi đang trả lời)"],
-    [<span key="g" className="inline-flex items-center gap-1">{k("g")}<span className="text-ink-3">rồi</span>{or(k("i"), k("p"), k("a"), k("b"))}</span>, "Đi tới Việc cần xử lý / Tag đã ghim / AI Agent / Briefing"],
-    [k("/"), "Tìm kiếm"],
-    [plus(k(MOD_KEY), k("K")), "Lệnh nhanh: nhóm, trang, ticket, phiên AI, tìm tin"],
-  ]],
-  ["Xử lý tin", [
-    [k("x"), "Xong / mở lại tin đang chọn"],
-    [plus(k("Shift"), k("x")), "Xong, không thả reaction trên Telegram"],
-    [k("s"), "Hoãn tin đang chọn 1 giờ"],
-    [k("p"), "Ghim / bỏ ghim tin đang chọn"],
-    [k("o"), "Mở tin đang chọn trong Telegram"],
-    [or(k("Space"), plus(k("Shift"), <span key="c" className="text-xs text-ink-2">bấm</span>)), "Chọn nhiều tin, rồi Xong / Hoãn / Ghim cả loạt"],
-    [k("z"), "Hoàn tác thao tác vừa làm"],
-  ]],
-  ["Trả lời", [
-    [or(k("Enter"), k("r")), "Trả lời tin đang chọn"],
-    [k("a"), "Nhập yêu cầu cho AI (khi đang trả lời)"],
-    [plus(k(MOD_KEY), k("Enter")), "Gửi trả lời"],
-    [k("Esc"), "Bỏ chọn nhiều tin, rồi đóng trả lời (nháp được giữ lại)"],
-  ]],
-  ["Trợ giúp", [
-    [k("?"), "Mở bảng phím tắt"],
-    [k("F1"), "Mở hướng dẫn"],
-  ]],
-];
-
-const YT_KEYS: ShortcutGroup[] = [
-  ["Di chuyển", [
-    [plus(k(MOD_KEY), k("K")), "Lệnh nhanh"],
-    [k("/"), "Tìm ticket"],
-    [or(k("j"), k("k")), "Chọn ticket dưới / trên"],
-    [k("Enter"), "Mở ticket đang chọn"],
-  ]],
-  ["Chọn và trợ giúp", [
-    [k("x"), "Chọn / bỏ chọn ticket (chọn nhiều)"],
-    [k("Esc"), "Xóa ô tìm, rồi bỏ chọn các ticket"],
-    [k("F1"), "Mở hướng dẫn"],
-  ]],
-];
 
 function ShortcutsGroup() {
   const [find, setFind] = useState("");
@@ -946,34 +931,3 @@ function ShortcutsGroup() {
   </>;
 }
 
-function ShortcutList({ list }: { list: Shortcut[] }) {
-  return (
-    <dl className="grid">
-      {list.map(([keys, what]) => (
-        <div key={what} className="flex items-center justify-between gap-4 border-t border-rule py-2 first:border-0 first:pt-1">
-          <dt className="text-sm text-ink-2">{what}</dt>
-          <dd className="shrink-0">{keys}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** The Inbox's "?" sheet: the Telegram groups, two columns on a wide screen. */
-export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogTitle>Phím tắt</DialogTitle>
-        <div className="grid max-h-[70vh] gap-x-8 gap-y-5 overflow-y-auto md:grid-cols-2">
-          {TG_KEYS.map(([name, list]) => (
-            <section key={name} aria-label={name} className="grid content-start gap-1">
-              <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{name}</h3>
-              <ShortcutList list={list} />
-            </section>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}

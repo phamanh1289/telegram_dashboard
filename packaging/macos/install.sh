@@ -14,9 +14,14 @@ ver=${tag#v}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
+file="TelegramDashboard-$ver-macos-arm64.zip"
 echo "Tải Telegram Dashboard ${tag}…"
-curl -fL --progress-bar -o "$tmp/td.zip" \
-  "https://github.com/$REPO/releases/download/$tag/TelegramDashboard-$ver-macos-arm64.zip"
+curl -fL --progress-bar -o "$tmp/td.zip" "https://github.com/$REPO/releases/download/$tag/$file"
+# The sha256 GitHub computed for the asset (API, pretty-printed: the first "digest" after its name).
+want=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$tag" |
+  awk -v n="\"name\": \"$file\"" 'index($0, n) {f = 1} f && /"digest"/ {gsub(/.*"sha256:|".*/, ""); print; exit}')
+got=$(shasum -a 256 "$tmp/td.zip" | cut -d' ' -f1)
+[ -n "$want" ] && [ "$got" = "$want" ] || { echo "Gói tải về sai checksum (hoặc không đọc được checksum): không cài."; exit 1; }
 ditto -x -k "$tmp/td.zip" "$tmp/x"
 src="$tmp/x/Telegram Dashboard"
 mkdir -p "$DEST/versions"
@@ -33,7 +38,8 @@ cat >"$bin/mydashboard" <<EOF
 #!/bin/bash
 case "\${1:-start}" in
   start) exec $(printf %q "$DEST/Start Dashboard Telegram.command") ;;
-  *) echo "Dùng: mydashboard start"; exit 2 ;;
+  open) cd $(printf %q "$DEST")/versions/"\$(cat $(printf %q "$DEST/current"))"/app && exec ../python/bin/python3 -m telegram_dashboard open ;;
+  *) echo "Dùng: mydashboard start | open"; exit 2 ;;
 esac
 EOF
 chmod +x "$bin/mydashboard"

@@ -1,18 +1,22 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, Clock, Flame, type LucideIcon, Megaphone, Pin, Reply, RotateCw, X } from "lucide-react";
-import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Bot, CheckCheck, ChevronDown, Clock, Flame, type LucideIcon, Megaphone, MessageCircleQuestion, Pin, Reply, RotateCw, Sun, TriangleAlert, X } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { useChats } from "@/components/chat-list";
 import { MessageItem, SnoozeMenu } from "@/components/message-item";
+import { useQaNews } from "@/components/qa-page";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { Kbd } from "@/components/ui/kbd";
-import { Skeleton } from "@/components/ui/skeleton";
 import type { Message, PendingItem } from "@/lib/api";
-import { fold, getMessage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, setHandled, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
+import { COMPOSER, fold, getMessage, msgKey, openQa, openReplyById, openTask, PartialError, pendingQuery, pinAll, scrollToRow, setHandled, smooth, useListShortcuts, useNow, useTaskList, useTasks, waitLabel } from "@/lib/inbox";
 import { doneLoopItem, type LoopItem, loopKey, useLoopItems } from "@/lib/report-back";
-import { readOverdueHours } from "@/lib/prefs";
+import { getPref, onPrefs, readOverdueHours, setPref, useRole } from "@/lib/prefs";
+import { riskOf, useMyTickets } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 
 type Section = { id: string; title: string; note?: string; icon: LucideIcon; tone: string; rows: PendingItem[] };
@@ -26,7 +30,7 @@ function sectionsOf(rows: PendingItem[], pinned: boolean, now: number): Section[
       { id: "done", title: "Đã xử lý", icon: CheckCheck, tone: "text-ok", rows: by((p) => !!p.message.handled) },
     ];
   }
-  const late = (p: PendingItem) => !p.message.pinned && waitLabel(p.message.date, now).overdue;
+  const late = (p: PendingItem) => !p.message.pinned && waitLabel(p.message.date, now, !!p.message.priority).overdue; // priority: half the wait
   return [
     { id: "pinned", title: "Đã ghim", icon: Pin, tone: "text-ink-2", rows: by((p) => !!p.message.pinned) },
     { id: "late", title: "Quá hạn", note: `chờ hơn ${readOverdueHours()} giờ`, icon: Flame, tone: "text-signal-2", rows: by(late) },
@@ -62,6 +66,7 @@ export function PendingInbox({
     ...pendingQuery(range, pinned),
     refetchInterval: 60_000, // snoozed tags come back on their own
   });
+  const wait = useAiWait(q.isPending);
   const now = useNow();
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { box.current?.scrollTo({ top: 0 }); }, [jump]);
@@ -100,6 +105,7 @@ export function PendingInbox({
     if (!chosen.length) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || (e.target as HTMLElement | null)?.closest?.("[role=dialog], [role=menu]")) return; // an open dialog / menu has focus: its own Esc
+      if (document.querySelector(COMPOSER)) return; // the reply covers the list: Esc closes it, the selection stays
       e.preventDefault();
       e.stopPropagation(); // before the inbox's Esc: this one only clears the selection
       setSel(new Set());
@@ -126,11 +132,8 @@ export function PendingInbox({
         </p>
         {/* Many groups: a list, not a segmented bar (DESIGN: segmented is for 2-4 options). */}
         {groups.length > 1 && (
-          <select aria-label="Lọc theo nhóm" value={group} onChange={(e) => setGroup(e.target.value)}
-            className={cn("h-7 max-w-48 min-w-0 truncate rounded-md border border-rule bg-cotton px-2 text-xs", group && "border-hl text-hl-2")}>
-            <option value="">Mọi nhóm ({found.length})</option>
-            {groups.map(([id, g]) => <option key={id} value={id}>{g.title} ({g.n})</option>)}
-          </select>
+          <Dropdown label="Lọc theo nhóm" value={group} onChange={setGroup} className={cn("h-7 w-auto max-w-48", group && "border-hl text-hl-2")}
+            options={[{ value: "", label: `Mọi nhóm (${found.length})` }, ...groups.map(([id, g]) => ({ value: id, label: `${g.title} (${g.n})` }))]} />
         )}
         <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 lg:flex">
           <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> chọn tin</span>
@@ -141,8 +144,8 @@ export function PendingInbox({
         </p>
       </div>
 
-      <div ref={box} className="min-h-0 flex-1 overflow-y-auto bg-cotton">
-        {q.isPending && <RowsSkeleton />}
+      <div ref={box} className="relative min-h-0 flex-1 overflow-y-auto bg-cotton">
+        {wait && <AiFetching kind="inbox" cover />}
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">
             <p className="text-error">Không tải được danh sách.</p>
@@ -174,6 +177,7 @@ export function PendingInbox({
           </div>
         )}
         <div className="@container grid gap-1 pb-4">
+          {!pinned && !search.trim() && <Today rows={q.data ?? []} late={late} now={now} />}
           {!pinned && !search.trim() && <LoopBack range={range} />}
           {sections.map((s) => s.rows.length > 0 && (
             <section key={s.id} aria-labelledby={`pending-${s.id}`}>
@@ -240,6 +244,59 @@ function SectionHead({ id, icon: Icon, tone, title, n, note, className }: { id: 
   );
 }
 
+/** "Hôm nay": one dense row of what needs you across modules, each a jump to it: the oldest waiting tag, the overdue ones,
+ *  my YouTrack tickets at risk, Q&A (my questions due a nudge, new answers), finished AI Agent sessions not reviewed yet.
+ *  Hidden when all are 0; folds to one line (remembered). Reads only what `/` already loads (no new polling).
+ *  ponytail: Q&A counts read the 7-day range, the Q&A page's default; another range there is its own read. */
+function Today({ rows, late, now }: { rows: PendingItem[]; late: number; now: number }) {
+  const folded = useSyncExternalStore(onPrefs, () => getPref("todayStrip") === "0", () => false);
+  const role = useRole();
+  const { me, rows: tickets } = useMyTickets(true, false); // the shell's 5-min poll feeds it
+  const risky = tickets.filter((i) => (role === "po" || (role === "qa" ? i.qc : i.assignee) === me) && riskOf(i, now)).length;
+  const qa = useQaNews(7, false, false); // the inbox shell polls these groups
+  const ai = (useTaskList().data ?? []).filter((t) => !t.running && !t.handled && !!t.result);
+  const oldest = rows.filter((p) => !p.message.pinned).reduce<PendingItem | null>((a, p) => (!a || p.message.date < a.message.date ? p : a), null);
+  const wait = oldest && waitLabel(oldest.message.date, now, !!oldest.message.priority);
+  const items: { n: number; key: string; label: string; icon: LucideIcon; alert?: boolean; go: () => void; href?: string }[] = [
+    ...(late ? [{ n: late, key: "late", label: "tag quá hạn", icon: Flame, alert: true, go: () => document.getElementById("pending-late")?.scrollIntoView({ behavior: smooth() }) }] : []),
+    ...(risky ? [{ n: risky, key: "yt", label: "ticket rủi ro", icon: TriangleAlert, alert: true, go: () => {}, href: "/youtrack/" }] : []),
+    ...(qa.lateTotal && qa.firstLate ? [{ n: qa.lateTotal, key: "qa-late", label: "câu hỏi cần nhắc", icon: MessageCircleQuestion, alert: true, go: () => openQa(qa.firstLate!.question.chat_id, qa.firstLate!.code) }] : []),
+    ...(qa.total && qa.firstNew ? [{ n: qa.total, key: "qa-new", label: "trả lời Q&A mới", icon: MessageCircleQuestion, go: () => openQa(qa.firstNew!.question.chat_id, qa.firstNew!.code) }] : []),
+    ...(ai.length ? [{ n: ai.length, key: "ai", label: "phiên AI xong chờ xem", icon: Bot, go: () => openTask(ai[0].id) }] : []),
+  ];
+  if (!items.length && !wait) return null;
+  const chip = "inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors duration-(--dur-micro)";
+  return (
+    <section aria-label="Hôm nay" className="mx-3 mt-3 mb-1 rounded-[var(--radius-card)] bg-paper-2 shadow-groove @xl:mx-5">
+      <div className="flex flex-wrap items-center gap-1.5 px-2 py-1.5">
+        <button type="button" aria-expanded={!folded} onClick={() => setPref("todayStrip", folded ? null : "0")}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-xs font-semibold text-ink hover:bg-paper-3">
+          <Sun className="size-3.5 text-ink-3" aria-hidden />Hôm nay
+          <ChevronDown aria-hidden className={cn("size-3.5 text-ink-3 transition-transform duration-(--dur-short)", folded && "-rotate-90")} />
+        </button>
+        {folded ? (
+          <span className="text-xs text-ink-3">
+            {items.length ? items.map((i) => `${i.n} ${i.label}`).join(", ") : wait && `chờ lâu nhất ${wait.n} ${wait.unit}`}
+          </span>
+        ) : <>
+          {wait && oldest && (
+            <Hint side="bottom" text="Tag chờ lâu nhất (không tính tin ghim): bấm để tới tin đó">
+              <button type="button" onClick={() => scrollToRow(msgKey(oldest.message))} className={cn(chip, "text-ink-2 hover:bg-paper-3")}>
+                <Clock className="size-3.5 text-ink-3" aria-hidden />chờ lâu nhất <b className="font-mono font-semibold text-ink tabular-nums">{wait.n}</b> {wait.unit}
+              </button>
+            </Hint>
+          )}
+          {items.map(({ n, key, label, icon: Icon, alert, go, href }) => {
+            const body = <><Icon className="size-3.5" aria-hidden /><b className="font-mono font-semibold tabular-nums">{n}</b> {label}</>;
+            const cls = cn(chip, alert ? "bg-signal-wash text-signal-2 hover:brightness-95" : "text-ink-2 hover:bg-paper-3");
+            return href ? <Link key={key} href={href} className={cls}>{body}</Link> : <button key={key} type="button" onClick={go} className={cls}>{body}</button>;
+          })}
+        </>}
+      </div>
+    </section>
+  );
+}
+
 /** "Báo lại": a ticket I own reached Fixed / Done (seen by the YouTrack watch); answer whoever asked about it.
  *  "Trả lời" opens the reply with a line; the item goes once that reply is sent (or on X). */
 function LoopBack({ range }: { range: string }) {
@@ -280,23 +337,5 @@ function LoopRow({ l, chat }: { l: LoopItem; chat?: string }) {
         <Button size="icon-xs" variant="ghost" aria-label="Bỏ qua" onClick={() => doneLoopItem(l)}><X /></Button>
       </Hint>
     </li>
-  );
-}
-
-/** Loading rows in the shape of a group's message list: the wait, the sender, two lines of message. */
-export function RowsSkeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <ul aria-label="Đang tải…" className="@container divide-y divide-rule">
-      {Array.from({ length: rows }, (_, i) => (
-        <li key={i} className="grid gap-x-4 gap-y-2 px-4 py-4 @xl:grid-cols-[6.5rem_minmax(0,1fr)] @xl:px-5">
-          <div className="flex gap-3 @xl:grid @xl:content-start @xl:gap-2"><Skeleton className="h-3.5 w-14" /><Skeleton className="h-3 w-10" /></div>
-          <div className="grid content-start gap-2">
-            <Skeleton className="h-3.5 w-48 max-w-full" />
-            <Skeleton className="h-3.5 w-full max-w-xl" />
-            <Skeleton className="h-3.5 max-w-md" style={{ width: `${70 - i * 10}%` }} />
-          </div>
-        </li>
-      ))}
-    </ul>
   );
 }

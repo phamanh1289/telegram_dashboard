@@ -24,7 +24,7 @@ export function CreateTicket() {
           notePlaceholder="vd. Màn chốt giá trên Android bấm Ký sau bị crash khi chưa có hợp đồng, máy Samsung A52, bản 3.2.1"
           aiOn={y.aiOn}
           aiKind="yt"
-          aiDraft={(note, f) => yt.aiDraft(note, f.types, f.priorities)}
+          aiDraft={(note, f, signal) => yt.aiDraft(note, f.types, f.priorities, signal)}
           onSubmit={async (v) => {
             const r = await createTicket(v);
             toast({ text: r.warning ? `Đã tạo ${r.id}. ${r.warning}` : `Đã tạo ${r.id}` });

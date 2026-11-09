@@ -31,12 +31,35 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
-SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # .env lands in os.environ (yt_dashboard reads it)
+SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_",  # .env lands in os.environ (yt_dashboard reads it)
+              # the user's other credentials: an agent's shell has no business with them (the AI CLIs keep theirs)
+              "GH_TOKEN", "GITHUB_TOKEN", "NPM_TOKEN", "AWS_", "AZURE_", "GOOGLE_APPLICATION_CREDENTIALS")
+RUN_DIR = Path.home() / ".telegram_dashboard"  # outside every install's data/: one server per machine
 
 
 def child_env() -> dict[str, str]:
-    """os.environ minus this app's secrets (Telegram API, YouTrack token): for claude runs."""
+    """os.environ minus secrets (this app's Telegram API / YouTrack token, cloud and git tokens): for AI CLI runs."""
     return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+
+
+def api_token_path() -> Path:
+    return RUN_DIR / "api_token"
+
+
+def ensure_api_token() -> str:
+    """The local API's token (auth.py), made once (0600) and kept across restarts so the browser's cookie
+    stays valid. Machine-wide like the server lock: any install's launcher opens the running server."""
+    path = api_token_path()
+    with contextlib.suppress(OSError):
+        if tok := path.read_text().strip():
+            return tok
+    import secrets
+
+    RUN_DIR.mkdir(mode=0o700, exist_ok=True)
+    tok = secrets.token_urlsafe(32)
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        f.write(tok)
+    return tok
 
 
 async def run_cli(
@@ -136,6 +159,7 @@ class Settings:
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
+    api_token: str | None = field(default=None, repr=False)  # local API auth (auth.py); None = off (tests)
 
     @property
     def data_dir(self) -> Path:

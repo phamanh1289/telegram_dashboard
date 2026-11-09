@@ -183,6 +183,9 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
           </Button>
         )}
       </>} />
+    {plan && edit && (t.chat_id || refs.length > 0 || /https?:\/\//.test(t.prompt)) && (
+      <p className="text-xs text-warn">Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt.</p>
+    )}
     {failed && <p role="alert" className="text-xs text-error">Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.</p>}
     {send.isError && <p role="alert" className="text-xs text-error">{busy ? "AI đang làm lượt trước." : "Gửi thất bại."}</p>}
     {stop.isError && <p role="alert" className="text-xs text-error">Không dừng được, thử lại.</p>}

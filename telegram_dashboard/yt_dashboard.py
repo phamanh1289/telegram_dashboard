@@ -31,6 +31,7 @@ TTL = 50.0  # shorter than the UI refresh (60s) so each refresh sees fresh data
 WAVE = 4  # issue pages fetched concurrently
 PAGE = 500
 TRANS_PAGES = 20  # activity pages of 1000 for /transitions
+SINCE_DAYS = 30  # /statesince reads the project's State changes over this window in one paged read
 FIELDS = (
     "idReadable,summary,created,updated,resolved,reporter(login,fullName),"
     "customFields(name,value(name,login,fullName,minutes,presentation))"
@@ -508,6 +509,7 @@ class YouTrackDashboard:
         self._cache: dict[str, tuple[float, object]] = {}
         self._inflight: dict[str, asyncio.Future] = {}
         self._since: dict[str, int] = {}
+        self._trans_until: dict[str, int] = {}  # "p:days" -> ms the last read covers (0: cut at TRANS_PAGES)
 
     def notes(self) -> AiNotes:
         raw = _read_json(self.notes_path)
@@ -576,6 +578,7 @@ class YouTrackDashboard:
         self._cache.clear()
         self._inflight.clear()
         self._since.clear()
+        self._trans_until.clear()
 
     async def aclose(self) -> None:
         for c in [*self._retired, self._client]:
@@ -602,10 +605,13 @@ class YouTrackDashboard:
             msg = {
                 401: "Token YouTrack hết hạn hoặc sai — dán token mới trong Cài đặt",
                 403: "Token YouTrack không có quyền cho thao tác này",
-                404: "ticket not found",
+                404: "ticket not found" if path.startswith("/api/issues/") else f"Không thấy trên YouTrack: {path}",
             }.get(r.status_code, f"YouTrack {r.status_code}: {r.text[:200]}")
             raise YtError(r.status_code if r.status_code in (400, 401, 403, 404) else 502, msg)
-        return r.json()
+        try:
+            return r.json()
+        except ValueError:  # a redirect / SSO login page: the URL is wrong, not the ticket
+            raise YtError(502, "YouTrack trả về không phải JSON — kiểm tra URL YouTrack trong Cài đặt") from None
 
     async def attach(self, issue: str, path) -> None:
         """Upload one file to a ticket's attachments."""
@@ -618,6 +624,11 @@ class YouTrackDashboard:
             raise YtError(502, "Không kết nối được YouTrack") from None
         if r.status_code >= 400:
             raise YtError(502, f"YouTrack {r.status_code}: {r.text[:200]}")
+
+    def need_token(self) -> None:
+        """A write / detail read without a token: say where to paste one (lists just come back empty)."""
+        if self.mock:
+            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
 
     def stale(self, issue: str | None = None) -> None:
         """After a write: ticket lists (and that ticket) are stale; sprints, people, fields stay cached.
@@ -832,6 +843,7 @@ class YouTrackDashboard:
             f"/api/issues/{issue_id}/activities",
             categories="CustomFieldCategory",
             fields="timestamp,field(name)",
+            reverse="true",  # newest first: tickets with >200 field changes keep their latest State
             **{"$top": 200},
         )
         v = max(
@@ -847,6 +859,7 @@ class YouTrackDashboard:
     async def transitions(self, project: str, days: int) -> list[dict]:
         """Every State change in the project over the last `days`, oldest first: the page works out
         QC pass / fail / reopen from them. One paged activity read for the whole project."""
+        read_at = int(time.time() * 1000)
         start = int((time.time() - days * 86400) * 1000)
         day = (datetime.now(UTC) - timedelta(days=days)).date().isoformat()
         params = {
@@ -869,12 +882,37 @@ class YouTrackDashboard:
                         "from": _label(a.get("removed")), "to": _label(a.get("added")),
                     })  # fmt: skip
             if not page.get("hasAfter") or not page.get("afterCursor"):
+                self._trans_until[f"{project}:{days}"] = read_at
                 break
             params["cursor"] = page["afterCursor"]
+        else:  # cut short: the newest changes are missing, so statesince can't trust it
+            self._trans_until[f"{project}:{days}"] = 0
         return out
 
     async def since_all(self, items: list[str]) -> dict[str, int]:
-        sem, out = asyncio.Semaphore(8), {}
+        """Latest State change per "ID@updated": from the project's State changes over SINCE_DAYS (one
+        cached read for all its tickets) when that read covers the ticket's last update and holds a
+        change of it; else from the ticket's own activity log (one request each)."""
+        sem, out, rest = asyncio.Semaphore(8), {}, []
+        by_project: dict[str, list[str]] = {}
+        for it in items:
+            by_project.setdefault(it.split("-", 1)[0], []).append(it)
+        for p, its in by_project.items():
+            try:
+                trans = await self.cached(f"trans:{p}:{SINCE_DAYS}", lambda p=p: self.transitions(p, SINCE_DAYS))
+            except YtError as e:
+                if e.status in (401, 403):
+                    raise
+                trans = []
+            until, last = self._trans_until.get(f"{p}:{SINCE_DAYS}", 0), {}
+            for t in trans:
+                last[t["id"]] = max(last.get(t["id"], 0), t["at"] or 0)
+            for it in its:
+                issue_id, updated = it.split("@")
+                if issue_id in last and int(updated) <= until:
+                    out[issue_id] = last[issue_id]
+                else:  # no State change in the window (or changed since the read): its own log
+                    rest.append(it)
 
         async def one(it: str):
             issue_id, updated = it.split("@")
@@ -885,7 +923,7 @@ class YouTrackDashboard:
                     if e.status in (401, 403):  # but a bad token must show, not look like "no data"
                         raise
 
-        await asyncio.gather(*map(one, items))
+        await asyncio.gather(*map(one, rest))
         return out
 
     async def people(self, project: str):
@@ -903,7 +941,7 @@ class YouTrackDashboard:
             pass
         seen = {
             i["assigneeLogin"]: i["assignee"]
-            for i in await self.issues(project, "active", None)
+            for i in await self._all(f"project: {{{project}}} #Unresolved")
             if i["assigneeLogin"]
         }
         return [{"login": k, "name": v} for k, v in seen.items()]
@@ -1040,10 +1078,6 @@ async def _code_dir(request: Request, folder: str) -> str | None:
     return folder
 
 
-async def _text(answer) -> dict:
-    return {"text": await answer}
-
-
 def build_router(svc: YouTrackDashboard) -> APIRouter:
     r = APIRouter(prefix="/api/yt")
 
@@ -1147,19 +1181,24 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         i = _issue_id(issue)
         if not re.fullmatch(r"[\w.-]{1,40}", id):
             raise YtError(400, "bad attachment id")
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         return await svc.file(i, id)
 
     @r.post("/issue/assignee")
     async def set_assignee(body: Assignee):
+        return await set_user(body, "Assignee")
+
+    @r.post("/issue/qc")  # its own path: an older server answers 404 instead of changing the Assignee
+    async def set_qc(body: Assignee):
+        return await set_user(body, "QC")
+
+    async def set_user(body: Assignee, name: str):
         i = _issue_id(body.id)
         if body.login is not None and not re.match(r"^[\w.@-]{1,100}$", body.login):
             raise YtError(400, "bad login")
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         field = {
-            "name": "Assignee",
+            "name": name,
             "$type": "SingleUserIssueCustomField",
             "value": {"login": body.login} if body.login else None,
         }
@@ -1170,10 +1209,9 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.post("/issue/comment")
     async def comment(body: Comment):
         i = _issue_id(body.id)
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         await svc.yt(f"/api/issues/{i}/comments", post={"text": body.text}, fields="id")
-        svc._cache.pop(f"issue:{i}", None)
+        svc.stale(i)
         return {"ok": True}
 
     @r.get("/fields")
@@ -1197,8 +1235,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/workflow/youtrack")
     async def youtrack_flow(project: str) -> dict:
         p = _project(project)
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         states = (await svc.cached(f"fields:{p}", lambda: _fields(svc, p))).get("State", [])
         return await svc.yt_flow(p, states)
 
@@ -1206,8 +1243,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def set_field(body: FieldSet, request: Request):
         """Through a command, so State follows the project's workflow (it is a state machine)."""
         i = _issue_id(body.id)
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         p = i.rsplit("-", 1)[0]
         # the value goes into the command unquoted (YouTrack rejects {braces}): only known values
         known = await svc.cached(f"fields:{p}", lambda: _fields(svc, p))
@@ -1250,8 +1286,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
 
     async def p_ticket(body: AiTicket, request: Request) -> tuple[str, bool]:
         i = _issue_id(body.id)
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
         ticket = _ticket_json(d)
         links = ""  # KB / Telegram links in it, read for the AI (no web); a rewrite only keeps the links
@@ -1273,8 +1308,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         ids = list(dict.fromkeys(map(_issue_id, body.ids)))
         if body.kind == "ask" and not body.ask.strip():
             raise YtError(400, "Nhập yêu cầu cho AI")
-        if svc.mock:
-            raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
+        svc.need_token()
         gate = asyncio.Semaphore(WAVE * 2)
         st = request.app.state
 

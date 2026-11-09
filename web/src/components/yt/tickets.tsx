@@ -8,13 +8,13 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
-import { copyText, fold, toast, useNow } from "@/lib/inbox";
+import { copyText, toast, Told, useNow } from "@/lib/inbox";
 import { ago } from "@/lib/time";
 import { readJson, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { activePool, bucket, type ColKey, COLS, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, PCOL, rank, shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt } from "@/lib/yt";
+import { activePool, bucket, type ColKey, COLS, counts, DAY, exportCsv, type Filters, fmt, groupRows, issueUrl, lastSp, PCOL, rank, shortSp, snippet, stateColor, stateSem, tagsOf, ticketId, titleOf, TINT, type Ticket, typeColor, visibleRows, yt, ytDetailQuery } from "@/lib/yt";
 import { period } from "@/lib/yt-stats";
-import { Avatar, MultiSelect, Person, Popover, Prio, StatePill, Tag, TypeTag } from "./bits";
+import { Avatar, MultiSelect, Person, Picker, Popover, Prio, StatePill, Tag, TypeTag } from "./bits";
 import { type AssigneeActs, AssigneePicker } from "./sheet";
 import { CAP_STEP, saveTicket, useYt, type Yt } from "./state";
 import { useFlow } from "./workflow";
@@ -82,7 +82,7 @@ export function TicketsPage() {
     return () => io.disconnect();
   }, [y.cap, more, setCap]);
 
-  // keys: / search, j / k rows, x tick, Esc clears the search, then the ticked rows
+  // keys: / search, j / k rows, Space tick (as Telegram's multi-select; x is "done" there), Esc clears the search, then the ticked rows
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (y.sheet) return;
@@ -99,9 +99,9 @@ export function TicketsPage() {
         const r = rows[k < 0 ? (e.key === "j" ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, k + (e.key === "j" ? 1 : -1)))];
         r.focus();
         r.scrollIntoView({ block: "nearest" });
-      } else if (e.key === "x") {
-        const id = (document.activeElement?.closest("tr[data-id]") as HTMLElement | null)?.dataset.id;
-        if (id) togglePick(id);
+      } else if (e.key === " " && el.matches("tr[data-id]")) { // a button / link in the row keeps its own Space
+        e.preventDefault();
+        togglePick(el.dataset.id!);
       }
     };
     document.addEventListener("keydown", onKey);
@@ -123,11 +123,11 @@ export function TicketsPage() {
     <section aria-label="Ticket" className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <label className="relative min-w-56 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-3" aria-hidden />
           <input ref={searchRef} type="search" value={f.q} onChange={(e) => y.setFilters({ q: e.target.value })} aria-label="Tìm ticket" autoComplete="off" maxLength={500}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && y.aiOn) { e.preventDefault(); void aiFilterApply(y, f.q); } }}
             placeholder={y.aiOn ? "Tìm ID, tiêu đề, người… hoặc gõ một câu cho AI lọc  ( / )" : "Tìm ID, tiêu đề, người…  ( / )"}
-            className={cn("h-8 w-full rounded-md border border-rule bg-cotton pl-8 text-sm focus:border-hl", y.aiOn ? "pr-20" : "pr-2")} />
+            className={cn("h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1", y.aiOn ? "pr-20" : "pr-2")} />
           {y.aiOn && (
             <Hint text="AI đổi câu này thành bộ lọc State / Priority / Type / Người / Sprint (⌘↵)" side="bottom">
               <button type="button" disabled={!f.q.trim() || aiBusy} onClick={() => void aiFilterApply(y, f.q)}
@@ -289,57 +289,56 @@ const Row = memo(function Row({ i, cols, now, onOpen, onPick, acts, picked, dens
   );
 });
 
+/** Change the picked tickets at once: Assignee / State / Priority apply on pick (5 calls at a time), the toast puts each one back. */
 function BulkBar() {
   const y = useYt();
-  const [as, setAs] = useState("-");
+  const flow = useFlow(y.project);
   const [busy, setBusy] = useState(false);
-  const [q, setQ] = useState("");
+  const write = !y.config?.mock;
+  const fields = useQuery({ queryKey: ["yt", "fields", y.project], queryFn: () => yt.fields(y.project), staleTime: Infinity, enabled: write });
   const ids = [...y.picked];
-  const asLabel = as === "-" ? "Assignee: giữ nguyên" : as === "" ? "Chưa assign" : y.people.find((p) => p.login === as)?.name ?? as;
-  async function apply() {
-    if (as === "-") { toast({ text: "Chọn assignee cần đổi" }); return; }
+  async function apply(label: string, prevOf: (t: Ticket) => string | null, call: (id: string, v: string | null) => Promise<Ticket>, v: string | null, nullable = false, allowed?: (t: Ticket) => boolean) {
+    const changed = ids.map((id) => y.rows.find((i) => i.id === id)).filter((t): t is Ticket => !!t && prevOf(t) !== v);
+    const todo = allowed ? changed.filter(allowed) : changed;
+    const off = changed.length - todo.length; // "Áp dụng" workflow: no arrow from their State to this one
+    const offText = off ? `${off} ticket không có mũi tên sang ${label} trong workflow` : "";
+    if (!todo.length) { toast({ text: offText || "Không có gì thay đổi" }); return; }
     setBusy(true);
     const done: [string, string | null][] = [], fail: string[] = [];
-    for (const id of ids) {
-      const t = y.rows.find((i) => i.id === id);
-      const prev = t?.assigneeLogin ?? null;
-      if (prev === (as || null)) continue;
-      try { y.patchTicket(await yt.setAssignee(id, as || null)); done.push([id, prev]); } catch (e) { fail.push(`${id}: ${(e as Error).message}`); }
-    }
+    for (let k = 0; k < todo.length; k += 5) await Promise.all(todo.slice(k, k + 5).map(async (t) => {
+      try { await y.patchTicket(await call(t.id, v)); done.push([t.id, prevOf(t)]); } catch (e) { fail.push(`${t.id}: ${(e as Error).message}`); }
+    }));
     setBusy(false);
-    const label = y.people.find((p) => p.login === as)?.name ?? "Chưa assign";
-    if (fail.length) toast({ text: `Lỗi ${fail.length} ticket — ${fail[0]}` });
-    else if (done.length) {
-      toast({ text: `${done.length === 1 ? done[0][0] : `${done.length} ticket`} → ${label}`, undo: async () => { for (const [id, prev] of done) y.patchTicket(await yt.setAssignee(id, prev)); } });
-      y.setPicked(new Set());
-      setAs("-");
-    } else toast({ text: "Không có gì thay đổi" });
+    const err = [offText, fail.length ? `Lỗi ${fail.length} ticket — ${fail[0]}` : ""].filter(Boolean).join(". ");
+    if (!done.length) { toast({ text: err }); return; }
+    toast({ text: `${done.length === 1 ? done[0][0] : `${done.length} ticket`} → ${label}${err ? `. ${err}` : ""}`, undo: async () => {
+      const back = done.filter(([, prev]) => prev !== null || nullable), bad: string[] = [];
+      for (const [id, prev] of back) await call(id, prev).then(y.patchTicket, (e: Error) => { bad.push(`${id}: ${e.message}`); });
+      if (bad.length) throw new Told(`${bad.length < back.length ? `Chỉ hoàn tác được ${back.length - bad.length}/${back.length} ticket` : "Không hoàn tác được"} — ${bad[0]}`);
+    } });
+    y.setPicked(new Set());
   }
+  const none = "\u0000"; // nothing ticked in the list: every pick is a change
+  const bar = "h-8 bg-board-type/15 px-2.5 text-board-type hover:bg-board-type/25 aria-expanded:bg-board-type/25";
+  const person = (p: { login: string; name: string }) => ({ v: p.login, text: p.name, node: <><Avatar name={p.name} /><span className="truncate">{p.name}</span></> });
+  const field = (name: "State" | "Priority", node: (v: string) => React.ReactNode) => (fields.data?.[name]?.length ? (
+    <Picker label={name} title={`Đổi ${name} cho các ticket đã chọn`} value={none} disabled={busy} className={bar}
+      options={fields.data[name]!.map((v) => ({ v, node: node(v) }))}
+      onPick={(v) => void apply(v, (t) => (name === "State" ? t.state : t.priority), (id, x) => yt.setField(id, name, x!), v, false,
+        name === "State" ? (t) => { const f = flow(t.state); return !f || f.includes(v); } : undefined)} />
+  ) : null);
   return (
     <motion.div role="region" aria-label="Thao tác hàng loạt" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
       className="flex flex-wrap items-center gap-2 rounded-lg bg-board px-3 py-2 text-sm text-board-type">
       <b className="font-semibold">{ids.length} ticket đã chọn</b>
-      <Popover label={asLabel} title="Đổi assignee cho các ticket đã chọn" className="border-0 bg-board-type/15 text-board-type hover:bg-board-type/25 hover:text-board-type">
-        {(close) => {
-          const pick = (v: string) => { setAs(v); setQ(""); close(); };
-          return (
-            <>
-              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm người…" aria-label="Tìm người"
-                className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm text-ink focus:border-hl" />
-              <div className="grid overflow-y-auto p-1 text-ink">
-                {!q && <button type="button" onClick={() => pick("")} className="rounded px-2 py-1.5 text-left text-sm text-ink-3 hover:bg-paper-2 hover:text-ink">Chưa assign</button>}
-                {y.people.filter((p) => !q || fold(p.name).includes(fold(q)) || fold(p.login).includes(fold(q))).map((p) => (
-                  <button key={p.login} type="button" onClick={() => pick(p.login)} aria-current={as === p.login}
-                    className={cn("flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-paper-2", as === p.login && "bg-paper-2 font-medium")}>
-                    <Avatar name={p.name} /><span className="truncate">{p.name}</span>
-                  </button>
-                ))}
-              </div>
-            </>
-          );
-        }}
-      </Popover>
-      <Button size="sm" variant="outline" disabled={busy} aria-busy={busy} onClick={() => void apply()}>Áp dụng</Button>
+      {write && <>
+        <Picker label="Assignee" title="Đổi assignee cho các ticket đã chọn" value={none} disabled={busy} search="Tìm người…" className={bar}
+          options={[{ v: "", text: "Chưa assign", node: <span className="text-ink-2">Chưa assign</span> }, ...y.people.map(person)]}
+          onPick={(login) => void apply(y.people.find((p) => p.login === login)?.name ?? "Chưa assign", (t) => t.assigneeLogin, (id, l) => yt.setAssignee(id, l), login || null, true)} />
+        {field("State", (v) => <StatePill state={v} />)}
+        {field("Priority", (v) => <Prio p={v} />)}
+        {busy && <span role="status" className="text-xs opacity-80">Đang cập nhật…</span>}
+      </>}
       {y.aiOn && (
         <Hint side="bottom" text="Hỏi AI về các ticket đã chọn, có thể trace code trong thư mục dự án"><Button size="sm" variant="outline"
           onClick={() => y.setSheet({ kind: "work", title: "AI", ids })}><Sparkles /> AI</Button></Hint>
@@ -383,8 +382,15 @@ export function applyView(y: Yt, v: SavedView) {
 }
 
 /** Built-in views per role: one click sets the whole filter + table / board + grouping for a job the role does every day. */
-type RoleView = [label: string, hint: string, f: Partial<Filters>, view?: "table" | "board"];
-function roleViews(y: Yt): RoleView[] {
+export type RoleView = [label: string, hint: string, f: Partial<Filters>, view?: "table" | "board"];
+/** A built-in view replaces the whole filter (unset parts back to the defaults), then opens the ticket page. */
+export function applyRoleView(y: Yt, [label, , f, view = "table"]: RoleView) {
+  y.setFilters({ sprint: [], assignee: [], state: [], priority: [], type: [], q: "", tier: null, quick: null, group: "sprint", sort: { k: "priority", d: "asc" }, ...f });
+  y.setView(view);
+  y.setPage("tickets");
+  toast({ text: `Góc nhìn “${label}”` });
+}
+export function roleViews(y: Yt): RoleView[] {
   const me = y.me ? [y.me] : [];
   const sprint = [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now: Date.now() }).set];
   return {
@@ -425,11 +431,6 @@ function Views() {
     setName("");
     toast({ text: `Đã lưu view “${n}”` });
   }
-  function apply([label, , f, view = "table"]: RoleView) {
-    y.setFilters({ sprint: [], assignee: [], state: [], priority: [], type: [], q: "", tier: null, quick: null, group: "sprint", sort: { k: "priority", d: "asc" }, ...f });
-    y.setView(view);
-    toast({ text: `Góc nhìn “${label}”` });
-  }
   const head = "px-2 pt-1.5 pb-0.5 text-xs font-medium text-ink-3";
   return (
     <Popover label={<span className="inline-flex items-center gap-1"><Bookmark className="size-3.5" />Góc nhìn{list.length ? <b className="font-mono font-medium text-ink-3">{list.length}</b> : null}</span>} align="right">
@@ -437,7 +438,7 @@ function Views() {
         <div className="grid gap-0.5 p-1">
           <span className={head}>Gợi ý cho {({ dev: "Dev", qa: "QA/QC", po: "PO/PM" } as const)[y.mode]}</span>
           {roleViews(y).map((v) => (
-            <button key={v[0]} type="button" onClick={() => { close(); apply(v); }} disabled={y.mode === "dev" && !y.me}
+            <button key={v[0]} type="button" onClick={() => { close(); applyRoleView(y, v); }} disabled={y.mode === "dev" && !y.me}
               className="grid gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2 disabled:pointer-events-none disabled:opacity-50">
               <span className="text-sm">{v[0]}</span><span className="text-xs text-ink-3">{v[1]}</span>
             </button>
@@ -678,7 +679,7 @@ function Empty({ anyFilter }: { anyFilter: boolean }) {
     const id = ticketId(gid, y.project);
     if (!id) { setMsg("Nhập số ticket hoặc ID dạng VA-123."); return; }
     setMsg(`Đang tìm ${id}…`);
-    try { await qc.fetchQuery({ queryKey: ["yt", "detail", id], queryFn: () => yt.detail(id) }); setMsg(""); y.openTicket(id); }
+    try { await qc.fetchQuery(ytDetailQuery(id)); setMsg(""); y.openTicket(id); }
     catch (e) { setMsg(`Không tìm thấy ${id} (${(e as Error).message})`); }
   }
   return (
@@ -718,7 +719,7 @@ function HoverPreview({ el }: { el: HTMLTableSectionElement | null }) {
     addEventListener("scroll", scroll, { passive: true, capture: true });
     return () => { el.removeEventListener("mouseover", over); el.removeEventListener("mouseleave", leave); removeEventListener("scroll", scroll, { capture: true }); clearTimeout(timer.current); };
   }, [el]);
-  const d = useQuery({ queryKey: ["yt", "detail", at?.id], queryFn: () => yt.detail(at!.id), enabled: !!at, staleTime: 60_000 });
+  const d = useQuery({ ...ytDetailQuery(at?.id ?? ""), enabled: !!at });
   const t = at && y.rows.find((i) => i.id === at.id);
   if (!at || !t || y.sheet) return null;
   const left = Math.max(8, Math.min(at.x + 16, innerWidth - 380)), top = at.y + 220 > innerHeight ? Math.max(8, at.y - 200) : at.y + 18;

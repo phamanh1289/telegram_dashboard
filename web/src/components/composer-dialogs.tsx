@@ -1,11 +1,11 @@
 "use client";
 
-import { ArrowLeft, Bot, Check, ChevronRight, Eye, FilePen, FolderGit2, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Bot, Check, ChevronRight, Eye, FilePen, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { AiPromptBox } from "@/components/ai/chat";
-import { AddProject, useProjects } from "@/components/project-picker";
+import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { createTicket, TicketForm, useOpenSimilar, useYtProject } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, DIALOG_SHEET } from "@/components/ui/dialog";
@@ -222,7 +222,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
         </Hint>
         <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><Bot className="size-[18px]" aria-hidden /></span>
         <div className="grid min-w-0 flex-1 leading-tight">
-          <h2 id="task-page-title" className="truncate text-base font-semibold">Giao việc cho AI Agent</h2>
+          <DialogTitle id="task-page-title" className="truncate pr-0">Giao việc cho AI Agent</DialogTitle>
           <span className="truncate text-xs text-ink-3">Cho tin là việc cần làm trong code (sửa bug, thêm tính năng…), không chỉ cần trả lời.</span>
         </div>
       </header>
@@ -284,11 +284,12 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
                     <button type="button" className="font-medium text-ink underline underline-offset-4" onClick={() => setCustom(null)}>Dùng prompt tự sinh</button>
                   </p>
                 )}
-                tools={
+                tools={<>
+                  <ModelEffortPicker kind="task" compact />
                   <Hint text="Yêu cầu thêm được ưu tiên hơn mẫu.">
                     <span className="min-w-0 truncate text-ink-3">Mẫu: {TASK_TEMPLATE[mode]}</span>
                   </Hint>
-                }
+                </>}
                 actions={<>
                   <Hint text="Xem và sửa prompt gửi AI">
                     <Button type="button" size="sm" variant="ghost" onClick={() => setPeek(true)} className="text-ink-2">
@@ -310,26 +311,11 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
           {/* Where and how it runs: stays put while the message scrolls. */}
           <div className="grid min-w-0 content-start gap-6 lg:min-h-0 lg:overflow-y-auto">
             <Step n={3} title="Chạy ở đâu, quyền gì">
-              <fieldset className="grid gap-1.5">
-                <legend className="mb-1.5 flex w-full items-center text-xs font-medium text-ink-3">Dự án<AddProject onAdded={choose} className="-my-1 ml-auto h-6" /></legend>
-                {projects.isPending ? <><Skeleton className="h-14" /><Skeleton className="h-14" /></>
-                  : projects.isError ? <p role="alert" className="text-xs text-error">Không tải được danh sách dự án. <button type="button" className="underline" onClick={() => projects.refetch()}>Thử lại</button></p>
-                  : !projects.data.length ? <p className="rounded-lg border border-dashed border-rule-2 px-3 py-3 text-xs text-ink-2">Chưa có dự án nào: bấm Thêm để chọn thư mục code trên máy.</p>
-                  : (
-                    <div className="grid max-h-64 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-1">
-                      {projects.data.map((p) => (
-                        <Choice key={p.path} name="task-project" checked={p.path === project} onChange={() => choose(p.path)}>
-                          <FolderGit2 className={cn("mt-0.5 size-4 shrink-0", p.path === project ? "text-hl-2" : "text-ink-3")} aria-hidden />
-                          <span className="grid min-w-0">
-                            <span className="truncate font-medium text-ink">{p.name}</span>
-                            <span className="truncate text-xs text-ink-3" dir="rtl"><bdi dir="ltr">{p.path}</bdi></span>{/* rtl: cut from the left, keep the folder */}
-                          </span>
-                        </Choice>
-                      ))}
-                    </div>
-                  )}
-                {projects.data?.length && !picked ? <p className="text-xs text-warn">Chọn dự án để giao việc.</p> : null}
-              </fieldset>
+              <div className="grid gap-1.5">
+                <span className="text-xs font-medium text-ink-3">Dự án</span>
+                <ProjectPicker value={project} onChange={choose} className="h-10 w-full" />
+                {projects.isSuccess && !picked ? <p className="text-xs text-warn">Chọn dự án để giao việc.</p> : null}
+              </div>
               <fieldset className="mt-2 grid gap-1.5">
                 <legend className="mb-1.5 text-xs font-medium text-ink-3">Quyền</legend>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -346,10 +332,6 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
                   ))}
                 </div>
               </fieldset>
-              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-paper-2 px-3 py-2">
-                <span className="text-xs font-medium text-ink-3">{aiName}</span>
-                <ModelEffortPicker kind="task" compact className="ml-auto" />
-              </div>
             </Step>
             <IntroNotice compact />
           </div>

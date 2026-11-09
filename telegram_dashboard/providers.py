@@ -24,7 +24,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .claude import USAGE_EVERY, flags_for, quota_now, spawn
+from .claude import USAGE_EVERY, flags_for, login_failed, quota_now, spawn
 from .config import _read_json, child_env, run_cli, write_private_json
 from .errors import ApiError
 
@@ -58,16 +58,31 @@ AGY_MODELS = [
 TIERS = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
 # Antigravity runs as a custom agent with only these built-in tools (no web or browser; shell only in
 # task sessions), none of the user's skills/plugins, and deny rules over the user's own allow rules.
-AGY_TOOLS = {"read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
+# No shell at all: agy has no sandbox, and its prompts carry text written by others (Telegram, tickets).
+AGY_TOOLS = {"none": [], "read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
-AGY_SHELL = ["run_command", "command_status", "send_command_input"]
-_AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)"]
+_AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)", "command(*)"]
+# Secrets outside this app's data dir that no AI run reads (Claude: Read rules; agy: read_file dirs).
+SECRET_HOME = (".ssh", ".codex", ".aws", ".config/gh", ".gnupg", ".telegram_dashboard")  # last: the API token
 # Claude task turns, enforced here, not left to ~/.claude settings: shell only in `edit` (plan prompts
 # carry Telegram text written by others, e.g. deep thinking, so a read-only run must not reach a
 # shell), no web, no MCP servers, no reads of this app's data dir (Telegram session, tokens), and no
 # edits to files that run code later (hooks, git hooks, CI). An Edit(path) rule also covers Write;
 # neither binds Bash.
 PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
+# Edit turns run Bash in Claude Code's sandbox: writes only inside the project, network only to package
+# registries (loopback too is out: injected text can't reach the dashboard's own API or exfiltrate).
+# ponytail: fixed registry list; add a host when a build needs another mirror.
+SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
+                   "repo.maven.apache.org", "repo1.maven.org", "maven.google.com", "dl.google.com",
+                   "*.gradle.org", "jitpack.io"]  # fmt: skip
+SANDBOX = json.dumps({"sandbox": {
+    "enabled": True,
+    "failIfUnavailable": sys.platform != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
+    "autoAllowBashIfSandboxed": True,
+    "allowUnsandboxedCommands": False,  # the model can't opt a command out
+    "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
+}})
 ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
 DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
         # files that run code later (on folder open, commit, cd) or load tools into the next session
@@ -219,12 +234,12 @@ def _codex_base(settings, model: str, effort: str) -> list[str]:
             *(["-c", f'model_reasoning_effort="{effort}"'] if effort in EFFORTS else [])]  # fmt: skip
 
 
-def _agy_agent(kind: str, shell: bool) -> str:
-    """The custom agent a run uses, written where agy looks agents up by name: `read` or `edit` (+ shell)."""
-    name = f"telegram-dashboard-{kind}{'-shell' if shell else ''}"
+def _agy_agent(kind: str) -> str:
+    """The custom agent a run uses, written where agy looks agents up by name: `none`, `read` or `edit`."""
+    name = f"telegram-dashboard-{kind}"
     path = _agy_home() / "agents" / f"{name}.md"
-    tools = [*AGY_TOOLS[kind], *(AGY_SHELL if shell else [])]
-    cannot = "browse" if shell else "run commands or browse"
+    tools = AGY_TOOLS[kind]
+    cannot = "use any tool: answer from the prompt alone" if not tools else "run commands or browse"
     text = (f"---\nname: {name}\ndescription: Telegram Dashboard run ({kind})\n"
             f"tools: [{', '.join(tools)}]\ninheritCustomizations: false\n---\n"
             f"Work only through the tools you have; you cannot {cannot}.\n")  # fmt: skip
@@ -234,13 +249,14 @@ def _agy_agent(kind: str, shell: bool) -> str:
     return name
 
 
-def _agy_base(settings, kind: str, model: str, shell: bool = False) -> list[str]:
-    deny = [*_AGY_DENY, *(["write_file(*)"] if kind == "read" else []), *([] if shell else ["command(*)"])]
-    # headless agy auto-denies what it would prompt for: shell needs an explicit allow
-    perms = {"deny": deny, **({"allow": ["command(*)"]} if shell else {})}
+def _agy_base(settings, kind: str, model: str) -> list[str]:
+    # read_file(<dir>) covers the whole dir; headless agy auto-denies anything it would prompt for
+    reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in _secret_dirs(settings)]
+    deny = [*_AGY_DENY, *reads, *(["write_file(*)"] if kind != "edit" else [])]
+    perms = json.dumps({"permissions": {"deny": deny}})
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
-            "--disable-slash-commands", "--agent", _agy_agent(kind, shell),
-            "--settings", json.dumps({"permissions": perms}), *(["--model", model] if model else [])]  # fmt: skip
+            "--disable-slash-commands", "--agent", _agy_agent(kind),
+            "--settings", perms, *(["--model", model] if model else [])]  # fmt: skip
 
 
 def stdin(p: str, text: str) -> bytes:
@@ -250,11 +266,27 @@ def stdin(p: str, text: str) -> bytes:
     return text.encode()
 
 
+def _secret_dirs(settings) -> list[str]:
+    home = Path.home()
+    return [str(settings.data_dir.resolve()), *(str(home / h) for h in SECRET_HOME)]
+
+
+def _rule_path(p: Path) -> str:
+    """An absolute path in a Claude permission rule: `//abs`. Windows paths match in POSIX form (C:\\x -> /c/x)."""
+    s = p.as_posix()
+    if re.match(r"^[A-Za-z]:/", s):
+        s = f"/{s[0].lower()}{s[2:]}"
+    return f"/{s}"
+
+
 def _data_deny(settings) -> str:
-    """Rules for this app's data dir (Telegram session, tokens): prompts carry others' text. Read() also
-    binds reader commands in Bash; the Bash rules catch a command naming the dir or its secrets."""
+    """Rules for this app's data dir (Telegram session, tokens, API token) and the user's other secrets: prompts
+    carry others' text. Read() also binds reader commands in Bash (and the edit sandbox's reads); the Bash rules
+    catch a command naming the dir or its secrets."""
     d = settings.data_dir.resolve()
-    return f"Read(/{d}/**),Bash(*{d}*),Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
+    home = ",".join(f"Read(~/{h}/**)" for h in SECRET_HOME)
+    return (f"Read({_rule_path(d)}/**),Read({_rule_path(settings.root.resolve())}/.env),{home},Bash(*{d}*),"
+            f"Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)")
 
 
 def is_claude(cmd: list[str]) -> bool:
@@ -292,7 +324,8 @@ def ask_cmd(
             *off,
             "-",
         ]
-    return [*_agy_base(settings, "read", model), *(["--add-dir", read_dir] if read_dir else [])]
+    kind = "read" if tools or read_dir else "none"  # no tools asked: none at all, not just "no project"
+    return [*_agy_base(settings, kind, model), *(["--add-dir", read_dir] if read_dir else [])]
 
 
 def task_cmd(
@@ -304,6 +337,7 @@ def task_cmd(
     if p == "claude":
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
                 "--permission-mode", PERMISSION[mode], "--strict-mcp-config", "--allowedTools", ALLOW[mode],
+                *(["--tools", ALLOW["plan"]] if mode == "plan" else ["--settings", SANDBOX]),
                 "--disallowedTools", DENY, _data_deny(settings), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
@@ -311,7 +345,7 @@ def task_cmd(
         head = [*exe(settings, p), "exec", *(["resume"] if resume else [])]
         return [*head, *_codex_base(settings, model, effort), *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, shell=mode != "plan"), *edit,
+    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip
 
 
@@ -491,6 +525,7 @@ async def events(stream, idle=lambda: None):
 # ---- accounts ----
 
 _login: dict = {"proc": None, "url": None}  # a dashboard-started `codex login`
+_codex_login_lock = asyncio.Lock()
 _quota: dict = {}  # provider -> (monotonic time read, windows, ISO time read)
 _quota_lock: dict[str, asyncio.Lock] = {}
 _CODEX_URL = re.compile(r"https://auth\.openai\.com/\S+")
@@ -653,28 +688,33 @@ async def login(settings, p: str) -> str | None:
         if code != 0:
             raise ApiError(502, "terminal_failed", detail=out[-200:] or None)
         return None
-    if _login_pending():
+    async with _codex_login_lock:  # two clicks: one `codex login`, not two fighting over its callback port
+        if _login_pending():
+            return _login["url"]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *exe(settings, p), "login", env=child_env(),
+                stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )  # fmt: skip
+        except OSError:
+            raise ApiError(502, "ai_cli_unavailable") from None
+        _login.update(proc=proc, url=None)
+        last = [""]
+
+        async def read_url() -> None:
+            async for line in proc.stdout:
+                last[0] = line.decode(errors="replace").strip() or last[0]
+                if m := _CODEX_URL.search(last[0]):
+                    _login["url"] = m.group(0)
+                    return
+
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(read_url(), 10)
+        if not _login["url"]:
+            await login_failed(proc, last[0], "ai_login_failed")
+        # ponytail: an abandoned login keeps its local callback server up until the next login/logout.
+        spawn(proc.communicate())  # drain and reap it when it finishes
         return _login["url"]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *exe(settings, p), "login", env=child_env(),
-            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )  # fmt: skip
-    except OSError:
-        raise ApiError(502, "ai_cli_unavailable") from None
-    _login.update(proc=proc, url=None)
-
-    async def read_url() -> None:
-        async for line in proc.stdout:
-            if m := _CODEX_URL.search(line.decode(errors="replace")):
-                _login["url"] = m.group(0)
-                return
-
-    with contextlib.suppress(TimeoutError):
-        await asyncio.wait_for(read_url(), 10)
-    # ponytail: an abandoned login keeps its local callback server up until the next login/logout.
-    spawn(proc.communicate())  # drain and reap it when it finishes
-    return _login["url"]
 
 
 async def logout(settings, p: str) -> None:

@@ -213,6 +213,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Privacy */
+        get: operations["get_privacy_api_privacy_get"];
+        /** Put Privacy */
+        put: operations["put_privacy_api_privacy_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -617,6 +635,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chats/{chat_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Members
+         * @description The group's members, live from Telegram, reused for MEMBERS_TTL: the reply box's @ popup.
+         */
+        get: operations["members_api_chats__chat_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/qa": {
         parameters: {
             query?: never;
@@ -640,6 +678,27 @@ export interface paths {
          *     out as a plain message: no code, no Q&A.
          */
         post: operations["qa_post_api_qa_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Qa Mark
+         * @description Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
+         *     null undoes.
+         */
+        put: operations["qa_mark_api_qa_mark_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -823,6 +882,44 @@ export interface paths {
         get?: never;
         /** Snooze */
         put: operations["snooze_api_chats__chat_id__messages__message_id__snooze_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/messages/{message_id}/remind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Remind
+         * @description "Nhắc lại sau": reopen a tag (e.g. just answered "để mình check") and hide it until `until`; it comes
+         *     back to Việc cần xử lý then. No reaction change on Telegram.
+         */
+        put: operations["remind_api_chats__chat_id__messages__message_id__remind_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stats/week": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Week Stats */
+        get: operations["week_stats_api_stats_week_get"];
+        put?: never;
         post?: never;
         delete?: never;
         options?: never;
@@ -1820,6 +1917,8 @@ export interface components {
              * @default 0
              */
             pending_count: number;
+            /** Oldest Pending */
+            oldest_pending?: string | null;
         };
         /** ChatsResponse */
         ChatsResponse: {
@@ -2107,6 +2206,18 @@ export interface components {
              */
             kind: "link" | "mention" | "code" | "pre" | "bold" | "italic" | "underline" | "strike" | "spoiler" | "blockquote";
         };
+        /**
+         * Member
+         * @description A group member the reply box can tag (@ popup): by @username, or by name when there is none.
+         */
+        Member: {
+            /** User Id */
+            user_id: string;
+            /** Name */
+            name: string;
+            /** Username */
+            username?: string | null;
+        };
         /** MessageDTO */
         MessageDTO: {
             /** Chat Id */
@@ -2156,6 +2267,11 @@ export interface components {
              * @default false
              */
             pinned: boolean;
+            /**
+             * Priority
+             * @default false
+             */
+            priority: boolean;
             /**
              * Links
              * @default []
@@ -2218,6 +2334,19 @@ export interface components {
             /** Pinned */
             pinned: boolean;
         };
+        /** Privacy */
+        Privacy: {
+            /**
+             * Redact
+             * @default false
+             */
+            redact: boolean;
+            /**
+             * Notify Preview
+             * @default false
+             */
+            notify_preview: boolean;
+        };
         /** ProjectDTO */
         ProjectDTO: {
             /** Path */
@@ -2239,6 +2368,20 @@ export interface components {
             question: components["schemas"]["MessageDTO"];
             /** Answers */
             answers: components["schemas"]["MessageDTO"][];
+            /**
+             * Done
+             * @default false
+             */
+            done: boolean;
+        };
+        /** QaMarkRequest */
+        QaMarkRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Code */
+            code: string;
+            /** State */
+            state: ("done" | "deleted") | null;
         };
         /** QaPostRequest */
         QaPostRequest: {
@@ -2306,6 +2449,11 @@ export interface components {
              * @default true
              */
             quote: boolean;
+            /**
+             * Qa
+             * @default false
+             */
+            qa: boolean;
         };
         /** RuleAdded */
         RuleAdded: {
@@ -2323,7 +2471,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender";
+            kind: "keyword" | "sender" | "priority";
             /** Value */
             value: string;
             /** Label */
@@ -2335,7 +2483,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender";
+            kind: "keyword" | "sender" | "priority";
             /** Value */
             value: string;
             /**
@@ -2367,6 +2515,17 @@ export interface components {
         SavedMessageRequest: {
             /** Text */
             text: string;
+        };
+        /** SlowGroup */
+        SlowGroup: {
+            /** Chat Id */
+            chat_id: string;
+            /** Title */
+            title: string;
+            /** Handled */
+            handled: number;
+            /** Median Min */
+            median_min: number;
         };
         /** SnoozeRequest */
         SnoozeRequest: {
@@ -2553,6 +2712,33 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WeekNumbers */
+        WeekNumbers: {
+            /** Received */
+            received: number;
+            /** Handled */
+            handled: number;
+            /** Replied */
+            replied: number;
+            /** Marked */
+            marked: number;
+            /** Auto */
+            auto: number;
+            /** Median Min */
+            median_min: number | null;
+            /** P90 Min */
+            p90_min: number | null;
+        };
+        /**
+         * WeekStats
+         * @description "Tuần của tôi": the last 7 days (`cur`), the 7 before (`prev`), this week's slowest groups.
+         */
+        WeekStats: {
+            cur: components["schemas"]["WeekNumbers"];
+            prev: components["schemas"]["WeekNumbers"];
+            /** Slow */
+            slow: components["schemas"]["SlowGroup"][];
         };
         /** YouTrackAuth */
         YouTrackAuth: {
@@ -2995,6 +3181,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_privacy_api_privacy_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Privacy"];
+                };
+            };
+        };
+    };
+    put_privacy_api_privacy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Privacy"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Privacy"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -3729,6 +3968,37 @@ export interface operations {
             };
         };
     };
+    members_api_chats__chat_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     qa_api_qa_get: {
         parameters: {
             query: {
@@ -3782,6 +4052,37 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["QaPosted"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_mark_api_qa_mark_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4137,6 +4438,60 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remind_api_chats__chat_id__messages__message_id__remind_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SnoozeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    week_stats_api_stats_week_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeekStats"];
                 };
             };
         };

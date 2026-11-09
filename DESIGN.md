@@ -2,12 +2,12 @@
 
 Two modules, one product, one Next app (Tailwind 4 + shadcn / Base UI): **Telegram Inbox** (`/`) and **YouTrack** (`/youtrack/`, `web/src/components/yt/`), plus **Cài đặt** (`/settings/`). All read the same tokens: [`web/src/app/tokens.css`](web/src/app/tokens.css) and [`web/src/app/base.css`](web/src/app/base.css) (imported by `globals.css`; each member's look is applied before first paint by the boot script in `web/src/app/layout.tsx`). Change a value there, never a literal in a component.
 
-Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a near-neutral warm graphite (dark: low chroma so it never reads as muddy brown; ground < sidebar < card in clear steps, cards lit by a 1px top highlight); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** (a deeper, redder copper in dark mode, where lifted terracotta read too close to the amber) for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
+Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a low-chroma blue slate (dark, hue 255 in `tokens.css`: cool so the warm highlight and amber read clearly; ground < sidebar < card in clear steps, cards lit by a 1px top highlight); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** (a deeper, redder copper in dark mode, where lifted terracotta read too close to the amber) for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
 ## Principles
 
 1. **The task, not the tool.** Someone triaging mentions or chasing tickets should see what needs them first: the oldest waiting message, the ticket stuck longest. Everything else is one step away.
-2. **Terracotta = here / act, amber = needs you.** Highlight (`--color-hl`) marks the selection, the current tab, module and filter, the primary button, links and focus. Signal (`--color-signal`) marks overdue, waiting > 4h, new since last visit. Neither is decoration.
+2. **Terracotta = here / act, amber = needs you.** Highlight (`--color-hl`) marks the selection, the current tab, module and filter, links and focus. The primary button is espresso ink (`--color-board`), not highlight. Signal (`--color-signal`) marks overdue, waiting > 4h, new since last visit. Neither is decoration.
 3. **Density is the design.** Controls 30–36px tall with a 44px hit area; tables before cards; one card recipe.
 4. **Figures are set, not decorated.** IDs, times, counts, ages, percentages in Geist Mono tabular. No icon tiles on stats, no trend arrows nobody measured, no gradients.
 5. **Motion is state.** `--dur-micro` / `--dur-short`, `transform` + `opacity` only, `prefers-reduced-motion` respected. Never `transition: all`; never animate width/height/top/left.
@@ -21,7 +21,7 @@ Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wa
 | Text strong / body / quiet | `--color-ink`, `--color-ink-2`, `--color-ink-3` |
 | Hairline / control border | `--color-rule`, `--color-rule-2` |
 | Highlight: fill / as text / selected background / text on fill | `--color-hl`, `--color-hl-2`, `--color-hl-wash`, `--color-hl-ink` |
-| Primary action fill / its label | `--color-board`, `--color-board-type` (= highlight) |
+| Primary action fill / its label | `--color-board`, `--color-board-type` (espresso ink; light ink in dark mode) |
 | Signal (needs you) / as text / wash | `--color-signal`, `--color-signal-2`, `--color-signal-wash` |
 | Focus ring | `--color-focus` (2px, offset 2px, instant) |
 | Data state | `--color-ok`, `--color-warn`, `--color-error`, `--color-info` and their `-wash` |
@@ -31,7 +31,7 @@ Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wa
 | Type | `--font-body` (Be Vietnam Pro), `--font-figure` (Geist Mono); scale `--text-xs`…`--text-3xl` (1.2 ratio) |
 | Space | `--space-3xs` 2 · `2xs` 4 · `xs` 8 · `sm` 12 · `md` 16 · `lg` 24 · `xl` 40 |
 | Motion | `--dur-micro` 120ms, `--dur-short` 220ms, `--ease-out` |
-| Radius | `--radius-card` 8, `--radius-input` 6, `--radius-pill` (avatars and counts only) |
+| Radius | `--radius-card` 10, `--radius-input` 8, `--radius-pill` (avatars and counts only) |
 
 In the Next app these map onto shadcn names in `globals.css` (`--background`, `--card`, `--primary`…); use the Tailwind utilities (`bg-card`, `text-muted-foreground`) or `var(--color-*)`. `--color-signal` and `--color-ink-3` are deliberately not shadcn's `accent`/`muted`.
 
@@ -45,16 +45,16 @@ In the Next app these map onto shadcn names in `globals.css` (`--background`, `-
 
 ## Components
 
-- **Button** — primary: highlight fill, white label, 36px (30px small), radius 6, lifts 1px on hover, presses 1px on active. Secondary: cotton with `--edge-stock`. Ghost: transparent, paper-3 on hover. Destructive: error text, error-wash on hover. All eight states: default, hover, focus-visible, active, disabled (opacity .5, no pointer), loading (spinner replaces icon, label stays), error, success.
+- **Button** — primary: `--color-board` fill (espresso ink), `--color-board-type` label, 36px (30px small), radius 8, lifts 1px on hover, presses 1px on active. Secondary: cotton with `--edge-stock`. Ghost: transparent, paper-3 on hover. Destructive: error text, error-wash on hover. All eight states: default, hover, focus-visible, active, disabled (opacity .5, no pointer), loading (spinner replaces icon, label stays), error, success.
 - **Segmented control** (2–4 options: scope, tabs inside a card): a groove (`--press-groove`, paper-2) with a cotton card riding in it to the chosen stop.
 - **Tabs** (page-level): text tabs with a 2px ink underline on the current one; count in a mono pill.
-- **Input / select** — 36px, radius 6, 1px `--color-rule-2`, cotton fill; focus ring highlight.
+- **Input / select** — 36px, radius 8, 1px `--color-rule-2`, cotton fill; focus ring highlight.
 - **Chip / filter** — 28px, radius 8, rule-2 border; selected = highlight fill, white label. A count inside is mono.
-- **Card** — cotton, radius 8, `--edge-stock` + `--cast-stock`, 16px padding, head row 600 + quiet meta at right. Never a card inside a card (use a rule or a paper-2 well).
+- **Card** — cotton, radius 10, `--edge-stock` + `--cast-stock`, 16px padding, head row 600 + quiet meta at right. Never a card inside a card (use a rule or a paper-2 well).
 - **Table** — sticky head in paper-2, heads ink-3 `--text-xs` 500 sentence case, rows 40px (compact 32px), hairline rules, hover paper-2, selected row hl-wash with a 3px highlight left mark. Numbers right-aligned mono.
 - **Badge / state** — text + a small square swatch of its category colour (not colour alone); `-wash` background only for error/warn/ok states.
 - **Avatar** — 24px circle, initials on a hue derived from the name at fixed L/C.
-- **Popover / menu / dialog / drawer** — cotton, `--cast-pop`, radius 8; scrim `--scrim`; drawer slides with `transform`.
+- **Popover / menu / dialog / drawer** — cotton, `--cast-pop`, radius 10; scrim `--scrim`; drawer slides with `transform`.
 - **Toast** — board fill, bottom centre, auto-dismiss 3s, one action max.
 - **Empty / loading / error** — every data region: skeleton in the shape of what's coming; empty = what belongs here + the one action; error = what broke + retry.
 

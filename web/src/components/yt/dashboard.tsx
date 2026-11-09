@@ -5,7 +5,7 @@ import { Activity, AlertTriangle, Bug, CheckCheck, FlaskConical, Gauge, Hammer, 
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Hint } from "@/components/ui/hint";
-import { Pill } from "@/components/ui/segmented";
+import { Pill, Segmented } from "@/components/ui/segmented";
 import { useNow } from "@/lib/inbox";
 import { dm } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -16,14 +16,20 @@ import { type Mode, useYt } from "./state";
 
 // The bento dashboard, laid out per role (LAYOUT): what needs that role first, then its figures. Every number opens its tickets.
 
+/** One computation per inputs (to the minute), shared by every caller on screen (page, ⌘K palette, report card). */
+const shared = new WeakMap<Ticket[], { k: unknown[]; d: Stats }>();
 export function useStats() {
   const y = useYt();
-  const agingSet = useMemo(() => new Set(y.agingStates), [y.agingStates]);
   const now = useNow();
-  const d = useMemo(() => dashStats({
-    rows: y.rows, f: y.filters, sprints: y.sprints, latestSprint: y.sprintOptions[0] ?? null, range: y.range,
-    hist: y.config?.hist ?? 0, aging: agingSet, since: y.since, now,
-  }), [y.rows, y.filters, y.sprints, y.sprintOptions, y.range, y.config?.hist, agingSet, y.since, now]);
+  const latest = y.sprintOptions[0] ?? null, hist = y.config?.hist ?? 0;
+  const d = useMemo(() => {
+    const k = [y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, Math.floor(now / 60_000)];
+    const hit = shared.get(y.rows);
+    if (hit && k.every((v, i) => v === hit.k[i])) return hit.d;
+    const d = dashStats({ rows: y.rows, f: y.filters, sprints: y.sprints, latestSprint: latest, range: y.range, hist, aging: new Set(y.agingStates), since: y.since, now });
+    shared.set(y.rows, { k, d });
+    return d;
+  }, [y.rows, y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, now]);
   const { loadSince } = y;
   useEffect(() => { if (d.aging.need.length) loadSince(d.aging.need); }, [d.aging.need, loadSince]);
   return d;
@@ -78,7 +84,7 @@ export function DashboardPage() {
     </Card>,
     lead: (c) => <Card title="Lead time" meta={`${fmt(d.lead.n)} ticket, ${d.days.length} ngày qua`} onMeta={() => drill("lead")} className={c}><Lead d={d} /></Card>,
     wip: (c) => <Card title="Công việc đang làm" className={c}
-      meta={<label className="flex items-center gap-1">ngưỡng WIP <select value={y.wip} onChange={(e) => y.setWip(+e.target.value)} className="h-6 rounded border border-rule bg-cotton px-1">{[2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>}><Wip d={d} /></Card>,
+      meta={<span className="flex items-center gap-1.5">ngưỡng WIP<Segmented id="yt-wip" label="Ngưỡng WIP" value={y.wip} onChange={y.setWip} items={[2, 3, 4, 5].map((n) => ({ value: n, label: n }))} /></span>}><Wip d={d} /></Card>,
     qcload: (c) => <Card title="Chờ QC theo người" className={c}>
       <HBars rows={d.qcLoad.map(([n, k]) => ({ label: n === "Chưa có QC" ? n : <Person name={n} />, v: k, c: n === "Chưa có QC" ? "var(--color-warn)" : "var(--color-hl)", on: () => drill("qcl", n) }))} empty="Không có ticket chờ QC." />
     </Card>,
@@ -86,7 +92,7 @@ export function DashboardPage() {
       <HBars rows={d.dist.map(([s, n]) => ({ label: s, v: n, c: stateColor(s), on: () => drill("dist", s) }))} empty="Không có ticket mở." />
     </Card>,
     thru: (c) => <Card title="Ticket xong mỗi ngày" className={c}
-      meta={<select value={y.range} onChange={(e) => y.setRange(+e.target.value)} aria-label="Khoảng thời gian biểu đồ" className="h-6 rounded border border-rule bg-cotton px-1">{[7, 14, 30].map((n) => <option key={n} value={n}>{n} ngày</option>)}</select>}>
+      meta={<Segmented id="yt-range" label="Khoảng thời gian biểu đồ" value={y.range} onChange={y.setRange} items={[7, 14, 30].map((n) => ({ value: n, label: `${n} ngày` }))} />}>
       <Columns days={d.days} series={[{ v: d.thru, c: "var(--color-hl)", on: (k) => drill("thru", String(k)) }]} /><BulkNote d={d} />
     </Card>,
     carry: (c) => <Card title="Ticket chuyển sprint nhiều lần" meta={`${fmt(d.carry.length)} ticket`} onMeta={() => drill("carry")} className={c}><Carry d={d} /></Card>,

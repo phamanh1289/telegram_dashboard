@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { api, errorText, type YouTrackIssue } from "@/lib/api";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { resolveProject, yt } from "@/lib/yt";
+import { resolveProject, yt, ytMeQuery, ytProjectsQuery } from "@/lib/yt";
 
 // The one "create a ticket" form, for the YouTrack tab and the Telegram composer. Two ways in:
 // Thủ công (type it) and AI (a rough note → summary, Type / Priority, templated description), then review and create.
@@ -36,7 +36,7 @@ export const createTicket = (v: TicketValue, from?: { chat_id: string; message_i
 /** The YouTrack project the app is on: the YouTrack tab's, else VA, else the first one. The one default for the ticket
  *  form, the comment dialog and the composer's related tickets (never "": the server then has no project to search). */
 export function useYtProject(wanted?: string) {
-  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity });
+  const projects = useQuery(ytProjectsQuery);
   return resolveProject(projects.data, wanted || getPref("project") || "VA");
 }
 /** Open tickets whose text matches free `text` (YouTrack's own search, server-side; no AI). The one lookup for text
@@ -224,9 +224,9 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   useEffect(() => () => abort.current?.abort(), []);
 
   // Same defaults on both tabs: the project the YouTrack tab is on (VA, else the first), assigned to me.
-  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity });
+  const projects = useQuery(ytProjectsQuery);
   const fallback = useYtProject(startProject);
-  const me = useQuery({ queryKey: ["yt", "me"], queryFn: yt.me, staleTime: Infinity });
+  const me = useQuery(ytMeQuery);
   const project = picked ?? fallback;
   const assignee = meta.assignee ?? me.data?.login ?? "";
   const fields = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !!project && !demo });

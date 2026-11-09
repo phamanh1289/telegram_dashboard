@@ -4,10 +4,10 @@
 "tab": "telegram",
 "area": "Thanh trên cùng",
 "title": "Chuyển module Telegram / YouTrack",
-"what": "Chuyển qua lại giữa Telegram Inbox và trang YouTrack. Khi đang ở Telegram, nút YouTrack có huy hiệu đỏ đếm số ticket của bạn cần xử lý ngay.",
+"what": "Chuyển qua lại giữa Telegram Inbox và trang YouTrack. Khi đang ở Telegram, nút YouTrack có huy hiệu vàng đếm số ticket của bạn cần xử lý ngay.",
 "how": [
 {
-"t": "Rê chuột vào \"YouTrack\" để xem ticket cần xử lý ngay (huy hiệu đỏ), rồi bấm để sang YouTrack",
+"t": "Rê chuột vào \"YouTrack\" để xem ticket cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
 "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
 },
 {
@@ -145,6 +145,18 @@
 "keys": "viec can xu ly inbox hop thu tin tag chua xu ly pending todo tất cả nhóm"
 },
 {
+"id": "today-strip",
+"tab": "telegram",
+"area": "Việc cần xử lý › Hôm nay",
+"title": "Dải “Hôm nay”: việc đang cần bạn",
+"what": "Một dòng trên đầu Việc cần xử lý đếm những gì đang cần bạn ở cả hai module: tag chờ lâu nhất, số tag quá hạn, ticket YouTrack của bạn đang rủi ro, câu hỏi Q&A tới hạn nhắc hoặc có trả lời mới, phiên AI Agent đã xong chưa xem. Bấm từng mục để tới đúng chỗ. Ẩn khi mọi số đều 0; thu gọn được và app nhớ lựa chọn.",
+"how": [
+"Mở Việc cần xử lý, nhìn dòng “Hôm nay” trên cùng",
+"Bấm một mục (vd. “chờ lâu nhất”) để nhảy tới tag / ticket / câu hỏi đó"
+],
+"keys": "hom nay hôm nay sang nay sáng nay tong quan tổng quan viec can xu ly việc cần xử lý dai dải qua han quá hạn"
+},
+{
 "id": "view-pinned",
 "tab": "telegram",
 "area": "Thanh bên › Tag đã ghim",
@@ -161,6 +173,31 @@
 }
 ],
 "keys": "tag da ghim pinned ghim pin luu tin giu lai"
+},
+{
+"id": "view-qa",
+"tab": "telegram",
+"area": "Thanh bên › Q&A",
+"title": "Q&A: hỏi trong nhóm và theo dõi câu trả lời",
+"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi.",
+"how": [
+"Bấm Q&A trên thanh bên (hoặc g rồi q), chọn nhóm",
+"Bấm “Câu hỏi mới”, gõ câu hỏi có @tên người được hỏi rồi Đăng",
+"Bấm một câu bên trái để đọc cả chuỗi, trả lời ngay trong chuỗi"
+],
+"keys": "qa q&a hoi dap hỏi đáp cau hoi câu hỏi ma qa mã #qa chuoi chuỗi nhac nhắc tra loi trả lời"
+},
+{
+"id": "qa-my-questions",
+"tab": "telegram",
+"area": "Q&A › Câu hỏi của tôi",
+"title": "Câu hỏi của tôi (mọi nhóm)",
+"what": "Mục đầu danh sách nhóm của Q&A gom mọi câu bạn hỏi chưa ai trả lời ở các nhóm gần đây, câu tới hạn nhắc lên trước, chia theo nhóm. Bấm để mở đúng chuỗi.",
+"how": [
+"Mở Q&A, bấm “Câu hỏi của tôi” đầu danh sách nhóm",
+"Bấm một câu để mở chuỗi của nó và nhắc lại"
+],
+"keys": "cau hoi cua toi câu hỏi của tôi chua tra loi chưa trả lời moi nhom mọi nhóm qa"
 },
 {
 "id": "view-ai-agent",
@@ -201,6 +238,18 @@
 }
 ],
 "keys": "briefing tom tat cac nhom tong quan tóm tắt nhanh overview"
+},
+{
+"id": "briefing-week-stats",
+"tab": "telegram",
+"area": "Briefing › Tuần của tôi",
+"title": "Tuần của tôi (thời gian xử lý tag)",
+"what": "Thẻ dưới tiêu đề Briefing so tuần này với tuần trước: số tag nhận, đã xử lý (trả lời / Xong / tự xong), thời gian xử lý trung vị và mức 90% tag xong trong khoảng đó, cùng 5 nhóm xử lý chậm nhất.",
+"how": [
+"Mở Briefing, xem thẻ “Tuần của tôi”",
+"Rê chuột lên từng số để xem giải thích"
+],
+"keys": "tuan cua toi tuần của tôi thong ke thống kê thoi gian phan hoi thời gian phản hồi trung vi trung vị p90 nhom cham nhóm chậm"
 },
 {
 "id": "group-list",
@@ -763,6 +812,30 @@
 "keys": "hoan snooze nhac lai sau bo hoan remind later 1 gio 3 gio sang mai"
 },
 {
+"id": "msg-remind-later",
+"tab": "telegram",
+"area": "Tin tag › Nhắc lại sau",
+"title": "Nhắc lại sau (mở lại tag đã xử lý)",
+"what": "Trả lời xong mà vẫn cần kiểm tra lại: chọn “Nhắc lại sau khi gửi” trong ô trả lời trước khi Gửi, hoặc trên tag đã xong mở ⋯ › “Nhắc lại sau…”. Tag tạm ẩn và quay lại Việc cần xử lý đúng giờ đã chọn (1 giờ, chiều nay, mai 9h, tuần sau).",
+"how": [
+"Trong ô trả lời: chọn mốc ở “Nhắc lại sau khi gửi” rồi Gửi",
+"Hoặc trên tag đã xong: ⋯ › Nhắc lại sau… › chọn mốc"
+],
+"keys": "nhac lai sau nhắc lại sau kiem tra lai kiểm tra lại mo lai mở lại remind follow up"
+},
+{
+"id": "msg-priority-sender",
+"tab": "telegram",
+"area": "Tin tag › Hoãn › Luôn ưu tiên",
+"title": "Luôn ưu tiên một người",
+"what": "Ngược với “Luôn bỏ qua”: tin tag của người này luôn lên đầu Việc cần xử lý (sau tin ghim), có dấu “Ưu tiên” màu vàng và bị coi là quá hạn ở nửa ngưỡng thường. Gỡ quy tắc ở Cài đặt › Telegram › Quy tắc.",
+"how": [
+"Mở menu Hoãn của một tag, chọn “Luôn ưu tiên {tên}”",
+"Thông báo dưới màn hình có nút Hoàn tác"
+],
+"keys": "uu tien ưu tiên luon uu tien luôn ưu tiên nguoi gui người gửi quy tac quy tắc priority vip"
+},
+{
 "id": "msg-pin",
 "tab": "telegram",
 "area": "Dòng tin › Ghim",
@@ -899,7 +972,7 @@
 "tab": "telegram",
 "area": "Nội dung tin › Mã ticket",
 "title": "Chip ticket YouTrack trong tin",
-"what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột xem tiêu đề, trạng thái, độ ưu tiên, người được giao; bấm để mở ticket. Link, @mention và `code` cũng được tô riêng.",
+"what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột hoặc Tab tới chip để xem nhanh ticket (Trạng thái, Ưu tiên, Người làm, QC, Cập nhật) với hai link “Mở ở trang YouTrack” và “Mở trong YouTrack”; Esc đóng. Link, @mention và `code` cũng được tô riêng.",
 "how": [
 {
 "t": "Rê chuột lên mã ticket (vd. VA-123) trong tin để xem tiêu đề, trạng thái, người được giao; bấm để mở ticket.",
@@ -919,9 +992,10 @@
 {
 "t": "Bấm \"Mở phiên\" để mở phiên ở trang AI Agent.",
 "at": "Mở phiên"
-}
+},
+"Bấm mã phiên (REF-…) để chép #REF-…; dán vào tin nhóm thì tin sau tự đính kèm đúng phiên."
 ],
-"keys": "task ket qua mo phien dung ket qua lam nhap tra loi ai agent"
+"keys": "task ket qua ma phien ref mo phien dung ket qua lam nhap tra loi ai agent"
 },
 {
 "id": "deep-thinking",
@@ -942,8 +1016,8 @@
 ]
 },
 {
-"t": "Chọn \"Dự án\" (hoặc Thêm).",
-"at": "css:select[aria-label=\"Dự án tham chiếu cho AI\"]"
+"t": "Bấm ô Dự án, chọn thư mục (hoặc \"Thêm thư mục…\" ở cuối menu).",
+"at": "css:button[aria-label=\"Dự án tham chiếu cho AI\"]"
 },
 {
 "t": "Bấm \"Yêu cầu thêm\" nếu muốn khoanh vùng.",
@@ -978,6 +1052,43 @@
 "Gửi xong tự mở tin chưa xử lý kế tiếp. Nhấn Esc hoặc bấm X \"Đóng (Esc)\" để đóng khung."
 ],
 "keys": "gui tra loi send reply soan ctrl enter cmd enter 4096 ky tu dong esc"
+},
+{
+"id": "composer-snippets",
+"tab": "telegram",
+"area": "Ô trả lời › Mẫu",
+"title": "Mẫu trả lời nhanh",
+"what": "Nút “Mẫu” trong ô trả lời (hoặc gõ / khi ô đang trống) mở danh sách câu trả lời soạn sẵn; {tên} và {ticket} được điền tự động. Lưu nội dung đang gõ thành mẫu mới, xóa mẫu không dùng. Mẫu lưu trên trình duyệt này.",
+"how": [
+"Bấm “Mẫu” trong ô trả lời, hoặc gõ / ở ô trống",
+"Chọn một mẫu để chèn; “Lưu nội dung đang soạn làm mẫu” để thêm mẫu mới"
+],
+"keys": "mau tra loi mẫu trả lời snippet template cau soan san câu soạn sẵn tra loi nhanh trả lời nhanh"
+},
+{
+"id": "composer-mention",
+"tab": "telegram",
+"area": "Ô trả lời › @",
+"title": "Tag thành viên nhóm bằng @",
+"what": "Gõ @ trong ô trả lời để mở danh sách thành viên của nhóm, gõ tiếp để lọc theo tên hoặc username. Người có username được chèn @username; người không có username hiện “tag theo tên” và vẫn được Telegram báo như một tag. Nhóm ẩn danh sách thành viên thì gõ @username bằng tay.",
+"how": [
+"Gõ @ rồi vài chữ của tên trong ô trả lời",
+"↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
+],
+"keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên username goi y gợi ý"
+},
+{
+"id": "composer-split-view",
+"tab": "telegram",
+"area": "Ô trả lời › Màn rộng",
+"title": "Trả lời song song với danh sách (màn ≥ 1280px)",
+"what": "Trên màn rộng, mở trả lời từ Việc cần xử lý, Tag đã ghim hay một nhóm thì danh sách vẫn nằm bên trái. Dải “Tag n/N đang chờ” trên ô trả lời có nút ‹ › để sang tag kế; j/k cũng vậy. Khi ô hẹp, nút “Trả lời / Trợ lý AI” chuyển giữa ô gõ và khung AI.",
+"how": [
+"Mở một tag trên màn ≥ 1280px",
+"Dùng ‹ › hoặc j/k để sang tag đang chờ kế / trước",
+"Ô hẹp: bấm “Trợ lý AI” để mở khung AI, AI soạn xong một nháp thì tự quay lại “Trả lời”"
+],
+"keys": "chia doi chia đôi song song split view danh sach danh sách tag ke tag kế man rong màn rộng tro ly ai trợ lý ai"
 },
 {
 "id": "composer-send-recovery",
@@ -1088,7 +1199,7 @@
 },
 {
 "t": "Chọn \"Dự án\".",
-"at": "css:select[aria-label=\"Dự án tham chiếu cho AI\"]"
+"at": "css:button[aria-label=\"Dự án tham chiếu cho AI\"]"
 },
 {
 "t": "Nhập \"Yêu cầu thêm\" nếu cần.",
@@ -1257,7 +1368,7 @@
 "tab": "telegram",
 "area": "AI Agent › Phiên › Cho sửa code",
 "title": "Cho phép lượt sau sửa file (duyệt plan)",
-"what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.",
+"what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm. Lượt sửa file chạy lệnh trong sandbox (chỉ ghi trong thư mục dự án, mạng chỉ tới kho package); nếu phiên có tin hay link của người khác, ô tick có cảnh báo trước khi bật.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1334,7 +1445,7 @@
 "tab": "telegram",
 "area": "Phím tắt",
 "title": "Phím tắt Inbox",
-"what": "Thao tác nhanh bằng bàn phím (không áp dụng khi đang gõ trong ô nhập): j/k chọn tin dưới/trên, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, ⌘/Ctrl+Enter gửi, Esc đóng trả lời, ? mở bảng phím tắt.",
+"what": "Thao tác nhanh bằng bàn phím (không áp dụng khi đang gõ trong ô nhập): j/k chọn tin dưới/trên (khi đang trả lời trên màn rộng: sang tag đang chờ kế / trước), Tab đi qua từng tin rồi Enter để trả lời, g rồi q mở Q&A, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, ⌘/Ctrl+Enter gửi, Esc đóng trả lời, ? mở bảng phím tắt.",
 "how": [
 "Nhấn ? để mở bảng \"Phím tắt\"; Esc để đóng",
 {
@@ -1354,7 +1465,7 @@
 "tab": "telegram",
 "area": "Thông báo trình duyệt",
 "title": "Thông báo khi có tag mới",
-"what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi và nội dung tag mới (tối đa 3, kèm \"Còn N tag mới khác\"); bấm để quay lại app.",
+"what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi kèm “Tag mới” (tối đa 3, kèm “Còn N tag mới khác”); bấm để quay lại app. Nội dung tin chỉ hiện khi bật “Hiện nội dung tin trong thông báo macOS” trong Cài đặt › AI › Quyền riêng tư (áp dụng cả thông báo của trình duyệt và macOS).",
 "how": [
 {
 "t": "Bấm bánh răng \"Cài đặt\"",
@@ -1405,6 +1516,30 @@
 }
 ],
 "keys": "vai tro role dev qa qc po pm xoa vai tro"
+},
+{
+"id": "settings-privacy",
+"tab": "settings",
+"area": "Cài đặt › AI › Quyền riêng tư",
+"title": "Quyền riêng tư: ẩn SĐT / email, nội dung thông báo",
+"what": "Tin nhắn của người khác và nội dung ticket được gửi tới AI bạn chọn. “Ẩn SĐT / email khi gửi AI” thay số điện thoại và email bằng [SĐT] / [email] trước khi gửi (nháp, tóm tắt, Briefing, Q&A, YouTrack AI). “Hiện nội dung tin trong thông báo macOS” (mặc định tắt) cho thông báo tag hiện cả nội dung; tắt thì chỉ hiện nhóm và người gửi.",
+"how": [
+"Mở Cài đặt › AI, kéo xuống “Quyền riêng tư”",
+"Bật / tắt từng công tắc; có hiệu lực ngay"
+],
+"keys": "quyen rieng tu quyền riêng tư an sdt ẩn sđt email thong bao thông báo noi dung nội dung privacy redact"
+},
+{
+"id": "settings-access",
+"tab": "settings",
+"area": "Mở app",
+"title": "Mở app trên trình duyệt mới (mã truy cập)",
+"what": "API của dashboard chỉ nhận trình duyệt đã được cấp quyền, để chương trình khác trên máy (kể cả AI Agent) không gửi tin thay bạn. Mở app bằng Start Dashboard hoặc lệnh mydashboard open thì trình duyệt được cấp quyền tự động và giữ khoảng một năm. Nếu thấy màn hình khóa: mở lại app bằng một trong hai cách trên, hoặc dán mã trong file ~/.telegram_dashboard/api_token rồi bấm “Mở khóa”.",
+"how": [
+"Mở app bằng Start Dashboard / mydashboard open (hoặc uv run python -m telegram_dashboard open)",
+"Màn hình “Trình duyệt này chưa được mở khóa”: dán mã rồi bấm “Mở khóa”"
+],
+"keys": "ma truy cap mã truy cập token dang nhap đăng nhập khoa khóa mo app mở app bookmark trinh duyet trình duyệt"
 },
 {
 "id": "settings-theme",
@@ -1722,7 +1857,7 @@
 "tab": "youtrack",
 "area": "Thanh bên",
 "title": "Điều hướng các trang theo vai trò",
-"what": "Thanh bên liệt kê các trang của vai trò: Dev có Hôm nay / Ticket / Dashboard / Thành viên; QA có Kiểm thử / Ticket / Dashboard / Thành viên; PO có Brief / Dashboard / Thành viên / Ticket. Rê chuột vào từng mục để xem gợi ý trang đó làm gì.",
+"what": "Thanh bên liệt kê các trang của vai trò: Dev có Hôm nay / Ticket / Dashboard / Thành viên; QA có Kiểm thử / Ticket / Dashboard / Thành viên; PO có Tổng quan / Dashboard / Thành viên / Ticket. Rê chuột vào từng mục để xem gợi ý trang đó làm gì.",
 "how": [
 {
 "t": "Bấm \"Ticket\" trên thanh bên",
@@ -1775,11 +1910,26 @@
 "keys": "project du an dự án chon project chọn project doi project đổi project"
 },
 {
+"id": "yt-vai-tro-thanh-ben",
+"tab": "youtrack",
+"area": "Thanh bên",
+"title": "Xem / đổi vai trò hiện tại",
+"what": "Ô \"Vai trò\" dưới ô Project cho biết bạn đang xem YouTrack với vai trò nào (Dev, QA/QC, PO/PM). Đổi ở đây thì trang chủ, Dashboard và AI chuyển theo ngay, giống đổi trong Cài đặt › Chung.",
+"how": [
+{
+"t": "Mở ô chọn \"Vai trò\" ở thanh bên (menu phải đang mở rộng)",
+"at": "css:[aria-label=\"Vai trò hiện tại\"]"
+},
+"Chọn \"Dev\", \"QA/QC\" hoặc \"PO/PM\"; dòng phụ cho biết trang chủ của vai trò đó"
+],
+"keys": "vai tro vai trò role hien tai hiện tại doi vai tro đổi vai trò dev qa qc po pm"
+},
+{
 "id": "yt-huy-hieu-rui-ro",
 "tab": "youtrack",
 "area": "Thanh bên › mục trang chủ",
 "title": "Huy hiệu số ticket rủi ro",
-"what": "Con số đỏ cạnh mục trang chủ cho biết số ticket cần xử lý ngay (quá hạn, tới hạn trong 24 giờ, Blocked, đang làm mà 3+ ngày không cập nhật). Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team.",
+"what": "Con số vàng cạnh mục trang chủ cho biết số ticket cần xử lý ngay (quá hạn, tới hạn trong 24 giờ, Blocked, đang làm mà 3+ ngày không cập nhật). Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team.",
 "how": [
 {
 "t": "Nhìn số đỏ cạnh trang chủ, rê chuột để đọc giải thích, bấm để xem danh sách",
@@ -1866,16 +2016,16 @@
 "id": "yt-pham-vi-my-task",
 "tab": "youtrack",
 "area": "Thanh trên trang › Phạm vi",
-"title": "Phạm vi My task / My team / All",
-"what": "Chọn nhanh tập ticket: My task (ticket bạn được assign hoặc làm QC), My team (bạn + thành viên đã thêm), All (tất cả người).",
+"title": "Phạm vi Của tôi / Team / Nhóm chọn",
+"what": "Chọn nhanh tập ticket: Của tôi (ticket bạn được assign hoặc làm QC), Team (bạn + thành viên đã thêm), Nhóm chọn (những người bạn chọn; chưa chọn ai thì tất cả mọi người).",
 "how": [
 {
-"t": "Bấm \"My task\", \"My team\" hoặc \"All\" trên thanh đầu trang",
+"t": "Bấm \"Của tôi\", \"Team\" hoặc \"Nhóm chọn\" trên thanh đầu trang",
 "at": "css:[role=\"group\"][aria-label=\"Phạm vi\"]"
 },
-"Số cạnh \"My team\" là số người trong team"
+"Số cạnh \"Team\" là số người trong team"
 ],
-"keys": "pham vi phạm vi scope my task my team all cua toi của tôi ca team cả team tat ca tất cả"
+"keys": "pham vi phạm vi scope my task my team all cua toi của tôi team nhom chon nhóm chọn tat ca tất cả"
 },
 {
 "id": "yt-sua-team",
@@ -2095,16 +2245,13 @@
 "id": "yt-canh-bao-can-xu-ly",
 "tab": "youtrack",
 "area": "Hôm nay (Dev)",
-"title": "Dải cảnh báo “cần xử lý ngay”",
-"what": "Khung đỏ liệt kê ticket của bạn đang rủi ro kèm lý do: Quá hạn, Tới hạn trong 24 giờ, Blocked, Không cập nhật N ngày.",
+"title": "Chip “Cần xử lý ngay” trên thanh lọc",
+"what": "Số ticket của bạn đang rủi ro (Quá hạn, Tới hạn trong 24 giờ, Blocked, Không cập nhật N ngày) hiện thành chip “Cần xử lý ngay” màu vàng trên thanh lọc. Bật chip để chỉ xem các ticket đó, mỗi dòng có lý do gấp ở đầu.",
 "how": [
-{
-"t": "Bấm một chip ID trong khung đỏ \"cần xử lý ngay\" ở đầu trang Hôm nay để mở ticket",
-"at": "css:div[role=alert] button[title]"
-},
-"Nhấn Esc để đóng bảng bên để quay lại trang"
+"Bấm chip “Cần xử lý ngay” trên thanh lọc của trang chủ",
+"Bấm lần nữa để bỏ lọc"
 ],
-"keys": "can xu ly ngay cần xử lý ngay rui ro rủi ro risk qua han quá hạn toi han trong 24 gio tới hạn trong 24 giờ khong cap nhat không cập nhật"
+"keys": "canh bao cảnh báo can xu ly ngay cần xử lý ngay rui ro rủi ro qua han quá hạn blocked chip"
 },
 {
 "id": "yt-moi-cap-nhat",
@@ -2199,7 +2346,7 @@
 "tab": "youtrack",
 "area": "Kiểm thử (QA)",
 "title": "Cảnh báo bug tăng đột biến",
-"what": "Khi bug mới 7 ngày qua từ 3 trở lên và vượt 1,5 lần trung bình 4 tuần trước (toàn project hoặc theo module), hiện khung “Bug tăng đột biến” kèm các module nóng.",
+"what": "Khi bug mới 7 ngày qua từ 3 trở lên và vượt 1,5 lần trung bình 4 tuần trước (toàn project hoặc theo module), hiện nút vàng “Bug tăng đột biến” kèm các module nóng.",
 "how": [
 {
 "t": "Bấm khung đỏ \"Bug tăng đột biến\" (chỉ hiện khi bug mới tăng bất thường) để xem \"Bug mới 7 ngày\"",
@@ -2262,8 +2409,8 @@
 "id": "yt-trang-brief-po",
 "tab": "youtrack",
 "area": "Thanh bên › Brief (PO)",
-"title": "Brief (trang chủ PO)",
-"what": "Tổng quan cho PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
+"title": "Tổng quan (trang chủ PO)",
+"what": "Trang chủ của PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
 "how": [
 {
 "t": "Bấm \"Brief\" trên thanh bên",
@@ -2814,7 +2961,7 @@
 "tab": "youtrack",
 "area": "Ticket › Bảng",
 "title": "Phím tắt trang Ticket",
-"what": "Điều khiển bảng bằng bàn phím: / tìm, j/k di chuyển dòng, x chọn dòng, Enter mở ticket, Esc xóa tìm kiếm rồi bỏ chọn.",
+"what": "Điều khiển bảng bằng bàn phím: / tìm, j/k di chuyển dòng, Space chọn dòng, Enter mở ticket, Esc xóa tìm kiếm rồi bỏ chọn. Nhấn ? để xem mọi phím tắt YouTrack; g rồi h / t / d / r / p / a để sang Trang chính / Ticket / Dashboard / Release / Thành viên / Lịch sử AI.",
 "how": [
 {
 "t": "Bấm \"Ticket\"",
@@ -2825,6 +2972,18 @@
 "Nhấn Esc: trong ô tìm thì xóa từ khóa, ngoài ra bỏ các dòng đã chọn"
 ],
 "keys": "phim tat phím tắt keyboard shortcut j k x enter esc slash dieu huong ban phim điều hướng bàn phím"
+},
+{
+"id": "yt-phim-tat-trang",
+"tab": "youtrack",
+"area": "Phím tắt",
+"title": "Phím tắt YouTrack (? và g + phím)",
+"what": "Nhấn ? ở bất kỳ trang YouTrack nào để mở bảng phím tắt. g rồi h / t / d / r / p / a chuyển tới Trang chính / Ticket / Dashboard / Release / Thành viên / Lịch sử AI; ⌘/Ctrl+K mở lệnh nhanh. Space chọn dòng như ở Telegram.",
+"how": [
+"Nhấn ? để xem bảng phím tắt",
+"Nhấn g rồi chữ của trang muốn tới"
+],
+"keys": "phim tat phím tắt youtrack g keys chuyen trang chuyển trang space chon chọn"
 },
 {
 "id": "yt-hien-them",
@@ -2900,6 +3059,30 @@
 }
 ],
 "keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
+},
+{
+"id": "yt-hoi-lai-trong-nhom",
+"tab": "youtrack",
+"area": "Chi tiết ticket › Nhắc trên Telegram",
+"title": "Hỏi lại trong nhóm từ ticket",
+"what": "Dưới mỗi tin Telegram nhắc tới ticket có link “Hỏi lại trong nhóm”: mở Q&A của đúng nhóm đó, ô câu hỏi mới điền sẵn “Về <ID> <tiêu đề>: ”. Thêm @tên người cần hỏi rồi Đăng để câu hỏi có mã #QA và được theo dõi.",
+"how": [
+"Mở một ticket, xem mục “Nhắc trên Telegram”",
+"Bấm “Hỏi lại trong nhóm”, gõ tiếp câu hỏi kèm @tên, Đăng"
+],
+"keys": "hoi lai trong nhom hỏi lại trong nhóm qa telegram ticket nhac nhắc hoi nguoi hỏi người"
+},
+{
+"id": "yt-bao-lai-moi-noi",
+"tab": "youtrack",
+"area": "Báo lại",
+"title": "Báo lại khi ticket chuyển Fixed / Done (cả khi đang ở Telegram)",
+"what": "Khi một ticket của bạn có người hỏi trên Telegram chuyển sang Fixed / Done, app nhắc bạn báo lại cho người hỏi, kể cả khi đang ở trang Telegram hay vừa mở lại app (trạng thái đã thấy được lưu trên trình duyệt). Không tốn thêm lượt gọi YouTrack.",
+"how": [
+"Thông báo dưới màn hình hiện “<ID>: …”",
+"Mở tin trong Việc cần xử lý để soạn câu báo lại"
+],
+"keys": "bao lai báo lại fixed done thong bao thông báo nguoi hoi người hỏi telegram ticket"
 },
 {
 "id": "yt-chuyen-ticket-jk",

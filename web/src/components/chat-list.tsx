@@ -33,10 +33,10 @@ export function Avatar({ name, className }: { name: string; className?: string }
 /** While collapsed to a rail, text beyond the avatars waits for the rail to open (hover or focus). */
 export const railHide = "transition-opacity duration-(--dur-short) md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100";
 
-/** Count on the avatar while the list is a narrow rail. */
+/** Count on the avatar while the list is a narrow rail: a plain count (neutral), not the amber "needs you" signal. */
 function RailBadge({ n }: { n: number }) {
   return (
-    <span className="absolute -right-1.5 -top-1.5 hidden min-w-4 rounded-full bg-signal px-1 text-center font-mono text-[0.625rem] leading-4 text-signal-ink tabular-nums md:block md:group-hover/side:opacity-0 md:group-focus-within/side:opacity-0">
+    <span className="absolute -right-1.5 -top-1.5 hidden min-w-4 rounded-full bg-ink-2 px-1 text-center font-mono text-[0.625rem] leading-4 text-cotton tabular-nums ring-2 ring-paper-2 md:block md:group-hover/side:opacity-0 md:group-focus-within/side:opacity-0">
       {n > 99 ? "99+" : n}
     </span>
   );

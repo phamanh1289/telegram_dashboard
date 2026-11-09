@@ -491,3 +491,42 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     assert t["desc"] == "Cho phép xuất PDF."
     assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
     assert t["links"][0]["issues"][0]["state"] == "In Progress"
+
+
+async def test_assignee_endpoint_also_sets_qc():
+    sent = []
+
+    def handler(req):
+        sent.append(json.loads(req.content)["customFields"][0])
+        return httpx.Response(200, json=issue(1))
+
+    app = FastAPI()
+    app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
+    app.include_router(build_router(make(handler)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert (await c.post("/api/yt/issue/qc", json={"id": "VA-1", "login": "q"})).status_code == 200
+        assert (await c.post("/api/yt/issue/assignee", json={"id": "VA-1", "login": None})).status_code == 200
+        assert (await c.post("/api/yt/issue/qc", json={"id": "VA-1", "login": "{x}"})).status_code == 400
+    assert [(f["name"], f["value"]) for f in sent] == [("QC", {"login": "q"}), ("Assignee", None)]
+
+
+async def test_statesince_reads_project_transitions_once_then_falls_back_per_ticket():
+    calls = []
+
+    def handler(req):
+        path = req.url.path
+        calls.append(path)
+        if path == "/api/activitiesPage":
+            acts = [{"timestamp": t, "target": {"idReadable": i}, "field": {"name": "State"},
+                     "removed": [{"name": "Open"}], "added": [{"name": "Fixed"}], "author": {}}
+                    for i, t in (("VA-1", 100), ("VA-1", 300), ("VA-2", 200))]  # fmt: skip
+            return httpx.Response(200, json={"activities": acts, "hasAfter": False})
+        assert path == "/api/issues/VA-3/activities"  # only the ticket the window doesn't cover
+        return httpx.Response(200, json=[{"timestamp": 50, "field": {"name": "State"}}])
+
+    svc = make(handler)
+    out = await svc.since_all(["VA-1@400", "VA-2@250", "VA-3@60"])
+    assert out == {"VA-1": 300, "VA-2": 200, "VA-3": 50}  # the latest change per ticket
+    assert calls.count("/api/activitiesPage") == 1
+    await svc.since_all(["VA-1@400", "VA-2@250"])
+    assert calls.count("/api/activitiesPage") == 1  # cached: no second project read

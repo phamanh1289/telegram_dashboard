@@ -1,9 +1,10 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { ArrowLeft, BellOff, BellRing, Check, CheckCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCw, Search, Send, X } from "lucide-react";
+import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { ArrowLeft, BellOff, BellRing, Check, CheckCheck, CircleCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCcw, RotateCw, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting } from "@/components/ai/chat";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
 import { Markdown } from "@/components/markdown";
 import { MessageItem } from "@/components/message-item";
@@ -68,6 +69,30 @@ function resolve(code: string, id: string | null) {
 }
 const accepted = (i: QaItem) => { const id = resolvedIds()[i.code]; return id ? i.answers.find((a) => a.message_id === id) : undefined; };
 
+// Xong / Xóa: backend `qa_marks` (follows you to any browser). Xong closes the thread whatever its answers: no nudge,
+// not waiting. Xóa drops it from the dashboard's Q&A only (Telegram keeps the messages). null undoes either.
+type QaMark = "done" | "deleted" | null;
+async function markQa(qc: QueryClient, i: QaItem, state: QaMark) {
+  const chatId = i.question.chat_id;
+  await api("/qa/mark", { method: "PUT", json: { chat_id: chatId, code: i.code, state } });
+  qc.setQueriesData<QaItem[]>({ queryKey: ["qa", chatId] }, (d) => d && (state === "deleted"
+    ? d.filter((x) => x.code !== i.code) : d.map((x) => (x.code === i.code ? { ...x, done: state === "done" } : x))));
+  void qc.invalidateQueries({ queryKey: ["qa", chatId] }); // undoing a Xóa brings the thread back
+}
+/** Mark with a toast (undo restores what it was); a failed call says so. */
+async function markWithUndo(qc: QueryClient, i: QaItem, state: QaMark) {
+  const was: QaMark = i.done ? "done" : null;
+  try {
+    await markQa(qc, i, state);
+    toast({ text: state === "deleted" ? `Đã xóa ${i.code} khỏi Q&A` : state ? `Đã đánh dấu xong ${i.code}` : `Đã mở lại ${i.code}`,
+      undo: () => void markQa(qc, i, was) });
+  } catch (e) {
+    toast({ text: errorText(e, {}, "Không lưu được, thử lại") });
+  }
+}
+/** Still waiting on someone: not answered and not marked Xong. */
+const waiting = (i: QaItem) => !i.done && !answered(i);
+
 /** A Telegram @username (not an e-mail address): only a message that tags someone opens a Q&A (backend `has_tag`). */
 const TAG = /(?<![\w.])@(\w{5,32})/g;
 const hasTag = (s: string) => new RegExp(TAG.source).test(s);
@@ -111,7 +136,7 @@ function mute(code: string, off: boolean) {
 /** When you last spoke in your own question's thread: the question, or your latest nudge / follow-up. */
 const lastOwn = (i: QaItem) => thread(i).findLast((m) => m.outgoing)?.date ?? i.question.date;
 const isLate = (i: QaItem, mins: number, now: number, muted: readonly string[]) =>
-  mins > 0 && i.question.outgoing && !answered(i) && !muted.includes(i.code) && now - new Date(lastOwn(i)).getTime() >= mins * 60_000;
+  mins > 0 && i.question.outgoing && waiting(i) && !muted.includes(i.code) && now - new Date(lastOwn(i)).getTime() >= mins * 60_000;
 /** The nudge put in the box: the people the question tagged, else everyone (a reply to the question, so it is quoted). */
 function nudgeText(i: QaItem) {
   const ats = [...new Set([...i.question.text.matchAll(TAG)].map((x) => `@${x[1]}`))].join(" ");
@@ -139,35 +164,50 @@ const dataOf = (rs: UseQueryResult<QaItem[]>[]) => rs.map((r) => r.data); // str
  *  (`late` group, `lateTotal`) and `codes`, msgKey → "#QA…" of every message in their threads (tags show the badge).
  *  Read on load and every 5 min, every 2 min on the Q&A page.
  *  ponytail: one live read per group each time; a server-side watch if more groups need it. */
-export function useQaNews(days: number, onPage: boolean) {
+export function useQaNews(days: number, onPage: boolean, poll = true) { // poll false: read along another caller's poll
   const ids = useQaRecent().slice(0, 8);
   const seen = useStored<Seen>(SEEN, {});
   const muted = useStored<string[]>(MUTED, []);
   const mins = useQaRemind();
   const now = useNow();
-  const datas = useQueries({ queries: ids.map((id) => ({ ...qaQuery(id, days), refetchInterval: onPage ? 120_000 : 300_000 })), combine: dataOf });
+  const datas = useQueries({ queries: ids.map((id) => ({ ...qaQuery(id, days), refetchInterval: poll && (onPage ? 120_000 : 300_000) })), combine: dataOf });
   const codes = useMemo(() => new Map(datas.flatMap((d) => (d ?? []).flatMap((i) => thread(i).map((m) => [msgKey(m), i.code] as const)))), [datas]);
   const by: Record<string, number> = {};
   const late: Record<string, number> = {};
+  const lists: Record<string, QaItem[]> = {};
   const lateItems: QaItem[] = [];
+  let firstNew: QaItem | null = null;
   ids.forEach((id, k) => {
-    by[id] = (datas[k] ?? []).reduce((n, i) => n + fresh(i, seen).length, 0);
-    const l = (datas[k] ?? []).filter((i) => isLate(i, mins, now, muted));
+    const items = (lists[id] = datas[k] ?? []);
+    by[id] = items.reduce((n, i) => n + fresh(i, seen).length, 0);
+    firstNew ??= items.find((i) => fresh(i, seen).length > 0) ?? null;
+    const l = items.filter((i) => isLate(i, mins, now, muted));
     late[id] = l.length;
     lateItems.push(...l);
   });
   useEffect(() => notifyLate(lateItems)); // every render: the set keeps it to one notification per wait
   const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
-  return { by, total: sum(by), late, lateTotal: sum(late), codes };
+  // `lists`: each group's threads (the cross-group "Câu hỏi của tôi" view); `firstNew` / `firstLate`: where a link to
+  // "new answers" / "due a nudge" opens (openQa).
+  const ready = datas.every((d) => d !== undefined); // every group read once (a failed read stays not ready)
+  return { by, total: sum(by), late, lateTotal: sum(late), codes, lists, ready, firstNew: firstNew as QaItem | null, firstLate: lateItems[0] ?? null };
 }
+
+/** Sidebar / page value for the cross-group list of your unanswered questions (not a chat id). */
+export const QA_MINE = "__qa_mine__";
+/** Your questions nobody answered yet, across the groups you asked lately (`lists` of useQaNews), oldest first. */
+const mineOpen = (lists: Record<string, QaItem[]>) =>
+  Object.values(lists).flat().filter((i) => i.question.outgoing && waiting(i))
+    .sort((a, b) => new Date(a.question.date).getTime() - new Date(b.question.date).getTime());
 
 export const QA_DAYS = [[1, "24 giờ"], [3, "3 ngày"], [7, "7 ngày"], [30, "30 ngày"]] as const;
 export type QaDays = (typeof QA_DAYS)[number][0];
-type Filter = "open" | "done" | "mine" | "all";
+type Filter = "open" | "done" | "closed" | "mine" | "all";
 const FILTERS: [Filter, string, (i: QaItem) => boolean, string][] = [
   ["all", "Tất cả", () => true, ""],
-  ["open", "Chờ trả lời", (i) => !answered(i), "Chưa ai (ngoài người hỏi; hoặc người được tag, theo Cài đặt) trả lời, chưa chốt"],
-  ["done", "Đã trả lời", answered, "Đã có người trả lời, hoặc bạn đã chốt câu trả lời"],
+  ["open", "Chờ trả lời", waiting, "Chưa ai (ngoài người hỏi; hoặc người được tag, theo Cài đặt) trả lời, chưa chốt, chưa đánh dấu xong"],
+  ["done", "Đã trả lời", (i) => !i.done && answered(i), "Đã có người trả lời, hoặc bạn đã chốt câu trả lời"],
+  ["closed", "Xong", (i) => i.done, "Bạn đã đánh dấu xong: không nhắc, không tính là chờ"],
   ["mine", "Bạn hỏi", (i) => i.question.outgoing, "Câu hỏi bạn đăng"],
 ];
 
@@ -176,6 +216,7 @@ const PILL = "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap roun
 /** Settled ("Chốt"), answered, or how long the question has waited (`late`: yours, past the nudge threshold): text +
  *  icon, not colour alone. */
 function State({ i, now, late }: { i: QaItem; now: number; late?: boolean }) {
+  if (i.done) return <span className={cn(PILL, "bg-paper-3 text-ink-2")}><CircleCheck aria-hidden />Xong</span>;
   if (accepted(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><CheckCheck aria-hidden />Đã chốt</span>;
   if (answered(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><Check aria-hidden />Đã trả lời</span>;
   const w = waitLabel(i.question.date, now);
@@ -231,10 +272,12 @@ const SUM_ERR = { ai_not_configured: "Chưa cài AI (Cài đặt › AI).", ai_c
  *  bare) on one rail. Kept tags keep their tag actions; a click on a message makes it the one the box below answers;
  *  "Chốt" on a reply marks it as the answer. AI can sum the thread up (question, conclusion, what is still open).
  *  Keyed by code: a new thread starts with no summary. */
-function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted, remind, onNudge, onMute, onResolve }: {
+function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted, remind, onNudge, onMute, onResolve, onMark }: {
   i: QaItem; now: number; title?: string; seenAt: Seen; target: Message | null; onTarget: (m: Message) => void; onClose: () => void;
   late: boolean; muted: boolean; remind: number; onNudge: () => void; onMute: (off: boolean) => void; onResolve: (id: string | null) => void;
+  onMark: (state: QaMark) => void;
 }) {
+  const [sure, setSure] = useState(false); // Xóa waits for a second click
   const all = thread(i);
   const news = new Set(fresh(i, seenAt).map((m) => m.message_id));
   const nudged = i.answers.filter((a) => a.outgoing).length;
@@ -273,6 +316,17 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
         <Hint side="bottom" text="Chép cả chuỗi (người, giờ, nội dung; câu trả lời đã chốt ở đầu) để dán vào ticket, AI hay gửi người khác">
           <Button size="icon-sm" variant="ghost" aria-label={`Chép chuỗi ${i.code}`} onClick={() => void copyText(transcript(i, title), `Đã chép chuỗi ${i.code}`)}><Copy /></Button>
         </Hint>
+        <Hint side="bottom" text={i.done ? "Mở lại: chuỗi quay về trạng thái theo các trả lời, nhắc lại như cũ"
+          : "Đánh dấu xong: không nhắc nữa, rời Chờ trả lời và Câu hỏi của tôi (xem lại ở bộ lọc Xong)"}>
+          <Button size="icon-sm" variant="ghost" aria-pressed={i.done} aria-label={i.done ? `Mở lại ${i.code}` : `Đánh dấu xong ${i.code}`}
+            className={cn(i.done && "text-ok")} onClick={() => onMark(i.done ? null : "done")}>{i.done ? <RotateCcw /> : <CircleCheck />}</Button>
+        </Hint>
+        <Hint side="bottom" text="Xóa chuỗi khỏi Q&A trên dashboard (tin trên Telegram vẫn còn). Bấm 2 lần để xác nhận">
+          <Button size={sure ? "xs" : "icon-sm"} variant={sure ? "destructive" : "ghost"} aria-label={`Xóa ${i.code} khỏi Q&A`} onBlur={() => setSure(false)}
+            onClick={() => { if (!sure) return setSure(true); setSure(false); onMark("deleted"); }}>
+            <Trash2 />{sure && "Bấm lần nữa để xóa"}
+          </Button>
+        </Hint>
       </div>
       {answer && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-ok-wash px-3 py-2 text-xs text-ok @4xl/qa:px-5">
@@ -292,7 +346,7 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
             <Button size="xs" variant="ghost" onClick={() => onMute(true)}><BellOff /> Bỏ qua</Button>
           </Hint>
         </div>
-      ) : muted && i.question.outgoing && !answered(i) && (
+      ) : muted && i.question.outgoing && waiting(i) && (
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs text-ink-3 @4xl/qa:px-5">
           <BellOff className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1">Đã tắt nhắc cho câu này.</span>
@@ -350,7 +404,7 @@ export function QaPage({ focus, group, onGroup, days, onDays, onBack }: {
   const title = groups.data?.find((g) => g.chat_id === group)?.title;
   return (
     <section aria-label="Q&A" className="flex min-h-0 flex-col">
-      {group ? <GroupQa key={group} chatId={group} title={title} focus={focus} days={days} onDays={onDays} /> : (
+      {group === QA_MINE ? <MyQuestions days={days} onDays={onDays} /> : group ? <GroupQa key={group} chatId={group} title={title} focus={focus} days={days} onDays={onDays} /> : (
         <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-4 sm:p-6">
           <div className="grid w-full max-w-sm justify-items-center gap-2 text-center">
             <span className="grid size-11 place-items-center rounded-full bg-hl-wash text-hl-2"><MessageCircleQuestion className="size-5" aria-hidden /></span>
@@ -367,17 +421,121 @@ export function QaPage({ focus, group, onGroup, days, onDays, onBack }: {
   );
 }
 
+/** "Câu hỏi của tôi": your unanswered questions across the groups you asked lately, oldest first, grouped by group.
+ *  A row opens its thread in its own group (openQa); the late ones lead, with nudge / mute like a group's list.
+ *  No new reads: the same per-group queries the sidebar badges poll. */
+function MyQuestions({ days, onDays }: { days: QaDays; onDays: (d: QaDays) => void }) {
+  const { lists, ready } = useQaNews(days, true);
+  const now = useNow();
+  const mins = useQaRemind();
+  const muted = useStored<string[]>(MUTED, []);
+  const recent = useQaRecent();
+  const open = mineOpen(lists);
+  const wait = useAiWait(recent.length > 0 && !ready && !open.length);
+  const late = open.filter((i) => isLate(i, mins, now, muted));
+  const groups: [string, QaItem[]][] = [];
+  for (const i of open.filter((x) => !late.includes(x))) {
+    const g = groups.find(([t]) => t === i.chat_title);
+    if (g) g[1].push(i);
+    else groups.push([i.chat_title, [i]]);
+  }
+  const row = (i: QaItem, isLateRow: boolean) => (
+    <Row key={`${i.question.chat_id}:${i.code}`} i={i} now={now} on={false} news={0} late={isLateRow}
+      onOpen={() => openQa(i.question.chat_id, i.code)} onNudge={() => openQa(i.question.chat_id, i.code)}
+      onMute={() => { mute(i.code, true); toast({ text: `Đã bỏ qua nhắc ${i.code}`, undo: () => mute(i.code, false) }); }} />
+  );
+  return (
+    <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]">
+      <header className="flex flex-wrap items-center gap-2 border-b px-3 py-2 md:px-4">
+        <p className="min-w-0 flex-1 truncate text-sm text-ink-2">
+          <span className="font-mono text-base font-semibold text-ink tabular-nums">{open.length}</span> câu bạn hỏi chưa ai trả lời
+          <span className="hidden text-ink-3 sm:inline"> · {recent.slice(0, 8).length} nhóm hỏi gần đây</span>
+        </p>
+        <Dropdown label="Khoảng thời gian" value={String(days)} onChange={(v) => onDays(Number(v) as QaDays)} className="w-[5.5rem]"
+          options={QA_DAYS.map(([v, l]) => ({ value: String(v), label: l }))} />
+      </header>
+      <div className="min-h-0 overflow-y-auto">
+        {wait ? (
+          <AiFetching kind="qa" lines={["AI đang kết nối Telegram", "Đang đọc câu bạn hỏi ở các nhóm", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"]} />
+        ) : !open.length ? (
+          <div className="grid justify-items-center gap-2 px-4 py-16 text-center">
+            <span className="grid size-11 place-items-center rounded-full bg-ok-wash text-ok"><CheckCheck className="size-5" aria-hidden /></span>
+            <p className="text-sm font-semibold text-ink">{recent.length ? "Câu nào bạn hỏi cũng có người trả lời rồi" : "Bạn chưa hỏi nhóm nào"}</p>
+            <p className="max-w-xs text-sm leading-relaxed text-ink-3">
+              {recent.length ? `Trong ${QA_DAYS.find(([v]) => v === days)![1]} qua.` : "Chọn một nhóm bên trái để đăng câu hỏi kèm mã #QA…"}
+            </p>
+            {recent.length > 0 && days < 30 && <Button size="xs" variant="outline" onClick={() => onDays(30)}>Xem 30 ngày</Button>}
+          </div>
+        ) : (
+          [...(late.length ? [["late", late] as const] : []), ...groups].map(([g, its]) => (
+            <section key={g} aria-label={g === "late" ? "Cần nhắc" : g}>
+              <h3 className={cn("sticky top-0 z-10 flex items-center gap-1.5 border-b bg-paper-2/95 px-4 py-1 text-xs font-medium backdrop-blur-sm", g === "late" ? "text-signal-2" : "text-ink-3")}>
+                {g === "late" ? <><BellRing className="size-3.5" aria-hidden />Chưa ai trả lời sau {qaRemindLabel(mins)}</> : g}
+                <span className="ml-auto font-mono tabular-nums">{its.length}</span>
+              </h3>
+              <ul className="divide-y divide-rule">{its.map((i) => row(i, g === "late"))}</ul>
+            </section>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+const QA_PREFILL = "qa-prefill"; // sessionStorage key + window event: {chatId, text} for a new question (YouTrack sheet)
+
+/** A group's unsent box text: read / written from handlers without re-rendering the page; saved for reloads 300 ms
+ *  after the last keystroke (`flush` on leaving). */
+function draftStore(key: string) {
+  let v = getPref(key) ?? "";
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const subs = new Set<() => void>();
+  const flush = () => { clearTimeout(t); put(key, v.trim() ? v : null); };
+  return {
+    get: () => v,
+    set: (x: string) => { v = x; subs.forEach((f) => f()); clearTimeout(t); t = setTimeout(flush, 300); },
+    sub: (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; },
+    flush,
+  };
+}
+type Draft = ReturnType<typeof draftStore>;
+
+/** The Q&A prompt box: the only part that re-renders as you type. */
+function QaBox({ draft, onSend, busy, to, title, top }: {
+  draft: Draft; onSend: () => void; busy: boolean; to: Message | null; title?: string; top: (text: string) => React.ReactNode;
+}) {
+  const text = useSyncExternalStore(draft.sub, draft.get, draft.get);
+  return (
+    <AiPromptBox className="mx-auto max-w-3xl" value={text} onChange={draft.set} onSend={onSend} maxLength={4000}
+      aria-label={to ? "Trả lời trong chuỗi" : "Câu hỏi mới"}
+      placeholder={to ? `Trả lời ${who(to)}…` : `Hỏi ${title ?? "nhóm"}… (tag @tên người được hỏi)`}
+      top={top(text)}
+      tools={!to && (hasTag(text)
+        ? <span className="text-ink-3">Có tag: tự thêm mã <span className="font-mono">#QA…</span> ở cuối tin</span>
+        : <span className="text-ink-3">Tag người được hỏi (<span className="font-mono">@tên</span>) để mở Q&A; không tag thì gửi như tin thường</span>)}
+      actions={
+        <Hint side="bottom" text={`${to ? "Gửi trả lời" : "Đăng câu hỏi vào nhóm"} (Enter, Shift+Enter xuống dòng)`}>
+          <Button size="sm" className="rounded-full bg-hl" disabled={!text.trim() || busy} aria-busy={busy} onClick={onSend}>
+            <Send />{to ? "Trả lời" : "Đăng"}
+          </Button>
+        </Hint>
+      } />
+  );
+}
+
 function GroupQa({ chatId, title, focus, days, onDays }: {
   chatId: string; title?: string; focus: string | null; days: QaDays; onDays: (d: QaDays) => void;
 }) {
   const qc = useQueryClient();
   const list = useQuery({ ...qaQuery(chatId, days), refetchInterval: 60_000 }); // answers show up while you read
+  const listWait = useAiWait(list.isPending);
   const now = useNow();
   const [filter, setFilter] = useState<Filter>("all");
   const [find, setFind] = useState("");
-  const draftKey = `qa-draft:${chatId}`;
-  const [text, setText] = useState(() => getPref(draftKey) ?? "");
-  const edit = (v: string) => { setText(v); put(draftKey, v.trim() ? v : null); }; // survives switching groups / reload
+  // The box text lives outside this component's state: a keystroke re-renders only the box, not the list and thread.
+  const [draft] = useState(() => draftStore(`qa-draft:${chatId}`));
+  useEffect(() => draft.flush, [draft]); // leaving within the save debounce
+  const edit = draft.set;
   // The open thread's code, or "new": the empty box on its own (narrow screens; wide ones always show the reader).
   const [open, setOpen] = useState<string | null>(null);
   const [target, setTarget] = useState<Message | null>(null); // the message picked to answer (default: the thread's last)
@@ -390,7 +548,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     setOpen(code);
     setTarget(null);
     if (code) setRead((r) => new Set(r).add(code));
-    if (autoText && text === autoText) edit(""); // a nudge tags that thread's people: never carry it to another
+    if (autoText && draft.get() === autoText) edit(""); // a nudge tags that thread's people: never carry it to another
   };
   const mins = useQaRemind();
   const muted = useStored<string[]>(MUTED, []);
@@ -401,7 +559,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const nudge = (i: QaItem) => {
     show(i.code);
     setTarget(i.question);
-    if (!text.trim() || text === autoText) {
+    if (!draft.get().trim() || draft.get() === autoText) {
       edit(nudgeText(i));
       setAutoText(nudgeText(i));
     }
@@ -423,6 +581,24 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     addEventListener("qa-answer", take);
     return () => removeEventListener("qa-answer", take);
   }, [chatId]);
+  // "Hỏi lại trong nhóm" from a YouTrack ticket (the inbox stores `qa-prefill` and opens this group): a new question
+  // with that text, under whatever you had typed.
+  useEffect(() => {
+    const take = () => {
+      let p: { chatId?: string; text?: string } | null = null;
+      try { p = JSON.parse(sessionStorage.getItem(QA_PREFILL) ?? "null"); } catch {}
+      if (!p?.text || p.chatId !== chatId) return;
+      try { sessionStorage.removeItem(QA_PREFILL); } catch {}
+      const cur = draft.get().trim();
+      setOpen("new");
+      setTarget(null);
+      edit(cur ? `${cur}\n${p.text}` : p.text);
+      requestAnimationFrame(focusBox);
+    };
+    take();
+    addEventListener(QA_PREFILL, take);
+    return () => removeEventListener(QA_PREFILL, take);
+  }, [chatId, draft, edit]);
 
   // "Mới" is against what you had seen when the group opened; everything shown counts as seen from then on.
   const [seenAt, setSeenAt] = useState(() => parse<Seen>(getPref(SEEN), {}));
@@ -462,7 +638,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const reading = !!cur || open === "new" || !!target; // narrow screens: the reader takes the list's place
 
   const post = useMutation({
-    mutationFn: () => api<QaPosted>("/qa", { method: "POST", json: { chat_id: chatId, text, reply_to: to?.message_id ?? null, start } }),
+    mutationFn: (text: string) => api<QaPosted>("/qa", { method: "POST", json: { chat_id: chatId, text, reply_to: to?.message_id ?? null, start } }),
     onSuccess: (r) => {
       remember(chatId);
       edit("");
@@ -480,7 +656,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     },
     onError: (e) => toast({ text: errorText(e, { forbidden: "Nhóm không cho bạn gửi tin", reply_not_found: "Tin được trả lời không còn" }, "Không gửi được, thử lại") }),
   });
-  const send = () => { if (text.trim() && !post.isPending) post.mutate(); };
+  const send = () => { const t = draft.get(); if (t.trim() && !post.isPending) post.mutate(t); };
 
   const s = fold(find.trim());
   const shown = items.filter(FILTERS.find(([f]) => f === filter)![2])
@@ -552,10 +728,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
 
       <div className="grid min-h-0 grid-cols-1 @4xl/qa:grid-cols-[minmax(18rem,23rem)_minmax(0,1fr)]">
         <div className={cn("min-h-0 overflow-y-auto @4xl/qa:border-r", reading ? "hidden @4xl/qa:block" : "block")}>
-          {list.isPending ? (
-            <div aria-label="Đang tải…" className="divide-y divide-rule">
-              {[0, 1, 2, 3].map((k) => <div key={k} className="grid gap-2 px-4 py-3"><Skeleton className="h-4 w-4/5" /><Skeleton className="h-3 w-1/2" /></div>)}
-            </div>
+          {listWait ? (
+            <AiFetching kind="qa" />
           ) : list.isError ? (
             <div role="alert" className="grid justify-items-start gap-2 p-4 text-sm text-error">
               {errorText(list.error, {}, "Không đọc được nhóm.")}
@@ -591,7 +765,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
           {cur ? (
             <Thread key={cur.code} i={cur} now={now} title={title} seenAt={seenAt} target={target} onTarget={pick} onClose={() => show(null)}
               late={late.includes(cur)} muted={muted.includes(cur.code)} remind={mins} onNudge={() => nudge(cur)} onMute={(off) => onMute(cur, off)}
-              onResolve={(id) => onResolve(cur, id)} />
+              onResolve={(id) => onResolve(cur, id)}
+              onMark={(state) => { if (state === "deleted") show(null); void markWithUndo(qc, cur, state); }} />
           ) : (
             <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-6">
               <div className="grid max-w-sm justify-items-center gap-2 text-center">
@@ -606,10 +781,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
             </div>
           )}
           <div ref={box} className="shrink-0 border-t px-3 py-3 @4xl/qa:px-5" onKeyDown={(e) => { if (e.key === "Escape" && target) { e.preventDefault(); setTarget(null); } }}>
-            <AiPromptBox className="mx-auto max-w-3xl" value={text} onChange={edit} onSend={send} maxLength={4000}
-              aria-label={to ? "Trả lời trong chuỗi" : "Câu hỏi mới"}
-              placeholder={to ? `Trả lời ${who(to)}…` : `Hỏi ${title ?? "nhóm"}… (tag @tên người được hỏi)`}
-              top={to && (
+            <QaBox draft={draft} onSend={send} busy={post.isPending} to={to} title={title}
+              top={(text) => to && (
                 <div className="flex items-center gap-2 rounded-md border-l-[3px] border-hl bg-paper-2 py-1 pr-1 pl-2.5 text-xs">
                   <Reply className="size-3.5 shrink-0 text-hl-2" aria-hidden />
                   <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-semibold text-ink">{who(to)}:</b> {gist(to)}</span>
@@ -629,16 +802,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
                   ) : <span className="hidden shrink-0 pr-1.5 text-ink-3 @2xl/qa:inline">Bấm một tin để trả lời tin đó</span>}
                 </div>
               )}
-              tools={!to && (hasTag(text)
-                ? <span className="text-ink-3">Có tag: tự thêm mã <span className="font-mono">#QA…</span> ở cuối tin</span>
-                : <span className="text-ink-3">Tag người được hỏi (<span className="font-mono">@tên</span>) để mở Q&A; không tag thì gửi như tin thường</span>)}
-              actions={
-                <Hint side="bottom" text={`${to ? "Gửi trả lời" : "Đăng câu hỏi vào nhóm"} (Enter, Shift+Enter xuống dòng)`}>
-                  <Button size="sm" className="rounded-full bg-hl" disabled={!text.trim() || post.isPending} aria-busy={post.isPending} onClick={send}>
-                    <Send />{to ? "Trả lời" : "Đăng"}
-                  </Button>
-                </Hint>
-              } />
+            />
           </div>
         </div>
       </div>
@@ -652,7 +816,8 @@ export function QaGroups({ days, selected, onSelect, collapsed }: {
   days: QaDays; selected: string | null | undefined; onSelect: (chatId: string) => void; collapsed: boolean;
 }) {
   const list = useQuery(qaGroupsQuery);
-  const { by: news, late } = useQaNews(days, true);
+  const { by: news, late, lists } = useQaNews(days, true);
+  const mine = mineOpen(lists).length;
   const recents = useQaRecent();
   const [q, setQ] = useState("");
   const s = fold(q.trim());
@@ -688,6 +853,19 @@ export function QaGroups({ days, selected, onSelect, collapsed }: {
           className="h-8 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-8 text-xs text-ink placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1" />
       </label>
       <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
+        {!s && recents.length > 0 && (
+          <li>
+            <button type="button" aria-current={selected === QA_MINE} onClick={() => onSelect(QA_MINE)}
+              className={cn("relative flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
+                selected === QA_MINE && "font-medium text-hl-2 hover:bg-transparent")}>
+              {selected === QA_MINE && <NavPill />}
+              <span className="relative grid size-7 shrink-0 place-items-center rounded-full bg-paper-3 text-ink-2"><MessageCircleQuestion className="size-4" aria-hidden /></span>
+              <span className={cn("relative min-w-0 flex-1 truncate", fade)}>Câu hỏi của tôi</span>
+              {mine > 0 && <span className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums", fade)}
+                aria-label={`${mine} câu chưa ai trả lời`}>{mine}</span>}
+            </button>
+          </li>
+        )}
         {recent.length > 0 && <>{label("Đã hỏi gần đây")}{recent.map(row)}{label("Mọi nhóm")}</>}
         {rest.map(row)}
       </ul>

@@ -5,10 +5,11 @@ import { Download, EyeOff, LayoutGrid, Plus, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type PointerEvent as RPointerEvent, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { getPref, put, useRole, YT_ROLES } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { stateColor, type Workflow, yt } from "@/lib/yt";
+import { stateColor, type Workflow, yt, ytProjectsQuery } from "@/lib/yt";
 
 const W = 150, H = 36, GX = 180, GY = 80, PAD = 24;
 
@@ -76,7 +77,7 @@ function arrow(a: [number, number], b: [number, number], bend: boolean) {
 
 /** Settings › YouTrack › Workflow: drag the state boxes, drag from a box's dot onto another to draw an arrow, click an arrow to remove it. */
 export function WorkflowSection() {
-  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity });
+  const projects = useQuery(ytProjectsQuery);
   const [project, setProject] = useState(() => getPref("project") || "VA");
   const ps = projects.data;
   const p = !ps?.length || ps.some((x) => x.shortName === project) ? project : ps[0].shortName;
@@ -116,10 +117,8 @@ export function WorkflowSection() {
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <select aria-label="Project" value={p} onChange={(e) => { setProject(e.target.value); fromYt.reset(); }}
-          className="h-8 rounded-[var(--radius-input)] border border-rule bg-cotton px-2 text-sm">
-          {(ps ?? [{ shortName: p, name: p }]).map((x) => <option key={x.shortName} value={x.shortName}>{x.shortName} ({x.name})</option>)}
-        </select>
+        <Dropdown label="Project" value={p} onChange={(v) => { setProject(v); fromYt.reset(); }} className="w-auto text-sm"
+          options={(ps ?? [{ shortName: p, name: p }]).map((x) => ({ value: x.shortName, label: x.shortName, hint: x.name }))} />
         <Hint title="Lấy từ YouTrack" text="Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.">
           <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate()}>
             <Download className="size-3.5" />{fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack"}
@@ -286,14 +285,14 @@ function EdgeList({ states, edges, onChange }: { states: string[]; edges: [strin
   const [from, setFrom] = useState(""), [to, setTo] = useState("");
   const f = states.includes(from) ? from : states[0] ?? "", t = states.includes(to) ? to : states[1] ?? states[0] ?? "";
   const dupe = f === t || edges.some(([a, b]) => a === f && b === t);
-  const sel = "h-8 min-w-0 rounded-[var(--radius-input)] border border-rule bg-cotton px-2 text-sm";
+  const opts = states.map((s) => ({ value: s, label: s }));
   return (
     <details className="grid gap-2 text-sm">
       <summary className="cursor-pointer text-xs text-ink-3">Danh sách mũi tên ({edges.length})</summary>
       <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, t]]); }}>
-        <select aria-label="Từ state" className={sel} value={f} onChange={(e) => setFrom(e.target.value)}>{states.map((s) => <option key={s}>{s}</option>)}</select>
+        <Dropdown label="Từ state" value={f} onChange={setFrom} options={opts} className="w-auto" />
         <span aria-hidden>→</span>
-        <select aria-label="Sang state" className={sel} value={t} onChange={(e) => setTo(e.target.value)}>{states.map((s) => <option key={s}>{s}</option>)}</select>
+        <Dropdown label="Sang state" value={t} onChange={setTo} options={opts} className="w-auto" />
         <Button type="submit" size="sm" variant="outline" disabled={dupe}>Thêm</Button>
       </form>
       <ul className="mt-2 flex flex-wrap gap-1.5">
