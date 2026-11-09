@@ -104,7 +104,8 @@ export const qaRemindLabel = (m: number) => (m === 0 ? "Tắt" : m < 60 ? `${m} 
 export const useQaRemind = () => useSyncExternalStore(onPrefs, readQaRemind, () => 30);
 /** When a Q&A question counts as answered: a reply from anyone but the asker, or only from someone it tagged. */
 export type QaAnswerBy = "any" | "tagged";
-export const readQaAnswerBy = (): QaAnswerBy => (getPref("qaAnswerBy") === "tagged" ? "tagged" : "any");
+/** Default "tagged": only a reply from someone the question tagged counts as answered (Cài đặt can widen it to anyone). */
+export const readQaAnswerBy = (): QaAnswerBy => (getPref("qaAnswerBy") === "any" ? "any" : "tagged");
 
 /** Row actions (ghim, ngữ cảnh, mở Telegram): tucked behind Xong until it is hovered, or always shown. */
 export type RowActionsPref = "hover" | "always";

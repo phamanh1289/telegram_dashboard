@@ -79,7 +79,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     e = task_cmd(s, "claude", "edit", "sid", False, "", "")
     box = json.loads(e[e.index("--settings") + 1])["sandbox"]
     assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
-    assert "--tools" not in e
+    assert "--tools" not in e and "Gradle" in e[e.index("--append-system-prompt") + 1]
     p = task_cmd(s, "claude", "plan", "sid", False, "", "")
     assert p[p.index("--tools") + 1] == "Read,Grep,Glob" and "--settings" not in p
     deny = p[p.index("--disallowedTools") + 2]

@@ -73,20 +73,20 @@ PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 # Edit turns run Bash in Claude Code's sandbox: writes only inside the project, network only to package
 # registries (loopback too is out: injected text can't reach the dashboard's own API or exfiltrate).
 # ponytail: fixed registry list; add a host when a build needs another mirror.
-SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org",
-                   "repo.maven.apache.org", "repo1.maven.org", "maven.google.com", "dl.google.com",
-                   "*.gradle.org", "jitpack.io"]  # fmt: skip
-# Gradle's cache in its own folder: ~/.gradle (init scripts, gradle.properties) would let a sandboxed run plant code
-# that the user's own builds run later, outside any sandbox. ponytail: deps download once more into this cache.
-GRADLE_HOME = str(Path.home() / ".cache" / "telegram_dashboard" / "gradle")
+SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]
 SANDBOX = json.dumps({"sandbox": {
     "enabled": True,
     "failIfUnavailable": sys.platform != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
     "autoAllowBashIfSandboxed": True,
     "allowUnsandboxedCommands": False,  # the model can't opt a command out
     "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
-    "filesystem": {"allowWrite": [GRADLE_HOME]},
-}, "env": {"GRADLE_USER_HOME": GRADLE_HOME}})
+}})
+# Gradle always binds a loopback socket (FileLockContentionHandler) and Java ignores HTTPS_PROXY. Opening loopback
+# (allowLocalBinding) would let sandboxed code drive the user's own Gradle/Kotlin daemons outside the sandbox, so
+# JVM builds stay out: the model leaves them to the user instead of failing at them.
+NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy. Cuối câu trả lời ghi rõ lệnh build / "
+          "test để người dùng tự chạy kiểm tra.")  # fmt: skip
+SANDBOXED = ["--settings", SANDBOX, "--append-system-prompt", NO_JVM]
 ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
 SHELL_TOOLS = "Read,Grep,Glob,Bash"  # an answer that may run commands, never Edit/Write
 DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
@@ -311,7 +311,7 @@ def ask_cmd(
     if p == "claude":
         try:
             cmd = (
-                [*exe(settings, p), "-p", "--tools", SHELL_TOOLS, "--allowedTools", SHELL_TOOLS, "--settings", SANDBOX]
+                [*exe(settings, p), "-p", "--tools", SHELL_TOOLS, "--allowedTools", SHELL_TOOLS, *SANDBOXED]
                 if shell else shlex.split(settings.ai_agent_project_command if tools else settings.ai_agent_command)
             )  # fmt: skip
         except ValueError:
@@ -349,7 +349,7 @@ def task_cmd(
     if p == "claude":
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
                 "--permission-mode", PERMISSION[mode], "--strict-mcp-config", "--allowedTools", ALLOW[mode],
-                *(["--tools", ALLOW["plan"]] if mode == "plan" else ["--settings", SANDBOX]),
+                *(["--tools", ALLOW["plan"]] if mode == "plan" else SANDBOXED),
                 "--disallowedTools", DENY, _data_deny(settings), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":

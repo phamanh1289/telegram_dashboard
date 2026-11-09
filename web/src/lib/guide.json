@@ -179,7 +179,7 @@
 "tab": "telegram",
 "area": "Thanh bên › Q&A",
 "title": "Q&A: hỏi trong nhóm và theo dõi câu trả lời",
-"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi.",
+"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, chỉ tính Đã trả lời khi người được tag trả lời (Cài đặt › Telegram đổi được thành bất kỳ ai), nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi.",
 "how": [
 "Bấm Q&A trên thanh bên (hoặc g rồi q), chọn nhóm",
 "Bấm “Câu hỏi mới”, gõ câu hỏi có @tên người được hỏi rồi Đăng",
@@ -461,7 +461,7 @@
 "tab": "telegram",
 "area": "Trang nhóm › Tóm tắt (Digest)",
 "title": "Tóm tắt nhóm (Digest)",
-"what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag.",
+"what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất.",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
@@ -485,7 +485,7 @@
 "at": "Quay lại nhóm"
 }
 ],
-"keys": "digest tom tat nhom summary can confirm da chot thay doi anh huong team viec can lam chu de tóm tắt hội thoại"
+"keys": "digest tom tat nhom summary can confirm da chot thay doi anh huong team viec can lam chu de tóm tắt hội thoại con mo tu lan truoc còn mở nhieu tin 2000 chia dot khong sot"
 },
 {
 "id": "digest-consent",
@@ -638,7 +638,7 @@
 "tab": "telegram",
 "area": "Briefing › Việc cần xử lý",
 "title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
-"what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật.",
+"what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\".",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -993,7 +993,7 @@
 "t": "Bấm \"Mở phiên\" để mở phiên ở trang AI Agent.",
 "at": "Mở phiên"
 },
-"Bấm mã phiên (REF-…) để chép #REF-…; dán vào tin nhóm thì tin sau tự đính kèm đúng phiên."
+"Bấm mã phiên (REF-…) để chép #REF-…; dán vào tin nhóm thì tin sau tự đính kèm đúng phiên. Rê chuột vào nút kẹp giấy của tin trả lời: app đọc cả chuỗi trả lời (tin gốc của tin gốc…) để tìm #REF-… và #QA…."
 ],
 "keys": "task ket qua ma phien ref mo phien dung ket qua lam nhap tra loi ai agent"
 },
@@ -1029,6 +1029,40 @@
 }
 ],
 "keys": "deep thinking phan tich be confirm backend trace code bo nao brain"
+},
+{
+"id": "digest-be-filter",
+"tab": "telegram",
+"area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
+"title": "Với BE: Q&A với BE gom theo chủ đề",
+"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, câu hỏi nằm cạnh câu BE trả lời, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu). Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\".",
+"how": [
+{
+"t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\"",
+"at": "Briefing"
+},
+"Chọn tab \"Với BE\": mỗi nhóm hiện các thẻ chủ đề",
+"Bấm vòng tròn cuối một dòng để đánh dấu đã xử lý (bấm \"Hoàn tác\" trên thông báo để lấy lại)",
+"Hoặc trong trang Tóm tắt của một nhóm, chọn \"Với BE\" ở trên kết quả"
+],
+"keys": "be backend loc be với be api field confirm voi be tab be trao doi be khong sot chu de chủ đề the gom nhom cau hoi cho tra loi da chot an muc da xu ly"
+},
+{
+"id": "deep-bulk",
+"tab": "telegram",
+"area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
+"title": "Đối chiếu code theo chủ đề với BE",
+"what": "Soi code dự án với từng chủ đề trao đổi với BE (tối đa 20 chủ đề một lần, hoặc từng chủ đề trên thẻ của nó): chủ đề đã chốt được kiểm ✅ đã adapt / ⚠️ lệch / ❌ chưa làm, chủ đề còn chờ BE trả lời được báo ⏳ code hiện đang làm gì và cần sửa gì tùy câu trả lời; kèm bằng chứng path:line. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE; đối chiếu một chủ đề thì thẻ của nó hiện nhãn \"Xem đối chiếu BE\". Mục đã xử lý không được gửi đi.",
+"how": [
+"Mở Briefing › tab \"Với BE\" (hoặc trang Tóm tắt của nhóm › \"Với BE\")",
+"Bấm \"Đối chiếu code N chủ đề\" để chạy cả nhóm, hoặc \"Đối chiếu code\" trên một thẻ",
+"Chọn dự án để AI đọc code, thêm yêu cầu nếu cần, rồi bấm \"Đối chiếu N chủ đề\"",
+{
+"t": "Xem kết quả ở AI Agent › Đối chiếu BE",
+"at": "AI Agent"
+}
+],
+"keys": "doi chieu code hang loat doi chieu be nhieu muc bulk batch check code be đối chiếu hàng loạt bang trang thai da adapt lech chua lam"
 },
 {
 "id": "composer-reply",
@@ -2137,7 +2171,7 @@
 "tab": "youtrack",
 "area": "Thanh trên trang › biểu tượng chuông",
 "title": "Chuông thay đổi trên ticket của bạn",
-"what": "Theo dõi ticket bạn được assign hoặc làm QC: báo khi đổi state, mới được giao cho bạn, hoặc có cập nhật (bình luận, sửa). Có thể bật thông báo trên máy khi tab chạy nền.",
+"what": "Theo dõi ticket bạn được assign hoặc làm QC: báo khi đổi state, mới được giao cho bạn, hoặc có cập nhật (bình luận, sửa). Ticket mới giao / nhờ test hiện toast ở cả trang Telegram lẫn YouTrack (kiểm 5 phút một lần, ticket giao lúc đóng app vẫn được báo khi mở lại). Trên macOS, app tự hiện banner cho ticket mới ở mọi project kể cả khi không mở tab nào (kiểm 3 phút một lần; nội dung ticket chỉ hiện khi bật \"Hiện nội dung tin trong thông báo macOS\" trong Cài đặt). Có thể bật thông báo trên máy khi tab chạy nền.",
 "how": [
 {
 "t": "Bấm biểu tượng chuông \"Thay đổi trên ticket của bạn\"",

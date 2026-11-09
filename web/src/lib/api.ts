@@ -27,6 +27,7 @@ export type AiRun = S["AiRun"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
 export type DigestItem = S["DigestItem"];
+export type DigestTopic = S["DigestTopic"];
 export type HistoryPage = S["HistoryPage"];
 export type BriefingItem = S["BriefingItem"];
 export type QaItem = S["QaItem"];

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { AiPromptBox } from "@/components/ai/chat";
+import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { createTicket, TicketForm, useOpenSimilar, useYtProject } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
@@ -174,6 +175,21 @@ function PromptDialog({ onClose, generated, custom, onSave }: {
   );
 }
 
+/** Lines under the agent start scene; the backend works in this order: save, read the tickets / links in the message, open the CLI session. Undefined = the scene's defaults. */
+function agentLines(m: Message, analysis: string, note: string, project?: string): string[] | undefined {
+  const text = textWithLinks(m);
+  const ids = [...new Set(text.match(/\b[A-Z][A-Z0-9_]+-\d+\b/g) ?? [])];
+  const links = (text.match(/https?:\/\/\S+/g) ?? []).length;
+  const found = [ids.length && `ticket ${ids.slice(0, 3).join(", ")}${ids.length > 3 ? "…" : ""}`, links && `${links} link`].filter(Boolean);
+  return [
+    `Đang đọc tin của ${m.sender_name ?? "nhóm"}`,
+    found.length ? `Đang mở ${found.join(" và ")} trong tin` : "Tin không kèm ticket hay link",
+    analysis || note.trim() ? `Đang ghép ${[analysis && "phân tích", note.trim() && "yêu cầu thêm"].filter(Boolean).join(" và ")}` : "Đang soạn việc cần làm",
+    `Đang mở dự án ${project ?? ""}`.trim(),
+    "Đang khởi động phiên AI Agent",
+  ];
+}
+
 /**
  * Hand the tagged message to an AI Agent session in a project, as a detail page over the reply: the message (the only part
  * that scrolls) with the request box pinned under it on the left, where and how it runs on the right (stacked when narrow).
@@ -208,6 +224,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
     onSuccess: (r) => onCreated(r.id),
   });
   const start = () => { if (picked && !task.isPending) task.mutate(); };
+  const starting = useAiWait(task.isPending);
   const lines = note.split("\n");
   const togglePreset = (p: string) => setNote(lines.includes(p) ? lines.filter((l) => l !== p).join("\n") : note.trim() ? `${note.trimEnd()}\n${p}` : p);
   const edit = mode === "edit";
@@ -225,6 +242,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
       </header>
 
       {/* Wide: nothing scrolls but the message (and step 3 if it overflows). Narrow: the page scrolls. */}
+      {starting ? <AiFetching kind="agent" project={picked?.name} lines={agentLines(m, analysis, note, picked?.name)} className="min-h-0 @min-[40rem]:*:[zoom:1.6]" /> : (
       <div className="min-h-0 overflow-y-auto lg:overflow-hidden">
         <div className="mx-auto grid max-w-6xl gap-6 px-4 py-5 sm:px-6 lg:h-full lg:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)] lg:grid-rows-[minmax(0,1fr)] lg:gap-8">
           {/* The job: the message, then the request box with the start buttons. */}
@@ -296,9 +314,8 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
                   <Button type="button" size="sm" variant="outline" onClick={onBack} disabled={task.isPending}>Hủy</Button>
                   <Button type="button" size="sm" aria-busy={task.isPending} disabled={!picked || task.isPending} onClick={start}
                     className={cn(edit && "bg-warn text-cotton hover:bg-warn hover:brightness-110")}>
-                    {task.isPending ? <Loader2 className="animate-spin" aria-hidden /> : edit ? <FilePen /> : <Bot />}
-                    {task.isPending ? "Đang khởi động…" : edit ? "Giao việc, cho sửa file" : "Giao việc"}
-                    {!task.isPending && <span aria-hidden className="ml-0.5 font-mono text-[0.6875rem] font-normal opacity-70">↵</span>}
+                    {edit ? <FilePen /> : <Bot />}{edit ? "Giao việc, cho sửa file" : "Giao việc"}
+                    <span aria-hidden className="ml-0.5 font-mono text-[0.6875rem] font-normal opacity-70">↵</span>
                   </Button>
                 </>} />
               {peek && <PromptDialog onClose={() => setPeek(false)} generated={generated} custom={custom} onSave={setCustom} />}
@@ -334,7 +351,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
           </div>
         </div>
       </div>
-
+      )}
     </section>
   );
 }

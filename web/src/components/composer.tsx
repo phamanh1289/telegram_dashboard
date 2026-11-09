@@ -426,12 +426,12 @@ export function Composer({
           )}
 
           {!!related.data?.length && (
-            <section aria-label="Ticket có vẻ liên quan" className="grid gap-2">
+            <section aria-label="Ticket có vẻ liên quan" className="grid grid-cols-1 gap-2">
               <h3 className={head}>Ticket có vẻ liên quan</h3>
-              <ul className="grid divide-y rounded-[var(--radius-input)] border bg-cotton">
+              <ul className="grid grid-cols-1 divide-y rounded-[var(--radius-input)] border bg-cotton">
                 {related.data.slice(0, 3).map((t) => (
                   <li key={t.id} className="flex min-h-10 items-center gap-2 py-1 pr-1 pl-3 text-xs">
-                    <a href={t.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-ink-2 hover:underline">
+                    <a href={`/youtrack/?ticket=${t.id}`} title={t.summary} className="min-w-0 flex-1 truncate text-ink-2 hover:underline">
                       <b className="font-mono font-medium text-ink">{t.id}</b> {t.summary}
                     </a>
                     <Button type="button" size="xs" variant="ghost" aria-label={`Chèn link ${t.id} vào trả lời`} onClick={() => insert(`${t.id}: ${t.url}`)}>

@@ -11,6 +11,7 @@ import sqlite3
 import statistics
 import threading
 import uuid
+from collections.abc import Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -226,6 +227,17 @@ def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
 def _like(text: str) -> str:
     """`%text%` for LIKE ... ESCAPE '\\'."""
     return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _mark_qa(c: sqlite3.Connection, rows: Iterable, handled: bool) -> None:
+    """Done / reopen the Q&A threads whose #QA code these (chat_id, text) rows name. Done never overwrites a removed
+    thread; reopen clears only a 'done' mark."""
+    for cid, text in rows:
+        for code in qa_codes(text):
+            if handled:
+                c.execute("INSERT INTO qa_marks VALUES (?,?,'done',?) ON CONFLICT DO NOTHING", (cid, code, now_ts()))
+            else:
+                c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=? AND state='done'", (cid, code))
 
 
 def _add_cols(c: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
@@ -1093,8 +1105,7 @@ class Store:
         return out
 
     def mark_task_qa(self, task_id: str, handled: bool) -> None:
-        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name. Done never
-        overwrites a removed thread; reopen clears only a 'done' mark."""
+        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name."""
         with self._conn(write=True) as c:
             rows = c.execute(
                 "SELECT m.chat_id, m.text FROM messages m JOIN tasks t "
@@ -1103,13 +1114,17 @@ class Store:
                 "ON r.chat_id=m.chat_id AND r.message_id=m.message_id WHERE r.task_id=?",
                 (task_id, task_id),
             ).fetchall()
-            for cid, text in rows:
-                for code in qa_codes(text):
-                    if handled:
-                        c.execute("INSERT INTO qa_marks VALUES (?,?,'done',?) ON CONFLICT DO NOTHING",
-                                  (cid, code, now_ts()))  # fmt: skip
-                    else:
-                        c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=? AND state='done'", (cid, code))
+            _mark_qa(c, rows, handled)
+
+    def mark_tag_qa(self, chat_id: str, message_id: int, handled: bool) -> None:
+        """Done / reopen on a tag straight from the list: a #QA code in it, and the Q&A of the sessions on it
+        (as on the session), follow."""
+        key = (chat_id, message_id)
+        with self._conn(write=True) as c:
+            _mark_qa(c, c.execute("SELECT chat_id, text FROM messages WHERE chat_id=? AND message_id=?", key), handled)
+            ids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE chat_id=? AND message_id=?", key).fetchall()]
+        for task_id in ids:
+            self.mark_task_qa(task_id, handled)
 
     # ---- projects ------------------------------------------------------
     def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:

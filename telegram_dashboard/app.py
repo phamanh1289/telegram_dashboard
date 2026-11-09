@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import sys
 import time
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -34,6 +35,7 @@ from .events import Hub, event_stream
 from .models import (
     AiAccount,
     AiCatalogEntry,
+    AiDeepBatchRequest,
     AiDeepRequest,
     AiDraftRequest,
     AiGuideRequest,
@@ -99,7 +101,7 @@ from .qa import chain_code, find_threads, has_tag, names_code, qa_code
 from .storage import Db, Store, _dt, parse_cursor
 from .tasks import build_router as build_task_router
 from .tasks import new_task_id, start_task
-from .telegram import TelegramBridge, Transport
+from .telegram import TelegramBridge, Transport, notify_mac
 from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 
 log = logging.getLogger("telegram_dashboard.app")
@@ -149,18 +151,25 @@ def create_app(
         app.state.settings = settings
         await bridge.start()
         auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
+        # macOS banner for a YouTrack ticket newly given to me, even with no page open (the page toasts on its own)
+        mac = settings.notify and sys.platform == "darwin"
+        watch = asyncio.create_task(yt_dashboard.watch_new(notify_mac)) if mac else None
         try:
             yield
         finally:
             auto.cancel()
+            if watch:
+                watch.cancel()
             # Agents and Telegram first; one failing step never skips the others.
             for step in (app.state.agent.stop_all, bridge.stop, yt_dashboard.aclose):
                 try:
                     await step()
                 except Exception:
                     log.warning("shutdown step %s failed", step.__name__, exc_info=True)
-            with contextlib.suppress(asyncio.CancelledError):
-                await auto
+            for task in (auto, watch):
+                if task:
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
     yt_dashboard = YouTrackDashboard(settings)
     app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
@@ -288,6 +297,7 @@ def create_app(
         by = "me" if body.react else "quiet"
         if await s.db.write(s.store.set_handled, chat_id, mid, body.handled, by) and body.react:
             s.bridge.react(chat_id, [mid], body.handled)
+        await s.db.write(s.store.mark_tag_qa, chat_id, mid, body.handled)  # an AI Agent session's tag: its Q&A follows
 
     @app.post("/api/chats/{chat_id}/handled-all")
     async def handled_all(
@@ -401,6 +411,21 @@ def create_app(
                          kind="deep", title=title)  # fmt: skip
         return {"id": task_id}
 
+    @app.post("/api/ai/deep-batch")
+    async def ai_deep_batch(body: AiDeepBatchRequest, request: Request) -> dict:
+        """Đối chiếu BE in bulk: several digest items of one chat, one read-only AI Agent session (a table per item)."""
+        s = S(request)
+        if not s.agent.available:
+            raise ApiError(422, "ai_agent_missing")
+        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        items = [(i.text, i.message_ids, i.waiting) for i in body.items]
+        prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items,
+                                                      body.project, body.instruction, body.platform, fetch=fetch,
+                                                      intro=body.intro)  # fmt: skip
+        task_id = new_task_id()
+        await start_task(s, task_id, body.chat_id, anchor, body.project, prompt, "plan", kind="deep", title=title)
+        return {"id": task_id}
+
     @app.post("/api/ai/ticket")
     async def ai_ticket(body: AiTicketRequest, request: Request) -> AiTicketDraft:
         """A YouTrack ticket proposal (summary, Type, Priority, templated description) of a tag."""
@@ -466,7 +491,7 @@ def create_app(
         request: Request,
         since: datetime,
         until: datetime | None = None,
-        limit: Annotated[int, Query(ge=1, le=400)] = 400,
+        limit: Annotated[int, Query(ge=1, le=2000)] = 2000,  # what one digest reads (MAX_RUN)
     ) -> HistoryPage:
         """Live from Telegram, not stored: the Digest view reads and picks from this."""
         s = S(request)

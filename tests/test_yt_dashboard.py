@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import time
 import types
 from urllib.parse import parse_qs
 
@@ -566,3 +567,46 @@ async def test_an_ai_run_with_a_job_id_can_be_read_again_and_the_id_is_used_once
         else:
             raise AssertionError("expected YtError")
     await svc.aclose()
+
+
+async def test_watch_once_banners_only_tickets_newly_mine(tmp_path, monkeypatch):
+    from telegram_dashboard import telegram
+
+    monkeypatch.setattr(telegram, "NOTIFY_PREVIEW", False)
+    rows = []
+
+    def mine(n, rep="PO", qc=False):
+        i = issue(n)
+        i["reporter"] = {"login": "x", "fullName": rep}
+        i["customFields"][1]["value"] = {"login": "z" if qc else "me", "fullName": "Z" if qc else "Me"}
+        return i
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "me", "fullName": "Me"})
+        return httpx.Response(200, json=rows)
+
+    svc = make(handler)
+    svc.watch_path = tmp_path / "yt_watch.json"
+    sent = []
+
+    async def notify(*a):
+        sent.append(a)
+
+    rows[:] = [mine(1)]
+    assert await svc.watch_once(notify) == [] and sent == []  # first look: record only
+    rows[:] = [mine(1), mine(2), mine(3, qc=True), mine(4, rep="Me"), mine(5)]
+    svc.touched["VA-5"] = time.monotonic()  # I just assigned it from the dashboard
+    await svc.watch_once(notify)
+    assert sent == [
+        ("Ticket mới · VA-2", "Giao cho bạn", "Mở dashboard để xem chi tiết"),
+        ("Ticket mới · VA-3", "Nhờ bạn test", "Mở dashboard để xem chi tiết"),
+    ]
+    await svc.watch_once(notify)
+    assert len(sent) == 2  # no repeat
+    rows[:] = [mine(n) for n in range(10, 15)]
+    await svc.watch_once(notify)
+    assert sent[-1] == ("5 ticket mới cho bạn", "", "VA-10, VA-11, VA-12, VA-13, VA-14")  # one banner, not five
+    svc.watch_path.write_text(json.dumps({"login": "other", "ids": []}))
+    rows[:] = [mine(20)]
+    assert await svc.watch_once(notify) == []  # another account: record only

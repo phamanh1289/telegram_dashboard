@@ -475,6 +475,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/deep-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Deep Batch
+         * @description Đối chiếu BE in bulk: several digest items of one chat, one read-only AI Agent session (a table per item).
+         */
+        post: operations["ai_deep_batch_api_ai_deep_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/ticket": {
         parameters: {
             query?: never;
@@ -1466,6 +1486,34 @@ export interface components {
             install: string;
         };
         /**
+         * AiDeepBatchRequest
+         * @description Đối chiếu BE in bulk: several digest items of one chat (agreed with BE), traced through a project's code.
+         */
+        AiDeepBatchRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Items */
+            items: components["schemas"]["DeepItem"][];
+            /** Project */
+            project: string;
+            /**
+             * Instruction
+             * @default
+             */
+            instruction: string;
+            /**
+             * Platform
+             * @default android
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "mobile" | "any";
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
+        };
+        /**
          * AiDeepRequest
          * @description Deep thinking: a question to BE + BE's confirmation, traced through a project's code.
          */
@@ -1993,6 +2041,21 @@ export interface components {
             /** Resets At */
             resets_at?: string | null;
         };
+        /**
+         * DeepItem
+         * @description One topic of Q&A with BE: its title / summary and the messages behind it.
+         */
+        DeepItem: {
+            /** Text */
+            text: string;
+            /** Message Ids */
+            message_ids: string[];
+            /**
+             * Waiting
+             * @default false
+             */
+            waiting: boolean;
+        };
         /** DigestConsent */
         DigestConsent: {
             /** Enabled */
@@ -2042,6 +2105,23 @@ export interface components {
              * @default
              */
             why: string;
+            /**
+             * Be
+             * @default false
+             */
+            be: boolean;
+            /**
+             * Topic
+             * @default
+             */
+            topic: string;
+            /** At */
+            at?: string | null;
+            /**
+             * Carried
+             * @default false
+             */
+            carried: boolean;
         };
         /** DigestRequest */
         DigestRequest: {
@@ -2058,6 +2138,11 @@ export interface components {
             message_ids: string[];
             /** After Id */
             after_id?: number | null;
+            /**
+             * Closed
+             * @default []
+             */
+            closed: string[];
             /**
              * Teams
              * @default []
@@ -3672,6 +3757,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AiDeepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_deep_batch_api_ai_deep_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiDeepBatchRequest"];
             };
         };
         responses: {

@@ -3,13 +3,14 @@
 import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { getPref, setPref } from "@/lib/prefs";
-import { checkLoopBack, type Ticket } from "@/lib/yt";
+import { checkLoopBack, deskNotify, type Ticket } from "@/lib/yt";
 import { ago } from "@/lib/time";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
 
-// What changed on my tickets (assignee or QC) between two refreshes: state moved, newly given to me, updated by someone
-// (a comment, an edit). Kept for the session; a desktop notification when the tab is in the background and it is on.
+// What changed on my tickets (assignee or QC) between two refreshes: state moved, updated by someone (a comment, an edit);
+// tickets newly given to me come from checkNew in the shell (`note`). Kept for the session; a desktop notification when
+// the tab is in the background and it is on.
 
 type Event = { id: string; text: string; at: number };
 let events: Event[] = [];
@@ -20,7 +21,7 @@ const sub = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; 
 
 type Snap = { state: string | null; assignee: string | null; updated: number };
 
-const note = (id: string, text: string) => {
+export const note = (id: string, text: string) => {
   events = [{ id, text, at: Date.now() }, ...events].slice(0, 40);
   unread += 1;
   emit();
@@ -44,21 +45,16 @@ export function useWatch() {
     for (const i of data.filter(mine)) {
       const o = p.m.get(i.id);
       if ((selfEdits.get(i.id) ?? 0) > now - 3 * 60_000) continue;
-      if (!o) { if (i.assignee === y.me) out.push({ id: i.id, text: `Mới giao cho bạn: ${i.summary ?? ""}`, at: now }); }
-      else if (o.state !== i.state) out.push({ id: i.id, text: `${o.state ?? "—"} → ${i.state ?? "—"}`, at: now });
+      if (!o) continue; // newly mine: checkNew in the shell (persists across reloads and scopes)
+      if (o.state !== i.state) out.push({ id: i.id, text: `${o.state ?? "—"} → ${i.state ?? "—"}`, at: now });
       else if (o.updated !== i.updated) out.push({ id: i.id, text: "Có cập nhật mới (bình luận hoặc sửa)", at: now });
     }
     if (!out.length) return;
     events = [...out, ...events].slice(0, 40);
     unread += out.length;
     emit();
-    try {
-      if (document.hidden && getPref("ytNotify") === "1" && Notification.permission === "granted") {
-        const n = new Notification(out.length === 1 ? `${out[0].id}: ${out[0].text}` : `${out.length} ticket của bạn vừa thay đổi`,
-          { body: out.slice(0, 4).map((e) => `${e.id}: ${e.text}`).join("\n"), tag: "yt-watch" });
-        n.onclick = () => { focus(); y.openTicket(out[0].id); n.close(); };
-      }
-    } catch {} // no Notification API
+    deskNotify(out.length === 1 ? `${out[0].id}: ${out[0].text}` : `${out.length} ticket của bạn vừa thay đổi`,
+      out.slice(0, 4).map((e) => `${e.id}: ${e.text}`).join("\n"), () => y.openTicket(out[0].id));
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps -- one diff per refreshed list
 }
 

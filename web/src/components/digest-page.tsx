@@ -5,6 +5,7 @@ import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, Shield
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { IssueDialog } from "@/components/composer-dialogs";
 import { AiThinking } from "@/components/ai/chat";
+import { BeTopics } from "@/components/be-topics";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { DeepItemAction, DeepPick } from "@/components/deep-think";
@@ -14,8 +15,8 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
 import { copyText, getMessage, openReplyById, smooth, toast } from "@/lib/inbox";
-import { timeLabel } from "@/lib/time";
-import { readDigestTeams, readIntro } from "@/lib/prefs";
+import { dayLabel, timeLabel } from "@/lib/time";
+import { isString, put, readDigestTeams, readIntro, readList } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { lastSp, yt } from "@/lib/yt";
 import { Segmented } from "@/components/ui/segmented";
@@ -25,7 +26,7 @@ const PRESETS = [["24h", 24], ["3 ngày", 72], ["7 ngày", 168]] as const;
 const ERRORS: Record<string, string> = {
   digest_consent_required: "Cần cho phép AI đọc nhóm này trước.",
   digest_empty: "Không có tin nào để tóm tắt.",
-  digest_too_large: "Quá nhiều tin cho một lần tóm tắt; hãy thu hẹp khoảng thời gian.",
+  digest_too_large: "Quá nhiều tin cho một lần tóm tắt (tối đa 2.000 tin); hãy thu hẹp khoảng thời gian.",
   not_connected: "Telegram chưa kết nối.",
   ai_not_configured: "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.",
   ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
@@ -57,6 +58,42 @@ const span = (since: string, until?: string | null): Span => ({ since, until: un
 const hoursAgo = (h: number) => span(new Date(Date.now() - h * 3_600_000).toISOString());
 const CONSENT_DAYS = [7, 30, 90] as const;
 
+// Handled marks, per browser, refs only (chat, kind, message ids; a hash when an item cites none): never the text.
+// Shared by Briefing (where you tick them) and a group's Tóm tắt (whose "Với BE" view leaves them out).
+const DONE = "briefDone";
+const OPEN = ["confirmations", "actions"] as const;
+const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0).toString(36);
+export const todoKey = (chat: string, kind: string, it: DigestItem) => `${chat}:${kind}:${it.message_ids?.length ? it.message_ids.join(",") : hash(it.text)}`;
+
+export function useDone() {
+  const [done, setDone] = useState<Set<string>>(() => new Set(readList(DONE, [], isString)));
+  const toggle = (key: string) => setDone((prev) => {
+    const next = new Set(prev);
+    if (!next.delete(key)) next.add(key);
+    put(DONE, JSON.stringify([...next].slice(-500))); // ponytail: oldest marks drop off past 500
+    return next;
+  });
+  return [done, toggle] as const;
+}
+
+/** chat_id -> digest-cited message ids I have replied to on Telegram: those items tick themselves off. */
+export const answeredQuery = {
+  queryKey: ["briefing-answered"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string[]>>("/briefing/answered", { signal }),
+  staleTime: 60_000,
+};
+
+/** Ticked off (here) or replied to (on Telegram). */
+export const isClosedItem = (chat: string, kind: string, it: DigestItem, done: Set<string>, answered?: Record<string, string[]>) =>
+  done.has(todoKey(chat, kind, it)) || ((OPEN as readonly string[]).includes(kind) && !!it.message_ids?.some((id) => answered?.[chat]?.includes(id)));
+
+/** A chat's open items I have closed, as their joined message ids: the next digest drops them instead of carrying them on. */
+export function closedIds(chat: string, r: DigestResult | undefined, answered?: Record<string, string[]>) {
+  const done = new Set(readList(DONE, [], isString));
+  return OPEN.flatMap((k) => (r?.[k] ?? []).filter((it) => it.message_ids?.length && isClosedItem(chat, k, it, done, answered)))
+    .map((it) => it.message_ids!.join(","));
+}
+
 /** Impacts grouped by team, in first-seen order. */
 const THINKING = ["Đang đọc tin nhắn", "Đang tìm điều đã chốt, thay đổi", "Đang xếp việc cần PO/PM confirm"];
 
@@ -83,7 +120,8 @@ export function toMarkdown(r: DigestResult, title: string) {
     for (const it of items) {
       const m = key === "impacts" ? `**${it.who || "Khác"}**: ` : "";
       const extra = meta(key, it);
-      out.push(`- ${m}${it.text}${extra ? ` — ${extra}` : ""}${refs(it.message_ids ?? [], it.tickets)}`);
+      const flags = `${it.be ? "[BE] " : ""}${it.carried && it.at ? `[còn mở từ ${dayLabel(it.at).toLowerCase()}] ` : ""}`;
+      out.push(`- ${m}${flags}${it.text}${extra ? ` — ${extra}` : ""}${refs(it.message_ids ?? [], it.tickets)}`);
     }
   }
   if (r.topics?.length) {
@@ -151,6 +189,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           until: win.until,
           message_ids: [...picked],
           after_id: preset === "last" && last ? Number(last.last_message_id) : null,
+          closed: closedIds(chatId, last?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams: readDigestTeams(),
           intro: readIntro(),
         },
@@ -414,7 +453,30 @@ function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump:
   ));
 }
 
+/** "BE" on an item about the backend; "còn mở từ …" on an open item kept from an earlier digest. */
+export function ItemFlags({ it, be = true }: { it: DigestItem; be?: boolean }) {
+  return (
+    <>
+      {be && it.be && <span className="ml-1 rounded-sm bg-code-wash px-1 text-xs font-medium text-code">BE</span>}
+      {it.carried && it.at && (
+        <Hint side="bottom" text="Chưa ai trả lời / làm từ lần tóm tắt trước; tự mất khi tin mới giải quyết nó">
+          <span tabIndex={0} className="ml-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn">còn mở từ {dayLabel(it.at).toLowerCase()}</span>
+        </Hint>
+      )}
+    </>
+  );
+}
+
 export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: DigestResult; when: string | null; lit: string | null; onJump: (id: string) => void; onCopy: () => void; title?: string; chatId?: string }) {
+  const [only, setOnly] = useState<"all" | "be">("all");
+  const [done, toggle] = useDone();
+  const answered = useQuery({ ...answeredQuery, enabled: !!chatId }).data;
+  const closed = (key: string, it: DigestItem) => !!chatId && isClosedItem(chatId, key, it, done, answered);
+  // "Với BE": what is still open with BE; items you ticked off in Briefing or replied to on Telegram drop out.
+  const beOpen = (key: string, it: DigestItem) => !!it.be && !closed(key, it);
+  const beCount = SECTIONS.reduce((n, [k]) => n + (r[k] ?? []).filter((it) => beOpen(k, it)).length, 0);
+  const beDone = SECTIONS.reduce((n, [k]) => n + (r[k] ?? []).filter((it) => it.be && closed(k, it)).length, 0);
+  const be = only === "be";
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">
@@ -423,6 +485,18 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
         <span>{r.source_count} tin</span>
         <Button size="xs" variant="outline" className="ml-auto" onClick={onCopy}><Copy /> Copy markdown</Button>
       </div>
+      {beCount + beDone > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented id="tg-digest-be" label="Lọc mục" value={only} onChange={setOnly}
+            items={[{ value: "all", label: "Tất cả" }, { value: "be", label: `Với BE · ${beCount}`, title: "Hỏi / trả lời / chốt với BE (API, field, data) còn chưa xử lý" }]} />
+          {be && beDone > 0 && <span className="text-xs text-ink-3">ẩn {beDone} mục đã xử lý</span>}
+        </div>
+      )}
+      {be && !beCount && <p className="text-sm text-ink-3">Mọi mục với BE đã xử lý.</p>}
+      {be && chatId && (
+        <BeTopics chatId={chatId} title={title ?? "nhóm"} r={r} open={(k, it) => !closed(k, it)} lit={lit} onJump={onJump}
+          onToggle={(k, it) => toggle(todoKey(chatId, k, it))} />
+      )}
       {empty && <p className="text-sm text-ink-3">AI không tìm thấy nội dung đáng chú ý.</p>}
       {r.raw && (
         <div className="grid gap-1">
@@ -430,7 +504,7 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
           <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.raw}</p>
         </div>
       )}
-      {SECTIONS.map(([key, label]) => {
+      {!be && SECTIONS.map(([key, label]) => {
         const list = r[key] ?? [];
         if (!list.length) return null;
         // Impacts read best grouped by team.
@@ -450,8 +524,9 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
                     const extra = meta(key, it);
                     return (
                       <li key={i} className="text-sm leading-relaxed">
-                        <span className="text-ink">{it.text}</span>
+                        <span className={closed(key, it) ? "text-ink-3 line-through decoration-ink-3/60" : "text-ink"}>{it.text}</span>
                         {extra && <span className="text-ink-3"> — {extra}</span>}
+                        <ItemFlags it={it} />
                         <Tickets ids={it.tickets} scope={key === "changes"}
                           record={key === "decisions" ? `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}` : undefined} />
                         <Refs ids={it.message_ids ?? []} lit={lit} onJump={onJump} />
@@ -466,7 +541,7 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
           </section>
         );
       })}
-      {!!r.topics?.length && (
+      {!be && !!r.topics?.length && (
         <section className="grid gap-2">
           <h3 className="text-sm font-semibold text-ink">Chủ đề <span className="font-mono font-normal">{r.topics.length}</span></h3>
           <ul className="grid gap-3">

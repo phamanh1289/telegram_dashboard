@@ -12,9 +12,10 @@ import { ModelEffortPicker } from "@/components/ai";
 import { AiBot, AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
+import { BeTopics } from "@/components/be-topics";
 import { DeepItemAction } from "@/components/deep-think";
 import { NavPill } from "@/components/shell";
-import { digestError, ItemActions, Tickets, toMarkdown } from "@/components/digest-page";
+import { answeredQuery, closedIds, digestError, isClosedItem, ItemActions, ItemFlags, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
 import { Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
@@ -26,7 +27,7 @@ import { WeekStatsCard } from "@/components/week-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, type BriefingItem, type DigestItem, type DigestResult, errorText, type GroupInfo, type Message, statusQuery } from "@/lib/api";
 import { copyText, toast } from "@/lib/inbox";
-import { isString, put, readDigestTeams, readIntro, readList, useRole } from "@/lib/prefs";
+import { readDigestTeams, readIntro, useRole } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -75,6 +76,7 @@ async function runBrief(qc: QueryClient, groups: BriefingItem[]) {
           until,
           message_ids: [],
           after_id: it.saved ? Number(it.saved.last_message_id) : null,
+          closed: closedIds(it.chat_id, it.saved?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams,
           intro: readIntro(),
         },
@@ -107,7 +109,7 @@ const FADE = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exi
 // ---- to-do items: every group's latest digest in one list ------------------------------------------------------------
 
 type Kind = "confirmations" | "actions" | "decisions" | "changes";
-type Tab = "mine" | Kind;
+type Tab = "mine" | "be" | Kind;
 type Todo = DigestItem & { kind: Kind; chat: BriefingItem; key: string; mine: boolean; replied: boolean };
 const KINDS = ["confirmations", "actions", "decisions", "changes"] as const;
 // One hue per kind, the same on its tab, its icon and in Saved Messages. Confirmations need you: the signal amber.
@@ -118,21 +120,6 @@ const KIND: Record<Kind, { label: string; Icon: LucideIcon; tone: string; dot: s
   changes: { label: "Thay đổi", Icon: GitCompareArrows, tone: "bg-code-wash text-code", dot: "bg-code", tg: "🔄 Thay đổi" },
 };
 
-// Handled marks, per browser, refs only (chat, kind, message ids; a hash when an item cites none): never the text.
-const DONE = "briefDone";
-const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0).toString(36);
-const todoKey = (chat: string, kind: Kind, it: DigestItem) => `${chat}:${kind}:${it.message_ids?.length ? it.message_ids.join(",") : hash(it.text)}`;
-
-function useDone() {
-  const [done, setDone] = useState<Set<string>>(() => new Set(readList(DONE, [], isString)));
-  const toggle = (key: string) => setDone((prev) => {
-    const next = new Set(prev);
-    if (!next.delete(key)) next.add(key);
-    put(DONE, JSON.stringify([...next].slice(-500))); // ponytail: oldest marks drop off past 500
-    return next;
-  });
-  return [done, toggle] as const;
-}
 
 function meta(t: Todo) {
   if (t.kind === "confirmations") return t.who && `hỏi ${t.who}`;
@@ -263,6 +250,7 @@ function TodoRow({ t, closed, showKind, showGroup, onToggle, onOpen }: {
       <div className="grid min-w-0 flex-1 gap-1">
         <p className={cn("text-sm leading-relaxed text-ink transition-colors duration-(--dur-short)", closed && "text-ink-3 line-through decoration-ink-3/60")}>
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="rounded-sm text-left hover:text-hl-2">{t.text}</button>
+          <ItemFlags it={t} />
           <Tickets ids={t.tickets} />
         </p>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-3">
@@ -570,11 +558,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   const offline = allowed.length > 0 && allowed.every((i) => i.latest_id == null);
   const summarized = allowed.some((i) => i.saved);
   // Items whose cited message I have replied to on Telegram tick themselves off.
-  const answered = useQuery({
-    queryKey: ["briefing-answered"],
-    queryFn: ({ signal }) => api<Record<string, string[]>>("/briefing/answered", { signal }),
-    enabled: summarized, staleTime: 60_000,
-  });
+  const answered = useQuery({ ...answeredQuery, enabled: summarized });
   const [done, toggle] = useDone();
   // Asked of / assigned to me (my YouTrack name; a PO also answers to "PO" / "PM").
   const role = useRole();
@@ -596,9 +580,10 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   const shown = group ? todos.filter((t) => t.chat.chat_id === group) : todos;
   const tabs: [Tab, string, string][] = [
     ...(todos.some((x) => x.mine) ? [["mine", "Cần bạn", "bg-hl"] as [Tab, string, string]] : []),
+    ...(todos.some((x) => x.be) ? [["be", "Với BE", "bg-code"] as [Tab, string, string]] : []),
     ...KINDS.map((k) => [k, KIND[k].label, KIND[k].dot] as [Tab, string, string]),
   ];
-  const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : x.kind === t));
+  const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
   const left = (t: Tab) => inTabOf(t).filter((x) => !isClosed(x)).length;
   const cur = tabs.find(([t]) => t === tab)?.[0] ?? tabs.find(([t]) => left(t))?.[0] ?? "confirmations";
   const inTab = inTabOf(cur);
@@ -622,9 +607,15 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   }
 
   const open = (i: Pick<BriefingItem, "chat_id" | "title">) => onOpenDigest(i.chat_id, i.title);
+  // "Với BE" tab: each group's open Q&A with BE as topic cards (questions next to BE's answers), checkable against the code.
+  const beCards = (c: BriefingItem) => c.saved && (
+    <BeTopics chatId={c.chat_id} title={c.title} r={c.saved.result}
+      open={(k, it) => !isClosedItem(c.chat_id, k, it, done, answered.data)} onToggle={(k, it) => toggle(todoKey(c.chat_id, k, it))} />
+  );
+  const beGroups = (group ? allowed.filter((c) => c.chat_id === group) : allowed).filter((c) => openItems.some((t) => t.chat === c));
   const byGroup = !group && allowed.length > 1; // all groups: items sit under their group's heading
   const row = (t: Todo) => (
-    <TodoRow key={t.key} t={t} closed={isClosed(t)} showKind={cur === "mine"} showGroup={byGroup && isClosed(t)}
+    <TodoRow key={t.key} t={t} closed={isClosed(t)} showKind={cur === "mine" || cur === "be"} showGroup={byGroup && isClosed(t)}
       onToggle={() => toggle(t.key)} onOpen={() => open(t.chat)} />
   );
   const runButton = (
@@ -728,13 +719,28 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
                     items={tabs.map(([v, l]) => ({
                       value: v,
                       label: <span className="flex items-center gap-1.5">{l}<span className="font-mono tabular-nums opacity-70">{left(v)}</span></span>,
-                      title: v === "mine" ? "Câu hỏi chờ bạn trả lời và việc giao cho bạn (theo tên YouTrack / vai trò PO)" : undefined,
+                      title: v === "mine" ? "Câu hỏi chờ bạn trả lời và việc giao cho bạn (theo tên YouTrack / vai trò PO)"
+                        : v === "be" ? "Hỏi / trả lời / chốt với BE (API, field, data): đối chiếu với code để không sót" : undefined,
                     }))} />
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-2 pb-4 md:px-3">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div key={`${cur}:${group}`} {...FADE}>
-                      {openItems.length ? (
+                      {openItems.length && cur === "be" ? (
+                        <div className="grid gap-4 px-1.5">
+                          {beGroups.map((c) => (
+                            <section key={c.chat_id} aria-label={c.title} className="grid gap-1.5">
+                              {beGroups.length > 1 || !group ? (
+                                <h3 className="flex items-center gap-2 text-xs font-semibold text-ink-2">
+                                  <StatusDot i={c} r={runs[c.chat_id]} />
+                                  <button type="button" onClick={() => open(c)} className="min-w-0 truncate rounded-sm hover:text-ink hover:underline">{c.title}</button>
+                                </h3>
+                              ) : null}
+                              {beCards(c)}
+                            </section>
+                          ))}
+                        </div>
+                      ) : openItems.length ? (
                         byGroup ? (
                           <div className="grid gap-3">
                             {allowed.map((c) => [c, openItems.filter((t) => t.chat === c)] as const).filter(([, its]) => its.length).map(([c, its]) => (
@@ -753,7 +759,9 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
                               </section>
                             ))}
                           </div>
-                        ) : <ul aria-label="Việc cần xử lý" className="grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
+                        ) : (
+                          <ul aria-label="Việc cần xử lý" className="grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
+                        )
                       ) : (
                         <div className="grid justify-items-center gap-2 px-4 py-10 text-center">
                           <motion.span initial={{ scale: 0.6, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 400, damping: 18 }}

@@ -198,6 +198,25 @@ class AiDeepRequest(BaseModel):
     intro: str = Field("", max_length=2000)
 
 
+class DeepItem(BaseModel):
+    """One topic of Q&A with BE: its title / summary and the messages behind it."""
+
+    text: str = Field(max_length=1000)  # the digest's own summary of it
+    message_ids: list[str] = Field(min_length=1, max_length=10)
+    waiting: bool = False  # BE has not answered yet: trace what the code does now
+
+
+class AiDeepBatchRequest(BaseModel):
+    """Đối chiếu BE in bulk: several digest items of one chat (agreed with BE), traced through a project's code."""
+
+    chat_id: str
+    items: list[DeepItem] = Field(min_length=1, max_length=20)
+    project: str
+    instruction: str = Field("", max_length=2000)
+    platform: Literal["android", "ios", "mobile", "any"] = "android"
+    intro: str = Field("", max_length=2000)
+
+
 class AiTicketRequest(AiDraftRequest):
     instruction: str = Field("", max_length=2000)  # the user's note for the ticket
     types: list[str] = Field([], max_length=50)  # the YouTrack project's Type values
@@ -569,8 +588,10 @@ class DigestRequest(BaseModel):
     chat_id: str
     since: datetime | None = None  # used when message_ids is empty
     until: datetime | None = None  # default: now
-    message_ids: list[str] = Field(default=[], max_length=400)  # wins over the range
+    message_ids: list[str] = Field(default=[], max_length=2000)  # wins over the range
     after_id: int | None = None  # range only: skip messages a previous digest already read
+    # open items of the saved digest I closed (ticked / replied), as their joined message ids: not carried on
+    closed: list[Annotated[str, Field(max_length=400)]] = Field(default=[], max_length=500)
     teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt › Telegram)
 
@@ -591,6 +612,10 @@ class DigestItem(DigestRef):
     who: str = ""  # decided by / owner / who must confirm / team name
     due: str = ""  # actions only
     why: str = ""  # context: the problem behind it and how it was concluded
+    be: bool = False  # a question to / answer from / agreement with the backend team
+    topic: str = ""  # title of the topic it belongs to (kept when the item is carried to a later digest)
+    at: datetime | None = None  # open items: when it was first raised (its oldest cited message)
+    carried: bool = False  # open item kept from an earlier digest: nothing since settled it
 
 
 class DigestResult(BaseModel):

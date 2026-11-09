@@ -435,7 +435,38 @@ export function useMyTickets(on: boolean, poll = true) {
   const project = getPref("project") || "VA";
   const me = useQuery({ ...ytMeQuery, enabled: on });
   const q = useQuery({ queryKey: ["yt", "issues", project, "me"], queryFn: ({ signal }) => yt.issues(project, ["me"], signal), enabled: on && !!me.data?.name, retry: false, refetchInterval: poll && 5 * 60_000 });
-  return { me: me.data?.name ?? null, rows: q.data ?? NO_ROWS, project };
+  return { me: me.data?.name ?? null, rows: q.data ?? NO_ROWS, ready: !!q.data, project };
+}
+
+/** Tickets I just changed from the dashboard (assignee, field, comment): their next update is mine, not news (watch.tsx, checkNew). */
+export const selfEdits = new Map<string, number>();
+
+/** Desktop banner when the tab is in the background and "Thông báo trên máy" is on (bell popover on the YouTrack page). */
+export function deskNotify(title: string, body: string, onClick?: () => void) {
+  try {
+    if (!document.hidden || getPref("ytNotify") !== "1" || Notification.permission !== "granted") return;
+    const n = new Notification(title, { body, tag: "yt-watch" });
+    n.onclick = () => { focus(); onClick?.(); n.close(); };
+  } catch {} // no Notification API
+}
+
+const NEW_SEEN = "ytNewSeen"; // {project: ids}: my open tickets (assignee or QC) at the last look, from the full "me" list
+
+/** Open tickets newly given to me (assignee or QC) since the last look, in this session or an earlier one.
+ *  `rows` must be the whole "me" list: a narrower page scope would make the missing ones look new later. First look only records. */
+export function checkNew(project: string, me: string, rows: Ticket[], say: (id: string, text: string) => void) {
+  let all: Record<string, string[]> = {};
+  try { all = JSON.parse(getPref(NEW_SEEN) ?? "{}") ?? {}; } catch {}
+  const seen = all[project] ? new Set(all[project]) : null;
+  const mine = rows.filter((i) => !i.resolved && (i.assignee === me || i.qc === me));
+  put(NEW_SEEN, JSON.stringify({ ...all, [project]: mine.map((i) => i.id) }));
+  if (!seen) return;
+  const now = Date.now();
+  const fresh = mine.filter((i) => !seen.has(i.id) && i.reporter !== me && (selfEdits.get(i.id) ?? 0) < now - 3 * 60_000);
+  for (const i of fresh) say(i.id, `${i.assignee === me ? "Mới giao cho bạn" : "Mới nhờ bạn test"}: ${i.summary ?? ""}`);
+  // on a Mac the server shows the banner (yt_dashboard.watch_new), even with no page open: not twice
+  if (fresh.length && !navigator.userAgent.includes("Mac")) deskNotify(fresh.length === 1 ? `Ticket mới: ${fresh[0].id}` : `${fresh.length} ticket mới cho bạn`,
+    fresh.slice(0, 4).map((i) => `${i.id}: ${i.summary ?? ""}`).join("\n"));
 }
 
 const FINISHED = /^(fixed|done|resolved|verified|closed)$/i; // whole state names: not "Unresolved" / "Not fixed"
@@ -474,12 +505,18 @@ export function checkLoopBack(project: string, me: string, rows: Ticket[], say: 
   put(SEEN, JSON.stringify({ ...all, [project]: Object.keys(next).length > 500 ? cur : next }));
 }
 
-/** "Báo lại" outside the YouTrack page (mount in the Telegram shell): the shared 5-minute my-tickets poll, no extra requests. */
-export function useWatchGlobal(on: boolean, say: (id: string, text: string) => void) {
-  const { me, rows, project } = useMyTickets(on);
+/** Mounted in the shell of both modules: tickets newly given to me, and "Báo lại" (`loop`: off on the YouTrack page, whose
+ *  own watch does it) from the shared 5-minute my-tickets poll. */
+export function useWatchGlobal(loop: boolean, say: (id: string, text: string) => void) {
+  const { me, rows, ready, project } = useMyTickets(true);
   const said = useRef(say);
   useEffect(() => { said.current = say; });
-  useEffect(() => { if (me && rows.length) checkLoopBack(project, me, rows, (id, text) => said.current(id, text)); }, [project, me, rows]);
+  useEffect(() => {
+    if (!me || !ready) return;
+    const s = (id: string, text: string) => said.current(id, text);
+    checkNew(project, me, rows, s);
+    if (loop && rows.length) checkLoopBack(project, me, rows, s);
+  }, [project, me, rows, ready, loop]);
 }
 
 const FIXED = /(đã|da)\s*(fix|sửa|xong|deploy|merge|lên)|\b(fixed|deployed|resolved|build|retest)\b|test lại|lên (dev|test|stg|staging|uat)/i;

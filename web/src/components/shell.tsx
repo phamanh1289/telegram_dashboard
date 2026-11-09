@@ -16,6 +16,7 @@ import { Pill } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
 import { GuideButton } from "@/components/guide";
 import { YtLogo } from "@/components/yt-logo";
+import { note } from "@/components/yt/watch";
 
 // Chrome shared by the Telegram and YouTrack modules: the top bar and the toast.
 
@@ -51,8 +52,8 @@ function useUpdateState() {
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
 export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
   const risk = useYtRisk(module === "telegram");
-  // "Báo lại" also while on Telegram: a ticket of mine reaching Fixed / Done queues its Telegram mentions (same 5-min poll).
-  useWatchGlobal(module === "telegram", (id, text) => toast({ text: `${id}: ${text}` }));
+  // New tickets for me on every page; "Báo lại" also while on Telegram (the YouTrack page's own watch does it there). Same 5-min poll.
+  useWatchGlobal(module === "telegram", (id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
   const behind = useUpdateState();
   const router = useRouter();
   // "Theo hệ thống": follow the OS when it flips while the page is open.

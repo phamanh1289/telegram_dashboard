@@ -402,7 +402,7 @@ function TelegramGroup() {
   const privacy = usePrivacy();
   const [overdue, setOverdue] = useState(readOverdueHours);
   const qaRemind = useQaRemind();
-  const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "any" as const);
+  const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "tagged" as const);
   const [rowActions, setRowActions] = useState(readRowActions);
   const [platform, setPlatform] = useState(readPlatform);
   const [notify, setNotify] = useState(readNotify);
@@ -454,7 +454,7 @@ function TelegramGroup() {
         <Switch label="Thông báo khi có tag mới" checked={notify} onChange={(v) => void toggleNotify(v)} />
       </Row>
       {privacy.p && (
-        <Row label="Hiện nội dung tin trong thông báo macOS" desc="Banner macOS khi có tag mới (cả trên màn hình khóa, Notification Center). Tắt: chỉ hiện nhóm và người gửi.">
+        <Row label="Hiện nội dung tin trong thông báo macOS" desc="Banner macOS khi có tag mới hoặc ticket YouTrack mới giao cho bạn (cả trên màn hình khóa, Notification Center). Tắt: chỉ hiện nhóm và người gửi / mã ticket.">
           <Switch label="Hiện nội dung tin trong thông báo macOS" checked={privacy.p.notify_preview} disabled={privacy.busy} onChange={(v) => privacy.set({ notify_preview: v })} />
         </Row>
       )}

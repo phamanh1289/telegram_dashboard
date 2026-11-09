@@ -6,7 +6,7 @@ import { toast } from "@/lib/inbox";
 import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
-import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytMeQuery, ytProjectsQuery } from "@/lib/yt";
+import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytMeQuery, ytProjectsQuery } from "@/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
@@ -23,8 +23,7 @@ export type Sheet =
   | { kind: "list"; title: string; rows: Ticket[] }
   | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession };
 
-/** Tickets I just changed from the dashboard (assignee, field, comment): their next update is mine, not news (watch.tsx). */
-export const selfEdits = new Map<string, number>();
+export { selfEdits };
 
 export type TicketPatch = Partial<Ticket> & { id: string };
 /** The newest save per ticket (`id`) and per field (`id:key`): an older answer or rollback never lands over a newer edit. */

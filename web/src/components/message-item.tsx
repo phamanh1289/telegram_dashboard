@@ -1,6 +1,6 @@
 "use client";
 
-import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, Bot, Check, CheckCheck, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, RotateCcw, Star, UserX, Users } from "lucide-react";
 import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
@@ -467,25 +467,48 @@ function MoreItem({ icon, keys, children, ...rest }: { icon: React.ReactNode; ke
 /** Row button: attach this message to the next prompt of a Doing AI Agent session, Giao AI Agent or Đối chiếu BE
  *  (this group's first). Always shown, so the feature is found; with no Doing session the menu says so. The session
  *  list lives in the popup, so rows don't each watch the task list. */
-/** The session this message, or the one it replies to, names with "#REF-97c501" (a copied ask ends with it): the BE's
- *  answer goes back to the session that asked. */
-async function namedSession(qc: QueryClient, m: Message) {
-  const tasks = (await qc.ensureQueryData(taskListQuery)).filter((t) => t.mode !== "terminal");
-  const find = (text?: string | null) => [...(text ?? "").matchAll(SESSION_CODE)]
-    .map((x) => tasks.find((t) => t.id.slice(-6).toLowerCase() === x[1].toLowerCase())).filter(Boolean).at(-1);
-  return find(m.text) ?? (m.reply_to_id ? find((await qc.fetchQuery(messageQuery({ chat_id: m.chat_id, message_id: m.reply_to_id })).catch(() => null))?.text) : undefined);
-}
-
 /** Session id tails named in a text ("#REF-97c501", or the old "#AI-…"), lowercase. */
 const sessionTails = (text?: string | null) => [...(text ?? "").matchAll(SESSION_CODE)].map((x) => x[1].toLowerCase());
+const qaIds = (text?: string | null) => [...(text ?? "").matchAll(QA_CODE)].map((x) => x[1]);
+
+const CHAIN_MAX = 12; // ponytail: ancestors read one by one (cached per message); a deeper thread stops here
+
+/** The session (#REF-…) and Q&A (#QA…) a message answers: the nearest one named by it or any message up its reply chain
+ *  (a BE answer often replies to a reply to the copied ask). `at`: the message naming the session. Read on hover only. */
+const chainQuery = (qc: QueryClient, m: Message) => queryOptions({
+  queryKey: ["reply-chain", m.chat_id, m.message_id],
+  queryFn: async () => {
+    let tails: string[] = [], qas: string[] = [], at = "";
+    let cur: Message | null = m;
+    for (let i = 0; cur; i++) {
+      if (!tails.length && (tails = sessionTails(cur.text)).length) at = cur.message_id;
+      if (!qas.length) qas = qaIds(cur.text);
+      if ((tails.length && qas.length) || !cur.reply_to_id || i >= CHAIN_MAX) break;
+      const up: string = cur.reply_to_id;
+      cur = await qc.fetchQuery(messageQuery({ chat_id: m.chat_id, message_id: up })).catch((e) => {
+        if (!tails.length && !qas.length) throw e; // nothing found yet: an unread chain is an error, not "no session"
+        return null; // a deleted ancestor ends the walk with what was found below it
+      });
+    }
+    return { tails, qas, at };
+  },
+  staleTime: 60_000,
+  retry: false,
+});
+
+/** The open session a message's reply chain names, if any. */
+const findSession = (ts: Task[] | undefined, tails: string[]) =>
+  ts?.filter((t) => t.mode !== "terminal").findLast((t) => tails.includes(t.id.slice(-6).toLowerCase()));
 
 /** Badges for what this message answers: the AI Agent session and the Q&A questions it names, from its own text (no
  *  reads), plus the Q&A thread it sits in when the groups asked lately were read (`QaCodes`). A session badge opens the session, its clip attaches the message; a Q&A badge opens the question. A code
  *  only in the replied-to message is read when the row's clip (AttachPick) is hovered, never on render. */
 function AnswersFor({ m, qa }: { m: Message; qa: boolean }) {
+  const qc = useQueryClient();
   const own = useMemo(() => sessionTails(m.text), [m.text]);
   const inThread = useContext(QaCodes).get(msgKey(m))?.slice(3); // a reply in a thread, code or not
-  const qas = useMemo(() => qa ? [...new Set([...m.text.matchAll(QA_CODE)].map((x) => x[1]).concat(inThread ?? []))] : [], [m.text, inThread, qa]);
+  const chained = useQuery({ ...chainQuery(qc, m), enabled: false }).data?.qas; // filled once the clip was hovered
+  const qas = useMemo(() => qa ? [...new Set(qaIds(m.text).concat(inThread ?? [], chained ?? []))] : [], [m.text, inThread, chained, qa]);
   return <>
     {own.length > 0 && <SessionBadge m={m} tails={own} />}
     {qas.map((id) => (
@@ -500,7 +523,7 @@ function AnswersFor({ m, qa }: { m: Message; qa: boolean }) {
 }
 
 function SessionBadge({ m, tails }: { m: Message; tails: string[] }) {
-  const t = useQuery(taskListQuery).data?.filter((x) => x.mode !== "terminal").findLast((x) => tails.includes(x.id.slice(-6).toLowerCase()));
+  const t = findSession(useQuery(taskListQuery).data, tails);
   if (!t) return null;
   const name = sessionId(t);
   return (
@@ -531,30 +554,28 @@ function attachTo(t: Task, m: Message) {
 function AttachPick({ m }: { m: Message }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  // Hovering (or focusing) the clip reads the replied-to message once, only when this one names no session itself.
+  // Hovering (or focusing) the clip walks the reply chain once for a session / Q&A code (cached, shared with AnswersFor).
   const [peek, setPeek] = useState(false);
   const own = useMemo(() => sessionTails(m.text), [m.text]);
-  const parent = useQuery({
-    ...messageQuery({ chat_id: m.chat_id, message_id: m.reply_to_id ?? "" }),
-    enabled: peek && !own.length && !!m.reply_to_id,
-  });
-  const tails = own.length ? own : sessionTails(parent.data?.text);
-  const named = useQuery({
-    ...taskListQuery, enabled: peek && tails.length > 0,
-    select: (ts) => ts.filter((t) => t.mode !== "terminal").findLast((t) => tails.includes(t.id.slice(-6).toLowerCase())),
-  }).data;
+  const parent = useQuery({ ...chainQuery(qc, m), enabled: peek && !!m.reply_to_id });
+  const tails = own.length ? own : parent.data?.tails ?? [];
+  const named = useQuery({ ...taskListQuery, enabled: peek && tails.length > 0, select: (ts) => findSession(ts, tails) }).data;
   const name = named && sessionId(named);
+  const where = own.length || parent.data?.at === m.message_id ? "tin này"
+    : parent.data?.at === m.reply_to_id ? "tin gốc nó trả lời" : `tin #${parent.data?.at} trong chuỗi trả lời`;
   const toggle = (next: boolean) => {
     if (!next) return setOpen(false);
     if (named) return attachTo(named, m);
-    void namedSession(qc, m).catch(() => undefined).then((t) => (t ? attachTo(t, m) : setOpen(true)));
+    void Promise.all([qc.fetchQuery(chainQuery(qc, m)), qc.ensureQueryData(taskListQuery)]).catch(() => undefined)
+      .then((r) => { const t = r && findSession(r[1], r[0].tails); return t ? attachTo(t, m) : setOpen(true); });
   };
   return (
     <Menu.Root open={open} onOpenChange={toggle}>
       <Hint side="bottom" title={name || undefined} text={named
-        ? `Bấm để đính kèm tin này vào phiên ${name}${named.title ? ` (${named.title})` : ""}: ${own.length ? "tin này" : "tin gốc nó trả lời"} có mã phiên đó.`
-        : parent.isFetching ? "Đang xem tin gốc có mã phiên #REF-… không…"
-        : "Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent. Tin (hoặc tin gốc nó trả lời) có mã #REF-… thì tự vào đúng phiên đó."}>
+        ? `Bấm để đính kèm tin này vào phiên ${name}${named.title ? ` (${named.title})` : ""}: ${where} có mã phiên đó.`
+        : parent.isFetching ? "Đang đọc chuỗi trả lời tìm mã phiên #REF-… / #QA…"
+        : parent.isError ? errorText(parent.error, { not_connected: "Chưa kết nối Telegram", message_not_found: "Không tìm thấy tin gốc" }, "Không đọc được chuỗi trả lời").trim()
+        : "Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent. Tin (hoặc tin nào trong chuỗi trả lời) có mã #REF-… thì tự vào đúng phiên đó."}>
         <Menu.Trigger aria-label={name ? `Đính kèm vào phiên ${name}` : "Đính kèm vào phiên AI"} aria-busy={parent.isFetching}
           onClick={(e) => e.stopPropagation()} onPointerEnter={() => setPeek(true)} onFocus={() => setPeek(true)}
           className={cn("relative inline-flex h-[30px] min-w-[30px] items-center justify-center gap-1 rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-hl-wash hover:text-hl-2 data-popup-open:bg-hl-wash data-popup-open:text-hl-2",

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, MessageCircleQuestion, Rocket, Send, Sparkles } from "lucide-react";
+import { Check, FileText, MessageCircleQuestion, Rocket, Send, Sparkles } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -20,6 +20,7 @@ const LINES: Record<FetchKind, string[]> = {
   history: ["AI đang kết nối Telegram", "Đang đọc hội thoại của nhóm", "Đang gom tin trong khoảng đã chọn", "Sắp xong rồi"],
   qa: ["AI đang kết nối Telegram", "Đang đọc các câu hỏi #QA", "Đang gom câu trả lời trong chuỗi", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"],
   brief: ["AI đang kết nối Telegram", "Đang gom tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
+  agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
 /** Shortest time a loading scene stays up, so it plays through instead of flashing (user ask: 0.5–1s). */
@@ -38,7 +39,7 @@ export function useAiWait(pending: boolean, ms = AI_WAIT_MS) {
 }
 
 /**
- * Waiting on the data a feature reads; `project` names YouTrack ticket IDs, `lines` replaces the feature's own.
+ * Waiting on the data a feature reads; `project` names YouTrack ticket IDs (for `agent`: the project folder), `lines` replaces the feature's own.
  * `cover`: laid over the (relative) list box, so the rows render and scroll into place underneath during the hold.
  */
 export function AiFetching({ kind, project = "", lines, cover, className }: { kind: FetchKind; project?: string; lines?: string[]; cover?: boolean; className?: string }) {
@@ -265,6 +266,40 @@ const SCENES: Record<FetchKind, Scene> = {
         })}
       </div>
       <Bot className="-top-2 right-[70px] size-12" size="size-9" />
+    </>;
+  },
+
+  // handing a message to the agent: the message, its tickets and links fly into the robot, which loads them line by line into the session
+  agent: ({ p }) => {
+    const srcs = [[22, "Tin", <Tg key="t" className="size-6" icon="size-3" />], [80, "Ticket", <YtLogo key="y" className="size-6" />], [138, "Link", <FileText key="f" className="size-5 text-hl-2" />]] as const;
+    return <>
+      {([["Tin nhắn", 0, C.info], ["YT-128", 1, C.hl], ["link", 2, C.warn], ["Phân tích", 0, C.hl2], ["spec.md", 2, C.ok], ["YT-342", 1, C.hl]] as const)
+        .map(([t, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M56 ${y}C100 ${y} 110 80 138 80`}>{t}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={k} k={k} gap={0.6} dur={1.6} path="M182 80H236" className="size-1.5 rounded-full bg-hl" />)}
+      {srcs.map(([y, l, icon]) => (
+        <div key={l} className="absolute left-0 flex h-9 w-14 -translate-y-1/2 items-center gap-1 rounded-lg border border-rule bg-cotton px-1 shadow-stock" style={{ top: y }}>
+          {icon}<span className="font-mono text-[9px] font-semibold text-ink-3">{l}</span>
+        </div>
+      ))}
+      <Bot ring className="top-1/2 left-[118px] size-20 -translate-y-1/2" size="size-12" />
+      <div className="absolute top-4 right-0 bottom-4 w-[84px] overflow-hidden rounded-lg border border-rule bg-paper-2 shadow-stock">
+        <div className="flex items-center gap-0.5 border-b border-rule bg-cotton px-1.5 py-1">
+          {[C.err, C.warn, C.ok].map((c) => <span key={c} className="size-1.5 rounded-full" style={{ background: c }} />)}
+          <span className="ml-1 truncate font-mono text-[8px] text-ink-3">{p || "agent"}</span>
+        </div>
+        <div className="grid gap-2 p-1.5">
+          {[48, 36, 56, 30, 44].map((w, k) => {
+            const at = v({ "--fx-d": "4.5s", animationDelay: `${0.3 + k * 0.6}s` });
+            return (
+              <div key={k} className="flex items-center gap-1">
+                <Check className="fx-step size-2.5 shrink-0 text-ok" style={at} />
+                <span className="fx-step block h-1 rounded-full bg-ink-3/30" style={{ ...at, width: w }} />
+              </div>
+            );
+          })}
+          <span className="h-2 w-1 animate-pulse bg-hl" />
+        </div>
+      </div>
     </>;
   },
 };

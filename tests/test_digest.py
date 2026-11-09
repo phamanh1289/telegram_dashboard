@@ -131,7 +131,7 @@ async def test_revoked_during_call(dg):
 async def test_too_large_and_empty(dg):
     env, svc, provider = dg
     consent(env)
-    env.fake.history[A] = [at(A, i, "x", 0) for i in range(1, 402)]
+    env.fake.history[A] = [at(A, i, "x", 0) for i in range(1, 2002)]
     await expect("digest_too_large", svc.run(req()))
     env.fake.history[A] = [at(A, 1, "x" * 80_001, 0)]
     await expect("digest_too_large", svc.run(req()))
@@ -189,7 +189,7 @@ async def test_truncation_counted_before_filtering(dg):
     env, svc, provider = dg
     consent(env)
     blank = [at(A, i, "", 0) for i in range(1, 3)]  # nothing to summarize, but still messages
-    env.fake.history[A] = blank + [at(A, i, "x", 1) for i in range(3, 402)]
+    env.fake.history[A] = blank + [at(A, i, "x", 1) for i in range(3, 2002)]
     await expect("digest_too_large", svc.run(req()))
     assert provider.calls == []
 
@@ -288,10 +288,10 @@ async def test_prompt_keeps_data_block_closed_and_vn_time(dg):
 async def test_too_large_detail_says_why(dg):
     env, svc, provider = dg
     consent(env)
-    env.fake.history[A] = [at(A, i, "x", 0) for i in range(1, 402)]
+    env.fake.history[A] = [at(A, i, "x", 0) for i in range(1, 2002)]
     with pytest.raises(ApiError) as e:
         await svc.run(req())
-    assert "hơn 400 tin" in e.value.detail
+    assert "hơn 2.000 tin" in e.value.detail
     env.fake.history[A] = [at(A, 1, "x" * 80_001, 0)]
     with pytest.raises(ApiError) as e:
         await svc.run(req())
@@ -525,3 +525,81 @@ def test_qa_summary_reads_the_thread_and_builds_on_the_accepted_answer(settings,
         assert "API login trả 500?" in seen["user"] and "đã fix" in seen["user"]  # live reads: none of them stored
         assert '"accepted": true' in seen["user"] and seen["kw"]["feature"] == "qa-summary"
         assert c.post("/api/qa/summary", json={"chat_id": "-999", "message_ids": ["1"]}).status_code == 404
+
+# ---- busy groups: long stretches in parts, open items kept until settled, BE items -------------
+
+
+async def test_long_stretch_runs_in_parts_and_hands_open_items_on(dg):
+    env, svc, provider = dg
+    consent(env)
+    env.fake.history[A] = [at(A, i, f"tin {i}", 0) for i in range(1, 502)]  # 501: two AI calls
+    replies = iter([
+        '{"confirmations": [{"text": "BE trả field gì?", "who": "BE", "be": true, "message_ids": ["5"]}],'
+        ' "decisions": [{"text": "Dùng uuid", "be": "yes", "message_ids": ["9"]}]}',
+        '{"resolved": ["p1"], "decisions": [{"text": "BE: field status", "be": true, "message_ids": ["450"]}],'
+        ' "actions": [{"text": "Sửa màn A", "message_ids": ["460"]}]}',
+    ])
+    provider.on_call = lambda: setattr(provider, "reply", next(replies))
+    r = await svc.run(req())
+    assert len(provider.calls) == 2 and r.source_count == 501
+    assert "<open>" not in provider.calls[0]
+    assert '"key": "p1"' in provider.calls[1] and "BE trả field gì?" in provider.calls[1]
+    assert [d.text for d in r.decisions] == ["Dùng uuid", "BE: field status"]
+    assert [d.be for d in r.decisions] == [False, True]  # only a real true counts
+    assert r.confirmations == []  # settled by the second part
+    assert [a.text for a in r.actions] == ["Sửa màn A"] and r.actions[0].at == T0
+
+
+async def test_open_items_carry_to_the_next_digest_until_settled(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = '{"confirmations": [{"text": "PO confirm deadline?", "who": "PO", "message_ids": ["3"]}]}'
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1", "2", "3"]))
+    env.fake.history[A].append(at(A, 4, "chuyện khác", 20))
+    provider.reply = '{"decisions": [{"text": "x", "message_ids": ["4"]}]}'
+    r = await svc.run(req(after_id=3))
+    [c] = r.confirmations
+    assert (c.text, c.carried, c.at) == ("PO confirm deadline?", True, T0 + timedelta(minutes=10))
+    assert '"message_ids": ["3"]' in provider.calls[-1]  # the AI can match a reply to it
+    env.fake.history[A].append(at(A, 5, "deadline 30/11", 30).model_copy(update={"reply_to_id": 3}))
+    provider.reply = '{"resolved": ["p1"], "decisions": [{"text": "Deadline 30/11", "message_ids": ["5"]}]}'
+    r = await svc.run(req(after_id=4))
+    assert r.confirmations == [] and r.decisions[0].text == "Deadline 30/11"
+    # a run that reads the item's own messages again judges it afresh instead of carrying a copy
+    provider.reply = '{"confirmations": [{"text": "lại", "message_ids": ["3"]}]}'
+    await svc.run(DigestRequest(chat_id=A, message_ids=["3"]))
+    provider.reply = "{}"
+    r = await svc.run(DigestRequest(chat_id=A, message_ids=["3"]))
+    assert r.confirmations == []
+
+
+async def test_unreadable_part_keeps_everything_open(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = '{"actions": [{"text": "Sửa màn A", "message_ids": ["1"]}]}'
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"]))
+    provider.reply = "not json"
+    r = await svc.run(req(after_id=1))
+    assert r.raw == "not json" and [a.text for a in r.actions] == ["Sửa màn A"]
+
+
+async def test_briefing_ask_serializes_dates(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = '{"actions": [{"text": "Sửa màn A", "message_ids": ["1"]}]}'
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"]))
+    provider.reply = "ok"
+    assert await svc.ask("hôm nay làm gì?") == "ok"
+
+
+async def test_items_i_closed_are_not_carried(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = ('{"confirmations": [{"text": "a?", "message_ids": ["1", "2"]}],'
+                      ' "actions": [{"text": "b", "message_ids": ["3"]}]}')
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1", "2", "3"]))
+    env.fake.history[A].append(at(A, 4, "chuyện khác", 20))
+    provider.reply = "{}"
+    r = await svc.run(req(after_id=3, closed=["1,2"]))  # ticked off in Briefing
+    assert r.confirmations == [] and [a.text for a in r.actions] == ["b"]
+    assert "a?" not in provider.calls[-1]

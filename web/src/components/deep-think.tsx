@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, BrainCircuit, CheckCheck, CornerDownRight, Loader2 } from "lucide-react";
+import { ArrowDown, BrainCircuit, CheckCheck, CornerDownRight, ListChecks, Loader2 } from "lucide-react";
 import { type ReactNode, useCallback, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
 import { AiPromptBox } from "@/components/ai/chat";
@@ -93,10 +93,122 @@ export function DeepItemAction({ chatId, ids, className }: { chatId: string; ids
 const who = (m: Message) => (m.outgoing ? "Bạn" : (m.sender_name ?? "?"));
 const body = (m: Message) => m.text || (m.media_kind ? `[${m.media_kind === "photo" ? "ảnh" : "file"}]` : "");
 
-/** Mounted once (inbox): the dialog for the clicked message. */
+/** Mounted once (inbox): the dialog for the clicked message, or for a bulk check. */
 export function DeepThinking() {
   const t = useTarget();
+  const b = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => bulk, () => bulk);
+  if (b) return <BulkDialog key={b.chatId} b={b} onClose={() => openBulk(null)} />;
   return t ? <DeepDialog key={`${t.m.chat_id}:${t.m.message_id}`} c={t.m} preset={t.q} onClose={() => open(null)} /> : null;
+}
+
+// ---- in bulk: every BE item of a digest (Briefing's "BE" tab, a group's Tóm tắt) checked in one session ----------------
+
+type BulkItem = { text: string; message_ids: string[]; waiting?: boolean };
+type Bulk = { chatId: string; title: string; items: BulkItem[] };
+let bulk: Bulk | null = null;
+const openBulk = (b: Bulk | null) => { bulk = b; subs.forEach((f) => f()); };
+const MAX_BULK = 20; // the server's cap per session
+// The question and the latest of the discussion: the server takes ≤10 messages per item.
+const cap = (ids: string[]) => {
+  const s = [...ids].sort((a, b) => Number(a) - Number(b));
+  return s.length > 10 ? [s[0], ...s.slice(-9)] : s;
+};
+
+/** "Đối chiếu code N chủ đề": a group's topics with BE (agreed or still waiting), checked against the code in one session. */
+export function DeepBulkAction({ chatId, title, items, className }: { chatId: string; title: string; items: BulkItem[]; className?: string }) {
+  const list = items.filter((it) => it.message_ids.length);
+  if (!list.length) return null;
+  return (
+    <Hint side="bottom" title="Đối chiếu code theo chủ đề"
+      text="AI soi code dự án với từng chủ đề trao đổi với BE của nhóm này và trả về một bảng: đã adapt, lệch, chưa làm, hoặc với câu còn chờ BE: code hiện đang làm gì.">
+      <Button type="button" size="xs" variant="outline" className={cn("gap-1 [&_svg]:size-3", className)}
+        onClick={(e) => { e.stopPropagation(); openBulk({ chatId, title, items: list }); }}>
+        <ListChecks aria-hidden /> Đối chiếu code {list.length} chủ đề
+      </Button>
+    </Hint>
+  );
+}
+
+/** One topic card's check: its session once there is one (anchored on the topic's newest message), else the button. */
+export function DeepTopicAction({ chatId, item }: { chatId: string; item: BulkItem }) {
+  const ids = cap(item.message_ids);
+  const t = useDeepTaskAt(chatId, ids.at(-1));
+  if (!ids.length) return null;
+  if (t) return <TaskChip t={t} />;
+  return (
+    <Hint side="bottom" title="Đối chiếu code" text="AI soi code dự án với chủ đề này: đã làm đúng chưa, hoặc nếu BE chưa trả lời thì code hiện đang làm gì.">
+      <Button type="button" size="xs" variant="ghost" className="h-5 px-1 text-ink-3 hover:bg-hl-wash hover:text-hl-2 [&_svg]:size-3"
+        onClick={(e) => { e.stopPropagation(); openBulk({ chatId, title: item.text.split("\n")[0], items: [item] }); }}>
+        <BrainCircuit aria-hidden /> Đối chiếu code
+      </Button>
+    </Hint>
+  );
+}
+
+function BulkDialog({ b, onClose }: { b: Bulk; onClose: () => void }) {
+  const items = b.items.slice(0, MAX_BULK);
+  const [project, setProject] = useState(readAgentProject);
+  const projects = useProjects();
+  const projectOk = !!projects.data?.some((p) => p.path === project);
+  const [note, setNote] = useState("");
+  const qc = useQueryClient();
+  const chooseProject = (p: string) => { setProject(p); setPref("agentProject", p); };
+  const run = useMutation({
+    mutationFn: () => api<{ id: string }>("/ai/deep-batch", { method: "POST",
+      json: { chat_id: b.chatId, items: items.map((it) => ({ text: it.text.slice(0, 1000), message_ids: cap(it.message_ids), waiting: !!it.waiting })),
+        project, instruction: note.trim(), platform: readPlatform(), intro: readIntro() } }),
+    onSuccess: async ({ id }) => {
+      await qc.invalidateQueries({ queryKey: ["tasks"] });
+      onClose();
+      toast({ text: `Đang đối chiếu ${items.length} chủ đề với code`, action: { label: "Xem", run: () => openTask(id) } });
+    },
+  });
+  const blocker = !projectOk ? "Chọn dự án để AI đọc code" : null;
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="ai-in flex max-h-[calc(100dvh-2.5rem)] flex-col gap-4 sm:max-w-xl">
+        <div className="grid gap-1">
+          <DialogTitle className="flex items-center gap-2"><ListChecks className="size-4 text-ink-3" aria-hidden /> Đối chiếu code: {b.title}</DialogTitle>
+          <DialogDescription>AI soi code dự án với từng chủ đề trao đổi với BE, rồi trả về một bảng: ✅ đã adapt, ⚠️ lệch, ❌ chưa làm, ⏳ chờ BE (code hiện đang làm gì), kèm việc cần sửa.</DialogDescription>
+        </div>
+        <ol aria-label="Chủ đề sẽ đối chiếu" className="grid min-h-0 list-decimal gap-1 overflow-y-auto rounded-[var(--radius-card)] border border-rule bg-cotton py-2 pr-3 pl-8 text-sm leading-relaxed">
+          {items.map((it, i) => (
+            <li key={i} className="text-ink">{it.text.split("\n")[0]}{it.waiting && <span className="ml-1.5 text-xs text-signal-2">chờ BE</span>}</li>
+          ))}
+        </ol>
+        {b.items.length > MAX_BULK && <p className="text-xs text-warn">Chỉ đối chiếu {MAX_BULK} chủ đề đầu; còn {b.items.length - MAX_BULK} chủ đề, chạy lại sau khi xử lý bớt.</p>}
+        <div className="grid gap-2">
+          <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
+          <IntroNotice compact />
+        </div>
+        {run.isError && (
+          <p role="alert" className="text-sm text-error">
+            {errorText(run.error, {
+              project_not_found: "Dự án không còn trong danh sách, hãy chọn lại.",
+              ai_agent_missing: "Không tìm thấy AI CLI để đọc dự án, xem Cài đặt › AI.",
+              ai_not_configured: "Chưa cấu hình AI, xem Cài đặt › AI.",
+              message_not_found: "Không đọc được tin gốc của các chủ đề (cần đang kết nối Telegram).",
+              ai_context_too_large: "Các chủ đề quá dài; đối chiếu từng chủ đề trên thẻ của nó.",
+            }, "Không chạy được đối chiếu.")}
+          </p>
+        )}
+        <AiPromptBox aria-label="Yêu cầu thêm" placeholder="Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán" maxLength={2000}
+          value={note} onChange={setNote} onSend={() => { if (!blocker && !run.isPending) run.mutate(); }} running={run.isPending}
+          tools={<>
+            <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
+            {blocker && <span className="text-ink-3">{blocker}</span>}
+          </>}
+          actions={
+            <Hint text="Giao AI Agent đối chiếu các chủ đề với code dự án (Enter)" side="bottom">
+              <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" aria-busy={run.isPending}
+                disabled={!!blocker || run.isPending} onClick={() => run.mutate()}>
+                {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ListChecks aria-hidden />} Đối chiếu {items.length} chủ đề
+              </Button>
+            </Hint>
+          } />
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 /** One message of the pair, as a card: what it is, who said it, all of its text. */

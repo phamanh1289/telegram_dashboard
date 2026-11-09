@@ -16,9 +16,15 @@ from .errors import ApiError
 from .models import DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store, _dt
 
-MAX_MESSAGES = 400
-MAX_CHARS = 80_000
+MAX_MESSAGES = 400  # per AI call
+MAX_CHARS = 80_000  # per AI call
+MAX_RUN = 2_000  # per digest: a longer stretch is read in calls of ≤ MAX_MESSAGES / MAX_CHARS
+MAX_CALLS = 5
+OWN = ("message_ids", "tickets", "be", "at", "carried")  # set by us, never taken as text from the model
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
+OPEN = ("confirmations", "actions")  # what still waits on someone: kept until a later digest settles it
+CARRY_DAYS = 30  # ponytail: an open item nobody settled in a month drops off; a "closed" store if that misses things
+MAX_CARRY = 60
 STATUSES = ("decided", "open", "dropped")
 TICKET = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 log = logging.getLogger(__name__)
@@ -40,9 +46,18 @@ the message that settled it), and also has "why": 1-2 sentences of context a rea
 the chat needs - the problem behind it and how the conclusion was reached (who proposed, who \
 agreed, quoting the deciding message when short). "text" must make sense on its own: name the \
 subject (feature, screen, module, API), not only the verdict. Every item and topic also has \
-"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Never invent \
+"tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Every item \
+(not topic) has "be": true when it is a question to, an answer from or an agreement with the \
+backend (BE) team (API, endpoint, request / response field, data, DB, server logic), else false, and \
+"topic": the exact "title" of the topic it belongs to. Never invent \
 facts: leave a field empty or drop the item when unsure; empty lists are fine. Write every text \
 in Vietnamese, short and concrete."""
+
+CARRY = """
+<open> lists items still open from earlier in this chat (key "p1", "p2"…); their messages are older than \
+<messages>, which may answer them (a reply_to may point at one of their message_ids). Add a key "resolved": \
+the keys of <open> items that <messages> settles (answered, confirmed, done or cancelled); report what settled \
+them in "decisions" / "changes" as usual. Never repeat an <open> item in "confirmations" / "actions"."""
 
 ASK = """<briefing> holds the latest AI digests of the user's work groups (JSON per group: \
 decisions, changes, impacts, confirmations = open questions, actions = to-dos, topics). Answer \
@@ -74,7 +89,7 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
     """The model's JSON object, cleaned: unknown ids dropped, fields coerced to strings.
     None (show it raw) when no JSON object can be read or it uses none of our keys."""
     data = json_object(text)
-    if data is None or (data and not set(data) & set(KEYS)):
+    if data is None or (data and not set(data) & {*KEYS, "resolved"}):
         return None
     out: dict = {}
     for key in KEYS:
@@ -83,7 +98,9 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
         for it in items if isinstance(items, list) else []:
             if not isinstance(it, dict):
                 continue
-            row = {k: _field(v) for k, v in it.items() if k not in ("message_ids", "tickets") and v is not None}
+            row = {k: _field(v) for k, v in it.items() if k not in OWN and v is not None}
+            if key != "topics":
+                row["be"] = it.get("be") is True
             tix = it.get("tickets")
             row["tickets"] = list(dict.fromkeys(
                 t.upper() for t in (tix if isinstance(tix, list) else []) if isinstance(t, str) and TICKET.match(t)
@@ -95,7 +112,38 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
                 row["status"] = "open"
             rows.append(row)
         out[key] = rows
+    done = data.get("resolved")
+    out["resolved"] = [str(k) for k in done] if isinstance(done, list) else []
     return out
+
+
+def _chunks(msgs: list[StoredMessage]) -> list[list[StoredMessage]]:
+    """Consecutive stretches of ≤ MAX_MESSAGES / MAX_CHARS (each message fits one: checked before)."""
+    out, cur, size = [], [], 0
+    for m in msgs:
+        n = len(_text(m))
+        if cur and (len(cur) >= MAX_MESSAGES or size + n > MAX_CHARS):
+            out.append(cur)
+            cur, size = [], 0
+        cur.append(m)
+        size += n
+    return [*out, cur] if cur else out
+
+
+def _carry(prev: dict | None, seen: set[str], closed: set[str]) -> list[tuple[str, dict]]:
+    """Open items of the saved digest, as (key, item), that this run does not read again (it re-judges those) and
+    the user has not closed (`closed`: their joined message ids, as Briefing keys its ticks)."""
+    if prev is None:
+        return []
+    res = DigestResult.model_validate_json(prev["result"])
+    made, old = _dt(prev["created_at"]), datetime.now(UTC) - timedelta(days=CARRY_DAYS)
+    out = []
+    for key in OPEN:
+        for it in getattr(res, key):
+            at = aware(it.at) or made
+            if at >= old and not set(it.message_ids) & seen and ",".join(it.message_ids) not in closed:
+                out.append((key, it.model_dump() | {"at": at, "carried": True}))
+    return out[-MAX_CARRY:]
 
 
 class DigestService:
@@ -128,43 +176,52 @@ class DigestService:
             msgs = await self.bridge.fetch_ids(req.chat_id, ids)
             since = until = None
         elif since is not None:
-            msgs = await self.bridge.fetch_range(req.chat_id, since, until, MAX_MESSAGES + 1)
+            msgs = await self.bridge.fetch_range(req.chat_id, since, until, MAX_RUN + 1)
             if req.after_id is not None:  # `since` has 1s precision: the boundary would repeat
                 msgs = [m for m in msgs if m.message_id > req.after_id]
         else:
             msgs = []
-        too_many = len(msgs) > MAX_MESSAGES  # before filtering: the range itself is too long
+        too_many = len(msgs) > MAX_RUN  # before filtering: the range itself is too long
         msgs = [m for m in msgs if m.chat_id == req.chat_id and not m.deleted and _text(m)]
         if not msgs:
             raise ApiError(422, "digest_empty")
         chars = sum(len(_text(m)) for m in msgs)
-        if too_many or chars > MAX_CHARS:
-            why = f"hơn {MAX_MESSAGES} tin" if too_many else f"{_num(chars)} ký tự"
+        big = max(len(_text(m)) for m in msgs)
+        chunks = [] if too_many or big > MAX_CHARS else _chunks(msgs)
+        if not chunks or len(chunks) > MAX_CALLS:
+            why = (f"hơn {_num(MAX_RUN)} tin" if too_many else f"một tin dài {_num(big)} ký tự" if big > MAX_CHARS
+                   else f"{_num(chars)} ký tự")  # fmt: skip
             raise ApiError(
                 422, "digest_too_large",
-                detail=f"Khoảng này có {why} (tối đa {MAX_MESSAGES} tin / {_num(MAX_CHARS)} "
-                "ký tự); hãy thu hẹp khoảng thời gian hoặc chọn bớt tin.",
+                detail=f"Khoảng này có {why} (tối đa {_num(MAX_RUN)} tin, {_num(MAX_CHARS)} ký tự mỗi lượt AI, "
+                f"{MAX_CALLS} lượt); hãy thu hẹp khoảng thời gian hoặc chọn bớt tin.",
             )  # fmt: skip
-        context = [
-            {
-                "id": str(m.message_id),
-                "at": m.date.astimezone(VN).strftime("%d/%m %H:%M"),
-                "from": "me" if m.outgoing else (m.sender_name or "?"),
-                **({"reply_to": str(m.reply_to_id)} if m.reply_to_id else {}),
-                "text": _text(m),
-            }
-            for m in msgs
-        ]
-        prompt = TASK
-        if teams := [t.strip() for t in req.teams if t.strip()]:
-            prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
-        prompt += about_user(req.intro)
-        prompt += f"\n<messages>\n{data_json(context)}\n</messages>"
-        text = await self.ai.ask(prompt, feature="digest", brief=True)
-        parsed = parse_result(text, {c["id"] for c in context})
+        # Open items of the last digest ride along until a run settles them: a busy chat never drops a question.
+        # A long stretch is read in parts the same way: each part gets what the earlier parts left open.
+        prev = await self.db.read(self.store.get_digest, req.chat_id)
+        pending = _carry(prev, {str(m.message_id) for m in msgs}, set(req.closed))
+        out: dict[str, list] = {k: [] for k in KEYS}
+        raws = []
+        for part in chunks:
+            text, parsed = await self._ask(req, part, pending)
+            if parsed is None:  # unreadable: nothing is known to be settled, so everything open stays
+                raws.append(text)
+                continue
+            done = set(parsed.pop("resolved"))
+            pending = [p for i, p in enumerate(pending, 1) if f"p{i}" not in done]
+            dates = {str(m.message_id): m.date for m in part}
+            for key in KEYS:
+                if key not in OPEN:
+                    out[key] += parsed[key]
+                    continue
+                for row in parsed[key]:
+                    row["at"] = min((dates[i] for i in row["message_ids"]), default=part[-1].date)
+                    pending.append((key, row))
+        for key, row in pending:
+            out[key].append(row)
         result = DigestResult(
-            **(parsed or {}),
-            raw="" if parsed is not None else text,
+            **out,
+            raw="\n\n".join(raws),
             source_count=len(msgs),
             since=since,
             until=until,
@@ -181,6 +238,31 @@ class DigestService:
             )  # fmt: skip
         return result
 
+    async def _ask(self, req: DigestRequest, part: list[StoredMessage], pending: list[tuple[str, dict]]):
+        """One AI call over `part`, with the items still open before it: (text, parsed or None)."""
+        context = [
+            {
+                "id": str(m.message_id),
+                "at": m.date.astimezone(VN).strftime("%d/%m %H:%M"),
+                "from": "me" if m.outgoing else (m.sender_name or "?"),
+                **({"reply_to": str(m.reply_to_id)} if m.reply_to_id else {}),
+                "text": _text(m),
+            }
+            for m in part
+        ]
+        prompt = TASK
+        if teams := [t.strip() for t in req.teams if t.strip()]:
+            prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
+        prompt += about_user(req.intro)
+        if pending:
+            rows = [{"key": f"p{i}", "kind": "confirm" if key == "confirmations" else "action",
+                     **{f: it[f] for f in ("text", "who", "due", "message_ids") if it.get(f)}}
+                    for i, (key, it) in enumerate(pending, 1)]  # fmt: skip
+            prompt += f"{CARRY}\n<open>\n{data_json(rows)}\n</open>"
+        prompt += f"\n<messages>\n{data_json(context)}\n</messages>"
+        text = await self.ai.ask(prompt, feature="digest", brief=True)
+        return text, parse_result(text, {c["id"] for c in context})
+
     async def ask(self, question: str, intro: str = "", on_text=None) -> str:
         """A question about every consented group's saved digest (the AI's own earlier output, no
         new messages are read)."""
@@ -192,7 +274,7 @@ class DigestService:
             if not (r["consent"] and r["digest"]):
                 continue
             res = DigestResult.model_validate_json(r["digest"]["result"])
-            keep = res.model_dump(include=set(KEYS), exclude_defaults=True)
+            keep = res.model_dump(mode="json", include=set(KEYS), exclude_defaults=True)
             at = _dt(r["digest"]["created_at"]).astimezone(VN).strftime("%d/%m %H:%M")
             data.append({"group": r["title"], "summarized_at": at, **keep})
         if not data:
@@ -211,10 +293,12 @@ class DigestService:
 
         async def one(r: dict) -> tuple[str, list[str]]:
             res = DigestResult.model_validate_json(r["digest"]["result"])
-            cited = {i for k in ("confirmations", "actions") for it in getattr(res, k) for i in it.message_ids}
+            items = [it for k in OPEN for it in getattr(res, k)]
+            cited = {i for it in items for i in it.message_ids}
             if not cited:
                 return r["chat_id"], []
             since = aware(res.since) or _dt(r["digest"]["last_date"]) - timedelta(days=7)
+            since = min([since, *(aware(it.at) for it in items if it.at)])  # carried items were asked earlier
             try:
                 async with live:
                     msgs = await self.bridge.fetch_range(r["chat_id"], since, now, MAX_MESSAGES)

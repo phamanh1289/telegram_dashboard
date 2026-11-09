@@ -98,8 +98,8 @@ const waiting = (i: QaItem) => !i.done && !answered(i);
 const TAG = /(?<![\w.])@(\w{5,32})/g;
 const hasTag = (s: string) => new RegExp(TAG.source).test(s) || s.includes("](tg://user?id="); // or tagged by name (@ popup)
 /** Answered: you marked an answer, or someone other than the asker replied (the asker's own "up" / thanks is no
- *  answer); with Cài đặt › "Người được tag", only a reply from someone the question tagged (@username or a name
- *  mention) counts, when it tagged anyone. Reads its prefs live: pages re-render on a prefs change (`useNow`). */
+ *  answer); by default (Cài đặt › "Người được tag") only a reply from someone the question tagged (@username or a
+ *  name mention) counts, when it tagged anyone. Reads its prefs live: pages re-render on a prefs change (`useNow`). */
 function answered(i: QaItem) {
   if (accepted(i)) return true;
   const others = i.answers.filter((a) => a.sender_id !== i.question.sender_id);
@@ -206,8 +206,8 @@ export type QaDays = (typeof QA_DAYS)[number][0];
 type Filter = "open" | "done" | "closed" | "mine" | "all";
 const FILTERS: [Filter, string, (i: QaItem) => boolean, string][] = [
   ["all", "Tất cả", () => true, ""],
-  ["open", "Chờ trả lời", waiting, "Chưa ai (ngoài người hỏi; hoặc người được tag, theo Cài đặt) trả lời, chưa chốt, chưa đánh dấu xong"],
-  ["done", "Đã trả lời", (i) => !i.done && answered(i), "Đã có người trả lời, hoặc bạn đã chốt câu trả lời"],
+  ["open", "Chờ trả lời", waiting, "Người được tag chưa trả lời (hoặc bất kỳ ai ngoài người hỏi, theo Cài đặt), chưa chốt, chưa đánh dấu xong"],
+  ["done", "Đã trả lời", (i) => !i.done && answered(i), "Người được tag đã trả lời (hoặc bất kỳ ai, theo Cài đặt), hoặc bạn đã chốt câu trả lời"],
   ["closed", "Xong", (i) => i.done, "Bạn đã đánh dấu xong: không nhắc, không tính là chờ"],
   ["mine", "Bạn hỏi", (i) => i.question.outgoing, "Câu hỏi bạn đăng"],
 ];

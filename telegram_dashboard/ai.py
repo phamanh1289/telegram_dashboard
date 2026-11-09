@@ -146,6 +146,22 @@ DEEP_TASK = (
     "versions, regressions; **Cần hỏi lại**: specific questions per field / case still unclear "
     "(omit if none)."
 )
+DEEP_BATCH_TASK = (
+    "<items> lists topics of Q&A with the backend (BE) team in a work chat: each has a summary, a status (\"agreed\": "
+    "BE answered / it was settled; \"waiting\": BE has not answered yet) and the Telegram messages it is based on "
+    "(the questions, the discussion, BE's answers). The current directory is the user's project. For every agreed "
+    "topic check whether the code already follows it; for every waiting one, find what the code does now and what "
+    "each likely answer would need. Read and trace what it touches (API endpoints, request/response models and "
+    "parsing, screens, state, validation, error handling). "
+    "Read every linked document in full before concluding. Never quote secrets (.env, keys, tokens); never claim "
+    "code you did not read; never guess: where the messages and code are not enough, say so. Do not edit files. "
+    "Answer in Vietnamese Markdown, no preamble: first a table with one row per item, in order: **#**, **Mục** "
+    "(short), **Trạng thái** (✅ Đã adapt / ⚠️ Lệch / ❌ Chưa làm / ⏳ Chờ BE / ❓ Chưa rõ), **Bằng chứng** "
+    "(`path:line`, or why not found; for ⏳ what the code does now); then **Cần bổ sung / thay đổi**: for each "
+    "⚠️ / ❌ item, and each ⏳ item whose answer will need code changes, a numbered list of concrete changes (item #, "
+    "file, what and why), each sized nhỏ/vừa/lớn; **Rủi ro**: edge cases, old data / versions, regressions; "
+    "**Cần hỏi lại**: specific questions still unclear (omit if none)."
+)
 # No self-introduction: say who the user is taken to be (as the AI Agent prompt does), instead of guessing silently.
 NO_INTRO = (
     '\nThe user has not introduced themselves: open the answer with one line "⚠ Giả định: …" saying who you take '
@@ -194,6 +210,14 @@ def _scrub(v):
     if isinstance(v, dict):
         return {k: _scrub(x) for k, x in v.items()}
     return v
+
+
+def _deep_task(task: str, platform: str, intro: str, instruction: str) -> str:
+    """Đối chiếu BE's task with the platform focus, who the user is (or the assumption line) and their note."""
+    if platform in PLATFORM_FOCUS:
+        task += f"\nUnless the messages clearly concern something else, analyze from {PLATFORM_FOCUS[platform]}."
+    task += about_user(intro) or NO_INTRO
+    return task + (f"\nUser instruction: {instruction}" if instruction else "")
 
 
 def data_json(v) -> str:
@@ -418,20 +442,58 @@ class AiService:
         def one(m):
             return {"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
 
-        task = DEEP_TASK
-        if platform in PLATFORM_FOCUS:
-            task += (
-                "\nUnless the messages clearly concern something else, analyze from "
-                f"{PLATFORM_FOCUS[platform]}."
-            )
-        task += about_user(intro) or NO_INTRO
-        if instruction:
-            task += f"\nUser instruction: {instruction}"
+        task = _deep_task(DEEP_TASK, platform, intro, instruction)
         user = (
             f"{task}\n<question>\n{data_json(one(by_id[q]))}\n</question>"
             f"\n<confirm>\n{data_json(one(by_id[c]))}\n</confirm>"
         )
         return user, f"Hỏi: {by_id[q].text[:150]}\nBE: {by_id[c].text[:150]}"
+
+    async def deep_batch(
+        self,
+        chat_id: str,
+        items: list[tuple[str, list[str], bool]],
+        project: str,
+        instruction: str = "",
+        platform: str = "android",
+        fetch=None,
+        intro: str = "",
+    ) -> tuple[str, str, int]:
+        """Đối chiếu BE by topic: (summary, cited message ids, still waiting for BE) of one chat, traced through
+        `project`. Returns (prompt, title, anchor) for a read-only AI Agent session: the anchor is the newest cited
+        message when it checks one topic (its card shows the session), else None. No tracking gate."""
+        if not await self.db.read(self.store.has_project, project):
+            raise ApiError(404, "project_not_found")
+        try:
+            per = [(text, sorted({int(i) for i in ids}), waiting) for text, ids, waiting in items]
+        except ValueError:
+            raise ApiError(422, "ai_scope_not_allowed") from None
+        want = sorted({i for _, ids, _ in per for i in ids})
+        if not want or want[0] < 1 or want[-1] >= 2**31:  # Telegram ids are int32
+            raise ApiError(422, "ai_scope_not_allowed")
+        msgs, _ = await self.db.read(self.store.get_messages_by_ids, chat_id, want)
+        msgs = [m for m in msgs if not m.deleted]
+        missing = [i for i in want if i not in {m.message_id for m in msgs}]
+        if missing and fetch is not None:
+            msgs += [m for m in await fetch(chat_id, missing) if m.chat_id == chat_id and not m.deleted]
+        by_id = {m.message_id: m for m in msgs}
+        rows = [(text, [by_id[i] for i in ids if i in by_id], waiting) for text, ids, waiting in per]
+        rows = [r for r in rows if r[1]]
+        if not rows:
+            raise ApiError(404, "message_not_found")
+        if sum(len(m.text) for m in by_id.values()) > 4 * MAX_CONTEXT_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
+            raise ApiError(422, "ai_context_too_large")
+        data = [{"n": n, "summary": text, "status": "waiting" if waiting else "agreed",
+                 "messages": [{"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
+                              for m in found]}
+                for n, (text, found, waiting) in enumerate(rows, 1)]  # fmt: skip
+        user = f"{_deep_task(DEEP_BATCH_TASK, platform, intro, instruction)}\n<items>\n{data_json(data)}\n</items>"
+        head = rows[0][0].split("\n")[0][:120]
+        if len(rows) > 1:
+            return user, f"Đối chiếu {len(rows)} chủ đề BE: {head}", None
+        return user, f"Đối chiếu BE: {head}", max(m.message_id for m in rows[0][1])
 
     async def qa_summary(self, chat_id: str, ids: list[int], fetch=None, accepted: int | None = None, intro: str = "",
                          on_text=None) -> str:  # fmt: skip

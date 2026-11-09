@@ -188,6 +188,15 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     assert store.qa_marks(A) == {"#QA11": "done", "#QA22": "deleted"}
     client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
     assert store.qa_marks(A) == {"#QA22": "deleted"}
+    # Done on the tag itself (the list / reply panel, not the session): the session's Q&A follows too.
+    client.put(f"/api/chats/{A}/messages/4/handled", json=done, headers=H)
+    assert store.qa_marks(A) == {"#QA11": "done", "#QA22": "deleted"}
+    # A tag on no session with its own #QA code: Done / reopen on it moves that Q&A too.
+    store.apply_message(msg(A, 7, "@me xem giúp\n#QA33"))
+    client.put(f"/api/chats/{A}/messages/7/handled", json=done, headers=H)
+    assert store.qa_marks(A)["#QA33"] == "done"
+    client.put(f"/api/chats/{A}/messages/7/handled", json={"handled": False, "react": False}, headers=H)
+    assert "#QA33" not in store.qa_marks(A)
     client.put("/api/tasks/t1/handled", json=done, headers=H)
     p = task_result_path(settings, "t1")
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -390,3 +399,20 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         assert t["title"] == "Hỏi: BE ơi API trả field gì?\nBE: field là status" and "<confirm>" in t["prompt"]
         same = c.post("/api/ai/deep", json=body | {"confirm_id": "4"}, headers=H).json()
         assert same["error"]["code"] == "ai_scope_not_allowed"
+        # in bulk: digest items (summary + cited ids) of one chat, one session anchored on the newest cited message
+        items = [{"text": "Field status", "message_ids": ["4", "5"]}, {"text": "Gone", "message_ids": ["99"]}]
+        r = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
+        assert r.status_code == 200, r.text
+        t = next(t for t in c.get("/api/tasks").json() if t["id"] == r.json()["id"])
+        assert (t["kind"], t["mode"], t["message_id"]) == ("deep", "plan", "5")  # one topic: its card shows it
+        assert t["title"] == "Đối chiếu BE: Field status"  # the item whose messages are gone is left out
+        assert "<items>" in t["prompt"] and "field là status" in t["prompt"] and "Gone" not in t["prompt"]
+        # several topics, one still waiting for BE: traced too, the session sits on no single message
+        items = [{"text": "Field status", "message_ids": ["5"]},
+                 {"text": "Có discount?", "message_ids": ["4"], "waiting": True}]
+        r = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
+        t = next(t for t in c.get("/api/tasks").json() if t["id"] == r.json()["id"])
+        assert t["message_id"] is None and t["title"] == "Đối chiếu 2 chủ đề BE: Field status"
+        assert '"status": "waiting"' in t["prompt"] and "⏳ Chờ BE" in t["prompt"]
+        bad = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": [], "project": str(proj)}, headers=H)
+        assert bad.status_code == 422
