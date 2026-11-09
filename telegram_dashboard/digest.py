@@ -8,8 +8,7 @@ how far digests have read (digests), both dropped with the consent.
 import asyncio
 import logging
 import re
-from datetime import UTC, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime, timedelta, timezone
 
 from .ai import AiService, about_user, data_json, json_object
 from .errors import ApiError
@@ -28,7 +27,9 @@ MAX_CARRY = 60
 STATUSES = ("decided", "open", "dropped")
 TICKET = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 log = logging.getLogger(__name__)
-VN = ZoneInfo("Asia/Ho_Chi_Minh")  # what the UI shows; the server's own zone may be UTC
+# What the UI shows; the server's own zone may be UTC. Fixed +07:00 (VN has no DST): ZoneInfo needs a tz
+# database the bundled Windows Python lacks ("No time zone found with key Asia/Ho_Chi_Minh" at startup).
+VN = timezone(timedelta(hours=7), "ICT")
 
 TASK = """Analyze the group conversation in <messages>: a work chat where several subjects are \
 mixed together without topics.

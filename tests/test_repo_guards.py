@@ -31,6 +31,11 @@ def test_no_native_select_outside_ui():
     assert _hits(files, re.compile(r"<select\b")) == []
 
 
+def test_no_zoneinfo():
+    """The bundled Windows Python has no tz database: ZoneInfo("Asia/...") crashed 0.1.7 at startup. Use digest.VN."""
+    assert _hits((ROOT / "telegram_dashboard").rglob("*.py"), re.compile(r"\bZoneInfo\(")) == []
+
+
 @pytest.mark.skipif(not shutil.which("git"), reason="git not installed")
 def test_no_private_key_in_repo():
     """The release signing key lives in ~/.config and a GitHub secret only; no tracked or new file holds one."""
