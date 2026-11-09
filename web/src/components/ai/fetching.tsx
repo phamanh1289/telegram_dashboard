@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileText, MessageCircleQuestion, Rocket, Send, Server, Sparkles } from "lucide-react";
+import { Check, FileText, GitBranch, MessageCircleQuestion, PackageCheck, Rocket, Send, Server, Sparkles } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -22,6 +22,7 @@ const LINES: Record<FetchKind, string[]> = {
   brief: ["AI đang kết nối Telegram", "Đang gom tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   digest: ["AI đang đọc hội thoại của nhóm", "Đang ghép câu hỏi với câu trả lời", "Đang gom theo chủ đề, đánh dấu trao đổi với BE", "Đang tìm việc cần confirm, điều đã chốt", "Sắp xong rồi"],
   today: ["AI đang gom việc của bạn", "Đang đọc tag chờ và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang xếp theo độ gấp", "Sắp xong rồi"],
+  update: ["AI đang kết nối GitHub", "Đang kéo bản mới về", "Đang kiểm checksum và chữ ký", "Đang cài bản mới", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -320,6 +321,17 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // handing a message to the agent: the message, its tickets and links fly into the robot, which loads them line by line into the session
+  // update: the release (tag, zip, checksum, signature) streams from GitHub into the robot, which hands the checked package to the app
+  update: ({ p }) => <>
+    <Cone className="inset-y-7 right-1/2 left-12" />
+    {([[p || "Release", C.hl], [".zip", C.info], ["sha256", C.ok], ["chữ ký", C.hl2], ["commits", C.warn]] as const)
+      .map(([t, c], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={k % 2 ? "M44 80C84 130 124 120 160 80" : "M44 80C84 30 124 40 160 80"}>{t}</Fly>)}
+    {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.6} dur={1.6} path="M196 80H262" className="size-1.5 rounded-full bg-ok" />)}
+    <Tile label="GitHub" className="top-1/2 left-1 -translate-y-1/2"><span className="grid size-9 place-items-center rounded-full bg-ink text-cotton"><GitBranch className="size-5" /></span></Tile>
+    <Bot ring className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
+    <Tile label="App" className="top-1/2 right-1 -translate-y-1/2"><PackageCheck className="size-8 text-ok" /></Tile>
+  </>,
+
   agent: ({ p }) => {
     const srcs = [[22, "Tin", <Tg key="t" className="size-6" icon="size-3" />], [80, "Ticket", <YtLogo key="y" className="size-6" />], [138, "Link", <FileText key="f" className="size-5 text-hl-2" />]] as const;
     return <>

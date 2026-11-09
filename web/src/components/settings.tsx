@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, ChevronDown, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Download, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
+import { AiFetching } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
@@ -858,10 +860,11 @@ function UpdateSection() {
     queryFn: async ({ signal }) => { const r = await api<UpdateInfo>("/update", { signal }); void qc.invalidateQueries({ queryKey: ["update-state"] }); return r; }, staleTime: 60_000 });
   const [restarting, setRestarting] = useState(false);
   const [restartFailed, setRestartFailed] = useState(false);
+  const [ask, setAsk] = useState(false);
   const run = useMutation({
     mutationFn: () => api<UpdateInfo>("/update", { method: "POST" }),
     onSuccess: async (r) => {
-      if (!r.updated) return void qc.invalidateQueries({ queryKey: ["update"] });
+      if (!r.updated) { setAsk(false); return void qc.invalidateQueries({ queryKey: ["update"] }); }
       setRestarting(true);
       setRestartFailed(false);
       await new Promise((ok) => setTimeout(ok, 2000));
@@ -871,6 +874,7 @@ function UpdateSection() {
       }
       setRestarting(false); // a minute without the server: say so instead of spinning forever
       setRestartFailed(true);
+      setAsk(false);
     },
   });
   const auto = useMutation({
@@ -880,6 +884,9 @@ function UpdateSection() {
   });
   const d = info.data;
   const err = (e: unknown) => (e instanceof ApiError && (e.detail || `Cập nhật lỗi (${e.code}).`)) || "Không kết nối được GitHub.";
+  const busy = run.isPending || restarting;
+  const latest = d?.commits[0]?.sha ?? "";
+  const release = d?.branch === "GitHub Releases";
   return <>
     <div className="grid gap-2.5 py-3 first:pt-1">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -892,7 +899,7 @@ function UpdateSection() {
               <RotateCw className={cn(info.isFetching && "animate-spin")} />
             </Button>
           </Hint>
-          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || run.isPending || restarting} onClick={() => run.mutate()}>
+          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || busy} onClick={() => { run.reset(); setAsk(true); }}>
             {restarting ? "Đang khởi động lại…" : run.isPending ? "Đang cập nhật…" : "Cập nhật"}
           </Button>
         </div>
@@ -908,9 +915,41 @@ function UpdateSection() {
       )}
       {d?.error && !run.isPending && <p role="alert" className="text-xs text-warn">Lần tự cập nhật gần nhất lỗi: {d.error}</p>}
       {d?.dirty && <p className="text-xs text-warn">Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.</p>}
-      {(info.isError || run.isError) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
+      {(info.isError || (run.isError && !ask)) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
       {restartFailed && <p role="alert" className="text-xs text-error">Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.</p>}
     </div>
+    {d && (
+      <ConfirmDialog open={ask} onOpenChange={setAsk} tone="default" icon={Download} busy={busy} onConfirm={() => run.mutate()}
+        title={busy ? "Đang cập nhật app" : "Cập nhật app?"}
+        description={busy ? "Giữ trang này mở: xong sẽ tự tải lại." : `Lấy bản mới từ ${d.branch}, rồi khởi động lại server.`}
+        items={busy ? undefined : d.commits.map((c) => ({ id: c.sha, tag: c.sha, label: c.subject }))} unit="bản"
+        confirmLabel={restarting ? "Đang khởi động lại…" : run.isPending ? "Đang cập nhật…" : "Cập nhật"}
+        error={run.isError ? err(run.error) : undefined}>
+        {busy ? (
+          <AiFetching kind="update" project={latest} className="min-h-0 py-2"
+            lines={restarting ? ["Đã cài bản mới", "Đang khởi động lại server", "Sắp tải lại trang"] : undefined} />
+        ) : <>
+          <dl className="grid grid-cols-[1fr_1fr_auto] items-end gap-x-4 gap-y-1">
+            <dt className="text-xs text-ink-3">Đang dùng</dt><dt className="text-xs text-ink-3">Mới nhất</dt>
+            <dd className="row-span-2 self-center rounded-full bg-ok-wash px-2.5 py-1 font-mono text-xs font-semibold text-ok">Có bản mới</dd>
+            <dd className="truncate font-mono text-sm text-ink">{d.current}</dd><dd className="truncate font-mono text-sm text-ink">{latest}</dd>
+          </dl>
+          <div className="grid gap-1">
+            <span className="text-xs text-ink-3">Sẽ chạy</span>
+            <code className="rounded-md bg-paper-2 px-2.5 py-1.5 font-mono text-xs break-words text-ink-2 shadow-groove">
+              {release ? `tải gói ${latest} từ GitHub Releases → kiểm sha256 + chữ ký → cài vào versions/` : `git pull --ff-only (${d.branch}) → uv sync / npm ci / npm run build khi cần`}
+            </code>
+          </div>
+          <div className="flex items-start justify-between gap-3 border-t border-rule pt-3">
+            <div className="grid gap-0.5">
+              <span className="text-sm font-medium text-ink">Khởi động lại sau khi cập nhật</span>
+              <span className="text-xs text-ink-3">Bắt buộc: server chạy code cũ tới khi khởi động lại. Trang tự tải lại; task AI Agent đang chạy thì đợi xong.</span>
+            </div>
+            <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-ok" />
+          </div>
+        </>}
+      </ConfirmDialog>
+    )}
     {d && (
       <Row label="Tự động cập nhật" desc="Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.">
         <Switch label="Tự động cập nhật" checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />

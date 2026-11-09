@@ -1795,7 +1795,7 @@
 "tab": "settings",
 "area": "Cài đặt › Cập nhật",
 "title": "Cập nhật app và tự động cập nhật",
-"what": "Kiểm tra và cài bản mới từ GitHub, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
+"what": "Kiểm tra và cài bản mới từ GitHub: bấm \"Cập nhật\" mở hộp xác nhận (bản đang dùng / mới nhất, danh sách thay đổi, lệnh sẽ chạy); bấm \"Cập nhật\" trong hộp thì AI kéo bản mới về, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
 "how": [
 {
 "t": "Chọn mục \"Cập nhật\"",
@@ -1808,6 +1808,10 @@
 {
 "t": "Có bản mới thì bấm \"Cập nhật\"",
 "at": "Cập nhật"
+},
+{
+"t": "Xem bản mới và lệnh sẽ chạy trong hộp xác nhận, bấm \"Cập nhật\" để cài",
+"at": "css:[role=\"alertdialog\"]"
 },
 {
 "t": "Bật \"Tự động cập nhật\" nếu muốn",
