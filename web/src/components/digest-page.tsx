@@ -4,9 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { IssueDialog } from "@/components/composer-dialogs";
-import { AiThinking } from "@/components/ai/chat";
 import { BeTopics } from "@/components/be-topics";
-import { AiFetching, useAiWait } from "@/components/ai/fetching";
+import { AiFetching, digestLines, useAiWait } from "@/components/ai/fetching";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { DeepItemAction, DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
@@ -107,8 +106,6 @@ export function closedIds(chat: string, r: DigestResult | undefined, answered?: 
 }
 
 /** Impacts grouped by team, in first-seen order. */
-const THINKING = ["Đang đọc tin nhắn", "Đang tìm điều đã chốt, thay đổi", "Đang xếp việc cần PO/PM confirm"];
-
 function byTeam(list: DigestItem[]): [string, DigestItem[]][] {
   const out = new Map<string, DigestItem[]>();
   for (const it of list) out.set(it.who || "Khác", [...(out.get(it.who || "Khác") ?? []), it]);
@@ -312,7 +309,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         {/* Result: first on phones, right column on desktop. */}
         <div className="border-b p-3 md:p-5 lg:order-2 lg:min-h-0 lg:overflow-y-auto lg:border-b-0 lg:border-l" aria-live="polite">
           {run.isPending ? (
-            <AiThinking lines={THINKING} />
+            <AiFetching kind="digest" lines={digestLines(title)} className="min-h-0 py-2" />
           ) : run.isError ? (
             <p role="alert" className="text-sm text-error">{digestError(run.error)}</p>
           ) : shown ? (

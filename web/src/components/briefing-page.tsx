@@ -10,7 +10,7 @@ import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
 import { AiBot, AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
-import { AiFetching, useAiWait } from "@/components/ai/fetching";
+import { AiFetching, digestLines, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
 import { BeTopics } from "@/components/be-topics";
 import { DeepItemAction } from "@/components/deep-think";
@@ -20,6 +20,7 @@ import { Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
@@ -552,6 +553,9 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
     </Button>
   );
   const scopeLeft = shown.filter(pending).length;
+  // The group on screen is being read (or nothing is summarized yet and a run is on): its AI scene, not an empty list.
+  const reading = scope ? runs[scope.chat_id]?.status === "running" ? scope : undefined : !summarized ? now : undefined;
+  const readingShown = useAiWait(!!reading);
 
   return (
     <MotionConfig reducedMotion="user">
@@ -650,6 +654,8 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
           <div className={cn("flex min-h-0 flex-col", summarized && pane === "ai" && "max-lg:hidden")}>
             {wait ? (
               <AiFetching kind="brief" />
+            ) : readingShown ? (
+              <AiFetching kind="digest" lines={digestLines((reading ?? scope ?? now)?.title)} />
             ) : list.isError ? (
               <p role="alert" className="flex items-center gap-2 p-5 text-sm text-error">
                 {digestError(list.error)}
@@ -774,7 +780,7 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
   const { runs, batch } = useBriefRun();
   const [done] = useDone();
   const answered = useQuery({ ...answeredQuery, enabled: !!list.data?.some((i) => i.consent && i.saved) }).data;
-  const [asking, setAsking] = useState<string | null>(null); // the group whose removal waits for "Bỏ"
+  const [asking, setAsking] = useState<BriefingItem | null>(null); // the group whose removal waits for its dialog
   const items = list.data ?? [];
   const left = (i: BriefingItem) => openCount(i.chat_id, i.saved?.result, done, answered);
   const groups = items.filter((i) => i.consent).sort((a, b) => Number(hasNews(b)) - Number(hasNews(a)) || left(b) - left(a));
@@ -789,7 +795,6 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
       for (const key of [["briefing"], ["digest-saved", id], ["digest-consent", id]]) void qc.invalidateQueries({ queryKey: key });
       toast({ text: "Đã bỏ nhóm khỏi Briefing" });
     },
-    onError: (e) => toast({ text: errorText(e, {}, "Không bỏ được nhóm, thử lại sau") }),
   });
   const row = (on: boolean) => cn(
     "relative flex h-10 w-full min-w-0 items-center gap-3 rounded-md px-3 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
@@ -814,17 +819,7 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
             {count(total)}
           </button>
         </li>
-        {groups.map((i) => asking === i.chat_id && !collapsed ? (
-          <li key={i.chat_id} role="alert" className="grid gap-1.5 rounded-md bg-error/10 p-2 text-xs text-ink">
-            <span>Bỏ <b className="font-semibold">{i.title}</b> khỏi Briefing? AI thôi đọc nhóm, bản tóm tắt bị xóa.</span>
-            <span className="flex justify-end gap-1">
-              <Button size="xs" variant="ghost" onClick={() => setAsking(null)}>Thôi</Button>
-              <Button size="xs" variant="destructive" aria-busy={remove.isPending} disabled={remove.isPending || running} onClick={() => remove.mutate(i.chat_id)}>
-                {remove.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />} Bỏ
-              </Button>
-            </span>
-          </li>
-        ) : (
+        {groups.map((i) => (
           <li key={i.chat_id} className="group/g relative">
             <Hint side="right" text={status(i)}>
               <button type="button" aria-current={selected === i.chat_id} onClick={() => onSelect(i.chat_id)} className={row(selected === i.chat_id)}>
@@ -852,7 +847,7 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
                   </button>
                 </Hint>
                 <Hint side="bottom" text="Bỏ khỏi Briefing: AI thôi đọc nhóm này, bản tóm tắt đã lưu bị xóa">
-                  <button type="button" aria-label={`Bỏ ${i.title} khỏi Briefing`} disabled={running} onClick={() => setAsking(i.chat_id)} className={cn(act, "hover:bg-error/10 hover:text-error")}>
+                  <button type="button" aria-label={`Bỏ ${i.title} khỏi Briefing`} disabled={running} onClick={() => { remove.reset(); setAsking(i); }} className={cn(act, "hover:bg-error/10 hover:text-error")}>
                     <Trash2 className="size-3.5" aria-hidden />
                   </button>
                 </Hint>
@@ -881,6 +876,14 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
       {list.isSuccess && !groups.length && (
         <p className={cn("px-3 py-2 text-sm leading-relaxed text-ink-3", fade)}>Chưa có nhóm nào. Bấm “Thêm nhóm” để chọn nhóm cho AI tóm tắt.</p>
       )}
+      <ConfirmDialog open={!!asking} onOpenChange={(o) => { if (!o) setAsking(null); }} icon={Trash2}
+        title="Bỏ nhóm khỏi Briefing?" confirmLabel="Bỏ nhóm"
+        description="AI thôi đọc nhóm này và bản tóm tắt đã lưu bị xóa. Thêm lại lúc nào cũng được bằng “Thêm nhóm”."
+        items={asking ? [{ id: asking.chat_id, label: asking.title,
+          tag: asking.saved ? `${left(asking)} việc chờ` : "chưa tóm tắt" }] : undefined}
+        busy={remove.isPending}
+        error={running ? "Đang tóm tắt, chờ xong rồi bỏ nhóm." : remove.isError && errorText(remove.error, {}, "Không bỏ được nhóm, thử lại.")}
+        onConfirm={() => { if (asking && !running) remove.mutate(asking.chat_id); }} />
     </nav>
   );
 }

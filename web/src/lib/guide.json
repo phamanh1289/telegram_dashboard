@@ -671,7 +671,7 @@
 "tab": "telegram",
 "area": "Briefing › Hàng chip nhóm",
 "title": "Nhóm ở thanh bên: lọc, tóm tắt, mở, bỏ nhóm",
-"what": "Mục \"Nhóm · Briefing\" của thanh bên liệt kê các nhóm: chấm vàng = có tin mới, xanh = đã cập nhật, số = việc còn chờ (tự giảm khi bạn đánh dấu xử lý). Bấm nhóm để chỉ xem việc của nhóm đó; rê chuột vào nhóm để hiện ✦ tóm tắt nhóm, ↗ mở trang Tóm tắt, 🗑 bỏ khỏi Briefing (AI thôi đọc nhóm, bản tóm tắt bị xóa; thêm lại bằng \"Thêm nhóm\"). Nút Copy ở góc phải trên chép mọi bản tóm tắt thành một Markdown.",
+"what": "Mục \"Nhóm · Briefing\" của thanh bên liệt kê các nhóm: chấm vàng = có tin mới, xanh = đã cập nhật, số = việc còn chờ (tự giảm khi bạn đánh dấu xử lý). Bấm nhóm để chỉ xem việc của nhóm đó; rê chuột vào nhóm để hiện ✦ tóm tắt nhóm, ↗ mở trang Tóm tắt, 🗑 bỏ khỏi Briefing (hộp xác nhận \"Bỏ nhóm khỏi Briefing?\"; AI thôi đọc nhóm, bản tóm tắt bị xóa; thêm lại bằng \"Thêm nhóm\"). Nút Copy ở góc phải trên chép mọi bản tóm tắt thành một Markdown.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -686,7 +686,7 @@
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Mở \"]"
 },
 {
-"t": "Rê chuột vào nhóm, bấm thùng rác rồi \"Bỏ\" để bỏ nhóm khỏi Briefing",
+"t": "Rê chuột vào nhóm, bấm thùng rác, rồi bấm \"Bỏ nhóm\" trong hộp xác nhận",
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label$=\"khỏi Briefing\"]"
 },
 {

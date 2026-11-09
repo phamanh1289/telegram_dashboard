@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileText, MessageCircleQuestion, Rocket, Send, Sparkles } from "lucide-react";
+import { Check, FileText, MessageCircleQuestion, Rocket, Send, Server, Sparkles } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -20,8 +20,12 @@ const LINES: Record<FetchKind, string[]> = {
   history: ["AI đang kết nối Telegram", "Đang đọc hội thoại của nhóm", "Đang gom tin trong khoảng đã chọn", "Sắp xong rồi"],
   qa: ["AI đang kết nối Telegram", "Đang đọc các câu hỏi #QA", "Đang gom câu trả lời trong chuỗi", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"],
   brief: ["AI đang kết nối Telegram", "Đang gom tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
+  digest: ["AI đang đọc hội thoại của nhóm", "Đang ghép câu hỏi với câu trả lời", "Đang gom theo chủ đề, đánh dấu trao đổi với BE", "Đang tìm việc cần confirm, điều đã chốt", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
+
+/** The digest scene's lines, naming the group being read. */
+export const digestLines = (group?: string) => [group ? `AI đang đọc hội thoại ${group}` : LINES.digest[0], ...LINES.digest.slice(1)];
 
 /** Shortest time a loading scene stays up, so it plays through instead of flashing (user ask: 0.5–1s). */
 export const AI_WAIT_MS = 800;
@@ -266,6 +270,40 @@ const SCENES: Record<FetchKind, Scene> = {
         })}
       </div>
       <Bot className="-top-2 right-[70px] size-12" size="size-9" />
+    </>;
+  },
+
+  // summarizing a group: its back-and-forth scrolls by (PO / QA ask, BE answers), each message passes through the robot and lands
+  // in what it is: a question still open, something settled, Q&A with BE
+  digest: () => {
+    const feed = [["PO", "w-20", 0], ["BE", "w-16", 1], ["QA", "w-[72px]", 0], ["BE", "w-20", 1], ["Dev", "w-14", 0], ["PO", "w-[68px]", 0]] as const;
+    const lanes = [["Cần confirm", C.warn, 30, MessageCircleQuestion], ["Đã chốt", C.ok, 80, Check], ["Với BE", "var(--color-code)", 130, Server]] as const;
+    return <>
+      <div className="absolute top-1 bottom-1 left-0 w-[104px] overflow-hidden rounded-xl border border-rule bg-paper-2 px-1.5">
+        <div className="fx-scroll flex flex-col gap-1.5 pt-2">
+          {[...feed, ...feed].map(([who, w, be], k) => (
+            <div key={k} className={cn("grid gap-1 rounded-2xl px-2 py-1.5", be ? "self-end rounded-br-sm bg-code/20" : "self-start rounded-bl-sm bg-cotton shadow-stock", w)}>
+              <span className={cn("font-mono text-[8px] leading-none font-semibold", be ? "text-code" : "text-ink-3")}>{who}</span>
+              <Line w="90%" /><Line w="55%" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <span className="fx-scan absolute top-1 left-0 h-8 w-[104px] bg-linear-to-b from-transparent via-hl/25 to-transparent" style={v({ "--fx-y": "120px" })} />
+      <Tg className="absolute -top-1 -left-1 size-6 shadow-stock" icon="size-3" />
+      {([["Hỏi?", 0, 40], ["BE: API", 2, 96], ["Chốt", 1, 64], ["QA hỏi", 0, 120], ["Đổi field", 2, 52], ["OK", 1, 108]] as const).map(([t, l, sy], k) => {
+        const [, c, y] = lanes[l];
+        return <Fly key={k} k={k} gap={0.55} dur={3.2} dot={c} path={`M100 ${sy}C122 ${sy} 128 80 154 80C192 80 204 ${y} 232 ${y}`}>{t}</Fly>;
+      })}
+      <Bot ring className="top-1/2 left-[112px] size-[72px] -translate-y-1/2" size="size-11" />
+      {lanes.map(([l, c, y, Icon], n) => (
+        <div key={l} className="absolute right-0 grid w-[84px] -translate-y-1/2 gap-1 rounded-md border border-rule bg-cotton px-1.5 py-1 shadow-stock" style={{ top: y }}>
+          <span className="flex items-center gap-1 text-[9px] font-semibold text-ink-2"><Icon className="size-2.5 shrink-0" style={{ color: c }} />{l}</span>
+          <span className="flex gap-0.5">
+            {[0, 1, 2].map((k) => <span key={k} className="fx-step block h-1 flex-1 rounded-full" style={v({ background: c, "--fx-d": "4.5s", animationDelay: `${0.6 + n * 0.3 + k * 0.9}s` })} />)}
+          </span>
+        </div>
+      ))}
     </>;
   },
 
