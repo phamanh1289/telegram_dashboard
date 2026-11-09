@@ -90,6 +90,7 @@ from .models import (
     TelegramPhone,
     TelegramSignIn,
     TelegramSignInResult,
+    WakeTicketRequest,
     WeekStats,
     YouTrackAuth,
     YouTrackIssue,
@@ -549,7 +550,9 @@ def create_app(
                         latest = str(await s.bridge.transport.latest_id(row["chat_id"]))
                 except Exception as e:  # one unreachable group must not hide the others
                     log.warning("briefing: latest id of %s unknown: %r", row["chat_id"], e)
+            until = row["consent_until"]
             return BriefingItem(chat_id=row["chat_id"], title=row["title"], consent=row["consent"],
+                                consent_until=None if until is None else datetime.fromtimestamp(until, UTC),
                                 latest_id=latest, saved=_saved(row["digest"]))  # fmt: skip
 
         rows = await s.db.read(s.store.briefing_rows)
@@ -727,6 +730,12 @@ def create_app(
         rows = await s.db.read(s.store.list_pending, since, until)
         return [PendingItem(chat_title=t, message=m) for t, m in rows]
 
+    @app.get("/api/snoozed")
+    async def snoozed(request: Request) -> list[PendingItem]:
+        """Tags hidden for now: Hôm nay lists them under "Bạn đang chờ"."""
+        s = S(request)
+        return [PendingItem(chat_title=t, message=m) for t, m in await s.db.read(s.store.list_snoozed)]
+
     @app.get("/api/pinned")
     async def pinned(request: Request) -> list[PendingItem]:
         s = S(request)
@@ -736,8 +745,20 @@ def create_app(
     async def snooze(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if not await s.db.write(s.store.set_snooze, chat_id, mid, body.until):
+        if not await s.db.write(s.store.set_snooze, chat_id, mid, body.until, body.on if body.until else None):
             raise ApiError(404, "message_not_found")
+
+    @app.get("/api/snooze/tickets")
+    async def snooze_tickets(request: Request) -> list[str]:
+        """Tickets that snoozed tags wait on: the YouTrack watch wakes them once done."""
+        s = S(request)
+        return await s.db.read(s.store.ticket_snoozes)
+
+    @app.post("/api/snooze/wake")
+    async def snooze_wake(body: WakeTicketRequest, request: Request) -> dict[str, int]:
+        """The ticket is done: tags snoozed until then come back."""
+        s = S(request)
+        return {"woke": await s.db.write(s.store.wake_ticket, body.ticket.upper())}
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/remind", status_code=204)
     async def remind(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:

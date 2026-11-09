@@ -557,3 +557,20 @@ async def test_a_background_ai_run_outlives_its_reader_and_is_read_again_from_th
     jobs.stop("job-87654321")
     await asyncio.gather(jobs._jobs["job-87654321"].task, return_exceptions=True)
     assert jobs.status()["job-87654321"] == "error" and jobs.attach("nope-0000") is None
+
+
+async def test_overloaded_provider_is_tried_once_more(tmp_path):
+    exe, count = tmp_path / "claude", tmp_path / "n"  # first run: overloaded; second: the answer
+    exe.write_text(f'#!/bin/sh\ncat >/dev/null\nif [ -f {count} ]; then\n'
+                   'echo \'{"type":"result","is_error":false,"result":"ok"}\'\nelse\n'
+                   f'touch {count}\necho \'{{"type":"result","is_error":true,"result":"API Error: 529 Overloaded"}}\''
+                   '\nexit 1\nfi\n')
+    exe.chmod(0o755)
+    s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)), ai_model="", ai_effort="")
+    assert await AiService(s, None, None).ask("hi") == "ok"
+    count.unlink()  # a login error is not retried
+    exe.write_text('#!/bin/sh\ncat >/dev/null\n'
+                   'echo \'{"type":"result","is_error":true,"result":"Not logged in"}\'\nexit 1\n')
+    with pytest.raises(ApiError):
+        await AiService(s, None, None).ask("hi")
+    assert not count.exists()

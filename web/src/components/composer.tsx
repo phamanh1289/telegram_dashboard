@@ -10,7 +10,8 @@ import { IssueDialog, TaskPage } from "@/components/composer-dialogs";
 import { Dialog, DialogContent, DIALOG_SHEET } from "@/components/ui/dialog";
 import { useOpenSimilar } from "@/components/ticket-form";
 import { DeepBadge, DeepPick } from "@/components/deep-think";
-import { RemindPick, remindAt } from "@/components/remind";
+import { promiseChoice, RemindPick, remindAt } from "@/components/remind";
+import { WorkTrail } from "@/components/work-trail";
 import { Snippets } from "@/components/snippets";
 import { groupMembers, useMention } from "@/components/mention";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
@@ -93,6 +94,10 @@ export function Composer({
   useEffect(() => () => { if (!unsure.current) saveDraft(replyTo, latest.current); }, [replyTo]); // leaving within the debounce
   const warned = useRef(false); // Esc once more leaves without a saved draft
   const [remindAfter, setRemindAfter] = useState(""); // RemindPick: reopen this tag at that time once the reply is sent
+  const [remindSet, setRemindSet] = useState(false); // picked by hand: the text's promise no longer decides
+  useEffect(() => { // "Lời hứa": a promise in the reply sets the reminder (kept once the box clears after the send)
+    if (!remindSet && text.trim()) setRemindAfter(promiseChoice(text)); // eslint-disable-line react-hooks/set-state-in-effect -- follows the typed text
+  }, [text, remindSet]);
   const [snips, setSnips] = useState(false);
   const { attach, ...mention } = useMention(groupMembers(chatId), text, setText);
   const [pane, setPane] = useState<"reply" | "ai">("reply"); // narrow (split view, phones): one pane at a time
@@ -395,6 +400,7 @@ export function Composer({
           {showContext
             ? <ContextPanel m={replyTo} focus={tag} className="mt-0 max-h-none gap-3 overflow-visible bg-transparent p-0 text-sm" />
             : tag}
+          <WorkTrail m={replyTo} />
         </div>
 
         <aside aria-label="Trợ lý" className={cn("order-2 flex min-h-0 flex-1 flex-col border-t bg-paper-2 @3xl:col-start-2 @3xl:row-span-2 @3xl:row-start-1 @3xl:border-t-0 @3xl:border-l",
@@ -537,7 +543,7 @@ export function Composer({
                 <Snippets open={snips} onOpenChange={setSnips} current={text}
                   vars={{ "tên": replyTo.sender_name ?? "", ticket: replyTo.text.match(TICKET_ID)?.[0] ?? "" }}
                   onInsert={(line) => { insert(line); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("textarea[aria-label='Nội dung trả lời']")?.focus()); }} />
-                {!replyTo.outgoing && <RemindPick value={remindAfter} onChange={setRemindAfter} />}
+                {!replyTo.outgoing && <RemindPick value={remindAfter} auto={!remindSet && !!remindAfter} onChange={(v) => { setRemindSet(true); setRemindAfter(v); }} />}
               </span>
               <div aria-live="polite" className="min-w-0 flex-1 text-xs leading-snug">
                 {draftStale && <span role="status" className="text-warn">Tin nguồn của bản nháp AI đã đổi; bản nháp có thể đã cũ. </span>}

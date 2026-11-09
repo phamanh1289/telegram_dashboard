@@ -1,7 +1,7 @@
 "use client";
 
 import { type UseQueryResult, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, FolderGit2, ListPlus, Loader2, Paperclip, X } from "lucide-react";
+import { ArrowUp, FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, X } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/components/ai";
 import { AiPromptBox } from "@/components/ai/chat";
@@ -71,7 +71,8 @@ function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Messa
 }
 
 /** The follow-up composer of a headless session (queue, attachments, send / stop). */
-export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
+/** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". */
+export const TaskComposer = memo(function TaskComposer({ t, cut }: { t: Task; cut?: boolean }) {
   const { id } = t;
   const running = !!t.running;
   const plan = t.mode === "plan";
@@ -151,7 +152,12 @@ export const TaskComposer = memo(function TaskComposer({ t }: { t: Task }) {
       onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
       stopHint="Dừng AI (giữ hội thoại, có thể nhắn tiếp)"
       placeholder={running ? `AI đang làm: ${MOD}+Enter để thêm vào hàng đợi` : `Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, ${MOD}+Enter vào hàng đợi)`}
-      top={refs.length > 0 && (
+      top={cut && !queue.length && !send.isPending ? (
+        <Button size="xs" variant="outline" className="justify-self-start animate-in fade-in-0 duration-(--dur-short)"
+          onClick={() => send.mutate({ line: "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
+          <RotateCw /> Chạy tiếp
+        </Button>
+      ) : refs.length > 0 && (
         <ul aria-label="Tin đính kèm" className="flex flex-wrap gap-1.5">
           {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== t.chat_id}
             onRemove={() => setRefs(id, refs.filter((x) => !sameRef(x, r)))} />)}

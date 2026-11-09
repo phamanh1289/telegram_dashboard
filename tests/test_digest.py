@@ -133,7 +133,7 @@ async def test_too_large_and_empty(dg):
     consent(env)
     env.fake.history[A] = [at(A, i, "x", 0) for i in range(1, 2002)]
     await expect("digest_too_large", svc.run(req()))
-    env.fake.history[A] = [at(A, 1, "x" * 80_001, 0)]
+    env.fake.history[A] = [at(A, 1, "x" * 40_001, 0)]
     await expect("digest_too_large", svc.run(req()))
     env.fake.history[A] = []
     await expect("digest_empty", svc.run(req()))
@@ -226,6 +226,20 @@ async def test_run_saves_result_and_cursor(dg):
     assert json.loads(saved["result"])["changes"][0]["text"] == "cũ"
 
 
+async def test_one_off_run_leaves_saved_digest_alone(dg):
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = '{"actions": [{"text": "Viết API", "message_ids": ["2"]}]}'
+    await svc.run(req())
+    before = env.store.get_digest(A)
+    provider.reply = '{"changes": [{"text": "riêng"}]}'
+    r = await svc.run(DigestRequest(chat_id=A, message_ids=["1"], save=False))
+    assert r.changes[0].text == "riêng" and not r.actions  # nothing carried into a one-off view
+    assert env.store.get_digest(A) == before
+    provider.on_call = lambda: env.store.set_digest_consent(A, None)
+    await expect("ai_permission_changed", svc.run(DigestRequest(chat_id=A, message_ids=["1"], save=False)))
+
+
 async def test_after_id_skips_already_read(dg):
     env, svc, provider = dg
     consent(env)
@@ -292,10 +306,10 @@ async def test_too_large_detail_says_why(dg):
     with pytest.raises(ApiError) as e:
         await svc.run(req())
     assert "hơn 2.000 tin" in e.value.detail
-    env.fake.history[A] = [at(A, 1, "x" * 80_001, 0)]
+    env.fake.history[A] = [at(A, 1, "x" * 40_001, 0)]
     with pytest.raises(ApiError) as e:
         await svc.run(req())
-    assert "80.001" in e.value.detail and "80.000" in e.value.detail
+    assert "40.001" in e.value.detail and "40.000" in e.value.detail
 
 
 # ---- briefing ----------------------------------------------------------------------
@@ -532,16 +546,16 @@ def test_qa_summary_reads_the_thread_and_builds_on_the_accepted_answer(settings,
 async def test_long_stretch_runs_in_parts_and_hands_open_items_on(dg):
     env, svc, provider = dg
     consent(env)
-    env.fake.history[A] = [at(A, i, f"tin {i}", 0) for i in range(1, 502)]  # 501: two AI calls
+    env.fake.history[A] = [at(A, i, f"tin {i}", 0) for i in range(1, 302)]  # 301: two AI calls
     replies = iter([
         '{"confirmations": [{"text": "BE trả field gì?", "who": "BE", "be": true, "message_ids": ["5"]}],'
         ' "decisions": [{"text": "Dùng uuid", "be": "yes", "message_ids": ["9"]}]}',
-        '{"resolved": ["p1"], "decisions": [{"text": "BE: field status", "be": true, "message_ids": ["450"]}],'
-        ' "actions": [{"text": "Sửa màn A", "message_ids": ["460"]}]}',
+        '{"resolved": ["p1"], "decisions": [{"text": "BE: field status", "be": true, "message_ids": ["260"]}],'
+        ' "actions": [{"text": "Sửa màn A", "message_ids": ["270"]}]}',
     ])
     provider.on_call = lambda: setattr(provider, "reply", next(replies))
     r = await svc.run(req())
-    assert len(provider.calls) == 2 and r.source_count == 501
+    assert len(provider.calls) == 2 and r.source_count == 301
     assert "<open>" not in provider.calls[0]
     assert '"key": "p1"' in provider.calls[1] and "BE trả field gì?" in provider.calls[1]
     assert [d.text for d in r.decisions] == ["Dùng uuid", "BE: field status"]

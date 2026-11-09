@@ -42,6 +42,7 @@ class StoredMessage(BaseModel):
     handled_by: HandledBy = ""  # how it got handled ("" while pending, or marked before this was kept)
     handled_at: datetime | None = None
     snoozed_until: datetime | None = None  # hidden from pending until then
+    snooze_on: str | None = None  # "reply" / "ticket:<ID>": back when that happens (snoozed_until: the backstop)
     pinned: bool = False  # sticks to the top of the pending list
     priority: bool = False  # from a "Luôn ưu tiên" sender: sorts first among pending tags
     links: list[LinkSpan] = []  # Telegram formatting entities (UTF-16 offsets)
@@ -84,6 +85,7 @@ class MessageDTO(BaseModel):
     handled_by: HandledBy = ""
     handled_at: datetime | None = None
     snoozed_until: datetime | None = None
+    snooze_on: str | None = None  # "reply" / "ticket:<ID>": wakes sooner on that event
     pinned: bool = False
     priority: bool = False  # sender is in "Luôn ưu tiên" (Cài đặt › Telegram): shows first, overdue sooner
     links: list[LinkSpan] = []
@@ -239,8 +241,19 @@ class PinRequest(BaseModel):
     pinned: bool
 
 
+class PrRequest(BaseModel):
+    title: str = Field(min_length=3, max_length=200)
+    body: str = Field("", max_length=5000)
+
+
 class SnoozeRequest(BaseModel):
     until: datetime | None  # None = wake now
+    # wake sooner: "reply" (someone answers the tag or my reply to it) or "ticket:VA-12" (that ticket done)
+    on: Annotated[str, Field(pattern=r"^(reply|ticket:[A-Za-z][A-Za-z0-9_]*-\d{1,9})$")] | None = None
+
+
+class WakeTicketRequest(BaseModel):
+    ticket: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*-\d{1,9}$")]
 
 
 class PendingItem(BaseModel):
@@ -590,6 +603,8 @@ class DigestRequest(BaseModel):
     until: datetime | None = None  # default: now
     message_ids: list[str] = Field(default=[], max_length=2000)  # wins over the range
     after_id: int | None = None  # range only: skip messages a previous digest already read
+    # the running digest Briefing shows: carries its open items and is saved; False = a one-off view, left out of it
+    save: bool = True
     # open items of the saved digest I closed (ticked / replied), as their joined message ids: not carried on
     closed: list[Annotated[str, Field(max_length=400)]] = Field(default=[], max_length=500)
     teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
@@ -698,6 +713,7 @@ class BriefingItem(BaseModel):
     chat_id: str
     title: str
     consent: bool
+    consent_until: datetime | None = None  # the consent's end, also once passed (Briefing offers to renew)
     saved: SavedDigest | None = None
     latest_id: str | None = None  # newest message on Telegram; None if unknown or no consent
 
@@ -724,6 +740,7 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         handled_by=m.handled_by,
         handled_at=m.handled_at,
         snoozed_until=m.snoozed_until,
+        snooze_on=m.snooze_on,
         pinned=m.pinned,
         priority=m.priority,
         links=m.links,

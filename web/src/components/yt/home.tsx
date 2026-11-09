@@ -1,6 +1,8 @@
 "use client";
 
-import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Sparkles, Trash2, UserCheck } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { AlertTriangle, ChevronLeft, ChevronRight, Copy, RotateCw, Send, Sparkles, Trash2, UserCheck } from "lucide-react";
+import { api, errorText } from "@/lib/api";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -75,6 +77,11 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
   const setSaved = (v: Saved | null) => { setPref(key, v && JSON.stringify(v)); setVer((n) => n + 1); };
   function pick(v: string) { setK(v); setPref(`ytAiTab:${id}`, v); }
+  const send = useMutation({
+    mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
+    onSuccess: () => toast({ text: "Đã gửi vào Saved Messages" }),
+    onError: (e) => toast({ text: errorText(e, { not_connected: "Telegram chưa kết nối." }, "Không gửi được, thử lại sau") }),
+  });
   // every run opens the AI session; a saved answer opens there too, so it can be followed up
   const open = (fresh: boolean) => y.setSheet({ kind: "work", title: `AI · ${t.label}`, ids: (t.ids ?? []).slice(0, AI_MAX), auto: {
     label: t.busy, run: t.run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined,
@@ -91,10 +98,30 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
         <Button size="sm" variant={saved ? "outline" : "default"} disabled={!!t.disabled} onClick={() => open(true)}>
           {saved ? <><RotateCw /> Làm lại</> : <><Sparkles /> {t.label}</>}
         </Button>
+        {saved && t.k === "standup" && (
+          <Hint side="bottom" text="Gửi standup vào Saved Messages trên Telegram của bạn (đọc trên điện thoại, chuyển tiếp vào nhóm)">
+            <Button size="sm" variant="ghost" disabled={send.isPending} onClick={() => send.mutate(saved.text)}><Send /> Saved Messages</Button>
+          </Hint>
+        )}
         {saved && <Hint side="bottom" text="Xóa nội dung AI đã lưu"><Button size="sm" variant="ghost" onClick={() => setSaved(null)}><Trash2 /> Xóa</Button></Hint>}
       </div>
     </Card>
   );
+}
+
+/** The one standup (Dev and QA): my tickets touched since the last working day (Friday on Mondays) and the ones still
+ *  open, as assignee (Dev) or QC (QA); the server adds my Telegram replies and finished AI Agent sessions. */
+function standupTab(rows: Ticket[], me: string | null, qa: boolean, now: number): Tab {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - (d.getDay() === 1 ? 3 : 1));
+  const since = d.getTime();
+  const mine = (i: Ticket) => (qa ? i.qc : i.assignee) === me;
+  const ids = [...new Set([...rows.filter((i) => mine(i) && i.updated >= since).sort((a, b) => b.updated - a.updated),
+    ...rows.filter((i) => mine(i) && !i.resolved)].map((i) => i.id))].slice(0, AI_MAX);
+  return { k: "standup", label: "Standup", busy: "AI đang viết standup", disabled: ids.length ? undefined : "Chưa có ticket nào của bạn.",
+    hint: "Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước, tin bạn đã trả lời trên Telegram và phiên AI Agent đã xong. Gửi vào Saved Messages hoặc dán thẳng vào nhóm.",
+    ids, run: (sig) => yt.aiTickets(ids, `Ticket của ${me}${qa ? " (QC)" : ""}`, "standup", sig, "", undefined, since) };
 }
 
 type Lens = "all" | "risk" | "doing" | "qc" | "block" | "test";
@@ -121,15 +148,6 @@ export function DevHome() {
   const shown = lens === "all" ? list : lens === "risk"
     ? list.filter((x) => LENS.risk[1](x.i)).map((x) => { const r = riskOf(x.i, now)!; return { ...x, why: [r, ...x.why.filter((w) => w !== r)] }; })
     : list.filter((x) => LENS[lens][1](x.i));
-  // Standup: what changed since the last working day (Friday on Mondays) plus today's top picks.
-  const standup = useMemo(() => {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - (d.getDay() === 1 ? 3 : 1));
-    const since = d.getTime();
-    const done = y.rows.filter((i) => i.assignee === y.me && i.updated >= since).sort((a, b) => b.updated - a.updated);
-    return { since, ids: [...new Set([...done, ...list.map((x) => x.i).filter((i) => i.assignee === y.me || i.qc === y.me)].map((i) => i.id))].slice(0, AI_MAX) }; // standup stays mine
-  }, [y.rows, y.me, list, now]);
   if (!y.me) return (
     <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">
       Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong <Link href="/settings/#youtrack" className="text-hl-2 underline underline-offset-2">Cài đặt › YouTrack</Link>, hoặc đổi vai trò trong <Link href="/settings/#general" className="text-hl-2 underline underline-offset-2">Cài đặt › Chung</Link>.
@@ -153,9 +171,7 @@ export function DevHome() {
             { k: "today", label: "Kế hoạch", busy: `AI đang đọc ${Math.min(list.length, AI_MAX)} ticket`, disabled: list.length ? undefined : "Không có ticket nào để lập kế hoạch.",
               hint: "AI đọc mô tả, bình luận và tin Telegram của các ticket trên để chọn việc làm ngay, việc cần trả lời, chỗ đang kẹt.",
               ids: list.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(list.slice(0, AI_MAX).map((x) => x.i.id), y.scope === "me" ? `Ticket của ${y.me}` : `Ticket của ${names.join(", ") || "cả nhóm"}`, "today", sig) },
-            { k: "standup", label: "Standup", busy: "AI đang viết standup", disabled: standup.ids.length ? undefined : "Chưa có ticket nào của bạn.",
-              hint: "Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Dán thẳng vào nhóm.",
-              ids: standup.ids, run: (sig) => yt.aiTickets(standup.ids, `Ticket của ${y.me}`, "standup", sig, "", undefined, standup.since) },
+            standupTab(y.rows, y.me, false, now),
           ]} />
         )}
         <Card title="Mới cập nhật" meta={`ticket ${whose}`}>
@@ -318,6 +334,7 @@ export function QaHome() {
       <div className="grid content-start gap-4">
         {y.aiOn && (
           <AiStudio key={`qa:${y.project}`} id={`qa:${y.project}`} tabs={[
+            standupTab(y.rows, y.me, true, now),
             { k: "testcases", label: "Test case", busy: `AI đang viết test case cho ${testIds.length} ticket`, disabled: testIds.length ? undefined : "Không có ticket nào chờ test.",
               hint: `Test case (luồng chính, biên, lỗi), vùng regression và câu cần hỏi cho ${mine.length ? "các ticket chờ bạn test" : "các ticket chờ test"}, tối đa ${TESTS} ticket gấp nhất.`,
               ids: testIds, run: (sig) => yt.aiTickets(testIds, mine.length ? `Ticket chờ ${y.me} test` : "Ticket chờ test", "testcases", sig) },

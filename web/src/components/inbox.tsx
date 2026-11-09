@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronRight, Inbox as InboxIcon, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, RotateCw, Search, Send, Sparkles, WifiOff, X } from "lucide-react";
+import { Bot, ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, WifiOff, X } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
 import { DeepThinking } from "@/components/deep-think";
-import { BriefingGroups, BriefingPage, briefingQuery, hasNews } from "@/components/briefing-page";
+import { AiDock, BriefingGroups, BriefingPage, briefingQuery, hasNews, useAutoBrief } from "@/components/briefing-page";
+import { TodayPage } from "@/components/today-page";
 import { DigestPage } from "@/components/digest-page";
 import { QA_MINE, qaGroupsQuery, QaGroups, QaPage, type QaDays, useQaNews, useQaRecent } from "@/components/qa-page";
 import { InboxPalette } from "@/components/inbox-palette";
@@ -17,14 +18,14 @@ import { TasksPage } from "@/components/tasks-page";
 import { PendingInbox } from "@/components/pending-inbox";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutsDialog } from "@/components/shortcuts";
-import { Toaster, TopBar } from "@/components/shell";
+import { Toaster, TopBar, useYtRisk } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status, statusQuery } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
-import { ALL, BRIEFING, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { ALL, BRIEFING, TODAY, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
@@ -56,7 +57,7 @@ const STREAM_LABEL: Record<StreamState, string> = {
   closed: "Luồng cập nhật tạm dừng",
 };
 
-type NavItem = readonly [id: string, label: string, count: number, icon: LucideIcon];
+type NavItem = readonly [id: string, label: string, count: number, icon: LucideIcon]; // an id starting with "/" is a link to the YouTrack module
 
 /** Sidebar section title; on the closed rail it gives way to a short rule so the sections still read apart. */
 function SideHeading({ label, extra, fade, rail }: { label: string; extra?: ReactNode; fade: string; rail: boolean }) {
@@ -121,7 +122,7 @@ function Inbox({ status }: { status: Status }) {
   const codeRole = usesCode(useRole()); // QA / PO: no AI Agent unless they already have sessions
   // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
   // (after /status), so state starts from the URL and prefs directly, with no first paint on defaults.
-  const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? ALL); // default: cross-group to-do list
+  const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? TODAY); // default: Hôm nay, every source of work
   // The tag being answered; `external`: opened from elsewhere (Digest, Báo lại, ⌘K), so a send just closes it.
   // `at`: its place among the list's open tags ([n, of]), read when it opens (the reply header's "3/17").
   const [reply, setReply] = useState<{ m: Message; external: boolean; at?: [number, number] } | null>(null);
@@ -139,6 +140,7 @@ function Inbox({ status }: { status: Status }) {
     setDraft(null); // an injected line belongs to the tag it was made for
   }, [place]);
   const [palette, setPalette] = useState(false);
+  const [dock, setDock] = useState(false); // ⌘J: the AI assistant drawer
   const [focus, setFocus] = useState<string | null>(null); // item to show in the opened view: a message, or a task on AI Agent
   const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
@@ -174,9 +176,14 @@ function Inbox({ status }: { status: Status }) {
         setPalette((o) => !o);
         return;
       }
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "j" && status.ai_configured) {
+        e.preventDefault();
+        setDock((o) => !o); // the AI assistant over every group, from any page
+        return;
+      }
       if (typing(e)) return;
       if (goKey.take()) {
-        const to = { i: ALL, q: QA, p: PINNED, a: TASKS, b: BRIEFING }[e.key.toLowerCase()];
+        const to = { h: TODAY, i: ALL, q: QA, p: PINNED, a: TASKS, b: BRIEFING }[e.key.toLowerCase()];
         if (to && views.some(([id]) => id === to)) go(to);
         else return;
       } else if (replyTo && !reply?.external && "jk".includes(e.key.toLowerCase())) {
@@ -317,7 +324,14 @@ function Inbox({ status }: { status: Status }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, from the URL the page was opened with
 
   const hints: Record<string, string> = {
+    [TODAY]: "Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)",
     [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
+    "/youtrack/": "Trang chủ YouTrack theo vai trò: việc hôm nay, kiểm thử hoặc tổng quan.",
+    "/youtrack/?view=tickets": "Danh sách ticket YouTrack: lọc, tìm, board.",
+    "/youtrack/?view=dash": "Biểu đồ và số liệu project theo vai trò.",
+    "/youtrack/?view=release": "Theo dõi go-live của sprint phát hành.",
+    "/youtrack/?view=people": "Tải việc và ticket của từng thành viên.",
+    "/youtrack/?view=ai": "Mọi cuộc hỏi AI, cả YouTrack lẫn Trợ lý Briefing (tab Telegram): đọc lại, hỏi tiếp.",
     [QA]: "Đăng câu hỏi vào nhóm bất kỳ (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời. Số: trả lời mới cộng câu của bạn chưa ai trả lời quá ngưỡng nhắc.",
     [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
     [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
@@ -332,10 +346,14 @@ function Inbox({ status }: { status: Status }) {
   // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges).
   const qa = useQaNews(qaDays, chatId === QA);
   const [briefGroup, setBriefGroup] = useState<string | null>(null); // Briefing: one group's items (null: all)
-  const briefNews = (useQuery({ ...briefingQuery, enabled: aiOn }).data ?? []).filter((i) => i.consent && hasNews(i)).length;
+  const briefList = useQuery({ ...briefingQuery, enabled: aiOn }).data ?? [];
+  const ytRisk = useYtRisk(true); // my risky tickets: a badge on the YouTrack home icon (was on the module switch)
+  const briefNews = briefList.filter((i) => i.consent && hasNews(i)).length;
+  useAutoBrief(aiOn);
   // Sidebar sections; `views` (all pages, flat) also feeds the header title, g-keys and ⌘K.
   const sections: { label: string; items: NavItem[] }[] = [
-    { label: "Hộp thư", items: [
+    { label: "Việc", items: [
+      [TODAY, "Hôm nay", 0, Sun],
       [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
       [QA, "Q&A", qa.total + qa.lateTotal, MessageCircleQuestion],
       [PINNED, "Tag đã ghim", 0, Pin],
@@ -343,6 +361,14 @@ function Inbox({ status }: { status: Status }) {
     { label: "Trợ lý AI", items: [
       ...(aiOn ? [[BRIEFING, "Briefing", briefNews, Sparkles] as NavItem] : []),
       ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
+    ] },
+    { label: "YouTrack", items: [
+      ["/youtrack/", "Trang chủ YouTrack", ytRisk.length, Home],
+      ["/youtrack/?view=tickets", "Ticket", 0, ListChecks],
+      ["/youtrack/?view=dash", "Dashboard", 0, LayoutDashboard],
+      ["/youtrack/?view=release", "Release", 0, Rocket],
+      ["/youtrack/?view=people", "Thành viên", 0, UserSearch],
+      ...(aiOn ? [["/youtrack/?view=ai", "Lịch sử AI", 0, History] as NavItem] : []),
     ] },
   ];
   const views = sections.flatMap((s) => s.items);
@@ -362,10 +388,15 @@ function Inbox({ status }: { status: Status }) {
   const banner = offline && lasting;
   const filtering = !!(days.from || days.to);
   // Search and the day range filter tag lists; Briefing, Digest and AI Agent have their own (or none).
-  const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && chatId !== QA && !digest;
+  const listPage = !!chatId && chatId !== TASKS && chatId !== BRIEFING && chatId !== QA && chatId !== TODAY && !digest;
   const inGroup = listPage && chatId !== ALL && chatId !== PINNED;
   const title = views.find(([id]) => id === chatId)?.[1] ?? (chatId === BRIEFING ? "Briefing" : chatId === QA ? "Q&A" : undefined) ?? chatsData.find((c) => c.chat_id === chatId)?.title ?? ((digest && named) || "Telegram");
-  const openDigest = status.ai_configured ? () => { setReply(null); setFocus(null); setDigest(true); } : undefined;
+  // A group already in Briefing: its Tóm tắt is Briefing for that group (one place keeps the running summary);
+  // otherwise the group's Digest, where AI is allowed to read it.
+  const openDigest = status.ai_configured ? () => {
+    if (briefList.some((i) => i.chat_id === chatId && i.consent)) { setBriefGroup(chatId); go(BRIEFING); return; }
+    setReply(null); setFocus(null); setDigest(true);
+  } : undefined;
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
@@ -388,7 +419,21 @@ function Inbox({ status }: { status: Status }) {
           </span>
         </div>
         <nav aria-label="Trang" className="grid gap-0.5">
-          {sections.filter((s) => s.items.length).map((s) => (
+          {sections.filter((s) => s.items.length).map((s) => s.label === "YouTrack" ? (
+            // The YouTrack pages: one row of icons, so the group list keeps its room (the rail has the module switch)
+            <section key={s.label} aria-label={s.label} className={cn("flex items-center gap-1 px-1 pt-1", collapsed && "md:hidden")}>
+              <span className="mr-auto pl-1.5 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">YouTrack</span>
+              {s.items.map(([id, label, count, Icon]) => (
+                <Hint key={id} title={label} text={count ? `${hints[id]} ${count} ticket cần xử lý ngay: ${ytRisk.slice(0, 5).join(", ")}${count > 5 ? "…" : ""}` : hints[id]}>
+                  <Link href={id} aria-label={`YouTrack › ${label}${count ? ` (${count} ticket cần xử lý ngay)` : ""}`}
+                    className="relative grid size-8 place-items-center rounded-[var(--radius-input)] text-ink-3 transition-[background-color,color,translate] duration-(--dur-micro) hover:-translate-y-px hover:bg-paper-3 hover:text-ink motion-reduce:transition-none">
+                    <Icon className="size-4" aria-hidden />
+                    {count > 0 && <span aria-hidden className="absolute -top-1 -right-1 min-w-4 rounded-full bg-signal px-1 font-mono text-[10px] leading-4 text-white tabular-nums">{count}</span>}
+                  </Link>
+                </Hint>
+              ))}
+            </section>
+          ) : (
             <section key={s.label} aria-label={s.label} className="grid gap-0.5">
               <SideHeading label={s.label} fade={t} rail={collapsed} />
               {s.items.map(([id, label, count, Icon]) => (
@@ -518,8 +563,10 @@ function Inbox({ status }: { status: Status }) {
             <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
             {/* No exit wait: the next page mounts at once and rises in (globals.css .page-in); pages the AI made get the .ai-in beam. */}
             {chatId ? (
-              <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || digest) && "ai-in")}>
-                {chatId === QA ? (
+              <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || chatId === TODAY || digest) && "ai-in")}>
+                {chatId === TODAY ? (
+                  <TodayPage onReply={(m) => setReply({ m, external: true })} onGo={() => go(ALL)} onBriefGroup={(id) => { setBriefGroup(id); go(BRIEFING); }} />
+                ) : chatId === QA ? (
                   <QaPage key={qaShown} focus={focus} group={qaShown} onGroup={setQaGroup} days={qaDays} onDays={setQaDays} onBack={() => go(ALL)} />
                 ) : chatId === BRIEFING ? (
                   <BriefingPage group={briefGroup} onGroup={setBriefGroup} onBack={() => go(ALL)} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
@@ -573,6 +620,7 @@ function Inbox({ status }: { status: Status }) {
         </div>
       </div>
       <DeepThinking />
+      {status.ai_configured && <AiDock open={dock} onOpenChange={setDock} />}
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <InboxPalette open={palette} onClose={() => setPalette(false)} chats={chatsData} views={views} range={range}
         group={inGroup ? chatsData.find((c) => c.chat_id === chatId) ?? null : null} onGo={go} onDigest={inGroup ? openDigest : undefined}

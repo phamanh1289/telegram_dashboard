@@ -5,7 +5,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { ApiError, readAnswer } from "@/lib/api";
+import { api, ApiError, readAnswer } from "@/lib/api";
 import { getPref, put, readYtRole } from "@/lib/prefs";
 import { addLoopItems } from "@/lib/report-back";
 import { fold } from "@/lib/inbox";
@@ -508,6 +508,7 @@ export function checkLoopBack(project: string, me: string, rows: Ticket[], say: 
 /** Mounted in the shell of both modules: tickets newly given to me, and "Báo lại" (`loop`: off on the YouTrack page, whose
  *  own watch does it) from the shared 5-minute my-tickets poll. */
 export function useWatchGlobal(loop: boolean, say: (id: string, text: string) => void) {
+  useTicketWake();
   const { me, rows, ready, project } = useMyTickets(true);
   const said = useRef(say);
   useEffect(() => { said.current = say; });
@@ -517,6 +518,22 @@ export function useWatchGlobal(loop: boolean, say: (id: string, text: string) =>
     checkNew(project, me, rows, s);
     if (loop && rows.length) checkLoopBack(project, me, rows, s);
   }, [project, me, rows, ready, loop]);
+}
+
+/** Tags snoozed "until VA-1 is done": every 5 minutes (one poll, in the shell) check those tickets and wake the tags
+ *  of the ones resolved / Fixed / Done. ponytail: at most 10 tickets a round; the snooze's 7-day time is the backstop. */
+function useTicketWake() {
+  useQuery({
+    queryKey: ["snooze-tickets"],
+    queryFn: async ({ signal }) => {
+      const ids = (await api<string[]>("/snooze/tickets", { signal })).slice(0, 10);
+      const done = await Promise.all(ids.map((id) => yt.detail(id).then((d) => !!d.resolved || FINISHED.test(d.state ?? ""), () => false)));
+      await Promise.all(ids.filter((_, i) => done[i]).map((ticket) => api("/snooze/wake", { method: "POST", json: { ticket } })));
+      return ids.length;
+    },
+    refetchInterval: 5 * 60_000,
+    retry: false,
+  });
 }
 
 const FIXED = /(đã|da)\s*(fix|sửa|xong|deploy|merge|lên)|\b(fixed|deployed|resolved|build|retest)\b|test lại|lên (dev|test|stg|staging|uat)/i;

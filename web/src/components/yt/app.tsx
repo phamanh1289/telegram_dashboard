@@ -1,6 +1,7 @@
 "use client";
 
 import { Plus, CalendarCheck, Rocket, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, RotateCw, Search, Sparkles, UserPlus, UserSearch, X } from "lucide-react";
+import Link from "next/link";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
@@ -15,13 +16,13 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ShortcutList, YT_KEYS } from "@/components/shortcuts";
 import { getPref, saveYtRole, setPref, YT_ROLES } from "@/lib/prefs";
 import { cn, durShort } from "@/lib/utils";
-import { QUICK, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
+import { AI_MAX, QUICK, rank, riskOf, shortName, shortSp, TIER_LABEL, UNASSIGNED } from "@/lib/yt";
 import { useAiWait } from "@/components/ai/fetching";
 import { Avatar, MultiSelect, POP, YtFetching } from "./bits";
 import { DashboardPage } from "./dashboard";
 import { DevHome, PoHome, QaHome } from "./home";
 import { CreateTicket } from "./create";
-import { Palette } from "./palette";
+import { Palette, TG_PAGES } from "./palette";
 import { useWatch, WatchBell } from "./watch";
 import { Sheet } from "./sheet";
 import { type Mode, type Page, type Scope, useYt, YtProvider } from "./state";
@@ -71,6 +72,12 @@ function Shell() {
   // ⌘K palette, "?" shortcut sheet, g then h/t/d/r/p/a: the pages (as Telegram's g-keys)
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); setPal((o) => !o); return; }
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "j" && y.aiOn) { // ⌘J: AI over the open tickets in view, risky / high priority first
+      e.preventDefault();
+      const t = Date.now(), ids = y.rows.filter((i) => !i.resolved).sort((a, b) => +!riskOf(a, t) - +!riskOf(b, t) || rank(a) - rank(b) || b.updated - a.updated).slice(0, AI_MAX).map((i) => i.id);
+      if (ids.length) y.setSheet({ kind: "work", title: "Hỏi AI về phạm vi đang xem (⌘J)", ids });
+      return;
+    }
     if (typing(e)) return;
     if (e.key === "?") { e.preventDefault(); setKeys(true); return; }
     if (e.key === "g") { goKey.arm(); return; }
@@ -139,6 +146,15 @@ function Shell() {
                     {p === "home" && risk > 0 && <span
                       className={cn("relative rounded-full bg-signal px-1.5 font-mono text-xs leading-[18px] text-white tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
                   </button></Hint>
+                ))}
+              </nav>
+              <nav aria-label="Telegram" className="mt-3 grid grid-cols-1 gap-1 border-t pt-2">
+                <span className={cn("px-2.5 pb-0.5 text-[11px] font-semibold tracking-wide text-ink-3 uppercase", fade)}>Telegram</span>
+                {TG_PAGES.map(([href, label, Icon]) => (
+                  <Link key={href} href={href} aria-label={label} onClick={() => setMenu(false)}
+                    className="relative flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
+                    <Icon className="size-5 shrink-0" aria-hidden /><span className={cn("flex-1", fade)}>{label}</span>
+                  </Link>
                 ))}
               </nav>
               {!y.config?.mock && (

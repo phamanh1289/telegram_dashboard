@@ -188,8 +188,11 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   });
   const items = useMemo(() => history.data?.items ?? [], [history.data]);
   const wait = useAiWait(history.isPending);
+  // Only a run that carries on from the last one (or the first ever) feeds Briefing; picked messages and other
+  // ranges are a one-off view that leaves Briefing's running summary and cursor alone.
+  const keep = !picked.size && (preset === "last" || !last);
   const run = useMutation({
-    mutationFn: () =>
+    mutationFn: (save: boolean) =>
       api<DigestResult>("/digest", {
         method: "POST",
         json: {
@@ -198,6 +201,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           until: win.until,
           message_ids: [...picked],
           after_id: preset === "last" && last ? Number(last.last_message_id) : null,
+          save,
           closed: closedIds(chatId, last?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams: readDigestTeams(),
           intro: readIntro(),
@@ -275,7 +279,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
         <DateRangePicker value={days} onChange={onDays} emptyLabel="Tuỳ chọn ngày" />
         <Button size="sm" className="ml-auto" aria-busy={run.isPending}
           disabled={!enabled || !items.length || run.isPending || history.isFetching || tooMany}
-          onClick={() => run.mutate()}>
+          onClick={() => run.mutate(keep)}>
           <Sparkles /> {run.isPending ? "Đang tóm tắt…" : picked.size ? `Tóm tắt ${picked.size} tin đã chọn` : tooMany ? "Quá nhiều tin" : `Tóm tắt ${items.length} tin`}
         </Button>
       </div>
@@ -312,8 +316,10 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
             <AiFetching kind="digest" lines={digestLines(title)} className="min-h-0 py-2" />
           ) : run.isError ? (
             <p role="alert" className="text-sm text-error">{digestError(run.error)}</p>
-          ) : shown ? (
+          ) : shown ? (<>
+            {run.variables === false && run.data && <p className="mb-2 text-xs text-ink-3">Bản tóm tắt riêng cho khoảng / tin đã chọn, không đưa vào Briefing.</p>}
             <Result r={shown} title={title} chatId={chatId} when={run.data ? null : last?.created_at ?? null} lit={lit} onJump={jump} onCopy={() => void copy()} />
+          </>
           ) : (
             <p className="text-sm leading-relaxed text-ink-3">
               Tóm tắt {label}: đã chốt gì, thay đổi gì, ảnh hưởng team nào, cần PO/PM confirm gì. Chọn tin bên dưới (Shift+click để chọn cả đoạn) nếu chỉ muốn tóm tắt một phần.

@@ -13,14 +13,18 @@ import { useQuery } from "@tanstack/react-query";
 import type { AiPending } from "./bits";
 import { fold, toast } from "@/lib/inbox";
 import { WorkView } from "./work";
+import Link from "next/link";
+import { AiResultCard, UserBubble } from "@/components/ai/chat";
+import { Markdown } from "@/components/markdown";
 
 // The YouTrack tab's AI history (apart from Telegram's AI Agent tasks), per browser. A small index lists the sessions,
 // each session is its own key: the list never parses an answer, a turn rewrites one session + the index.
 
 /** `pending`: the last turn, saved as it started, never answered (the page closed, an error). */
-export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[]; pending?: AiPending };
+// src "tg": a Telegram AI conversation (Trợ lý Briefing, ⌘J), kept here so every AI conversation sits in one history
+export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[]; pending?: AiPending; src?: "tg" };
 // name: set by the user; pending: the last turn has no answer (job: its server run, maybe still going after a reload)
-type Meta = { id: string; title: string; name?: string; ids: string[]; q: string; n: number; at: number; pending?: boolean; job?: string };
+type Meta = { id: string; title: string; name?: string; ids: string[]; q: string; n: number; at: number; pending?: boolean; job?: string; src?: "tg" };
 
 const IDX = "ytAiIdx";
 const KEY = (id: string) => `ytAiS:${id}`;
@@ -57,7 +61,7 @@ export function saveSession(s: AiSession) {
   prune();
   const old = readIdx();
   const name = old.find((m) => m.id === s.id)?.name; // a rename outlives the next turn
-  const meta: Meta = { id: s.id, title: s.title, name, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now(), pending: s.pending ? true : undefined, job: s.pending?.job };
+  const meta: Meta = { id: s.id, title: s.title, name, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now(), pending: s.pending ? true : undefined, job: s.pending?.job, src: s.src };
   let idx = [meta, ...old.filter((m) => m.id !== s.id)];
   const body = JSON.stringify({ ...s, thread });
   for (let tries = 0; ; tries++) {
@@ -123,8 +127,11 @@ function drop(ids: string[]) {
 }
 
 /** Ticket: sessions about picked tickets; Dashboard: about figures (dashboard, reports, team), which pick none. */
-type Tab = "all" | "ticket" | "dash";
-const tabOf = (m: Meta): Tab => (m.ids.length ? "ticket" : "dash");
+type Tab = "all" | "ticket" | "dash" | "tg";
+const tabOf = (m: Meta): Tab => (m.src === "tg" ? "tg" : m.ids.length ? "ticket" : "dash");
+
+/** Trợ lý Briefing (Telegram) keeps each answered turn of its conversation here. */
+export const saveTgTurns = (id: string, title: string, thread: AiTurn[]) => saveSession({ id, title, ids: [], req: null, thread, src: "tg" });
 /** Rail headings: today, yesterday, this week, older. */
 function dayOf(at: number) {
   const d = Math.floor((new Date().setHours(24, 0, 0, 0) - at) / DAY);
@@ -194,7 +201,7 @@ export function HistoryPage() {
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${idx.length} phiên…`} aria-label="Tìm phiên AI"
             className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm focus:border-hl" />
         </label>
-        <Segmented id="yt-history" label="Loại phiên AI" value={tab} onChange={(t) => { setTab(t); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"]] as const).map(([v, l]) => (
+        <Segmented id="yt-history" label="Loại phiên AI" value={tab} onChange={(t) => { setTab(t); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"], ["tg", "Telegram"]] as const).map(([v, l]) => (
           { value: v, label: <>{l} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
         {/* sessions by day: a sticky day header (click: fold / unfold its sessions), the sessions hang under it on a guide line */}
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-rule">
@@ -271,10 +278,26 @@ export function HistoryPage() {
             )}
             <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{cur.n} lượt</span><span>{when(cur.at)}</span></span>
           </div>
-          {s ? <WorkView key={`${cur.id}:${v}`} title={cur.title} ids={s.ids} resume={s} />
+          {s?.src === "tg" ? <TgThread s={s} />
+            : s ? <WorkView key={`${cur.id}:${v}`} title={cur.title} ids={s.ids} resume={s} />
             : <p className="m-auto text-sm text-ink-3">Phiên này không còn trong bộ nhớ trình duyệt. <Button size="xs" variant="ghost" onClick={() => remove([cur.id])}>Xóa khỏi danh sách</Button></p>}
         </section>
       )}
+    </div>
+  );
+}
+
+/** A Telegram conversation: read here; going on is the Trợ lý itself (⌘J on Telegram), where the groups' digests are. */
+function TgThread({ s }: { s: AiSession }) {
+  return (
+    <div className="grid min-h-0 content-start gap-4 overflow-y-auto rounded-lg bg-cotton p-4 shadow-stock">
+      {s.thread.map((t, i) => (
+        <div key={i} className="grid grid-cols-[minmax(0,1fr)] gap-3">
+          {t.q && <UserBubble>{t.q}</UserBubble>}
+          <AiResultCard title="Trả lời"><Markdown text={t.a} className="text-ink" /></AiResultCard>
+        </div>
+      ))}
+      <Link href="/?chat=__briefing__" className="w-fit text-sm text-hl-2 underline underline-offset-4">Hỏi tiếp ở Trợ lý Briefing (⌘J bên Telegram)</Link>
     </div>
   );
 }

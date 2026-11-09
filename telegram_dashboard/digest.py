@@ -16,10 +16,10 @@ from .errors import ApiError
 from .models import DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store, _dt
 
-MAX_MESSAGES = 400  # per AI call
-MAX_CHARS = 80_000  # per AI call
+MAX_MESSAGES = 250  # per AI call
+MAX_CHARS = 40_000  # per AI call: smaller parts finish well inside the timeout
 MAX_RUN = 2_000  # per digest: a longer stretch is read in calls of ≤ MAX_MESSAGES / MAX_CHARS
-MAX_CALLS = 5
+MAX_CALLS = 8
 OWN = ("message_ids", "tickets", "be", "at", "carried")  # set by us, never taken as text from the model
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 OPEN = ("confirmations", "actions")  # what still waits on someone: kept until a later digest settles it
@@ -199,7 +199,7 @@ class DigestService:
         # Open items of the last digest ride along until a run settles them: a busy chat never drops a question.
         # A long stretch is read in parts the same way: each part gets what the earlier parts left open.
         prev = await self.db.read(self.store.get_digest, req.chat_id)
-        pending = _carry(prev, {str(m.message_id) for m in msgs}, set(req.closed))
+        pending = _carry(prev, {str(m.message_id) for m in msgs}, set(req.closed)) if req.save else []
         out: dict[str, list] = {k: [] for k in KEYS}
         raws = []
         for part in chunks:
@@ -227,10 +227,10 @@ class DigestService:
             until=until,
         )
         newest = max(msgs, key=lambda m: m.message_id)
-        # consent re-checked in the save's own transaction: a revoke during the AI run drops the result
-        if not await self.db.write(
+        # consent re-checked (for a save, in its own transaction): a revoke during the AI run drops the result
+        if not (await self.db.write(
             self.store.save_consented_digest, req.chat_id, newest.message_id, newest.date, result.model_dump_json(),
-        ):  # fmt: skip
+        ) if req.save else await self._consented(req.chat_id)):  # fmt: skip
             raise ApiError(
                 409, "ai_permission_changed",
                 detail="Quyền đã đổi trong lúc xử lý; kết quả bị bỏ. "

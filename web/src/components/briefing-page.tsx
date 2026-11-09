@@ -20,14 +20,14 @@ import { Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/ui/dialog";
+import { ConfirmDialog, Dialog, DIALOG_SHEET, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { WeekStatsCard } from "@/components/week-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, type BriefingItem, type DigestItem, type DigestResult, errorText, type GroupInfo, type Message, statusQuery } from "@/lib/api";
-import { copyText, toast } from "@/lib/inbox";
+import { copyText, toast, useNow } from "@/lib/inbox";
 import { getPref, put, readDigestTeams, readIntro, useRole } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -96,17 +96,71 @@ async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: number)
   setBrief((b) => ({ ...b, batch: null }));
 }
 
+const AUTO_MS = 2 * 3_600_000; // a group with news is summarized again at most this often
+const AUTO_TICK = 5 * 60_000;
+export const AUTO_BRIEF = "autoBrief"; // "0": no background runs (Cài đặt › Telegram)
+
+/** Keeps Briefing fresh while the app is open: every few minutes (one shared timer) the groups that have news and a
+ *  digest older than AUTO_MS run in the background batch, so opening Briefing shows it ready. Off when AI isn't set. */
+export function useAutoBrief(on: boolean) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!on) return;
+    const tick = async () => {
+      if (brief.batch || getPref(AUTO_BRIEF) === "0") return;
+      const items = await qc.fetchQuery({ ...briefingQuery, staleTime: AUTO_TICK }).catch(() => []);
+      const now = Date.now();
+      const due = items.filter((i) => i.consent && hasNews(i) && (!i.saved || now - Date.parse(i.saved.created_at) >= AUTO_MS));
+      if (due.length) await runBrief(qc, due);
+    };
+    const first = setTimeout(() => void tick(), 60_000); // after the app has settled
+    const every = setInterval(() => void tick(), AUTO_TICK);
+    return () => { clearTimeout(first); clearInterval(every); };
+  }, [on, qc]);
+}
+
+const RENEW_DAYS = 30;
+const SOON_MS = 3 * 86_400_000;
+
+/** Groups whose AI consent ended or ends within 3 days: one click renews them all for RENEW_DAYS. */
+function RenewConsents({ items }: { items: BriefingItem[] }) {
+  const qc = useQueryClient();
+  const now = useNow();
+  const due = items.filter((i) => i.consent_until && Date.parse(i.consent_until) - now < SOON_MS);
+  const renew = useMutation({
+    mutationFn: () => Promise.all(due.map((i) =>
+      api(`/chats/${encodeURIComponent(i.chat_id)}/digest-consent`, { method: "PUT", json: { enabled: true, days: RENEW_DAYS } }))),
+    onSuccess: () => toast({ text: `Đã gia hạn ${due.length} nhóm thêm ${RENEW_DAYS} ngày` }),
+    onError: (e) => toast({ text: errorText(e, {}, "Không gia hạn được, thử lại sau") }),
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["briefing"] }),
+  });
+  if (!due.length) return null;
+  const ended = due.filter((i) => !i.consent).length;
+  return (
+    <motion.div {...FADE} className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-warn-wash/60 px-3 py-2 text-xs text-ink-2 md:px-5">
+      <span className="min-w-0 flex-1">
+        {ended ? `${ended} nhóm đã hết quyền cho AI đọc` : `${due.length} nhóm sắp hết quyền cho AI đọc`}: {due.map((i) => i.title).join(", ")}
+      </span>
+      <Button size="xs" variant="outline" disabled={renew.isPending} onClick={() => renew.mutate()}>
+        {renew.isPending && <Loader2 className="animate-spin" />} Gia hạn {RENEW_DAYS} ngày
+      </Button>
+    </motion.div>
+  );
+}
+
 /** Telegram has messages newer than the last digest (or there was none yet). */
 export const hasNews = (i: BriefingItem) =>
   i.latest_id !== null && i.latest_id !== undefined && (!i.saved || Number(i.latest_id) > Number(i.saved.last_message_id));
 
 const EASE = [0.16, 1, 0.3, 1] as const; // --ease-out
-const ROW_MOTION = {
+export const ROW_MOTION = {
   initial: { opacity: 0, y: 6 },
   animate: { opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } },
   exit: { opacity: 0, x: 24, transition: { duration: 0.16 } },
 } as const;
 const FADE = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.18, ease: EASE } } as const;
+
+const sessionKey = () => `tg${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 const AI_PANE = "briefAi"; // "0": the AI column is hidden on desktop
 
@@ -353,16 +407,43 @@ const SUGGEST: [LucideIcon, string, string][] = [
   [Sun, "Hôm nay làm gì trước?", "Hôm nay tôi cần làm gì trước? Xếp theo độ gấp."],
   [UserRound, "Ai đang chờ tôi?", "Ai đang chờ tôi trả lời hoặc chốt?"],
   [TriangleAlert, "Blocker và rủi ro", "Có blocker hay rủi ro nào cần để ý không?"],
-  [ClipboardList, "Viết standup", "Viết standup update ngắn từ các nhóm."],
+  [ClipboardList, "Cần confirm gì?", "Những câu nào đang chờ tôi confirm hoặc chốt, ở nhóm nào?"],
 ];
 const ASK_ERR = { briefing_empty: "Chưa có bản tóm tắt nào; bấm “Tóm tắt” trước.", ai_not_configured: "AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI." };
 type Turn = { id: number; q: string; text: string; busy: boolean; error?: string };
+
+/** ⌘J from any Telegram page: the Briefing assistant in a drawer (the same pane as on the Briefing page), so a question
+ *  about every group needs no trip to Briefing. Mounted only while open (its portal and its reads). */
+export function AiDock({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      {open && <DockBody />}
+    </Dialog>
+  );
+}
+
+function DockBody() {
+  const ready = (useQuery(briefingQuery).data ?? []).some((i) => i.consent && i.saved);
+  const save = useMutation({
+    mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
+    onSuccess: () => toast({ text: "Đã gửi vào Saved Messages" }),
+    onError: (e) => toast({ text: errorText(e, { not_connected: "Telegram chưa kết nối." }, "Không gửi được, thử lại sau") }),
+  });
+  return (
+    <DialogContent className={cn(DIALOG_SHEET, "sm:max-w-md")}>
+      <DialogTitle className="sr-only">Trợ lý AI (⌘J)</DialogTitle>
+      <AiPane ready={ready} onSave={(t) => save.mutate(t)} saving={save.isPending} className="h-full lg:border-l-0" />
+    </DialogContent>
+  );
+}
 
 function AiPane({ ready, onSave, saving, className }: { ready: boolean; onSave: (text: string) => void; saving: boolean; className?: string }) {
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
   const abort = useRef<AbortController | null>(null);
   const seq = useRef(0);
+  const histId = useRef(sessionKey()); // this conversation in Lịch sử AI
+  const done = useRef<{ q: string; a: string }[]>([]);
   useEffect(() => () => abort.current?.abort(), []);
   const last = turns.at(-1);
   const busy = !!last?.busy;
@@ -378,6 +459,10 @@ function AiPane({ ready, onSave, saving, className }: { ready: boolean; onSave: 
     try {
       const r = await apiStream<{ text: string }>("/briefing/ask", { question, intro: readIntro() }, ctl.signal, (text) => set({ text }));
       set({ text: r.text, busy: false });
+      // one AI history for both modules: the conversation also shows in Lịch sử AI › Telegram
+      done.current.push({ q: question, a: r.text });
+      const turns = [...done.current], id = histId.current; // the history module loads only once there is one to keep
+      void import("@/components/yt/history").then((h) => h.saveTgTurns(id, "Trợ lý Briefing", turns));
     } catch (e) {
       set({ busy: false, error: ctl.signal.aborted ? "Đã dừng." : errorText(e, ASK_ERR, "AI không trả lời được.") });
     }
@@ -391,7 +476,7 @@ function AiPane({ ready, onSave, saving, className }: { ready: boolean; onSave: 
         <span className="truncate text-xs text-ink-3">đọc tóm tắt mọi nhóm</span>
         {turns.length > 0 && (
           <Hint side="bottom" text="Xóa hội thoại">
-            <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label="Xóa hội thoại" disabled={busy} onClick={() => setTurns([])}><Trash2 /></Button>
+            <Button size="icon-xs" variant="ghost" className="ml-auto" aria-label="Xóa hội thoại" disabled={busy} onClick={() => { setTurns([]); histId.current = sessionKey(); done.current = []; }}><Trash2 /></Button>
           </Hint>
         )}
       </div>
@@ -628,6 +713,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
         </header>
 
         <AnimatePresence initial={false}>
+          <RenewConsents key="renew" items={items} />
           {batch && (
             <motion.div key="progress" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2, ease: EASE }}
               className="grid shrink-0 gap-1.5 border-b bg-hl-wash/40 px-3 py-2 md:px-5">

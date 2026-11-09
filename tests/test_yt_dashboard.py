@@ -1,6 +1,7 @@
 import asyncio
 import dataclasses
 import json
+import pathlib
 import time
 import types
 from urllib.parse import parse_qs
@@ -133,7 +134,9 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.db = types.SimpleNamespace(read=lambda fn, *a: asyncio.sleep(0, fn(*a)))
-    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [])
+    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [],
+                                            list_tasks=lambda *a: [])
+    app.state.settings = types.SimpleNamespace(data_dir=pathlib.Path("/nonexistent"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
         r = await c.post("/api/yt/ai/tickets", json=body)

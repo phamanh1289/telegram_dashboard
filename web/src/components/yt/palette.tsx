@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, Bookmark, Eye, Filter, Plus, Search, Sparkles } from "lucide-react";
+import { ArrowRight, Bookmark, Bot, Eye, Filter, Inbox, MessageCircleQuestion, Plus, Search, Sparkles, Sun } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { matches, PaletteDialog, type PaletteItem, PaletteList } from "@/components/ui/palette";
 import { fold, useNow } from "@/lib/inbox";
@@ -17,12 +18,17 @@ import { aiFilterApply, applyRoleView, applyView, readViews, roleViews } from ".
 
 export const PAGE_LABEL: Record<Page, string> = { home: "Trang chủ", tickets: "Ticket", dash: "Dashboard", release: "Release", people: "Thành viên", ai: "Lịch sử AI" };
 
+/** The Telegram module's pages, in this sidebar and ⌘K too: one nav for both modules. */
+export const TG_PAGES = [["/?chat=__today__", "Hôm nay", Sun], ["/?chat=__all__", "Việc cần xử lý", Inbox], ["/?chat=__qa__", "Q&A", MessageCircleQuestion],
+  ["/?chat=__briefing__", "Briefing", Sparkles], ["/?chat=__tasks__", "AI Agent", Bot]] as const;
+
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   return <PaletteDialog open={open} onClose={onClose}><Body onClose={onClose} /></PaletteDialog>;
 }
 
 function Body({ onClose }: { onClose: () => void }) {
   const y = useYt();
+  const router = useRouter();
   const d = useStats();
   const now = useNow();
   const [q, setQ] = useState("");
@@ -62,6 +68,7 @@ function Body({ onClose }: { onClose: () => void }) {
       ...(!y.config?.mock ? [["Tạo ticket mới", () => y.setNewTicket("")] as [string, () => void]] : []),
     ];
     for (const [l, f] of nav) if (matches(terms, l)) out.push({ key: l, group: "Đi tới", icon: <ArrowRight />, label: l, run: go(f) });
+    for (const [href, l] of TG_PAGES) if (matches(terms, `${l} telegram`)) out.push({ key: href, group: "Telegram", icon: <ArrowRight />, label: `Telegram › ${l}`, run: go(() => router.push(href)) });
     return out;
   }, [q, y, d, now]); // eslint-disable-line react-hooks/exhaustive-deps -- go() closes over onClose only
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
@@ -18,7 +18,8 @@ import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
 import { api, ApiError, errorText, statusQuery } from "@/lib/api";
 import { clearDrafts, fold, toast } from "@/lib/inbox";
-import { ACCENTS, applyRowActions, applyTheme, INTRO_MAX, type Look, onPrefs, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, type ReportAt, saveLook, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
+import { AUTO_BRIEF } from "@/components/briefing-page";
+import { ACCENTS, applyRowActions, applyTheme, INTRO_MAX, type Look, onPrefs, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, getPref, type ReportAt, saveLook, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
 import { clearLoopItems } from "@/lib/report-back";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -66,6 +67,7 @@ export function SettingsPage() {
     if (!jump) return;
     const el = jump.card ? document.querySelector<HTMLElement>(`main section[aria-label="${CSS.escape(jump.card)}"]`) : null;
     if (!el) return void scrollTo({ top: 0 });
+    el.querySelector<HTMLButtonElement>(":scope > header button[aria-expanded=false]")?.click(); // a folded advanced card opens
     el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     el.dataset.flash = "";
     const t = setTimeout(() => delete el.dataset.flash, 1600);
@@ -143,6 +145,7 @@ const ENTRIES: Entry[] = [
   { t: "Giới thiệu bản thân cho AI", g: "telegram", card: "Giới thiệu bản thân cho AI", k: "intro toi la ai" },
   { t: "Tóm tắt theo nền tảng", g: "telegram", card: "AI cho Telegram", k: "android ios mobile platform" },
   { t: "Model và effort cho Briefing, Digest", g: "telegram", card: "AI cho Telegram", k: "tom tat nhom" },
+  { t: "Tự tóm tắt Briefing", g: "telegram", card: "AI cho Telegram", k: "tu dong nen briefing auto" },
   { t: "Ngưỡng quá hạn", g: "telegram", card: "Hàng chờ và thông báo", k: "overdue gio cho lau" },
   { t: "Nhắc câu hỏi Q&A chưa ai trả lời", g: "telegram", card: "Hàng chờ và thông báo", k: "qa remind nhac lai phut canh bao" },
   { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Hàng chờ và thông báo", k: "qa tag nguoi duoc hoi tra loi" },
@@ -221,15 +224,23 @@ function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
 // ---- building blocks ----------------------------------------------------------------------------
 
 /** A settings card: title (+ the long explanation behind the bulb), an optional action on the right, then its rows. */
-function Card({ title, info, action, children }: { title: string; info?: string; action?: React.ReactNode; children: React.ReactNode }) {
+/** `advanced`: rarely changed; folded to its title until opened, so the everyday settings come first. */
+function Card({ title, info, action, advanced, children }: { title: string; info?: string; action?: React.ReactNode; advanced?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(!advanced);
   return (
     <section aria-label={title} className="grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl">
-      <header className="flex min-h-11 items-center gap-1.5 px-4 pt-3 sm:px-5">
-        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+      <header className={cn("flex min-h-11 items-center gap-1.5 px-4 pt-3 sm:px-5", !open && "pb-3")}>
+        {advanced ? (
+          <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-sm text-sm font-semibold text-ink">
+            <ChevronDown className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", !open && "-rotate-90")} aria-hidden />
+            <h3>{title}</h3>
+            <span className="rounded-full bg-paper-2 px-1.5 text-[11px] font-medium text-ink-3">Nâng cao</span>
+          </button>
+        ) : <h3 className="text-sm font-semibold text-ink">{title}</h3>}
         {info && <InfoHint title={title} text={info} />}
-        {action && <span className="ml-auto flex items-center gap-2">{action}</span>}
+        {action && open && <span className="ml-auto flex items-center gap-2">{action}</span>}
       </header>
-      <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5">{children}</div>
+      {open && <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5 animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short) ease-(--ease-out) motion-reduce:animate-none">{children}</div>}
     </section>
   );
 }
@@ -405,6 +416,7 @@ function TelegramGroup() {
   const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "tagged" as const);
   const [rowActions, setRowActions] = useState(readRowActions);
   const [platform, setPlatform] = useState(readPlatform);
+  const [autoBrief, setAutoBrief] = useState(() => getPref(AUTO_BRIEF) !== "0");
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
   async function toggleNotify(on: boolean) {
@@ -431,6 +443,9 @@ function TelegramGroup() {
       <Row label="Tóm tắt theo nền tảng" desc="AI tập trung vào phần việc của nền tảng này khi tóm tắt và soạn nháp." stack>
         <Segmented id="set-platform" variant="card" label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
           items={PLATFORMS.map(([value, name]) => ({ value, label: name }))} />
+      </Row>
+      <Row label="Tự tóm tắt Briefing" desc="Khi app đang mở, nhóm có tin mới được tóm tắt nền tối đa 2 giờ một lần, mở Briefing là có sẵn. Tắt: chỉ tóm tắt khi bạn bấm.">
+        <Switch label="Tự tóm tắt Briefing" checked={autoBrief} onChange={(v) => { setAutoBrief(v); setPref(AUTO_BRIEF, v ? null : "0"); }} />
       </Row>
       <Row label="Model cho Briefing và Digest" desc="Riêng cho tóm tắt cả nhóm. “Như tóm tắt”: dùng model/effort của tóm tắt, soạn nháp (Cài đặt › AI)." stack>
         <ModelEffortPicker kind="brief" variant="full" />
@@ -464,11 +479,11 @@ function TelegramGroup() {
       </Row>
     </Card>
 
-    <Card title="Luôn bỏ qua" info="Người gửi (thêm bằng “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo. Xóa một dòng để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
+    <Card advanced title="Luôn bỏ qua" info="Người gửi (thêm bằng “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo. Xóa một dòng để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
       <RulesSection />
     </Card>
 
-    <Card title="Dữ liệu trên trình duyệt này">
+    <Card advanced title="Dữ liệu trên trình duyệt này">
       <Row label="Nháp và danh sách Báo lại" desc="Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.">
         <Button type="button" size="sm" variant="outline"
           onClick={() => { clearDrafts(); clearLoopItems(); toast({ text: "Đã xóa nháp và danh sách Báo lại trên máy này" }); }}>
@@ -632,7 +647,7 @@ function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: YtView) =
       <Card title="Tài khoản YouTrack" info="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
         <YouTrackSection />
       </Card>
-      <Card title="Báo cáo release" info="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
+      <Card advanced title="Báo cáo release" info="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
         <ReportSection />
       </Card>
     </>}
@@ -646,12 +661,12 @@ function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: YtView) =
         info="Hướng dẫn riêng của team cho vai trò đang chọn (Cài đặt › Chung), AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
         <NotesSection role={role} />
       </Card>
-      <Card title="Kho prompt" info="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
+      <Card advanced title="Kho prompt" info="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
         <div className="pt-1"><PromptManager role={role ?? "dev"} /></div>
       </Card>
     </>}
     {view === "workflow" && (
-      <Card title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
+      <Card advanced title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
         <div className="pt-1"><WorkflowSection /></div>
       </Card>
     )}

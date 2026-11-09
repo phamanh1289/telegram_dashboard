@@ -416,3 +416,29 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         assert '"status": "waiting"' in t["prompt"] and "⏳ Chờ BE" in t["prompt"]
         bad = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": [], "project": str(proj)}, headers=H)
         assert bad.status_code == 422
+
+
+def test_snooze_until_reply_or_ticket_wakes_early(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from telegram_dashboard.models import StoredMessage
+    from telegram_dashboard.storage import Store
+
+    st = Store(tmp_path / "db.sqlite3")
+    st.set_tracking("c1", True, "G", "group")
+    t0 = datetime(2026, 11, 1, tzinfo=UTC)
+
+    def msg(mid, reply=None, out=False):
+        return StoredMessage(chat_id="c1", message_id=mid, sender_id="9", sender_name="A", text=f"m{mid}", date=t0,
+                             edit_date=None, reply_to_id=reply, topic_id=None, outgoing=out, media_kind=None,
+                             deleted=False)
+
+    for m in (msg(1), msg(2), msg(3, reply=1, out=True)):
+        st.apply_message(m)
+    later = datetime.now(UTC) + timedelta(days=7)
+    st.set_snooze("c1", 1, later, "reply")
+    st.set_snooze("c1", 2, later, "ticket:VA-7")
+    assert st.ticket_snoozes() == ["VA-7"]
+    st.apply_message(msg(4, reply=3))  # answers my reply to tag 1
+    assert st.get_message("c1", 1).snoozed_until is None and st.get_message("c1", 2).snoozed_until is not None
+    assert st.wake_ticket("VA-7") == 1 and st.get_message("c1", 2).snoozed_until is None

@@ -15,7 +15,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Message, statusQuery, type Task } from "@/lib/api";
 import { attach, messageQuery, sameRef } from "@/lib/attach";
-import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sessionId, SESSION_CODE, setHandled, smooth, snooze, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
+import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sessionId, SESSION_CODE, setHandled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
 import { ago, clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
 import { readOverdueHours, useRole } from "@/lib/prefs";
 import { useRetest, yt, ytDetailQuery, ytProjectsQuery } from "@/lib/yt";
@@ -37,6 +37,7 @@ const SAFE_URL = /^(https?|tg|mailto):/i;
 const WEB_URL = /^(https?|mailto):/i; // a hidden link (label ≠ url) from anyone: no tg:// (proxy, join, login)
 
 // Bare URLs, @username mentions (not inside e-mails), `code` the sender typed literally and YouTrack IDs (VA-123).
+const TICKET_IDS = /(?<![\w-])[A-Z][A-Z0-9]{1,9}-\d{1,6}(?!\w)/g;
 const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`|(?<![\w-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)/g;
 
 export function inline(text: string, key: number) {
@@ -730,8 +731,11 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
   const snoozed = !!one?.snoozed_until && new Date(one.snoozed_until).getTime() > now;
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
+  // Tickets the tag names (known projects only), each a "until it is done" choice.
+  const known = useQuery({ ...ytProjectsQuery, enabled: open }).data;
+  const tickets = one && known ? [...new Set(one.text.match(TICKET_IDS) ?? [])].filter((id) => known.some((p) => p.shortName === id.split("-")[0])).slice(0, 3) : [];
   const run = useMutation({
-    mutationFn: (until: Date | null) => snooze(ms, until),
+    mutationFn: (v: Date | null | { on: string }) => v instanceof Date || v === null ? snooze(ms, v) : snooze(ms, new Date(Date.now() + EVENT_SNOOZE_MS), v.on),
     onSuccess: () => { setOpen(false); onDone?.([]); },
     onError: (e) => {
       if (e instanceof PartialError) { setOpen(false); onDone?.(e.failed); return; } // its toast said x/y
@@ -747,7 +751,7 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
   };
   return (
     <Menu.Root open={open} onOpenChange={(o) => { setOpen(o); if (o) setNow(Date.now()); }}>
-      <Hint side="bottom" title="Hoãn (s: 1 giờ)" text={snoozed ? `Đang hoãn tới ${timeLabel(one!.snoozed_until!, true)}.` : "Ẩn khỏi Việc cần xử lý, tự hiện lại sau; hoặc luôn bỏ qua người gửi."}>
+      <Hint side="bottom" title="Hoãn (s: 1 giờ)" text={snoozed ? (one!.snooze_on === "reply" ? "Đang hoãn tới khi có người trả lời." : one!.snooze_on ? `Đang hoãn tới khi ${one!.snooze_on.slice(7)} xong.` : `Đang hoãn tới ${timeLabel(one!.snoozed_until!, true)}.`) : "Ẩn khỏi Việc cần xử lý, tự hiện lại sau; hoặc luôn bỏ qua người gửi."}>
         <Menu.Trigger aria-label="Hoãn" onClick={(e) => e.stopPropagation()}
           render={<Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info", "hover:bg-info-wash hover:text-info data-popup-open:bg-info-wash data-popup-open:text-info")} />}>
           <AlarmClock />{label && "Hoãn"}
@@ -759,6 +763,14 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
             {snoozeChoices(now).map(({ label: text, at, clock }) => (
               <Menu.Item key={text} disabled={run.isPending} onClick={() => run.mutate(at)} className={cn("flex text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
                 {text}<span className="ml-auto pl-2 font-mono text-ink-3 tabular-nums">{clock && clockLabel(at.toISOString())}</span>
+              </Menu.Item>
+            ))}
+            <Menu.Item disabled={run.isPending} onClick={() => run.mutate({ on: "reply" })} className={cn("flex border-t text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
+              Tới khi có người trả lời
+            </Menu.Item>
+            {tickets.map((id) => (
+              <Menu.Item key={id} disabled={run.isPending} onClick={() => run.mutate({ on: `ticket:${id}` })} className={cn("flex text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
+                Tới khi {id} xong
               </Menu.Item>
             ))}
             {/* Not a <form>: React submits bubble through the portal to the reply form around the header. */}

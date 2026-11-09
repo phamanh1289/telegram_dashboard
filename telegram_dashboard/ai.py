@@ -322,7 +322,8 @@ class AiService:
             "user as a peer (friendly, collaborative); 3) the user replying to their own "
             "leader/manager (respectful, concise, reports status and asks for a decision when "
             "needed). Separate the drafts by a line containing just ---. The drafts are plain "
-            "text (no Markdown, no labels). No preamble."
+            "text (no Markdown, no labels). Keep it fast to read: at most 6 summary bullets, at most 3 next "
+            "steps, each draft at most 3 sentences. No preamble."
             if kind == "draft"
             else TICKET_TASK
         )
@@ -549,7 +550,16 @@ class AiService:
         if provider == "claude" and not providers.is_claude(cmd):
             provider = None  # another AI command only prints its answer
         prompt = providers.stdin(provider or "claude", f"{system}\n\n{user_prompt}")
-        return await self._run(cmd, cwd, prompt, bool(project or heavy), on_text, feature, choice, provider)
+        long = bool(project or heavy or brief)  # Briefing / Digest parts read many messages: the longer timeout
+        try:
+            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider)
+        except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt
+            if e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
+                raise
+            log.info("AI run for %s retried after: %s", feature, e.detail)
+            if on_text:
+                on_text(None)  # the page drops the half answer
+            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider)
 
     async def _run(self, cmd, cwd, prompt: bytes, long: bool, on_text, feature, choice, provider) -> str:
         """Run one AI command to its answer. `provider`: whose JSON events it prints (None: plain
@@ -593,6 +603,12 @@ class AiService:
             return text
         except ApiError as e:
             error = f"{e.code}: {e.detail}" if e.detail else e.code
+            raise
+        except asyncio.CancelledError:  # the page closed / moved on: not a failure of the AI
+            error = "ai_cancelled"
+            raise
+        except Exception as e:
+            error = f"ai_failed: {type(e).__name__}: {e}"[:300]
             raise
         finally:
             if proc is not None:
@@ -642,6 +658,9 @@ async def _read(proc, prompt: bytes, provider: str | None, on_text) -> tuple[str
         err.cancel()
 
 
+# worth one more try: the provider was busy or the connection dropped (not quota, login or a bad prompt)
+_TRANSIENT = re.compile(r"overloaded|\b(?:500|502|503|529)\b|econnreset|socket hang up|connection (?:reset|closed)|"
+                        r"network error|temporarily unavailable", re.I)
 _REASON = re.compile(r"error|failed|denied|not supported|no longer|quota|unauthori[sz]ed|rate limit", re.I)
 
 

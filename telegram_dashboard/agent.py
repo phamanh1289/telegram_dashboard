@@ -11,6 +11,7 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from . import providers
@@ -92,16 +93,22 @@ class AgentRunner:
                 log.warning("task %s: unreadable log line skipped", task_id)
         return items, len(lines)
 
+    def note(self, task_id: str, text: str) -> None:
+        """A line from the app in the session log (a PR opened from it, ...)."""
+        self._append(task_id, {"kind": "note", "text": text})
+
     def _append(self, task_id: str, item: dict) -> None:
         """`at` (epoch seconds) lets the page show how long each step and turn took."""
         with self.log_path(task_id).open("a") as f:
             f.write(json.dumps(item | {"at": round(time.time(), 1)}, ensure_ascii=False) + "\n")
 
     async def start(
-        self, task_id: str, project: str, text: str, mode: str, session_id: str, resume: bool,
-        ai: tuple[str | None, str | None] = (None, None),
+        self, task_id: str, project: str, text: str | Callable[[], Awaitable[str]], mode: str, session_id: str,
+        resume: bool, ai: tuple[str | None, str | None] = (None, None),
     ) -> str:  # fmt: skip
-        """Run one turn. Returns once the process has the prompt; output streams into the log.
+        """Run one turn. `text` may be made here (reading links takes seconds): the task already
+        shows running meanwhile, not stopped, and a second send meanwhile is busy.
+        Returns once the process has the prompt; output streams into the log.
         A new session (not `resume`) replaces the old log and result, once it is running.
         `ai`: the session's own model/effort (None: the task picks in AI settings).
         Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out).
@@ -111,6 +118,8 @@ class AgentRunner:
         self._starting[task_id] = proc = None
         provider, sid = providers.split_session(session_id)
         try:
+            if callable(text):
+                text = await text()
             tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
             if ai[0] is not None:  # picked for this session: used as is, no step-down
@@ -204,7 +213,11 @@ class AgentRunner:
                         got_result = item["kind"] == "result"
                         if got_result:
                             run = (providers.run_model(provider, st.get("model"), choice[0]), *choice[1:])
-                            note_run(self.settings, "agent", run, item.pop("final"), time.monotonic() - t0, None)
+                            final = item.pop("final")
+                            note_run(self.settings, "agent", run, final, time.monotonic() - t0, None)
+                            cost = final.get("total_cost_usd") if isinstance(final, dict) else None
+                            if isinstance(cost, int | float):  # the CLI's own estimate: the session sums its turns
+                                item["cost"] = round(float(cost), 4)
                             if not item["error"]:  # a failed turn is not a result
                                 task_result_path(self.settings, task_id).write_text(item["text"])
                         self._append(task_id, item)
@@ -213,7 +226,8 @@ class AgentRunner:
                 kill_tree(proc)
             code = await proc.wait()
             if not got_result:
-                note_run(self.settings, "agent", choice, None, time.monotonic() - t0, f"exit_{code}")
+                note_run(self.settings, "agent", choice, None, time.monotonic() - t0,
+                         "ai_cancelled" if task_id in self._why else f"exit_{code}")  # fmt: skip
                 tail = (await err).decode(errors="replace").strip()[-400:]
                 text = self._why.get(task_id) or tail or f"Tiến trình dừng (mã {code})."
                 self._append(task_id, {"kind": "result", "error": True, "text": text})

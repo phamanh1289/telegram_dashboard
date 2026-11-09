@@ -16,7 +16,7 @@ async function ctl(path: string, body?: object) {
 }
 
 async function open(page: Page) {
-  await page.goto("/");
+  await page.goto("/?chat=__all__"); // "/" lands on Hôm nay; these tests work the tag list
   await expect(page.getByTestId("message").first()).toBeVisible();
   await expect(page.getByTestId("tg-sub")).toHaveText("Cập nhật trực tiếp");
 }

@@ -70,11 +70,13 @@ async def test_failed_spawn_and_corrupt_log(tmp_path):
 
 async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr("telegram_dashboard.agent.AFTER_RESULT_IDLE", 0.2)
-    r = runner(tmp_path, '#!/bin/sh\ncat >/dev/null\necho \'{"type":"result","result":"ok"}\'\nexec sleep 30\n')
+    r = runner(tmp_path, '#!/bin/sh\ncat >/dev/null\n'
+                         'echo \'{"type":"result","result":"ok","total_cost_usd":0.123456}\'\nexec sleep 30\n')
     await r.start("t1", str(tmp_path), "hi", "plan", "s1", False)
     await asyncio.wait_for(r.pumps["t1"], 5)
     items, _ = r.read("t1")
     assert [i["kind"] for i in items] == ["user", "result"] and not items[1]["error"]
+    assert items[1]["cost"] == 0.1235  # the session page sums its turns' cost
     assert not r.running("t1") and read_task_result(r.settings, "t1") == "ok"
 
 
@@ -100,8 +102,57 @@ async def test_stop_while_starting_cancels_the_launch(tmp_path):
     assert not r.log_path("t1").exists()
 
 
+async def test_running_while_the_prompt_is_made(tmp_path):
+    r, gate = runner(tmp_path, LONG), asyncio.Event()
+
+    async def text() -> str:  # reading links: seconds the page must show running, not stopped
+        await gate.wait()
+        return "hi"
+
+    start = asyncio.ensure_future(r.start("t1", str(tmp_path), text, "plan", "s1", False))
+    await asyncio.sleep(0.05)
+    assert r.running("t1")
+    with pytest.raises(ApiError) as e:  # a second send meanwhile
+        await r.start("t1", str(tmp_path), "again", "plan", "s1", True)
+    assert e.value.code == "task_busy"
+    gate.set()
+    await asyncio.wait_for(start, 5)
+    await r.pumps["t1"]
+    assert r.read("t1")[0][0]["text"] == "hi"
+
+
 async def test_session_model_and_effort_override_the_task_picks(tmp_path):
     r = runner(tmp_path, LONG)
     await r.start("t1", str(tmp_path), "hi", "plan", "s1", False, ("sonnet", "low"))
     await r.pumps["t1"]
     assert "--model sonnet --effort low" in r.read("t1")[0][1]["text"]
+
+
+async def test_git_changes_and_pr_leave_secrets_out(tmp_path, monkeypatch):
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    remote, repo = tmp_path / "remote.git", tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True)  # noqa: E731
+    (repo / "a.txt").write_text("1\n")
+    g("add", ".")
+    g("commit", "-qm", "init")
+    g("remote", "add", "origin", str(remote))
+    (repo / "a.txt").write_text("2\n")
+    (repo / ".env").write_text("TOKEN=x\n")
+    c = await gitops.changes(str(repo))
+    assert c["branch"] == "main" and {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True}
+    assert "+2" in c["diff"]
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")  # no gh here: the branch is pushed, the PR left to the user
+    r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "")
+    assert r["branch"] == "ai/x" and r["skipped"] == [".env"] and r["url"] is None
+    shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
+                           capture_output=True, text=True).stdout
+    assert shown.split() == ["a.txt"]

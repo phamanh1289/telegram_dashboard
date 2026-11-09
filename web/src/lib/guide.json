@@ -2,9 +2,9 @@
 {
 "id": "module-switch",
 "tab": "telegram",
-"area": "Thanh trên cùng",
+"area": "Cài đặt › Thanh trên cùng",
 "title": "Chuyển module Telegram / YouTrack",
-"what": "Chuyển qua lại giữa Telegram Inbox và trang YouTrack. Khi đang ở Telegram, nút YouTrack có huy hiệu vàng đếm số ticket của bạn cần xử lý ngay.",
+"what": "Trang Cài đặt (không có thanh bên) có hai nút Telegram / YouTrack để quay về. Ở trang Telegram và YouTrack, đi qua lại bằng thanh bên: mục YouTrack bên Telegram (trang chủ YouTrack có huy hiệu số ticket cần xử lý ngay), mục Telegram bên YouTrack, hoặc ⌘K.",
 "how": [
 {
 "t": "Rê chuột vào \"YouTrack\" để xem ticket cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
@@ -147,14 +147,17 @@
 {
 "id": "today-strip",
 "tab": "telegram",
-"area": "Việc cần xử lý › Hôm nay",
-"title": "Dải “Hôm nay”: việc đang cần bạn",
-"what": "Một dòng trên đầu Việc cần xử lý đếm những gì đang cần bạn ở cả hai module: tag chờ lâu nhất, số tag quá hạn, ticket YouTrack của bạn đang rủi ro, câu hỏi Q&A tới hạn nhắc hoặc có trả lời mới, phiên AI Agent đã xong chưa xem. Bấm từng mục để tới đúng chỗ. Ẩn khi mọi số đều 0; thu gọn được và app nhớ lựa chọn.",
+"area": "Thanh bên › Hôm nay",
+"title": "Hôm nay: mọi việc đang chờ bạn",
+"what": "Trang mở đầu của app. Gom việc từ cả Telegram và YouTrack thành một danh sách, gấp nhất lên trước: tag chờ (quá hạn tô đỏ), ticket của bạn đang rủi ro, câu hỏi Q&A cần nhắc hoặc có trả lời mới, phiên AI Agent xong chưa xem, Báo lại, việc còn mở trong Briefing. Khối “Bạn đang chờ” liệt kê tag đã hoãn (kể cả hoãn tới khi có người trả lời / ticket xong) và câu hỏi Q&A của bạn chưa ai trả lời. Bấm một dòng để tới đúng chỗ; phím g rồi h.",
 "how": [
-"Mở Việc cần xử lý, nhìn dòng “Hôm nay” trên cùng",
-"Bấm một mục (vd. “chờ lâu nhất”) để nhảy tới tag / ticket / câu hỏi đó"
+{
+"t": "Bấm “Hôm nay” đầu thanh bên",
+"at": "Hôm nay"
+},
+"Bấm một dòng để trả lời tag, mở ticket, mở chuỗi Q&A hoặc phiên AI Agent"
 ],
-"keys": "hom nay hôm nay sang nay sáng nay tong quan tổng quan viec can xu ly việc cần xử lý dai dải qua han quá hạn"
+"keys": "hom nay hôm nay trang chu trang chủ viec dang cho viec của tôi đang chờ bạn ban dang cho tong quan tổng quan"
 },
 {
 "id": "view-pinned",
@@ -464,14 +467,14 @@
 "tab": "telegram",
 "area": "Trang nhóm › Tóm tắt (Digest)",
 "title": "Tóm tắt nhóm (Digest)",
-"what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất.",
+"what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất. Nhóm đã có trong Briefing: nút \"Tóm tắt\" mở Briefing của nhóm đó (bản tóm tắt chạy nối tiếp); xem chi tiết hay tóm tắt khoảng khác bằng nút \"Mở\" cạnh nhóm ở Briefing. Tóm tắt theo khoảng tự chọn hoặc tin đã chọn chỉ để xem riêng, không thay bản trong Briefing.",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
 "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
 },
 {
-"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+"t": "Bấm \"Tóm tắt\" ở đầu trang nhóm (nhóm đã có trong Briefing: bấm \"Mở\" cạnh nhóm ở Briefing)",
 "at": "Tóm tắt"
 },
 {
@@ -591,7 +594,7 @@
 "tab": "telegram",
 "area": "Briefing › Tóm tắt N nhóm",
 "title": "Tóm tắt mọi nhóm có tin mới",
-"what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất).",
+"what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất). Khi app đang mở, nhóm có tin mới tự được tóm tắt nền tối đa 2 giờ một lần (tắt ở Cài đặt › Telegram › Tự tóm tắt Briefing). Nhóm sắp hết hoặc đã hết quyền cho AI đọc hiện một dòng “Gia hạn 30 ngày” trên Briefing.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -622,7 +625,7 @@
 "tab": "telegram",
 "area": "Briefing › Trợ lý Briefing",
 "title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
-"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính ẩn / hiện bằng nút khung ở góc phải trên, app nhớ lựa chọn) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages.",
+"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính ẩn / hiện bằng nút khung ở góc phải trên, app nhớ lựa chọn) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages. Mỗi cuộc hỏi được lưu vào Lịch sử AI › Telegram trên trình duyệt này.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -804,7 +807,7 @@
 "tab": "telegram",
 "area": "Dòng tin › Hoãn",
 "title": "Hoãn tin (nhắc lại sau)",
-"what": "Ẩn tin khỏi Việc cần xử lý và tự hiện lại sau 1 giờ, 3 giờ hoặc sáng mai 9:00; tin đang hoãn hiện \"nhắc <giờ>\".",
+"what": "Ẩn tin khỏi Việc cần xử lý và tự hiện lại sau 1 giờ, 3 giờ hoặc sáng mai 9:00; tin đang hoãn hiện \"nhắc <giờ>\". Có thêm “Tới khi có người trả lời” (tin hiện lại khi ai đó trả lời tin này hoặc trả lời câu bạn đã trả lời) và “Tới khi VA-123 xong” khi tin nhắc ticket (hiện lại khi ticket chuyển Fixed / Done); hai kiểu này vẫn tự hiện lại sau 7 ngày.",
 "how": [
 {
 "t": "Bấm biểu tượng đồng hồ báo thức \"Hoãn\" (rê chuột vào nút Xong của tin để hiện)",
@@ -827,7 +830,7 @@
 "tab": "telegram",
 "area": "Tin tag › Nhắc lại sau",
 "title": "Nhắc lại sau (mở lại tag đã xử lý)",
-"what": "Trả lời xong mà vẫn cần kiểm tra lại: chọn “Nhắc lại sau khi gửi” trong ô trả lời trước khi Gửi, hoặc trên tag đã xong mở ⋯ › “Nhắc lại sau…”. Tag tạm ẩn và quay lại Việc cần xử lý đúng giờ đã chọn (1 giờ, chiều nay, mai 9h, tuần sau).",
+"what": "Trả lời xong mà vẫn cần kiểm tra lại: chọn “Nhắc lại sau khi gửi” trong ô trả lời trước khi Gửi, hoặc trên tag đã xong mở ⋯ › “Nhắc lại sau…”. Tag tạm ẩn và quay lại Việc cần xử lý đúng giờ đã chọn (1 giờ, chiều nay, mai 9h, tuần sau). Khi câu trả lời có hẹn làm tiếp (“để mình check rồi báo”, “chiều nay gửi”, “mai mình làm”…), ô “Nhắc lại sau khi gửi” tự chọn giờ phù hợp; đổi hoặc chọn Không nhắc nếu không cần.",
 "how": [
 "Trong ô trả lời: chọn mốc ở “Nhắc lại sau khi gửi” rồi Gửi",
 "Hoặc trên tag đã xong: ⋯ › Nhắc lại sau… › chọn mốc"
@@ -1440,7 +1443,7 @@
 "tab": "telegram",
 "area": "AI Agent › Phiên › Thao tác",
 "title": "Done, dừng, xóa phiên, mở nhóm, model riêng",
-"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn.",
+"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên mở danh sách file AI đã sửa trong dự án cùng diff; “Tạo nhánh + PR” (bấm hai lần để xác nhận) commit trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này).",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1533,7 +1536,7 @@
 "tab": "settings",
 "area": "Cài đặt › Tìm cài đặt",
 "title": "Tìm một cài đặt",
-"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt.",
+"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Dữ liệu trên trình duyệt, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
 "how": [
 {
 "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -1994,7 +1997,7 @@
 "tab": "youtrack",
 "area": "Thanh bên › Lịch sử AI",
 "title": "Lịch sử AI",
-"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong khi trang đã tải lại thì hiện \"Đã xong, mở để xem\", kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt).",
+"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong khi trang đã tải lại thì hiện \"Đã xong, mở để xem\", kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt). Tab “Telegram” giữ các cuộc hỏi Trợ lý Briefing (cả khi mở bằng ⌘J): đọc lại ở đây, hỏi tiếp ở Trợ lý. Bên Telegram mở được từ icon Lịch sử AI ở thanh bên.",
 "how": [
 {
 "t": "Bấm \"Lịch sử AI\" trên thanh bên (chỉ hiện khi AI bật)",
@@ -2349,8 +2352,8 @@
 "id": "yt-ai-standup-dev",
 "tab": "youtrack",
 "area": "Hôm nay (Dev) › AI Studio",
-"title": "Standup và Kế hoạch (Dev)",
-"what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt.",
+"title": "Standup và Kế hoạch",
+"what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt. Standup có cho cả Dev và QA/QC (QA: theo ticket bạn làm QC), đọc thêm phiên AI Agent đã xong; nút “Saved Messages” gửi standup vào Telegram của bạn.",
 "how": [
 {
 "t": "Ở thẻ \"AI Studio\" bấm tab \"Standup\"",
@@ -3898,5 +3901,41 @@
 }
 ],
 "keys": "mock du lieu mau dữ liệu mẫu token youtrack ket noi kết nối cai dat cài đặt"
+},
+{
+"id": "ai-dock",
+"tab": "telegram",
+"area": "Toàn trang › ⌘J",
+"title": "Trợ lý AI ở mọi trang (⌘J)",
+"what": "Bên Telegram, ⌘J (Ctrl+J) mở Trợ lý Briefing ở khung bên phải từ bất kỳ trang nào: hỏi về bản tóm tắt mới nhất của mọi nhóm mà không phải sang Briefing. Bên YouTrack, ⌘J mở phiên AI về các ticket đang mở trong phạm vi đang xem (ticket rủi ro, priority cao trước).",
+"how": [
+"Nhấn ⌘J (Ctrl+J trên Windows)",
+"Gõ câu hỏi hoặc bấm một gợi ý"
+],
+"keys": "cmd j ctrl j tro ly ai trợ lý ai hoi ai hỏi ai khung ai"
+},
+{
+"id": "cross-nav",
+"tab": "telegram",
+"area": "Thanh bên › YouTrack / Telegram",
+"title": "Đi giữa Telegram và YouTrack từ thanh bên",
+"what": "Thanh bên Telegram có một hàng icon YouTrack: Trang chủ YouTrack (huy hiệu đỏ = số ticket của bạn cần xử lý ngay), Ticket, Dashboard, Release, Thành viên, Lịch sử AI. Thanh bên YouTrack có mục Telegram (Hôm nay, Việc cần xử lý, Q&A, Briefing, AI Agent). ⌘K ở mỗi bên cũng tìm được trang của bên kia. Không còn công tắc module trên thanh trên cùng.",
+"how": [
+"Bấm một mục trong nhóm YouTrack / Telegram ở thanh bên",
+"Hoặc ⌘K rồi gõ tên trang (vd. “dashboard”)"
+],
+"keys": "chuyen module chuyển module youtrack telegram thanh ben dieu huong điều hướng"
+},
+{
+"id": "work-trail",
+"tab": "telegram",
+"area": "Khung Trả lời › Luồng việc",
+"title": "Luồng việc của một tin",
+"what": "Dưới tin đang trả lời có dòng “Luồng việc”: ticket nhắc trong tin kèm trạng thái, phiên AI Agent trên tin này, chuỗi Q&A, đã trả lời hay chưa. Bấm từng bước để tới đúng chỗ. Không hiện khi tin chưa đi tới bước nào.",
+"how": [
+"Mở trả lời một tin tag",
+"Bấm một bước trong dòng “Luồng việc”"
+],
+"keys": "luong viec luồng việc timeline ticket agent qa"
 }
 ]

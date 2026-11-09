@@ -48,7 +48,10 @@ function Body({ onClose, chats, views, group, range, onGo, onDigest, onSearch }:
     out.push({ key: `chat:${c.chat_id}`, group: "Nhóm", icon: <Users />, label: c.title,
       hint: c.pending_count ? <span className="font-mono text-xs text-ink-3 tabular-nums">{c.pending_count} chờ</span> : undefined, run: go(() => onGo(c.chat_id)) });
   }
-  for (const [v, label] of views) if (hit(label)) out.push({ key: `view:${v}`, group: "Đi tới", icon: <ArrowRight />, label, run: go(() => onGo(v)) });
+  for (const [v, label] of views) {
+    const yt = v.startsWith("/"); // a YouTrack page: the same ⌘K reaches both modules
+    if (hit(`${label}${yt ? " youtrack" : ""}`)) out.push({ key: `view:${v}`, group: yt ? "YouTrack" : "Đi tới", icon: <ArrowRight />, label: yt ? `YouTrack › ${label}` : label, run: go(() => (yt ? router.push(v) : onGo(v))) });
+  }
   if (group) {
     const acts: PaletteItem[] = [
       ...(onDigest ? [{ key: "digest", group: "Nhóm này", icon: <Sparkles />, label: `Digest: tóm tắt ${group.title}`, run: go(onDigest) }] : []),

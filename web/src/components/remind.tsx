@@ -79,10 +79,10 @@ export function RemindSubmenu({ m }: { m: Message }) {
 }
 
 /** The reply box: pick before Gửi; once the reply is sent the tag reopens at that time. "" = no reminder. */
-export function RemindPick({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+export function RemindPick({ value, onChange, auto }: { value: string; onChange: (v: string) => void; auto?: boolean }) {
   const choices = snoozeChoices();
   return (
-    <Hint side="bottom" text="Gửi xong vẫn giữ tin này trong việc cần xử lý: nó hiện lại vào lúc bạn chọn để kiểm tra lại.">
+    <Hint side="bottom" text={auto ? "Câu trả lời có hẹn làm tiếp (vd “để mình check rồi báo”), nên tự đặt nhắc lại. Đổi hoặc chọn Không nhắc nếu không cần." : "Gửi xong vẫn giữ tin này trong việc cần xử lý: nó hiện lại vào lúc bạn chọn để kiểm tra lại."}>
       <span className="inline-flex">
         <Dropdown label="Nhắc lại sau khi gửi" value={value} onChange={onChange}
           trigger={cn("flex h-7 items-center gap-1 rounded-full px-2 text-xs transition-colors duration-(--dur-micro) hover:bg-paper-3", value ? "bg-info-wash text-info" : "text-ink-3")}
@@ -91,6 +91,21 @@ export function RemindPick({ value, onChange }: { value: string; onChange: (v: s
       </span>
     </Hint>
   );
+}
+
+// "Lời hứa": a reply that promises a follow-up ("để mình check rồi báo", "chiều nay gửi") picks a reminder by itself;
+// the most specific time wins. A RemindPick label, or "" when the text promises nothing.
+const PROMISES: [RegExp, string][] = [
+  [/tuần sau|thứ hai tới|đầu tuần/i, "Thứ Hai 9:00"],
+  [/\b(sáng |ngày )?mai\b/i, "Sáng mai 9:00"],
+  [/chiều nay|trưa nay|trong hôm nay|cuối ngày|\beod\b/i, "14:00 hôm nay"],
+  [/lát nữa|tí nữa|chút nữa|lát (mình|em|anh|chị|tôi)/i, "1 giờ"],
+  [/để (mình|em|anh|chị|tôi|t) (check|kiểm tra|xem|hỏi|test|confirm|tìm)|(mình|em|anh|chị|tôi) (sẽ )?(báo|gửi|update) lại|(check|xem) (rồi|xong) báo/i, "3 giờ"],
+];
+export function promiseChoice(text: string, now = Date.now()) {
+  const labels = new Set(snoozeChoices(now).map((c) => c.label));
+  const hit = PROMISES.find(([re]) => re.test(text))?.[1] ?? "";
+  return hit && !labels.has(hit) ? "3 giờ" : hit; // "14:00 hôm nay" once it has passed
 }
 
 /** The time a RemindPick value means now (its choices are relative: "1 giờ" counts from the send). */

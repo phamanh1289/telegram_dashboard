@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results.
 
-export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number };
+export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number; cost?: number }; // cost: a result turn, USD as the CLI estimates
 export type TaskLog = { items: TaskEvent[]; next: number; running?: boolean };
 
 /** Tool name -> icon and a Vietnamese verb, so a step reads "Đọc SellProgressCard.kt". */
@@ -139,7 +139,10 @@ export function ToolGroup({ steps, live }: { steps: Step[]; live: boolean }) {
 }
 
 /** Where a turn's time went: tools vs the model thinking/writing, as one bar. */
-function TurnTimeline({ took, tools }: { took: number; tools: number }) {
+/** USD the CLI reports, short: $0.42, $1.3 */
+export const usd = (n: number) => "$" + (n < 1 ? n.toFixed(2) : n.toFixed(1));
+
+function TurnTimeline({ took, tools, cost }: { took: number; tools: number; cost?: number }) {
   const pct = took > 0 ? (tools / took) * 100 : 0;
   return (
     <div className="mt-3 grid gap-1.5 border-t border-ok/20 pt-2.5 text-[0.6875rem] text-ink-3">
@@ -151,6 +154,7 @@ function TurnTimeline({ took, tools }: { took: number; tools: number }) {
         <span>Tổng {dur(took)}</span>
         <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-warn/80" aria-hidden />Công cụ {dur(tools)}</span>
         <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-hl/70" aria-hidden />Suy nghĩ {dur(took - tools)}</span>
+        {cost !== undefined && <span title="Ước tính theo giá API do CLI báo (gói thuê bao không trừ tiền theo số này)">≈ {usd(cost)}</span>}
       </p>
     </div>
   );
@@ -216,7 +220,7 @@ export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: Task
       <li>
         <AiResultCard error={ev.error} className="p-4">
           {ev.text && <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />}
-          {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} />}
+          {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} cost={ev.cost} />}
         </AiResultCard>
       </li>
     );

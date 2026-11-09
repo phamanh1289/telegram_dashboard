@@ -4,7 +4,7 @@ import { ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState, ViewTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AiQuota } from "@/components/ai";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { api, errorText } from "@/lib/api";
@@ -26,7 +26,7 @@ const MODULES = [
 ] as const;
 
 /** My YouTrack tickets that need attention now, for a badge on the YouTrack switch while on Telegram (same cache key as the YouTrack page). */
-function useYtRisk(on: boolean) {
+export function useYtRisk(on: boolean) {
   const { me, rows } = useMyTickets(on);
   const now = useNow();
   const role = useRole(); // "me" = my tickets + those I QC; QA counts the QC ones, PO all of them, Dev the assigned ones
@@ -51,7 +51,7 @@ function useUpdateState() {
 
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
 export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
-  const risk = useYtRisk(module === "telegram");
+  const risk = useYtRisk(module === "settings");
   // New tickets for me on every page; "Báo lại" also while on Telegram (the YouTrack page's own watch does it there). Same 5-min poll.
   useWatchGlobal(module === "telegram", (id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
   const behind = useUpdateState();
@@ -66,15 +66,9 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
   return (
     <div className="col-span-full flex h-11 items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
       {children}
-      <nav aria-label="Chuyển module" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
-        {MODULES.map(([id, href, label, Icon, title]) => id === module ? (
-          // Shared across both pages: on a module switch React morphs the pill and crossfades the rest (globals.css sets the timing).
-          <ViewTransition key={id} name="module-pill">
-            <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-              <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
-            </span>
-          </ViewTransition>
-        ) : (
+      {/* Telegram and YouTrack link each other from their sidebars (one nav); only Settings, which has none, keeps the switch. */}
+      {module === "settings" && <nav aria-label="Chuyển module" className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
+        {MODULES.map(([id, href, label, Icon, title]) => (
           <Hint key={id} side="bottom" title={label} text={id === "youtrack" && risk.length ? `${title}. ${risk.length} ticket cần xử lý ngay: ${risk.slice(0, 5).join(", ")}${risk.length > 5 ? "…" : ""}` : title}><Link href={href}
             className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
             <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
@@ -82,7 +76,7 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
             {id === "youtrack" && risk.length > 0 && <span className="rounded-full bg-signal px-1.5 font-mono text-[11px] leading-[18px] text-white tabular-nums">{risk.length}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
           </Link></Hint>
         ))}
-      </nav>
+      </nav>}
       <div className="ml-auto flex items-center gap-1">
         <AiQuota scope={module === "youtrack" ? "youtrack" : "telegram"} />
         <GuideButton module={module} />

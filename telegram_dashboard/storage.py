@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS messages (
   media_kind TEXT,
   deleted INTEGER NOT NULL DEFAULT 0,
   handled INTEGER NOT NULL DEFAULT 0,
-  snoozed_until INTEGER,
+  snoozed_until INTEGER, snooze_on TEXT,
   pinned INTEGER NOT NULL DEFAULT 0,
   links TEXT NOT NULL DEFAULT '[]',
   PRIMARY KEY (chat_id, message_id)
@@ -206,6 +206,7 @@ def _row_to_message(r: sqlite3.Row) -> StoredMessage:
         handled_by=r["handled_by"],
         handled_at=_dt(r["handled_at"]),
         snoozed_until=_dt(r["snoozed_until"]),
+        snooze_on=r["snooze_on"] if "snooze_on" in r.keys() else None,  # noqa: SIM118 (sqlite3.Row)
         pinned=bool(r["pinned"]),
         priority=bool(r["priority"]),
         links=json.loads(r["links"]),
@@ -240,6 +241,23 @@ def _mark_qa(c: sqlite3.Connection, rows: Iterable, handled: bool) -> None:
                 c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=? AND state='done'", (cid, code))
 
 
+CHAIN_MAX = 12  # as the web's reply-chain walk (message-item.tsx)
+
+
+def _qa_text(c: sqlite3.Connection, cid: str, mid: int | None) -> tuple:
+    """(chat_id, text) of the nearest stored message naming a #QA code: this one or one up its reply chain (a BE
+    answer replies to the copied ask that carries the code); ("", "") when none."""
+    for _ in range(CHAIN_MAX):
+        r = None if mid is None else c.execute(
+            "SELECT text, reply_to_id FROM messages WHERE chat_id=? AND message_id=?", (cid, mid)).fetchone()
+        if r is None:
+            break
+        if qa_codes(r[0]):
+            return cid, r[0]
+        mid = r[1]
+    return "", ""
+
+
 def _add_cols(c: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
     """ALTER TABLE ADD COLUMN for each column the table lacks (new databases have them already)."""
     have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
@@ -251,7 +269,8 @@ def _add_cols(c: sqlite3.Connection, table: str, cols: dict[str, str]) -> None:
 def _add_missing_columns(c: sqlite3.Connection) -> None:
     """Databases from before versioning may lack these columns; a no-op on new ones."""
     _add_cols(c, "messages", {"handled": "INTEGER NOT NULL DEFAULT 0", "links": "TEXT NOT NULL DEFAULT '[]'",
-                              "snoozed_until": "INTEGER", "pinned": "INTEGER NOT NULL DEFAULT 0"})  # fmt: skip
+                              "snoozed_until": "INTEGER", "pinned": "INTEGER NOT NULL DEFAULT 0",
+                              "snooze_on": "TEXT"})  # fmt: skip
     _add_cols(c, "tasks", {"prompt": "TEXT", "mode": "TEXT NOT NULL DEFAULT 'terminal'", "session_id": "TEXT",
                            "tty": "TEXT"})  # fmt: skip
     _add_cols(c, "outbox", {"code": "TEXT", "sent_text": "TEXT NOT NULL DEFAULT ''", "sent_at": "INTEGER"})
@@ -593,6 +612,8 @@ class Store:
             c.execute("UPDATE messages SET priority=1 WHERE chat_id=? AND message_id=? AND sender_id IN "
                       "(SELECT value FROM rules WHERE kind='priority')", (m.chat_id, m.message_id))  # fmt: skip
             self._record(c, m.chat_id, m.message_id, "new", chat["generation"])
+            if m.reply_to_id and not m.outgoing:
+                self._wake_on_reply(c, m.chat_id, m.reply_to_id)
             return True
         if existing["deleted"]:
             return False  # tombstones are never resurrected
@@ -698,9 +719,41 @@ class Store:
         with self._conn(write=True) as c:
             return self._mark(c, chat_id, message_id, handled, by)
 
-    def set_snooze(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
+    def set_snooze(self, chat_id: str, message_id: int, until: datetime | None, on: str | None = None) -> bool:
+        """Hide a tag until `until`; `on` ("reply" or "ticket:<ID>") wakes it sooner, when someone answers it (or my
+        reply to it) or that ticket is done. `until` stays the backstop, so an event that never comes loses nothing."""
         with self._conn(write=True) as c:
+            c.execute("UPDATE messages SET snooze_on=? WHERE chat_id=? AND message_id=?", (on, chat_id, message_id))
             return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
+
+    def _wake_on_reply(self, c: sqlite3.Connection, chat_id: str, reply_to: int) -> None:
+        """A new message answers `reply_to`: wake tags snoozed "until a reply" that it answers, directly or through
+        my own reply to them."""
+        rows = c.execute(
+            "SELECT message_id FROM messages WHERE chat_id=?1 AND snooze_on='reply' AND (message_id=?2 OR message_id="
+            "(SELECT reply_to_id FROM messages WHERE chat_id=?1 AND message_id=?2 AND outgoing=1))",
+            (chat_id, reply_to),
+        ).fetchall()  # fmt: skip
+        for (mid,) in rows:
+            c.execute("UPDATE messages SET snooze_on=NULL WHERE chat_id=? AND message_id=?", (chat_id, mid))
+            self._set_col(c, chat_id, mid, "snoozed_until", None)
+
+    def wake_ticket(self, ticket: str) -> int:
+        """Wake every tag snoozed until `ticket` is done. Returns how many woke."""
+        with self._conn(write=True) as c:
+            rows = c.execute("SELECT chat_id, message_id FROM messages WHERE snooze_on=?",
+                             (f"ticket:{ticket}",)).fetchall()  # fmt: skip
+            for chat_id, mid in rows:
+                c.execute("UPDATE messages SET snooze_on=NULL WHERE chat_id=? AND message_id=?", (chat_id, mid))
+                self._set_col(c, chat_id, mid, "snoozed_until", None)
+            return len(rows)
+
+    def ticket_snoozes(self) -> list[str]:
+        """Tickets some snoozed tag waits on (still hidden)."""
+        with self._conn() as c:
+            return [r[0][7:] for r in c.execute(
+                "SELECT DISTINCT snooze_on FROM messages "
+                "WHERE snooze_on LIKE 'ticket:%' AND snoozed_until>unixepoch()")]
 
     def remind(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
         """"Nhắc lại sau": reopen a kept tag and hide it until `until` (None: back now), in one write, so it comes
@@ -723,6 +776,16 @@ class Store:
                 "WHERE m.pinned=1 AND m.deleted=0 ORDER BY m.date DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+        return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
+
+    def list_snoozed(self, limit: int = 100) -> list[tuple[str, MessageDTO]]:
+        """Open tags hidden for now (snoozed, or "nhắc lại sau"), the soonest back first: (chat title, message)."""
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.*, c.title AS chat_title FROM messages m JOIN chats c USING (chat_id) WHERE m.outgoing=0 "
+                "AND m.handled=0 AND m.deleted=0 AND m.snoozed_until>unixepoch() ORDER BY m.snoozed_until LIMIT ?",
+                (limit,),
+            ).fetchall()  # fmt: skip
         return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
 
     def list_pending(
@@ -1105,23 +1168,22 @@ class Store:
         return out
 
     def mark_task_qa(self, task_id: str, handled: bool) -> None:
-        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name."""
+        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name (or, nearest,
+        a message up their reply chain)."""
         with self._conn(write=True) as c:
-            rows = c.execute(
-                "SELECT m.chat_id, m.text FROM messages m JOIN tasks t "
-                "ON t.chat_id=m.chat_id AND t.message_id=m.message_id WHERE t.id=? "
-                "UNION ALL SELECT m.chat_id, m.text FROM messages m JOIN task_refs r "
-                "ON r.chat_id=m.chat_id AND r.message_id=m.message_id WHERE r.task_id=?",
+            keys = c.execute(
+                "SELECT chat_id, message_id FROM tasks WHERE id=? "
+                "UNION ALL SELECT chat_id, message_id FROM task_refs WHERE task_id=?",
                 (task_id, task_id),
             ).fetchall()
-            _mark_qa(c, rows, handled)
+            _mark_qa(c, [_qa_text(c, cid, mid) for cid, mid in keys], handled)
 
     def mark_tag_qa(self, chat_id: str, message_id: int, handled: bool) -> None:
         """Done / reopen on a tag straight from the list: a #QA code in it, and the Q&A of the sessions on it
         (as on the session), follow."""
         key = (chat_id, message_id)
         with self._conn(write=True) as c:
-            _mark_qa(c, c.execute("SELECT chat_id, text FROM messages WHERE chat_id=? AND message_id=?", key), handled)
+            _mark_qa(c, [_qa_text(c, *key)], handled)
             ids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE chat_id=? AND message_id=?", key).fetchall()]
         for task_id in ids:
             self.mark_task_qa(task_id, handled)
@@ -1221,16 +1283,18 @@ class Store:
     # ---- digests -------------------------------------------------------
     def briefing_rows(self) -> list[dict]:
         """Tracked chats plus untagged ones opened to Digest (any consent row, even expired), each
-        with its title, whether the consent is live, and its saved digest (None when none)."""
+        with its title, whether the consent is live (and until when: past = expired), and its saved digest (None when
+        none)."""
         with self._conn() as c:
             rows = c.execute(
-                "SELECT c.chat_id, c.title, dc.expires_at>unixepoch() AS consent, d.chat_id AS d_chat, "
+                "SELECT c.chat_id, c.title, dc.expires_at>unixepoch() AS consent, dc.expires_at, d.chat_id AS d_chat, "
                 "d.last_message_id, d.last_date, d.result, d.created_at FROM chats c "
                 "LEFT JOIN digest_consents dc USING (chat_id) LEFT JOIN digests d USING (chat_id) "
                 "WHERE c.tracking=1 OR dc.chat_id IS NOT NULL"
             ).fetchall()  # fmt: skip
         keys = ("chat_id", "last_message_id", "last_date", "result", "created_at")
         return [{"chat_id": r["chat_id"], "title": r["title"], "consent": bool(r["consent"]),
+                 "consent_until": r["expires_at"],
                  "digest": dict(zip(keys, (r["d_chat"], *(r[k] for k in keys[1:])), strict=True))
                  if r["d_chat"] else None} for r in rows]  # fmt: skip
 

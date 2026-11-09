@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from . import providers, telegram
+from .agent import read_task_result, task_result_path
 from .ai import ASK_STYLE, TICKET_FORMAT, AiJobs, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
 from .digest import VN
@@ -318,10 +319,11 @@ AI_TODAY = (
     "Mọi ý phải kèm ID. Không bịa; ý suy luận thì ghi '(có vẻ)'. Ngắn, đọc trong 1 phút."
 )
 AI_STANDUP = (
-    "Viết standup ngắn của một developer từ <tickets> (ticket của họ; \"updated\" là lúc cập nhật "
-    "cuối) và <telegram_replies> (tin họ đã gửi trong các nhóm). Ba nhãn in đậm, theo thứ tự:\n"
+    "Viết standup ngắn của một thành viên (dev hoặc QC) từ <tickets> (ticket của họ; \"updated\" là lúc cập nhật "
+    "cuối), <telegram_replies> (tin họ đã gửi trong các nhóm) và <agent_sessions> (phiên AI Agent "
+    "đã xong: việc code đã điều tra / sửa). Ba nhãn in đậm, theo thứ tự:\n"
     "**Hôm qua:** việc đã làm từ <since>: ticket cập nhật / chuyển trạng thái sau mốc đó, câu trả "
-    "lời quan trọng trên Telegram. Mỗi dòng '- ID: đã làm gì'.\n"
+    "lời quan trọng trên Telegram, việc code xong nhờ AI Agent. Mỗi dòng '- ID: đã làm gì'.\n"
     "**Hôm nay:** 1-3 việc sẽ làm, ưu tiên ticket đang làm, quá hạn, priority cao.\n"
     "**Vướng mắc:** ticket blocked / đang chờ người khác, cần ai gỡ; không có thì ghi 'Không'.\n"
     "Ngôi thứ nhất, câu ngắn, dán thẳng vào Telegram. Không bịa; không chắc thì ghi '(có vẻ)'."
@@ -1408,6 +1410,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
                  for m in sent])  # fmt: skip
             head += f"\n<since>{_day(body.since)}</since>"  # local days, like the tickets' dates
             head += f"\n<telegram_replies>{replies}</telegram_replies>"
+            # AI Agent sessions that ended a turn since then: code investigated / changed (one standup reads it all)
+            ran = [t for t in await st.db.read(st.store.list_tasks)
+                   if (f := task_result_path(st.settings, t["id"])).is_file() and f.stat().st_mtime >= since]
+            sessions = data_json([{"task": (t["title"] or t["message_text"] or t["prompt"] or "")[:200],
+                                   "result": (read_task_result(st.settings, t["id"]) or "")[:400]} for t in ran[:8]])
+            head += f"\n<agent_sessions>{sessions}</agent_sessions>"
         if body.kind in ("ask", "plan"):
             stats = data_json(body.stats)[:20_000] if body.stats else ""
             ask = f"\n<ask>{body.ask}</ask>" if body.kind == "ask" else ""

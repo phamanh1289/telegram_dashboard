@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -21,6 +21,7 @@ const LINES: Record<FetchKind, string[]> = {
   qa: ["AI đang kết nối Telegram", "Đang đọc các câu hỏi #QA", "Đang gom câu trả lời trong chuỗi", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"],
   brief: ["AI đang kết nối Telegram", "Đang gom tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   digest: ["AI đang đọc hội thoại của nhóm", "Đang ghép câu hỏi với câu trả lời", "Đang gom theo chủ đề, đánh dấu trao đổi với BE", "Đang tìm việc cần confirm, điều đã chốt", "Sắp xong rồi"],
+  today: ["AI đang gom việc của bạn", "Đang đọc tag chờ và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -126,6 +127,17 @@ const tid = (p: string, n: number) => `${p || "YT"}-${n}`; // a ticket ID of the
 const ARCS = ["M44 70C110 -6 200 0 268 80", "M44 70C110 150 200 160 268 80"];
 
 const SCENES: Record<FetchKind, Scene> = {
+  // Hôm nay: tags (Telegram) and tickets (YouTrack) stream into the robot from both sides; what is urgent comes out on top
+  today: ({ p }) => <>
+    <Cone className="inset-y-7 right-1/2 left-12" />
+    <Cone className="inset-y-7 right-12 left-1/2 -scale-x-100" />
+    {([["@bạn", C.info, 0], [tid(p, 214), C.hl, 1], ["#QA", C.ok, 0], ["Blocked", C.err, 1], ["@bạn", C.info, 0], ["Quá hạn", C.warn, 1]] as const)
+      .map(([t, c, side], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={side ? "M276 80C236 30 196 40 160 80" : "M44 80C84 130 124 120 160 80"}>{t}</Fly>)}
+    <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
+    <Tile label={p || "YouTrack"} className="top-1/2 right-1 -translate-y-1/2"><YtLogo className="size-9" /></Tile>
+    <Bot ring className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
+  </>,
+
   // the ticket list: the robot pulls ticket IDs and fields out of YouTrack
   tickets: ({ p }) => <>
     <Cone className="inset-y-7 right-12 left-12" />

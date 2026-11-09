@@ -7,11 +7,12 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Request
 
+from . import gitops
 from .agent import delete_task_files, read_task_prompt, read_task_result
 from .ai import ASK_MSG, ASK_STYLE
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
-from .models import HandledRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
+from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
 
 log = logging.getLogger("telegram_dashboard.tasks")
@@ -32,7 +33,9 @@ async def start_task(
                      mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
     try:
         # its questions to BE / PO / QC: one post-ready format for every session, in the role style of every AI text
-        text = await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_MSG}{ASK_STYLE}"
+        async def text() -> str:
+            return await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_MSG}{ASK_STYLE}"
+
         named = await s.agent.start(task_id, project, text, mode, session, False)
     except BaseException:
         await s.db.write(s.store.delete_task, task_id)
@@ -98,7 +101,7 @@ def build_router(settings) -> APIRouter:
         await s.agent.stop(task_id)
         ai = (row["model"], row["effort"])
         fresh = s.agent.new_session(split_session(row["session_id"] or "")[0])
-        text = await expand(s, row["prompt"], task_id, chat_id=row["chat_id"])
+        text = lambda: expand(s, row["prompt"], task_id, chat_id=row["chat_id"])  # noqa: E731
         session = await s.agent.start(task_id, row["project"], text, row["mode"], fresh, False, ai)
         await s.db.write(s.store.set_task_session, task_id, session)
 
@@ -118,13 +121,16 @@ def build_router(settings) -> APIRouter:
         if not row["session_id"]:
             raise ApiError(404, "task_not_found")
         mode = "edit" if body.edit else row["mode"]  # per turn, so a plan can be approved
-        if s.agent.running(task_id):  # before expand(): a double send must not rewrite the files a turn reads
-            raise ApiError(409, "task_busy")  # (start() also reserves the task before its first await)
-        if has_links(row["prompt"] or "") and not links_dir(settings, task_id).is_dir():
-            log.info("task %s: saved link content gone, fetching it again", task_id)
-            await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])  # re-saves earlier files
         ai = (row["model"], row["effort"])
-        text = await expand(s, body.text, task_id, chat_id=row["chat_id"])
+
+        # made in start(), once reserved: a double send must not rewrite the files a turn reads
+        async def text() -> str:
+            if has_links(row["prompt"] or "") and not links_dir(settings, task_id).is_dir():
+                log.info("task %s: saved link content gone, fetching it again", task_id)
+                # re-saves earlier files
+                await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])
+            return await expand(s, body.text, task_id, chat_id=row["chat_id"])
+
         await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, ai)
         refs = [(x.chat_id, int(x.message_id)) for x in body.refs if x.message_id.isdigit()]
         if refs:
@@ -157,6 +163,24 @@ def build_router(settings) -> APIRouter:
             if body.react:
                 s.bridge.react(rc, mids, body.handled)
         await s.db.write(s.store.mark_task_qa, task_id, body.handled)  # a #QA code in them: that Q&A follows
+
+    @r.get("/{task_id}/changes")
+    async def task_changes(task_id: str, request: Request) -> dict:
+        """What the session's project has changed (git working tree vs HEAD): files and patch."""
+        row = await _task(request.app.state, task_id)
+        return await gitops.changes(row["project"])
+
+    @r.post("/{task_id}/pr")
+    async def task_pr(task_id: str, body: PrRequest, request: Request) -> dict:
+        """Commit the changes (secret-looking files left out) on a branch, push it and open a PR; noted in the log."""
+        s = request.app.state
+        row = await _task(s, task_id)
+        if s.agent.running(task_id):
+            raise ApiError(409, "task_busy")
+        res = await gitops.open_pr(row["project"], f"ai/{task_id}", body.title.strip(), body.body.strip())
+        pushed = f"Đã đẩy nhánh `{res['branch']}`. {res['note'] or ''}"
+        s.agent.note(task_id, f"Đã mở PR: {res['url']}" if res["url"] else pushed)
+        return res
 
     @r.post("/{task_id}/stop", status_code=204)
     async def task_stop(task_id: str, request: Request) -> None:

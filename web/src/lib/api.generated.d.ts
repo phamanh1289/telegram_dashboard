@@ -909,6 +909,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/snooze/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Snooze Tickets
+         * @description Tickets that snoozed tags wait on: the YouTrack watch wakes them once done.
+         */
+        get: operations["snooze_tickets_api_snooze_tickets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/snooze/wake": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Snooze Wake
+         * @description The ticket is done: tags snoozed until then come back.
+         */
+        post: operations["snooze_wake_api_snooze_wake_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chats/{chat_id}/messages/{message_id}/remind": {
         parameters: {
             query?: never;
@@ -1888,6 +1928,8 @@ export interface components {
             title: string;
             /** Consent */
             consent: boolean;
+            /** Consent Until */
+            consent_until?: string | null;
             saved?: components["schemas"]["SavedDigest"] | null;
             /** Latest Id */
             latest_id?: string | null;
@@ -2139,6 +2181,11 @@ export interface components {
             /** After Id */
             after_id?: number | null;
             /**
+             * Save
+             * @default true
+             */
+            save: boolean;
+            /**
              * Closed
              * @default []
              */
@@ -2347,6 +2394,8 @@ export interface components {
             handled_at?: string | null;
             /** Snoozed Until */
             snoozed_until?: string | null;
+            /** Snooze On */
+            snooze_on?: string | null;
             /**
              * Pinned
              * @default false
@@ -2616,6 +2665,8 @@ export interface components {
         SnoozeRequest: {
             /** Until */
             until: string | null;
+            /** On */
+            on?: string | null;
         };
         /** StatusDTO */
         StatusDTO: {
@@ -2797,6 +2848,11 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WakeTicketRequest */
+        WakeTicketRequest: {
+            /** Ticket */
+            ticket: string;
         };
         /** WeekNumbers */
         WeekNumbers: {
@@ -4550,6 +4606,61 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    snooze_tickets_api_snooze_tickets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    snooze_wake_api_snooze_wake_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WakeTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: number;
+                    };
+                };
             };
             /** @description Validation Error */
             422: {

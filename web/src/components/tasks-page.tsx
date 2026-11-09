@@ -1,14 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, ExternalLink, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Send, Square, Trash2, Users } from "lucide-react";
+import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, ExternalLink, GitPullRequest, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Send, Square, Trash2, Users } from "lucide-react";
 import { createContext, type ReactNode, use, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui/react/menu";
 import { AiBot, AiThinking, useFollow } from "@/components/ai/chat";
 import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
-import { EventItem, groupEvents, OpenAttached, type TaskEvent, type TaskLog, ToolGroup } from "@/components/tasks-feed";
+import { EventItem, groupEvents, OpenAttached, type TaskEvent, type TaskLog, ToolGroup, usd } from "@/components/tasks-feed";
 import { SEND_ERRORS } from "@/components/composer";
+import { TaskChanges } from "@/components/task-changes";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
@@ -100,10 +101,20 @@ function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
   });
   const items = q.data?.items;
   const blocks = useMemo(() => groupEvents(items ?? []), [items]);
+  const last = items?.at(-1);
+  const turns = (items ?? []).filter((e) => e.kind === "result");
+  const spent = turns.reduce((n, e) => n + (e.cost ?? 0), 0);
+  const cut = !running && last?.kind === "result" && !!last.error; // stopped / restarted / failed: offer to go on
 
   return (
-    <Feed follow={(items?.length ?? 0) + (running ? 0.5 : 0)} footer={<TaskComposer t={t} />}>
+    <Feed follow={(items?.length ?? 0) + (running ? 0.5 : 0)} footer={<TaskComposer t={t} cut={cut} />}>
       {head}
+      {turns.length > 0 && (
+        <p className="-mt-2 flex gap-3 font-mono text-[0.6875rem] text-ink-3 tabular-nums">
+          <span>{turns.length} lượt</span>
+          {spent > 0 && <Hint side="bottom" text="Cộng chi phí ước tính của các lượt, theo giá API do CLI báo; gói thuê bao không trừ tiền theo số này."><span>≈ {usd(spent)} cả phiên</span></Hint>}
+        </p>
+      )}
       <ul aria-label="Hội thoại với AI" className="grid grid-cols-[minmax(0,1fr)] gap-3">
         {blocks.map((b, i) => b.kind === "tools"
           ? <li key={i} className="animate-in fade-in-0 duration-(--dur-short)"><ToolGroup steps={b.steps} live={running && i === blocks.length - 1} /></li>
@@ -241,6 +252,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup }: {
   const [open, setOpen] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: ["tasks"] });
   const [asking, setAsking] = useState(false); // "Xóa phiên" confirm
+  const [changes, setChanges] = useState(false); // "Thay đổi": git diff + PR dialog
   const remove = useMutation({ mutationFn: () => api<void>(`/tasks/${t.id}`, { method: "DELETE" }), onSettled: () => { setAsking(false); return refresh(); } });
   // Done: on the tagged message, or on the session itself when its message is not a kept tag (Đối chiếu BE on any
   // reply); the session moves to the Done tab.
@@ -304,6 +316,12 @@ function TaskDetail({ t, now, onBack, onOpenGroup }: {
             {sessionId(t)}
           </button>
         </Hint>
+        {t.kind !== "deep" && (
+          <Hint side="bottom" text="Xem file AI đã sửa trong dự án, rồi tạo nhánh + PR (hỏi lại trước khi đẩy)">
+            <Button size="xs" variant="outline" className="shrink-0" onClick={() => setChanges(true)}><GitPullRequest /> Thay đổi</Button>
+          </Hint>
+        )}
+        <TaskChanges t={t} open={changes} onOpenChange={setChanges} />
         <time className="shrink-0 text-xs text-ink-3" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>{ago(t.created_at, now)}</time>
         <Menu.Root>
           <Menu.Trigger openOnHover delay={120} aria-label="Thao tác phiên"

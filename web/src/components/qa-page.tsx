@@ -191,13 +191,13 @@ export function useQaNews(days: number, onPage: boolean, poll = true) { // poll 
   // `lists`: each group's threads (the cross-group "Câu hỏi của tôi" view); `firstNew` / `firstLate`: where a link to
   // "new answers" / "due a nudge" opens (openQa).
   const ready = datas.every((d) => d !== undefined); // every group read once (a failed read stays not ready)
-  return { by, total: sum(by), late, lateTotal: sum(late), codes, lists, ready, firstNew: firstNew as QaItem | null, firstLate: lateItems[0] ?? null };
+  return { by, total: sum(by), late, lateTotal: sum(late), lateItems, codes, lists, ready, firstNew: firstNew as QaItem | null, firstLate: lateItems[0] ?? null };
 }
 
 /** Sidebar / page value for the cross-group list of your unanswered questions (not a chat id). */
 export const QA_MINE = "__qa_mine__";
 /** Your questions nobody answered yet, across the groups you asked lately (`lists` of useQaNews), oldest first. */
-const mineOpen = (lists: Record<string, QaItem[]>) =>
+export const mineOpen = (lists: Record<string, QaItem[]>) =>
   Object.values(lists).flat().filter((i) => i.question.outgoing && waiting(i))
     .sort((a, b) => new Date(a.question.date).getTime() - new Date(b.question.date).getTime());
 

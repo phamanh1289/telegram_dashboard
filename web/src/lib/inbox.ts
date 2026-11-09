@@ -27,6 +27,8 @@ export function textWithLinks({ text, links = [] }: Message) {
 
 /** Pseudo chat id for the cross-group "to do" inbox. */
 export const ALL = "__all__";
+/** "Hôm nay": every source of work in one list (the default page). */
+export const TODAY = "__today__";
 /** Pseudo chat id for the pinned-tags page. */
 export const PINNED = "__pinned__";
 /** Pseudo chat id for the AI sessions page. */
@@ -149,8 +151,12 @@ export async function pinAll(ms: Message[]) {
 
 /** Hide tags from the to-do list until `until` (null: back now); the toast offers undo (for the ones that went through).
  *  Throws `PartialError` (after its own toast) when some did not go through. */
-export async function snooze(ms: Message[], until: Date | null) {
-  const set = (m: Message, u: Date | null) => api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, { method: "PUT", json: { until: u?.toISOString() ?? null } });
+/** Event snoozes ("until a reply", "until VA-1 is done") also keep a time: this far out, so nothing hides for good. */
+export const EVENT_SNOOZE_MS = 7 * 86_400_000;
+
+/** `on`: "reply" or "ticket:<ID>", the event that brings the tags back before `until`. */
+export async function snooze(ms: Message[], until: Date | null, on?: string) {
+  const set = (m: Message, u: Date | null) => api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/snooze`, { method: "PUT", json: { until: u?.toISOString() ?? null, on: u && on ? on : null } });
   const res = await Promise.allSettled(ms.map((m) => set(m, until)));
   const ok = ms.filter((_, i) => res[i].status === "fulfilled");
   if (!ok.length) throw (res[0] as PromiseRejectedResult).reason;
@@ -160,7 +166,8 @@ export async function snooze(ms: Message[], until: Date | null) {
     throw new PartialError(ms.filter((_, i) => res[i].status === "rejected"));
   }
   const n = ok.length > 1 ? `${ok.length} tin, ` : "";
-  toast(until ? { text: `Đã hoãn ${n}nhắc lại lúc ${timeLabel(until.toISOString())}`, undo } : { text: "Đã bỏ hoãn" });
+  const when = on === "reply" ? "tới khi có người trả lời" : on ? `tới khi ${on.slice(7)} xong` : `nhắc lại lúc ${timeLabel(until?.toISOString() ?? "")}`;
+  toast(until ? { text: `Đã hoãn ${n}${when}`, undo } : { text: "Đã bỏ hoãn" });
 }
 
 /** One message: the kept copy, else live from Telegram. */
