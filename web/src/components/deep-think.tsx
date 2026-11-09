@@ -1,20 +1,25 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, BrainCircuit, CheckCheck, CornerDownRight, ListChecks, Loader2 } from "lucide-react";
-import { type ReactNode, useCallback, useState, useSyncExternalStore } from "react";
+import { ArrowDown, ArrowLeft, Bot, BrainCircuit, Check, CheckCheck, CircleCheckBig, CircleHelp, CircleX, Copy, CornerDownRight, History, Hourglass, ListChecks, Loader2, type LucideIcon, TriangleAlert } from "lucide-react";
+import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
-import { AiPromptBox } from "@/components/ai/chat";
+import { AiPromptBox, AiResultCard } from "@/components/ai/chat";
+import { AiFetching, deepLines, useAiWait } from "@/components/ai/fetching";
+import { type Block, EventItem, groupEvents, SessionAsks, type TaskEvent, toolMeta, useTaskLog } from "@/components/tasks-feed";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { IntroNotice } from "@/components/composer-dialogs";
 import { api, errorText, type Message, type Task } from "@/lib/api";
-import { getMessage, openTask, taskListQuery, toast } from "@/lib/inbox";
-import { readAgentProject, readIntro, readPlatform, setPref } from "@/lib/prefs";
+import { copyText, getMessage, openTask, taskListQuery, toast } from "@/lib/inbox";
+import { aboutMe, readAgentProject, readNotify, setPref } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
+import { isBatch, type Verdict, VERDICT_EMOJI, VERDICT_ORDER, verdictsOf } from "@/lib/verdicts";
+
+export { type Verdict, VERDICT_ORDER, verdictsOf };
 
 // The answer to check, plus the question when the caller already knows it (a Briefing item cites both).
 // Module state: rows, context panels, Digest rows and Briefing items open the one dialog.
@@ -93,20 +98,48 @@ export function DeepItemAction({ chatId, ids, className }: { chatId: string; ids
 const who = (m: Message) => (m.outgoing ? "Bạn" : (m.sender_name ?? "?"));
 const body = (m: Message) => m.text || (m.media_kind ? `[${m.media_kind === "photo" ? "ảnh" : "file"}]` : "");
 
-/** Mounted once (inbox): the dialog for the clicked message, or for a bulk check. */
+/** Mounted once (inbox): the dialog for the clicked message. */
 export function DeepThinking() {
   const t = useTarget();
-  const b = useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => bulk, () => bulk);
-  if (b) return <BulkDialog key={b.chatId} b={b} onClose={() => openBulk(null)} />;
+  useDoneNotice();
   return t ? <DeepDialog key={`${t.m.chat_id}:${t.m.message_id}`} c={t.m} preset={t.q} onClose={() => open(null)} /> : null;
 }
 
-// ---- in bulk: every BE item of a digest (Briefing's "BE" tab, a group's Tóm tắt) checked in one session ----------------
+// Bulk checks started from the page (id -> group title): when one ends with the page no longer showing it, say so.
+const watched = new Map<string, string>();
+let onPage: string | null = null;
+function useDoneNotice() {
+  const ended = useQuery({ ...taskListQuery,
+    select: useCallback((l: Task[]) => l.filter((t) => watched.has(t.id) && !t.running), []) }).data;
+  useEffect(() => {
+    for (const t of ended ?? []) {
+      const group = watched.get(t.id);
+      watched.delete(t.id);
+      if (t.id === onPage) continue; // its page shows the table itself
+      const tally = [...verdictsOf(t).values()];
+      const sum = VERDICT_ORDER.map((v) => [VERDICT_EMOJI[v], tally.filter((x) => x === v).length] as const).filter(([, n]) => n).map(([e, n]) => `${e}${n}`).join(" ");
+      const text = t.result ? `Đối chiếu code ${group} xong${sum ? `: ${sum}` : ""}` : `Đối chiếu code ${group} dừng mà chưa có bảng`;
+      toast({ text, action: { label: "Xem", run: () => openTask(t.id) } });
+      if (document.hidden && readNotify()) {
+        try {
+          const n = new Notification(text, { body: "Bấm để xem bảng đối chiếu ở AI Agent", tag: `deep:${t.id}` });
+          n.onclick = () => { focus(); openTask(t.id); n.close(); };
+        } catch {} // no Notification constructor here (Android Chrome, webviews)
+      }
+    }
+  }, [ended]);
+}
+
+// ---- in bulk: every BE topic of a digest (Briefing's "Với BE" tab, a group's Tóm tắt) checked in one session -----------
+// A detail page over the inbox list (like a reply): pick topics and project, run, watch the AI read the code, read the table.
 
 type BulkItem = { text: string; message_ids: string[]; waiting?: boolean };
 type Bulk = { chatId: string; title: string; items: BulkItem[] };
 let bulk: Bulk | null = null;
 const openBulk = (b: Bulk | null) => { bulk = b; subs.forEach((f) => f()); };
+export const closeBulk = () => { if (bulk) openBulk(null); };
+/** The bulk check on screen, if any (the inbox shows its page over the list). */
+export const useBulk = () => useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => bulk, () => bulk);
 const MAX_BULK = 20; // the server's cap per session
 // The question and the latest of the discussion: the server takes ≤10 messages per item.
 const cap = (ids: string[]) => {
@@ -145,69 +178,310 @@ export function DeepTopicAction({ chatId, item }: { chatId: string; item: BulkIt
   );
 }
 
-function BulkDialog({ b, onClose }: { b: Bulk; onClose: () => void }) {
-  const items = b.items.slice(0, MAX_BULK);
+const VERDICTS = [["✅", "đã adapt"], ["⚠️", "lệch"], ["❌", "chưa làm"], ["⏳", "chờ BE"]] as const;
+
+// ---- verdicts: a finished check's table read back per topic, so Với BE cards show where the code stands -------------
+
+const VERDICT: Record<Verdict, { Icon: LucideIcon; label: string; tone: string }> = {
+  ok: { Icon: CircleCheckBig, label: "đã adapt", tone: "bg-ok-wash text-ok" },
+  off: { Icon: TriangleAlert, label: "lệch", tone: "bg-warn-wash text-warn" },
+  missing: { Icon: CircleX, label: "chưa làm", tone: "bg-error-wash text-error" },
+  waiting: { Icon: Hourglass, label: "chờ BE", tone: "bg-signal-wash text-signal-2" },
+  unclear: { Icon: CircleHelp, label: "chưa rõ", tone: "bg-paper-3 text-ink-2" },
+};
+
+/** `anchor`: the newest message the check had read (its session sits on it); a topic with a newer one moved on since. */
+export type TopicVerdict = { v: Verdict; task: string; at: string; anchor?: number };
+/** The topic has messages newer than the check read: its verdict may be out of date. */
+export const isStale = (tv: TopicVerdict, ids: string[]) => !!tv.anchor && ids.some((i) => Number(i) > tv.anchor!);
+/** Per topic title of a chat: the newest finished check's verdict (the task list is newest first). */
+export function useVerdicts(chatId: string) {
+  const pick = useCallback((l: Task[]) => {
+    const out = new Map<string, TopicVerdict>();
+    for (const t of l) {
+      if (t.chat_id !== chatId || t.running) continue;
+      for (const [title, v] of verdictsOf(t)) if (!out.has(title)) out.set(title, { v, task: t.id, at: t.created_at, anchor: t.message_id ? Number(t.message_id) : undefined });
+    }
+    return out;
+  }, [chatId]);
+  return useQuery({ ...taskListQuery, select: pick }).data;
+}
+
+/** "Code: lệch" — where the code stood at the last check; `open` makes it a button to that session. */
+export function VerdictChip({ tv, open: openIt, stale, className }: { tv: TopicVerdict; open?: boolean; stale?: boolean; className?: string }) {
+  const { Icon, label, tone } = VERDICT[tv.v];
+  const chip = cn("inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 text-xs leading-5 font-medium", tone,
+    stale && "opacity-60 ring-1 ring-current/30 ring-inset", className);
+  const body = <><Icon className="size-3" aria-hidden />Code: {label}{stale && <span className="font-normal"> · cũ</span>}</>;
+  if (!openIt) return <span className={chip}>{body}</span>;
+  return (
+    <Hint side="bottom" title={`Code: ${label}${stale ? " (cũ)" : ""}`}
+      text={`Theo lần đối chiếu ${timeLabel(tv.at)}.${stale ? " Chủ đề có tin mới sau đó, nên đối chiếu lại." : ""} Bấm để xem bảng và bằng chứng ở AI Agent.`}>
+      <button type="button" className={cn(chip, "transition-[filter] duration-(--dur-micro) hover:brightness-110")}
+        onClick={(e) => { e.stopPropagation(); openTask(tv.task); }}>{body}</button>
+    </Hint>
+  );
+}
+
+/** "✅ 3 · ⚠️ 1 · ❌ 1": a check's verdicts counted. */
+export function VerdictTally({ vs, className }: { vs: Verdict[]; className?: string }) {
+  if (!vs.length) return null;
+  return (
+    <span className={cn("inline-flex flex-wrap items-center gap-1", className)}>
+      {VERDICT_ORDER.map((v) => [v, vs.filter((x) => x === v).length] as const).filter(([, n]) => n).map(([v, n]) => {
+        const { Icon, tone } = VERDICT[v];
+        return <span key={v} className={cn("inline-flex items-center gap-0.5 rounded-full px-1.5 text-xs leading-5 font-medium tabular-nums", tone)}><Icon className="size-3" aria-hidden />{n}</span>;
+      })}
+    </span>
+  );
+}
+/** What the agent is doing right now, from the session's log (the AI Agent one): "Đang đọc PaymentScreen.kt · 23 bước". */
+function LiveStep({ items }: { items?: TaskEvent[] }) {
+  const tools = items?.filter((e) => e.kind === "tool") ?? [];
+  if (!tools.length) return <p className="h-5 text-xs text-ink-3">Đang khởi động phiên AI Agent…</p>;
+  const [name, ...rest] = tools.at(-1)!.text.split("  ");
+  const [Icon, verb] = toolMeta(name);
+  const arg = rest.join("  ");
+  const file = arg.startsWith("/") ? arg.slice(arg.lastIndexOf("/") + 1) : arg;
+  return (
+    <p key={tools.length} className="flex h-5 max-w-full min-w-0 items-center gap-1.5 text-xs text-ink-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
+      <Icon className="size-3.5 shrink-0 text-hl-2" aria-hidden />
+      <span className="shrink-0">Đang {verb.toLowerCase()}</span>
+      <span className="min-w-0 truncate font-mono text-ink" title={arg}>{file}</span>
+      <span className="shrink-0 font-mono text-ink-3 tabular-nums">· {tools.length} bước</span>
+    </p>
+  );
+}
+
+/** One Đối chiếu session followed live (the bulk page and the one-message dialog alike): run state, log, answer, stop. */
+function useDeepRun(taskId: string | null) {
+  const qc = useQueryClient();
+  const task = useQuery({ ...taskListQuery, select: useCallback((l: Task[]) => l.find((t) => t.id === taskId), [taskId]), enabled: !!taskId }).data;
+  const running = !!taskId && (!task || task.running); // the log ending refetches the list (useTaskLog), so this flips soon after
+  const items = useTaskLog(taskId, running).data?.items;
+  // The last turn as the AI Agent session shows it (its texts, then the result card with asks and timeline), tools aside.
+  const turn = useMemo(() => {
+    const b = groupEvents(items ?? []);
+    return b.slice(b.findLastIndex((x) => x.kind === "event" && x.ev.kind === "user") + 1)
+      .filter((x): x is Extract<Block, { kind: "event" }> => x.kind === "event");
+  }, [items]);
+  const shown = useAiWait(running);
+  const done = !!taskId && !shown && !!task && !task.running;
+  const stop = useMutation({
+    mutationFn: () => api<void>(`/tasks/${taskId}/stop`, { method: "POST" }),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
+    onError: (e) => toast({ text: errorText(e, {}, "Không dừng được, thử lại sau") }),
+  });
+  return { task, running, items, turn, shown, done, stop };
+}
+type DeepRun = ReturnType<typeof useDeepRun>;
+
+/** A run on screen: the AI reading the code while it runs (`children`: what it reads), then its answer. */
+function DeepProgress({ dr, project, lines, children }: { dr: DeepRun; project?: string; lines: string[]; children?: ReactNode }) {
+  const { task, turn } = dr;
+  if (dr.shown) return (
+    <div className="grid justify-items-center gap-3">
+      <AiFetching kind="deep" project={project} className="min-h-0 py-2 @min-[36rem]:[&>div>div:first-child]:[zoom:1.4] [&_[role=status]]:w-auto"
+        lines={lines} />
+      <LiveStep items={dr.items} />
+      {children}
+      <p className="text-center text-xs text-ink-3">Chạy ngầm: có thể rời đi, kết quả nằm ở AI Agent › Đối chiếu BE.</p>
+    </div>
+  );
+  if (!dr.done || !task) return null;
+  // the list's result if the log lags behind it
+  const shown = turn.length ? turn : task.result?.trim() ? [{ kind: "event" as const, ev: { kind: "result", text: task.result } }] : [];
+  return shown.length ? (
+    <SessionAsks t={task}>
+      <ul aria-label="Kết quả đối chiếu" className="grid grid-cols-[minmax(0,1fr)] gap-3">
+        {shown.map((x, i) => <EventItem key={i} ev={x.ev} took={"took" in x ? x.took : undefined} tools={"tools" in x ? x.tools : undefined} />)}
+      </ul>
+      <div className="-mt-3 flex flex-wrap justify-end gap-1">
+        {task.result && <Button size="xs" variant="ghost" onClick={() => void copyText(task.result!, "Đã copy kết quả đối chiếu")}><Copy aria-hidden /> Copy</Button>}
+        <Button size="xs" variant="outline" onClick={() => openTask(task.id)}><Bot aria-hidden /> Hỏi tiếp ở AI Agent</Button>
+      </div>
+    </SessionAsks>
+  ) : (
+    <AiResultCard error title="Phiên dừng mà chưa có kết quả"
+      actions={<Button size="xs" variant="outline" onClick={() => openTask(task.id)}><Bot aria-hidden /> Xem phiên</Button>}>
+      Phiên bị dừng hoặc lỗi giữa chừng. Mở phiên để xem bước cuối, hoặc bấm Đối chiếu lại.
+    </AiResultCard>
+  );
+}
+
+export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
+  const [off, setOff] = useState(() => new Set(b.items.map((_, i) => i).filter((i) => i >= MAX_BULK)));
+  const picked = b.items.filter((_, i) => !off.has(i));
+  const flip = (i: number) => setOff((s) => { const n = new Set(s); if (!n.delete(i)) n.add(i); return n; });
   const [project, setProject] = useState(readAgentProject);
   const projects = useProjects();
-  const projectOk = !!projects.data?.some((p) => p.path === project);
+  const proj = projects.data?.find((p) => p.path === project);
   const [note, setNote] = useState("");
   const qc = useQueryClient();
+  // Back on the page while this group's check still runs: pick its scene up again instead of starting over.
+  const [taskId, setTaskId] = useState<string | null>(() =>
+    qc.getQueryData<Task[]>(taskListQuery.queryKey)?.find((t) => t.chat_id === b.chatId && t.running && isBatch(t))?.id ?? null);
+  const verdicts = useVerdicts(b.chatId);
+  const vOf = (it: BulkItem) => verdicts?.get(it.text.split("\n")[0]);
+  const staleOf = (it: BulkItem) => !!vOf(it) && isStale(vOf(it)!, it.message_ids);
+  const last = useQuery({ ...taskListQuery,
+    select: useCallback((l: Task[]) => l.find((t) => t.chat_id === b.chatId && !t.running && isBatch(t) && !!t.result), [b.chatId]) }).data;
+  const adapted = b.items.map((it, i) => [it, i] as const).filter(([it, i]) => !off.has(i) && vOf(it)?.v === "ok" && !staleOf(it)).map(([, i]) => i);
   const chooseProject = (p: string) => { setProject(p); setPref("agentProject", p); };
+  const dr = useDeepRun(taskId);
+  const { running, done, stop } = dr;
+  const waiting = b.items.filter((it) => it.waiting).length;
+
   const run = useMutation({
     mutationFn: () => api<{ id: string }>("/ai/deep-batch", { method: "POST",
-      json: { chat_id: b.chatId, items: items.map((it) => ({ text: it.text.slice(0, 1000), message_ids: cap(it.message_ids), waiting: !!it.waiting })),
-        project, instruction: note.trim(), platform: readPlatform(), intro: readIntro() } }),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: ["tasks"] });
-      onClose();
-      toast({ text: `Đang đối chiếu ${items.length} chủ đề với code`, action: { label: "Xem", run: () => openTask(id) } });
-    },
+      json: { chat_id: b.chatId, items: picked.map((it) => ({ text: it.text.slice(0, 1000), message_ids: cap(it.message_ids), waiting: !!it.waiting })),
+        project, instruction: note.trim(), ...aboutMe() } }),
+    onSuccess: async ({ id }) => { watched.set(id, b.title); setTaskId(id); await qc.invalidateQueries({ queryKey: ["tasks"] }); },
   });
-  const blocker = !projectOk ? "Chọn dự án để AI đọc code" : null;
+  useEffect(() => { onPage = taskId; return () => { onPage = null; }; }, [taskId]);
+  const leave = () => {
+    if (running && taskId) toast({ text: "Đối chiếu vẫn chạy ngầm ở AI Agent", action: { label: "Xem", run: () => openTask(taskId) } });
+    onClose();
+  };
+  const blocker = !proj ? "Chọn dự án để AI đọc code" : !picked.length ? "Chọn ít nhất một chủ đề"
+    : picked.length > MAX_BULK ? `Tối đa ${MAX_BULK} chủ đề mỗi lần` : null;
+  const go = () => { if (!blocker && !run.isPending && !running) run.mutate(); };
+
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="ai-in flex max-h-[calc(100dvh-2.5rem)] flex-col gap-4 sm:max-w-xl">
-        <div className="grid gap-1">
-          <DialogTitle className="flex items-center gap-2"><ListChecks className="size-4 text-ink-3" aria-hidden /> Đối chiếu code: {b.title}</DialogTitle>
-          <DialogDescription>AI soi code dự án với từng chủ đề trao đổi với BE, rồi trả về một bảng: ✅ đã adapt, ⚠️ lệch, ❌ chưa làm, ⏳ chờ BE (code hiện đang làm gì), kèm việc cần sửa.</DialogDescription>
-        </div>
-        <ol aria-label="Chủ đề sẽ đối chiếu" className="grid min-h-0 list-decimal gap-1 overflow-y-auto rounded-[var(--radius-card)] border border-rule bg-cotton py-2 pr-3 pl-8 text-sm leading-relaxed">
-          {items.map((it, i) => (
-            <li key={i} className="text-ink">{it.text.split("\n")[0]}{it.waiting && <span className="ml-1.5 text-xs text-signal-2">chờ BE</span>}</li>
-          ))}
-        </ol>
-        {b.items.length > MAX_BULK && <p className="text-xs text-warn">Chỉ đối chiếu {MAX_BULK} chủ đề đầu; còn {b.items.length - MAX_BULK} chủ đề, chạy lại sau khi xử lý bớt.</p>}
-        <div className="grid gap-2">
-          <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
-          <IntroNotice compact />
-        </div>
-        {run.isError && (
-          <p role="alert" className="text-sm text-error">
-            {errorText(run.error, {
-              project_not_found: "Dự án không còn trong danh sách, hãy chọn lại.",
-              ai_agent_missing: "Không tìm thấy AI CLI để đọc dự án, xem Cài đặt › AI.",
-              ai_not_configured: "Chưa cấu hình AI, xem Cài đặt › AI.",
-              message_not_found: "Không đọc được tin gốc của các chủ đề (cần đang kết nối Telegram).",
-              ai_context_too_large: "Các chủ đề quá dài; đối chiếu từng chủ đề trên thẻ của nó.",
-            }, "Không chạy được đối chiếu.")}
+    <section aria-label="Đối chiếu code" className="flex min-h-0 flex-col">
+      <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2 md:px-5">
+        <Hint side="bottom" text="Quay lại Briefing">
+          <Button size="icon-sm" variant="ghost" onClick={leave} aria-label="Quay lại"><ArrowLeft /></Button>
+        </Hint>
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><ListChecks className="size-4" aria-hidden /></span>
+        <div className="grid min-w-0 gap-0.5">
+          <h2 className="truncate text-sm font-semibold text-ink">Đối chiếu code · {b.title}</h2>
+          <p className="truncate text-xs text-ink-3">
+            {b.items.length} chủ đề với BE{waiting > 0 && <> · <span className="text-signal-2">{waiting} chờ BE</span></>}
+            <span className="max-sm:hidden"> · AI soi code dự án, trả về bảng {VERDICTS.map(([e, l]) => `${e} ${l}`).join(", ")}</span>
           </p>
+        </div>
+        {taskId && (
+          <Hint side="bottom" text="Mở phiên ở AI Agent để xem từng bước hoặc hỏi tiếp">
+            <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => openTask(taskId)}>
+              <Bot aria-hidden /> <span className="max-sm:hidden">Mở ở AI Agent</span>
+            </Button>
+          </Hint>
         )}
-        <AiPromptBox aria-label="Yêu cầu thêm" placeholder="Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán" maxLength={2000}
-          value={note} onChange={setNote} onSend={() => { if (!blocker && !run.isPending) run.mutate(); }} running={run.isPending}
-          tools={<>
-            <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
-            {blocker && <span className="text-ink-3">{blocker}</span>}
-          </>}
-          actions={
-            <Hint text="Giao AI Agent đối chiếu các chủ đề với code dự án (Enter)" side="bottom">
-              <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" aria-busy={run.isPending}
-                disabled={!!blocker || run.isPending} onClick={() => run.mutate()}>
-                {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ListChecks aria-hidden />} Đối chiếu {items.length} chủ đề
-              </Button>
-            </Hint>
-          } />
-      </DialogContent>
-    </Dialog>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-5">
+          {dr.shown || done ? (
+            <DeepProgress dr={dr} project={proj?.name} lines={deepLines(proj?.name, picked.length)}>
+              <ul aria-label="Chủ đề đang soi" className="flex max-w-full flex-wrap justify-center gap-1.5">
+                {picked.map((it, i) => (
+                  <li key={i} className="fx-step max-w-56 truncate rounded-full border border-rule bg-paper-2 px-2 text-xs leading-6 text-ink-2"
+                    style={{ "--fx-d": `${Math.max(4, picked.length * 0.6)}s`, animationDelay: `${i * 0.6}s` } as CSSProperties}>
+                    {it.waiting ? "⏳ " : ""}{it.text.split("\n")[0]}
+                  </li>
+                ))}
+              </ul>
+            </DeepProgress>
+          ) : (
+            <>
+              {last && (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-[var(--radius-card)] border border-rule bg-paper-2 px-3 py-2 text-xs text-ink-2">
+                  <History className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+                  <span>Lần đối chiếu trước · {timeLabel(last.created_at)}</span>
+                  <VerdictTally vs={[...verdictsOf(last).values()]} />
+                  <Button size="xs" variant="outline" className="ml-auto" onClick={() => setTaskId(last.id)}>Xem bảng</Button>
+                </div>
+              )}
+              <section aria-label="Chủ đề sẽ đối chiếu" className="grid gap-2">
+                <div className="flex items-center gap-2 text-xs text-ink-3">
+                  <span>Chủ đề sẽ soi · <b className="font-semibold text-ink-2 tabular-nums">{picked.length}</b>/{b.items.length}</span>
+                  {adapted.length > 0 && (
+                    <Hint side="bottom" text="Bỏ chọn các chủ đề lần trước code đã adapt và chưa có tin mới, chỉ soi lại phần còn lệch / chưa làm / chờ BE">
+                      <button type="button" className="rounded-sm text-ok hover:underline" onClick={() => setOff((s) => new Set([...s, ...adapted]))}>
+                        Bỏ {adapted.length} chủ đề đã adapt
+                      </button>
+                    </Hint>
+                  )}
+                  {b.items.length > 1 && (
+                    <button type="button" className="ml-auto rounded-sm hover:text-ink hover:underline"
+                      onClick={() => setOff(picked.length ? new Set(b.items.map((_, i) => i)) : new Set())}>
+                      {picked.length ? "Bỏ chọn hết" : "Chọn hết"}
+                    </button>
+                  )}
+                </div>
+                <ul className="grid gap-1.5">
+                  {b.items.map((it, i) => {
+                    const on = !off.has(i);
+                    const [head, ...rest] = it.text.split("\n");
+                    return (
+                      <li key={i}>
+                        <button type="button" aria-pressed={on} onClick={() => flip(i)}
+                          className={cn("flex w-full min-w-0 items-start gap-3 rounded-[var(--radius-card)] border px-3 py-2.5 text-left transition-colors duration-(--dur-micro)",
+                            on ? "border-rule bg-cotton hover:border-hl/50" : "border-dashed border-rule-2 bg-transparent opacity-55 hover:opacity-100")}>
+                          <span className={cn("mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-[1.5px] transition-colors duration-(--dur-short)",
+                            on ? "border-hl bg-hl text-hl-ink" : "border-rule-2 text-transparent")}>
+                            <Check className="size-3" strokeWidth={3} aria-hidden />
+                          </span>
+                          <span className="grid min-w-0 flex-1 gap-0.5">
+                            <span className="flex min-w-0 items-center gap-2">
+                              <span className="shrink-0 font-mono text-xs text-ink-3 tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                              <span className="min-w-0 truncate text-sm font-medium text-ink">{head}</span>
+                            </span>
+                            {rest[0] && <span className="line-clamp-1 text-xs text-ink-3">{rest[0]}</span>}
+                          </span>
+                          {vOf(it) && !(it.waiting && vOf(it)!.v === "waiting") && <VerdictChip tv={vOf(it)!} stale={staleOf(it)} className="max-sm:hidden" />}
+                          {it.waiting
+                            ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-signal-wash px-1.5 text-xs leading-5 font-medium text-signal-2"><Hourglass className="size-3" aria-hidden />Chờ BE</span>
+                            : <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-ok-wash px-1.5 text-xs leading-5 font-medium text-ok"><CircleCheckBig className="size-3" aria-hidden />Đã chốt</span>}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+              <section aria-label="Dự án" className="grid gap-2">
+                <span className="text-xs text-ink-3">Dự án để AI đọc code</span>
+                <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
+                <IntroNotice compact />
+              </section>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 px-4 pt-2 pb-4 sm:px-6">
+        <div className="mx-auto grid max-w-3xl gap-1.5">
+          {run.isError && (
+            <p role="alert" className="text-sm text-error">
+              {errorText(run.error, {
+                project_not_found: "Dự án không còn trong danh sách, hãy chọn lại.",
+                ai_agent_missing: "Không tìm thấy AI CLI để đọc dự án, xem Cài đặt › AI.",
+                ai_not_configured: "Chưa cấu hình AI, xem Cài đặt › AI.",
+                message_not_found: "Không đọc được tin gốc của các chủ đề (cần đang kết nối Telegram).",
+                ai_context_too_large: "Các chủ đề quá dài; bỏ bớt chủ đề hoặc đối chiếu từng chủ đề trên thẻ của nó.",
+              }, "Không chạy được đối chiếu.")}
+            </p>
+          )}
+          <AiPromptBox aria-label="Yêu cầu thêm" placeholder="Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán" maxLength={2000}
+            value={note} onChange={setNote} onSend={go} running={running || run.isPending}
+            onStop={taskId ? () => stop.mutate() : undefined} stopping={stop.isPending} stopHint="Dừng đối chiếu" stopLabel="Dừng"
+            tools={<>
+              <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
+              {blocker && !running && <span className="text-ink-3">{blocker}</span>}
+            </>}
+            actions={!running && (
+              <Hint text="Giao AI Agent đối chiếu các chủ đề với code dự án (Enter)" side="bottom">
+                <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" aria-busy={run.isPending}
+                  disabled={!!blocker || run.isPending} onClick={go}>
+                  {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ListChecks aria-hidden />}
+                  {done ? "Đối chiếu lại" : "Đối chiếu"} {picked.length} chủ đề
+                </Button>
+              </Hint>
+            )} />
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -246,31 +520,39 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
   const [picking, setPicking] = useState(false);
   const [project, setProject] = useState(readAgentProject);
   const projects = useProjects();
-  const projectOk = !!projects.data?.some((p) => p.path === project);
+  const proj = projects.data?.find((p) => p.path === project);
   const [note, setNote] = useState("");
   const qc = useQueryClient();
   const chooseProject = (p: string) => { setProject(p); setPref("agentProject", p); };
-  // A read-only AI Agent session: it runs in the background; the message shows its state and opens it.
+  // A read-only AI Agent session, followed here like the bulk page (scene, then the answer); closing leaves it running.
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const dr = useDeepRun(taskId);
   const run = useMutation({
     mutationFn: () => api<{ id: string }>("/ai/deep", { method: "POST",
-      json: { chat_id: c.chat_id, question_id: qId, confirm_id: c.message_id, project, instruction: note.trim(), platform: readPlatform(), intro: readIntro() } }),
-    onSuccess: async ({ id }) => {
-      await qc.invalidateQueries({ queryKey: ["tasks"] });
-      onClose();
-      toast({ text: "Đang đối chiếu BE, xong sẽ có nhãn xanh trên tin", action: { label: "Xem", run: () => openTask(id) } });
-    },
+      json: { chat_id: c.chat_id, question_id: qId, confirm_id: c.message_id, project, instruction: note.trim(), ...aboutMe() } }),
+    onSuccess: async ({ id }) => { setTaskId(id); await qc.invalidateQueries({ queryKey: ["tasks"] }); },
   });
+  const close = () => {
+    if (dr.running && taskId) toast({ text: "Đối chiếu vẫn chạy ngầm, xong sẽ có nhãn xanh trên tin", action: { label: "Xem", run: () => openTask(taskId) } });
+    onClose();
+  };
   const showList = picking || (before.isSuccess && !q);
-  const blocker = !q ? "Chọn tin hỏi" : !projectOk ? "Chọn dự án để AI đọc code" : null;
+  const blocker = !q ? "Chọn tin hỏi" : !proj ? "Chọn dự án để AI đọc code" : null;
+  const go = () => { if (!blocker && !run.isPending && !dr.running) run.mutate(); };
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="ai-in flex max-h-[calc(100dvh-2.5rem)] flex-col gap-4 sm:max-w-xl">
+    <Dialog open onOpenChange={(o) => { if (!o) close(); }}>
+      <DialogContent className={cn("ai-in flex max-h-[calc(100dvh-2.5rem)] flex-col gap-4", taskId ? "sm:max-w-3xl" : "sm:max-w-xl")}>
         <div className="grid gap-1">
           <DialogTitle className="flex items-center gap-2"><BrainCircuit className="size-4 text-ink-3" aria-hidden /> Đối chiếu BE</DialogTitle>
           <DialogDescription>{HINT}</DialogDescription>
         </div>
 
+        {taskId ? (
+          <div className="@container grid min-h-0 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto">
+            <DeepProgress dr={dr} project={proj?.name} lines={deepLines(proj?.name)} />
+          </div>
+        ) : <>
         <div className="grid min-h-0 gap-1 overflow-y-auto">
           <Said m={showList ? undefined : q} label="1 · Câu hỏi" tone="bg-info-wash text-info"
             action={q && (
@@ -318,6 +600,7 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
           <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
           <IntroNotice compact />
         </div>
+        </>}
 
         {run.isError && (
           <p role="alert" className="text-sm text-error">
@@ -332,19 +615,20 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
         )}
 
         <AiPromptBox aria-label="Yêu cầu thêm" placeholder="Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán" maxLength={2000}
-          value={note} onChange={setNote} onSend={() => { if (!blocker && !run.isPending) run.mutate(); }} running={run.isPending}
+          value={note} onChange={setNote} onSend={go} running={dr.running || run.isPending}
+          onStop={taskId ? () => dr.stop.mutate() : undefined} stopping={dr.stop.isPending} stopHint="Dừng đối chiếu" stopLabel="Dừng"
           tools={<>
             <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
-            {blocker && !before.isPending && <span className="text-ink-3">{blocker}</span>}
+            {blocker && !before.isPending && !dr.running && <span className="text-ink-3">{blocker}</span>}
           </>}
-          actions={
+          actions={!dr.running && (
             <Hint text="Giao AI Agent đối chiếu câu trả lời của BE với code dự án (Enter)" side="bottom">
               <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" aria-busy={run.isPending}
-                disabled={!!blocker || run.isPending} onClick={() => run.mutate()}>
-                {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <BrainCircuit aria-hidden />} Phân tích
+                disabled={!!blocker || run.isPending} onClick={go}>
+                {run.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <BrainCircuit aria-hidden />} {dr.done ? "Đối chiếu lại" : "Phân tích"}
               </Button>
             </Hint>
-          } />
+          )} />
       </DialogContent>
     </Dialog>
   );

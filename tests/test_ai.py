@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from conftest import A, B, FakeAgent, msg
 
-from telegram_dashboard.ai import AiService
+from telegram_dashboard.ai import ASK_MSG, AiService, session_rules
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import ReplyRequest
@@ -290,7 +290,7 @@ def test_ai_prefs_keep_each_clis_picks(client, settings):
     from conftest import ORIGIN
 
     from telegram_dashboard.claude import flags_for
-    from telegram_dashboard.providers import run_choice
+    from telegram_dashboard.providers import chosen, run_choice
 
     H = {"Origin": ORIGIN}
     flags = lambda task=False: flags_for(*run_choice(settings, task)[:2])  # noqa: E731
@@ -300,9 +300,12 @@ def test_ai_prefs_keep_each_clis_picks(client, settings):
     settings.claude_prefs_path.parent.mkdir(parents=True, exist_ok=True)
     settings.claude_prefs_path.write_text('{"model": "claude-haiku-5-5"}')  # a file from before per-CLI picks
     assert flags()[:2] == ["--model", "haiku"]  # full id -> the CLI's alias
+    settings.claude_prefs_path.write_text('{"provider": "codex", "by": {}}')  # from before per-kind CLIs
+    assert chosen(settings) == chosen(settings, task=True) == chosen(settings, brief=True) == "codex"
     none = dict.fromkeys(("model", "effort", "task_model", "task_effort", "brief_model", "brief_effort",
                          "yt_model", "yt_effort", "yt_task_model", "yt_task_effort"), "")  # fmt: skip
-    body = {"provider": "claude", "fallback": False, "fallback_at": 90, "by": {
+    use = {"chat": "claude", "brief": "", "task": "claude", "yt": "", "yt_task": ""}
+    body = {"use": use, "fallback": False, "fallback_at": 90, "by": {
         "claude": {**none, "model": "opus", "effort": "high", "task_effort": "max", "brief_model": "sonnet"},
         "codex": {**none, "model": "gpt-6.1-sol", "effort": "low"},
         "antigravity": {**none, "model": "gemini-3.8-flash-low", "effort": "high"}}}
@@ -312,14 +315,19 @@ def test_ai_prefs_keep_each_clis_picks(client, settings):
     assert flags(True) == ["--effort", "max"]
     assert run_choice(settings, brief=True)[:2] == ("sonnet", "high")  # Briefing: own model, effort inherited
     # Switching CLI keeps every CLI's picks; Antigravity takes no effort.
-    client.put("/api/ai/prefs", json={**body, "provider": "antigravity"}, headers=H)
+    client.put("/api/ai/prefs", json={**body, "use": {**use, "chat": "antigravity"}}, headers=H)
     assert run_choice(settings) == ("gemini-3.8-flash-low", "", False)
     assert run_choice(settings, provider="codex") == ("gpt-6.1-sol", "low", False)
+    # Each kind runs on the CLI of its own pick: Briefing on Codex, the rest untouched.
+    client.put("/api/ai/prefs", json={**body, "use": {**use, "brief": "codex"}}, headers=H)
+    assert chosen(settings, brief=True) == "codex" and chosen(settings) == chosen(settings, task=True) == "claude"
+    assert run_choice(settings, brief=True) == ("", "high", False)  # Codex default model, the drafts' effort
+    assert chosen(settings, yt=True) == "claude"  # "" = its base kind's CLI
     assert client.get("/api/ai/prefs", headers=H).json()["by"]["claude"]["model"] == "opus"
     assert settings.claude_prefs_path.stat().st_mode & 0o777 == 0o600
     bad_by = lambda picks: {**body, "by": {**body["by"], "codex": {**none, **picks}}}  # noqa: E731
     for bad in (bad_by({"model": "--dangerously-skip-permissions"}), bad_by({"effort": "huge"}),
-                {**body, "fallback_at": 10}, {**body, "provider": "gpt"}):  # fmt: skip
+                {**body, "fallback_at": 10}, {**body, "use": {**use, "chat": "gpt"}}, {**body, "use": {**use, "task": ""}}):  # fmt: skip
         assert client.put("/api/ai/prefs", json=bad, headers=H).status_code == 422
     cat = {c["id"]: c for c in client.get("/api/ai/catalog", headers=H).json()}
     assert cat["antigravity"]["efforts"] == [] and cat["claude"]["efforts"][0] == ""
@@ -432,7 +440,7 @@ async def test_deep_traces_question_and_confirm_in_the_project(env, tmp_path):
 
     p, title = await svc.deep(A, "4", "5", str(proj), fetch=fetch)
     assert fetched == [[4]] and title == "Hỏi: BE ơi API trả field gì?\nBE: BE confirm: field is `status`"
-    assert "Đã adapt" in p and "**Cần hỏi lại**" in p and "⚠ Giả định" in p  # no intro: says who it assumes
+    assert "⚠️ lệch" in p and "KHÔNG tin cậy" in p and "Giả định" not in p  # rules / sections: session_rules
     assert p.rindex("<question>") < p.index("BE ơi") < p.rindex("<confirm>") < p.rindex("BE confirm")
     await expect("ai_scope_not_allowed", svc.deep(A, "5", "5", str(proj)))
     await expect("message_not_found", svc.deep(A, "4", "5", str(proj)))  # offline: no fetch
@@ -574,3 +582,49 @@ async def test_overloaded_provider_is_tried_once_more(tmp_path):
     with pytest.raises(ApiError):
         await AiService(s, None, None).ask("hi")
     assert not count.exists()
+
+
+def test_codex_lists_models_a_local_proxy_routes(settings, monkeypatch, tmp_path):
+    import json
+
+    from telegram_dashboard import providers
+
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    lv = lambda *es: [{"effort": e} for e in es]  # noqa: E731
+    models = [
+        {"slug": "gpt-6.1-sol", "display_name": "GPT-6.1-Sol", "visibility": "list", "supported_reasoning_levels": lv("low", "ultra")},
+        {"slug": "combo/gemini", "display_name": "combo/gemini", "visibility": "list", "supported_reasoning_levels": lv("low", "high")},
+        {"slug": "combo/hidden", "visibility": "hide"},
+    ]
+    (tmp_path / "ocx.json").write_text(json.dumps({"models": models}))
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'openai_base_url = "http://127.0.0.1:10100/v1"\nmodel_catalog_json = "{tmp_path / "ocx.json"}"\n')
+    codex = {m["value"]: m for m in providers.catalog(settings)[1]["models"]}
+    assert set(codex) == {"", "gpt-6.1-sol", "combo/gemini"}
+    assert codex["combo/gemini"]["group"] == "combo" and codex["combo/gemini"]["efforts"] == ["", "low", "high"]
+    routed = providers._codex_base(settings, "combo/gemini", "high")
+    assert 'openai_base_url="http://127.0.0.1:10100/v1"' in routed and "--ignore-user-config" in routed
+    assert "features.apps=false" in routed  # codex_apps (web_run, upload from URL) is built in: off for every run
+    assert not any("openai_base_url" in a for a in providers._codex_base(settings, "gpt-6.1-sol", "low"))
+    # Each model's own levels: "ultra" runs on the model that lists it, not on one that doesn't.
+    p = providers.prefs(settings)
+    p["use"]["chat"] = "codex"
+    p["by"]["codex"].update(model="combo/gemini", effort="ultra")
+    providers.save_prefs(settings, p)
+    assert providers.run_choice(settings)[:2] == ("combo/gemini", "")
+    p["by"]["codex"]["model"] = "gpt-6.1-sol"
+    providers.save_prefs(settings, p)
+    assert providers.run_choice(settings)[:2] == ("gpt-6.1-sol", "ultra")
+    # A remote base URL is never followed: routed models drop out.
+    cfg.write_text('openai_base_url = "https://evil.example/v1"\n')
+    assert "combo/gemini" not in {m["value"] for m in providers.catalog(settings)[1]["models"]}
+    assert not any("openai_base_url" in a for a in providers._codex_base(settings, "combo/gemini", ""))
+
+
+def test_session_rules_one_frame_for_every_session():
+    # Giao AI Agent and Đối chiếu BE share it (start_task): who the user is, rules, sections, how to ask
+    r = session_rules("plan", None, "android", "")
+    assert "⚠ Giả định" in r and "Nền tảng: Android" in r and "Cần hỏi lại" in r and ASK_MSG in r
+    r = session_rules("edit", "qa", "any", "Tôi test app")
+    assert "Vai trò: QA/QC" in r and "Nền tảng" not in r and "Tôi test app" in r and "Giả định" not in r
+    assert "Đã sửa" in r and "`**Tóm tắt**`" in r  # one Markdown shape: bold labels on their own line

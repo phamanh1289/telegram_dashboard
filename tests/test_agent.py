@@ -156,3 +156,20 @@ async def test_git_changes_and_pr_leave_secrets_out(tmp_path, monkeypatch):
     shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
                            capture_output=True, text=True).stdout
     assert shown.split() == ["a.txt"]
+
+
+def test_prime_codegraph_leaves_the_wal_files_a_read_only_sandbox_needs(tmp_path):
+    import sqlite3
+
+    from telegram_dashboard.agent import prime_codegraph
+
+    (tmp_path / ".codegraph").mkdir()
+    db = tmp_path / ".codegraph" / "codegraph.db"
+    c = sqlite3.connect(db)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("CREATE TABLE t (x)")
+    c.close()  # the last writer: -wal / -shm deleted, as with no codegraph daemon running
+    assert not (tmp_path / ".codegraph" / "codegraph.db-shm").exists()
+    prime_codegraph(str(tmp_path))
+    assert (tmp_path / ".codegraph" / "codegraph.db-shm").exists()
+    prime_codegraph(str(tmp_path / "no-index"))  # no index: nothing to do

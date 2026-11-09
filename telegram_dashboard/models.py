@@ -188,7 +188,15 @@ class AiDraftRequest(BaseModel):
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt chung)
 
 
-class AiDeepRequest(BaseModel):
+class AboutMe(BaseModel):
+    """Who the user is (Settings), for every AI Agent session's frame (ai.session_rules)."""
+
+    role: Literal["dev", "qa", "po"] | None = None  # None: not chosen yet
+    platform: Literal["android", "ios", "mobile", "any"] = "android"
+    intro: str = Field("", max_length=2000)
+
+
+class AiDeepRequest(AboutMe):
     """Deep thinking: a question to BE + BE's confirmation, traced through a project's code."""
 
     chat_id: str
@@ -196,8 +204,6 @@ class AiDeepRequest(BaseModel):
     confirm_id: str
     project: str
     instruction: str = Field("", max_length=2000)
-    platform: Literal["android", "ios", "mobile", "any"] = "android"
-    intro: str = Field("", max_length=2000)
 
 
 class DeepItem(BaseModel):
@@ -208,15 +214,13 @@ class DeepItem(BaseModel):
     waiting: bool = False  # BE has not answered yet: trace what the code does now
 
 
-class AiDeepBatchRequest(BaseModel):
+class AiDeepBatchRequest(AboutMe):
     """Đối chiếu BE in bulk: several digest items of one chat (agreed with BE), traced through a project's code."""
 
     chat_id: str
     items: list[DeepItem] = Field(min_length=1, max_length=20)
     project: str
     instruction: str = Field("", max_length=2000)
-    platform: Literal["android", "ios", "mobile", "any"] = "android"
-    intro: str = Field("", max_length=2000)
 
 
 class AiTicketRequest(AiDraftRequest):
@@ -313,9 +317,10 @@ class RuleAdded(BaseModel):
     cleared: list[MessageRef]  # those tags, for an Undo (reopen them)
 
 
-AiEffort = Literal["", "low", "medium", "high", "xhigh", "max"]
-# A CLI model alias or id; never starts with "-" so it can't pass for a flag.
-AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*)?$")]
+AiEffort = Literal["", "low", "medium", "high", "xhigh", "max", "ultra"]  # ultra: some Codex models
+# A CLI model alias or id; never starts with "-" so it can't pass for a flag. "provider/model": a model
+# opencodex routes for Codex.
+AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*(/[\w.\-\[\]]+)?)?$")]
 
 
 AiProvider = Literal["claude", "codex", "antigravity"]
@@ -433,10 +438,21 @@ class AiPicks(BaseModel):
     yt_task_effort: AiEffort = ""
 
 
-class AiPrefs(BaseModel):
-    """provider: the CLI every AI feature runs on; by: each CLI's own picks (see providers.prefs)."""
+class AiUse(BaseModel):
+    """The CLI each kind of run uses, picked with its model: drafts, Briefing / Digest, tasks / AI Agent,
+    YouTrack light / heavy ("" = like its base kind: drafts, YouTrack heavy: tasks)."""
 
-    provider: AiProvider = "claude"
+    chat: AiProvider = "claude"
+    brief: AiProvider | Literal[""] = ""
+    task: AiProvider = "claude"
+    yt: AiProvider | Literal[""] = ""
+    yt_task: AiProvider | Literal[""] = ""
+
+
+class AiPrefs(BaseModel):
+    """use: the CLI each kind of run uses; by: each CLI's own picks (see providers.prefs)."""
+
+    use: AiUse = AiUse()
     by: dict[AiProvider, AiPicks] = {}
     fallback: bool = False  # Claude: step down to haiku (tasks: sonnet) once a window reaches fallback_at %
     fallback_at: int = Field(90, ge=50, le=100)
@@ -446,6 +462,8 @@ class AiOption(BaseModel):
     value: str
     label: str
     hint: str = ""
+    group: str = ""  # a routed model's provider (opencodex: AgentAPI, combo, ...)
+    efforts: list[AiEffort] | None = None  # this model's own levels ([]: none); None: the CLI's
 
 
 class AiCatalogEntry(BaseModel):
@@ -541,7 +559,7 @@ class ProjectRequest(BaseModel):
     path: str = Field(min_length=1, max_length=1000)
 
 
-class TaskRequest(BaseModel):
+class TaskRequest(AboutMe):
     project: str
     mode: Literal["plan", "edit"] = "plan"
     prompt: str = Field(min_length=1, max_length=8000)
@@ -629,8 +647,21 @@ class DigestItem(DigestRef):
     why: str = ""  # context: the problem behind it and how it was concluded
     be: bool = False  # a question to / answer from / agreement with the backend team
     topic: str = ""  # title of the topic it belongs to (kept when the item is carried to a later digest)
+    asker: str = ""  # BE items: who raised the question / request
+    question: str = ""  # BE decisions / changes: the question this answers ("text" is the answer)
     at: datetime | None = None  # open items: when it was first raised (its oldest cited message)
     carried: bool = False  # open item kept from an earlier digest: nothing since settled it
+
+
+class BeReply(BaseModel):
+    """A message replying to an open question with BE that the latest digest has not read yet."""
+
+    reply_to: str  # the question's message id (cited by the digest item)
+    message_id: str
+    sender: str
+    text: str
+    date: datetime
+    direct: bool = True  # a reply to the question; False: a later plain message from whoever must answer (a guess)
 
 
 class DigestResult(BaseModel):

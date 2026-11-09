@@ -254,7 +254,7 @@ Mọi tính năng AI chạy qua **AI CLI cài trên máy bạn**, dùng tài kho
 Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 - **Tài khoản**: CLI phải hiện "đang dùng" kèm tài khoản. CLI chưa cài / chưa đăng nhập hiện mờ.
-- **Dùng AI nào**: một lựa chọn cho mọi tính năng (nháp, tóm tắt, Digest, YouTrack, AI Agent). Mỗi AI giữ model / effort riêng, đổi qua lại không mất.
+- **Model và effort**: ô Model của từng việc (nháp, tóm tắt, Briefing / Digest, YouTrack, AI Agent) gộp model của mọi AI theo nhóm Claude / Codex / Antigravity; chọn model của AI nào thì việc đó chạy bằng AI ấy. Codex đi qua [opencodex](https://github.com/lidge-jun/opencodex) thì danh sách có thêm model opencodex định tuyến (nhóm `Codex · AgentAPI`, `Codex · combo`…). Mỗi AI giữ model / effort riêng.
 - **Quyền riêng tư**: *Ẩn SĐT / email khi gửi AI*, nội dung trong thông báo.
 - Nút đồng hồ đo trên thanh trên cùng hiện % hạn mức AI (xanh / vàng từ 70% / đỏ từ 90%).
 

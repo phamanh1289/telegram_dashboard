@@ -6,7 +6,8 @@ import { cn } from "@/lib/utils";
 
 const DEFAULT = "\u0000default"; // Select reads "" as nothing chosen; "" (e.g. a CLI default) is a real choice here
 
-export type DropdownOption = { value: string; label: string; hint?: string };
+/** `group`: a heading over a run of options sharing it (the trigger then reads "<group> · <label>"). */
+export type DropdownOption = { value: string; label: string; hint?: string; group?: string };
 
 /** Compact select: the popup scales in from the trigger, the chosen item carries a check.
  *  `trigger`: replaces the field look of the trigger (e.g. a chip), keeping its focus ring; `style` goes on the trigger;
@@ -16,7 +17,23 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
   trigger?: string; style?: React.CSSProperties; prefix?: React.ReactNode;
 }) {
   const enc = (v: string) => (v === "" ? DEFAULT : v);
-  const items = options.map((o) => ({ ...o, value: enc(o.value) }));
+  const items = options.map((o) => ({ ...o, value: enc(o.value), label: o.group ? `${o.group} · ${o.label}` : o.label, text: o.label }));
+  const runs: (typeof items)[] = [];
+  for (const o of items) {
+    const run = runs.at(-1);
+    if (run && run[0].group === o.group) run.push(o);
+    else runs.push([o]);
+  }
+  const item = (o: (typeof items)[number]) => (
+    <Select.Item key={o.value} value={o.value}
+      className="grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2">
+      <span className="grid">
+        <Select.ItemText className="font-medium">{o.text}</Select.ItemText>
+        {o.hint && <span className="text-xs whitespace-nowrap text-ink-3">{o.hint}</span>}
+      </span>
+      <Select.ItemIndicator><Check aria-hidden className="size-4 text-hl" /></Select.ItemIndicator>
+    </Select.Item>
+  );
   return (
     <Select.Root items={items} value={enc(value)} onValueChange={(v) => v != null && onChange(v === DEFAULT ? "" : v)}>
       <Select.Trigger aria-label={label} style={style}
@@ -30,16 +47,12 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
       <Select.Portal>
         <Select.Positioner sideOffset={6} align="start" alignItemWithTrigger={false} className="z-50 outline-none">
           <Select.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-            {items.map((o) => (
-              <Select.Item key={o.value} value={o.value}
-                className="grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2">
-                <span className="grid">
-                  <Select.ItemText className="font-medium">{o.label}</Select.ItemText>
-                  {o.hint && <span className="text-xs whitespace-nowrap text-ink-3">{o.hint}</span>}
-                </span>
-                <Select.ItemIndicator><Check aria-hidden className="size-4 text-hl" /></Select.ItemIndicator>
-              </Select.Item>
-            ))}
+            {runs.map((run) => run[0].group
+              ? <Select.Group key={run[0].group} className="not-first:mt-1 not-first:border-t not-first:border-rule not-first:pt-1">
+                  <Select.GroupLabel className="px-2.5 pt-1 pb-0.5 text-[0.6875rem] font-semibold text-ink-3">{run[0].group}</Select.GroupLabel>
+                  {run.map(item)}
+                </Select.Group>
+              : run.map(item))}
           </Select.Popup>
         </Select.Positioner>
       </Select.Portal>

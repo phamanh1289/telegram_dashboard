@@ -330,9 +330,23 @@ def _priority(c: sqlite3.Connection) -> None:
     _add_cols(c, "messages", {"priority": "INTEGER NOT NULL DEFAULT 0"})
 
 
+def _deep_anchor(c: sqlite3.Connection) -> None:
+    """Every AI Agent session sits on a message now (its asks post into that group / topic); Đối chiếu BE of several
+    topics used to sit on none. Anchor it on the newest stored message its prompt cites (as ai.data_json wrote it)."""
+    rows = c.execute("SELECT id, chat_id, prompt FROM tasks WHERE kind='deep' AND message_id IS NULL "
+                     "AND chat_id IS NOT NULL AND prompt IS NOT NULL").fetchall()  # fmt: skip
+    for t in rows:
+        # ponytail: a text match on the stored copies; a topic whose messages were never stored stays without one
+        for m in c.execute("SELECT message_id, text FROM messages WHERE chat_id=? AND deleted=0 AND length(text)>=8 "
+                           "ORDER BY message_id DESC LIMIT 5000", (t["chat_id"],)):  # fmt: skip
+            if json.dumps(m["text"], ensure_ascii=False)[1:-1].replace("<", "\\u003c") in t["prompt"]:
+                c.execute("UPDATE tasks SET message_id=? WHERE id=?", (m["message_id"], t["id"]))
+                break
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
-    _handled_by, _outbox_quote, _priority,
+    _handled_by, _outbox_quote, _priority, _deep_anchor,
 ]  # fmt: skip
 
 

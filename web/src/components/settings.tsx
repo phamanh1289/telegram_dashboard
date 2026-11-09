@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, GitBranch, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
+import { AiAccounts, ModelEffortPicker, PrefsSection, useAiPrefs } from "@/components/ai";
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
 import { AiFetching, UpdateHero } from "@/components/ai/fetching";
@@ -160,8 +160,7 @@ const ENTRIES: Entry[] = [
   { t: "Instructions cho AI (YouTrack)", g: "youtrack", card: "Instructions cho AI", view: "ai", k: "huong dan notes team" },
   { t: "Kho prompt", g: "youtrack", card: "Kho prompt", view: "ai", k: "ghim phien ai" },
   { t: "Workflow State", g: "youtrack", card: "Workflow", view: "workflow", k: "luong mui ten board" },
-  { t: "Dùng AI nào: Claude, Codex, Antigravity", g: "ai", card: "Dùng AI nào", k: "provider cli" },
-  { t: "Model và effort", g: "ai", card: "Model và effort", k: "tom tat soan nhap task agent briefing thu model" },
+  { t: "Model và effort (Claude, Codex, Antigravity)", g: "ai", card: "Model và effort", k: "dung ai nao provider cli tom tat soan nhap task agent briefing thu model" },
   { t: "Model và effort cho AI YouTrack", g: "youtrack", card: "Model và effort", view: "ai", k: "model effort youtrack doc code ticket" },
   { t: "Tự hạ model khi gần hết hạn mức", g: "ai", card: "Model và effort", k: "fallback quota" },
   { t: "Tài khoản CLI AI", g: "ai", card: "Tài khoản", k: "dang nhap usage history claude codex antigravity" },
@@ -655,8 +654,8 @@ function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: YtView) =
     </>}
     {view === "ai" && <>
       {p && (
-        <Card title="Model và effort" info="Cho các tính năng AI YouTrack, của AI đang dùng (Cài đặt › AI). Để “Như Telegram” thì dùng lựa chọn tương ứng bên Telegram. Áp dụng từ lần chạy kế tiếp.">
-          <PrefsSection provider={p.provider} scope="youtrack" fixed plain />
+        <Card title="Model và effort" info="Cho các tính năng AI YouTrack: chọn model của Claude, Codex hay Antigravity thì việc đó chạy bằng AI ấy. Để “Như Telegram” thì dùng lựa chọn tương ứng bên Telegram. Áp dụng từ lần chạy kế tiếp.">
+          <PrefsSection scope="youtrack" fixed plain />
         </Card>
       )}
       <Card title="Instructions cho AI" action={roleName && <span className="rounded-full bg-paper-2 px-2 py-0.5 text-xs text-ink-2 shadow-groove">Vai trò: <b className="font-semibold">{roleName}</b></span>}
@@ -804,15 +803,12 @@ function ReportSection() {
 // ---- AI -----------------------------------------------------------------------------------------
 
 function AiGroup() {
-  const { p } = useAiPrefs();
+  const { p, used, info } = useAiPrefs();
   const privacy = usePrivacy();
   return <>
-    <Card title="Dùng AI nào" info="Áp dụng cho mọi tính năng AI: tóm tắt, soạn nháp, Briefing, Digest, YouTrack, Task và AI Agent. Mỗi AI giữ model và effort riêng, đổi qua lại không mất lựa chọn.">
-      <ProviderSection />
-    </Card>
     {p && (
-      <Card title="Model và effort" info="Của AI đang dùng, riêng cho Telegram và YouTrack; mỗi AI giữ lựa chọn riêng, áp dụng từ lần chạy kế tiếp. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
-        <PrefsSection provider={p.provider} plain />
+      <Card title="Model và effort" info="Một danh sách gồm model của mọi AI (Claude, Codex, Antigravity): chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước. Riêng cho Telegram và YouTrack; mỗi AI giữ lựa chọn riêng, áp dụng từ lần chạy kế tiếp. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
+        <PrefsSection plain />
       </Card>
     )}
     <Card title="Tài khoản" info="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập. Chi tiết: hạn mức, usage và lịch sử chạy.">
@@ -820,7 +816,7 @@ function AiGroup() {
     </Card>
     <Card title="Quyền riêng tư">
       <p className="py-2 text-xs text-ink-2">
-        Tin nhắn của người khác (nhóm Telegram) và nội dung ticket được gửi tới AI đang chọn ({p ? p.provider : "Claude"}) khi bạn dùng tóm tắt, soạn nháp, Briefing, Q&amp;A, YouTrack AI hay AI Agent; nhà cung cấp xử lý theo điều khoản của họ.
+        Tin nhắn của người khác (nhóm Telegram) và nội dung ticket được gửi tới AI của model đang chọn ({p ? used().map((id) => info(id)?.name ?? id).join(", ") : "Claude"}) khi bạn dùng tóm tắt, soạn nháp, Briefing, Q&amp;A, YouTrack AI hay AI Agent; nhà cung cấp xử lý theo điều khoản của họ.
       </p>
       {privacy.p && (
         <Row label="Ẩn SĐT / email khi gửi AI" desc="Thay số điện thoại và email trong tin nhắn, ticket, nội dung link bằng [SĐT] / [email] trước khi gửi (nháp, tóm tắt, Briefing, Q&A, YouTrack AI). Lời dặn bạn tự gõ cho AI Agent gửi nguyên văn.">
@@ -829,24 +825,6 @@ function AiGroup() {
       )}
     </Card>
   </>;
-}
-
-/** Which CLI runs every AI feature (drafts, summaries, Digest, YouTrack, tasks, AI Agent); saved in data/claude.json. */
-function ProviderSection() {
-  const { p, set, info, name } = useAiPrefs();
-  const accounts = useAccounts();
-  if (!p) return null;
-  const ready = (v: Provider) => accounts[v].installed && accounts[v].loggedIn;
-  const items = (["claude", "codex", "antigravity"] as const).map((v) => ({
-    value: v, label: <span className={cn(!ready(v) && "opacity-50")}>{info(v)?.name ?? v}</span>,
-  }));
-  return (
-    <div className="grid gap-2 pt-1">
-      <Segmented id="set-provider" variant="card" label="AI cho mọi tính năng" value={p.provider} onChange={(v) => set({ provider: v })} items={items} />
-      {!accounts[p.provider].checking && !ready(p.provider) && <span className="text-xs text-warn">{name} chưa cài hoặc chưa đăng nhập: lần chạy sẽ lỗi.</span>}
-      <p className="text-xs text-ink-3">Task đang dở tiếp tục bằng AI đã bắt đầu nó.</p>
-    </div>
-  );
 }
 
 // ---- Cập nhật -----------------------------------------------------------------------------------

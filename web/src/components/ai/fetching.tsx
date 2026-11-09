@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, FileText, GitBranch, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Send, Server, ShieldCheck, Sparkles } from "lucide-react";
+import { Check, FileText, GitBranch, Hourglass, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep";
 
 const LINES: Record<FetchKind, string[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
@@ -24,11 +24,16 @@ const LINES: Record<FetchKind, string[]> = {
   today: ["AI đang gom việc của bạn", "Đang đọc tag chờ và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   update: ["AI đang kết nối GitHub", "Đang kéo bản mới về", "Đang kiểm checksum và chữ ký", "Đang cài bản mới", "Sắp xong rồi"],
   restart: ["Đã cài bản mới", "Đang khởi động lại server", "Đang chờ server lên lại", "Sắp tải lại trang"],
+  deep: ["AI đang mở dự án", "Đang đọc câu hỏi gửi BE và câu BE trả lời", "Đang soi code: API, model, màn hình", "Đang so: đã adapt, lệch hay chưa làm", "Đang viết bảng đối chiếu"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
 /** The digest scene's lines, naming the group being read. */
 export const digestLines = (group?: string) => [group ? `AI đang đọc hội thoại ${group}` : LINES.digest[0], ...LINES.digest.slice(1)];
+
+/** The Đối chiếu BE scene's lines, naming the project and how many topics. */
+export const deepLines = (project?: string, topics?: number) =>
+  [project ? `AI đang mở dự án ${project}` : LINES.deep[0], topics ? `Đang đọc ${topics} chủ đề hỏi / BE` : LINES.deep[1], ...LINES.deep.slice(2)];
 
 /** Shortest time a loading scene stays up, so it plays through instead of flashing (user ask: 0.5–1s). */
 export const AI_WAIT_MS = 800;
@@ -415,6 +420,54 @@ const SCENES: Record<FetchKind, Scene> = {
           <span className="h-2 w-1 animate-pulse bg-hl" />
         </div>
       </div>
+    </>;
+  },
+  // Đối chiếu BE: the Q&A with BE scrolls by on the left, each question / answer flies into the robot, which runs its
+  // magnifier down the project's code on the right and pins a verdict on the lines it checked (adapted, off, missing, waiting)
+  deep: ({ p }) => {
+    const feed = [["Hỏi", "w-20", 0], ["BE", "w-16", 1], ["Hỏi", "w-[72px]", 0], ["BE", "w-20", 1], ["Hỏi", "w-14", 0], ["BE", "w-[68px]", 1]] as const;
+    const code = [[0, 44, C.hl2], [8, 52, C.info], [8, 36, C.ok], [16, 46, C.warn], [8, 30, C.info], [0, 40, C.hl2], [8, 50, C.ok], [16, 34, C.info]] as const;
+    const marks = [[1, Check, C.ok], [3, TriangleAlert, C.warn], [5, X, C.err], [7, Hourglass, "var(--color-signal-2)"]] as const;
+    return <>
+      <div className="absolute top-1 bottom-1 left-0 w-[92px] overflow-hidden rounded-xl border border-rule bg-paper-2 px-1.5">
+        <div className="fx-scroll flex flex-col gap-1.5 pt-2">
+          {[...feed, ...feed].map(([who, w, be], k) => (
+            <div key={k} className={cn("grid gap-1 rounded-2xl px-2 py-1.5", be ? "self-end rounded-br-sm bg-code/20" : "self-start rounded-bl-sm bg-cotton shadow-stock", w)}>
+              <span className={cn("font-mono text-[8px] leading-none font-semibold", be ? "text-code" : "text-info")}>{who}</span>
+              <Line w="90%" /><Line w="55%" />
+            </div>
+          ))}
+        </div>
+      </div>
+      <Tg className="absolute -top-1 -left-1 size-6 shadow-stock" icon="size-3" />
+      {([["Hỏi?", 40, C.info], ["BE: API", 96, "var(--color-code)"], ["field", 64, C.hl2], ["BE: OK", 120, "var(--color-code)"], ["Hỏi?", 52, C.info]] as const)
+        .map(([t, y, c], k) => <Fly key={k} k={k} gap={0.6} dur={3} dot={c} path={`M88 ${y}C108 ${y} 112 80 134 80`}>{t}</Fly>)}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`d${k}`} k={k} gap={0.5} dur={1.6} path={`M166 80C184 80 186 ${40 + k * 22} 206 ${40 + k * 22}`} className="size-1.5 rounded-full bg-hl" />)}
+      <Bot ring className="top-1/2 left-[96px] size-[76px] -translate-y-1/2" size="size-11" />
+      <div className="absolute top-1 right-0 bottom-1 w-[116px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
+        <div className="flex items-center gap-0.5 border-b border-rule bg-paper-2 px-1.5 py-1">
+          {[C.err, C.warn, C.ok].map((c) => <span key={c} className="size-1.5 rounded-full" style={{ background: c }} />)}
+          <span className="ml-1 truncate font-mono text-[8px] text-ink-3">{p || "project"}</span>
+        </div>
+        <div className="relative grid gap-[7px] py-1.5 pr-5 pl-1.5">
+          {code.map(([x, w, c], k) => (
+            <div key={k} className="flex items-center gap-1" style={{ paddingLeft: x }}>
+              <span className="w-2 shrink-0 text-right font-mono text-[6px] leading-none text-ink-3/60">{k + 1}</span>
+              <span className="block h-1 rounded-full opacity-60" style={{ width: w * 0.35, background: c }} />
+              <span className="block h-1 rounded-full bg-ink-3/25" style={{ width: w * 0.65 }} />
+            </div>
+          ))}
+          {marks.map(([row, Icon, c], k) => (
+            <span key={row} className="fx-step absolute right-1 grid size-3.5 place-items-center rounded-full bg-cotton shadow-stock" style={v({ top: 6 + row * 11 - 1, "--fx-d": "4.8s", animationDelay: `${0.6 + k * 0.9}s` })}>
+              <Icon className="size-2.5" style={{ color: c }} strokeWidth={3} />
+            </span>
+          ))}
+        </div>
+        <span className="fx-scan absolute top-4 left-0 h-6 w-full bg-linear-to-b from-transparent via-hl/25 to-transparent" style={v({ "--fx-y": "110px" })} />
+      </div>
+      <span className="fx-scan absolute top-3 left-[178px] grid size-7 place-items-center rounded-full border-2 border-hl bg-cotton/80 shadow-stock" style={v({ "--fx-y": "100px" })}>
+        <Search className="size-3.5 text-hl-2" strokeWidth={2.5} />
+      </span>
     </>;
   },
 };

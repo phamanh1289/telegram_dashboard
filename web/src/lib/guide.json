@@ -1016,7 +1016,7 @@
 "tab": "telegram",
 "area": "Dòng tin, Briefing › Đối chiếu BE",
 "title": "Đối chiếu BE (soi câu trả lời của BE với code)",
-"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả.",
+"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt. Hộp thoại ở lại, hiện AI đang soi code (bước đang làm) rồi kết quả ngay tại chỗ; đóng lúc nào cũng được, phiên vẫn chạy ngầm ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả. Kết quả cùng mẫu với phiên Giao AI Agent (Tóm tắt · Hiện trạng · Cần làm · Rủi ro · Cần hỏi lại; nhiều chủ đề thì mở đầu bằng bảng ✅ / ⚠️ / ❌ / ⏳), ý Cần hỏi lại có nút copy và gửi vào nhóm như ở AI Agent.",
 "how": [
 {
 "t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing.",
@@ -1038,7 +1038,7 @@
 "at": "Yêu cầu thêm"
 },
 {
-"t": "Bấm \"Phân tích\"; tiếp tục làm việc khác, bấm \"Xem\" trên thông báo hoặc nhãn trên tin để mở kết quả.",
+"t": "Bấm \"Phân tích\"; xem AI soi code và đọc kết quả ngay trong hộp thoại (nút Dừng nằm trong ô yêu cầu, xong thì có \"Đối chiếu lại\"). Đóng sớm thì bấm \"Xem\" trên thông báo hoặc nhãn trên tin để mở kết quả sau.",
 "at": "Phân tích"
 }
 ],
@@ -1049,7 +1049,7 @@
 "tab": "telegram",
 "area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
 "title": "Với BE: Q&A với BE gom theo chủ đề",
-"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, câu hỏi nằm cạnh câu BE trả lời, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu). Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\". Bản tóm tắt làm trước khi có tính năng này chưa có mục BE: tab Với BE hiện nút \"Đọc lại 7 ngày\" để AI đọc lại và gom theo chủ đề.",
+"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu); trong thẻ, mỗi câu hỏi (kèm người hỏi) đi thành cặp với câu BE trả lời, hoặc \"Chờ BE trả lời\" nếu chưa có, bên dưới là bối cảnh: vấn đề và cách chốt. Bản tóm tắt cũ chưa có cặp: bấm Tóm tắt lại. BE vừa reply câu hỏi mà chưa tóm tắt lại: thẻ hiện \"Có trả lời mới\" kèm câu trả lời (bấm Tóm tắt lại để AI chốt), và câu đó không còn tính là chờ; người phải trả lời nhắn sau câu hỏi mà không bấm reply thì thẻ hiện \"Có thể đã trả lời\" (chỉ là đoán, vẫn tính là chờ). Số trên tab chỉ đếm chủ đề còn chờ BE. Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\". Bản tóm tắt làm trước khi có tính năng này chưa có mục BE: tab Với BE hiện nút \"Đọc lại 7 ngày\" để AI đọc lại và gom theo chủ đề.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\"",
@@ -1066,13 +1066,14 @@
 "tab": "telegram",
 "area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
 "title": "Đối chiếu code theo chủ đề với BE",
-"what": "Soi code dự án với từng chủ đề trao đổi với BE (tối đa 20 chủ đề một lần, hoặc từng chủ đề trên thẻ của nó): chủ đề đã chốt được kiểm ✅ đã adapt / ⚠️ lệch / ❌ chưa làm, chủ đề còn chờ BE trả lời được báo ⏳ code hiện đang làm gì và cần sửa gì tùy câu trả lời; kèm bằng chứng path:line. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE; đối chiếu một chủ đề thì thẻ của nó hiện nhãn \"Xem đối chiếu BE\". Mục đã xử lý không được gửi đi.",
+"what": "Soi code dự án với từng chủ đề trao đổi với BE (tối đa 20 chủ đề một lần, hoặc từng chủ đề trên thẻ của nó): chủ đề đã chốt được kiểm ✅ đã adapt / ⚠️ lệch / ❌ chưa làm, chủ đề còn chờ BE trả lời được báo ⏳ code hiện đang làm gì và cần sửa gì tùy câu trả lời; kèm bằng chứng path:line. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE. Xong, mỗi thẻ chủ đề ở Với BE hiện nhãn kết luận \"Code: đã adapt / lệch / chưa làm / chờ BE\" (bấm để mở phiên) và đầu tab có tổng số theo kết luận; chủ đề có tin mới sau lần đối chiếu thì nhãn ghi \"cũ\", nên đối chiếu lại. Rời trang khi đang chạy: xong sẽ có thông báo kèm tổng kết luận (thêm thông báo hệ thống nếu bật ở Cài đặt và tab đang ẩn). Mở lại trang Đối chiếu code: đang chạy thì xem tiếp cảnh AI, đã có kết quả thì có dòng \"Lần đối chiếu trước\" với nút \"Xem bảng\", và nút \"Bỏ N chủ đề đã adapt\" để chỉ soi lại phần còn lại. Mục đã xử lý không được gửi đi.",
 "how": [
 "Mở Briefing › tab \"Với BE\" (hoặc trang Tóm tắt của nhóm › \"Với BE\")",
 "Bấm \"Đối chiếu code N chủ đề\" để chạy cả nhóm, hoặc \"Đối chiếu code\" trên một thẻ",
-"Chọn dự án để AI đọc code, thêm yêu cầu nếu cần, rồi bấm \"Đối chiếu N chủ đề\"",
+"Trang Đối chiếu code mở ra: bỏ chọn chủ đề không cần soi, chọn dự án để AI đọc code, thêm yêu cầu nếu cần, rồi bấm \"Đối chiếu N chủ đề\"",
+"Trong lúc chạy, trang hiện AI đang soi câu hỏi / câu BE trả lời và file code đang đọc; có thể rời trang, phiên vẫn chạy ngầm",
 {
-"t": "Xem kết quả ở AI Agent › Đối chiếu BE",
+"t": "Xong, bảng đối chiếu hiện ngay trên trang; bấm \"Hỏi tiếp ở AI Agent\" để hỏi thêm (cũng nằm ở AI Agent › Đối chiếu BE)",
 "at": "AI Agent"
 }
 ],
@@ -1775,20 +1776,20 @@
 {
 "id": "settings-ai-provider",
 "tab": "settings",
-"area": "Cài đặt › AI › Dùng AI nào",
-"title": "Chọn AI cho mọi tính năng",
-"what": "Chọn CLI (Claude, Codex, Antigravity) chạy mọi tính năng AI; mỗi AI giữ model/effort riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
+"area": "Cài đặt › AI › Model và effort",
+"title": "Chọn model của mọi AI trong một danh sách",
+"what": "Ô Model của từng việc (tóm tắt, soạn nháp, Briefing, Task và AI Agent, AI YouTrack) liệt kê model của Claude, Codex và Antigravity theo nhóm: chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước; effort theo đúng mức model đó nhận. Codex chạy qua opencodex (proxy trên máy) thì có thêm model opencodex định tuyến (AgentAPI, anthropic, combo…), xếp nhóm \"Codex · <provider>\" như trang Models của opencodex. Mỗi AI giữ lựa chọn riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
 "how": [
 {
 "t": "Chọn mục \"AI\"",
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
 },
 {
-"t": "Bấm tên AI muốn dùng ở \"Dùng AI nào\"",
-"at": "css:[aria-label=\"AI cho mọi tính năng\"]"
+"t": "Mở ô Model của việc cần đổi, chọn model trong nhóm Claude / Codex / Antigravity",
+"at": "css:[aria-label=\"Model cho Tóm tắt, soạn nháp\"]"
 }
 ],
-"keys": "dung ai nao provider claude codex antigravity chon ai"
+"keys": "dung ai nao provider claude codex antigravity chon ai model gop chung opencodex combo agentapi proxy"
 },
 {
 "id": "settings-github-update",

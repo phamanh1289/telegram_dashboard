@@ -12,7 +12,7 @@ import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
-import { api, ApiError, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
+import { api, ApiError, type BeReply, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
 import { copyText, getMessage, openReplyById, smooth, toast } from "@/lib/inbox";
 import { dayLabel, timeLabel } from "@/lib/time";
 import { isString, put, readDigestTeams, readIntro, readList } from "@/lib/prefs";
@@ -89,6 +89,17 @@ export const answeredQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string[]>>("/briefing/answered", { signal }),
   staleTime: 60_000,
 };
+
+/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời"). */
+export const beRepliesQuery = {
+  queryKey: ["briefing-be-replies"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, BeReply[]>>("/briefing/be-replies", { signal }),
+  staleTime: 60_000,
+};
+/** The replies to an item's question (any of its cited messages), and the guesses (`direct` false) when nobody replied. */
+export const repliesTo = (it: DigestItem, hits?: BeReply[]) => hits?.filter((h) => it.message_ids?.includes(h.reply_to)) ?? [];
+/** BE replied to the question itself: it no longer waits (a guess does not count). */
+export const isAnswered = (it: DigestItem, hits?: BeReply[]) => repliesTo(it, hits).some((h) => h.direct);
 
 /** Ticked off (here) or replied to (on Telegram). */
 export const isClosedItem = (chat: string, kind: string, it: DigestItem, done: Set<string>, answered?: Record<string, string[]>) =>

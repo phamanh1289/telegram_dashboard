@@ -1,7 +1,8 @@
 """The AI CLIs (Claude, Codex, Antigravity): which one runs, its model/effort, logins, commands and output.
 
-One pick in Settings › AI runs every AI feature; each CLI keeps its own model/effort picks, so
-switching away and back finds them again. `catalog` is what each CLI offers, read in one place.
+Each kind of run (drafts, Briefing, tasks / AI Agent, YouTrack light / heavy) runs on the CLI of the
+model picked for it (`use`), so one model list holds every CLI's models; each CLI keeps its own
+model/effort picks, so switching away and back finds them again. `catalog` is what each CLI offers, read in one place.
 Like Claude, each CLI owns its login and its token; the dashboard only starts a login, reads who
 is signed in, and turns the CLI's JSON events into the same items a Claude run gives.
 A task's session id carries its CLI ("codex:<thread>", "antigravity:<conversation>"; bare = Claude), so a
@@ -20,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,10 +38,17 @@ INSTALL = {
     "codex": "npm i -g @openai/codex",
     "antigravity": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 }
-EFFORTS = ("low", "medium", "high", "xhigh", "max")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")  # Claude's
+CODEX_EFFORTS = (*EFFORTS, "ultra")  # what Codex's catalog may list per model
 PICKS = ("model", "effort", "task_model", "task_effort", "brief_model", "brief_effort",
          "yt_model", "yt_effort", "yt_task_model", "yt_task_effort")  # fmt: skip
-MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*$")  # an alias or id, never a flag
+# Each kind of run, the kind its "" picks fall back to, and its model / effort keys in a CLI's picks.
+BASE = {"chat": "chat", "brief": "chat", "task": "task", "yt": "chat", "yt_task": "task"}
+KEYS = {k: ("model", "effort") if k == "chat" else (f"{k}_model", f"{k}_effort") for k in BASE}
+# An alias or id, never a flag; "provider/model": a model a local proxy (opencodex) routes for Codex.
+MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*(/[\w.\-\[\]]+)?$")
+# Codex's base URL when the user routes it through a local proxy (opencodex: http://127.0.0.1:10100/v1).
+LOOPBACK = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}(/[\w.\-/]*)?$")
 CLAUDE_MODELS = [
     ("haiku", "Haiku", "Nhanh, tiết kiệm hạn mức"),
     ("sonnet", "Sonnet", "Cân bằng tốc độ và chất lượng"),
@@ -88,6 +97,12 @@ NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy.
           "test để người dùng tự chạy kiểm tra.")  # fmt: skip
 SANDBOXED = ["--settings", SANDBOX, "--append-system-prompt", NO_JVM]
 ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
+# A project indexed with codegraph (`.codegraph/`): Claude turns query it through its MCP server, one read-only tool
+# (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
+# DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
+CODEGRAPH_MCP = json.dumps({"mcpServers": {"codegraph": {
+    "type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"], "env": {"DO_NOT_TRACK": "1"}}}})
+CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 SHELL_TOOLS = "Read,Grep,Glob,Bash"  # an answer that may run commands, never Edit/Write
 DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
         # files that run code later (on folder open, commit, cd) or load tools into the next session
@@ -100,8 +115,9 @@ DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
 
 
 def prefs(settings) -> dict:
-    """The picked CLI and every CLI's model/effort ("" = that CLI's default) over the .env
-    defaults (Claude's). A file from before per-CLI picks holds Claude's picks at the top level."""
+    """The CLI each kind of run uses and every CLI's model/effort ("" = that CLI's default) over the
+    .env defaults (Claude's). A file from before per-CLI picks holds Claude's picks at the top level;
+    one from before per-kind CLIs has one `provider` for all."""
     saved = _read_json(settings.claude_prefs_path)
     old = saved.get("by")
     by_saved = old if isinstance(old, dict) else {"claude": saved}
@@ -118,9 +134,12 @@ def prefs(settings) -> dict:
         by["claude"][k] = re.sub(r"^claude-(haiku|sonnet|opus|fable)\b.*", r"\1", by["claude"][k])
     at = saved.get("fallback_at")
     # Gemini CLI's Google login is gone: its pick moves to Antigravity
-    picked = "antigravity" if saved.get("provider") == "gemini" else saved.get("provider")
+    old = "antigravity" if saved.get("provider") == "gemini" else saved.get("provider")
+    old = old if old in PROVIDERS else "claude"
+    got = saved.get("use") if isinstance(saved.get("use"), dict) else {}
+    use = {k: got[k] if got.get(k) in PROVIDERS else old if BASE[k] == k else "" for k in BASE}
     return {
-        "provider": picked if picked in PROVIDERS else "claude",
+        "use": use,
         "by": by,
         "fallback": saved.get("fallback") is True,
         "fallback_at": at if isinstance(at, int) and not isinstance(at, bool) else 90,
@@ -132,29 +151,40 @@ def save_prefs(settings, p: dict) -> None:
     write_private_json(settings.claude_prefs_path, p)
 
 
-def chosen(settings) -> str:
-    """The CLI that runs every AI feature (a resumed task keeps the CLI that started it)."""
-    return prefs(settings)["provider"]
+def _kind(task: bool, brief: bool, yt: bool) -> str:
+    return ("yt_task" if task else "yt") if yt else "task" if task else "brief" if brief else "chat"
+
+
+def _on(p: dict, kind: str) -> str:
+    return p["use"][kind] or p["use"][BASE[kind]]
+
+
+def chosen(settings, *, task: bool = False, brief: bool = False, yt: bool = False) -> str:
+    """The CLI a kind of run uses: drafts (default), `brief`, `task` / AI Agent, `yt` (a resumed task
+    keeps the CLI that started it)."""
+    return _on(prefs(settings), _kind(task, brief, yt))
 
 
 def run_choice(
     settings, task: bool = False, provider: str | None = None, brief: bool = False, yt: bool = False
 ) -> tuple[str, str, bool]:
-    """Model, effort and whether the model was stepped down, for `provider` (default: the picked
-    CLI): drafts/summaries, Briefing/Digest (`brief`; "" = same as drafts), or tasks/AI Agent.
-    `yt`: a YouTrack run, on its own picks (yt_* light, yt_task_* heavy; "" = the Telegram pick).
+    """Model, effort and whether the model was stepped down, for `provider` (default: the CLI of the
+    kind's pick): drafts/summaries, Briefing/Digest (`brief`), or tasks/AI Agent (`task`); `yt`: a
+    YouTrack run (yt_* light, yt_task_* heavy). A Briefing / YouTrack "" pick is its base kind's
+    (drafts; YouTrack heavy: tasks): the model on the same CLI, the effort on any.
     Claude only: with fallback on, a window at or past `fallback_at`% runs the cheap model."""
     p = prefs(settings)
-    provider = provider or p["provider"]
+    kind = _kind(task, brief, yt)
+    base, provider = BASE[kind], provider or _on(p, kind)
     c = p["by"][provider]
-    model, effort = (c["task_model"], c["task_effort"]) if task else (c["model"], c["effort"])
-    if brief and not task:
-        model, effort = c["brief_model"] or model, c["brief_effort"] or effort
-    if yt:
-        k = "yt_task" if task else "yt"
-        model, effort = c[f"{k}_model"] or model, c[f"{k}_effort"] or effort
-    if provider != "claude":
-        return model, effort if provider == "codex" else "", False  # Antigravity's models carry their level
+    (m, e), (bm, be) = KEYS[kind], KEYS[base]
+    model, effort = c[m], c[e]
+    if kind != base:
+        on = _on(p, base)
+        model, effort = model or (c[bm] if provider == on else ""), effort or p["by"][on][be]
+    if provider != "claude":  # Antigravity's models carry their level; each Codex model lists its own
+        return model, effort if provider == "codex" and effort in _codex_levels(model) else "", False
+    effort = effort if effort in EFFORTS else ""  # a Codex-only level ("ultra") picked for the base kind
     cheap = "sonnet" if task else "haiku"
     if (
         p["fallback"]
@@ -170,32 +200,66 @@ def _options(rows) -> list[dict]:
             *({"value": v, "label": label, "hint": hint} for v, label, hint in rows)]  # fmt: skip
 
 
-def _codex_models() -> tuple[list, list[str]]:
-    """The models Codex lists (its own cache of the account's models) and the efforts they take.
-    A routed id ("Provider/model") needs the user's own config, which a run here ignores."""
-    data = _read_json(_codex_home() / "models_cache.json").get("models")
-    rows, efforts = [], set()
+def _codex_config() -> dict:
+    """The user's Codex config.toml; runs here ignore it, but read the proxy and catalog it names."""
+    with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
+        return tomllib.loads((_codex_home() / "config.toml").read_text())
+    return {}
+
+
+def _codex_proxy(cfg: dict | None = None) -> str:
+    """The loopback base URL the user's Codex goes through (opencodex), "" if none: routed "provider/model"
+    ids run through it. Never a remote URL: config text is not trusted to redirect a run."""
+    url = (_codex_config() if cfg is None else cfg).get("openai_base_url")
+    return url if isinstance(url, str) and LOOPBACK.match(url) else ""
+
+
+def _codex_catalog(cfg: dict) -> Path:
+    """The model list Codex reads: the proxy's catalog file (opencodex writes one) or Codex's own cache."""
+    got = cfg.get("model_catalog_json")
+    p = Path(got).expanduser() if isinstance(got, str) and got else None
+    return p if p and p.is_file() and p.is_relative_to(_codex_home()) else _codex_home() / "models_cache.json"
+
+
+def _codex_models() -> tuple[list[dict], list[str]]:
+    """The models Codex lists (shown ones only) with each one's efforts, and every effort any takes.
+    Routed ids ("AgentAPI/agentgw-opus-5.5", "combo/gemini": opencodex) only when a local proxy routes them,
+    grouped by their provider like the proxy's own model page."""
+    cfg = _codex_config()
+    data = _read_json(_codex_catalog(cfg)).get("models")
+    proxy = bool(_codex_proxy(cfg))
+    rows, union = [], set()
     for m in data if isinstance(data, list) else []:
         if not isinstance(m, dict) or m.get("visibility") != "list":
             continue
         slug = m.get("slug")
-        if not isinstance(slug, str) or len(slug) > 80 or not MODEL_RE.match(slug):
+        if not isinstance(slug, str) or len(slug) > 80 or not MODEL_RE.match(slug) or ("/" in slug and not proxy):
             continue
-        rows.append((slug, str(m.get("display_name") or slug), str(m.get("description") or "")))
         levels = m.get("supported_reasoning_levels")
-        for lv in levels if isinstance(levels, list) else []:
-            if isinstance(lv, dict):
-                efforts.add(lv.get("effort"))
-    return rows, [e for e in EFFORTS if e in efforts] or ["low", "medium", "high", "xhigh"]
+        got = {lv.get("effort") for lv in levels if isinstance(lv, dict)} if isinstance(levels, list) else set()
+        efforts = [e for e in CODEX_EFFORTS if e in got]
+        union |= set(efforts)
+        group, _, name = slug.rpartition("/")
+        label = str(m.get("display_name") or slug).rpartition("/")[2] if group else str(m.get("display_name") or slug)
+        hint = f"Qua opencodex → {group}" if group else str(m.get("description") or "")
+        rows.append({"value": slug, "label": label or name, "hint": hint, "group": group, "efforts": ["", *efforts] if efforts else []})
+    return rows, [e for e in CODEX_EFFORTS if e in union] or ["low", "medium", "high", "xhigh"]
+
+
+def _codex_levels(model: str) -> list[str]:
+    """The efforts a Codex model takes ("" or an unlisted id: any Codex lists)."""
+    rows, union = _codex_models()
+    return next((r["efforts"] for r in rows if r["value"] == model), union)
 
 
 def catalog(settings) -> list[dict]:
     """What each CLI offers: models and efforts ("" = its default, listed first; no efforts: the
     CLI takes none), whether it has a quota and model fallback (Claude), and how to install it."""
     codex, codex_efforts = _codex_models()
-    rows = {"claude": (CLAUDE_MODELS, EFFORTS), "codex": (codex, codex_efforts), "antigravity": (AGY_MODELS, ())}
+    rows = {"claude": (_options(CLAUDE_MODELS), EFFORTS), "codex": ([*_options([])[:1], *codex], codex_efforts),
+            "antigravity": (_options(AGY_MODELS), ())}  # fmt: skip
     return [
-        {"id": p, "name": NAMES[p], "models": _options(rows[p][0]),
+        {"id": p, "name": NAMES[p], "models": rows[p][0],
          "efforts": ["", *rows[p][1]] if rows[p][1] else [], "quota": p == "claude", "install": INSTALL[p]}  # fmt: skip
         for p in PROVIDERS
     ]
@@ -219,9 +283,9 @@ def installed(settings, p: str) -> bool:
 
 
 def new_session(settings, provider: str | None = None) -> str:
-    """Session id for a new task on `provider` (default: the picked CLI); Codex and Antigravity name
-    theirs once it starts."""
-    p = provider or chosen(settings)
+    """Session id for a new task on `provider` (default: the CLI of the task pick); Codex and
+    Antigravity name theirs once it starts."""
+    p = provider or chosen(settings, task=True)
     return {"claude": str(uuid.uuid4()), "codex": "codex:", "antigravity": "antigravity:"}[p]
 
 
@@ -233,10 +297,23 @@ def split_session(session_id: str) -> tuple[str, str]:
 # ---- commands ----
 
 
+# Built in, so --ignore-user-config keeps them: ChatGPT apps (codex_apps MCP: web_run "open", upload from URL, …),
+# plugins, browsers, computer use, image generation. Every run's prompt may carry others' text: no way out but the
+# sandbox.
+CODEX_OFF = [x for f in ("apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation")
+             for x in ("-c", f"features.{f}=false")]  # fmt: skip
+
+
 def _codex_base(settings, model: str, effort: str) -> list[str]:
-    return ["--json", "--skip-git-repo-check", "--ignore-user-config", "-c", 'web_search="disabled"',
+    """The user's config stays out (its MCP servers, hooks, plugins); a routed model ("combo/gemini") takes
+    just the proxy's base URL and model catalog from it."""
+    route = []
+    if "/" in model and (proxy := _codex_proxy(cfg := _codex_config())):
+        route = ["-c", f"openai_base_url={json.dumps(proxy)}", "-c", f"model_catalog_json={json.dumps(str(_codex_catalog(cfg)))}"]
+    return ["--json", "--skip-git-repo-check", "--ignore-user-config", "-c", 'web_search="disabled"', *route,
+            *CODEX_OFF,
             *(["-m", model] if model else []),
-            *(["-c", f'model_reasoning_effort="{effort}"'] if effort in EFFORTS else [])]  # fmt: skip
+            *(["-c", f'model_reasoning_effort="{effort}"'] if effort in CODEX_EFFORTS else [])]  # fmt: skip
 
 
 def _agy_agent(kind: str) -> str:
@@ -341,14 +418,18 @@ def ask_cmd(
 
 
 def task_cmd(
-    settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str, read_dir: str | None = None
+    settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str, read_dir: str | None = None,
+    *, index: bool = False,
 ) -> list[str]:
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
-    `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere)."""
+    `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere).
+    `index`: the project has a codegraph index; Claude gets its read-only tool (Codex runs the CLI in its sandbox)."""
     add = ["--add-dir", read_dir] if read_dir else []
     if p == "claude":
+        mcp = ["--mcp-config", CODEGRAPH_MCP] if index else []
+        allow = f"{ALLOW[mode]},{CODEGRAPH_TOOL}" if index else ALLOW[mode]
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
-                "--permission-mode", PERMISSION[mode], "--strict-mcp-config", "--allowedTools", ALLOW[mode],
+                "--permission-mode", PERMISSION[mode], "--strict-mcp-config", *mcp, "--allowedTools", allow,
                 *(["--tools", ALLOW["plan"]] if mode == "plan" else SANDBOXED),
                 "--disallowedTools", DENY, _data_deny(settings), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip

@@ -387,6 +387,42 @@ async def test_briefing_answered_finds_my_replies(dg):
     assert await svc.answered() == {A: ["3"]}
 
 
+async def test_be_replies_finds_others_answering_open_be_questions(dg):
+    env, svc, _ = dg
+    env.bridge.state = "connected"
+    consent(env)
+    env.store.save_digest(A, 4, T0, json.dumps({"source_count": 4, "since": T0.isoformat(), "confirmations": [
+        {"text": "BE trả null hay 0?", "be": True, "message_ids": ["3", "4"]},
+        {"text": "PO chốt màu?", "message_ids": ["2"]}]}))  # fmt: skip
+    be = at(A, 11, "Trả 0 nhé", 22)
+    be.reply_to_id = 3  # BE answers the open question: new since the digest
+    old = at(A, 4, "đang xem", 20)
+    old.reply_to_id = 3  # already part of what the digest read
+    po = at(A, 12, "xanh", 23)
+    po.reply_to_id = 2  # not a BE question
+    env.fake.history[A] += [be, old, po]
+    hits = (await svc.be_replies())[A]
+    assert [(h.reply_to, h.message_id, h.text) for h in hits] == [("3", "11", "Trả 0 nhé")]
+    env.fake.history[A].remove(be)
+    assert (await svc.be_replies())[A][0].message_id == "11"  # one live read reused for SCAN_TTL
+
+
+async def test_be_replies_guesses_a_plain_message_from_who_must_answer(dg):
+    env, svc, _ = dg
+    env.bridge.state = "connected"
+    consent(env)
+    env.store.save_digest(A, 4, T0, json.dumps({"source_count": 4, "since": T0.isoformat(), "confirmations": [
+        {"text": "BE trả null hay 0?", "be": True, "who": "Tùng (BE)", "message_ids": ["3"]},
+        {"text": "Field mới tên gì?", "be": True, "who": "Backend", "message_ids": ["2"]}]}))  # fmt: skip
+    tung = at(A, 11, "null nhé", 22)
+    tung.sender_name = "Nguyễn Thanh Tùng"  # not a reply: may be the answer
+    other = at(A, 12, "lunch?", 23)
+    other.sender_name = "Hà"
+    env.fake.history[A] += [tung, other]
+    hits = (await svc.be_replies())[A]
+    assert [(h.reply_to, h.message_id, h.direct) for h in hits] == [("3", "11", False)]  # "Backend" names nobody
+
+
 def test_chunks_split_at_lines():
     from telegram_dashboard.telegram import chunks
 

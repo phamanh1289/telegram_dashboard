@@ -2,18 +2,28 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, api, type ClaudeAccount } from "@/lib/api";
 import { byUnit } from "@/lib/time";
 
-// The AI CLIs' shared state: which one runs every AI feature, the catalog, each CLI's picks and logins.
+// The AI CLIs' shared state: which one runs each kind of run, the catalog, each CLI's picks and logins.
 
-export type Provider = AiPrefs["provider"];
+export type Provider = AiPrefs["use"]["chat"];
 export type Effort = AiPicks["effort"];
+/** Which saved picks a run uses (providers.run_choice): drafts, Briefing / Digest, tasks / AI Agent, YouTrack light / heavy. */
+export type RunKind = keyof AiPrefs["use"];
+/** The kind whose picks a "" pick falls back to (Briefing, YouTrack light: drafts; YouTrack heavy: tasks). */
+export const BASE: Record<RunKind, "chat" | "task"> = { chat: "chat", brief: "chat", task: "task", yt: "chat", yt_task: "task" };
+/** A kind's model / effort keys in a CLI's picks. */
+export const KEYS = {
+  chat: ["model", "effort"], brief: ["brief_model", "brief_effort"], task: ["task_model", "task_effort"],
+  yt: ["yt_model", "yt_effort"], yt_task: ["yt_task_model", "yt_task_effort"],
+} as const satisfies Record<RunKind, readonly [keyof AiPicks, keyof AiPicks]>;
 export const PROVIDERS: Provider[] = ["claude", "codex", "antigravity"];
 const NO_PICKS: AiPicks = {
   model: "", effort: "", task_model: "", task_effort: "", brief_model: "", brief_effort: "",
   yt_model: "", yt_effort: "", yt_task_model: "", yt_task_effort: "",
 };
-export const EFFORT_LABELS: Record<Effort, string> = { "": "Mặc định", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+export const EFFORT_LABELS: Record<Effort, string> = { "": "Mặc định", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 
-/** Which CLI runs every AI feature, what each CLI offers, and each CLI's own picks (kept when switching): every AI surface reads this. */
+/** Which CLI runs each kind of run, what each CLI offers, and each CLI's own picks (kept when switching): every AI surface reads this.
+ *  A model pick is "<cli>:<model>" over every CLI's models: picking it picks its CLI for that kind ("" = like the base kind). */
 export function useAiPrefs() {
   const qc = useQueryClient();
   const prefs = useQuery({ queryKey: ["ai-prefs"], queryFn: ({ signal }) => api<AiPrefs>("/ai/prefs", { signal }) });
@@ -25,14 +35,33 @@ export function useAiPrefs() {
     onError: () => void qc.invalidateQueries({ queryKey: ["ai-prefs"] }),
   });
   const p = prefs.data;
-  const provider = p?.provider ?? "claude";
+  const on = (k: RunKind): Provider => p?.use[k] || p?.use[BASE[k]] || "claude";
   const info = (id: Provider) => catalog.data?.find((c) => c.id === id);
+  const picks = (id: Provider) => p?.by[id] ?? NO_PICKS;
   return {
-    p, provider, save, isError: prefs.isError || catalog.isError,
-    info, name: info(provider)?.name ?? "AI",
-    picks: (id: Provider = provider) => p?.by[id] ?? NO_PICKS,
+    p, save, isError: prefs.isError || catalog.isError, catalog: catalog.data,
+    info, on, nameOf: (k: RunKind = "chat") => info(on(k))?.name ?? "AI",
+    /** Every CLI some kind of run uses. */
+    used: () => PROVIDERS.filter((id) => (Object.keys(BASE) as RunKind[]).some((k) => on(k) === id)),
+    picks,
+    /** A kind's model pick as "<cli>:<model>", or "" when it is its base kind's. */
+    modelOf: (k: RunKind) => {
+      const id = on(k), m = picks(id)[KEYS[k][0]];
+      return BASE[k] === k || m || (p?.use[k] && id !== on(BASE[k])) ? `${id}:${m}` : "";
+    },
+    setModel: (k: RunKind, v: string) => {
+      if (!p) return;
+      const m = KEYS[k][0], i = v.indexOf(":");
+      if (i < 0) { // "" (not a base kind): back to the base kind's pick, on its CLI
+        const by = { ...p.by };
+        for (const id of [on(k), on(BASE[k])]) by[id] = { ...picks(id), [m]: "" };
+        return save.mutate({ ...p, use: { ...p.use, [k]: "" }, by });
+      }
+      const id = v.slice(0, i) as Provider;
+      save.mutate({ ...p, use: { ...p.use, [k]: id }, by: { ...p.by, [id]: { ...picks(id), [m]: v.slice(i + 1) } } });
+    },
     set: (patch: Partial<AiPrefs>) => p && save.mutate({ ...p, ...patch }),
-    setPicks: (id: Provider, patch: Partial<AiPicks>) => p && save.mutate({ ...p, by: { ...p.by, [id]: { ...(p.by[id] ?? NO_PICKS), ...patch } } }),
+    setPicks: (id: Provider, patch: Partial<AiPicks>) => p && save.mutate({ ...p, by: { ...p.by, [id]: { ...picks(id), ...patch } } }),
   };
 }
 

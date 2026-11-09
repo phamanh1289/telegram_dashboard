@@ -15,7 +15,7 @@ import { Avatar, railHide } from "@/components/chat-list";
 import { BeTopics } from "@/components/be-topics";
 import { DeepItemAction } from "@/components/deep-think";
 import { NavPill } from "@/components/shell";
-import { answeredQuery, closedIds, digestError, isClosedItem, ItemActions, ItemFlags, openCount, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
+import { answeredQuery, beRepliesQuery, closedIds, digestError, isClosedItem, ItemActions, ItemFlags, isAnswered, openCount, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
 import { Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
@@ -92,6 +92,7 @@ async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: number)
     void qc.invalidateQueries({ queryKey: ["digest-saved", it.chat_id] });
     void qc.invalidateQueries({ queryKey: ["briefing"] }); // each group fills in as its digest lands
     void qc.invalidateQueries({ queryKey: ["briefing-answered"] });
+    void qc.invalidateQueries({ queryKey: ["briefing-be-replies"] });
   }
   setBrief((b) => ({ ...b, batch: null }));
 }
@@ -568,6 +569,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   const summarized = allowed.some((i) => i.saved);
   // Items whose cited message I have replied to on Telegram tick themselves off.
   const answered = useQuery({ ...answeredQuery, enabled: summarized });
+  const beReplies = useQuery({ ...beRepliesQuery, enabled: summarized }).data; // BE answered since the digest
   const [done, toggle] = useDone();
   // Asked of / assigned to me (my YouTrack name; a PO also answers to "PO" / "PM").
   const role = useRole();
@@ -593,7 +595,10 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
     ...KINDS.map((k) => [k, KIND[k].label, KIND[k].dot] as [Tab, string, string]),
   ];
   const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
-  const left = (t: Tab) => inTabOf(t).filter((x) => !isClosed(x)).length;
+  // "Với BE": topics still waiting on BE (as its "N chờ trả lời"); what is settled stays listed for the code check, uncounted.
+  const left = (t: Tab) => t === "be"
+    ? new Set(inTabOf(t).filter((x) => x.kind === "confirmations" && !isClosed(x) && !isAnswered(x, beReplies?.[x.chat.chat_id])).map((x) => `${x.chat.chat_id}:${x.topic || x.text}`)).size
+    : inTabOf(t).filter((x) => !isClosed(x)).length;
   const cur = tabs.find(([t]) => t === tab)?.[0] ?? tabs.find(([t]) => left(t))?.[0] ?? "confirmations";
   const inTab = inTabOf(cur);
   const openItems = inTab.filter((x) => !isClosed(x));

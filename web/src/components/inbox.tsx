@@ -7,7 +7,7 @@ import { Bot, ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDa
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
-import { DeepThinking } from "@/components/deep-think";
+import { closeBulk, DeepBulkPage, DeepThinking, useBulk } from "@/components/deep-think";
 import { AiDock, BriefingGroups, BriefingPage, briefingQuery, hasNews, useAutoBrief } from "@/components/briefing-page";
 import { TodayPage } from "@/components/today-page";
 import { DigestPage } from "@/components/digest-page";
@@ -118,6 +118,7 @@ const NO_CODES: ReadonlyMap<string, string> = new Map(); // Q&A page: its cards 
 function Inbox({ status }: { status: Status }) {
   const stream = useSync(status.cursor);
   const taskList = useTaskList().data ?? [];
+  const bulk = useBulk(); // "Đối chiếu code N chủ đề": a detail page over the list, like a reply
   const runningTasks = taskList.filter((t) => t.running).length;
   const codeRole = usesCode(useRole()); // QA / PO: no AI Agent unless they already have sessions
   // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
@@ -264,6 +265,7 @@ function Inbox({ status }: { status: Status }) {
   const [jump, setJump] = useState(0);
   const [focusView, setFocusView] = useState<View>();
   function go(id: string | null, focusId?: string, view?: View) {
+    closeBulk();
     selectChat(id);
     setFocus(focusId ?? null);
     setFocusView(view);
@@ -544,7 +546,7 @@ function Inbox({ status }: { status: Status }) {
           <QaCodes.Provider value={chatId === QA ? NO_CODES : qa.codes}>
           <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock">
             {/* A reply is a detail page over the list (the tag shows once, full width); the list stays mounted for j / k. */}
-            <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", replyTo && "hidden")}>
+            <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", (replyTo || bulk) && "hidden")}>
             {/* No exit wait: the next page mounts at once and rises in (globals.css .page-in); pages the AI made get the .ai-in beam. */}
             {chatId ? (
               <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || chatId === TODAY || digest) && "ai-in")}>
@@ -589,6 +591,11 @@ function Inbox({ status }: { status: Status }) {
               </div>
             )}
             </div>
+            {bulk && !replyTo && (
+              <div key={`bulk:${bulk.chatId}:${bulk.title}`} className="detail-in ai-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
+                <DeepBulkPage b={bulk} onClose={closeBulk} />
+              </div>
+            )}
             {replyTo && (
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} position={reply?.external ? undefined : reply?.at} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}

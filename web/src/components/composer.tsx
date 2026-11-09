@@ -114,7 +114,7 @@ export function Composer({
   const [partial, setPartial] = useState(""); // the answer so far, while the AI writes it
   const [turns, setTurns] = useState<Turn[]>([]); // the asks of this panel, oldest first, like an AI Agent session
   const lastTurn = (f: (t: Turn) => Turn) => setTurns((l) => l.map((t, i) => (i === l.length - 1 ? f(t) : t)));
-  const aiName = useAiPrefs().name;
+  const aiName = useAiPrefs().nameOf();
   const role = useRole();
   const [, example] = ROLE_AI[role ?? "dev"];
   const missing = role === "qa" ? askMissing(analysis) : "";

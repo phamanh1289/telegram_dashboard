@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import sqlite3
 import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -54,6 +55,23 @@ def delete_task_files(settings, task_id: str) -> None:
     delete_links(settings, task_id)
 
 
+
+def prime_codegraph(project: str) -> None:
+    """A read-only turn can't create the index's -wal / -shm files (the Codex sandbox denies writes), so its
+    `codegraph` fails with "unable to open database file" unless they exist (a running daemon keeps them). A
+    read-only connection opened here leaves them behind: it may not checkpoint, so its close deletes nothing."""
+    db = Path(project) / ".codegraph" / "codegraph.db"
+    if not db.is_file():
+        return
+    try:
+        c = sqlite3.connect(f"{db.as_uri()}?mode=ro", uri=True, timeout=2)
+        try:
+            c.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchall()
+        finally:
+            c.close()
+    except sqlite3.Error as e:  # the agent still runs; it falls back to grep
+        log.info("codegraph index not primed: %s", e)
+
 class AgentRunner:
     def __init__(self, settings):
         self.settings = settings
@@ -66,7 +84,7 @@ class AgentRunner:
 
     @property
     def available(self) -> bool:
-        p = providers.chosen(self.settings)
+        p = providers.chosen(self.settings, task=True)
         return on_path(self.settings.ai_task_command) if p == "claude" else providers.installed(self.settings, p)
 
     def log_path(self, task_id: str) -> Path:
@@ -126,7 +144,10 @@ class AgentRunner:
                 choice = (ai[0], ai[1] or "", False)
             links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
             read_dir = str(links) if links.is_dir() else None
-            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir)
+            index = (Path(project) / ".codegraph").is_dir() and on_path("codegraph")
+            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index)
+            if index and mode == "plan":
+                await asyncio.to_thread(prime_codegraph, project)
             try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,

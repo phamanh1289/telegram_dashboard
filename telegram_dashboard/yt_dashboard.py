@@ -1122,7 +1122,7 @@ async def _ai(
     detached: bool = False,
 ) -> str:
     ai = request.app.state.ai
-    name = lambda: providers.NAMES[providers.chosen(ai.settings)]  # noqa: E731  only on errors
+    name = lambda: providers.NAMES[providers.chosen(ai.settings, yt=True)]  # noqa: E731  only on errors
     if not ai.configured:
         raise YtError(503, f"Chưa cài {name()} CLI, xem Cài đặt › AI")
     if not detached:  # a background run (AiJobs) is stopped by its id only

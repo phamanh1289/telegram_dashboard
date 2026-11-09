@@ -220,7 +220,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const [meta, setMeta] = useState<Omit<TicketMeta, "assignee"> & { assignee: string | null }>(NO_META); // assignee null: me
   const [note, setNote] = useState(startNote);
   const [drafted, setDrafted] = useState(0); // AI drafts so far: the manual tab re-enters on each
-  const aiName = useAiPrefs().name;
+  const aiName = useAiPrefs().nameOf(aiKind);
   const abort = useRef<AbortController | null>(null);
   useEffect(() => () => abort.current?.abort(), []);
 

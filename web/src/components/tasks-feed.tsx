@@ -1,18 +1,45 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronDown, ExternalLink, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
-import { createContext, memo, use, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bot, CheckCheck, ChevronDown, ExternalLink, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Paperclip, Pencil, Search, Send, SquareTerminal, Wrench } from "lucide-react";
+import { createContext, memo, type ReactNode, use, useMemo, useState } from "react";
 import { AiResultCard, dur, UserBubble } from "@/components/ai/chat";
-import { Markdown } from "@/components/markdown";
+import { SEND_ERRORS } from "@/components/composer";
+import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
 import { Hint } from "@/components/ui/hint";
+import { api, ApiError, errorText, type Outbox, type Task } from "@/lib/api";
 import { type Attached, chatByTitle, parseAttachments, splitAttachments } from "@/lib/attach";
+import { sessionId, toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results.
 
 export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number; cost?: number }; // cost: a result turn, USD as the CLI estimates
 export type TaskLog = { items: TaskEvent[]; next: number; running?: boolean };
+
+/** A session's log, read as it grows (AI Agent and Đối chiếu BE alike). It grows in the cache (each poll appends the
+ *  new lines), so coming back to a session shows it at once. */
+export function useTaskLog(id: string | null, running: boolean) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: ["task-events", id],
+    enabled: !!id,
+    queryFn: async ({ signal }): Promise<TaskLog> => {
+      const prev = qc.getQueryData<TaskLog>(["task-events", id]);
+      const read = (after: number) =>
+        api<{ items: TaskEvent[]; next: number; total: number; running: boolean }>(`/tasks/${id}/events?after=${after}`, { signal });
+      let after = prev?.next ?? 0;
+      let r = await read(after);
+      if (r.total < after) r = await read((after = 0)); // the task was re-run: start over
+      if (!r.running && prev?.running !== false) void qc.invalidateQueries({ queryKey: ["tasks"] }); // the result is in: the list's poll can be 10s behind
+      return { items: after ? [...prev!.items, ...r.items] : r.items, next: r.items.length ? r.next : after, running: r.running };
+    },
+    // Until the log itself says the run ended: the list can flip `running` off before the last poll caught the
+    // result (the server reads the log before checking `running`, so that last poll has every line).
+    // A finished turn only changes after a send, which refetches.
+    refetchInterval: (query) => (running || query.state.data?.running ? 1500 : false),
+  });
+}
 
 /** Tool name -> icon and a Vietnamese verb, so a step reads "Đọc SellProgressCard.kt". */
 const TOOLS: Record<string, [LucideIcon, string]> = {
@@ -21,7 +48,7 @@ const TOOLS: Record<string, [LucideIcon, string]> = {
   WebFetch: [Globe, "Mở web"], WebSearch: [Globe, "Tìm web"], Task: [Bot, "Gọi agent"], Agent: [Bot, "Gọi agent"],
   TodoWrite: [ListChecks, "Lập kế hoạch"],
 };
-const toolMeta = (name: string): [LucideIcon, string] => TOOLS[name] ?? [Wrench, name];
+export const toolMeta = (name: string): [LucideIcon, string] => TOOLS[name] ?? [Wrench, name];
 
 type Step = { name: string; arg: string; at?: number; out?: TaskEvent };
 /** took / tools: seconds the turn ran and spent in tools (logs from before timestamps have neither). */
@@ -227,3 +254,75 @@ export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: Task
   }
   return <li className={cn("px-0.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)", ev.error ? "text-error" : "text-ink")}><Markdown asks text={ev.text} className={AI_TEXT} /></li>;
 });
+
+/** Where an ask goes: a new message in the session's group (the tagged message's topic). */
+const AskTarget = createContext<{ taskId: string; chatId: string; messageId: string } | null>(null);
+
+/** The same ask in the same session always gets the same request ID: the outbox then says, on any later visit,
+ *  whether it went out, and a second click can't post it twice. */
+async function askRequestId(taskId: string, text: string) {
+  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}\n${text}`))).slice(0, 16);
+  h[6] = (h[6] & 0x0f) | 0x80; // UUID v8 (custom), RFC variant
+  h[8] = (h[8] & 0x3f) | 0x80;
+  const x = [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
+}
+
+/** Send button of one ask: posts it to the group; remembers (via the outbox) that it was sent. */
+function PostAsk({ text }: { text: string }) {
+  const at = use(AskTarget)!;
+  const qc = useQueryClient();
+  const rid = useQuery({ queryKey: ["ask-id", at.taskId, text], queryFn: () => askRequestId(at.taskId, text), staleTime: Infinity });
+  const key = ["outbox", rid.data];
+  const rec = useQuery({
+    queryKey: key, enabled: !!rid.data, staleTime: Infinity, retry: false,
+    queryFn: ({ signal }) => api<Outbox>(`/outbox/${rid.data}`, { signal })
+      .catch((e) => { if (e instanceof ApiError && e.status === 404) return null; throw e; }), // never sent
+  });
+  const status = rec.data?.status;
+  const send = useMutation({
+    mutationFn: () => api<Outbox>("/messages/reply", { method: "POST", json: {
+      request_id: rid.data!, chat_id: at.chatId, reply_to_message_id: at.messageId, text,
+      retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
+      quote: false, // a new message in the tag's group / topic, not a reply
+      qa: true, // tags someone: a #QA line, so the Q&A tab follows the answer
+    } }),
+    onSuccess: (r) => {
+      qc.setQueryData(key, r);
+      toast({ text: r.status === "sent" ? "Đã gửi vào nhóm" : "Đang gửi vào nhóm…" });
+    },
+    onError: (e) => {
+      void qc.invalidateQueries({ queryKey: key });
+      toast({ text: errorText(e, SEND_ERRORS, "Gửi thất bại.") });
+    },
+  });
+  const sent = status === "sent";
+  const busy = send.isPending || status === "pending" || status === "sending";
+  const hint = sent ? "Đã gửi vào nhóm" : busy ? "Đang gửi…" : status === "unknown" ? "Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại"
+    : "Gửi ngay ý này thành tin mới trong nhóm (có @tên: thêm mã #QA để Q&A theo dõi trả lời)";
+  return (
+    <Hint text={hint}>
+      <button type="button" aria-label={sent ? "Đã gửi vào nhóm" : "Gửi ý này vào nhóm"} aria-busy={busy} disabled={sent || busy || !rid.data}
+        onClick={() => send.mutate()} className={cn(ASK_BTN, sent && "text-ok", status === "unknown" && "text-warn")}>
+        {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : sent ? <CheckCheck className="size-3.5" aria-hidden /> : <Send className="size-3.5" aria-hidden />}
+      </button>
+    </Hint>
+  );
+}
+
+const postAsk = (text: string) => <PostAsk text={text} />;
+
+/** A session's answers: asks copy with its ID ("#REF-…") and, when it has a group message, post there. Every place
+ *  that shows a session's result wraps it in this, so they behave the same. */
+export function SessionAsks({ t, children }: { t: Pick<Task, "id" | "chat_id" | "message_id">; children: ReactNode }) {
+  // Stable per session row, so the memoised answers don't re-render on every poll.
+  const { id, chat_id, message_id } = t;
+  const target = useMemo(() => (chat_id && message_id ? { taskId: id, chatId: chat_id, messageId: message_id } : null), [id, chat_id, message_id]);
+  return (
+    <AskTag value={sessionId(t)}>
+      <AskTarget value={target}>
+        <AskPost value={target && postAsk}>{children}</AskPost>
+      </AskTarget>
+    </AskTag>
+  );
+}

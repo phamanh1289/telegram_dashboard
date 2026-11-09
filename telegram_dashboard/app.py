@@ -48,6 +48,7 @@ from .models import (
     AiTestResult,
     AiTicketDraft,
     AiTicketRequest,
+    BeReply,
     BriefingAskRequest,
     BriefingItem,
     ChangesPage,
@@ -406,10 +407,10 @@ def create_app(
             raise ApiError(422, "ai_agent_missing")
         fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
         prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
-                                        body.instruction, body.platform, fetch=fetch, intro=body.intro)  # fmt: skip
+                                        body.instruction, fetch=fetch)  # fmt: skip
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, int(body.confirm_id), body.project, prompt, "plan",
-                         kind="deep", title=title)  # fmt: skip
+                         kind="deep", title=title, about=body)  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/deep-batch")
@@ -420,11 +421,11 @@ def create_app(
             raise ApiError(422, "ai_agent_missing")
         fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
         items = [(i.text, i.message_ids, i.waiting) for i in body.items]
-        prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items,
-                                                      body.project, body.instruction, body.platform, fetch=fetch,
-                                                      intro=body.intro)  # fmt: skip
+        prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items, body.project, body.instruction,
+                                                      fetch=fetch)  # fmt: skip
         task_id = new_task_id()
-        await start_task(s, task_id, body.chat_id, anchor, body.project, prompt, "plan", kind="deep", title=title)
+        await start_task(s, task_id, body.chat_id, anchor, body.project, prompt, "plan", kind="deep", title=title,
+                         about=body)  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/ticket")
@@ -680,6 +681,11 @@ def create_app(
     async def briefing_answered(request: Request) -> dict[str, list[str]]:
         """chat_id -> digest-cited message ids I have replied to since (Briefing ticks them off)."""
         return await S(request).digest.answered()
+
+    @app.get("/api/briefing/be-replies")
+    async def briefing_be_replies(request: Request) -> dict[str, list[BeReply]]:
+        """chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE shows them)."""
+        return await S(request).digest.be_replies()
 
     @app.post("/api/briefing/saved", status_code=204)
     async def briefing_saved(body: SavedMessageRequest, request: Request) -> None:

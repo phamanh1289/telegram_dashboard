@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request
 
 from . import gitops
 from .agent import delete_task_files, read_task_prompt, read_task_result
-from .ai import ASK_MSG, ASK_STYLE
+from .ai import session_rules
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
@@ -24,7 +24,7 @@ def new_task_id() -> str:
 
 async def start_task(
     s, task_id: str, chat_id: str | None, message_id: int | None, project: str, prompt: str, mode: str,
-    kind: str = "task", title: str | None = None,
+    kind: str = "task", title: str | None = None, *, about,
 ) -> None:  # fmt: skip
     """Save the task, then start its first turn: a run is never without its row (a failed start
     takes the row back)."""
@@ -32,9 +32,11 @@ async def start_task(
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
     try:
-        # its questions to BE / PO / QC: one post-ready format for every session, in the role style of every AI text
+        # one frame for every session (Giao AI Agent, Đối chiếu BE): who the user is, rules, answer sections, questions
+        rules = session_rules(mode, about.role, about.platform, about.intro)
+
         async def text() -> str:
-            return await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{ASK_MSG}{ASK_STYLE}"
+            return await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{rules}"
 
         named = await s.agent.start(task_id, project, text, mode, session, False)
     except BaseException:
@@ -65,7 +67,7 @@ def build_router(settings) -> APIRouter:
             raise ApiError(422, "ai_agent_missing")
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
         task_id = new_task_id()
-        await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode)
+        await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode, about=body)
         return {"id": task_id}
 
     @r.get("")

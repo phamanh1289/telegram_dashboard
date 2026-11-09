@@ -51,7 +51,7 @@ export function Quota({ provider }: { provider: Provider }) {
           CLI tự làm mới token mỗi lần chạy: bấm <RefreshCw aria-label="Đọc lại" className="inline size-3 align-[-2px]" /> để chạy một câu hỏi nhỏ bằng Haiku rồi đọc lại.
         </p>
       )}
-      {provider === "claude" && p?.provider === "claude" && p.fallback && peak >= p.fallback_at && (
+      {provider === "claude" && p?.fallback && peak >= p.fallback_at && (
         <p role="status" className="rounded-md bg-warn-wash px-3 py-2 text-xs text-ink">
           Đã chạm ngưỡng {p.fallback_at}%: tóm tắt/nháp đang chạy Haiku, Task và AI Agent chạy Sonnet.
         </p>

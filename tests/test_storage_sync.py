@@ -299,19 +299,43 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     """A live database already ran the earlier steps: new columns need a new step, not an edit of an old one."""
     import sqlite3
 
-    from telegram_dashboard.storage import MIGRATIONS, Store
+    from telegram_dashboard.storage import MIGRATIONS, Store, _priority
 
     path = tmp_path / "prev.sqlite3"
     Store(path).set_tracking(A, True, "Team", "supergroup")
     c = sqlite3.connect(path)
-    c.executescript("ALTER TABLE messages DROP COLUMN priority;")  # the newest step's column
-    c.execute(f"PRAGMA user_version={len(MIGRATIONS) - 1}")
+    c.executescript("ALTER TABLE messages DROP COLUMN priority;")  # _priority's column
+    c.execute(f"PRAGMA user_version={MIGRATIONS.index(_priority)}")
     c.close()
     store = Store(path)
     store.apply_message(msg(A, 1, "@me hi", sender="7"))
     assert store.get_message(A, 1).priority is False
     store.outbox_create("r1", A, 1, "hỏi BE", 1, quote=False)
     assert store.outbox_claim("r1", False)["reply_to"] is None  # a new message, not a reply
+
+
+def test_old_deep_batch_session_gets_an_anchor(tmp_path):
+    """Đối chiếu BE of several topics made before sessions always sat on a message: anchored on the newest cited one."""
+    import sqlite3
+
+    from telegram_dashboard.ai import data_json
+    from telegram_dashboard.storage import MIGRATIONS, Store, _deep_anchor
+
+    path = tmp_path / "prev.sqlite3"
+    store = Store(path)
+    store.set_tracking(A, True, "Team", "supergroup")
+    for i, text in [(1, "BE: field là <status>"), (2, "câu khác không dẫn"), (3, "BE chốt discount 5%")]:
+        store.apply_message(msg(A, i, text, sender="7"))
+    prompt = "Đối chiếu\n<items>\n" + data_json([{"messages": [{"text": "BE: field là <status>"}]}]) + "\n</items>"
+    store.add_task("t1", A, None, "/p", prompt, kind="deep")
+    store.add_task("t2", A, None, "/p", "không dẫn tin nào", kind="deep")
+    c = sqlite3.connect(path)
+    c.execute(f"PRAGMA user_version={MIGRATIONS.index(_deep_anchor)}")
+    c.close()
+    Store(path)
+    c = sqlite3.connect(path)
+    assert dict(c.execute("SELECT id, message_id FROM tasks").fetchall()) == {"t1": 1, "t2": None}
+    c.close()
 
 
 def test_my_replies_keeps_the_newest_oldest_first(env):

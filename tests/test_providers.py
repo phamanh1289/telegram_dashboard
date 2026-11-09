@@ -84,6 +84,13 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert p[p.index("--tools") + 1] == "Read,Grep,Glob" and "--settings" not in p
     deny = p[p.index("--disallowedTools") + 2]
     assert f"Read(/{s.data_dir.resolve().as_posix()}/**)" in deny and "Read(~/.ssh/**)" in deny
+    assert "--mcp-config" not in p  # no index: no MCP server at all
+    # an indexed project: its codegraph MCP, one read-only tool, no shell, telemetry off
+    i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
+    server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
+    assert server["args"] == ["serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
+    assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,mcp__codegraph__codegraph_explore"
+    assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob"
 
 
 def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):

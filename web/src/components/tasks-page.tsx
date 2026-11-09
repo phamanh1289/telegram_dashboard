@@ -1,14 +1,13 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, ExternalLink, GitPullRequest, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Send, Square, Trash2, Users } from "lucide-react";
-import { createContext, type ReactNode, use, useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Check, CheckCheck, CheckCircle2, ChevronDown, Ellipsis, ExternalLink, GitPullRequest, Loader2, type LucideIcon, MessageSquare, RotateCcw, RotateCw, Search, Square, Trash2, Users } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui/react/menu";
 import { AiBot, AiThinking, useFollow } from "@/components/ai/chat";
-import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
-import { EventItem, groupEvents, OpenAttached, type TaskEvent, type TaskLog, ToolGroup, usd } from "@/components/tasks-feed";
-import { SEND_ERRORS } from "@/components/composer";
+import { Markdown } from "@/components/markdown";
+import { EventItem, groupEvents, OpenAttached, SessionAsks, ToolGroup, usd, useTaskLog } from "@/components/tasks-feed";
 import { TaskChanges } from "@/components/task-changes";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,7 @@ import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, ApiError, errorText, type Message, type Outbox, type Task } from "@/lib/api";
+import { api, type Message, type Task } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
 import { ALL, copyText, openReply, sessionId, sessionMatches, toast, useNow, useTaskList } from "@/lib/inbox";
 import { ago, timeLabel } from "@/lib/time";
@@ -81,24 +80,7 @@ function Feed({ follow, children, footer }: { follow: unknown; children: ReactNo
 function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
   const { id } = t;
   const running = !!t.running;
-  const qc = useQueryClient();
-  // The log grows in the cache (each poll appends the new lines), so coming back to a session shows it at once.
-  const q = useQuery({
-    queryKey: ["task-events", id],
-    queryFn: async ({ signal }): Promise<TaskLog> => {
-      const prev = qc.getQueryData<TaskLog>(["task-events", id]);
-      const read = (after: number) =>
-        api<{ items: TaskEvent[]; next: number; total: number; running: boolean }>(`/tasks/${id}/events?after=${after}`, { signal });
-      let after = prev?.next ?? 0;
-      let r = await read(after);
-      if (r.total < after) r = await read((after = 0)); // the task was re-run: start over
-      return { items: after ? [...prev!.items, ...r.items] : r.items, next: r.items.length ? r.next : after, running: r.running };
-    },
-    // Until the log itself says the run ended: the list can flip `running` off before the last poll caught the
-    // result (the server reads the log before checking `running`, so that last poll has every line).
-    // A finished turn only changes after a send, which refetches.
-    refetchInterval: (query) => (running || query.state.data?.running ? 1500 : false),
-  });
+  const q = useTaskLog(id, running);
   const items = q.data?.items;
   const blocks = useMemo(() => groupEvents(items ?? []), [items]);
   const last = items?.at(-1);
@@ -187,62 +169,6 @@ function MenuRow({ icon: Icon, label, hint, tone, disabled, onClick }: {
   );
 }
 
-/** Where an ask goes: a new message in the session's group (the tagged message's topic). */
-const AskTarget = createContext<{ taskId: string; chatId: string; messageId: string } | null>(null);
-
-/** The same ask in the same session always gets the same request ID: the outbox then says, on any later visit,
- *  whether it went out, and a second click can't post it twice. */
-async function askRequestId(taskId: string, text: string) {
-  const h = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${taskId}\n${text}`))).slice(0, 16);
-  h[6] = (h[6] & 0x0f) | 0x80; // UUID v8 (custom), RFC variant
-  h[8] = (h[8] & 0x3f) | 0x80;
-  const x = [...h].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20)}`;
-}
-
-/** Send button of one ask: posts it to the group; remembers (via the outbox) that it was sent. */
-function PostAsk({ text }: { text: string }) {
-  const at = use(AskTarget)!;
-  const qc = useQueryClient();
-  const rid = useQuery({ queryKey: ["ask-id", at.taskId, text], queryFn: () => askRequestId(at.taskId, text), staleTime: Infinity });
-  const key = ["outbox", rid.data];
-  const rec = useQuery({
-    queryKey: key, enabled: !!rid.data, staleTime: Infinity, retry: false,
-    queryFn: ({ signal }) => api<Outbox>(`/outbox/${rid.data}`, { signal })
-      .catch((e) => { if (e instanceof ApiError && e.status === 404) return null; throw e; }), // never sent
-  });
-  const status = rec.data?.status;
-  const send = useMutation({
-    mutationFn: () => api<Outbox>("/messages/reply", { method: "POST", json: {
-      request_id: rid.data!, chat_id: at.chatId, reply_to_message_id: at.messageId, text,
-      retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
-      quote: false, // a new message in the tag's group / topic, not a reply
-      qa: true, // tags someone: a #QA line, so the Q&A tab follows the answer
-    } }),
-    onSuccess: (r) => {
-      qc.setQueryData(key, r);
-      toast({ text: r.status === "sent" ? "Đã gửi vào nhóm" : "Đang gửi vào nhóm…" });
-    },
-    onError: (e) => {
-      void qc.invalidateQueries({ queryKey: key });
-      toast({ text: errorText(e, SEND_ERRORS, "Gửi thất bại.") });
-    },
-  });
-  const sent = status === "sent";
-  const busy = send.isPending || status === "pending" || status === "sending";
-  const hint = sent ? "Đã gửi vào nhóm" : busy ? "Đang gửi…" : status === "unknown" ? "Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại"
-    : "Gửi ngay ý này thành tin mới trong nhóm (có @tên: thêm mã #QA để Q&A theo dõi trả lời)";
-  return (
-    <Hint text={hint}>
-      <button type="button" aria-label={sent ? "Đã gửi vào nhóm" : "Gửi ý này vào nhóm"} aria-busy={busy} disabled={sent || busy || !rid.data}
-        onClick={() => send.mutate()} className={cn(ASK_BTN, sent && "text-ok", status === "unknown" && "text-warn")}>
-        {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : sent ? <CheckCheck className="size-3.5" aria-hidden /> : <Send className="size-3.5" aria-hidden />}
-      </button>
-    </Hint>
-  );
-}
-
-const postAsk = (text: string) => <PostAsk text={text} />;
 
 /** The selected session: a slim title bar with one action menu, the scrolling conversation, the composer pinned at the bottom. */
 function TaskDetail({ t, now, onBack, onOpenGroup }: {
@@ -272,9 +198,6 @@ function TaskDetail({ t, now, onBack, onOpenGroup }: {
   const openAttached = useMemo(() => ({
     home: t.chat_id, open: (chatId: string, messageId: string) => onOpenGroup(chatId, messageId, "live"),
   }), [t.chat_id, onOpenGroup]);
-  // Stable per session row, so the memoised answers don't re-render on every poll.
-  const { id, chat_id, message_id } = t;
-  const target = useMemo(() => (chat_id && message_id ? { taskId: id, chatId: chat_id, messageId: message_id } : null), [id, chat_id, message_id]);
 
   const head = <>
     {(t.title || t.message_text || t.chat_title) && (
@@ -357,9 +280,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup }: {
       </div>
       {remove.isError && <p role="alert" className="border-b px-4 py-1.5 text-xs text-error">Xóa thất bại, thử lại.</p>}
 
-      <AskTag value={sessionId(t)}>
-      <AskTarget value={target}>
-      <AskPost value={target && postAsk}>
+      <SessionAsks t={t}>
       <OpenAttached value={openAttached}>
       {t.mode !== "terminal" ? <ChatPanel t={t} head={head} /> : ( // old Terminal tasks: prompt and result only
         <Feed follow={t.result}>
@@ -372,9 +293,7 @@ function TaskDetail({ t, now, onBack, onOpenGroup }: {
         </Feed>
       )}
       </OpenAttached>
-      </AskPost>
-      </AskTarget>
-      </AskTag>
+      </SessionAsks>
     </div>
   );
 }

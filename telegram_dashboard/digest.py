@@ -8,17 +8,22 @@ how far digests have read (digests), both dropped with the consent.
 import asyncio
 import logging
 import re
+import time
 from datetime import UTC, datetime, timedelta, timezone
 
 from .ai import AiService, about_user, data_json, json_object
 from .errors import ApiError
-from .models import DigestRequest, DigestResult, StoredMessage
+from .models import BeReply, DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store, _dt
 
 MAX_MESSAGES = 250  # per AI call
 MAX_CHARS = 40_000  # per AI call: smaller parts finish well inside the timeout
 MAX_RUN = 2_000  # per digest: a longer stretch is read in calls of ≤ MAX_MESSAGES / MAX_CHARS
 MAX_CALLS = 8
+SCAN_TTL = 30.0  # seconds one live read of the summarized groups (answered / BE replies) is reused
+REPLY_CHARS = 400  # of a BE reply shown on its Với BE card
+MAX_GUESSES = 2  # later messages from whoever must answer, shown as "may have answered" when nobody replied
+GENERIC = {"be", "backend", "dev", "team", "fe", "po", "pm", "qa", "qc", "ba", "bạn", "me", "mọi", "người"}
 OWN = ("message_ids", "tickets", "be", "at", "carried")  # set by us, never taken as text from the model
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 OPEN = ("confirmations", "actions")  # what still waits on someone: kept until a later digest settles it
@@ -50,7 +55,9 @@ subject (feature, screen, module, API), not only the verdict. Every item and top
 "tickets": the YouTrack ticket ids (like ABC-123) named in those messages, else []. Every item \
 (not topic) has "be": true when it is a question to, an answer from or an agreement with the \
 backend (BE) team (API, endpoint, request / response field, data, DB, server logic), else false, and \
-"topic": the exact "title" of the topic it belongs to. Never invent \
+"topic": the exact "title" of the topic it belongs to. A "be" item also has "asker": who raised the question or \
+request (as named in the chat), and a "be" decision / change that answers a question has "question": that question, \
+short and standalone (its "text" is then the answer), else "". Never invent \
 facts: leave a field empty or drop the item when unsure; empty lists are fine. Write every text \
 in Vietnamese, short and concrete."""
 
@@ -65,6 +72,12 @@ decisions, changes, impacts, confirmations = open questions, actions = to-dos, t
 the user's question from them only; say so when they do not cover it, never invent. Write in \
 Vietnamese markdown, short and scannable: bullets, the group name in bold before each point, \
 the most urgent first (what waits on the user, deadlines, blockers)."""
+
+
+def _names(who: str, sender: str | None) -> bool:
+    """`sender` is the person `who` names ("Tùng (BE)" ~ "Nguyễn Thanh Tùng"); a role alone ("Backend") names nobody."""
+    words = lambda x: {w for w in re.findall(r"\w+", (x or "").lower()) if len(w) > 1 and w not in GENERIC}  # noqa: E731
+    return bool(words(who) & words(sender))
 
 
 def aware(d: datetime | None) -> datetime | None:
@@ -154,6 +167,8 @@ class DigestService:
         self.db = db
         self.bridge = bridge
         self.ai = ai
+        self._scan_lock = asyncio.Lock()
+        self._scan_hit: tuple[float, dict] | None = None
 
     async def _consented(self, chat_id: str) -> bool:
         return await self.db.read(self.store.get_digest_consent, chat_id) is not None
@@ -237,6 +252,8 @@ class DigestService:
                 detail="Quyền đã đổi trong lúc xử lý; kết quả bị bỏ. "
                 "Dữ liệu đã gửi provider không thể thu hồi.",
             )  # fmt: skip
+        if req.save:
+            self._scan_hit = None  # the new digest cites what was "new"; the next scan reads from it
         return result
 
     async def _ask(self, req: DigestRequest, part: list[StoredMessage], pending: list[tuple[str, dict]]):
@@ -287,17 +304,35 @@ class DigestService:
     async def answered(self) -> dict[str, list[str]]:
         """Per consented group: the ids its latest digest cites under "Cần confirm" / "Việc cần làm"
         that I have since replied to on Telegram (a reply_to from me, sent here or in Telegram)."""
-        if self.bridge.state != "connected":
-            return {}
+        return {chat: mine for chat, (mine, _) in (await self._scan()).items()}
+
+    async def be_replies(self) -> dict[str, list[BeReply]]:
+        """Per consented group: messages from others replying to a question its latest digest still has open
+        with BE, newest last. BE answered before the next summary: Với BE says so instead of "Chờ trả lời"."""
+        return {chat: hits for chat, (_, hits) in (await self._scan()).items() if hits}
+
+    async def _scan(self) -> dict[str, tuple[list[str], list[BeReply]]]:
+        """One live read of every summarized group since its digest, shared by answered / be_replies and reused
+        for SCAN_TTL (Briefing asks both on every refresh); the lock keeps two refreshes from reading twice."""
+        async with self._scan_lock:
+            if self._scan_hit and time.monotonic() - self._scan_hit[0] < SCAN_TTL:
+                return self._scan_hit[1]
+            if self.bridge.state != "connected":
+                return {}
+            out = await self._read_all()
+            self._scan_hit = (time.monotonic(), out)
+            return out
+
+    async def _read_all(self) -> dict[str, tuple[list[str], list[BeReply]]]:
         live = asyncio.Semaphore(4)
         now = datetime.now(UTC)
 
-        async def one(r: dict) -> tuple[str, list[str]]:
+        async def one(r: dict) -> tuple[str, tuple[list[str], list[BeReply]]]:
             res = DigestResult.model_validate_json(r["digest"]["result"])
             items = [it for k in OPEN for it in getattr(res, k)]
             cited = {i for it in items for i in it.message_ids}
             if not cited:
-                return r["chat_id"], []
+                return r["chat_id"], ([], [])
             since = aware(res.since) or _dt(r["digest"]["last_date"]) - timedelta(days=7)
             since = min([since, *(aware(it.at) for it in items if it.at)])  # carried items were asked earlier
             try:
@@ -305,9 +340,22 @@ class DigestService:
                     msgs = await self.bridge.fetch_range(r["chat_id"], since, now, MAX_MESSAGES)
             except Exception as e:  # one unreachable group must not hide the others
                 log.warning("answered: %s unread: %r", r["chat_id"], e)
-                return r["chat_id"], []
+                return r["chat_id"], ([], [])
             mine = {str(m.reply_to_id) for m in msgs if m.outgoing and m.reply_to_id}
-            return r["chat_id"], sorted(mine & cited)
+            # since the digest, not part of the discussion it read
+            new = sorted((m for m in msgs if not m.outgoing and not m.deleted and str(m.message_id) not in cited),
+                         key=lambda m: m.message_id)  # fmt: skip
+            hits: list[BeReply] = []
+            for it in (it for it in res.confirmations if it.be and it.message_ids):  # questions still open with BE
+                ids, after = set(it.message_ids), max(int(i) for i in it.message_ids)
+                direct = [m for m in new if m.reply_to_id and str(m.reply_to_id) in ids]
+                # no reply: what the one who must answer wrote next, not replying to anything else (a guess)
+                guess = [] if direct else [m for m in new if m.message_id > after and not m.reply_to_id
+                                           and _names(it.who, m.sender_name)][:MAX_GUESSES]  # fmt: skip
+                hits += [BeReply(reply_to=str(m.reply_to_id) if m in direct else it.message_ids[0],
+                                 message_id=str(m.message_id), sender=m.sender_name or "?", text=m.text[:REPLY_CHARS],
+                                 date=m.date, direct=m in direct) for m in direct + guess]  # fmt: skip
+            return r["chat_id"], (sorted(mine & cited), hits)
 
         rows = [r for r in await self.db.read(self.store.briefing_rows) if r["consent"] and r["digest"]]
         return dict(await asyncio.gather(*(one(r) for r in rows)))

@@ -161,6 +161,8 @@ export function readYtRole(): YtRole | null {
   const m = getPref("ytMode");
   return m === "dev" || m === "qa" ? m : m === "po" || m === "lead" ? "po" : null; // "lead" = the old PO / PM mode
 }
+/** Who the user is, sent with every AI Agent session (Giao AI Agent, Đối chiếu BE): the BE frames them alike. */
+export const aboutMe = () => ({ role: readYtRole(), platform: readPlatform(), intro: readIntro() });
 /** Save or clear (null) the role; open YouTrack pages follow at once (the "prefs" event). */
 export const saveYtRole = (r: YtRole | null) => setPref("ytMode", r);
 /** Re-render on a saved preference, here or in another tab. */

@@ -407,12 +407,12 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         assert (t["kind"], t["mode"], t["message_id"]) == ("deep", "plan", "5")  # one topic: its card shows it
         assert t["title"] == "Đối chiếu BE: Field status"  # the item whose messages are gone is left out
         assert "<items>" in t["prompt"] and "field là status" in t["prompt"] and "Gone" not in t["prompt"]
-        # several topics, one still waiting for BE: traced too, the session sits on no single message
+        # several topics, one waiting for BE: traced too, anchored on the newest cited message (asks post there)
         items = [{"text": "Field status", "message_ids": ["5"]},
                  {"text": "Có discount?", "message_ids": ["4"], "waiting": True}]
         r = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
         t = next(t for t in c.get("/api/tasks").json() if t["id"] == r.json()["id"])
-        assert t["message_id"] is None and t["title"] == "Đối chiếu 2 chủ đề BE: Field status"
+        assert t["message_id"] == "5" and t["title"] == "Đối chiếu 2 chủ đề BE: Field status"
         assert '"status": "waiting"' in t["prompt"] and "⏳ Chờ BE" in t["prompt"]
         bad = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": [], "project": str(proj)}, headers=H)
         assert bad.status_code == 422
