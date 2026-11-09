@@ -485,14 +485,20 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
         <span>{r.source_count} tin</span>
         <Button size="xs" variant="outline" className="ml-auto" onClick={onCopy}><Copy /> Copy markdown</Button>
       </div>
-      {beCount + beDone > 0 && (
+      {!empty && !r.raw && (
         <div className="flex flex-wrap items-center gap-2">
           <Segmented id="tg-digest-be" label="Lọc mục" value={only} onChange={setOnly}
             items={[{ value: "all", label: "Tất cả" }, { value: "be", label: `Với BE · ${beCount}`, title: "Hỏi / trả lời / chốt với BE (API, field, data) còn chưa xử lý" }]} />
           {be && beDone > 0 && <span className="text-xs text-ink-3">ẩn {beDone} mục đã xử lý</span>}
         </div>
       )}
-      {be && !beCount && <p className="text-sm text-ink-3">Mọi mục với BE đã xử lý.</p>}
+      {be && !beCount && (
+        <p className="text-sm text-ink-3">
+          {beDone ? "Mọi mục với BE đã xử lý."
+            : SECTIONS.some(([k]) => r[k]?.some((it) => it.topic)) ? "Không có trao đổi nào với BE trong bản tóm tắt này."
+            : "Bản tóm tắt này làm trước khi có phân loại BE: chọn \"7 ngày\" ở trên rồi bấm Tóm tắt để AI đọc lại và gom theo chủ đề."}
+        </p>
+      )}
       {be && chatId && (
         <BeTopics chatId={chatId} title={title ?? "nhóm"} r={r} open={(k, it) => !closed(k, it)} lit={lit} onJump={onJump}
           onToggle={(k, it) => toggle(todoKey(chatId, k, it))} />

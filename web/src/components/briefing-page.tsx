@@ -57,7 +57,8 @@ const stopBrief = () => briefStop?.abort();
 
 /** One group at a time: keeps the AI provider and Telegram calm, and each result lands as it comes.
  *  Aborting is the stop: the server sees the request go and kills that AI run. */
-async function runBrief(qc: QueryClient, groups: BriefingItem[]) {
+/** `hours`: re-read that far back instead of only what is new (a digest made before BE topics existed). */
+async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: number) {
   if (brief.batch) return; // one batch at a time
   const stop = (briefStop = new AbortController()).signal;
   setBrief((b) => ({ ...b, batch: { done: 0, total: groups.length } }));
@@ -72,10 +73,10 @@ async function runBrief(qc: QueryClient, groups: BriefingItem[]) {
         method: "POST",
         json: {
           chat_id: it.chat_id,
-          since: it.saved?.last_date ?? new Date(Date.now() - 24 * 3_600_000).toISOString(),
+          since: (!hours && it.saved?.last_date) || new Date(Date.now() - (hours ?? 24) * 3_600_000).toISOString(),
           until,
           message_ids: [],
-          after_id: it.saved ? Number(it.saved.last_message_id) : null,
+          after_id: it.saved && !hours ? Number(it.saved.last_message_id) : null,
           closed: closedIds(it.chat_id, it.saved?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams,
           intro: readIntro(),
@@ -580,7 +581,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   const shown = group ? todos.filter((t) => t.chat.chat_id === group) : todos;
   const tabs: [Tab, string, string][] = [
     ...(todos.some((x) => x.mine) ? [["mine", "Cần bạn", "bg-hl"] as [Tab, string, string]] : []),
-    ...(todos.some((x) => x.be) ? [["be", "Với BE", "bg-code"] as [Tab, string, string]] : []),
+    ["be", "Với BE", "bg-code"] as [Tab, string, string], // always: an empty one says how to get BE topics
     ...KINDS.map((k) => [k, KIND[k].label, KIND[k].dot] as [Tab, string, string]),
   ];
   const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
@@ -599,7 +600,10 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
     onError: (e) => toast({ text: errorText(e, { not_connected: "Telegram chưa kết nối." }, "Không gửi được, thử lại sau") }),
   });
 
-  const run = (groups: BriefingItem[]) => runBrief(qc, groups);
+  const run = (groups: BriefingItem[], hours?: number) => runBrief(qc, groups, hours);
+  // Digests made before BE topics existed: nothing in them is sorted by topic, so "Với BE" stays empty until a re-read.
+  const legacy = allowed.filter((c) => c.saved && !KINDS.some((k) => c.saved!.result[k]?.some((it) => it.topic)))
+    .filter((c) => !group || c.chat_id === group);
 
   async function copyAll() {
     const parts = allowed.filter((i) => i.saved).map((i) => toMarkdown(i.saved!.result, i.title).replace(/^# /, "## "));
@@ -726,7 +730,11 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-2 pb-4 md:px-3">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div key={`${cur}:${group}`} {...FADE}>
-                      {openItems.length && cur === "be" ? (
+                      {cur === "be" && !openItems.length && legacy.length ? (
+                        <Empty icon={<MessageCircleQuestion className="size-5" aria-hidden />} title="Bản tóm tắt chưa gom theo chủ đề BE"
+                          text={`${legacy.map((c) => c.title).join(", ")}: bản tóm tắt làm trước khi có tính năng này. Đọc lại 7 ngày gần nhất để AI gom câu hỏi / trả lời với BE theo chủ đề.`}
+                          action={<Button size="sm" disabled={running} onClick={() => void run(legacy, 168)}><Sparkles /> Đọc lại 7 ngày · {legacy.length} nhóm</Button>} />
+                      ) : openItems.length && cur === "be" ? (
                         <div className="grid gap-4 px-1.5">
                           {beGroups.map((c) => (
                             <section key={c.chat_id} aria-label={c.title} className="grid gap-1.5">

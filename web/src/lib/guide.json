@@ -1035,7 +1035,7 @@
 "tab": "telegram",
 "area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
 "title": "Với BE: Q&A với BE gom theo chủ đề",
-"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, câu hỏi nằm cạnh câu BE trả lời, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu). Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\".",
+"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, câu hỏi nằm cạnh câu BE trả lời, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu). Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\". Bản tóm tắt làm trước khi có tính năng này chưa có mục BE: tab Với BE hiện nút \"Đọc lại 7 ngày\" để AI đọc lại và gom theo chủ đề.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\"",
@@ -1045,7 +1045,7 @@
 "Bấm vòng tròn cuối một dòng để đánh dấu đã xử lý (bấm \"Hoàn tác\" trên thông báo để lấy lại)",
 "Hoặc trong trang Tóm tắt của một nhóm, chọn \"Với BE\" ở trên kết quả"
 ],
-"keys": "be backend loc be với be api field confirm voi be tab be trao doi be khong sot chu de chủ đề the gom nhom cau hoi cho tra loi da chot an muc da xu ly"
+"keys": "be backend loc be với be api field confirm voi be tab be trao doi be khong sot chu de chủ đề the gom nhom cau hoi cho tra loi da chot an muc da xu ly doc lai 7 ngay khong thay tab be"
 },
 {
 "id": "deep-bulk",
