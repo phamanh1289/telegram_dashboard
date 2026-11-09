@@ -1,4 +1,4 @@
-# Telegram Dashboard
+# Radar
 
 Web local để tập trung tin nhắn nhóm, trả lời bằng tài khoản Telegram cá nhân và dùng AI hỗ trợ soạn nháp (tùy chọn, mặc định tắt).
 
@@ -24,7 +24,7 @@ Không cần Python/Node/git. Dán **một lệnh** (bấm nút copy góc phải
 curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 ```
 
-Cài vào `~/Applications/Telegram Dashboard`; lần sau mở **Telegram Dashboard** từ Spotlight / Launchpad. Hoặc mở Terminal mới, gõ `mydashboard start`.
+Cài vào `~/Applications/Telegram Dashboard`; lần sau mở **Radar** từ Spotlight / Launchpad. Hoặc mở Terminal mới, gõ `mydashboard start`.
 
 **Windows 10/11**: bấm Start, gõ **PowerShell**, mở lên, dán:
 
@@ -32,7 +32,7 @@ Cài vào `~/Applications/Telegram Dashboard`; lần sau mở **Telegram Dashboa
 irm https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-windows.ps1 | iex
 ```
 
-Cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard`, có shortcut **Telegram Dashboard** ở Start Menu và Desktop. Hoặc mở cmd/PowerShell mới, gõ `mydashboard start`.
+Cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard`, có shortcut **Radar** ở Start Menu và Desktop. Hoặc mở cmd/PowerShell mới, gõ `mydashboard start`.
 
 Cài bằng lệnh để không bị macOS Gatekeeper / Windows SmartScreen chặn (app chưa ký số). Muốn tải tay thì lấy ở [GitHub Releases](https://github.com/phamanh1289/telegram_dashboard/releases/latest) và xem **[docs/INSTALL.md](docs/INSTALL.md)**. Lần đầu mở: dán Telegram API ID/Hash (https://my.telegram.org/apps) rồi đăng nhập. Cập nhật sau này: Cài đặt › GitHub.
 

@@ -72,7 +72,7 @@ export function ChatList({
   // The tab title always counts every open tag, whatever the day range (same query when no range is set).
   const allTotal = (useChats("").data?.items ?? []).reduce((n, c) => n + c.pending_count, 0);
   useEffect(() => {
-    document.title = allTotal ? `(${allTotal}) Telegram Dashboard` : "Telegram Dashboard";
+    document.title = allTotal ? `(${allTotal}) Radar` : "Radar";
   }, [allTotal]);
 
   return (

@@ -114,7 +114,7 @@ MEMBERS_TTL = 300.0  # seconds a group's member list (reply box @ popup) is reus
 
 
 GUIDE_PROMPT = (
-    "Bạn là trợ lý hướng dẫn sử dụng ứng dụng Telegram Dashboard (2 tab: Telegram và YouTrack, cùng Cài đặt). "
+    "Bạn là trợ lý hướng dẫn sử dụng ứng dụng Radar (2 tab: Telegram và YouTrack, cùng Cài đặt). "
     "Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước. Chỉ dựa vào danh mục đó; "
     "nếu không có tính năng phù hợp thì nói rõ là không thấy, đừng bịa. Trả lời tiếng Việt, ngắn gọn, markdown: "
     "nêu tính năng phù hợp nhất (tên in đậm kèm [id]), rồi các bước làm theo đánh số, ghi đúng nhãn nút/phím tắt. "
@@ -173,7 +173,7 @@ def create_app(
                         await task
 
     yt_dashboard = YouTrackDashboard(settings)
-    app = FastAPI(title="Telegram Dashboard", lifespan=lifespan)
+    app = FastAPI(title="Radar", lifespan=lifespan)
     app.add_middleware(
         LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin,
         token=settings.api_token,

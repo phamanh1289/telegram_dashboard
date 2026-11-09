@@ -1,4 +1,4 @@
-# Cài Telegram Dashboard (người dùng)
+# Cài Radar (người dùng)
 
 Tải bản mới nhất tại **https://github.com/phamanh1289/telegram_dashboard/releases/latest**.
 Không cần cài Python, Node hay git: gói đã có sẵn tất cả.
@@ -12,13 +12,13 @@ irm https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/i
 ```
 
 Lệnh tải bộ cài bản mới nhất, cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard` (không cần quyền admin),
-tạo shortcut **Telegram Dashboard** ở Start Menu và Desktop, rồi mở app: một cửa sổ đen hiện ra (đó là server,
+tạo shortcut **Radar** ở Start Menu và Desktop, rồi mở app: một cửa sổ đen hiện ra (đó là server,
 **để nguyên**, đóng = tắt app), trình duyệt mở `http://127.0.0.1:8765`.
 
 Lần đầu: **Cài đặt › Telegram** tự mở → dán **API ID / API Hash** (tạo ở https://my.telegram.org/apps,
 mục *API development tools*) → đăng nhập bằng số điện thoại → mã Telegram gửi → mật khẩu 2FA (nếu có).
 
-Hằng ngày: mở **Telegram Dashboard** từ Start Menu / Desktop.
+Hằng ngày: mở **Radar** từ Start Menu / Desktop.
 
 **Cách khác: tải Setup.exe bằng trình duyệt** (`TelegramDashboard-X.Y.Z-windows-x64-setup.exe` ở trang Releases).
 Bộ cài chưa ký số nên Windows hiện *"Windows protected your PC"* (SmartScreen): bấm **More info** → **Run anyway**.
@@ -42,9 +42,9 @@ Mở **Terminal** (Spotlight: gõ "Terminal"), dán lệnh này rồi Enter:
 curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 ```
 
-Lệnh tải bản mới nhất vào `~/Applications/Telegram Dashboard`, tạo app `~/Applications/Telegram Dashboard.app`
+Lệnh tải bản mới nhất vào `~/Applications/Telegram Dashboard`, tạo app `~/Applications/Radar.app`
 và chạy app: một cửa sổ Terminal mở (để nguyên, đóng = tắt app), trình duyệt mở `http://127.0.0.1:8765`.
-Đăng nhập như bước 5 của Windows. Lần sau: gõ **Telegram Dashboard** trong Spotlight / Launchpad (kéo vào Dock cho tiện).
+Đăng nhập như bước 5 của Windows. Lần sau: gõ **Radar** trong Spotlight / Launchpad (kéo vào Dock cho tiện).
 
 > Vì sao không tải zip bằng trình duyệt? App chưa được Apple notarize nên file tải qua trình duyệt bị chặn
 > (*"Apple could not verify… Not Opened"*). Nếu đã lỡ tải zip: bấm **Done**, mở **System Settings ›
@@ -65,7 +65,7 @@ hoặc Antigravity (`agy`). Không có thì inbox vẫn chạy, chỉ ẩn AI.
 
 ## Gỡ cài đặt
 
-- Windows: Settings › Apps › **Telegram Dashboard** › Uninstall. Dữ liệu (`data\` trong thư mục cài, gồm session
+- Windows: Settings › Apps › **Radar** › Uninstall. Dữ liệu (`data\` trong thư mục cài, gồm session
   Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn.
 - macOS: xóa thư mục `~/Applications/Telegram Dashboard`.
 - Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của dashboard.

@@ -245,7 +245,7 @@ def _agy_agent(kind: str) -> str:
     path = _agy_home() / "agents" / f"{name}.md"
     tools = AGY_TOOLS[kind]
     cannot = "use any tool: answer from the prompt alone" if not tools else "run commands or browse"
-    text = (f"---\nname: {name}\ndescription: Telegram Dashboard run ({kind})\n"
+    text = (f"---\nname: {name}\ndescription: Radar run ({kind})\n"
             f"tools: [{', '.join(tools)}]\ninheritCustomizations: false\n---\n"
             f"Work only through the tools you have; you cannot {cannot}.\n")  # fmt: skip
     if not path.is_file() or path.read_text() != text:

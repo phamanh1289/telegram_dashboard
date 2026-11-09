@@ -1,20 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <!-- Robot agent (AI) with a paper-plane visor (Telegram) holding a ticket (YouTrack). macOS grid: 824 body. -->
+  <!-- Radar ping: a scope picking up an amber blip (= needs you) that pulses terracotta. macOS grid: 824 body. -->
   <g transform="translate(100 100) scale(4.5778)">
     <rect width="180" height="180" rx="40" fill="#f3e8d6"/>
     <rect x="0.5" y="0.5" width="179" height="179" rx="39.5" fill="none" stroke="#dcc8ab"/>
-    <line x1="90" y1="58" x2="90" y2="40" stroke="#2e231c" stroke-width="6" stroke-linecap="round"/>
-    <path d="M90 18 Q92 30 104 32 Q92 34 90 46 Q88 34 76 32 Q88 30 90 18 Z" fill="#d8902f"/>
-    <rect x="34" y="58" width="112" height="88" rx="28" fill="#2e231c"/>
-    <rect x="26" y="88" width="10" height="28" rx="5" fill="#2e231c"/>
-    <rect x="144" y="88" width="10" height="28" rx="5" fill="#2e231c"/>
-    <rect x="48" y="78" width="84" height="44" rx="22" fill="#b5532f"/>
-    <path d="M58 98 L122 86 L92 116 Z" fill="#f6eee2"/>
-    <path d="M122 86 L84 104 L92 116 Z" fill="#e6d3bd"/>
-    <g transform="rotate(-10 140 150)">
-      <rect x="112" y="132" width="52" height="34" rx="6" fill="#d8902f"/>
-      <circle cx="112" cy="149" r="5" fill="#f3e8d6"/>
-      <path d="M128 149 L136 156 L150 142" fill="none" stroke="#2e231c" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    </g>
+    <circle cx="90" cy="90" r="36" fill="none" stroke="#2e231c" stroke-opacity=".22" stroke-width="3"/>
+    <circle cx="90" cy="90" r="62" fill="none" stroke="#2e231c" stroke-width="8"/>
+    <circle cx="118" cy="62" r="34" fill="none" stroke="#b5532f" stroke-opacity=".35" stroke-width="6"/>
+    <circle cx="118" cy="62" r="22" fill="none" stroke="#b5532f" stroke-width="7"/>
+    <circle cx="118" cy="62" r="11" fill="#d8902f" stroke="#2e231c" stroke-width="4"/>
   </g>
 </svg>

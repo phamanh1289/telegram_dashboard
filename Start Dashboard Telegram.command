@@ -18,7 +18,7 @@ pause_close() { printf "\n  ${D}Enter để đóng${R} "; read -r; }
 
 banner() {
   printf "\n${B}${CYN}  ╭──────────────────────────────────╮${R}\n"
-  printf "${B}${CYN}  │${R}  ${B}✈  Telegram Dashboard${R}           ${B}${CYN}│${R}\n"
+  printf "${B}${CYN}  │${R}  ${B}◉  Radar${R}                        ${B}${CYN}│${R}\n"
   printf "${B}${CYN}  ╰──────────────────────────────────╯${R}\n"
 }
 

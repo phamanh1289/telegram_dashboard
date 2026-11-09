@@ -2,7 +2,7 @@
 rem Double-click to start the dashboard on Windows. Close this window to stop it.
 setlocal
 cd /d "%~dp0"
-title Telegram Dashboard
+title Radar
 
 for %%c in (uv node npm git) do (
   where %%c >nul 2>nul || (echo [X] Thieu %%c - xem docs\SETUP.md & pause & exit /b 1)

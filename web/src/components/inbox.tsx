@@ -404,7 +404,7 @@ function Inbox({ status }: { status: Status }) {
         "md:translate-x-0 md:shadow-none",
         collapsed && "md:[clip-path:inset(0_calc(100%-4rem)_0_0)] md:hover:[clip-path:inset(0_-3rem_0_0)] md:hover:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop",
       )}>
-        <h1 className="sr-only">Telegram Dashboard</h1>
+        <h1 className="sr-only">Radar</h1>
         <div className="flex min-h-10 items-center gap-3 px-1.5">
           <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-hl text-hl-ink"><Send className="size-4 -translate-x-px translate-y-px" aria-hidden /></span>
           <span className={cn("grid whitespace-nowrap leading-tight", t)}>

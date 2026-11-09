@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "Telegram Dashboard" };
+export const metadata: Metadata = { title: "Radar" };
 
 // Runs before first paint. Theme: localStorage.theme = light | dark, else the OS preference. Row actions (Settings) so the
 // first paint already shows or tucks them. Each member's look (Cài đặt chung, lib/prefs saveLook): uiStyle = simple |

@@ -8,9 +8,9 @@
 
 [Setup]
 AppId={{6E0B7C1E-5B2A-4C1D-9C5E-7A4D2F1B8E31}
-AppName=Telegram Dashboard
+AppName=Radar
 AppVersion={#Version}
-AppPublisher=Telegram Dashboard
+AppPublisher=Radar
 DefaultDirName={localappdata}\Programs\Telegram Dashboard
 DisableProgramGroupPage=yes
 DisableDirPage=auto
@@ -22,7 +22,7 @@ OutputBaseFilename=TelegramDashboard-{#Version}-windows-x64-setup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayName=Telegram Dashboard
+UninstallDisplayName=Radar
 ; {app} goes on the user PATH so `mydashboard start` works in a new cmd/PowerShell window
 ChangesEnvironment=yes
 
@@ -36,11 +36,16 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#Src}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\Telegram Dashboard"; Filename: "{app}\Start Dashboard Telegram.bat"; WorkingDir: "{app}"
-Name: "{autodesktop}\Telegram Dashboard"; Filename: "{app}\Start Dashboard Telegram.bat"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autoprograms}\Radar"; Filename: "{app}\Start Dashboard Telegram.bat"; WorkingDir: "{app}"
+Name: "{autodesktop}\Radar"; Filename: "{app}\Start Dashboard Telegram.bat"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\Start Dashboard Telegram.bat"; Description: "Open Telegram Dashboard"; Flags: postinstall nowait shellexec skipifsilent
+Filename: "{app}\Start Dashboard Telegram.bat"; Description: "Open Radar"; Flags: postinstall nowait shellexec skipifsilent
+
+[InstallDelete]
+; shortcuts from before the rename to Radar
+Type: files; Name: "{autoprograms}\Telegram Dashboard.lnk"
+Type: files; Name: "{autodesktop}\Telegram Dashboard.lnk"
 
 [UninstallDelete]
 ; versions added later by in-app updates are not in the install log

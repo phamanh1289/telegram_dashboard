@@ -67,7 +67,7 @@ def main() -> None:
     shutil.copy2(ROOT / "packaging" / sub / launcher, stage / launcher)
     if sub == "windows":  # `mydashboard start` in a terminal (setup.iss adds the folder to PATH)
         shutil.copy2(ROOT / "packaging/windows/mydashboard.cmd", stage / "mydashboard.cmd")
-    if sub == "macos":  # install.sh puts it in Telegram Dashboard.app
+    if sub == "macos":  # install.sh puts it in Radar.app
         shutil.copy2(ROOT / "packaging/macos/AppIcon.icns", stage / "AppIcon.icns")
 
     out = DIST / f"TelegramDashboard-{ver}-{plat()}.zip"

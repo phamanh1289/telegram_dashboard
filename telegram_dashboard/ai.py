@@ -823,7 +823,7 @@ async def _osascript(script: str, timeout: float = 15) -> tuple[int, str]:
 
 # osascript shows the dialog itself (no Finder automation permission); `activate` brings it front.
 PICK_FOLDER_SCRIPT = """activate
-POSIX path of (choose folder with prompt "Chọn thư mục dự án cho Telegram Dashboard")"""
+POSIX path of (choose folder with prompt "Chọn thư mục dự án cho Radar")"""
 
 
 # Windows: WinForms dialog owned by a TopMost form so it opens above the browser.
@@ -831,7 +831,7 @@ PICK_FOLDER_PS = """[Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $f = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
-$d.Description = 'Chọn thư mục dự án cho Telegram Dashboard'
+$d.Description = 'Chọn thư mục dự án cho Radar'
 if ($d.ShowDialog($f) -eq 'OK') { $d.SelectedPath }"""
 
 

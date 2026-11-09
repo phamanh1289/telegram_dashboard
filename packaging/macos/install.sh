@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install or update Telegram Dashboard on macOS (Apple Silicon):
+# Install or update Radar on macOS (Apple Silicon):
 #   curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-macos.sh | bash
 # Files fetched by curl carry no quarantine flag, so Gatekeeper does not block the unsigned app
 # (a zip downloaded in a browser does). Re-running updates in place; data/ is kept.
@@ -15,7 +15,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 file="TelegramDashboard-$ver-macos-arm64.zip"
-echo "Tải Telegram Dashboard ${tag}…"
+echo "Tải Radar ${tag}…"
 curl -fL --progress-bar -o "$tmp/td.zip" "https://github.com/$REPO/releases/download/$tag/$file"
 # The sha256 GitHub computed for the asset (API, pretty-printed: the first "digest" after its name).
 want=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/tags/$tag" |
@@ -49,7 +49,8 @@ case ":$PATH:" in
 esac
 
 # A tiny .app beside the folder: Spotlight, Launchpad and Applications list only app bundles.
-app="$(dirname "$DEST")/Telegram Dashboard.app"
+app="$(dirname "$DEST")/Radar.app"
+rm -rf "$(dirname "$DEST")/Telegram Dashboard.app"  # name before the rename to Radar
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$src/AppIcon.icns" "$app/Contents/Resources/" 2>/dev/null || true  # releases before 0.1.6 have none
 printf '#!/bin/bash\nexec open %q\n' "$DEST/Start Dashboard Telegram.command" >"$app/Contents/MacOS/launch"
@@ -61,13 +62,13 @@ cat >"$app/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key><string>launch</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleIdentifier</key><string>com.github.phamanh1289.telegram-dashboard</string>
-  <key>CFBundleName</key><string>Telegram Dashboard</string>
+  <key>CFBundleName</key><string>Radar</string>
   <key>CFBundlePackageType</key><string>APPL</string>
 </dict></plist>
 EOF
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app" 2>/dev/null || true
 
 echo "Đã cài ${tag} vào: ${DEST}"
-echo "Lần sau mở: gõ \"Telegram Dashboard\" trong Spotlight / Launchpad (hoặc kéo app vào Dock),"
+echo "Lần sau mở: gõ \"Radar\" trong Spotlight / Launchpad (hoặc kéo app vào Dock),"
 echo "hoặc mở Terminal mới và gõ: mydashboard start"
 open "$app"
