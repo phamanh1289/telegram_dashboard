@@ -3,8 +3,8 @@
 import { Popover } from "@base-ui/react/popover";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronDown, ChevronRight, CircleAlert, CircleCheckBig, ClipboardList, Copy, GitCompareArrows, ListTodo, Loader2,
-  type LucideIcon, MessageCircleQuestion, Plus, RotateCw, Send, ShieldCheck, Sparkles, Sun, Trash2, TriangleAlert, UserRound, Users,
+  ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronRight, CircleAlert, CircleCheckBig, ClipboardList, Copy, Gauge, GitCompareArrows, ListTodo, Loader2,
+  type LucideIcon, MessageCircleQuestion, PanelRightClose, PanelRightOpen, Plus, RotateCw, Send, ShieldCheck, Sparkles, Sun, Trash2, TriangleAlert, UserRound,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
 import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -15,7 +15,7 @@ import { Avatar, railHide } from "@/components/chat-list";
 import { BeTopics } from "@/components/be-topics";
 import { DeepItemAction } from "@/components/deep-think";
 import { NavPill } from "@/components/shell";
-import { answeredQuery, closedIds, digestError, isClosedItem, ItemActions, ItemFlags, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
+import { answeredQuery, closedIds, digestError, isClosedItem, ItemActions, ItemFlags, openCount, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
 import { Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
@@ -27,7 +27,7 @@ import { WeekStatsCard } from "@/components/week-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, type BriefingItem, type DigestItem, type DigestResult, errorText, type GroupInfo, type Message, statusQuery } from "@/lib/api";
 import { copyText, toast } from "@/lib/inbox";
-import { readDigestTeams, readIntro, useRole } from "@/lib/prefs";
+import { getPref, put, readDigestTeams, readIntro, useRole } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -106,6 +106,8 @@ const ROW_MOTION = {
   exit: { opacity: 0, x: 24, transition: { duration: 0.16 } },
 } as const;
 const FADE = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 }, transition: { duration: 0.18, ease: EASE } } as const;
+
+const AI_PANE = "briefAi"; // "0": the AI column is hidden on desktop
 
 // ---- to-do items: every group's latest digest in one list ------------------------------------------------------------
 
@@ -287,88 +289,11 @@ function StatusDot({ i, r }: { i: BriefingItem; r?: RunState }) {
 }
 
 /** Which group's items to show; each row also says how fresh its digest is, and can re-run or open it. */
-function GroupPicker({ groups, runs, group, openOf, running, onPick, onRun, onOpen }: {
-  groups: BriefingItem[]; runs: Record<string, RunState>; group: string | null; openOf: (i: BriefingItem) => number; running: boolean;
-  onPick: (chatId: string | null) => void; onRun: (i: BriefingItem) => void; onOpen: (i: BriefingItem) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [q, setQ] = useState("");
-  const cur = groups.find((g) => g.chat_id === group);
-  const news = groups.filter(hasNews).length;
-  const total = groups.reduce((n, g) => n + openOf(g), 0);
-  const needle = q.trim().toLowerCase();
-  const sorted = [...groups].sort((a, b) => Number(hasNews(b)) - Number(hasNews(a)) || openOf(b) - openOf(a))
-    .filter((g) => g.title.toLowerCase().includes(needle));
-  const pick = (id: string | null) => { setOpen(false); setQ(""); onPick(id); };
-  const hint = (i: BriefingItem) => {
-    const r = runs[i.chat_id];
-    return r?.status === "error" ? r.error ?? "Lỗi" : r?.status === "running" ? "Đang tóm tắt…"
-      : !i.saved ? "Chưa tóm tắt lần nào" : `Tóm tắt lúc ${timeLabel(i.saved.created_at)}${hasNews(i) ? " · có tin mới" : ""}`;
-  };
-  const count = (n: number) => n > 0 && <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-4 text-ink-2 tabular-nums">{n}</span>;
-  return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
-      <Popover.Trigger aria-label="Chọn nhóm"
-        className="flex h-8 max-w-72 min-w-0 shrink items-center gap-1.5 rounded-full border border-rule bg-cotton pr-2 pl-2.5 text-xs text-ink-2 transition-colors duration-(--dur-micro) hover:border-rule-2 hover:text-ink data-popup-open:border-hl data-popup-open:text-hl-2">
-        {cur ? <StatusDot i={cur} r={runs[cur.chat_id]} /> : <Users className="size-3.5 shrink-0" aria-hidden />}
-        <span className="truncate font-medium">{cur?.title ?? `Tất cả ${groups.length} nhóm`}</span>
-        {count(cur ? openOf(cur) : total)}
-        <ChevronDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner sideOffset={6} align="start" className="z-40 outline-none">
-          <Popover.Popup aria-label="Chọn nhóm"
-            className="grid w-96 max-w-[calc(100vw-2rem)] origin-(--transform-origin) gap-2 rounded-lg bg-cotton p-2.5 text-sm shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-            {groups.length > 6 && <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhóm…" aria-label="Tìm nhóm" />}
-            <ul className="grid max-h-80 gap-0.5 overflow-y-auto">
-              {!needle && (
-                <li>
-                  <button type="button" aria-pressed={!group} onClick={() => pick(null)}
-                    className={cn("flex h-8 w-full items-center gap-2 rounded-md px-2 text-left", !group ? "bg-hl-wash text-hl-2" : "text-ink-2 hover:bg-paper-2 hover:text-ink")}>
-                    <Users className="size-3.5 shrink-0" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate font-medium">Tất cả nhóm</span>
-                    {news > 0 && <span className="text-xs text-signal-2">{news} có tin mới</span>}
-                    {count(total)}
-                  </button>
-                </li>
-              )}
-              {sorted.map((i) => (
-                <li key={i.chat_id} className={cn("flex items-center rounded-md", group === i.chat_id ? "bg-hl-wash text-hl-2" : "text-ink-2 hover:bg-paper-2 hover:text-ink")}>
-                  <Hint side="right" text={hint(i)}>
-                    <button type="button" aria-pressed={group === i.chat_id} onClick={() => pick(i.chat_id)} className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left">
-                      <StatusDot i={i} r={runs[i.chat_id]} />
-                      <span className="min-w-0 flex-1 truncate">{i.title}</span>
-                      {count(openOf(i))}
-                    </button>
-                  </Hint>
-                  {hasNews(i) && (
-                    <Hint side="bottom" text="Chỉ tóm tắt nhóm này">
-                      <button type="button" aria-label={`Tóm tắt ${i.title}`} disabled={running} onClick={() => onRun(i)}
-                        className="grid size-7 place-items-center rounded-md text-hl-2 hover:bg-hl-wash disabled:opacity-40">
-                        <Sparkles className="size-3.5" aria-hidden />
-                      </button>
-                    </Hint>
-                  )}
-                  <Hint side="bottom" text="Mở trang tóm tắt của nhóm (chọn khoảng thời gian, chọn tin)">
-                    <button type="button" aria-label={`Mở ${i.title}`} onClick={() => { setOpen(false); onOpen(i); }} className="mr-0.5 grid size-7 place-items-center rounded-md hover:bg-paper-3">
-                      <ArrowUpRight className="size-3.5" aria-hidden />
-                    </button>
-                  </Hint>
-                </li>
-              ))}
-              {!sorted.length && <li className="px-2 py-1.5 text-ink-3">Không có nhóm nào khớp.</li>}
-            </ul>
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
-  );
-}
-
 /** Groups not here yet: those waiting for "Cho phép", and any other Telegram group; picking one opens its Digest. */
-function AddGroup({ blocked, known, open, onOpenChange, onPick }: {
-  blocked: BriefingItem[]; known: Set<string>; open: boolean; onOpenChange: (o: boolean) => void; onPick: (chatId: string, title: string) => void;
+function AddGroup({ blocked, known, onPick, className, children }: {
+  blocked: BriefingItem[]; known: Set<string>; onPick: (chatId: string, title: string) => void; className: string; children: ReactNode;
 }) {
+  const [open, onOpenChange] = useState(false);
   const [q, setQ] = useState("");
   const groups = useQuery({
     queryKey: ["groups"],
@@ -391,15 +316,11 @@ function AddGroup({ blocked, known, open, onOpenChange, onPick }: {
   );
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
-      <Hint side="bottom" text="Thêm nhóm vào Briefing">
-        <Popover.Trigger aria-label="Thêm nhóm"
-          className="flex h-8 shrink-0 items-center gap-1 rounded-full border border-dashed border-rule-2 px-2.5 text-xs text-ink-3 transition-colors duration-(--dur-micro) hover:border-ink-3 hover:text-ink data-popup-open:border-hl data-popup-open:text-hl-2">
-          <Plus className="size-3.5" aria-hidden /> Thêm
-          {blocked.length > 0 && <span className="rounded-full bg-paper-3 px-1.5 font-mono leading-4 tabular-nums">{blocked.length}</span>}
-        </Popover.Trigger>
+      <Hint side="right" text="Thêm nhóm vào Briefing: chọn nhóm rồi cho phép AI đọc">
+        <Popover.Trigger aria-label="Thêm nhóm" className={className}>{children}</Popover.Trigger>
       </Hint>
       <Popover.Portal>
-        <Popover.Positioner sideOffset={6} align="start" className="z-40 outline-none">
+        <Popover.Positioner sideOffset={6} align="start" side="right" className="z-40 outline-none">
           <Popover.Popup aria-label="Thêm nhóm"
             className="grid w-80 max-w-[calc(100vw-2rem)] origin-(--transform-origin) gap-2 rounded-lg bg-cotton p-2.5 text-sm shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
             <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhóm Telegram…" aria-label="Tìm nhóm" />
@@ -547,7 +468,8 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   const list = useQuery(briefingQuery);
   const wait = useAiWait(list.isPending);
   const { runs, batch } = useBriefRun(); // null batch: nothing running
-  const [adding, setAdding] = useState(false);
+  const [aiOpen, setAiOpen] = useState(() => getPref(AI_PANE) !== "0"); // desktop: the AI column can make room
+  const showAi = (on: boolean) => { setAiOpen(on); put(AI_PANE, on ? null : "0"); };
   const [tab, setTab] = useState<Tab | null>(null); // null: the first tab with something left
   const [showDone, setShowDone] = useState(false);
   const [pane, setPane] = useState<"todo" | "ai">("todo"); // phones: one pane at a time
@@ -622,11 +544,14 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
     <TodoRow key={t.key} t={t} closed={isClosed(t)} showKind={cur === "mine" || cur === "be"} showGroup={byGroup && isClosed(t)}
       onToggle={() => toggle(t.key)} onOpen={() => open(t.chat)} />
   );
+  const scope = group ? allowed.find((c) => c.chat_id === group) : undefined;
+  const runFor = scope ? todo.filter((c) => c === scope) : todo; // one group picked in the sidebar: just that one
   const runButton = (
-    <Button id="briefing-run" size="sm" disabled={!todo.length || running} onClick={() => void run(todo)}>
-      <Sparkles /> {todo.length ? `Tóm tắt ${todo.length} nhóm` : "Đã cập nhật"}
+    <Button id="briefing-run" size="sm" disabled={!runFor.length || running} onClick={() => void run(runFor)}>
+      <Sparkles /> {!runFor.length ? "Đã cập nhật" : scope ? "Tóm tắt nhóm này" : `Tóm tắt ${runFor.length} nhóm`}
     </Button>
   );
+  const scopeLeft = shown.filter(pending).length;
 
   return (
     <MotionConfig reducedMotion="user">
@@ -635,14 +560,40 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
           <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại">
             <ArrowLeft />
           </Button>
-          <span className="flex min-w-0 items-center gap-2 truncate text-sm text-ink-2">
-            {!list.data ? "Đang kiểm tra các nhóm…" : <>
-              <span><b className="font-semibold text-ink tabular-nums">{leftAll}</b> việc chờ xử lý</span>
-              {last && <span className="hidden text-ink-3 sm:inline">· cập nhật {timeLabel(last)}</span>}
-              {offline && <span className="text-warn">· Telegram chưa kết nối</span>}
-            </>}
-          </span>
+          <div className="grid min-w-0 gap-0.5">
+            <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-ink">
+              <span className="truncate">{scope?.title ?? "Tất cả nhóm"}</span>
+              {scope && (
+                <Hint side="bottom" text="Xem việc của mọi nhóm">
+                  <button type="button" onClick={() => onGroup(null)} className="shrink-0 rounded-sm text-xs font-normal text-ink-3 hover:text-ink hover:underline">Tất cả</button>
+                </Hint>
+              )}
+            </h2>
+            <p className="flex min-w-0 items-center gap-1.5 truncate text-xs text-ink-3">
+              {!list.data ? "Đang kiểm tra các nhóm…" : <>
+                <span><b className="font-semibold text-ink-2 tabular-nums">{scope ? scopeLeft : leftAll}</b> việc chờ xử lý</span>
+                {(scope?.saved?.created_at ?? last) && <span className="hidden sm:inline">· cập nhật {timeLabel((scope?.saved?.created_at ?? last)!)}</span>}
+                {offline && <span className="text-warn">· Telegram chưa kết nối</span>}
+              </>}
+            </p>
+          </div>
           <div className="ml-auto flex items-center gap-0.5">
+            <Popover.Root>
+              <Hint side="bottom" text="Tuần của tôi: số tag nhận, đã xử lý, thời gian xử lý">
+                <Popover.Trigger aria-label="Tuần của tôi"
+                  className="grid size-8 place-items-center rounded-md text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink data-popup-open:bg-hl-wash data-popup-open:text-hl-2">
+                  <Gauge className="size-4" aria-hidden />
+                </Popover.Trigger>
+              </Hint>
+              <Popover.Portal>
+                <Popover.Positioner sideOffset={6} align="end" className="z-40 outline-none">
+                  <Popover.Popup aria-label="Tuần của tôi"
+                    className="w-[min(40rem,calc(100vw-2rem))] origin-(--transform-origin) rounded-lg bg-cotton p-3 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                    <WeekStatsCard className="" empty={<p className="text-sm text-ink-3">Chưa có số liệu tuần này.</p>} />
+                  </Popover.Popup>
+                </Popover.Positioner>
+              </Popover.Portal>
+            </Popover.Root>
             <Hint side="bottom" text="Kiểm tra lại tin mới ở các nhóm">
               <Button size="icon-sm" variant="ghost" aria-label="Kiểm tra lại" disabled={running || list.isFetching}
                 onClick={() => { void list.refetch(); void answered.refetch(); }}>
@@ -660,10 +611,17 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
                 {save.isPending ? <Loader2 className="animate-spin" /> : <Send />}
               </Button>
             </Hint>
+            {allowed.length > 0 && (
+              <Hint side="bottom" text={aiOpen ? "Ẩn Trợ lý AI để danh sách rộng hơn" : "Mở Trợ lý AI: hỏi về mọi nhóm"}>
+                <Button size="icon-sm" variant="ghost" className={cn("max-lg:hidden", aiOpen && "text-hl-2")} aria-pressed={aiOpen}
+                  aria-label="Trợ lý AI" onClick={() => showAi(!aiOpen)}>
+                  {aiOpen ? <PanelRightClose /> : <PanelRightOpen />}
+                </Button>
+              </Hint>
+            )}
             <span className="ml-1.5">{runButton}</span>
           </div>
         </header>
-        <WeekStatsCard />
 
         <AnimatePresence initial={false}>
           {batch && (
@@ -681,17 +639,6 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
           )}
         </AnimatePresence>
 
-        {list.data && (
-          <div role="group" aria-label="Lọc theo nhóm" className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2 md:px-5">
-            {allowed.length > 0 && (
-              <GroupPicker groups={allowed} runs={runs} group={group} running={running}
-                openOf={(i) => todos.filter((t) => t.chat === i && pending(t)).length}
-                onPick={(id) => { onGroup(id); setShowDone(false); }} onRun={(i) => void run([i])} onOpen={open} />
-            )}
-            <AddGroup blocked={blocked} known={new Set(items.map((i) => i.chat_id))} open={adding} onOpenChange={setAdding} onPick={onOpenDigest} />
-          </div>
-        )}
-
         {summarized && (
           <div className="shrink-0 px-3 pt-2 lg:hidden">
             <Segmented id="brief-pane" label="Khung" variant="card" value={pane} onChange={setPane}
@@ -699,7 +646,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
           </div>
         )}
 
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
+        <div className={cn("grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)]", aiOpen && "lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]")}>
           <div className={cn("flex min-h-0 flex-col", summarized && pane === "ai" && "max-lg:hidden")}>
             {wait ? (
               <AiFetching kind="brief" />
@@ -711,7 +658,12 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
             ) : !allowed.length ? (
               <Empty icon={<Plus className="size-5" aria-hidden />} title="Chưa có nhóm nào trong Briefing"
                 text="Chọn một nhóm, cho phép AI đọc, rồi mỗi sáng chỉ cần bấm một nút để biết: ai đang chờ bạn, đã chốt gì, việc gì cần làm."
-                action={<Button size="sm" onClick={() => setAdding(true)}><Plus /> Thêm nhóm</Button>} />
+                action={
+                  <AddGroup blocked={blocked} known={new Set(items.map((i) => i.chat_id))} onPick={onOpenDigest}
+                    className="inline-flex h-8 items-center gap-1.5 rounded-md bg-hl px-3 text-sm font-medium text-hl-ink hover:brightness-110">
+                    <Plus className="size-4" aria-hidden /> Thêm nhóm
+                  </AddGroup>
+                } />
             ) : !summarized ? (
               <Empty icon={<Sparkles className="size-5" aria-hidden />} title="Chưa có bản tóm tắt nào"
                 text="Tóm tắt các nhóm có tin mới: AI gom câu hỏi cần confirm, việc cần làm, quyết định và thay đổi vào một danh sách." action={runButton} />
@@ -804,7 +756,7 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
           </div>
           {list.data && allowed.length > 0 && (
             <AiPane ready={summarized} onSave={(t) => save.mutate(t)} saving={save.isPending}
-              className={cn(pane === "todo" && "max-lg:hidden")} />
+              className={cn(pane === "todo" && "max-lg:hidden", !aiOpen && "lg:hidden")} />
           )}
         </div>
       </section>
@@ -812,18 +764,45 @@ export function BriefingPage({ group, onGroup, onBack, onOpenDigest }: {
   );
 }
 
-/** Sidebar tab "Briefing": the followed groups and how fresh each digest is; a pick opens Briefing on that group. */
-export function BriefingGroups({ selected, onSelect, collapsed }: {
-  selected: string | null | undefined; onSelect: (chatId: string | null) => void; collapsed: boolean;
+/** Sidebar under "Briefing": the groups (what still waits in each, how fresh), and everything done to one group:
+ *  summarize it, open its Tóm tắt, take it out; "Thêm nhóm" at the end. A pick shows Briefing for that group. */
+export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: {
+  selected: string | null | undefined; onSelect: (chatId: string | null) => void; onOpenDigest: (chatId: string, title: string) => void; collapsed: boolean;
 }) {
+  const qc = useQueryClient();
   const list = useQuery(briefingQuery);
-  const groups = (list.data ?? []).filter((i) => i.consent).sort((a, b) => Number(hasNews(b)) - Number(hasNews(a)));
-  const news = groups.filter(hasNews).length;
+  const { runs, batch } = useBriefRun();
+  const [done] = useDone();
+  const answered = useQuery({ ...answeredQuery, enabled: !!list.data?.some((i) => i.consent && i.saved) }).data;
+  const [asking, setAsking] = useState<string | null>(null); // the group whose removal waits for "Bỏ"
+  const items = list.data ?? [];
+  const left = (i: BriefingItem) => openCount(i.chat_id, i.saved?.result, done, answered);
+  const groups = items.filter((i) => i.consent).sort((a, b) => Number(hasNews(b)) - Number(hasNews(a)) || left(b) - left(a));
+  const total = groups.reduce((n, g) => n + left(g), 0);
+  const running = batch !== null;
+  // Out of Briefing = AI may no longer read it: revoking the consent also drops its saved digest (as "Thu hồi" does).
+  const remove = useMutation({
+    mutationFn: (id: string) => api(`/chats/${encodeURIComponent(id)}/digest-consent`, { method: "PUT", json: { enabled: false, days: 30 } }),
+    onSuccess: (_, id) => {
+      setAsking(null);
+      if (selected === id) onSelect(null);
+      for (const key of [["briefing"], ["digest-saved", id], ["digest-consent", id]]) void qc.invalidateQueries({ queryKey: key });
+      toast({ text: "Đã bỏ nhóm khỏi Briefing" });
+    },
+    onError: (e) => toast({ text: errorText(e, {}, "Không bỏ được nhóm, thử lại sau") }),
+  });
   const row = (on: boolean) => cn(
-    "relative flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
+    "relative flex h-10 w-full min-w-0 items-center gap-3 rounded-md px-3 text-left text-sm text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink",
     on && "font-medium text-hl-2 hover:bg-transparent",
   );
   const fade = collapsed ? railHide : undefined;
+  const count = (n: number, cls?: string) => n > 0 && <span className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums", cls, fade)}>{n}</span>;
+  const act = "grid size-7 shrink-0 place-items-center rounded-md text-ink-3 hover:bg-paper-3 hover:text-ink disabled:opacity-40";
+  const status = (i: BriefingItem) => {
+    const r = runs[i.chat_id];
+    return r?.status === "error" ? `Lỗi: ${r.error ?? ""}` : r?.status === "running" ? "Đang tóm tắt…"
+      : !i.saved ? "Chưa tóm tắt lần nào" : `Tóm tắt lúc ${timeLabel(i.saved.created_at)}${hasNews(i) ? " · có tin mới" : ""}`;
+  };
   return (
     <nav aria-label="Nhóm Briefing" className="no-scrollbar h-full min-h-0 overflow-y-auto px-2 pb-3">
       <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
@@ -832,24 +811,65 @@ export function BriefingGroups({ selected, onSelect, collapsed }: {
             {selected === null && <NavPill />}
             <Sparkles className="relative size-5 shrink-0 text-hl" aria-hidden />
             <span className={cn("relative min-w-0 flex-1 truncate font-medium", fade)}>Tất cả nhóm</span>
-            {news > 0 && <span className={cn("relative shrink-0 text-xs text-signal-2", fade)}>{news} có tin mới</span>}
+            {count(total)}
           </button>
         </li>
-        {groups.map((i) => (
-          <li key={i.chat_id}>
-            <button type="button" aria-current={selected === i.chat_id} onClick={() => onSelect(i.chat_id)} className={row(selected === i.chat_id)}>
-              {selected === i.chat_id && <NavPill />}
-              <span className="relative shrink-0">
-                <Avatar name={i.title} />
-                <span className="absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-full bg-paper-2 p-0.5"><StatusDot i={i} /></span>
+        {groups.map((i) => asking === i.chat_id && !collapsed ? (
+          <li key={i.chat_id} role="alert" className="grid gap-1.5 rounded-md bg-error/10 p-2 text-xs text-ink">
+            <span>Bỏ <b className="font-semibold">{i.title}</b> khỏi Briefing? AI thôi đọc nhóm, bản tóm tắt bị xóa.</span>
+            <span className="flex justify-end gap-1">
+              <Button size="xs" variant="ghost" onClick={() => setAsking(null)}>Thôi</Button>
+              <Button size="xs" variant="destructive" aria-busy={remove.isPending} disabled={remove.isPending || running} onClick={() => remove.mutate(i.chat_id)}>
+                {remove.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Trash2 aria-hidden />} Bỏ
+              </Button>
+            </span>
+          </li>
+        ) : (
+          <li key={i.chat_id} className="group/g relative">
+            <Hint side="right" text={status(i)}>
+              <button type="button" aria-current={selected === i.chat_id} onClick={() => onSelect(i.chat_id)} className={row(selected === i.chat_id)}>
+                {selected === i.chat_id && <NavPill />}
+                <span className="relative shrink-0">
+                  <Avatar name={i.title} />
+                  <span className="absolute -right-0.5 -bottom-0.5 grid place-items-center rounded-full bg-paper-2 p-0.5"><StatusDot i={i} r={runs[i.chat_id]} /></span>
+                </span>
+                <span className={cn("relative min-w-0 flex-1 truncate", hasNews(i) && "font-medium text-ink", fade)}>{i.title}</span>
+                {count(left(i), !collapsed ? "group-hover/g:invisible group-focus-within/g:invisible" : undefined)}
+              </button>
+            </Hint>
+            {!collapsed && (
+              <span className="absolute inset-y-0 right-1 hidden items-center rounded-md bg-paper-3 group-focus-within/g:flex group-hover/g:flex">
+                {hasNews(i) && (
+                  <Hint side="bottom" text="Tóm tắt tin mới của nhóm này">
+                    <button type="button" aria-label={`Tóm tắt ${i.title}`} disabled={running} onClick={() => void runBrief(qc, [i])} className={cn(act, "text-hl-2")}>
+                      <Sparkles className="size-3.5" aria-hidden />
+                    </button>
+                  </Hint>
+                )}
+                <Hint side="bottom" text="Mở trang Tóm tắt của nhóm (chọn khoảng thời gian, chọn tin)">
+                  <button type="button" aria-label={`Mở ${i.title}`} onClick={() => onOpenDigest(i.chat_id, i.title)} className={act}>
+                    <ArrowUpRight className="size-3.5" aria-hidden />
+                  </button>
+                </Hint>
+                <Hint side="bottom" text="Bỏ khỏi Briefing: AI thôi đọc nhóm này, bản tóm tắt đã lưu bị xóa">
+                  <button type="button" aria-label={`Bỏ ${i.title} khỏi Briefing`} disabled={running} onClick={() => setAsking(i.chat_id)} className={cn(act, "hover:bg-error/10 hover:text-error")}>
+                    <Trash2 className="size-3.5" aria-hidden />
+                  </button>
+                </Hint>
               </span>
-              <span className={cn("relative min-w-0 flex-1 truncate", hasNews(i) && "font-medium text-ink", fade)}>{i.title}</span>
-              <span className={cn("relative shrink-0 text-xs", hasNews(i) ? "text-signal-2" : "text-ink-3", fade)}>
-                {hasNews(i) ? "tin mới" : i.saved ? timeLabel(i.saved.created_at) : "chưa tóm tắt"}
-              </span>
-            </button>
+            )}
           </li>
         ))}
+        {list.isSuccess && (
+          <li>
+            <AddGroup blocked={items.filter((i) => !i.consent)} known={new Set(items.map((i) => i.chat_id))} onPick={onOpenDigest}
+              className={cn(row(false), "text-ink-3 data-popup-open:bg-paper-3 data-popup-open:text-ink")}>
+              <span className="grid size-5 shrink-0 place-items-center rounded-full border border-dashed border-rule-2"><Plus className="size-3" aria-hidden /></span>
+              <span className={cn("min-w-0 flex-1 truncate", fade)}>Thêm nhóm</span>
+              {count(items.filter((i) => !i.consent).length)}
+            </AddGroup>
+          </li>
+        )}
       </ul>
       {list.isPending && <div className="grid gap-2 px-3 pt-2">{[0, 1, 2].map((k) => <Skeleton key={k} className="h-4" style={{ width: `${70 - k * 12}%` }} />)}</div>}
       {list.isError && (
@@ -859,7 +879,7 @@ export function BriefingGroups({ selected, onSelect, collapsed }: {
         </div>
       )}
       {list.isSuccess && !groups.length && (
-        <p className={cn("px-3 py-2 text-sm leading-relaxed text-ink-3", fade)}>Chưa theo dõi nhóm nào. Mở Tất cả nhóm để thêm nhóm cho AI tóm tắt.</p>
+        <p className={cn("px-3 py-2 text-sm leading-relaxed text-ink-3", fade)}>Chưa có nhóm nào. Bấm “Thêm nhóm” để chọn nhóm cho AI tóm tắt.</p>
       )}
     </nav>
   );

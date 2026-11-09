@@ -33,14 +33,15 @@ function Delta({ cur, prev, lowerBetter }: { cur: number | null | undefined; pre
 
 /** "Tuần của tôi" (top of Briefing): the last 7 days of tags: how many came, how you handled them, how fast, and the
  *  slowest groups; arrows compare with the 7 days before. From stored tags only (backend /api/stats/week, no AI). */
-export function WeekStatsCard() {
+/** `className` replaces the strip's frame (Briefing shows it in a popover); `empty`: shown when there is nothing yet. */
+export function WeekStatsCard({ className, empty = null }: { className?: string; empty?: React.ReactNode } = {}) {
   const q = useQuery({
     queryKey: ["stats-week"],
     queryFn: ({ signal }) => api<WeekStats>("/stats/week", { signal }),
     staleTime: 5 * 60_000,
   });
   const s = q.data;
-  if (!s || (!s.cur.received && !s.prev.received)) return null;
+  if (!s || (!s.cur.received && !s.prev.received)) return empty;
   const { cur, prev } = s;
   const stat = (label: string, value: React.ReactNode, hint?: string) => {
     const body = (
@@ -52,7 +53,7 @@ export function WeekStatsCard() {
     return hint ? <Hint side="bottom" text={hint}>{body}</Hint> : body;
   };
   return (
-    <section aria-label="Tuần của tôi" className="shrink-0 border-b px-3 py-2 md:px-5">
+    <section aria-label="Tuần của tôi" className={className ?? "shrink-0 border-b px-3 py-2 md:px-5"}>
       <dl className="flex flex-wrap items-end gap-x-6 gap-y-2">
         <span className="flex items-center gap-1.5 self-center text-xs font-semibold text-ink"><Gauge className="size-3.5 text-ink-3" aria-hidden />Tuần của tôi</span>
         {stat("Tag nhận", <>{cur.received}<Delta cur={cur.received} prev={prev.received} /></>, "Tin tag / trả lời bạn trong 7 ngày qua")}

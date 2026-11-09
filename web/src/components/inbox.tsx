@@ -440,7 +440,7 @@ function Inbox({ status }: { status: Status }) {
           {showBrief && (
             <div className="min-h-0 flex-1">
               <BriefingGroups collapsed={collapsed} selected={chatId === BRIEFING ? briefGroup : undefined}
-                onSelect={(id) => { setBriefGroup(id); go(BRIEFING); }} />
+                onSelect={(id) => { setBriefGroup(id); go(BRIEFING); }} onOpenDigest={(id, name) => { go(id); setNamed(name); setDigest(true); }} />
             </div>
           )}
         </div>

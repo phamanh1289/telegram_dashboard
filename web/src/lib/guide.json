@@ -229,11 +229,11 @@
 "at": "Briefing"
 },
 {
-"t": "Mục \"Nhóm · Briefing\" bên dưới: bấm một nhóm để chỉ xem việc của nhóm đó; \"Tất cả nhóm\" để xem lại tất cả",
+"t": "Mục \"Nhóm · Briefing\" bên dưới: mỗi nhóm kèm số việc còn chờ; bấm một nhóm để chỉ xem việc của nhóm đó, \"Tất cả nhóm\" để xem lại tất cả",
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
 },
 {
-"t": "Bấm \"Tóm tắt N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới",
+"t": "Bấm \"Tóm tắt N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới (đang xem một nhóm: \"Tóm tắt nhóm này\")",
 "at": "css:#briefing-run"
 }
 ],
@@ -244,9 +244,12 @@
 "tab": "telegram",
 "area": "Briefing › Tuần của tôi",
 "title": "Tuần của tôi (thời gian xử lý tag)",
-"what": "Thẻ dưới tiêu đề Briefing so tuần này với tuần trước: số tag nhận, đã xử lý (trả lời / Xong / tự xong), thời gian xử lý trung vị và mức 90% tag xong trong khoảng đó, cùng 5 nhóm xử lý chậm nhất.",
+"what": "Nút đồng hồ \"Tuần của tôi\" trên đầu Briefing so tuần này với tuần trước: số tag nhận, đã xử lý (trả lời / Xong / tự xong), thời gian xử lý trung vị và mức 90% tag xong trong khoảng đó, cùng 5 nhóm xử lý chậm nhất.",
 "how": [
-"Mở Briefing, xem thẻ “Tuần của tôi”",
+{
+"t": "Mở Briefing, bấm nút đồng hồ \"Tuần của tôi\" ở góc phải trên",
+"at": "Tuần của tôi"
+},
 "Rê chuột lên từng số để xem giải thích"
 ],
 "keys": "tuan cua toi tuần của tôi thong ke thống kê thoi gian phan hoi thời gian phản hồi trung vi trung vị p90 nhom cham nhóm chậm"
@@ -600,8 +603,8 @@
 },
 "Bấm nút dừng tròn đỏ trên dải tiến độ để hủy giữa chừng",
 {
-"t": "Muốn tóm tắt một nhóm: bấm biểu tượng ✦ trên chip của nhóm đó (hàng chip dưới tiêu đề)",
-"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Tóm tắt \"]"
+"t": "Muốn tóm tắt một nhóm: rê chuột vào nhóm ở mục \"Nhóm · Briefing\" của thanh bên, bấm ✦",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Tóm tắt \"]"
 },
 {
 "t": "Đổi model / effort riêng cho Briefing ở dưới ô hỏi của Trợ lý Briefing",
@@ -619,11 +622,15 @@
 "tab": "telegram",
 "area": "Briefing › Trợ lý Briefing",
 "title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
-"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\") là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages.",
+"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính ẩn / hiện bằng nút khung ở góc phải trên, app nhớ lựa chọn) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
 "at": "Briefing"
+},
+{
+"t": "Trên máy tính, nếu khung đang ẩn: bấm nút \"Trợ lý AI\" (biểu tượng khung) ở góc phải trên",
+"at": "css:button[aria-label=\"Trợ lý AI\"]"
 },
 {
 "t": "Bấm một thẻ gợi ý, hoặc gõ câu hỏi vào ô \"Hỏi về mọi nhóm…\" rồi Enter",
@@ -663,27 +670,31 @@
 "id": "briefing-group-cards",
 "tab": "telegram",
 "area": "Briefing › Hàng chip nhóm",
-"title": "Trạng thái từng nhóm, lọc theo nhóm và copy tất cả",
-"what": "Mỗi nhóm là một chip dưới tiêu đề: chấm vàng = có tin mới, xanh = đã cập nhật, số = mục chưa xử lý. Bấm chip để chỉ xem việc của nhóm đó; mũi tên ↗ mở trang Tóm tắt đầy đủ của nhóm. Có thể chép mọi bản tóm tắt thành một Markdown.",
+"title": "Nhóm ở thanh bên: lọc, tóm tắt, mở, bỏ nhóm",
+"what": "Mục \"Nhóm · Briefing\" của thanh bên liệt kê các nhóm: chấm vàng = có tin mới, xanh = đã cập nhật, số = việc còn chờ (tự giảm khi bạn đánh dấu xử lý). Bấm nhóm để chỉ xem việc của nhóm đó; rê chuột vào nhóm để hiện ✦ tóm tắt nhóm, ↗ mở trang Tóm tắt, 🗑 bỏ khỏi Briefing (AI thôi đọc nhóm, bản tóm tắt bị xóa; thêm lại bằng \"Thêm nhóm\"). Nút Copy ở góc phải trên chép mọi bản tóm tắt thành một Markdown.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Bấm chip của một nhóm để lọc danh sách việc theo nhóm đó; bấm \"Tất cả nhóm\" để bỏ lọc",
-"at": "css:[aria-label=\"Lọc theo nhóm\"]"
+"t": "Bấm một nhóm ở mục \"Nhóm · Briefing\" để chỉ xem việc của nhóm đó; \"Tất cả nhóm\" để xem lại tất cả",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
 },
 {
-"t": "Bấm ↗ trên chip để mở trang Tóm tắt của nhóm",
-"at": "css:[aria-label=\"Lọc theo nhóm\"] button[aria-label^=\"Mở \"]"
+"t": "Rê chuột vào nhóm, bấm ↗ để mở trang Tóm tắt của nhóm",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Mở \"]"
+},
+{
+"t": "Rê chuột vào nhóm, bấm thùng rác rồi \"Bỏ\" để bỏ nhóm khỏi Briefing",
+"at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label$=\"khỏi Briefing\"]"
 },
 {
 "t": "Bấm \"Copy tất cả\" để chép Markdown của mọi nhóm",
 "at": "Copy tất cả"
 }
 ],
-"keys": "copy tat ca briefing markdown co tin moi nhom chip loc theo nhom trang thai"
+"keys": "copy tat ca briefing markdown co tin moi nhom chip loc theo nhom trang thai bo nhom xoa nhom khoi briefing thu hoi go nhom thanh ben sidebar nhom briefing so viec con cho"
 },
 {
 "id": "briefing-saved",
@@ -709,14 +720,14 @@
 "tab": "telegram",
 "area": "Briefing › Hàng chip nhóm › Thêm",
 "title": "Thêm nhóm chưa tag vào Briefing",
-"what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép AI nằm đầu danh sách trong \"Thêm\".",
+"what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép AI nằm đầu danh sách trong \"Thêm nhóm\" (cuối mục \"Nhóm · Briefing\" ở thanh bên).",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Bấm chip \"+ Thêm\" ở cuối hàng chip nhóm",
+"t": "Bấm \"Thêm nhóm\" ở cuối mục \"Nhóm · Briefing\" của thanh bên",
 "at": "Thêm nhóm"
 },
 {

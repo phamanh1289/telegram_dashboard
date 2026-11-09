@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { IssueDialog } from "@/components/composer-dialogs";
 import { AiThinking } from "@/components/ai/chat";
 import { BeTopics } from "@/components/be-topics";
@@ -65,14 +65,22 @@ const OPEN = ["confirmations", "actions"] as const;
 const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0).toString(36);
 export const todoKey = (chat: string, kind: string, it: DigestItem) => `${chat}:${kind}:${it.message_ids?.length ? it.message_ids.join(",") : hash(it.text)}`;
 
+// One store for the page, the sidebar's counts and a group's Tóm tắt: a tick shows everywhere at once.
+let doneSet: Set<string> | null = null;
+const doneSubs = new Set<() => void>();
+const NONE = new Set<string>();
+const readDone = () => (doneSet ??= new Set(readList(DONE, [], isString)));
+const subDone = (f: () => void) => { doneSubs.add(f); return () => { doneSubs.delete(f); }; };
+
 export function useDone() {
-  const [done, setDone] = useState<Set<string>>(() => new Set(readList(DONE, [], isString)));
-  const toggle = (key: string) => setDone((prev) => {
-    const next = new Set(prev);
+  const done = useSyncExternalStore(subDone, readDone, () => NONE);
+  const toggle = (key: string) => {
+    const next = new Set(readDone());
     if (!next.delete(key)) next.add(key);
     put(DONE, JSON.stringify([...next].slice(-500))); // ponytail: oldest marks drop off past 500
-    return next;
-  });
+    doneSet = next;
+    doneSubs.forEach((f) => f());
+  };
   return [done, toggle] as const;
 }
 
@@ -87,9 +95,13 @@ export const answeredQuery = {
 export const isClosedItem = (chat: string, kind: string, it: DigestItem, done: Set<string>, answered?: Record<string, string[]>) =>
   done.has(todoKey(chat, kind, it)) || ((OPEN as readonly string[]).includes(kind) && !!it.message_ids?.some((id) => answered?.[chat]?.includes(id)));
 
+/** What still waits in a group's latest digest: open questions / to-dos not ticked off or replied to. */
+export const openCount = (chat: string, r: DigestResult | undefined, done: Set<string>, answered?: Record<string, string[]>) =>
+  OPEN.reduce((n, k) => n + (r?.[k] ?? []).filter((it) => !isClosedItem(chat, k, it, done, answered)).length, 0);
+
 /** A chat's open items I have closed, as their joined message ids: the next digest drops them instead of carrying them on. */
 export function closedIds(chat: string, r: DigestResult | undefined, answered?: Record<string, string[]>) {
-  const done = new Set(readList(DONE, [], isString));
+  const done = readDone();
   return OPEN.flatMap((k) => (r?.[k] ?? []).filter((it) => it.message_ids?.length && isClosedItem(chat, k, it, done, answered)))
     .map((it) => it.message_ids!.join(","));
 }
