@@ -29,6 +29,8 @@ Trước release đầu tiên có chữ ký, **user tự chạy** (agent không 
 ```bash
 gh secret set RELEASE_SIGNING_KEY < ~/.config/telegram-dashboard/release_signing_key.pem
 ```
+Đặt qua web (Settings › Secrets › Actions): dán bản base64 một dòng, `base64 -i ~/.config/telegram-dashboard/release_signing_key.pem | pbcopy`
+(dán PEM nhiều dòng qua web từng làm hỏng khóa ở v0.1.8–v0.1.10; CI nhận cả PEM lẫn base64).
 Mất khóa riêng → tạo cặp mới, commit `release_key.pem` mới, set lại secret; bản đã cài với khóa cũ phải cài lại
 bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa khác).
 
