@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { Kbd } from "@/components/ui/kbd";
+import { Segmented } from "@/components/ui/segmented";
 import type { Message, PendingItem } from "@/lib/api";
 import { COMPOSER, fold, getMessage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, setHandled, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
 import { doneLoopItem, type LoopItem, loopKey, useLoopItems } from "@/lib/report-back";
@@ -47,8 +48,10 @@ export function PendingInbox({
   onUseText,
   itemsRef,
   jump,
+  onPinned,
 }: {
   pinned?: boolean;
+  onPinned?: (pinned: boolean) => void; // the "Đang chờ / Đã ghim" tabs
   range: string;
   search: string;
   onClearSearch: () => void;
@@ -118,6 +121,8 @@ export function PendingInbox({
     <section aria-label={pinned ? "Tag đã ghim" : "Việc cần xử lý"} className="relative flex min-h-0 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label="Quay lại"><ArrowLeft /></Button>
+        {onPinned && <Segmented id="pending-tab" label="Đang chờ hoặc đã ghim" value={pinned ? "pinned" : "todo"} onChange={(v) => onPinned(v === "pinned")}
+          items={[{ value: "todo", label: "Đang chờ", title: "Tin tag bạn chưa xử lý" }, { value: "pinned", label: "Đã ghim", title: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)" }]} />}
         <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
           {!q.data ? "Đang tải…" : items.length === 0 ? (pinned ? "Chưa có tin ghim" : "Không còn việc nào") : (
             <>

@@ -18,7 +18,7 @@ import { TasksPage } from "@/components/tasks-page";
 import { PendingInbox } from "@/components/pending-inbox";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutsDialog } from "@/components/shortcuts";
-import { Toaster, TopBar, useYtRisk } from "@/components/shell";
+import { Toaster, TopBar } from "@/components/shell";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -326,12 +326,6 @@ function Inbox({ status }: { status: Status }) {
   const hints: Record<string, string> = {
     [TODAY]: "Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)",
     [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
-    "/youtrack/": "Trang chủ YouTrack theo vai trò: việc hôm nay, kiểm thử hoặc tổng quan.",
-    "/youtrack/?view=tickets": "Danh sách ticket YouTrack: lọc, tìm, board.",
-    "/youtrack/?view=dash": "Biểu đồ và số liệu project theo vai trò.",
-    "/youtrack/?view=release": "Theo dõi go-live của sprint phát hành.",
-    "/youtrack/?view=people": "Tải việc và ticket của từng thành viên.",
-    "/youtrack/?view=ai": "Mọi cuộc hỏi AI, cả YouTrack lẫn Trợ lý Briefing (tab Telegram): đọc lại, hỏi tiếp.",
     [QA]: "Đăng câu hỏi vào nhóm bất kỳ (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời. Số: trả lời mới cộng câu của bạn chưa ai trả lời quá ngưỡng nhắc.",
     [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
     [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
@@ -347,7 +341,6 @@ function Inbox({ status }: { status: Status }) {
   const qa = useQaNews(qaDays, chatId === QA);
   const [briefGroup, setBriefGroup] = useState<string | null>(null); // Briefing: one group's items (null: all)
   const briefList = useQuery({ ...briefingQuery, enabled: aiOn }).data ?? [];
-  const ytRisk = useYtRisk(true); // my risky tickets: a badge on the YouTrack home icon (was on the module switch)
   const briefNews = briefList.filter((i) => i.consent && hasNews(i)).length;
   useAutoBrief(aiOn);
   // Sidebar sections; `views` (all pages, flat) also feeds the header title, g-keys and ⌘K.
@@ -363,7 +356,7 @@ function Inbox({ status }: { status: Status }) {
       ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
     ] },
     { label: "YouTrack", items: [
-      ["/youtrack/", "Trang chủ YouTrack", ytRisk.length, Home],
+      ["/youtrack/", "Trang chủ YouTrack", 0, Home],
       ["/youtrack/?view=tickets", "Ticket", 0, ListChecks],
       ["/youtrack/?view=dash", "Dashboard", 0, LayoutDashboard],
       ["/youtrack/?view=release", "Release", 0, Rocket],
@@ -418,42 +411,33 @@ function Inbox({ status }: { status: Status }) {
             <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox · có AI trợ lực</span>
           </span>
         </div>
-        <nav aria-label="Trang" className="grid gap-0.5">
-          {sections.filter((s) => s.items.length).map((s) => s.label === "YouTrack" ? (
-            // The YouTrack pages: one row of icons, so the group list keeps its room (the rail has the module switch)
-            <section key={s.label} aria-label={s.label} className={cn("flex items-center gap-1 px-1 pt-1", collapsed && "md:hidden")}>
-              <span className="mr-auto pl-1.5 text-[11px] font-semibold tracking-wide text-ink-3 uppercase">YouTrack</span>
-              {s.items.map(([id, label, count, Icon]) => (
-                <Hint key={id} title={label} text={count ? `${hints[id]} ${count} ticket cần xử lý ngay: ${ytRisk.slice(0, 5).join(", ")}${count > 5 ? "…" : ""}` : hints[id]}>
-                  <Link href={id} aria-label={`YouTrack › ${label}${count ? ` (${count} ticket cần xử lý ngay)` : ""}`}
-                    className="relative grid size-8 place-items-center rounded-[var(--radius-input)] text-ink-3 transition-[background-color,color,translate] duration-(--dur-micro) hover:-translate-y-px hover:bg-paper-3 hover:text-ink motion-reduce:transition-none">
-                    <Icon className="size-4" aria-hidden />
-                    {count > 0 && <span aria-hidden className="absolute -top-1 -right-1 min-w-4 rounded-full bg-signal px-1 font-mono text-[10px] leading-4 text-white tabular-nums">{count}</span>}
-                  </Link>
-                </Hint>
-              ))}
-            </section>
-          ) : (
+        <nav aria-label="Trang" className="grid grid-cols-1 gap-0.5">
+          {/* YouTrack pages stay in `views` for ⌘K; the top bar's module switch is the way there. */}
+          {sections.filter((s) => s.items.length && s.label !== "YouTrack").map((s) => (
             <section key={s.label} aria-label={s.label} className="grid gap-0.5">
               <SideHeading label={s.label} fade={t} rail={collapsed} />
-              {s.items.map(([id, label, count, Icon]) => (
-                <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={chatId === id ? "page" : undefined} aria-label={label}
+              {/* "Tag đã ghim" is a tab inside Việc cần xử lý (still in ⌘K and g p), not a row here */}
+              {s.items.filter(([id]) => id !== PINNED).map(([id, label, count, Icon]) => {
+                const on = chatId === id || (id === ALL && chatId === PINNED);
+                return (
+                <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={on ? "page" : undefined} aria-label={label}
                   onClick={() => { if (id === BRIEFING) setBriefGroup(null); go(id); }}
                   className={cn(
                     "group/item relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
-                    chatId === id ? "font-semibold text-hl-2" : "text-ink-2 hover:bg-paper-3 hover:text-ink",
+                    on ? "font-semibold text-hl-2" : "text-ink-2 hover:bg-paper-3 hover:text-ink",
                   )}>
-                  {chatId === id && <Pill id="tg-page" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
-                  <Icon className={cn("relative size-[1.125rem] shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none", chatId !== id && "text-ink-3 group-hover/item:text-ink-2")} aria-hidden />
+                  {on && <Pill id="tg-page" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
+                  <Icon className={cn("relative size-[1.125rem] shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none", !on && "text-ink-3 group-hover/item:text-ink-2")} aria-hidden />
                   <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
                   {count > 0 && (
-                    <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, chatId === id ? "bg-hl text-hl-ink" : id === BRIEFING ? "bg-signal-wash text-signal-2" : "bg-paper-3 text-ink-2")}>
+                    <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, on ? "bg-hl text-hl-ink" : id === BRIEFING ? "bg-signal-wash text-signal-2" : "bg-paper-3 text-ink-2")}>
                       <span className="sr-only">(</span>{count}<span className="sr-only">{countSr[id] ? ` ${countSr[id]})` : ")"}</span>
                     </span>
                   )}
                   {collapsed && count > 0 && <span aria-hidden className={cn("absolute top-1.5 left-7 size-2 rounded-full ring-2 ring-paper-2 md:group-hover/side:hidden md:group-focus-within/side:hidden max-md:hidden", id === TASKS ? "bg-hl" : "bg-signal")} />}
                 </button></Hint>
-              ))}
+                );
+              })}
             </section>
           ))}
         </nav>
@@ -575,7 +559,7 @@ function Inbox({ status }: { status: Status }) {
                   <TasksPage key={focus ?? ""} focus={focus} headSlot={headSlot} onOpenGroup={go} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} onClearSearch={() => setSearch("")} replyTo={replyTo && msgKey(replyTo)} onReply={pickReply}
-                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} />
+                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} onPinned={(p) => go(p ? PINNED : ALL)} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
                 ) : (

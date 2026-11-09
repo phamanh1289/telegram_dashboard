@@ -71,8 +71,11 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const one = list.length === 1 ? list[0] : null;
   const { lib } = usePrompts();
   const fits = (b: Builtin) => list.length > 0 && fitsCount(b, list.length > 1);
+  // asked: the tickets now live in the AI history, so the table's selection of them is let go
+  const unpick = () => y.setPicked((p) => (list.some((id) => p.has(id)) ? new Set([...p].filter((id) => !list.includes(id))) : p));
   function runBuiltin(b: Builtin) {
     setRetry(undefined);
+    unpick();
     const k = b.kind;
     const run = (sig: AbortSignal) =>
       k === "notes" ? yt.aiData("notes", rows.map((r) => ({ id: r.id, type: r.type, summary: r.summary })), sig)
@@ -120,6 +123,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
       return;
     }
     setPrompt("");
+    unpick();
     void ai.run({ label: dir ? `AI đang đọc ${list.length} ticket và code ${folder!.name}` : `AI đang đọc ${list.length} ticket`, q: ask, run: (sig) => yt.aiTickets(list, scope, "ask", sig, ask, undefined, 0, [], dir, sh) });
   }
 

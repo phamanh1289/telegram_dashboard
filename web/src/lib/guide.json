@@ -2,9 +2,9 @@
 {
 "id": "module-switch",
 "tab": "telegram",
-"area": "Cài đặt › Thanh trên cùng",
+"area": "Thanh trên cùng › Telegram / YouTrack",
 "title": "Chuyển module Telegram / YouTrack",
-"what": "Trang Cài đặt (không có thanh bên) có hai nút Telegram / YouTrack để quay về. Ở trang Telegram và YouTrack, đi qua lại bằng thanh bên: mục YouTrack bên Telegram (trang chủ YouTrack có huy hiệu số ticket cần xử lý ngay), mục Telegram bên YouTrack, hoặc ⌘K.",
+"what": "Hai tab Telegram / YouTrack ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa hai module; tab đang mở được tô sáng, tab YouTrack có huy hiệu đỏ = số ticket của bạn cần xử lý ngay. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
 "how": [
 {
 "t": "Rê chuột vào \"YouTrack\" để xem ticket cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
@@ -162,7 +162,7 @@
 {
 "id": "view-pinned",
 "tab": "telegram",
-"area": "Thanh bên › Tag đã ghim",
+"area": "Việc cần xử lý › Đã ghim",
 "title": "Tag đã ghim",
 "what": "Danh sách các tin bạn đã ghim để giữ lại, kể cả khi đã xử lý.",
 "how": [
@@ -171,8 +171,8 @@
 "at": "Ghim"
 },
 {
-"t": "Bấm \"Tag đã ghim\" ở thanh bên để xem các tin đã ghim",
-"at": "Tag đã ghim"
+"t": "Mở Việc cần xử lý, bấm \"Đã ghim\" ở đầu danh sách (hoặc g rồi p)",
+"at": "Đã ghim"
 }
 ],
 "keys": "tag da ghim pinned ghim pin luu tin giu lai"
@@ -305,7 +305,7 @@
 "title": "Trạng thái kết nối Telegram",
 "what": "Cho biết đã kết nối Telegram chưa (Đã kết nối / Mất kết nối, đang thử lại / Cần đăng nhập…) và luồng cập nhật trực tiếp có đang chạy không.",
 "how": [
-"Xem thẻ ở cuối thanh bên: robot AI cắm dây vào Telegram là đã kết nối (xung chạy dọc dây = đang cập nhật trực tiếp); dây tuột, xám là mất kết nối",
+"Xem cuối thanh bên: một dòng có chấm xanh \"Đã kết nối Telegram · Cập nhật trực tiếp\" là mọi thứ ổn; khi có vấn đề nó thành thẻ robot AI cắm dây (dây tuột, xám là mất kết nối; robot với tới là đang kết nối)",
 "Nếu báo \"AI chờ bạn đăng nhập\" hoặc \"Chưa có dây Telegram\", bấm vào thẻ đó để mở Cài đặt Telegram",
 "Làm theo mục \"Tài khoản Telegram\": nhập API ID/Hash rồi đăng nhập"
 ],
@@ -854,15 +854,15 @@
 "tab": "telegram",
 "area": "Dòng tin › Ghim",
 "title": "Ghim / Bỏ ghim tin",
-"what": "Ghim tin lên đầu danh sách và giữ nó trong \"Tag đã ghim\", kể cả khi đã xử lý.",
+"what": "Ghim tin lên đầu danh sách và giữ nó trong \"Đã ghim\" (đầu trang Việc cần xử lý), kể cả khi đã xử lý.",
 "how": [
 {
 "t": "Bấm biểu tượng ghim \"Ghim\" (rê chuột vào nút Xong của tin để hiện)",
 "at": "Ghim"
 },
 {
-"t": "Mở \"Tag đã ghim\" ở thanh bên để thấy tin vừa ghim.",
-"at": "Tag đã ghim"
+"t": "Bấm \"Đã ghim\" ở đầu trang Việc cần xử lý để thấy tin vừa ghim.",
+"at": "Đã ghim"
 },
 {
 "t": "Bấm \"Bỏ ghim\" để bỏ.",
@@ -3913,18 +3913,6 @@
 "Gõ câu hỏi hoặc bấm một gợi ý"
 ],
 "keys": "cmd j ctrl j tro ly ai trợ lý ai hoi ai hỏi ai khung ai"
-},
-{
-"id": "cross-nav",
-"tab": "telegram",
-"area": "Thanh bên › YouTrack / Telegram",
-"title": "Đi giữa Telegram và YouTrack từ thanh bên",
-"what": "Thanh bên Telegram có một hàng icon YouTrack: Trang chủ YouTrack (huy hiệu đỏ = số ticket của bạn cần xử lý ngay), Ticket, Dashboard, Release, Thành viên, Lịch sử AI. Thanh bên YouTrack có mục Telegram (Hôm nay, Việc cần xử lý, Q&A, Briefing, AI Agent). ⌘K ở mỗi bên cũng tìm được trang của bên kia. Không còn công tắc module trên thanh trên cùng.",
-"how": [
-"Bấm một mục trong nhóm YouTrack / Telegram ở thanh bên",
-"Hoặc ⌘K rồi gõ tên trang (vd. “dashboard”)"
-],
-"keys": "chuyen module chuyển module youtrack telegram thanh ben dieu huong điều hướng"
 },
 {
 "id": "work-trail",

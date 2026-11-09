@@ -1,7 +1,6 @@
 "use client";
 
 import { Plus, CalendarCheck, Rocket, History, ClipboardList, FlaskConical, LayoutDashboard, ListChecks, Menu, RotateCw, Search, Sparkles, UserPlus, UserSearch, X } from "lucide-react";
-import Link from "next/link";
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
@@ -22,7 +21,7 @@ import { Avatar, MultiSelect, POP, YtFetching } from "./bits";
 import { DashboardPage } from "./dashboard";
 import { DevHome, PoHome, QaHome } from "./home";
 import { CreateTicket } from "./create";
-import { Palette, TG_PAGES } from "./palette";
+import { Palette } from "./palette";
 import { useWatch, WatchBell } from "./watch";
 import { Sheet } from "./sheet";
 import { type Mode, type Page, type Scope, useYt, YtProvider } from "./state";
@@ -146,15 +145,6 @@ function Shell() {
                     {p === "home" && risk > 0 && <span
                       className={cn("relative rounded-full bg-signal px-1.5 font-mono text-xs leading-[18px] text-white tabular-nums", collapsed && "md:absolute md:top-0.5 md:right-0.5")}>{risk}<span className="sr-only"> ticket cần xử lý ngay</span></span>}
                   </button></Hint>
-                ))}
-              </nav>
-              <nav aria-label="Telegram" className="mt-3 grid grid-cols-1 gap-1 border-t pt-2">
-                <span className={cn("px-2.5 pb-0.5 text-[11px] font-semibold tracking-wide text-ink-3 uppercase", fade)}>Telegram</span>
-                {TG_PAGES.map(([href, label, Icon]) => (
-                  <Link key={href} href={href} aria-label={label} onClick={() => setMenu(false)}
-                    className="relative flex min-h-9 items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-                    <Icon className="size-5 shrink-0" aria-hidden /><span className={cn("flex-1", fade)}>{label}</span>
-                  </Link>
                 ))}
               </nav>
               {!y.config?.mock && (
