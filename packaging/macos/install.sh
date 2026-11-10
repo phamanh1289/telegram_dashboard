@@ -31,18 +31,19 @@ cp "$src/Start Dashboard Telegram.command" "$DEST/"
 printf %s "$ver" >"$DEST/current"
 xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
 
-# `mydashboard start` in Terminal: a tiny command in ~/.local/bin, put on PATH via ~/.zprofile.
+# `myradar start` (alias `mydashboard`, the old name) in Terminal: a tiny command in ~/.local/bin, put on PATH via ~/.zprofile.
 bin="$HOME/.local/bin"
 mkdir -p "$bin"
-cat >"$bin/mydashboard" <<EOF
+cat >"$bin/myradar" <<EOF
 #!/bin/bash
 case "\${1:-start}" in
   start) exec $(printf %q "$DEST/Start Dashboard Telegram.command") ;;
   open) cd $(printf %q "$DEST")/versions/"\$(cat $(printf %q "$DEST/current"))"/app && exec ../python/bin/python3 -m telegram_dashboard open ;;
-  *) echo "Dùng: mydashboard start | open"; exit 2 ;;
+  *) echo "Dùng: \$(basename "\$0") start | open"; exit 2 ;;
 esac
 EOF
-chmod +x "$bin/mydashboard"
+chmod +x "$bin/myradar"
+ln -sf myradar "$bin/mydashboard"
 case ":$PATH:" in
   *":$bin:"*) ;;
   *) grep -qs '.local/bin' "$HOME/.zprofile" || echo 'export PATH="$HOME/.local/bin:$PATH"' >>"$HOME/.zprofile" ;;
@@ -70,5 +71,5 @@ EOF
 
 echo "Đã cài ${tag} vào: ${DEST}"
 echo "Lần sau mở: gõ \"Radar\" trong Spotlight / Launchpad (hoặc kéo app vào Dock),"
-echo "hoặc mở Terminal mới và gõ: mydashboard start"
+echo "hoặc mở Terminal mới và gõ: myradar start"
 open "$app"

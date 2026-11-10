@@ -45,6 +45,11 @@
     --shadow-stock: var(--edge-stock), var(--cast-stock);
     --shadow-pop: var(--cast-pop);
     --shadow-groove: var(--press-groove);
+    /* the two steps Tailwind lacks (text-2xs, text-md); xs…3xl reuse Tailwind's names, sizes from tokens.css */
+    --text-2xs: var(--text-2xs);
+    --text-2xs--line-height: 1rem;
+    --text-md: var(--text-md);
+    --text-md--line-height: 1.55;
 }
 
 @theme inline {
@@ -216,6 +221,12 @@
 .view-back { transition: opacity var(--dur-long) var(--ease-emph), translate var(--dur-long) var(--ease-emph); }
 @starting-style { .view-back { opacity: 0; translate: -1rem 0; } }
 @media (prefers-reduced-motion: reduce) { .page-in, .detail-in { animation: none; } .view-back { transition: none; } }
+/* Fold (Thay đổi file cards): rows 0fr -> 1fr, no height measuring; hidden once shut so nothing inside takes focus. */
+.fold { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
+  transition: grid-template-rows var(--dur-long) var(--ease-emph), opacity var(--dur-short) var(--ease-out), visibility 0s linear var(--dur-long); }
+.fold[data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.fold > * { min-height: 0; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .fold { transition: none; } }
 
 /* Popups (ui/dialog, ui/palette). base-ui marks the first frame [data-starting-style] and closing [data-ending-style], so these are
    interruptible transitions, not keyframes: open on --ease-emph over --dur-long, close quicker on --ease-in.
@@ -310,6 +321,19 @@
 .ai-twinkle { animation: ai-twinkle 1.2s ease-in-out infinite; }
 @keyframes ai-twinkle { 50% { scale: 0.55; opacity: 0.5; } }
 @media (prefers-reduced-motion: reduce) { .ai-float, .ai-shadow, .ai-halo, .ai-beam, .ai-packet, .sk-grow, .sk-pop, .sk-caret, .ai-spin, .ai-twinkle { animation: none; } }
+/* AgentIcon (ai/agent-icon.tsx): each AI CLI's mascot bobs (Antigravity over a breathing shadow, its moon on the ring),
+   Codex's prompt nudges; the whole mascot hops once on hover. */
+.agent:hover { animation: agent-hop 0.6s ease-in-out; }
+@keyframes agent-hop { 30% { translate: 0 -12%; rotate: -8deg; } 60% { translate: 0 0; rotate: 6deg; } }
+.agent-bob { animation: agent-bob 2.6s ease-in-out infinite; }
+@keyframes agent-bob { 50% { translate: 0 var(--bob, -1.5px); } }
+.agent-nudge { animation: agent-nudge 1.6s ease-in-out infinite; }
+@keyframes agent-nudge { 50% { translate: 2px 0; } }
+.agent-orbit { animation: agent-orbit 3.2s linear infinite; }
+@keyframes agent-orbit { to { offset-distance: 100%; } }
+.agent-shadow { transform-box: fill-box; transform-origin: center; animation: agent-shadow 2.6s ease-in-out infinite; }
+@keyframes agent-shadow { 50% { scale: 0.7; opacity: 0.2; } }
+@media (prefers-reduced-motion: reduce) { .agent:hover, .agent-bob, .agent-nudge, .agent-orbit, .agent-shadow { animation: none; } }
 /* ConfirmDialog danger badge (ui/dialog.tsx): the icon inside shakes once as it opens. */
 .confirm-shake svg { animation: confirm-shake 0.6s ease-in-out 0.15s; }
 @keyframes confirm-shake { 20%, 60% { rotate: -14deg; } 40%, 80% { rotate: 12deg; } }
@@ -383,22 +407,24 @@
 /* Rendered markdown (components/markdown.tsx): AI answers, YouTrack text */
 .md { overflow-wrap: anywhere; }
 .md > * + * { margin-top: 0.6em; }
-.md :is(h1, h2, h3, h4) { margin-top: 1em; font-weight: 600; line-height: 1.35; }
+.md :is(h1, h2, h3, h4) { margin-top: 1em; font-weight: 700; line-height: 1.35; }
 .md h1 { font-size: 1.15em; } .md h2 { font-size: 1.08em; } .md :is(h3, h4) { font-size: 1em; }
 .md :is(ul, ol) { padding-left: 1.4em; } .md ul { list-style: disc; } .md ol { list-style: decimal; }
 .md li + li, .md li > :is(ul, ol) { margin-top: 0.25em; }
 .md li::marker { color: var(--color-ink-3); }
 .md a { color: var(--color-hl-2); text-decoration: underline; text-underline-offset: 2px; }
-.md strong { font-weight: 600; }
+.md strong { font-weight: 700; }
 .md code { font-family: var(--font-mono); font-size: 0.875em; }
 .md :not(pre) > code { border-radius: 4px; background: var(--color-code-wash); padding: 0.05em 0.3em; }
 .md pre { overflow-x: auto; border-radius: 6px; background: var(--color-paper-2); padding: 0.7em 0.85em; font-size: 0.8125rem; line-height: 1.55; }
 .md blockquote { border-left: 2px solid var(--color-rule-2); padding-left: 0.8em; color: var(--color-ink-2); }
 .md table { display: block; overflow-x: auto; border-collapse: collapse; font-size: 0.875em; }
 .md :is(th, td) { border: 1px solid var(--color-rule); padding: 0.3em 0.6em; text-align: left; }
-.md th { background: var(--color-paper-2); font-weight: 600; }
+.md th { background: var(--color-paper-2); font-weight: 700; }
 .md hr { border-color: var(--color-rule); }
 .md input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
 /* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
 .yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }
+/* A mascot standing still (long lists, e.g. History rows: hundreds of looping animations would cost frames). */
+.agent-still, .agent-still * { animation: none !important; }

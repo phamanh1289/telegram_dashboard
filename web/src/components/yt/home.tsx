@@ -7,6 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { fmtDay, type T, tMaybe, useT } from "@/lib/i18n";
 import { copyText, toast, Told, useNow } from "@/lib/inbox";
 import { ymd } from "@/lib/time";
 import { getPref, put, setPref } from "@/lib/prefs";
@@ -70,40 +71,41 @@ type Tab = { k: string; label: string; busy: string; hint: string; disabled?: st
  *  so opening the tab spends no quota; "Làm lại" reruns. */
 function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
   const y = useYt();
-  const [k, setK] = useState(() => { const v = getPref(`ytAiTab:${id}`); return tabs.some((t) => t.k === v) ? v! : tabs[0].k; });
-  const t = tabs.find((x) => x.k === k) ?? tabs[0];
-  const key = `ytAi:${id}:${t.k}:${t.weekly ? monday() : ymd()}`;
+  const [k, setK] = useState(() => { const v = getPref(`ytAiTab:${id}`); return tabs.some((x) => x.k === v) ? v! : tabs[0].k; });
+  const t = useT();
+  const tab = tabs.find((x) => x.k === k) ?? tabs[0];
+  const key = `ytAi:${id}:${tab.k}:${tab.weekly ? monday() : ymd()}`;
   const [ver, setVer] = useState(0); // bumped on save / delete: the answer is read from prefs for the current tab and day
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
   const setSaved = (v: Saved | null) => { setPref(key, v && JSON.stringify(v)); setVer((n) => n + 1); };
   function pick(v: string) { setK(v); setPref(`ytAiTab:${id}`, v); }
   const send = useMutation({
     mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
-    onSuccess: () => toast({ text: "Đã gửi vào Saved Messages" }),
-    onError: (e) => toast({ text: errorText(e, { not_connected: "Telegram chưa kết nối." }, "Không gửi được, thử lại sau") }),
+    onSuccess: () => toast({ text: t("Đã gửi vào Saved Messages") }),
+    onError: (e) => toast({ text: errorText(e, { not_connected: t("Telegram chưa kết nối.") }, t("Không gửi được, thử lại sau")) }),
   });
   // every run opens the AI session; a saved answer opens there too, so it can be followed up
-  const open = (fresh: boolean) => y.setSheet({ kind: "work", title: `AI · ${t.label}`, ids: (t.ids ?? []).slice(0, AI_MAX), auto: {
-    label: t.busy, run: t.run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined,
+  const open = (fresh: boolean) => y.setSheet({ kind: "work", title: `AI · ${tab.label}`, ids: (tab.ids ?? []).slice(0, AI_MAX), auto: {
+    label: tab.busy, run: tab.run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined,
     onDone: (r) => { setPref(key, JSON.stringify({ text: r.text, at: Date.now(), req: r.req } satisfies Saved)); setVer((n) => n + 1); },
   } });
   return (
     <Card title={<span className="inline-flex items-center gap-1.5"><Sparkles className="size-4 text-hl-2" />AI Studio</span>}
-      meta={saved ? `${t.label} lúc ${when(saved.at)}` : undefined} className="border border-hl/25">
-      <Segmented id={`ai-studio-${id}`} label="Việc của AI" value={t.k} onChange={pick} items={tabs.map((x) => ({ value: x.k, label: x.label, title: x.hint }))} className="flex-wrap justify-self-start" />
+      meta={saved ? t("{x} lúc {w}", { x: tab.label, w: when(saved.at) }) : undefined} className="border border-hl/25">
+      <Segmented id={`ai-studio-${id}`} label={t("Việc của AI")} value={tab.k} onChange={pick} items={tabs.map((x) => ({ value: x.k, label: x.label, title: x.hint }))} className="flex-wrap justify-self-start" />
       {saved ? <div className="line-clamp-6"><Markdown text={saved.text} onTicket={(i) => y.openTicket(i)} /></div>
-        : <p className="text-sm text-ink-2">{t.disabled ?? t.hint}</p>}
+        : <p className="text-sm text-ink-2">{tab.disabled ?? tab.hint}</p>}
       <div className="flex gap-1.5">
-        {saved && <Button size="sm" onClick={() => open(false)}><Sparkles /> Mở phiên AI</Button>}
-        <Button size="sm" variant={saved ? "outline" : "default"} disabled={!!t.disabled} onClick={() => open(true)}>
-          {saved ? <><RotateCw /> Làm lại</> : <><Sparkles /> {t.label}</>}
+        {saved && <Button size="sm" onClick={() => open(false)}><Sparkles /> {t("Mở phiên AI")}</Button>}
+        <Button size="sm" variant={saved ? "outline" : "default"} disabled={!!tab.disabled} onClick={() => open(true)}>
+          {saved ? <><RotateCw /> {t("Làm lại")}</> : <><Sparkles /> {tab.label}</>}
         </Button>
-        {saved && t.k === "standup" && (
-          <Hint side="bottom" text="Gửi standup vào Saved Messages trên Telegram của bạn (đọc trên điện thoại, chuyển tiếp vào nhóm)">
+        {saved && tab.k === "standup" && (
+          <Hint side="bottom" text={t("Gửi standup vào Saved Messages trên Telegram của bạn (đọc trên điện thoại, chuyển tiếp vào nhóm)")}>
             <Button size="sm" variant="ghost" disabled={send.isPending} onClick={() => send.mutate(saved.text)}><Send /> Saved Messages</Button>
           </Hint>
         )}
-        {saved && <Hint side="bottom" text="Xóa nội dung AI đã lưu"><Button size="sm" variant="ghost" onClick={() => setSaved(null)}><Trash2 /> Xóa</Button></Hint>}
+        {saved && <Hint side="bottom" text={t("Xóa nội dung AI đã lưu")}><Button size="sm" variant="ghost" onClick={() => setSaved(null)}><Trash2 /> {t("Xóa")}</Button></Hint>}
       </div>
     </Card>
   );
@@ -111,7 +113,7 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
 
 /** The one standup (Dev and QA): my tickets touched since the last working day (Friday on Mondays) and the ones still
  *  open, as assignee (Dev) or QC (QA); the server adds my Telegram replies and finished AI Agent sessions. */
-function standupTab(rows: Ticket[], me: string | null, qa: boolean, now: number): Tab {
+function standupTab(t: T, rows: Ticket[], me: string | null, qa: boolean, now: number): Tab {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - (d.getDay() === 1 ? 3 : 1));
@@ -119,8 +121,8 @@ function standupTab(rows: Ticket[], me: string | null, qa: boolean, now: number)
   const mine = (i: Ticket) => (qa ? i.qc : i.assignee) === me;
   const ids = [...new Set([...rows.filter((i) => mine(i) && i.updated >= since).sort((a, b) => b.updated - a.updated),
     ...rows.filter((i) => mine(i) && !i.resolved)].map((i) => i.id))].slice(0, AI_MAX);
-  return { k: "standup", label: "Standup", busy: "AI đang viết standup", disabled: ids.length ? undefined : "Chưa có ticket nào của bạn.",
-    hint: "Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước, tin bạn đã trả lời trên Telegram và phiên AI Agent đã xong. Gửi vào Saved Messages hoặc dán thẳng vào nhóm.",
+  return { k: "standup", label: "Standup", busy: t("AI đang viết standup"), disabled: ids.length ? undefined : t("Chưa có ticket nào của bạn."),
+    hint: t("Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước, tin bạn đã trả lời trên Telegram và phiên AI Agent đã xong. Gửi vào Saved Messages hoặc dán thẳng vào nhóm."),
     ids, run: (sig) => yt.aiTickets(ids, `Ticket của ${me}${qa ? " (QC)" : ""}`, "standup", sig, "", undefined, since) };
 }
 
@@ -128,29 +130,35 @@ type Lens = "all" | "risk" | "doing" | "qc" | "block" | "test";
 
 export function DevHome() {
   const y = useYt();
+  const t = useT();
   const now = useNow();
   // the header scope (My task / My team / Group): its people's tickets; no one picked = everyone
   const names = y.filters.assignee;
   const ours = useCallback((i: Ticket) => !names.length || names.includes(i.assignee ?? UNASSIGNED), [names]);
-  const whose = y.scope === "me" ? "của bạn" : "trong phạm vi";
-  const list = useMemo(() => todayList(y.rows, y.me, ours, y.since, now), [y.rows, y.me, ours, y.since, now]);
+  const own = y.scope === "me";
+  const full = useMemo(() => todayList(y.rows, y.me, ours, y.since, now), [y.rows, y.me, ours, y.since, now]);
+  // handed to QC = off my plate: the default list keeps only the ones I test; the lenses still see them all
+  const list = useMemo(() => full.filter((x) => bucket(x.i) !== 2 || x.i.qc === y.me), [full, y.me]);
   const mine = useMemo(() => y.rows.filter((i) => !i.resolved && ours(i)), [y.rows, ours]);
   const { loadSince } = y;
   useEffect(() => { const doing = mine.filter((i) => bucket(i) === 1); if (doing.length) loadSince(doing); }, [mine, loadSince]);
   const [lens, setLens] = useState<Lens>("all");
   const LENS: Record<Lens, [string, (i: Ticket) => boolean]> = {
-    all: ["Đang mở", ours], risk: ["Cần xử lý ngay", (i) => ours(i) && !!riskOf(i, now)],
-    doing: ["Đang làm", (i) => ours(i) && bucket(i) === 1],
-    qc: ["Chờ QC", (i) => ours(i) && bucket(i) === 2], block: ["Blocked", (i) => ours(i) && isBlocked(i)],
-    test: ["Chờ bạn test", (i) => i.qc === y.me && i.assignee !== y.me && bucket(i) === 2],
+    all: [t("Đang mở"), ours], risk: [t("Cần xử lý ngay"), (i) => ours(i) && !!riskOf(i, now)],
+    doing: [t("Đang làm"), (i) => ours(i) && bucket(i) === 1],
+    qc: [t("Chờ QC"), (i) => ours(i) && bucket(i) === 2], block: ["Blocked", (i) => ours(i) && isBlocked(i)],
+    test: [t("Chờ bạn test"), (i) => i.qc === y.me && i.assignee !== y.me && bucket(i) === 2],
   };
   // the risk lens leads each row with why it is urgent (riskOf), the rest keep their ranking reasons
   const shown = lens === "all" ? list : lens === "risk"
-    ? list.filter((x) => LENS.risk[1](x.i)).map((x) => { const r = riskOf(x.i, now)!; return { ...x, why: [r, ...x.why.filter((w) => w !== r)] }; })
-    : list.filter((x) => LENS[lens][1](x.i));
+    ? full.filter((x) => LENS.risk[1](x.i)).map((x) => { const r = riskOf(x.i, now)!; return { ...x, why: [r, ...x.why.filter((w) => w !== r)] }; })
+    : full.filter((x) => LENS[lens][1](x.i));
   if (!y.me) return (
     <p className="rounded-lg bg-cotton p-6 text-sm text-ink-2 shadow-stock">
-      Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong <Link href="/settings/#youtrack" className="text-hl-2 underline underline-offset-2">Cài đặt › YouTrack</Link>, hoặc đổi vai trò trong <Link href="/settings/#general" className="text-hl-2 underline underline-offset-2">Cài đặt › Chung</Link>.
+      {t.n("Chưa biết bạn là ai trên YouTrack. Kiểm tra token trong {a}, hoặc đổi vai trò trong {b}.", {
+        a: <Link href="/settings/#youtrack" className="text-hl-2 underline underline-offset-2">{t("Cài đặt › YouTrack")}</Link>,
+        b: <Link href="/settings/#general" className="text-hl-2 underline underline-offset-2">{t("Cài đặt › Chung")}</Link>,
+      })}
     </p>
   );
   const recent = [...mine].sort((a, b) => b.updated - a.updated).slice(0, 5);
@@ -158,23 +166,23 @@ export function DevHome() {
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
       <div className="grid content-start gap-4">
         {/* the figures are the list's lens: one card, a click narrows "Hôm nay làm gì" below */}
-        <LensBar label="Lọc danh sách hôm nay" value={lens} onChange={setLens} lenses={(Object.keys(LENS) as Lens[]).map((l) => [l, LENS[l][0],
+        <LensBar label={t("Lọc danh sách hôm nay")} value={lens} onChange={setLens} lenses={(Object.keys(LENS) as Lens[]).map((l) => [l, LENS[l][0],
           l === "all" ? mine.length : l === "test" ? y.rows.filter((i) => !i.resolved && LENS.test[1](i)).length : mine.filter(LENS[l][1]).length,
           l === "block" ? "text-error" : l === "test" || l === "risk" ? "text-signal-2" : ""])} />
-        <Card title="Hôm nay làm gì" meta={lens === "all" ? `${list.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
-          <FocusList key={lens} list={shown} top={lens === "all" ? "Làm ngay" : ""} empty={lens === "all" ? `Không có ticket nào đang mở ${whose}.` : "Không có ticket nào ở mục này."} />
+        <Card title={t("Hôm nay làm gì")} meta={lens === "all" ? t("{n} ticket, xếp theo mức gấp", { n: list.length }) : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{t("{x}: {n}, bỏ lọc", { x: LENS[lens][0], n: shown.length })}</button>}>
+          <FocusList key={lens} list={shown} top={lens === "all" ? t("Làm ngay") : ""} empty={lens === "all" ? t(own ? "Không có ticket nào đang mở của bạn." : "Không có ticket nào đang mở trong phạm vi.") : t("Không có ticket nào ở mục này.")} />
         </Card>
       </div>
       <div className="grid content-start gap-4">
         {y.aiOn && (
           <AiStudio key={`dev:${y.project}`} id={`dev:${y.project}`} tabs={[
-            { k: "today", label: "Kế hoạch", busy: `AI đang đọc ${Math.min(list.length, AI_MAX)} ticket`, disabled: list.length ? undefined : "Không có ticket nào để lập kế hoạch.",
-              hint: "AI đọc mô tả, bình luận và tin Telegram của các ticket trên để chọn việc làm ngay, việc cần trả lời, chỗ đang kẹt.",
+            { k: "today", label: t("Kế hoạch"), busy: t("AI đang đọc {n} ticket", { n: Math.min(list.length, AI_MAX) }), disabled: list.length ? undefined : t("Không có ticket nào để lập kế hoạch."),
+              hint: t("AI đọc mô tả, bình luận và tin Telegram của các ticket trên để chọn việc làm ngay, việc cần trả lời, chỗ đang kẹt."),
               ids: list.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(list.slice(0, AI_MAX).map((x) => x.i.id), y.scope === "me" ? `Ticket của ${y.me}` : `Ticket của ${names.join(", ") || "cả nhóm"}`, "today", sig) },
-            standupTab(y.rows, y.me, false, now),
+            standupTab(t, y.rows, y.me, false, now),
           ]} />
         )}
-        <Card title="Mới cập nhật" meta={`ticket ${whose}`}>
+        <Card title={t("Mới cập nhật")} meta={t(own ? "ticket của bạn" : "ticket trong phạm vi")}>
           {recent.length ? (
             <ul className="grid gap-0.5">
               {recent.map((i) => (
@@ -184,7 +192,7 @@ export function DevHome() {
                 </button></li>
               ))}
             </ul>
-          ) : <p className="text-sm text-ink-3">Chưa có.</p>}
+          ) : <p className="text-sm text-ink-3">{t("Chưa có.")}</p>}
         </Card>
         <ReportCard />
       </div>
@@ -214,6 +222,7 @@ export const PAGE = 20;
 
 /** The ranked list, 20 a page: page 1 opens with the "top" few; numbers stay global. Pages slide in the direction moved. */
 function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: string }) {
+  const t = useT();
   const [[page, dir], setPage] = useState([0, 0]);
   const calm = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
@@ -222,7 +231,7 @@ function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: st
   if (!list.length) return <p className="text-sm text-ink-3">{empty}</p>;
   const all = list.map((x) => x.i);
   const from = p * PAGE, shown = list.slice(from, from + PAGE);
-  const parts = top && p === 0 ? [[top, shown.slice(0, 3), 0], ["Tiếp theo", shown.slice(3), 3]] as const : [["", shown, from]] as const;
+  const parts = top && p === 0 ? [[top, shown.slice(0, 3), 0], [t("Tiếp theo"), shown.slice(3), 3]] as const : [["", shown, from]] as const;
   function go(n: number) {
     if (n === p || n < 0 || n >= pages) return;
     setPage([n, n > p ? 1 : -1]);
@@ -258,22 +267,23 @@ function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: st
 /** ‹ 1 2 3 … 9 › and "21–40 / 57"; arrow keys move a page while it has focus. */
 export function Pager({ page, pages, total, onGo }: { page: number; pages: number; total: number; onGo: (n: number) => void }) {
   // first, last, and the pages around the current one; gaps become …
+  const t = useT();
   const nums = [...new Set([0, page - 1, page, page + 1, pages - 1])].filter((n) => n >= 0 && n < pages).sort((a, b) => a - b);
   const btn = "grid h-7 min-w-7 place-items-center rounded-md px-1.5 font-mono text-xs tabular-nums transition-colors duration-(--dur-micro)";
   return (
-    <nav aria-label="Trang" className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-2.5"
+    <nav aria-label={t("Trang")} className="flex flex-wrap items-center justify-between gap-2 border-t border-rule pt-2.5"
       onKeyDown={(e) => { if (e.key === "ArrowLeft") onGo(page - 1); if (e.key === "ArrowRight") onGo(page + 1); }}>
       <span className="text-xs text-ink-3 tabular-nums">{page * PAGE + 1}–{Math.min(total, (page + 1) * PAGE)} / {total}</span>
       <div className="flex items-center gap-0.5">
-        <Button size="icon-xs" variant="ghost" disabled={page === 0} onClick={() => onGo(page - 1)} aria-label="Trang trước"><ChevronLeft /></Button>
+        <Button size="icon-xs" variant="ghost" disabled={page === 0} onClick={() => onGo(page - 1)} aria-label={t("Trang trước")}><ChevronLeft /></Button>
         {nums.map((n, k) => (
           <Fragment key={n}>
             {k > 0 && n - nums[k - 1] > 1 && <span className="px-0.5 text-xs text-ink-3" aria-hidden>…</span>}
-            <button type="button" onClick={() => onGo(n)} aria-current={n === page ? "page" : undefined} aria-label={`Trang ${n + 1}`}
+            <button type="button" onClick={() => onGo(n)} aria-current={n === page ? "page" : undefined} aria-label={t("Trang {n}", { n: n + 1 })}
               className={cn(btn, n === page ? "bg-ink text-paper" : "text-ink-2 hover:bg-paper-2")}>{n + 1}</button>
           </Fragment>
         ))}
-        <Button size="icon-xs" variant="ghost" disabled={page >= pages - 1} onClick={() => onGo(page + 1)} aria-label="Trang sau"><ChevronRight /></Button>
+        <Button size="icon-xs" variant="ghost" disabled={page >= pages - 1} onClick={() => onGo(page + 1)} aria-label={t("Trang sau")}><ChevronRight /></Button>
       </div>
     </nav>
   );
@@ -283,6 +293,7 @@ type QaLens = "queue" | "mine" | "retest" | "noqc" | "bugs" | "mybugs" | "critic
 
 export function QaHome() {
   const y = useYt();
+  const t = useT();
   const d = useStats();
   const now = useNow();
   const open = useMemo(() => y.rows.filter((i) => !i.resolved), [y.rows]);
@@ -292,10 +303,10 @@ export function QaHome() {
   const fails = useMemo(() => { const m = new Map<string, number>(); for (const x of qc.fail) m.set(x.id, (m.get(x.id) || 0) + 1); return m; }, [qc.fail]);
   const ranked = useMemo(() => qaList(open, y.me, y.since, now, fails), [open, y.me, y.since, now, fails]);
   const LENS: Record<QaLens, [string, (i: Ticket) => boolean, string]> = {
-    queue: ["Chờ test", (i) => bucket(i) === 2, ""], mine: ["Chờ tôi test", (i) => !!y.me && i.qc === y.me && bucket(i) === 2, "text-signal-2"],
-    retest: ["Test lại", (i) => bucket(i) === 2 && fails.has(i.id), "text-signal-2"],
-    noqc: ["Chưa có QC", (i) => bucket(i) === 2 && !i.qc, "text-warn"], bugs: ["Bug đang mở", isBug, ""],
-    mybugs: ["Bug tôi log", (i) => !!y.me && isBug(i) && i.reporter === y.me, ""],
+    queue: [t("Chờ test"), (i) => bucket(i) === 2, ""], mine: [t("Chờ tôi test"), (i) => !!y.me && i.qc === y.me && bucket(i) === 2, "text-signal-2"],
+    retest: [t("Test lại"), (i) => bucket(i) === 2 && fails.has(i.id), "text-signal-2"],
+    noqc: [t("Chưa có QC"), (i) => bucket(i) === 2 && !i.qc, "text-warn"], bugs: [t("Bug đang mở"), isBug, ""],
+    mybugs: [t("Bug tôi log"), (i) => !!y.me && isBug(i) && i.reporter === y.me, ""],
     critical: ["Bug Critical", (i) => isBug(i) && rank(i) <= 1, "text-error"],
   };
   const [lens, setLens] = useState<QaLens>("queue");
@@ -316,45 +327,45 @@ export function QaHome() {
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
       <div className="grid content-start gap-4">
         {(spike.spike || spike.mods.length > 0) && (
-          <button type="button" onClick={() => y.setSheet({ kind: "list", title: "Bug mới 7 ngày", rows: spike.rows })}
+          <button type="button" onClick={() => y.setSheet({ kind: "list", title: t("Bug mới 7 ngày"), rows: spike.rows })}
             className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-signal-wash px-3 py-2 text-left text-sm text-signal-ink shadow-edge hover:bg-signal-wash/70">
             <AlertTriangle className="size-4 text-signal-2" aria-hidden />
-            <b>Bug tăng đột biến:</b>
-            <span>{spike.n} bug mới 7 ngày (trung bình {spike.avg}/tuần)</span>
-            {spike.mods.slice(0, 4).map(([m, n]) => <span key={m} className="rounded-full bg-paper-3 px-2 text-xs leading-5 font-medium">{m}: {n}</span>)}
+            <b>{t("Bug tăng đột biến:")}</b>
+            <span>{t("{n} bug mới 7 ngày (trung bình {a}/tuần)", { n: spike.n, a: spike.avg })}</span>
+            {spike.mods.slice(0, 4).map(([m, n]) => <span key={m} className="rounded-full bg-paper-3 px-2 text-xs leading-5 font-medium">{tMaybe(m)}: {n}</span>)}
           </button>
         )}
-        <LensBar label="Lọc hàng đợi kiểm thử" value={lens} onChange={setLens}
+        <LensBar label={t("Lọc hàng đợi kiểm thử")} value={lens} onChange={setLens}
           lenses={(Object.keys(LENS) as QaLens[]).map((l) => [l, LENS[l][0], ranked.filter((x) => LENS[l][1](x.i)).length, LENS[l][2]])} />
-        <Card title={lens === "mybugs" ? "Bug tôi đã log, còn mở" : lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test"}
-          meta={lens === "queue" ? `${shown.length} ticket, xếp theo mức gấp` : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{LENS[lens][0]}: {shown.length}, bỏ lọc</button>}>
-          <FocusList key={lens} list={shown} top={lens === "queue" ? "Test ngay" : ""} empty="Không có ticket nào ở mục này." />
+        <Card title={t(lens === "mybugs" ? "Bug tôi đã log, còn mở" : lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test")}
+          meta={lens === "queue" ? t("{n} ticket, xếp theo mức gấp", { n: shown.length }) : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{t("{x}: {n}, bỏ lọc", { x: LENS[lens][0], n: shown.length })}</button>}>
+          <FocusList key={lens} list={shown} top={lens === "queue" ? t("Test ngay") : ""} empty={t("Không có ticket nào ở mục này.")} />
         </Card>
       </div>
       <div className="grid content-start gap-4">
         {y.aiOn && (
           <AiStudio key={`qa:${y.project}`} id={`qa:${y.project}`} tabs={[
-            standupTab(y.rows, y.me, true, now),
-            { k: "testcases", label: "Test case", busy: `AI đang viết test case cho ${testIds.length} ticket`, disabled: testIds.length ? undefined : "Không có ticket nào chờ test.",
-              hint: `Test case (luồng chính, biên, lỗi), vùng regression và câu cần hỏi cho ${mine.length ? "các ticket chờ bạn test" : "các ticket chờ test"}, tối đa ${TESTS} ticket gấp nhất.`,
+            standupTab(t, y.rows, y.me, true, now),
+            { k: "testcases", label: "Test case", busy: t("AI đang viết test case cho {n} ticket", { n: testIds.length }), disabled: testIds.length ? undefined : t("Không có ticket nào chờ test."),
+              hint: t(mine.length ? "Test case (luồng chính, biên, lỗi), vùng regression và câu cần hỏi cho các ticket chờ bạn test, tối đa {n} ticket gấp nhất." : "Test case (luồng chính, biên, lỗi), vùng regression và câu cần hỏi cho các ticket chờ test, tối đa {n} ticket gấp nhất.", { n: TESTS }),
               ids: testIds, run: (sig) => yt.aiTickets(testIds, mine.length ? `Ticket chờ ${y.me} test` : "Ticket chờ test", "testcases", sig) },
-            { k: "triage", label: "Bug triage", busy: `AI đang đọc ${Math.min(bugs.length, AI_MAX)} bug`, disabled: bugs.length ? undefined : "Không có bug nào đang mở.",
-              hint: "Bug thiếu bước tái hiện / log / thiết bị, nên đổi priority, có vẻ trùng, có thể đã fix, cần ping ai.",
+            { k: "triage", label: "Bug triage", busy: t("AI đang đọc {n} bug", { n: Math.min(bugs.length, AI_MAX) }), disabled: bugs.length ? undefined : t("Không có bug nào đang mở."),
+              hint: t("Bug thiếu bước tái hiện / log / thiết bị, nên đổi priority, có vẻ trùng, có thể đã fix, cần ping ai."),
               ids: bugs.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(bugs.slice(0, AI_MAX).map((x) => x.i.id), "Bug đang mở", "triage", sig) },
-            { k: "regression", label: "Regression", busy: `AI đang đọc ${Math.min(built.length, AI_MAX)} ticket chờ release`, disabled: built.length ? undefined : "Không có ticket nào đã build / chờ release.",
-              hint: "Checklist regression cho bản sắp phát hành từ các ticket Built / Done on dev / Waiting to release: smoke test, theo màn hình, rủi ro cao.",
+            { k: "regression", label: "Regression", busy: t("AI đang đọc {n} ticket chờ release", { n: Math.min(built.length, AI_MAX) }), disabled: built.length ? undefined : t("Không có ticket nào đã build / chờ release."),
+              hint: t("Checklist regression cho bản sắp phát hành từ các ticket Built / Done on dev / Waiting to release: smoke test, theo màn hình, rủi ro cao."),
               ids: built.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(built.slice(0, AI_MAX).map((x) => x.i.id), "Ticket đã build, chờ release", "regression", sig) },
-            { k: "quality", label: "Chất lượng ticket", busy: `AI đang rà ${Math.min(upstream.length, AI_MAX)} ticket`, disabled: upstream.length ? undefined : "Sprint đang xem không còn ticket nào chưa tới QC.",
-              hint: `Ticket của ${d.per.label} chưa tới bước test: thiếu tiêu chí nghiệm thu, bug thiếu bước tái hiện, nên tách, chưa estimate, có vẻ trùng.`,
+            { k: "quality", label: t("Chất lượng ticket"), busy: t("AI đang rà {n} ticket", { n: Math.min(upstream.length, AI_MAX) }), disabled: upstream.length ? undefined : t("Sprint đang xem không còn ticket nào chưa tới QC."),
+              hint: t("Ticket của {s} chưa tới bước test: thiếu tiêu chí nghiệm thu, bug thiếu bước tái hiện, nên tách, chưa estimate, có vẻ trùng.", { s: d.per.label }),
               ids: upstream.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(upstream.slice(0, AI_MAX).map((i) => i.id), `${d.per.label}, chưa tới QC`, "quality", sig) },
           ]} />
         )}
         <QcMine qc={qc} waiting={mine.map((x) => x.i)} retest={ranked.filter((x) => LENS.retest[1](x.i)).map((x) => x.i)} />
         <QcSplit open={open} />
-        <Card title="Bug 7 ngày qua">
+        <Card title={t("Bug 7 ngày qua")}>
           <dl className="grid grid-cols-3 gap-2 text-center">
             {([["Mới", week.created, week.created > week.fixed ? "text-error" : ""], ["Đã fix", week.fixed, "text-ok"], ["Đang mở", bugs.length, ""]] as const).map(([l, n, tone]) => (
-              <div key={l} className="grid gap-0.5 rounded-md bg-paper-2 py-2"><dt className="text-xs text-ink-3">{l}</dt><dd className={cn("font-mono text-2xl tabular-nums", n > 0 && tone)}>{n}</dd></div>
+              <div key={l} className="grid gap-0.5 rounded-md bg-paper-2 py-2"><dt className="text-xs text-ink-3">{t(l)}</dt><dd className={cn("font-mono text-2xl tabular-nums", n > 0 && tone)}>{n}</dd></div>
             ))}
           </dl>
         </Card>
@@ -385,12 +396,12 @@ function FocusRow({ i, why, n, all, top }: { i: Ticket; why: string[]; n: number
       className={cn("group/row relative grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-1 rounded-md px-2.5 py-2 text-left transition-colors duration-(--dur-micro)",
         top ? "hover:bg-cotton" : "hover:bg-paper-2")}>
       {hot && <i aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-error" />}
-      <span className={cn("row-span-2 grid size-7 place-items-center rounded-full font-mono text-xs font-semibold tabular-nums",
+      <span className={cn("row-span-2 grid size-7 place-items-center rounded-full font-mono text-xs font-bold tabular-nums",
         top ? "bg-hl text-hl-ink" : "text-ink-3 group-hover/row:text-ink-2")}>{n}</span>
       <Title i={i} clamp={top ? "line-clamp-2" : "truncate"} />
       <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
         <span className="font-mono text-ink-3">{i.id}</span><StatePill state={i.state} /><Prio p={i.priority} />
-        {why.map((w) => <span key={w} className={cn("rounded-full px-2 leading-5 font-medium", hot ? "bg-error-wash text-error" : "bg-paper-3 text-ink-2")}>{w}</span>)}
+        {why.map((w) => <span key={w} className={cn("rounded-full px-2 leading-5 font-medium", hot ? "bg-error-wash text-error" : "bg-paper-3 text-ink-2")}>{tMaybe(w)}</span>)}
       </span>
     </button>
   );
@@ -398,6 +409,7 @@ function FocusRow({ i, why, n, all, top }: { i: Ticket; why: string[]; n: number
 
 export function PoHome() {
   const y = useYt();
+  const t = useT();
   const d = useStats();
   const waitPo = useMemo(() => y.rows.filter(needsPo).sort((a, b) => rank(a) - rank(b) || a.updated - b.updated), [y.rows]);
   // sprint planning: open tickets outside the sprint being watched, most urgent first
@@ -410,29 +422,29 @@ export function PoHome() {
           <ReportCard />
           {y.aiOn && (
             <AiStudio key={`po:${y.project}:${d.per.label}`} id={`po:${y.project}:${d.per.label}`} tabs={[
-              { k: "brief", label: "Brief", busy: `AI đang đọc ${Math.min(d.sprintOpen.length, AI_MAX)} ticket đang mở`, disabled: d.sprintOpen.length ? undefined : "Sprint đang xem không có ticket mở.",
-                hint: `AI đọc các ticket đang mở của ${d.per.label}: việc tiếp theo từng người, chỗ nghẽn, cần chốt, cần ping ai, và những gì đã đổi từ lần brief trước.`,
+              { k: "brief", label: "Brief", busy: t("AI đang đọc {n} ticket đang mở", { n: Math.min(d.sprintOpen.length, AI_MAX) }), disabled: d.sprintOpen.length ? undefined : t("Sprint đang xem không có ticket mở."),
+                hint: t("AI đọc các ticket đang mở của {s}: việc tiếp theo từng người, chỗ nghẽn, cần chốt, cần ping ai, và những gì đã đổi từ lần brief trước.", { s: d.per.label }),
                 ids: d.sprintOpen.map((i) => i.id), run: (sig) => sinceLast(`ytAiSnap:${y.project}:${d.per.label}`, d.sprintOpen, (changes) =>
                   yt.aiTickets(d.sprintOpen.slice(0, AI_MAX).map((i) => i.id), `${d.per.label} (ticket đang mở)`, "review", sig, "", undefined, 0, changes)) },
-              { k: "plan", label: "Lên sprint", busy: `AI đang xếp ${Math.min(backlog.length, AI_MAX)} ticket`, disabled: backlog.length ? undefined : "Không có ticket mở nào ngoài sprint đang xem.",
-                hint: "Gợi ý ticket nên kéo vào sprint tới và giao cho ai, dựa trên priority, tải hiện tại (WIP) và velocity của team; kèm ticket chưa nên kéo vì thiếu spec / estimate.",
+              { k: "plan", label: t("Lên sprint"), busy: t("AI đang xếp {n} ticket", { n: Math.min(backlog.length, AI_MAX) }), disabled: backlog.length ? undefined : t("Không có ticket mở nào ngoài sprint đang xem."),
+                hint: t("Gợi ý ticket nên kéo vào sprint tới và giao cho ai, dựa trên priority, tải hiện tại (WIP) và velocity của team; kèm ticket chưa nên kéo vì thiếu spec / estimate."),
                 ids: backlog.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(backlog.slice(0, AI_MAX).map((i) => i.id), `Backlog ngoài ${d.per.label}`, "plan", sig, "", { wipLimit: y.wip, wip: d.wip, velocityAvgPerSprint: d.vel.avg, sprintNow: d.per.label }) },
-              { k: "groom", label: "Grooming", busy: `AI đang đọc ${Math.min(backlog.length, AI_MAX)} ticket backlog`, disabled: backlog.length ? undefined : "Không có ticket mở nào ngoài sprint đang xem.",
-                hint: "Rà backlog: ticket đã sẵn sàng, cần làm rõ (hỏi ai, hỏi gì), nên tách / gộp, đề xuất priority, nên đóng.",
+              { k: "groom", label: "Grooming", busy: t("AI đang đọc {n} ticket backlog", { n: Math.min(backlog.length, AI_MAX) }), disabled: backlog.length ? undefined : t("Không có ticket mở nào ngoài sprint đang xem."),
+                hint: t("Rà backlog: ticket đã sẵn sàng, cần làm rõ (hỏi ai, hỏi gì), nên tách / gộp, đề xuất priority, nên đóng."),
                 ids: backlog.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(backlog.slice(0, AI_MAX).map((i) => i.id), `Backlog ngoài ${d.per.label}`, "groom", sig) },
-              { k: "weekly", label: "Bản tin tuần", weekly: true, busy: "AI đang viết bản tin tuần", disabled: y.rows.length ? undefined : "Chưa có dữ liệu ticket.",
-                hint: "7 ngày qua: tổng quan, từng người xong gì / đang làm / kẹt, rủi ro tuần tới. Lưu cả tuần, dán thẳng vào Telegram.",
+              { k: "weekly", label: t("Bản tin tuần"), weekly: true, busy: t("AI đang viết bản tin tuần"), disabled: y.rows.length ? undefined : t("Chưa có dữ liệu ticket."),
+                hint: t("7 ngày qua: tổng quan, từng người xong gì / đang làm / kẹt, rủi ro tuần tới. Lưu cả tuần, dán thẳng vào Telegram."),
                 run: (sig) => yt.aiData("weekly", weekData(y.rows, Date.now()), sig) },
-              { k: "notes", label: "Release notes", busy: "AI đang viết release notes", disabled: d.doneRows.length ? undefined : "Sprint đang xem chưa có ticket xong.",
-                hint: "Release notes từ ticket đã xong trong sprint: phần cho người dùng và danh sách nội bộ.",
+              { k: "notes", label: "Release notes", busy: t("AI đang viết release notes"), disabled: d.doneRows.length ? undefined : t("Sprint đang xem chưa có ticket xong."),
+                hint: t("Release notes từ ticket đã xong trong sprint: phần cho người dùng và danh sách nội bộ."),
                 ids: d.doneRows.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiData("notes", d.doneRows.slice(0, 300).map((i) => ({ id: i.id, type: i.type, summary: i.summary })), sig) },
             ]} />
           )}
-          <Card title="Tiến độ sprint" meta="vạch dọc = thời gian đã qua"><Progress d={d} /></Card>
-          <Card title="Cảnh báo ticket kéo dài"><Aging d={d} /></Card>
+          <Card title={t("Tiến độ sprint")} meta={t("vạch dọc = thời gian đã qua")}><Progress d={d} /></Card>
+          <Card title={t("Cảnh báo ticket kéo dài")}><Aging d={d} /></Card>
         </div>
         <div className="grid content-start gap-4">
-          <Card title="Chờ PO chốt" meta="define / confirm">
+          <Card title={t("Chờ PO chốt")} meta="define / confirm">
             {waitPo.length ? (
               <ul className="grid gap-0.5">
                 {waitPo.slice(0, 8).map((i) => (
@@ -441,12 +453,12 @@ export function PoHome() {
                     <span className="flex items-center gap-2 text-xs"><span className="font-mono text-ink-3">{i.id}</span><StatePill state={i.state} /><Prio p={i.priority} /><span className="ml-auto text-ink-3">{when(i.updated)}</span></span>
                   </button></li>
                 ))}
-                {waitPo.length > 8 && <li><button type="button" onClick={() => y.setSheet({ kind: "list", title: "Chờ PO chốt", rows: waitPo })} className="px-1.5 text-xs text-ink-3 hover:text-ink">Xem cả {waitPo.length} ticket</button></li>}
+                {waitPo.length > 8 && <li><button type="button" onClick={() => y.setSheet({ kind: "list", title: t("Chờ PO chốt"), rows: waitPo })} className="px-1.5 text-xs text-ink-3 hover:text-ink">{t("Xem cả {n} ticket", { n: waitPo.length })}</button></li>}
               </ul>
-            ) : <p className="text-sm text-ink-3">Không có ticket nào chờ định nghĩa / xác nhận.</p>}
+            ) : <p className="text-sm text-ink-3">{t("Không có ticket nào chờ định nghĩa / xác nhận.")}</p>}
           </Card>
-          <Card title="Cần chú ý" meta="ticket đang mở"><Attention d={d} /></Card>
-          <Card title="Công việc đang làm" meta={`ngưỡng WIP ${y.wip}`}><Wip d={d} /></Card>
+          <Card title={t("Cần chú ý")} meta={t("ticket đang mở")}><Attention d={d} /></Card>
+          <Card title={t("Công việc đang làm")} meta={`${t("ngưỡng WIP")} ${y.wip}`}><Wip d={d} /></Card>
         </div>
       </div>
     </div>
@@ -457,6 +469,7 @@ export function PoHome() {
 /** My test results (from the State history: moves out of a test state I made), and a standup line to paste in Telegram. */
 function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting: Ticket[]; retest: Ticket[] }) {
   const y = useYt();
+  const t = useT();
   const now = useNow();
   if (!y.me || !qc.q.data) return null;
   const today = new Date(now).setHours(0, 0, 0, 0);
@@ -468,22 +481,22 @@ function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting
   const rows = [["Hôm nay", of(today)], ["24 giờ qua", of(now - DAY)], ["7 ngày", of(now - 7 * DAY)]] as const;
   const day = rows[1][1];
   const standup = [
-    `Standup QC · ${y.me} · ${new Date(now).toLocaleDateString("vi-VN")}`,
-    `- 24h qua đã test ${day.n} ticket${day.pass.length ? `; pass: ${day.pass.join(", ")}` : ""}${day.fail.length ? `; trả lại: ${day.fail.join(", ")}` : ""}`,
-    `- Chờ tôi test: ${waiting.length}${waiting.length ? ` (${waiting.slice(0, 8).map((i) => i.id).join(", ")})` : ""}`,
-    ...(retest.length ? [`- Test lại sau khi dev sửa: ${retest.slice(0, 8).map((i) => i.id).join(", ")}`] : []),
+    `Standup QC · ${y.me} · ${fmtDay(now)}`,
+    t("- 24h qua đã test {n} ticket", { n: day.n }) + (day.pass.length ? `; pass: ${day.pass.join(", ")}` : "") + (day.fail.length ? t("; trả lại: {x}", { x: day.fail.join(", ") }) : ""),
+    t("- Chờ tôi test: {n}", { n: waiting.length }) + (waiting.length ? ` (${waiting.slice(0, 8).map((i) => i.id).join(", ")})` : ""),
+    ...(retest.length ? [t("- Test lại sau khi dev sửa: {x}", { x: retest.slice(0, 8).map((i) => i.id).join(", ") })] : []),
   ].join("\n");
   return (
-    <Card title="Kết quả test của tôi" meta={<Button size="xs" variant="ghost" onClick={() => void copyText(standup, "Đã chép standup")}><Copy /> Copy standup</Button>}>
+    <Card title={t("Kết quả test của tôi")} meta={<Button size="xs" variant="ghost" onClick={() => void copyText(standup, t("Đã chép standup"))}><Copy /> Copy standup</Button>}>
       <dl className="grid grid-cols-3 gap-2 text-center">
         {rows.map(([l, r]) => (
           <div key={l} className="grid gap-0.5 rounded-md bg-paper-2 py-2">
-            <dt className="text-xs text-ink-3">{l}</dt>
+            <dt className="text-xs text-ink-3">{t(l)}</dt>
             <dd className="font-mono text-2xl tabular-nums">{r.n}</dd>
             <dd className="text-xs text-ink-3"><button type="button" disabled={!r.pass.length} className="text-ok enabled:hover:underline"
-              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã pass: ${l}`, rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
+              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã pass: {x}", { x: t(l) }), rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
               {", "}<button type="button" disabled={!r.fail.length} className={cn(r.fail.length && "text-error", "enabled:hover:underline")}
-              onClick={() => y.setSheet({ kind: "list", title: `Tôi đã trả lại: ${l}`, rows: r.fail.map((id) => qc.byId.get(id)!) })}>{r.fail.length} trả</button></dd>
+              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã trả lại: {x}", { x: t(l) }), rows: r.fail.map((id) => qc.byId.get(id)!) })}>{t("{n} trả", { n: r.fail.length })}</button></dd>
           </div>
         ))}
       </dl>
@@ -495,6 +508,7 @@ function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting
  *  ones suggested above it), most urgent first. QC people = whoever is QC on any loaded ticket. */
 function QcSplit({ open }: { open: Ticket[] }) {
   const y = useYt();
+  const t = useT();
   const plan = useMemo(() => {
     const load = new Map<string, number>();
     for (const i of y.rows) if (i.qc && !load.has(i.qc)) load.set(i.qc, 0);
@@ -509,7 +523,7 @@ function QcSplit({ open }: { open: Ticket[] }) {
   }, [y.rows, open]);
   const [busy, setBusy] = useState(false);
   if (!plan.length) return null;
-  const text = ["Đề xuất chia QC:", ...plan.map((x) => `- ${x.i.id} ${titleOf(x.i).slice(0, 60)} → ${x.who}`)].join("\n");
+  const text = [t("Đề xuất chia QC:"), ...plan.map((x) => `- ${x.i.id} ${titleOf(x.i).slice(0, 60)} → ${x.who}`)].join("\n");
   const write = !y.config?.mock;
   const login = (who: string) => y.loginOf.get(who);
   /** Every suggestion at once (5 calls at a time); one toast puts them all back. */
@@ -517,31 +531,31 @@ function QcSplit({ open }: { open: Ticket[] }) {
     setBusy(true);
     const done: string[] = [], fail: string[] = [], todo = plan.filter((x) => login(x.who));
     for (let k = 0; k < todo.length; k += 5) await Promise.all(todo.slice(k, k + 5).map((x) =>
-      yt.setAssignee(x.i.id, login(x.who)!, "QC").then((t) => { void y.patchTicket(t); done.push(x.i.id); }, (e: Error) => { fail.push(`${x.i.id}: ${e.message}`); })));
+      yt.setAssignee(x.i.id, login(x.who)!, "QC").then((tk) => { void y.patchTicket(tk); done.push(x.i.id); }, (e: Error) => { fail.push(`${x.i.id}: ${e.message}`); })));
     setBusy(false);
     const noLogin = plan.length - todo.length; // the suggested person is not in the project's team list
-    const why = [noLogin ? `${noLogin} chưa có login YouTrack của người được gợi ý` : "", fail.length ? `lỗi ${fail.length} — ${fail[0]}` : ""].filter(Boolean).join("; ");
-    toast({ text: `Đã gán QC ${done.length}/${plan.length} ticket${why ? ` (${why})` : ""}`, undo: done.length ? async () => {
+    const why = [noLogin ? t("{n} chưa có login YouTrack của người được gợi ý", { n: noLogin }) : "", fail.length ? t("lỗi {n} — {e}", { n: fail.length, e: fail[0] }) : ""].filter(Boolean).join("; ");
+    toast({ text: t("Đã gán QC {a}/{b} ticket", { a: done.length, b: plan.length }) + (why ? ` (${why})` : ""), undo: done.length ? async () => {
       const bad: string[] = [];
       for (const id of done) await yt.setAssignee(id, null, "QC").then(y.patchTicket, (e: Error) => { bad.push(`${id}: ${e.message}`); });
-      if (bad.length) throw new Told(`${bad.length < done.length ? `Chỉ hoàn tác được ${done.length - bad.length}/${done.length} ticket` : "Không hoàn tác được"} — ${bad[0]}`);
+      if (bad.length) throw new Told(`${bad.length < done.length ? t("Chỉ hoàn tác được {a}/{b} ticket", { a: done.length - bad.length, b: done.length }) : t("Không hoàn tác được")} — ${bad[0]}`);
     } : undefined });
   }
   return (
-    <Card title="Gợi ý chia QC" meta={<span className="flex items-center gap-1">
-      {write && <Hint side="bottom" text="Gán QC cho mọi ticket theo gợi ý dưới đây"><Button size="xs" variant="ghost" disabled={busy} aria-busy={busy} onClick={() => void all()}><UserCheck /> Gán hết</Button></Hint>}
-      <Button size="xs" variant="ghost" onClick={() => void copyText(text, "Đã chép phân công")}><Copy /> Copy</Button>
+    <Card title={t("Gợi ý chia QC")} meta={<span className="flex items-center gap-1">
+      {write && <Hint side="bottom" text={t("Gán QC cho mọi ticket theo gợi ý dưới đây")}><Button size="xs" variant="ghost" disabled={busy} aria-busy={busy} onClick={() => void all()}><UserCheck /> {t("Gán hết")}</Button></Hint>}
+      <Button size="xs" variant="ghost" onClick={() => void copyText(text, t("Đã chép phân công"))}><Copy /> Copy</Button>
     </span>}>
-      <p className="text-xs text-ink-3">{plan.length} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm “Gán” để đặt QC trên YouTrack.</p>
+      <p className="text-xs text-ink-3">{t("{n} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm “Gán” để đặt QC trên YouTrack.", { n: plan.length })}</p>
       <ol className="grid grid-cols-1 divide-y divide-rule/60">
         {plan.slice(0, 12).map((x) => (
           <li key={x.i.id} className="flex items-center gap-2">
             <button type="button" onClick={() => y.openTicket(x.i.id, plan.map((p) => p.i))} className="flex min-w-0 flex-1 items-baseline gap-2 py-1.5 text-left text-sm hover:text-hl-2">
               <span className="shrink-0 font-mono text-xs text-ink-3">{x.i.id}</span>
               <span className="min-w-0 flex-1 truncate">{titleOf(x.i)}</span>
-              <span className="shrink-0 text-xs"><b className="font-medium">{shortName(x.who)}</b> <span className="text-ink-3">đang giữ {x.n}</span></span>
+              <span className="shrink-0 text-xs"><b className="font-medium">{shortName(x.who)}</b> <span className="text-ink-3">{t("đang giữ {n}", { n: x.n })}</span></span>
             </button>
-            {write && login(x.who) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void setPerson(y, x.i, "QC", login(x.who)!)} aria-label={`Gán QC ${x.i.id} cho ${x.who}`}>Gán</Button>}
+            {write && login(x.who) && <Button size="xs" variant="outline" disabled={busy} onClick={() => void setPerson(y, x.i, "QC", login(x.who)!)} aria-label={t("Gán QC {id} cho {who}", { id: x.i.id, who: x.who })}>{t("Gán")}</Button>}
           </li>
         ))}
       </ol>

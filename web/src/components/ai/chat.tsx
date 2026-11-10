@@ -1,9 +1,11 @@
 "use client";
 
-import { Bug, Check, CheckCircle2, CircleAlert, Code, ListChecks, Loader2, type LucideIcon, PenLine, ScrollText, Square } from "lucide-react";
+import { ArrowUp, Bug, Check, CheckCircle2, CircleAlert, Code, FileSearch, ListChecks, Loader2, type LucideIcon, PenLine, ScrollText, Square } from "lucide-react";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import type { Mention } from "@/components/mention";
+import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
+import { type Key, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 // The AI chat look every AI feature shares (AI Agent, Trợ lý AI of a tag, YouTrack AI): the ask in a bubble, the AI
@@ -57,8 +59,9 @@ function useRotate(lines: string[] | undefined, ms: number) {
 }
 
 /** Waiting on the first word: the hopping robot and a shimmering status line; `lines` rotate every 2.2s. */
-export function AiThinking({ label = "AI đang suy nghĩ", lines, className }: { label?: string; lines?: string[]; className?: string }) {
-  const text = useRotate(lines, 2200) ?? label;
+export function AiThinking({ label, lines, className }: { label?: string; lines?: string[]; className?: string }) {
+  const t = useT();
+  const text = useRotate(lines, 2200) ?? label ?? t("AI đang suy nghĩ");
   return (
     <div role="status" className={cn("flex items-center gap-2.5 px-0.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)", className)}>
       <AiBot className="ai-hop size-7 shrink-0 drop-shadow-sm" />
@@ -74,10 +77,10 @@ const Bar = ({ w, d = 0, className }: { w: string; d?: number; className?: strin
 );
 const pop = (d: number) => ({ animationDelay: `${d}ms` });
 
-export type AiSkill = "summary" | "steps" | "reply" | "ticket" | "code";
+export type AiSkill = "summary" | "steps" | "reply" | "ticket" | "code" | "answer";
 
 /** What the assistant can do, each with a tiny scene of its result being written (replays every time it comes round). */
-const SKILLS: Record<AiSkill, { icon: LucideIcon; label: string; scene: ReactNode }> = {
+const SKILLS: Record<AiSkill, { icon: LucideIcon; label: Key; scene: ReactNode }> = {
   summary: { icon: ScrollText, label: "Tóm tắt ý chính", scene: (
     <ul className="grid gap-2">
       {([["92%", "bg-hl/70"], ["68%", ""], ["80%", ""]] as const).map(([w, c], i) => (
@@ -111,7 +114,7 @@ const SKILLS: Record<AiSkill, { icon: LucideIcon; label: string; scene: ReactNod
       <span className="flex gap-1.5 text-[0.625rem] leading-4">
         <span className="sk-pop rounded-full bg-error-wash px-1.5 text-error" style={pop(750)}>Bug</span>
         <span className="sk-pop rounded-full bg-warn-wash px-1.5 text-warn" style={pop(900)}>High</span>
-        <span className="sk-pop rounded-full bg-paper-3 px-1.5 text-ink-2" style={pop(1050)}>@bạn</span>
+        <span className="sk-pop rounded-full bg-paper-3 px-1.5 text-ink-2" style={pop(1050)}><You /></span>
       </span>
     </div>
   ) },
@@ -122,7 +125,20 @@ const SKILLS: Record<AiSkill, { icon: LucideIcon; label: string; scene: ReactNod
       ))}
     </div>
   ) },
+  answer: { icon: FileSearch, label: "Trả lời từ code", scene: (
+    <div className="grid gap-2">
+      <div className="grid gap-1.5 rounded-md bg-paper-2 p-2">
+        {([["30%", "bg-info/60"], ["52%", "bg-ok/60"]] as const).map(([w, c], i) => <Bar key={i} w={w} d={i * 200} className={c} />)}
+      </div>
+      <div className="sk-pop grid w-4/5 origin-bottom-right justify-self-end rounded-2xl rounded-br-sm bg-hl-wash px-3 py-2" style={pop(600)}>
+        <Bar w="100%" d={800} className="bg-hl/60" />
+      </div>
+    </div>
+  ) },
 };
+
+/** "@you", in the live language (the skill scenes are module constants). */
+function You() { return useT()("@bạn"); }
 
 const STAGE = 192; // px; the skills sit on a ring of radius R around the robot
 const R = 74;
@@ -130,6 +146,7 @@ const R = 74;
 /** An AI panel with nothing asked yet: the robot works through `skills` one by one, leaning to the one in hand and
  *  beaming to it, while a small card under it writes out that skill's kind of result. */
 export function AiIdle({ skills, className }: { skills: AiSkill[]; className?: string }) {
+  const t = useT();
   const i = useTick(skills.length, 2800);
   const at = (k: number) => { const a = (k / skills.length) * 2 * Math.PI - Math.PI / 2; return [Math.cos(a), Math.sin(a)] as const; };
   const [cx, cy] = at(i);
@@ -166,7 +183,7 @@ export function AiIdle({ skills, className }: { skills: AiSkill[]; className?: s
         <span className="ai-shadow absolute h-1.5 w-10 rounded-full bg-ink-3/40 blur-[2px]" style={{ left: c - 20, top: c + 38 }} />
       </div>
       <figure key={i} className="grid w-64 max-w-full gap-2.5 rounded-xl border border-rule bg-cotton p-3 shadow-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
-        <figcaption className="flex items-center gap-1.5 text-xs font-medium text-hl-2"><Icon className="size-3.5" aria-hidden />{cur.label}</figcaption>
+        <figcaption className="flex items-center gap-1.5 text-xs font-medium text-hl-2"><Icon className="size-3.5" aria-hidden />{t(cur.label)}</figcaption>
         <div aria-hidden>{cur.scene}</div>
       </figure>
       <span aria-hidden className="flex gap-1">
@@ -177,9 +194,10 @@ export function AiIdle({ skills, className }: { skills: AiSkill[]; className?: s
 }
 
 /** Under text that is still streaming in. */
-export const AiWriting = ({ label = "AI đang viết" }: { label?: string }) => (
-  <p role="status" className="flex items-center gap-2 px-0.5 text-xs"><span className="ai-text font-medium">{label}</span><AiDots /></p>
-);
+export function AiWriting({ label }: { label?: string }) {
+  const t = useT();
+  return <p role="status" className="flex items-center gap-2 px-0.5 text-xs"><span className="ai-text font-medium">{label ?? t("AI đang viết")}</span><AiDots /></p>;
+}
 
 /** What the user asked, right-aligned. */
 export function UserBubble({ children, className }: { children: ReactNode; className?: string }) {
@@ -196,13 +214,14 @@ export function UserBubble({ children, className }: { children: ReactNode; class
 export function AiResultCard({ children, error, title, took, actions, dim, className, ...rest }: {
   children: ReactNode; error?: boolean; title?: ReactNode; took?: number; actions?: ReactNode; dim?: boolean; className?: string; "aria-label"?: string;
 }) {
+  const t = useT();
   return (
     <div {...rest} role={error ? "alert" : undefined}
       className={cn("rounded-xl border p-3.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-long)",
         error ? "border-error/25 bg-error-wash" : "border-ok/25 bg-ok-wash", dim && "opacity-75", className)}>
-      <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-semibold", error ? "text-error" : "text-ok")}>
+      <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-bold", error ? "text-error" : "text-ok")}>
         {error ? <CircleAlert className="size-4" aria-hidden /> : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
-        {title ?? (error ? "Có lỗi" : "Kết quả")}
+        {title ?? (error ? t("Có lỗi") : t("Kết quả"))}
         {took !== undefined && <span className="ml-auto font-mono font-normal tabular-nums text-ink-3">{dur(took)}</span>}
       </p>
       <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 break-words text-sm leading-[1.55]", error ? "text-error" : "text-ink-2")}>{children}</div>
@@ -211,11 +230,35 @@ export function AiResultCard({ children, error, title, took, actions, dim, class
   );
 }
 
-/** Round stop button with a spinning rim, shown while the AI runs. */
-export function AiStop({ onClick, busy, label = "Dừng", hint = "Dừng AI" }: { onClick: () => void; busy?: boolean; label?: string; hint?: string }) {
+/** A run going on, as a list row's icon: a spinner with a soft ping behind it. */
+export function AiSpin({ className }: { className?: string }) {
   return (
-    <Hint text={hint} side="bottom">
-      <button type="button" aria-label={label} aria-busy={busy} disabled={busy} onClick={onClick}
+    <span className={cn("relative grid size-4 shrink-0 place-items-center", className)}>
+      <span className="absolute inset-0 animate-ping rounded-full bg-hl/30 motion-reduce:animate-none" aria-hidden />
+      <Loader2 className="size-4 animate-spin text-hl-2" aria-hidden />
+    </span>
+  );
+}
+
+/** The prompt box's round send button (Enter): pops in, an arrow, a spinner while the prompt is on its way / running. */
+export function AiSend({ onClick, disabled, busy, hint }: { onClick: () => void; disabled?: boolean; busy?: boolean; hint?: string }) {
+  const t = useT();
+  return (
+    <Hint text={hint ?? t("Gửi cho AI (Enter)")}>
+      <Button type="button" size="icon-sm" aria-label={t("Gửi")} aria-busy={busy} disabled={disabled || busy} onClick={onClick}
+        className="rounded-full bg-hl text-hl-ink transition-[scale,filter] hover:brightness-110 active:scale-90 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
+        {busy ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp />}
+      </Button>
+    </Hint>
+  );
+}
+
+/** Round stop button with a spinning rim, shown while the AI runs. */
+export function AiStop({ onClick, busy, label, hint }: { onClick: () => void; busy?: boolean; label?: string; hint?: string }) {
+  const t = useT();
+  return (
+    <Hint text={hint ?? t("Dừng AI")} side="bottom">
+      <button type="button" aria-label={label ?? t("Dừng")} aria-busy={busy} disabled={busy} onClick={onClick}
         className="relative grid size-8 shrink-0 place-items-center rounded-full bg-error-wash text-error transition-[scale,background-color] duration-(--dur-micro) hover:scale-105 hover:bg-error hover:text-cotton active:scale-95 disabled:opacity-60 animate-in zoom-in-50 fade-in-0 duration-(--dur-short)">
         <span className="absolute inset-0 animate-spin rounded-full border-2 border-error/20 border-t-error motion-reduce:animate-none" aria-hidden />
         {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Square className="size-3 fill-current" aria-hidden />}

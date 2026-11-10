@@ -14,6 +14,7 @@ from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
 from .providers import split_session
+from .qa import chain_code
 
 log = logging.getLogger("telegram_dashboard.tasks")
 
@@ -22,15 +23,58 @@ def new_task_id() -> str:
     return f"{datetime.now(UTC):%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
+async def _ref_qa(s, chat_id: str, mid: int) -> str:
+    """The "#QA…" of the thread a message sits in (up its reply chain; kept copies first, else live), "" if none.
+    Read now, while the message was just shown: a BE answer is often never stored, so Done could not find it later."""
+
+    async def fetch(ids: list[int]):
+        kept, _ = await s.db.read(s.store.get_messages_by_ids, chat_id, ids)
+        return kept or await s.bridge.fetch_ids(chat_id, ids)
+
+    try:
+        return await chain_code(fetch, mid) or ""
+    except Exception as e:  # the turn already runs: a failed lookup only loses the Q&A link, never fails the send
+        log.warning("Q&A code of %s/%s not read: %r", chat_id, mid, e)
+        return ""
+
+
+async def add_refs(s, task_id: str, refs) -> None:
+    """Attach messages ((chat_id, message id) pairs) to a session: its Done / reopen moves them and their Q&A."""
+    rows = [(cid, int(mid)) for cid, mid in refs if str(mid).isdigit()]
+    await s.db.write(s.store.add_task_refs, task_id, [(cid, mid, await _ref_qa(s, cid, mid)) for cid, mid in rows])
+
+
+async def follow_task(s, task_id: str, handled: bool, react: bool) -> None:
+    """A session's Done / reopen (on it, or on its tag): every kept message attached to it and the Q&A they (or an
+    Đối chiếu BE prompt) name follow."""
+    for rc, mids in (await s.db.write(s.store.mark_task_refs, task_id, handled, "me" if react else "quiet")).items():
+        if react:
+            s.bridge.react(rc, mids, handled)
+    await s.db.write(s.store.mark_task_qa, task_id, handled)
+
+
+async def mark_tags(s, chat_id: str, ids: list[int], handled: bool, react: bool) -> None:
+    """After tags were marked done / reopened (one, or "Đã xử lý tất cả"): the Q&A they name, and the sessions on
+    them, follow."""
+    await s.db.write(s.store.mark_tag_qa, chat_id, ids, handled)
+    for task_id in await s.db.read(s.store.tasks_on, chat_id, ids):
+        await follow_task(s, task_id, handled, react)
+
+
 async def start_task(
     s, task_id: str, chat_id: str | None, message_id: int | None, project: str, prompt: str, mode: str,
-    kind: str = "task", title: str | None = None, *, about,
+    kind: str = "task", title: str | None = None, *, about, refs=(),
 ) -> None:  # fmt: skip
     """Save the task, then start its first turn: a run is never without its row (a failed start
-    takes the row back)."""
+    takes the row back). `refs`: messages it is about (Đối chiếu BE's cited ones)."""
     session = s.agent.new_session()
+    try:  # the tree before the AI touches it: Thay đổi shows this session's edits only
+        base = await gitops.snapshot(project)
+    except ApiError as e:  # git too slow / failing: Thay đổi falls back to the whole working tree
+        log.warning("git snapshot of %s failed: %s", project, e)
+        base = None
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
-                     mode=mode, session_id=session, kind=kind, title=title)  # fmt: skip
+                     mode=mode, session_id=session, kind=kind, title=title, git_base=base)  # fmt: skip
     try:
         # one frame for every session (Giao AI Agent, Đối chiếu BE): who the user is, rules, answer sections, questions
         rules = session_rules(mode, about.role, about.platform, about.intro)
@@ -45,6 +89,7 @@ async def start_task(
         raise
     if named != session:  # Codex / Antigravity name their session once it runs
         await s.db.write(s.store.set_task_session, task_id, named)
+    await add_refs(s, task_id, refs)
 
 
 def build_router(settings) -> APIRouter:
@@ -134,9 +179,7 @@ def build_router(settings) -> APIRouter:
             return await expand(s, body.text, task_id, chat_id=row["chat_id"])
 
         await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, ai)
-        refs = [(x.chat_id, int(x.message_id)) for x in body.refs if x.message_id.isdigit()]
-        if refs:
-            await s.db.write(s.store.add_task_refs, task_id, refs)
+        await add_refs(s, task_id, [(x.chat_id, x.message_id) for x in body.refs])
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:
@@ -160,17 +203,16 @@ def build_router(settings) -> APIRouter:
             changed = await s.db.write(s.store.set_task_done, task_id, body.handled)
         if changed and body.react and mid is not None:
             s.bridge.react(cid, [mid], body.handled)
-        by = "me" if body.react else "quiet"
-        for rc, mids in (await s.db.write(s.store.mark_task_refs, task_id, body.handled, by)).items():
-            if body.react:
-                s.bridge.react(rc, mids, body.handled)
-        await s.db.write(s.store.mark_task_qa, task_id, body.handled)  # a #QA code in them: that Q&A follows
+        if kept:  # the tag's own #QA code, and every session on it (this one included), as Done from the list
+            await mark_tags(s, cid, [mid], body.handled, body.react)
+        else:
+            await follow_task(s, task_id, body.handled, body.react)
 
     @r.get("/{task_id}/changes")
     async def task_changes(task_id: str, request: Request) -> dict:
-        """What the session's project has changed (git working tree vs HEAD): files and patch."""
+        """What the project changed since the session started (old sessions: working tree vs HEAD): files and patch."""
         row = await _task(request.app.state, task_id)
-        return await gitops.changes(row["project"])
+        return await gitops.changes(row["project"], row["git_base"])
 
     @r.post("/{task_id}/pr")
     async def task_pr(task_id: str, body: PrRequest, request: Request) -> dict:
@@ -179,7 +221,10 @@ def build_router(settings) -> APIRouter:
         row = await _task(s, task_id)
         if s.agent.running(task_id):
             raise ApiError(409, "task_busy")
-        res = await gitops.open_pr(row["project"], f"ai/{task_id}", body.title.strip(), body.body.strip())
+        title, text = body.title.strip(), body.body.strip()
+        res = await gitops.open_pr(row["project"], f"ai/{task_id}", title, text, row["git_base"])
+        if row["git_base"]:  # what went into the PR is no longer this session's open change
+            await s.db.write(s.store.set_task_base, task_id, await gitops.snapshot(row["project"]))
         pushed = f"Đã đẩy nhánh `{res['branch']}`. {res['note'] or ''}"
         s.agent.note(task_id, f"Đã mở PR: {res['url']}" if res["url"] else pushed)
         return res

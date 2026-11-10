@@ -90,7 +90,7 @@ export function Hint({ title, text, side = "right", children }: { title?: string
               <GuideBulb className="size-8 shrink-0 drop-shadow-sm" />
               <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
                 className={cn("mt-4 grid min-w-0 gap-0.5 rounded-lg bg-cotton px-2.5 py-1.5 text-xs text-ink-2 shadow-pop", right && pos.flip ? "rounded-tr-none" : "rounded-tl-none")}>
-                {title && <b className="font-semibold text-ink">{title}</b>}
+                {title && <b className="font-bold text-ink">{title}</b>}
                 {text}
               </motion.span>
             </motion.div>

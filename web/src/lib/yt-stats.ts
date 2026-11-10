@@ -1,4 +1,5 @@
 // Dashboard numbers for the YouTrack module (pure, no DOM); ported from public/yt/js/stats.js.
+import { fmtDay, type Key, t, tMaybe } from "@/lib/i18n";
 import { bucket, byAs, bySp, DAY, type Filters, QUICK, shortSp, type Sprint, tagsOf, type Ticket } from "@/lib/yt";
 
 export const AGE = { warn: 2, bad: 3 }; // days a ticket may sit in a watched state: > warn amber, > bad red
@@ -134,30 +135,30 @@ export function dashStats(x: StatsInput) {
   const detail = (key: string, arg = ""): [string, Ticket[]] | null => {
     const who = (a: string) => (i: Ticket) => (a === "Chưa assign" ? !i.assignee : i.assignee === a);
     const inDay = (list: Ticket[], k: "resolved" | "created", t: number) => list.filter((i) => (i[k] ?? 0) >= t && (i[k] ?? 0) < t + DAY);
-    const dl = (t: number) => new Date(t).toLocaleDateString("vi-VN");
+    const dl = (at: number) => fmtDay(at);
     const R: Record<string, () => [string, Ticket[]]> = {
-      total: () => [`Ticket trong sprint: ${per.label}`, cohort],
-      doing: () => ["Đang làm", work.filter((i) => bucket(i) === 1)],
-      qc: () => ["Chờ QC", work.filter((i) => bucket(i) === 2)],
-      rate: () => [`Đã xong: ${per.label} (${done.length}/${cohort.length})`, done],
-      q: () => [QUICK[arg].label, open.filter((i) => QUICK[arg].fn(i, now))],
+      total: () => [t("Ticket trong sprint: {s}", { s: per.label }), cohort],
+      doing: () => [t("Đang làm"), work.filter((i) => bucket(i) === 1)],
+      qc: () => [t("Chờ QC"), work.filter((i) => bucket(i) === 2)],
+      rate: () => [t("Đã xong: {s} ({a}/{b})", { s: per.label, a: done.length, b: cohort.length }), done],
+      q: () => [tMaybe(QUICK[arg].label), open.filter((i) => QUICK[arg].fn(i, now))],
       sp: () => [`Sprint ${arg}`, cohort.filter((i) => i.sprints.includes(arg))],
-      wip: () => [`Đang làm: ${arg}`, openL.filter((i) => bucket(i) === 1 && who(arg)(i))],
-      bugs: () => [`Bug trong sprint: ${per.label}`, [...spBugs].sort((a, b) => +!!a.resolved - +!!b.resolved)],
-      bugu: () => [`Bug: ${arg}, ${per.label}`, spBugs.filter(who(arg))],
-      qcl: () => [`Chờ QC: ${arg}`, open.filter((i) => bucket(i) === 2 && (i.qc || "Chưa có QC") === arg)],
+      wip: () => [t("Đang làm: {x}", { x: tMaybe(arg) }), openL.filter((i) => bucket(i) === 1 && who(arg)(i))],
+      bugs: () => [t("Bug trong sprint: {s}", { s: per.label }), [...spBugs].sort((a, b) => +!!a.resolved - +!!b.resolved)],
+      bugu: () => [`Bug: ${tMaybe(arg)}, ${per.label}`, spBugs.filter(who(arg))],
+      qcl: () => [t("Chờ QC: {x}", { x: tMaybe(arg) }), open.filter((i) => bucket(i) === 2 && (i.qc || "Chưa có QC") === arg)],
       dist: () => [`State ${arg}`, open.filter((i) => up(i.state) === arg)],
-      ready: () => [`Ticket mở: ${arg}`, open.filter(MISSING[arg])],
-      mix: () => [`Xong trong sprint: ${({ bug: "Bug", feat: "Feature", task: "Task khác" } as Record<string, string>)[arg]}`, finished(per.set).filter((i) => kindOf(i) === arg)],
-      thru: () => [`Ticket xong ngày ${dl(days[+arg])}`, inDay(thruRows, "resolved", days[+arg])],
-      bugnew: () => [`Bug mới ngày ${dl(days[+arg])}`, inDay(bugs, "created", days[+arg])],
-      bugfix: () => [`Bug đã sửa ngày ${dl(days[+arg])}`, inDay(bugs, "resolved", days[+arg])],
-      aging: () => ["Ticket ở state quá ngưỡng", agingRows.map((r) => r.i)],
-      vel: () => [`Xong trong sprint ${arg}`, rows.filter((i) => i.resolved && real(i) && i.sprints.includes(arg) && as(i))],
-      lead: () => [`Lead time: xong trong ${days.length} ngày qua (lâu nhất trước)`, recent.slice().sort((a, b) => b.resolved! - b.created - (a.resolved! - a.created))],
-      carry: () => ["Ticket chuyển sprint nhiều lần", carry],
-      bugp: () => [`Bug đang mở: ${arg}`, openBugs.filter((i) => (i.priority || "—") === arg)],
-      bugm: () => [`Bug đang mở: ${arg}`, openBugs.filter((i) => modOf(i) === arg)],
+      ready: () => [t("Ticket mở: {x}", { x: tMaybe(arg) }), open.filter(MISSING[arg])],
+      mix: () => [t("Xong trong sprint: {x}", { x: arg === "task" ? t("Task khác") : arg === "bug" ? "Bug" : "Feature" }), finished(per.set).filter((i) => kindOf(i) === arg)],
+      thru: () => [t("Ticket xong ngày {d}", { d: dl(days[+arg]) }), inDay(thruRows, "resolved", days[+arg])],
+      bugnew: () => [t("Bug mới ngày {d}", { d: dl(days[+arg]) }), inDay(bugs, "created", days[+arg])],
+      bugfix: () => [t("Bug đã sửa ngày {d}", { d: dl(days[+arg]) }), inDay(bugs, "resolved", days[+arg])],
+      aging: () => [t("Ticket ở state quá ngưỡng"), agingRows.map((r) => r.i)],
+      vel: () => [t("Xong trong sprint {x}", { x: arg }), rows.filter((i) => i.resolved && real(i) && i.sprints.includes(arg) && as(i))],
+      lead: () => [t("Lead time: xong trong {n} ngày qua (lâu nhất trước)", { n: days.length }), recent.slice().sort((a, b) => b.resolved! - b.created - (a.resolved! - a.created))],
+      carry: () => [t("Ticket chuyển sprint nhiều lần"), carry],
+      bugp: () => [t("Bug đang mở: {x}", { x: arg }), openBugs.filter((i) => (i.priority || "—") === arg)],
+      bugm: () => [t("Bug đang mở: {x}", { x: tMaybe(arg) }), openBugs.filter((i) => modOf(i) === arg)],
     };
     return R[key]?.() ?? null;
   };
@@ -188,7 +189,7 @@ export function dashStats(x: StatsInput) {
     qcLoad: tally(open.filter((i) => bucket(i) === 2), (i) => i.qc || "Chưa có QC"),
     bugPrio: tally(openBugs, (i) => i.priority || "—"),
     bugMod: tally(openBugs, modOf),
-    ready: { n: open.length, rows: Object.entries(MISSING).map(([l, fn]) => [l, open.filter(fn).length] as const) },
+    ready: { n: open.length, rows: Object.entries(MISSING).map(([l, fn]) => [l as Key, open.filter(fn).length] as const) },
     carry,
     mix: mixOf(per.set),
     mixPrev: per.prev ? mixOf(new Set([per.prev])) : { m: { bug: 0, feat: 0, task: 0 }, n: 0 },

@@ -1,12 +1,13 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Bot, Bug, Check, ChevronDown, ChevronUp, ExternalLink, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square } from "lucide-react";
+import { ArrowLeft, ArrowUp, Bot, Bug, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
 import { type AiSkill, AiIdle, AiPromptBox, AiResultCard, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
 import { Avatar } from "@/components/chat-list";
 import { IssueDialog, TaskPage } from "@/components/composer-dialogs";
+import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Dialog, DialogContent, DIALOG_SHEET } from "@/components/ui/dialog";
 import { useOpenSimilar } from "@/components/ticket-form";
 import { DeepBadge, DeepPick } from "@/components/deep-think";
@@ -15,21 +16,23 @@ import { WorkTrail } from "@/components/work-trail";
 import { Snippets } from "@/components/snippets";
 import { groupMembers, useMention } from "@/components/mention";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
+import { ASK_BTN } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox } from "@/lib/api";
-import { draftKey, remind, saveDraft, telegramLink, toast } from "@/lib/inbox";
+import { copyText, draftKey, msgKey, remind, saveDraft, takeCodeAsk, telegramLink, toast } from "@/lib/inbox";
 import { doneLoopMessage } from "@/lib/report-back";
 import { timeLabel } from "@/lib/time";
-import { getPref, put, readIntro, readPlatform, useRole, usesCode, type YtRole } from "@/lib/prefs";
+import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/lib/prefs";
 import { cn, MOD } from "@/lib/utils";
+import { type Key, t as tNow, useT } from "@/lib/i18n";
 
 const MAX = 4096; // UTF-16 code units == JS string length
 // What "Tóm tắt" brings out and an example ask, per role (Cài đặt chung › Vai trò); the prompt side is ai.py ROLE_FOCUS.
-const ROLE_AI: Record<YtRole, [string, string]> = {
+const ROLE_AI: Record<YtRole, [string, Key]> = {
   dev: ["góc nhìn kỹ thuật", "trả lời lịch sự, hẹn chiều nay"],
   qa: ["góc nhìn QA: bước tái hiện, môi trường, mức độ, phạm vi test", "hỏi thêm build và thiết bị để tái hiện"],
   po: ["góc nhìn PO: ảnh hưởng người dùng, ưu tiên, việc cần bạn quyết", "chốt ưu tiên, hẹn trả lời trước thứ Sáu"],
@@ -43,7 +46,7 @@ type Outcome =
 
 export type DraftInjection = { result: AiResult; chatId: string; nonce: number };
 
-export const SEND_ERRORS: Record<string, string> = {
+const SEND_ERROR_KEYS: Record<string, Key> = {
   not_tracking: "Nhóm không còn được theo dõi.",
   reply_not_found: "Tin đích không còn hoặc không thuộc nhóm này.",
   not_connected: "Chưa kết nối Telegram. Bản nháp vẫn được giữ.",
@@ -51,6 +54,10 @@ export const SEND_ERRORS: Record<string, string> = {
   request_payload_mismatch: "Nội dung đã đổi so với yêu cầu đang chờ.",
   retry_after: "Telegram yêu cầu chờ trước khi gửi tiếp.",
 };
+/** Send error texts, in the language at lookup time (for `errorText`). */
+export const SEND_ERRORS: Record<string, string> = new Proxy(SEND_ERROR_KEYS, {
+  get: (o, k) => (typeof k === "string" && k in o ? tNow(o[k]) : undefined),
+});
 
 export function Composer({
   chatId,
@@ -79,6 +86,7 @@ export function Composer({
   youtrackConfigured: boolean;
   groupTitle?: string;
 }) {
+  const t = useT();
   // The reply draft lives per tag in this browser: Esc, Quay lại, j/k, a reload or a crash never lose it.
   const [text, setText] = useState(() => getPref(draftKey(replyTo)) ?? "");
   const latest = useRef(text);
@@ -122,6 +130,11 @@ export function Composer({
   const [taskOpen, setTaskOpen] = useState(false); // the AI Agent sheet
   const [issueOpen, setIssueOpen] = useState(false); // YouTrack dialog
   const [aiPrompt, setAiPrompt] = useState("");
+  // "Trả lời từ code": a project picked here, the AI answers the tag's question from its code (a Dev tool, like Giao AI Agent)
+  const codeOn = aiConfigured && usesCode(role);
+  const projects = useProjects();
+  const [code, setCode] = useState(readReplyCode);
+  const codeProject = codeOn ? projects.data?.find((p) => p.path === code) : undefined; // a removed folder reads as none
   const [showContext, setShowContext] = useState(true); // the group thread around the tag (Ngữ cảnh toggles it)
   // A reply sent here can land after the panel closed: its callbacks must not close or advance the next one.
   const alive = useRef(true);
@@ -180,9 +193,9 @@ export function Composer({
         unsure.current = false;
         saveDraft(replyTo, latest.current);
         const until = err.retryAfter ? Date.now() + err.retryAfter * 1000 : undefined;
-        setOutcome({ kind: "error", message: errorText(err, SEND_ERRORS, "Gửi thất bại."), until });
+        setOutcome({ kind: "error", message: errorText(err, SEND_ERRORS, t("Gửi thất bại.")), until });
       } else {
-        setOutcome({ kind: "unknown", reason: err instanceof ApiError ? "Máy chủ local gặp lỗi khi gửi." : "Không liên lạc được máy chủ local." });
+        setOutcome({ kind: "unknown", reason: err instanceof ApiError ? t("Máy chủ local gặp lỗi khi gửi.") : t("Không liên lạc được máy chủ local.") });
       }
     },
   });
@@ -193,23 +206,34 @@ export function Composer({
 
   // Tagged message (+ nearby context) + the user's prompt -> AI summary, next steps and reply options.
   // Aborting the request is the cancel: the server sees the browser go and kills the claude run.
+  // "Trả lời từ code" takes minutes: it runs in the background (a server job saved per tag), so closing the panel only
+  // stops reading it; opening the tag again reads it on. Hủy stops it for good.
   const askAbort = useRef<AbortController | null>(null);
-  useEffect(() => () => askAbort.current?.abort(), []); // Esc / closing the reply unmounts: stop its run
+  useEffect(() => () => askAbort.current?.abort(), []); // Esc / closing the reply unmounts: stop its run (a job: reading it)
+  const jobKey = `replyJob:${msgKey(replyTo)}`;
   const ask = useMutation({
-    mutationFn: (instruction: string) => {
+    mutationFn: ({ instruction, job, resume }: AskVars) => {
       askAbort.current = new AbortController();
       setPartial("");
+      if (resume && job) return apiStream<AiResult>(`/ai/job/${job.id}`, undefined, askAbort.current.signal, setPartial);
+      // progress questions: the tickets the tag names, then the open ones that look like it
+      const tickets = codeProject && youtrackConfigured ? [...new Set([...(replyTo.text.match(TICKET_IDS) ?? []), ...(related.data ?? []).slice(0, 3).map((tk) => tk.id)])].slice(0, 10) : [];
       return apiStream<AiResult>("/ai/draft",
-        { chat_id: chatId, message_ids: [replyTo.message_id], instruction, project: null, with_context: true, platform: readPlatform(), role: role ?? "dev", intro: readIntro() },
-        askAbort.current.signal, setPartial);
+        { chat_id: chatId, message_ids: [replyTo.message_id], instruction, project: codeProject?.path ?? null, ticket_ids: tickets, with_context: true, platform: readPlatform(), role: role ?? "dev", intro: readIntro() },
+        askAbort.current.signal, setPartial, job?.id);
     },
-    onMutate: (instruction) => {
-      setTurns((l) => [...l, { prompt: instruction, at: Date.now() }]);
+    onMutate: ({ instruction, job }) => {
+      setTurns((l) => [...l, { prompt: instruction, at: job?.at ?? Date.now(), code: job?.code ?? codeProject?.name }]);
       setAiPrompt(""); // sent, like a chat; the ask stays in its bubble
     },
-    onError: (err) => lastTurn((t) => ({ ...t, error: err.name === "AbortError" ? "" : errorText(err, {
-      ai_agent_missing: `Không tìm thấy ${aiName} CLI để đọc dự án, xem Cài đặt › AI.`,
-    }, "AI lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công.") })),
+    onSettled: (_r, err) => { if (err?.name !== "AbortError") setPref(jobKey, null); }, // ended; an abort: Hủy clears it, a closed panel keeps it
+    onError: (err) => lastTurn((turn) => ({ ...turn, error: err.name === "AbortError" ? "" : errorText(err, {
+      ai_agent_missing: t("Không tìm thấy {name} CLI để đọc dự án, xem Cài đặt › AI.", { name: aiName }),
+      project_not_found: t("Dự án không còn trong danh sách, chọn lại dự án."),
+      ai_job_gone: t("Lượt AI trước không còn trên máy chủ (app khởi động lại, hoặc xong quá 1 giờ): chạy lại."),
+      youtrack_unauthorized: t("Token YouTrack hết hạn hoặc thiếu quyền, xem Cài đặt › YouTrack."),
+      youtrack_error: t("Không đọc được ticket YouTrack, thử lại sau."),
+    }, t("AI lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công.")) })),
     onSuccess: (r) => {
       lastTurn((t) => ({ ...t, analysis: r.analysis, took: (Date.now() - t.at) / 1000 }));
       setAnalysis(r.analysis);
@@ -218,7 +242,8 @@ export function Composer({
       const rel = r.options.length === LEVELS.length ? Number(getPref(relKey) ?? 0) : 0;
       const i = rel >= 0 && rel < r.options.length ? rel : 0;
       setPicked(i);
-      setText(r.options[i] ?? r.text);
+      // hand edits in the box (a draft typed while the AI read the code) stay; the drafts wait on the cards
+      if (!latest.current.trim() || options.includes(latest.current)) setText(r.options[i] ?? r.text);
       if (r.options.length <= 1) setPane("reply"); // narrow: one draft, show it; several: pick them on this pane
       setDraftSources(new Set(r.source_message_ids));
       setDraftStale(false);
@@ -238,7 +263,7 @@ export function Composer({
       doneLoopMessage(replyTo); // a "Báo lại" item for this tag is answered
       void qc.invalidateQueries({ queryKey: ["briefing-answered"] }); // …and a Briefing item citing it
       const at = remindAt(remindAfter); // "để mình check rồi báo": back on the list at that time (the pick at send)
-      if (at) remind(replyTo, at).catch((e) => toast({ text: errorText(e, {}, "Đã gửi, nhưng chưa đặt được nhắc lại") }));
+      if (at) remind(replyTo, at).catch((e) => toast({ text: errorText(e, {}, t("Đã gửi, nhưng chưa đặt được nhắc lại")) }));
     } else if (rec.status === "failed") {
       unsure.current = false;
       saveDraft(replyTo, latest.current); // certainly not sent: keep the text, even when the panel already closed
@@ -255,18 +280,20 @@ export function Composer({
       setOutcome({ kind: "sent" });
     } else if (rec.status === "failed") {
       setRequestId(null);
-      setOutcome({ kind: "error", message: SEND_ERRORS[rec.error_code ?? ""] ?? "Gửi thất bại." });
+      setOutcome({ kind: "error", message: SEND_ERRORS[rec.error_code ?? ""] ?? t("Gửi thất bại.") });
     } else {
       setOutcome({
         kind: "unknown",
-        reason: rec.status === "sending" ? "Đang gửi…" : "Chưa rõ Telegram đã nhận tin hay chưa.",
+        reason: rec.status === "sending" ? t("Đang gửi…") : t("Chưa rõ Telegram đã nhận tin hay chưa."),
       });
     }
   }
 
   const pending = requestId !== null && outcome.kind === "unknown";
   const waitLeft = outcome.kind === "error" && outcome.until ? Math.max(0, Math.ceil((outcome.until - now) / 1000)) : 0;
-  const canSend = text.trim().length > 0 && text.length <= MAX && !send.isPending && !pending && waitLeft === 0 && !targetDeleted;
+  const fits = (body: string) => body.trim().length > 0 && body.length <= MAX;
+  const ready = !send.isPending && !pending && waitLeft === 0 && !targetDeleted;
+  const canSend = fits(text) && ready;
 
   // Captured before the inbox's own Esc (which closes the reply): a send in flight holds it. A draft doesn't: it is saved.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
@@ -280,7 +307,7 @@ export function Composer({
     if (e.key === "Escape" && !unsure.current && latest.current.trim() && !saveDraft(replyTo, latest.current) && !warned.current) {
       warned.current = true;
       e.preventDefault();
-      toast({ text: "Không lưu được nháp trên trình duyệt này: bấm Esc lần nữa để bỏ nội dung" });
+      toast({ text: t("Không lưu được nháp trên trình duyệt này: bấm Esc lần nữa để bỏ nội dung") });
       return;
     }
     if (step) {
@@ -295,7 +322,7 @@ export function Composer({
   }, []);
 
   function submit(body = text) {
-    if (!canSend) return;
+    if (!fits(body) || !ready) return;
     const id = requestId ?? crypto.randomUUID();
     setRequestId(id);
     unsure.current = true;
@@ -304,25 +331,63 @@ export function Composer({
     send.mutate({ id, retryUnknown: false, text: mention.wire(body) });
   }
 
-  const head = "text-sm font-semibold text-ink";
+  const head = "text-sm font-bold text-ink";
   const link = telegramLink(replyTo);
   const name = replyTo.sender_name ?? `#${replyTo.message_id}`;
   const insert = (line: string) => setText((cur) => (cur.trim() ? `${cur}\n${line}` : line));
   const tools = (aiConfigured && usesCode(role)) || youtrackConfigured;
   // What the idle assistant shows it can do here: only the tools this panel offers.
-  const skills: AiSkill[] = ["summary", "steps", "reply", ...(youtrackConfigured ? ["ticket" as const] : []), ...(usesCode(role) ? ["code" as const] : [])];
+  const skills: AiSkill[] = codeProject ? ["answer", "reply", ...(youtrackConfigured ? ["ticket" as const] : []), "code"]
+    : ["summary", "steps", "reply", ...(youtrackConfigured ? ["ticket" as const] : []), ...(usesCode(role) ? ["code" as const] : [])];
   const { ref: feedRef, onScroll: onFeedScroll } = useFollow(`${partial.length}:${options.length}`, turns.length); // follows the AI's writing unless scrolled up
-  const runAsk = () => { if (!ask.isPending && !targetDeleted && !pending) ask.mutate(aiPrompt.trim()); };
-  const askLabel = analysis ? "Tóm tắt lại" : "Tóm tắt & gợi ý";
+  const runAsk = () => {
+    if (ask.isPending || targetDeleted || pending) return;
+    const instruction = aiPrompt.trim();
+    const job = codeProject ? { id: crypto.randomUUID(), code: codeProject.name, prompt: instruction, at: Date.now() } : undefined;
+    if (job) setPref(jobKey, JSON.stringify(job));
+    ask.mutate({ instruction, job });
+  };
+  const stopAsk = () => {
+    const job = readJob(jobKey);
+    if (job) api<void>(`/ai/job/${job.id}`, { method: "DELETE" }).catch(() => {}); // gone already: nothing to stop
+    setPref(jobKey, null);
+    askAbort.current?.abort();
+  };
+  // A run of this tag still on the server (the panel was closed): read it on. "Trả lời từ code" from the row: run it.
+  // Deferred a tick: React dev runs effects twice, and a cancelled timer starts nothing.
+  const [wantCode, setWantCode] = useState(false);
+  const onOpen = useEffectEvent(() => {
+    const job = readJob(jobKey);
+    if (job && Date.now() - job.at > JOB_KEEP_MS) setPref(jobKey, null); // the server dropped it long ago
+    else if (job && aiConfigured) ask.mutate({ instruction: job.prompt, job, resume: true });
+    else if (takeCodeAsk(msgKey(replyTo))) setWantCode(true);
+  });
+  useEffect(() => { const id = setTimeout(onOpen, 0); return () => clearTimeout(id); }, []);
+  useEffect(() => {
+    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === msgKey(replyTo) && takeCodeAsk(msgKey(replyTo))) setWantCode(true); };
+    addEventListener("ask-code", on);
+    return () => removeEventListener("ask-code", on);
+  }, [replyTo]);
+  const startCode = useEffectEvent(() => {
+    setWantCode(false);
+    setPane("ai");
+    if (codeProject) runAsk();
+    else toast({ text: t("Chọn dự án ở ô Đọc code rồi bấm Trả lời từ code") });
+  });
+  useEffect(() => { if (wantCode && (projects.isSuccess || projects.isError)) startCode(); }, [wantCode, projects.isSuccess, projects.isError]); // eslint-disable-line react-hooks/set-state-in-effect -- runs once the project list is known
+  const askLabel = codeProject ? (analysis ? t("Hỏi code lại") : t("Trả lời từ code")) : analysis ? t("Tóm tắt lại") : t("Tóm tắt & gợi ý");
+  const answerMode = !!turns.at(-1)?.code; // the drafts on screen answer from code: "Ngắn gọn" / "Đầy đủ"
+  // The textarea holds hand edits (not one of the drafts): a draft's own Gửi would overwrite them, so it waits.
+  const edited = !!text.trim() && !options.includes(text);
   const tag = (
-    <article ref={toTag} aria-label="Tin được tag" className="my-1 grid scroll-mt-16 gap-1 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-2.5 pr-3 pl-3">
+    <article ref={toTag} aria-label={t("Tin được tag")} className="my-1 grid scroll-mt-16 gap-1 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-2.5 pr-3 pl-3">
       <span className="flex min-h-6 items-center gap-2 text-xs font-medium text-hl-2">
-        <span>{replyTo.outgoing ? "Bạn" : name}</span><span className="font-normal">tag bạn</span>
+        <span>{replyTo.outgoing ? t("Bạn") : name}</span><span className="font-normal">{t("tag bạn")}</span>
         <DeepBadge m={replyTo} />
         <DeepPick m={replyTo} className="ml-auto" />
       </span>
-      <p className="whitespace-pre-wrap break-words text-[0.9375rem] leading-[1.6] text-ink">
-        {replyTo.text ? richText(replyTo) : <i className="text-ink-3">Tin không có chữ</i>}
+      <p className="whitespace-pre-wrap break-words text-md leading-[1.6] text-ink">
+        {replyTo.text ? richText(replyTo) : <i className="text-ink-3">{t("Tin không có chữ")}</i>}
       </p>
     </article>
   );
@@ -336,7 +401,7 @@ export function Composer({
       </DialogContent>
     </Dialog>
     <form
-      aria-label="Soạn trả lời"
+      aria-label={t("Soạn trả lời")}
       data-composer
       className="@container grid h-full min-h-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] bg-cotton"
       onSubmit={(e) => {
@@ -346,25 +411,25 @@ export function Composer({
     >
       {/* Back, who you answer, the actions on that tag. */}
       <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2 sm:px-5">
-        <Hint side="bottom" text="Quay lại danh sách (Esc)">
-          <Button type="button" size="icon-sm" variant="ghost" onClick={onClearReply} disabled={pending} aria-label="Quay lại danh sách (Esc)">
+        <Hint side="bottom" text={t("Quay lại danh sách (Esc)")}>
+          <Button type="button" size="icon-sm" variant="ghost" onClick={onClearReply} disabled={pending} aria-label={t("Quay lại danh sách (Esc)")}>
             <ArrowLeft />
           </Button>
         </Hint>
         {onStep && (
           <span className="flex items-center">
-            <Hint side="bottom" text="Tag trước (k, Alt+↑)">
-              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(-1)} aria-label="Tag trước"><ChevronUp /></Button>
+            <Hint side="bottom" text={t("Tag trước (k, Alt+↑)")}>
+              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(-1)} aria-label={t("Tag trước")}><ChevronUp /></Button>
             </Hint>
-            {position && <span className="px-0.5 font-mono text-xs text-ink-3 tabular-nums" aria-label={`Tag ${position[0]} trên ${position[1]} đang chờ`}>{position[0]}/{position[1]}</span>}
-            <Hint side="bottom" text="Tag tiếp theo (j, Alt+↓)">
-              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(1)} aria-label="Tag tiếp theo"><ChevronDown /></Button>
+            {position && <span className="px-0.5 font-mono text-xs text-ink-3 tabular-nums" aria-label={t("Tag {i} trên {n} đang chờ", { i: position[0], n: position[1] })}>{position[0]}/{position[1]}</span>}
+            <Hint side="bottom" text={t("Tag tiếp theo (j, Alt+↓)")}>
+              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(1)} aria-label={t("Tag tiếp theo")}><ChevronDown /></Button>
             </Hint>
           </span>
         )}
         <Avatar name={name} className="size-9 text-sm" />
         <div className="grid min-w-0 flex-1 leading-tight">
-          <h2 className="truncate text-base font-semibold">{name}</h2>
+          <h2 className="truncate text-base font-bold">{name}</h2>
           <span className="flex min-w-0 gap-2 text-xs text-ink-3">
             {groupTitle && <span className="truncate">{groupTitle}</span>}
             <time dateTime={replyTo.date} className="shrink-0 font-mono tabular-nums">{timeLabel(replyTo.date)}</time>
@@ -376,8 +441,8 @@ export function Composer({
             <MessageActions m={replyTo} showContext={showContext} onDone={onDone} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         )}
-        <Hint side="bottom" title="Mở Telegram" text={link.exact ? "Mở tin này trong app Telegram" : "Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)"}>
-          <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })} aria-label="Mở Telegram"
+        <Hint side="bottom" title={t("Mở Telegram")} text={link.exact ? t("Mở tin này trong app Telegram") : t("Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)")}>
+          <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })} aria-label={t("Mở Telegram")}
             className="grid size-[30px] shrink-0 place-items-center rounded-[var(--radius-input)] text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
             <ExternalLink className="size-4" aria-hidden />
           </a>
@@ -390,20 +455,20 @@ export function Composer({
         {/* Narrow: the reply or the assistant, so the AI prompt box stays pinned at the bottom of its pane. */}
         {(aiConfigured || tools) && (
           <div className="shrink-0 px-3 pt-2 @3xl:hidden">
-            <Segmented id="composer-pane" label="Khung" variant="card" value={pane} onChange={setPane}
-              items={[{ value: "reply", label: <><Send className="size-3.5" aria-hidden />Trả lời</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{aiConfigured ? "Trợ lý AI" : "Công cụ"}</> }]} />
+            <Segmented id="composer-pane" label={t("Khung")} variant="card" value={pane} onChange={setPane}
+              items={[{ value: "reply", label: <><Send className="size-3.5" aria-hidden />{t("Trả lời")}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{aiConfigured ? t("Trợ lý AI") : t("Công cụ")}</> }]} />
           </div>
         )}
         {/* The thread as it reads in the group: messages before, the tag in place, messages after. */}
         <div className={cn("grid content-start gap-3 px-4 py-5 sm:px-6 @3xl:col-start-1 @3xl:row-start-1 @3xl:overflow-y-auto", pane === "ai" && "@max-3xl:hidden")}>
-          {targetDeleted && <p role="alert" className="rounded-[var(--radius-input)] bg-error-wash px-3 py-2 text-xs text-error">Tin đích đã bị xóa.</p>}
+          {targetDeleted && <p role="alert" className="rounded-[var(--radius-input)] bg-error-wash px-3 py-2 text-xs text-error">{t("Tin đích đã bị xóa.")}</p>}
           {showContext
             ? <ContextPanel m={replyTo} focus={tag} className="mt-0 max-h-none gap-3 overflow-visible bg-transparent p-0 text-sm" />
             : tag}
           <WorkTrail m={replyTo} />
         </div>
 
-        <aside aria-label="Trợ lý" className={cn("order-2 flex min-h-0 flex-1 flex-col border-t bg-paper-2 @3xl:col-start-2 @3xl:row-span-2 @3xl:row-start-1 @3xl:border-t-0 @3xl:border-l",
+        <aside aria-label={t("Trợ lý")} className={cn("order-2 flex min-h-0 flex-1 flex-col border-t bg-paper-2 @3xl:col-start-2 @3xl:row-span-2 @3xl:row-start-1 @3xl:border-t-0 @3xl:border-l",
           pane === "reply" && "@max-3xl:hidden")}>
           {/* Like an AI Agent session: header and conversation scroll, the prompt box stays pinned under them. */}
           <div ref={feedRef} onScroll={onFeedScroll}
@@ -412,18 +477,18 @@ export function Composer({
           {(aiConfigured || tools) && (
             <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
               <h3 className={cn(head, "flex items-center gap-1.5")}>
-                {aiConfigured ? <><Sparkles className="size-4 text-hl" aria-hidden /> Trợ lý AI</> : "Công cụ"}
+                {aiConfigured ? <><Sparkles className="size-4 text-hl" aria-hidden /> {t("Trợ lý AI")}</> : t("Công cụ")}
               </h3>
               {tools && (
-                <div role="toolbar" aria-label="Công cụ" className="flex flex-wrap gap-1.5">
+                <div role="toolbar" aria-label={t("Công cụ")} className="flex flex-wrap gap-1.5">
                   {aiConfigured && usesCode(role) && (
-                    <Hint side="bottom" title="AI Agent" text="Giao cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)">
-                      <Button type="button" size="sm" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> Giao AI Agent</Button>
+                    <Hint side="bottom" title="AI Agent" text={t("Giao cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)")}>
+                      <Button type="button" size="sm" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> {t("Giao AI Agent")}</Button>
                     </Hint>
                   )}
                   {youtrackConfigured && (
-                    <Hint side="bottom" title="YouTrack" text="Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời">
-                      <Button type="button" size="sm" variant="outline" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><Bug /> Tạo ticket</Button>
+                    <Hint side="bottom" title="YouTrack" text={t("Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời")}>
+                      <Button type="button" size="sm" variant="outline" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><Bug /> {t("Tạo ticket")}</Button>
                     </Hint>
                   )}
                 </div>
@@ -432,16 +497,16 @@ export function Composer({
           )}
 
           {!!related.data?.length && (
-            <section aria-label="Ticket có vẻ liên quan" className="grid grid-cols-1 gap-2">
-              <h3 className={head}>Ticket có vẻ liên quan</h3>
+            <section aria-label={t("Ticket có vẻ liên quan")} className="grid grid-cols-1 gap-2">
+              <h3 className={head}>{t("Ticket có vẻ liên quan")}</h3>
               <ul className="grid grid-cols-1 divide-y rounded-[var(--radius-input)] border bg-cotton">
-                {related.data.slice(0, 3).map((t) => (
-                  <li key={t.id} className="flex min-h-10 items-center gap-2 py-1 pr-1 pl-3 text-xs">
-                    <a href={`/youtrack/?ticket=${t.id}`} title={t.summary} className="min-w-0 flex-1 truncate text-ink-2 hover:underline">
-                      <b className="font-mono font-medium text-ink">{t.id}</b> {t.summary}
+                {related.data.slice(0, 3).map((tk) => (
+                  <li key={tk.id} className="flex min-h-10 items-center gap-2 py-1 pr-1 pl-3 text-xs">
+                    <a href={`/youtrack/?ticket=${tk.id}`} title={tk.summary} className="min-w-0 flex-1 truncate text-ink-2 hover:underline">
+                      <b className="font-mono font-medium text-ink">{tk.id}</b> {tk.summary}
                     </a>
-                    <Button type="button" size="xs" variant="ghost" aria-label={`Chèn link ${t.id} vào trả lời`} onClick={() => insert(`${t.id}: ${t.url}`)}>
-                      <Plus /> Chèn
+                    <Button type="button" size="xs" variant="ghost" aria-label={t("Chèn link {id} vào trả lời", { id: tk.id })} onClick={() => insert(`${tk.id}: ${tk.url}`)}>
+                      <Plus /> {t("Chèn")}
                     </Button>
                   </li>
                 ))}
@@ -450,12 +515,12 @@ export function Composer({
           )}
 
           {aiConfigured && (
-            <section aria-label="Trợ lý AI" aria-busy={ask.isPending} className="grid grid-cols-[minmax(0,1fr)] gap-3">
+            <section aria-label={t("Trợ lý AI")} aria-busy={ask.isPending} className="grid grid-cols-[minmax(0,1fr)] gap-3">
               <AiTurns turns={turns} running={ask.isPending} partial={partial} missing={missing} onMissing={() => insert(missing)} />
 
               {options.length > 0 && !ask.isPending && (
                 <fieldset className="grid gap-2 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
-                  <legend className="mb-2 text-xs font-medium text-ink-3">Mẫu AI <span className="font-normal">(chọn để đưa vào ô soạn)</span></legend>
+                  <legend className="mb-2 text-xs font-medium text-ink-3">{t("Mẫu AI")} <span className="font-normal">{t("(chọn để đưa vào ô soạn)")}</span></legend>
                   {options.map((o, i) => (
                     <label
                       key={i}
@@ -474,15 +539,25 @@ export function Composer({
                           // Edited by hand: add the new pick under it rather than overwrite the edits.
                           if (text.trim() && text !== options[picked]) {
                             insert(o);
-                            toast({ text: "Đã chèn mẫu dưới nội dung bạn đã sửa" });
+                            toast({ text: t("Đã chèn mẫu dưới nội dung bạn đã sửa") });
                           } else setText(o);
                           setPicked(i);
                           if (options.length === LEVELS.length) put(relKey, String(i));
                         }}
                       />
-                      <span className={cn("flex items-center gap-1.5 text-xs font-medium", picked === i ? "text-hl-2" : "text-ink-3")}>
+                      <span className={cn("flex min-h-5 items-center gap-1.5 text-xs font-medium", picked === i ? "text-hl-2" : "text-ink-3")}>
                         {picked === i && <Check className="size-3.5 animate-in zoom-in-50 duration-(--dur-short)" aria-hidden />}
-                        {options.length === LEVELS.length ? LEVELS[i] : <>Mẫu <span className="font-mono">{i + 1}</span></>}
+                        {answerMode && options.length === ANSWER_LEVELS.length ? t(ANSWER_LEVELS[i]) : options.length === LEVELS.length ? t(LEVELS[i]) : t.n("Mẫu {n}", { n: <span className="font-mono">{i + 1}</span> })}
+                        <span className="ml-auto flex">
+                          <Hint side="bottom" text={t("Copy bản nháp này")}>
+                            <button type="button" aria-label={t("Copy bản nháp này")} className={DRAFT_BTN}
+                              onClick={(e) => { e.preventDefault(); void copyText(o); }}><Copy className="size-3.5" aria-hidden /></button>
+                          </Hint>
+                          <Hint side="bottom" text={edited ? t("Ô soạn đang có nội dung bạn sửa: gửi từ ô soạn, hoặc xóa nó trước") : o.length > MAX ? t("Quá {n} ký tự, sửa trong ô soạn rồi gửi", { n: MAX }) : t("Gửi ngay bản nháp này, trả lời {name}", { name })}>
+                            <button type="button" aria-label={t("Gửi bản nháp này")} aria-disabled={edited || !fits(o) || !ready} className={DRAFT_BTN}
+                              onClick={(e) => { e.preventDefault(); if (edited || !fits(o) || !ready) return; setPicked(i); setText(o); submit(o); }}><Send className="size-3.5" aria-hidden /></button>
+                          </Hint>
+                        </span>
                       </span>
                       <span className="block min-w-0 whitespace-pre-wrap break-words text-ink">{o}</span>
                     </label>
@@ -496,15 +571,25 @@ export function Composer({
 
           {aiConfigured && (
             <div className="shrink-0 px-4 pb-4 sm:px-6 @3xl:px-5">
-              <AiPromptBox id="ai-prompt" aria-label="Prompt cho AI" maxLength={2000} value={aiPrompt} onChange={setAiPrompt} onSend={runAsk}
-                running={ask.isPending} onStop={() => askAbort.current?.abort()} stopLabel="Hủy" stopHint="Dừng AI (Hủy tóm tắt)"
-                placeholder={ask.isPending ? "AI đang tóm tắt…" : `Thêm yêu cầu (không bắt buộc). Ví dụ: ${example}`}
-                tools={<ModelEffortPicker compact className="min-w-0 gap-x-2" />}
+              <AiPromptBox id="ai-prompt" aria-label={t("Prompt cho AI")} maxLength={2000} value={aiPrompt} onChange={setAiPrompt} onSend={runAsk}
+                running={ask.isPending} onStop={stopAsk} stopLabel={t("Hủy")} stopHint={t("Dừng AI (Hủy tóm tắt)")}
+                placeholder={ask.isPending ? (turns.at(-1)?.code ? t("AI đang đọc code…") : t("AI đang tóm tắt…")) : codeProject ? t("Hỏi thêm về code (không bắt buộc). Ví dụ: {example}", { example: t("trả lời ngắn cho PO, không nêu tên file") }) : t("Thêm yêu cầu (không bắt buộc). Ví dụ: {example}", { example: t(example) })}
+                tools={<>
+                  {codeOn && (
+                    <Hint side="bottom" title={t("Trả lời từ code")} text={t("Chọn dự án: AI đọc code trong đó để trả lời câu hỏi của tin này, kèm căn cứ file / hàm và 2 bản nháp trả lời. Không đọc code: tóm tắt & gợi ý như thường.")}>
+                      <span className="inline-flex min-w-0">
+                        <ProjectPicker value={codeProject?.path ?? ""} none={t("Không đọc code")} className="h-7 max-w-48 text-xs"
+                          onChange={(path) => { setCode(path); saveReplyCode(path); }} />
+                      </span>
+                    </Hint>
+                  )}
+                  <ModelEffortPicker compact className="min-w-0 gap-x-2" />
+                </>}
                 actions={!ask.isPending && (
                   <Hint text={`${askLabel} (Enter)`} side="bottom">
                     <Button type="button" size="sm" aria-label={askLabel} disabled={targetDeleted || pending} onClick={runAsk}
                       className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
-                      {aiPrompt.trim() ? <ArrowUp aria-hidden /> : <Sparkles aria-hidden />} {askLabel}
+                      {aiPrompt.trim() ? <ArrowUp aria-hidden /> : codeProject ? <FileSearch aria-hidden /> : <Sparkles aria-hidden />} {askLabel}
                     </Button>
                   </Hint>
                 )} />
@@ -519,7 +604,8 @@ export function Composer({
             {mention.popup}
             <Textarea
               ref={attach}
-              aria-label="Nội dung trả lời"
+              aria-label={t("Nội dung trả lời")}
+              data-reply
               className="max-h-[40vh] min-h-16 resize-none border-0 bg-transparent hover:border-0 focus-visible:outline-none"
               value={text}
               readOnly={pending}
@@ -536,20 +622,20 @@ export function Composer({
                 }
               }}
               rows={2}
-              placeholder={`Trả lời ${name}… (@ để tag, / để chèn mẫu)`}
+              placeholder={t("Trả lời {name}… (@ để tag, / để chèn mẫu)", { name })}
             />
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-2 pl-1.5">
               <span className="flex items-center gap-0.5">
                 <Snippets open={snips} onOpenChange={setSnips} current={text}
                   vars={{ "tên": replyTo.sender_name ?? "", ticket: replyTo.text.match(TICKET_ID)?.[0] ?? "" }}
-                  onInsert={(line) => { insert(line); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("textarea[aria-label='Nội dung trả lời']")?.focus()); }} />
+                  onInsert={(line) => { insert(line); requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>("textarea[data-reply]")?.focus()); }} />
                 {!replyTo.outgoing && <RemindPick value={remindAfter} auto={!remindSet && !!remindAfter} onChange={(v) => { setRemindSet(true); setRemindAfter(v); }} />}
               </span>
               <div aria-live="polite" className="min-w-0 flex-1 text-xs leading-snug">
-                {draftStale && <span role="status" className="text-warn">Tin nguồn của bản nháp AI đã đổi; bản nháp có thể đã cũ. </span>}
-                {outcome.kind === "sent" && <span className="text-ok">Đã gửi.</span>}
-                {outcome.kind === "unknown" && <span className="text-warn">{outcome.reason} Thử lại sẽ dùng cùng yêu cầu, Telegram có thể đã nhận tin.</span>}
-                {outcome.kind === "error" && <span className="text-error">{outcome.message}{waitLeft > 0 && ` Còn ${waitLeft} giây.`}</span>}
+                {draftStale && <span role="status" className="text-warn">{t("Tin nguồn của bản nháp AI đã đổi; bản nháp có thể đã cũ.")} </span>}
+                {outcome.kind === "sent" && <span className="text-ok">{t("Đã gửi.")}</span>}
+                {outcome.kind === "unknown" && <span className="text-warn">{outcome.reason} {t("Thử lại sẽ dùng cùng yêu cầu, Telegram có thể đã nhận tin.")}</span>}
+                {outcome.kind === "error" && <span className="text-error">{outcome.message}{waitLeft > 0 && ` ${t("Còn {n} giây.", { n: waitLeft })}`}</span>}
               </div>
               {text.length > 0 && (
                 <span className={cn("shrink-0 font-mono text-xs tabular-nums", text.length > MAX ? "font-medium text-error" : "text-ink-3")}>
@@ -557,26 +643,26 @@ export function Composer({
                 </span>
               )}
               <Button type="submit" size="sm" aria-busy={send.isPending} disabled={!canSend} className="shrink-0 px-3">
-                {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />} {send.isPending ? "Đang gửi…" : "Gửi"}
-                <span aria-hidden className="ml-0.5 font-mono text-[0.6875rem] font-normal opacity-70">{MOD}↵</span>
+                {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <Send aria-hidden />} {send.isPending ? t("Đang gửi…") : t("Gửi")}
+                <span aria-hidden className="ml-0.5 font-mono text-2xs font-normal opacity-70">{MOD}↵</span>
               </Button>
             </div>
           </div>
           {pending && (
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="sm" variant="outline" aria-busy={check.isPending} disabled={check.isPending} onClick={() => requestId && check.mutate(requestId)}>
-                Kiểm tra
+                {t("Kiểm tra")}
               </Button>
               <Button type="button" size="sm" variant="outline" disabled={send.isPending}
                 onClick={() => requestId && send.mutate({ id: requestId, retryUnknown: true, text: mention.wire(text) })}>
-                Thử lại cùng yêu cầu
+                {t("Thử lại cùng yêu cầu")}
               </Button>
               <Button type="button" size="sm" variant="ghost"
                 onClick={() => {
                   setRequestId(null);
                   setOutcome({ kind: "idle" });
                 }}>
-                Bỏ theo dõi yêu cầu
+                {t("Bỏ theo dõi yêu cầu")}
               </Button>
             </div>
           )}
@@ -611,7 +697,7 @@ function Md({ text }: { text: string }) {
     }
     flush(i);
     const h = /^#{1,6}\s+(.*)/.exec(line);
-    if (h) out.push(<p key={i} className="mt-1 font-semibold text-ink first:mt-0">{bold(h[1], i)}</p>);
+    if (h) out.push(<p key={i} className="mt-1 font-bold text-ink first:mt-0">{bold(h[1], i)}</p>);
     else if (line.trim()) out.push(<p key={i}>{bold(line, i)}</p>);
   });
   flush(-1);
@@ -620,10 +706,11 @@ function Md({ text }: { text: string }) {
 
 function bold(s: string, key: number) {
   return s.split(/\*\*(.+?)\*\*/g).map((t, i) =>
-    i % 2 ? <strong key={i} className="font-semibold text-ink">{inline(t, key * 100 + i)}</strong> : inline(t, key * 100 + i));
+    i % 2 ? <strong key={i} className="font-bold text-ink">{inline(t, key * 100 + i)}</strong> : inline(t, key * 100 + i));
 }
 
 const TICKET_ID = /\b[A-Z][A-Z0-9]+-\d+\b/;
+const TICKET_IDS = new RegExp(TICKET_ID.source, "g");
 
 /** QA: a reply asking for what the summary marked [cần bổ sung] ("**Môi trường:** [cần bổ sung]" → "Môi trường"). */
 export function askMissing(analysis: string) {
@@ -634,11 +721,35 @@ export function askMissing(analysis: string) {
 }
 
 // The AI drafts come in this order (prompt in ai.py): who the user is to the person they answer.
-const LEVELS = ["Tôi là cấp trên", "Ngang cấp", "Trả lời cấp trên"];
+const LEVELS: Key[] = ["Tôi là cấp trên", "Ngang cấp", "Trả lời cấp trên"];
+const ANSWER_LEVELS: Key[] = ["Ngắn gọn", "Đầy đủ"]; // ai.py ANSWER_TASK
+const DRAFT_BTN = cn(ASK_BTN, "aria-disabled:cursor-not-allowed aria-disabled:opacity-40"); // the AI Agent asks' copy / send look
 
-type Turn = { prompt: string; at: number; analysis?: string; took?: number; error?: string }; // error "": cancelled
+/** A "Trả lời từ code" run on the server, saved per tag (the panel may close and open again). */
+type SavedJob = { id: string; code: string; prompt: string; at: number };
+type AskVars = { instruction: string; job?: SavedJob; resume?: boolean };
+const JOB_KEEP_MS = 2 * 3600_000; // a run's start + ai.py JOB_KEEP (an ended run waits 1 h), with room for a long run
+const readJob = (key: string): SavedJob | null => {
+  try {
+    return JSON.parse(getPref(key) ?? "null");
+  } catch {
+    return null;
+  }
+};
 
-const THINKING = [
+// error "": cancelled; code: the project read for it ("Trả lời từ code")
+type Turn = { prompt: string; at: number; analysis?: string; took?: number; error?: string; code?: string };
+
+const CODE_THINKING: Key[] = [
+  "Đang đọc câu hỏi…",
+  "Đang lục code dự án…",
+  "Đang lần theo màn hình và API…",
+  "Đang soi rule validate…",
+  "Đang đối chiếu nghiệp vụ…",
+  "Đang viết câu trả lời có căn cứ…",
+];
+
+const THINKING: Key[] = [
   "Đang đọc tin nhắn…",
   "Đang lục lại ngữ cảnh nhóm…",
   "Đang hỏi ý kiến con Android…",
@@ -651,33 +762,36 @@ const THINKING = [
 function AiTurns({ turns, running, partial, missing, onMissing }: {
   turns: Turn[]; running: boolean; partial: string; missing: string; onMissing: () => void;
 }) {
+  const t = useT();
   const live = partial.split(/\n\s*={3,}\s*(?:\n|$)/)[0]; // the summary part; the reply options come after "==="
   return (
-    <ul aria-label="Hội thoại với AI" className="grid grid-cols-[minmax(0,1fr)] gap-3">
-      {turns.map((t, i) => {
+    <ul aria-label={t("Hội thoại với AI")} className="grid grid-cols-[minmax(0,1fr)] gap-3">
+      {turns.map((turn, i) => {
         const last = i === turns.length - 1;
         return (
-          <Fragment key={t.at}>
-            <li><UserBubble>{t.prompt || <span className="inline-flex items-center gap-1.5"><Sparkles className="size-3.5 text-hl-2" aria-hidden /> Tóm tắt & gợi ý</span>}</UserBubble></li>
+          <Fragment key={turn.at}>
+            <li><UserBubble>{turn.prompt || (turn.code
+              ? <span className="inline-flex items-center gap-1.5"><FileSearch className="size-3.5 text-hl-2" aria-hidden /> {t("Trả lời từ code · {project}", { project: turn.code })}</span>
+              : <span className="inline-flex items-center gap-1.5"><Sparkles className="size-3.5 text-hl-2" aria-hidden /> {t("Tóm tắt & gợi ý")}</span>)}</UserBubble></li>
             {last && running ? (
               live.trim() ? <>
-                <li aria-label="AI đang viết" className="grid gap-1.5 break-words px-0.5 text-sm leading-[1.6] text-ink animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
+                <li aria-label={t("AI đang viết")} className="grid gap-1.5 break-words px-0.5 text-sm leading-[1.6] text-ink animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
                   <Md text={live} />
                 </li>
                 <li><AiWriting /></li>
-              </> : <li><AiThinking lines={THINKING} /></li>
-            ) : t.analysis ? (
+              </> : <li><AiThinking lines={(turn.code ? CODE_THINKING : THINKING).map((l) => t(l))} /></li>
+            ) : turn.analysis ? (
               <li>
-                <AiResultCard aria-label="Tóm tắt và bước tiếp theo" took={t.took} dim={!last}
-                  actions={last && missing && <Button type="button" size="xs" variant="outline" className="mr-auto" onClick={onMissing}><MessageCircleQuestion /> Hỏi thông tin còn thiếu</Button>}>
-                  <Md text={t.analysis} />
+                <AiResultCard aria-label={turn.code ? t("Trả lời từ code") : t("Tóm tắt và bước tiếp theo")} took={turn.took} dim={!last}
+                  actions={last && missing && <Button type="button" size="xs" variant="outline" className="mr-auto" onClick={onMissing}><MessageCircleQuestion /> {t("Hỏi thông tin còn thiếu")}</Button>}>
+                  <Md text={turn.analysis} />
                 </AiResultCard>
               </li>
-            ) : t.error ? (
-              <li><AiResultCard error>{t.error}</AiResultCard></li>
-            ) : t.error === "" && (
+            ) : turn.error ? (
+              <li><AiResultCard error>{turn.error}</AiResultCard></li>
+            ) : turn.error === "" && (
               <li role="status" className="flex items-center gap-1.5 px-0.5 text-xs text-ink-3 animate-in fade-in-0 duration-(--dur-short)">
-                <Square className="size-3 fill-current" aria-hidden /> Đã hủy tóm tắt.
+                <Square className="size-3 fill-current" aria-hidden /> {t("Đã hủy tóm tắt.")}
               </li>
             )}
           </Fragment>

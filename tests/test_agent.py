@@ -147,15 +147,56 @@ async def test_git_changes_and_pr_leave_secrets_out(tmp_path, monkeypatch):
     g("remote", "add", "origin", str(remote))
     (repo / "a.txt").write_text("2\n")
     (repo / ".env").write_text("TOKEN=x\n")
+    (repo / "new.py").write_text("x = 1\n")
     c = await gitops.changes(str(repo))
-    assert c["branch"] == "main" and {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True}
-    assert "+2" in c["diff"]
+    assert c["branch"] == "main" and {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True, "new.py": False}
+    assert "+2" in c["diff"] and "+++ b/new.py\n@@ -0,0 +1,1 @@\n+x = 1" in c["diff"] and "TOKEN" not in c["diff"]
     monkeypatch.setenv("PATH", "/usr/bin:/bin")  # no gh here: the branch is pushed, the PR left to the user
     r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "")
     assert r["branch"] == "ai/x" and r["skipped"] == [".env"] and r["url"] is None
     shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
                            capture_output=True, text=True).stdout
-    assert shown.split() == ["a.txt"]
+    assert shown.split() == ["a.txt", "new.py"]
+
+
+async def test_git_changes_since_the_session_start_leave_earlier_edits_out(tmp_path, monkeypatch):
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    remote, repo = tmp_path / "remote.git", tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True)  # noqa: E731
+    for n in ("a", "b", "c"):
+        (repo / f"{n}.txt").write_text("1\n")
+    g("add", ".")
+    g("commit", "-qm", "init")
+    g("remote", "add", "origin", str(remote))
+    (repo / "b.txt").write_text("user\n")  # the user's own edits before the session: not the session's
+    (repo / "old.txt").write_text("x\n")
+    g("add", "b.txt")
+    base = await gitops.snapshot(str(repo))
+    assert g("status", "--porcelain").stdout.splitlines() == ["M  b.txt", "?? old.txt"]  # their staging untouched
+    (repo / "a.txt").write_text("2\n")  # the session's edits
+    (repo / "c.txt").unlink()
+    (repo / "new.py").write_text("x = 1\n")
+    (repo / ".env").write_text("TOKEN=x\n")
+    c = await gitops.changes(str(repo), base)
+    assert {f["path"]: f["status"] for f in c["files"]} == {"a.txt": "M", "c.txt": "D", "new.py": "A", ".env": "A"}
+    assert "+2" in c["diff"] and "+x = 1" in c["diff"] and "TOKEN" not in c["diff"] and "user" not in c["diff"]
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", base)
+    assert r["branch"] == "ai/x" and r["skipped"] == [".env"]
+    shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
+                           capture_output=True, text=True).stdout
+    assert sorted(shown.split()) == ["a.txt", "c.txt", "new.py"]
+    assert sorted(g("status", "--porcelain").stdout.splitlines()) == ["?? .env", "?? old.txt", "M  b.txt"]
+    assert (await gitops.changes(str(repo), await gitops.snapshot(str(repo))))["files"] == []
 
 
 def test_prime_codegraph_leaves_the_wal_files_a_read_only_sandbox_needs(tmp_path):

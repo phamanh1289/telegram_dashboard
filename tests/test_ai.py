@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shlex
+import subprocess
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -356,6 +357,8 @@ echo '{"type":"stream_event","event":{"type":"message_start"}}'
 echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"Xin "}}}'
 echo 'not json'
 echo '{"type":"stream_event","event":{"type":"content_block_delta","delta":{"type":"text_delta","text":"chào"}}}'
+echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/p/A.kt"}}]}}'
+echo '{"type":"user","message":{"content":[{"type":"tool_result","content":"class A"}]}}'
 echo '{"type":"result","is_error":false,"result":"Xin chào"}'
 """
 
@@ -369,7 +372,11 @@ async def test_ask_streams_pieces_and_returns_the_final_answer(tmp_path):
     svc = AiService(s, None, None)
     parts = []
     assert await svc.ask("hỏi", on_text=parts.append, heavy=True) == "Xin chào"
-    assert parts == [None, "Xin ", "chào"]
+    steps = [p for p in parts if isinstance(p, dict)]
+    assert [p for p in parts if not isinstance(p, dict)] == [None, "Xin ", "chào"]
+    # the working steps go to the page too (YouTrack AI shows them like AI Agent)
+    assert [(p["kind"], p["text"]) for p in steps] == [("tool", "Read  /p/A.kt"), ("tool_result", "class A")]
+    assert all(isinstance(p["at"], float) for p in steps)
     args = (tmp_path / "claude.args").read_text()
     assert "--include-partial-messages" in args and "--model sonnet" in args  # heavy: task model
     assert (tmp_path / "claude.prompt").read_text().endswith("hỏi")
@@ -628,3 +635,57 @@ def test_session_rules_one_frame_for_every_session():
     r = session_rules("edit", "qa", "any", "Tôi test app")
     assert "Vai trò: QA/QC" in r and "Nền tảng" not in r and "Tôi test app" in r and "Giả định" not in r
     assert "Đã sửa" in r and "`**Tóm tắt**`" in r  # one Markdown shape: bold labels on their own line
+
+
+async def test_ui_language_header_sets_ai_reply_language():
+    """X-Lang: en adds the English rule to every AI run of that request (and its session rules); else nothing."""
+    from telegram_dashboard.ai import LANG_RULE, lang_rule, reply_lang
+    from telegram_dashboard.app import LangMiddleware
+
+    seen = []
+
+    async def inner(scope, receive, send):
+        seen.append((lang_rule(), LANG_RULE in session_rules("plan", "dev", "android", "")))
+
+    mw = LangMiddleware(inner)
+    await mw({"type": "http", "headers": [(b"x-lang", b"en")]}, None, None)
+    await mw({"type": "http", "headers": [(b"x-lang", b"vi")]}, None, None)
+    await mw({"type": "http", "headers": []}, None, None)
+    assert seen == [(LANG_RULE, True), ("", False), ("", False)]
+    assert reply_lang.get() == "vi"
+
+
+async def test_answer_reads_the_project_with_its_git_log_and_tickets(ai, tmp_path):
+    env, svc, provider = ai
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    await expect("project_not_found", svc.run("answer", A, ["1"]))  # answering from code needs the code
+    env.store.add_project(str(proj), "proj")
+    git = dict(cwd=proj, check=True, capture_output=True)
+    subprocess.run(["git", "init", "-b", "main"], **git)
+    who = ["-c", "user.name=Lan", "-c", "user.email=l@x"]
+    subprocess.run(["git", *who, "commit", "--allow-empty", "-m", "OTP lock"], **git)
+    provider.reply = "**Trả lời:** 120s\n===\nDạ 2 phút ạ\n---\nMã OTP dùng được 2 phút."
+    r = await svc.run("answer", A, ["1"], project=str(proj), tickets='[{"id": "VA-1"}]')
+    p = provider.calls[-1]
+    assert "**Căn cứ:**" in p and "<git_log>" in p and "OTP lock" in p and '"main"' in p and "VA-1" in p
+    assert provider.projects[-1] == str(proj) and provider.shells[-1] is False  # read-only, no shell
+    assert r.analysis == "**Trả lời:** 120s" and r.options == ["Dạ 2 phút ạ", "Mã OTP dùng được 2 phút."]
+
+
+def test_answer_from_code_runs_on_after_the_panel_goes(client, monkeypatch):
+    from telegram_dashboard.models import AiResult
+
+    async def run(self, kind, *a, **kw):
+        return AiResult(text=kind, options=[], analysis="", source_message_ids=["1"], context_revision="")
+
+    monkeypatch.setattr("telegram_dashboard.ai.AiService.run", run)
+    body = {"chat_id": A, "message_ids": ["1"], "instruction": "", "project": "/p"}
+    hdr = {"Origin": "http://127.0.0.1:8765", "X-Ai-Job": "reply-job-1"}
+    r = client.post("/api/ai/draft", json=body, headers=hdr)
+    assert json.loads(r.text.strip().splitlines()[-1])["done"]["text"] == "answer"
+    again = client.get("/api/ai/job/reply-job-1", headers={"Origin": hdr["Origin"]})  # the panel opened again
+    assert again.text == r.text
+    assert client.post("/api/ai/draft", json=body, headers=hdr).status_code == 409  # an id is used once
+    gone = client.get("/api/ai/job/nope-12345", headers={"Origin": hdr["Origin"]})
+    assert gone.status_code == 404 and gone.json()["error"]["code"] == "ai_job_gone"

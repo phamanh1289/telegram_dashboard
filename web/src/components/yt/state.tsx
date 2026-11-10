@@ -2,6 +2,7 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { t as tNow } from "@/lib/i18n";
 import { toast } from "@/lib/inbox";
 import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
 import type { AiRun } from "./bits";
@@ -39,7 +40,7 @@ export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ti
   const back = Object.fromEntries(keys.map((k) => [k, t[k] ?? null])) as Partial<Ticket>;
   await patch({ id: t.id, ...local });
   try { const r = await call(); await patch(newest.get(t.id) === n ? r : own(r)); return true; }
-  catch (e) { await patch(own(back)); toast({ text: `${t.id}: không đổi được — ${(e as Error).message}` }); return false; }
+  catch (e) { await patch(own(back)); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
 }
 
 const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view

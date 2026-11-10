@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, type KeyboardEvent, type SyntheticEvent } from "react";
 import { Avatar } from "@/components/chat-list";
 import { api, errorText, type Member } from "@/lib/api";
+import { tMaybe, useT } from "@/lib/i18n";
 import { fold } from "@/lib/inbox";
 import { type Person, yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,7 @@ const label = (m: Member) => `@${m.name.replace(/[[\]\n]/g, "").slice(0, 64)}`;
 /** Wire onto a textarea: `ref={attach}`, `track` (onChange + onSelect), `onKeyDown` first; `popup` inside a `relative` parent.
  *  Send `wire(text)`. Used by the inbox reply box, Q&A (AiPromptBox `mention`), YouTrack comments and ticket description. */
 export function useMention<T>(source: MentionSource<T>, text: string, setText: (s: string) => void) {
+  const t = useT();
   const [box, setBox] = useState<HTMLTextAreaElement | null>(null); // callback ref: the textarea, for focus after a pick
   const [caret, setCaret] = useState<number | null>(null);
   const [closed, setClosed] = useState(-1); // where the "@" Esc dismissed starts: stays shut until another "@"
@@ -94,12 +96,14 @@ export function useMention<T>(source: MentionSource<T>, text: string, setText: (
   /** The text as sent: each "@Name" picked here becomes [Name](tg://user?id=N), longest first ("@Minh BE" before "@Minh"). */
   const wire = (s: string) =>
     Object.entries(named).sort(([a], [b]) => b.length - a.length)
-      .reduce((t, [tag, id]) => t.split(tag).join(`[${tag.slice(1)}](tg://user?id=${id})`), s);
+      .reduce((s2, [tag, id]) => s2.split(tag).join(`[${tag.slice(1)}](tg://user?id=${id})`), s);
 
-  const status = members.isPending ? "Đang tải thành viên…" : members.isError ? errorText(members.error, source.errors ?? {})
-    : shown.length ? "" : "Không thấy ai khớp.";
+  // `errors` texts are i18n keys (module constants): translated here, where they render.
+  const status = members.isPending ? t("Đang tải thành viên…") : members.isError
+    ? errorText(members.error, Object.fromEntries(Object.entries(source.errors ?? {}).map(([k, v]) => [k, tMaybe(v)])))
+    : shown.length ? "" : t("Không thấy ai khớp.");
   const popup = open && (
-    <div role="listbox" aria-label="Tag thành viên" className="absolute bottom-full left-0 z-20 mb-1 w-72 max-w-full overflow-hidden rounded-[var(--radius-card)] border border-rule-2 bg-cotton py-1 shadow-lg">
+    <div role="listbox" aria-label={t("Tag thành viên")} className="absolute bottom-full left-0 z-20 mb-1 w-72 max-w-full overflow-hidden rounded-[var(--radius-card)] border border-rule-2 bg-cotton py-1 shadow-lg">
       {status && <p className={cn("px-3 py-1.5 text-xs", members.isError ? "text-error" : "text-ink-3")}>{status}</p>}
       {shown.map((m, i) => (
         <div key={m.user_id} role="option" aria-selected={i === cur}
@@ -107,7 +111,7 @@ export function useMention<T>(source: MentionSource<T>, text: string, setText: (
           className={cn("flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm", i === cur && "bg-paper-2")}>
           <Avatar name={m.name} />
           <span className="min-w-0 flex-1 truncate text-ink">{m.name}</span>
-          <span className="shrink-0 text-xs text-ink-3">{m.username ? `@${m.username}` : "tag theo tên"}</span>
+          <span className="shrink-0 text-xs text-ink-3">{m.username ? `@${m.username}` : t("tag theo tên")}</span>
         </div>
       ))}
     </div>

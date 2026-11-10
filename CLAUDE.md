@@ -1,6 +1,10 @@
 ## Post-task routine
 - Xong mỗi task (feature, bug fix, refactor): chạy `codegraph sync` ở thư mục gốc repo để cập nhật index `.codegraph/`.
 
+## Sửa tính năng: rà toàn dự án + reuse (bắt buộc)
+- Sửa / thêm một hành vi: trước khi xong, rà **cả dự án** (backend + `web/`) mọi chỗ cùng tính năng hoặc cùng luồng (endpoint anh em, nút / màn khác gọi cùng việc, tab Telegram lẫn YouTrack) và sửa luôn cho đồng bộ; không chỉ vá đúng chỗ được báo. Báo lại danh sách chỗ đã rà / đã sửa.
+- Reuse trước, viết mới sau: tìm helper / hook / component / hàm store đã có (codegraph, grep) và dùng lại hoặc mở rộng nó. Không copy-paste logic sang chỗ mới; thấy 2 chỗ trùng thì gom về một nguồn rồi cả hai cùng gọi. Cùng một tính năng phải chạy cùng một code.
+
 ## UI: tab / segmented / nav highlight
 - Mọi nhóm tab chọn-một (view, bộ lọc, khoảng thời gian…) dùng `Segmented` trong `web/src/components/ui/segmented.tsx`; không tự viết `motion.span layoutId` + spring.
 - Highlight trượt kiểu khác (nav sidebar, gạch chân, tab có popover) dùng `Pill` cùng file với `className` riêng.
@@ -9,6 +13,8 @@
 - Ô prompt AI (`AiPromptBox`): ghim ở **đáy** màn / dialog (footer), không đặt giữa nội dung. Mọi nút thực hiện AI (chạy / soạn / gửi / dừng, chọn model / effort) nằm **bên trong** ô prompt qua `actions` / `tools` (nút chạy: `Button size="sm"` `rounded-full bg-hl`, bọc `Hint`); không đặt nút chạy AI ở footer riêng hay bên ngoài ô. Không thêm khung giới thiệu "AI sẽ làm gì" cạnh ô prompt; trạng thái chạy dùng robot/`AiThinking` + `ai-ring`.
 - Khung chính chờ data từ YouTrack / Telegram (danh sách ticket, tin nhóm, việc cần xử lý, Q&A, Briefing, Release, Thành viên…) dùng `AiFetching` (`web/src/components/ai/fetching.tsx`) với `kind` đúng tính năng (bên YouTrack qua `YtFetching` trong `yt/bits.tsx`); mỗi `kind` là một cảnh AI diễn đúng việc tính năng làm với data (gom ticket, dò go-live, chia tải, đọc chat, xếp độ gấp, quét khoảng ngày, chuỗi Q&A, viết brief). Tính năng mới cần cảnh khác: thêm `kind` + cảnh + `LINES` ở đó, không dùng đại cảnh của tính năng khác. Điều kiện hiện luôn qua `useAiWait(pending)` (giữ tối thiểu `AI_WAIT_MS` = 800ms để kịp xem cảnh; data có sẵn trong cache thì hiện ngay); danh sách cần render / cuộn sẵn bên dưới (tin nhóm, việc cần xử lý) dùng `cover` để phủ lên trên. Skeleton chỉ cho chỗ nhỏ: sidebar / nav, popover, chi tiết 1 item, ô tìm trong dialog.
 - Form tạo ticket YouTrack chỉ có một: `TicketForm` (`web/src/components/ticket-form.tsx`) dùng chung cho tab Telegram và tab YouTrack; Project / Type / Priority / Assignee luôn lấy từ YouTrack (`yt.projects/fields/people`); mặc định do form tự tính, giống nhau ở 2 tab (project = project tab YouTrack đang dùng qua `resolveProject`, assignee = mình). Nơi gọi không truyền project / meta riêng. Sửa ở đó, không nhân bản. Section dạng `grid` chứa dòng `truncate` phải có `grid-cols-1` (cột `minmax(0,1fr)`), nếu không chữ dài làm cột nở ra, vùng cuộn bị `autoFocus` cuộn ngang và UI lệch.
+- Cỡ chữ chỉ dùng thang token theo vai trò (`text-2xs` 12 badge · `xs` 13 meta · `sm` 15 UI · `md` 16 chữ đọc · `base` 17 tiêu đề dialog · `lg` 20 tiêu đề trang · `xl` 22 hero · `2xl/3xl` số lớn; bảng ở `DESIGN.md` › Type); không viết `text-[Npx]` / `text-[N rem]`. Đổi cỡ thì sửa `--text-*` trong `tokens.css`. Font do người dùng chọn (Cài đặt chung › Font chữ, danh sách ở `web/src/lib/fonts.ts`); component không đặt `font-family` hay số weight riêng (weight theo font qua `font-normal/medium/bold`). Nội dung chính của dòng (tin, tiêu đề ticket) dùng `text-ink`, không dùng `ink-2/ink-3`.
+- Chuỗi UI mới phải có cả **vi và en**: viết tiếng Việt làm key qua `useT()` / `t()` (`web/src/lib/i18n`), thêm bản tiếng Anh vào `lib/i18n/en/<khu>.ts` (thiếu là typecheck lỗi). Ngày / giờ / số qua `fmtDate` / `fmtNum` / `locale()`, không viết cứng `"vi-VN"`. Sửa `guide.json` thì sửa cả `guide.en.json`. Chi tiết: `DESIGN.md` › Language.
 - Ô chọn một giá trị trong form / dialog (thuộc tính ticket, model…) dùng `Dropdown` (`web/src/components/ui/dropdown.tsx`, base-ui Select; `prefix` cho tên trường, `hint` cho dòng phụ); không dùng `<select>` native vì popup của nó không theo giao diện app.
 - Menu / icon cần giải thích khi hover: bọc bằng `Hint` (`web/src/components/ui/hint.tsx`, trễ `HINT_DELAY` 500ms, linh vật bóng đèn); không dùng `title` cho phần giải thích đó. Nút AI giữ `AiAsk` (robot).
 
@@ -26,4 +32,4 @@
 - Tailwind 4: container max là `@max-3xl:` (không phải `max-@3xl:`); layout trong khung hẹp dùng container query, không dùng breakpoint viewport.
 - Khóa riêng ký release không vào repo; GitHub Action pin theo SHA. `uv run pytest tests/test_repo_guards.py` kiểm các luật máy kiểm được.
 - Dev / test: không build đè `web/out`, không đụng `:8765` (app thật đang chạy); e2e chạy trên bản copy ở scratchpad. Subagent luôn truyền `model`.
-- Đổi / thêm feature người dùng thấy: cập nhật `web/src/lib/guide.json` theo đúng nhãn UI.
+- Đổi / thêm feature người dùng thấy: cập nhật `web/src/lib/guide.json` và `guide.en.json` theo đúng nhãn UI (`at` giữ nhãn tiếng Việt, tour tự dịch).

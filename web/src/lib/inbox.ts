@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api, errorText, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/lib/api";
+import { type Key, t } from "@/lib/i18n";
 import { getPref, put, readOverdueHours } from "@/lib/prefs";
 import { byUnit, timeLabel } from "@/lib/time";
 
@@ -56,7 +57,7 @@ export function useNow() {
 export function waitLabel(date: string, now: number, priority = false) {
   const mins = Math.max(0, Math.round((now - new Date(date).getTime()) / 60_000));
   const [n, unit] = byUnit(mins);
-  return { text: `chờ ${n} ${unit}`, n, unit, overdue: mins >= readOverdueHours() * 60 * (priority ? 0.5 : 1) }; // priority sender: half the wait
+  return { text: t("chờ {span}", { span: `${n} ${unit}` }), n, unit, overdue: mins >= readOverdueHours() * 60 * (priority ? 0.5 : 1) }; // priority sender: half the wait
 }
 
 /**
@@ -88,7 +89,7 @@ export const scrollToRow = (key: string) =>
   document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.scrollIntoView({ block: "nearest", behavior: smooth() });
 
 /** How an AI Agent task runs; "terminal" only on old tasks (shown, no longer started). */
-export const TASK_MODES: Record<string, string> = { plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal (cũ)" };
+export const TASK_MODES: Record<string, Key> = { plan: "Chỉ đọc", edit: "Được sửa file", terminal: "Terminal (cũ)" };
 
 export const markHandled = (m: Pick<Message, "chat_id" | "message_id">, handled: boolean, react = true) =>
   api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/handled`, {
@@ -100,8 +101,8 @@ export type ToastMsg = { text: string; undo?: () => unknown; action?: { label: s
 /** Show a toast (rendered by the inbox shell); `undo` adds a "Hoàn tác" button and the z shortcut. */
 export const toast = (t: ToastMsg) => dispatchEvent(new CustomEvent<ToastMsg>("toast", { detail: t }));
 /** Copy and say so; a refused clipboard (no focus, permissions) says that instead of a false "Đã copy". */
-export async function copyText(text: string, done = "Đã copy") {
-  try { await navigator.clipboard.writeText(text); toast({ text: done }); } catch { toast({ text: "Không copy được, thử lại" }); }
+export async function copyText(text: string, done = t("Đã copy")) {
+  try { await navigator.clipboard.writeText(text); toast({ text: done }); } catch { toast({ text: t("Không copy được, thử lại") }); }
 }
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
@@ -112,7 +113,7 @@ export class Told extends Error {}
 async function undoAll(ps: Promise<unknown>[]) {
   const res = await Promise.allSettled(ps);
   const bad = res.filter((r) => r.status === "rejected").length;
-  if (bad) throw new Told(bad < ps.length ? `Chỉ hoàn tác được ${ps.length - bad}/${ps.length} tin, thử lại phần còn lại` : "Không hoàn tác được");
+  if (bad) throw new Told(bad < ps.length ? t("Chỉ hoàn tác được {ok}/{n} tin, thử lại phần còn lại", { ok: ps.length - bad, n: ps.length }) : t("Không hoàn tác được"));
 }
 
 /** Mark done or reopen; marking done offers an undo (for the ones that went through, if some failed).
@@ -124,10 +125,10 @@ export async function setHandled(ms: Message[], handled: boolean, react = true) 
   const undo = handled && ok.length ? () => undoAll(ok.map((m) => markHandled(m, false))) : undefined;
   const failed = res.find((r) => r.status === "rejected");
   if (failed) {
-    toast({ text: ok.length ? `Chỉ cập nhật được ${ok.length}/${ms.length} tin, thử lại phần còn lại` : errorText(failed.reason, {}, "Không cập nhật được, thử lại sau"), undo });
+    toast({ text: ok.length ? t("Chỉ cập nhật được {ok}/{n} tin, thử lại phần còn lại", { ok: ok.length, n: ms.length }) : errorText(failed.reason, {}, t("Không cập nhật được, thử lại sau")), undo });
     throw new PartialError(ms.filter((_, i) => res[i].status === "rejected"));
   }
-  if (handled) toast({ text: ms.length > 1 ? `Đã xử lý ${ms.length} tin` : "Đã đánh dấu xong", undo });
+  if (handled) toast({ text: ms.length > 1 ? t("Đã xử lý {n} tin", { n: ms.length }) : t("Đã đánh dấu xong"), undo });
 }
 
 /** Thrown after a toast already reported it: `failed` are the tags that did not go through (kept selected). */
@@ -145,7 +146,7 @@ export const pin = (m: Message, pinned: boolean) =>
 export async function pinAll(ms: Message[]) {
   const res = await Promise.allSettled(ms.map((m) => pin(m, true)));
   const failed = ms.filter((_, i) => res[i].status === "rejected");
-  toast({ text: !failed.length ? `Đã ghim ${ms.length} tin` : `Chỉ ghim được ${ms.length - failed.length}/${ms.length} tin, thử lại phần còn lại` });
+  toast({ text: !failed.length ? t("Đã ghim {n} tin", { n: ms.length }) : t("Chỉ ghim được {ok}/{n} tin, thử lại phần còn lại", { ok: ms.length - failed.length, n: ms.length }) });
   if (failed.length) throw new PartialError(failed);
 }
 
@@ -162,12 +163,12 @@ export async function snooze(ms: Message[], until: Date | null, on?: string) {
   if (!ok.length) throw (res[0] as PromiseRejectedResult).reason;
   const undo = until ? () => undoAll(ok.map((m) => set(m, null))) : undefined;
   if (ok.length < ms.length) {
-    toast({ text: `Chỉ hoãn được ${ok.length}/${ms.length} tin, thử lại phần còn lại`, undo });
+    toast({ text: t("Chỉ hoãn được {ok}/{n} tin, thử lại phần còn lại", { ok: ok.length, n: ms.length }), undo });
     throw new PartialError(ms.filter((_, i) => res[i].status === "rejected"));
   }
-  const n = ok.length > 1 ? `${ok.length} tin, ` : "";
-  const when = on === "reply" ? "tới khi có người trả lời" : on ? `tới khi ${on.slice(7)} xong` : `nhắc lại lúc ${timeLabel(until?.toISOString() ?? "")}`;
-  toast(until ? { text: `Đã hoãn ${n}${when}`, undo } : { text: "Đã bỏ hoãn" });
+  const when = on === "reply" ? t("tới khi có người trả lời") : on ? t("tới khi {id} xong", { id: on.slice(7) }) : t("nhắc lại lúc {time}", { time: timeLabel(until?.toISOString() ?? "") });
+  const text = ok.length > 1 ? t("Đã hoãn {n} tin, {when}", { n: ok.length, when }) : t("Đã hoãn {when}", { when });
+  toast(until ? { text, undo } : { text: t("Đã bỏ hoãn") });
 }
 
 /** One message: the kept copy, else live from Telegram. */
@@ -176,36 +177,42 @@ export const getMessage = (chatId: string, messageId: string, { signal }: { sign
 
 /** Open the reply panel on a message, optionally with a prefilled line (the inbox shell listens). */
 export const openReply = (m: Message, text?: string) => dispatchEvent(new CustomEvent<{ m: Message; text?: string }>("open-reply", { detail: { m, text } }));
+let codeAsk = "";
+/** "Trả lời từ code" on a message row: open its reply panel, which runs the answer (`takeCodeAsk`; "ask-code" when open). */
+export const askCode = (m: Message) => { codeAsk = msgKey(m); openReply(m); dispatchEvent(new CustomEvent<string>("ask-code", { detail: codeAsk })); };
+export const takeCodeAsk = (key: string) => { if (codeAsk !== key) return false; codeAsk = ""; return true; };
 /** Load one message and open the reply panel on it; false (after a toast) when it could not be loaded. */
 export async function openReplyById(chatId: string, messageId: string, text?: string) {
   try {
     openReply(await getMessage(chatId, messageId), text);
     return true;
   } catch (e) {
-    toast({ text: errorText(e, {}, "Không mở được tin gốc, thử lại sau") });
+    toast({ text: errorText(e, {}, t("Không mở được tin gốc, thử lại sau")) });
     return false;
   }
 }
 
 /** Mark every open tag of a group done (within the day range); Undo reopens exactly those, without reactions. */
-export async function markAllHandled(chatId: string, range: string) {
+/** `skip`: open tags the list leaves to Q&A (`useChats().qaHidden`), so they stay open there. */
+export async function markAllHandled(chatId: string, range: string, skip: readonly string[] = []) {
+  const qs = [range, ...skip.map((id) => `skip=${encodeURIComponent(id)}`)].filter(Boolean).join("&");
   const { count, message_ids } = await api<HandledAllResponse>(
-    `/chats/${encodeURIComponent(chatId)}/handled-all${range ? `?${range}` : ""}`, { method: "POST" });
+    `/chats/${encodeURIComponent(chatId)}/handled-all${qs ? `?${qs}` : ""}`, { method: "POST" });
   const ms = message_ids.map((id) => ({ chat_id: chatId, message_id: String(id) }));
   ms.forEach(dropDraft);
-  toast({ text: `Đã xử lý ${count} tin`, undo: ms.length ? () => undoAll(ms.map((m) => markHandled(m, false, false))) : undefined });
+  toast({ text: t("Đã xử lý {n} tin", { n: count }), undo: ms.length ? () => undoAll(ms.map((m) => markHandled(m, false, false))) : undefined });
 }
 
 /** "Luôn bỏ qua {tên}": a sender rule clears their open tags now and later; Undo deletes it and reopens those. */
 export async function ignoreSender(m: Message) {
-  const name = m.sender_name ?? "người này";
+  const name = m.sender_name ?? t("người này");
   const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: name } });
   r.cleared.forEach(dropDraft);
   toast({
-    text: `Luôn bỏ qua ${name}: đã dọn ${r.cleared.length} tin`,
+    text: t("Luôn bỏ qua {name}: đã dọn {n} tin", { name, n: r.cleared.length }),
     undo: async () => {
       try { await api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }); } catch {
-        throw new Told("Chưa xóa được quy tắc: xóa ở Cài đặt › Telegram › Luôn bỏ qua"); // reopening the tags now would just clear them again
+        throw new Told(t("Chưa xóa được quy tắc: xóa ở Cài đặt › Telegram › Luôn bỏ qua")); // reopening the tags now would just clear them again
       }
       await undoAll(r.cleared.map((c) => markHandled(c, false, false)));
     },
@@ -215,16 +222,16 @@ export async function ignoreSender(m: Message) {
 /** "Luôn ưu tiên {tên}": their tags sort first in Việc cần xử lý and turn overdue at half the time (replaces a "Luôn bỏ
  *  qua" on the same sender); Undo deletes the rule. */
 export async function prioritizeSender(m: Message) {
-  const name = m.sender_name ?? "người này";
+  const name = m.sender_name ?? t("người này");
   const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "priority", value: m.sender_id, label: name } });
-  toast({ text: `Luôn ưu tiên ${name}: tin của họ lên đầu danh sách`, undo: () => api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }) });
+  toast({ text: t("Luôn ưu tiên {name}: tin của họ lên đầu danh sách", { name }), undo: () => api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }) });
 }
 
 /** "Nhắc lại sau": reopen a tag (answered or done) and keep it hidden until `until`, when it comes back to Việc cần xử
  *  lý ("để mình check rồi báo" stays on your list). Undo marks it done again, quietly. */
 export async function remind(m: Pick<Message, "chat_id" | "message_id">, until: Date) {
   await api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/remind`, { method: "PUT", json: { until: until.toISOString() } });
-  toast({ text: `Sẽ nhắc lại tin này lúc ${timeLabel(until.toISOString())}`, undo: () => markHandled(m, true, false) });
+  toast({ text: t("Sẽ nhắc lại tin này lúc {time}", { time: timeLabel(until.toISOString()) }), undo: () => markHandled(m, true, false) });
 }
 
 // Reply drafts, per tag, in this browser only (never sent to the server). A tag marked done here drops its draft;
@@ -283,6 +290,9 @@ export function takeQaAnswer(chatId: string) {
 /** `msgKey` → "#QA…" of every message in a Q&A thread of the groups asked lately (Q&A page `useQaNews`): a tag that
  *  answers one shows its badge even without the code in its text. Empty on the Q&A page itself (the card says it). */
 export const QaCodes = createContext<ReadonlyMap<string, string>>(new Map());
+/** A tag the Q&A page shows (it names a #QA code, or sits in a thread of `codes`): tag lists and their counts leave it
+ *  to Q&A, so it is not listed twice. */
+export const inQaPage = (codes: ReadonlyMap<string, string>, m: Message) => codes.has(msgKey(m)) || /#QA\d+\b/i.test(m.text ?? "");
 /** Open the Q&A page on one thread: its group and "#QA…" code (the inbox shell listens). */
 export const openQa = (chatId: string, code: string) => dispatchEvent(new CustomEvent<{ chatId: string; code: string }>("open-qa", { detail: { chatId, code } }));
 
@@ -368,9 +378,9 @@ export function useListShortcuts(
       else if (k === "o" && cur) openInTelegram(cur);
       else if (k === "x" && tag && !e.shiftKey) setHandled([tag], !tag.handled).catch(() => {}); // the toast already reported it
       else if (k === "x" && tag && !tag.handled) setHandled([tag], true, false).catch(() => {}); // Shift+x: no reaction
-      else if (k === "s" && tag && !tag.handled) snooze([tag], new Date(Date.now() + 3600_000)).catch((err) => toast({ text: errorText(err, {}, "Không hoãn được, thử lại") }));
+      else if (k === "s" && tag && !tag.handled) snooze([tag], new Date(Date.now() + 3600_000)).catch((err) => toast({ text: errorText(err, {}, t("Không hoãn được, thử lại")) }));
       else if (k === "p" && tag) {
-        pin(tag, !tag.pinned).then(() => toast({ text: tag.pinned ? "Đã bỏ ghim" : "Đã ghim" }), (err) => toast({ text: errorText(err, {}, "Không ghim được, thử lại") }));
+        pin(tag, !tag.pinned).then(() => toast({ text: tag.pinned ? t("Đã bỏ ghim") : t("Đã ghim") }), (err) => toast({ text: errorText(err, {}, t("Không ghim được, thử lại")) }));
       } else if (k === "a") (document.getElementById("ai-prompt") as HTMLTextAreaElement | null)?.focus();
       else return;
       e.preventDefault();

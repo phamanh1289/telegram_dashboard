@@ -34,6 +34,6 @@
   Remove-Item $exe -ErrorAction SilentlyContinue
 
   Write-Host "Da cai vao $dir (shortcut 'Radar' o Start Menu va Desktop)." -ForegroundColor Green
-  Write-Host "Hoac mo cmd/PowerShell moi va go: mydashboard start"
+  Write-Host "Hoac mo cmd/PowerShell moi va go: myradar start"
   Start-Process (Join-Path $dir 'Start Dashboard Telegram.bat') -WorkingDirectory $dir
 }

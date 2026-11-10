@@ -806,6 +806,24 @@ class YouTrackDashboard:
             raise ApiError(502, "youtrack_error") from None
         return issue_id, f"{self.base}/issue/{issue_id}"
 
+    async def brief(self, ids: list[str]) -> str:
+        """Tickets as short JSON for a Telegram answer's progress ("Trả lời từ code"); "" with no token. A ticket gone
+        (404) or a bad id is skipped; a token / network failure is an ApiError the page shows."""
+        keys = list(dict.fromkeys(i.upper() for i in ids if ID_RE.match(i)))
+        if self.mock or not keys:
+            return ""
+
+        async def one(i: str) -> str | None:
+            try:
+                return _ticket_json(await self.cached(f"issue:{i}", lambda: self.detail(i)), 600, 3, 300)
+            except YtError as e:
+                if e.status == 404:
+                    return None
+                raise ApiError(502, "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error") from None
+
+        got = [t for t in await asyncio.gather(*map(one, keys)) if t]
+        return f"[{','.join(got)}]" if got else ""
+
     async def detail(self, issue_id: str):
         d = await self.yt(
             f"/api/issues/{issue_id}",

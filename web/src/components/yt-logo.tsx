@@ -7,7 +7,7 @@ export function YtLogo({ className }: { className?: string }) {
         <path d="M26.5 5.5 5.5 26.5M16 16l10.5 10.5" stroke="#0BB0F0" />
       </g>
       <rect x="7.5" y="7.5" width="17" height="17" fill="#000" />
-      <text x="9" y="17.2" fill="#fff" fontSize="9" fontWeight="800" fontFamily="system-ui, sans-serif" letterSpacing="-0.4">YT</text>
+      <text x="9" y="17.2" fill="#fff" fontSize="9" fontWeight="700" fontFamily="Quicksand, system-ui, sans-serif" letterSpacing="-0.4">YT</text>
       <rect x="9.5" y="20.6" width="6" height="1.5" fill="#fff" />
     </svg>
   );

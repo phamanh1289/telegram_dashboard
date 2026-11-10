@@ -58,7 +58,7 @@ Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm
 
 ### YouTrack và AI
 
-- **My Dashboard** theo vai trò: Hôm nay (Dev), Kiểm thử (QA), Brief (PO).
+- **Tab YouTrack** theo vai trò: Hôm nay (Dev), Kiểm thử (QA), Brief (PO).
 - Bảng / Board ticket, bộ lọc, view đã lưu, xuất CSV, báo cáo release.
 - **Tạo ticket** từ tin Telegram, AI điền sẵn tiêu đề, Type, Priority, mô tả.
 - **AI Agent**: giao việc cho Claude Code / Codex / Antigravity chạy trong thư mục dự án.
@@ -120,14 +120,14 @@ Sau khi cài, app tự mở trình duyệt. Những lần sau:
 | Cách | macOS | Windows |
 |---|---|---|
 | Mở app | Gõ **Radar** trong Spotlight / Launchpad (kéo vào Dock cho tiện) | Bấm **Radar** ở Start Menu / Desktop |
-| Bằng lệnh | Terminal mới: `mydashboard start` | cmd / PowerShell mới: `mydashboard start` |
-| Server đang chạy, chỉ mở lại trang | `mydashboard open` | `mydashboard open` |
+| Bằng lệnh | Terminal mới: `myradar start` | cmd / PowerShell mới: `myradar start` |
+| Server đang chạy, chỉ mở lại trang | `myradar open` | `myradar open` |
 
 Địa chỉ web: **http://127.0.0.1:8765**
 
 - **Phải dùng `127.0.0.1`**. Mở bằng `localhost` thì trang vẫn hiện nhưng mọi thao tác bị từ chối.
 - Port 8765 bị app khác chiếm thì server tự dùng port trống kế tiếp (8766…) và tự mở đúng địa chỉ. Mở app lần nữa khi đang chạy chỉ mở lại trang, không chạy thêm server.
-- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `mydashboard open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.telegram_dashboard/api_token`. Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
+- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `myradar open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.telegram_dashboard/api_token`. Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
 - Tắt app: đóng cửa sổ Terminal / cửa sổ đen của server.
 
 ## Lần đầu sử dụng
@@ -211,7 +211,7 @@ Trong app, bấm `?` để xem toàn bộ phím tắt; **Cài đặt › Tìm c�
 - **AI Agent**: danh sách phiên AI, nhắn tiếp, duyệt plan rồi cho sửa code.
 - **Báo lại**: ticket của bạn chuyển Fixed / Done thì hàng chờ hiện mục nhắc báo lại cho các tin Telegram nhắc ticket đó.
 
-### My Dashboard — YouTrack (`/youtrack/`)
+### Tab YouTrack (`/youtrack/`)
 
 Bấm **YouTrack** trên thanh trên cùng (huy hiệu đỏ = số ticket của bạn cần xử lý ngay). Cần URL + token ở **Cài đặt › YouTrack**; chưa có token thì trang hiện dữ liệu mẫu, các thao tác ghi (tạo ticket, đổi state, bình luận) và AI bị tắt.
 
@@ -289,7 +289,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 | | Cách gỡ |
 |---|---|
 | Windows | Settings › Apps › **Radar** › Uninstall. Thư mục `data\` (gồm phiên Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn |
-| macOS | Xóa `~/Applications/Telegram Dashboard`, `~/Applications/Radar.app` và `~/.local/bin/mydashboard` |
+| macOS | Xóa `~/Applications/Telegram Dashboard`, `~/Applications/Radar.app` và `~/.local/bin/myradar`, `~/.local/bin/mydashboard` |
 | Cả hai | Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của Radar |
 
 ## Dữ liệu và bảo mật
@@ -313,10 +313,10 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| Trình duyệt báo không kết nối được | Server chưa chạy hoặc đã tắt: mở lại **Radar** / `mydashboard start`. Xem log `data/server.log` |
+| Trình duyệt báo không kết nối được | Server chưa chạy hoặc đã tắt: mở lại **Radar** / `myradar start`. Xem log `data/server.log` |
 | Mọi nút bấm báo lỗi / bị từ chối | Đang mở `localhost` → đổi sang `http://127.0.0.1:8765` |
-| Hiện màn hình khóa | Chạy `mydashboard open`, hoặc dán mã trong `~/.telegram_dashboard/api_token` |
-| `mydashboard: command not found` | Mở **cửa sổ terminal mới** sau khi cài (PATH mới có hiệu lực) |
+| Hiện màn hình khóa | Chạy `myradar open`, hoặc dán mã trong `~/.telegram_dashboard/api_token` |
+| `myradar: command not found` | Mở **cửa sổ terminal mới** sau khi cài (PATH mới có hiệu lực) |
 | Inbox trống sau khi cài | Bình thường: app không nạp lịch sử, chờ có người tag / reply bạn |
 | App báo `login_required` | Phiên Telegram hết hạn hoặc đã bị thu hồi → đăng nhập lại ở Cài đặt › Telegram |
 | `FloodWaitError` khi đăng nhập | Telegram giới hạn số lần thử, đợi đủ số giây báo rồi thử lại |
@@ -339,7 +339,7 @@ Báo lỗi: trên tin có nút chép **ID tin**; gửi kèm đoạn cuối `data
 - Frontend: Next.js (App Router, static export) + React + TypeScript, Tailwind v4, shadcn/ui (Base UI), Motion, TanStack Query.
 - Backend: FastAPI + Telethon + SQLite (WAL) trong một Python process; REST + SSE.
 - Bản build: FastAPI phục vụ cả UI tĩnh và `/api` tại `http://127.0.0.1:8765`. Static export vẫn là app React tương tác, chỉ không có Next server lúc chạy; API, cookie và Telegram đều thuộc Python.
-- Module: **Telegram Inbox** `/`, **Cài đặt** `/settings/` (nhóm Chung / Telegram / YouTrack / AI / GitHub / Phím tắt, `#nhóm` trên URL), **My Dashboard** `/youtrack/` (`web/src/components/yt/`) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song).
+- Module: **Telegram Inbox** `/`, **Cài đặt** `/settings/` (nhóm Chung / Telegram / YouTrack / AI / GitHub / Phím tắt, `#nhóm` trên URL), **YouTrack** `/youtrack/` (`web/src/components/yt/`) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song).
 - YouTrack dùng `YOUTRACK_URL` / `YOUTRACK_TOKEN`; tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`.
 
 Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.md) · [thiết kế](docs/superpowers/specs/2026-10-29-local-web-design.md) · [rà stack](docs/decisions/2026-10-29-stack-review.md) · [nghiệm thu](docs/verification/local-web-smoke.md) · [cài từ source chi tiết](docs/SETUP.md).

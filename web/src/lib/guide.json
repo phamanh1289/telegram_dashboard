@@ -22,38 +22,50 @@
 "tab": "telegram",
 "area": "Thanh trên cùng › Hạn mức AI",
 "title": "Xem hạn mức AI đang dùng",
-"what": "Nút trên thanh trên cùng hiện % hạn mức (Phiên 5 giờ, 7 ngày) và thời gian đặt lại của AI đang dùng; báo nếu AI chưa cài hoặc chưa đăng nhập. Bấm mở trang tài khoản AI.",
+"what": "Nút trên thanh trên cùng hiện linh vật AI và vòng % hạn mức còn lại (Phiên 5 giờ, 7 ngày), thời gian đặt lại; báo nếu AI chưa cài hoặc chưa đăng nhập. Mặc định (Tự động) là AI đang chạy việc hằng ngày ở trang đang mở; chọn AI khác (Claude, Codex, Agy) ngay trong nút hoặc ở Cài đặt › AI › Tài khoản › \"Hạn mức trên thanh trên cùng\".",
 "how": [
 {
-"t": "Nhìn nút đồng hồ đo: xanh ổn, vàng từ 70%, đỏ từ 90%; rê chuột xem chi tiết, bấm để mở trang tài khoản AI",
-"at": "AI đang dùng"
+"t": "Nhìn vòng hạn mức: vòng vơi dần theo % còn lại, vàng khi đã dùng 70%, đỏ từ 90%; rê chuột xem chi tiết, bấm để mở bảng hạn mức",
+"at": "Hạn mức AI"
 },
-"Trang \"Tài khoản <AI>\" trượt ra từ bên phải",
+{
+"t": "Trong bảng: chọn \"Tự động\" hoặc một AI để luôn hiện hạn mức của AI đó; bấm nút xoay để đọc lại hạn mức",
+"at": "AI hiện hạn mức trên thanh trên cùng"
+},
+{
+"t": "Bấm \"Tài khoản, usage và lịch sử\" để mở trang tài khoản AI",
+"at": "Tài khoản, usage và lịch sử"
+},
+"Trang \"Tài khoản AI\" trượt ra từ bên phải",
 {
 "t": "Bấm \"Đóng\" để đóng trang",
 "at": "Đóng"
 }
 ],
-"keys": "han muc quota usage claude codex antigravity gioi han 5h 7 ngay hạn mức ai dang dung"
+"keys": "han muc quota usage claude codex antigravity agy gioi han 5h 7 ngay hạn mức ai dang dung doi ai thanh tren cung chon agent"
 },
 {
 "id": "ai-account-dialog",
 "tab": "telegram",
 "area": "Thanh trên cùng › Hạn mức AI › Tài khoản",
-"title": "Trang tài khoản AI (Tài khoản / Usage / History)",
-"what": "Bảng trượt từ phải hiện đăng nhập của CLI AI, chọn model/effort, hạn mức, báo cáo chi phí và lịch sử từng lần chạy AI.",
+"title": "Trang tài khoản AI (Tổng quan / Model / Usage / History)",
+"what": "Bảng trượt từ phải gom mọi AI (Claude, Codex, Antigravity), mỗi AI một thẻ có linh vật động riêng: đăng nhập, hạn mức còn lại, tính năng đang dùng AI đó; thêm chọn model/effort, báo cáo chi phí và lịch sử từng lần chạy AI.",
 "how": [
 {
-"t": "Bấm nút hạn mức AI trên thanh trên cùng",
-"at": "AI đang dùng"
+"t": "Bấm nút hạn mức AI trên thanh trên cùng, rồi \"Tài khoản, usage và lịch sử\"",
+"at": "Hạn mức AI"
 },
-"Tab \"Tài khoản\": đăng nhập/đăng xuất ở trên cùng; dưới là \"Model và effort\" để chọn model và effort",
+"Tab \"Tổng quan\": mỗi AI một thẻ với đăng nhập/đăng xuất, hạn mức còn lại (rê vào thời gian để xem giờ đặt lại) và \"Dùng cho\" (tính năng nào chạy bằng AI đó, model/effort gì)",
+{
+"t": "Mở tab \"Model\" để chọn model và effort cho từng tính năng",
+"at": "Model"
+},
 {
 "t": "Bấm \"Thử model\" để kiểm tra model có trả lời",
 "at": "Thử model"
 },
 {
-"t": "Mở tab \"Usage\" xem hạn mức và báo cáo",
+"t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí",
 "at": "Usage"
 },
 {
@@ -61,12 +73,12 @@
 "at": "30 ngày"
 },
 {
-"t": "Mở tab \"History\" xem lịch sử từng lần chạy AI",
+"t": "Mở tab \"History\" xem lịch sử từng lần chạy AI, gồm cả request gõ trong Claude Code / Claude Desktop / Codex",
 "at": "History"
 },
 {
-"t": "Gõ vào ô \"Tìm theo model, tính năng, lỗi…\" để lọc; nút \"Xuất CSV\" bên cạnh xuất dòng đang hiện",
-"at": "Tìm theo model"
+"t": "Lọc theo AI (Claude / Codex / Agy), chọn số dòng mỗi trang (50 / 100 / 200 / 500) và chuyển trang ở cuối danh sách; nút tải xuống bên cạnh xuất CSV",
+"at": "Lọc theo AI"
 }
 ],
 "keys": "tai khoan ai account usage history lich su chay chi phi cost csv model effort thu model đăng nhập claude"
@@ -182,13 +194,17 @@
 "tab": "telegram",
 "area": "Thanh bên › Q&A",
 "title": "Q&A: hỏi trong nhóm và theo dõi câu trả lời",
-"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, chỉ tính Đã trả lời khi người được tag trả lời (Cài đặt › Telegram đổi được thành bất kỳ ai), nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi.",
+"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, chỉ tính Đã trả lời khi người được tag trả lời (Cài đặt › Telegram đổi được thành bất kỳ ai), nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi. Tin tag có mã #QA… hoặc nằm trong một chuỗi Q&A chỉ hiện ở trang Q&A, không lặp lại ở Việc cần xử lý / Hôm nay / tin tag của nhóm (và không tính vào số chưa xử lý); tin đã ghim vẫn ở Tag đã ghim.",
 "how": [
 "Bấm Q&A trên thanh bên (hoặc g rồi q), chọn nhóm",
 "Bấm “Câu hỏi mới”, gõ câu hỏi có @tên người được hỏi rồi Đăng",
-"Bấm một câu bên trái để đọc cả chuỗi, trả lời ngay trong chuỗi"
+"Bấm một câu bên trái để đọc cả chuỗi, trả lời ngay trong chuỗi",
+"Bấm tiêu đề ngày trong danh sách để thu gọn / mở rộng các câu của ngày đó",
+"Đánh dấu xong một chuỗi: bấm nút dấu tích trên chuỗi. Tin tag trong chuỗi (câu người khác hỏi, các trả lời) cũng thành đã xử lý (không reaction), phiên AI Agent đặt trên chúng xong theo; Mở lại thì bỏ theo",
+"Xóa khỏi Q&A: rê chuột vào một câu, bấm thùng rác (hoàn tác ở thông báo); xóa cả ngày: thùng rác trên tiêu đề ngày, bấm 2 lần. Tin trên Telegram vẫn còn",
+"Đưa mọi câu trả lời cho AI Agent: bấm nút kẹp giấy ở một tin trong chuỗi, tick “Mọi tin trả lời trong chuỗi” (không kèm câu hỏi) rồi chọn phiên (tối đa 10 tin mỗi lượt)"
 ],
-"keys": "qa q&a hoi dap hỏi đáp cau hoi câu hỏi ma qa mã #qa chuoi chuỗi nhac nhắc tra loi trả lời"
+"keys": "qa q&a hoi dap hỏi đáp cau hoi câu hỏi ma qa mã #qa chuoi chuỗi nhac nhắc tra loi trả lời dinh kem đính kèm phien ai agent"
 },
 {
 "id": "qa-my-questions",
@@ -207,7 +223,7 @@
 "tab": "telegram",
 "area": "Thanh bên › AI Agent",
 "title": "Trang AI Agent",
-"what": "Danh sách phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên).",
+"what": "Danh sách phiên AI: Giao AI Agent từ tin tag, Đối chiếu BE và hội thoại Trợ lý Briefing. Số trên mục là số phiên đang chạy. Chỉ hiện với vai trò Dev (hoặc khi đã có phiên, kể cả hội thoại Briefing).",
 "how": [
 {
 "t": "Bấm \"AI Agent\" ở thanh bên",
@@ -232,11 +248,11 @@
 "at": "Briefing"
 },
 {
-"t": "Mục \"Nhóm · Briefing\" bên dưới: mỗi nhóm kèm số việc còn chờ; bấm một nhóm để chỉ xem việc của nhóm đó, \"Tất cả nhóm\" để xem lại tất cả",
+"t": "Mục \"Nhóm · Briefing\" bên dưới: mỗi nhóm kèm số việc còn chờ; mở Briefing là vào nhóm đầu danh sách, bấm nhóm khác để xem việc của nhóm đó; bấm \"Tất cả\" cạnh tên nhóm ở đầu trang để xem việc của mọi nhóm",
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
 },
 {
-"t": "Bấm \"Tóm tắt N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới (đang xem một nhóm: \"Tóm tắt nhóm này\")",
+"t": "Bấm \"Tóm tắt tin mới · N nhóm\" ở góc phải trên để tóm tắt các nhóm có tin mới (đang xem một nhóm: \"Tóm tắt tin mới\"); không có tin mới thì nút ẩn",
 "at": "css:#briefing-run"
 }
 ],
@@ -422,7 +438,7 @@
 "tab": "telegram",
 "area": "Trang nhóm › Xong tất cả",
 "title": "Đánh dấu tất cả là đã xử lý",
-"what": "Chuyển mọi tin chưa xử lý trong nhóm (trong khoảng ngày đang lọc) sang Đã xử lý.",
+"what": "Chuyển mọi tin chưa xử lý trong nhóm (trong khoảng ngày đang lọc) sang Đã xử lý, như bấm Xong từng tin (không reaction): Q&A có mã #QA… trong các tin đó và phiên AI Agent đặt trên chúng (cùng tin đính kèm) cũng xong theo. Tin tag đang chuyển sang trang Q&A (không hiện trong danh sách) được bỏ qua, vẫn mở ở Q&A.",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
@@ -592,7 +608,7 @@
 {
 "id": "briefing-run-all",
 "tab": "telegram",
-"area": "Briefing › Tóm tắt N nhóm",
+"area": "Briefing › Tóm tắt tin mới",
 "title": "Tóm tắt mọi nhóm có tin mới",
 "what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất). Khi app đang mở, nhóm có tin mới tự được tóm tắt nền tối đa 2 giờ một lần (tắt ở Cài đặt › Telegram › Tự tóm tắt Briefing). Nhóm sắp hết hoặc đã hết quyền cho AI đọc hiện một dòng “Gia hạn 30 ngày” trên Briefing.",
 "how": [
@@ -601,10 +617,10 @@
 "at": "Briefing"
 },
 {
-"t": "Bấm \"Tóm tắt N nhóm\" để tóm tắt lần lượt các nhóm có tin mới; dải tiến độ hiện nhóm đang chạy",
+"t": "Bấm \"Tóm tắt tin mới · N nhóm\" để tóm tắt lần lượt các nhóm có tin mới (nút chỉ hiện khi có tin chưa tóm tắt); giữa trang hiện AI đang đọc nhóm nào",
 "at": "css:#briefing-run"
 },
-"Bấm nút dừng tròn đỏ trên dải tiến độ để hủy giữa chừng",
+"Đang tóm tắt: nút \"Tóm tắt\" ở góc phải trên thành nút dừng tròn đỏ (kèm số nhóm n/N khi chạy nhiều nhóm), bấm để hủy giữa chừng",
 {
 "t": "Muốn tóm tắt một nhóm: rê chuột vào nhóm ở mục \"Nhóm · Briefing\" của thanh bên, bấm ✦",
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Tóm tắt \"]"
@@ -625,14 +641,14 @@
 "tab": "telegram",
 "area": "Briefing › Trợ lý Briefing",
 "title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
-"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính ẩn / hiện bằng nút khung ở góc phải trên, app nhớ lựa chọn) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages. Mỗi cuộc hỏi được lưu vào Lịch sử AI › Telegram trên trình duyệt này.",
+"what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính mặc định ẩn để danh sách rộng hơn, bấm \"Hỏi AI\" ở góc phải trên để mở, X trong khung để ẩn, hội thoại vẫn giữ, app nhớ lựa chọn; chỉ có khi đã tóm tắt ít nhất một nhóm) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages. Mỗi cuộc hỏi được lưu vào AI Agent › Briefing trên trình duyệt này.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
 "at": "Briefing"
 },
 {
-"t": "Trên máy tính, nếu khung đang ẩn: bấm nút \"Trợ lý AI\" (biểu tượng khung) ở góc phải trên",
+"t": "Trên máy tính, bấm nút \"Hỏi AI\" (robot) ở góc phải trên",
 "at": "css:button[aria-label=\"Trợ lý AI\"]"
 },
 {
@@ -681,7 +697,7 @@
 "at": "Briefing"
 },
 {
-"t": "Bấm một nhóm ở mục \"Nhóm · Briefing\" để chỉ xem việc của nhóm đó; \"Tất cả nhóm\" để xem lại tất cả",
+"t": "Bấm một nhóm ở mục \"Nhóm · Briefing\" để chỉ xem việc của nhóm đó; bấm \"Briefing\" để xem lại tất cả",
 "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
 },
 {
@@ -1016,10 +1032,10 @@
 "tab": "telegram",
 "area": "Dòng tin, Briefing › Đối chiếu BE",
 "title": "Đối chiếu BE (soi câu trả lời của BE với code)",
-"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt. Hộp thoại ở lại, hiện AI đang soi code (bước đang làm) rồi kết quả ngay tại chỗ; đóng lúc nào cũng được, phiên vẫn chạy ngầm ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả. Kết quả cùng mẫu với phiên Giao AI Agent (Tóm tắt · Hiện trạng · Cần làm · Rủi ro · Cần hỏi lại; nhiều chủ đề thì mở đầu bằng bảng ✅ / ⚠️ / ❌ / ⏳), ý Cần hỏi lại có nút copy và gửi vào nhóm như ở AI Agent.",
+"what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt, hoặc nút \"Đối chiếu BE\" trên thanh Đã chốt của một chuỗi Q&A (câu hỏi = tin hỏi, trả lời = tin đã chốt). Hộp thoại ở lại, hiện AI đang soi code (bước đang làm) rồi kết quả ngay tại chỗ; đóng lúc nào cũng được, phiên vẫn chạy ngầm ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả. Kết quả cùng mẫu với phiên Giao AI Agent (Tóm tắt · Hiện trạng · Cần làm · Rủi ro · Cần hỏi lại; nhiều chủ đề thì mở đầu bằng bảng ✅ / ⚠️ / ❌ / ⏳), ý Cần hỏi lại có nút copy và gửi vào nhóm như ở AI Agent.",
 "how": [
 {
-"t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing.",
+"t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing, hoặc \"Đối chiếu BE\" trên thanh Đã chốt của chuỗi Q&A.",
 "at": "Đối chiếu BE"
 },
 {
@@ -1049,27 +1065,28 @@
 "tab": "telegram",
 "area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
 "title": "Với BE: Q&A với BE gom theo chủ đề",
-"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu); trong thẻ, mỗi câu hỏi (kèm người hỏi) đi thành cặp với câu BE trả lời, hoặc \"Chờ BE trả lời\" nếu chưa có, bên dưới là bối cảnh: vấn đề và cách chốt. Bản tóm tắt cũ chưa có cặp: bấm Tóm tắt lại. BE vừa reply câu hỏi mà chưa tóm tắt lại: thẻ hiện \"Có trả lời mới\" kèm câu trả lời (bấm Tóm tắt lại để AI chốt), và câu đó không còn tính là chờ; người phải trả lời nhắn sau câu hỏi mà không bấm reply thì thẻ hiện \"Có thể đã trả lời\" (chỉ là đoán, vẫn tính là chờ). Số trên tab chỉ đếm chủ đề còn chờ BE. Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\". Bản tóm tắt làm trước khi có tính năng này chưa có mục BE: tab Với BE hiện nút \"Đọc lại 7 ngày\" để AI đọc lại và gom theo chủ đề.",
+"what": "AI đánh dấu các mục hỏi / trả lời / chốt với BE (API, field, data) và gom theo chủ đề: mỗi thẻ là một chủ đề, có tóm tắt và trạng thái \"Chờ trả lời\" / \"Đã chốt\" (thẻ chờ trả lời lên đầu); trong thẻ, mỗi câu hỏi (kèm người hỏi) đi thành cặp với câu BE trả lời, hoặc \"Chờ BE trả lời\" nếu chưa có, bên dưới là bối cảnh: vấn đề và cách chốt. Mỗi dòng ghi người nêu (AI bỏ trống thì lấy người gửi tin đầu tiên; mục mang sang từ bản tóm tắt cũ có thể chưa có tên, bấm \"Đọc lại 7 ngày\" để có). Ở Briefing, bấm \"Tin gốc · n\" dưới một dòng để đọc các tin AI dựa vào (kèm người gửi, giờ; tin của người hỏi được tô nổi \"người hỏi\"); ở trang Tóm tắt của nhóm thì bấm chip #id để nhảy tới tin. Bản tóm tắt cũ chưa có cặp: bấm Tóm tắt lại. BE vừa reply câu hỏi mà chưa tóm tắt lại: thẻ hiện \"Có trả lời mới\" kèm câu trả lời (bấm Tóm tắt lại để AI chốt), và câu đó không còn tính là chờ; người phải trả lời nhắn sau câu hỏi mà không bấm reply thì thẻ hiện \"Có thể đã trả lời\" (chỉ là đoán, vẫn tính là chờ). Số trên tab chỉ đếm chủ đề còn chờ BE. Mục đã đánh dấu xử lý hoặc bạn đã trả lời trên Telegram tự rời khỏi Với BE. Ở Briefing là tab \"Với BE\" của mọi nhóm; ở trang Tóm tắt của nhóm, chọn \"Với BE\". Bản tóm tắt làm trước khi có tính năng này chưa có mục BE: tab Với BE hiện nút \"Đọc lại 7 ngày\" để AI đọc lại và gom theo chủ đề.",
 "how": [
 {
 "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\"",
 "at": "Briefing"
 },
 "Chọn tab \"Với BE\": mỗi nhóm hiện các thẻ chủ đề",
+"Bấm \"Tin gốc · n\" dưới một dòng để xem các tin nhắn gốc",
 "Bấm vòng tròn cuối một dòng để đánh dấu đã xử lý (bấm \"Hoàn tác\" trên thông báo để lấy lại)",
 "Hoặc trong trang Tóm tắt của một nhóm, chọn \"Với BE\" ở trên kết quả"
 ],
-"keys": "be backend loc be với be api field confirm voi be tab be trao doi be khong sot chu de chủ đề the gom nhom cau hoi cho tra loi da chot an muc da xu ly doc lai 7 ngay khong thay tab be"
+"keys": "be backend loc be với be api field confirm voi be tab be trao doi be tin goc xem tin goc nguoi hoi khong sot chu de chủ đề the gom nhom cau hoi cho tra loi da chot an muc da xu ly doc lai 7 ngay khong thay tab be"
 },
 {
 "id": "deep-bulk",
 "tab": "telegram",
 "area": "Briefing › Với BE · Trang nhóm › Tóm tắt",
 "title": "Đối chiếu code theo chủ đề với BE",
-"what": "Soi code dự án với từng chủ đề trao đổi với BE (tối đa 20 chủ đề một lần, hoặc từng chủ đề trên thẻ của nó): chủ đề đã chốt được kiểm ✅ đã adapt / ⚠️ lệch / ❌ chưa làm, chủ đề còn chờ BE trả lời được báo ⏳ code hiện đang làm gì và cần sửa gì tùy câu trả lời; kèm bằng chứng path:line. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE. Xong, mỗi thẻ chủ đề ở Với BE hiện nhãn kết luận \"Code: đã adapt / lệch / chưa làm / chờ BE\" (bấm để mở phiên) và đầu tab có tổng số theo kết luận; chủ đề có tin mới sau lần đối chiếu thì nhãn ghi \"cũ\", nên đối chiếu lại. Rời trang khi đang chạy: xong sẽ có thông báo kèm tổng kết luận (thêm thông báo hệ thống nếu bật ở Cài đặt và tab đang ẩn). Mở lại trang Đối chiếu code: đang chạy thì xem tiếp cảnh AI, đã có kết quả thì có dòng \"Lần đối chiếu trước\" với nút \"Xem bảng\", và nút \"Bỏ N chủ đề đã adapt\" để chỉ soi lại phần còn lại. Mục đã xử lý không được gửi đi.",
+"what": "Soi code dự án với từng chủ đề trao đổi với BE (nút đầu tab gửi các chủ đề BE đã trả lời / chốt, tối đa 20 chủ đề một lần; chủ đề còn chờ BE thì đối chiếu trên thẻ của nó): chủ đề đã chốt được kiểm ✅ đã adapt / ⚠️ lệch / ❌ chưa làm, chủ đề còn chờ BE trả lời được báo ⏳ code hiện đang làm gì và cần sửa gì tùy câu trả lời; kèm bằng chứng path:line. Chạy ngầm thành phiên Chỉ đọc ở AI Agent › Đối chiếu BE. Mỗi thẻ chủ đề có ID #… (tin mở đầu chủ đề, bấm để nhảy tới tin ở Tóm tắt): giữ nguyên khi AI tóm tắt lại hay đổi tên chủ đề, nên kết quả đối chiếu vẫn bám đúng chủ đề. Xong, mỗi thẻ chủ đề ở Với BE hiện nhãn kết luận \"Code: đã adapt / lệch / chưa làm / chờ BE\" (bấm để mở phiên) và đầu tab có tổng số theo kết luận; chủ đề có tin mới sau lần đối chiếu thì nhãn ghi \"cũ\", nên đối chiếu lại. Chủ đề ra ✅ đã adapt (và không có tin mới) thì các mục của nó tự đánh dấu đã xử lý, rời khỏi Với BE; Done phiên Đối chiếu BE (AI Agent) cũng đóng các chủ đề nó đã đối chiếu, kèm tin tag và Q&A của chúng; bấm \"Hoàn tác\" trên thông báo hoặc bỏ tick để mở lại. Rời trang khi đang chạy: xong sẽ có thông báo kèm tổng kết luận (thêm thông báo hệ thống nếu bật ở Cài đặt và tab đang ẩn). Mở lại trang Đối chiếu code: đang chạy thì xem tiếp cảnh AI, đã có kết quả thì có dòng \"Lần đối chiếu trước\" với nút \"Xem bảng\", và nút \"Bỏ N chủ đề đã adapt\" để chỉ soi lại phần còn lại. Mục đã xử lý không được gửi đi.",
 "how": [
 "Mở Briefing › tab \"Với BE\" (hoặc trang Tóm tắt của nhóm › \"Với BE\")",
-"Bấm \"Đối chiếu code N chủ đề\" để chạy cả nhóm, hoặc \"Đối chiếu code\" trên một thẻ",
+"Bấm \"Đối chiếu code N chủ đề đã trả lời\" để chạy mọi chủ đề BE đã trả lời / chốt của nhóm, hoặc \"Đối chiếu code\" trên một thẻ (cả thẻ còn chờ BE)",
 "Trang Đối chiếu code mở ra: bỏ chọn chủ đề không cần soi, chọn dự án để AI đọc code, thêm yêu cầu nếu cần, rồi bấm \"Đối chiếu N chủ đề\"",
 "Trong lúc chạy, trang hiện AI đang soi câu hỏi / câu BE trả lời và file code đang đọc; có thể rời trang, phiên vẫn chạy ngầm",
 {
@@ -1180,6 +1197,34 @@
 "keys": "tom tat goi y ai summary draft prompt phim a tom tat lai huy"
 },
 {
+"id": "composer-ai-code",
+"tab": "telegram",
+"area": "Khung Trả lời › Trả lời từ code",
+"title": "Trả lời câu hỏi từ code dự án",
+"what": "Ai đó hỏi bạn về logic, nghiệp vụ hay tiến độ: chọn dự án ở ô prompt, AI đọc code (chỉ đọc) và trả lời kèm căn cứ file / hàm, độ chắc chắn, điều cần xác nhận, cùng 2 bản nháp \"Ngắn gọn\" / \"Đầy đủ\" viết theo vai trò người hỏi (PO / QA: không nêu tên file, API). Câu hỏi tiến độ: AI đọc thêm commit 14 ngày gần nhất và ticket YouTrack liên quan. Lượt đọc code chạy nền: đóng khung trả lời vẫn chạy tiếp, mở lại tin đó sẽ thấy tiến độ / kết quả; \"Hủy\" mới dừng hẳn. Từ danh sách tin: menu ⋯ › \"Trả lời từ code\" mở khung và chạy ngay. Chỉ có với vai trò Dev; dự án được nhớ cho lần sau.",
+"how": [
+"Chỉ có với vai trò Dev.",
+{
+"t": "Bấm vào tin có câu hỏi để mở trang trả lời.",
+"at": "css:[data-testid=\"message\"]"
+},
+{
+"t": "Trong ô prompt, bấm ô dự án và chọn thư mục code (hoặc \"Thêm thư mục…\").",
+"at": "Dự án tham chiếu cho AI"
+},
+{
+"t": "Bấm \"Trả lời từ code\" và chờ AI đọc code.",
+"at": [
+"Trả lời từ code",
+"Hỏi code lại"
+]
+},
+"Ở bản nháp, bấm biểu tượng copy để copy, hoặc biểu tượng gửi để trả lời ngay tin đó.",
+"Hoặc ở danh sách tin: rê vào tin, menu ⋯ › \"Trả lời từ code\"."
+],
+"keys": "tra loi tu code doc code du an hoi logic nghiep vu tien do can cu answer from code project"
+},
+{
 "id": "composer-ai-options",
 "tab": "telegram",
 "area": "Khung Trả lời › Mẫu AI",
@@ -1198,7 +1243,7 @@
 ]
 },
 {
-"t": "Ở \"Mẫu AI\" bấm một mẫu để đưa vào ô trả lời, sửa rồi Gửi.",
+"t": "Ở \"Mẫu AI\" bấm một mẫu để đưa vào ô trả lời, sửa rồi Gửi; hoặc bấm biểu tượng copy / gửi ở góc mẫu để copy hay gửi ngay.",
 "at": "css:label:has(input[name=\"ai-option\"])"
 }
 ],
@@ -1349,7 +1394,7 @@
 "tab": "telegram",
 "area": "AI Agent › Bộ lọc",
 "title": "Lọc phiên AI Agent",
-"what": "Chuyển giữa loại phiên \"Giao AI Agent\" và \"Đối chiếu BE\" (trên thanh tiêu đề), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý; Done một phiên cũng đánh dấu xong tin đính kèm, và Q&A có mã #QA… trong tin tag / tin đính kèm, mở lại thì bỏ theo); hiện số phiên đang chạy.",
+"what": "Chuyển giữa loại phiên \"Giao AI Agent\", \"Đối chiếu BE\" và \"Briefing\" (trên thanh tiêu đề; Briefing: các cuộc hỏi Trợ lý Briefing lưu trên trình duyệt 14 ngày, đọc lại / xóa ở đây, hỏi tiếp ở Trợ lý), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý; Done một phiên, hay Done tin tag của nó từ danh sách, cũng đánh dấu xong tin đính kèm (phiên Đối chiếu BE: cả các tin của chủ đề đã đối chiếu), các tin tag trả lời câu hỏi phiên đã gửi (có #REF-…) hay nằm trong Q&A của phiên, và Q&A có mã #QA… trong tin tag / tin đính kèm / tin được đối chiếu / câu hỏi phiên đã gửi, mở lại thì bỏ theo); hiện số phiên đang chạy.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1444,7 +1489,7 @@
 "tab": "telegram",
 "area": "AI Agent › Phiên › Thao tác",
 "title": "Done, dừng, xóa phiên, mở nhóm, model riêng",
-"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên mở danh sách file AI đã sửa trong dự án cùng diff; “Tạo nhánh + PR” (bấm hai lần để xác nhận) commit trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này).",
+"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên (mọi loại phiên, cả Đối chiếu BE khi bạn cho sửa file ở ô nhắn) mở trang Thay đổi, chỉ gồm file đổi kể từ lúc phiên bắt đầu (sửa của bạn hay của phiên khác có từ trước không tính; phiên tạo trước bản này vẫn so cả thư mục với commit cuối): đầu trang ghi tổng số file thay đổi, số file theo loại (mới / sửa / đổi tên / xóa) và tổng dòng +/−; cột trái liệt kê file theo nhóm Mới / Sửa / Đổi tên / Xóa (bấm để nhảy tới), mỗi file một thẻ bấm để thu gọn / mở rộng (nút mũi tên trên đầu thu / mở mọi file; file dài sẵn thu gọn); xem “Song song” (Trước khi sửa bên trái, Sau khi sửa bên phải) hoặc “Một cột” (− đỏ là trước, + xanh là sau), phần chữ đổi trong dòng được tô đậm; nút “Phiên” quay lại. “Tạo nhánh + PR” ở đáy trang (bấm hai lần để xác nhận) commit đúng các file đó (file khác bạn đang sửa hay đã stage để nguyên) trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này).",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1583,9 +1628,9 @@
 "tab": "settings",
 "area": "Mở app",
 "title": "Mở app trên trình duyệt mới (mã truy cập)",
-"what": "API của dashboard chỉ nhận trình duyệt đã được cấp quyền, để chương trình khác trên máy (kể cả AI Agent) không gửi tin thay bạn. Mở app bằng Start Dashboard hoặc lệnh mydashboard open thì trình duyệt được cấp quyền tự động và giữ khoảng một năm. Nếu thấy màn hình khóa: mở lại app bằng một trong hai cách trên, hoặc dán mã trong file ~/.telegram_dashboard/api_token rồi bấm “Mở khóa”.",
+"what": "API của dashboard chỉ nhận trình duyệt đã được cấp quyền, để chương trình khác trên máy (kể cả AI Agent) không gửi tin thay bạn. Mở app bằng Start Dashboard hoặc lệnh myradar open thì trình duyệt được cấp quyền tự động và giữ khoảng một năm. Nếu thấy màn hình khóa: mở lại app bằng một trong hai cách trên, hoặc dán mã trong file ~/.telegram_dashboard/api_token rồi bấm “Mở khóa”.",
 "how": [
-"Mở app bằng Start Dashboard / mydashboard open (hoặc uv run python -m telegram_dashboard open)",
+"Mở app bằng Start Dashboard / myradar open (hoặc uv run python -m telegram_dashboard open)",
 "Màn hình “Trình duyệt này chưa được mở khóa”: dán mã rồi bấm “Mở khóa”"
 ],
 "keys": "ma truy cap mã truy cập token dang nhap đăng nhập khoa khóa mo app mở app bookmark trinh duyet trình duyệt"
@@ -1594,9 +1639,13 @@
 "id": "settings-theme",
 "tab": "settings",
 "area": "Cài đặt › Chung › Giao diện",
-"title": "Giao diện, phong cách, màu chủ đạo, gradient",
-"what": "Chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; màu chủ đạo (có sẵn hoặc kéo chọn); bật Gradient với màu thứ hai. Lưu trên trình duyệt.",
+"title": "Ngôn ngữ, giao diện, phong cách, font chữ, màu chủ đạo, gradient",
+"what": "Chọn ngôn ngữ (Theo máy / Tiếng Việt / English); chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; font chữ (Quicksand, Be Vietnam Pro, Inter, Nunito hoặc font của máy); màu chủ đạo (có sẵn hoặc kéo chọn); bật Gradient với màu thứ hai. Lưu trên trình duyệt.",
 "how": [
+{
+"t": "Ở \"Ngôn ngữ\" chọn \"Theo máy\", \"Tiếng Việt\" hoặc \"English\"",
+"at": "css:[aria-label=\"Ngôn ngữ\"]"
+},
 {
 "t": "Chọn \"Sáng\", \"Tối\" hoặc \"Theo hệ thống\"",
 "at": "css:[aria-label=\"Giao diện\"]"
@@ -1604,6 +1653,10 @@
 {
 "t": "Chọn phong cách \"Đơn giản\", \"Mặc định\" hoặc \"Rực rỡ\"",
 "at": "css:[aria-label=\"Phong cách\"]"
+},
+{
+"t": "Mở \"Font chữ\" và chọn font bạn thích",
+"at": "css:[aria-label=\"Font chữ\"]"
 },
 {
 "t": "Bấm một ô màu có sẵn",
@@ -1614,7 +1667,7 @@
 "at": "Gradient"
 }
 ],
-"keys": "giao dien sang toi theo he thong phong cach don gian mac dinh ruc ro mau chu dao gradient theme accent"
+"keys": "giao dien sang toi theo he thong phong cach don gian mac dinh ruc ro mau chu dao gradient theme accent ngon ngu ngôn ngữ language tieng viet tiếng việt english theo may"
 },
 {
 "id": "settings-telegram-account",
@@ -2002,7 +2055,7 @@
 "tab": "youtrack",
 "area": "Thanh bên › Lịch sử AI",
 "title": "Lịch sử AI",
-"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong khi trang đã tải lại thì hiện \"Đã xong, mở để xem\", kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt). Tab “Telegram” giữ các cuộc hỏi Trợ lý Briefing (cả khi mở bằng ⌘J): đọc lại ở đây, hỏi tiếp ở Trợ lý. Bên Telegram mở được từ icon Lịch sử AI ở thanh bên.",
+"what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Ticket / Dashboard; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong khi trang đã tải lại thì hiện \"Đã xong, mở để xem\", kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt). Phiên đọc code hiện từng bước AI làm (đọc file, tìm, chạy lệnh) giống AI Agent, cả khi mở lại một phiên đang chạy nền. Chỉ dành cho YouTrack: các cuộc hỏi Trợ lý Briefing nằm ở AI Agent › Briefing bên Telegram. Bên Telegram mở được từ icon Lịch sử AI ở thanh bên.",
 "how": [
 {
 "t": "Bấm \"Lịch sử AI\" trên thanh bên (chỉ hiện khi AI bật)",
@@ -2263,7 +2316,7 @@
 "tab": "youtrack",
 "area": "Thanh bên › Hôm nay (Dev)",
 "title": "Hôm nay làm gì (trang chủ Dev)",
-"what": "Danh sách ticket của bạn xếp theo mức gấp kèm lý do (Blocked, Quá hạn, Sắp tới hạn, priority, Chờ bạn test, Đang làm, Đứng N ngày); 3 ticket đầu ở mục “Làm ngay”, còn lại “Tiếp theo”, 20 ticket mỗi trang.",
+"what": "Danh sách ticket đang mở của bạn xếp theo mức gấp kèm lý do (Blocked, Quá hạn, Sắp tới hạn, priority, Chờ bạn test, Đang làm, Đứng N ngày); ticket đã chuyển QC / chờ test chỉ hiện khi bấm ô \"Chờ QC\"; 3 ticket đầu ở mục “Làm ngay”, còn lại “Tiếp theo”, 20 ticket mỗi trang.",
 "how": [
 {
 "t": "Bấm \"Hôm nay\" trên thanh bên",
@@ -2514,12 +2567,12 @@
 {
 "id": "yt-bao-cao-release",
 "tab": "youtrack",
-"area": "Trang chủ › Báo cáo release",
-"title": "Báo cáo release",
+"area": "Trang chủ › Tạo báo cáo",
+"title": "Tạo báo cáo",
 "what": "AI viết báo cáo từ số liệu dashboard: Theo sprint (kịp ngày release không, chưa bàn giao QC, stuck, kết quả test, trễ, quá tải, bug) hoặc Theo ngày (đã test xong, đang test, chờ test). Mỗi con số mở danh sách ticket; có thể tự tạo theo lịch trong Cài đặt.",
 "how": [
 {
-"t": "Ở thẻ \"Báo cáo release\" bấm \"Theo ngày\" để xem tình trạng test tính tới giờ",
+"t": "Ở thẻ \"Tạo báo cáo\" bấm \"Theo ngày\" để xem tình trạng test tính tới giờ",
 "at": "Theo ngày"
 },
 {
@@ -2546,17 +2599,17 @@
 ]
 }
 ],
-"keys": "bao cao release báo cáo release report ngay release ngày release theo sprint theo ngay theo ngày tu tao tự tạo lich lịch"
+"keys": "tao bao cao tạo báo cáo bao cao release báo cáo release report ngay release ngày release theo sprint theo ngay theo ngày tu tao tự tạo lich lịch"
 },
 {
 "id": "yt-xuat-bao-cao",
 "tab": "youtrack",
-"area": "Trang chủ › Báo cáo release › Xuất",
+"area": "Trang chủ › Tạo báo cáo › Xuất",
 "title": "Xuất báo cáo MD / PDF / CSV",
 "what": "Tải báo cáo release ra Markdown, PDF (bản in) hoặc CSV (số liệu và danh sách ticket theo mục).",
 "how": [
 {
-"t": "Trong thẻ \"Báo cáo release\" đã có báo cáo, bấm \"Xuất\" (chưa có thì tạo báo cáo trước)",
+"t": "Trong thẻ \"Tạo báo cáo\" đã có báo cáo, bấm \"Xuất\" (chưa có thì tạo báo cáo trước)",
 "at": "Xuất"
 },
 {
@@ -2752,7 +2805,7 @@
 "tab": "youtrack",
 "area": "Ticket › Board",
 "title": "Kéo thả thẻ để đổi State",
-"what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack; có nút hoàn tác trong thông báo. Cột đã xong được gộp thành một nút.",
+"what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack; có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút.",
 "how": [
 {
 "t": "Bấm \"Ticket\"",
@@ -2767,9 +2820,10 @@
 "t": "Bấm cột dọc \"Đã xong\" để hiện các cột đã xong (bấm lại để ẩn)",
 "at": "css:button[aria-label=\"Hiện các cột đã xong\"], button[aria-label=\"Ẩn các cột đã xong\"]"
 },
+"Kéo tiêu đề một cột (tên State) sang trái / phải để đổi thứ tự cột; thứ tự được nhớ cho project đó",
 "Mỗi cột hiện tối đa 60 thẻ; lọc bớt để xem phần còn lại"
 ],
-"keys": "keo tha kéo thả drag drop doi state đổi state board cot cột da xong đã xong hoan tac hoàn tác undo"
+"keys": "keo tha kéo thả drag drop doi state đổi state doi thu tu cot đổi thứ tự cột reorder board cot cột da xong đã xong hoan tac hoàn tác undo"
 },
 {
 "id": "yt-gom-nhom",

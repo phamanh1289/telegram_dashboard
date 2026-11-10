@@ -6,8 +6,9 @@ import { timeLabel } from "@/lib/time";
 
 /** A Telegram message attached to an AI Agent session's next prompt. */
 export type Ref = { chat_id: string; message_id: string };
-export const MAX_REFS = 5;
-const MAX_TEXT = 1500; // per attached message: 5 of them + 8000 typed stay under the API's 16000
+export const MAX_REFS = 10; // a whole Q&A thread fits
+const MAX_TEXT = 1500; // per attached message, while the bodies share TEXT_BUDGET
+const TEXT_BUDGET = 6500; // all bodies + headers + 8000 typed stay under the API's 16000
 export const ATTACH_HEAD = "Tin nhắn đính kèm:";
 
 // One pasted token: the dashboard's "chat/message" ID (the #123 chip), a t.me/c link (also inside a topic), or "#123".
@@ -95,10 +96,11 @@ export function parseAttachments(block: string): Attached[] {
 /** The prompt sent: what was typed, then each attached message quoted, "[#id]" matching the marks in the text. */
 export function withAttachments(text: string, msgs: Message[], home: string | null, title: (chatId: string) => string | undefined) {
   if (!msgs.length) return text;
+  const cap = Math.min(MAX_TEXT, Math.floor(TEXT_BUDGET / msgs.length));
   const block = msgs.map((m) => {
     const where = m.chat_id === home ? "" : ` (nhóm ${title(m.chat_id) ?? m.chat_id})`;
     const media = m.media_kind ? ` [kèm ${m.media_kind}]` : "";
-    const body = m.text.length > MAX_TEXT ? `${m.text.slice(0, MAX_TEXT)}…` : m.text || "(không có chữ)";
+    const body = m.text.length > cap ? `${m.text.slice(0, cap)}…` : m.text || "(không có chữ)";
     return `[#${m.message_id}] ${m.outgoing ? "Bạn" : (m.sender_name ?? "?")}, ${timeLabel(m.date, true)}${where}${media}:\n${body.replace(/^/gm, "> ")}`;
   });
   // Others wrote these: inside a per-turn random tag they can't close, marked untrusted (as taskPrompt does).

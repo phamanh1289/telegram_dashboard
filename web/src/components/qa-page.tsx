@@ -1,14 +1,15 @@
 "use client";
 
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { ArrowLeft, BellOff, BellRing, Check, CheckCheck, CircleCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCcw, RotateCw, Search, Send, Trash2, X } from "lucide-react";
+import { ArrowLeft, BellOff, BellRing, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCcw, RotateCw, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting } from "@/components/ai/chat";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
+import { DeepAnswerAction } from "@/components/deep-think";
 import { Avatar, railHide } from "@/components/chat-list";
 import { Markdown } from "@/components/markdown";
 import { groupMembers, useMention } from "@/components/mention";
-import { MessageItem } from "@/components/message-item";
+import { AttachThread, MessageItem } from "@/components/message-item";
 import { NavPill } from "@/components/shell";
 import { AiAsk } from "@/components/yt/bits";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, errorText, type GroupInfo, type Message, type QaItem, type QaPosted } from "@/lib/api";
+import { type Key, t as tr, useT } from "@/lib/i18n";
 import { copyText, fold, msgKey, openQa, smooth, takeQaAnswer, toast, typing, useNow, waitLabel } from "@/lib/inbox";
 import { getPref, onPrefs, put, QA_REMIND_CHOICES, qaRemindLabel, readIntro, readNotify, readQaAnswerBy, setPref, useQaRemind } from "@/lib/prefs";
 import { clockLabel, dayLabel, timeLabel } from "@/lib/time";
@@ -79,17 +81,30 @@ async function markQa(qc: QueryClient, i: QaItem, state: QaMark) {
   qc.setQueriesData<QaItem[]>({ queryKey: ["qa", chatId] }, (d) => d && (state === "deleted"
     ? d.filter((x) => x.code !== i.code) : d.map((x) => (x.code === i.code ? { ...x, done: state === "done" } : x))));
   void qc.invalidateQueries({ queryKey: ["qa", chatId] }); // undoing a Xóa brings the thread back
+  if (state !== "deleted") void qc.invalidateQueries({ queryKey: ["tasks"] }); // Xong moves the thread's tags: their sessions follow
 }
 /** Mark with a toast (undo restores what it was); a failed call says so. */
 async function markWithUndo(qc: QueryClient, i: QaItem, state: QaMark) {
   const was: QaMark = i.done ? "done" : null;
   try {
     await markQa(qc, i, state);
-    toast({ text: state === "deleted" ? `Đã xóa ${i.code} khỏi Q&A` : state ? `Đã đánh dấu xong ${i.code}` : `Đã mở lại ${i.code}`,
+    toast({ text: state === "deleted" ? tr("Đã xóa {code} khỏi Q&A", { code: i.code }) : state ? tr("Đã đánh dấu xong {code}", { code: i.code }) : tr("Đã mở lại {code}", { code: i.code }),
       undo: () => void markQa(qc, i, was) });
   } catch (e) {
-    toast({ text: errorText(e, {}, "Không lưu được, thử lại") });
+    toast({ text: errorText(e, {}, tr("Không lưu được, thử lại")) });
   }
+}
+/** Xóa threads (one row, a whole day) with one toast whose undo brings them all back as they were. */
+async function deleteWithUndo(qc: QueryClient, its: QaItem[]) {
+  const r = await Promise.allSettled(its.map((i) => markQa(qc, i, "deleted")));
+  const ok = its.filter((_, k) => r[k].status === "fulfilled");
+  const failed = its.length - ok.length;
+  if (!ok.length) return toast({ text: errorText((r[0] as PromiseRejectedResult).reason, {}, tr("Không xóa được, thử lại")) });
+  toast({
+    text: `${ok.length > 1 ? tr("Đã xóa {n} Q&A", { n: ok.length }) : tr("Đã xóa {code} khỏi Q&A", { code: ok[0].code })}${failed ? tr(", {n} câu không xóa được", { n: failed }) : ""}`,
+    undo: () => void Promise.all(ok.map((i) => markQa(qc, i, i.done ? "done" : null)))
+      .catch((e) => toast({ text: errorText(e, {}, tr("Không khôi phục được, thử lại")) })),
+  });
 }
 /** Still waiting on someone: not answered and not marked Xong. */
 const waiting = (i: QaItem) => !i.done && !answered(i);
@@ -110,11 +125,11 @@ function answered(i: QaItem) {
   if (!names.size && !ids.size) return others.length > 0;
   return others.some((a) => (!!a.sender_username && names.has(a.sender_username.toLowerCase())) || (!!a.sender_id && ids.has(a.sender_id)));
 }
-const who = (m: Message) => (m.outgoing ? "Bạn" : m.sender_name || "Ẩn danh");
+const who = (m: Message) => (m.outgoing ? tr("Bạn") : m.sender_name || tr("Ẩn danh"));
 function transcript(i: QaItem, title?: string) {
   const a = accepted(i);
-  return [`Q&A ${i.code}${title ? ` · ${title}` : ""}`, ...(a ? [`Câu trả lời đã chốt: ${who(a)}: ${a.text}`] : []),
-    ...thread(i).map((m) => `${who(m)} (${timeLabel(m.date, true)}): ${m.text || "[Tệp đính kèm]"}`)].join("\n\n");
+  return [`Q&A ${i.code}${title ? ` · ${title}` : ""}`, ...(a ? [`${tr("Câu trả lời đã chốt")}: ${who(a)}: ${a.text}`] : []),
+    ...thread(i).map((m) => `${who(m)} (${timeLabel(m.date, true)}): ${m.text || tr("[Tệp đính kèm]")}`)].join("\n\n");
 }
 /** The text without a "#QA…" code at its end (the line the dashboard adds): the thread names its code once. */
 const CODE_TAIL = /\s*#QA\d+\s*$/i;
@@ -122,7 +137,7 @@ function untag(m: Message): Message {
   const cut = m.text.search(CODE_TAIL);
   return cut < 0 ? m : { ...m, text: m.text.slice(0, cut), links: m.links.filter((l) => l.offset + l.length <= cut) };
 }
-const gist = (m: Message) => untag(m).text.trim() || "[Tệp đính kèm]";
+const gist = (m: Message) => untag(m).text.trim() || tr("[Tệp đính kèm]");
 const noop = () => {};
 
 // Nudges: your question nobody answered a while (Cài đặt / the Q&A toolbar) after you last spoke in it asks you to
@@ -153,7 +168,7 @@ function notifyLate(items: QaItem[]) {
     notified.add(key);
     if (!document.hidden || !readNotify()) continue;
     try {
-      const n = new Notification(`Chưa ai trả lời · ${i.chat_title}`, { body: gist(i.question).slice(0, 200), tag: `qa:${i.code}` });
+      const n = new Notification(tr("Chưa ai trả lời · {group}", { group: i.chat_title }), { body: gist(i.question).slice(0, 200), tag: `qa:${i.code}` });
       n.onclick = () => { focus(); openQa(i.question.chat_id, i.code); n.close(); };
     } catch {} // no Notification constructor here (Android Chrome, webviews)
   }
@@ -204,7 +219,7 @@ export const mineOpen = (lists: Record<string, QaItem[]>) =>
 export const QA_DAYS = [[1, "24 giờ"], [3, "3 ngày"], [7, "7 ngày"], [30, "30 ngày"]] as const;
 export type QaDays = (typeof QA_DAYS)[number][0];
 type Filter = "open" | "done" | "closed" | "mine" | "all";
-const FILTERS: [Filter, string, (i: QaItem) => boolean, string][] = [
+const FILTERS: [Filter, Key, (i: QaItem) => boolean, Key | ""][] = [
   ["all", "Tất cả", () => true, ""],
   ["open", "Chờ trả lời", waiting, "Người được tag chưa trả lời (hoặc bất kỳ ai ngoài người hỏi, theo Cài đặt), chưa chốt, chưa đánh dấu xong"],
   ["done", "Đã trả lời", (i) => !i.done && answered(i), "Người được tag đã trả lời (hoặc bất kỳ ai, theo Cài đặt), hoặc bạn đã chốt câu trả lời"],
@@ -217,13 +232,14 @@ const PILL = "inline-flex h-5 shrink-0 items-center gap-1 whitespace-nowrap roun
 /** Settled ("Chốt"), answered, or how long the question has waited (`late`: yours, past the nudge threshold): text +
  *  icon, not colour alone. */
 function State({ i, now, late }: { i: QaItem; now: number; late?: boolean }) {
-  if (i.done) return <span className={cn(PILL, "bg-paper-3 text-ink-2")}><CircleCheck aria-hidden />Xong</span>;
-  if (accepted(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><CheckCheck aria-hidden />Đã chốt</span>;
-  if (answered(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><Check aria-hidden />Đã trả lời</span>;
+  const tx = useT();
+  if (i.done) return <span className={cn(PILL, "bg-paper-3 text-ink-2")}><CircleCheck aria-hidden />{tx("Xong")}</span>;
+  if (accepted(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><CheckCheck aria-hidden />{tx("Đã chốt")}</span>;
+  if (answered(i)) return <span className={cn(PILL, "bg-ok-wash text-ok")}><Check aria-hidden />{tx("Đã trả lời")}</span>;
   const w = waitLabel(i.question.date, now);
   return (
     <span className={cn(PILL, late ? "bg-signal-wash text-signal-2" : "bg-warn-wash text-warn")}>
-<Clock3 aria-hidden />{late ? "Quá hạn" : "Chờ"} <span className="font-mono tabular-nums">{w.n}</span> {w.unit}
+<Clock3 aria-hidden />{late ? tx("Quá hạn") : tx("Chờ")} <span className="font-mono tabular-nums">{w.n}</span> {w.unit}
     </span>
   );
 }
@@ -231,44 +247,55 @@ function State({ i, now, late }: { i: QaItem; now: number; late?: boolean }) {
 /** One question in the list: its text, then its state and the latest reply (or who asked), new replies at the end.
  *  `late`: signal mark, and the nudge / mute buttons in their own column on the right (siblings of the row button,
  *  never inside it, never over its text). */
-function Row({ i, now, on, news, late, onOpen, onNudge, onMute }: {
-  i: QaItem; now: number; on: boolean; news: number; late: boolean; onOpen: () => void; onNudge: () => void; onMute: () => void;
+function Row({ i, now, on, news, late, onOpen, onNudge, onMute, onDelete }: {
+  i: QaItem; now: number; on: boolean; news: number; late: boolean; onOpen: () => void; onNudge: () => void; onMute: () => void; onDelete?: () => void;
 }) {
+  const tx = useT();
   const end = accepted(i) ?? i.answers.at(-1); // a settled thread previews its answer
   const at = latest(i).date;
   return (
-    <li className={cn("relative flex transition-colors duration-(--dur-micro) hover:bg-paper-2",
+    <li className={cn("group/qa relative flex transition-colors duration-(--dur-micro) hover:bg-paper-2",
       (on || late) && "before:absolute before:inset-y-0 before:left-0 before:w-[3px]",
       on ? "bg-hl-wash before:bg-hl hover:bg-hl-wash" : late && "bg-signal-wash/50 before:bg-signal")}>
       <button type="button" data-qa={i.code} aria-current={on || undefined} onClick={onOpen}
-        className={cn("grid min-w-0 flex-1 grid-cols-1 gap-1.5 py-2.5 pl-4 text-left", late ? "pr-1" : "pr-4")}>
+        className={cn("grid min-w-0 flex-1 grid-cols-1 gap-1.5 py-2.5 pl-4 text-left", late || onDelete ? "pr-1" : "pr-4")}>
         <span className="flex items-start gap-3">
-          <span className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-snug text-ink", news ? "font-semibold" : "font-medium")}>{gist(i.question)}</span>
+          <span className={cn("line-clamp-2 min-w-0 flex-1 text-sm leading-snug text-ink", news ? "font-bold" : "font-medium")}>{gist(i.question)}</span>
           <time dateTime={at} title={timeLabel(at, true)} className="shrink-0 pt-px font-mono text-xs text-ink-3 tabular-nums">{clockLabel(at)}</time>
         </span>
         <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
           <State i={i} now={now} late={late} />
           <span className="min-w-0 flex-1 truncate">
-            {end ? <><b className="font-medium text-ink-2">{who(end)}:</b> {gist(end)}</> : <>{who(i.question)} hỏi</>}
+            {end ? <><b className="font-medium text-ink-2">{who(end)}:</b> {gist(end)}</> : tx("{who} hỏi", { who: who(i.question) })}
           </span>
-          {news > 0 && <span className={cn(PILL, "bg-hl text-hl-ink")}>{news} mới</span>}
+          {news > 0 && <span className={cn(PILL, "bg-hl text-hl-ink")}>{tx("{n} mới", { n: news })}</span>}
         </span>
       </button>
-      {late && (
-        <span className="flex shrink-0 flex-col items-center justify-center gap-1 border-l border-rule/60 px-1.5">
-          <Hint side="bottom" text="Nhắc lại trong nhóm: soạn sẵn tin trả lời vào câu hỏi này (tag lại người được hỏi), Enter để gửi">
-            <Button size="icon-xs" variant="ghost" className="text-signal-2 hover:bg-signal-wash" aria-label={`Nhắc lại ${i.code}`} onClick={onNudge}><BellRing /></Button>
-          </Hint>
-          <Hint side="bottom" text="Bỏ qua: không nhắc câu này nữa">
-            <Button size="icon-xs" variant="ghost" className="text-ink-3" aria-label={`Bỏ qua nhắc ${i.code}`} onClick={onMute}><BellOff /></Button>
-          </Hint>
+      {(late || onDelete) && (
+        <span className={cn("flex shrink-0 flex-col items-center justify-center gap-1 px-1.5", late && "border-l border-rule/60")}>
+          {late && <>
+            <Hint side="bottom" text={tx("Nhắc lại trong nhóm: soạn sẵn tin trả lời vào câu hỏi này (tag lại người được hỏi), Enter để gửi")}>
+              <Button size="icon-xs" variant="ghost" className="text-signal-2 hover:bg-signal-wash" aria-label={tx("Nhắc lại {code}", { code: i.code })} onClick={onNudge}><BellRing /></Button>
+            </Hint>
+            <Hint side="bottom" text={tx("Bỏ qua: không nhắc câu này nữa")}>
+              <Button size="icon-xs" variant="ghost" className="text-ink-3" aria-label={tx("Bỏ qua nhắc {code}", { code: i.code })} onClick={onMute}><BellOff /></Button>
+            </Hint>
+          </>}
+          {onDelete && (
+            <Hint side="bottom" text={tx("Xóa khỏi Q&A trên dashboard (tin trên Telegram vẫn còn); hoàn tác ở thông báo")}>
+              <Button size="icon-xs" variant="ghost" aria-label={tx("Xóa {code} khỏi Q&A", { code: i.code })} onClick={onDelete}
+                className="text-ink-3 opacity-0 transition-opacity duration-(--dur-micro) group-hover/qa:opacity-100 hover:bg-error-wash hover:text-error focus-visible:opacity-100 [@media(hover:none)]:opacity-100"><Trash2 /></Button>
+            </Hint>
+          )}
         </span>
       )}
     </li>
   );
 }
 
-const SUM_ERR = { ai_not_configured: "Chưa cài AI (Cài đặt › AI).", ai_context_too_large: "Chuỗi quá dài để AI đọc.", message_not_found: "Không đọc được các tin của chuỗi." };
+const SUM_ERR: Record<string, Key> = { ai_not_configured: "Chưa cài AI (Cài đặt › AI).", ai_context_too_large: "Chuỗi quá dài để AI đọc.", message_not_found: "Không đọc được các tin của chuỗi." };
+const SUM_LINES: Key[] = ["Đang đọc cả chuỗi", "Đang tìm câu trả lời chốt", "Đang gom việc còn mở"];
+const MINE_LINES: Key[] = ["AI đang kết nối Telegram", "Đang đọc câu bạn hỏi ở các nhóm", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"];
 
 /** The open question: its code, state and people, the answer you settled on, then the chain as tag rows (`MessageItem`,
  *  bare) on one rail. Kept tags keep their tag actions; a click on a message makes it the one the box below answers;
@@ -279,6 +306,7 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
   late: boolean; muted: boolean; remind: number; onNudge: () => void; onMute: (off: boolean) => void; onResolve: (id: string | null) => void;
   onMark: (state: QaMark) => void;
 }) {
+  const tx = useT();
   const [sure, setSure] = useState(false); // Xóa waits for a second click
   const all = thread(i);
   const news = new Set(fresh(i, seenAt).map((m) => m.message_id));
@@ -297,101 +325,104 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
       }, ctl.signal, (text) => setSum({ text, busy: true }));
       setSum({ text: r.text, busy: false });
     } catch (e) {
-      setSum({ text: "", busy: false, error: ctl.signal.aborted ? "Đã dừng." : errorText(e, SUM_ERR, "AI không tóm tắt được.") });
+      setSum({ text: "", busy: false, error: ctl.signal.aborted ? tr("Đã dừng.") : errorText(e, Object.fromEntries(Object.entries(SUM_ERR).map(([k, v]) => [k, tr(v)])), tr("AI không tóm tắt được.")) });
     }
   }
   return (
     <>
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2 @4xl/qa:px-5">
-        <Hint side="bottom" text="Về danh sách câu hỏi (Esc)">
-          <Button size="icon-sm" variant="ghost" className="@4xl/qa:hidden" aria-label="Về danh sách" onClick={onClose}><ArrowLeft /></Button>
+        <Hint side="bottom" text={tx("Về danh sách câu hỏi (Esc)")}>
+          <Button size="icon-sm" variant="ghost" className="@4xl/qa:hidden" aria-label={tx("Về danh sách")} onClick={onClose}><ArrowLeft /></Button>
         </Hint>
-        <Hint side="bottom" title={i.code} text="Mã Q&A, bấm để chép. Ghi mã này trong tin trên Telegram là gắn vào chuỗi; bấm hashtag đó trong Telegram để xem cả chuỗi.">
-          <button type="button" aria-label={`Chép mã ${i.code}`} onClick={() => void copyText(i.code, `Đã chép ${i.code}`)}
+        <Hint side="bottom" title={i.code} text={tx("Mã Q&A, bấm để chép. Ghi mã này trong tin trên Telegram là gắn vào chuỗi; bấm hashtag đó trong Telegram để xem cả chuỗi.")}>
+          <button type="button" aria-label={tx("Chép mã {code}", { code: i.code })} onClick={() => void copyText(i.code, tr("Đã chép {code}", { code: i.code }))}
             className="rounded-full bg-hl-wash px-2 font-mono text-xs leading-5 font-medium text-hl-2 tabular-nums transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink">
             {i.code}
           </button>
         </Hint>
         <State i={i} now={now} late={late} />
         <span className="min-w-0 flex-1 truncate text-xs text-ink-3">{[...new Set(all.map(who))].join(", ")}</span>
-        <AiAsk label="AI tóm tắt kết luận" hint="Mình tóm câu hỏi, kết luận và việc còn mở nhé!" onClick={() => void summarize()} />
-        <Hint side="bottom" text="Chép cả chuỗi (người, giờ, nội dung; câu trả lời đã chốt ở đầu) để dán vào ticket, AI hay gửi người khác">
-          <Button size="icon-sm" variant="ghost" aria-label={`Chép chuỗi ${i.code}`} onClick={() => void copyText(transcript(i, title), `Đã chép chuỗi ${i.code}`)}><Copy /></Button>
+        <AiAsk label={tx("AI tóm tắt kết luận")} hint={tx("Mình tóm câu hỏi, kết luận và việc còn mở nhé!")} onClick={() => void summarize()} />
+        <Hint side="bottom" text={tx("Chép cả chuỗi (người, giờ, nội dung; câu trả lời đã chốt ở đầu) để dán vào ticket, AI hay gửi người khác")}>
+          <Button size="icon-sm" variant="ghost" aria-label={tx("Chép chuỗi {code}", { code: i.code })} onClick={() => void copyText(transcript(i, title), tr("Đã chép chuỗi {code}", { code: i.code }))}><Copy /></Button>
         </Hint>
-        <Hint side="bottom" text={i.done ? "Mở lại: chuỗi quay về trạng thái theo các trả lời, nhắc lại như cũ"
-          : "Đánh dấu xong: không nhắc nữa, rời Chờ trả lời và Câu hỏi của tôi (xem lại ở bộ lọc Xong)"}>
-          <Button size="icon-sm" variant="ghost" aria-pressed={i.done} aria-label={i.done ? `Mở lại ${i.code}` : `Đánh dấu xong ${i.code}`}
+        <Hint side="bottom" text={i.done ? tx("Mở lại: chuỗi quay về trạng thái theo các trả lời, nhắc lại như cũ; tin tag trong chuỗi thành chưa xử lý")
+          : tx("Đánh dấu xong: không nhắc nữa, rời Chờ trả lời và Câu hỏi của tôi (xem lại ở bộ lọc Xong); tin tag trong chuỗi cũng thành đã xử lý")}>
+          <Button size="icon-sm" variant="ghost" aria-pressed={i.done} aria-label={i.done ? tx("Mở lại {code}", { code: i.code }) : tx("Đánh dấu xong {code}", { code: i.code })}
             className={cn(i.done && "text-ok")} onClick={() => onMark(i.done ? null : "done")}>{i.done ? <RotateCcw /> : <CircleCheck />}</Button>
         </Hint>
-        <Hint side="bottom" text="Xóa chuỗi khỏi Q&A trên dashboard (tin trên Telegram vẫn còn). Bấm 2 lần để xác nhận">
-          <Button size={sure ? "xs" : "icon-sm"} variant={sure ? "destructive" : "ghost"} aria-label={`Xóa ${i.code} khỏi Q&A`} onBlur={() => setSure(false)}
+        <Hint side="bottom" text={tx("Xóa chuỗi khỏi Q&A trên dashboard (tin trên Telegram vẫn còn). Bấm 2 lần để xác nhận")}>
+          <Button size={sure ? "xs" : "icon-sm"} variant={sure ? "destructive" : "ghost"} aria-label={tx("Xóa {code} khỏi Q&A", { code: i.code })} onBlur={() => setSure(false)}
             onClick={() => { if (!sure) return setSure(true); setSure(false); onMark("deleted"); }}>
-            <Trash2 />{sure && "Bấm lần nữa để xóa"}
+            <Trash2 />{sure && tx("Bấm lần nữa để xóa")}
           </Button>
         </Hint>
       </div>
       {answer && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-ok-wash px-3 py-2 text-xs text-ok @4xl/qa:px-5">
           <CheckCheck className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-semibold text-ok">Đã chốt · {who(answer)}:</b> {gist(answer)}</span>
-          <Hint side="bottom" text="Bỏ chốt: chuỗi quay lại trạng thái theo các trả lời">
-            <Button size="xs" variant="ghost" onClick={() => onResolve(null)}>Bỏ chốt</Button>
+          <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-bold text-ok">{tx("Đã chốt · {who}:", { who: who(answer) })}</b> {gist(answer)}</span>
+          <DeepAnswerAction m={answer} q={i.question.message_id} />
+          <Hint side="bottom" text={tx("Bỏ chốt: chuỗi quay lại trạng thái theo các trả lời")}>
+            <Button size="xs" variant="ghost" onClick={() => onResolve(null)}>{tx("Bỏ chốt")}</Button>
           </Hint>
         </div>
       )}
       {late ? (
         <div role="status" className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-signal-wash px-3 py-2 text-xs text-signal-2 @4xl/qa:px-5">
           <BellRing className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1">Chưa ai trả lời sau {qaRemindLabel(remind)}{nudged > 0 && `, bạn đã nhắc ${nudged} lần`}.</span>
-          <Button size="xs" className="bg-hl" onClick={onNudge}><BellRing /> Nhắc lại trong nhóm</Button>
-          <Hint side="bottom" text="Không nhắc câu này nữa (bật lại ngay tại đây)">
-            <Button size="xs" variant="ghost" onClick={() => onMute(true)}><BellOff /> Bỏ qua</Button>
+          <span className="min-w-0 flex-1">{tx("Chưa ai trả lời sau {x}", { x: qaRemindLabel(remind) })}{nudged > 0 && tx(", bạn đã nhắc {n} lần", { n: nudged })}.</span>
+          <Button size="xs" className="bg-hl" onClick={onNudge}><BellRing /> {tx("Nhắc lại trong nhóm")}</Button>
+          <Hint side="bottom" text={tx("Không nhắc câu này nữa (bật lại ngay tại đây)")}>
+            <Button size="xs" variant="ghost" onClick={() => onMute(true)}><BellOff /> {tx("Bỏ qua")}</Button>
           </Hint>
         </div>
       ) : muted && i.question.outgoing && waiting(i) && (
         <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5 text-xs text-ink-3 @4xl/qa:px-5">
           <BellOff className="size-3.5 shrink-0" aria-hidden />
-          <span className="min-w-0 flex-1">Đã tắt nhắc cho câu này.</span>
-          <Button size="xs" variant="ghost" onClick={() => onMute(false)}>Bật lại</Button>
+          <span className="min-w-0 flex-1">{tx("Đã tắt nhắc cho câu này.")}</span>
+          <Button size="xs" variant="ghost" onClick={() => onMute(false)}>{tx("Bật lại")}</Button>
         </div>
       )}
       {/* The rail runs through the avatars, so the chain reads as one conversation. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {sum && (
-          <div aria-live="polite" className="mx-auto grid max-w-3xl grid-cols-[minmax(0,1fr)] gap-2 px-4 pt-3 @4xl/qa:px-5">
+          <div aria-live="polite" className="grid grid-cols-[minmax(0,1fr)] gap-2 px-4 pt-3 @4xl/qa:px-5">
             {sum.error ? (
-              <AiResultCard error actions={<Button size="xs" variant="ghost" onClick={() => setSum(null)}><X /> Đóng</Button>}>{sum.error}</AiResultCard>
+              <AiResultCard error actions={<Button size="xs" variant="ghost" onClick={() => setSum(null)}><X /> {tx("Đóng")}</Button>}>{sum.error}</AiResultCard>
             ) : sum.busy ? (
               <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">{sum.text ? <><Markdown text={sum.text} className="text-ink" /><AiWriting /></> : <AiThinking lines={["Đang đọc cả chuỗi", "Đang tìm câu trả lời chốt", "Đang gom việc còn mở"]} />}</div>
-                <AiStop onClick={() => stop.current?.abort()} hint="Dừng tóm tắt" />
+                <div className="min-w-0 flex-1">{sum.text ? <><Markdown text={sum.text} className="text-ink" /><AiWriting /></> : <AiThinking lines={SUM_LINES.map((l) => tx(l))} />}</div>
+                <AiStop onClick={() => stop.current?.abort()} hint={tx("Dừng tóm tắt")} />
               </div>
             ) : (
-              <AiResultCard title="Kết luận (AI)" actions={<>
-                <Button size="xs" variant="ghost" onClick={() => void copyText(sum.text, "Đã chép kết luận")}><Copy /> Copy</Button>
-                <Button size="xs" variant="ghost" onClick={() => setSum(null)}><X /> Đóng</Button>
+              <AiResultCard title={tx("Kết luận (AI)")} actions={<>
+                <Button size="xs" variant="ghost" onClick={() => void copyText(sum.text, tr("Đã chép kết luận"))}><Copy /> Copy</Button>
+                <Button size="xs" variant="ghost" onClick={() => setSum(null)}><X /> {tx("Đóng")}</Button>
               </>}>
                 <Markdown text={sum.text} className="text-ink" />
               </AiResultCard>
             )}
           </div>
         )}
-        <ol aria-label={`Chuỗi ${i.code}`} className="@container relative mx-auto max-w-3xl py-2 before:absolute before:inset-y-6 before:left-8 before:w-px before:bg-rule-2 @xl:before:left-9">
+        <AttachThread.Provider value={i.answers}>
+        <ol aria-label={tx("Chuỗi {code}", { code: i.code })} className="@container relative py-2 before:absolute before:inset-y-6 before:left-8 before:w-px before:bg-rule-2 @xl:before:left-9">
           {all.map((m, k) => (
             <MessageItem key={m.message_id} m={untag(m)} now={now} head={k === 0 || all[k - 1].sender_id !== m.sender_id || all[k - 1].outgoing !== m.outgoing}
               isReplyTarget={!!target && msgKey(target) === msgKey(m)} onReply={onTarget} onUseText={noop} live={!m.kept} liveReply bare fresh={news.has(m.message_id)}
               extra={k > 0 && !m.deleted && (answer?.message_id === m.message_id ? (
-                <span className={cn(PILL, "mr-1 bg-ok-wash text-ok")}><CheckCheck aria-hidden />Câu trả lời</span>
+                <span className={cn(PILL, "mr-1 bg-ok-wash text-ok")}><CheckCheck aria-hidden />{tx("Câu trả lời")}</span>
               ) : (
-                <Hint side="bottom" text="Chốt tin này là câu trả lời của câu hỏi: chuỗi thành Đã chốt, không nhắc nữa, tin này hiện ở đầu chuỗi và trong Chép chuỗi">
+                <Hint side="bottom" text={tx("Chốt tin này là câu trả lời của câu hỏi: chuỗi thành Đã chốt, không nhắc nữa, tin này hiện ở đầu chuỗi và trong Chép chuỗi")}>
                   <Button size="xs" variant="ghost" onClick={() => onResolve(m.message_id)}
                     className="opacity-0 transition-opacity duration-(--dur-micro) group-hover/row:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100">
-                    <CheckCheck /> Chốt
+                    <CheckCheck /> {tx("Chốt")}
                   </Button>
                 </Hint>
               ))} />
           ))}
         </ol>
+        </AttachThread.Provider>
       </div>
     </>
   );
@@ -402,6 +433,7 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
 export function QaPage({ focus, group, onGroup, days, onDays, onBack }: {
   focus: string | null; group: string | null; onGroup: (chatId: string) => void; days: QaDays; onDays: (d: QaDays) => void; onBack: () => void;
 }) {
+  const tx = useT();
   const groups = useQuery(qaGroupsQuery);
   const title = groups.data?.find((g) => g.chat_id === group)?.title;
   return (
@@ -410,12 +442,12 @@ export function QaPage({ focus, group, onGroup, days, onDays, onBack }: {
         <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-4 sm:p-6">
           <div className="grid w-full max-w-sm justify-items-center gap-2 text-center">
             <span className="grid size-11 place-items-center rounded-full bg-hl-wash text-hl-2"><MessageCircleQuestion className="size-5" aria-hidden /></span>
-            <p className="text-sm font-semibold text-ink">Hỏi nhóm nào?</p>
-            <p className="text-sm leading-relaxed text-ink-3">Đăng câu hỏi vào bất kỳ nhóm nào (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời.</p>
+            <p className="text-sm font-bold text-ink">{tx("Hỏi nhóm nào?")}</p>
+            <p className="text-sm leading-relaxed text-ink-3">{tx("Đăng câu hỏi vào bất kỳ nhóm nào (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời.")}</p>
             <div className="mt-2 h-[min(55vh,26rem)] w-full rounded-xl border bg-cotton pt-2 text-left">
               <QaGroups days={days} selected={null} onSelect={onGroup} collapsed={false} />
             </div>
-            <Button size="sm" variant="ghost" className="md:hidden" onClick={onBack}><ArrowLeft /> Việc cần xử lý</Button>
+            <Button size="sm" variant="ghost" className="md:hidden" onClick={onBack}><ArrowLeft /> {tx("Việc cần xử lý")}</Button>
           </div>
         </div>
       )}
@@ -427,6 +459,7 @@ export function QaPage({ focus, group, onGroup, days, onDays, onBack }: {
  *  A row opens its thread in its own group (openQa); the late ones lead, with nudge / mute like a group's list.
  *  No new reads: the same per-group queries the sidebar badges poll. */
 function MyQuestions({ days, onDays }: { days: QaDays; onDays: (d: QaDays) => void }) {
+  const tx = useT();
   const { lists, ready } = useQaNews(days, true);
   const now = useNow();
   const mins = useQaRemind();
@@ -444,35 +477,35 @@ function MyQuestions({ days, onDays }: { days: QaDays; onDays: (d: QaDays) => vo
   const row = (i: QaItem, isLateRow: boolean) => (
     <Row key={`${i.question.chat_id}:${i.code}`} i={i} now={now} on={false} news={0} late={isLateRow}
       onOpen={() => openQa(i.question.chat_id, i.code)} onNudge={() => openQa(i.question.chat_id, i.code)}
-      onMute={() => { mute(i.code, true); toast({ text: `Đã bỏ qua nhắc ${i.code}`, undo: () => mute(i.code, false) }); }} />
+      onMute={() => { mute(i.code, true); toast({ text: tr("Đã bỏ qua nhắc {code}", { code: i.code }), undo: () => mute(i.code, false) }); }} />
   );
   return (
     <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)]">
       <header className="flex flex-wrap items-center gap-2 border-b px-3 py-2 md:px-4">
         <p className="min-w-0 flex-1 truncate text-sm text-ink-2">
-          <span className="font-mono text-base font-semibold text-ink tabular-nums">{open.length}</span> câu bạn hỏi chưa ai trả lời
-          <span className="hidden text-ink-3 sm:inline"> · {recent.slice(0, 8).length} nhóm hỏi gần đây</span>
+          {tx.n("{n} câu bạn hỏi chưa ai trả lời", { n: <span className="font-mono text-base font-bold text-ink tabular-nums">{open.length}</span> })}
+          <span className="hidden text-ink-3 sm:inline">{tx(" · {n} nhóm hỏi gần đây", { n: recent.slice(0, 8).length })}</span>
         </p>
-        <Dropdown label="Khoảng thời gian" value={String(days)} onChange={(v) => onDays(Number(v) as QaDays)} className="w-[5.5rem]"
-          options={QA_DAYS.map(([v, l]) => ({ value: String(v), label: l }))} />
+        <Dropdown label={tx("Khoảng thời gian")} value={String(days)} onChange={(v) => onDays(Number(v) as QaDays)} className="w-[5.5rem]"
+          options={QA_DAYS.map(([v, l]) => ({ value: String(v), label: tx(l) }))} />
       </header>
       <div className="min-h-0 overflow-y-auto">
         {wait ? (
-          <AiFetching kind="qa" lines={["AI đang kết nối Telegram", "Đang đọc câu bạn hỏi ở các nhóm", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"]} />
+          <AiFetching kind="qa" lines={MINE_LINES.map((l) => tx(l))} />
         ) : !open.length ? (
           <div className="grid justify-items-center gap-2 px-4 py-16 text-center">
             <span className="grid size-11 place-items-center rounded-full bg-ok-wash text-ok"><CheckCheck className="size-5" aria-hidden /></span>
-            <p className="text-sm font-semibold text-ink">{recent.length ? "Câu nào bạn hỏi cũng có người trả lời rồi" : "Bạn chưa hỏi nhóm nào"}</p>
+            <p className="text-sm font-bold text-ink">{recent.length ? tx("Câu nào bạn hỏi cũng có người trả lời rồi") : tx("Bạn chưa hỏi nhóm nào")}</p>
             <p className="max-w-xs text-sm leading-relaxed text-ink-3">
-              {recent.length ? `Trong ${QA_DAYS.find(([v]) => v === days)![1]} qua.` : "Chọn một nhóm bên trái để đăng câu hỏi kèm mã #QA…"}
+              {recent.length ? tx("Trong {x} qua.", { x: tx(QA_DAYS.find(([v]) => v === days)![1]) }) : tx("Chọn một nhóm bên trái để đăng câu hỏi kèm mã #QA…")}
             </p>
-            {recent.length > 0 && days < 30 && <Button size="xs" variant="outline" onClick={() => onDays(30)}>Xem 30 ngày</Button>}
+            {recent.length > 0 && days < 30 && <Button size="xs" variant="outline" onClick={() => onDays(30)}>{tx("Xem 30 ngày")}</Button>}
           </div>
         ) : (
           [...(late.length ? [["late", late] as const] : []), ...groups].map(([g, its]) => (
-            <section key={g} aria-label={g === "late" ? "Cần nhắc" : g}>
+            <section key={g} aria-label={g === "late" ? tx("Cần nhắc") : g}>
               <h3 className={cn("sticky top-0 z-10 flex items-center gap-1.5 border-b bg-paper-2/95 px-4 py-1 text-xs font-medium backdrop-blur-sm", g === "late" ? "text-signal-2" : "text-ink-3")}>
-                {g === "late" ? <><BellRing className="size-3.5" aria-hidden />Chưa ai trả lời sau {qaRemindLabel(mins)}</> : g}
+                {g === "late" ? <><BellRing className="size-3.5" aria-hidden />{tx("Chưa ai trả lời sau {x}", { x: qaRemindLabel(mins) })}</> : g}
                 <span className="ml-auto font-mono tabular-nums">{its.length}</span>
               </h3>
               <ul className="divide-y divide-rule">{its.map((i) => row(i, g === "late"))}</ul>
@@ -507,22 +540,23 @@ function QaBox({ chatId, draft, onSend, busy, to, title, top }: {
   chatId: string; draft: Draft; onSend: (text: string) => void; busy: boolean; to: Message | null; title?: string;
   top: (text: string) => React.ReactNode;
 }) {
+  const tx = useT();
   const typed = useSyncExternalStore(draft.sub, draft.get, draft.get);
   const mention = useMention(groupMembers(chatId), typed, draft.set);
   const text = mention.wire(typed); // as sent: a member tagged by name counts as a tag
   const send = () => onSend(text);
   return (
-    <AiPromptBox className="mx-auto max-w-3xl" value={typed} onChange={draft.set} onSend={send} maxLength={4000} mention={mention}
-      aria-label={to ? "Trả lời trong chuỗi" : "Câu hỏi mới"}
-      placeholder={to ? `Trả lời ${who(to)}…` : `Hỏi ${title ?? "nhóm"}… (tag @tên người được hỏi)`}
+    <AiPromptBox value={typed} onChange={draft.set} onSend={send} maxLength={4000} mention={mention}
+      aria-label={to ? tx("Trả lời trong chuỗi") : tx("Câu hỏi mới")}
+      placeholder={to ? tx("Trả lời {who}…", { who: who(to) }) : tx("Hỏi {title}… (tag @tên người được hỏi)", { title: title ?? tx("nhóm") })}
       top={top(text)}
       tools={!to && (hasTag(text)
-        ? <span className="text-ink-3">Có tag: tự thêm mã <span className="font-mono">#QA…</span> ở cuối tin</span>
-        : <span className="text-ink-3">Tag người được hỏi (<span className="font-mono">@tên</span>) để mở Q&A; không tag thì gửi như tin thường</span>)}
+        ? <span className="text-ink-3">{tx.n("Có tag: tự thêm mã {code} ở cuối tin", { code: <span className="font-mono">#QA…</span> })}</span>
+        : <span className="text-ink-3">{tx.n("Tag người được hỏi ({at}) để mở Q&A; không tag thì gửi như tin thường", { at: <span className="font-mono">{tx("@tên")}</span> })}</span>)}
       actions={
-        <Hint side="bottom" text={`${to ? "Gửi trả lời" : "Đăng câu hỏi vào nhóm"} (Enter, Shift+Enter xuống dòng)`}>
+        <Hint side="bottom" text={to ? tx("Gửi trả lời (Enter, Shift+Enter xuống dòng)") : tx("Đăng câu hỏi vào nhóm (Enter, Shift+Enter xuống dòng)")}>
           <Button size="sm" className="rounded-full bg-hl" disabled={!text.trim() || busy} aria-busy={busy} onClick={send}>
-            <Send />{to ? "Trả lời" : "Đăng"}
+            <Send />{to ? tx("Trả lời") : tx("Đăng")}
           </Button>
         </Hint>
       } />
@@ -532,6 +566,7 @@ function QaBox({ chatId, draft, onSend, busy, to, title, top }: {
 function GroupQa({ chatId, title, focus, days, onDays }: {
   chatId: string; title?: string; focus: string | null; days: QaDays; onDays: (d: QaDays) => void;
 }) {
+  const tx = useT();
   const qc = useQueryClient();
   const list = useQuery({ ...qaQuery(chatId, days), refetchInterval: 60_000 }); // answers show up while you read
   const listWait = useAiWait(list.isPending);
@@ -573,12 +608,12 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   };
   const onMute = (i: QaItem, off: boolean) => {
     mute(i.code, off);
-    if (off) toast({ text: `Đã bỏ qua nhắc ${i.code}`, undo: () => mute(i.code, false) });
+    if (off) toast({ text: tr("Đã bỏ qua nhắc {code}", { code: i.code }), undo: () => mute(i.code, false) });
   };
   const onResolve = (i: QaItem, id: string | null) => {
     const was = resolvedIds()[i.code] ?? null;
     resolve(i.code, id);
-    toast({ text: id ? `Đã chốt câu trả lời cho ${i.code}` : `Đã bỏ chốt ${i.code}`, undo: () => resolve(i.code, was) });
+    toast({ text: id ? tr("Đã chốt câu trả lời cho {code}", { code: i.code }) : tr("Đã bỏ chốt {code}", { code: i.code }), undo: () => resolve(i.code, was) });
   };
   // "Trả lời bằng Q&A" on a message of this group, from anywhere (taken on open, or while open).
   useEffect(() => {
@@ -622,7 +657,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
       if (!w.widen) return;
       if (days < 30) return onDays(30);
       want.current = null;
-      toast({ text: `Không thấy ${w.code} trong 30 ngày qua của nhóm này` });
+      toast({ text: tr("Không thấy {code} trong 30 ngày qua của nhóm này", { code: w.code }) });
       return;
     }
     want.current = null;
@@ -656,11 +691,11 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
         setFind("");
         want.current = { code: r.code, widen: r.joined }; // joined: an older thread, maybe outside the range
       }
-      toast({ text: r.joined ? `Đã trả lời trong chuỗi ${r.code}` : r.code ? `${start ? "Đã trả lời, mở Q&A" : "Đã đăng câu hỏi"} ${r.code}`
-        : !to || start ? "Đã gửi như tin thường: không tag ai nên không tạo Q&A" : "Đã gửi trả lời" });
+      toast({ text: r.joined ? tr("Đã trả lời trong chuỗi {code}", { code: r.code ?? "" }) : r.code ? tr(start ? "Đã trả lời, mở Q&A {code}" : "Đã đăng câu hỏi {code}", { code: r.code })
+        : !to || start ? tr("Đã gửi như tin thường: không tag ai nên không tạo Q&A") : tr("Đã gửi trả lời") });
       void qc.invalidateQueries({ queryKey: ["qa", chatId] });
     },
-    onError: (e) => toast({ text: errorText(e, { forbidden: "Nhóm không cho bạn gửi tin", reply_not_found: "Tin được trả lời không còn" }, "Không gửi được, thử lại") }),
+    onError: (e) => toast({ text: errorText(e, { forbidden: tr("Nhóm không cho bạn gửi tin"), reply_not_found: tr("Tin được trả lời không còn") }, tr("Không gửi được, thử lại")) }),
   });
   const send = (t: string) => { if (t.trim() && !post.isPending) post.mutate(t); };
 
@@ -670,13 +705,19 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   // Your questions due a nudge lead the list (what needs you first), the rest by the day of their latest message.
   const late = shown.filter((i) => isLate(i, mins, now, muted));
   const rest = shown.filter((i) => !late.includes(i));
-  const ordered = [...late, ...rest];
   const dayGroups: [string, QaItem[]][] = [];
   for (const i of rest) {
     const d = dayLabel(latest(i).date);
     if (dayGroups.at(-1)?.[0] === d) dayGroups.at(-1)![1].push(i);
     else dayGroups.push([d, [i]]);
   }
+  const sections = [...(late.length ? [["late", late] as [string, QaItem[]]] : []), ...dayGroups];
+  // A day header folds its rows (this visit only); j / k skip folded days.
+  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
+  const fold1 = (d: string) => setFolded((f) => { const n = new Set(f); if (!n.delete(d)) n.add(d); return n; });
+  const ordered = sections.filter(([d]) => !folded.has(d)).flatMap(([, its]) => its);
+  const [sureDay, setSureDay] = useState<string | null>(null); // Xóa cả ngày waits for a second click
+  const remove = (its: QaItem[]) => { if (cur && its.includes(cur)) show(null); void deleteWithUndo(qc, its); };
 
   // j / k the next / previous question, r the box, Esc back to the list (outside text fields).
   const onKey = useEffectEvent((e: KeyboardEvent) => {
@@ -700,34 +741,34 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     <div className="@container/qa grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)]">
       <header className="flex min-w-0 flex-wrap items-center gap-2 border-b px-3 py-2 @4xl/qa:px-4">
         <div className={cn("max-w-full overflow-x-auto [scrollbar-width:none]", reading && "@max-4xl/qa:hidden")}>
-          <Segmented id="qa-filter" label="Lọc Q&A" value={filter} onChange={setFilter} className="w-max"
+          <Segmented id="qa-filter" label={tx("Lọc Q&A")} value={filter} onChange={setFilter} className="w-max"
             items={FILTERS.map(([v, l, f, hint]) => ({
-              value: v, title: hint || undefined,
-              label: <span className="flex items-center gap-1.5">{l}<span className="font-mono tabular-nums opacity-70">{items.filter(f).length}</span></span>,
+              value: v, title: hint ? tx(hint) : undefined,
+              label: <span className="flex items-center gap-1.5">{tx(l)}<span className="font-mono tabular-nums opacity-70">{items.filter(f).length}</span></span>,
             }))} />
         </div>
         <label className={cn("relative min-w-36 flex-1 @2xl/qa:max-w-64", reading && "@max-4xl/qa:hidden")}>
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <input type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder="Tìm nội dung, người, #QA…" aria-label="Tìm Q&A"
+          <input type="search" value={find} onChange={(e) => setFind(e.target.value)} placeholder={tx("Tìm nội dung, người, #QA…")} aria-label={tx("Tìm Q&A")}
             className="h-8 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-8 text-xs text-ink placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1" />
         </label>
         <div className="ml-auto flex items-center gap-1.5">
-          <Dropdown label="Khoảng thời gian" value={String(days)} onChange={(v) => onDays(Number(v) as QaDays)} className="w-[5.5rem]"
-            options={QA_DAYS.map(([v, l]) => ({ value: String(v), label: l }))} />
-          <Hint side="bottom" text="Nhắc khi câu hỏi của bạn chưa ai trả lời sau khoảng này (cũng ở Cài đặt › Telegram)">
+          <Dropdown label={tx("Khoảng thời gian")} value={String(days)} onChange={(v) => onDays(Number(v) as QaDays)} className="w-[5.5rem]"
+            options={QA_DAYS.map(([v, l]) => ({ value: String(v), label: tx(l) }))} />
+          <Hint side="bottom" text={tx("Nhắc khi câu hỏi của bạn chưa ai trả lời sau khoảng này (cũng ở Cài đặt › Telegram)")}>
             <span className="inline-flex">
-              <Dropdown label="Nhắc khi chưa ai trả lời sau" value={String(mins)} onChange={(v) => setPref("qaRemindMins", v)} className="w-[7.25rem]"
+              <Dropdown label={tx("Nhắc khi chưa ai trả lời sau")} value={String(mins)} onChange={(v) => setPref("qaRemindMins", v)} className="w-[7.25rem]"
                 prefix={mins ? <BellRing aria-hidden className="size-3.5 shrink-0 text-ink-3" /> : <BellOff aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
-                options={QA_REMIND_CHOICES.map((m) => ({ value: String(m), label: qaRemindLabel(m), hint: m ? `Nhắc sau ${qaRemindLabel(m)}` : "Không nhắc" }))} />
+                options={QA_REMIND_CHOICES.map((m) => ({ value: String(m), label: qaRemindLabel(m), hint: m ? tx("Nhắc sau {x}", { x: qaRemindLabel(m) }) : tx("Không nhắc") }))} />
             </span>
           </Hint>
-          <Hint side="bottom" text="Đọc lại nhóm (tự đọc lại mỗi phút)">
-            <Button size="icon-sm" variant="ghost" aria-label="Đọc lại" disabled={list.isFetching} onClick={() => void list.refetch()}>
+          <Hint side="bottom" text={tx("Đọc lại nhóm (tự đọc lại mỗi phút)")}>
+            <Button size="icon-sm" variant="ghost" aria-label={tx("Đọc lại")} disabled={list.isFetching} onClick={() => void list.refetch()}>
               <RotateCw className={cn(list.isFetching && "animate-spin")} />
             </Button>
           </Hint>
-          <Hint side="bottom" text="Đăng câu hỏi mới vào nhóm này">
-            <Button size="sm" onClick={() => { show("new"); requestAnimationFrame(focusBox); }}><Plus /><span className="@max-md/qa:sr-only">Câu hỏi mới</span></Button>
+          <Hint side="bottom" text={tx("Đăng câu hỏi mới vào nhóm này")}>
+            <Button size="sm" onClick={() => { show("new"); requestAnimationFrame(focusBox); }}><Plus /><span className="@max-md/qa:sr-only">{tx("Câu hỏi mới")}</span></Button>
           </Hint>
         </div>
       </header>
@@ -738,32 +779,50 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
             <AiFetching kind="qa" />
           ) : list.isError ? (
             <div role="alert" className="grid justify-items-start gap-2 p-4 text-sm text-error">
-              {errorText(list.error, {}, "Không đọc được nhóm.")}
-              <Button size="xs" variant="outline" onClick={() => void list.refetch()}><RotateCw /> Thử lại</Button>
+              {errorText(list.error, {}, tx("Không đọc được nhóm."))}
+              <Button size="xs" variant="outline" onClick={() => void list.refetch()}><RotateCw /> {tx("Thử lại")}</Button>
             </div>
           ) : !shown.length ? (
             <div className="grid justify-items-center gap-2 px-4 py-12 text-center">
-              <p className="text-sm font-semibold text-ink">{items.length ? "Không thấy Q&A khớp" : "Chưa có Q&A nào"}</p>
+              <p className="text-sm font-bold text-ink">{items.length ? tx("Không thấy Q&A khớp") : tx("Chưa có Q&A nào")}</p>
               <p className="max-w-xs text-sm leading-relaxed text-ink-3">
-                {items.length ? "Thử từ khác hoặc bộ lọc khác." : `Trong ${QA_DAYS.find(([v]) => v === days)![1]} qua chưa có câu hỏi kèm mã #QA… ở nhóm này.`}
+                {items.length ? tx("Thử từ khác hoặc bộ lọc khác.") : tx("Trong {x} qua chưa có câu hỏi kèm mã #QA… ở nhóm này.", { x: tx(QA_DAYS.find(([v]) => v === days)![1]) })}
               </p>
-              {items.length ? <Button size="xs" variant="outline" onClick={() => { setFilter("all"); setFind(""); }}>Bỏ lọc</Button>
-                : days < 30 && <Button size="xs" variant="outline" onClick={() => onDays(30)}>Xem 30 ngày</Button>}
+              {items.length ? <Button size="xs" variant="outline" onClick={() => { setFilter("all"); setFind(""); }}>{tx("Bỏ lọc")}</Button>
+                : days < 30 && <Button size="xs" variant="outline" onClick={() => onDays(30)}>{tx("Xem 30 ngày")}</Button>}
             </div>
           ) : (
-            [...(late.length ? [["late", late] as const] : []), ...dayGroups].map(([d, its]) => (
-              <section key={d} aria-label={d === "late" ? "Chưa ai trả lời" : d}>
-                <h3 className={cn("sticky top-0 z-10 flex items-center gap-1.5 border-b bg-paper-2/95 px-4 py-1 text-xs font-medium backdrop-blur-sm", d === "late" ? "text-signal-2" : "text-ink-3")}>
-                  {d === "late" ? <><BellRing className="size-3.5" aria-hidden />Chưa ai trả lời sau {qaRemindLabel(mins)}<span className="ml-auto font-mono tabular-nums">{late.length}</span></> : d}
-                </h3>
-                <ul className="divide-y divide-rule">
-                  {its.map((i) => (
-                    <Row key={i.code} i={i} now={now} on={i.code === open} news={read.has(i.code) ? 0 : fresh(i, seenAt).length} late={d === "late"}
-                      onOpen={() => show(i.code)} onNudge={() => nudge(i)} onMute={() => onMute(i, true)} />
-                  ))}
-                </ul>
-              </section>
-            ))
+            sections.map(([d, its]) => {
+              const shut = folded.has(d), sure = sureDay === d;
+              return (
+                <section key={d} aria-label={d === "late" ? tx("Chưa ai trả lời") : d}>
+                  <h3 className={cn("group/day sticky top-0 z-10 flex items-center border-b bg-paper-2/95 pr-1.5 text-xs font-medium backdrop-blur-sm", d === "late" ? "text-signal-2" : "text-ink-3")}>
+                    <button type="button" aria-expanded={!shut} onClick={() => fold1(d)}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 py-1 pl-3 text-left transition-colors duration-(--dur-micro) hover:text-ink">
+                      <ChevronDown className={cn("size-3.5 shrink-0 transition-transform duration-(--dur-long) ease-(--ease-emph)", shut && "-rotate-90")} aria-hidden />
+                      {d === "late" ? <><BellRing className="size-3.5 shrink-0" aria-hidden />{tx("Chưa ai trả lời sau {x}", { x: qaRemindLabel(mins) })}</> : d}
+                      <span className="ml-auto pl-2 font-mono tabular-nums">{its.length}</span>
+                    </button>
+                    <Hint side="bottom" text={tx("Xóa {n} câu của {what} khỏi Q&A trên dashboard (tin trên Telegram vẫn còn). Bấm 2 lần để xác nhận", { n: its.length, what: d === "late" ? tx("nhóm này") : d })}>
+                      <Button size={sure ? "xs" : "icon-xs"} variant={sure ? "destructive" : "ghost"} aria-label={tx("Xóa {n} Q&A {what}", { n: its.length, what: d === "late" ? tx("chưa ai trả lời") : d })}
+                        onBlur={() => setSureDay(null)} onClick={() => { if (!sure) return setSureDay(d); setSureDay(null); remove(its); }}
+                        className={cn("ml-1", !sure && "opacity-0 transition-opacity duration-(--dur-micro) group-hover/day:opacity-100 hover:bg-error-wash hover:text-error focus-visible:opacity-100 [@media(hover:none)]:opacity-100")}>
+                        <Trash2 />{sure && tx("Xóa {n} câu?", { n: its.length })}
+                      </Button>
+                    </Hint>
+                  </h3>
+                  {/* Rows slide shut: the grid row eases 1fr → 0fr (inert while shut, out of tab order). */}
+                  <div inert={shut} className={cn("grid transition-[grid-template-rows,opacity] duration-(--dur-long) ease-(--ease-emph)", shut ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
+                    <ul className="min-h-0 divide-y divide-rule overflow-hidden">
+                      {its.map((i) => (
+                        <Row key={i.code} i={i} now={now} on={i.code === open} news={read.has(i.code) ? 0 : fresh(i, seenAt).length} late={d === "late"}
+                          onOpen={() => show(i.code)} onNudge={() => nudge(i)} onMute={() => onMute(i, true)} onDelete={() => remove([i])} />
+                      ))}
+                    </ul>
+                  </div>
+                </section>
+              );
+            })
           )}
         </div>
 
@@ -777,12 +836,12 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
             <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto p-6">
               <div className="grid max-w-sm justify-items-center gap-2 text-center">
                 <span className="grid size-11 place-items-center rounded-full bg-hl-wash text-hl-2"><MessageCircleQuestion className="size-5" aria-hidden /></span>
-                <p className="text-sm font-semibold text-ink">Câu hỏi mới cho {title ?? "nhóm"}</p>
+                <p className="text-sm font-bold text-ink">{tx("Câu hỏi mới cho {title}", { title: title ?? tx("nhóm") })}</p>
                 <p className="text-sm leading-relaxed text-ink-3">
-                  Gõ ở ô dưới: tin đăng vào nhóm kèm một dòng mã #QA…, mọi trả lời nối tiếp gom thành một chuỗi.
-                  <span className="hidden @4xl/qa:inline"> Chọn một câu bên trái để đọc cả chuỗi.</span>
+                  {tx("Gõ ở ô dưới: tin đăng vào nhóm kèm một dòng mã #QA…, mọi trả lời nối tiếp gom thành một chuỗi.")}
+                  <span className="hidden @4xl/qa:inline">{tx(" Chọn một câu bên trái để đọc cả chuỗi.")}</span>
                 </p>
-                <Button size="sm" variant="ghost" className="@4xl/qa:hidden" onClick={() => show(null)}><ArrowLeft /> Danh sách câu hỏi</Button>
+                <Button size="sm" variant="ghost" className="@4xl/qa:hidden" onClick={() => show(null)}><ArrowLeft /> {tx("Danh sách câu hỏi")}</Button>
               </div>
             </div>
           )}
@@ -791,21 +850,21 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
               top={(text) => to && (
                 <div className="flex items-center gap-2 rounded-md border-l-[3px] border-hl bg-paper-2 py-1 pr-1 pl-2.5 text-xs">
                   <Reply className="size-3.5 shrink-0 text-hl-2" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-semibold text-ink">{who(to)}:</b> {gist(to)}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-bold text-ink">{who(to)}:</b> {gist(to)}</span>
                   {start && (hasTag(text) ? (
-                    <Hint side="bottom" text="Tin này không thuộc chuỗi nào đang hiện và bạn có tag người: câu trả lời kèm mã #QA…, tin này đứng đầu chuỗi mới. Nếu nó nằm trong một chuỗi cũ hơn thì trả lời vào đúng chuỗi đó, không thêm mã.">
-                      <span className="shrink-0 rounded-full bg-hl-wash px-2 leading-5 font-medium text-hl-2">Mở Q&A mới</span>
+                    <Hint side="bottom" text={tx("Tin này không thuộc chuỗi nào đang hiện và bạn có tag người: câu trả lời kèm mã #QA…, tin này đứng đầu chuỗi mới. Nếu nó nằm trong một chuỗi cũ hơn thì trả lời vào đúng chuỗi đó, không thêm mã.")}>
+                      <span className="shrink-0 rounded-full bg-hl-wash px-2 leading-5 font-medium text-hl-2">{tx("Mở Q&A mới")}</span>
                     </Hint>
                   ) : (
-                    <Hint side="bottom" text="Chưa tag ai (@tên): gửi như một tin trả lời thường, không mở Q&A. Tag người được hỏi để mở chuỗi Q&A.">
-                      <span className="shrink-0 rounded-full bg-paper-3 px-2 leading-5 font-medium text-ink-2">Tin thường</span>
+                    <Hint side="bottom" text={tx("Chưa tag ai (@tên): gửi như một tin trả lời thường, không mở Q&A. Tag người được hỏi để mở chuỗi Q&A.")}>
+                      <span className="shrink-0 rounded-full bg-paper-3 px-2 leading-5 font-medium text-ink-2">{tx("Tin thường")}</span>
                     </Hint>
                   ))}
                   {target ? (
-                    <Hint side="bottom" text={cur ? "Bỏ chọn (Esc): trả lời tin mới nhất của chuỗi" : "Bỏ trả lời (Esc): gửi thành câu hỏi mới"}>
-                      <Button size="icon-xs" variant="ghost" aria-label="Bỏ chọn tin" onClick={() => setTarget(null)}><X /></Button>
+                    <Hint side="bottom" text={cur ? tx("Bỏ chọn (Esc): trả lời tin mới nhất của chuỗi") : tx("Bỏ trả lời (Esc): gửi thành câu hỏi mới")}>
+                      <Button size="icon-xs" variant="ghost" aria-label={tx("Bỏ chọn tin")} onClick={() => setTarget(null)}><X /></Button>
                     </Hint>
-                  ) : <span className="hidden shrink-0 pr-1.5 text-ink-3 @2xl/qa:inline">Bấm một tin để trả lời tin đó</span>}
+                  ) : <span className="hidden shrink-0 pr-1.5 text-ink-3 @2xl/qa:inline">{tx("Bấm một tin để trả lời tin đó")}</span>}
                 </div>
               )}
             />
@@ -821,6 +880,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
 export function QaGroups({ days, selected, onSelect, collapsed }: {
   days: QaDays; selected: string | null | undefined; onSelect: (chatId: string) => void; collapsed: boolean;
 }) {
+  const tx = useT();
   const list = useQuery(qaGroupsQuery);
   const { by: news, late, lists } = useQaNews(days, true);
   const mine = mineOpen(lists).length;
@@ -841,21 +901,21 @@ export function QaGroups({ days, selected, onSelect, collapsed }: {
         <span className={cn("relative min-w-0 flex-1 truncate", fade)}>{g.title}</span>
         {!!late[g.chat_id] && (
           <span className={cn("relative inline-flex shrink-0 items-center gap-0.5 rounded-full bg-signal-wash px-1.5 font-mono text-xs leading-5 font-medium text-signal-2 tabular-nums", fade)}
-            aria-label={`${late[g.chat_id]} câu chưa ai trả lời, cần nhắc`}><BellRing className="size-3" aria-hidden />{late[g.chat_id]}</span>
+            aria-label={tx("{n} câu chưa ai trả lời, cần nhắc", { n: late[g.chat_id] })}><BellRing className="size-3" aria-hidden />{late[g.chat_id]}</span>
         )}
         {!!news[g.chat_id] && (
           <span className={cn("relative shrink-0 rounded-full bg-hl px-1.5 text-xs leading-5 font-medium text-hl-ink tabular-nums", fade)}
-            aria-label={`${news[g.chat_id]} trả lời mới`}>{news[g.chat_id]}</span>
+            aria-label={tx("{n} trả lời mới", { n: news[g.chat_id] })}>{news[g.chat_id]}</span>
         )}
       </button>
     </li>
   );
-  const label = (t: string) => <li className={cn("px-3 pt-2 pb-0.5 text-xs font-medium text-ink-3", fade)}>{t}</li>;
+  const label = (x: string) => <li className={cn("px-3 pt-2 pb-0.5 text-xs font-medium text-ink-3", fade)}>{x}</li>;
   return (
-    <nav aria-label="Nhóm Q&A" className="no-scrollbar h-full min-h-0 overflow-y-auto px-2 pb-3">
+    <nav aria-label={tx("Nhóm Q&A")} className="no-scrollbar h-full min-h-0 overflow-y-auto px-2 pb-3">
       <label className={cn("relative mb-1 block px-1", fade)}>
         <Search className="pointer-events-none absolute left-3.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm nhóm…" aria-label="Tìm nhóm"
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={tx("Tìm nhóm…")} aria-label={tx("Tìm nhóm")}
           className="h-8 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-8 text-xs text-ink placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1" />
       </label>
       <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
@@ -866,18 +926,18 @@ export function QaGroups({ days, selected, onSelect, collapsed }: {
                 selected === QA_MINE && "font-medium text-hl-2 hover:bg-transparent")}>
               {selected === QA_MINE && <NavPill />}
               <span className="relative grid size-7 shrink-0 place-items-center rounded-full bg-paper-3 text-ink-2"><MessageCircleQuestion className="size-4" aria-hidden /></span>
-              <span className={cn("relative min-w-0 flex-1 truncate", fade)}>Câu hỏi của tôi</span>
+              <span className={cn("relative min-w-0 flex-1 truncate", fade)}>{tx("Câu hỏi của tôi")}</span>
               {mine > 0 && <span className={cn("relative shrink-0 rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums", fade)}
-                aria-label={`${mine} câu chưa ai trả lời`}>{mine}</span>}
+                aria-label={tx("{n} câu chưa ai trả lời", { n: mine })}>{mine}</span>}
             </button>
           </li>
         )}
-        {recent.length > 0 && <>{label("Đã hỏi gần đây")}{recent.map(row)}{label("Mọi nhóm")}</>}
+        {recent.length > 0 && <>{label(tx("Đã hỏi gần đây"))}{recent.map(row)}{label(tx("Mọi nhóm"))}</>}
         {rest.map(row)}
       </ul>
       {list.isPending && <div className="grid gap-2 px-3 pt-2">{[0, 1, 2].map((k) => <Skeleton key={k} className="h-4" style={{ width: `${70 - k * 12}%` }} />)}</div>}
-      {list.isError && <p className={cn("px-3 py-2 text-sm text-error", fade)}>Không đọc được danh sách nhóm.</p>}
-      {list.isSuccess && !all.length && <p className={cn("px-3 py-2 text-sm leading-relaxed text-ink-3", fade)}>Không thấy nhóm nào.</p>}
+      {list.isError && <p className={cn("px-3 py-2 text-sm text-error", fade)}>{tx("Không đọc được danh sách nhóm.")}</p>}
+      {list.isSuccess && !all.length && <p className={cn("px-3 py-2 text-sm leading-relaxed text-ink-3", fade)}>{tx("Không thấy nhóm nào.")}</p>}
     </nav>
   );
 }

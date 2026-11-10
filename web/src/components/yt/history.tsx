@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
+import { type Key, t as tNow, useT } from "@/lib/i18n";
 import { getPref, put, readJson } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/lib/yt";
@@ -13,18 +14,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { AiPending } from "./bits";
 import { fold, toast } from "@/lib/inbox";
 import { WorkView } from "./work";
-import Link from "next/link";
-import { AiResultCard, UserBubble } from "@/components/ai/chat";
-import { Markdown } from "@/components/markdown";
+import { AiSpin } from "@/components/ai/chat";
 
-// The YouTrack tab's AI history (apart from Telegram's AI Agent tasks), per browser. A small index lists the sessions,
+// The YouTrack tab's AI history, per browser (Telegram's AI conversations live in AI Agent: tasks, Đối chiếu BE, Briefing). A small index lists the sessions,
 // each session is its own key: the list never parses an answer, a turn rewrites one session + the index.
 
 /** `pending`: the last turn, saved as it started, never answered (the page closed, an error). */
-// src "tg": a Telegram AI conversation (Trợ lý Briefing, ⌘J), kept here so every AI conversation sits in one history
-export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[]; pending?: AiPending; src?: "tg" };
+export type AiSession = { id: string; title: string; ids: string[]; req: AiReq | null; thread: AiTurn[]; pending?: AiPending };
 // name: set by the user; pending: the last turn has no answer (job: its server run, maybe still going after a reload)
-type Meta = { id: string; title: string; name?: string; ids: string[]; q: string; n: number; at: number; pending?: boolean; job?: string; src?: "tg" };
+type Meta = { id: string; title: string; name?: string; ids: string[]; q: string; n: number; at: number; pending?: boolean; job?: string };
 
 const IDX = "ytAiIdx";
 const KEY = (id: string) => `ytAiS:${id}`;
@@ -36,13 +34,13 @@ const DONE = "ytAiDone"; // a run whose view was closed has ended (detail: sessi
 /** Runs this page reads, their view open or closed: session id -> stop. After a reload the server's run goes on
  *  (AiJobs): the session keeps its job id, opening it reads the run again. */
 const running = new Map<string, () => void>();
-export const isRunning = (id: string) => running.has(id);
-export const stopRun = (id: string) => running.get(id)?.();
+const isRunning = (id: string) => running.has(id);
 const changed = () => dispatchEvent(new Event(IDX));
 
 function readIdx(): Meta[] {
   const v = readJson(IDX, []);
-  return Array.isArray(v) ? v.filter((m: Meta) => Date.now() - m.at < TTL) : [];
+  // src "tg": a Trợ lý Briefing conversation kept here before it moved to AI Agent › Briefing (lib/briefs.ts moves it)
+  return Array.isArray(v) ? v.filter((m: Meta & { src?: string }) => Date.now() - m.at < TTL && !m.src) : [];
 }
 
 /** Sessions older than TTL: off the list (readIdx) and out of storage. */
@@ -61,7 +59,7 @@ export function saveSession(s: AiSession) {
   prune();
   const old = readIdx();
   const name = old.find((m) => m.id === s.id)?.name; // a rename outlives the next turn
-  const meta: Meta = { id: s.id, title: s.title, name, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now(), pending: s.pending ? true : undefined, job: s.pending?.job, src: s.src };
+  const meta: Meta = { id: s.id, title: s.title, name, ids: s.ids, q: q.slice(0, 160), n: s.thread.length, at: Date.now(), pending: s.pending ? true : undefined, job: s.pending?.job };
   let idx = [meta, ...old.filter((m) => m.id !== s.id)];
   const body = JSON.stringify({ ...s, thread });
   for (let tries = 0; ; tries++) {
@@ -96,7 +94,7 @@ export function useHistory(title: string, ids: string[], resumeId = "") {
       if (!alive.current) { // its view was closed: tell where the answer is
         dispatchEvent(new CustomEvent(DONE, { detail: id }));
         const m = readIdx().find((x) => x.id === id);
-        if (m && !m.pending) toast({ text: `AI đã trả lời “${nameOf(m)}”, xem ở Lịch sử AI` });
+        if (m && !m.pending) toast({ text: tNow("AI đã trả lời “{name}”, xem ở Lịch sử AI", { name: nameOf(m) }) });
       }
       changed();
     };
@@ -127,13 +125,10 @@ function drop(ids: string[]) {
 }
 
 /** Ticket: sessions about picked tickets; Dashboard: about figures (dashboard, reports, team), which pick none. */
-type Tab = "all" | "ticket" | "dash" | "tg";
-const tabOf = (m: Meta): Tab => (m.src === "tg" ? "tg" : m.ids.length ? "ticket" : "dash");
-
-/** Trợ lý Briefing (Telegram) keeps each answered turn of its conversation here. */
-export const saveTgTurns = (id: string, title: string, thread: AiTurn[]) => saveSession({ id, title, ids: [], req: null, thread, src: "tg" });
+type Tab = "all" | "ticket" | "dash";
+const tabOf = (m: Meta): Tab => (m.ids.length ? "ticket" : "dash");
 /** Rail headings: today, yesterday, this week, older. */
-function dayOf(at: number) {
+function dayOf(at: number): Key {
   const d = Math.floor((new Date().setHours(24, 0, 0, 0) - at) / DAY);
   return d < 1 ? "Hôm nay" : d < 2 ? "Hôm qua" : d < 7 ? "7 ngày qua" : "Cũ hơn";
 }
@@ -142,19 +137,21 @@ function dayOf(at: number) {
 function nameOf(m: { title: string; name?: string; ids: string[] }) {
   if (m.name) return m.name;
   const t = m.title.replace(/^AI( · )?/, "").trim();
-  return t && t !== "ticket đã chọn" ? t : m.ids.length ? `${m.ids.slice(0, 3).join(", ")}${m.ids.length > 3 ? ` +${m.ids.length - 3}` : ""}` : "Phiên AI";
+  return t && t !== "ticket đã chọn" ? t : m.ids.length ? `${m.ids.slice(0, 3).join(", ")}${m.ids.length > 3 ? ` +${m.ids.length - 3}` : ""}` : tNow("Phiên AI");
 }
 
 /** A session whose last turn has no answer yet: running (here, or on the server since a reload), answered on the
  *  server (opening it reads the answer), or stopped. */
 function PendingTag({ m, job }: { m: Meta; job?: "running" | "done" | "error" }) {
-  return isRunning(m.id) || job === "running" ? <b className="font-medium text-hl-2">Đang chạy · </b>
-    : job === "done" ? <b className="font-medium text-ok">Đã xong, mở để xem · </b>
-    : <b className="font-medium text-warn">Chưa xong · </b>;
+  const t = useT();
+  return isRunning(m.id) || job === "running" ? <b className="ai-text font-medium">{t("Đang chạy")} · </b>
+    : job === "done" ? <b className="font-medium text-ok">{t("Đã xong, mở để xem")} · </b>
+    : <b className="font-medium text-warn">{t("Chưa xong")} · </b>;
 }
 
 /** A page like Thành viên: the sessions on a rail, the picked one on the right, where the chat goes on. */
 export function HistoryPage() {
+  const t = useT();
   const [idx, setIdx] = useState(readIdx);
   useEffect(() => { prune(); const f = () => setIdx(readIdx()); addEventListener(IDX, f); return () => removeEventListener(IDX, f); }, []);
   const [q, setQ] = useState("");
@@ -177,50 +174,50 @@ export function HistoryPage() {
     return k ? inTab.filter((m) => fold(`${m.name ?? ""} ${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
   }, [inTab, q]);
   const groups = useMemo(() => {
-    const g: [string, Meta[]][] = [];
+    const g: [Key, Meta[]][] = [];
     for (const m of shown) { const d = dayOf(m.at), last = g.at(-1); if (last?.[0] === d) last[1].push(m); else g.push([d, [m]]); }
     return g;
   }, [shown]);
-  const [shut, setShut] = useState<string[]>([]); // folded days (a search unfolds all)
+  const [shut, setShut] = useState<Key[]>([]); // folded days (a search unfolds all)
   const calm = useReducedMotion();
   const cur = idx.find((m) => m.id === sel) ?? shown[0];
   const v = cur ? ver[cur.id] ?? 0 : 0;
   const s = useMemo(() => (cur ? loadSession(cur.id) : null), [cur?.id, v]); // eslint-disable-line react-hooks/exhaustive-deps -- a new turn must not reload the open chat; a background run's end does
-  const n = (t: Tab) => (t === "all" ? idx.length : idx.filter((m) => tabOf(m) === t).length);
+  const n = (x: Tab) => (x === "all" ? idx.length : idx.filter((m) => tabOf(m) === x).length);
   const remove = (ids: string[]) => { drop(ids); setIdx(readIdx()); };
 
   if (!idx.length) return (
     <p className="mx-auto mt-16 max-w-sm text-center text-sm text-ink-3"><History className="mx-auto mb-2 size-6" />
-      Chưa có phiên AI nào. Mỗi lần hỏi AI trong tab YouTrack (ticket, dashboard, thành viên) sẽ được lưu ở đây, trên trình duyệt này, để đọc lại và hỏi tiếp.</p>
+      {t("Chưa có phiên AI nào. Mỗi lần hỏi AI trong tab YouTrack (ticket, dashboard, thành viên) sẽ được lưu ở đây, trên trình duyệt này, để đọc lại và hỏi tiếp.")}</p>
   );
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:h-full lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
-      <nav aria-label="Phiên AI" className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-80">
+      <nav aria-label={t("Phiên AI")} className="flex flex-col gap-2 rounded-[var(--radius-card)] bg-cotton p-3 shadow-stock max-lg:max-h-80">
         <label className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm trong ${idx.length} phiên…`} aria-label="Tìm phiên AI"
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Tìm trong {n} phiên…", { n: idx.length })} aria-label={t("Tìm phiên AI")}
             className="h-8 w-full rounded-md border border-rule bg-paper pr-2 pl-7 text-sm focus:border-hl" />
         </label>
-        <Segmented id="yt-history" label="Loại phiên AI" value={tab} onChange={(t) => { setTab(t); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"], ["tg", "Telegram"]] as const).map(([v, l]) => (
-          { value: v, label: <>{l} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
+        <Segmented id="yt-history" label={t("Loại phiên AI")} value={tab} onChange={(x) => { setTab(x); setSure(false); }} className="w-full" items={([["all", "Tất cả"], ["ticket", "Ticket"], ["dash", "Số liệu"]] as const).map(([v, l]) => (
+          { value: v, label: <>{t(l)} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
         {/* sessions by day: a sticky day header (click: fold / unfold its sessions), the sessions hang under it on a guide line */}
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-rule">
           {groups.map(([day, ms]) => {
             const off = !q.trim() && shut.includes(day);
             return (
-              <section key={day} aria-label={day}>
+              <section key={day} aria-label={t(day)}>
                 <div className="group/day sticky top-0 z-10 flex items-center gap-1 bg-cotton pt-1">
                   <button type="button" aria-expanded={!off} onClick={() => setShut((x) => (off ? x.filter((d) => d !== day) : [...x, day]))}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 pt-1.5 pb-1.5 text-xs font-semibold text-ink-3 hover:text-ink">
-                    <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", !off && "rotate-90")} aria-hidden />{day}
-                    <span className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-[10px] font-medium tabular-nums">{ms.length}</span>
+                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 pt-1.5 pb-1.5 text-xs font-bold text-ink-3 hover:text-ink">
+                    <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", !off && "rotate-90")} aria-hidden />{t(day)}
+                    <span className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-2xs font-medium tabular-nums">{ms.length}</span>
                   </button>
                   {/* delete this day's sessions (those shown: tab + search); two clicks like "Xóa tất cả" */}
                   <Button size="xs" variant={sureDay === day ? "destructive" : "ghost"} onBlur={() => setSureDay("")}
                     className={cn(sureDay !== day && "text-ink-3 opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100")}
-                    aria-label={`Xóa ${ms.length} phiên ${day.toLowerCase()}`}
+                    aria-label={t("Xóa {n} phiên {day}", { n: ms.length, day: t(day).toLowerCase() })}
                     onClick={() => { if (sureDay !== day) { setSureDay(day); return; } remove(ms.map((m) => m.id)); setSureDay(""); }}>
-                    <Trash2 />{sureDay === day && `Xóa ${ms.length}?`}</Button>
+                    <Trash2 />{sureDay === day && t("Xóa {n}?", { n: ms.length })}</Button>
                 </div>
                 <AnimatePresence initial={false}>
                   {!off && (
@@ -228,18 +225,19 @@ export function HistoryPage() {
                       transition={{ duration: calm ? 0 : 0.2, ease: [0.2, 0, 0, 1] }} className="ml-3 grid gap-0.5 overflow-hidden border-l border-rule pl-1.5">
                       {ms.map((m) => {
                         const on = m.id === cur?.id, Icon = m.ids.length ? ListChecks : LayoutDashboard;
+                        const live = m.pending && (isRunning(m.id) || (!!m.job && jobs.data?.[m.job] === "running"));
                         return (
                           <li key={m.id} className="group relative">
                             <button type="button" aria-current={on} onClick={() => setSel(m.id)}
                               className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1.5 pr-8 text-left", on ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
-                              <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />
+                              {live ? <AiSpin className="mt-0.5" /> : <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />}
                               <span className="grid min-w-0">
                                 <span className={cn("truncate text-sm", on && "font-medium")}>{nameOf(m)}</span>
-                                <span className="truncate text-xs text-ink-3">{m.pending && <PendingTag m={m} job={m.job ? jobs.data?.[m.job] : undefined} />}{m.q.replace(/[*_#`>]/g, "") || `${m.n} lượt`}</span>
+                                <span className="truncate text-xs text-ink-3">{m.pending && <PendingTag m={m} job={m.job ? jobs.data?.[m.job] : undefined} />}{m.q.replace(/[*_#`>]/g, "") || t("{n} lượt", { n: m.n })}</span>
                               </span>
                             </button>
                             <Button size="icon-xs" variant="ghost" className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                              onClick={() => remove([m.id])} aria-label={`Xóa phiên ${nameOf(m)}`}><Trash2 /></Button>
+                              onClick={() => remove([m.id])} aria-label={t("Xóa phiên {name}", { name: nameOf(m) })}><Trash2 /></Button>
                           </li>
                         );
                       })}
@@ -249,11 +247,11 @@ export function HistoryPage() {
               </section>
             );
           })}
-          {!shown.length && <p className="px-2 py-4 text-center text-xs text-ink-3">{q ? "Không có phiên nào khớp." : "Chưa có phiên nào loại này."}</p>}
+          {!shown.length && <p className="px-2 py-4 text-center text-xs text-ink-3">{t(q ? "Không có phiên nào khớp." : "Chưa có phiên nào loại này.")}</p>}
         </div>
         <Button size="xs" variant={sure ? "destructive" : "ghost"} className="self-start text-ink-3" disabled={!inTab.length} onBlur={() => setSure(false)}
           onClick={() => { if (!sure) { setSure(true); return; } remove(inTab.map((m) => m.id)); setSure(false); }}>
-          <Trash2 /> {sure ? `Bấm lần nữa để xóa ${inTab.length} phiên` : tab === "all" ? "Xóa tất cả" : `Xóa ${inTab.length} phiên này`}</Button>
+          <Trash2 /> {sure ? t("Bấm lần nữa để xóa {n} phiên", { n: inTab.length }) : tab === "all" ? t("Xóa tất cả") : t("Xóa {n} phiên này", { n: inTab.length })}</Button>
       </nav>
 
       {cur && (
@@ -261,43 +259,28 @@ export function HistoryPage() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {editing !== null ? (
               <form className="mr-auto min-w-0 flex-1" onSubmit={(e) => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur(); }}>
-                <input autoFocus value={editing} onChange={(e) => setEditing(e.target.value)} maxLength={120} aria-label="Tên phiên AI"
+                <input autoFocus value={editing} onChange={(e) => setEditing(e.target.value)} maxLength={120} aria-label={t("Tên phiên AI")}
                   placeholder={nameOf({ ...cur, name: undefined })} onFocus={(e) => e.target.select()}
                   onBlur={() => { if (!cancelEdit.current) rename(cur.id, editing); cancelEdit.current = false; setEditing(null); }}
                   onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); cancelEdit.current = true; e.currentTarget.blur(); } }}
-                  className="h-8 w-full rounded-md border border-hl bg-paper px-2 text-lg font-semibold" />
+                  className="h-8 w-full rounded-md border border-hl bg-paper px-2 text-lg font-bold" />
               </form>
             ) : (
-              <h2 className="group/name mr-auto flex min-w-0 items-center gap-1 text-lg font-semibold">
+              <h2 className="group/name mr-auto flex min-w-0 items-center gap-1 text-lg font-bold">
                 <span className="truncate">{nameOf(cur)}</span>
-                <Hint side="bottom" text="Đổi tên phiên (để trống: về tên tự đặt)">
-                  <Button size="icon-xs" variant="ghost" aria-label="Đổi tên phiên" onClick={() => setEditing(cur.name ?? nameOf(cur))}
+                <Hint side="bottom" text={t("Đổi tên phiên (để trống: về tên tự đặt)")}>
+                  <Button size="icon-xs" variant="ghost" aria-label={t("Đổi tên phiên")} onClick={() => setEditing(cur.name ?? nameOf(cur))}
                     className="shrink-0 text-ink-3 opacity-0 group-hover/name:opacity-100 focus-visible:opacity-100"><Pencil /></Button>
                 </Hint>
               </h2>
             )}
-            <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{cur.n} lượt</span><span>{when(cur.at)}</span></span>
+            <span className="flex items-center gap-1.5 text-xs text-ink-3 tabular-nums"><MessageSquareText className="size-3.5" aria-hidden /><span>{t("{n} lượt", { n: cur.n })}</span><span>{when(cur.at)}</span></span>
           </div>
-          {s?.src === "tg" ? <TgThread s={s} />
-            : s ? <WorkView key={`${cur.id}:${v}`} title={cur.title} ids={s.ids} resume={s} />
-            : <p className="m-auto text-sm text-ink-3">Phiên này không còn trong bộ nhớ trình duyệt. <Button size="xs" variant="ghost" onClick={() => remove([cur.id])}>Xóa khỏi danh sách</Button></p>}
+          {s ? <WorkView key={`${cur.id}:${v}`} title={cur.title} ids={s.ids} resume={s} />
+            : <p className="m-auto text-sm text-ink-3">{t("Phiên này không còn trong bộ nhớ trình duyệt.")} <Button size="xs" variant="ghost" onClick={() => remove([cur.id])}>{t("Xóa khỏi danh sách")}</Button></p>}
         </section>
       )}
     </div>
   );
 }
 
-/** A Telegram conversation: read here; going on is the Trợ lý itself (⌘J on Telegram), where the groups' digests are. */
-function TgThread({ s }: { s: AiSession }) {
-  return (
-    <div className="grid min-h-0 content-start gap-4 overflow-y-auto rounded-lg bg-cotton p-4 shadow-stock">
-      {s.thread.map((t, i) => (
-        <div key={i} className="grid grid-cols-[minmax(0,1fr)] gap-3">
-          {t.q && <UserBubble>{t.q}</UserBubble>}
-          <AiResultCard title="Trả lời"><Markdown text={t.a} className="text-ink" /></AiResultCard>
-        </div>
-      ))}
-      <Link href="/?chat=__briefing__" className="w-fit text-sm text-hl-2 underline underline-offset-4">Hỏi tiếp ở Trợ lý Briefing (⌘J bên Telegram)</Link>
-    </div>
-  );
-}

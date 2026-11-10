@@ -23,7 +23,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=Radar
-; {app} goes on the user PATH so `mydashboard start` works in a new cmd/PowerShell window
+; {app} goes on the user PATH so `myradar start` works in a new cmd/PowerShell window
 ChangesEnvironment=yes
 
 [Registry]

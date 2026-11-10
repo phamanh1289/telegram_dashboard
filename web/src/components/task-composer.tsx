@@ -1,10 +1,10 @@
 "use client";
 
 import { type UseQueryResult, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { ArrowUp, FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, X } from "lucide-react";
+import { FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, X } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/components/ai";
-import { AiPromptBox } from "@/components/ai/chat";
+import { AiPromptBox, AiSend } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
@@ -13,6 +13,7 @@ import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef
 import { toast } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
 import { cn, MOD } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 // The follow-up box under an AI Agent session: queue, attached messages, paste, send, stop. Its own memoised component,
 // so the session log's 1.5s poll doesn't re-render the textarea.
@@ -20,24 +21,25 @@ import { cn, MOD } from "@/lib/utils";
 type Effort = AiPicks["effort"];
 
 /** Model + effort for this session's next turns; until picked, the task picks in AI settings. */
-function SessionAi({ t, disabled }: { t: Task; disabled: boolean }) {
+function SessionAi({ t: task, disabled }: { t: Task; disabled: boolean }) {
+  const t = useT();
   const qc = useQueryClient();
   const { info, picks } = useAiPrefs();
   const save = useMutation({
-    mutationFn: (ai: { model: string; effort: Effort }) => api<void>(`/tasks/${t.id}/ai`, { method: "PUT", json: ai }),
-    onMutate: (ai) => qc.setQueryData<Task[]>(["tasks"], (l) => l?.map((x) => (x.id === t.id ? { ...x, ...ai } : x))),
+    mutationFn: (ai: { model: string; effort: Effort }) => api<void>(`/tasks/${task.id}/ai`, { method: "PUT", json: ai }),
+    onMutate: (ai) => qc.setQueryData<Task[]>(["tasks"], (l) => l?.map((x) => (x.id === task.id ? { ...x, ...ai } : x))),
     onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
   });
-  const c = info(t.provider ?? "claude");
+  const c = info(task.provider ?? "claude");
   if (!c) return null;
-  const k = picks(t.provider ?? "claude");
-  const model = t.model ?? k.task_model;
-  const effort = (t.effort ?? k.task_effort) as Effort;
+  const k = picks(task.provider ?? "claude");
+  const model = task.model ?? k.task_model;
+  const effort = (task.effort ?? k.task_effort) as Effort;
   return (
-    <Hint text={`${c.name} cho phiên này, áp dụng từ lượt nhắn tiếp`} side="bottom">
-      <span role="group" aria-label={`${c.name}: model và effort cho phiên này`}
+    <Hint text={t("{name} cho phiên này, áp dụng từ lượt nhắn tiếp", { name: c.name })} side="bottom">
+      <span role="group" aria-label={t("{name}: model và effort cho phiên này", { name: c.name })}
         className={cn("flex min-w-0 items-center gap-2", disabled && "pointer-events-none opacity-50", save.isError && "[&_button]:border-error")}>
-        <Picks c={c} label="phiên này" model={model} effort={effort} modelClass="w-28"
+        <Picks c={c} label={t("phiên này")} model={model} effort={effort} modelClass="w-28"
           variant="short" onModel={(m) => save.mutate({ model: m, effort })} onEffort={(e) => save.mutate({ model, effort: e })} />
       </span>
     </Hint>
@@ -51,6 +53,7 @@ const queues = new Map<string, Queued[]>();
 
 /** One attached message above the composer: who and when, two lines of it; or why it can't be read. */
 function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Message>; other: boolean; onRemove: () => void }) {
+  const t = useT();
   const m = q.data;
   const qc = useQueryClient();
   return (
@@ -59,23 +62,24 @@ function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Messa
       <span className="grid min-w-0 flex-1">
         <span className="flex min-w-0 items-center gap-1 text-ink-2">
           <span className="shrink-0 font-mono text-ink-3 tabular-nums">#{r.message_id}</span>
-          {m && <><span className="truncate font-medium">{m.outgoing ? "Bạn" : (m.sender_name ?? "?")}</span><span className="shrink-0 text-ink-3">{timeLabel(m.date)}</span></>}
+          {m && <><span className="truncate font-medium">{m.outgoing ? t("Bạn") : (m.sender_name ?? "?")}</span><span className="shrink-0 text-ink-3">{timeLabel(m.date)}</span></>}
         </span>
-        {q.isPending ? <span className="inline-flex items-center gap-1 text-ink-3"><Loader2 className="size-3 animate-spin" aria-hidden /> Đang tìm tin…</span>
-          : q.isError ? <span className="text-error">{errorText(q.error, { not_connected: "Chưa kết nối Telegram", message_not_found: "Không tìm thấy tin" }, "Không tìm thấy tin").trim()}</span>
-          : <span className="line-clamp-2 text-ink-3">{other && <span className="text-ink-2">{chatTitle(qc, r.chat_id) ?? "Nhóm khác"}: </span>}{m?.text || (m?.media_kind ? `[${m.media_kind}]` : "")}</span>}
+        {q.isPending ? <span className="inline-flex items-center gap-1 text-ink-3"><Loader2 className="size-3 animate-spin" aria-hidden /> {t("Đang tìm tin…")}</span>
+          : q.isError ? <span className="text-error">{errorText(q.error, { not_connected: t("Chưa kết nối Telegram"), message_not_found: t("Không tìm thấy tin") }, t("Không tìm thấy tin")).trim()}</span>
+          : <span className="line-clamp-2 text-ink-3">{other && <span className="text-ink-2">{chatTitle(qc, r.chat_id) ?? t("Nhóm khác|một")}: </span>}{m?.text || (m?.media_kind ? `[${m.media_kind}]` : "")}</span>}
       </span>
-      <Button type="button" size="icon-xs" variant="ghost" aria-label={`Bỏ tin #${r.message_id}`} onClick={onRemove}><X /></Button>
+      <Button type="button" size="icon-xs" variant="ghost" aria-label={t("Bỏ tin #{id}", { id: r.message_id })} onClick={onRemove}><X /></Button>
     </li>
   );
 }
 
 /** The follow-up composer of a headless session (queue, attachments, send / stop). */
 /** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". */
-export const TaskComposer = memo(function TaskComposer({ t, cut }: { t: Task; cut?: boolean }) {
-  const { id } = t;
-  const running = !!t.running;
-  const plan = t.mode === "plan";
+export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Task; cut?: boolean }) {
+  const t = useT();
+  const { id } = task;
+  const running = !!task.running;
+  const plan = task.mode === "plan";
   const qc = useQueryClient();
   const stop = useMutation({ mutationFn: () => api<void>(`/tasks/${id}/stop`, { method: "POST" }), onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }) });
   const [text, setText] = useState("");
@@ -85,7 +89,7 @@ export const TaskComposer = memo(function TaskComposer({ t, cut }: { t: Task; cu
   const looked = useQueries({ queries: refs.map(messageQuery) });
   const resolving = looked.some((r) => r.isPending);
   const failed = looked.some((r) => r.isError); // a dangling "[#id]" mark: the AI would get no quote for it
-  const line = withAttachments(text.trim(), looked.flatMap((r) => (r.data ? [r.data] : [])), t.chat_id, (c) => chatTitle(qc, c));
+  const line = withAttachments(text.trim(), looked.flatMap((r) => (r.data ? [r.data] : [])), task.chat_id, (c) => chatTitle(qc, c));
   const ready = !!line && !resolving && !failed;
   /** Clear what went out, not what was typed or attached while the send was pending. */
   const sentOnly = (s: string, r: Ref[]) => () => {
@@ -116,12 +120,12 @@ export const TaskComposer = memo(function TaskComposer({ t, cut }: { t: Task; cu
   const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
   /** A paste of message IDs / links only: attach them and leave a "[#id]" mark at the caret, so the sentence still reads. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const add = parseRefs(e.clipboardData.getData("text"), t.chat_id);
+    const add = parseRefs(e.clipboardData.getData("text"), task.chat_id);
     if (!add) return;
     e.preventDefault();
     const next = attach(id, add);
     const kept = add.filter((r) => next.some((x) => sameRef(x, r)));
-    if (kept.length < add.length) toast({ text: `Tối đa ${MAX_REFS} tin đính kèm mỗi lượt` });
+    if (kept.length < add.length) toast({ text: t("Tối đa {n} tin đính kèm mỗi lượt", { n: MAX_REFS }) });
     if (!kept.length) return;
     const el = e.currentTarget, a = el.selectionStart, b = el.selectionEnd;
     const mark = kept.map((r) => `[#${r.message_id}]`).join(" ");
@@ -138,62 +142,60 @@ export const TaskComposer = memo(function TaskComposer({ t, cut }: { t: Task; cu
 
   return <>
     {queue.length > 0 && (
-      <ol aria-label="Hàng đợi" className="grid gap-1">
+      <ol aria-label={t("Hàng đợi")} className="grid gap-1">
         {queue.map(({ line }, i) => (
           <li key={i} className="flex items-center gap-2 rounded-lg bg-paper-2 px-2.5 py-1 text-xs text-ink-2 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
             <span className="shrink-0 font-mono tabular-nums text-ink-3">{i + 1}</span>
             <span className="min-w-0 flex-1 truncate" title={line}>{line}</span>
-            <Button size="icon-xs" variant="ghost" aria-label="Bỏ khỏi hàng đợi" disabled={i === 0 && send.isPending} onClick={() => setQueue((q) => q.filter((_, j) => j !== i))}><X /></Button>
+            <Button size="icon-xs" variant="ghost" aria-label={t("Bỏ khỏi hàng đợi")} disabled={i === 0 && send.isPending} onClick={() => setQueue((q) => q.filter((_, j) => j !== i))}><X /></Button>
           </li>
         ))}
       </ol>
     )}
-    <AiPromptBox aria-label="Nhắn tiếp cho AI" maxLength={8000} value={text} onChange={setText} onPaste={paste}
+    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={8000} value={text} onChange={setText} onPaste={paste}
       onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
-      stopHint="Dừng AI (giữ hội thoại, có thể nhắn tiếp)"
-      placeholder={running ? `AI đang làm: ${MOD}+Enter để thêm vào hàng đợi` : `Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, ${MOD}+Enter vào hàng đợi)`}
-      top={cut && !queue.length && !send.isPending ? (
-        <Button size="xs" variant="outline" className="justify-self-start animate-in fade-in-0 duration-(--dur-short)"
-          onClick={() => send.mutate({ line: "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
-          <RotateCw /> Chạy tiếp
-        </Button>
-      ) : refs.length > 0 && (
-        <ul aria-label="Tin đính kèm" className="flex flex-wrap gap-1.5">
-          {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== t.chat_id}
+      stopHint={t("Dừng AI (giữ hội thoại, có thể nhắn tiếp)")}
+      placeholder={running ? t("AI đang làm: {mod}+Enter để thêm vào hàng đợi", { mod: MOD }) : t("Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, {mod}+Enter vào hàng đợi)", { mod: MOD })}
+      // Attached messages win over "Chạy tiếp" (after Stop): sending them goes on with them; hiding them lost them.
+      top={refs.length > 0 ? (
+        <ul aria-label={t("Tin đính kèm")} className="flex flex-wrap gap-1.5">
+          {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== task.chat_id}
             onRemove={() => setRefs(id, refs.filter((x) => !sameRef(x, r)))} />)}
         </ul>
+      ) : cut && !queue.length && !send.isPending && (
+        <Button size="xs" variant="outline" className="justify-self-start animate-in fade-in-0 duration-(--dur-short)"
+          onClick={() => send.mutate({ line: "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
+          <RotateCw /> {t("Chạy tiếp")}
+        </Button>
       )}
       tools={<>
-        <span className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full bg-paper-2 px-2 py-1" title={t.project}>
-          <FolderGit2 className="size-3.5 shrink-0 text-ink-3" aria-hidden /><span className="truncate">{t.project.split("/").pop()}</span>
+        <span className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full bg-paper-2 px-2 py-1" title={task.project}>
+          <FolderGit2 className="size-3.5 shrink-0 text-ink-3" aria-hidden /><span className="truncate">{task.project.split("/").pop()}</span>
         </span>
         {plan && (
-          <Hint text="Phiên đang ở chế độ chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm." side="bottom">
+          <Hint text={t("Phiên đang ở chế độ chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.")} side="bottom">
             <label className="flex items-center gap-1.5">
               <Checkbox checked={edit} onCheckedChange={(v) => setEdit(!!v)} disabled={running} />
-              Cho sửa code
+              {t("Cho sửa code")}
             </label>
           </Hint>
         )}
       </>}
       actions={<>
-        <SessionAi t={t} disabled={running} />
+        <SessionAi t={task} disabled={running} />
         {running ? (
-          <Hint text={`Thêm vào hàng đợi, chạy khi AI xong lượt này (${MOD}+Enter)`} side="bottom">
-            <Button type="button" size="icon-sm" variant="outline" className="rounded-full" aria-label="Vào hàng đợi" disabled={!ready} onClick={enqueue}><ListPlus /></Button>
+          <Hint text={t("Thêm vào hàng đợi, chạy khi AI xong lượt này ({mod}+Enter)", { mod: MOD })} side="bottom">
+            <Button type="button" size="icon-sm" variant="outline" className="rounded-full" aria-label={t("Vào hàng đợi")} disabled={!ready} onClick={enqueue}><ListPlus /></Button>
           </Hint>
         ) : (
-          <Button type="button" size="icon-sm" aria-label="Gửi" aria-busy={send.isPending || resolving} disabled={!ready || send.isPending} onClick={submit}
-            className="rounded-full bg-hl text-hl-ink hover:brightness-110">
-            {send.isPending ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp />}
-          </Button>
+          <AiSend onClick={submit} disabled={!ready} busy={send.isPending || resolving} />
         )}
       </>} />
-    {plan && edit && (t.chat_id || refs.length > 0 || /https?:\/\//.test(t.prompt)) && (
-      <p className="text-xs text-warn">Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt.</p>
+    {plan && edit && (task.chat_id || refs.length > 0 || /https?:\/\//.test(task.prompt)) && (
+      <p className="text-xs text-warn">{t("Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt.")}</p>
     )}
-    {failed && <p role="alert" className="text-xs text-error">Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.</p>}
-    {send.isError && <p role="alert" className="text-xs text-error">{busy ? "AI đang làm lượt trước." : "Gửi thất bại."}</p>}
-    {stop.isError && <p role="alert" className="text-xs text-error">Không dừng được, thử lại.</p>}
+    {failed && <p role="alert" className="text-xs text-error">{t("Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.")}</p>}
+    {send.isError && <p role="alert" className="text-xs text-error">{busy ? t("AI đang làm lượt trước.") : t("Gửi thất bại.")}</p>}
+    {stop.isError && <p role="alert" className="text-xs text-error">{t("Không dừng được, thử lại.")}</p>}
   </>;
 });

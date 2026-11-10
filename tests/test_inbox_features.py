@@ -175,14 +175,14 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     assert client.get("/api/tasks").json()[0]["handled"] is True  # the task follows its tag
     # Messages attached to its turns follow the session's Done / reopen (only kept ones; others are no-ops).
     store.apply_message(msg(A, 5, "@me BE: API đã sửa"))
-    store.add_task_refs("t1", [(A, 5), (A, 99)])
+    store.add_task_refs("t1", [(A, 5, ""), (A, 99, "")])
     client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
     assert not store.get_message(A, 5).handled
     client.put("/api/tasks/t1/handled", json=done, headers=H)
     assert store.get_message(A, 4).handled and store.get_message(A, 5).handled
     # A #QA code in the tag / an attached message: that Q&A thread follows Done / reopen; a removed one stays removed.
     store.apply_message(msg(A, 6, "@me đã trả lời\n#QA11 #qa22"))
-    store.add_task_refs("t1", [(A, 6)])
+    store.add_task_refs("t1", [(A, 6, "")])
     store.set_qa_mark(A, "#QA22", "deleted")
     client.put("/api/tasks/t1/handled", json=done, headers=H)
     assert store.qa_marks(A) == {"#QA11": "done", "#QA22": "deleted"}
@@ -191,6 +191,15 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     # Done on the tag itself (the list / reply panel, not the session): the session's Q&A follows too.
     client.put(f"/api/chats/{A}/messages/4/handled", json=done, headers=H)
     assert store.qa_marks(A) == {"#QA11": "done", "#QA22": "deleted"}
+    # Done / reopen on the tag from the list moves the session's attached messages too, as Done on the session does.
+    client.put(f"/api/chats/{A}/messages/4/handled", json={"handled": False, "react": False}, headers=H)
+    assert not store.get_message(A, 5).handled and "#QA11" not in store.qa_marks(A)
+    client.put(f"/api/chats/{A}/messages/4/handled", json=done, headers=H)
+    assert store.get_message(A, 5).handled and store.get_message(A, 6).handled
+    # "Đã xử lý tất cả": the same follow-ups (Q&A of the tags, the sessions on them), without reactions.
+    client.put(f"/api/chats/{A}/messages/4/handled", json={"handled": False, "react": False}, headers=H)
+    assert client.post(f"/api/chats/{A}/handled-all", headers=H).json()["count"] >= 1
+    assert store.get_message(A, 5).handled and store.qa_marks(A)["#QA11"] == "done"
     # A tag on no session with its own #QA code: Done / reopen on it moves that Q&A too.
     store.apply_message(msg(A, 7, "@me xem giúp\n#QA33"))
     client.put(f"/api/chats/{A}/messages/7/handled", json=done, headers=H)
@@ -408,14 +417,94 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         assert t["title"] == "Đối chiếu BE: Field status"  # the item whose messages are gone is left out
         assert "<items>" in t["prompt"] and "field là status" in t["prompt"] and "Gone" not in t["prompt"]
         # several topics, one waiting for BE: traced too, anchored on the newest cited message (asks post there)
-        items = [{"text": "Field status", "message_ids": ["5"]},
+        items = [{"text": "Field status", "message_ids": ["5"], "key": "5"},
                  {"text": "Có discount?", "message_ids": ["4"], "waiting": True}]
         r = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
         t = next(t for t in c.get("/api/tasks").json() if t["id"] == r.json()["id"])
         assert t["message_id"] == "5" and t["title"] == "Đối chiếu 2 chủ đề BE: Field status"
         assert '"status": "waiting"' in t["prompt"] and "⏳ Chờ BE" in t["prompt"]
+        assert t["prompt"].count('"id": "5"') == 1  # a topic's id rides along (its verdict maps back by it)
         bad = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": [], "project": str(proj)}, headers=H)
         assert bad.status_code == 422
+        # Done on the session: the tags it traced and the Q&A they name follow (not just the anchor)
+        store.apply_message(msg(A, 6, "@me BE chốt status\n#QA55", sender="8"))
+        store.apply_message(msg(A, 7, "@me thêm field type", sender="8"))
+        items = [{"text": "Chốt status", "message_ids": ["6", "7"]}]
+        tid = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
+        tid = tid.json()["id"]
+        assert c.put(f"/api/tasks/{tid}/handled", json={"handled": True, "react": False}, headers=H).status_code == 204
+        assert store.get_message(A, 6).handled and store.get_message(A, 7).handled
+        assert store.qa_marks(A)["#QA55"] == "done"
+        # a #QA code only in the prompt (cited messages read live, never stored) follows too
+        store.add_task("d2", A, 999, str(proj), 'tin: "BE trả lời #QA66"', kind="deep")
+        store.mark_task_qa("d2", True)
+        assert store.qa_marks(A)["#QA66"] == "done"
+        # an attached answer never stored: the code found up its chain when attached; attaching again never clears it
+        store.add_task_refs("d2", [(A, 998, "#QA77")])
+        store.add_task_refs("d2", [(A, 998, "")])
+        store.mark_task_qa("d2", True)
+        assert store.qa_marks(A)["#QA77"] == "done"
+        # the ask the session posted (it names "#REF-<tail>" and its question's code): Done closes that Q&A too
+        store.apply_message(msg(A, 997, "@be hỏi thêm?\n\n#REF-0000d2\n#QA88", outgoing=True))
+        store.add_task("x-0000d2", A, 999, str(proj), "p")
+        store.mark_task_qa("x-0000d2", True)
+        assert store.qa_marks(A)["#QA88"] == "done"
+        # the tags answering it (down the reply chain under its ask / Q&A question) follow its Done too, not mine
+        def reply(mid, to, text, **kw):
+            store.apply_message(msg(A, mid, text, **kw).model_copy(update={"reply_to_id": to}))
+
+        reply(996, 997, "@me BE trả lời")
+        reply(995, 996, "@me BE bổ sung")
+        reply(994, 997, "mình hỏi lại", outgoing=True)
+        store.apply_message(msg(A, 993, "@me tin khác"))
+        assert sorted(store.mark_task_refs("x-0000d2", True, "quiet")[A]) == [995, 996]
+        assert not store.get_message(A, 993).handled
+        assert sorted(store.mark_task_refs("x-0000d2", False, "quiet")[A]) == [995, 996]
+        # Xong on the Q&A page moves the thread's kept tags the same way (the asker's message the Q&A answered too)
+        store.apply_message(msg(A, 980, "@me staging đâu?"))
+        reply(981, 980, "@be đây nhé\n#QA90", outgoing=True)
+        reply(982, 981, "@me cảm ơn")
+        mark = {"chat_id": A, "code": "#QA90", "state": "done"}
+        assert c.put("/api/qa/mark", json=mark, headers=H).status_code == 204
+        assert store.get_message(A, 980).handled and store.get_message(A, 982).handled
+        assert not store.get_message(A, 993).handled
+        assert c.put("/api/qa/mark", json=mark | {"state": "deleted"}, headers=H).status_code == 204
+        assert store.get_message(A, 982).handled  # removing it leaves the tags as they are
+        assert c.put("/api/qa/mark", json=mark | {"state": None}, headers=H).status_code == 204
+        assert store.get_message(A, 982).handled  # undoing the removal: was not Xong, nothing to reopen
+        c.put("/api/qa/mark", json=mark, headers=H)
+        c.put("/api/qa/mark", json=mark | {"state": None}, headers=H)
+        assert not store.get_message(A, 980).handled and not store.get_message(A, 982).handled
+
+
+def test_attached_ref_finds_its_qa_up_the_live_chain(tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from telegram_dashboard.storage import Db, Store
+    from telegram_dashboard.tasks import add_refs
+
+    st = Store(tmp_path / "db.sqlite3")
+    # BE's answer (never stored) replies to the copied ask that carries the code
+    answer = msg(A, 2, "trả lời").model_copy(update={"reply_to_id": 1})
+    live = {1: msg(A, 1, "@be hỏi field?\n#QA42"), 2: answer}
+
+    async def fetch_ids(chat_id, ids):
+        if not live:
+            raise ConnectionError("offline")
+        return [live[i] for i in ids if i in live]
+
+    async def run():
+        db = Db(st, SimpleNamespace(notify=lambda: None))
+        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids))
+        await add_refs(s, "t", [(A, "2")])
+        live.clear()  # offline: the ref is still kept, only without a code
+        await add_refs(s, "t", [(A, "3")])
+
+    asyncio.run(run())
+    with st._conn() as c:
+        assert [tuple(r) for r in c.execute("SELECT message_id, qa FROM task_refs ORDER BY message_id")] == [
+            (2, "#QA42"), (3, "")]
 
 
 def test_snooze_until_reply_or_ticket_wakes_early(tmp_path):

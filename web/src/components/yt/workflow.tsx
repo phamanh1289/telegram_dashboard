@@ -7,6 +7,7 @@ import { type PointerEvent as RPointerEvent, useEffect, useRef, useState } from 
 import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
+import { useT } from "@/lib/i18n";
 import { getPref, put, useRole, YT_ROLES } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { stateColor, type Workflow, yt, ytProjectsQuery } from "@/lib/yt";
@@ -77,6 +78,7 @@ function arrow(a: [number, number], b: [number, number], bend: boolean) {
 
 /** Settings › YouTrack › Workflow: drag the state boxes, drag from a box's dot onto another to draw an arrow, click an arrow to remove it. */
 export function WorkflowSection() {
+  const t = useT();
   const projects = useQuery(ytProjectsQuery);
   const [project, setProject] = useState(() => getPref("project") || "VA");
   const ps = projects.data;
@@ -112,31 +114,32 @@ export function WorkflowSection() {
     },
   });
 
-  if (!q.data || !wf) return <p className="text-sm text-ink-3">{q.isError ? `Không tải được: ${(q.error as Error).message}` : "Đang tải…"}</p>;
+  if (!q.data || !wf) return <p className="text-sm text-ink-3">{q.isError ? t("Không tải được: {msg}", { msg: (q.error as Error).message }) : t("Đang tải…")}</p>;
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(saved);
+  const roleName = YT_ROLES.find(([r]) => r === role)?.[1];
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <Dropdown label="Project" value={p} onChange={(v) => { setProject(v); fromYt.reset(); }} className="w-auto text-sm"
           options={(ps ?? [{ shortName: p, name: p }]).map((x) => ({ value: x.shortName, label: x.shortName, hint: x.name }))} />
-        <Hint title="Lấy từ YouTrack" text="Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.">
+        <Hint title={t("Lấy từ YouTrack")} text={t("Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.")}>
           <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate()}>
-            <Download className="size-3.5" />{fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack"}
+            <Download className="size-3.5" />{t(fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack")}
           </Button>
         </Hint>
-        <Hint title="Tự xếp" text="Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.">
-          <Button type="button" size="sm" variant="ghost" disabled={!states.length} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-3.5" />Tự xếp</Button>
+        <Hint title={t("Tự xếp")} text={t("Xếp lại các ô theo luồng: state đầu ở trên, các bước sau xuống dưới.")}>
+          <Button type="button" size="sm" variant="ghost" disabled={!states.length} onClick={() => set({ pos: layout(shown, wf.edges, cols) })}><LayoutGrid className="size-3.5" />{t("Tự xếp")}</Button>
         </Hint>
-        <Hint title="Xóa hết mũi tên" text="Bỏ mọi mũi tên để vẽ lại từ đầu.">
-          <Button type="button" size="sm" variant="ghost" disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-3.5" />Xóa hết</Button>
+        <Hint title={t("Xóa hết mũi tên")} text={t("Bỏ mọi mũi tên để vẽ lại từ đầu.")}>
+          <Button type="button" size="sm" variant="ghost" disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-3.5" />{t("Xóa hết")}</Button>
         </Hint>
         <label className="ml-auto flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={wf.on} onChange={(e) => set({ on: e.target.checked })} /> Áp dụng trong app
+          <input type="checkbox" checked={wf.on} onChange={(e) => set({ on: e.target.checked })} /> {t("Áp dụng trong app")}
         </label>
       </div>
-      {fromYt.isError && <p role="alert" className="text-xs text-error">Không đọc được: {(fromYt.error as Error).message}</p>}
-      {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">Chưa có ticket nào ở {fromYt.data.unknown.join(", ")} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.</p> : null}
-      {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? "Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo)." : null}</p>
+      {fromYt.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được: {msg}", { msg: (fromYt.error as Error).message })}</p>}
+      {fromYt.data?.unknown.length ? <p className="text-xs text-ink-3">{t("Chưa có ticket nào ở {states} nên chưa biết từ đó đi đâu, tự nối thêm nếu cần.", { states: fromYt.data.unknown.join(", ") })}</p> : null}
+      {!states.length ? <p className="text-sm text-ink-3">{q.data && !states.length ? t("Chưa có state: cần token YouTrack (nhóm Kết nối và báo cáo).") : null}</p>
         : (
           <div className="overflow-hidden rounded-[var(--radius-card)] border border-rule">
             <Canvas states={shown} wf={wf} onChange={set} onHide={hide} fit={fit} />
@@ -145,12 +148,12 @@ export function WorkflowSection() {
         )}
       <EdgeList states={shown} edges={wf.edges} onChange={(edges) => set({ edges })} />
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>Lưu</Button>
-        {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>Bỏ nháp</Button>}
-        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">Bản nháp: chưa áp dụng cho ticket, bấm Lưu để áp dụng</span>}
-        <span className="flex flex-wrap gap-x-3 text-xs text-ink-3"><span>Vai trò <b className="text-ink-2">{YT_ROLES.find(([r]) => r === role)?.[1]}</b></span><span>{wf.edges.length} mũi tên</span><span>{wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định"}</span></span>
+        <Button type="button" size="sm" variant="outline" disabled={!dirty || save.isPending} onClick={() => save.mutate(wf)}>{t("Lưu")}</Button>
+        {dirty && <Button type="button" size="sm" variant="ghost" onClick={() => { setDraft(null); fromYt.reset(); }}>{t("Bỏ nháp")}</Button>}
+        {dirty && <span className="rounded-full bg-warn-wash px-2 py-0.5 text-xs font-medium text-warn">{t("Bản nháp: chưa áp dụng cho ticket, bấm Lưu để áp dụng")}</span>}
+        <span className="flex flex-wrap gap-x-3 text-xs text-ink-3"><span>{t("Vai trò")} <b className="text-ink-2">{roleName && t(roleName)}</b></span><span>{t("{n} mũi tên", { n: wf.edges.length })}</span><span>{t(wf.on ? "app chỉ cho chuyển state theo mũi tên (menu State, kéo thả Board)" : "đang tắt: chỉ YouTrack quyết định")}</span></span>
       </div>
-      {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
+      {save.isError && <p role="alert" className="text-xs text-error">{t("Không lưu được: {msg}", { msg: (save.error as Error).message })}</p>}
     </div>
   );
 }
@@ -158,6 +161,7 @@ export function WorkflowSection() {
 type Drag = { kind: "move"; s: string; dx: number; dy: number } | { kind: "link"; s: string; x: number; y: number; over: string | null };
 
 function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: Workflow; onChange: (p: Partial<Workflow>) => void; onHide: (s: string) => void; fit: (el: HTMLDivElement | null) => void }) {
+  const t = useT();
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => fit(box.current), []); // eslint-disable-line react-hooks/exhaustive-deps -- measured once
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -218,7 +222,7 @@ function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: W
         if (!e) return null;
         const m = arrow(wf.pos[e[0]], wf.pos[e[1]], has.has(key([e[1], e[0]]))).mid;
         return (
-          <button type="button" aria-label={`Xóa mũi tên ${e[0]} → ${e[1]}`} onClick={() => remove(sel)} style={{ left: m[0] - 11, top: m[1] - 11 }}
+          <button type="button" aria-label={t("Xóa mũi tên {from} → {to}", { from: e[0], to: e[1] })} onClick={() => remove(sel)} style={{ left: m[0] - 11, top: m[1] - 11 }}
             className="absolute z-10 grid size-[22px] place-items-center rounded-full bg-error text-cotton shadow-stock"><X className="size-3.5" /></button>
         );
       })()}
@@ -230,9 +234,9 @@ function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: W
             className={cn("group absolute flex cursor-grab items-center gap-1.5 rounded-[var(--radius-input)] border-l-4 bg-cotton pr-4 pl-2 text-xs font-medium shadow-stock active:cursor-grabbing",
               target && "ring-2 ring-hl", drag?.kind === "move" && drag.s === s && "z-10 shadow-lg")}>
             <span className="truncate" title={s}>{s}</span>
-            <span role="button" aria-label={`Kéo để nối từ ${s}`} onPointerDown={(e) => { e.stopPropagation(); const [px, py] = at(e); setDrag({ kind: "link", s, x: px, y: py, over: null }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
+            <span role="button" aria-label={t("Kéo để nối từ {state}", { state: s })} onPointerDown={(e) => { e.stopPropagation(); const [px, py] = at(e); setDrag({ kind: "link", s, x: px, y: py, over: null }); setSel(null); box.current!.setPointerCapture(e.pointerId); }}
               className="absolute top-1/2 -right-[7px] size-3.5 -translate-y-1/2 cursor-crosshair rounded-full border-2 border-cotton bg-hl shadow-stock hover:scale-125" />
-            <button type="button" aria-label={`Ẩn ${s} khỏi workflow`} onPointerDown={(e) => e.stopPropagation()} onClick={() => onHide(s)}
+            <button type="button" aria-label={t("Ẩn {state} khỏi workflow", { state: s })} onPointerDown={(e) => e.stopPropagation()} onClick={() => onHide(s)}
               className="absolute -top-2 right-3 grid size-[18px] place-items-center rounded-full bg-paper-3 text-ink-3 opacity-0 shadow-stock transition-opacity group-hover:opacity-100 hover:bg-error hover:text-cotton focus-visible:opacity-100 [@media(hover:none)]:opacity-100">
               <X className="size-3" />
             </button>
@@ -245,6 +249,7 @@ function Canvas({ states, wf, onChange, onHide, fit }: { states: string[]; wf: W
 
 /** Under the canvas: the states taken off it, as small boxes like the ones above; a click puts one back where it was. */
 function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: string[]) => void }) {
+  const t = useT();
   return (
     <AnimatePresence initial={false}>
       {hidden.length > 0 && (
@@ -253,18 +258,18 @@ function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: str
           <div className="grid gap-2 px-3 py-2.5">
             <div className="flex items-center gap-2 text-xs text-ink-3">
               <EyeOff className="size-3.5" aria-hidden />
-              <span className="font-medium text-ink-2">Đã ẩn</span>
-              <span className="rounded-full bg-paper-3 px-1.5 font-mono text-[11px] leading-[18px]">{hidden.length}</span>
-              <span className="max-sm:hidden">(bấm một state để đưa lại vào sơ đồ)</span>
+              <span className="font-medium text-ink-2">{t("Đã ẩn")}</span>
+              <span className="rounded-full bg-paper-3 px-1.5 font-mono text-2xs leading-[18px]">{hidden.length}</span>
+              <span className="max-sm:hidden">{t("(bấm một state để đưa lại vào sơ đồ)")}</span>
               {hidden.length > 1 && (
-                <button type="button" onClick={() => onShow(hidden)} className="ml-auto rounded px-1.5 py-0.5 font-medium text-hl-2 hover:bg-hl-wash">Hiện tất cả</button>
+                <button type="button" onClick={() => onShow(hidden)} className="ml-auto rounded px-1.5 py-0.5 font-medium text-hl-2 hover:bg-hl-wash">{t("Hiện tất cả")}</button>
               )}
             </div>
             <ul className="flex flex-wrap gap-1.5">
               <AnimatePresence initial={false}>
                 {hidden.map((s) => (
                   <motion.li key={s} layout initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} transition={{ duration: 0.15 }}>
-                    <button type="button" aria-label={`Hiện lại ${s}`} onClick={() => onShow([s])} style={{ borderLeftColor: stateColor(s) }}
+                    <button type="button" aria-label={t("Hiện lại {state}", { state: s })} onClick={() => onShow([s])} style={{ borderLeftColor: stateColor(s) }}
                       className="group inline-flex h-7 max-w-56 items-center gap-1.5 rounded-[var(--radius-input)] border border-l-[3px] border-rule bg-paper-2 pr-1.5 pl-2 text-xs text-ink-2 transition-colors hover:border-hl/60 hover:bg-cotton hover:text-ink focus-visible:ring-2 focus-visible:ring-hl">
                       <span className="truncate">{s}</span>
                       <Plus className="size-3.5 shrink-0 text-ink-3 transition-colors group-hover:text-hl-2" aria-hidden />
@@ -283,23 +288,24 @@ function HiddenTray({ hidden, onShow }: { hidden: string[]; onShow: (states: str
 /** The same arrows as a list: add one with two selects, remove with ×. Works by keyboard and on a phone. */
 function EdgeList({ states, edges, onChange }: { states: string[]; edges: [string, string][]; onChange: (e: [string, string][]) => void }) {
   const [from, setFrom] = useState(""), [to, setTo] = useState("");
-  const f = states.includes(from) ? from : states[0] ?? "", t = states.includes(to) ? to : states[1] ?? states[0] ?? "";
-  const dupe = f === t || edges.some(([a, b]) => a === f && b === t);
+  const t = useT();
+  const f = states.includes(from) ? from : states[0] ?? "", dst = states.includes(to) ? to : states[1] ?? states[0] ?? "";
+  const dupe = f === dst || edges.some(([a, b]) => a === f && b === dst);
   const opts = states.map((s) => ({ value: s, label: s }));
   return (
     <details className="grid gap-2 text-sm">
-      <summary className="cursor-pointer text-xs text-ink-3">Danh sách mũi tên ({edges.length})</summary>
-      <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, t]]); }}>
-        <Dropdown label="Từ state" value={f} onChange={setFrom} options={opts} className="w-auto" />
+      <summary className="cursor-pointer text-xs text-ink-3">{t("Danh sách mũi tên ({n})", { n: edges.length })}</summary>
+      <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, dst]]); }}>
+        <Dropdown label={t("Từ state")} value={f} onChange={setFrom} options={opts} className="w-auto" />
         <span aria-hidden>→</span>
-        <Dropdown label="Sang state" value={t} onChange={setTo} options={opts} className="w-auto" />
-        <Button type="submit" size="sm" variant="outline" disabled={dupe}>Thêm</Button>
+        <Dropdown label={t("Sang state")} value={dst} onChange={setTo} options={opts} className="w-auto" />
+        <Button type="submit" size="sm" variant="outline" disabled={dupe}>{t("Thêm")}</Button>
       </form>
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {edges.map(([a, b]) => (
           <li key={key([a, b])} className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-1 pl-2.5 text-xs">
             {a} → {b}
-            <button type="button" aria-label={`Xóa ${a} → ${b}`} onClick={() => onChange(edges.filter((e) => e[0] !== a || e[1] !== b))} className="rounded-full p-0.5 text-ink-3 hover:bg-paper-3 hover:text-error"><X className="size-3" /></button>
+            <button type="button" aria-label={t("Xóa {from} → {to}", { from: a, to: b })} onClick={() => onChange(edges.filter((e) => e[0] !== a || e[1] !== b))} className="rounded-full p-0.5 text-ink-3 hover:bg-paper-3 hover:text-error"><X className="size-3" /></button>
           </li>
         ))}
       </ul>

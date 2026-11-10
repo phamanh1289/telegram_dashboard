@@ -11,7 +11,7 @@ import sqlite3
 import statistics
 import threading
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -105,12 +105,14 @@ CREATE TABLE IF NOT EXISTS tasks (
   title TEXT,
   model TEXT,
   effort TEXT,
-  done INTEGER NOT NULL DEFAULT 0
+  done INTEGER NOT NULL DEFAULT 0,
+  git_base TEXT  -- the project's working tree (git tree id) when the session started: Thay đổi diffs from it
 );
 CREATE TABLE IF NOT EXISTS task_refs (  -- messages attached to a session's turns: Done on the session ticks them too
   task_id TEXT NOT NULL,
   chat_id TEXT NOT NULL,
   message_id INTEGER NOT NULL,
+  qa TEXT NOT NULL DEFAULT '',  -- "#QA…" of the thread it answers (up its reply chain, read live if not kept)
   PRIMARY KEY (task_id, chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS projects (
@@ -244,6 +246,63 @@ def _mark_qa(c: sqlite3.Connection, rows: Iterable, handled: bool) -> None:
 CHAIN_MAX = 12  # as the web's reply-chain walk (message-item.tsx)
 
 
+def _session_asks(c: sqlite3.Connection, task_id: str) -> list[sqlite3.Row]:
+    """Kept messages naming the session ("#REF-…", or the old "#AI-…"): the asks it posted, the answers quoting it."""
+    tail = task_id[-6:]  # sessionId() on the web
+    return c.execute(  # ponytail: a LIKE scan of kept messages, once per Done
+        "SELECT chat_id, message_id, text FROM messages WHERE deleted=0 AND (text LIKE ? OR text LIKE ?)",
+        (f"%#REF-{tail}%", f"%#AI-{tail}%"),
+    ).fetchall()
+
+
+def _session_qa(c: sqlite3.Connection, task_id: str) -> list[tuple[str, str]]:
+    """(chat_id, text) rows naming the session's Q&A codes: its tag and attached messages (or, nearest, a message up
+    their reply chain; for an attached one, the code found when it was attached), its asks, and the Q&A an Đối chiếu
+    BE prompt cites (messages read live, never stored)."""
+    keys = c.execute(
+        "SELECT chat_id, message_id FROM tasks WHERE id=? UNION ALL SELECT chat_id, message_id FROM task_refs "
+        "WHERE task_id=?",
+        (task_id, task_id),
+    ).fetchall()
+    deep = c.execute("SELECT chat_id, prompt FROM tasks WHERE id=? AND kind='deep'", (task_id,)).fetchall()
+    found = c.execute("SELECT chat_id, qa FROM task_refs WHERE task_id=? AND qa<>''", (task_id,)).fetchall()
+    asks = [(r["chat_id"], r["text"]) for r in _session_asks(c, task_id)]
+    return [_qa_text(c, cid, mid) for cid, mid in keys] + [(r[0], r[1] or "") for r in deep + found] + asks
+
+
+def _code_roots(c: sqlite3.Connection, chat_id: str, code: str) -> set[tuple[str, int]]:
+    """Kept messages of a group naming a Q&A code, and (as qa.find_threads) the message the first of them replies to:
+    the question someone asked that I answered with Q&A."""
+    rows = c.execute("SELECT message_id, text, reply_to_id FROM messages WHERE chat_id=? AND deleted=0 AND text LIKE ? "
+                     "ORDER BY message_id", (chat_id, f"%{code}%")).fetchall()  # fmt: skip
+    named = [r for r in rows if code in qa_codes(r[1])]  # #QA12 must not match #QA123
+    first = [named[0][2]] if named and named[0][2] else []
+    return {(chat_id, mid) for mid in [r[0] for r in named] + first}
+
+
+def _session_answers(c: sqlite3.Connection, task_id: str) -> list[tuple[str, int]]:
+    """Kept tags (not mine) answering the session: down the reply chains under its asks and its Q&A questions."""
+    roots = {(r["chat_id"], r["message_id"]) for r in _session_asks(c, task_id)}
+    for cid, code in {(cid, code) for cid, text in _session_qa(c, task_id) for code in qa_codes(text)}:
+        roots |= _code_roots(c, cid, code)
+    return _tags_under(c, roots)
+
+
+def _tags_under(c: sqlite3.Connection, roots: set[tuple[str, int]]) -> list[tuple[str, int]]:
+    """Kept tags (not mine) among these messages and down the reply chains under them."""
+    seen, level = set(roots), list(roots)
+    for _ in range(CHAIN_MAX):  # ponytail: one query per message per level; Done is rare and threads are short
+        level = [(cid, r[0]) for cid, mid in level
+                 for r in c.execute("SELECT message_id FROM messages WHERE chat_id=? AND reply_to_id=?", (cid, mid))
+                 if (cid, r[0]) not in seen]  # fmt: skip
+        if not level:
+            break
+        seen.update(level)
+    return [(cid, mid) for cid, mid in seen
+            if c.execute("SELECT 1 FROM messages WHERE chat_id=? AND message_id=? AND outgoing=0 AND deleted=0",
+                         (cid, mid)).fetchone()]  # fmt: skip
+
+
 def _qa_text(c: sqlite3.Connection, cid: str, mid: int | None) -> tuple:
     """(chat_id, text) of the nearest stored message naming a #QA code: this one or one up its reply chain (a BE
     answer replies to the copied ask that carries the code); ("", "") when none."""
@@ -344,9 +403,24 @@ def _deep_anchor(c: sqlite3.Connection) -> None:
                 break
 
 
+def _task_git_base(c: sqlite3.Connection) -> None:
+    """Thay đổi shows what this session changed, not every edit in the project folder (NULL: whole-tree view)."""
+    _add_cols(c, "tasks", {"git_base": "TEXT"})
+
+
+def _task_ref_qa(c: sqlite3.Connection) -> None:
+    """An attached message's Q&A follows the session's Done even when the message was never stored."""
+    _add_cols(c, "task_refs", {"qa": "TEXT NOT NULL DEFAULT ''"})
+
+
+def _snooze_on(c: sqlite3.Connection) -> None:
+    """snooze_on landed in _add_missing_columns, which databases past version 1 never run again."""
+    _add_cols(c, "messages", {"snooze_on": "TEXT"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
-    _handled_by, _outbox_quote, _priority, _deep_anchor,
+    _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
 ]  # fmt: skip
 
 
@@ -816,18 +890,19 @@ class Store:
         return [(r["chat_title"], to_dto(_row_to_message(r))) for r in rows]
 
     def mark_all_handled(
-        self, chat_id: str, since: datetime | None = None, until: datetime | None = None
+        self, chat_id: str, since: datetime | None = None, until: datetime | None = None, *, skip: Sequence[int] = ()
     ) -> list[int]:
         """Mark every pending tag of a tracked chat (within [since, until)) handled, the same
-        ones the pending count shows; returns their ids."""
+        ones the pending count shows, except `skip` (tags the list leaves to Q&A); returns their ids."""
         with self._conn(write=True) as c:
             chat = self._chat(c, chat_id)
             if chat is None or not chat["tracking"]:
                 return []
             ids = sorted(r[0] for r in c.execute(
                 f"UPDATE messages AS m SET handled=1, handled_by='all', handled_at=?4 WHERE m.chat_id=?1 AND {PENDING} "
-                "AND (?2 IS NULL OR m.date>=?2) AND (?3 IS NULL OR m.date<?3) RETURNING message_id",
-                (chat_id, _ts(since), _ts(until), now_ts()),
+                "AND (?2 IS NULL OR m.date>=?2) AND (?3 IS NULL OR m.date<?3) "
+                "AND m.message_id NOT IN (SELECT value FROM json_each(?5)) RETURNING message_id",
+                (chat_id, _ts(since), _ts(until), now_ts(), json.dumps(list(skip))),
             ).fetchall())  # fmt: skip
             for i in ids:
                 self._record(c, chat_id, i, "edit", chat["generation"])
@@ -968,8 +1043,10 @@ class Store:
             chat = self._chat(c, chat_id)
             if chat is None or not chat["tracking"]:
                 raise ApiError(409, "not_tracking")
+            # A new message (not quote) only borrows the target's topic: it may be a message read live and never
+            # stored (Đối chiếu BE from Với BE / Briefing). ponytail: unstored => General topic, fetch it if forums need it.
             target = self._msg(c, chat_id, reply_to)
-            if target is None or target["deleted"]:
+            if quote and (target is None or target["deleted"]):
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
             if qa and has_tag(text):
@@ -1122,13 +1199,18 @@ class Store:
     def add_task(
         self, task_id: str, chat_id: str | None, message_id: int | None, project: str,
         prompt: str, mode: str = "plan", session_id: str | None = None, kind: str = "task", title: str | None = None,
+        git_base: str | None = None,
     ):  # fmt: skip
         with self._conn(write=True) as c:
             c.execute(
                 "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, "
-                "mode, session_id, kind, title) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id, kind, title),
+                "mode, session_id, kind, title, git_base) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id, kind, title, git_base),
             )
+
+    def set_task_base(self, task_id: str, git_base: str | None) -> None:
+        with self._conn(write=True) as c:
+            c.execute("UPDATE tasks SET git_base=? WHERE id=?", (git_base, task_id))
 
     def set_task_session(self, task_id: str, session_id: str) -> None:
         with self._conn(write=True) as c:
@@ -1167,40 +1249,43 @@ class Store:
             c.execute("DELETE FROM task_refs WHERE task_id=?", (task_id,))
             return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
 
-    def add_task_refs(self, task_id: str, refs: list[tuple[str, int]]) -> None:
+    def add_task_refs(self, task_id: str, refs: list[tuple[str, int, str]]) -> None:
+        """(chat_id, message_id, "#QA…" or ""): attaching again fills a code missed before, never clears one."""
         with self._conn(write=True) as c:
-            c.executemany("INSERT OR IGNORE INTO task_refs VALUES (?,?,?)", [(task_id, cid, mid) for cid, mid in refs])
+            c.executemany(
+                "INSERT INTO task_refs (task_id, chat_id, message_id, qa) VALUES (?,?,?,?) ON CONFLICT DO UPDATE "
+                "SET qa=excluded.qa WHERE excluded.qa<>''",
+                [(task_id, cid, mid, qa) for cid, mid, qa in refs],
+            )
 
     def mark_task_refs(self, task_id: str, handled: bool, by: str) -> dict[str, list[int]]:
-        """Done / reopen every kept message attached to the session; the ones that flipped, per chat."""
+        """Done / reopen every kept message attached to the session, and the kept tags answering it (under its asks
+        and its Q&A questions); the ones that flipped, per chat."""
         out: dict[str, list[int]] = {}
         with self._conn(write=True) as c:
             refs = c.execute("SELECT chat_id, message_id FROM task_refs WHERE task_id=?", (task_id,)).fetchall()
-            for cid, mid in refs:
+            for cid, mid in dict.fromkeys([tuple(r) for r in refs] + _session_answers(c, task_id)):
                 if self._mark(c, cid, mid, handled, by):
                     out.setdefault(cid, []).append(mid)
         return out
 
     def mark_task_qa(self, task_id: str, handled: bool) -> None:
-        """Done / reopen the Q&A threads whose #QA code the session's tag or attached messages name (or, nearest,
-        a message up their reply chain)."""
+        """Done / reopen the session's Q&A threads (see _session_qa)."""
         with self._conn(write=True) as c:
-            keys = c.execute(
-                "SELECT chat_id, message_id FROM tasks WHERE id=? "
-                "UNION ALL SELECT chat_id, message_id FROM task_refs WHERE task_id=?",
-                (task_id, task_id),
-            ).fetchall()
-            _mark_qa(c, [_qa_text(c, cid, mid) for cid, mid in keys], handled)
+            _mark_qa(c, _session_qa(c, task_id), handled)
 
-    def mark_tag_qa(self, chat_id: str, message_id: int, handled: bool) -> None:
-        """Done / reopen on a tag straight from the list: a #QA code in it, and the Q&A of the sessions on it
-        (as on the session), follow."""
-        key = (chat_id, message_id)
+    def mark_tag_qa(self, chat_id: str, message_ids: list[int], handled: bool) -> None:
+        """Done / reopen on tags: the #QA code each names (or, nearest, a message up its reply chain) follows."""
         with self._conn(write=True) as c:
-            _mark_qa(c, [_qa_text(c, *key)], handled)
-            ids = [r[0] for r in c.execute("SELECT id FROM tasks WHERE chat_id=? AND message_id=?", key).fetchall()]
-        for task_id in ids:
-            self.mark_task_qa(task_id, handled)
+            _mark_qa(c, [_qa_text(c, chat_id, mid) for mid in message_ids], handled)
+
+    def tasks_on(self, chat_id: str, message_ids: list[int]) -> list[str]:
+        """The sessions sitting on these messages."""
+        with self._conn() as c:
+            return [r[0] for r in c.execute(
+                "SELECT id FROM tasks WHERE chat_id=? AND message_id IN (SELECT value FROM json_each(?))",
+                (chat_id, json.dumps(message_ids)),
+            ).fetchall()]  # fmt: skip
 
     # ---- projects ------------------------------------------------------
     def find_mentions(self, needle: str, limit: int = 20) -> list[dict]:
@@ -1283,12 +1368,22 @@ class Store:
             rows = c.execute("SELECT code, state FROM qa_marks WHERE chat_id=?", (chat_id,))
             return {r["code"]: r["state"] for r in rows}
 
-    def set_qa_mark(self, chat_id: str, code: str, state: str | None) -> None:
+    def set_qa_mark(self, chat_id: str, code: str, state: str | None) -> str | None:
+        """The state it had before."""
         with self._conn(write=True) as c:
+            r = c.execute("SELECT state FROM qa_marks WHERE chat_id=? AND code=?", (chat_id, code)).fetchone()
             if state:
                 c.execute("INSERT OR REPLACE INTO qa_marks VALUES (?,?,?,?)", (chat_id, code, state, now_ts()))
             else:
                 c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=?", (chat_id, code))
+            return r[0] if r else None
+
+    def mark_qa_thread(self, chat_id: str, code: str, handled: bool) -> list[int]:
+        """Done / reopen (no reaction) the kept tags (not mine) of a Q&A thread: its question and the replies under
+        it; the ones that flipped."""
+        with self._conn(write=True) as c:
+            tags = _tags_under(c, _code_roots(c, chat_id, code))
+            return [mid for cid, mid in tags if self._mark(c, cid, mid, handled, "quiet")]
 
     def has_project(self, path: str) -> bool:
         with self._conn() as c:

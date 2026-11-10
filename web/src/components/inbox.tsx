@@ -26,13 +26,15 @@ import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status, statusQuery } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
 import { ALL, BRIEFING, TODAY, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { useBriefs } from "@/lib/briefs";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { Hint } from "@/components/ui/hint";
 import { Pill } from "@/components/ui/segmented";
 import { AiPlug } from "@/components/ai-plug";
+import { type Key, useT } from "@/lib/i18n";
 
-const STATE_LABEL: Record<Status["state"], string> = {
+const STATE_LABEL: Record<Status["state"], Key> = {
   setup_required: "Chưa cấu hình Telegram: mở Cài đặt Telegram",
   login_required: "Cần đăng nhập: mở Cài đặt Telegram",
   connecting: "Đang kết nối Telegram…",
@@ -42,8 +44,8 @@ const STATE_LABEL: Record<Status["state"], string> = {
 };
 
 /** Sidebar AI plug card: title per state, and the line under it when not connected (connected shows the stream state). */
-const PLUG_LINE: Record<Status["state"], [string, string]> = {
-  connected: ["Đã kết nối Telegram", ""],
+const PLUG_LINE: Record<Status["state"], [Key, Key]> = {
+  connected: ["Đã kết nối Telegram", "Cập nhật trực tiếp"], // sub unused: connected shows STREAM_LABEL
   connecting: ["Đang kết nối Telegram…", "Chờ chút nhé"],
   degraded: ["Mất kết nối Telegram", "Mạng chặn? Bật VPN, đang thử lại"],
   setup_required: ["Chưa kết nối Telegram", "Bấm để cấu hình"],
@@ -51,7 +53,7 @@ const PLUG_LINE: Record<Status["state"], [string, string]> = {
   stopped: ["Đã ngắt kết nối Telegram", "Kết nối Telegram đã dừng"],
 };
 
-const STREAM_LABEL: Record<StreamState, string> = {
+const STREAM_LABEL: Record<StreamState, Key> = {
   open: "Cập nhật trực tiếp",
   connecting: "Đang nối lại luồng cập nhật…",
   closed: "Luồng cập nhật tạm dừng",
@@ -71,12 +73,13 @@ function SideHeading({ label, extra, fade, rail }: { label: string; extra?: Reac
 }
 
 export function App() {
+  const t = useT();
   const status = useQuery({ ...statusQuery, retry: 1 });
 
   if (status.isPending) {
     return (
       <main aria-busy className="grid h-dvh grid-rows-[3.5rem_1fr]">
-        <span className="sr-only">Đang tải…</span>
+        <span className="sr-only">{t("Đang tải…")}</span>
         <div className="flex items-center gap-4 border-b px-4">
           <Skeleton className="h-8 w-44 rounded-md" />
           <Skeleton className="ml-auto h-9 w-full max-w-sm rounded-md" />
@@ -101,10 +104,10 @@ export function App() {
     return (
       <main className="grid min-h-dvh place-items-center p-4">
         <div role="alert" className="grid max-w-sm justify-items-start gap-3">
-          <h1 className="text-base">Không liên lạc được backend</h1>
-          <p className="text-sm leading-relaxed text-ink-2">Server dashboard trên máy này chưa chạy hoặc vừa dừng. Mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm Thử lại.</p>
+          <h1 className="text-base">{t("Không liên lạc được backend")}</h1>
+          <p className="text-sm leading-relaxed text-ink-2">{t("Server dashboard trên máy này chưa chạy hoặc vừa dừng. Mở lại app (hoặc chạy lại Start Dashboard Telegram), rồi bấm Thử lại.")}</p>
           <Button size="sm" variant="outline" aria-busy={status.isFetching} disabled={status.isFetching} onClick={() => void status.refetch()}>
-            <RotateCw /> Thử lại
+            <RotateCw /> {t("Thử lại")}
           </Button>
         </div>
       </main>
@@ -116,11 +119,13 @@ export function App() {
 const NO_CODES: ReadonlyMap<string, string> = new Map(); // Q&A page: its cards already say the code
 
 function Inbox({ status }: { status: Status }) {
+  const t = useT();
   const stream = useSync(status.cursor);
   const taskList = useTaskList().data ?? [];
   const bulk = useBulk(); // "Đối chiếu code N chủ đề": a detail page over the list, like a reply
   const runningTasks = taskList.filter((t) => t.running).length;
-  const codeRole = usesCode(useRole()); // QA / PO: no AI Agent unless they already have sessions
+  const codeRole = usesCode(useRole()); // QA / PO: no AI Agent unless they already have sessions (Briefing ones too)
+  const briefs = useBriefs().length;
   // Selected chat lives in the query string (static export: no dynamic routes). The inbox only mounts in the browser
   // (after /status), so state starts from the URL and prefs directly, with no first paint on defaults.
   const [chatId, setChatId] = useState<string | null>(() => new URLSearchParams(location.search).get("chat") ?? TODAY); // default: Hôm nay, every source of work
@@ -149,7 +154,12 @@ function Inbox({ status }: { status: Status }) {
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDays] = useState<DayRange>({ from: "", to: "" });
   const range = rangeQuery(days);
-  const pendingTotal = (useChats(range).data?.items ?? []).reduce((n, c) => n + c.pending_count, 0);
+  const [qaDays, setQaDays] = useState<QaDays>(7);
+  // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges; tag
+  // lists and counts leave those to Q&A).
+  const qa = useQaNews(qaDays, chatId === QA);
+  const chatsData = useChats(range, qa.codes).data?.items ?? [];
+  const pendingTotal = chatsData.reduce((n, c) => n + c.pending_count, 0);
   // One search box: across groups on Việc cần xử lý / Ghim, within the group when one is open.
   const [search, setSearch] = useState("");
   const [searchOpen, setSearchOpen] = useState(false); // phones: the box opens from an icon
@@ -212,7 +222,7 @@ function Inbox({ status }: { status: Status }) {
     const open = (m: Message, j: number) => j !== i && !m.outgoing && !m.deleted && !m.handled;
     const next = dir < 0 ? all.findLast((m, j) => j < i && open(m, j))
       : all.find((m, j) => j > i && open(m, j)) ?? (dir ? undefined : all.findLast((m, j) => open(m, j)));
-    if (dir && !next) return toast({ text: dir > 0 ? "Không còn tag nào phía dưới" : "Không còn tag nào phía trên" });
+    if (dir && !next) return toast({ text: dir > 0 ? t("Không còn tag nào phía dưới") : t("Không còn tag nào phía trên") });
     setReply(next ? { m: next, external: false, at: place(next, dir ? null : replyTo) } : null);
     setDraft(null);
     if (next) requestAnimationFrame(() => {
@@ -255,7 +265,6 @@ function Inbox({ status }: { status: Status }) {
     history.replaceState(null, "", url);
   }
 
-  const chatsData = useChats(range).data?.items ?? [];
   // Phones: the sidebar is an off-canvas sheet; desktop: pinned open or a 64px rail that opens on hover/focus.
   const [menuOpen, setMenuOpen] = useState(false);
   function toggleMenu() {
@@ -326,44 +335,41 @@ function Inbox({ status }: { status: Status }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, from the URL the page was opened with
 
   const hints: Record<string, string> = {
-    [TODAY]: "Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)",
-    [ALL]: "Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước.",
-    [QA]: "Đăng câu hỏi vào nhóm bất kỳ (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời. Số: trả lời mới cộng câu của bạn chưa ai trả lời quá ngưỡng nhắc.",
-    [PINNED]: "Tin bạn ghim để giữ lại, kể cả khi đã xử lý.",
-    [BRIEFING]: "AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn.",
-    [TASKS]: "Phiên AI đọc / sửa code: Giao AI Agent từ tin tag và Đối chiếu BE.",
+    [TODAY]: t("Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)"),
+    [ALL]: t("Mọi tin tag bạn chưa xử lý, gom từ các nhóm, cũ nhất lên trước."),
+    [QA]: t("Đăng câu hỏi vào nhóm bất kỳ (kèm mã #QA…) và xem lại từng câu với cả chuỗi trả lời. Số: trả lời mới cộng câu của bạn chưa ai trả lời quá ngưỡng nhắc."),
+    [PINNED]: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý."),
+    [BRIEFING]: t("AI tóm tắt nhanh các nhóm: có gì mới, việc gì cần bạn."),
+    [TASKS]: t("Phiên AI: Giao AI Agent từ tin tag, Đối chiếu BE và các hội thoại Trợ lý Briefing."),
   };
-  const countSr: Record<string, string> = { [TASKS]: "đang chạy", [BRIEFING]: "nhóm có tin mới", [QA]: "trả lời mới hoặc câu cần nhắc" };
+  const countSr: Record<string, string> = { [TASKS]: t("đang chạy"), [BRIEFING]: t("nhóm có tin mới"), [QA]: t("trả lời mới hoặc câu cần nhắc") };
   const aiOn = status.ai_configured;
   const [qaGroup, setQaGroup] = useState<string | null>(null); // Q&A: the group picked (null: none yet)
   const qaLast = useQaRecent()[0];
   const qaShown = qaGroup ?? qaLast ?? null; // none picked: the one you asked last
-  const [qaDays, setQaDays] = useState<QaDays>(7);
-  // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges).
-  const qa = useQaNews(qaDays, chatId === QA);
-  const [briefGroup, setBriefGroup] = useState<string | null>(null); // Briefing: one group's items (null: all)
+  const [briefGroup, setBriefGroup] = useState<string | null | undefined>(undefined); // Briefing: one group's items (null: all; undefined: the first)
   const briefList = useQuery({ ...briefingQuery, enabled: aiOn }).data ?? [];
   const briefNews = briefList.filter((i) => i.consent && hasNews(i)).length;
   useAutoBrief(aiOn);
   // Sidebar sections; `views` (all pages, flat) also feeds the header title, g-keys and ⌘K.
   const sections: { label: string; items: NavItem[] }[] = [
-    { label: "Việc", items: [
-      [TODAY, "Hôm nay", 0, Sun],
-      [ALL, "Việc cần xử lý", pendingTotal, InboxIcon],
+    { label: t("Việc"), items: [
+      [TODAY, t("Hôm nay"), 0, Sun],
+      [ALL, t("Việc cần xử lý"), pendingTotal, InboxIcon],
       [QA, "Q&A", qa.total + qa.lateTotal, MessageCircleQuestion],
-      [PINNED, "Tag đã ghim", 0, Pin],
+      [PINNED, t("Tag đã ghim"), 0, Pin],
     ] },
-    { label: "Trợ lý AI", items: [
+    { label: t("Trợ lý AI"), items: [
       ...(aiOn ? [[BRIEFING, "Briefing", briefNews, Sparkles] as NavItem] : []),
-      ...(codeRole || taskList.length ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
+      ...(codeRole || taskList.length || (aiOn && briefs) ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
     ] },
     { label: "YouTrack", items: [
-      ["/youtrack/", "Trang chủ YouTrack", 0, Home],
+      ["/youtrack/", t("Trang chủ YouTrack"), 0, Home],
       ["/youtrack/?view=tickets", "Ticket", 0, ListChecks],
       ["/youtrack/?view=dash", "Dashboard", 0, LayoutDashboard],
       ["/youtrack/?view=release", "Release", 0, Rocket],
-      ["/youtrack/?view=people", "Thành viên", 0, UserSearch],
-      ...(aiOn ? [["/youtrack/?view=ai", "Lịch sử AI", 0, History] as NavItem] : []),
+      ["/youtrack/?view=people", t("Thành viên"), 0, UserSearch],
+      ...(aiOn ? [["/youtrack/?view=ai", t("Lịch sử AI"), 0, History] as NavItem] : []),
     ] },
   ];
   const views = sections.flatMap((s) => s.items);
@@ -371,7 +377,7 @@ function Inbox({ status }: { status: Status }) {
   const showBrief = aiOn && chatId === BRIEFING;
   const showQa = chatId === QA;
   const qaGroupTitle = useQuery({ ...qaGroupsQuery, enabled: showQa }).data?.find((g) => showQa && g.chat_id === qaShown)?.title;
-  const qaTitle = showQa && qaShown === QA_MINE ? "Câu hỏi của tôi" : qaGroupTitle;
+  const qaTitle = showQa && qaShown === QA_MINE ? t("Câu hỏi của tôi") : qaGroupTitle;
   const offline = status.state !== "connected" || stream !== "open";
   // Shown only once the problem lasts a few seconds: a reconnect blip shouldn't flash a banner.
   const [lasting, setLasting] = useState(false);
@@ -393,7 +399,7 @@ function Inbox({ status }: { status: Status }) {
     setReply(null); setFocus(null); setDigest(true);
   } : undefined;
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
-  const t = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
+  const fade = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
 
   return (
     <div className={cn("grid h-dvh grid-rows-[2.75rem_minmax(0,1fr)] transition-[grid-template-columns] duration-(--dur-short) ease-(--ease-out)", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15.5rem_minmax(0,1fr)]")}>
@@ -409,30 +415,30 @@ function Inbox({ status }: { status: Status }) {
         <h1 className="sr-only">Radar</h1>
         <div className="flex min-h-10 items-center gap-3 px-1.5">
           <span className="grid size-7 shrink-0 place-items-center rounded-[var(--radius-input)] bg-hl text-hl-ink"><Send className="size-4 -translate-x-px translate-y-px" aria-hidden /></span>
-          <span className={cn("grid whitespace-nowrap leading-tight", t)}>
-            <span className="text-sm font-semibold">Telegram</span><span className="text-xs text-ink-3">Inbox · có AI trợ lực</span>
+          <span className={cn("grid whitespace-nowrap leading-tight", fade)}>
+            <span className="text-sm font-bold">Telegram</span><span className="text-xs text-ink-3">{t("Inbox · có AI trợ lực")}</span>
           </span>
         </div>
-        <nav aria-label="Trang" className="grid grid-cols-1 gap-0.5">
+        <nav aria-label={t("Trang")} className="grid grid-cols-1 gap-0.5">
           {/* YouTrack pages stay in `views` for ⌘K; the top bar's module switch is the way there. */}
           {sections.filter((s) => s.items.length && s.label !== "YouTrack").map((s) => (
             <section key={s.label} aria-label={s.label} className="grid gap-0.5">
-              <SideHeading label={s.label} fade={t} rail={collapsed} />
+              <SideHeading label={s.label} fade={fade} rail={collapsed} />
               {/* "Tag đã ghim" is a tab inside Việc cần xử lý (still in ⌘K and g p), not a row here */}
               {s.items.filter(([id]) => id !== PINNED).map(([id, label, count, Icon]) => {
                 const on = chatId === id || (id === ALL && chatId === PINNED);
                 return (
                 <Hint key={id} title={label} text={hints[id]}><button type="button" aria-current={on ? "page" : undefined} aria-label={label}
-                  onClick={() => { if (id === BRIEFING) setBriefGroup(null); go(id); }}
+                  onClick={() => { if (id === BRIEFING) setBriefGroup(undefined); go(id); }}
                   className={cn(
                     "group/item relative flex min-h-9 w-full items-center gap-3 rounded-[var(--radius-input)] px-2.5 text-left text-sm font-medium transition-[background-color,color] duration-(--dur-micro)",
-                    on ? "font-semibold text-hl-2" : "text-ink-2 hover:bg-paper-3 hover:text-ink",
+                    on ? "font-bold text-hl-2" : "text-ink-2 hover:bg-paper-3 hover:text-ink",
                   )}>
                   {on && <Pill id="tg-page" className="inset-0 rounded-[var(--radius-input)] bg-hl-wash" />}
                   <Icon className={cn("relative size-[1.125rem] shrink-0 transition-transform duration-(--dur-short) ease-(--ease-out) group-hover/item:-rotate-6 group-hover/item:scale-110 motion-reduce:transition-none", !on && "text-ink-3 group-hover/item:text-ink-2")} aria-hidden />
-                  <span className={cn("relative flex-1 whitespace-nowrap", t)}>{label}</span>
+                  <span className={cn("relative flex-1 whitespace-nowrap", fade)}>{label}</span>
                   {count > 0 && (
-                    <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", t, on ? "bg-hl text-hl-ink" : id === BRIEFING ? "bg-signal-wash text-signal-2" : "bg-paper-3 text-ink-2")}>
+                    <span className={cn("relative rounded-full px-1.5 font-mono text-xs font-normal leading-5 tabular-nums", fade, on ? "bg-hl text-hl-ink" : id === BRIEFING ? "bg-signal-wash text-signal-2" : "bg-paper-3 text-ink-2")}>
                       <span className="sr-only">(</span>{count}<span className="sr-only">{countSr[id] ? ` ${countSr[id]})` : ")"}</span>
                     </span>
                   )}
@@ -445,9 +451,9 @@ function Inbox({ status }: { status: Status }) {
         </nav>
         {filtering && (
           // The day range also filters the counts here: say so where the counts are.
-          <div className={cn("mt-1 flex items-center gap-1 rounded-full bg-paper-3 py-0.5 pr-0.5 pl-2.5 text-xs text-ink-2", t)}>
-            <span className="min-w-0 flex-1 truncate">Đang lọc: <b className="font-medium text-ink">{rangeLabel(days)}</b></span>
-            <button type="button" aria-label="Bỏ lọc ngày" onClick={() => setDays({ from: "", to: "" })}
+          <div className={cn("mt-1 flex items-center gap-1 rounded-full bg-paper-3 py-0.5 pr-0.5 pl-2.5 text-xs text-ink-2", fade)}>
+            <span className="min-w-0 flex-1 truncate">{t.n("Đang lọc: {range}", { range: <b className="font-medium text-ink">{rangeLabel(days)}</b> })}</span>
+            <button type="button" aria-label={t("Bỏ lọc ngày")} onClick={() => setDays({ from: "", to: "" })}
               className="grid size-6 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-cotton hover:text-ink">
               <X className="size-3.5" aria-hidden />
             </button>
@@ -455,12 +461,12 @@ function Inbox({ status }: { status: Status }) {
         )}
         <div className="-mx-3 mt-2 flex min-h-0 flex-1 flex-col border-t pt-1">
           <div className="px-3">
-            <SideHeading fade={t} rail={collapsed}
-              label={showBrief ? "Nhóm · Briefing" : showQa ? "Nhóm · Q&A" : "Nhóm có tag"}
-              extra={!showBrief && !showQa && pendingTotal > 0 && <><span className="font-mono tabular-nums text-ink-2">{pendingTotal}</span> chưa xử lý</>} />
+            <SideHeading fade={fade} rail={collapsed}
+              label={showBrief ? t("Nhóm · Briefing") : showQa ? t("Nhóm · Q&A") : t("Nhóm có tag")}
+              extra={!showBrief && !showQa && pendingTotal > 0 && t.n("{n} chưa xử lý", { n: <span className="font-mono tabular-nums text-ink-2">{pendingTotal}</span> })} />
           </div>
           <div className={cn("min-h-0 flex-1", (showBrief || showQa) && "hidden")}>
-            <ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} bare />
+            <QaCodes.Provider value={qa.codes}><ChatList selected={chatId} onSelect={go} range={range} collapsed={collapsed} bare /></QaCodes.Provider>
           </div>
           {showQa && (
             <div className="min-h-0 flex-1">
@@ -476,25 +482,25 @@ function Inbox({ status }: { status: Status }) {
           )}
         </div>
         <div className="-mx-3 border-t px-3 pt-2">
-          <AiPlug testId="tg" icon={<Send className="size-4 -translate-x-px translate-y-px" aria-hidden />} sock="bg-info text-cotton" textClass={t}
+          <AiPlug testId="tg" icon={<Send className="size-4 -translate-x-px translate-y-px" aria-hidden />} sock="bg-info text-cotton" textClass={fade}
             pose={status.state === "connected" ? "on" : status.state === "connecting" ? "try" : "off"} live={stream === "open"}
-            title={PLUG_LINE[status.state][0]} sub={status.state === "connected" ? STREAM_LABEL[stream] : PLUG_LINE[status.state][1]}
+            title={t(PLUG_LINE[status.state][0])} sub={t(status.state === "connected" ? STREAM_LABEL[stream] : PLUG_LINE[status.state][1])}
             subWarn={status.state === "connected" ? stream !== "open" : status.state !== "connecting"}
             href={status.state === "setup_required" || status.state === "login_required" ? "/settings/#telegram" : undefined}
-            hint={{ title: "Kết nối Telegram", text: `${STATE_LABEL[status.state]}. ${STREAM_LABEL[stream]}.` }} />
+            hint={{ title: t("Kết nối Telegram"), text: `${t(STATE_LABEL[status.state])}. ${t(STREAM_LABEL[stream])}.` }} />
         </div>
       </aside>
       <div className="hidden md:block" aria-hidden />
 
       <div className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)]">
         <header className="flex min-h-14 min-w-0 flex-wrap items-center gap-x-4 gap-y-2 border-b px-3 py-2 sm:px-6">
-          <Hint side="bottom" text="Thu gọn / mở rộng menu">
+          <Hint side="bottom" text={t("Thu gọn / mở rộng menu")}>
             <Button size="icon-sm" variant="ghost" onClick={(e) => { e.currentTarget.blur(); toggleMenu(); }}
-              aria-label="Thu gọn / mở rộng menu" aria-expanded={menuOpen}>
+              aria-label={t("Thu gọn / mở rộng menu")} aria-expanded={menuOpen}>
               <Menu />
             </Button>
           </Hint>
-          <h2 className="flex min-w-0 flex-1 items-center gap-1.5 text-lg font-semibold tracking-[-0.01em] sm:flex-initial">
+          <h2 className="flex min-w-0 flex-1 items-center gap-1.5 text-lg font-bold tracking-[-0.01em] sm:flex-initial">
             <span className={cn("truncate", qaTitle && "shrink-0")}>{title}</span>
             {qaTitle && <><ChevronRight className="size-4 shrink-0 text-ink-3" aria-hidden /><span className="min-w-0 truncate font-medium text-ink-2">{qaTitle}</span></>}
           </h2>
@@ -502,7 +508,7 @@ function Inbox({ status }: { status: Status }) {
           <div ref={setHeadSlot} className={cn("min-w-0 flex-1", chatId !== TASKS && "hidden")} />
           {listPage && <div className={cn("ml-auto flex min-w-0 flex-1 items-center justify-end gap-2", searchOpen && "max-sm:order-last max-sm:basis-full")}>
             {!searchOpen && (
-              <Button size="icon-sm" variant="ghost" className="sm:hidden" aria-label="Tìm kiếm" onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchRef.current?.focus()); }}>
+              <Button size="icon-sm" variant="ghost" className="sm:hidden" aria-label={t("Tìm kiếm")} onClick={() => { setSearchOpen(true); requestAnimationFrame(() => searchRef.current?.focus()); }}>
                 <Search />
               </Button>
             )}
@@ -514,13 +520,13 @@ function Inbox({ status }: { status: Status }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onBlur={() => { if (!search) setSearchOpen(false); }}
-                placeholder={inGroup ? "Tìm trong nhóm này…" : "Tìm ở mọi nhóm…"}
-                aria-label={inGroup ? "Tìm tin tag trong nhóm này" : "Tìm tin tag ở mọi nhóm"}
+                placeholder={inGroup ? t("Tìm trong nhóm này…") : t("Tìm ở mọi nhóm…")}
+                aria-label={inGroup ? t("Tìm tin tag trong nhóm này") : t("Tìm tin tag ở mọi nhóm")}
                 className="h-9 w-full rounded-[var(--radius-input)] border border-rule-2 bg-cotton pl-9 pr-9 text-sm text-ink transition-[border-color] duration-(--dur-micro) placeholder:text-ink-3 hover:border-ink-3 focus-visible:-outline-offset-1 [&::-webkit-search-cancel-button]:hidden"
               />
               {!search && <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" aria-hidden><Kbd>/</Kbd></span>}
               {search && (
-                <button type="button" aria-label="Xóa tìm kiếm" onClick={() => setSearch("")}
+                <button type="button" aria-label={t("Xóa tìm kiếm")} onClick={() => setSearch("")}
                   className="absolute right-1.5 top-1/2 grid size-7 -translate-y-1/2 place-items-center rounded-sm text-ink-3 hover:bg-paper-3 hover:text-ink">
                   <X className="size-3.5" aria-hidden />
                 </button>
@@ -535,11 +541,11 @@ function Inbox({ status }: { status: Status }) {
           <div role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-warn-wash px-3 py-1.5 text-xs text-warn sm:px-6">
             <WifiOff className="size-4 shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">
-              {status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream]}. Danh sách có thể chưa mới.
+              {t(status.state !== "connected" ? STATE_LABEL[status.state] : STREAM_LABEL[stream])}. {t("Danh sách có thể chưa mới.")}
             </span>
             {status.state === "setup_required" || status.state === "login_required"
-              ? <Link href="/settings/#telegram" className="font-semibold underline underline-offset-4">Mở Cài đặt Telegram</Link>
-              : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> Thử lại</Button>}
+              ? <Link href="/settings/#telegram" className="font-bold underline underline-offset-4">{t("Mở Cài đặt Telegram")}</Link>
+              : <Button size="xs" variant="outline" onClick={() => void qc.invalidateQueries()}><RotateCw /> {t("Thử lại")}</Button>}
           </div>
         )}
         <div className="min-h-0 min-w-0 p-2 sm:p-4 lg:p-5">
@@ -585,8 +591,8 @@ function Inbox({ status }: { status: Status }) {
               <div key="empty" className="page-in grid place-items-center p-6">
                 <div className="grid max-w-xs justify-items-center gap-3 text-center">
                   <MessageSquare className="size-6 text-ink-3" aria-hidden />
-                  <p className="text-sm text-ink-2">Chọn một nhóm để xem tin bạn được tag</p>
-                  <Button size="sm" variant="outline" onClick={() => go(ALL)}>Việc cần xử lý</Button>
+                  <p className="text-sm text-ink-2">{t("Chọn một nhóm để xem tin bạn được tag")}</p>
+                  <Button size="sm" variant="outline" onClick={() => go(ALL)}>{t("Việc cần xử lý")}</Button>
                 </div>
               </div>
             )}
@@ -599,8 +605,8 @@ function Inbox({ status }: { status: Status }) {
             {replyTo && (
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} position={reply?.external ? undefined : reply?.at} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReply(null)} onSent={() => { flashMessage("Đã gửi trả lời"); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
-              onTaskCreated={(id) => { setReply(null); toast({ text: "Đã giao AI Agent", action: { label: "Mở phiên", run: () => openTask(id) },
+              onClearReply={() => setReply(null)} onSent={() => { flashMessage(t("Đã gửi trả lời")); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
+              onTaskCreated={(id) => { setReply(null); toast({ text: t("Đã giao AI Agent"), action: { label: t("Mở phiên"), run: () => openTask(id) },
                 // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
                 undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) }); }} draft={draft}
               aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />
@@ -613,13 +619,13 @@ function Inbox({ status }: { status: Status }) {
       <DeepThinking />
       {status.ai_configured && <AiDock open={dock} onOpenChange={setDock} />}
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
-      <InboxPalette open={palette} onClose={() => setPalette(false)} chats={chatsData} views={views} range={range}
+      <QaCodes.Provider value={qa.codes}><InboxPalette open={palette} onClose={() => setPalette(false)} chats={chatsData} views={views} range={range}
         group={inGroup ? chatsData.find((c) => c.chat_id === chatId) ?? null : null} onGo={go} onDigest={inGroup ? openDigest : undefined}
         onSearch={(q) => {
           if (!listPage) go(ALL);
           setSearch(q);
           setSearchOpen(true);
-        }} />
+        }} /></QaCodes.Provider>
       <Toaster />
     </div>
   );

@@ -312,6 +312,8 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     assert store.get_message(A, 1).priority is False
     store.outbox_create("r1", A, 1, "hỏi BE", 1, quote=False)
     assert store.outbox_claim("r1", False)["reply_to"] is None  # a new message, not a reply
+    store.outbox_create("r2", A, 999, "hỏi BE", 2, quote=False)  # anchor read live, never stored: still posts
+    assert store.outbox_claim("r2", False)["topic_id"] is None
 
 
 def test_old_deep_batch_session_gets_an_anchor(tmp_path):

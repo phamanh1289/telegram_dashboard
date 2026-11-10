@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
+import { fmtClock, fmtDate, fmtDay, type Key, useT } from "@/lib/i18n";
 import { toast, useNow } from "@/lib/inbox";
 import { ymd } from "@/lib/time";
 import { getPref, onPrefs, put, readReportAt, setPref, YT_ROLES } from "@/lib/prefs";
@@ -34,6 +35,7 @@ type By = "sprint" | "day";
 
 export function ReportCard() {
   const y = useYt();
+  const t = useT();
   const d = useStats();
   const qc = useQc();
   const now = useNow();
@@ -49,8 +51,8 @@ export function ReportCard() {
   const [ver, setVer] = useState(0);
   const [full, setFull] = useState(false); // a long report stays folded on the home page
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
-  const role = YT_ROLES.find(([r]) => r === y.mode)?.[1] ?? y.mode;
-  const title = `Báo cáo ${y.project} · ${role} · ${ymd(saved?.at ?? now)}`;
+  const name = YT_ROLES.find(([r]) => r === y.mode)?.[1], role = name ? t(name) : y.mode;
+  const title = t("Báo cáo {p} · {r} · {d}", { p: y.project, r: role, d: ymd(saved?.at ?? now) });
   const ai = useAi(useHistory(`AI · ${title}`, []).onTurn); // the scheduled run is in the history too, to follow up
   const busy = ai.s.status === "busy";
 
@@ -66,7 +68,7 @@ export function ReportCard() {
         ["Đang test", open.filter(inTest)],
         ["Chờ test", open.filter((i) => bucket(i) === 2 && !inTest(i) && !isBuilt(i))],
         ["Bị QC trả lại / reopen", qc.pong.map((x) => x.i)],
-      ] as [string, Ticket[]][];
+      ] as [Key, Ticket[]][];
     }
     return [
       ["Ticket trong sprint", d.sprintRows],
@@ -75,7 +77,7 @@ export function ReportCard() {
       ["Bị bỏ quên", q("stale")], ["Quá hạn", q("overdue")], ["Blocked", q("blocked")],
       ["Bug Critical / Highest", open.filter((i) => isBug(i) && rank(i) <= 1)],
       ["Bị QC trả lại / reopen", qc.pong.map((x) => x.i)],
-    ] as [string, Ticket[]][];
+    ] as [Key, Ticket[]][];
   }, [by, y.rows, d.sprintRows, d.sprintOpen, qc, now]);
 
   function data() {
@@ -85,7 +87,7 @@ export function ReportCard() {
       bounced: qc.pong.slice(0, 10).map((x) => `${x.i.id}: trả lại ${x.n} lần${x.re ? ", reopen" : ""}`) } : "chưa đọc được lịch sử state";
     if (by === "day") {
       const part = (k: string) => ({ n: L[k].length, noQc: L[k].filter((i) => !i.qc).length, tickets: L[k].slice(0, 40).map(brief) });
-      return { by, asOf: new Date(now).toLocaleString("vi-VN"), role: y.mode, me: y.me,
+      return { by, asOf: fmtDate(now), role: y.mode, me: y.me,
         testedDone: part("Đã test xong"), testing: part("Đang test"), waitingTest: part("Chờ test"), qcResult };
     }
     const spike = bugSpike(y.rows, now);
@@ -108,13 +110,13 @@ export function ReportCard() {
   const run = (sig: AbortSignal) => yt.aiData("release", data(), sig);
   /** The scheduled run: in the background, here. */
   async function go() {
-    const r = await ai.run({ label: "AI đang viết báo cáo", run });
+    const r = await ai.run({ label: t("AI đang viết báo cáo"), run });
     if (r?.text) keep(r.text, r.req);
     ai.cancel(); // the saved copy is shown (and exported) from here on
   }
   /** A click: the AI session, where it can be followed up; the answer is kept here for the exports. */
   const open = (fresh: boolean) => { const rel = by === "day" ? "" : release; y.setSheet({ kind: "work", title: `AI · ${title}`, ids: [], auto: {
-    label: "AI đang viết báo cáo", run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined, onDone: (r) => keep(r.text, r.req, rel),
+    label: t("AI đang viết báo cáo"), run, seed: !fresh && saved ? { text: saved.text, req: saved.req ?? null } : undefined, onDone: (r) => keep(r.text, r.req, rel),
   } }); };
 
   // the schedule: once a day, on picked weekdays, after the picked time; one try per day and key (an error is not retried),
@@ -129,25 +131,25 @@ export function ReportCard() {
 
   const view = useRef<HTMLDivElement>(null);
   const file = `bao-cao-${y.project}-${y.mode}-${ymd(saved?.at ?? now)}`;
-  const scope = (x: Saved) => (x.release ? `Release: ${x.release}` : "Tình trạng test tính tới lúc tạo");
-  const md = () => `# ${title}\n\n${scope(saved!)} · tạo lúc ${when(saved!.at)}\n\n${saved!.text}\n`;
+  const scope = (x: Saved) => (x.release ? `Release: ${x.release}` : t("Tình trạng test tính tới lúc tạo"));
+  const md = () => `# ${title}\n\n${scope(saved!)} · ${t("tạo lúc {w}", { w: when(saved!.at) })}\n\n${saved!.text}\n`;
   function pdf() {
     const w = window.open("", "_blank");
-    if (!w) { toast({ text: "Trình duyệt chặn cửa sổ in, cho phép popup rồi thử lại" }); return; }
-    w.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(file)}</title><style>body{font:14px/1.55 system-ui,sans-serif;max-width:46rem;margin:2rem auto;color:#111}h1{font-size:1.3rem}button{all:unset}ul{padding-left:1.2rem}</style><h1>${esc(title)}</h1><p>${esc(scope(saved!))} · tạo lúc ${esc(when(saved!.at))}</p>${view.current?.innerHTML ?? ""}`);
+    if (!w) { toast({ text: t("Trình duyệt chặn cửa sổ in, cho phép popup rồi thử lại") }); return; }
+    w.document.write(`<!doctype html><meta charset="utf-8"><title>${esc(file)}</title><style>body{font:14px/1.55 system-ui,sans-serif;max-width:46rem;margin:2rem auto;color:#111}h1{font-size:1.3rem}button{all:unset}ul{padding-left:1.2rem}</style><h1>${esc(title)}</h1><p>${esc(scope(saved!))} · ${esc(t("tạo lúc {w}", { w: when(saved!.at) }))}</p>${view.current?.innerHTML ?? ""}`);
     w.document.close();
     w.focus();
     w.print(); // "Save as PDF" in the print dialog
   }
   function csv() {
     const s = data();
-    const metrics: [string, unknown][] = s.by === "day" ? [["Tính tới", s.asOf], ...lists.map(([k, l]) => [k, l.length] as [string, unknown])] : [["Sprint", s.sprint], ["Ngày release", s.release.date], ["Ngày làm việc còn lại", s.release.daysLeft], ["Ticket sprint", s.tickets],
-      ["Tỷ lệ xong (%)", s.doneRatePct], ["Chưa tới QC", s.handoff.notYetInQc], ["Đang chờ test", s.qaQueue.waitingTest], ["Chưa có QC", s.qaQueue.noQc],
-      ["Bug mới 7 ngày", s.bugSpike.new7d], ["Bug TB/tuần trước đó", s.bugSpike.weeklyAvgBefore],
-      ...(typeof s.qcResult === "object" ? [["QC pass", s.qcResult.pass], ["QC trả lại", s.qcResult.returned], ["Reopen", s.qcResult.reopened]] as [string, unknown][] : [])];
-    downloadCsv([["Mục", "Chỉ số / ID", "Tiêu đề", "State", "Assignee", "QC", "Giá trị"],
-      ...metrics.map(([k, v]) => ["Số liệu", k, "", "", "", "", v]),
-      ...lists.flatMap(([sec, l]) => l.map((i) => [sec, i.id, i.summary, i.state, i.assignee, i.qc, i.due ? new Date(i.due).toLocaleDateString("vi-VN") : ""]))], `${file}.csv`);
+    const metrics: [string, unknown][] = s.by === "day" ? [[t("Tính tới"), s.asOf], ...lists.map(([k, l]) => [t(k), l.length] as [string, unknown])] : [["Sprint", s.sprint], [t("Ngày release"), s.release.date], [t("Ngày làm việc còn lại"), s.release.daysLeft], [t("Ticket sprint"), s.tickets],
+      [t("Tỷ lệ xong (%)"), s.doneRatePct], [t("Chưa tới QC"), s.handoff.notYetInQc], [t("Đang chờ test"), s.qaQueue.waitingTest], [t("Chưa có QC"), s.qaQueue.noQc],
+      [t("Bug mới 7 ngày"), s.bugSpike.new7d], [t("Bug TB/tuần trước đó"), s.bugSpike.weeklyAvgBefore],
+      ...(typeof s.qcResult === "object" ? [["QC pass", s.qcResult.pass], [t("QC trả lại"), s.qcResult.returned], ["Reopen", s.qcResult.reopened]] as [string, unknown][] : [])];
+    downloadCsv([[t("Mục|cột"), t("Chỉ số / ID"), t("Tiêu đề"), "State", "Assignee", "QC", t("Giá trị")],
+      ...metrics.map(([k, v]) => [t("Số liệu"), k, "", "", "", "", v]),
+      ...lists.flatMap(([sec, l]) => l.map((i) => [t(sec), i.id, i.summary, i.state, i.assignee, i.qc, i.due ? fmtDay(i.due) : ""]))], `${file}.csv`);
   }
 
   const left = workDays(now, release);
@@ -156,56 +158,56 @@ export function ReportCard() {
   // the figures the report is written from; a number opens its tickets
   const stats = lists.filter(([k]) => k !== "Bị QC trả lại / reopen" || qc.q.data);
   return (
-    <Card title={<span className="inline-flex items-center gap-1.5"><FileText className="size-4 text-hl-2" />Báo cáo release</span>}
-      meta={sched.on ? `Tự tạo ${sched.days.length === 5 && !sched.days.includes(5) && !sched.days.includes(6) ? "T2–T6" : `${sched.days.length} ngày/tuần`} lúc ${sched.time}` : "Tự tạo: tắt"} className="border border-hl/25">
+    <Card title={<span className="inline-flex items-center gap-1.5"><FileText className="size-4 text-hl-2" />{t("Tạo báo cáo")}</span>}
+      meta={sched.on ? t("Tự tạo {d} lúc {h}", { d: sched.days.length === 5 && !sched.days.includes(5) && !sched.days.includes(6) ? t("T2–T6") : t("{n} ngày/tuần", { n: sched.days.length }), h: sched.time }) : t("Tự tạo: tắt")} className="border border-hl/25">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-paper-2 p-3">
-        <Segmented id="yt-report-by" label="Phạm vi báo cáo" value={by} onChange={(v) => setPref("ytReportBy", v === "day" ? "day" : null)} items={[
-          { value: "sprint", label: "Theo sprint", title: "Mọi ticket trong sprint đang xem, so với ngày release" },
-          { value: "day", label: "Theo ngày", title: "Tính tới hiện tại: ticket đã test xong, đang test, chờ test" },
+        <Segmented id="yt-report-by" label={t("Phạm vi báo cáo")} value={by} onChange={(v) => setPref("ytReportBy", v === "day" ? "day" : null)} items={[
+          { value: "sprint", label: t("Theo sprint"), title: t("Mọi ticket trong sprint đang xem, so với ngày release") },
+          { value: "day", label: t("Theo ngày"), title: t("Tính tới hiện tại: ticket đã test xong, đang test, chờ test") },
         ]} />
-        {by === "day" ? <span className="text-xs text-ink-3">Tính tới {new Date(now).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} hôm nay</span> : <>
+        {by === "day" ? <span className="text-xs text-ink-3">{t("Tính tới {h} hôm nay", { h: fmtClock(now) })}</span> : <>
         <div className="grid leading-tight">
-          <span className={cn("font-mono text-2xl font-semibold tabular-nums", left <= 2 ? "text-error" : left <= 5 ? "text-warn" : "text-ink")}>{left}</span>
-          <span className="text-xs text-ink-3">ngày làm việc còn lại</span>
+          <span className={cn("font-mono text-2xl font-bold tabular-nums", left <= 2 ? "text-error" : left <= 5 ? "text-warn" : "text-ink")}>{left}</span>
+          <span className="text-xs text-ink-3">{t("ngày làm việc còn lại")}</span>
         </div>
-        <label className="grid gap-0.5 text-xs text-ink-3">Ngày release{!relPref && sprintEnd ? " (cuối sprint)" : ""}
-          <Input type="date" className="h-8 w-40" value={release} onChange={(e) => setPref(relKey, e.target.value || null)} aria-label="Ngày release" />
+        <label className="grid gap-0.5 text-xs text-ink-3">{t("Ngày release")}{!relPref && sprintEnd ? ` (${t("cuối sprint")})` : ""}
+          <Input type="date" className="h-8 w-40" value={release} onChange={(e) => setPref(relKey, e.target.value || null)} aria-label={t("Ngày release")} />
         </label></>}
       </div>
-      <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-3" aria-label="Số liệu báo cáo">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-x-3" aria-label={t("Số liệu báo cáo")}>
         {stats.map(([k, l]) => (
-          <button key={k} type="button" disabled={!l.length} onClick={() => y.setSheet({ kind: "list", title: k, rows: l })} aria-label={`${k}: ${l.length} ticket${l.length ? ", bấm để xem" : ""}`}
+          <button key={k} type="button" disabled={!l.length} onClick={() => y.setSheet({ kind: "list", title: t(k), rows: l })} aria-label={t(l.length ? "{x}: {n} ticket, bấm để xem" : "{x}: {n} ticket", { x: t(k), n: l.length })}
             className="flex items-baseline justify-between gap-2 border-b border-rule/60 px-1 py-1.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2 disabled:pointer-events-none">
-            <span className="truncate text-xs text-ink-2">{k}</span>
-            <span className={cn("font-mono text-sm font-semibold tabular-nums", !l.length ? "text-ink-3" : /Quá hạn|Blocked|Critical/.test(k) ? "text-error" : "text-ink")}>{l.length}</span>
+            <span className="truncate text-xs text-ink-2">{t(k)}</span>
+            <span className={cn("font-mono text-sm font-bold tabular-nums", !l.length ? "text-ink-3" : /Quá hạn|Blocked|Critical/.test(k) ? "text-error" : "text-ink")}>{l.length}</span>
           </button>
         ))}
       </div>
 
       {saved && !busy ? (
         <div className="grid gap-2">
-          <p className="text-xs text-ink-3">Viết lúc {when(saved.at)}, {saved.release ? `cho release ${saved.release}` : "tình trạng test tính tới lúc viết"}</p>
+          <p className="text-xs text-ink-3">{t("Viết lúc {w}, {x}", { w: when(saved.at), x: saved.release ? t("cho release {r}", { r: saved.release }) : t("tình trạng test tính tới lúc viết") })}</p>
           <div className={cn("relative", !full && "max-h-72 overflow-hidden")}>
             <div ref={view}><Markdown text={saved.text} onTicket={(i) => y.openTicket(i)} /></div>
             {!full && <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-cotton" />}
           </div>
-          <Button size="xs" variant="ghost" className="justify-self-start" onClick={() => setFull(!full)}>{full ? <><ChevronUp /> Thu gọn</> : <><ChevronDown /> Xem đầy đủ</>}</Button>
-          {stale && <p className="text-xs text-warn">Báo cáo viết cho ngày release {saved.release}; bấm Tạo lại để tính theo {release}.</p>}
+          <Button size="xs" variant="ghost" className="justify-self-start" onClick={() => setFull(!full)}>{full ? <><ChevronUp /> {t("Thu gọn")}</> : <><ChevronDown /> {t("Xem đầy đủ")}</>}</Button>
+          {stale && <p className="text-xs text-warn">{t("Báo cáo viết cho ngày release {a}; bấm Tạo lại để tính theo {b}.", { a: saved.release, b: release })}</p>}
         </div>
       ) : ai.s.status === "idle" && (
-        <p className="text-sm text-ink-2">{by === "day" ? "AI đọc các số liệu trên: ticket nào đã test xong, đang test, chờ test, ai đang giữ, cái gì cần đẩy." : <>AI đọc các số liệu trên: kịp release không, ticket nào chưa bàn giao được cho QC, đang stuck ở đâu, kết quả test, việc trễ, ai quá tải, bug.</>}{y.config?.mock ? " Cần token YouTrack." : ""}</p>
+        <p className="text-sm text-ink-2">{t(by === "day" ? "AI đọc các số liệu trên: ticket nào đã test xong, đang test, chờ test, ai đang giữ, cái gì cần đẩy." : "AI đọc các số liệu trên: kịp release không, ticket nào chưa bàn giao được cho QC, đang stuck ở đâu, kết quả test, việc trễ, ai quá tải, bug.")}{y.config?.mock ? ` ${t("Cần token YouTrack.")}` : ""}</p>
       )}
       <AiBox ai={ai} />
 
       <div className="flex flex-wrap items-center gap-1.5">
-        {saved && !busy && <Button size="sm" onClick={() => open(false)}><Sparkles /> Mở phiên AI</Button>}
+        {saved && !busy && <Button size="sm" onClick={() => open(false)}><Sparkles /> {t("Mở phiên AI")}</Button>}
         <Button size="sm" variant={saved && !stale ? "outline" : "default"} disabled={busy || !can} aria-busy={busy} onClick={() => open(true)}>
-          {saved ? <><RotateCw /> Tạo lại</> : <><Sparkles /> Tạo báo cáo</>}
+          {saved ? <><RotateCw /> {t("Tạo lại")}</> : <><Sparkles /> {t("Tạo báo cáo")}</>}
         </Button>
-        {saved && !busy && <div className="ml-auto"><Menu align="right" title="Tải báo cáo" label={<span className="inline-flex items-center gap-1.5"><Download className="size-4" />Xuất</span>} items={[
+        {saved && !busy && <div className="ml-auto"><Menu align="right" title={t("Tải báo cáo")} label={<span className="inline-flex items-center gap-1.5"><Download className="size-4" />{t("Xuất")}</span>} items={[
           { label: <><FileDown /> Markdown (.md)</>, on: () => downloadText(md(), `${file}.md`) },
-          { label: <><Printer /> PDF</>, hint: "Mở bản in, chọn Lưu dạng PDF", on: pdf },
-          { label: <><Sheet /> CSV</>, hint: "Số liệu và danh sách ticket theo mục", on: csv },
+          { label: <><Printer /> PDF</>, hint: t("Mở bản in, chọn Lưu dạng PDF"), on: pdf },
+          { label: <><Sheet /> CSV</>, hint: t("Số liệu và danh sách ticket theo mục"), on: csv },
         ]} /></div>}
       </div>
     </Card>

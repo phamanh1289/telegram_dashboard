@@ -60,6 +60,8 @@ def test_mark_all_handled_respects_since(client):
     store.apply_message(old)
     store.apply_message(new)
     h = {"Origin": ORIGIN}
+    r = client.post("/api/chats/-1001/handled-all?skip=1&skip=2", headers=h)
+    assert r.json() == {"count": 0, "message_ids": []}  # tags left to Q&A stay open
     r = client.post("/api/chats/-1001/handled-all?since=2026-10-29T00:00:00Z", headers=h)
     assert r.json() == {"count": 1, "message_ids": [2]}  # the ids, for an Undo
     assert client.get("/api/chats").json()["items"][0]["pending_count"] == 1

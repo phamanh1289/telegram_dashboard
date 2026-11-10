@@ -5,6 +5,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "cn"
 
 import { Button } from "@/components/ui/button"
+import { useT } from "@/lib/i18n"
 import { CircleHelp, Loader2, Trash2, XIcon, type LucideIcon } from "lucide-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -47,6 +48,7 @@ function DialogContent({
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
 }) {
+  const t = useT()
   return (
     <DialogPortal>
       <DialogOverlay />
@@ -76,7 +78,7 @@ function DialogContent({
             }
           >
             <XIcon aria-hidden />
-            <span className="sr-only">Đóng</span>
+            <span className="sr-only">{t("Đóng")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>
@@ -106,6 +108,7 @@ function DialogFooter({
 }: React.ComponentProps<"div"> & {
   showCloseButton?: boolean
 }) {
+  const t = useT()
   return (
     <div
       data-slot="dialog-footer"
@@ -119,7 +122,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close render={<Button variant="outline" />}>
-          Đóng
+          {t("Đóng")}
         </DialogPrimitive.Close>
       )}
     </div>
@@ -131,7 +134,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
     <DialogPrimitive.Title
       data-slot="dialog-title"
       className={cn(
-        "pr-9 text-base leading-snug font-semibold tracking-tight text-pretty text-ink",
+        "pr-9 text-base leading-snug font-bold tracking-tight text-pretty text-ink",
         className
       )}
       {...props}
@@ -166,14 +169,14 @@ const TONES = {
 /** "Xóa …?" / "Xong tất cả?" asked in the app's own look (never `window.confirm`): what happens, what it touches, Hủy first.
  *  Stays open while `busy` (Esc / Hủy blocked); the caller closes it on success and passes `error` on failure.
  *  `children` goes under the list for anything else the question needs (a checkbox, a note). */
-function ConfirmDialog({ open, onOpenChange, title, description, items, unit = "mục", confirmLabel, tone = "danger", icon,
+function ConfirmDialog({ open, onOpenChange, title, description, items, unit, confirmLabel, tone = "danger", icon,
   busy, error, onConfirm, children }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: React.ReactNode
   description?: React.ReactNode
   items?: { id: string; label: React.ReactNode; tag?: string }[] // what it touches, first SHOWN of them
-  unit?: string // "+3 phiên khác"
+  unit?: string // "+3 phiên khác" (default: "mục")
   confirmLabel: React.ReactNode
   tone?: keyof typeof TONES
   icon?: LucideIcon // overrides the tone's icon, in the badge and on the button
@@ -182,13 +185,14 @@ function ConfirmDialog({ open, onOpenChange, title, description, items, unit = "
   onConfirm: () => void
   children?: React.ReactNode
 }) {
-  const t = TONES[tone], Icon = icon ?? t.icon
+  const t = useT()
+  const look = TONES[tone], Icon = icon ?? look.icon
   const more = (items?.length ?? 0) - SHOWN
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o) }}>
       <DialogContent showCloseButton={false} role="alertdialog" className="sm:max-w-md">
         <div className="flex gap-3.5">
-          <span aria-hidden className={cn("grid size-10 shrink-0 place-items-center rounded-lg [&_svg]:size-5", t.badge)}><Icon /></span>
+          <span aria-hidden className={cn("grid size-10 shrink-0 place-items-center rounded-lg [&_svg]:size-5", look.badge)}><Icon /></span>
           <DialogHeader className="min-w-0 flex-1 pt-0.5">
             <DialogTitle className="pr-0">{title}</DialogTitle>
             {description && <DialogDescription>{description}</DialogDescription>}
@@ -203,14 +207,14 @@ function ConfirmDialog({ open, onOpenChange, title, description, items, unit = "
                 <span className="min-w-0 flex-1 truncate text-ink-2">{it.label}</span>
               </li>
             ))}
-            {more > 0 && <li className="px-3 py-1.5 text-ink-3">+<span className="font-mono tabular-nums">{more}</span> {unit} khác</li>}
+            {more > 0 && <li className="px-3 py-1.5 text-ink-3">{t.n("+{n} {unit} khác", { n: <span className="font-mono tabular-nums">{more}</span>, unit: unit ?? t("mục") })}</li>}
           </ul>
         )}
         {children}
         {error && <p role="alert" className="text-sm text-error">{error}</p>}
         <DialogFooter>
-          <DialogPrimitive.Close disabled={busy} render={<Button variant="outline" />}>Hủy</DialogPrimitive.Close>
-          <Button className={t.button} aria-busy={busy} disabled={busy} onClick={onConfirm}>
+          <DialogPrimitive.Close disabled={busy} render={<Button variant="outline" />}>{t("Hủy")}</DialogPrimitive.Close>
+          <Button className={look.button} aria-busy={busy} disabled={busy} onClick={onConfirm}>
             {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Icon aria-hidden />}{confirmLabel}
           </Button>
         </DialogFooter>

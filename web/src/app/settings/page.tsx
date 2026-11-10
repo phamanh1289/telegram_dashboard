@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { SettingsPage } from "@/components/settings";
 
-export const metadata: Metadata = { title: "Cài đặt · Radar" };
+// No title here: SettingsPage sets the localized "Settings · Radar" itself (lib/i18n).
+export const metadata: Metadata = {};
 
 export default function Page() {
   return <SettingsPage />;

@@ -152,7 +152,7 @@ def _with_token(url: str) -> str:
 
 
 def _open(settings: Settings) -> int:
-    """`mydashboard open` / launchers: open the running server, signing this browser in."""
+    """`myradar open` / launchers: open the running server, signing this browser in."""
     import webbrowser
 
     port_file = RUN_DIR / "server.port"

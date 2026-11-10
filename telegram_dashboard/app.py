@@ -18,7 +18,7 @@ from telethon import errors as tg_errors
 
 from . import privacy, providers, updater
 from .agent import AgentRunner
-from .ai import AiService, client_gone, parse_ticket, pick_folder, stream_answer
+from .ai import AiService, client_gone, parse_ticket, pick_folder, reply_lang, stream_answer
 from .auth import LocalGuardMiddleware
 from .claude import (
     claude_account,
@@ -32,6 +32,7 @@ from .config import Settings, write_private_json
 from .digest import DigestService, aware
 from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
+from .external_runs import external_runs, run_provider
 from .models import (
     AiAccount,
     AiCatalogEntry,
@@ -102,7 +103,7 @@ from .models import (
 from .qa import chain_code, find_threads, has_tag, names_code, qa_code
 from .storage import Db, Store, _dt, parse_cursor
 from .tasks import build_router as build_task_router
-from .tasks import new_task_id, start_task
+from .tasks import mark_tags, new_task_id, start_task
 from .telegram import TelegramBridge, Transport, notify_mac
 from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 
@@ -121,6 +122,24 @@ GUIDE_PROMPT = (
     "nêu tính năng phù hợp nhất (tên in đậm kèm [id]), rồi các bước làm theo đánh số, ghi đúng nhãn nút/phím tắt. "
     "Có thể gợi ý thêm 1-2 tính năng liên quan."
 )
+
+
+class LangMiddleware:
+    """The page's UI language (X-Lang: vi | en) for this request's AI runs (ai.reply_lang); background
+    work started from the request inherits it, scheduled runs keep Vietnamese."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        lang = "en" if dict(scope["headers"]).get(b"x-lang") == b"en" else "vi"
+        token = reply_lang.set(lang)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            reply_lang.reset(token)
 
 
 def create_app(
@@ -175,6 +194,7 @@ def create_app(
 
     yt_dashboard = YouTrackDashboard(settings)
     app = FastAPI(title="Radar", lifespan=lifespan)
+    app.add_middleware(LangMiddleware)
     app.add_middleware(
         LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin,
         token=settings.api_token,
@@ -299,7 +319,7 @@ def create_app(
         by = "me" if body.react else "quiet"
         if await s.db.write(s.store.set_handled, chat_id, mid, body.handled, by) and body.react:
             s.bridge.react(chat_id, [mid], body.handled)
-        await s.db.write(s.store.mark_tag_qa, chat_id, mid, body.handled)  # an AI Agent session's tag: its Q&A follows
+        await mark_tags(s, chat_id, [mid], body.handled, body.react)  # its Q&A and the sessions on it follow
 
     @app.post("/api/chats/{chat_id}/handled-all")
     async def handled_all(
@@ -307,9 +327,11 @@ def create_app(
         request: Request,
         since: datetime | None = None,
         until: datetime | None = None,
+        skip: Annotated[list[int], Query(max_length=1000)] = [],  # noqa: B006 -- tags the list leaves to Q&A
     ) -> HandledAllResponse:
         s = S(request)
-        ids = await s.db.write(s.store.mark_all_handled, chat_id, since, until)
+        ids = await s.db.write(s.store.mark_all_handled, chat_id, since, until, skip=skip)
+        await mark_tags(s, chat_id, ids, True, False)  # as Done one by one, still without reactions
         return HandledAllResponse(count=len(ids), message_ids=ids)  # no reactions: would flood Telegram
 
     @app.get("/api/changes")
@@ -387,17 +409,36 @@ def create_app(
     @app.post("/api/ai/draft", responses={200: {
         "model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}})
     async def ai_draft(body: AiDraftRequest, request: Request) -> StreamingResponse:
+        """With header X-Ai-Job (an id the page picked): a background run that outlives the reply panel ("Trả lời từ
+        code" takes minutes), read again by GET /api/ai/job/{id}; without: it stops when the page goes."""
+        job = request.headers.get("x-ai-job", "")
+        if job and not yt_dashboard.jobs.free(job):
+            raise ApiError(409, "ai_job_taken")
         client_gone.set(request.is_disconnected)
         nearby, images = await _draft_extras(request, body)
+        kind = "answer" if body.project else "draft"  # a project picked: "Trả lời từ code"
+        tickets = await yt_dashboard.brief(body.ticket_ids) if kind == "answer" else ""
 
         async def work(on_text):
             r = await S(request).ai.run(
-                "draft", body.chat_id, body.message_ids, body.instruction, body.project,
-                nearby=nearby, images=images, platform=body.platform, role=body.role, intro=body.intro, on_text=on_text,
+                kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
+                platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
             )  # fmt: skip
             return r.model_dump()
 
-        return stream_answer(work)
+        return yt_dashboard.jobs.start(job, work) if job else stream_answer(work)
+
+    # One store of background AI runs for the whole app (YouTrack's): the Telegram side reads / stops its own here.
+    @app.get("/api/ai/job/{job_id}", responses={200: {"description": "NDJSON, as the run that started it"}})
+    async def ai_job(job_id: str) -> StreamingResponse:
+        got = yt_dashboard.jobs.attach(job_id)
+        if got is None:
+            raise ApiError(404, "ai_job_gone")
+        return got
+
+    @app.delete("/api/ai/job/{job_id}", status_code=204)
+    async def ai_job_stop(job_id: str) -> None:
+        yt_dashboard.jobs.stop(job_id)
 
     @app.post("/api/ai/deep")
     async def ai_deep(body: AiDeepRequest, request: Request) -> dict:
@@ -410,7 +451,8 @@ def create_app(
                                         body.instruction, fetch=fetch)  # fmt: skip
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, int(body.confirm_id), body.project, prompt, "plan",
-                         kind="deep", title=title, about=body)  # fmt: skip
+                         kind="deep", title=title, about=body,
+                         refs=[(body.chat_id, body.question_id), (body.chat_id, body.confirm_id)])  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/deep-batch")
@@ -420,12 +462,12 @@ def create_app(
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
         fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
-        items = [(i.text, i.message_ids, i.waiting) for i in body.items]
+        items = [(i.text, i.message_ids, i.waiting, i.key) for i in body.items]
         prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items, body.project, body.instruction,
                                                       fetch=fetch)  # fmt: skip
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, anchor, body.project, prompt, "plan", kind="deep", title=title,
-                         about=body)  # fmt: skip
+                         about=body, refs=[(body.chat_id, m) for i in body.items for m in i.message_ids])  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/ticket")
@@ -624,10 +666,14 @@ def create_app(
     @app.put("/api/qa/mark", status_code=204)
     async def qa_mark(body: QaMarkRequest, request: Request) -> None:
         """Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
-        null undoes."""
+        null undoes. Xong / undoing it moves the thread's kept tags too, as Done on each from the list (no reaction)."""
         s = S(request)
         await _known_chat(s, body.chat_id)
-        await s.db.write(s.store.set_qa_mark, body.chat_id, body.code, body.state)
+        prev = await s.db.write(s.store.set_qa_mark, body.chat_id, body.code, body.state)
+        if body.state == "done" or (body.state is None and prev == "done"):
+            on = body.state == "done"
+            if ids := await s.db.write(s.store.mark_qa_thread, body.chat_id, body.code, on):
+                await mark_tags(s, body.chat_id, ids, on, False)  # their sessions follow, as Done from the list
 
     @app.post("/api/qa", status_code=201)
     async def qa_post(body: QaPostRequest, request: Request) -> QaPosted:
@@ -909,7 +955,12 @@ def create_app(
 
     @app.get("/api/ai/runs")
     async def get_ai_runs(days: Annotated[int, Query(ge=1, le=90)] = 30) -> list[AiRun]:
-        return [AiRun(**r) for r in await asyncio.to_thread(claude_runs, settings, days)]
+        """This app's runs plus the ones made outside it (Claude Code / Codex transcripts), newest first."""
+        own, outside = await asyncio.gather(
+            asyncio.to_thread(claude_runs, settings, days), asyncio.to_thread(external_runs, days)
+        )
+        rows = sorted([*own, *outside], key=lambda r: str(r["at"]), reverse=True)
+        return [AiRun(**{"provider": run_provider(str(r.get("model", ""))), **r}) for r in rows]
 
     @app.post("/api/ai/test")
     async def ai_test(body: AiTestRequest, request: Request) -> AiTestResult:

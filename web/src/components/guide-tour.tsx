@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { type Key, type T, readLang, useT } from "@/lib/i18n";
+import { EN } from "@/lib/i18n/en";
 import { fold } from "@/lib/inbox";
 import { type Feature, type Module, type Step, StepText, stepText } from "./guide";
 
@@ -50,17 +52,37 @@ export function findControl(target: string): HTMLElement | null {
   return pick(exact) ?? pick(prefix);
 }
 
+/** A Vietnamese UI label as the English UI shows it: its EN value ("N" may stand for a `{n}` placeholder); with `prefix`,
+ *  the English before the first placeholder of a key that starts with it (an aria-label^= selector). */
+function enLabel(v: string, prefix = false) {
+  const en = (k: string) => { const e = EN[k as Key] as string | ((v: { n: string }) => string) | undefined; return typeof e === "function" ? e({ n: "N" }) : (e ?? null); };
+  const hit = en(v) ?? en(v.replace(/\bN\b/g, "{n}"))?.replace(/\{n\}/g, "N");
+  if (hit || !prefix) return hit;
+  const k = Object.keys(EN).find((k) => k.startsWith(v) && en(k));
+  return k ? en(k)!.split("{")[0].trim() || null : null;
+}
+/** Ways to find a target in the live language: in English, its translated labels first, then as written. */
+function localized(target: string): string[] {
+  if (readLang() === "vi") return [target];
+  const out = target.startsWith("css:")
+    ? target.replace(/((?:aria-label|title|placeholder)([\^$*]?)=)"([^"]+)"/g, (m, attr: string, op: string, v: string) => {
+      const e = enLabel(v, op === "^");
+      return e ? `${attr}"${e.replace(/"/g, "\\\"")}"` : m;
+    })
+    : (enLabel(target, true) ?? target); // a label also matches a control that starts with it (findControl)
+  return out === target ? [target] : [out, target];
+}
 const targets = (s: Step) => (typeof s === "string" || !s.at ? [] : Array.isArray(s.at) ? s.at : [s.at]);
 /** Typing / picking controls: clicking them is not the step, so they wait for "Tiếp" (a select: for a change). */
 const isField = (el: HTMLElement) => el.matches("textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit])");
 
-const GO: Record<Module, Step> = {
+const GO: Record<Module, { t: Key; at: string }> = {
   telegram: { t: "Bấm \"Telegram\" trên thanh trên cùng để mở Telegram.", at: "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]" },
   youtrack: { t: "Bấm \"YouTrack\" trên thanh trên cùng để mở YouTrack.", at: "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]" },
   settings: { t: "Bấm biểu tượng bánh răng \"Cài đặt\" ở góc phải thanh trên cùng.", at: "css:a[href^=\"/settings\"]" },
 };
 /** A feature's steps, starting from module `from` (a feature elsewhere first switches module). */
-export const tourSteps = (f: Feature, from: Module): Step[] => (f.tab === from ? f.how : [GO[f.tab], ...f.how]);
+export const tourSteps = (f: Feature, from: Module, t: T): Step[] => (f.tab === from ? f.how : [{ ...GO[f.tab], t: t(GO[f.tab].t) }, ...f.how]);
 
 export const TOUR_KEY = "guide-tour";
 export type TourState = { id: string; from: Module; i: number };
@@ -74,7 +96,8 @@ export function readTour(): TourState | null {
 const PAD = 6;
 
 export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module; start: number; onEnd: () => void }) {
-  const steps = useMemo(() => tourSteps(f, from), [f, from]);
+  const t = useT();
+  const steps = useMemo(() => tourSteps(f, from, t), [f, from, t.lang]); // eslint-disable-line react-hooks/exhaustive-deps
   const [i, setI] = useState(Math.min(start, steps.length - 1));
   // what step i's lookup found, and where it is now
   const [found, setFound] = useState<{ i: number; el: HTMLElement } | null>(null);
@@ -97,7 +120,7 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
     let n = 0, cur: HTMLElement | null = null;
     const look = () => {
       if (cur?.isConnected && shown(cur)) return;
-      const hit = at.map(findControl).find(Boolean) ?? null;
+      const hit = at.flatMap(localized).map(findControl).find(Boolean) ?? null;
       if (hit) {
         cur = hit;
         hit.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -157,11 +180,11 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
   const pos: React.CSSProperties = h
     ? { left: Math.min(Math.max(12, h.x1), innerWidth - W - 12), ...(below ? { top: Math.max(12, h.y2 + 12) } : { bottom: Math.max(12, innerHeight - h.y1 + 12) }) }
     : { left: "50%", top: "50%", transform: "translate(-50%, -50%)" };
-  const tip = el ? (isField(el) ? "Nhập / chọn ở ô đang sáng rồi bấm Tiếp." : "Bấm vào chỗ đang sáng để làm bước này.")
-    : !at.length ? "Làm theo mô tả rồi bấm Tiếp."
-      : waited !== i ? "Đang tìm trên trang…"
-        : role ? `Chưa thấy chỗ này. Tính năng dành cho vai trò ${role}: đổi ở Cài đặt › Chung › Vai trò nếu bạn đang ở vai trò khác.`
-          : "Chưa thấy chỗ này trên màn hình: có thể cần dữ liệu phù hợp, hoặc làm bước trước. Bấm Tiếp để bỏ qua.";
+  const tip = el ? (isField(el) ? t("Nhập / chọn ở ô đang sáng rồi bấm Tiếp.") : t("Bấm vào chỗ đang sáng để làm bước này."))
+    : !at.length ? t("Làm theo mô tả rồi bấm Tiếp.")
+      : waited !== i ? t("Đang tìm trên trang…")
+        : role ? t("Chưa thấy chỗ này. Tính năng dành cho vai trò {role}: đổi ở Cài đặt › Chung › Vai trò nếu bạn đang ở vai trò khác.", { role })
+          : t("Chưa thấy chỗ này trên màn hình: có thể cần dữ liệu phù hợp, hoặc làm bước trước. Bấm Tiếp để bỏ qua.");
 
   // portal: the top bar is a stacking context (sticky z-30) that app dialogs would cover
   return createPortal(
@@ -173,12 +196,12 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
           <span className="absolute inset-0 animate-ping rounded-lg ring-2 ring-hl/60" />
         </div>
       )}
-      <div role="dialog" aria-label={`Hướng dẫn: ${f.title}`} style={{ ...pos, width: W, maxWidth: "calc(100vw - 24px)" }}
+      <div role="dialog" aria-label={t("Hướng dẫn: {title}", { title: f.title })} style={{ ...pos, width: W, maxWidth: "calc(100vw - 24px)" }}
         className="pointer-events-auto absolute grid grid-cols-[minmax(0,1fr)] gap-2 rounded-lg bg-cotton p-4 text-sm text-ink shadow-pop transition-[left,top,bottom] duration-300 ease-(--ease-out)">
         <div className="flex items-center gap-2">
-          <span className="rounded-full bg-hl-wash px-2 py-0.5 text-[11px] font-semibold text-hl-2 tabular-nums">Bước {i + 1}/{steps.length}</span>
+          <span className="rounded-full bg-hl-wash px-2 py-0.5 text-2xs font-bold text-hl-2 tabular-nums">{t("Bước {i}/{n}", { i: i + 1, n: steps.length })}</span>
           <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink-3">{f.title}</span>
-          <Button size="icon-xs" variant="ghost" aria-label="Thoát hướng dẫn (Esc)" onClick={end}><X /></Button>
+          <Button size="icon-xs" variant="ghost" aria-label={t("Thoát hướng dẫn (Esc)")} onClick={end}><X /></Button>
         </div>
         <p key={i} className="leading-relaxed animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)"><StepText text={stepText(steps[i])} /></p>
         <p className="text-xs text-ink-3">{tip}</p>
@@ -186,8 +209,8 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
           <div className="flex flex-1 gap-1" aria-hidden>
             {steps.map((_, n) => <span key={n} className={cn("h-1.5 rounded-full transition-[width,background-color] duration-(--dur-short)", n === i ? "w-4 bg-hl" : n < i ? "w-1.5 bg-hl/50" : "w-1.5 bg-rule-2")} />)}
           </div>
-          {i > 0 && <Button size="sm" variant="ghost" onClick={() => go(i - 1)}>Trước</Button>}
-          <Button size="sm" onClick={next}>{last ? "Xong" : "Tiếp"}</Button>
+          {i > 0 && <Button size="sm" variant="ghost" onClick={() => go(i - 1)}>{t("Bước trước")}</Button>}
+          <Button size="sm" onClick={next}>{last ? t("Xong") : t("Tiếp")}</Button>
         </div>
       </div>
     </div>,

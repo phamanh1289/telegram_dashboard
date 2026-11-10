@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type AiAccount, type AiCatalogEntry, type AiPicks, type AiPrefs, api, type ClaudeAccount } from "@/lib/api";
+import { t, useLang } from "@/lib/i18n";
 import { byUnit } from "@/lib/time";
 
 // The AI CLIs' shared state: which one runs each kind of run, the catalog, each CLI's picks and logins.
@@ -20,7 +21,9 @@ const NO_PICKS: AiPicks = {
   model: "", effort: "", task_model: "", task_effort: "", brief_model: "", brief_effort: "",
   yt_model: "", yt_effort: "", yt_task_model: "", yt_task_effort: "",
 };
-export const EFFORT_LABELS: Record<Effort, string> = { "": "Mặc định", low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+const EFFORT_LABELS: Record<Exclude<Effort, "">, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
+/** An effort's name ("" = the CLI's default), in the current language: call from a component that uses `useT`. */
+export const effortLabel = (e: Effort) => (e ? EFFORT_LABELS[e] : t("Mặc định"));
 
 /** Which CLI runs each kind of run, what each CLI offers, and each CLI's own picks (kept when switching): every AI surface reads this.
  *  A model pick is "<cli>:<model>" over every CLI's models: picking it picks its CLI for that kind ("" = like the base kind). */
@@ -73,14 +76,14 @@ export const planTier = (a: ClaudeAccount) => /max_(\d+x)/.exec(a.rate_tier ?? "
 
 export function planLabel(a: ClaudeAccount) {
   const tier = planTier(a);
-  return tier ? `${planName(a)}, hạn mức Max ${tier}` : planName(a);
+  return tier ? t("{plan}, hạn mức Max {tier}", { plan: planName(a), tier }) : planName(a);
 }
 
 // The backend's short window labels (kept short for the top-bar pill), spelled out for the account page.
 /** "5h" / "1w", optionally "· <models>" ("1w · Opus", "5h · Gemini"), as a row title. */
-export const windowName = (label: string) => label.replace(/^5h/, "Phiên 5 giờ").replace(/^1w/, "7 ngày").replace(" · ", ", ");
+export const windowName = (label: string) => label.replace(/^5h/, t("Phiên 5 giờ")).replace(/^1w/, t("7 ngày")).replace(" · ", ", ");
 
-export const sectionHead = "text-[0.8125rem] font-semibold text-ink";
+export const sectionHead = "text-[0.8125rem] font-bold text-ink";
 /** A raised card on the AI page. */
 export const card = "grid gap-4 rounded-lg bg-cotton p-4 shadow-stock";
 
@@ -112,6 +115,7 @@ export type AccountView = {
 
 /** Every CLI's login, keyed by CLI. */
 export function useAccounts(every: number | false = false): Record<Provider, AccountView> {
+  useLang(); // the plan label is in the current language
   const c = useClaudeAccount(every);
   const o = useOtherAccounts(every);
   const { info } = useAiPrefs();
@@ -140,7 +144,11 @@ export function useRecheck() {
   return () => { for (const k of ["claude-account", "ai-accounts", "ai-catalog"]) void qc.invalidateQueries({ queryKey: [k] }); };
 }
 
-export const meterTone = (pct: number) => (pct >= 90 ? "bg-error" : pct >= 70 ? "bg-warn" : "bg-hl");
+/** 0 ok, 1 amber from 70% used, 2 red from 90%: one threshold for every quota meter. */
+const level = (pct: number) => (pct >= 90 ? 2 : pct >= 70 ? 1 : 0);
+export const meterTone = (pct: number) => (["bg-hl", "bg-warn", "bg-error"] as const)[level(pct)];
+/** The same tone as text colour (a ring's stroke = currentColor). */
+export const ringTone = (pct: number) => (["text-hl", "text-warn", "text-error"] as const)[level(pct)];
 
 /** Time until a window resets, in its largest whole unit ("3 giờ"). */
 export const resetIn = (iso: string, now: number) => byUnit(Math.ceil(Math.max(0, (Date.parse(iso) - now) / 60_000))).join(" ");

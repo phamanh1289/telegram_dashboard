@@ -3,6 +3,7 @@
 import { type InfiniteData, type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/lib/api";
+import { t } from "@/lib/i18n";
 import { msgKey } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
@@ -30,8 +31,8 @@ function notifyNew(items: ChangeItem[], preview: boolean) {
   );
   try {
     for (const m of fresh.slice(0, 3)) {
-      const n = new Notification(m.sender_name ?? "Tag mới", {
-        body: preview ? m.text.slice(0, 200) || "[tệp đính kèm]" : "Tag mới", // the text only when Settings › AI allows it
+      const n = new Notification(m.sender_name ?? t("Tag mới"), {
+        body: preview ? m.text.slice(0, 200) || t("[tệp đính kèm]") : t("Tag mới"), // the text only when Settings › AI allows it
         tag: `${m.chat_id}:${m.message_id}`,
       });
       n.onclick = () => {
@@ -39,7 +40,7 @@ function notifyNew(items: ChangeItem[], preview: boolean) {
         n.close();
       };
     }
-    if (fresh.length > 3) new Notification(`Còn ${fresh.length - 3} tag mới khác`, { tag: "more" });
+    if (fresh.length > 3) new Notification(t("Còn {n} tag mới khác", { n: fresh.length - 3 }), { tag: "more" });
   } catch {} // no Notification constructor here (Android Chrome, webviews): nothing to show
 }
 

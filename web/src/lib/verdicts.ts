@@ -1,7 +1,8 @@
 import type { Task } from "@/lib/api";
 
 // A finished Đối chiếu code session read back per topic: the agent's table has one row per topic, "#" = the topic's
-// "n" in the prompt's <items>, whose summary starts with the topic title (DEEP_BATCH_TASK in telegram_dashboard/ai.py).
+// "n" in the prompt's <items>: keyed by its "id" (the topic's first message), else by the title its summary starts with
+// (DEEP_BATCH_TASK in telegram_dashboard/ai.py).
 
 export type Verdict = "ok" | "off" | "missing" | "waiting" | "unclear";
 const MARKS: [string, Verdict][] = [["✅", "ok"], ["⚠", "off"], ["❌", "missing"], ["⏳", "waiting"], ["❓", "unclear"]];
@@ -21,16 +22,17 @@ function markOf(cells: string): Verdict | undefined {
   return best?.[1];
 }
 
-/** Per topic title, the verdict on its row of a finished bulk check; empty when the answer has no such table. */
+/** Per topic id (or title), the verdict on its row of a finished bulk check; empty when the answer has no such table. */
 export function verdictsOf(t: Pick<Task, "kind" | "prompt" | "result">): Map<string, Verdict> {
   const out = new Map<string, Verdict>();
   const m = isBatch(t) && t.result ? /<items>\n([\s\S]*?)\n<\/items>/.exec(t.prompt) : null;
   if (!m) return out;
-  let items: { n?: number; summary?: string }[];
+  let items: { n?: number; id?: string; summary?: string }[];
   try { items = JSON.parse(m[1]); } catch { return out; }
   for (const line of t.result!.split("\n")) {
     const row = /^\|\s*#?(\d+)\s*\|(.*)$/.exec(line.trim());
-    const title = row && items.find((x) => x.n === Number(row[1]))?.summary?.split("\n")[0];
+    const it = row ? items.find((x) => x.n === Number(row[1])) : undefined;
+    const title = it?.id || it?.summary?.split("\n")[0];
     const v = row && markOf(row[2]);
     if (title && v && !out.has(title)) out.set(title, v);
   }

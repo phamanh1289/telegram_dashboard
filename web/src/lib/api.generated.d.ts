@@ -133,7 +133,7 @@ export interface paths {
         };
         /**
          * Task Changes
-         * @description What the session's project has changed (git working tree vs HEAD): files and patch.
+         * @description What the project changed since the session started (old sessions: working tree vs HEAD): files and patch.
          */
         get: operations["task_changes_api_tasks__task_id__changes_get"];
         put?: never;
@@ -487,9 +487,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Ai Draft */
+        /**
+         * Ai Draft
+         * @description With header X-Ai-Job (an id the page picked): a background run that outlives the reply panel ("Trả lời từ
+         *     code" takes minutes), read again by GET /api/ai/job/{id}; without: it stops when the page goes.
+         */
         post: operations["ai_draft_api_ai_draft_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/job/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Job */
+        get: operations["ai_job_api_ai_job__job_id__get"];
+        put?: never;
+        post?: never;
+        /** Ai Job Stop */
+        delete: operations["ai_job_stop_api_ai_job__job_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -755,7 +777,7 @@ export interface paths {
         /**
          * Qa Mark
          * @description Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
-         *     null undoes.
+         *     null undoes. Xong / undoing it moves the thread's kept tags too, as Done on each from the list (no reaction).
          */
         put: operations["qa_mark_api_qa_mark_put"];
         post?: never;
@@ -1323,7 +1345,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Ai Runs */
+        /**
+         * Get Ai Runs
+         * @description This app's runs plus the ones made outside it (Claude Code / Codex transcripts), newest first.
+         */
         get: operations["get_ai_runs_api_ai_runs_get"];
         put?: never;
         post?: never;
@@ -1699,6 +1724,8 @@ export interface components {
              * @default
              */
             intro: string;
+            /** Ticket Ids */
+            ticket_ids?: string[];
         };
         /**
          * AiGuideRequest
@@ -1919,6 +1946,21 @@ export interface components {
              * @default false
              */
             imported: boolean;
+            /**
+             * Provider
+             * @default claude
+             */
+            provider: string;
+            /**
+             * External
+             * @default false
+             */
+            external: boolean;
+            /**
+             * Project
+             * @default
+             */
+            project: string;
         };
         /** AiTestRequest */
         AiTestRequest: {
@@ -1991,6 +2033,8 @@ export interface components {
              * @default
              */
             intro: string;
+            /** Ticket Ids */
+            ticket_ids?: string[];
             /**
              * Types
              * @default []
@@ -2250,6 +2294,11 @@ export interface components {
              * @default false
              */
             waiting: boolean;
+            /**
+             * Key
+             * @default
+             */
+            key: string;
         };
         /** DigestConsent */
         DigestConsent: {
@@ -3859,6 +3908,7 @@ export interface operations {
             query?: {
                 since?: string | null;
                 until?: string | null;
+                skip?: number[];
             };
             header?: never;
             path: {
@@ -4047,6 +4097,66 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AiResult"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_job_api_ai_job__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description NDJSON, as the run that started it */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_job_stop_api_ai_job__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

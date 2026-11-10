@@ -2,6 +2,7 @@
 
 import { Select } from "@base-ui/react/select";
 import { Check, ChevronDown } from "lucide-react";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const DEFAULT = "\u0000default"; // Select reads "" as nothing chosen; "" (e.g. a CLI default) is a real choice here
@@ -16,6 +17,7 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
   label: string; value: string; onChange: (v: string) => void; options: DropdownOption[]; className?: string;
   trigger?: string; style?: React.CSSProperties; prefix?: React.ReactNode;
 }) {
+  const t = useT();
   const enc = (v: string) => (v === "" ? DEFAULT : v);
   const items = options.map((o) => ({ ...o, value: enc(o.value), label: o.group ? `${o.group} · ${o.label}` : o.label, text: o.label }));
   const runs: (typeof items)[] = [];
@@ -40,8 +42,8 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
         className={cn("group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus)",
           trigger ?? "flex h-8 w-full min-w-0 items-center justify-between gap-1.5 rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-2.5 text-xs font-medium text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 data-popup-open:border-hl", className)}>
         {prefix
-          ? <span className="flex min-w-0 items-center gap-1.5">{prefix}<Select.Value className="truncate" placeholder="Chọn" /></span>
-          : <Select.Value className="truncate" placeholder="Chọn" />}
+          ? <span className="flex min-w-0 items-center gap-1.5">{prefix}<Select.Value className="truncate" placeholder={t("Chọn")} /></span>
+          : <Select.Value className="truncate" placeholder={t("Chọn")} />}
         <Select.Icon><ChevronDown aria-hidden className="size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out) group-data-popup-open:rotate-180" /></Select.Icon>
       </Select.Trigger>
       <Select.Portal>
@@ -49,7 +51,7 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
           <Select.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
             {runs.map((run) => run[0].group
               ? <Select.Group key={run[0].group} className="not-first:mt-1 not-first:border-t not-first:border-rule not-first:pt-1">
-                  <Select.GroupLabel className="px-2.5 pt-1 pb-0.5 text-[0.6875rem] font-semibold text-ink-3">{run[0].group}</Select.GroupLabel>
+                  <Select.GroupLabel className="px-2.5 pt-1 pb-0.5 text-2xs font-bold text-ink-3">{run[0].group}</Select.GroupLabel>
                   {run.map(item)}
                 </Select.Group>
               : run.map(item))}

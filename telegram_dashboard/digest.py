@@ -131,6 +131,18 @@ def parse_result(text: str, ids: set[str]) -> dict | None:
     return out
 
 
+def _people(row: dict, names: dict[str, str]) -> None:
+    """A BE item the AI left without names: who raised it = sender of its first cited message; for an answered
+    question, who answered = sender of the last one ("me" stays "me": the UI says "Bạn")."""
+    ids = sorted((i for i in row["message_ids"] if names.get(i)), key=int)
+    if not (row.get("be") and ids):
+        return
+    if not row.get("asker"):
+        row["asker"] = names[ids[0]]
+    if row.get("question") and not row.get("who") and len(ids) > 1:
+        row["who"] = names[ids[-1]]
+
+
 def _chunks(msgs: list[StoredMessage]) -> list[list[StoredMessage]]:
     """Consecutive stretches of ≤ MAX_MESSAGES / MAX_CHARS (each message fits one: checked before)."""
     out, cur, size = [], [], 0
@@ -226,7 +238,10 @@ class DigestService:
             done = set(parsed.pop("resolved"))
             pending = [p for i, p in enumerate(pending, 1) if f"p{i}" not in done]
             dates = {str(m.message_id): m.date for m in part}
+            names = {str(m.message_id): "me" if m.outgoing else (m.sender_name or "") for m in part}
             for key in KEYS:
+                for row in parsed[key]:
+                    _people(row, names)
                 if key not in OPEN:
                     out[key] += parsed[key]
                     continue

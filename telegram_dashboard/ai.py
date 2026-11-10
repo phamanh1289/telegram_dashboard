@@ -15,7 +15,7 @@ from pathlib import Path
 
 from fastapi.responses import StreamingResponse
 
-from . import providers
+from . import gitops, providers
 from .claude import note_run
 from .config import child_env, kill_tree, on_path, run_cli
 from .errors import ApiError
@@ -31,6 +31,21 @@ MAX_INSTRUCTION_CHARS = 2_000
 client_gone: contextvars.ContextVar[Callable[[], Awaitable[bool]] | None] = contextvars.ContextVar(
     "client_gone", default=None
 )
+# Set per request from the page's X-Lang header (app.LangMiddleware): the UI language AI answers are written in.
+reply_lang: contextvars.ContextVar[str] = contextvars.ContextVar("reply_lang", default="vi")
+LANG_RULE = (
+    "\n\nLANGUAGE: the user reads this app in English. Write your answer in English, even where the "
+    "instructions above say Vietnamese. Exception: text drafted for other people (a reply or message "
+    "for a group, a comment, a ticket) keeps the language of the conversation or ticket it goes into. "
+    "Quote messages, names, ticket ids and code as they are."
+)
+
+
+def lang_rule() -> str:
+    """Appended to every AI system prompt: nothing for Vietnamese (the prompts' own language), else LANG_RULE."""
+    return LANG_RULE if reply_lang.get() == "en" else ""
+
+
 AGENT_TIMEOUT = 180.0
 PROJECT_AGENT_TIMEOUT = 600.0  # reading a codebase takes longer
 STREAM_LIMIT = 16 * 1024 * 1024  # one stream-json line carries the whole answer
@@ -119,6 +134,27 @@ TICKET_TASK = (
     "language of the conversation."
 )
 
+# "Trả lời từ code": someone asked the user about the project; the answer rests on the code read in `project`.
+ANSWER_TASK = (
+    "Someone in the group asked the user the question in <messages> (logic, a business rule, how a feature "
+    "behaves, or progress). The current directory is the user's project: before answering, find and read the "
+    "code it touches (screens, API calls, models, validation, error handling, feature flags, config) and use it "
+    "as the evidence; never guess. First part, Markdown for the user only, with exactly these bold labels:\n"
+    "**Trả lời:** 1-3 sentences answering directly (several questions: one bullet each).\n"
+    "**Căn cứ:** 2-5 bullets, each `path:function` and what that code does; nothing relevant found: say so.\n"
+    "**Độ chắc:** Cao / Trung bình / Thấp, with a one-sentence reason (e.g. only the app side is here, the rule "
+    "lives in the backend).\n"
+    "**Cần xác nhận:** what the code cannot answer (omit when nothing).\n"
+    "A progress / deadline question: the code does not know the schedule. Say what already exists in the code "
+    "and use <git_log> (recent commits) and <tickets> (state, assignee, sprint) when given; else say progress "
+    "needs confirming.\n"
+    "Then output a line containing just === and after it 2 reply drafts to the asker, separated by a line "
+    "containing just ---: 1) short (1-2 sentences); 2) complete (at most 5 sentences). The drafts are plain text "
+    "(no Markdown, no labels). To a developer they may name APIs, fields and files; to a PO, QA / QC, BA or "
+    "customer they use plain words about screens and behaviour, never file, function, API or field names. "
+    "Never quote secrets (.env, keys, tokens). No preamble."
+)
+
 QA_SUMMARY_TASK = (
     "<messages> is one Q&A thread from a work group, in order: the first is the question, the rest are the replies "
     '("me" is the user). Write its conclusion for the user in Markdown, short bullets led by a bold label: '
@@ -183,7 +219,8 @@ def about_me(role: str | None, platform: str, intro: str) -> str:
 
 
 def session_rules(mode: str, role: str | None, platform: str, intro: str) -> str:
-    return f"{about_me(role, platform, intro)}\n\n{TASK_RULES}\n\n{TASK_ANSWER[mode]}\n\n{ASK_MSG}{ASK_STYLE}"
+    rules = f"{TASK_RULES}\n\n{TASK_ANSWER[mode]}\n\n{ASK_MSG}{ASK_STYLE}{lang_rule()}"
+    return f"{about_me(role, platform, intro)}\n\n{rules}"
 
 
 # Đối chiếu BE: only what to look at; the rules and answer sections come from session_rules (start_task).
@@ -320,10 +357,14 @@ class AiService:
         fields: dict[str, list[str]] | None = None,
         intro: str = "",
         on_text=None,
+        tickets: str = "",
     ) -> AiResult:
-        """kind "draft" (analysis + reply drafts) or "ticket" (a YouTrack ticket proposal, JSON in
-        `text`; `fields` = the project's Type / Priority values). `nearby`: surrounding group messages
-        (context only); `images`: photo files to read. `on_text`: see `ask`."""
+        """kind "draft" (analysis + reply drafts), "answer" (a question answered from the code in `project`, + reply
+        drafts) or "ticket" (a YouTrack ticket proposal, JSON in `text`; `fields` = the project's Type / Priority
+        values). `nearby`: surrounding group messages (context only); `images`: photo files to read; `tickets`:
+        YouTrack tickets as JSON (answer: their state for progress questions). `on_text`: see `ask`."""
+        if kind == "answer" and project is None:
+            raise ApiError(422, "project_not_found")
         if not self.configured:
             raise ApiError(503, "ai_not_configured")
         if project is not None:
@@ -365,14 +406,15 @@ class AiService:
             "text (no Markdown, no labels). Keep it fast to read: at most 6 summary bullets, at most 3 next "
             "steps, each draft at most 3 sentences. No preamble."
             if kind == "draft"
-            else TICKET_TASK
+            else ANSWER_TASK if kind == "answer" else TICKET_TASK
         )
         if kind == "ticket":
             task += f"\n<fields>{data_json(fields or {})}</fields>"
         if project is not None:
             task += (
-                "\nThe current directory is the user's project. Read its code and docs as needed "
-                "so the drafts answer correctly; never quote secrets (.env, keys, tokens)."
+                "\nThe current directory is the user's project: you may read its files (read-only, nothing else). "
+                "Read its code and docs as needed so the drafts answer correctly; never quote secrets (.env, keys, "
+                "tokens)."
             )
         if platform in PLATFORM_FOCUS:
             task += (
@@ -380,9 +422,9 @@ class AiService:
                 f"{PLATFORM_FOCUS[platform]}."
             )
         if role in ROLE_FOCUS:
-            task += "\n" + (ROLE_FOCUS if kind == "draft" else ROLE_TICKET)[role]
+            task += "\n" + (ROLE_TICKET if kind == "ticket" else ROLE_FOCUS)[role]
         task += about_user(intro)
-        if kind == "draft":
+        if kind != "ticket":
             me = self.settings.telegram_me or self.me()
             task += (
                 f"\nThe user is Telegram {me} (shown as \"me\" in the context): mentions of {me} "
@@ -404,7 +446,12 @@ class AiService:
                 "\nSurrounding conversation, for context only (the reply targets <messages>):"
                 f"\n<context>\n{data_json(around)[:8000]}\n</context>"
             )
-        if kind == "draft":  # Telegram text, like nearby
+        if kind == "answer":  # progress questions: what moved lately (commit subjects are teammates' text: data)
+            if log := await gitops.recent(project):
+                user += f"\n<git_log>\n{data_json(log)}\n</git_log>"
+            if tickets:
+                user += f"\nYouTrack tickets possibly related (may be unrelated):\n<tickets>\n{tickets}\n</tickets>"
+        if kind != "ticket":  # Telegram text, like nearby
             mine = await self.db.read(self.store.my_replies, 0, 8, chat_id)
             if mine:
                 user += (
@@ -429,7 +476,7 @@ class AiService:
                 "Dữ liệu đã gửi provider không thể thu hồi.",
             )
         options, analysis = [], ""
-        if kind == "draft":
+        if kind != "ticket":
             parts = re.split(r"(?m)^\s*={3,}\s*$", text, maxsplit=1)
             if len(parts) == 2:
                 analysis, text = parts[0].strip(), parts[1]
@@ -491,22 +538,22 @@ class AiService:
     async def deep_batch(
         self,
         chat_id: str,
-        items: list[tuple[str, list[str], bool]],
+        items: list[tuple[str, list[str], bool, str]],
         project: str,
         instruction: str = "",
         fetch=None,
     ) -> tuple[str, str, int]:
-        """Đối chiếu BE by topic: (summary, cited message ids, still waiting for BE) of one chat, traced through
-        `project`. Returns (prompt, title, anchor) for a read-only AI Agent session: the anchor is the newest cited
-        message, as every session sits on a message (its asks post into that group / topic; one topic: its card shows
-        the session). No tracking gate."""
+        """Đối chiếu BE by topic: (summary, cited message ids, still waiting for BE, topic id) of one chat, traced
+        through `project`. Returns (prompt, title, anchor) for a read-only AI Agent session: the anchor is the newest
+        cited message, as every session sits on a message (its asks post into that group / topic; one topic: its card
+        shows the session). No tracking gate."""
         if not await self.db.read(self.store.has_project, project):
             raise ApiError(404, "project_not_found")
         try:
-            per = [(text, sorted({int(i) for i in ids}), waiting) for text, ids, waiting in items]
+            per = [(text, sorted({int(i) for i in ids}), waiting, key) for text, ids, waiting, key in items]
         except ValueError:
             raise ApiError(422, "ai_scope_not_allowed") from None
-        want = sorted({i for _, ids, _ in per for i in ids})
+        want = sorted({i for _, ids, _, _ in per for i in ids})
         if not want or want[0] < 1 or want[-1] >= 2**31:  # Telegram ids are int32
             raise ApiError(422, "ai_scope_not_allowed")
         msgs, _ = await self.db.read(self.store.get_messages_by_ids, chat_id, want)
@@ -515,7 +562,7 @@ class AiService:
         if missing and fetch is not None:
             msgs += [m for m in await fetch(chat_id, missing) if m.chat_id == chat_id and not m.deleted]
         by_id = {m.message_id: m for m in msgs}
-        rows = [(text, [by_id[i] for i in ids if i in by_id], waiting) for text, ids, waiting in per]
+        rows = [(text, [by_id[i] for i in ids if i in by_id], waiting, key) for text, ids, waiting, key in per]
         rows = [r for r in rows if r[1]]
         if not rows:
             raise ApiError(404, "message_not_found")
@@ -523,13 +570,13 @@ class AiService:
             raise ApiError(422, "ai_context_too_large")
         if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
             raise ApiError(422, "ai_context_too_large")
-        data = [{"n": n, "summary": text, "status": "waiting" if waiting else "agreed",
+        data = [{"n": n, **({"id": key} if key else {}), "summary": text, "status": "waiting" if waiting else "agreed",
                  "messages": [{"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
                               for m in found]}
-                for n, (text, found, waiting) in enumerate(rows, 1)]  # fmt: skip
+                for n, (text, found, waiting, key) in enumerate(rows, 1)]  # fmt: skip
         user = f"{_deep_task(DEEP_BATCH_TASK, instruction)}\n<items>\n{data_json(data)}\n</items>"
         head = rows[0][0].split("\n")[0][:120]
-        anchor = max(m.message_id for _, found, _ in rows for m in found)
+        anchor = max(m.message_id for _, found, _, _ in rows for m in found)
         if len(rows) > 1:
             return user, f"Đối chiếu {len(rows)} chủ đề BE: {head}", anchor
         return user, f"Đối chiếu BE: {head}", anchor
@@ -566,7 +613,7 @@ class AiService:
         read_dir: str | None = None,
         system: str = SYSTEM_PROMPT,
         heavy: bool = False,
-        on_text: Callable[[str | None], None] | None = None,
+        on_text: Callable[[str | dict | None], None] | None = None,
         feature: str = "ai",
         brief: bool = False,
         yt: bool = False,
@@ -575,7 +622,8 @@ class AiService:
         """One `claude -p` run (or the Codex/Antigravity CLI picked instead): prompt on stdin, answer on stdout.
         `heavy`: a long read (many tickets), run on the task model with the longer timeout.
         `on_text`: called with each piece of the answer as Claude writes it (None: start over,
-        a new turn after a tool call); the return value is still the whole final answer.
+        a new turn after a tool call; a dict: a working step {kind: tool | tool_result, text, error?, at});
+        the return value is still the whole final answer.
         `feature`: what the run is for, in the Claude page's run log. `brief`: a Briefing / Digest run
         (its own model / effort picks). `yt`: a YouTrack run (YouTrack's picks). `shell` (with `project`):
         may run commands in the sandbox (build, test), see providers.ask_cmd."""
@@ -587,7 +635,7 @@ class AiService:
                                 model=choice[0], effort=choice[1], stream=on_text is not None, shell=shell)  # fmt: skip
         if provider == "claude" and not providers.is_claude(cmd):
             provider = None  # another AI command only prints its answer
-        prompt = providers.stdin(provider or "claude", f"{system}\n\n{user_prompt}")
+        prompt = providers.stdin(provider or "claude", f"{system}{lang_rule()}\n\n{user_prompt}")
         long = bool(project or heavy or brief)  # Briefing / Digest parts read many messages: the longer timeout
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider)
@@ -688,6 +736,8 @@ async def _read(proc, prompt: bytes, provider: str | None, on_text) -> tuple[str
                     on_text(None)
                 elif it["kind"] == "delta" and on_text:
                     on_text(it["text"])
+                elif it["kind"] in ("tool", "tool_result") and on_text:  # a working step (read a file, run a command)
+                    on_text({k: v for k, v in it.items() if k in ("kind", "text", "error")} | {"at": round(time.time(), 1)})
                 elif it["kind"] == "result":
                     final = {**it["final"], "result": it["text"], "model": st.get("model")}
         await proc.wait()
@@ -717,8 +767,9 @@ def cli_reason(final, err: bytes) -> str | None:
 
 async def _answer_items(work, put) -> None:
     """Run `work(on_text)` to the NDJSON items of `stream_answer`, each handed to `put`."""
+    item = lambda t: {"reset": True} if t is None else {"step": t} if isinstance(t, dict) else {"delta": t}  # noqa: E731
     try:
-        put({"done": await work(lambda t: put({"reset": True} if t is None else {"delta": t}))})
+        put({"done": await work(lambda t: put(item(t)))})
     except ApiError as e:
         put({"error": {"status": e.status, "code": e.code, "detail": e.detail}})
     except Exception as e:
@@ -823,7 +874,7 @@ class AiJobs:
 
 
 def stream_answer(work) -> StreamingResponse:
-    """NDJSON while Claude writes: {"delta": text} / {"reset": true} lines, then {"done": result}
+    """NDJSON while Claude writes: {"delta": text} / {"reset": true} / {"step": tool call or output} lines, then {"done": result}
     or {"error": {status, code, detail}}. `work(on_text)` returns the result. Leaving the page
     cancels it, and with it the claude run."""
     q: asyncio.Queue[dict] = asyncio.Queue()

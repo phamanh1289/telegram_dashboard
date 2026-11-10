@@ -5,7 +5,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { api, ApiError, readAnswer } from "@/lib/api";
+import { type AiStep, api, ApiError, LANG, readAnswer } from "@/lib/api";
+import { fmtDate, fmtDay, fmtNum, type Key, t, tMaybe } from "@/lib/i18n";
 import { getPref, put, readYtRole } from "@/lib/prefs";
 import { addLoopItems } from "@/lib/report-back";
 import { fold } from "@/lib/inbox";
@@ -47,8 +48,8 @@ export type UserField = "Assignee" | "QC";
 export type Transition = { id: string; at: number; from: string | null; to: string | null; by: string | null };
 export type AiTicketKind = "brief" | "ready" | "reply" | "rewrite" | "split";
 
-/** Live text of an AI run, keyed by its signal: `useAi` registers it, `ytApi` feeds it from the streamed answer. */
-export const aiParts = new WeakMap<AbortSignal, (text: string) => void>();
+/** Live text and working steps of an AI run, keyed by its signal: `useAi` registers it, `ytApi` feeds it from the streamed answer. */
+export const aiParts = new WeakMap<AbortSignal, { text: (text: string) => void; step: (step: AiStep) => void }>();
 /** The AI request behind a run, keyed by its signal: a follow-up question sends it back so the server re-reads the same data. */
 export type AiReq = { path: string; json: unknown };
 export type AiTurn = { q: string; a: string };
@@ -68,19 +69,20 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
     signal: init.signal,
-    headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}) },
+    headers: { ...LANG(), ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
   if (res.ok && res.headers.get("content-type")?.includes("ndjson")) { // an AI answer, streamed as Claude writes it
-    return readAnswer<T>(res, init.signal && aiParts.get(init.signal))
+    const on = init.signal && aiParts.get(init.signal);
+    return readAnswer<T>(res, on?.text, on?.step)
       .catch((e) => { throw e instanceof ApiError ? new Error(e.detail || e.code) : e; });
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const e = body?.error;
     // an older backend: no route (the catch-all answers {code: "not_found"}), wrong method or body shape
-    if (([404, 405, 422].includes(res.status) && !e) || (typeof e === "object" && e?.code === "not_found")) throw new Error("Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại.");
-    throw new Error(typeof e === "string" ? e : e?.detail || e?.code || `HTTP ${res.status}`);
+    if (([404, 405, 422].includes(res.status) && !e) || (typeof e === "object" && e?.code === "not_found")) throw new Error(t("Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại."));
+    throw new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`);
   }
   return body as T;
 }
@@ -145,8 +147,8 @@ export const ytDetailQuery = (id: string) => ({ queryKey: ["yt", "detail", id], 
 
 // ---------- formatting ----------
 export const DAY = 864e5;
-export const fmt = (n: number) => n.toLocaleString("vi-VN");
-export const when = (t: number | null | undefined) => (t ? new Date(t).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" }) : "—");
+export const fmt = (n: number) => fmtNum(n);
+export const when = (ts: number | null | undefined) => (ts ? fmtDate(ts, { dateStyle: "short", timeStyle: "short" }) : "—");
 export const hue = (s: string) => 200 + [...s].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 360, 7) % 100; // blue→violet only, never reads as ok / warn / bad
 export const shortName = (n: string) => n.trim().split(/\s+/).slice(-2).join(" ");
 export const initials = (n: string) => { const w = n.trim().split(/\s+/); return ((w.length > 1 ? w[w.length - 2][0] : "") + w[w.length - 1][0]).toUpperCase(); };
@@ -192,7 +194,7 @@ export const TINT = [16, 12, 8]; // row tint % for Critical / Highest / High whi
 export const rank = (i: { priority: string | null }) => RANK[i.priority ?? ""] ?? 6;
 
 export type Now = number;
-export const QUICK: Record<string, { label: string; fn: (i: Ticket, now: Now) => boolean }> = {
+export const QUICK: Record<string, { label: Key; fn: (i: Ticket, now: Now) => boolean }> = {
   blocked: { label: "Blocked", fn: (i) => up(i.state) === "BLOCKED" },
   critical: { label: "Critical / Highest", fn: (i) => rank(i) <= 1 },
   overdue: { label: "Quá hạn", fn: (i, now) => !!i.due && i.due < now },
@@ -213,7 +215,7 @@ export const QUICK: Record<string, { label: string; fn: (i: Ticket, now: Now) =>
 const QC_ST = new Set(["READY FOR TEST", "QC - QA", "QC", "BUILT ON DEV", "DONE ON DEV", "WAITING TO RELEASE"]);
 const DOING_ST = new Set(["IN PROGRESS", "DESIGN IN PROCESS", "CONFIRM DESIGN", "ASSIGN TO DESIGN", "BLOCKED"]);
 export const bucket = (i: Ticket) => { const s = up(i.state); return i.resolved ? 3 : QC_ST.has(s) ? 2 : DOING_ST.has(s) ? 1 : 0; };
-export const TIER_LABEL = ["Todo / Opened", "Đang làm", "QC / Chờ test"];
+export const TIER_LABEL: Key[] = ["Todo / Opened", "Đang làm", "QC / Chờ test"];
 export const isBlocked = (i: Ticket) => up(i.state) === "BLOCKED";
 export const isBug = (i: Ticket) => up(i.type) === "BUG";
 /** Built and waiting to ship: the scope of a release's regression run. */
@@ -224,7 +226,7 @@ export const isBuilt = (i: Ticket) => !i.resolved && ["BUILT ON DEV", "DONE ON D
 const PO_ST = new Set(["ASSIGN TO DEFINE", "DEFINITION IN PROCESS", "CONFIRM DEFINITION", "CONFIRM DESIGN"]);
 export const needsPo = (i: Ticket) => !i.resolved && PO_ST.has(up(i.state));
 
-export const COLS = [["id", "ID"], ["summary", "Tiêu đề"], ["type", "Type"], ["state", "State"], ["priority", "Priority"], ["assignee", "Assignee"], ["qc", "QC"], ["sprint", "Sprint"], ["due", "Hạn"], ["updated", "Cập nhật"]] as const;
+export const COLS = [["id", "ID"], ["summary", "Tiêu đề"], ["type", "Type"], ["state", "State"], ["priority", "Priority"], ["assignee", "Assignee"], ["qc", "QC"], ["sprint", "Sprint"], ["due", "Hạn"], ["updated", "Cập nhật lúc"]] as const satisfies readonly (readonly [string, Key])[];
 export type ColKey = (typeof COLS)[number][0];
 export const lastSp = (i: Ticket) => i.sprints[i.sprints.length - 1] || "";
 const KEYS: Record<ColKey, (i: Ticket) => number | string> = {
@@ -315,13 +317,13 @@ export function todayList(rows: Ticket[], me: string | null, ours: (i: Ticket) =
   return rows.filter((i) => !i.resolved && (ours(i) || (i.qc === me && bucket(i) === 2))).map((i) => {
     const why: string[] = [];
     let score = 0;
-    if (isBlocked(i)) { score += 50; why.push("Blocked"); }
-    if (i.due && i.due < now) { score += 40; why.push("Quá hạn"); } else if (i.due && i.due - now < 2 * DAY) { score += 25; why.push("Sắp tới hạn"); }
+    if (isBlocked(i)) { score += 50; why.push(t("Blocked")); }
+    if (i.due && i.due < now) { score += 40; why.push(t("Quá hạn")); } else if (i.due && i.due - now < 2 * DAY) { score += 25; why.push(t("Sắp tới hạn")); }
     if (rank(i) <= 1) { score += 30; why.push(i.priority!); } else if (rank(i) === 2) score += 12;
-    if (i.qc === me && i.assignee !== me) { score += 15; why.push("Chờ bạn test"); }
-    if (bucket(i) === 1) { score += 10; why.push("Đang làm"); }
+    if (i.qc === me && i.assignee !== me) { score += 15; why.push(t("Chờ bạn test")); }
+    if (bucket(i) === 1) { score += 10; why.push(t("Đang làm")); }
     const s = since(i);
-    if (s != null && bucket(i) === 1 && now - s > 3 * DAY) { score += 15; why.push(`Đứng ${Math.floor((now - s) / DAY)} ngày`); }
+    if (s != null && bucket(i) === 1 && now - s > 3 * DAY) { score += 15; why.push(t("Đứng {n} ngày", { n: Math.floor((now - s) / DAY) })); }
     return { i, score, why };
   }).sort((a, b) => b.score - a.score || rank(a.i) - rank(b.i) || b.i.updated - a.i.updated);
 }
@@ -332,15 +334,15 @@ export function qaList(rows: Ticket[], me: string | null, since: (i: Ticket) => 
   return rows.filter((i) => !i.resolved).map((i) => {
     const why: string[] = [];
     let score = 0;
-    if (me && i.qc === me) { score += 30; why.push("Của bạn"); }
-    if (bucket(i) === 2 && !i.qc) { score += 10; why.push("Chưa có QC"); }
+    if (me && i.qc === me) { score += 30; why.push(t("Của bạn")); }
+    if (bucket(i) === 2 && !i.qc) { score += 10; why.push(t("Chưa có QC")); }
     const n = fails.get(i.id);
-    if (n && bucket(i) === 2) { score += 20; why.push(`Test lại, trả ${n} lần`); }
-    if (isBlocked(i)) { score += 20; why.push("Blocked"); }
-    if (i.due && i.due < now) { score += 40; why.push("Quá hạn"); } else if (i.due && i.due - now < 2 * DAY) { score += 25; why.push("Sắp tới hạn"); }
+    if (n && bucket(i) === 2) { score += 20; why.push(t("Test lại, trả {n} lần", { n })); }
+    if (isBlocked(i)) { score += 20; why.push(t("Blocked")); }
+    if (i.due && i.due < now) { score += 40; why.push(t("Quá hạn")); } else if (i.due && i.due - now < 2 * DAY) { score += 25; why.push(t("Sắp tới hạn")); }
     if (rank(i) <= 1) { score += 30; why.push(i.priority!); } else if (rank(i) === 2) score += 12;
     const s = since(i);
-    if (s != null && bucket(i) === 2 && now - s > 2 * DAY) { const d = Math.floor((now - s) / DAY); score += Math.min(d, 10) * 2; why.push(`Chờ ${d} ngày`); }
+    if (s != null && bucket(i) === 2 && now - s > 2 * DAY) { const d = Math.floor((now - s) / DAY); score += Math.min(d, 10) * 2; why.push(t("Chờ {n} ngày", { n: d })); }
     return { i, score, why };
   }).sort((a, b) => b.score - a.score || rank(a.i) - rank(b.i) || a.i.updated - b.i.updated); // ties: waiting longest first
 }
@@ -401,10 +403,10 @@ export function bugSpike(rows: Ticket[], now: number) {
 /** Why an open ticket of mine needs attention now (null = fine): overdue, due within a day, blocked, worked on but untouched 3+ days. */
 export function riskOf(i: Ticket, now: number) {
   if (i.resolved) return null;
-  if (i.due && i.due < now) return "Quá hạn";
-  if (i.due && i.due - now < DAY) return "Tới hạn trong 24 giờ";
-  if (isBlocked(i)) return "Blocked";
-  if (bucket(i) === 1 && now - i.updated > 3 * DAY) return `Không cập nhật ${Math.floor((now - i.updated) / DAY)} ngày`;
+  if (i.due && i.due < now) return t("Quá hạn");
+  if (i.due && i.due - now < DAY) return t("Tới hạn trong 24 giờ");
+  if (isBlocked(i)) return t("Blocked");
+  if (bucket(i) === 1 && now - i.updated > 3 * DAY) return t("Không cập nhật {n} ngày", { n: Math.floor((now - i.updated) / DAY) });
   return null;
 }
 
@@ -412,11 +414,11 @@ export function riskOf(i: Ticket, now: number) {
 export function exportCsv(list: Ticket[], project: string, keys: ColKey[]) {
   const VAL: Record<ColKey, (i: Ticket) => unknown> = {
     id: (i) => i.id, type: (i) => i.type, summary: (i) => i.summary, state: (i) => i.state, priority: (i) => i.priority, assignee: (i) => i.assignee,
-    qc: (i) => i.qc, sprint: (i) => i.sprints.join("; "), due: (i) => (i.due ? new Date(i.due).toLocaleDateString("vi-VN") : ""), updated: (i) => when(i.updated),
+    qc: (i) => i.qc, sprint: (i) => i.sprints.join("; "), due: (i) => (i.due ? fmtDay(i.due) : ""), updated: (i) => when(i.updated),
   };
   const ks: ColKey[] = ["id", "summary", ...keys.filter((k) => k !== "id" && k !== "summary")];
-  const name = Object.fromEntries(COLS) as Record<ColKey, string>;
-  const rows = [ks.map((k) => name[k]), ...list.map((i) => ks.map((k) => VAL[k](i)))];
+  const name = Object.fromEntries(COLS) as Record<ColKey, Key>;
+  const rows = [ks.map((k) => t(name[k])), ...list.map((i) => ks.map((k) => VAL[k](i)))];
   downloadCsv(rows, `tickets-${project}.csv`);
 }
 
@@ -463,9 +465,9 @@ export function checkNew(project: string, me: string, rows: Ticket[], say: (id: 
   if (!seen) return;
   const now = Date.now();
   const fresh = mine.filter((i) => !seen.has(i.id) && i.reporter !== me && (selfEdits.get(i.id) ?? 0) < now - 3 * 60_000);
-  for (const i of fresh) say(i.id, `${i.assignee === me ? "Mới giao cho bạn" : "Mới nhờ bạn test"}: ${i.summary ?? ""}`);
+  for (const i of fresh) say(i.id, `${t(i.assignee === me ? "Mới giao cho bạn" : "Mới nhờ bạn test")}: ${i.summary ?? ""}`);
   // on a Mac the server shows the banner (yt_dashboard.watch_new), even with no page open: not twice
-  if (fresh.length && !navigator.userAgent.includes("Mac")) deskNotify(fresh.length === 1 ? `Ticket mới: ${fresh[0].id}` : `${fresh.length} ticket mới cho bạn`,
+  if (fresh.length && !navigator.userAgent.includes("Mac")) deskNotify(fresh.length === 1 ? t("Ticket mới: {id}", { id: fresh[0].id }) : t("{n} ticket mới cho bạn", { n: fresh.length }),
     fresh.slice(0, 4).map((i) => `${i.id}: ${i.summary ?? ""}`).join("\n"));
 }
 
@@ -477,10 +479,10 @@ function loopBack(i: Ticket, say: (id: string, text: string) => void) {
   yt.mentions(i.id).then((ms) => {
     // My own "đã tạo VA-1" answers the tag it replied to; one not sent as a reply is answered in its own thread.
     const n = addLoopItems(ms.map((m) => ({ ticket: i.id, state: i.state ?? "Done", chat_id: m.chat_id, message_id: (m.outgoing && m.reply_to_id) || m.message_id })));
-    if (n) say(i.id, `Báo lại trên Telegram: ${n} tin nhắc ticket này (xem Việc cần xử lý)`);
+    if (n) say(i.id, t("Báo lại trên Telegram: {n} tin nhắc ticket này (xem Việc cần xử lý)", { n }));
   }, (e) => {
     console.warn("Báo lại: mentions", i.id, e); // runs once per state change: say so instead of missing it silently
-    say(i.id, "Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại");
+    say(i.id, t("Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại"));
   });
 }
 

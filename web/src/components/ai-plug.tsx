@@ -16,21 +16,6 @@ export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href
   pose: "on" | "try" | "off"; live: boolean; icon: ReactNode; sock: string; title: string; sub: string; subWarn?: boolean;
   hint: { title: string; text: string }; href?: string; textClass?: string; testId?: string;
 }) {
-  // All well (plugged in, live): one quiet line, so the sidebar keeps its room; the robot scene is for when something is off.
-  if (pose === "on" && live && !href) return (
-    <Hint title={hint.title} text={hint.text}>
-      <div className="flex items-center gap-2.5 px-1.5 py-1">
-        <span data-testid={testId && `${testId}-state`} data-pose={pose} className={cn("relative grid size-7 shrink-0 place-items-center rounded-full", sock)}>
-          <span className="grid scale-90 place-items-center">{icon}</span>
-          <span aria-hidden className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-ok ring-2 ring-paper-2" />
-        </span>
-        <span className={cn("grid min-w-0 whitespace-nowrap text-xs leading-tight", textClass)}>
-          <span className="truncate font-medium text-ink-2">{title}</span>
-          <span data-testid={testId && `${testId}-sub`} className="truncate text-ink-3">{sub}</span>
-        </span>
-      </div>
-    </Hint>
-  );
   const body = (
     <>
       <span data-testid={testId && `${testId}-state`} data-pose={pose} className="plug flex items-center">
@@ -52,7 +37,7 @@ export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href
         <span className="sr-only">{title}</span>
       </span>
       <span className={cn("grid min-w-0 gap-0.5 whitespace-nowrap px-0.5 text-xs leading-tight", textClass)}>
-        <span className={cn("truncate font-semibold", pose === "on" ? "text-ink" : pose === "try" ? "text-ink-2" : "text-warn")}>{title}</span>
+        <span className={cn("truncate font-bold", pose === "on" ? "text-ink" : pose === "try" ? "text-ink-2" : "text-warn")}>{title}</span>
         <span data-testid={testId && `${testId}-sub`} className={cn("truncate", subWarn ? "text-warn" : "text-ink-3")}>{sub}</span>
       </span>
     </>

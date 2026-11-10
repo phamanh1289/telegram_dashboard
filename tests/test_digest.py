@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from telegram_dashboard.ai import AiService
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
-from telegram_dashboard.digest import DigestService, parse_result
+from telegram_dashboard.digest import DigestService, _people, parse_result
 from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import DigestRequest, GroupInfo, StoredMessage
 
@@ -653,3 +653,16 @@ async def test_items_i_closed_are_not_carried(dg):
     r = await svc.run(req(after_id=3, closed=["1,2"]))  # ticked off in Briefing
     assert r.confirmations == [] and [a.text for a in r.actions] == ["b"]
     assert "a?" not in provider.calls[-1]
+
+
+def test_people_fills_only_missing_be_names():
+    names = {"5": "Lĩnh", "9": "BE Hỗ trợ", "12": "me"}
+    row = {"be": True, "question": "q", "message_ids": ["9", "5"]}
+    _people(row, names)
+    assert (row["asker"], row["who"]) == ("Lĩnh", "BE Hỗ trợ")  # first cited asked, last answered
+    kept = {"be": True, "asker": "PO", "who": "BE", "question": "q", "message_ids": ["5", "12"]}
+    _people(kept, names)
+    assert (kept["asker"], kept["who"]) == ("PO", "BE")  # the AI's names win
+    plain = {"be": False, "message_ids": ["5"]}
+    _people(plain, names)
+    assert "asker" not in plain  # only BE items

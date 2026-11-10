@@ -186,6 +186,8 @@ class AiDraftRequest(BaseModel):
     platform: Literal["android", "ios", "mobile", "any"] = "android"  # angle of the analysis
     role: Literal["dev", "qa", "po"] = "dev"  # who reads it (Cài đặt chung › Vai trò)
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt chung)
+    # with `project`: the tag's question answered from the code ("Trả lời từ code"); these tickets give its progress
+    ticket_ids: list[str] = Field(default_factory=list, max_length=10)
 
 
 class AboutMe(BaseModel):
@@ -212,6 +214,7 @@ class DeepItem(BaseModel):
     text: str = Field(max_length=1000)  # the digest's own summary of it
     message_ids: list[str] = Field(min_length=1, max_length=10)
     waiting: bool = False  # BE has not answered yet: trace what the code does now
+    key: str = Field("", max_length=20, pattern=r"^\d*$")  # the topic's id (its first message): verdicts map back by it
 
 
 class AiDeepBatchRequest(AboutMe):
@@ -517,6 +520,9 @@ class AiRun(BaseModel):
     turns: int = 0
     quota: dict[str, float] = {}
     imported: bool = False  # read back from the CLI's transcripts, not logged live
+    provider: str = "claude"  # which AI CLI ran it: claude / codex / antigravity
+    external: bool = False  # run outside this app (feature: Claude Desktop, Codex CLI…; project: its folder)
+    project: str = ""
 
 
 class AiTestRequest(BaseModel):

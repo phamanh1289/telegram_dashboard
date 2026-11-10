@@ -1,17 +1,20 @@
 "use client";
 
-import { Check, FileText, GitBranch, Hourglass, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
+import { Check, FileText, Gauge, GitBranch, Hourglass, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { AgentIcon } from "@/components/ai/agent-icon";
 import { AiBot, AiThinking } from "@/components/ai/chat";
 import { YtLogo } from "@/components/yt-logo";
+import { type Key, t as tNow, type T, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep";
+export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "runs";
 
-const LINES: Record<FetchKind, string[]> = {
+/** Each scene's rotating lines, as keys: translated where shown. */
+const LINES: Record<FetchKind, Key[]> = {
   tickets: ["AI đang kết nối YouTrack", "Đang gom ticket của bạn", "Đang đọc trạng thái, người làm, sprint", "Sắp xếp lại cho gọn", "Sắp xong rồi"],
   release: ["AI đang kết nối YouTrack", "Đang gom ticket của release", "Đang đọc liên kết, bình luận", "Đang dò ticket chặn go-live", "Sắp xong rồi"],
   people: ["AI đang kết nối YouTrack", "Đang gom ticket cả team", "Đang đếm việc từng người", "Đang tìm ticket blocked, quá hạn", "Sắp xong rồi"],
@@ -25,15 +28,18 @@ const LINES: Record<FetchKind, string[]> = {
   update: ["AI đang kết nối GitHub", "Đang kéo bản mới về", "Đang kiểm checksum và chữ ký", "Đang cài bản mới", "Sắp xong rồi"],
   restart: ["Đã cài bản mới", "Đang khởi động lại server", "Đang chờ server lên lại", "Sắp tải lại trang"],
   deep: ["AI đang mở dự án", "Đang đọc câu hỏi gửi BE và câu BE trả lời", "Đang soi code: API, model, màn hình", "Đang so: đã adapt, lệch hay chưa làm", "Đang viết bảng đối chiếu"],
+  runs: ["AI đang lắng nghe Claude, Codex", "Đang mở file của từng request", "Đang gom model, token, thời gian chạy", "Đang ghi chú lại thành lịch sử", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
 /** The digest scene's lines, naming the group being read. */
-export const digestLines = (group?: string) => [group ? `AI đang đọc hội thoại ${group}` : LINES.digest[0], ...LINES.digest.slice(1)];
+export const digestLines = (group?: string) =>
+  [group ? tNow("AI đang đọc hội thoại {group}", { group }) : tNow(LINES.digest[0]), ...LINES.digest.slice(1).map((k) => tNow(k))];
 
 /** The Đối chiếu BE scene's lines, naming the project and how many topics. */
 export const deepLines = (project?: string, topics?: number) =>
-  [project ? `AI đang mở dự án ${project}` : LINES.deep[0], topics ? `Đang đọc ${topics} chủ đề hỏi / BE` : LINES.deep[1], ...LINES.deep.slice(2)];
+  [project ? tNow("AI đang mở dự án {project}", { project }) : tNow(LINES.deep[0]), topics ? tNow("Đang đọc {n} chủ đề hỏi / BE", { n: topics }) : tNow(LINES.deep[1]),
+    ...LINES.deep.slice(2).map((k) => tNow(k))];
 
 /** Shortest time a loading scene stays up, so it plays through instead of flashing (user ask: 0.5–1s). */
 export const AI_WAIT_MS = 800;
@@ -55,13 +61,15 @@ export function useAiWait(pending: boolean, ms = AI_WAIT_MS) {
  * `cover`: laid over the (relative) list box, so the rows render and scroll into place underneath during the hold.
  */
 export function AiFetching({ kind, project = "", lines, cover, className }: { kind: FetchKind; project?: string; lines?: string[]; cover?: boolean; className?: string }) {
+  const t = useT();
   const Scene = SCENES[kind];
   return (
     <div className={cn("@container grid w-full place-items-center", cover ? "absolute inset-0 z-10 bg-cotton" : "min-h-[50vh] py-6", className)}>
       <div className="grid justify-items-center gap-5 animate-in fade-in-0 zoom-in-95 duration-(--dur-short) @max-[21rem]:[zoom:0.8]">
-        <div aria-hidden className="relative h-40 w-80"><Scene p={project} /></div>
-        <AiThinking lines={lines ?? LINES[kind]} className="w-72 max-w-full justify-center [&>svg]:hidden" />
-        <span className="ai-bar h-1 w-56 max-w-full rounded-full" />
+        {/* the scene is drawn in px (positions, flight paths): it grows with the frame by zoom, never by its box */}
+        <div aria-hidden className="relative h-40 w-80 @min-[36rem]:[zoom:1.3] @min-[52rem]:[zoom:1.55]"><Scene p={project} t={t} /></div>
+        <AiThinking lines={lines ?? LINES[kind].map((k) => t(k))} className="w-72 max-w-full justify-center @min-[36rem]:w-96 @min-[36rem]:[&_.ai-text]:text-base [&>svg]:hidden" />
+        <span className="ai-bar h-1 w-56 max-w-full rounded-full @min-[36rem]:w-80" />
       </div>
     </div>
   );
@@ -119,7 +127,7 @@ function Tile({ children, label, className }: { children: ReactNode; label: stri
         <span className="absolute inset-0 translate-x-0.5 -translate-y-0.5 rotate-3 rounded-xl border border-rule bg-cotton" />
         <span className="relative grid size-14 place-items-center rounded-xl border border-rule bg-cotton shadow-stock">{children}</span>
       </div>
-      <span className="max-w-20 truncate font-mono text-[10px] font-semibold tracking-wide text-ink-3">{label}</span>
+      <span className="max-w-20 truncate font-mono text-[10px] font-bold tracking-wide text-ink-3">{label}</span>
     </div>
   );
 }
@@ -134,26 +142,27 @@ const Line = ({ w, className }: { w: string | number; className?: string }) => <
 const Cone = ({ className }: { className: string }) => (
   <span className={cn("absolute animate-pulse bg-linear-to-r from-hl/5 to-hl/25 [clip-path:polygon(0_0,100%_42%,100%_58%,0_100%)]", className)} />
 );
-const Bubble = ({ me, w, tag }: { me?: boolean; w: string; tag?: boolean }) => (
+/** A chat bubble; `tag`: the "@you" label it starts with. */
+const Bubble = ({ me, w, tag }: { me?: boolean; w: string; tag?: string }) => (
   <div className={cn("mb-1.5 grid gap-1 rounded-2xl px-2 py-1.5", me ? "self-end rounded-br-sm bg-hl/25" : "self-start rounded-bl-sm bg-cotton shadow-stock", w)}>
-    {tag && <span className="font-mono text-[9px] leading-none font-semibold text-info">@bạn</span>}
+    {tag && <span className="font-mono text-[9px] leading-none font-bold text-info">{tag}</span>}
     <Line w="90%" /><Line w="60%" />
   </div>
 );
 
 // ---- scenes
 
-type Scene = (a: { p: string }) => ReactNode;
+type Scene = (a: { p: string; t: T }) => ReactNode;
 const tid = (p: string, n: number) => `${p || "YT"}-${n}`; // a ticket ID of the current project
 const ARCS = ["M44 70C110 -6 200 0 268 80", "M44 70C110 150 200 160 268 80"];
 
 const SCENES: Record<FetchKind, Scene> = {
   // Hôm nay: tags (Telegram) and tickets (YouTrack) stream into the robot from both sides; what is urgent comes out on top
-  today: ({ p }) => <>
+  today: ({ p, t }) => <>
     <Cone className="inset-y-7 right-1/2 left-12" />
     <Cone className="inset-y-7 right-12 left-1/2 -scale-x-100" />
-    {([["@bạn", C.info, 0], [tid(p, 214), C.hl, 1], ["#QA", C.ok, 0], ["Blocked", C.err, 1], ["@bạn", C.info, 0], ["Quá hạn", C.warn, 1]] as const)
-      .map(([t, c, side], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={side ? "M276 80C236 30 196 40 160 80" : "M44 80C84 130 124 120 160 80"}>{t}</Fly>)}
+    {([[t("@bạn"), C.info, 0], [tid(p, 214), C.hl, 1], ["#QA", C.ok, 0], ["Blocked", C.err, 1], [t("@bạn"), C.info, 0], [t("Quá hạn"), C.warn, 1]] as const)
+      .map(([s, c, side], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={side ? "M276 80C236 30 196 40 160 80" : "M44 80C84 130 124 120 160 80"}>{s}</Fly>)}
     <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
     <Tile label={p || "YouTrack"} className="top-1/2 right-1 -translate-y-1/2"><YtLogo className="size-9" /></Tile>
     <Bot ring className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
@@ -169,18 +178,18 @@ const SCENES: Record<FetchKind, Scene> = {
   </>,
 
   // release: tickets ride a belt through the robot's check; ready ones lift into the go-live rocket, blocked ones drop into "Chặn"
-  release: ({ p }) => <>
+  release: ({ p, t }) => <>
     <span className="absolute top-[92px] right-16 left-8 border-t border-dashed border-rule-2" />
     <span className="absolute top-[40px] left-[149px] h-[50px] w-0.5 animate-pulse rounded-full bg-linear-to-b from-hl to-hl/0" />
-    {([[`${tid(p, 128)} Done`, true], ["Blocked", false], [`${tid(p, 517)} Fixed`, true], ["Quá hạn", false], [`${tid(p, 206)} QC`, true], [`${tid(p, 731)} Done`, true]] as const)
-      .map(([t, ok], k) => <Fly key={k} k={k} gap={0.55} dur={3.3} dot={ok ? C.ok : C.err} path={ok ? "M30 92H150C205 92 228 46 284 34" : "M30 92H150C205 92 236 134 278 142"}>{t}</Fly>)}
+    {([[`${tid(p, 128)} Done`, true], ["Blocked", false], [`${tid(p, 517)} Fixed`, true], [t("Quá hạn"), false], [`${tid(p, 206)} QC`, true], [`${tid(p, 731)} Done`, true]] as const)
+      .map(([s, ok], k) => <Fly key={k} k={k} gap={0.55} dur={3.3} dot={ok ? C.ok : C.err} path={ok ? "M30 92H150C205 92 228 46 284 34" : "M30 92H150C205 92 236 134 278 142"}>{s}</Fly>)}
     <span className="absolute top-[72px] left-0 grid size-10 place-items-center rounded-lg border border-rule bg-cotton shadow-stock"><YtLogo className="size-6" /></span>
     <Bot className="top-0 left-[128px] size-11" size="size-9" />
     <div className="absolute top-0 right-0 grid justify-items-center gap-0.5">
       <span className="grid size-14 place-items-center rounded-full bg-hl-wash"><Rocket className="ai-float size-7 text-hl-2" /></span>
-      <span className="font-mono text-[10px] font-semibold text-ink-3">Go-live</span>
+      <span className="font-mono text-[10px] font-bold text-ink-3">Go-live</span>
     </div>
-    <span className="absolute right-1 bottom-1 rounded-md bg-error-wash px-1.5 py-0.5 text-[10px] font-medium text-error">Chặn go-live</span>
+    <span className="absolute right-1 bottom-1 rounded-md bg-error-wash px-1.5 py-0.5 text-[10px] font-medium text-error">{t("Chặn go-live")}</span>
   </>,
 
   // people: the robot deals ticket cards out to each member; their load bars rise and fall
@@ -196,7 +205,7 @@ const SCENES: Record<FetchKind, Scene> = {
           <span className="absolute top-[70px] h-[52px] w-2.5 -translate-x-1/2 overflow-hidden rounded-full bg-paper-3" style={{ left: x }}>
             <span className="fx-grow absolute inset-0 rounded-full" style={v({ background: c, "--fx-d": `${1.4 + k * 0.45}s`, animationDelay: `${k * 0.3}s` })} />
           </span>
-          <span className="absolute bottom-1 grid size-7 -translate-x-1/2 place-items-center rounded-full bg-paper-3 text-[11px] font-semibold text-ink-2 shadow-stock" style={{ left: x }}>{n}</span>
+          <span className="absolute bottom-1 grid size-7 -translate-x-1/2 place-items-center rounded-full bg-paper-3 text-[11px] font-bold text-ink-2 shadow-stock" style={{ left: x }}>{n}</span>
         </Fragment>
       ))}
       <Bot className="top-0 left-1/2 size-14 -translate-x-1/2" size="size-10" />
@@ -204,11 +213,11 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // a group's messages: the chat scrolls by, a scan line reads it, the robot takes it in
-  chat: () => {
+  chat: ({ t }) => {
     const feed = [[false, "w-28"], [true, "w-20"], [false, "w-24", true], [false, "w-16"], [true, "w-28"], [false, "w-20"]] as const;
     return <>
       <div className="absolute top-1 bottom-1 left-4 w-44 overflow-hidden rounded-xl border border-rule bg-paper-2 px-2">
-        <div className="fx-scroll flex flex-col pt-2">{[...feed, ...feed].map(([me, w, tag], k) => <Bubble key={k} me={me} w={w} tag={!!tag} />)}</div>
+        <div className="fx-scroll flex flex-col pt-2">{[...feed, ...feed].map(([me, w, tag], k) => <Bubble key={k} me={me} w={w} tag={tag ? t("@bạn") : undefined} />)}</div>
       </div>
       <span className="fx-scan absolute top-1 left-4 h-8 w-44 bg-linear-to-b from-transparent via-hl/25 to-transparent" style={v({ "--fx-y": "120px" })} />
       <Tg className="absolute -top-1 left-1 size-7 shadow-stock" icon="size-3.5" />
@@ -218,12 +227,12 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // tags waiting on you: each passes through the robot and drops into its urgency lane
-  inbox: () => {
-    const lanes = [["Quá hạn", C.err, 34], ["Hôm nay", C.warn, 80], ["Để sau", C.info, 126]] as const;
+  inbox: ({ t }) => {
+    const lanes = [[t("Quá hạn"), C.err, 34], [t("Hôm nay"), C.warn, 80], [t("Để sau"), C.info, 126]] as const;
     return <>
-      {([["@bạn", 0], ["Reply", 1], ["Tag", 2], ["@bạn 3h", 0], ["Hỏi", 1], ["FYI", 2]] as const).map(([t, l], k) => {
+      {([[t("@bạn"), 0], ["Reply", 1], ["Tag", 2], [`${t("@bạn")} 3h`, 0], [t("Hỏi"), 1], ["FYI", 2]] as const).map(([s, l], k) => {
         const [, c, y] = lanes[l];
-        return <Fly key={k} k={k} gap={0.5} dur={3} dot={c} path={`M44 72C90 72 112 80 150 80C196 80 214 ${y} 262 ${y}`}>{t}</Fly>;
+        return <Fly key={k} k={k} gap={0.5} dur={3} dot={c} path={`M44 72C90 72 112 80 150 80C196 80 214 ${y} 262 ${y}`}>{s}</Fly>;
       })}
       <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
       <Bot className="top-1/2 left-[118px] size-16 -translate-y-1/2" size="size-11" />
@@ -236,25 +245,25 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // the digest's conversation: messages pop up day by day along a timeline, the picked range sweeps over them
-  history: () => {
+  history: ({ t }) => {
     const pops = [[8, 74], [30, 46], [50, 82], [72, 58], [94, 34], [112, 76], [134, 50], [154, 84], [172, 40], [186, 66]];
     return <>
       <span className="absolute top-[108px] left-2 w-[204px] border-t border-rule-2" />
-      {["T2", "T3", "T4", "T5", "T6"].map((d, k) => <span key={d} className="absolute top-[114px] -translate-x-1/2 font-mono text-[9px] text-ink-3" style={{ left: 22 + k * 44 }}>{d}</span>)}
+      {(["T2", "T3", "T4", "T5", "T6"] as const).map((d, k) => <span key={d} className="absolute top-[114px] -translate-x-1/2 font-mono text-[9px] text-ink-3" style={{ left: 22 + k * 44 }}>{t(d)}</span>)}
       {pops.map(([x, y], k) => (
         <span key={k} className={cn("fx-step absolute h-3.5 w-9 rounded-xl", k % 3 === 1 ? "rounded-br-sm bg-hl/40" : "rounded-bl-sm border border-rule-2 bg-cotton shadow-stock")}
           style={v({ left: x, top: y, "--fx-d": "4s", animationDelay: `${k * 0.3}s` })} />
       ))}
       <span className="fx-sweep absolute top-6 left-1 h-[100px] w-14 rounded-lg border border-hl/50 bg-hl/10" style={v({ "--fx-x": "150px" })} />
       <Tg className="absolute top-[132px] left-1 size-5" icon="size-3" />
-      <span className="absolute top-[134px] left-7 font-mono text-[9px] text-ink-3">khoảng đã chọn</span>
+      <span className="absolute top-[134px] left-7 font-mono text-[9px] text-ink-3">{t("khoảng đã chọn")}</span>
       <span className="absolute top-[80px] left-[214px] w-8 border-t border-dashed border-hl/40" />
       <Bot ring className="top-1/2 right-0 size-20 -translate-y-1/2" size="size-12" />
     </>;
   },
 
   // Q&A: a #QA question pings, answers join its thread one by one, the accepted one gets "Chốt"
-  qa: () => <>
+  qa: ({ t }) => <>
     <span className="absolute top-[52px] bottom-3 left-[22px] border-l-2 border-rule-2" />
     <div className="absolute top-1 left-1 w-44">
       <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm border border-rule bg-cotton px-2 py-1.5 shadow-stock">
@@ -271,7 +280,7 @@ const SCENES: Record<FetchKind, Scene> = {
       </div>
     ))}
     <span className="fx-step absolute top-[124px] left-[168px] flex items-center gap-0.5 rounded-full bg-ok-wash px-1.5 py-0.5 text-[10px] font-medium text-ok" style={v({ "--fx-d": "4.5s", animationDelay: "2.9s" })}>
-      <Check className="size-3" />Chốt
+      <Check className="size-3" />{t("Chốt")}
     </span>
     <Bot ring className="top-4 right-0 size-20" size="size-12" />
   </>,
@@ -286,7 +295,7 @@ const SCENES: Record<FetchKind, Scene> = {
       })}
       {groups.map(([n, y]) => (
         <div key={n} className="absolute left-1 flex h-9 w-[92px] items-center gap-1.5 rounded-lg border border-rule bg-cotton px-1.5 shadow-stock" style={{ top: y }}>
-          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-paper-3 text-[9px] font-semibold text-ink-2">{n}</span>
+          <span className="grid size-5 shrink-0 place-items-center rounded-full bg-paper-3 text-[9px] font-bold text-ink-2">{n}</span>
           <span className="grid flex-1 gap-1"><Line w="90%" /><Line w="60%" /></span>
         </div>
       ))}
@@ -308,15 +317,15 @@ const SCENES: Record<FetchKind, Scene> = {
 
   // summarizing a group: its back-and-forth scrolls by (PO / QA ask, BE answers), each message passes through the robot and lands
   // in what it is: a question still open, something settled, Q&A with BE
-  digest: () => {
+  digest: ({ t }) => {
     const feed = [["PO", "w-20", 0], ["BE", "w-16", 1], ["QA", "w-[72px]", 0], ["BE", "w-20", 1], ["Dev", "w-14", 0], ["PO", "w-[68px]", 0]] as const;
-    const lanes = [["Cần confirm", C.warn, 30, MessageCircleQuestion], ["Đã chốt", C.ok, 80, Check], ["Với BE", "var(--color-code)", 130, Server]] as const;
+    const lanes = [[t("Cần confirm"), C.warn, 30, MessageCircleQuestion], [t("Đã chốt"), C.ok, 80, Check], [t("Với BE"), "var(--color-code)", 130, Server]] as const;
     return <>
       <div className="absolute top-1 bottom-1 left-0 w-[104px] overflow-hidden rounded-xl border border-rule bg-paper-2 px-1.5">
         <div className="fx-scroll flex flex-col gap-1.5 pt-2">
           {[...feed, ...feed].map(([who, w, be], k) => (
             <div key={k} className={cn("grid gap-1 rounded-2xl px-2 py-1.5", be ? "self-end rounded-br-sm bg-code/20" : "self-start rounded-bl-sm bg-cotton shadow-stock", w)}>
-              <span className={cn("font-mono text-[8px] leading-none font-semibold", be ? "text-code" : "text-ink-3")}>{who}</span>
+              <span className={cn("font-mono text-[8px] leading-none font-bold", be ? "text-code" : "text-ink-3")}>{who}</span>
               <Line w="90%" /><Line w="55%" />
             </div>
           ))}
@@ -324,14 +333,14 @@ const SCENES: Record<FetchKind, Scene> = {
       </div>
       <span className="fx-scan absolute top-1 left-0 h-8 w-[104px] bg-linear-to-b from-transparent via-hl/25 to-transparent" style={v({ "--fx-y": "120px" })} />
       <Tg className="absolute -top-1 -left-1 size-6 shadow-stock" icon="size-3" />
-      {([["Hỏi?", 0, 40], ["BE: API", 2, 96], ["Chốt", 1, 64], ["QA hỏi", 0, 120], ["Đổi field", 2, 52], ["OK", 1, 108]] as const).map(([t, l, sy], k) => {
+      {([[t("Hỏi?"), 0, 40], ["BE: API", 2, 96], [t("Chốt"), 1, 64], [t("QA hỏi"), 0, 120], [t("Đổi field"), 2, 52], ["OK", 1, 108]] as const).map(([s, l, sy], k) => {
         const [, c, y] = lanes[l];
-        return <Fly key={k} k={k} gap={0.55} dur={3.2} dot={c} path={`M100 ${sy}C122 ${sy} 128 80 154 80C192 80 204 ${y} 232 ${y}`}>{t}</Fly>;
+        return <Fly key={k} k={k} gap={0.55} dur={3.2} dot={c} path={`M100 ${sy}C122 ${sy} 128 80 154 80C192 80 204 ${y} 232 ${y}`}>{s}</Fly>;
       })}
       <Bot ring className="top-1/2 left-[112px] size-[72px] -translate-y-1/2" size="size-11" />
       {lanes.map(([l, c, y, Icon], n) => (
         <div key={l} className="absolute right-0 grid w-[84px] -translate-y-1/2 gap-1 rounded-md border border-rule bg-cotton px-1.5 py-1 shadow-stock" style={{ top: y }}>
-          <span className="flex items-center gap-1 text-[9px] font-semibold text-ink-2"><Icon className="size-2.5 shrink-0" style={{ color: c }} />{l}</span>
+          <span className="flex items-center gap-1 text-[9px] font-bold text-ink-2"><Icon className="size-2.5 shrink-0" style={{ color: c }} />{l}</span>
           <span className="flex gap-0.5">
             {[0, 1, 2].map((k) => <span key={k} className="fx-step block h-1 flex-1 rounded-full" style={v({ background: c, "--fx-d": "4.5s", animationDelay: `${0.6 + n * 0.3 + k * 0.9}s` })} />)}
           </span>
@@ -343,14 +352,14 @@ const SCENES: Record<FetchKind, Scene> = {
   // handing a message to the agent: the message, its tickets and links fly into the robot, which loads them line by line into the session
   // update: GitHub broadcasts the release; files stream along flowing beams into the robot, pass the signature gate as checked
   // packages and fill the app, which pops the new version with a burst of sparks
-  update: ({ p }) => <>
+  update: ({ p, t }) => <>
     <svg viewBox="0 0 320 160" className="absolute inset-0 size-full overflow-visible" fill="none" strokeWidth="1.5" strokeLinecap="round">
       <path className="ai-beam" d="M58 64C96 26 128 34 146 66" stroke={C.hl} opacity="0.55" />
       <path className="ai-beam" d="M58 76C96 116 128 112 146 92" stroke={C.info} opacity="0.55" />
       <path className="ai-beam" d="M186 80C214 62 236 60 260 68" stroke={C.ok} opacity="0.6" />
     </svg>
-    {([[p || "Release", C.hl], [".zip", C.info], ["sha256", C.ok], ["chữ ký", C.hl2], ["app/", C.warn], ["web/", C.info], ["VERSION", C.hl], ["uv.lock", C.ok]] as const)
-      .map(([t, c], k) => <Fly key={t} k={k} dot={c} gap={0.4} dur={3.2} path={k % 2 ? "M44 80C84 130 124 120 160 80" : "M44 80C84 30 124 40 160 80"}>{t}</Fly>)}
+    {([[p || "Release", C.hl], [".zip", C.info], ["sha256", C.ok], [t("chữ ký"), C.hl2], ["app/", C.warn], ["web/", C.info], ["VERSION", C.hl], ["uv.lock", C.ok]] as const)
+      .map(([s, c], k) => <Fly key={k} k={k} dot={c} gap={0.4} dur={3.2} path={k % 2 ? "M44 80C84 130 124 120 160 80" : "M44 80C84 30 124 40 160 80"}>{s}</Fly>)}
     {[0, 1, 2].map((k) => <Fly key={`pk${k}`} k={k} gap={0.8} dur={2.4} path="M186 80C214 62 236 60 266 68"><ShieldCheck className="size-3 text-ok" />ok</Fly>)}
     <span className="absolute top-[40px] left-[222px] h-[60px] w-0.5 animate-pulse rounded-full bg-linear-to-b from-transparent via-ok to-transparent" />
     <span className="absolute top-[42px] left-1 size-14 animate-ping rounded-xl border-2 border-hl/40 [animation-duration:1.8s]" />
@@ -364,11 +373,11 @@ const SCENES: Record<FetchKind, Scene> = {
     {[[-26, -22, C.ok], [0, -34, C.hl], [26, -22, C.info], [30, 6, C.warn], [-30, 6, C.hl2], [0, 30, C.ok]].map(([dx, dy, c], k) => (
       <span key={k} className="ai-packet absolute top-[70px] left-[288px] size-1.5 rounded-full" style={v({ background: c, "--dx": `${dx}px`, "--dy": `${dy}px`, animationDelay: `${0.15 + k * 0.17}s` })} />
     ))}
-    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "3.2s" })}><Check className="size-3" />{p || "mới"}</span>
+    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "3.2s" })}><Check className="size-3" />{p || t("mới")}</span>
   </>,
 
   // restart: the robot reboots the server: the power ring spins, rack lights blink back on one by one, the new version checks in
-  restart: ({ p }) => <>
+  restart: ({ p, t }) => <>
     <svg viewBox="0 0 320 160" className="absolute inset-0 size-full" fill="none" strokeWidth="1.5" strokeLinecap="round">
       <path className="ai-beam" d="M104 80H196" stroke={C.hl} opacity="0.6" />
     </svg>
@@ -387,18 +396,18 @@ const SCENES: Record<FetchKind, Scene> = {
         ))}
       </div>
     </div>
-    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "2.6s" })}><Check className="size-3" />{p || "mới"}</span>
+    <span className={cn(CHIP, "fx-step absolute top-1 right-0 text-ok")} style={v({ "--fx-d": "2.6s" })}><Check className="size-3" />{p || t("mới")}</span>
   </>,
 
-  agent: ({ p }) => {
-    const srcs = [[22, "Tin", <Tg key="t" className="size-6" icon="size-3" />], [80, "Ticket", <YtLogo key="y" className="size-6" />], [138, "Link", <FileText key="f" className="size-5 text-hl-2" />]] as const;
+  agent: ({ p, t }) => {
+    const srcs = [[22, t("Tin"), <Tg key="t" className="size-6" icon="size-3" />], [80, "Ticket", <YtLogo key="y" className="size-6" />], [138, "Link", <FileText key="f" className="size-5 text-hl-2" />]] as const;
     return <>
-      {([["Tin nhắn", 0, C.info], ["YT-128", 1, C.hl], ["link", 2, C.warn], ["Phân tích", 0, C.hl2], ["spec.md", 2, C.ok], ["YT-342", 1, C.hl]] as const)
-        .map(([t, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M56 ${y}C100 ${y} 110 80 138 80`}>{t}</Fly>; })}
+      {([[t("Tin nhắn"), 0, C.info], ["YT-128", 1, C.hl], ["link", 2, C.warn], [t("Phân tích"), 0, C.hl2], ["spec.md", 2, C.ok], ["YT-342", 1, C.hl]] as const)
+        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M56 ${y}C100 ${y} 110 80 138 80`}>{l}</Fly>; })}
       {Array.from({ length: 4 }, (_, k) => <Fly key={k} k={k} gap={0.6} dur={1.6} path="M182 80H236" className="size-1.5 rounded-full bg-hl" />)}
       {srcs.map(([y, l, icon]) => (
         <div key={l} className="absolute left-0 flex h-9 w-14 -translate-y-1/2 items-center gap-1 rounded-lg border border-rule bg-cotton px-1 shadow-stock" style={{ top: y }}>
-          {icon}<span className="font-mono text-[9px] font-semibold text-ink-3">{l}</span>
+          {icon}<span className="font-mono text-[9px] font-bold text-ink-3">{l}</span>
         </div>
       ))}
       <Bot ring className="top-1/2 left-[118px] size-20 -translate-y-1/2" size="size-12" />
@@ -422,10 +431,53 @@ const SCENES: Record<FetchKind, Scene> = {
       </div>
     </>;
   },
+  // AI runs (History / Usage): the robot listens to each AI's sessions (Claude, Codex, this app); their request files fly into
+  // it, sound rings pulse while it takes them in, and it notes each one down in the History log (time, model, a tick)
+  runs: ({ t }) => {
+    const srcs = [[24, <AgentIcon key="c" provider="claude" className="size-6" />, "Claude"], [80, <AgentIcon key="x" provider="codex" className="size-6" />, "Codex"],
+      [136, <Gauge key="a" className="size-5 text-hl-2" />, "App"]] as const;
+    const notes = [["09:14", "opus", C.hl], ["09:05", "gpt", C.info], ["08:59", "sonnet", C.ok], ["08:57", "haiku", C.warn], ["08:56", "opus", C.hl]] as const;
+    return <>
+      {([["req.jsonl", 0, C.hl], ["rollout", 1, C.info], ["6.9M tok", 0, C.hl2], [t("tóm tắt"), 2, C.ok], ["255s", 1, C.warn], ["opus", 0, C.hl]] as const)
+        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M64 ${y}C100 ${y} 108 80 134 80`}>{l}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`n${k}`} k={k} gap={0.7} dur={1.8} path="M180 80C196 80 200 66 214 66" className="size-1.5 rounded-full bg-hl" />)}
+      {srcs.map(([y, icon, l]) => (
+        <div key={l} className="absolute left-0 flex h-9 w-16 -translate-y-1/2 items-center gap-1 rounded-lg border border-rule bg-cotton px-1 shadow-stock" style={{ top: y }}>
+          {icon}<span className="font-mono text-[9px] font-bold text-ink-3">{l}</span>
+        </div>
+      ))}
+      {[0, 1, 2].map((k) => (
+        <span key={k} className="absolute top-1/2 left-[157px] size-12 -translate-1/2 animate-ping rounded-full border-2 border-hl/40"
+          style={{ animationDuration: "2.4s", animationDelay: `${k * 0.8}s` }} />
+      ))}
+      <Bot className="top-1/2 left-[122px] size-[72px] -translate-y-1/2" size="size-11" />
+      <div className="absolute top-2 right-0 bottom-2 w-[100px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
+        <div className="flex items-center gap-1 border-b border-rule bg-paper-2 px-1.5 py-1">
+          <FileText className="size-2.5 text-hl-2" />
+          <span className="font-mono text-[8px] font-bold text-ink-2">History</span>
+        </div>
+        <div className="grid gap-[7px] p-1.5">
+          {notes.map(([at0, m, c], k) => {
+            const at = v({ "--fx-d": "4.5s", animationDelay: `${0.3 + k * 0.6}s` });
+            return (
+              <div key={k} className="fx-step flex items-center gap-1" style={at}>
+                <span className="font-mono text-[7px] leading-none text-ink-3">{at0}</span>
+                <span className="size-1 shrink-0 rounded-full" style={{ background: c }} />
+                <span className="font-mono text-[7px] leading-none text-ink-2">{m}</span>
+                <Check className="ml-auto size-2.5 shrink-0 text-ok" />
+              </div>
+            );
+          })}
+          <span className="h-2 w-1 animate-pulse bg-hl" />
+        </div>
+      </div>
+    </>;
+  },
   // Đối chiếu BE: the Q&A with BE scrolls by on the left, each question / answer flies into the robot, which runs its
   // magnifier down the project's code on the right and pins a verdict on the lines it checked (adapted, off, missing, waiting)
-  deep: ({ p }) => {
-    const feed = [["Hỏi", "w-20", 0], ["BE", "w-16", 1], ["Hỏi", "w-[72px]", 0], ["BE", "w-20", 1], ["Hỏi", "w-14", 0], ["BE", "w-[68px]", 1]] as const;
+  deep: ({ p, t }) => {
+    const ask = t("Hỏi");
+    const feed = [[ask, "w-20", 0], ["BE", "w-16", 1], [ask, "w-[72px]", 0], ["BE", "w-20", 1], [ask, "w-14", 0], ["BE", "w-[68px]", 1]] as const;
     const code = [[0, 44, C.hl2], [8, 52, C.info], [8, 36, C.ok], [16, 46, C.warn], [8, 30, C.info], [0, 40, C.hl2], [8, 50, C.ok], [16, 34, C.info]] as const;
     const marks = [[1, Check, C.ok], [3, TriangleAlert, C.warn], [5, X, C.err], [7, Hourglass, "var(--color-signal-2)"]] as const;
     return <>
@@ -433,15 +485,15 @@ const SCENES: Record<FetchKind, Scene> = {
         <div className="fx-scroll flex flex-col gap-1.5 pt-2">
           {[...feed, ...feed].map(([who, w, be], k) => (
             <div key={k} className={cn("grid gap-1 rounded-2xl px-2 py-1.5", be ? "self-end rounded-br-sm bg-code/20" : "self-start rounded-bl-sm bg-cotton shadow-stock", w)}>
-              <span className={cn("font-mono text-[8px] leading-none font-semibold", be ? "text-code" : "text-info")}>{who}</span>
+              <span className={cn("font-mono text-[8px] leading-none font-bold", be ? "text-code" : "text-info")}>{who}</span>
               <Line w="90%" /><Line w="55%" />
             </div>
           ))}
         </div>
       </div>
       <Tg className="absolute -top-1 -left-1 size-6 shadow-stock" icon="size-3" />
-      {([["Hỏi?", 40, C.info], ["BE: API", 96, "var(--color-code)"], ["field", 64, C.hl2], ["BE: OK", 120, "var(--color-code)"], ["Hỏi?", 52, C.info]] as const)
-        .map(([t, y, c], k) => <Fly key={k} k={k} gap={0.6} dur={3} dot={c} path={`M88 ${y}C108 ${y} 112 80 134 80`}>{t}</Fly>)}
+      {([[t("Hỏi?"), 40, C.info], ["BE: API", 96, "var(--color-code)"], ["field", 64, C.hl2], ["BE: OK", 120, "var(--color-code)"], [t("Hỏi?"), 52, C.info]] as const)
+        .map(([s, y, c], k) => <Fly key={k} k={k} gap={0.6} dur={3} dot={c} path={`M88 ${y}C108 ${y} 112 80 134 80`}>{s}</Fly>)}
       {Array.from({ length: 4 }, (_, k) => <Fly key={`d${k}`} k={k} gap={0.5} dur={1.6} path={`M166 80C184 80 186 ${40 + k * 22} 206 ${40 + k * 22}`} className="size-1.5 rounded-full bg-hl" />)}
       <Bot ring className="top-1/2 left-[96px] size-[76px] -translate-y-1/2" size="size-11" />
       <div className="absolute top-1 right-0 bottom-1 w-[116px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">

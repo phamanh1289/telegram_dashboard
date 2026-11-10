@@ -7,6 +7,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { Hint } from "@/components/ui/hint";
+import { useT } from "@/lib/i18n";
 import { copyText } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
@@ -14,8 +15,8 @@ const PLUGINS = [remarkGfm, remarkBreaks];
 const TICKET = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
 const SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\))/; // code and links keep their ticket IDs as text
 
-// Sections whose items the user forwards as is: questions to ask, things to confirm.
-const ASK = /hỏi|confirm|xác nhận|làm rõ/i;
+// Sections whose items the user forwards as is: questions to ask, things to confirm (the AI may answer in English).
+const ASK = /hỏi|confirm|xác nhận|làm rõ|\bask|clarif/i;
 type Pos = { start: { offset?: number }; end: { offset?: number } };
 type MdNode = { type: string; value?: string; position?: Pos; children?: MdNode[]; data?: { hProperties?: Record<string, unknown> } };
 const plain = (n: MdNode): string => n.value ?? (n.children ?? []).map(plain).join("");
@@ -87,11 +88,12 @@ export const ASK_BTN = "ml-1 inline-grid size-5 place-items-center rounded-sm al
 function CopyAsk({ text }: { text: unknown }) {
   const tag = use(AskTag);
   const post = use(AskPost);
+  const t = useT();
   if (typeof text !== "string") return null;
   const full = tag ? `${text}\n\n#${tag}` : text;
   return <>
-    <Hint text="Copy ý này để hỏi / confirm">
-      <button type="button" aria-label="Copy ý này" onClick={() => void copyText(full)} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
+    <Hint text={t("Copy ý này để hỏi / confirm")}>
+      <button type="button" aria-label={t("Copy ý này")} onClick={() => void copyText(full)} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
     </Hint>
     {post?.(full)}
   </>;
@@ -106,6 +108,7 @@ const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a
  * Memoised: a long AI Agent log re-renders on every poll, but its old answers keep the same text.
  */
 export const Markdown = memo(function Markdown({ text, className, onTicket, asks }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void; asks?: boolean }) {
+  const t = useT(); // memo: re-renders on a language change through this subscription
   const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
   let src = text ?? "";
   if (onTicket) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
@@ -113,7 +116,7 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
     // only this app's own files load inline: a remote image would fetch on sight (tracking pixel, or a
     // prompt-injected AI answer leaking data in its URL), so it stays a link the user chooses to open
     img: ({ src, alt }) => (typeof src !== "string" || !src ? null
-      : src.startsWith("/api/") ? <ImageView src={src} alt={alt} /> : <Link href={src}>[ảnh{alt ? `: ${alt}` : ""}]</Link>),
+      : src.startsWith("/api/") ? <ImageView src={src} alt={alt} /> : <Link href={src}>[{alt ? t("ảnh: {alt}", { alt }) : t("ảnh")}]</Link>),
     a: onTicket
       ? ({ href, children }) => (href?.startsWith("#ticket:") ? <button type="button" onClick={() => onTicket(href.slice(8))}>{children}</button> : <Link href={href}>{children}</Link>)
       : Link,
@@ -137,6 +140,7 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
  * Esc / ✕ / a click beside it closes only the popup. A broken image shows its alt text.
  */
 export function ImageView({ src, alt, className, boxClass }: { src: string; alt?: string; className?: string; boxClass?: string }) {
+  const t = useT();
   const box = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false), [full, setFull] = useState(false);
   useEffect(() => { if (open) box.current?.showModal(); }, [open]);
@@ -144,12 +148,12 @@ export function ImageView({ src, alt, className, boxClass }: { src: string; alt?
   const beside = (e: React.MouseEvent) => { if (e.target === e.currentTarget) close(); };
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-label={`Xem ảnh${alt ? ` ${alt}` : ""}`} className={cn("my-1 inline-block max-w-full cursor-zoom-in align-top", boxClass)}>
+      <button type="button" onClick={() => setOpen(true)} aria-label={alt ? t("Xem ảnh {alt}", { alt }) : t("Xem ảnh")} className={cn("my-1 inline-block max-w-full cursor-zoom-in align-top", boxClass)}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={src} alt={alt ?? ""} loading="lazy" className={className ?? "max-h-[28rem] max-w-full rounded-md border border-rule bg-paper-2"} />
       </button>
       {open && createPortal( // in <body>: a <dialog> may not sit inside the markdown's <p>
-        <dialog ref={box} aria-label={alt || "Ảnh"} onClose={() => { setOpen(false); setFull(false); }} onClick={beside}
+        <dialog ref={box} aria-label={alt || t("Ảnh")} onClose={() => { setOpen(false); setFull(false); }} onClick={beside}
           onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } }} // not the sheet's Esc too
           className="m-0 h-dvh max-h-none w-dvw max-w-none bg-black/85 p-0 text-white backdrop:bg-transparent">
           <div onClick={beside} className={cn("grid size-full overflow-auto", !full && "place-items-center p-6 sm:p-10")}>
@@ -158,8 +162,8 @@ export function ImageView({ src, alt, className, boxClass }: { src: string; alt?
               className={full ? "max-w-none cursor-zoom-out" : "max-h-full max-w-full cursor-zoom-in rounded-md object-contain shadow-pop"} />
           </div>
           <div className="fixed top-3 right-3 flex gap-2">
-            <a href={src} target="_blank" rel="noopener noreferrer" aria-label="Mở ảnh ở tab mới" className="grid size-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><ExternalLink className="size-4" /></a>
-            <button type="button" autoFocus onClick={close} aria-label="Đóng (Esc)" className="grid size-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><X className="size-5" /></button>
+            <a href={src} target="_blank" rel="noopener noreferrer" aria-label={t("Mở ảnh ở tab mới")} className="grid size-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><ExternalLink className="size-4" /></a>
+            <button type="button" autoFocus onClick={close} aria-label={t("Đóng (Esc)")} className="grid size-9 place-items-center rounded-full bg-black/60 text-white hover:bg-black/80"><X className="size-5" /></button>
           </div>
         </dialog>, document.body)}
     </>

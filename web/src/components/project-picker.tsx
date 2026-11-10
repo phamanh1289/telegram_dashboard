@@ -10,6 +10,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Project } from "@/lib/api";
+import { t as tPlain, useT } from "@/lib/i18n";
 import { toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +26,7 @@ const ITEM = "flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 
  * `none`: the folder is optional, an item with that label picks "" (no code read).
  */
 export function ProjectPicker({ value, onChange, className, none }: { value: string; onChange: (path: string) => void; className?: string; none?: string }) {
+  const t = useT();
   const qc = useQueryClient();
   const projects = useProjects();
   const items = projects.data ?? [];
@@ -35,22 +37,22 @@ export function ProjectPicker({ value, onChange, className, none }: { value: str
   const pick = useMutation({
     mutationFn: () => api<Project | undefined>("/projects/pick", { method: "POST" }),
     onSuccess: (p) => p && onChange(p.path),
-    onError: (e) => setTyping(errorText(e, { not_found: "Backend cũ: khởi động lại dashboard, hoặc nhập đường dẫn." }, "Không mở được hộp chọn thư mục, hãy nhập đường dẫn.")),
+    onError: (e) => setTyping(errorText(e, { not_found: tPlain("Backend cũ: khởi động lại dashboard, hoặc nhập đường dẫn.") }, tPlain("Không mở được hộp chọn thư mục, hãy nhập đường dẫn."))),
     onSettled: refresh,
   });
   const remove = useMutation({
     mutationFn: (p: string) => api<void>(`/projects?path=${encodeURIComponent(p)}`, { method: "DELETE" }),
     onSuccess: () => onChange(""),
-    onError: (e) => toast({ text: errorText(e, {}, "Không gỡ được dự án, thử lại") }),
+    onError: (e) => toast({ text: errorText(e, {}, tPlain("Không gỡ được dự án, thử lại")) }),
     onSettled: refresh,
   });
-  const label = pick.isPending ? "Đang chọn thư mục…" : current?.name
-    ?? (projects.isPending ? "Đang tải dự án…" : projects.isError ? "Không tải được dự án" : none ?? "Chọn dự án");
+  const label = pick.isPending ? t("Đang chọn thư mục…") : current?.name
+    ?? (projects.isPending ? t("Đang tải dự án…") : projects.isError ? t("Không tải được dự án") : none ?? t("Chọn dự án"));
 
   return (
     <>
       <Menu.Root>
-        <Menu.Trigger aria-label="Dự án tham chiếu cho AI" aria-busy={pick.isPending} disabled={pick.isPending}
+        <Menu.Trigger aria-label={t("Dự án tham chiếu cho AI")} aria-busy={pick.isPending} disabled={pick.isPending}
           className={cn("group relative inline-flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-1 text-sm text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus) data-popup-open:border-hl disabled:opacity-70", className)}>
           <span className={cn("grid size-6 shrink-0 place-items-center rounded-md transition-colors duration-(--dur-short)", current ? "bg-hl-wash text-hl-2" : "bg-paper-2 text-ink-3")}>
             {pick.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FolderGit2 className="size-3.5" aria-hidden />}
@@ -66,15 +68,15 @@ export function ProjectPicker({ value, onChange, className, none }: { value: str
         <Menu.Portal>
           <Menu.Positioner sideOffset={6} align="start" className="z-50 outline-none">
             <Menu.Popup className={POPUP}>
-              <p className="px-2.5 pt-1 pb-0.5 text-xs text-ink-3">AI chỉ đọc code trong thư mục này</p>
+              <p className="px-2.5 pt-1 pb-0.5 text-xs text-ink-3">{t("AI chỉ đọc code trong thư mục này")}</p>
               {projects.isPending ? (
                 <div className="grid gap-1 p-1"><Skeleton className="h-9" /><Skeleton className="h-9" /></div>
               ) : projects.isError ? (
                 <Menu.Item closeOnClick={false} className={cn(ITEM, "text-error")} onClick={() => void projects.refetch()}>
-                  <RotateCcw /> Không tải được danh sách · Thử lại
+                  <RotateCcw /> {t("Không tải được danh sách · Thử lại")}
                 </Menu.Item>
               ) : !items.length && !none ? (
-                <p className="mx-1 rounded-md border border-dashed border-rule-2 px-2.5 py-2 text-xs text-ink-2">Chưa có dự án nào. Thêm thư mục code trên máy để AI đọc.</p>
+                <p className="mx-1 rounded-md border border-dashed border-rule-2 px-2.5 py-2 text-xs text-ink-2">{t("Chưa có dự án nào. Thêm thư mục code trên máy để AI đọc.")}</p>
               ) : (
                 <Menu.RadioGroup value={current?.path ?? ""} onValueChange={(v) => onChange(String(v))}>
                   {none && (
@@ -101,11 +103,11 @@ export function ProjectPicker({ value, onChange, className, none }: { value: str
                 </Menu.RadioGroup>
               )}
               <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />
-              <Menu.Item className={ITEM} onClick={() => pick.mutate()}><FolderPlus aria-hidden /> Thêm thư mục…</Menu.Item>
+              <Menu.Item className={ITEM} onClick={() => pick.mutate()}><FolderPlus aria-hidden /> {t("Thêm thư mục…")}</Menu.Item>
               {current && (
                 <Menu.Item className={cn(ITEM, "text-ink-2 data-highlighted:bg-error-wash data-highlighted:text-error data-highlighted:[&>svg]:text-error")}
                   disabled={remove.isPending} onClick={() => remove.mutate(current.path)}>
-                  <X aria-hidden /><span className="min-w-0 truncate">Gỡ khỏi danh sách <span className="text-xs opacity-70">(không xóa thư mục)</span></span>
+                  <X aria-hidden /><span className="min-w-0 truncate">{t("Gỡ khỏi danh sách")} <span className="text-xs opacity-70">{t("(không xóa thư mục)")}</span></span>
                 </Menu.Item>
               )}
             </Menu.Popup>
@@ -119,6 +121,7 @@ export function ProjectPicker({ value, onChange, className, none }: { value: str
 
 /** Fallback when the folder dialog can't open: paste the path. */
 function PathDialog({ why, onAdded, onClose }: { why: string; onAdded: (path: string) => void; onClose: () => void }) {
+  const t = useT();
   const qc = useQueryClient();
   const [path, setPath] = useState("");
   const add = useMutation({
@@ -130,20 +133,19 @@ function PathDialog({ why, onAdded, onClose }: { why: string; onAdded: (path: st
     <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent>
         <form className="grid gap-3" onSubmit={(e) => { e.preventDefault(); if (path.trim()) add.mutate(path.trim()); }}>
-          <DialogTitle>Thêm dự án</DialogTitle>
+          <DialogTitle>{t("Thêm dự án")}</DialogTitle>
           <DialogDescription>
-            {why} Dán đường dẫn thư mục dự án trên máy (ví dụ ~/Documents/my-app); mẹo: kéo thư mục từ Finder vào Terminal để lấy đường dẫn.
-            AI chỉ được đọc file trong đó.
+            {why} {t("Dán đường dẫn thư mục dự án trên máy (ví dụ ~/Documents/my-app); mẹo: kéo thư mục từ Finder vào Terminal để lấy đường dẫn. AI chỉ được đọc file trong đó.")}
           </DialogDescription>
-          <Input autoFocus aria-label="Đường dẫn dự án" placeholder="/Users/…/my-app" value={path} onChange={(e) => setPath(e.target.value)} maxLength={1000} />
+          <Input autoFocus aria-label={t("Đường dẫn dự án")} placeholder="/Users/…/my-app" value={path} onChange={(e) => setPath(e.target.value)} maxLength={1000} />
           {add.isError && (
             <p role="alert" className="text-sm text-error">
-              {errorText(add.error, { project_not_a_directory: "Không tìm thấy thư mục này." }, "Không thêm được dự án.")}
+              {errorText(add.error, { project_not_a_directory: t("Không tìm thấy thư mục này.") }, t("Không thêm được dự án."))}
             </p>
           )}
           <DialogFooter>
-            <DialogClose render={<Button type="button" variant="outline" />}>Hủy</DialogClose>
-            <Button type="submit" aria-busy={add.isPending} disabled={!path.trim() || add.isPending}>Thêm</Button>
+            <DialogClose render={<Button type="button" variant="outline" />}>{t("Hủy")}</DialogClose>
+            <Button type="submit" aria-busy={add.isPending} disabled={!path.trim() || add.isPending}>{t("Thêm")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

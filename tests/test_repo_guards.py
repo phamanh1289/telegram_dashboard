@@ -25,6 +25,12 @@ def test_tailwind_max_container_variant():
     assert _hits(_web_files(), re.compile(r"\bmax-@\w")) == []
 
 
+def test_dates_and_numbers_follow_ui_language():
+    """The UI is vi + en (lib/i18n): dates / numbers go through fmtDate / fmtNum / locale(), never a fixed "vi-VN"."""
+    files = [p for p in _web_files() if "lib/i18n/" not in p.as_posix()]
+    assert _hits(files, re.compile(r"[\"']vi-VN[\"']")) == []
+
+
 def test_no_native_select_outside_ui():
     """Single-value pickers use ui/dropdown.tsx (CLAUDE.md): the native popup ignores the app theme."""
     files = [p for p in _web_files() if "components/ui/" not in p.as_posix()]

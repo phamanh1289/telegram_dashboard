@@ -1,97 +1,386 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, GitPullRequest, Loader2, ShieldAlert } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, ExternalLink, GitBranch, GitPullRequest, Loader2, RotateCw, Rows2, ShieldAlert } from "lucide-react";
+import { useMemo, useState } from "react";
 import { AiFetching } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
+import { Segmented } from "@/components/ui/segmented";
 import { api, errorText, type Task } from "@/lib/api";
-import { toast } from "@/lib/inbox";
+import { type Key, t as tNow, tMaybe, useT } from "@/lib/i18n";
+import { sessionId, toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
+
+// AI Agent › Thay đổi: a full page over the session list. Only what changed since the session started (the backend
+// diffs from a snapshot taken then; older sessions: the whole working tree against HEAD). Files grouped new / edited / deleted, each a card that folds
+// (CSS grid-rows, body mounted on first open), before / after side by side or in one column, then branch + PR.
 
 type Changes = { root: string; branch: string; files: { path: string; status: string; secret: boolean }[]; diff: string; truncated: boolean };
 type Pr = { url: string | null; branch: string; skipped: string[]; note: string | null };
 
-const ERR = {
+const ERR_KEYS: Record<string, Key> = {
   not_git_repo: "Thư mục dự án không phải repo git.", git_missing: "Máy chưa cài git.", no_changes: "Không có thay đổi nào để commit.",
   git_push_failed: "Không đẩy được nhánh lên remote (quyền hoặc mạng).", git_failed: "Git báo lỗi.", git_timeout: "Git chạy quá lâu, thử lại.",
   task_busy: "AI đang chạy: đợi xong lượt này.",
 };
-const TONE: Record<string, string> = { M: "text-warn", A: "text-ok", "??": "text-ok", D: "text-error", R: "text-info" };
+/** The error texts in the current language (render-time: the caller uses `useT`). */
+const errs = () => Object.fromEntries(Object.entries(ERR_KEYS).map(([k, v]) => [k, tNow(v)]));
 
-/** What the session's project changed, and a branch + PR from it. Mounted only while open; push needs a second click. */
-export function TaskChanges({ t, open, onOpenChange }: { t: Task; open: boolean; onOpenChange: (o: boolean) => void }) {
-  return <Dialog open={open} onOpenChange={onOpenChange}>{open && <Body t={t} />}</Dialog>;
+type Kind = "new" | "edit" | "del" | "rename";
+const KIND: Record<Kind, { label: Key; group: Key; badge: string; edge: string }> = {
+  new: { label: "Mới", group: "File mới tạo", badge: "bg-ok-wash text-ok", edge: "border-l-ok" },
+  edit: { label: "Sửa", group: "File đã sửa", badge: "bg-warn-wash text-warn", edge: "border-l-warn" },
+  rename: { label: "Đổi tên", group: "File đổi tên", badge: "bg-info-wash text-info", edge: "border-l-info" },
+  del: { label: "Xóa", group: "File đã xóa", badge: "bg-error-wash text-error", edge: "border-l-error" },
+};
+const ORDER: Kind[] = ["new", "edit", "rename", "del"];
+const kindOf = (s: string): Kind => (s === "??" || s.includes("A") ? "new" : s.includes("D") ? "del" : s.includes("R") ? "rename" : "edit");
+
+type Line = { k: " " | "+" | "-"; text: string; o?: number; n?: number; hl?: [number, number] }; // hl: the changed span of a paired line
+type Hunk = { ctx: string; lines: Line[]; rows: { l?: Line; r?: Line }[] }; // rows: the side-by-side pairing
+type FileDiff = { hunks: Hunk[]; add: number; del: number; binary: boolean; from?: string }; // from: a rename's old path
+type File = FileDiff & { path: string; kind: Kind; secret: boolean; size: number };
+
+/** Where the patch text of `chunk` lives: `+++ b/x`, else `--- a/x` (deleted), else the `diff --git a/x b/x` header. */
+function pathOf(head: string, rows: string[]): string {
+  const pick = (p: string) => rows.find((r) => r.startsWith(p))?.slice(p.length).replace(/\t$/, "");
+  const plus = pick("+++ b/") ?? pick("rename to ") ?? pick("--- a/");
+  if (plus) return plus;
+  const rest = head.slice("diff --git ".length); // "a/P b/P": both halves the same length
+  return rest.slice(2, 2 + (rest.length - 5) / 2);
 }
 
-function Body({ t }: { t: Task }) {
-  const qc = useQueryClient();
+/** The changed middle of two paired lines (common prefix / suffix left plain); none when they share almost nothing. */
+function mark(a: Line, b: Line) {
+  const x = a.text, y = b.text;
+  let p = 0;
+  while (p < x.length && p < y.length && x[p] === y[p]) p++;
+  let s = 0;
+  while (s < x.length - p && s < y.length - p && x[x.length - 1 - s] === y[y.length - 1 - s]) s++;
+  if (p + s < 3 || (p === x.length && p === y.length)) return;
+  a.hl = [p, x.length - s];
+  b.hl = [p, y.length - s];
+}
+
+/** `git diff` text → per-path hunks with line numbers, -/+ runs paired (side by side rows and changed spans). */
+function parse(diff: string): Map<string, FileDiff> {
+  const out = new Map<string, FileDiff>();
+  for (const chunk of diff.split(/^(?=diff --git )/m)) {
+    if (!chunk.startsWith("diff --git ")) continue;
+    const rows = chunk.split("\n");
+    const f: FileDiff = { hunks: [], add: 0, del: 0, binary: false };
+    let o = 0, n = 0, h: Hunk | null = null;
+    for (const ln of rows.slice(1)) {
+      const c = ln[0];
+      if (h && (c === "+" || c === "-" || c === " ")) {
+        const line: Line = { k: c, text: ln.slice(1) };
+        if (c !== "+") line.o = o++;
+        if (c !== "-") line.n = n++;
+        if (c === "+") f.add++;
+        if (c === "-") f.del++;
+        h.lines.push(line);
+        continue;
+      }
+      const m = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@ ?(.*)/.exec(ln);
+      if (m) { o = +m[1]; n = +m[2]; h = { ctx: m[3], lines: [], rows: [] }; f.hunks.push(h); }
+      else if (!h && ln.startsWith("Binary files")) f.binary = true;
+      else if (!h && ln.startsWith("rename from ")) f.from = ln.slice("rename from ".length);
+    }
+    for (const hk of f.hunks) { // pair each run of - with the + run right after it
+      const L = hk.lines;
+      for (let i = 0; i < L.length;) {
+        if (L[i].k === " ") { hk.rows.push({ l: L[i], r: L[i] }); i++; continue; }
+        const dels: Line[] = [], adds: Line[] = [];
+        while (i < L.length && L[i].k === "-") dels.push(L[i++]);
+        while (i < L.length && L[i].k === "+") adds.push(L[i++]);
+        for (let j = 0; j < Math.max(dels.length, adds.length); j++) {
+          if (dels[j] && adds[j]) mark(dels[j], adds[j]);
+          hk.rows.push({ l: dels[j], r: adds[j] });
+        }
+      }
+    }
+    out.set(pathOf(rows[0], rows), f);
+  }
+  return out;
+}
+
+const OPEN_MAX = 400; // files longer than this start folded
+
+/** What the session's project changed, as a page: back to the session, the files, branch + PR (push needs a second click). */
+export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
+  const tt = useT();
   const q = useQuery({ queryKey: ["task-changes", t.id], queryFn: ({ signal }) => api<Changes>(`/tasks/${t.id}/changes`, { signal }), staleTime: 0, retry: false });
+  const [view, setView] = useState<"split" | "unified">(() => (matchMedia("(min-width: 48rem)").matches ? "split" : "unified")); // phones: one column
+  const [fold, setFold] = useState<Record<string, boolean>>({}); // user's open / closed per path, over the size default
+  const files = useMemo<File[]>(() => {
+    if (!q.data) return [];
+    const parsed = parse(q.data.diff);
+    return q.data.files.map((f) => {
+      const d = parsed.get(f.path) ?? { hunks: [], add: 0, del: 0, binary: false };
+      return { ...d, path: f.path, kind: kindOf(f.status), secret: f.secret, size: d.hunks.reduce((s, h) => s + h.lines.length, 0) };
+    }).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.path.localeCompare(b.path));
+  }, [q.data]);
+  const isOpen = (f: File) => fold[f.path] ?? f.size <= OPEN_MAX;
+  const allOpen = files.length > 0 && files.every(isOpen);
+  const add = files.reduce((s, f) => s + f.add, 0), del = files.reduce((s, f) => s + f.del, 0);
+  const jump = (f: File) => {
+    setFold((v) => ({ ...v, [f.path]: true }));
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.getElementById(cardId(f.path))?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  };
+
+  return (
+    <div className="detail-in flex min-h-0 flex-1 flex-col">
+      <header className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2 sm:px-4">
+        <Button size="sm" variant="ghost" className="-ml-1" onClick={onBack}><ArrowLeft /> {tt("Phiên")}</Button>
+        <h2 className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">
+          <GitPullRequest className="size-4 shrink-0 text-hl-2" aria-hidden /> {tt("Thay đổi")}
+          <span className="font-mono text-xs font-normal text-ink-3 tabular-nums">{sessionId(t)}</span>
+        </h2>
+        {q.data && (
+          <Hint side="bottom" text={q.data.root}>
+            <span className="inline-flex min-w-0 items-center gap-1 rounded-md bg-paper-2 px-2 py-0.5 font-mono text-xs text-ink-2">
+              <GitBranch className="size-3.5 shrink-0" aria-hidden /><span className="truncate">{q.data.branch || "(detached)"}</span>
+            </span>
+          </Hint>
+        )}
+        {files.length > 0 && (
+          <span className="flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums">
+            <span className="font-medium text-ink">{tt("{n} file thay đổi", { n: files.length })}</span>
+            {ORDER.map((k) => {
+              const n = files.filter((f) => f.kind === k).length;
+              return n > 0 && <span key={k} className={cn("rounded-sm px-1.5 py-0.5 font-sans text-2xs font-medium", KIND[k].badge)}>{n} {tt(KIND[k].label).toLowerCase()}</span>;
+            })}
+            <span className="text-ok">+{add}</span><span className="text-error">−{del}</span>
+          </span>
+        )}
+        <span className="flex-1" />
+        {files.length > 0 && <>
+          <span className="hidden items-center gap-1 text-xs lg:flex" aria-label={tt("Chú thích màu")}>
+            <span className="rounded-sm bg-error-wash px-1.5 py-0.5 font-medium text-error">− {tt("Trước")}</span>
+            <span className="rounded-sm bg-ok-wash px-1.5 py-0.5 font-medium text-ok">+ {tt("Sau")}</span>
+          </span>
+          <Segmented id="diff-view" label={tt("Kiểu xem")} value={view} onChange={setView} items={[
+            { value: "split", label: <span className="flex items-center gap-1.5"><Columns2 className="size-3.5" aria-hidden />{tt("Song song")}</span>, title: tt("Trước sửa bên trái, sau sửa bên phải") },
+            { value: "unified", label: <span className="flex items-center gap-1.5"><Rows2 className="size-3.5" aria-hidden />{tt("Một cột")}</span>, title: tt("Một cột: dòng đỏ (−) là trước, dòng xanh (+) là sau") },
+          ]} />
+          <Hint side="bottom" text={allOpen ? tt("Thu gọn mọi file") : tt("Mở rộng mọi file")}>
+            <Button size="icon-sm" variant="ghost" aria-label={allOpen ? tt("Thu gọn mọi file") : tt("Mở rộng mọi file")}
+              onClick={() => setFold(Object.fromEntries(files.map((f) => [f.path, !allOpen])))}>
+              {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
+            </Button>
+          </Hint>
+        </>}
+        <Hint side="bottom" text={tt("Đọc lại thay đổi từ dự án")}>
+          <Button size="icon-sm" variant="ghost" aria-label={tt("Tải lại")} disabled={q.isFetching} onClick={() => void q.refetch()}>
+            <RotateCw className={cn(q.isFetching && !q.isPending && "animate-spin")} />
+          </Button>
+        </Hint>
+      </header>
+
+      {q.isPending ? <AiFetching kind="agent" lines={[tt("Đang mở dự án"), tt("Đang đọc git status"), tt("Đang lấy diff")]} className="flex-1" />
+        : q.isError ? (
+          <div role="alert" className="grid justify-items-start gap-2 p-5 text-sm">
+            <p className="text-error">{errorText(q.error, errs(), tt("Không đọc được thay đổi."))}</p>
+            <Button size="sm" variant="outline" disabled={q.isFetching} onClick={() => void q.refetch()}><RotateCw /> {tt("Thử lại")}</Button>
+          </div>
+        ) : !files.length ? (
+          <div className="grid flex-1 content-center justify-items-center gap-3 text-sm text-ink-3">
+            <p>{tt("Phiên này chưa thay đổi file nào trong dự án.")}</p>
+            <Button size="sm" variant="outline" onClick={onBack}><ArrowLeft /> {tt("Về phiên")}</Button>
+          </div>
+        ) : <>
+          <div className="flex min-h-0 flex-1">
+            <nav aria-label={tt("File thay đổi")} className="hidden w-64 shrink-0 overflow-y-auto border-r p-2 md:block">
+              {ORDER.map((k) => {
+                const list = files.filter((f) => f.kind === k);
+                return list.length > 0 && (
+                  <section key={k} className="mb-3">
+                    <h3 className="flex items-center gap-1.5 px-2 pb-1 text-xs font-medium text-ink-3">
+                      <span className={cn("rounded-sm px-1 text-2xs", KIND[k].badge)}>{tt(KIND[k].label)}</span>
+                      {tt(KIND[k].group)} <span className="font-mono tabular-nums">{list.length}</span>
+                    </h3>
+                    <ul className="grid gap-px">
+                      {list.map((f) => (
+                        <li key={f.path}>
+                          <button type="button" onClick={() => jump(f)}
+                            className={cn("grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors duration-(--dur-micro) hover:bg-paper-2", f.secret && "text-ink-3 line-through")}>
+                            <span className="truncate font-mono text-ink">{base(f.path)}</span>
+                            <span className="font-mono text-2xs tabular-nums">
+                              {f.add > 0 && <span className="text-ok">+{f.add}</span>} {f.del > 0 && <span className="text-error">−{f.del}</span>}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
+            </nav>
+            <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
+              <div className="mx-auto grid max-w-[110rem] grid-cols-[minmax(0,1fr)] gap-3">
+                {files.some((f) => f.secret) && (
+                  <p className="flex items-start gap-2 rounded-md bg-warn-wash px-3 py-2 text-xs text-warn">
+                    <ShieldAlert className="size-4 shrink-0" aria-hidden />
+                    {tt("File trông như chứa bí mật (.env, khóa, chứng chỉ) sẽ không được commit: {files}", { files: files.filter((f) => f.secret).map((f) => f.path).join(", ") })}
+                  </p>
+                )}
+                {files.map((f) => (
+                  <FileCard key={f.path} f={f} open={isOpen(f)} split={view === "split"} onToggle={() => setFold((v) => ({ ...v, [f.path]: !isOpen(f) }))} />
+                ))}
+                {q.data.truncated && <p className="text-center text-xs text-ink-3">{tt("… Diff dài, phần còn lại không hiện.")}</p>}
+              </div>
+            </div>
+          </div>
+          <PrBar t={t} count={files.filter((f) => !f.secret).length} onDone={() => void q.refetch()} />
+        </>}
+    </div>
+  );
+}
+
+const cardId = (path: string) => `chg-${path.replace(/[^\w-]/g, "_")}`;
+const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+
+/** One file: sticky header (kind, path, +/-), the diff folding under it. The body mounts on first open and stays for the fold-up. */
+function FileCard({ f, open, split, onToggle }: { f: File; open: boolean; split: boolean; onToggle: () => void }) {
+  const tt = useT();
+  const [seen, setSeen] = useState(open);
+  if (open && !seen) setSeen(true);
+  const dir = f.path.slice(0, f.path.length - base(f.path).length);
+  const one = !split || f.kind === "new" || f.kind === "del"; // a new / deleted file has one side only
+  return (
+    <section id={cardId(f.path)} aria-label={f.path} className={cn("scroll-mt-2 rounded-lg border border-l-[3px] bg-cotton shadow-edge", KIND[f.kind].edge)}>
+      <button type="button" aria-expanded={open} onClick={onToggle}
+        className={cn("sticky top-0 z-10 grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-t-lg bg-cotton px-3 py-2 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2",
+          !open && "rounded-b-lg")}>
+        <ChevronRight className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", open && "rotate-90")} aria-hidden />
+        <span className={cn("rounded-sm px-1.5 py-0.5 text-2xs font-bold", KIND[f.kind].badge)}>{tt(KIND[f.kind].label)}</span>
+        <span className={cn("truncate font-mono text-sm", f.secret && "line-through")}>
+          {f.from && <span className="text-ink-3 line-through decoration-ink-3/60">{f.from}</span>}{f.from && <span className="px-1.5 text-info">→</span>}
+          <span className="text-ink-3">{dir}</span><span className="font-medium text-ink">{base(f.path)}</span>
+        </span>
+        <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
+          {f.add > 0 && <span className="text-ok">+{f.add}</span>}
+          {f.del > 0 && <span className="text-error">−{f.del}</span>}
+          <Bar add={f.add} del={f.del} />
+        </span>
+      </button>
+      <div className="fold" data-open={open || undefined}>
+        <div>
+          {seen && (
+            <div className="border-t font-mono text-xs leading-5">
+              {f.binary ? <Note>{tt("File nhị phân, không xem được nội dung.")}</Note>
+                : !f.hunks.length ? <Note>{f.secret ? tt("File bí mật: không đọc nội dung.") : f.from ? tt("Chỉ đổi tên, nội dung giữ nguyên.") : tt("Không có nội dung để xem (file rỗng hoặc diff quá dài).")}</Note>
+                : <>
+                  {!one && (
+                    <div className="grid grid-cols-2 border-b text-2xs font-sans font-medium">
+                      <span className="bg-error-wash px-3 py-1 text-error">{tt("Trước khi sửa")}</span>
+                      <span className="border-l bg-ok-wash px-3 py-1 text-ok">{tt("Sau khi sửa")}</span>
+                    </div>
+                  )}
+                  {f.hunks.map((h, i) => (
+                    <div key={i} className="[contain-intrinsic-size:auto_15rem] [content-visibility:auto]">
+                      <p className="truncate bg-info-wash px-3 py-0.5 text-info/90">
+                        ⋯ {tt("dòng {n}", { n: h.lines.find((l) => l.n !== undefined)?.n ?? h.lines[0]?.o ?? "" })}{h.ctx && <span className="text-ink-3"> · {h.ctx}</span>}
+                      </p>
+                      {one ? h.lines.map((l, j) => <Row key={j} l={l} />) : h.rows.map((r, j) => <SplitRow key={j} l={r.l} r={r.r} />)}
+                    </div>
+                  ))}
+                </>}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const Note = ({ children }: { children: string }) => <p className="px-3 py-3 font-sans text-ink-3">{children}</p>;
+
+/** Five blocks for the +/− share, as at-a-glance size. */
+function Bar({ add, del }: { add: number; del: number }) {
+  const g = Math.round((add / Math.max(1, add + del)) * 5);
+  return (
+    <span className="hidden gap-px sm:flex" aria-hidden>
+      {[0, 1, 2, 3, 4].map((i) => <span key={i} className={cn("size-2 rounded-[2px]", i < g ? "bg-ok" : add + del ? "bg-error" : "bg-rule")} />)}
+    </span>
+  );
+}
+
+const TONE = { "+": "bg-ok-wash", "-": "bg-error-wash", " ": "" } as const;
+const SIGN = { "+": "text-ok", "-": "text-error", " ": "text-ink-3" } as const;
+const NUM = "select-none px-2 text-right text-ink-3 tabular-nums";
+const CODE = "whitespace-pre-wrap pr-3 [overflow-wrap:anywhere]";
+
+function Code({ l }: { l: Line }) {
+  if (!l.hl) return <>{l.text || " "}</>;
+  const [a, b] = l.hl;
+  return <>{l.text.slice(0, a)}<span className={cn("rounded-[2px]", l.k === "+" ? "bg-ok/25" : "bg-error/25")}>{l.text.slice(a, b)}</span>{l.text.slice(b)}</>;
+}
+
+function Row({ l }: { l: Line }) {
+  return (
+    <div className={cn("grid grid-cols-[3rem_3rem_1.25rem_minmax(0,1fr)]", TONE[l.k])}>
+      <span className={NUM}>{l.o ?? ""}</span><span className={NUM}>{l.n ?? ""}</span>
+      <span className={cn("select-none", SIGN[l.k])}>{l.k === " " ? "" : l.k === "-" ? "−" : "+"}</span>
+      <span className={cn(CODE, "text-ink-2", l.k !== " " && "text-ink")}><Code l={l} /></span>
+    </div>
+  );
+}
+
+function Half({ l, side }: { l?: Line; side: "o" | "n" }) {
+  return (
+    <div className={cn("grid grid-cols-[3rem_1.25rem_minmax(0,1fr)]", l ? TONE[l.k] : "bg-paper-2/60", side === "n" && "border-l")}>
+      {l && <>
+        <span className={NUM}>{l[side]}</span>
+        <span className={cn("select-none", SIGN[l.k])}>{l.k === " " ? "" : l.k === "-" ? "−" : "+"}</span>
+        <span className={cn(CODE, l.k === " " ? "text-ink-2" : "text-ink")}><Code l={l} /></span>
+      </>}
+    </div>
+  );
+}
+
+const SplitRow = ({ l, r }: { l?: Line; r?: Line }) => <div className="grid grid-cols-2"><Half l={l} side="o" /><Half l={r} side="n" /></div>;
+
+/** Commit title + "Tạo nhánh + PR", asked twice before anything is pushed. */
+function PrBar({ t, count, onDone }: { t: Task; count: number; onDone: () => void }) {
+  const tt = useT();
+  const qc = useQueryClient();
   const [title, setTitle] = useState(() => (t.title || t.message_text || t.prompt || "").split("\n")[0].slice(0, 120));
   const [sure, setSure] = useState(false);
   const pr = useMutation({
-    mutationFn: () => api<Pr>(`/tasks/${t.id}/pr`, { method: "POST", json: { title: title.trim(), body: `Từ phiên AI Agent ${t.id}.` } }),
+    mutationFn: () => api<Pr>(`/tasks/${t.id}/pr`, { method: "POST", json: { title: title.trim(), body: tNow("Từ phiên AI Agent {id}.", { id: t.id }) } }),
     onSuccess: (r) => {
-      toast({ text: r.url ? "Đã mở PR" : `Đã đẩy nhánh ${r.branch}` });
+      toast({ text: r.url ? tNow("Đã mở PR") : tNow("Đã đẩy nhánh {branch}", { branch: r.branch }) });
       void qc.invalidateQueries({ queryKey: ["task-events", t.id] });
-      void q.refetch();
+      onDone();
     },
     onError: () => setSure(false),
   });
-  const files = q.data?.files ?? [];
-  const keep = files.filter((f) => !f.secret);
-  const secret = files.filter((f) => f.secret);
+  if (pr.data) {
+    return (
+      <footer className="flex shrink-0 items-center gap-2 border-t px-4 py-3 text-sm text-ok">
+        <GitPullRequest className="size-4" aria-hidden />
+        {pr.data.url ? <a href={pr.data.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">{tt("Mở PR")} <ExternalLink className="size-3.5" aria-hidden /></a>
+          : <span className="text-ink-2">{pr.data.note && tMaybe(pr.data.note)}</span>}
+      </footer>
+    );
+  }
+  if (!count) return null;
   return (
-    <DialogContent className="sm:max-w-3xl">
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2"><GitPullRequest className="size-4 text-hl-2" aria-hidden />Thay đổi của phiên</DialogTitle>
-        <DialogDescription>{q.data ? <>Nhánh <b className="font-mono">{q.data.branch || "(detached)"}</b> · {q.data.root}</> : t.project}</DialogDescription>
-      </DialogHeader>
-      {q.isPending ? <AiFetching kind="agent" lines={["Đang mở dự án", "Đang đọc git status", "Đang lấy diff"]} className="min-h-0 py-2" />
-        : q.isError ? <p role="alert" className="text-sm text-error">{errorText(q.error, ERR, "Không đọc được thay đổi.")}</p>
-        : !files.length ? <p className="text-sm text-ink-3">Không có thay đổi nào trong thư mục dự án.</p>
-        : <div className="grid min-w-0 gap-3">
-          <ul aria-label="File thay đổi" className="grid max-h-40 gap-0.5 overflow-y-auto rounded-md bg-paper-2 p-2 font-mono text-xs">
-            {files.map((f) => (
-              <li key={f.path} className={cn("flex gap-2", f.secret && "text-ink-3 line-through")}>
-                <span className={cn("w-5 shrink-0 font-semibold", TONE[f.status[0]] ?? TONE[f.status] ?? "text-ink-2")}>{f.status}</span>
-                <span className="min-w-0 truncate">{f.path}</span>
-              </li>
-            ))}
-          </ul>
-          {secret.length > 0 && (
-            <p className="flex items-start gap-2 rounded-md bg-warn-wash px-3 py-2 text-xs text-warn">
-              <ShieldAlert className="size-4 shrink-0" aria-hidden />
-              {secret.length} file trông như chứa bí mật (.env, khóa, chứng chỉ) sẽ không được commit: {secret.map((f) => f.path).join(", ")}
-            </p>
-          )}
-          <pre className="max-h-[40vh] overflow-auto rounded-md bg-paper-2 p-3 font-mono text-[11px] leading-relaxed text-ink-2">
-            {q.data!.diff.split("\n").map((ln, i) => (
-              <span key={i} className={cn("block", ln.startsWith("+") && !ln.startsWith("+++") ? "text-ok" : ln.startsWith("-") && !ln.startsWith("---") ? "text-error" : ln.startsWith("@@") && "text-info")}>{ln || " "}</span>
-            ))}
-            {q.data!.truncated && <span className="block text-ink-3">… (diff dài, phần còn lại không hiện)</span>}
-          </pre>
-          <label className="grid gap-1 text-xs text-ink-3">Tiêu đề commit và PR
-            <Input id={`pr-title-${t.id}`} value={title} maxLength={200} onChange={(e) => { setTitle(e.target.value); setSure(false); }} />
-          </label>
-          {pr.isError && <p role="alert" className="text-xs text-error">{errorText(pr.error, ERR, "Không tạo được PR.")}</p>}
-          {pr.data && (
-            <p className="flex flex-wrap items-center gap-2 text-sm text-ok">
-              {pr.data.url ? <a href={pr.data.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">Mở PR <ExternalLink className="size-3.5" aria-hidden /></a>
-                : <span className="text-ink-2">{pr.data.note}</span>}
-            </p>
-          )}
-        </div>}
-      {keep.length > 0 && !pr.data && (
-        <DialogFooter>
-          {sure ? <span className="mr-auto self-center text-xs text-ink-2">Commit {keep.length} file, đẩy lên remote và mở PR?</span> : null}
-          <Button variant={sure ? "default" : "outline"} disabled={title.trim().length < 3 || pr.isPending} onClick={() => (sure ? pr.mutate() : setSure(true))}>
-            {pr.isPending ? <Loader2 className="animate-spin" /> : <GitPullRequest />} {sure ? "Xác nhận tạo PR" : "Tạo nhánh + PR"}
-          </Button>
-        </DialogFooter>
-      )}
-    </DialogContent>
+    <footer className="shrink-0 border-t px-3 py-2.5 sm:px-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input aria-label={tt("Tiêu đề commit và PR")} placeholder={tt("Tiêu đề commit và PR")} value={title} maxLength={200} className="h-8 min-w-48 flex-1 text-sm"
+          onChange={(e) => { setTitle(e.target.value); setSure(false); }} />
+        {sure && <span className="text-xs text-ink-2 animate-in fade-in-0">{tt("Commit {n} file, đẩy lên remote và mở PR?", { n: count })}</span>}
+        {sure && <Button size="sm" variant="ghost" disabled={pr.isPending} onClick={() => setSure(false)}>{tt("Hủy")}</Button>}
+        <Button size="sm" variant={sure ? "default" : "outline"} disabled={title.trim().length < 3 || pr.isPending} onClick={() => (sure ? pr.mutate() : setSure(true))}>
+          {pr.isPending ? <Loader2 className="animate-spin" /> : <GitPullRequest />} {sure ? tt("Xác nhận tạo PR") : tt("Tạo nhánh + PR")}
+        </Button>
+      </div>
+      {pr.isError && <p role="alert" className="mt-1.5 text-xs text-error">{errorText(pr.error, errs(), tt("Không tạo được PR."))}</p>}
+    </footer>
   );
 }

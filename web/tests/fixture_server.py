@@ -32,9 +32,15 @@ tmp = Path(tempfile.mkdtemp(prefix="td-e2e-"))
 (tmp / "web").mkdir()
 (tmp / "web" / "out").symlink_to(ROOT / "web" / "out")
 AGENT = "sh -c \"cat >/dev/null; echo 'Bản nháp AI: cảm ơn mọi người!'\""  # fake claude CLI
+# "Trả lời từ code": the fake reading agent answers in ANSWER_TASK's shape (never a real CLI on this machine), slowly
+# enough to close the reply panel while it runs
+AGENT_CODE = ("sh -c \"cat >/dev/null; sleep 4; printf '**Trả lời:** OTP hết hạn sau 120 giây.\\n**Căn cứ:**\\n"
+              "- `auth/Otp.kt:verify` "
+              "đếm lần sai\\n**Độ chắc:** Cao\\n===\\nDạ OTP dùng được 2 phút ạ.\\n---\\nMã OTP có hiệu lực 2 phút; "
+              "nhập sai 5 lần sẽ bị khoá 15 phút.\\n'\"")
 # Consent mode off: the inbox AI may read the seeded tags (the AI-draft test needs it).
 settings = Settings(
-    root=tmp, port=PORT, ai_agent_command=AGENT, ai_model="",
+    root=tmp, port=PORT, ai_agent_command=AGENT, ai_agent_project_command=AGENT_CODE, ai_model="",
     app_origin=os.environ.get("APP_ORIGIN", f"http://127.0.0.1:{PORT}"),  # web-fixture (next dev :3002) proxies here
 )
 

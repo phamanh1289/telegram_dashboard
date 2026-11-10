@@ -1,6 +1,8 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { DEFAULT_FONT, FONTS, type FontId } from "./fonts";
+import { type Key, t } from "./i18n";
 
 // Per-browser preferences in localStorage. `theme` is shared with the YouTrack module (missing = follow the OS).
 
@@ -69,16 +71,18 @@ export function applyTheme(pref: ThemePref, save = true) {
 
 /** Each member's look (Cài đặt chung), saved per browser; the boot script in app/layout.tsx (window.applyLook) applies it before first paint and in every open tab. */
 export type UiStyle = "simple" | "default" | "vivid";
-export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean };
+export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean; font: FontId };
 /** Preset highlight hues; the slider reaches the rest. */
 export const ACCENTS = [[40, "Đất nung"], [355, "Hồng"], [305, "Tím"], [255, "Xanh dương"], [195, "Xanh ngọc"], [145, "Xanh lá"]] as const;
 const hue = (v: unknown, d: number) => { const n = parseFloat(String(v)); return n >= 0 && n < 360 ? n : d; };
 export function readLook(): Look {
   const s = getPref("uiStyle");
-  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), gradient: getPref("gradient") === "1" };
+  const f = FONTS.find((x) => x.id === getPref("font"))?.id ?? DEFAULT_FONT;
+  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), gradient: getPref("gradient") === "1", font: f };
 }
 export function saveLook(l: Look) {
   put("uiStyle", l.style === "default" ? null : l.style);
+  put("font", l.font === DEFAULT_FONT ? null : l.font);
   put("accent", String(l.hue));
   put("accent2", String(l.hue2));
   put("gradient", l.gradient ? "1" : "0");
@@ -99,7 +103,8 @@ export function readQaRemind(): number {
   const v = getPref("qaRemindMins");
   return v !== null && (QA_REMIND_CHOICES as readonly number[]).includes(Number(v)) ? Number(v) : 30;
 }
-export const qaRemindLabel = (m: number) => (m === 0 ? "Tắt" : m < 60 ? `${m} phút` : `${m / 60} giờ`);
+/** Rendered label (plain `t`: callers render it from a component that re-renders on a language change). */
+export const qaRemindLabel = (m: number) => (m === 0 ? t("Tắt") : m < 60 ? t("{n} phút", { n: m }) : t("{n} giờ", { n: m / 60 }));
 /** The Q&A nudge threshold, live (Settings and the Q&A page both change it). */
 export const useQaRemind = () => useSyncExternalStore(onPrefs, readQaRemind, () => 30);
 /** When a Q&A question counts as answered: a reply from anyone but the asker, or only from someone it tagged. */
@@ -132,6 +137,15 @@ export function readNotify() {
 /** Project the AI Agent dialog last ran in ("" = none chosen yet). */
 export const readAgentProject = () => getPref("agentProject") ?? "";
 
+/** Project the reply assistant reads to answer a question from code ("" = it doesn't read code). */
+export const readReplyCode = () => getPref("replyCode") ?? "";
+export const saveReplyCode = (path: string) => setPref("replyCode", path || null);
+
+/** Which AI CLI's quota the top bar shows ("" = the one the page's everyday runs use); the top bar and Settings both set it. */
+export const readQuotaAgent = () => getPref("quotaAgent") ?? "";
+export const useQuotaAgent = () => useSyncExternalStore(onPrefs, readQuotaAgent, () => "");
+export const saveQuotaAgent = (v: string) => setPref("quotaAgent", v || null);
+
 /** Angle the assistant analyses tags from; sent with every /ai/draft. */
 export const PLATFORMS = [["android", "Android"], ["ios", "iOS"], ["mobile", "Mobile chung"], ["any", "Không giới hạn"]] as const;
 export type Platform = (typeof PLATFORMS)[number][0];
@@ -152,7 +166,7 @@ export const readDigestTeams = () => readList("digestTeams", DEFAULT_DIGEST_TEAM
 
 /** The role (Cài đặt chung › Hệ thống): YouTrack's home, views, dashboard and AI, and Telegram's AI angle and AI Agent follow it. null = not chosen yet. */
 export type YtRole = "dev" | "qa" | "po";
-export const YT_ROLES: [YtRole, string, string][] = [
+export const YT_ROLES: [YtRole, Key, Key][] = [
   ["dev", "Dev", "Việc của tôi hôm nay, standup, việc đã hứa, ticket bị QC trả lại. Giao AI Agent đọc / sửa code trong thư mục dự án."],
   ["qa", "QA/QC", "Hàng đợi test, bug triage, test case, regression; tỷ lệ pass / trả lại / reopen. AI tóm tắt theo bước tái hiện, môi trường; không cần thư mục code."],
   ["po", "PO/PM", "Brief sprint, backlog và grooming, việc chờ PO chốt; tiến độ, dự báo, tải việc của team. AI tóm tắt theo ảnh hưởng, ưu tiên; không cần thư mục code."],

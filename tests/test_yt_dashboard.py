@@ -175,7 +175,7 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
 
 async def test_ai_answer_streams_pieces_then_result():
     async def ask(prompt, on_text=None, **_):
-        for t in ("Đọc file…", None, "**Tổng", " quan:**"):
+        for t in ("Đọc file…", {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}, None, "**Tổng", " quan:**"):
             on_text(t)
         return "**Tổng quan:**"
 
@@ -186,7 +186,7 @@ async def test_ai_answer_streams_pieces_then_result():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/yt/ai/data", json={"kind": "weekly", "data": {}})
     lines = [json.loads(x) for x in r.text.splitlines()]
-    assert lines == [{"delta": "Đọc file…"}, {"reset": True}, {"delta": "**Tổng"},
+    assert lines == [{"delta": "Đọc file…"}, {"step": {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}}, {"reset": True}, {"delta": "**Tổng"},
                      {"delta": " quan:**"}, {"done": {"text": "**Tổng quan:**"}}]  # fmt: skip
 
 

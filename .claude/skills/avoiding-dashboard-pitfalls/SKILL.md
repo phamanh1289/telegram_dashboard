@@ -63,7 +63,7 @@ Mỗi dòng dưới đây là lỗi đã có thật trong repo (deep review 2026
 - Container query: `@3xl:` (min) và **`@max-3xl:`** (max). `max-@3xl:` không sinh CSS, không báo lỗi. Cần tổ tiên có `@container`.
 - Layout trong khung hẹp (split view) theo container, không theo viewport (`lg:`).
 - Màu vàng (signal) chỉ cho việc cần người dùng; đếm thường dùng màu trung tính.
-- Thêm/đổi feature người dùng thấy: cập nhật `web/src/lib/guide.json` (nhãn đúng như UI).
+- Thêm/đổi feature người dùng thấy: cập nhật `web/src/lib/guide.json` và `guide.en.json` (nhãn đúng như UI). Chuỗi UI mới: `t("…")` + bản tiếng Anh trong `lib/i18n/en/*.ts`; số / ngày qua `fmtNum` / `fmtDate`.
 
 ## Làm việc song song / kiểm chứng
 - Subagent: luôn truyền `model` (mặc định 404 trong môi trường này).
