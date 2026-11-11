@@ -329,6 +329,14 @@ AiModel = Annotated[str, Field(max_length=80, pattern=r"^([A-Za-z][\w.\-\[\]]*(/
 AiProvider = Literal["claude", "codex", "antigravity"]
 
 
+class AskTo(BaseModel):
+    """Where a session's asks go: a reply to the message last attached to it."""
+
+    chat_id: str
+    message_id: str
+    qa: str = ""  # "#QA…" of the thread it sits in: the reply joins it, no new code
+
+
 class TaskDTO(BaseModel):
     id: str
     chat_id: str | None
@@ -349,6 +357,7 @@ class TaskDTO(BaseModel):
     provider: AiProvider = "claude"  # the CLI the session runs on
     model: str | None = None  # picked for this session; None: the task picks in AI settings
     effort: str | None = None
+    ask_to: AskTo | None = None  # None: asks go out as a new message in the tag's group
 
 
 class YouTrackRequest(BaseModel):
@@ -580,7 +589,7 @@ class TaskRef(BaseModel):
 
 class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=16000)  # 8000 typed + attached messages
-    refs: list[TaskRef] = Field(default=[], max_length=5)  # the attached messages: Done on the session ticks them
+    refs: list[TaskRef] = Field(default=[], max_length=10)  # attached messages (MAX_REFS): Done ticks them
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
 
 

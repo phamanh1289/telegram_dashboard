@@ -22,6 +22,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/tasks/sent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sent
+         * @description Which messages were sent along to which sessions (Q&A's "Đã gửi AI").
+         */
+        get: operations["sent_api_tasks_sent_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks/{task_id}/reopen": {
         parameters: {
             query?: never;
@@ -2081,6 +2101,21 @@ export interface components {
             yt_task: ("claude" | "codex" | "antigravity") | "";
         };
         /**
+         * AskTo
+         * @description Where a session's asks go: a reply to the message last attached to it.
+         */
+        AskTo: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: string;
+            /**
+             * Qa
+             * @default
+             */
+            qa: string;
+        };
+        /**
          * BeReply
          * @description A message replying to an open question with BE that the latest digest has not read yet.
          */
@@ -2994,6 +3029,7 @@ export interface components {
             model?: string | null;
             /** Effort */
             effort?: string | null;
+            ask_to?: components["schemas"]["AskTo"] | null;
         };
         /** TaskMessage */
         TaskMessage: {
@@ -3245,6 +3281,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sent_api_tasks_sent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
                 };
             };
         };

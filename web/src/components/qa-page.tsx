@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueries, useQuery, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { ArrowLeft, BellOff, BellRing, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCcw, RotateCw, Search, Send, Trash2, X } from "lucide-react";
+import { ArrowLeft, BellOff, BellRing, Bot, Check, CheckCheck, ChevronDown, CircleCheck, Clock3, Copy, MessageCircleQuestion, Plus, Reply, RotateCcw, RotateCw, Search, Send, Trash2, X } from "lucide-react";
 import { useEffect, useEffectEvent, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting } from "@/components/ai/chat";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
@@ -19,7 +19,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, errorText, type GroupInfo, type Message, type QaItem, type QaPosted } from "@/lib/api";
 import { type Key, t as tr, useT } from "@/lib/i18n";
-import { copyText, fold, msgKey, openQa, smooth, takeQaAnswer, toast, typing, useNow, waitLabel } from "@/lib/inbox";
+import { copyText, fold, msgKey, openQa, openTask, sentQuery, sessionId, smooth, takeQaAnswer, toast, typing, useNow, waitLabel } from "@/lib/inbox";
 import { getPref, onPrefs, put, QA_REMIND_CHOICES, qaRemindLabel, readIntro, readNotify, readQaAnswerBy, setPref, useQaRemind } from "@/lib/prefs";
 import { clockLabel, dayLabel, timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -218,11 +218,22 @@ export const mineOpen = (lists: Record<string, QaItem[]>) =>
 
 export const QA_DAYS = [[1, "24 giờ"], [3, "3 ngày"], [7, "7 ngày"], [30, "30 ngày"]] as const;
 export type QaDays = (typeof QA_DAYS)[number][0];
-type Filter = "open" | "done" | "closed" | "mine" | "all";
-const FILTERS: [Filter, Key, (i: QaItem) => boolean, Key | ""][] = [
+/** msgKey → the AI Agent / Đối chiếu BE sessions a message was sent to (sentQuery); undefined until read. */
+type Sent = Record<string, string[]> | undefined;
+/** What "sent to AI" counts in a thread: others' replies, or their question while nobody replied (yours: nothing). */
+function sendable(i: QaItem) {
+  const a = i.answers.filter((m) => !m.outgoing && !m.deleted);
+  return a.length || i.question.outgoing || i.question.deleted ? a : [i.question];
+}
+const sentCount = (i: QaItem, sent: NonNullable<Sent>) => sendable(i).filter((m) => sent[msgKey(m)]).length;
+
+type Filter = "open" | "done" | "unsent" | "closed" | "mine" | "all";
+const FILTERS: [Filter, Key, (i: QaItem, sent: Sent) => boolean, Key | ""][] = [
   ["all", "Tất cả", () => true, ""],
   ["open", "Chờ trả lời", waiting, "Người được tag chưa trả lời (hoặc bất kỳ ai ngoài người hỏi, theo Cài đặt), chưa chốt, chưa đánh dấu xong"],
   ["done", "Đã trả lời", (i) => !i.done && answered(i), "Người được tag đã trả lời (hoặc bất kỳ ai, theo Cài đặt), hoặc bạn đã chốt câu trả lời"],
+  ["unsent", "Chưa gửi AI", (i, s) => !!s && !i.done && sentCount(i, s) < sendable(i).length,
+    "Còn tin của người khác (trả lời, hoặc câu hỏi chưa ai trả lời) chưa gửi kèm vào phiên AI Agent / Đối chiếu BE nào; chưa đánh dấu xong"],
   ["closed", "Xong", (i) => i.done, "Bạn đã đánh dấu xong: không nhắc, không tính là chờ"],
   ["mine", "Bạn hỏi", (i) => i.question.outgoing, "Câu hỏi bạn đăng"],
 ];
@@ -247,10 +258,11 @@ function State({ i, now, late }: { i: QaItem; now: number; late?: boolean }) {
 /** One question in the list: its text, then its state and the latest reply (or who asked), new replies at the end.
  *  `late`: signal mark, and the nudge / mute buttons in their own column on the right (siblings of the row button,
  *  never inside it, never over its text). */
-function Row({ i, now, on, news, late, onOpen, onNudge, onMute, onDelete }: {
-  i: QaItem; now: number; on: boolean; news: number; late: boolean; onOpen: () => void; onNudge: () => void; onMute: () => void; onDelete?: () => void;
+function Row({ i, now, on, news, late, sent, onOpen, onNudge, onMute, onDelete }: {
+  i: QaItem; now: number; on: boolean; news: number; late: boolean; sent?: Sent; onOpen: () => void; onNudge: () => void; onMute: () => void; onDelete?: () => void;
 }) {
   const tx = useT();
+  const total = sendable(i).length, got = sent ? sentCount(i, sent) : 0;
   const end = accepted(i) ?? i.answers.at(-1); // a settled thread previews its answer
   const at = latest(i).date;
   return (
@@ -268,6 +280,9 @@ function Row({ i, now, on, news, late, onOpen, onNudge, onMute, onDelete }: {
           <span className="min-w-0 flex-1 truncate">
             {end ? <><b className="font-medium text-ink-2">{who(end)}:</b> {gist(end)}</> : tx("{who} hỏi", { who: who(i.question) })}
           </span>
+          {got > 0 && <span className={cn(PILL, got < total ? "bg-paper-3 text-ink-2" : "bg-hl-wash text-hl-2")}>
+            <Bot aria-hidden />{got < total ? tx("Gửi AI {n}/{total}", { n: got, total }) : tx("Đã gửi AI")}
+          </span>}
           {news > 0 && <span className={cn(PILL, "bg-hl text-hl-ink")}>{tx("{n} mới", { n: news })}</span>}
         </span>
       </button>
@@ -301,8 +316,8 @@ const MINE_LINES: Key[] = ["AI đang kết nối Telegram", "Đang đọc câu b
  *  bare) on one rail. Kept tags keep their tag actions; a click on a message makes it the one the box below answers;
  *  "Chốt" on a reply marks it as the answer. AI can sum the thread up (question, conclusion, what is still open).
  *  Keyed by code: a new thread starts with no summary. */
-function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted, remind, onNudge, onMute, onResolve, onMark }: {
-  i: QaItem; now: number; title?: string; seenAt: Seen; target: Message | null; onTarget: (m: Message) => void; onClose: () => void;
+function Thread({ i, now, title, seenAt, sent, target, onTarget, onClose, late, muted, remind, onNudge, onMute, onResolve, onMark }: {
+  i: QaItem; now: number; title?: string; seenAt: Seen; sent: Sent; target: Message | null; onTarget: (m: Message) => void; onClose: () => void;
   late: boolean; muted: boolean; remind: number; onNudge: () => void; onMute: (off: boolean) => void; onResolve: (id: string | null) => void;
   onMark: (state: QaMark) => void;
 }) {
@@ -410,7 +425,7 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
           {all.map((m, k) => (
             <MessageItem key={m.message_id} m={untag(m)} now={now} head={k === 0 || all[k - 1].sender_id !== m.sender_id || all[k - 1].outgoing !== m.outgoing}
               isReplyTarget={!!target && msgKey(target) === msgKey(m)} onReply={onTarget} onUseText={noop} live={!m.kept} liveReply bare fresh={news.has(m.message_id)}
-              extra={k > 0 && !m.deleted && (answer?.message_id === m.message_id ? (
+              extra={<><SentBadge ids={sent?.[msgKey(m)]} />{k > 0 && !m.deleted && (answer?.message_id === m.message_id ? (
                 <span className={cn(PILL, "mr-1 bg-ok-wash text-ok")}><CheckCheck aria-hidden />{tx("Câu trả lời")}</span>
               ) : (
                 <Hint side="bottom" text={tx("Chốt tin này là câu trả lời của câu hỏi: chuỗi thành Đã chốt, không nhắc nữa, tin này hiện ở đầu chuỗi và trong Chép chuỗi")}>
@@ -419,12 +434,28 @@ function Thread({ i, now, title, seenAt, target, onTarget, onClose, late, muted,
                     <CheckCheck /> {tx("Chốt")}
                   </Button>
                 </Hint>
-              ))} />
+              ))}</>} />
           ))}
         </ol>
         </AttachThread.Provider>
       </div>
     </>
+  );
+}
+
+/** On a thread message sent along to AI Agent / Đối chiếu BE (a turn carrying it started): the latest session; opens it. */
+function SentBadge({ ids }: { ids?: string[] }) {
+  const tx = useT();
+  if (!ids?.length) return null;
+  const names = ids.map((id) => sessionId({ id }));
+  return (
+    <Hint side="bottom" text={tx("Đã gửi kèm vào phiên {names}. Bấm để mở phiên mới nhất.", { names: names.join(", ") })}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); openTask(ids[0]); }}
+        className={cn(PILL, "bg-hl-wash text-hl-2 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink")}>
+        <Bot aria-hidden />{tx("Đã gửi")}
+        <span className="hidden font-mono @md:inline">{names[0]}{ids.length > 1 && ` +${ids.length - 1}`}</span>
+      </button>
+    </Hint>
   );
 }
 
@@ -570,6 +601,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const qc = useQueryClient();
   const list = useQuery({ ...qaQuery(chatId, days), refetchInterval: 60_000 }); // answers show up while you read
   const listWait = useAiWait(list.isPending);
+  const sentQ = useQuery(sentQuery);
+  const sent = sentQ.data;
   const now = useNow();
   const [filter, setFilter] = useState<Filter>("all");
   const [find, setFind] = useState("");
@@ -700,7 +733,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const send = (t: string) => { if (t.trim() && !post.isPending) post.mutate(t); };
 
   const s = fold(find.trim());
-  const shown = items.filter(FILTERS.find(([f]) => f === filter)![2])
+  const keep = FILTERS.find(([f]) => f === filter)![2];
+  const shown = items.filter((i) => keep(i, sent))
     .filter((i) => !s || fold(`${i.code} ${thread(i).map((m) => `${who(m)} ${m.text}`).join(" ")}`).includes(s));
   // Your questions due a nudge lead the list (what needs you first), the rest by the day of their latest message.
   const late = shown.filter((i) => isLate(i, mins, now, muted));
@@ -744,7 +778,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
           <Segmented id="qa-filter" label={tx("Lọc Q&A")} value={filter} onChange={setFilter} className="w-max"
             items={FILTERS.map(([v, l, f, hint]) => ({
               value: v, title: hint ? tx(hint) : undefined,
-              label: <span className="flex items-center gap-1.5">{tx(l)}<span className="font-mono tabular-nums opacity-70">{items.filter(f).length}</span></span>,
+              label: <span className="flex items-center gap-1.5">{tx(l)}<span className="font-mono tabular-nums opacity-70">{items.filter((i) => f(i, sent)).length}</span></span>,
             }))} />
         </div>
         <label className={cn("relative min-w-36 flex-1 @2xl/qa:max-w-64", reading && "@max-4xl/qa:hidden")}>
@@ -782,6 +816,11 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
               {errorText(list.error, {}, tx("Không đọc được nhóm."))}
               <Button size="xs" variant="outline" onClick={() => void list.refetch()}><RotateCw /> {tx("Thử lại")}</Button>
             </div>
+          ) : filter === "unsent" && sentQ.isError ? (
+            <div role="alert" className="grid justify-items-start gap-2 p-4 text-sm text-error">
+              {errorText(sentQ.error, {}, tx("Không đọc được tin nào đã gửi AI."))}
+              <Button size="xs" variant="outline" onClick={() => void sentQ.refetch()}><RotateCw /> {tx("Thử lại")}</Button>
+            </div>
           ) : !shown.length ? (
             <div className="grid justify-items-center gap-2 px-4 py-12 text-center">
               <p className="text-sm font-bold text-ink">{items.length ? tx("Không thấy Q&A khớp") : tx("Chưa có Q&A nào")}</p>
@@ -815,7 +854,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
                   <div inert={shut} className={cn("grid transition-[grid-template-rows,opacity] duration-(--dur-long) ease-(--ease-emph)", shut ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100")}>
                     <ul className="min-h-0 divide-y divide-rule overflow-hidden">
                       {its.map((i) => (
-                        <Row key={i.code} i={i} now={now} on={i.code === open} news={read.has(i.code) ? 0 : fresh(i, seenAt).length} late={d === "late"}
+                        <Row key={i.code} i={i} now={now} on={i.code === open} news={read.has(i.code) ? 0 : fresh(i, seenAt).length} late={d === "late"} sent={sent}
                           onOpen={() => show(i.code)} onNudge={() => nudge(i)} onMute={() => onMute(i, true)} onDelete={() => remove([i])} />
                       ))}
                     </ul>
@@ -828,7 +867,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
 
         <div className={cn("min-h-0 flex-col", reading ? "flex" : "hidden @4xl/qa:flex")}>
           {cur ? (
-            <Thread key={cur.code} i={cur} now={now} title={title} seenAt={seenAt} target={target} onTarget={pick} onClose={() => show(null)}
+            <Thread key={cur.code} i={cur} now={now} title={title} seenAt={seenAt} sent={sent} target={target} onTarget={pick} onClose={() => show(null)}
               late={late.includes(cur)} muted={muted.includes(cur.code)} remind={mins} onNudge={() => nudge(cur)} onMute={(off) => onMute(cur, off)}
               onResolve={(id) => onResolve(cur, id)}
               onMark={(state) => { if (state === "deleted") show(null); void markWithUndo(qc, cur, state); }} />

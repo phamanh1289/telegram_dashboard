@@ -102,6 +102,23 @@
 "keys": "theme light dark mode appearance toggle"
 },
 {
+"id": "lang-toggle",
+"tab": "telegram",
+"area": "Top bar",
+"title": "Switch language Vietnamese / English",
+"what": "Quickly switch the interface between Vietnamese and English.",
+"how": [
+{
+"t": "Click the language icon \"Switch language: Vietnamese / English\"",
+"at": "Đổi ngôn ngữ Tiếng Việt / English"
+},
+{
+"t": "To follow the machine's language: Settings › General › Language › Follow machine"
+}
+],
+"keys": "language vietnamese english en vi switch language ngon ngu"
+},
+{
 "id": "settings-button",
 "tab": "telegram",
 "area": "Top bar › Settings",
@@ -194,7 +211,7 @@
 "tab": "telegram",
 "area": "Sidebar › Q&A",
 "title": "Q&A: ask in a group and track the answers",
-"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from an AI Agent session (the send button next to the point) with an @name get this code too. The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
+"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from an AI Agent session (the send button next to the point) with an @name get this code too. When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
 "how": [
 "Click Q&A in the sidebar (or g then q) and pick a group",
 "Click \"New question\", type the question with @name of the person asked, then Post",
@@ -202,9 +219,10 @@
 "Click a date header in the list to collapse / expand that day's questions",
 "Mark a thread done: click the check button on it. Its tagged messages (someone else's question, the replies) become handled too (no reaction), and AI Agent sessions on them follow; Reopen undoes them",
 "Remove from Q&A: hover a question and click the trash can (undo in the notice); remove a whole day: the trash can on the date header, click twice. The messages stay on Telegram",
-"Send every answer to the AI Agent: click the paperclip on a message in the thread, tick \"Every reply in the thread\" (question not included), then pick a session (up to 10 messages per turn)"
+"Send every answer to the AI Agent: click the paperclip on a message in the thread, tick \"Every reply in the thread\" (question not included), then pick a session (up to 10 messages per turn)",
+"See what went to AI: a thread message sent with an AI Agent session's turn or a Check vs BE session shows \"Sent\" (click to open the session). It counts only once that turn was really sent (Enter, or the queue ran it), not when attached then removed; several messages in one turn are each marked. The question row says \"Sent to AI\" (or \"Sent to AI 1/3\" when only some replies went); the \"Not sent to AI\" filter gathers threads with messages not sent yet. The paperclip menu says \"already sent this\" next to a session that got that message"
 ],
-"keys": "qa q&a questions answers #qa code thread remind nudge reply attach ai agent session"
+"keys": "qa q&a questions answers #qa code thread remind nudge reply attach ai agent session sent to ai not sent"
 },
 {
 "id": "qa-my-questions",
@@ -1201,7 +1219,7 @@
 "tab": "telegram",
 "area": "Reply panel › Answer from code",
 "title": "Answer a question from the project's code",
-"what": "Someone asks you about logic, a business rule or progress: pick a project in the prompt box, the AI reads the code (read-only) and answers with the files / functions it rests on, how sure it is and what needs confirming, plus 2 drafts \"Short\" / \"Complete\" written for the asker's role (PO / QA: no file or API names). Progress questions: the AI also reads the last 14 days of commits and related YouTrack tickets. The code read runs in the background: closing the reply panel leaves it running, opening that message again shows its progress / result; only \"Cancel\" stops it. From the message list: ⋯ menu › \"Answer from code\" opens the panel and runs it at once. Dev role only; the project is remembered.",
+"what": "Someone asks you about logic, a business rule or progress: pick a project in the prompt box, the AI reads the code (read-only) and answers with the files / functions it rests on, how sure it is and what needs confirming, plus 2 drafts \"Short\" / \"Complete\" written for the asker's role (PO / QA: no file or API names). Progress questions: the AI also reads the last 14 days of commits and related YouTrack tickets. The code read runs in the background: closing the reply panel leaves it running, opening that message again shows its progress / result; only \"Cancel\" stops it. Dev role only; the project is remembered.",
 "how": [
 "Dev role only.",
 {
@@ -1219,8 +1237,7 @@
 "Hỏi code lại"
 ]
 },
-"On a draft, click the copy icon to copy it, or the send icon to reply to that message right away.",
-"Or in the message list: hover a message, ⋯ menu › \"Answer from code\"."
+"On a draft, click the copy icon to copy it, or the send icon to reply to that message right away."
 ],
 "keys": "answer from code read project code logic business rule progress evidence tra loi tu code"
 },
@@ -1288,7 +1305,7 @@
 "at": "css:[data-testid=\"message\"]"
 },
 {
-"t": "Click \"Give to AI Agent\" next to the AI assistant title in the right column.",
+"t": "Click \"AI Agent\" next to the AI assistant title in the right column.",
 "at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
 },
 {
@@ -1358,9 +1375,9 @@
 "t": "Click a message in the list to open the reply page.",
 "at": "css:[data-testid=\"message\"]"
 },
-"See the \"Looks related:\" line under the tool buttons (only when the message names no ticket ID).",
+"See the \"Possibly related tickets\" section under the tool buttons (only when the message names no ticket ID).",
 {
-"t": "Click \"+ insert\" to insert the ticket link into the reply.",
+"t": "Click \"+\" on a ticket row to insert the ticket link into the reply.",
 "at": "css:[aria-label=\"Ticket có vẻ liên quan\"] button"
 }
 ],

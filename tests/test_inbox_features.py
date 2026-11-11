@@ -176,6 +176,20 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     # Messages attached to its turns follow the session's Done / reopen (only kept ones; others are no-ops).
     store.apply_message(msg(A, 5, "@me BE: API đã sửa"))
     store.add_task_refs("t1", [(A, 5, ""), (A, 99, "")])
+    # Q&A "Đã gửi AI": attached messages and a session's own tag, with their sessions (newest first).
+    store.add_task("t0", A, 5, "/tmp/proj", "cũ")
+    assert client.get("/api/tasks/sent").json() == {f"{A}:4": ["t1"], f"{A}:5": ["t1", "t0"], f"{A}:99": ["t1"]}
+    store.delete_task("t0")
+    # Asks reply to the message attached last; a many-topic Đối chiếu BE's citations are not reply targets.
+    store.add_task("t2", A, 3, "/tmp/proj", "khác")
+    ask_to = lambda: next(x["ask_to"] for x in client.get("/api/tasks").json() if x["id"] == "t2")  # noqa: E731
+    assert ask_to() is None
+    store.add_task_refs("t2", [(A, 98, ""), (A, 99, "")])
+    store.add_task_refs("t2", [(A, 7, ""), (A, 8, "")], ask=False)
+    assert ask_to() == {"chat_id": A, "message_id": "99", "qa": ""}
+    store.add_task_refs("t2", [(A, 7, "#QA5")])  # attached by hand later: now a target (the newest row), code filled
+    assert ask_to() == {"chat_id": A, "message_id": "7", "qa": "#QA5"}
+    store.delete_task("t2")
     client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
     assert not store.get_message(A, 5).handled
     client.put("/api/tasks/t1/handled", json=done, headers=H)

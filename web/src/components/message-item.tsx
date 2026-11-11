@@ -1,7 +1,7 @@
 "use client";
 
 import { type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, Bot, Check, CheckCheck, SquareCheck, Square, ClipboardList, CornerDownRight, ExternalLink, FileSearch, FolderGit2, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, RotateCcw, Star, UserX, Users } from "lucide-react";
+import { AlarmClock, Bot, Check, CheckCheck, SquareCheck, Square, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, RotateCcw, Star, UserX, Users } from "lucide-react";
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Avatar, hueOf } from "@/components/chat-list";
@@ -12,12 +12,13 @@ import { RemindSubmenu } from "@/components/remind";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Kbd } from "@/components/ui/kbd";
+import { MENU_ACTION, MENU_ITEM, MENU_POPUP, MENU_SEP } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Message, statusQuery, type Task } from "@/lib/api";
 import { attach, MAX_REFS, messageQuery, sameRef } from "@/lib/attach";
-import { answerQa, askCode, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sessionId, SESSION_CODE, setHandled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
+import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sentQuery, sessionId, SESSION_CODE, setHandled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
 import { ago, clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
-import { readOverdueHours, useRole, usesCode } from "@/lib/prefs";
+import { readOverdueHours, useRole } from "@/lib/prefs";
 import { useRetest, yt, ytDetailQuery, ytProjectsQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 import { type Key, t, useT } from "@/lib/i18n";
@@ -396,11 +397,9 @@ function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag:
   const t = useT();
   const { done, pinned, mark, togglePin } = useTagMark(m);
   const [comment, setComment] = useState(false);
-  const status = useQuery({ ...statusQuery, staleTime: Infinity }).data; // the shell keeps it fresh
-  const yt = status?.youtrack_configured;
-  const role = useRole();
-  const codeOn = !!status?.ai_configured && usesCode(role); // "Trả lời từ code": a Dev tool, like the reply panel's
+  const yt = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
   const link = telegramLink(m);
+  const answers = !m.outgoing || (tag && !!yt); // the ⋯ menu's "answer it" group shows
   return (
     <div role="toolbar" aria-label={t("Thao tác tin #{id}", { id: m.message_id })} className="row-actions flex flex-row-reverse items-center gap-0.5 -my-1.5">
       {tag && (
@@ -437,23 +436,20 @@ function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag:
           <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
             {/* Portalled, but React events still bubble to the row: a click here must not open the reply panel. */}
             <Menu.Popup onClick={(e) => e.stopPropagation()} className={cn(MENU_POPUP, "w-72 text-sm")}>
+              {/* Three groups by intent: this tag (state) | answer it | Telegram. A rule only between groups that show. */}
               {tag && !done && (
-                <MoreItem icon={<Check />} keys="⇧ X" disabled={mark.isPending} onClick={() => mark.mutate({ handled: true, react: false })}>{t("Xong, không thả reaction")}</MoreItem>
+                <MoreItem icon={<Check />} keys="⇧X" disabled={mark.isPending} onClick={() => mark.mutate({ handled: true, react: false })}>{t("Xong, không thả reaction")}</MoreItem>
               )}
               {tag && (
                 <MoreItem icon={<Pin className={cn(pinned && "fill-current")} />} keys="P" disabled={togglePin.isPending} onClick={() => togglePin.mutate()}>
                   {pinned ? t("Bỏ ghim") : t("Ghim lên đầu")}
                 </MoreItem>
               )}
-              {tag && yt && <MoreItem icon={<MessageSquarePlus />} onClick={() => setComment(true)}>{t("Comment vào ticket YouTrack")}</MoreItem>}
               {tag && done && <RemindSubmenu m={m} />}
-              {tag && <Menu.Separator className="my-0.5 h-px bg-rule" />}
+              {tag && answers && <Menu.Separator className={MENU_SEP} />}
               {!m.outgoing && <MoreItem icon={<MessageCircleQuestion />} onClick={() => answerQa(m)}>{t("Trả lời bằng Q&A")}</MoreItem>}
-              {!m.outgoing && codeOn && (
-                <MoreItem icon={<FileSearch />} onClick={() => askCode(m)}>
-                  <span className="grid">{t("Trả lời từ code")}<span className="text-xs text-ink-3">{t("Đọc code rồi trả lời tin này (mở khung trả lời, chạy ngay)")}</span></span>
-                </MoreItem>
-              )}
+              {tag && yt && <MoreItem icon={<MessageSquarePlus />} onClick={() => setComment(true)}>{t("Comment vào ticket YouTrack")}</MoreItem>}
+              {(tag || answers) && <Menu.Separator className={MENU_SEP} />}
               <MoreItem icon={<ExternalLink />} keys="O" onClick={() => openInTelegram(m)}>{link.exact ? t("Mở trong Telegram") : t("Mở nhóm trên Telegram Web")}</MoreItem>
               {link.exact && <MoreItem icon={<Globe />} onClick={() => window.open(link.web, "_blank", "noreferrer")}>{t("Mở bằng Telegram Web")}</MoreItem>}
               <MoreItem icon={<Hash />} onClick={() => void copyText(dbId(m), t("Đã chép ID {id}, dán vào phiên AI để đính kèm", { id: dbId(m) }))}>{t("Chép ID tin")}</MoreItem>
@@ -472,7 +468,7 @@ function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag:
 
 function MoreItem({ icon, keys, children, ...rest }: { icon: React.ReactNode; keys?: string; children: React.ReactNode; disabled?: boolean; onClick: () => void }) {
   return (
-    <Menu.Item {...rest} className={cn("flex items-center gap-2.5 text-ink-2 data-highlighted:text-ink data-disabled:opacity-50 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3", MENU_ITEM)}>
+    <Menu.Item {...rest} className={cn(MENU_ACTION, MENU_ITEM)}>
       {icon}<span className="min-w-0 flex-1 truncate">{children}</span>{keys && <Kbd>{keys}</Kbd>}
     </Menu.Item>
   );
@@ -625,14 +621,13 @@ function AttachPick({ m }: { m: Message }) {
   );
 }
 
-const MENU_POPUP = "grid origin-(--transform-origin) gap-0.5 rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
-const MENU_ITEM = "cursor-default rounded-md px-2.5 py-1.5 outline-none select-none data-highlighted:bg-paper-2";
 
 /** `pin`: the session the reply chain names (even Done), first. `chain`: the Q&A thread's replies, offered together. */
 function AttachList({ m, pin, chain }: { m: Message; pin?: Task; chain: readonly Message[] | null }) {
   const t = useT();
   const [whole, setWhole] = useState(false);
   const ms = whole && chain ? chain.filter((x) => !x.deleted) : [m];
+  const sentTo = useQuery(sentQuery).data?.[msgKey(m)] ?? []; // sessions a turn carrying this message already went to
   const open = [...(pin ? [pin] : []), ...(useQuery(taskListQuery).data ?? []).filter((tk) => tk.mode !== "terminal" && !tk.handled && tk.id !== pin?.id)
     .sort((a, b) => Number(b.chat_id === m.chat_id) - Number(a.chat_id === m.chat_id))] // stable: newest first within
     .slice(0, 8);
@@ -659,6 +654,7 @@ function AttachList({ m, pin, chain }: { m: Message; pin?: Task; chain: readonly
                   <span className="shrink-0">{tk.kind === "deep" ? t("Đối chiếu BE") : t("Giao AI Agent")}</span>
                   <span className="truncate">{tk.chat_title || tk.project.split("/").pop()}</span>
                   {tk.chat_id === m.chat_id && <span className="shrink-0 rounded-full bg-paper-3 px-1.5 leading-4">{t("nhóm này")}</span>}
+                  {sentTo.includes(tk.id) && <span className="shrink-0 rounded-full bg-hl-wash px-1.5 leading-4 text-hl-2">{t("đã gửi tin này")}</span>}
                 </span>
               </Menu.Item>
             ))}

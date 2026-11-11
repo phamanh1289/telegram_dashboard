@@ -30,6 +30,19 @@ async def test_reply_to_other_chat_rejected(ready):
     assert ready.fake.send_calls == []
 
 
+async def test_reply_to_attached_message_never_kept(ready):
+    """An ask replies to a message attached to a session: never stored (a BE answer), in a group maybe untracked."""
+    C = "-1003"
+    ready.store.upsert_chat_info(C, "Q&A only", "supergroup")  # known, untracked
+    with pytest.raises(ApiError) as e:
+        await ready.bridge.submit_reply(req(chat=C, reply="77"))
+    assert e.value.code == "not_tracking"
+    ready.store.add_task_refs("t1", [(C, 77, ""), (B, 9, "")])
+    rec = await ready.bridge.submit_reply(req(chat=C, reply="77"))
+    assert rec.status == "sent" and ready.fake.send_calls[-1]["reply_to"] == 77
+    assert (await ready.bridge.submit_reply(req(chat=B, reply="9"))).status == "sent"  # tracked, unstored
+
+
 async def test_concurrent_same_uuid_one_rpc(ready):
     async def slow(call):
         await asyncio.sleep(0.05)

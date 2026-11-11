@@ -467,7 +467,8 @@ def create_app(
                                                       fetch=fetch)  # fmt: skip
         task_id = new_task_id()
         await start_task(s, task_id, body.chat_id, anchor, body.project, prompt, "plan", kind="deep", title=title,
-                         about=body, refs=[(body.chat_id, m) for i in body.items for m in i.message_ids])  # fmt: skip
+                         about=body, refs=[(body.chat_id, m) for i in body.items for m in i.message_ids],
+                         ask_refs=False)  # many topics: which one an ask is about is unknown  # fmt: skip
         return {"id": task_id}
 
     @app.post("/api/ai/ticket")

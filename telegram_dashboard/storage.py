@@ -113,6 +113,7 @@ CREATE TABLE IF NOT EXISTS task_refs (  -- messages attached to a session's turn
   chat_id TEXT NOT NULL,
   message_id INTEGER NOT NULL,
   qa TEXT NOT NULL DEFAULT '',  -- "#QA…" of the thread it answers (up its reply chain, read live if not kept)
+  ask INTEGER NOT NULL DEFAULT 1,  -- asks reply to the session's latest such ref (0: many-topic Đối chiếu BE)
   PRIMARY KEY (task_id, chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS projects (
@@ -270,6 +271,13 @@ def _session_qa(c: sqlite3.Connection, task_id: str) -> list[tuple[str, str]]:
     return [_qa_text(c, cid, mid) for cid, mid in keys] + [(r[0], r[1] or "") for r in deep + found] + asks
 
 
+def _attached(c: sqlite3.Connection, chat_id: str, message_id: int) -> bool:
+    """Attached to a session: real though maybe never kept (a BE answer, any Q&A group), so an ask may reply to it,
+    in that group even untracked."""
+    sql = "SELECT 1 FROM task_refs WHERE chat_id=? AND message_id=?"
+    return c.execute(sql, (chat_id, message_id)).fetchone() is not None
+
+
 def _code_roots(c: sqlite3.Connection, chat_id: str, code: str) -> set[tuple[str, int]]:
     """Kept messages of a group naming a Q&A code, and (as qa.find_threads) the message the first of them replies to:
     the question someone asked that I answered with Q&A."""
@@ -413,6 +421,11 @@ def _task_ref_qa(c: sqlite3.Connection) -> None:
     _add_cols(c, "task_refs", {"qa": "TEXT NOT NULL DEFAULT ''"})
 
 
+def _task_ref_ask(c: sqlite3.Connection) -> None:
+    """A session's asks reply to the message last attached to it."""
+    _add_cols(c, "task_refs", {"ask": "INTEGER NOT NULL DEFAULT 1"})
+
+
 def _snooze_on(c: sqlite3.Connection) -> None:
     """snooze_on landed in _add_missing_columns, which databases past version 1 never run again."""
     _add_cols(c, "messages", {"snooze_on": "TEXT"})
@@ -421,6 +434,7 @@ def _snooze_on(c: sqlite3.Connection) -> None:
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
+    _task_ref_ask,
 ]  # fmt: skip
 
 
@@ -1041,12 +1055,13 @@ class Store:
                     raise ApiError(409, "request_payload_mismatch")
                 return self._outbox_dto(row), False
             chat = self._chat(c, chat_id)
-            if chat is None or not chat["tracking"]:
-                raise ApiError(409, "not_tracking")
             # A new message (not quote) only borrows the target's topic: it may be a message read live and never
             # stored (Đối chiếu BE from Với BE / Briefing). ponytail: unstored => General topic, fetch it if forums need it.
             target = self._msg(c, chat_id, reply_to)
-            if quote and (target is None or target["deleted"]):
+            attached = target is None and _attached(c, chat_id, reply_to)
+            if chat is None or not (chat["tracking"] or attached):
+                raise ApiError(409, "not_tracking")
+            if quote and (target["deleted"] if target is not None else not attached):
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
             if qa and has_tag(text):
@@ -1076,7 +1091,7 @@ class Store:
             if r is None or r["status"] not in allowed or not r["text"]:
                 return None
             chat = self._chat(c, r["chat_id"])
-            if chat is None or not chat["tracking"]:
+            if chat is None or not (chat["tracking"] or _attached(c, r["chat_id"], r["reply_to_message_id"])):
                 return None
             c.execute(
                 "UPDATE outbox SET status='sending', error_code=NULL, retry_after=NULL, "
@@ -1231,7 +1246,11 @@ class Store:
         with self._conn() as c:
             rows = c.execute(
                 "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, "
-                "CASE WHEN m.deleted=0 THEN m.handled ELSE t.done END AS handled "  # else: the session's own Done
+                "CASE WHEN m.deleted=0 THEN m.handled ELSE t.done END AS handled, "  # else: the session's own Done
+                # where its asks go: a reply to the message last attached (ponytail: rowid order, a re-attach keeps
+                # its old place; an `at` column if that matters)
+                "(SELECT json_object('chat_id', r.chat_id, 'message_id', CAST(r.message_id AS TEXT), 'qa', r.qa) "
+                "FROM task_refs r WHERE r.task_id=t.id AND r.ask=1 ORDER BY r.rowid DESC LIMIT 1) AS ask_to "
                 "FROM tasks t LEFT JOIN chats c ON c.chat_id=t.chat_id "
                 "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
                 "WHERE ?1 IS NULL OR t.chat_id=?1 ORDER BY t.created_at DESC LIMIT 200",
@@ -1249,14 +1268,31 @@ class Store:
             c.execute("DELETE FROM task_refs WHERE task_id=?", (task_id,))
             return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
 
-    def add_task_refs(self, task_id: str, refs: list[tuple[str, int, str]]) -> None:
-        """(chat_id, message_id, "#QA…" or ""): attaching again fills a code missed before, never clears one."""
+    def add_task_refs(self, task_id: str, refs: list[tuple[str, int, str]], *, ask: bool = True) -> None:
+        """(chat_id, message_id, "#QA…" or ""): attaching again fills a code missed before, never clears one.
+        `ask`: the session's asks may reply to them (the last one inserted)."""
         with self._conn(write=True) as c:
             c.executemany(
-                "INSERT INTO task_refs (task_id, chat_id, message_id, qa) VALUES (?,?,?,?) ON CONFLICT DO UPDATE "
-                "SET qa=excluded.qa WHERE excluded.qa<>''",
-                [(task_id, cid, mid, qa) for cid, mid, qa in refs],
+                "INSERT INTO task_refs (task_id, chat_id, message_id, qa, ask) VALUES (?,?,?,?,?) "
+                "ON CONFLICT DO UPDATE SET qa=CASE WHEN excluded.qa<>'' THEN excluded.qa ELSE qa END, "
+                "ask=MAX(ask, excluded.ask)",
+                [(task_id, cid, mid, qa, int(ask)) for cid, mid, qa in refs],
             )
+
+    def sent_refs(self) -> dict[str, list[str]]:
+        """"chat_id:message_id" -> the sessions it went to, newest first: attached to a sent turn, cited by Đối chiếu
+        BE, or the tag a session was started on (rows are written only once the turn started)."""
+        # ponytail: every group, all time, full scan (~3k rows a year: a few ms); grown slow -> ?chat_id= + an index on
+        # task_refs(chat_id, message_id), and the query key per group.
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT chat_id, message_id, task_id FROM task_refs UNION SELECT chat_id, message_id, id FROM tasks "
+                "WHERE chat_id IS NOT NULL AND message_id IS NOT NULL ORDER BY 3 DESC"
+            ).fetchall()  # task ids start with their time: newest first
+        out: dict[str, list[str]] = {}
+        for cid, mid, tid in rows:
+            out.setdefault(f"{cid}:{mid}", []).append(tid)
+        return out
 
     def mark_task_refs(self, task_id: str, handled: bool, by: str) -> dict[str, list[int]]:
         """Done / reopen every kept message attached to the session, and the kept tags answering it (under its asks

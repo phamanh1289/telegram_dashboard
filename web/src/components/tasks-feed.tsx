@@ -9,7 +9,7 @@ import { SEND_ERRORS } from "@/components/composer";
 import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
 import { Hint } from "@/components/ui/hint";
 import { api, ApiError, errorText, type Outbox, type Task } from "@/lib/api";
-import { type Attached, chatByTitle, parseAttachments, splitAttachments } from "@/lib/attach";
+import { type Attached, chatByTitle, chatTitle, parseAttachments, splitAttachments } from "@/lib/attach";
 import { t as tNow, useT } from "@/lib/i18n";
 import { sessionId, toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
@@ -135,8 +135,11 @@ export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: Task
   return <li className={cn("px-0.5 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)", ev.error ? "text-error" : "text-ink")}><Markdown asks text={ev.text} className={AI_TEXT} /></li>;
 });
 
-/** Where an ask goes: a new message in the session's group (the tagged message's topic). */
-const AskTarget = createContext<{ taskId: string; chatId: string; messageId: string } | null>(null);
+/** Where an ask goes: `reply`, a reply to the message last attached to the session (its group, even another one);
+ *  else a new message in the session's group (the tagged message's topic). `qa`: add a #QA line when it tags someone
+ *  (not when the reply already sits in a Q&A thread: it joins that one). */
+type AskTo = { taskId: string; chatId: string; messageId: string; reply: boolean; qa: boolean };
+const AskTarget = createContext<AskTo | null>(null);
 
 /** The same ask in the same session always gets the same request ID: the outbox then says, on any later visit,
  *  whether it went out, and a second click can't post it twice. */
@@ -165,8 +168,8 @@ function PostAsk({ text }: { text: string }) {
     mutationFn: () => api<Outbox>("/messages/reply", { method: "POST", json: {
       request_id: rid.data!, chat_id: at.chatId, reply_to_message_id: at.messageId, text,
       retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
-      quote: false, // a new message in the tag's group / topic, not a reply
-      qa: true, // tags someone: a #QA line, so the Q&A tab follows the answer
+      quote: at.reply,
+      qa: at.qa, // tags someone: a #QA line, so the Q&A tab follows the answer
     } }),
     onSuccess: (r) => {
       qc.setQueryData(key, r);
@@ -180,6 +183,7 @@ function PostAsk({ text }: { text: string }) {
   const sent = status === "sent";
   const busy = send.isPending || status === "pending" || status === "sending";
   const hint = sent ? t("Đã gửi vào nhóm") : busy ? t("Đang gửi…") : status === "unknown" ? t("Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại")
+    : at.reply ? t("Gửi ngay ý này thành tin trả lời (reply) tin #{id} ở nhóm {group}: tin đính kèm gần nhất của phiên", { id: at.messageId, group: chatTitle(qc, at.chatId) ?? at.chatId })
     : t("Gửi ngay ý này thành tin mới trong nhóm (có @tên: thêm mã #QA để Q&A theo dõi trả lời)");
   return (
     <Hint text={hint}>
@@ -195,10 +199,13 @@ const postAsk = (text: string) => <PostAsk text={text} />;
 
 /** A session's answers: asks copy with its ID ("#REF-…") and, when it has a group message, post there. Every place
  *  that shows a session's result wraps it in this, so they behave the same. */
-export function SessionAsks({ t, children }: { t: Pick<Task, "id" | "chat_id" | "message_id">; children: ReactNode }) {
+export function SessionAsks({ t, children }: { t: Pick<Task, "id" | "chat_id" | "message_id" | "ask_to">; children: ReactNode }) {
   // Stable per session row, so the memoised answers don't re-render on every poll.
   const { id, chat_id, message_id } = t;
-  const target = useMemo(() => (chat_id && message_id ? { taskId: id, chatId: chat_id, messageId: message_id } : null), [id, chat_id, message_id]);
+  const [toChat, toMsg, inQa] = [t.ask_to?.chat_id, t.ask_to?.message_id, !!t.ask_to?.qa];
+  const target = useMemo<AskTo | null>(() => toChat && toMsg ? { taskId: id, chatId: toChat, messageId: toMsg, reply: true, qa: !inQa }
+    : chat_id && message_id ? { taskId: id, chatId: chat_id, messageId: message_id, reply: false, qa: true } : null,
+  [id, chat_id, message_id, toChat, toMsg, inQa]);
   return (
     <AskTag value={sessionId(t)}>
       <AskTarget value={target}>

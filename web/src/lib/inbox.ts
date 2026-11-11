@@ -177,10 +177,6 @@ export const getMessage = (chatId: string, messageId: string, { signal }: { sign
 
 /** Open the reply panel on a message, optionally with a prefilled line (the inbox shell listens). */
 export const openReply = (m: Message, text?: string) => dispatchEvent(new CustomEvent<{ m: Message; text?: string }>("open-reply", { detail: { m, text } }));
-let codeAsk = "";
-/** "Trả lời từ code" on a message row: open its reply panel, which runs the answer (`takeCodeAsk`; "ask-code" when open). */
-export const askCode = (m: Message) => { codeAsk = msgKey(m); openReply(m); dispatchEvent(new CustomEvent<string>("ask-code", { detail: codeAsk })); };
-export const takeCodeAsk = (key: string) => { if (codeAsk !== key) return false; codeAsk = ""; return true; };
 /** Load one message and open the reply panel on it; false (after a toast) when it could not be loaded. */
 export async function openReplyById(chatId: string, messageId: string, text?: string) {
   try {
@@ -261,6 +257,15 @@ export const COMPOSER = "form[data-composer]";
 export const taskListQuery = {
   queryKey: ["tasks"],
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Task[]>("/tasks", { signal }),
+};
+
+/** msgKey → the AI Agent / Đối chiếu BE sessions that message was sent to, newest first (only once a turn carrying it
+ *  started). Under ["tasks"]: whatever refreshes the task list (a sent turn, a new session) refreshes it, so opening a
+ *  menu or refocusing the window needn't read it again. */
+export const sentQuery = {
+  queryKey: ["tasks", "sent"],
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string[]>>("/tasks/sent", { signal }),
+  staleTime: 60_000,
 };
 
 /** Every task handed to the AI. Polls while some task has no result yet (one poller: the inbox shell / AI Agent page). */

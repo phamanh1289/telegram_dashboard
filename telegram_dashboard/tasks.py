@@ -1,6 +1,7 @@
 """AI Agent task routes: headless `claude -p` (or Codex/Antigravity) sessions per project (see agent.py)."""
 
 import asyncio
+import json
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -38,10 +39,12 @@ async def _ref_qa(s, chat_id: str, mid: int) -> str:
         return ""
 
 
-async def add_refs(s, task_id: str, refs) -> None:
-    """Attach messages ((chat_id, message id) pairs) to a session: its Done / reopen moves them and their Q&A."""
+async def add_refs(s, task_id: str, refs, *, ask: bool = True) -> None:
+    """Attach messages ((chat_id, message id) pairs) to a session: its Done / reopen moves them and their Q&A; its
+    asks reply to the last one (`ask`)."""
     rows = [(cid, int(mid)) for cid, mid in refs if str(mid).isdigit()]
-    await s.db.write(s.store.add_task_refs, task_id, [(cid, mid, await _ref_qa(s, cid, mid)) for cid, mid in rows])
+    await s.db.write(s.store.add_task_refs, task_id, [(cid, mid, await _ref_qa(s, cid, mid)) for cid, mid in rows],
+                     ask=ask)  # fmt: skip
 
 
 async def follow_task(s, task_id: str, handled: bool, react: bool) -> None:
@@ -63,10 +66,11 @@ async def mark_tags(s, chat_id: str, ids: list[int], handled: bool, react: bool)
 
 async def start_task(
     s, task_id: str, chat_id: str | None, message_id: int | None, project: str, prompt: str, mode: str,
-    kind: str = "task", title: str | None = None, *, about, refs=(),
+    kind: str = "task", title: str | None = None, *, about, refs=(), ask_refs: bool = True,
 ) -> None:  # fmt: skip
     """Save the task, then start its first turn: a run is never without its row (a failed start
-    takes the row back). `refs`: messages it is about (Đối chiếu BE's cited ones)."""
+    takes the row back). `refs`: messages it is about (Đối chiếu BE's cited ones); `ask_refs`: its asks reply to the
+    last of them."""
     session = s.agent.new_session()
     try:  # the tree before the AI touches it: Thay đổi shows this session's edits only
         base = await gitops.snapshot(project)
@@ -89,7 +93,7 @@ async def start_task(
         raise
     if named != session:  # Codex / Antigravity name their session once it runs
         await s.db.write(s.store.set_task_session, task_id, named)
-    await add_refs(s, task_id, refs)
+    await add_refs(s, task_id, refs, ask=ask_refs)
 
 
 def build_router(settings) -> APIRouter:
@@ -133,9 +137,16 @@ def build_router(settings) -> APIRouter:
                 message_text=r["message_text"], handled=bool(r["handled"]),
                 kind=r["kind"], title=r["title"], model=r["model"], effort=r["effort"],
                 provider=split_session(r["session_id"] or "")[0],
+                ask_to=json.loads(r["ask_to"]) if r["ask_to"] else None,
             )
             for r, (result, prompt) in zip(rows, files, strict=True)
         ]  # fmt: skip
+
+    @r.get("/sent")
+    async def sent(request: Request) -> dict[str, list[str]]:
+        """Which messages were sent along to which sessions (Q&A's "Đã gửi AI")."""
+        s = request.app.state
+        return await s.db.read(s.store.sent_refs)
 
     @r.post("/{task_id}/reopen", status_code=204)
     async def reopen_task(task_id: str, request: Request) -> None:

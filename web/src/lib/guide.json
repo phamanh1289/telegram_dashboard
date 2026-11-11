@@ -102,6 +102,23 @@
 "keys": "giao dien sang toi dark mode light mode theme đổi giao diện"
 },
 {
+"id": "lang-toggle",
+"tab": "telegram",
+"area": "Thanh trên cùng",
+"title": "Đổi ngôn ngữ Tiếng Việt / English",
+"what": "Chuyển nhanh giao diện giữa Tiếng Việt và English.",
+"how": [
+{
+"t": "Bấm biểu tượng ngôn ngữ \"Đổi ngôn ngữ Tiếng Việt / English\"",
+"at": "Đổi ngôn ngữ Tiếng Việt / English"
+},
+{
+"t": "Muốn theo ngôn ngữ máy: Cài đặt › Chung › Ngôn ngữ › Theo máy"
+}
+],
+"keys": "ngon ngu language tieng viet english en vi doi ngon ngu"
+},
+{
 "id": "settings-button",
 "tab": "telegram",
 "area": "Thanh trên cùng › Cài đặt",
@@ -194,7 +211,7 @@
 "tab": "telegram",
 "area": "Thanh bên › Q&A",
 "title": "Q&A: hỏi trong nhóm và theo dõi câu trả lời",
-"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, chỉ tính Đã trả lời khi người được tag trả lời (Cài đặt › Telegram đổi được thành bất kỳ ai), nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi. Tin tag có mã #QA… hoặc nằm trong một chuỗi Q&A chỉ hiện ở trang Q&A, không lặp lại ở Việc cần xử lý / Hôm nay / tin tag của nhóm (và không tính vào số chưa xử lý); tin đã ghim vẫn ở Tag đã ghim.",
+"what": "Đăng câu hỏi vào nhóm bất kỳ (tag người được hỏi bằng @tên); dashboard thêm một dòng mã #QA… để mọi trả lời nối thành một chuỗi. Ý \"Cần hỏi / Cần ping / Cần chốt\" gửi vào nhóm từ phiên AI Agent (nút gửi cạnh ý) có @tên cũng được thêm mã này. Phiên đã gửi kèm tin (đính kèm ở ô nhắn của phiên, hoặc Đối chiếu BE một câu trả lời) thì nút gửi đăng ý thành tin trả lời (reply) vào tin đính kèm gần nhất, ở đúng nhóm của tin đó; tin đó đã thuộc một chuỗi Q&A thì nối vào chuỗi, không thêm mã mới (Đối chiếu nhiều chủ đề một lần vẫn đăng tin mới). Mỗi tin hỏi tối đa 3 ý, mỗi ý một dòng; AI soạn quá 3 ý thì tự tách thành nhiều tin 3 ý, mỗi tin một nút gửi; dư đúng 1 ý thì gộp vào tin kế cuối (7 ý: 3 + 4). Trang Q&A liệt kê các chuỗi theo nhóm, lọc Chờ trả lời / Đã trả lời / Bạn hỏi, chỉ tính Đã trả lời khi người được tag trả lời (Cài đặt › Telegram đổi được thành bất kỳ ai), nhắc khi câu của bạn chưa ai trả lời quá ngưỡng, và AI tóm tắt kết luận của một chuỗi. Tin tag có mã #QA… hoặc nằm trong một chuỗi Q&A chỉ hiện ở trang Q&A, không lặp lại ở Việc cần xử lý / Hôm nay / tin tag của nhóm (và không tính vào số chưa xử lý); tin đã ghim vẫn ở Tag đã ghim.",
 "how": [
 "Bấm Q&A trên thanh bên (hoặc g rồi q), chọn nhóm",
 "Bấm “Câu hỏi mới”, gõ câu hỏi có @tên người được hỏi rồi Đăng",
@@ -202,9 +219,10 @@
 "Bấm tiêu đề ngày trong danh sách để thu gọn / mở rộng các câu của ngày đó",
 "Đánh dấu xong một chuỗi: bấm nút dấu tích trên chuỗi. Tin tag trong chuỗi (câu người khác hỏi, các trả lời) cũng thành đã xử lý (không reaction), phiên AI Agent đặt trên chúng xong theo; Mở lại thì bỏ theo",
 "Xóa khỏi Q&A: rê chuột vào một câu, bấm thùng rác (hoàn tác ở thông báo); xóa cả ngày: thùng rác trên tiêu đề ngày, bấm 2 lần. Tin trên Telegram vẫn còn",
-"Đưa mọi câu trả lời cho AI Agent: bấm nút kẹp giấy ở một tin trong chuỗi, tick “Mọi tin trả lời trong chuỗi” (không kèm câu hỏi) rồi chọn phiên (tối đa 10 tin mỗi lượt)"
+"Đưa mọi câu trả lời cho AI Agent: bấm nút kẹp giấy ở một tin trong chuỗi, tick “Mọi tin trả lời trong chuỗi” (không kèm câu hỏi) rồi chọn phiên (tối đa 10 tin mỗi lượt)",
+"Biết tin nào đã gửi AI: tin trong chuỗi đã đi kèm một lượt nhắn của phiên AI Agent hay một phiên Đối chiếu BE có nhãn “Đã gửi” (bấm để mở phiên). Chỉ tính khi lượt đó thật sự được gửi (Enter hoặc hàng đợi chạy), đính kèm rồi bỏ thì không; gửi nhiều tin một lượt thì tin nào cũng được đánh dấu. Dòng câu hỏi ghi “Đã gửi AI” (hoặc “Gửi AI 1/3” khi mới gửi một phần trả lời); bộ lọc “Chưa gửi AI” gom các chuỗi còn tin chưa gửi. Menu kẹp giấy ghi “đã gửi tin này” cạnh phiên đã nhận tin đó"
 ],
-"keys": "qa q&a hoi dap hỏi đáp cau hoi câu hỏi ma qa mã #qa chuoi chuỗi nhac nhắc tra loi trả lời dinh kem đính kèm phien ai agent"
+"keys": "qa q&a da gui ai đã gửi ai chua gui ai chưa gửi ai hoi dap hỏi đáp cau hoi câu hỏi ma qa mã #qa chuoi chuỗi nhac nhắc tra loi trả lời dinh kem đính kèm phien ai agent"
 },
 {
 "id": "qa-my-questions",
@@ -1201,7 +1219,7 @@
 "tab": "telegram",
 "area": "Khung Trả lời › Trả lời từ code",
 "title": "Trả lời câu hỏi từ code dự án",
-"what": "Ai đó hỏi bạn về logic, nghiệp vụ hay tiến độ: chọn dự án ở ô prompt, AI đọc code (chỉ đọc) và trả lời kèm căn cứ file / hàm, độ chắc chắn, điều cần xác nhận, cùng 2 bản nháp \"Ngắn gọn\" / \"Đầy đủ\" viết theo vai trò người hỏi (PO / QA: không nêu tên file, API). Câu hỏi tiến độ: AI đọc thêm commit 14 ngày gần nhất và ticket YouTrack liên quan. Lượt đọc code chạy nền: đóng khung trả lời vẫn chạy tiếp, mở lại tin đó sẽ thấy tiến độ / kết quả; \"Hủy\" mới dừng hẳn. Từ danh sách tin: menu ⋯ › \"Trả lời từ code\" mở khung và chạy ngay. Chỉ có với vai trò Dev; dự án được nhớ cho lần sau.",
+"what": "Ai đó hỏi bạn về logic, nghiệp vụ hay tiến độ: chọn dự án ở ô prompt, AI đọc code (chỉ đọc) và trả lời kèm căn cứ file / hàm, độ chắc chắn, điều cần xác nhận, cùng 2 bản nháp \"Ngắn gọn\" / \"Đầy đủ\" viết theo vai trò người hỏi (PO / QA: không nêu tên file, API). Câu hỏi tiến độ: AI đọc thêm commit 14 ngày gần nhất và ticket YouTrack liên quan. Lượt đọc code chạy nền: đóng khung trả lời vẫn chạy tiếp, mở lại tin đó sẽ thấy tiến độ / kết quả; \"Hủy\" mới dừng hẳn. Chỉ có với vai trò Dev; dự án được nhớ cho lần sau.",
 "how": [
 "Chỉ có với vai trò Dev.",
 {
@@ -1219,8 +1237,7 @@
 "Hỏi code lại"
 ]
 },
-"Ở bản nháp, bấm biểu tượng copy để copy, hoặc biểu tượng gửi để trả lời ngay tin đó.",
-"Hoặc ở danh sách tin: rê vào tin, menu ⋯ › \"Trả lời từ code\"."
+"Ở bản nháp, bấm biểu tượng copy để copy, hoặc biểu tượng gửi để trả lời ngay tin đó."
 ],
 "keys": "tra loi tu code doc code du an hoi logic nghiep vu tien do can cu answer from code project"
 },
@@ -1288,7 +1305,7 @@
 "at": "css:[data-testid=\"message\"]"
 },
 {
-"t": "Bấm \"Giao AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
+"t": "Bấm \"AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
 "at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
 },
 {
@@ -1358,9 +1375,9 @@
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
 },
-"Xem dòng \"Có vẻ liên quan:\" dưới các nút công cụ (chỉ hiện khi tin không nêu mã ticket).",
+"Xem mục \"Ticket có vẻ liên quan\" dưới các nút công cụ (chỉ hiện khi tin không nêu mã ticket).",
 {
-"t": "Bấm \"+ chèn\" để chèn link ticket vào trả lời.",
+"t": "Bấm \"+\" trên dòng ticket để chèn link ticket vào trả lời.",
 "at": "css:[aria-label=\"Ticket có vẻ liên quan\"] button"
 }
 ],

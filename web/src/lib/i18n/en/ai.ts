@@ -213,6 +213,7 @@ export default {
   "Báo cáo": "Report",
   "không lỗi": "no errors",
   "TB {n} / request": "avg {n} / request",
+  "{n} tỷ": ({ n }) => `${n}B`,
   "Chi phí quy đổi": "Equivalent cost",
   "nếu trả theo API": "if paid via API",
   "Thời gian TB": "Avg time",
@@ -417,6 +418,8 @@ export default {
   "Gửi thất bại.": "Send failed.",
   "Đang gửi…": "Sending…",
   "Không rõ đã gửi chưa: xem nhóm trước, bấm để gửi lại": "Not sure it was sent: check the group first, click to send again",
+  "Gửi ngay ý này thành tin trả lời (reply) tin #{id} ở nhóm {group}: tin đính kèm gần nhất của phiên":
+    "Send this point now as a reply to message #{id} in {group}: the session's latest attached message",
   "Gửi ngay ý này thành tin mới trong nhóm (có @tên: thêm mã #QA để Q&A theo dõi trả lời)": "Send this point now as a new group message (with an @name: adds a #QA code so Q&A tracks the answer)",
   "Gửi ý này vào nhóm": "Send this point to the group",
   "Gửi": "Send",
