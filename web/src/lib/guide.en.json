@@ -211,7 +211,7 @@
 "tab": "telegram",
 "area": "Sidebar › Q&A",
 "title": "Q&A: ask in a group and track the answers",
-"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from an AI Agent session (the send button next to the point) with an @name get this code too. When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
+"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from a Give to AI Agent or Check vs BE session (the send button next to the point) with an @name get this code too: the AI tags the recipient by @username, or by name for someone without one (the copy button turns it into @Name). When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
 "how": [
 "Click Q&A in the sidebar (or g then q) and pick a group",
 "Click \"New question\", type the question with @name of the person asked, then Post",
@@ -219,8 +219,8 @@
 "Click a date header in the list to collapse / expand that day's questions",
 "Mark a thread done: click the check button on it. Its tagged messages (someone else's question, the replies) become handled too (no reaction), and AI Agent sessions on them follow; Reopen undoes them",
 "Remove from Q&A: hover a question and click the trash can (undo in the notice); remove a whole day: the trash can on the date header, click twice. The messages stay on Telegram",
-"Send every answer to the AI Agent: click the paperclip on a message in the thread, tick \"Every reply in the thread\" (question not included), then pick a session (up to 10 messages per turn)",
-"See what went to AI: a thread message sent with an AI Agent session's turn or a Check vs BE session shows \"Sent\" (click to open the session). It counts only once that turn was really sent (Enter, or the queue ran it), not when attached then removed; several messages in one turn are each marked. The question row says \"Sent to AI\" (or \"Sent to AI 1/3\" when only some replies went); the \"Not sent to AI\" filter gathers threads with messages not sent yet. The paperclip menu says \"already sent this\" next to a session that got that message"
+"Send every answer to the AI Agent: click the paperclip on a message in the thread, tick \"Every reply in the thread\" (question not included), then pick a session (up to 10 messages per turn). Attaching a message (from Q&A or a tag) to a read-only (plan) session ticks its \"Allow code edits\" for the next turn; untick it if you only want to ask",
+"See what went to AI (the label also shows on tags outside Q&A): a thread message sent with an AI Agent session's turn or a Check vs BE session shows \"Sent\" (click to open the session). It counts only once that turn was really sent (Enter, or the queue ran it), not when attached then removed; several messages in one turn are each marked. The question row says \"Sent to AI\" (or \"Sent to AI 1/3\" when only some replies went); the \"Not sent to AI\" filter gathers threads with messages not sent yet. The paperclip menu says \"already sent this\" next to a session that got that message"
 ],
 "keys": "qa q&a questions answers #qa code thread remind nudge reply attach ai agent session sent to ai not sent"
 },
@@ -241,7 +241,7 @@
 "tab": "telegram",
 "area": "Sidebar › AI Agent",
 "title": "AI Agent page",
-"what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, and Briefing assistant chats. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included).",
+"what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, AI assistant (the AI assistant asks in the reply panel, one session per message, no project needed; ask on, post questions to the group, Done like any session), and Briefing assistant chats. Sessions are ordered by their latest activity and grouped into Today / Yesterday / Last 7 days / Older; the day label sticks to the top while scrolling, click it to fold / unfold. The time on each session is its latest activity. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included).",
 "how": [
 {
 "t": "Click \"AI Agent\" in the sidebar",
@@ -249,7 +249,7 @@
 },
 {
 "t": "Pick a session on the left to see its details on the right",
-"at": "css:ul[aria-label=\"Danh sách phiên\"] button"
+"at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 }
 ],
 "keys": "ai agent sessions ai task assign deep thinking code session agent"
@@ -806,6 +806,7 @@
 "at": "Xong"
 },
 "The notice shows \"Undo\" in case you clicked by mistake.",
+"The #QA… Q&A named in the message and the AI Agent sessions set on it follow. A message once sent to an AI Agent session (attached, Check vs BE) whose session is still Doing: that session turns Done too, with its other attached messages and its Q&A; reopening the message leaves the session Done.",
 {
 "t": "Pick a group in the sidebar to see its messages again.",
 "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
@@ -1041,7 +1042,7 @@
 "t": "Click \"Open session\" to open it on the AI Agent page.",
 "at": "Mở phiên"
 },
-"Click the session code (REF-…) to copy #REF-…; paste it into a group message and the next message attaches to that session. Hover the paperclip on a reply: the app reads the whole reply chain (the original of the original…) to find #REF-… and #QA…."
+"Click the session code (REF-…) to copy #REF-…; paste it into a group message and the next message attaches to that session (a read-only session gets \"Allow code edits\" ticked). Hover the paperclip on a reply: the app reads the whole reply chain (the original of the original…) to find #REF-… and #QA…. A message carried by a session turn that was actually sent (attached then Enter, or the assigned tag) shows \"Sent\" in every message list (tags, Q&A); click it to open the session."
 ],
 "keys": "task result session code ref open session use result as draft reply ai agent"
 },
@@ -1210,9 +1211,10 @@
 "Tóm tắt lại"
 ]
 },
-"Text appears as the AI writes; click \"Cancel\" to stop, \"Summarize again\" to rerun."
+"Text appears as the AI writes; click \"Cancel\" to stop, \"Summarize again\" to rerun.",
+"Every ask is saved in the message's AI assistant session (one session per message, with a REF-… ID): open the message again to see the earlier turns, and the AI remembers them. Questions the AI writes ready to send (quotes opening with @name) have a copy button and a button that posts them to the group with a #QA code, so Q&A follows the answers. Ask on, mark Done or delete the session in AI Agent › AI assistant."
 ],
-"keys": "summarize suggest ai summary draft prompt key a summarize again cancel"
+"keys": "summarize suggest ai summary draft prompt key a summarize again cancel session ai assistant saved post question qa"
 },
 {
 "id": "composer-ai-code",
@@ -1411,7 +1413,7 @@
 "tab": "telegram",
 "area": "AI Agent › Filters",
 "title": "Filter AI Agent sessions",
-"what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete them here, continue in the Assistant), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running.",
+"what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete them here, continue in the Assistant), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; only replying to the tag (the session's asks included) keeps the session in Doing; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running.",
 "how": [
 {
 "t": "Open \"AI Agent\" in the sidebar.",
@@ -1453,7 +1455,7 @@
 },
 {
 "t": "Pick a session in the list.",
-"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+"at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 },
 {
 "t": "Type in the \"Message the AI\" box; Enter sends, Shift+Enter adds a line.",
@@ -1491,7 +1493,7 @@
 },
 {
 "t": "Pick a Read only session.",
-"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+"at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 },
 {
 "t": "Tick \"Allow code edits\" in the message box.",
@@ -1518,7 +1520,7 @@
 },
 {
 "t": "Pick a session in the list.",
-"at": "css:ul[aria-label=\"Danh sách phiên\"] li > button"
+"at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 },
 {
 "t": "Hover or click the ⋯ button at the right of the session header to open the menu: Done, Done without reaction (or Reopen), Use as reply draft, Open group, Delete session (asks to confirm).",
@@ -1657,7 +1659,7 @@
 "tab": "settings",
 "area": "Settings › General › Appearance",
 "title": "Language, appearance, style, font, accent color, gradient",
-"what": "Choose the language (Match device / Tiếng Việt / English); choose Light / Dark / System; the Simple / Default / Vivid style; the font (Quicksand, Be Vietnam Pro, Inter, Nunito or the system font); the accent color (a preset or pick your own); turn on Gradient with a second color. Saved in the browser.",
+"what": "Choose the language (Match device / Tiếng Việt / English); choose Light / Dark / System; the Simple / Default / Vivid style; the font (Quicksand, Be Vietnam Pro, Inter, Nunito or the system font); the text size (Small / Medium / Large / Extra large); the accent color (a preset or pick your own); turn on Gradient with a second color. Saved in the browser.",
 "how": [
 {
 "t": "Under \"Language\" choose \"Match device\", \"Tiếng Việt\" or \"English\"",
@@ -1676,6 +1678,10 @@
 "at": "css:[aria-label=\"Font chữ\"]"
 },
 {
+"t": "Under \"Text size\" pick \"Small\", \"Medium\", \"Large\" or \"Extra large\"",
+"at": "css:[aria-label=\"Cỡ chữ\"]"
+},
+{
 "t": "Click a preset color swatch",
 "at": "css:[aria-label=\"Màu có sẵn\"]"
 },
@@ -1684,7 +1690,7 @@
 "at": "Gradient"
 }
 ],
-"keys": "language english vietnamese match device appearance theme light dark system style simple default vivid font accent color gradient"
+"keys": "language english vietnamese match device appearance theme light dark system style simple default vivid font text size accent color gradient"
 },
 {
 "id": "settings-telegram-account",

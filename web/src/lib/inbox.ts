@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { createContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api, errorText, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/lib/api";
 import { type Key, t } from "@/lib/i18n";
 import { getPref, put, readOverdueHours } from "@/lib/prefs";
@@ -259,7 +259,14 @@ export const taskListQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Task[]>("/tasks", { signal }),
 };
 
-/** msgKey → the AI Agent / Đối chiếu BE sessions that message was sent to, newest first (only once a turn carrying it
+/** The newest session of `kind` on a message (the task list is newest first), if any: Đối chiếu BE, Trợ lý AI.
+ *  `select` + structural sharing: a row re-renders only when its own session changes, not on every task-list poll. */
+export function useSessionOn(kind: Task["kind"], chatId: string, messageId: string | undefined) {
+  const pick = useCallback((l: Task[]) => l.find((t) => t.kind === kind && t.chat_id === chatId && t.message_id === messageId), [kind, chatId, messageId]);
+  return useQuery({ ...taskListQuery, select: pick, enabled: !!messageId });
+}
+
+/** msgKey → the AI Agent / Đối chiếu BE / Trợ lý AI sessions that message was sent to, newest first (only once a turn carrying it
  *  started). Under ["tasks"]: whatever refreshes the task list (a sent turn, a new session) refreshes it, so opening a
  *  menu or refocusing the window needn't read it again. */
 export const sentQuery = {
@@ -278,6 +285,11 @@ export function useTaskList() {
 
 /** Short ID of an AI Agent session ("REF-e03a28"): the random tail of its id, shown and searched. A neutral prefix, so
  *  asks posted to groups don't read as AI-made; asks posted before carry the old "AI-". */
+/** Telegram's tag by name (someone without a @username): the send turns it into a mention entity (telegram.split_mentions). */
+export const nameTag = (name: string, id: string) => `[${name.replace(/[[\]]/g, "")}](tg://user?id=${id})`;
+/** How a message to this sender tags them (the AI copies it into its asks; ai.who on the server): null for me / unknown. */
+export const tagOf = (m: Pick<Message, "outgoing" | "sender_id" | "sender_name" | "sender_username">) =>
+  m.outgoing ? null : m.sender_username ? `@${m.sender_username}` : m.sender_name && /^\d+$/.test(m.sender_id ?? "") ? nameTag(m.sender_name, m.sender_id!) : null;
 export const sessionId = (t: { id: string }) => `REF-${t.id.slice(-6)}`;
 /** "#REF-97c501" (or the old "#AI-97c501") in a message; group 1 is the session id's tail. */
 export const SESSION_CODE = /#(?:REF|AI)-(\w{6})\b/gi;

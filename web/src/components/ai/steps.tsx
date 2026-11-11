@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 // YouTrack AI with code all show their steps this way.
 
 /** One line of an AI run: the prompt, a tool call ("<name>  <input>") and its output, text, the result. */
-export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number; cost?: number }; // cost: a result turn, USD as the CLI estimates
+export type TaskEvent = { kind: string; text: string; error?: boolean; at?: number; cost?: number; code?: string }; // cost: a result turn, USD as the CLI estimates; code: a Trợ lý AI turn read this project
 /** Tool name -> icon, a verb and its "doing" form, so a step reads "Đọc SellProgressCard.kt", live "Đang đọc …". */
 const TOOLS: Record<string, [LucideIcon, Key, Key]> = {
   Read: [FileText, "Đọc", "Đang đọc"], Edit: [Pencil, "Sửa", "Đang sửa"], MultiEdit: [Pencil, "Sửa", "Đang sửa"], Write: [FilePlus, "Tạo", "Đang tạo"],

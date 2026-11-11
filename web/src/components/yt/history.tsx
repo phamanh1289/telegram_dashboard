@@ -1,12 +1,11 @@
 "use client";
 
-import { ChevronRight, History, LayoutDashboard, ListChecks, MessageSquareText, Pencil, Search, Trash2 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { History, LayoutDashboard, ListChecks, MessageSquareText, Pencil, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
-import { type Key, t as tNow, useT } from "@/lib/i18n";
+import { t as tNow, useT } from "@/lib/i18n";
 import { getPref, put, readJson } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/lib/yt";
@@ -15,6 +14,7 @@ import type { AiPending } from "./bits";
 import { fold, toast } from "@/lib/inbox";
 import { WorkView } from "./work";
 import { AiSpin } from "@/components/ai/chat";
+import { DayGroups } from "@/components/ai/day-groups";
 
 // The YouTrack tab's AI history, per browser (Telegram's AI conversations live in AI Agent: tasks, Đối chiếu BE, Briefing). A small index lists the sessions,
 // each session is its own key: the list never parses an answer, a turn rewrites one session + the index.
@@ -127,12 +127,6 @@ function drop(ids: string[]) {
 /** Ticket: sessions about picked tickets; Dashboard: about figures (dashboard, reports, team), which pick none. */
 type Tab = "all" | "ticket" | "dash";
 const tabOf = (m: Meta): Tab => (m.ids.length ? "ticket" : "dash");
-/** Rail headings: today, yesterday, this week, older. */
-function dayOf(at: number): Key {
-  const d = Math.floor((new Date().setHours(24, 0, 0, 0) - at) / DAY);
-  return d < 1 ? "Hôm nay" : d < 2 ? "Hôm qua" : d < 7 ? "7 ngày qua" : "Cũ hơn";
-}
-
 /** The session's name: its title, or (a ticket session, whose title said nothing) its tickets. */
 function nameOf(m: { title: string; name?: string; ids: string[] }) {
   if (m.name) return m.name;
@@ -173,13 +167,6 @@ export function HistoryPage() {
     const k = fold(q.trim());
     return k ? inTab.filter((m) => fold(`${m.name ?? ""} ${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
   }, [inTab, q]);
-  const groups = useMemo(() => {
-    const g: [Key, Meta[]][] = [];
-    for (const m of shown) { const d = dayOf(m.at), last = g.at(-1); if (last?.[0] === d) last[1].push(m); else g.push([d, [m]]); }
-    return g;
-  }, [shown]);
-  const [shut, setShut] = useState<Key[]>([]); // folded days (a search unfolds all)
-  const calm = useReducedMotion();
   const cur = idx.find((m) => m.id === sel) ?? shown[0];
   const v = cur ? ver[cur.id] ?? 0 : 0;
   const s = useMemo(() => (cur ? loadSession(cur.id) : null), [cur?.id, v]); // eslint-disable-line react-hooks/exhaustive-deps -- a new turn must not reload the open chat; a background run's end does
@@ -202,51 +189,33 @@ export function HistoryPage() {
           { value: v, label: <>{t(l)} <span className="font-mono tabular-nums opacity-70">{n(v)}</span></> }))} />
         {/* sessions by day: a sticky day header (click: fold / unfold its sessions), the sessions hang under it on a guide line */}
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-rule">
-          {groups.map(([day, ms]) => {
-            const off = !q.trim() && shut.includes(day);
-            return (
-              <section key={day} aria-label={t(day)}>
-                <div className="group/day sticky top-0 z-10 flex items-center gap-1 bg-cotton pt-1">
-                  <button type="button" aria-expanded={!off} onClick={() => setShut((x) => (off ? x.filter((d) => d !== day) : [...x, day]))}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 pt-1.5 pb-1.5 text-xs font-bold text-ink-3 hover:text-ink">
-                    <ChevronRight className={cn("size-3.5 transition-transform duration-(--dur-short)", !off && "rotate-90")} aria-hidden />{t(day)}
-                    <span className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-2xs font-medium tabular-nums">{ms.length}</span>
+          <DayGroups items={shown} at={(m) => m.at} open={!!q.trim()}
+            actions={(day, ms) => (
+              // delete this day's sessions (those shown: tab + search); two clicks like "Xóa tất cả"
+              <Button size="xs" variant={sureDay === day ? "destructive" : "ghost"} onBlur={() => setSureDay("")}
+                className={cn(sureDay !== day && "text-ink-3 opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100")}
+                aria-label={t("Xóa {n} phiên {day}", { n: ms.length, day: t(day).toLowerCase() })}
+                onClick={() => { if (sureDay !== day) { setSureDay(day); return; } remove(ms.map((m) => m.id)); setSureDay(""); }}>
+                <Trash2 />{sureDay === day && t("Xóa {n}?", { n: ms.length })}</Button>
+            )}
+            row={(m) => {
+              const on = m.id === cur?.id, Icon = m.ids.length ? ListChecks : LayoutDashboard;
+              const live = m.pending && (isRunning(m.id) || (!!m.job && jobs.data?.[m.job] === "running"));
+              return (
+                <li key={m.id} className="group relative">
+                  <button type="button" aria-current={on} onClick={() => setSel(m.id)}
+                    className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1.5 pr-8 text-left", on ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
+                    {live ? <AiSpin className="mt-0.5" /> : <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />}
+                    <span className="grid min-w-0">
+                      <span className={cn("truncate text-sm", on && "font-medium")}>{nameOf(m)}</span>
+                      <span className="truncate text-xs text-ink-3">{m.pending && <PendingTag m={m} job={m.job ? jobs.data?.[m.job] : undefined} />}{m.q.replace(/[*_#`>]/g, "") || t("{n} lượt", { n: m.n })}</span>
+                    </span>
                   </button>
-                  {/* delete this day's sessions (those shown: tab + search); two clicks like "Xóa tất cả" */}
-                  <Button size="xs" variant={sureDay === day ? "destructive" : "ghost"} onBlur={() => setSureDay("")}
-                    className={cn(sureDay !== day && "text-ink-3 opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100")}
-                    aria-label={t("Xóa {n} phiên {day}", { n: ms.length, day: t(day).toLowerCase() })}
-                    onClick={() => { if (sureDay !== day) { setSureDay(day); return; } remove(ms.map((m) => m.id)); setSureDay(""); }}>
-                    <Trash2 />{sureDay === day && t("Xóa {n}?", { n: ms.length })}</Button>
-                </div>
-                <AnimatePresence initial={false}>
-                  {!off && (
-                    <motion.ul initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: calm ? 0 : 0.2, ease: [0.2, 0, 0, 1] }} className="ml-3 grid gap-0.5 overflow-hidden border-l border-rule pl-1.5">
-                      {ms.map((m) => {
-                        const on = m.id === cur?.id, Icon = m.ids.length ? ListChecks : LayoutDashboard;
-                        const live = m.pending && (isRunning(m.id) || (!!m.job && jobs.data?.[m.job] === "running"));
-                        return (
-                          <li key={m.id} className="group relative">
-                            <button type="button" aria-current={on} onClick={() => setSel(m.id)}
-                              className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1.5 pr-8 text-left", on ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
-                              {live ? <AiSpin className="mt-0.5" /> : <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />}
-                              <span className="grid min-w-0">
-                                <span className={cn("truncate text-sm", on && "font-medium")}>{nameOf(m)}</span>
-                                <span className="truncate text-xs text-ink-3">{m.pending && <PendingTag m={m} job={m.job ? jobs.data?.[m.job] : undefined} />}{m.q.replace(/[*_#`>]/g, "") || t("{n} lượt", { n: m.n })}</span>
-                              </span>
-                            </button>
-                            <Button size="icon-xs" variant="ghost" className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                              onClick={() => remove([m.id])} aria-label={t("Xóa phiên {name}", { name: nameOf(m) })}><Trash2 /></Button>
-                          </li>
-                        );
-                      })}
-                    </motion.ul>
-                  )}
-                </AnimatePresence>
-              </section>
-            );
-          })}
+                  <Button size="icon-xs" variant="ghost" className="absolute top-1/2 right-1 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={() => remove([m.id])} aria-label={t("Xóa phiên {name}", { name: nameOf(m) })}><Trash2 /></Button>
+                </li>
+              );
+            }} />
           {!shown.length && <p className="px-2 py-4 text-center text-xs text-ink-3">{t(q ? "Không có phiên nào khớp." : "Chưa có phiên nào loại này.")}</p>}
         </div>
         <Button size="xs" variant={sure ? "destructive" : "ghost"} className="self-start text-ink-3" disabled={!inTab.length} onBlur={() => setSure(false)}

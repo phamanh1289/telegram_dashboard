@@ -480,6 +480,7 @@ export default {
   "Đang tải…": "Loading…",
   "Không tải được danh sách phiên.": "Could not load the session list.",
   "Chưa có phiên Đối chiếu BE. Bấm nút bộ não trên tin BE trả lời, hoặc “Đối chiếu code” ở mục Đã chốt trong Briefing.": "No BE check sessions yet. Click the brain button on a BE answer, or “Check code” under Settled in Briefing.",
+  "Chưa có phiên Trợ lý AI. Mở một tin, hỏi Trợ lý AI trong khung trả lời: mỗi tin một phiên, lưu ở đây.": "No AI assistant sessions yet. Open a message and ask the AI assistant in the reply panel: one session per message, kept here.",
   "Chưa giao việc nào cho AI Agent. Mở một tin, bấm “Giao AI Agent”, chọn dự án.": "Nothing given to AI Agent yet. Open a message, click “Give to AI Agent”, pick a project.",
   "Mở Việc cần xử lý": "Open To do",
   "Tìm phiên": "Search sessions",

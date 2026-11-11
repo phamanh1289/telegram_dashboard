@@ -170,7 +170,10 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     assert client.get("/api/tasks").json()[0]["handled"] is True
     client.put("/api/tasks/t1/handled", json={"handled": False, "react": False}, headers=H)
     store.apply_message(msg(A, 4, "@me login crash"))
-    client.put("/api/tasks/t1/handled", json=done, headers=H)  # now on the tag
+    store.set_handled(A, 4, True, "dashboard")  # a reply (the session's asks) handles the tag: the session stays Doing
+    assert client.get("/api/tasks").json()[0]["handled"] is False
+    client.put("/api/tasks/t1/handled", json=done, headers=H)  # now on the tag: Xong on the session claims it
+    assert store.get_message(A, 4).handled_by == "quiet"
     assert store.get_message(A, 4).handled
     assert client.get("/api/tasks").json()[0]["handled"] is True  # the task follows its tag
     # Messages attached to its turns follow the session's Done / reopen (only kept ones; others are no-ops).
@@ -229,6 +232,27 @@ def test_task_result_shows_next_to_its_tag(client, settings):
     assert t["prompt"] == "sửa bug login" and t["chat_title"] == "Alpha"
     assert client.delete("/api/tasks/t1", headers=H).status_code == 204
     assert client.get("/api/tasks").json() == [] and not p.exists()
+
+
+def test_done_on_an_attached_message_closes_its_doing_sessions(client):
+    store = client.app.state.store
+    store.set_tracking(A, True, "Alpha", "supergroup")
+    store.apply_message(msg(A, 4, "@me login crash"))  # t1's own tag
+    store.apply_message(msg(A, 5, "@me BE: API đã sửa\n#QA44"))  # sent along to t1 and t2
+    store.apply_message(msg(A, 6, "@me còn lỗi iOS"))  # t1's other attachment
+    store.add_task("t1", A, 4, "/tmp/proj", "sửa bug login")
+    store.add_task("t2", None, None, "/tmp/proj", "Đối chiếu BE")  # no tag: Done sits on the session
+    store.add_task_refs("t1", [(A, 5, "#QA44"), (A, 6, "")])
+    store.add_task_refs("t2", [(A, 5, ""), (A, 4, "")])  # t1 and t2 cite each other's messages: the cascade ends
+    done = lambda: {x["id"]: x["handled"] for x in client.get("/api/tasks").json()}  # noqa: E731
+    assert done() == {"t1": False, "t2": False}
+    on, off = {"handled": True, "react": False}, {"handled": False, "react": False}
+    assert client.put(f"/api/chats/{A}/messages/5/handled", json=on, headers=H).status_code == 204
+    assert done() == {"t1": True, "t2": True}  # both sessions left Doing
+    assert store.get_message(A, 4).handled and store.get_message(A, 6).handled  # their messages followed
+    assert store.qa_marks(A) == {"#QA44": "done"}  # and their Q&A
+    client.put(f"/api/chats/{A}/messages/6/handled", json=off, headers=H)  # reopening one attachment: sessions stay
+    assert done() == {"t1": True, "t2": True}
 
 
 def test_date_range_filters_lists(client):

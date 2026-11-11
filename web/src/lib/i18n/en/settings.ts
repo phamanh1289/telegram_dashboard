@@ -105,6 +105,13 @@ export default {
   "Tròn như Quicksand, nét dày hơn": "Round like Quicksand, heavier strokes",
   "Font của máy": "System font",
   "Font hệ thống, không tải thêm": "The system font, nothing to download",
+  "Cỡ chữ": "Text size",
+  "Phóng to / thu nhỏ chữ toàn app; khoảng cách giữ nguyên.": "Makes all text in the app bigger or smaller; spacing stays the same.",
+  // lib/fonts FONT_SIZES
+  "Nhỏ": "Small",
+  "Vừa": "Medium",
+  "Lớn": "Large",
+  "Rất lớn": "Extra large",
   "Màu chủ đạo": "Accent color",
   "Gần màu hổ phách dùng cho tin “cần bạn” (quá hạn), dễ lẫn.": "Close to the amber used for “needs you” (overdue) messages, easy to confuse.",
   "Màu có sẵn": "Preset colors",

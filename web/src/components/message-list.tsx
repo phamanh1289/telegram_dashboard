@@ -100,6 +100,16 @@ export function MessageList({
       anchor.current = null;
     } else if (atBottom.current) el.scrollTop = el.scrollHeight;
   }, [items]);
+  // Rows grow after the first paint (lazy photos, ticket / session chips): stay on the newest message while at the bottom.
+  // Not while seeking a focused message: its reveal scroll would be pulled back down.
+  const list = useRef<HTMLOListElement>(null);
+  useEffect(() => {
+    const el = box.current, ol = list.current;
+    if (!el || !ol || focus) return;
+    const ro = new ResizeObserver(() => { if (atBottom.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(ol);
+    return () => ro.disconnect();
+  }, [focus]);
 
   const loadOlder = () => {
     if (box.current) anchor.current = box.current.scrollHeight - box.current.scrollTop;
@@ -207,7 +217,7 @@ export function MessageList({
             {!sender && !q && pendingOnly && <Button size="sm" variant="outline" onClick={() => setView("live")}>{t("Xem mọi tin trong nhóm")}</Button>}
           </div>
         )}
-        <ol className="@container divide-y divide-rule">
+        <ol ref={list} className="@container divide-y divide-rule">
           {items.map((m, i) => {
             const day = days[i];
             const newDay = i === 0 || days[i - 1] !== day;

@@ -109,8 +109,10 @@ ASK_STYLE = (
 # send buttons (markdown.tsx remarkAsks) pick up these quotes. start_task appends it to every session.
 ASK_MSG = (
     "Cách viết câu hỏi cần hỏi lại: gom theo người được hỏi (BE/PO/QC): mỗi người một tin viết sẵn để gửi thẳng "
-    "vào nhóm, viết dạng trích dẫn (`> `), không dùng khối code. Mở đầu chỉ bằng @tag người đó, không chào / gọi "
-    '("ơi"), không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); không ghi lại (BE)/(PO)/(QC) ở từng câu. '
+    "vào nhóm, viết dạng trích dẫn (`> `), không dùng khối code. Mở đầu chỉ bằng tag người đó, chép y như `tag` "
+    "của họ trong dữ liệu (`@username` hoặc `[Tên](tg://user?id=…)`) hoặc một @username đã có trong tin; không tự "
+    'ghép @ với tên hiển thị ("@BE Hỗ trợ" không tag được ai, tin sẽ không có mã Q&A); không chào / gọi ("ơi"), '
+    "không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); không ghi lại (BE)/(PO)/(QC) ở từng câu. "
     "Mỗi tin tối đa 3 ý, mỗi ý một dòng đánh số, chỉ hỏi điều người đó cần trả lời, bỏ bối cảnh dài, chỉ giữ mã "
     "ticket / API liên quan. Quá 3 ý thì tách thành nhiều tin (mỗi tin một khối trích dẫn riêng, đều mở bằng @tag, "
     "mỗi tin 3 ý), ý chặn việc nhiều nhất ở tin đầu; dư đúng 1 ý thì gộp vào tin kế cuối (4 ý: 1 tin; 7 ý: 3 + 4; "
@@ -312,6 +314,18 @@ def data_json(v) -> str:
     return json.dumps(_scrub(v) if REDACT else v, ensure_ascii=False).replace("<", "\\u003c")
 
 
+def who(m) -> dict:
+    """A message's sender for the AI: "me", or their name and `tag`, how a message to them tags them (@username, or
+    Telegram's tag by name, which the send turns into a mention). Every prompt with Telegram messages uses this."""
+    if m.outgoing:
+        return {"from": "me"}
+    name = m.sender_name or "?"
+    sid = str(m.sender_id or "")
+    tag = f"@{m.sender_username}" if m.sender_username else (
+        f"[{re.sub(r'[][]', '', name)}](tg://user?id={sid})" if sid.isdigit() and m.sender_name else None)
+    return {"from": name, **({"tag": tag} if tag else {})}
+
+
 def _links(m) -> dict:
     """Hidden hyperlinks of a message, so the model can fetch them when it has tools."""
     spans = [x for x in m.links if x.kind == "link"]
@@ -366,11 +380,14 @@ class AiService:
         intro: str = "",
         on_text=None,
         tickets: str = "",
+        history: list[dict] | None = None,
     ) -> AiResult:
         """kind "draft" (analysis + reply drafts), "answer" (a question answered from the code in `project`, + reply
         drafts) or "ticket" (a YouTrack ticket proposal, JSON in `text`; `fields` = the project's Type / Priority
         values). `nearby`: surrounding group messages (context only); `images`: photo files to read; `tickets`:
-        YouTrack tickets as JSON (answer: their state for progress questions). `on_text`: see `ask`."""
+        YouTrack tickets as JSON (answer: their state for progress questions). `on_text`: see `ask`.
+        `history`: a saved Trợ lý AI session (its earlier asks and answers, maybe none): asks come as messages ready
+        to post."""
         if kind == "answer" and project is None:
             raise ApiError(422, "project_not_found")
         if not self.configured:
@@ -392,7 +409,7 @@ class AiService:
         if not ok:
             raise ApiError(403, "ai_scope_not_allowed")
         context = [
-            {"id": str(m.message_id), "from": m.sender_name or "?", "text": m.text, **_links(m)}
+            {"id": str(m.message_id), **who(m), "text": m.text, **_links(m)}
             for m in msgs
         ]
         if sum(len(m.text) for m in msgs) > MAX_CONTEXT_CHARS:
@@ -441,18 +458,24 @@ class AiService:
                 else '\nThe user is shown as "me" in the context; every draft is written by the '
                 "user in the first person."
             )
+        if history is not None:
+            task += f"\n{ASK_MSG}"
         if instruction:
             task += f"\nUser instruction: {instruction}"
         user = f"{task}\n<messages>\n{data_json(context)}\n</messages>"
         if nearby:
             around = [
-                {"id": str(m.message_id), "from": "me" if m.outgoing else (m.sender_name or "?"),
-                 "text": m.text[:1500], **_links(m)}
+                {"id": str(m.message_id), **who(m), "text": m.text[:1500], **_links(m)}
                 for m in nearby if m.text
             ]  # fmt: skip
             user += (
                 "\nSurrounding conversation, for context only (the reply targets <messages>):"
                 f"\n<context>\n{data_json(around)[:8000]}\n</context>"
+            )
+        if history:  # AI answers written from group text: data like it
+            user += (
+                "\nEarlier turns of this conversation (the user's asks and your answers), for context only; the user "
+                f"instruction above is what to do now:\n<earlier>\n{data_json(history)}\n</earlier>"
             )
         if kind == "answer":  # progress questions: what moved lately (commit subjects are teammates' text: data)
             if log := await gitops.recent(project):
@@ -534,7 +557,7 @@ class AiService:
         if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
             raise ApiError(422, "ai_context_too_large")
         def one(m):
-            return {"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
+            return {**who(m), "text": m.text, **_links(m)}
 
         task = _deep_task(DEEP_TASK, instruction)
         user = (
@@ -579,7 +602,7 @@ class AiService:
         if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
             raise ApiError(422, "ai_context_too_large")
         data = [{"n": n, **({"id": key} if key else {}), "summary": text, "status": "waiting" if waiting else "agreed",
-                 "messages": [{"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m)}
+                 "messages": [{**who(m), "text": m.text, **_links(m)}
                               for m in found]}
                 for n, (text, found, waiting, key) in enumerate(rows, 1)]  # fmt: skip
         user = f"{_deep_task(DEEP_BATCH_TASK, instruction)}\n<items>\n{data_json(data)}\n</items>"
@@ -606,7 +629,7 @@ class AiService:
             raise ApiError(404, "message_not_found")
         if sum(len(m.text) for m in thread) > MAX_CONTEXT_CHARS:
             raise ApiError(422, "ai_context_too_large")
-        rows = [{"from": "me" if m.outgoing else (m.sender_name or "?"), "text": m.text, **_links(m),
+        rows = [{**who(m), "text": m.text, **_links(m),
                  **({"accepted": True} if m.message_id == accepted else {})} for m in thread]  # fmt: skip
         task = QA_SUMMARY_TASK + about_user(intro)
         if accepted in by_id:

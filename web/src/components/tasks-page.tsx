@@ -6,6 +6,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Menu } from "@base-ui/react/menu";
 import { AiBot, AiResultCard, AiSpin, AiThinking, UserBubble, useFollow } from "@/components/ai/chat";
+import { DayGroups } from "@/components/ai/day-groups";
 import { Markdown } from "@/components/markdown";
 import { groupEvents, ToolGroup } from "@/components/ai/steps";
 import { EventItem, OpenAttached, SessionAsks, usd, useTaskLog } from "@/components/tasks-feed";
@@ -31,8 +32,9 @@ import { cn } from "@/lib/utils";
 type Filter = "all" | "doing" | "done";
 // Labels: Vietnamese keys or names, shown through tMaybe.
 const FILTERS: [Filter, string][] = [["all", "Tất cả"], ["doing", "Doing"], ["done", "Done"]];
-type Kind = "task" | "deep" | "brief"; // brief: Trợ lý Briefing conversations (this browser), not server tasks
-const KINDS: [Kind, string][] = [["task", "Giao AI Agent"], ["deep", "Đối chiếu BE"], ["brief", "Briefing"]];
+// assist: a tag's Trợ lý AI turns (reply panel, no project); brief: Trợ lý Briefing conversations (this browser), not server tasks
+type Kind = "task" | "deep" | "assist" | "brief";
+const KINDS: [Kind, string][] = [["task", "Giao AI Agent"], ["deep", "Đối chiếu BE"], ["assist", "Trợ lý AI"], ["brief", "Briefing"]];
 const KIND_LABEL = Object.fromEntries(KINDS) as Record<Kind, string>;
 
 /** The tagged message as the reply panel needs it (the task row only keeps a snapshot). */
@@ -47,6 +49,9 @@ function asMessage(t: Task): Message {
 type Status = "running" | "stopped" | "done";
 const statusOf = (t: Task): Status =>
   t.running ? "running" : !t.result && t.mode !== "terminal" ? "stopped" : "done";
+/** Last activity of a session (its latest turn or step; before any: when it started): the time shown and the order. */
+const lastIso = (t: Task) => t.active_at ?? t.created_at;
+const lastAt = (t: Task) => Date.parse(lastIso(t));
 /** Done = the tagged message was ticked done (handled); everything else is Doing. */
 const isDone = (t: Task) => !!t.handled;
 const STATUS_LABEL: Record<Status, Key> = { running: "Đang chạy", stopped: "Đã dừng", done: "Đã xong" };
@@ -151,7 +156,7 @@ function TaskRow({ t, now, active, mixed, picked, onSelect }: {
           {mixed && <span className="shrink-0">{tMaybe(KIND_LABEL[t.kind])}</span>}
           {t.handled && <HandledBadge />}
           <span className="truncate">{t.chat_title || t.project.split("/").pop()}</span>
-          <time className="shrink-0" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>{ago(t.created_at, now)}</time>
+          <time className="shrink-0" dateTime={lastIso(t)} title={timeLabel(lastIso(t), true)}>{ago(lastIso(t), now)}</time>
         </span>
       </button>
     </li>
@@ -225,13 +230,13 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
         <p className="line-clamp-3 max-w-[70ch] whitespace-pre-wrap break-words text-md leading-[1.55] text-ink">{t.title || t.message_text}</p>
       </div>
     )}
-    <section aria-label={tt("Yêu cầu giao cho AI")} className="grid gap-1.5">
+    {t.prompt && <section aria-label={tt("Yêu cầu giao cho AI")} className="grid gap-1.5">
       <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)}
         className="flex w-fit items-center gap-1 rounded-sm text-left text-xs font-medium text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
         <ChevronDown className={cn("size-3.5 transition-transform duration-(--dur-short)", !open && "-rotate-90")} aria-hidden /> {tt("Yêu cầu đã giao")}
       </button>
       {open && <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-paper-2 p-3 text-sm leading-relaxed text-ink-2 animate-in fade-in-0 duration-(--dur-short)">{t.prompt}</p>}
-    </section>
+    </section>}
   </>;
 
   return (
@@ -247,11 +252,13 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
             {sessionId(t)}
           </button>
         </Hint>
-        {/* every kind: an Đối chiếu BE session can go on with edits too (ô nhắn: cho sửa file) */}
-        <Hint side="bottom" text={tt("Xem file AI đã sửa trong dự án, rồi tạo nhánh + PR (hỏi lại trước khi đẩy)")}>
-          <Button size="xs" variant="outline" className="shrink-0" onClick={onChanges}><GitPullRequest /> {tt("Thay đổi")}</Button>
-        </Hint>
-        <time className="shrink-0 text-xs text-ink-3" dateTime={t.created_at} title={timeLabel(t.created_at, true)}>{ago(t.created_at, now)}</time>
+        {/* every project kind: an Đối chiếu BE session can go on with edits too (ô nhắn: cho sửa file) */}
+        {t.kind !== "assist" && (
+          <Hint side="bottom" text={tt("Xem file AI đã sửa trong dự án, rồi tạo nhánh + PR (hỏi lại trước khi đẩy)")}>
+            <Button size="xs" variant="outline" className="shrink-0" onClick={onChanges}><GitPullRequest /> {tt("Thay đổi")}</Button>
+          </Hint>
+        )}
+        <time className="shrink-0 text-xs text-ink-3" dateTime={lastIso(t)} title={timeLabel(lastIso(t), true)}>{ago(lastIso(t), now)}</time>
         <Menu.Root>
           <Menu.Trigger openOnHover delay={120} aria-label={tt("Thao tác phiên")}
             className="grid size-[30px] shrink-0 place-items-center rounded-md text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink">
@@ -270,9 +277,9 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
                     onClick={() => mark.mutate({ handled: true, react: false })} />
                 </>)}
                 {tag && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
-                {t.result && tag && <MenuRow icon={MessageSquare} label={tt("Dùng làm nháp trả lời")} hint={tt("Kết quả thành nháp trả lời tin tag")} onClick={() => openReply(tag, t.result!)} />}
+                {t.result && tag && t.kind !== "assist" && <MenuRow icon={MessageSquare} label={tt("Dùng làm nháp trả lời")} hint={tt("Kết quả thành nháp trả lời tin tag")} onClick={() => openReply(tag, t.result!)} />}
                 {t.chat_id && <MenuRow icon={Users} label={tt("Mở nhóm")} hint={tagView === "live" ? tt("Cả nhóm, cuộn tới tin đã giao AI Agent") : tt("Chưa xử lý, cuộn tới tin đã giao AI Agent")} onClick={openTag} />}
-                {(t.chat_id || (t.result && tag)) && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
+                {t.chat_id && <Menu.Separator className="mx-1 my-0.5 h-px bg-rule" />}
                 <MenuRow icon={Trash2} tone="error" label={tt("Xóa phiên")} hint={tt("Hỏi xác nhận trước khi xóa")} disabled={remove.isPending}
                   onClick={() => setAsking(true)} />
               </Menu.Popup>
@@ -331,8 +338,8 @@ function BriefsPanel({ now, onOpenBriefing }: { now: number; onOpenBriefing: () 
           <Search className="pointer-events-none absolute top-1/2 left-4.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
           <Input type="search" value={find} onChange={(e) => setFind(e.target.value)} aria-label={tt("Tìm hội thoại")} placeholder={tt("Tìm theo câu hỏi, câu trả lời")} className="h-8 pl-8 text-xs md:text-xs" />
         </span>
-        <ul aria-label={tt("Danh sách hội thoại")} className="grid min-h-0 flex-1 content-start gap-0.5 overflow-y-auto px-2 pb-2">
-          {rows.map((b) => (
+        <div role="group" aria-label={tt("Danh sách hội thoại")} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          <DayGroups items={rows} at={(b) => b.at} open={!!k} row={(b) => (
             <li key={b.id}>
               <button type="button" aria-current={b.id === cur?.id || undefined} onClick={() => setSel(b.id)}
                 className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-1 rounded-lg px-2.5 py-2 text-left transition-[background-color,box-shadow] duration-(--dur-micro)",
@@ -342,9 +349,9 @@ function BriefsPanel({ now, onOpenBriefing }: { now: number; onOpenBriefing: () 
                 <span className="flex gap-x-2.5 text-xs text-ink-3"><span className="font-mono tabular-nums">{tt("{n} lượt", { n: b.turns.length })}</span><time dateTime={new Date(b.at).toISOString()}>{ago(b.at, now)}</time></span>
               </button>
             </li>
-          ))}
-          {!rows.length && <li className="px-2 py-6 text-center text-xs text-ink-3">{tt("Không có hội thoại nào khớp.")}</li>}
-        </ul>
+          )} />
+          {!rows.length && <p className="px-2 py-6 text-center text-xs text-ink-3">{tt("Không có hội thoại nào khớp.")}</p>}
+        </div>
       </aside>
       <div className={cn("min-h-0 min-w-0 flex-1 flex-col", sel ? "flex" : "hidden md:flex")}>
         {cur && <>
@@ -400,7 +407,8 @@ export function TasksPage({ focus, headSlot, onOpenGroup }: {
   const done = all.filter(isDone).length;
   const count: Record<Filter, number> = { all: all.length, doing: all.length - done, done };
   const searching = !!find.trim();
-  const rows = searching ? every.filter((t) => sessionMatches(t, find)) : all.filter((t) => filter === "all" || (filter === "done") === isDone(t));
+  const rows = (searching ? every.filter((t) => sessionMatches(t, find)) : all.filter((t) => filter === "all" || (filter === "done") === isDone(t)))
+    .sort((a, b) => lastAt(b) - lastAt(a)); // rows[0]: the session opened by default, the top one
   // "Mở phiên" on a session that is gone: say so rather than open another one.
   const gone = !!focus && sel === focus && q.isSuccess && !every.some((t) => t.id === focus);
   const cur = gone ? undefined : (rows.find((t) => t.id === sel) ?? rows[0]);
@@ -461,8 +469,9 @@ export function TasksPage({ focus, headSlot, onOpenGroup }: {
         <div className="grid justify-items-center gap-3 py-20 text-center text-sm text-ink-2 animate-in fade-in-0">
           <AiBot className="size-10" />
           <p>{kind === "deep" ? tt("Chưa có phiên Đối chiếu BE. Bấm nút bộ não trên tin BE trả lời, hoặc “Đối chiếu code” ở mục Đã chốt trong Briefing.")
+            : kind === "assist" ? tt("Chưa có phiên Trợ lý AI. Mở một tin, hỏi Trợ lý AI trong khung trả lời: mỗi tin một phiên, lưu ở đây.")
             : tt("Chưa giao việc nào cho AI Agent. Mở một tin, bấm “Giao AI Agent”, chọn dự án.")}</p>
-          {kind === "task" && <Button size="sm" variant="outline" onClick={() => onOpenGroup(ALL)}>{tt("Mở Việc cần xử lý")}</Button>}
+          {kind !== "deep" && <Button size="sm" variant="outline" onClick={() => onOpenGroup(ALL)}>{tt("Mở Việc cần xử lý")}</Button>}
         </div>
       )}
       {q.isSuccess && diffTask && <TaskChanges key={diffTask.id} t={diffTask} onBack={() => setDiffOf(null)} />}
@@ -500,11 +509,12 @@ export function TasksPage({ focus, headSlot, onOpenGroup }: {
               description={tt("Các phiên này biến khỏi danh sách AI Agent. Không hoàn tác được.")} unit={tt("phiên")}
               confirmLabel={tt.n("Xóa {n} phiên", { n: <span className="font-mono tabular-nums">{chosen.length}</span> })}
               items={chosen.map((t) => ({ id: t.id, tag: sessionId(t), label: t.title || t.message_text || t.prompt }))} />
-            <ul aria-label={tt("Danh sách phiên")} className="grid min-h-0 flex-1 content-start gap-0.5 overflow-y-auto px-2 pb-2">
-              {rows.map((t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur?.id} mixed={searching}
-                picked={picking ? pick.has(t.id) : undefined} onSelect={() => (picking ? toggle(t.id) : setSel(t.id))} />)}
-              {rows.length === 0 && <li className="px-2 py-6 text-center text-xs text-ink-3">{searching ? tt("Không có phiên nào khớp.") : tt("Không có phiên nào khớp bộ lọc.")}</li>}
-            </ul>
+            <div role="group" aria-label={tt("Danh sách phiên")} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+              <DayGroups items={rows} at={lastAt} open={searching}
+                row={(t) => <TaskRow key={t.id} t={t} now={now} active={t.id === cur?.id} mixed={searching}
+                  picked={picking ? pick.has(t.id) : undefined} onSelect={() => (picking ? toggle(t.id) : setSel(t.id))} />} />
+              {rows.length === 0 && <p className="px-2 py-6 text-center text-xs text-ink-3">{searching ? tt("Không có phiên nào khớp.") : tt("Không có phiên nào khớp bộ lọc.")}</p>}
+            </div>
           </aside>
           <div className={cn("min-h-0 min-w-0 flex-1 flex-col", sel ? "flex" : "hidden md:flex")}>
             {cur ? <TaskDetail key={cur.id} t={cur} now={now} onBack={() => setSel(null)} onChanges={() => setDiffOf(cur.id)} onOpenGroup={onOpenGroup} />

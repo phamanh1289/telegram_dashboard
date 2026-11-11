@@ -15,7 +15,7 @@ import { Hint } from "@/components/ui/hint";
 import { IntroNotice } from "@/components/composer-dialogs";
 import { api, errorText, type Message, type Task } from "@/lib/api";
 import { type Key, t as tNow, useT } from "@/lib/i18n";
-import { copyText, getMessage, openTask, taskListQuery, toast } from "@/lib/inbox";
+import { copyText, getMessage, openTask, taskListQuery, toast, useSessionOn } from "@/lib/inbox";
 import { aboutMe, readAgentProject, readNotify, setPref } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -31,12 +31,8 @@ const subs = new Set<() => void>();
 const open = (t: Target | null) => { target = t; subs.forEach((f) => f()); };
 const useTarget = () => useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => target, () => target);
 
-/** The newest Đối chiếu BE session on this message (the task list is newest first), if any. */
-function useDeepTaskAt(chatId: string, messageId: string | undefined) {
-  // `select` + structural sharing: a row re-renders only when its own session changes, not on every task-list poll.
-  const pick = useCallback((l: Task[]) => l.find((t) => t.kind === "deep" && t.chat_id === chatId && t.message_id === messageId), [chatId, messageId]);
-  return useQuery({ ...taskListQuery, select: pick, enabled: !!messageId }).data;
-}
+/** The newest Đối chiếu BE session on this message, if any. */
+const useDeepTaskAt = (chatId: string, messageId: string | undefined) => useSessionOn("deep", chatId, messageId).data;
 export const useDeepTask = (m: Message) => useDeepTaskAt(m.chat_id, m.message_id);
 
 const HINT: Key = "AI đọc câu hỏi và câu trả lời của BE, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì.";
@@ -306,7 +302,7 @@ function DeepProgress({ dr, project, lines, children }: { dr: DeepRun; project?:
   const { task, turn } = dr;
   if (dr.shown) return (
     <div className="grid justify-items-center gap-3">
-      <AiFetching kind="deep" project={project} className="min-h-0 py-2 @min-[36rem]:[&>div>div:first-child]:[zoom:1.4] [&_[role=status]]:w-auto"
+      <AiFetching kind="deep" project={project} className="min-h-0 py-2 [&_[role=status]]:w-auto"
         lines={lines} />
       <LiveStep items={dr.items} />
       {children}

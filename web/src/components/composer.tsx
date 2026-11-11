@@ -16,14 +16,17 @@ import { WorkTrail } from "@/components/work-trail";
 import { Snippets } from "@/components/snippets";
 import { groupMembers, useMention } from "@/components/mention";
 import { ContextPanel, inline, MessageActions, richText } from "@/components/message-item";
-import { ASK_BTN } from "@/components/markdown";
+import { ASK_BTN, Markdown } from "@/components/markdown";
+import { SessionAsks, useTaskLog } from "@/components/tasks-feed";
+import type { TaskEvent } from "@/components/ai/steps";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
-import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox } from "@/lib/api";
-import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, toast } from "@/lib/inbox";
+import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type Task } from "@/lib/api";
+import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, toast, useSessionOn } from "@/lib/inbox";
+import { splitAttachments } from "@/lib/attach";
 import { doneLoopMessage } from "@/lib/report-back";
 import { timeLabel } from "@/lib/time";
 import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/lib/prefs";
@@ -122,6 +125,19 @@ export function Composer({
   const [partial, setPartial] = useState(""); // the answer so far, while the AI writes it
   const [turns, setTurns] = useState<Turn[]>([]); // the asks of this panel, oldest first, like an AI Agent session
   const lastTurn = (f: (t: Turn) => Turn) => setTurns((l) => l.map((t, i) => (i === l.length - 1 ? f(t) : t)));
+  // Every ask is a turn of the tag's saved Trợ lý AI session (AI Agent › Trợ lý AI): opening the tag again shows the
+  // earlier ones, read once from its log; what this panel asks from then on stays in `turns`.
+  const sessionQ = useSessionOn("assist", chatId, replyTo.message_id);
+  const session = sessionQ.data;
+  const savedLog = useTaskLog(session?.id ?? null, false);
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !sessionQ.isSuccess || (session && !savedLog.isFetchedAfterMount)) return;
+    seeded.current = true;
+    const job = readJob(`replyJob:${msgKey(replyTo)}`); // its turn comes back by reading the job on
+    const old = logTurns(savedLog.data?.items ?? []).filter((x) => !job || x.at < job.at - 5000);
+    if (old.length) setTurns((l) => [...old, ...l]); // eslint-disable-line react-hooks/set-state-in-effect -- seeded once from the saved log
+  }, [sessionQ.isSuccess, session, savedLog.isFetchedAfterMount, savedLog.data, replyTo]);
   const aiName = useAiPrefs().nameOf();
   const role = useRole();
   const [, example] = ROLE_AI[role ?? "dev"];
@@ -219,18 +235,23 @@ export function Composer({
       // progress questions: the tickets the tag names, then the open ones that look like it
       const tickets = codeProject && youtrackConfigured ? [...new Set([...(replyTo.text.match(TICKET_IDS) ?? []), ...(related.data ?? []).slice(0, 3).map((tk) => tk.id)])].slice(0, 10) : [];
       return apiStream<AiResult>("/ai/draft",
-        { chat_id: chatId, message_ids: [replyTo.message_id], instruction, project: codeProject?.path ?? null, ticket_ids: tickets, with_context: true, platform: readPlatform(), role: role ?? "dev", intro: readIntro() },
+        { chat_id: chatId, message_ids: [replyTo.message_id], instruction, project: codeProject?.path ?? null, ticket_ids: tickets, with_context: true, platform: readPlatform(), role: role ?? "dev", intro: readIntro(), save: true },
         askAbort.current.signal, setPartial, job?.id);
     },
     onMutate: ({ instruction, job }) => {
       setTurns((l) => [...l, { prompt: instruction, at: job?.at ?? Date.now(), code: job?.code ?? codeProject?.name }]);
       setAiPrompt(""); // sent, like a chat; the ask stays in its bubble
     },
-    onSettled: (_r, err) => { if (err?.name !== "AbortError") setPref(jobKey, null); }, // ended; an abort: Hủy clears it, a closed panel keeps it
+    onSettled: (_r, err) => {
+      if (err?.name !== "AbortError") setPref(jobKey, null); // ended; an abort: Hủy clears it, a closed panel keeps it
+      void qc.invalidateQueries({ queryKey: ["tasks"] }); // the session (made on the first ask) and its turn
+    },
     onError: (err) => lastTurn((turn) => ({ ...turn, error: err.name === "AbortError" ? "" : errorText(err, {
       ai_agent_missing: t("Không tìm thấy {name} CLI để đọc dự án, xem Cài đặt › AI.", { name: aiName }),
       project_not_found: t("Dự án không còn trong danh sách, chọn lại dự án."),
       ai_job_gone: t("Lượt AI trước không còn trên máy chủ (app khởi động lại, hoặc xong quá 1 giờ): chạy lại."),
+      task_busy: t("Phiên Trợ lý AI của tin này đang chạy một lượt khác (mở ở AI Agent), đợi xong rồi hỏi tiếp."),
+      ai_cancelled: t("Đã dừng."),
       youtrack_unauthorized: t("Token YouTrack hết hạn hoặc thiếu quyền, xem Cài đặt › YouTrack."),
       youtrack_error: t("Không đọc được ticket YouTrack, thử lại sau."),
     }, t("AI lỗi hoặc quá thời gian; bạn vẫn có thể trả lời thủ công.")) })),
@@ -504,7 +525,7 @@ export function Composer({
 
           {aiConfigured && (
             <section aria-label={t("Trợ lý AI")} aria-busy={ask.isPending} className="grid grid-cols-[minmax(0,1fr)] gap-3">
-              <AiTurns turns={turns} running={ask.isPending} partial={partial} missing={missing} onMissing={() => insert(missing)} />
+              <AiTurns turns={turns} running={ask.isPending} partial={partial} missing={missing} onMissing={() => insert(missing)} session={session} />
 
               {options.length > 0 && !ask.isPending && (
                 <fieldset className="grid gap-2 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
@@ -743,12 +764,12 @@ const THINKING: Key[] = [
 ];
 
 /** The panel's asks as a conversation: the ask in a bubble, then the AI thinking / writing, then the result card. */
-function AiTurns({ turns, running, partial, missing, onMissing }: {
-  turns: Turn[]; running: boolean; partial: string; missing: string; onMissing: () => void;
+function AiTurns({ turns, running, partial, missing, onMissing, session }: {
+  turns: Turn[]; running: boolean; partial: string; missing: string; onMissing: () => void; session?: Task;
 }) {
   const t = useT();
   const live = partial.split(/\n\s*={3,}\s*(?:\n|$)/)[0]; // the summary part; the reply options come after "==="
-  return (
+  const list = (
     <ul aria-label={t("Hội thoại với AI")} className="grid grid-cols-[minmax(0,1fr)] gap-3">
       {turns.map((turn, i) => {
         const last = i === turns.length - 1;
@@ -768,7 +789,7 @@ function AiTurns({ turns, running, partial, missing, onMissing }: {
               <li>
                 <AiResultCard aria-label={turn.code ? t("Trả lời từ code") : t("Tóm tắt và bước tiếp theo")} took={turn.took} dim={!last}
                   actions={last && missing && <Button type="button" size="xs" variant="outline" className="mr-auto" onClick={onMissing}><MessageCircleQuestion /> {t("Hỏi thông tin còn thiếu")}</Button>}>
-                  <Md text={turn.analysis} />
+                  <Markdown asks text={turn.analysis} className="text-sm leading-[1.6] text-ink" />
                 </AiResultCard>
               </li>
             ) : turn.error ? (
@@ -783,4 +804,20 @@ function AiTurns({ turns, running, partial, missing, onMissing }: {
       })}
     </ul>
   );
+  // its asks (Cần hỏi …) copy with the session's ID and post to the group, like any AI Agent session
+  return session ? <SessionAsks t={session}>{list}</SessionAsks> : list;
+}
+
+/** A saved Trợ lý AI session's answered (or failed) turns, from its log; an ask still running has no result yet. */
+function logTurns(items: TaskEvent[]): Turn[] {
+  const out: Turn[] = [];
+  let ask: Turn | null = null;
+  for (const e of items) {
+    if (e.kind === "user") ask = { prompt: splitAttachments(e.text)[0], at: (e.at ?? 0) * 1000, code: e.code?.split("/").pop() };
+    else if (e.kind === "result" && ask) {
+      out.push(e.error ? { ...ask, error: e.text } : { ...ask, analysis: e.text, took: e.at && ask.at ? e.at - ask.at / 1000 : undefined });
+      ask = null;
+    }
+  }
+  return out;
 }

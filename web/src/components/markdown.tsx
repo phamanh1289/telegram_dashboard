@@ -28,7 +28,9 @@ const dropRole = (t: string) => {
 };
 const MAX_POINTS = 3; // points per message to a teammate: one copy / send click posts at most this many (ASK_MSG in ai.py)
 const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+/;
-const TAGS = /^@\w+(?:\s+@\w+)*$/;
+// Who a message goes to: "@be_bot", or a tag by name ([Name](tg://user?id=N), lib/inbox nameTag).
+const TAG_AT = String.raw`(?:@\w+|\[[^\]]+\]\(tg://user\?id=\d+\))`;
+const TAGS = new RegExp(`^${TAG_AT}(?:\\s+${TAG_AT})*$`); // a line of tags only
 /** A message to "@be" quoted with more than MAX_POINTS points (numbered / bulleted items, else one point per line) →
  *  several quotes of MAX_POINTS, each to the same @tag, numbered from 1: each gets its own copy / send button. A single
  *  point left over joins the message before it (4 → 4, 7 → 3 + 4, 10 → 3 + 3 + 4).
@@ -97,7 +99,7 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
       const to = (n: MdNode) => {
         const p = sec[sec.indexOf(n) - 1];
         const t = p?.type === "paragraph" ? raw(p.position?.start.offset, p.position?.end.offset) : "";
-        return /^@\w+(\s+@\w+)*$/.test(t) ? `${t}\n` : "";
+        return TAGS.test(t) ? `${t}\n` : "";
       };
       for (const n of msgs.length ? msgs : sec) {
         if (n.type === "list") n.children?.forEach((li) => mark(li));
@@ -113,7 +115,7 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
     for (const n of root.children ?? []) {
       if (n.type !== "blockquote" || n.data?.hProperties?.dataCopy != null) continue;
       const text = raw(n.position?.start.offset, n.position?.end.offset);
-      if (/^@\w+/.test(text)) mark(n, text);
+      if (new RegExp(`^${TAG_AT}`).test(text)) mark(n, text);
     }
   };
 }
@@ -131,7 +133,7 @@ function CopyAsk({ text }: { text: unknown }) {
   const full = tag ? `${text}\n\n#${tag}` : text;
   return <>
     <Hint text={t("Copy ý này để hỏi / confirm")}>
-      <button type="button" aria-label={t("Copy ý này")} onClick={() => void copyText(full)} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
+      <button type="button" aria-label={t("Copy ý này")} onClick={() => void copyText(full.replace(/\[([^\]]+)\]\(tg:\/\/user\?id=\d+\)/g, "@$1"))} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
     </Hint>
     {post?.(full)}
   </>;

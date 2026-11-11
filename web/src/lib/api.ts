@@ -109,6 +109,18 @@ export async function readAnswer<T>(res: Response, onPart?: (text: string) => vo
 /** POST to an AI route that streams its answer (see `readAnswer`); `json` undefined: GET it (a background run read
  *  again, /ai/job/{id}). `job`: run it in the background under that id (header X-Ai-Job), the page may leave. */
 export async function apiStream<T>(path: string, json: unknown, signal?: AbortSignal, onPart?: (text: string) => void, job?: string): Promise<T> {
+  return readAnswer<T>(await openStream(path, json, signal, job), onPart);
+}
+
+/** Starts a background AI run (its own job id) and returns once the server took it; the answer is read elsewhere
+ *  (a saved session's log). */
+export async function apiStart(path: string, json: unknown): Promise<void> {
+  const ctl = new AbortController();
+  await openStream(path, json, ctl.signal, crypto.randomUUID());
+  ctl.abort(); // a job outlives its reader
+}
+
+async function openStream(path: string, json: unknown, signal?: AbortSignal, job?: string) {
   const res = await fetch(`/api${path}`, json === undefined
     ? { credentials: "same-origin", cache: "no-store", signal, headers: LANG() }
     : { method: "POST", credentials: "same-origin", cache: "no-store", signal, body: JSON.stringify(json),
@@ -117,7 +129,7 @@ export async function apiStream<T>(path: string, json: unknown, signal?: AbortSi
     const e = (await res.json().catch(() => null))?.error;
     throw new ApiError(res.status, e?.code ?? (res.status === 422 ? "validation" : "http_error"), e?.retry_after ?? null, e?.detail ?? null);
   }
-  return readAnswer<T>(res, onPart);
+  return res;
 }
 
 /** Codes any call may answer, worded once (in the current UI language); a caller's `map` wins over these. */

@@ -5,7 +5,7 @@ import { useState, type KeyboardEvent, type SyntheticEvent } from "react";
 import { Avatar } from "@/components/chat-list";
 import { api, errorText, type Member } from "@/lib/api";
 import { tMaybe, useT } from "@/lib/i18n";
-import { fold } from "@/lib/inbox";
+import { fold, nameTag } from "@/lib/inbox";
 import { type Person, yt } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 
@@ -96,7 +96,7 @@ export function useMention<T>(source: MentionSource<T>, text: string, setText: (
   /** The text as sent: each "@Name" picked here becomes [Name](tg://user?id=N), longest first ("@Minh BE" before "@Minh"). */
   const wire = (s: string) =>
     Object.entries(named).sort(([a], [b]) => b.length - a.length)
-      .reduce((s2, [tag, id]) => s2.split(tag).join(`[${tag.slice(1)}](tg://user?id=${id})`), s);
+      .reduce((s2, [tag, id]) => s2.split(tag).join(nameTag(tag.slice(1), id)), s);
 
   // `errors` texts are i18n keys (module constants): translated here, where they render.
   const status = members.isPending ? t("Đang tải thành viên…") : members.isError

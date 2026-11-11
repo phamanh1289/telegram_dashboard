@@ -101,9 +101,11 @@ function AttachedCard({ a }: { a: Attached }) {
 }
 
 /** A prompt the user sent; attached messages fold under it, one card each. */
-function UserTurn({ text }: { text: string }) {
+/** `code`: a Trợ lý AI ask that read this project; with no typed text it says what the ask was, like the reply panel. */
+function UserTurn({ text, code }: { text: string; code?: string }) {
   const t = useT();
-  const [said, attached] = splitAttachments(text);
+  const [typed, attached] = splitAttachments(text);
+  const said = typed || attached ? typed : code ? t("Trả lời từ code · {project}", { project: code.split("/").pop() ?? code }) : t("Tóm tắt & gợi ý");
   const items = attached ? parseAttachments(attached) : [];
   return (
     <UserBubble className={AI_TEXT}>
@@ -121,7 +123,7 @@ function UserTurn({ text }: { text: string }) {
 /** One turn's text, prompt or result. Memoised on the event itself (the log keeps old event objects while it grows), so
  *  the 1.5s poll doesn't re-parse every Markdown block of the session. */
 export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: TaskEvent; took?: number; tools?: number }) {
-  if (ev.kind === "user") return <li><UserTurn text={ev.text} /></li>;
+  if (ev.kind === "user") return <li><UserTurn text={ev.text} code={ev.code} /></li>;
   if (ev.kind === "result") {
     return (
       <li>

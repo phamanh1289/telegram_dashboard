@@ -1,7 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { DEFAULT_FONT, FONTS, type FontId } from "./fonts";
+import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONT_SIZES, FONTS, type FontId, type FontSizeId } from "./fonts";
 import { type Key, t } from "./i18n";
 
 // Per-browser preferences in localStorage. `theme` is shared with the YouTrack module (missing = follow the OS).
@@ -71,18 +71,20 @@ export function applyTheme(pref: ThemePref, save = true) {
 
 /** Each member's look (Cài đặt chung), saved per browser; the boot script in app/layout.tsx (window.applyLook) applies it before first paint and in every open tab. */
 export type UiStyle = "simple" | "default" | "vivid";
-export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean; font: FontId };
+export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean; font: FontId; size: FontSizeId };
 /** Preset highlight hues; the slider reaches the rest. */
 export const ACCENTS = [[40, "Đất nung"], [355, "Hồng"], [305, "Tím"], [255, "Xanh dương"], [195, "Xanh ngọc"], [145, "Xanh lá"]] as const;
 const hue = (v: unknown, d: number) => { const n = parseFloat(String(v)); return n >= 0 && n < 360 ? n : d; };
 export function readLook(): Look {
   const s = getPref("uiStyle");
   const f = FONTS.find((x) => x.id === getPref("font"))?.id ?? DEFAULT_FONT;
-  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), gradient: getPref("gradient") === "1", font: f };
+  const z = FONT_SIZES.find((x) => x.id === getPref("fontSize"))?.id ?? DEFAULT_FONT_SIZE;
+  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), gradient: getPref("gradient") === "1", font: f, size: z };
 }
 export function saveLook(l: Look) {
   put("uiStyle", l.style === "default" ? null : l.style);
   put("font", l.font === DEFAULT_FONT ? null : l.font);
+  put("fontSize", l.size === DEFAULT_FONT_SIZE ? null : l.size);
   put("accent", String(l.hue));
   put("accent2", String(l.hue2));
   put("gradient", l.gradient ? "1" : "0");

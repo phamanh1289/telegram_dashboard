@@ -237,4 +237,17 @@ test("an AI draft fills the reply box and is never sent on its own", async ({ pa
   await expect(reply(page)).toBeVisible(); // the run settled with one draft: the reply shows it (narrow: its pane comes back)
   await expect(page.getByRole("button", { name: "Gửi", exact: true })).toBeEnabled(); // waiting for the user
   expect((await ctl("/state")).send_calls).toBe(calls);
+  // the ask is a turn of the tag's saved Trợ lý AI session: the panel opened again (after a reload) shows it
+  await page.reload();
+  await row(page, 112).locator("p").first().click();
+  if (await aiPane.isVisible()) await aiPane.click();
+  const feed = page.getByRole("list", { name: "Hội thoại với AI" });
+  await expect(feed.getByText("Bản nháp AI: cảm ơn mọi người!")).toBeVisible();
+  // AI Agent › Trợ lý AI asks on in the same session; the run outlives the request that started it
+  await page.goto("/?chat=__tasks__");
+  await page.getByRole("button", { name: /^Trợ lý AI \d/ }).click(); // the session tab, with its count
+  await page.getByLabel("Nhắn tiếp cho AI").fill("thêm câu hỏi về deadline");
+  await page.keyboard.press("Enter");
+  await expect(feed.getByText("thêm câu hỏi về deadline")).toBeVisible();
+  await expect(feed.getByText("Bản nháp AI: cảm ơn mọi người!")).toHaveCount(2);
 });

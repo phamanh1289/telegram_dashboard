@@ -15,7 +15,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP, MENU_SEP } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Message, statusQuery, type Task } from "@/lib/api";
-import { attach, MAX_REFS, messageQuery, sameRef } from "@/lib/attach";
+import { attach, MAX_REFS, messageQuery, sameRef, wantEdit } from "@/lib/attach";
 import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sentQuery, sessionId, SESSION_CODE, setHandled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
 import { ago, clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
 import { readOverdueHours, useRole } from "@/lib/prefs";
@@ -332,6 +332,7 @@ function MessageRow({
               <span className={cn(PILL, "bg-hl-wash text-hl-2")}><PenLine className="size-3" aria-hidden />{t("Nháp")}</span>
             </Hint>
           )}
+          <SentBadge m={m} shown={tasks} />
           <DeepBadge m={m} />
           <AnswersFor m={m} qa={!bare} />
         </div>
@@ -533,6 +534,24 @@ function AnswersFor({ m, qa }: { m: Message; qa: boolean }) {
   </>;
 }
 
+/** On a message a sent turn of an AI Agent / Đối chiếu BE session carried (attached from any row or pasted, cited, or
+ *  the tag it started on): the latest session; opens it. Sessions already shown as a card under the row (`shown`) aren't repeated. */
+function SentBadge({ m, shown }: { m: Message; shown?: Task[] }) {
+  const t = useT();
+  const ids = (useQuery(sentQuery).data?.[msgKey(m)] ?? []).filter((id) => !shown?.some((tk) => tk.id === id));
+  if (!ids.length) return null;
+  const names = ids.map((id) => sessionId({ id }));
+  return (
+    <Hint side="bottom" text={t("Đã gửi kèm vào phiên {names}. Bấm để mở phiên mới nhất.", { names: names.join(", ") })}>
+      <button type="button" onClick={(e) => { e.stopPropagation(); openTask(ids[0]); }}
+        className={cn(PILL, "bg-hl-wash text-hl-2 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink")}>
+        <Bot className="size-3" aria-hidden />{t("Đã gửi")}
+        <span className="hidden font-mono @md:inline">{names[0]}{ids.length > 1 && ` +${ids.length - 1}`}</span>
+      </button>
+    </Hint>
+  );
+}
+
 function SessionBadge({ m, tails }: { m: Message; tails: string[] }) {
   const t = useT();
   const tk = findSession(useQuery(taskListQuery).data, tails);
@@ -558,13 +577,18 @@ function SessionBadge({ m, tails }: { m: Message; tails: string[] }) {
 /** The replies of the Q&A thread a row sits in (Q&A page, not the question): the clip's menu can attach them all at once. */
 export const AttachThread = createContext<readonly Message[] | null>(null);
 
+/** Every attach from a message row (session chip, clip, its menu) lands here: a message is attached to be built on,
+ *  so a read-only (plan) session's next turn gets "Cho sửa code" ticked. */
 function attachTo(tk: Task, ms: readonly Message[]) {
   const name = sessionId(tk);
   const draft = attach(tk.id, ms.map((m) => ({ chat_id: m.chat_id, message_id: m.message_id })));
   const n = ms.filter((m) => draft.some((r) => sameRef(r, m))).length;
-  toast({ text: !n ? t("Phiên {name} đã đủ tin đính kèm cho lượt tới", { name })
+  const edit = n > 0 && tk.mode === "plan" && tk.kind !== "assist"; // Trợ lý AI never edits code
+  if (edit) wantEdit(tk.id);
+  const more = edit ? ` · ${t("đã bật Cho sửa code")}` : "";
+  toast({ text: (!n ? t("Phiên {name} đã đủ tin đính kèm cho lượt tới", { name })
     : n < ms.length ? t("Đã đính kèm {n}/{total} tin vào phiên {name} (tối đa {max} tin mỗi lượt)", { n, total: ms.length, name, max: MAX_REFS })
-    : ms.length > 1 ? t("Đã đính kèm {n} tin vào phiên {name}", { n, name }) : t("Đã đính kèm {id} vào phiên {name}", { id: `#${ms[0].message_id}`, name }) });
+    : ms.length > 1 ? t("Đã đính kèm {n} tin vào phiên {name}", { n, name }) : t("Đã đính kèm {id} vào phiên {name}", { id: `#${ms[0].message_id}`, name })) + more });
   openTask(tk.id);
 }
 
@@ -651,7 +675,7 @@ function AttachList({ m, pin, chain }: { m: Message; pin?: Task; chain: readonly
                 <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                   {tk.running && <Loader2 className="-mr-1 size-3 shrink-0 animate-spin text-hl-2" aria-label={t("Đang chạy")} />}
                   <span className="shrink-0 font-mono tabular-nums">{sessionId(tk)}</span>
-                  <span className="shrink-0">{tk.kind === "deep" ? t("Đối chiếu BE") : t("Giao AI Agent")}</span>
+                  <span className="shrink-0">{tk.kind === "deep" ? t("Đối chiếu BE") : tk.kind === "assist" ? t("Trợ lý AI") : t("Giao AI Agent")}</span>
                   <span className="truncate">{tk.chat_title || tk.project.split("/").pop()}</span>
                   {tk.chat_id === m.chat_id && <span className="shrink-0 rounded-full bg-paper-3 px-1.5 leading-4">{t("nhóm này")}</span>}
                   {sentTo.includes(tk.id) && <span className="shrink-0 rounded-full bg-hl-wash px-1.5 leading-4 text-hl-2">{t("đã gửi tin này")}</span>}

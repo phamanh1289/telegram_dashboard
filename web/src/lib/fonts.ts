@@ -11,3 +11,13 @@ export const FONTS = [
 ] as const;
 export type FontId = (typeof FONTS)[number]["id"];
 export const DEFAULT_FONT: FontId = "quicksand";
+
+/** Text sizes a member can pick (Cài đặt chung › Cỡ chữ): `scale` multiplies every --text-* token (tokens.css), spacing stays. */
+export const FONT_SIZES = [
+  { id: "sm", label: "Nhỏ", scale: 0.9 },
+  { id: "md", label: "Vừa", scale: 1 },
+  { id: "lg", label: "Lớn", scale: 1.1 },
+  { id: "xl", label: "Rất lớn", scale: 1.2 },
+] as const;
+export type FontSizeId = (typeof FONT_SIZES)[number]["id"];
+export const DEFAULT_FONT_SIZE: FontSizeId = "md";

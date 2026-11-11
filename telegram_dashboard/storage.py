@@ -35,6 +35,11 @@ KEEP_CHANGES = 50_000  # change-log rows kept on startup; older cursors get a re
 PENDING = (
     "m.outgoing=0 AND m.handled=0 AND m.deleted=0 AND COALESCE(m.snoozed_until,0)<=unixepoch()"
 )
+# A session is Done (tasks `t`, its tag `m`): a kept tag's Done, else its own. A reply (on Telegram, or the session's
+# asks) handles the tag but leaves the session in Doing.
+_TASK_DONE = (
+    "(CASE WHEN m.deleted=0 THEN m.handled AND m.handled_by NOT IN ('reply', 'dashboard') ELSE t.done END)"
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -821,6 +826,17 @@ class Store:
         with self._conn(write=True) as c:
             return self._mark(c, chat_id, message_id, handled, by)
 
+    def claim_handled(self, chat_id: str, message_id: int, by: str) -> bool:
+        """A tag a reply handled, now ticked Done on purpose (its session's Xong): say so, so the session follows."""
+        with self._conn(write=True) as c:
+            cur = c.execute(
+                "UPDATE messages SET handled_by=? WHERE chat_id=? AND message_id=? AND deleted=0 AND handled=1 "
+                "AND handled_by IN ('reply', 'dashboard')", (by, chat_id, message_id),
+            )  # fmt: skip
+            if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
+                self._record(c, chat_id, message_id, "edit", chat["generation"])
+            return bool(cur.rowcount)
+
     def set_snooze(self, chat_id: str, message_id: int, until: datetime | None, on: str | None = None) -> bool:
         """Hide a tag until `until`; `on` ("reply" or "ticket:<ID>") wakes it sooner, when someone answers it (or my
         reply to it) or that ticket is done. `until` stays the backstop, so an event that never comes loses nothing."""
@@ -1223,6 +1239,20 @@ class Store:
                 (task_id, chat_id, message_id, project, now_ts(), prompt, mode, session_id, kind, title, git_base),
             )
 
+    def assist_task(self, task_id: str, chat_id: str, message_id: int) -> str:
+        """The tag's Trợ lý AI session (one per tag): made as `task_id` on its first ask, no project, no CLI session."""
+        with self._conn(write=True) as c:
+            r = c.execute("SELECT id FROM tasks WHERE kind='assist' AND chat_id=? AND message_id=?",
+                          (chat_id, message_id)).fetchone()  # fmt: skip
+            if r:
+                return r[0]
+            c.execute(
+                "INSERT INTO tasks (id, chat_id, message_id, project, created_at, prompt, mode, kind) "
+                "VALUES (?,?,?,'',?,'','plan','assist')",
+                (task_id, chat_id, message_id, now_ts()),
+            )
+            return task_id
+
     def set_task_base(self, task_id: str, git_base: str | None) -> None:
         with self._conn(write=True) as c:
             c.execute("UPDATE tasks SET git_base=? WHERE id=?", (git_base, task_id))
@@ -1245,8 +1275,7 @@ class Store:
         """Newest first, with a peek at the tagged message so the task list stands alone."""
         with self._conn() as c:
             rows = c.execute(
-                "SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, "
-                "CASE WHEN m.deleted=0 THEN m.handled ELSE t.done END AS handled, "  # else: the session's own Done
+                f"SELECT t.*, c.title AS chat_title, m.sender_name, m.text AS message_text, {_TASK_DONE} AS handled, "
                 # where its asks go: a reply to the message last attached (ponytail: rowid order, a re-attach keeps
                 # its old place; an `at` column if that matters)
                 "(SELECT json_object('chat_id', r.chat_id, 'message_id', CAST(r.message_id AS TEXT), 'qa', r.qa) "
@@ -1314,6 +1343,16 @@ class Store:
         """Done / reopen on tags: the #QA code each names (or, nearest, a message up its reply chain) follows."""
         with self._conn(write=True) as c:
             _mark_qa(c, [_qa_text(c, chat_id, mid) for mid in message_ids], handled)
+
+    def doing_tasks_citing(self, chat_id: str, message_ids: list[int]) -> list[str]:
+        """The sessions still in Doing that these messages were attached to (sent along, cited by Đối chiếu BE)."""
+        with self._conn() as c:
+            return [r[0] for r in c.execute(
+                "SELECT DISTINCT t.id FROM task_refs r JOIN tasks t ON t.id=r.task_id "
+                "LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
+                f"WHERE r.chat_id=? AND r.message_id IN (SELECT value FROM json_each(?)) AND NOT {_TASK_DONE}",
+                (chat_id, json.dumps(message_ids)),
+            ).fetchall()]  # fmt: skip
 
     def tasks_on(self, chat_id: str, message_ids: list[int]) -> list[str]:
         """The sessions sitting on these messages."""

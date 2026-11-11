@@ -188,6 +188,9 @@ class AiDraftRequest(BaseModel):
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt chung)
     # with `project`: the tag's question answered from the code ("Trả lời từ code"); these tickets give its progress
     ticket_ids: list[str] = Field(default_factory=list, max_length=10)
+    # Trợ lý AI: the turn goes into the tag's (message_ids[0]) saved session, and the earlier turns into the prompt
+    save: bool = False
+    shown: str = Field("", max_length=16000)  # the turn as the session shows it (attached quoted); "": instruction
 
 
 class AboutMe(BaseModel):
@@ -343,6 +346,7 @@ class TaskDTO(BaseModel):
     message_id: str | None
     project: str
     created_at: datetime
+    active_at: datetime | None = None  # last turn / step (log written); None: no log yet
     result: str | None = None  # what the agent wrote back when done
     prompt: str = ""
     # plan | edit: headless, driven from the dashboard; terminal: an old Terminal task (read-only)
@@ -352,7 +356,8 @@ class TaskDTO(BaseModel):
     sender_name: str | None = None
     message_text: str | None = None
     handled: bool = False  # the tagged message was marked done
-    kind: Literal["task", "deep"] = "task"  # deep: a Deep thinking session (question to BE + BE's confirmation)
+    # deep: a Deep thinking session (question to BE + BE's confirmation); assist: a tag's Trợ lý AI turns (no project)
+    kind: Literal["task", "deep", "assist"] = "task"
     title: str | None = None  # deep: the two messages, short
     provider: AiProvider = "claude"  # the CLI the session runs on
     model: str | None = None  # picked for this session; None: the task picks in AI settings

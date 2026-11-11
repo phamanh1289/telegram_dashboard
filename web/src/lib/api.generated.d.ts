@@ -133,8 +133,7 @@ export interface paths {
         get?: never;
         /**
          * Task Handled
-         * @description Done / reopen: on the kept tag when the message is one, else on the session itself; and on every
-         *     kept message attached to its turns.
+         * @description Done / reopen (see set_task_handled).
          */
         put: operations["task_handled_api_tasks__task_id__handled_put"];
         post?: never;
@@ -1746,6 +1745,16 @@ export interface components {
             intro: string;
             /** Ticket Ids */
             ticket_ids?: string[];
+            /**
+             * Save
+             * @default false
+             */
+            save: boolean;
+            /**
+             * Shown
+             * @default
+             */
+            shown: string;
         };
         /**
          * AiGuideRequest
@@ -2055,6 +2064,16 @@ export interface components {
             intro: string;
             /** Ticket Ids */
             ticket_ids?: string[];
+            /**
+             * Save
+             * @default false
+             */
+            save: boolean;
+            /**
+             * Shown
+             * @default
+             */
+            shown: string;
             /**
              * Types
              * @default []
@@ -2982,6 +3001,8 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /** Active At */
+            active_at?: string | null;
             /** Result */
             result?: string | null;
             /**
@@ -3016,7 +3037,7 @@ export interface components {
              * @default task
              * @enum {string}
              */
-            kind: "task" | "deep";
+            kind: "task" | "deep" | "assist";
             /** Title */
             title?: string | null;
             /**

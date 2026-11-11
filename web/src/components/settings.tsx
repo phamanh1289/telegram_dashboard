@@ -7,7 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { AiAccounts, ModelEffortPicker, PrefsSection, useAiPrefs } from "@/components/ai";
 import { PROVIDERS } from "@/components/ai/prefs";
 import { Dropdown } from "@/components/ui/dropdown";
-import { FONTS, type FontId } from "@/lib/fonts";
+import { FONT_SIZES, FONTS, type FontId } from "@/lib/fonts";
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
 import { AiFetching, UpdateHero } from "@/components/ai/fetching";
@@ -385,6 +385,10 @@ function LookSection() {
     <Row label={t("Font chữ")} desc={t("Áp dụng cho cả Telegram và YouTrack trên trình duyệt này.")}>
       <Dropdown label={t("Font chữ")} className="w-48" value={look.font} onChange={(v) => set({ font: v as FontId })}
         options={FONTS.map((f) => ({ value: f.id, label: tMaybe(f.label), hint: tMaybe(f.hint) }))} />
+    </Row>
+    <Row label={t("Cỡ chữ")} desc={t("Phóng to / thu nhỏ chữ toàn app; khoảng cách giữ nguyên.")}>
+      <Segmented id="set-font-size" variant="card" label={t("Cỡ chữ")} value={look.size} onChange={(size) => set({ size })}
+        items={FONT_SIZES.map((z) => ({ value: z.id, label: t(z.label) }))} />
     </Row>
     <Row label={t("Màu chủ đạo")} desc={look.hue >= 60 && look.hue <= 100 ? <span className="text-warn">{t("Gần màu hổ phách dùng cho tin “cần bạn” (quá hạn), dễ lẫn.")}</span> : undefined} stack>
       <div className="grid gap-2.5">

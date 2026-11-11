@@ -8,8 +8,9 @@ import { AiPromptBox, AiSend } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
-import { type AiPicks, api, ApiError, errorText, type Message, type Task } from "@/lib/api";
-import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, useRefs, withAttachments } from "@/lib/attach";
+import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/lib/api";
+import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeWantEdit, useRefs, useWantEdit, withAttachments } from "@/lib/attach";
+import { readIntro, readPlatform, useRole } from "@/lib/prefs";
 import { toast } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
 import { cn, MOD } from "@/lib/utils";
@@ -79,11 +80,16 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   const t = useT();
   const { id } = task;
   const running = !!task.running;
-  const plan = task.mode === "plan";
+  const assist = task.kind === "assist"; // Trợ lý AI: no project; its turns run as the reply panel's asks
+  const plan = task.mode === "plan" && !assist;
+  const role = useRole();
   const qc = useQueryClient();
   const stop = useMutation({ mutationFn: () => api<void>(`/tasks/${id}/stop`, { method: "POST" }), onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }) });
   const [text, setText] = useState("");
-  const [edit, setEdit] = useState(false); // plan task: let the next turns edit files (approve the plan)
+  const [picked, setPicked] = useState(false); // plan task: let the next turns edit files (approve the plan)
+  const wanted = useWantEdit(id); // a message attached from a row: ticked for the user
+  const edit = picked || wanted;
+  const setEdit = (v: boolean) => { takeWantEdit(id); setPicked(v); }; // unticked, or sent: the user's own from now
   // Messages pasted (ID / t.me link) or sent here from a message row: quoted under the typed text on send.
   const refs = useRefs(id);
   const looked = useQueries({ queries: refs.map(messageQuery) });
@@ -97,8 +103,15 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     setRefs(id, attach(id, []).filter((x) => !r.some((y) => sameRef(x, y)))); // attach(id, []): the draft as it is now
   };
   const send = useMutation({
-    mutationFn: ({ line, refs }: Queued & { queued?: boolean }) =>
-      api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit } }),
+    mutationFn: ({ line, refs }: Queued & { queued?: boolean }) => {
+      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit } });
+      // the AI reads attached messages as group messages, so only the session's group (its tag first)
+      if (refs.some((r) => r.chat_id !== task.chat_id)) throw new ApiError(422, "assist_other_chat", null, null);
+      return apiStart("/ai/draft", {
+        chat_id: task.chat_id, message_ids: [task.message_id, ...refs.map((r) => r.message_id)], instruction: splitAttachments(line)[0],
+        shown: line, save: true, with_context: true, platform: readPlatform(), role: role ?? "dev", intro: readIntro(),
+      });
+    },
     // Awaited so the mutation stays pending until the task list shows the new turn running: the queue can't fire twice.
     // Here, not per-mutate, so a sent queued prompt leaves the queue even if the panel unmounted meanwhile.
     onSuccess: async (_, { queued }) => {
@@ -108,7 +121,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     },
   });
   const submit = () => {
-    if (ready && !running && !send.isPending) send.mutate({ line, refs }, { onSuccess: sentOnly(text, refs) });
+    if (ready && !running && !send.isPending) { setEdit(edit); send.mutate({ line, refs }, { onSuccess: sentOnly(text, refs) }); }
   };
   // Cmd/Ctrl+Enter queues the prompt; queued prompts run one per turn, in order, once the AI is idle.
   const [queue, setQueueState] = useState<Queued[]>(() => queues.get(id) ?? []);
@@ -152,7 +165,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         ))}
       </ol>
     )}
-    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={8000} value={text} onChange={setText} onPaste={paste}
+    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={assist ? 2000 : 8000} value={text} onChange={setText} onPaste={paste}
       onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
       stopHint={t("Dừng AI (giữ hội thoại, có thể nhắn tiếp)")}
       placeholder={running ? t("AI đang làm: {mod}+Enter để thêm vào hàng đợi", { mod: MOD }) : t("Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, {mod}+Enter vào hàng đợi)", { mod: MOD })}
@@ -169,9 +182,11 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         </Button>
       )}
       tools={<>
-        <span className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full bg-paper-2 px-2 py-1" title={task.project}>
-          <FolderGit2 className="size-3.5 shrink-0 text-ink-3" aria-hidden /><span className="truncate">{task.project.split("/").pop()}</span>
-        </span>
+        {!assist && (
+          <span className="inline-flex min-w-0 max-w-40 items-center gap-1 rounded-full bg-paper-2 px-2 py-1" title={task.project}>
+            <FolderGit2 className="size-3.5 shrink-0 text-ink-3" aria-hidden /><span className="truncate">{task.project.split("/").pop()}</span>
+          </span>
+        )}
         {plan && (
           <Hint text={t("Phiên đang ở chế độ chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.")} side="bottom">
             <label className="flex items-center gap-1.5">
@@ -182,7 +197,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         )}
       </>}
       actions={<>
-        <SessionAi t={task} disabled={running} />
+        {!assist && <SessionAi t={task} disabled={running} />}
         {running ? (
           <Hint text={t("Thêm vào hàng đợi, chạy khi AI xong lượt này ({mod}+Enter)", { mod: MOD })} side="bottom">
             <Button type="button" size="icon-sm" variant="outline" className="rounded-full" aria-label={t("Vào hàng đợi")} disabled={!ready} onClick={enqueue}><ListPlus /></Button>
@@ -195,7 +210,10 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
       <p className="text-xs text-warn">{t("Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt.")}</p>
     )}
     {failed && <p role="alert" className="text-xs text-error">{t("Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.")}</p>}
-    {send.isError && <p role="alert" className="text-xs text-error">{busy ? t("AI đang làm lượt trước.") : t("Gửi thất bại.")}</p>}
+    {send.isError && <p role="alert" className="text-xs text-error">{busy ? t("AI đang làm lượt trước.") : errorText(send.error, {
+      assist_other_chat: t("Trợ lý AI chỉ đọc được tin trong nhóm của phiên: bỏ tin nhóm khác (×) rồi gửi."),
+      ai_job_taken: t("AI đang làm lượt trước."),
+    }, t("Gửi thất bại."))}</p>}
     {stop.isError && <p role="alert" className="text-xs text-error">{t("Không dừng được, thử lại.")}</p>}
   </>;
 });

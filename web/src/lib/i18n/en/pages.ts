@@ -59,8 +59,8 @@ export default {
   "Có thể đã trả lời": "Maybe answered",
   "Chờ trả lời": "Awaiting reply",
   "Chưa gửi AI": "Not sent to AI",
-  "Còn tin của người khác (trả lời, hoặc câu hỏi chưa ai trả lời) chưa gửi kèm vào phiên AI Agent / Đối chiếu BE nào; chưa đánh dấu xong":
-    "Has messages from others (replies, or a question nobody answered yet) not yet sent with any AI Agent / Check vs BE session; not marked done",
+  "Còn tin của người khác (trả lời, hoặc câu hỏi chưa ai trả lời) chưa gửi kèm vào phiên AI Agent / Đối chiếu BE / Trợ lý AI nào; chưa đánh dấu xong":
+    "Has messages from others (replies, or a question nobody answered yet) not yet sent with any AI Agent / Check vs BE / AI assistant session; not marked done",
   "Gửi AI {n}/{total}": "Sent to AI {n}/{total}",
   "Đã gửi AI": "Sent to AI",
   "Đã gửi": "Sent",

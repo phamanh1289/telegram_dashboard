@@ -13,6 +13,7 @@ import logging
 import sqlite3
 import time
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 from . import providers
@@ -41,6 +42,12 @@ def task_result_path(settings, task_id: str) -> Path:
 def read_task_result(settings, task_id: str) -> str | None:
     p = task_result_path(settings, task_id)
     return p.read_text(errors="replace")[:20000] if p.is_file() else None
+
+
+def task_active_at(settings, task_id: str) -> datetime | None:
+    """Last activity of a session: its log is appended on every turn and step."""
+    p = tasks_dir(settings) / f"{task_id}.log.jsonl"
+    return datetime.fromtimestamp(p.stat().st_mtime, UTC) if p.is_file() else None
 
 
 def read_task_prompt(settings, task_id: str) -> str:
@@ -81,6 +88,7 @@ class AgentRunner:
         self._starting: dict[str, asyncio.subprocess.Process | None] = {}
         self._cancel: set[str] = set()  # stopped while starting: never registered
         self._why: dict[str, str] = {}  # stopped on purpose: what the log says instead of the exit code
+        self.side: dict[str, asyncio.Task] = {}  # turns run in this process (Trợ lý AI), not by a CLI
 
     @property
     def available(self) -> bool:
@@ -91,12 +99,12 @@ class AgentRunner:
         return tasks_dir(self.settings) / f"{task_id}.log.jsonl"
 
     def running(self, task_id: str) -> bool:
-        return task_id in self.procs or task_id in self._starting
+        return task_id in self.procs or task_id in self._starting or task_id in self.side
 
     @property
     def busy(self) -> bool:
         """Any task running or still starting (an update must not restart under it)."""
-        return bool(self.procs or self._starting)
+        return bool(self.procs or self._starting or self.side)
 
     def read(self, task_id: str, after: int = 0) -> tuple[list[dict], int]:
         """(items after line `after`, total lines). Only whole lines: the pump may be mid-write."""
@@ -189,6 +197,38 @@ class AgentRunner:
             self.log_path(task_id).unlink(missing_ok=True)
         self._append(task_id, {"kind": "user", "text": text})
         return session_id
+
+    def side_start(self, task_id: str, prompt: dict, run: Callable[[], Awaitable], text_of: Callable[..., str]):
+        """A turn run in this process (Trợ lý AI: `run()` gives the result, `text_of` its Markdown), logged like a CLI
+        turn: the session shows running, Stop cancels it. Once this returns the turn is logged and busy. Awaiting the
+        task and being cancelled (a page leaving) cancels it too."""
+        if self.running(task_id):
+            raise ApiError(409, "task_busy")
+        tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
+        self._append(task_id, {"kind": "user", **prompt})
+
+        async def turn():
+            try:
+                r = await run()
+            except asyncio.CancelledError:
+                self._append(task_id, {"kind": "result", "error": True, "text": self._why.pop(task_id, "Đã dừng.")})
+                raise
+            except ApiError as e:
+                text = f"AI lỗi ({e.code}){f': {e.detail}' if e.detail else ''}"
+                self._append(task_id, {"kind": "result", "error": True, "text": text})
+                raise
+            except Exception as e:
+                self._append(task_id, {"kind": "result", "error": True, "text": f"AI lỗi: {e!r}"})
+                raise
+            text = text_of(r)
+            task_result_path(self.settings, task_id).write_text(text)
+            self._append(task_id, {"kind": "result", "error": False, "text": text})
+            return r
+
+        task = self.side[task_id] = asyncio.create_task(turn())
+        # cleared once done whatever ended it (even cancelled before it ran), after its last log line
+        task.add_done_callback(lambda t: self.side.pop(task_id) if self.side.get(task_id) is t else None)
+        return task
 
     @staticmethod
     async def _new_thread(task_id: str, proc, provider: str) -> str:
@@ -293,10 +333,15 @@ class AgentRunner:
             kill_tree(proc)  # also what it left behind holding the output pipe (the pump waits on it)
         if pump := self.pumps.get(task_id):
             await asyncio.gather(pump, return_exceptions=True)
+        if side := self.side.get(task_id):
+            self._why[task_id] = why
+            side.cancel()
+            await asyncio.gather(side, return_exceptions=True)
+            self._why.pop(task_id, None)  # cancelled before it ran: nobody read it
 
     async def stop_all(self) -> None:
         why = "Server khởi động lại nên lượt này dừng giữa chừng. Gửi tin (vd \"tiếp tục\") để chạy tiếp."
-        await asyncio.gather(*(self.stop(t, why) for t in {*self.procs, *self._starting}))
+        await asyncio.gather(*(self.stop(t, why) for t in {*self.procs, *self._starting, *self.side}))
 
     def new_session(self, provider: str | None = None) -> str:
         return providers.new_session(self.settings, provider)

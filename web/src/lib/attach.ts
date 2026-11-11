@@ -1,7 +1,7 @@
 import { type QueryClient, queryOptions } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type { ChatsResponse, Message } from "@/lib/api";
-import { getMessage } from "@/lib/inbox";
+import { getMessage, tagOf } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
 
 /** A Telegram message attached to an AI Agent session's next prompt. */
@@ -53,6 +53,19 @@ export function attach(taskId: string, add: Ref[]) {
   return next;
 }
 
+// Sessions whose next turn may edit code: a message was attached from a row (it is there to be built on).
+// The composer ticks "Cho sửa code" once, then it is the user's to untick.
+const editWanted = new Set<string>();
+export function wantEdit(taskId: string) {
+  editWanted.add(taskId);
+  subs.forEach((f) => f());
+}
+export const useWantEdit = (taskId: string) =>
+  useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => editWanted.has(taskId), () => false);
+export function takeWantEdit(taskId: string) {
+  if (editWanted.delete(taskId)) subs.forEach((f) => f());
+}
+
 export const useRefs = (taskId: string) =>
   useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => drafts.get(taskId) ?? NONE, () => NONE);
 
@@ -81,7 +94,7 @@ export function chatByTitle(qc: QueryClient, title: string) {
 
 /** One quoted message of a sent prompt's attached block (see withAttachments). */
 export type Attached = { id: string; who: string; when: string; group?: string; media?: string; body: string };
-const ATTACHED = /^\[#(\d+)\] (.*), (\d\d:\d\d, \d\d\/\d\d\/\d{4})(?: \(nhóm (.+?)\))?(?: \[kèm (\w+)\])?:$/;
+const ATTACHED = /^\[#(\d+)\] (.*?)(?: \(tag: .+?\))?, (\d\d:\d\d, \d\d\/\d\d\/\d{4})(?: \(nhóm (.+?)\))?(?: \[kèm (\w+)\])?:$/;
 
 /** The attached block split back into its messages; a block it can't read stays one plain item. */
 export function parseAttachments(block: string): Attached[] {
@@ -101,7 +114,8 @@ export function withAttachments(text: string, msgs: Message[], home: string | nu
     const where = m.chat_id === home ? "" : ` (nhóm ${title(m.chat_id) ?? m.chat_id})`;
     const media = m.media_kind ? ` [kèm ${m.media_kind}]` : "";
     const body = m.text.length > cap ? `${m.text.slice(0, cap)}…` : m.text || "(không có chữ)";
-    return `[#${m.message_id}] ${m.outgoing ? "Bạn" : (m.sender_name ?? "?")}, ${timeLabel(m.date, true)}${where}${media}:\n${body.replace(/^/gm, "> ")}`;
+    const tag = tagOf(m);
+    return `[#${m.message_id}] ${m.outgoing ? "Bạn" : (m.sender_name ?? "?")}${tag ? ` (tag: ${tag})` : ""}, ${timeLabel(m.date, true)}${where}${media}:\n${body.replace(/^/gm, "> ")}`;
   });
   // Others wrote these: inside a per-turn random tag they can't close, marked untrusted (as taskPrompt does).
   const tag = `tg-${crypto.randomUUID().slice(0, 8)}`;

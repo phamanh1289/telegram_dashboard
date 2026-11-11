@@ -11,7 +11,7 @@ import re
 import time
 from datetime import UTC, datetime, timedelta, timezone
 
-from .ai import AiService, about_user, data_json, json_object
+from .ai import AiService, about_user, data_json, json_object, who
 from .errors import ApiError
 from .models import BeReply, DigestRequest, DigestResult, StoredMessage
 from .storage import Db, Store, _dt
@@ -277,7 +277,7 @@ class DigestService:
             {
                 "id": str(m.message_id),
                 "at": m.date.astimezone(VN).strftime("%d/%m %H:%M"),
-                "from": "me" if m.outgoing else (m.sender_name or "?"),
+                **who(m),
                 **({"reply_to": str(m.reply_to_id)} if m.reply_to_id else {}),
                 "text": _text(m),
             }

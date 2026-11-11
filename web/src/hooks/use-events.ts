@@ -4,7 +4,7 @@ import { type InfiniteData, type QueryClient, useQuery, useQueryClient } from "@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { msgKey } from "@/lib/inbox";
+import { msgKey, sentQuery } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
 type Listener = (items: ChangeItem[]) => void;
@@ -100,9 +100,11 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
     void qc.invalidateQueries({ queryKey: ["chats"] });
     void qc.invalidateQueries({ queryKey: ["pending"] });
   }
-  // A task's tag changed (e.g. marked done): its row on AI Agent shows that state
+  // A task's tag, or a message sent along to it, changed (e.g. marked done, which closes the session): its row on AI
+  // Agent shows that state
   const tasks = new Set((qc.getQueryData<Task[]>(["tasks"]) ?? []).map(msgKey));
-  if (items.some((it) => tasks.has(msgKey(it)))) void qc.invalidateQueries({ queryKey: ["tasks"] });
+  const sent = qc.getQueryData<Record<string, string[]>>(sentQuery.queryKey) ?? {};
+  if (items.some((it) => tasks.has(msgKey(it)) || msgKey(it) in sent)) void qc.invalidateQueries({ queryKey: ["tasks"] });
   // A tag in a Q&A thread changed (done, snoozed, pinned) or a new tag answers one: that group's Q&A reads again now,
   // not at its next poll. Only groups with a cached thread holding it (Q&A reads Telegram live).
   for (const chat of new Set(items.filter((it) => inQa(qc, it)).map((it) => it.chat_id))) void qc.invalidateQueries({ queryKey: ["qa", chat] });

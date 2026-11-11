@@ -102,8 +102,8 @@ from .models import (
 )
 from .qa import chain_code, find_threads, has_tag, names_code, qa_code
 from .storage import Db, Store, _dt, parse_cursor
+from .tasks import add_refs, assist_history, mark_tags, new_task_id, start_task
 from .tasks import build_router as build_task_router
-from .tasks import mark_tags, new_task_id, start_task
 from .telegram import TelegramBridge, Transport, notify_mac
 from .yt_dashboard import YouTrackDashboard, YtError, build_router, whoami
 
@@ -419,14 +419,48 @@ def create_app(
         kind = "answer" if body.project else "draft"  # a project picked: "Trả lời từ code"
         tickets = await yt_dashboard.brief(body.ticket_ids) if kind == "answer" else ""
 
-        async def work(on_text):
-            r = await S(request).ai.run(
+        def run(on_text, history=None):
+            return S(request).ai.run(
                 kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
                 platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
+                history=history,
             )  # fmt: skip
-            return r.model_dump()
 
+        async def work(on_text):
+            return (await run(on_text)).model_dump()
+
+        if body.save:  # Trợ lý AI: a turn of the tag's saved session (one code path for the reply panel and AI Agent)
+            work = await _assist_turn(S(request), body, run, bool(job))
         return yt_dashboard.jobs.start(job, work) if job else stream_answer(work)
+
+    async def _assist_turn(s, body: AiDraftRequest, run, background: bool):
+        """Log the turn in the tag's Trợ lý AI session (made on its first ask), with the earlier turns in its prompt;
+        it starts now, so once this answers the session shows it running. The answer's `work`. `background` (a job):
+        the turn outlives the page, which only took it (AI Agent's follow-up) or may close (Trả lời từ code)."""
+        tag = int_or_404(body.message_ids[0], "message_not_found")
+        task_id = await s.db.write(s.store.assist_task, new_task_id(), body.chat_id, tag)
+        history = assist_history((await asyncio.to_thread(s.agent.read, task_id))[0])
+        early: list = []  # text the run streamed before a reader came
+        relay = [early.append]
+        prompt = {"text": body.shown or body.instruction, **({"code": body.project} if body.project else {})}
+        if background:  # the turn's task copies this context: a reader leaving must not stop its run
+            client_gone.set(None)
+        turn = s.agent.side_start(task_id, prompt, lambda: run(lambda t: relay[0](t), history),
+                                  lambda r: r.analysis or r.text)  # fmt: skip
+        await add_refs(s, task_id, [(body.chat_id, m) for m in body.message_ids[1:]])
+
+        async def work(on_text):
+            for t in early:
+                on_text(t)
+            relay[0] = on_text
+            try:
+                return (await turn).model_dump()
+            except asyncio.CancelledError:  # Stop from the AI Agent page: an answer, not a stream left hanging
+                if turn.cancelled() and not asyncio.current_task().cancelling():
+                    raise ApiError(499, "ai_cancelled", detail="Đã dừng lượt AI") from None
+                raise
+
+        return work
 
     # One store of background AI runs for the whole app (YouTrack's): the Telegram side reads / stops its own here.
     @app.get("/api/ai/job/{job_id}", responses={200: {"description": "NDJSON, as the run that started it"}})
