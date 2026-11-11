@@ -8,6 +8,7 @@ import { useChats } from "@/components/chat-list";
 import { MessageItem, revealMessage } from "@/components/message-item";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
+import { MENU_POPUP } from "@/components/ui/menu";
 import { Dropdown } from "@/components/ui/dropdown";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
@@ -283,7 +284,7 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
         </Hint>
         <Menu.Portal>
           <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
-            <Menu.Popup className="grid w-56 origin-(--transform-origin) gap-0.5 rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+            <Menu.Popup className={cn(MENU_POPUP, "w-56")}>
               <Menu.Item onClick={() => setConfirm(true)}
                 className="flex cursor-default items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-error outline-none select-none data-highlighted:bg-error-wash">
                 <Trash2 className="size-4" aria-hidden /> {t("Xóa dữ liệu nhóm…")}

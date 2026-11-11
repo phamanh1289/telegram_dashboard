@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
+import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { errorText, type Message } from "@/lib/api";
 import { type Key, t as tPlain, useT } from "@/lib/i18n";
 import { remind, toast } from "@/lib/inbox";
@@ -16,9 +17,7 @@ import { cn } from "@/lib/utils";
 // "Nhắc tôi kiểm tra lại": a tag you answered ("để mình check rồi báo") or marked done comes back to Việc cần xử lý at a
 // time you pick (backend PUT …/remind: reopen + hide until then). Same times as Hoãn (lib/time snoozeChoices).
 
-// Same look as the row menus in message-item.
-const POPUP = "grid origin-(--transform-origin) gap-0.5 rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
-const ITEM = "flex cursor-default rounded-md px-2.5 py-1.5 text-ink-2 outline-none select-none data-highlighted:bg-paper-2 data-highlighted:text-ink";
+const ITEM = cn("flex text-ink-2 data-highlighted:text-ink", MENU_ITEM);
 
 /** On a handled tag (row toolbar / ⋯ menu): pick when it comes back as a to-do. */
 export function RemindMenu({ m, label }: { m: Message; label?: boolean }) {
@@ -40,7 +39,7 @@ export function RemindMenu({ m, label }: { m: Message; label?: boolean }) {
       </Hint>
       <Menu.Portal>
         <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
-          <Menu.Popup aria-label={t("Nhắc lại lúc")} onClick={(e) => e.stopPropagation()} className={cn(POPUP, "w-52 text-xs")}>
+          <Menu.Popup aria-label={t("Nhắc lại lúc")} onClick={(e) => e.stopPropagation()} className={cn(MENU_POPUP, "w-52 text-xs")}>
             {snoozeChoices(now).map(({ label: text, at, clock }) => (
               <Menu.Item key={text} disabled={run.isPending} onClick={() => run.mutate(at)} className={ITEM}>
                 {t(text)}<span className="ml-auto pl-2 font-mono text-ink-3 tabular-nums">{clock && clockLabel(at.toISOString())}</span>
@@ -63,12 +62,12 @@ export function RemindSubmenu({ m }: { m: Message }) {
   });
   return (
     <Menu.SubmenuRoot onOpenChange={(o) => { if (o) setNow(Date.now()); }}>
-      <Menu.SubmenuTrigger className={cn(ITEM, "items-center gap-2.5 text-sm [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3")}>
+      <Menu.SubmenuTrigger className={cn(MENU_ACTION, MENU_ITEM, "text-sm")}>
         <AlarmClockPlus /><span className="min-w-0 flex-1 truncate">{t("Nhắc lại sau…")}</span><ChevronRight />
       </Menu.SubmenuTrigger>
       <Menu.Portal>
         <Menu.Positioner sideOffset={4} className="z-50 outline-none">
-          <Menu.Popup aria-label={t("Nhắc lại lúc")} onClick={(e) => e.stopPropagation()} className={cn(POPUP, "w-52 text-xs")}>
+          <Menu.Popup aria-label={t("Nhắc lại lúc")} onClick={(e) => e.stopPropagation()} className={cn(MENU_POPUP, "w-52 text-xs")}>
             {snoozeChoices(now).map(({ label: text, at, clock }) => (
               <Menu.Item key={text} disabled={run.isPending} onClick={() => run.mutate(at)} className={ITEM}>
                 {t(text)}<span className="ml-auto pl-2 font-mono text-ink-3 tabular-nums">{clock && clockLabel(at.toISOString())}</span>

@@ -250,7 +250,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
           }
           tools={!!list.length && dev && <>
             <Hint side="bottom" text={t("Thư mục dự án để AI đọc code khi trả lời")}><span className="min-w-0 max-w-56">
-              <ProjectPicker value={project} onChange={setProject} none={t("Không đọc code")} className="h-7 max-w-56" />
+              <ProjectPicker value={project} onChange={setProject} none={t("Không đọc code")} chip className="max-w-56" />
             </span></Hint>
             {folder && <Hint side="bottom" title={t(shell ? "AI được chạy lệnh" : "AI chỉ đọc code")}
               text={t("Bật: AI được chạy lệnh trong thư mục dự án (build, test, gradle…) trong sandbox: chỉ ghi trong thư mục đó, mạng chỉ tới kho thư viện (Maven, npm, PyPI); không sửa code. Antigravity không có sandbox nên vẫn chỉ đọc.")}>

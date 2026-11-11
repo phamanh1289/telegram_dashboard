@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { CHIP } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Project } from "@/lib/api";
@@ -25,7 +26,8 @@ const ITEM = "flex cursor-default items-center gap-2.5 rounded-md px-2.5 py-1.5 
  * then "Thêm thư mục…" (Finder; a typed path when that can't open) and "Gỡ khỏi danh sách". The caller stores the choice.
  * `none`: the folder is optional, an item with that label picks "" (no code read).
  */
-export function ProjectPicker({ value, onChange, className, none }: { value: string; onChange: (path: string) => void; className?: string; none?: string }) {
+/** `chip`: the pill look of a prompt box's tool row. */
+export function ProjectPicker({ value, onChange, className, none, chip }: { value: string; onChange: (path: string) => void; className?: string; none?: string; chip?: boolean }) {
   const t = useT();
   const qc = useQueryClient();
   const projects = useProjects();
@@ -53,17 +55,18 @@ export function ProjectPicker({ value, onChange, className, none }: { value: str
     <>
       <Menu.Root>
         <Menu.Trigger aria-label={t("Dự án tham chiếu cho AI")} aria-busy={pick.isPending} disabled={pick.isPending}
-          className={cn("group relative inline-flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-1 text-sm text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus) data-popup-open:border-hl disabled:opacity-70", className)}>
+          className={cn("group relative inline-flex h-8 min-w-0 items-center gap-2 overflow-hidden rounded-[var(--radius-input)] border border-rule-2 bg-cotton pr-2 pl-1 text-sm text-ink transition-[background-color,border-color] duration-(--dur-micro) hover:bg-paper-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-(--color-focus) data-popup-open:border-hl disabled:opacity-70", chip && [CHIP, "gap-1.5 pl-0.5 [&>span:first-child]:size-5 [&>span:first-child]:rounded-full"], className)}>
           <span className={cn("grid size-6 shrink-0 place-items-center rounded-md transition-colors duration-(--dur-short)", current ? "bg-hl-wash text-hl-2" : "bg-paper-2 text-ink-3")}>
             {pick.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <FolderGit2 className="size-3.5" aria-hidden />}
           </span>
           <AnimatePresence initial={false} mode="popLayout">
-            <motion.span key={label} className={cn("min-w-0 truncate", current ? "font-medium" : projects.isError ? "text-error" : "text-ink-3")}
+            {label && <motion.span key={label} className={cn("min-w-0 truncate", current ? "font-medium" : projects.isError ? "text-error" : "text-ink-3")}
               initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}>
               {label}
-            </motion.span>
+            </motion.span>}
           </AnimatePresence>
-          <ChevronDown aria-hidden className="ml-auto size-3.5 shrink-0 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out) group-data-popup-open:rotate-180" />
+          {/* none="": just the folder icon (the hint around it says what it does) */}
+          {label && <ChevronDown aria-hidden className="ml-auto size-3.5 shrink-0 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out) group-data-popup-open:rotate-180" />}
         </Menu.Trigger>
         <Menu.Portal>
           <Menu.Positioner sideOffset={6} align="start" className="z-50 outline-none">

@@ -2,11 +2,11 @@
 
 import { Popover } from "@base-ui/react/popover";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChartColumn, Copy, ExternalLink, History, Play, SlidersHorizontal, UserRound } from "lucide-react";
+import { ChartColumn, Copy, Cpu, ExternalLink, History, Play, SlidersHorizontal, UserRound } from "lucide-react";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dropdown } from "@/components/ui/dropdown";
+import { CHIP, Dropdown } from "@/components/ui/dropdown";
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DIALOG_SHEET } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
@@ -443,8 +443,8 @@ export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, 
 
 /** One kind of run's model over every CLI's models, grouped by CLI and, for models a proxy routes (opencodex), by their
  *  provider (picking one picks the CLI that runs it), and the effort levels that model takes (none: no slider). The same saved picks everywhere: prompt boxes, Settings, the AI page. */
-function KindPicks({ kind, modelClass, effortClass, bare, variant = "full" }: {
-  kind: RunKind; modelClass?: string; effortClass?: string; bare?: boolean; variant?: EffortVariant;
+function KindPicks({ kind, modelClass, effortClass, bare, variant = "full", chip }: {
+  kind: RunKind; modelClass?: string; effortClass?: string; bare?: boolean; variant?: EffortVariant; chip?: boolean;
 }) {
   const t = useT();
   const { catalog, on, info, modelOf, setModel, picks, setPicks } = useAiPrefs();
@@ -463,7 +463,8 @@ function KindPicks({ kind, modelClass, effortClass, bare, variant = "full" }: {
   const k = picks(id), steps = stepsOf(c, k[KEYS[kind][0]] || k[KEYS[BASE[kind]][0]]); // "": the base kind's model runs
   return (
     <>
-      <span className={modelClass}><Dropdown label={t("Model cho {label}", { label })} value={value} onChange={(v) => setModel(kind, v)} options={models} /></span>
+      <span className={modelClass}><Dropdown label={t("Model cho {label}", { label })} value={value} onChange={(v) => setModel(kind, v)} options={models}
+        {...chip && { trigger: CHIP, prefix: <Cpu aria-hidden className="size-3.5 shrink-0 text-ink-3" /> }} /></span>
       {steps.length > 0 && <EffortSlider label={t("Effort {name} cho {label}", { name: c.name, label })} steps={steps} value={k[e]} onChange={(v) => setPicks(id, { [e]: v })}
         className={effortClass} inherit={inherit?.[0]} bare={bare} variant={variant} />}
     </>
@@ -471,7 +472,8 @@ function KindPicks({ kind, modelClass, effortClass, bare, variant = "full" }: {
 }
 
 /** Model + effort of one kind of run, inline (reply panel, AI Agent, Briefing); the same saved picks as Settings › AI.
- *  Short (the effort's name only) by default, for prompt boxes; `variant="full"` adds the slider (settings). */
+ *  Short (the effort's name only) by default, for prompt boxes; `variant="full"` adds the slider (settings).
+ *  `compact`: pills sized for a prompt box's tool row. */
 export function ModelEffortPicker({ kind = "chat", compact = false, className, variant = "short" }: {
   kind?: RunKind; compact?: boolean; className?: string; variant?: EffortVariant;
 }) {
@@ -479,8 +481,8 @@ export function ModelEffortPicker({ kind = "chat", compact = false, className, v
   const { p, catalog, isError, save } = useAiPrefs();
   if (!p || !catalog) return isError ? <span role="alert" className={cn("text-xs text-error", className)}>{t("Không đọc được model/effort")}</span> : null;
   return (
-    <span role="group" aria-label={t("Model và effort cho {label}", { label: t(KINDS[kind][0]) })} className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5", className)}>
-      <KindPicks kind={kind} modelClass={compact ? "w-32" : "w-44"} effortClass={compact ? "w-20" : "w-28"} variant={variant} />
+    <span role="group" aria-label={t("Model và effort cho {label}", { label: t(KINDS[kind][0]) })} className={cn("flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5", compact && "gap-x-1.5", className)}>
+      <KindPicks kind={kind} modelClass={compact ? "flex min-w-0 max-w-36" : "w-44"} effortClass={compact ? "w-20" : "w-28"} variant={variant} chip={compact} />
       {save.isError && <span role="alert" className="text-xs text-error">{t("Không lưu được, thử lại")}</span>}
     </span>
   );

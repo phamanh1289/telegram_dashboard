@@ -7,6 +7,9 @@ import { cn } from "@/lib/utils";
 
 const DEFAULT = "\u0000default"; // Select reads "" as nothing chosen; "" (e.g. a CLI default) is a real choice here
 
+/** The quiet pill a prompt box's pickers wear (model, project…): pass as `trigger`, or merge into a trigger's className. */
+export const CHIP = "flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-full border border-transparent bg-paper-2 pr-1.5 pl-2.5 text-xs font-medium text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink";
+
 /** `group`: a heading over a run of options sharing it (the trigger then reads "<group> · <label>"). */
 export type DropdownOption = { value: string; label: string; hint?: string; group?: string };
 

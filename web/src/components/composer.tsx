@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Bot, Bug, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square } from "lucide-react";
+import { ArrowLeft, ArrowUp, Bot, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Link2, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square, TicketPlus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
-import { type AiSkill, AiIdle, AiPromptBox, AiResultCard, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
+import { type AiSkill, AiIdle, AiPromptBox, AiSend, AiResultCard, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
 import { Avatar } from "@/components/chat-list";
 import { IssueDialog, TaskPage } from "@/components/composer-dialogs";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
@@ -23,7 +23,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox } from "@/lib/api";
-import { copyText, draftKey, msgKey, remind, saveDraft, takeCodeAsk, telegramLink, toast } from "@/lib/inbox";
+import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, toast } from "@/lib/inbox";
 import { doneLoopMessage } from "@/lib/report-back";
 import { timeLabel } from "@/lib/time";
 import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/lib/prefs";
@@ -331,7 +331,6 @@ export function Composer({
     send.mutate({ id, retryUnknown: false, text: mention.wire(body) });
   }
 
-  const head = "text-sm font-bold text-ink";
   const link = telegramLink(replyTo);
   const name = replyTo.sender_name ?? `#${replyTo.message_id}`;
   const insert = (line: string) => setText((cur) => (cur.trim() ? `${cur}\n${line}` : line));
@@ -353,28 +352,14 @@ export function Composer({
     setPref(jobKey, null);
     askAbort.current?.abort();
   };
-  // A run of this tag still on the server (the panel was closed): read it on. "Trả lời từ code" from the row: run it.
+  // A run of this tag still on the server (the panel was closed): read it on.
   // Deferred a tick: React dev runs effects twice, and a cancelled timer starts nothing.
-  const [wantCode, setWantCode] = useState(false);
   const onOpen = useEffectEvent(() => {
     const job = readJob(jobKey);
     if (job && Date.now() - job.at > JOB_KEEP_MS) setPref(jobKey, null); // the server dropped it long ago
     else if (job && aiConfigured) ask.mutate({ instruction: job.prompt, job, resume: true });
-    else if (takeCodeAsk(msgKey(replyTo))) setWantCode(true);
   });
   useEffect(() => { const id = setTimeout(onOpen, 0); return () => clearTimeout(id); }, []);
-  useEffect(() => {
-    const on = (e: Event) => { if ((e as CustomEvent<string>).detail === msgKey(replyTo) && takeCodeAsk(msgKey(replyTo))) setWantCode(true); };
-    addEventListener("ask-code", on);
-    return () => removeEventListener("ask-code", on);
-  }, [replyTo]);
-  const startCode = useEffectEvent(() => {
-    setWantCode(false);
-    setPane("ai");
-    if (codeProject) runAsk();
-    else toast({ text: t("Chọn dự án ở ô Đọc code rồi bấm Trả lời từ code") });
-  });
-  useEffect(() => { if (wantCode && (projects.isSuccess || projects.isError)) startCode(); }, [wantCode, projects.isSuccess, projects.isError]); // eslint-disable-line react-hooks/set-state-in-effect -- runs once the project list is known
   const askLabel = codeProject ? (analysis ? t("Hỏi code lại") : t("Trả lời từ code")) : analysis ? t("Tóm tắt lại") : t("Tóm tắt & gợi ý");
   const answerMode = !!turns.at(-1)?.code; // the drafts on screen answer from code: "Ngắn gọn" / "Đầy đủ"
   // The textarea holds hand edits (not one of the drafts): a draft's own Gửi would overwrite them, so it waits.
@@ -472,23 +457,23 @@ export function Composer({
           pane === "reply" && "@max-3xl:hidden")}>
           {/* Like an AI Agent session: header and conversation scroll, the prompt box stays pinned under them. */}
           <div ref={feedRef} onScroll={onFeedScroll}
-            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:px-6 @3xl:px-5">
-          {/* One row: what this panel is, and the tools that act on the tag. */}
+            className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 *:shrink-0 sm:px-6 @3xl:px-5">
+          {/* One row: what this panel is, and short pill tools that act on the tag (wrap under it if the label runs long). */}
           {(aiConfigured || tools) && (
-            <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-              <h3 className={cn(head, "flex items-center gap-1.5")}>
+            <div className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1.5">
+              <h3 className="mr-auto flex items-center gap-1.5 text-sm font-bold text-ink">
                 {aiConfigured ? <><Sparkles className="size-4 text-hl" aria-hidden /> {t("Trợ lý AI")}</> : t("Công cụ")}
               </h3>
               {tools && (
-                <div role="toolbar" aria-label={t("Công cụ")} className="flex flex-wrap gap-1.5">
+                <div role="toolbar" aria-label={t("Công cụ")} className="flex gap-1">
                   {aiConfigured && usesCode(role) && (
                     <Hint side="bottom" title="AI Agent" text={t("Giao cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)")}>
-                      <Button type="button" size="sm" variant="outline" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> {t("Giao AI Agent")}</Button>
+                      <Button type="button" size="xs" variant="outline" className="rounded-full" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> AI Agent</Button>
                     </Hint>
                   )}
                   {youtrackConfigured && (
                     <Hint side="bottom" title="YouTrack" text={t("Tạo ticket YouTrack từ tin này; link ticket được thêm vào trả lời")}>
-                      <Button type="button" size="sm" variant="outline" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><Bug /> {t("Tạo ticket")}</Button>
+                      <Button type="button" size="xs" variant="outline" className="rounded-full" aria-label="YouTrack" disabled={targetDeleted} onClick={() => setIssueOpen(true)}><TicketPlus /> {t("Tạo ticket")}</Button>
                     </Hint>
                   )}
                 </div>
@@ -497,17 +482,20 @@ export function Composer({
           )}
 
           {!!related.data?.length && (
-            <section aria-label={t("Ticket có vẻ liên quan")} className="grid grid-cols-1 gap-2">
-              <h3 className={head}>{t("Ticket có vẻ liên quan")}</h3>
-              <ul className="grid grid-cols-1 divide-y rounded-[var(--radius-input)] border bg-cotton">
+            <section aria-label={t("Ticket có vẻ liên quan")} className="grid grid-cols-1 gap-1.5">
+              <h4 className="flex items-center gap-1.5 text-xs font-medium text-ink-3"><Link2 className="size-3.5" aria-hidden />{t("Ticket có vẻ liên quan")}</h4>
+              <ul className="grid grid-cols-1 gap-1">
                 {related.data.slice(0, 3).map((tk) => (
-                  <li key={tk.id} className="flex min-h-10 items-center gap-2 py-1 pr-1 pl-3 text-xs">
-                    <a href={`/youtrack/?ticket=${tk.id}`} title={tk.summary} className="min-w-0 flex-1 truncate text-ink-2 hover:underline">
-                      <b className="font-mono font-medium text-ink">{tk.id}</b> {tk.summary}
+                  <li key={tk.id} className="flex min-h-9 items-center gap-2 rounded-lg border border-rule bg-cotton py-0.5 pr-0.5 pl-2 text-xs transition-colors duration-(--dur-micro) hover:border-rule-2">
+                    <a href={`/youtrack/?ticket=${tk.id}`} title={tk.summary} className="flex min-w-0 flex-1 items-center gap-2 hover:[&>span:last-child]:underline">
+                      <span className="shrink-0 rounded-md bg-hl-wash px-1.5 py-0.5 font-mono text-2xs font-medium text-hl-2">{tk.id}</span>
+                      <span className="truncate text-ink">{tk.summary}</span>
                     </a>
-                    <Button type="button" size="xs" variant="ghost" aria-label={t("Chèn link {id} vào trả lời", { id: tk.id })} onClick={() => insert(`${tk.id}: ${tk.url}`)}>
-                      <Plus /> {t("Chèn")}
-                    </Button>
+                    <Hint side="bottom" text={t("Chèn link {id} vào trả lời", { id: tk.id })}>
+                      <Button type="button" size="icon-xs" variant="ghost" aria-label={t("Chèn link {id} vào trả lời", { id: tk.id })} onClick={() => insert(`${tk.id}: ${tk.url}`)}>
+                        <Plus />
+                      </Button>
+                    </Hint>
                   </li>
                 ))}
               </ul>
@@ -578,20 +566,16 @@ export function Composer({
                   {codeOn && (
                     <Hint side="bottom" title={t("Trả lời từ code")} text={t("Chọn dự án: AI đọc code trong đó để trả lời câu hỏi của tin này, kèm căn cứ file / hàm và 2 bản nháp trả lời. Không đọc code: tóm tắt & gợi ý như thường.")}>
                       <span className="inline-flex min-w-0">
-                        <ProjectPicker value={codeProject?.path ?? ""} none={t("Không đọc code")} className="h-7 max-w-48 text-xs"
+                        <ProjectPicker value={codeProject?.path ?? ""} none="" chip className="max-w-40"
                           onChange={(path) => { setCode(path); saveReplyCode(path); }} />
                       </span>
                     </Hint>
                   )}
-                  <ModelEffortPicker compact className="min-w-0 gap-x-2" />
+                  <ModelEffortPicker compact />
                 </>}
                 actions={!ask.isPending && (
-                  <Hint text={`${askLabel} (Enter)`} side="bottom">
-                    <Button type="button" size="sm" aria-label={askLabel} disabled={targetDeleted || pending} onClick={runAsk}
-                      className="rounded-full bg-hl text-hl-ink hover:brightness-110 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
-                      {aiPrompt.trim() ? <ArrowUp aria-hidden /> : codeProject ? <FileSearch aria-hidden /> : <Sparkles aria-hidden />} {askLabel}
-                    </Button>
-                  </Hint>
+                  <AiSend onClick={runAsk} disabled={targetDeleted || pending} label={askLabel} hint={`${askLabel} (Enter)`}
+                    icon={aiPrompt.trim() ? <ArrowUp aria-hidden /> : codeProject ? <FileSearch aria-hidden /> : <Sparkles aria-hidden />} />
                 )} />
             </div>
           )}

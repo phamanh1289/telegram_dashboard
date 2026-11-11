@@ -12,6 +12,7 @@ import { EventItem, OpenAttached, SessionAsks, usd, useTaskLog } from "@/compone
 import { TaskChanges } from "@/components/task-changes";
 import { TaskComposer } from "@/components/task-composer";
 import { Button } from "@/components/ui/button";
+import { MENU_POPUP } from "@/components/ui/menu";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
@@ -258,7 +259,7 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
           </Menu.Trigger>
           <Menu.Portal>
             <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
-              <Menu.Popup className="grid w-64 origin-(--transform-origin) gap-0.5 rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+              <Menu.Popup className={cn(MENU_POPUP, "w-64")}>
                 {tag && (t.handled ? (
                   <MenuRow icon={RotateCcw} label={tt("Mở lại")} hint={tt("Tin tag chưa xử lý, phiên về Doing")} disabled={mark.isPending}
                     onClick={() => mark.mutate({ handled: false, react: true })} />

@@ -5,6 +5,12 @@
 - Sửa / thêm một hành vi: trước khi xong, rà **cả dự án** (backend + `web/`) mọi chỗ cùng tính năng hoặc cùng luồng (endpoint anh em, nút / màn khác gọi cùng việc, tab Telegram lẫn YouTrack) và sửa luôn cho đồng bộ; không chỉ vá đúng chỗ được báo. Báo lại danh sách chỗ đã rà / đã sửa.
 - Reuse trước, viết mới sau: tìm helper / hook / component / hàm store đã có (codegraph, grep) và dùng lại hoặc mở rộng nó. Không copy-paste logic sang chỗ mới; thấy 2 chỗ trùng thì gom về một nguồn rồi cả hai cùng gọi. Cùng một tính năng phải chạy cùng một code.
 
+## Lên plan / đề xuất tính năng: trace cái đã có trước (bắt buộc)
+- Được hỏi một use case / tính năng mới (kể cả chỉ xin plan): trước khi đề xuất, trace luồng người dùng hiện có end-to-end (màn nào mở được, nút nào, endpoint nào, prompt AI nào) cho đúng việc đó. Câu trả lời mở đầu bằng: **đã làm được bằng cách nào hôm nay**, rồi mới tới phần thiếu.
+- Plan phải có bảng "Cần / Đã có / Ở đâu"; chỉ đề xuất phần thiếu thật sự. Nếu luồng có sẵn đã đáp ứng (chỉ cần chỉ cách dùng hoặc mở một tham số) thì nói thẳng như vậy, không vẽ thêm.
+- Không thêm lối vào thứ hai (nút, mục menu ⋯, phím tắt, màn) cho một luồng đã có lối vào. Mỗi lối vào / nút mới trong plan phải ghi: lối vào hiện có là gì và vì sao không đủ; không trả lời được thì bỏ mục đó.
+- Không tự thêm "Phase sau / chỉ khi cần" vào phạm vi khi người dùng bảo "làm hết": phần speculative để ngoài, hỏi lại trước khi làm.
+
 ## UI: tab / segmented / nav highlight
 - Mọi nhóm tab chọn-một (view, bộ lọc, khoảng thời gian…) dùng `Segmented` trong `web/src/components/ui/segmented.tsx`; không tự viết `motion.span layoutId` + spring.
 - Highlight trượt kiểu khác (nav sidebar, gạch chân, tab có popover) dùng `Pill` cùng file với `className` riêng.
@@ -20,6 +26,7 @@
 
 ## AI: phong cách câu hỏi theo vai trò
 - Câu hỏi / tin nhắn AI soạn gửi người khác (bình luận, trả lời, dòng "Cần hỏi / Cần ping / Cần chốt") theo vai trò người nhận: **dev (BE, FE, mobile)** → kỹ thuật (field / data, API, logic, edge case, rủi ro); **PO / QA / QC / BA / khách hàng** → ngôn ngữ thường (màn hình, hành vi, nghiệp vụ, kết quả mong đợi), không code / API / tên field.
+- Câu hỏi gửi BE / PO / PM / QC: mỗi tin tối đa 3 ý, mỗi ý một dòng, chỉ hỏi điều người nhận cần trả lời, bỏ bối cảnh dài (chỉ giữ mã ticket / API); quá 3 ý thì tách nhiều tin 3 ý, dư đúng 1 ý thì gộp vào tin kế cuối (7 → 3 + 4, 10 → 3 + 3 + 4). Prompt ở `ASK_STYLE` + `ASK_MSG`; chặn cứng ở `splitAsks` (`web/src/components/markdown.tsx`).
 - Một nguồn duy nhất: `ASK_STYLE` trong `telegram_dashboard/ai.py`, nối vào `SYSTEM_PROMPT` (Telegram) và `AI_SYSTEM` (YouTrack). Prompt AI mới gửi tới người khác dùng lại nó, không viết lại.
 
 ## Lỗi hay gặp: bắt buộc (chi tiết + cách sửa: skill `avoiding-dashboard-pitfalls`)

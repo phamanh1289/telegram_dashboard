@@ -121,7 +121,7 @@ Xong: `uv run pytest tests/test_ai.py tests/test_repo_guards.py`, `npm run typec
 
 ### Phase 3 (đã làm)
 - Chạy nền: lượt "Trả lời từ code" gửi `X-Ai-Job` (dùng chung kho `AiJobs` của YouTrack), job lưu theo tag (`replyJob:<chat>:<msg>`); đóng panel vẫn chạy, mở lại tag đọc tiếp qua `GET /api/ai/job/{id}`; "Hủy" gọi `DELETE` và xoá job.
-- Menu ⋯ trên dòng tin › "Trả lời từ code": mở khung trả lời và chạy ngay (`askCode` / `takeCodeAsk` trong `lib/inbox`); chưa chọn dự án thì nhắc chọn.
+- ~~Menu ⋯ trên dòng tin › "Trả lời từ code"~~: đã gỡ (2026-11-10). Trùng lối vào đã có: bấm dòng tin mở khung trả lời, chọn dự án trong ô prompt rồi chạy; thêm một nút nữa cho cùng việc chỉ làm thêm đường đi.
 
 ## 6. Edge case & lỗi
 

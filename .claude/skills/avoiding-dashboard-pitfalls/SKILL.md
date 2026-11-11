@@ -85,3 +85,4 @@ Mỗi kết quả của 3 lệnh `grep` cuối phải có lý do đúng (vd. loc
 - "Chỉ pop đúng key này thôi" → fetch đang bay cache lại bản cũ.
 - "Chỉ đọc thôi nên cho đọc mọi file" → text người khác dắt AI đọc khóa.
 - "Mỗi dòng tự poll cho đơn giản" → N timer, N request.
+- "Thêm nút tắt cho tiện" → hai lối vào cùng một luồng (vd. menu ⋯ "Trả lời từ code" trùng khung Trả lời + chọn dự án, đã gỡ); trace luồng có sẵn trước khi đề xuất.

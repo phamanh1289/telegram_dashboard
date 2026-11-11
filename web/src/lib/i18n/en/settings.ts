@@ -325,6 +325,8 @@ export default {
   "ticket cần xử lý ngay": "tickets need action now",
   "Đổi giao diện sáng / tối.": "Switch light / dark mode.",
   "Đổi giao diện sáng / tối": "Switch light / dark mode",
+  "Đổi ngôn ngữ Tiếng Việt / English.": "Switch language: Vietnamese / English.",
+  "Đổi ngôn ngữ Tiếng Việt / English": "Switch language: Vietnamese / English",
   "Có {n} bản cập nhật: mở Cài đặt › GitHub.": (v) => `${v.n} ${plural(v.n, "update", "updates")} available: open Settings › Update.`,
   "Telegram, YouTrack, AI, giao diện, cập nhật.": "Telegram, YouTrack, AI, appearance, updates.",
   "Cài đặt (có {n} bản cập nhật)": (v) => `Settings (${v.n} ${plural(v.n, "update", "updates")} available)`,

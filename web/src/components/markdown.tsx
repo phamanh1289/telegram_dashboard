@@ -26,6 +26,44 @@ const dropRole = (t: string) => {
   const roles = [...t.matchAll(ITEM)].map((m) => m[2]?.trim());
   return roles.length && roles.every((r) => r && r === roles[0]) ? t.replace(ITEM, "$1") : t;
 };
+const MAX_POINTS = 3; // points per message to a teammate: one copy / send click posts at most this many (ASK_MSG in ai.py)
+const BULLET = /^\s*(?:[-*+]|\d+[.)])\s+/;
+const TAGS = /^@\w+(?:\s+@\w+)*$/;
+/** A message to "@be" quoted with more than MAX_POINTS points (numbered / bulleted items, else one point per line) →
+ *  several quotes of MAX_POINTS, each to the same @tag, numbered from 1: each gets its own copy / send button. A single
+ *  point left over joins the message before it (4 → 4, 7 → 3 + 4, 10 → 3 + 3 + 4).
+ *  The AI is told to split already; this keeps one click to MAX_POINTS (+1) when it doesn't. */
+export function splitAsks(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; ) {
+    if (!/^\s*>/.test(lines[i])) { out.push(lines[i++]); continue; }
+    const start = i;
+    while (i < lines.length && /^\s*>/.test(lines[i])) i++;
+    const body = lines.slice(start, i).map((l) => l.replace(/^\s*>\s?/, ""));
+    const before = out.findLast((l) => l.trim()) ?? "";
+    const head = body.findIndex((l) => l.trim() && !TAGS.test(l.trim())); // @tag lines inside the quote come first
+    const tags = body.slice(0, Math.max(head, 0)).filter((l) => l.trim());
+    const rest = head < 0 ? [] : body.slice(head);
+    const bulleted = rest.some((l) => BULLET.test(l));
+    const points: string[][] = [];
+    for (const l of rest) {
+      if (bulleted ? BULLET.test(l) || !points.length : l.trim()) points.push([l]);
+      else points.at(-1)?.push(l);
+    }
+    const groups: string[][][] = [];
+    for (let c = 0; c < points.length; c += MAX_POINTS) groups.push(points.slice(c, c + MAX_POINTS));
+    if (groups.length > 1 && groups.at(-1)?.length === 1) groups.at(-2)?.push(...(groups.pop() ?? [])); // 7 → 3 + 4, not 3 + 3 + 1
+    if (groups.length < 2 || !(tags.length || TAGS.test(before.trim()))) { out.push(...lines.slice(start, i)); continue; }
+    groups.forEach((g, c) => {
+      const chunk = g.flatMap((p, k) => [p[0].replace(/^(\s*)\d+([.)])/, `$1${k + 1}$2`), ...p.slice(1)]);
+      while (chunk.length && !chunk.at(-1)?.trim()) chunk.pop();
+      if (c) out.push("", ...(tags.length ? [] : [before.trim()])); // the @tag line above the quote, again
+      out.push(...[...tags, ...chunk].map((l) => `> ${l}`));
+    });
+  }
+  return out.join("\n");
+}
 /** remark plugin: under a heading or a bold label line naming an ask section, each item gets `data-copy`: its markdown
  *  as the AI wrote it (Telegram keeps **bold** / `code`), without the quote / list markers. */
 function remarkAsks(this: { parse: (md: string) => MdNode }) {
@@ -110,7 +148,7 @@ const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a
 export const Markdown = memo(function Markdown({ text, className, onTicket, asks }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void; asks?: boolean }) {
   const t = useT(); // memo: re-renders on a language change through this subscription
   const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
-  let src = text ?? "";
+  let src = asks ? splitAsks(text ?? "") : text ?? "";
   if (onTicket) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
   const components: Components = {
     // only this app's own files load inline: a remote image would fetch on sight (tracking pixel, or a

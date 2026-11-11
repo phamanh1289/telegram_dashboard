@@ -99,14 +99,22 @@ ASK_STYLE = (
     "Cần chốt' lines), match their role: to a developer (BE, FE, mobile) be technical: fields / data, "
     "API, logic, edge cases, risk; to a PO, QA / QC, BA or customer use plain non-technical words "
     "about screens, behaviour, business rules and expected results, no code, API or field names. "
-    "Role unknown: infer it from the comments / messages, else use plain words."
+    "Role unknown: infer it from the comments / messages, else use plain words. Every such question is short and "
+    "on point: ask only what the recipient must answer (decide, confirm, give a value), one line per point, no "
+    "background or restating the context; name only the ticket ID / API it concerns. One message holds at most 3 "
+    "points; more than 3 for the same person: split into several messages of 3 points, most blocking first; a "
+    "single point left over joins the message before it (4 points: one message; 7: 3 + 4; 10: 3 + 3 + 4)."
 )
 # AI Agent sessions (Giao AI Agent, Đối chiếu BE): questions as messages ready to post, one per person; the copy /
 # send buttons (markdown.tsx remarkAsks) pick up these quotes. start_task appends it to every session.
 ASK_MSG = (
     "Cách viết câu hỏi cần hỏi lại: gom theo người được hỏi (BE/PO/QC): mỗi người một tin viết sẵn để gửi thẳng "
     "vào nhóm, viết dạng trích dẫn (`> `), không dùng khối code. Mở đầu chỉ bằng @tag người đó, không chào / gọi "
-    '("ơi"), không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); không ghi lại (BE)/(PO)/(QC) ở từng câu.'
+    '("ơi"), không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); không ghi lại (BE)/(PO)/(QC) ở từng câu. '
+    "Mỗi tin tối đa 3 ý, mỗi ý một dòng đánh số, chỉ hỏi điều người đó cần trả lời, bỏ bối cảnh dài, chỉ giữ mã "
+    "ticket / API liên quan. Quá 3 ý thì tách thành nhiều tin (mỗi tin một khối trích dẫn riêng, đều mở bằng @tag, "
+    "mỗi tin 3 ý), ý chặn việc nhiều nhất ở tin đầu; dư đúng 1 ý thì gộp vào tin kế cuối (4 ý: 1 tin; 7 ý: 3 + 4; "
+    "10 ý: 3 + 3 + 4)."
 )
 
 SYSTEM_PROMPT = (

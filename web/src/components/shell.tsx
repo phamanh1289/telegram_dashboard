@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
+import { ExternalLink, Languages, Moon, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, ViewTransition } from "react";
 import { AiQuota } from "@/components/ai";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { api, errorText } from "@/lib/api";
-import { t as tPlain, useT } from "@/lib/i18n";
+import { saveLang, t as tPlain, useT } from "@/lib/i18n";
 import { toast, type ToastMsg, Told, useNow } from "@/lib/inbox";
 import { applyTheme, readTheme, useRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -91,6 +91,10 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
         <Hint side="bottom" title={t("Giao diện")} text={t("Đổi giao diện sáng / tối.")}><Button size="icon-sm" variant="ghost" aria-label={t("Đổi giao diện sáng / tối")}
           onClick={() => applyTheme(document.documentElement.classList.contains("dark") ? "light" : "dark")}>
           <Moon className="dark:hidden" /><Sun className="hidden dark:block" />
+        </Button></Hint>
+        <Hint side="bottom" title={t("Ngôn ngữ")} text={t("Đổi ngôn ngữ Tiếng Việt / English.")}><Button size="icon-sm" variant="ghost" aria-label={t("Đổi ngôn ngữ Tiếng Việt / English")}
+          onClick={() => saveLang(t.lang === "vi" ? "en" : "vi")}>
+          <Languages />
         </Button></Hint>
         <Hint side="bottom" title={t("Cài đặt")} text={behind ? t("Có {n} bản cập nhật: mở Cài đặt › GitHub.", { n: behind }) : t("Telegram, YouTrack, AI, giao diện, cập nhật.")}><Link href={behind ? "/settings/#github" : "/settings/"} aria-current={module === "settings" ? "page" : undefined}
           // A second click closes Settings, like its "Quay lại".

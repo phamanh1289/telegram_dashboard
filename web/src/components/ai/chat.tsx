@@ -241,13 +241,15 @@ export function AiSpin({ className }: { className?: string }) {
 }
 
 /** The prompt box's round send button (Enter): pops in, an arrow, a spinner while the prompt is on its way / running. */
-export function AiSend({ onClick, disabled, busy, hint }: { onClick: () => void; disabled?: boolean; busy?: boolean; hint?: string }) {
+export function AiSend({ onClick, disabled, busy, hint, label, icon }: {
+  onClick: () => void; disabled?: boolean; busy?: boolean; hint?: string; label?: string; icon?: ReactNode;
+}) {
   const t = useT();
   return (
     <Hint text={hint ?? t("Gửi cho AI (Enter)")}>
-      <Button type="button" size="icon-sm" aria-label={t("Gửi")} aria-busy={busy} disabled={disabled || busy} onClick={onClick}
-        className="rounded-full bg-hl text-hl-ink transition-[scale,filter] hover:brightness-110 active:scale-90 animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
-        {busy ? <Loader2 className="animate-spin" aria-hidden /> : <ArrowUp />}
+      <Button type="button" size="icon-sm" aria-label={label ?? t("Gửi")} aria-busy={busy} disabled={disabled || busy} onClick={onClick}
+        className="rounded-full bg-hl text-hl-ink shadow-[0_0_0_4px_color-mix(in_oklch,var(--color-hl)_15%,transparent)] transition-[scale,filter] hover:brightness-110 active:scale-90 disabled:shadow-none animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
+        {busy ? <Loader2 className="animate-spin" aria-hidden /> : icon ?? <ArrowUp />}
       </Button>
     </Hint>
   );
@@ -296,9 +298,10 @@ export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onSt
           else onSend();
         }}
         className="relative block max-h-48 min-h-14 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-ink outline-none field-sizing-content placeholder:text-ink-3" />
-      <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2 px-2.5 pb-2.5 text-xs text-ink-2">
-        {tools}
-        <div className="ml-auto flex min-w-0 items-center gap-2">
+      {/* Tools wrap within their own column, so the send / stop button keeps its corner instead of dropping to a row of its own. */}
+      <div className="relative flex items-end gap-2 px-2.5 pb-2.5 text-xs text-ink-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{tools}</div>
+        <div className="flex shrink-0 items-center gap-2">
           {actions}
           {running && onStop && <AiStop onClick={onStop} busy={stopping} hint={stopHint} label={stopLabel} />}
         </div>

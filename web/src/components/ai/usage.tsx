@@ -94,7 +94,7 @@ const PERIODS = [[1, "24 giờ"], [7, "7 ngày"], [30, "30 ngày"]] as const;
 
 export const secs = (ms: number) => t("{n} giây", { n: (ms / 1000).toFixed(1) });
 const usd = (c: number) => `$${c.toFixed(c < 1 ? 3 : 2)}`;
-const kilo = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
+const kilo = (n: number) => (n >= 1e9 ? t("{n} tỷ", { n: (n / 1e9).toFixed(2) }) : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n));
 const tokens = (r: AiRun) => r.input_tokens + r.output_tokens + r.cache_read + r.cache_write;
 // One formatter each: building an Intl formatter per call (per row, per day) was the History tab's main cost.
 const VN_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" });

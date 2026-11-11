@@ -313,7 +313,8 @@ const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Th
 function GeneralGroup() {
   const [theme, setTheme] = useState<ThemePref>(readTheme);
   const t = useT();
-  const [lang, setLang] = useState<Lang | "system">(() => (getPref("lang") as Lang | null) ?? "system");
+  // Live: the top bar's language button changes it too.
+  const lang = useSyncExternalStore(onPrefs, () => (getPref("lang") as Lang | null) ?? "system", () => "system" as const);
   return <>
     <Card title="Vai trò" info="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code.">
       <RoleSection />
@@ -324,7 +325,7 @@ function GeneralGroup() {
           items={THEMES.map(([v, name, ThemeIcon]) => ({ value: v, label: <><ThemeIcon className="size-3.5" aria-hidden />{t(name)}</> }))} />
       </Row>
       <Row label={t("Ngôn ngữ")} desc={t("Theo máy: Tiếng Việt khi máy dùng tiếng Việt, còn lại English.")} stack>
-        <Segmented id="set-lang" variant="card" label={t("Ngôn ngữ")} value={lang} onChange={(v) => { setLang(v); saveLang(v === "system" ? null : v); }}
+        <Segmented id="set-lang" variant="card" label={t("Ngôn ngữ")} value={lang} onChange={(v) => saveLang(v === "system" ? null : v)}
           items={[{ value: "system", label: t("Theo máy") }, { value: "vi", label: "Tiếng Việt" }, { value: "en", label: "English" }]} />
       </Row>
       <LookSection />
