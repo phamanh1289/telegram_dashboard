@@ -42,6 +42,7 @@
       acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối", headHint: "Đầu mũi tên",
       arrow: "Mũi tên", button: "Nút", props: "Thuộc tính",
       maxScreens: "Tối đa {n} màn", maxItems: "Tối đa {n} nút mỗi màn", maxLinks: "Tối đa {n} liên kết",
+      dragging: "Thả chuột xong rồi hãy sửa",
       badZeplin: "Link Zeplin không đúng (zpl.io, app.zeplin.io)",
       act_navigate: "Đi tới", act_open: "Mở", act_back: "Quay lại", act_close: "Đóng",
       kind_screen: "Màn", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
@@ -62,6 +63,7 @@
       acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link", headHint: "Arrow head",
       arrow: "Arrow", button: "Button", props: "Properties",
       maxScreens: "At most {n} screens", maxItems: "At most {n} buttons per screen", maxLinks: "At most {n} links",
+      dragging: "Drop what you are dragging first",
       badZeplin: "Not a Zeplin link (zpl.io, app.zeplin.io)",
       act_navigate: "Navigate", act_open: "Open", act_back: "Back", act_close: "Close",
       kind_screen: "Screen", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
@@ -1077,8 +1079,10 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       paint();
       fill();
     }
-    /** After a re-render: drop a selection whose shape is gone, then paint the new nodes. */
+    /** After a re-render: drop a selection whose shape is gone, then paint the new nodes. A value that could not
+     *  be stored belongs to the edit that is now over (undo included), so it goes too. */
     function sync() {
+      badVal = null;
       if (!alive(get())) sel = null;
       paint();
       fill();
@@ -1098,6 +1102,10 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
       const knob = el.closest?.(".uf-handle"), dot = el.closest?.(".uf-dot"), head = el.closest?.(".uf-head");
       if (!knob && !dot && !head) return;
+      // A rename or a panel field commits on blur, and mousedown is about to blur it. Do it now, while there is
+      // no drag yet, or `commit` would refuse it and the typed value would be lost. Everything read below is read
+      // after it, so it comes from the flow that edit produced.
+      document.activeElement?.blur();
       e.stopPropagation(); // keep the camera from panning. No preventDefault: it would swallow the renaming dblclick
       const rect = ctx.view.getBoundingClientRect(), f = get();
       at = null;
@@ -1201,6 +1209,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
 
     // ---------------- the properties panel
     const change = (fn) => {
+      if (blocked()) return;
       const f = structuredClone(get());
       fn(target(f), f);
       ctx.commit(f);
@@ -1230,10 +1239,14 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       };
       i.addEventListener("change", () => {
         const raw = i.value.trim(), v = bad ? raw : raw.slice(0, cap);
-        const wrong = !!v && !!bad && (!bad.ok(v) || v.length > cap);
-        mark(wrong);
-        if (bad) badVal = wrong ? v : null;
-        set(wrong ? "" : v);
+        if (!v || !bad || (bad.ok(v) && v.length <= cap)) {
+          mark(false);
+          badVal = null;
+          return set(v);
+        }
+        set(""); // never keep a stored value the box does not show
+        badVal = v; // the re-render that just happened cleared it; the panel still owes the user their text
+        fill();
       });
       i.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") i.blur(); });
       w.append(h("span", "uf-flab", label), i);
@@ -1277,7 +1290,14 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
     }
 
     // ---------------- add / remove
+    /** True (and says why) when a gesture is in flight: `commit` would refuse, so change nothing at all. */
+    function blocked() {
+      if (!drag) return false;
+      ctx.note(t("dragging"));
+      return true;
+    }
     function addScreen() {
+      if (blocked()) return;
       const f = structuredClone(get()), c = ctx.centre();
       if (f.screens.length >= MAX_SCREENS) return ctx.note(t("maxScreens", { n: MAX_SCREENS }));
       const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
@@ -1287,13 +1307,13 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       ctx.commit(f);
     }
     function addItem() {
-      if (sel?.t !== "screen") return;
+      if (sel?.t !== "screen" || blocked()) return;
       if (target(get()).items.length >= MAX_ITEMS) return ctx.note(t("maxItems", { n: MAX_ITEMS }));
       change((s) => s.items.push({ id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: t("newItem") }));
     }
     /** Delete what is selected: a screen takes its overlays and every arrow touching them. */
     function remove() {
-      if (!sel) return;
+      if (!sel || blocked()) return;
       const f = structuredClone(get());
       if (sel.t === "link") f.links.splice(sel.i, 1);
       else if (sel.t === "item") {
@@ -1364,6 +1384,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
     bar.append(seg);
     if (opts.edit) {
       const bEdit = btn(t("edit"), "uf-btn uf-editbtn", () => {
+        ed.cancel(); // the handles this render draws are about to be replaced
         editing = !editing;
         bEdit.setAttribute("aria-pressed", String(editing));
         root.classList.toggle("uf-editing", editing);
@@ -1618,6 +1639,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       },
       mode(m) {
         if (m !== "map" && m !== "play") return;
+        ed.cancel(); // hiding the map mid-drag would leave the gesture holding frames nobody can see
         shown = m;
         root.dataset.mode = m;
         bMap.setAttribute("aria-pressed", String(m === "map"));

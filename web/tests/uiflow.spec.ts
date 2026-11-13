@@ -901,8 +901,10 @@ test("a flow change during a drag is refused, and the drag still finishes", asyn
   await page.mouse.down();
   await page.mouse.move(head.x + 120, head.y + head.height / 2 + 40, { steps: 5 });
   await page.keyboard.press("Delete"); // would rebuild the frames the drag is holding
+  await expect(page.locator(".uf-note")).toHaveText("Thả chuột xong rồi hãy sửa");
   await page.evaluate(() => document.querySelector<HTMLButtonElement>(".uf-add")!.click());
   expect((await flowOf(page)).screens).toHaveLength(4);
+  await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-sel/); // a refusal keeps the selection
   await page.mouse.up();
   const f = await flowOf(page);
   expect(f.screens).toHaveLength(4);
@@ -946,8 +948,55 @@ test("a too long Zeplin link is wrong, not silently cut, and clears what was sto
   await expect(insp(page).getByLabel("Zeplin")).toHaveValue(long); // shown and stored agree: nothing is kept
   await expect(insp(page).getByLabel("Zeplin")).toHaveAttribute("aria-invalid", "true");
   await expect(insp(page).locator(".uf-bad")).toBeVisible();
+  await page.evaluate(() => window.__api.undo()); // undo brings the old link back: the box must show it
+  expect((await flowOf(page)).screens[0].zeplin).toBe("https://zpl.io/abc123");
+  await expect(insp(page).getByLabel("Zeplin")).toHaveValue("https://zpl.io/abc123");
+  await expect(insp(page).locator(".uf-bad")).toBeHidden();
   await insp(page).getByLabel("Zeplin").fill("https://zpl.io/ok");
   await insp(page).getByLabel("Zeplin").press("Enter");
   expect((await flowOf(page)).screens[0].zeplin).toBe("https://zpl.io/ok");
   await expect(insp(page).locator(".uf-bad")).toBeHidden();
+});
+
+test("an edit still in the box is kept when the next gesture starts", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  // a rename that was never confirmed with Enter: clicking another screen's handle must keep it
+  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await page.keyboard.type("Màn mở đầu");
+  const head = await box(page, '.uf-screen[data-id="home"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 140, head.y + head.height / 2 + 30, { steps: 6 });
+  await page.mouse.up();
+  const f = await flowOf(page);
+  expect(f.screens[0].title).toBe("Màn mở đầu");
+  expect(f.screens.find((s) => s.id === "home")!.x).toBeGreaterThan(1280); // and the drag still happened
+
+  // the same for a panel field left unconfirmed
+  await page.locator('.uf-screen[data-id="code"] .uf-title').click();
+  await insp(page).getByLabel("AC").fill("AC-99");
+  const dot = await box(page, '.uf-dot[data-src="home.out"]');
+  await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(dot.x + 60, dot.y + 60, { steps: 4 });
+  await page.mouse.up();
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.ac).toBe("AC-99");
+});
+
+test("switching to Prototype mid-drag ends the gesture instead of stranding it", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 120, head.y + head.height / 2, { steps: 5 });
+  await page.evaluate(() => window.__api.mode("play")); // the app may switch modes under the pointer
+  await page.mouse.up();
+  await expect(title(page)).toHaveText("Đăng nhập"); // the prototype runs
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  // the map still takes edits: the gesture did not survive the mode switch
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  await page.keyboard.press("Delete");
+  expect((await flowOf(page)).screens.map((s) => s.id)).toEqual(["login", "code", "err"]);
 });
