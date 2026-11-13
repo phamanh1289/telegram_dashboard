@@ -1143,3 +1143,74 @@ test("two groups that do not hang off the first screen are each laid out by BFS,
   expect(by.f.x!).toBeGreaterThan(by.d.x!);
   expect([by.a.y, by.c.y, by.f.y]).toEqual([0, 0, 0]); // each group starts at the top
 });
+
+// ------------------------------------------------------------------ frame labels (readable names at any zoom)
+test("at fit-all every frame has a readable label just above it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  await page.evaluate((f) => window.__api.set(f), VA12584);
+  const rows = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>(".uf-flabel")].map((l) => {
+    const t = l.querySelector<HTMLElement>(".uf-ltitle")!, card = l.parentElement!.getBoundingClientRect();
+    const b = l.getBoundingClientRect();
+    return { font: parseFloat(getComputedStyle(t).fontSize), shown: t.getBoundingClientRect().height,
+      gap: card.top - b.bottom, dx: b.left - card.left, over: b.width - card.width, text: t.textContent };
+  }));
+  expect(rows).toHaveLength(17); // every screen and popup
+  for (const r of rows) {
+    expect(r.font).toBeGreaterThanOrEqual(12);
+    expect(r.shown).toBeGreaterThanOrEqual(14); // on screen, not shrunk with the 0.26 zoom (a 17px title is 4px here)
+    expect(Math.abs(r.gap)).toBeLessThan(1); // it sits on the frame's top edge...
+    expect(Math.abs(r.dx)).toBeLessThan(1); // ...from its left edge...
+    expect(r.over).toBeLessThan(1); // ...and never wider than the frame on screen (ellipsis)
+  }
+  expect(rows.map((r) => r.text)).toContain("S44B");
+});
+
+test("a pan moves the labels without touching them; a zoom close in hides them", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  await page.evaluate((f) => window.__api.set(f), VA12584);
+  await page.evaluate(() => document.querySelectorAll(".uf-flabel").forEach((n) => ((n as Element & { __k?: 1 }).__k = 1)));
+  const a = await box(page, '.uf-screen[data-id="S44"] .uf-flabel');
+  const view = await box(page, ".uf-view");
+  await page.mouse.move(view.x + view.width - 10, view.y + view.height - 10);
+  await page.mouse.wheel(0, 120); // plain wheel pans
+  await expect.poll(async () => (await box(page, '.uf-screen[data-id="S44"] .uf-flabel')).y - a.y).toBeCloseTo(-120, 0);
+  expect(await page.evaluate(() => [...document.querySelectorAll(".uf-flabel")]
+    .every((n) => (n as Element & { __k?: 1 }).__k === 1 && !n.getAttribute("style")))).toBe(true); // same nodes, no writes
+
+  const opacity = () => page.locator('.uf-screen[data-id="S44"] .uf-flabel').evaluate((e) => getComputedStyle(e).opacity);
+  await expect.poll(opacity).toBe("1"); // faded in after set() refit from the fixture's closer zoom
+  await page.evaluate(() => window.__api.goto("S44")); // one screen fills the view: its own title is readable
+  await expect.poll(opacity).toBe("0");
+});
+
+test("a label rides along with its screen while it is dragged", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const lab = await box(page, '.uf-screen[data-id="code"] .uf-flabel');
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 140, head.y + head.height / 2 + 50, { steps: 6 });
+  await expect.poll(async () => (await box(page, '.uf-screen[data-id="code"] .uf-flabel')).x - lab.x).toBeCloseTo(120, 0);
+  expect((await box(page, '.uf-screen[data-id="code"] .uf-flabel')).y - lab.y).toBeCloseTo(50, 0);
+  await page.mouse.up();
+});
+
+test("a narrow label shows what tells screens apart: no shared title prefix, no AC chip", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  await page.evaluate((f) => {
+    const g = structuredClone(f);
+    g.screens.forEach((s) => { if (s.kind === "screen") s.title = `Ban-TSCNY ${s.id.slice(1)} - Màn ${s.id}`; s.ac = "AC4.5"; });
+    window.__api.set(g);
+  }, VA12584);
+  const s44b = page.locator('.uf-screen[data-id="S44B"]');
+  await expect(s44b.locator(".uf-ltitle")).toHaveText("44B - Màn S44B"); // "Ban-TSCNY " is on every screen
+  await expect(s44b.locator(".uf-title")).toHaveText("Ban-TSCNY 44B - Màn S44B"); // the frame keeps the full title
+  await expect(s44b.locator(".uf-lac")).toBeHidden(); // ~100px on screen: the chip would only push the name out
+  await expect(page.locator('.uf-screen[data-id="P_lostperm44"] .uf-ltitle')).toHaveText("P_lostperm44"); // not a screen title
+  await page.evaluate(() => window.__api.goto("S44B")); // close in, the label has room again... and steps aside anyway
+  await expect.poll(() => s44b.locator(".uf-flabel").evaluate((e) => getComputedStyle(e).opacity)).toBe("0");
+});

@@ -12,6 +12,7 @@
   const W = SCREEN.w, H = SCREEN.h;
   const COL = W + 220, ROW = H + 120, SHIFT = 60; // column / row step; overlay offset from its parent
   const GROUP_GAP = 200; // extra space between the main flow, each separate group and the loose screens
+  const LABEL_HIDE = 0.6; // from this zoom up the in-frame title (17px) reads at 10px+: the frame labels step aside
   const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40; // phone: status bar, nav bar, first row, home bar
   const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64; // overlay card header, bottom padding; max row step
   const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
@@ -227,6 +228,17 @@
     return f;
   }
 
+  /** What every screen title starts with, cut back to a word break ("Ban-TSCNY "): frame labels drop it so the part
+   *  that tells screens apart is what fits. "" when screens share nothing or it would leave a title empty. */
+  function sharedLead(f) {
+    const titles = f.screens.filter((s) => s.kind === "screen").map((s) => s.title);
+    if (titles.length < 2) return "";
+    let p = titles[0];
+    for (const x of titles) while (!x.startsWith(p)) p = p.slice(0, -1);
+    p = p.slice(0, p.lastIndexOf(" ") + 1);
+    return titles.some((x) => !x.slice(p.length).trim()) ? "" : p;
+  }
+
   /** Rows for what `sanitize` dropped (kind "broken"); screen set when there is one to go to. */
   function brokenRows(d, t) {
     return [
@@ -372,8 +384,9 @@
   }
 
   /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
-   *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from. */
-  function buildFrame(s, t, linked, edit) {
+   *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
+   *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
+  function buildFrame(s, t, linked, edit, lead = "") {
     const c = cardOf(s);
     const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : ""));
     el.dataset.id = s.id;
@@ -384,7 +397,12 @@
     head.append(h("div", "uf-title", s.title));
     if (s.ac) head.append(h("span", "uf-ac", s.ac));
     if (s.zeplin) head.append(zeplinLink(s.zeplin, t));
-    card.append(head);
+    // the name above the frame at a constant on-screen size (Figma style): readable when the map is zoomed out.
+    // Pure CSS from the camera's --zk; no per-label work on a pan, none in JS on a zoom.
+    const label = h("div", "uf-flabel");
+    label.append(h("span", "uf-ltitle", lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title));
+    if (s.ac) label.append(h("span", "uf-lac", s.ac));
+    card.append(label, head);
     s.items.forEach((it, i) => {
       const r = rowOf(c, i), row = h("div", "uf-item " + (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
       row.dataset.item = it.id;
@@ -478,12 +496,23 @@ border-radius:5px;background:var(--uf-soft);box-shadow:0 22px 0 var(--uf-soft)}
 .uf-head{position:absolute;display:flex;align-items:center;gap:8px;padding:0 18px 0 20px}
 .uf-screen:not(.uf-ov) .uf-head{border-bottom:1px solid var(--uf-soft)}
 .uf-title{flex:1;min-width:0;font-size:17px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.uf-ac{flex:none;max-width:120px;padding:2px 8px;border-radius:999px;background:var(--uf-accent-soft);color:var(--uf-accent);
+.uf-ac,.uf-lac{flex:none;max-width:120px;padding:2px 8px;border-radius:999px;background:var(--uf-accent-soft);color:var(--uf-accent);
 font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uf-zeplin{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:var(--uf-ink2)}
 .uf-zeplin[href]{color:var(--uf-accent)}
 .uf-zeplin[href]:hover{background:var(--uf-accent-soft)}
 .uf-zeplin:not([href]){opacity:.4}
+/* frame label: --zk is the camera zoom. Laid out at k·(card width) and scaled by 1/k, so on screen it is exactly the
+   frame's width and its text a constant 12px, whatever the zoom. Its layout width is its on-screen width, so a
+   container query can drop the AC chip where it would only push the name out. */
+.uf-flabel{position:absolute;left:0;bottom:100%;display:flex;align-items:center;gap:6px;width:calc(var(--zk,1) * 100%);
+padding-bottom:6px;transform:scale(calc(1 / var(--zk,1)));transform-origin:0 100%;font-size:12px;line-height:16px;
+font-weight:600;color:var(--uf-ink);white-space:nowrap;pointer-events:none;transition:opacity .15s ease-out;
+container-type:inline-size}
+.uf-ltitle{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.uf-lac{max-width:45%;padding:1px 7px;font-size:11px}
+@container (max-width:180px){.uf-lac{display:none}}
+.uf-near .uf-flabel{opacity:0}
 .uf-item{position:absolute;padding:0 30px 0 14px;border:1px solid var(--uf-line);border-radius:12px;background:var(--uf-soft);
 font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uf-item.uf-linked::after{content:"›";position:absolute;right:12px;top:0;color:var(--uf-ink2);font-size:20px}
@@ -632,13 +661,17 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
    *  scroll pans. One transform write per animation frame; no layout reads while moving. `fit(box)` while the view
    *  has no size (hidden, not laid out yet) waits and applies once it has one; the latest request wins.
    *  onTap(target): a press that did not move. reduced: MediaQueryList for prefers-reduced-motion. */
-  function camera(view, layer, { onTap, reduced }) {
+  function camera(view, layer, { onTap, reduced, onZoom }) {
     let cam = { x: 0, y: 0, k: 1 }, rect = view.getBoundingClientRect(), pending = null;
     let raf = 0, anim = 0, idle = 0, wheel = null;
     const pts = new Map();
     let g = null, tapOn = null, moved = false;
 
-    const apply = () => { layer.style.transform = `translate3d(${cam.x}px,${cam.y}px,0) scale(${cam.k})`; };
+    let zk = NaN; // the zoom last reported: a pan does not call onZoom
+    const apply = () => {
+      layer.style.transform = `translate3d(${cam.x}px,${cam.y}px,0) scale(${cam.k})`;
+      if (cam.k !== zk) onZoom?.((zk = cam.k));
+    };
     const moving = (on) => view.classList.toggle("uf-moving", on);
     const schedule = () => { if (!raf) raf = requestAnimationFrame(tick); };
     function stopAnim() {
@@ -1470,7 +1503,8 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     function render() {
       const had = root.contains(document.activeElement);
       const linked = new Set(cur.links.map((l) => l.src));
-      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked, editing)]));
+      const lead = sharedLead(cur);
+      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked, editing, lead)]));
       const nodes = [...frames.values()].sort((a, b) => a.classList.contains("uf-ov") - b.classList.contains("uf-ov"));
       layer.replaceChildren(...nodes, links, labels);
       drawLinks();
@@ -1583,6 +1617,10 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const cam = camera(view, layer, {
       reduced,
+      onZoom: (k) => { // one variable for every frame label, and a class once the frames are big enough to read
+        layer.style.setProperty("--zk", String(k));
+        view.classList.toggle("uf-near", k >= LABEL_HIDE);
+      },
       onTap: (target) => {
         if (editing) return ed.tap(target && layer.contains(target) ? target : null);
         const f = target?.closest?.(".uf-screen");
