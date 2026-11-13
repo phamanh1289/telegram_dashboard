@@ -134,6 +134,11 @@ class AiTickets(BaseModel):
     shell: bool = False  # with a folder: may also run commands there (build, test) in the sandbox
 
 
+class AiFlow(BaseModel):
+    id: str
+    note: str = Field("", max_length=2000)  # what the user adds to the ticket's own text
+
+
 class AiDraft(BaseModel):
     text: str = Field(min_length=1, max_length=8000)  # what the user typed / pasted
     types: list[Annotated[str, Field(max_length=100)]] = Field([], max_length=50)  # the project's values
@@ -1197,6 +1202,16 @@ def _ticket_json(d: dict, desc: int = 8000, ncom: int = 30, clen: int = 1500, **
     )
 
 
+async def _ticket_block(svc: YouTrackDashboard, request: Request, i: str, links: bool = True) -> tuple[str, str]:
+    """(ticket JSON, KB / ticket / Telegram links in it read for the AI; no web) of ticket `i`."""
+    svc.need_token()
+    d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
+    ticket = _ticket_json(d)
+    if not links:
+        return ticket, ""
+    return ticket, await svc.cached(f"links:{i}", lambda: link_block(request.app.state, ticket, None))
+
+
 async def _whoami(svc: YouTrackDashboard) -> str:
     """Tells the AI who "tôi" is, so it reads my comments / tickets as mine, not a third party's."""
     if svc.mock:
@@ -1244,6 +1259,7 @@ async def _ai(
     code: str | None = None,
     shell: bool = False,
     detached: bool = False,
+    zeplin: dict | None = None,
 ) -> str:
     """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report."""
     ai = request.app.state.ai
@@ -1260,7 +1276,7 @@ async def _ai(
     try:
         return await ai.ask(f"{head}{prompt}", project=code, system=AI_SYSTEM, heavy=heavy,
                             on_text=on_text, feature="youtrack", yt=True, shell=shell and bool(code),
-                            ref=_session_ref(request))  # fmt: skip
+                            ref=_session_ref(request), zeplin=zeplin)  # fmt: skip
     except ApiError as e:
         msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
@@ -1550,13 +1566,8 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         ]  # fmt: skip
 
     async def p_ticket(body: AiTicket, request: Request) -> tuple[str, bool]:
-        i = _issue_id(body.id)
-        svc.need_token()
-        d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-        ticket = _ticket_json(d)
-        links = ""  # KB / ticket / Telegram links in it, read for the AI (no web); a rewrite only keeps the links
-        if body.kind != "rewrite":
-            links = await svc.cached(f"links:{i}", lambda: link_block(request.app.state, ticket, None))
+        rewrite = body.kind == "rewrite"  # a rewrite only keeps the links
+        ticket, links = await _ticket_block(svc, request, _issue_id(body.id), not rewrite)
         return f"{AI_TICKET[body.kind]}\n<ticket>\n{ticket}\n</ticket>{links}", False
 
     async def p_data(body: AiData, request: Request) -> tuple[str, bool]:
@@ -1705,6 +1716,24 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         fields = {"Type": body.types, "Priority": body.priorities}
         prompt = f"{AI_DRAFT}\n<fields>{data_json(fields)}</fields>\n<ask>{data_json(body.text)}</ask>"
         return parse_ticket(await _ai(svc, request, prompt), fields)
+
+    @r.post("/ai/flow")
+    async def ai_flow(body: AiFlow, request: Request):
+        """One AI run turns the ticket (AC, rules, Zeplin links) into UI flow data: cleaned, rev 0, not saved."""
+        i = _issue_id(body.id)
+        ticket, links = await _ticket_block(svc, request, i)
+        zep = providers.zeplin_server() if providers.ZEPLIN.search(ticket) else None  # none set up: AC only
+        hint = providers.ZEPLIN_HINT if zep else ""
+        prompt = f"{uiflow.AI_FLOW}{hint}\n<ticket>\n{ticket}\n</ticket>{links}\n<ask>{data_json(body.note)}</ask>"
+        raw = json_object(await _ai(svc, request, prompt, heavy=True, notes=False, zeplin=zep))
+        try:
+            flow = uiflow.clean(raw, i)
+        except (ValueError, TypeError, AttributeError):  # unreadable answer, or a shape clean refuses
+            raise YtError(502, "AI trả về không đọc được, thử lại") from None
+        flow.rev = 0  # whatever the AI wrote: the dialog saves over the version it opened
+        for s in flow.screens:
+            s.x = s.y = None  # the layout is the dialog's job
+        return {"flow": flow.model_dump()}
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):

@@ -173,6 +173,7 @@ class FakeAgent:
         self.projects: list[str | None] = []  # the folder each run could read
         self.shells: list[bool] = []  # each run could run commands there (sandboxed)
         self.refs: list[str] = []  # the session code each run is logged under
+        self.kwargs: dict = {}  # the last run's keyword arguments (zeplin: the MCP server it may read)
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
     async def __call__(
@@ -188,7 +189,9 @@ class FakeAgent:
         yt=False,
         shell=False,
         ref="",
+        zeplin=None,
     ):
+        self.kwargs = {"zeplin": zeplin}
         self.calls.append(prompt)
         self.projects.append(project)
         self.shells.append(shell)

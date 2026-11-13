@@ -11,7 +11,7 @@ from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from telegram_dashboard import uiflow
+from telegram_dashboard import providers, uiflow
 from telegram_dashboard.config import Settings
 from telegram_dashboard.yt_dashboard import (
     DEV_FLOW,
@@ -916,3 +916,50 @@ async def test_flow_save_replaces_a_broken_file(tmp_path):
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": "1-1"})
     assert r.status_code == 200 and r.json()["warn"] == "Đã thay file UI flow hỏng trên ticket"
     assert ("DELETE", "/api/issues/VA-1/attachments/1-1") in yt.writes and r.json()["rev"] == 1
+
+
+FLOW_RAW = """```json
+{"rev": 9, "screens": [
+ {"id": "login", "title": "Đăng nhập", "x": 5, "y": 6, "items": [{"id": "otp", "label": "Gửi OTP"}]},
+ {"id": "code", "title": "Nhập OTP", "items": []}],
+ "links": [{"src": "login.otp", "to": "code"}, {"src": "login", "to": "code"}, {"src": "x.y", "to": "ghost"}]}
+```"""
+
+
+async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm"):
+    me = {"login": "anh", "fullName": "A"}
+    svc = make(lambda req: httpx.Response(200, json=me if req.url.path == "/api/users/me" else {
+        **issue(1), "description": desc, "comments": [], "links": []}))  # fmt: skip
+    agent = FakeAgent(reply)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note})
+
+
+async def test_ai_flow_returns_clean_flow_and_wraps_ticket_text():
+    agent, r = await _flow_post(FLOW_RAW)
+    flow = r.json()["flow"]
+    assert flow["ticket"] == "VA-1" and flow["rev"] == 0 and len(flow["links"]) == 2  # broken link dropped
+    assert all(s["x"] is None and s["y"] is None for s in flow["screens"])  # the AI's layout is ignored
+    p = agent.calls[0]
+    assert "<ticket>" in p and "Ghi chú thêm" in p.split("<ask>")[1] and "Ghi chú thêm" not in p.split("<ask>")[0]
+    assert agent.kwargs["zeplin"] is None  # no Zeplin link in the ticket
+
+
+async def test_ai_flow_passes_zeplin_server_when_ticket_has_a_link(monkeypatch):
+    zep = {"command": "npx", "args": ["zeplin-mcp"]}
+    monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
+    agent, r = await _flow_post(FLOW_RAW, desc="Thiết kế https://zpl.io/abc")
+    assert r.json()["flow"] and agent.kwargs["zeplin"] == zep and "get_screen" in agent.calls[0]
+
+
+async def test_ai_flow_502_on_unreadable_answer():
+    for reply in ("xin lỗi", '{"screens": []}', '{"screens": "x"}'):
+        try:
+            await _flow_post(reply)
+        except YtError as e:
+            assert e.status == 502, reply
+        else:
+            raise AssertionError(reply)
