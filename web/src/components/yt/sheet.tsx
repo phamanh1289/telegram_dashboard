@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, Workflow, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ImageView } from "@/components/markdown";
 import { useEffect, useRef, useState } from "react";
@@ -20,6 +21,11 @@ import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
 import { useFlow } from "./workflow";
+
+// The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
+const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
+/** The ticket's UI flow file, as the dashboard names it: its row in the attachments opens the same dialog. */
+const flowName = (issue: string) => `uiflow-${issue}.html`;
 
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
 
@@ -155,6 +161,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const acts: AssigneeActs = other ? { ...y, people: team.data ?? [], loginOf: new Map([...y.loginOf, ...(team.data ?? []).map((p) => [p.name, p.login] as const)]) } : y;
   const i: Ticket | Detail | undefined = d.data ?? row;
   const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
+  const [flowOpen, setFlowOpen] = useState(false); // the UI flow dialog (one entry: this ticket's "UI flow")
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
   const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
@@ -204,6 +211,13 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       </motion.dl>
 
 
+      <motion.div variants={fade} className="flex flex-wrap gap-2">
+        <Hint text={t("Sơ đồ màn hình và luồng bấm của ticket này")}>
+          <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}><Workflow aria-hidden /> {t("UI flow")}</Button>
+        </Hint>
+      </motion.div>
+      {flowOpen && <FlowDialog issue={id} open onClose={() => setFlowOpen(false)} />}
+
       <motion.section variants={fade} className="grid gap-2">
         <Label>{t("Mô tả")}</Label>
         {d.isPending ? (
@@ -219,7 +233,13 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
           <Label>{t("Tệp đính kèm ({n})", { n: loose.length })}</Label>
           <div className="flex flex-wrap gap-2">
             {loose.map((a) => (
-              /^image\/(?!svg)/.test(a.mime) ? (
+              a.name === flowName(id) ? ( // the same dialog as the "UI flow" button: this is that file
+                <button key={a.id} type="button" onClick={() => setFlowOpen(true)}
+                  className="grid w-32 gap-1 rounded-lg bg-cotton p-1.5 text-left text-xs shadow-edge hover:bg-paper-2">
+                  <span className="grid h-20 place-items-center rounded bg-hl-wash text-hl-2"><Workflow className="size-6" aria-hidden /></span>
+                  <span className="truncate text-ink-2">{a.name}</span>
+                </button>
+              ) : /^image\/(?!svg)/.test(a.mime) ? (
                 <span key={a.id} title={a.name} className="grid w-32 gap-1 rounded-lg bg-cotton p-1.5 text-xs shadow-edge">
                   <ImageView src={fileUrl(id, a)} alt={a.name} boxClass="my-0 block w-full" className="h-20 w-full rounded object-cover" />
                   <span className="truncate text-ink-2">{a.name}</span>

@@ -439,6 +439,6 @@ export function Menu({ label, items, align = "left", title, className }: {
 }
 
 /** Waiting on YouTrack: the feature's AI scene (tickets: first load / a scope not warmed yet, release, people), with this project's ticket IDs. */
-export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people" | "sessions"; className?: string }) {
+export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people" | "sessions" | "flow"; className?: string }) {
   return <AiFetching kind={kind} project={useYt().project} className={className} />;
 }

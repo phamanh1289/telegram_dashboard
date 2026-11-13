@@ -34,7 +34,7 @@ export type Comment = { id?: string; text: string | null; created: number; autho
 /** A file on the ticket; `comment`: the comment it was added with (its text names it), null for the description. */
 export type Attachment = { id: string; name: string; mime: string; size: number; comment: string | null };
 /** The file through our server: YouTrack wants the token, the browser has none. */
-export const fileUrl = (issue: string, a: Attachment) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
+export const fileUrl = (issue: string, a: Pick<Attachment, "id">) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
 export type Link = { rel: string; issues: { id: string; summary: string | null; resolved: number | null }[] };
 export type Detail = Ticket & { description: string; comments: Comment[]; links: Link[]; attachments?: Attachment[] };
 export type Config = { base: string; mock: boolean; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
@@ -85,7 +85,8 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
     const e = body?.error;
     // an older backend: no route (the catch-all answers {code: "not_found"}), wrong method or body shape
     if (([404, 405, 422].includes(res.status) && !e) || (typeof e === "object" && e?.code === "not_found")) throw new Error(t("Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại."));
-    throw new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`);
+    // status: a caller may act on one (the UI flow's 409); the text is what the user reads
+    throw Object.assign(new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`), { status: res.status });
   }
   return body as T;
 }
@@ -101,6 +102,12 @@ export type PromptCtx = `${"dev" | "qa" | "po"}:${"one" | "many"}`;
 export type PromptLib = { prompts: SavedPrompt[]; shown: Partial<Record<PromptCtx, string[]>>; hidden: string[] }; // hidden: built-ins the team deleted
 /** The team's State flow for a project (Settings › YouTrack › Workflow); `on`: the app only moves tickets along an arrow. */
 export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][]; hidden: string[] }; // hidden: states taken off the canvas (no arrow can reach them)
+/** The ticket's UI flow (web/public/uiflow.js reads and draws it; the server checks its schema). Typed only as far as the
+ *  dashboard reads it. */
+export type UiFlow = { v: number; ticket: string; rev: number; screens: { id: string }[]; links: unknown[] };
+/** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
+export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean };
+export type FlowSaved = { att: string; rev: number; changes: string[]; warn: string };
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),
@@ -141,7 +148,13 @@ export const yt = {
   aiDraft: (text: string, types: string[], priorities: string[], signal?: AbortSignal, session?: string) =>
     ytApi<{ summary: string; type: string; priority: string; description: string }>("/ai/draft", { json: { text, types, priorities }, signal, session }),
   aiFilter: (text: string, options: unknown, session?: string) => ytApi<Record<string, unknown>>("/ai/filter", { json: { text, options }, session }),
+  flow: (issue: string, signal?: AbortSignal) => ytApi<FlowFile>(`/flow?issue=${enc(issue)}`, { signal }),
+  /** Uploads it over `base` (the attachment opened; null = none). 409: someone else saved since; 502: outcome unknown. */
+  saveFlow: (id: string, flow: UiFlow, base: string | null) => ytApi<FlowSaved>("/flow", { json: { id, flow, base } }),
+  /** One AI run: the ticket as a flow, rev 0, not saved. */
+  aiFlow: (id: string, note: string, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note }, signal }),
 };
+export const ytFlowQuery = (issue: string) => ({ queryKey: ["yt", "flow", issue], queryFn: ({ signal }: { signal: AbortSignal }) => yt.flow(issue, signal), retry: false });
 export const AI_MAX = 40; // the server's cap on tickets in one review
 /** Shared query options: one per cache key, so every reader has the same staleTime / retry whichever mounts first. */
 export const ytProjectsQuery = { queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false } as const;

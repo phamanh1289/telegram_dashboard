@@ -3407,6 +3407,35 @@
 "keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
 },
 {
+"id": "yt-ui-flow",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket › UI flow",
+"title": "UI flow: sơ đồ màn hình và luồng bấm của ticket",
+"what": "AI đọc AC, rule và link Zeplin của ticket rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file uiflow-<ticket>.html lên ticket kèm bình luận ghi rõ đã đổi gì. Dòng uiflow-<ticket>.html trong Tệp đính kèm mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm \"UI flow\"",
+"at": "UI flow"
+},
+"Chưa có file: ghi chú thêm cho AI ở ô dưới (không bắt buộc) rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng\"",
+"Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, Vừa màn hình, Soát luồng)",
+"Sửa xong, thanh dưới hiện \"Có thay đổi chưa lưu\": bấm \"Cập nhật\" để ghi lên ticket, hoặc \"Không\" để giữ trên màn",
+{
+"t": "Menu ⋯ : \"Render lại bằng AI\" hoặc \"Tải file HTML\"",
+"at": "Thao tác UI flow"
+}
+],
+"keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket"
+},
+{
 "id": "yt-hoi-lai-trong-nhom",
 "tab": "youtrack",
 "area": "Chi tiết ticket › Nhắc trên Telegram",

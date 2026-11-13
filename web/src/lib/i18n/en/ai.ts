@@ -103,6 +103,11 @@ export default {
   "Dừng AI": "Stop AI",
   "Dừng": "Stop",
   "AI đang kết nối YouTrack": "AI is connecting to YouTrack",
+  // UI flow (the "flow" scene)
+  "AI đang đọc AC và rule của ticket": "AI is reading the ticket's AC and rules",
+  "Đang mở màn hình trên Zeplin": "Opening the screens on Zeplin",
+  "Đang xếp các màn thành luồng": "Laying the screens out as a flow",
+  "Đang nối nút với màn đích": "Linking buttons to their screens",
   "Đang gom ticket của bạn": "Gathering your tickets",
   "Đang đọc trạng thái, người làm, sprint": "Reading state, assignee, sprint",
   "Sắp xếp lại cho gọn": "Tidying it up",
