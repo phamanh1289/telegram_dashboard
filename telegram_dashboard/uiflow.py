@@ -3,11 +3,12 @@
 import json
 import re
 from html import escape
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
 from .providers import ZEPLIN
+from .zeplin import MAX_HITS
 
 NAME = "uiflow-{issue}.html"  # = flowName() in web/src/components/yt/sheet.tsx
 MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 60, 20, 300
@@ -52,6 +53,20 @@ class Flow(BaseModel):
     device: Literal["mobile"] = "mobile"
     screens: list[Screen] = Field(max_length=MAX_SCREENS)
     links: list[Link] = Field(max_length=MAX_LINKS)
+
+
+Label = Annotated[str, Field(max_length=80)]
+MAX_SHOT = 1_500_000  # one screen image as a data URI (the page sends WebP ≤ 780 px wide: ~100-300 KB)
+MAX_SHOTS = 20_000_000  # every image of a file together, under the attachment size the dashboard proxies
+
+
+class Shot(BaseModel):
+    """A Zeplin screen as the exported file draws it: the image (compressed by the page), design size, hits."""
+
+    src: str = Field(pattern=r"^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$", max_length=MAX_SHOT)
+    w: float = Field(gt=0, le=5000)
+    h: float = Field(gt=0, le=50000)
+    hits: list[tuple[Label, float, float, float, float]] = Field(default_factory=list, max_length=MAX_HITS)
 
 
 def _items_by_screen(flow: Flow) -> dict[str, dict[str, str]]:
@@ -102,16 +117,26 @@ SHELL = (
     '<!doctype html><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
     '<title>UI flow · {ticket}</title><div id="uiflow"></div>'
-    '<script type="application/json" id="uiflow-data">{data}</script><script>{engine}</script>'
+    '<script type="application/json" id="uiflow-data">{data}</script>'
+    '<script type="application/json" id="uiflow-shots">{shots}</script><script>{engine}</script>'
 )
 DATA = re.compile(r"""<script\b[^>]*\bid=["']uiflow-data["'][^>]*>(.*?)</script>""", re.S | re.I)
 
 
-def build_html(flow: Flow, engine: str) -> str:
+def _json(v: str) -> str:
+    return v.replace("<", "\\u003c")
+
+
+def build_html(flow: Flow, engine: str, shots: dict[str, Shot] | None = None) -> str:
+    """The self-contained file: the flow, the images of the Zeplin screens it links (only those), the engine."""
     if "</script" in engine.lower():
         raise ValueError("engine chứa </script")
-    data = flow.model_dump_json().replace("<", "\\u003c")
-    return SHELL.format(ticket=escape(flow.ticket), data=data, engine=engine)
+    used = {s.zeplin for s in flow.screens}
+    pics = {u: s.model_dump() for u, s in (shots or {}).items() if u in used}
+    if sum(len(p["src"]) for p in pics.values()) > MAX_SHOTS:
+        raise ValueError("Ảnh Zeplin quá lớn")
+    return SHELL.format(ticket=escape(flow.ticket), data=_json(flow.model_dump_json()),
+                        shots=_json(json.dumps(pics, ensure_ascii=False)), engine=engine)  # fmt: skip
 
 
 def extract(html: str) -> Flow | None:
@@ -234,8 +259,9 @@ Màn:
   Chỉ có tên màn Zeplin thì dùng tên đó làm title.
 - Zeplin get_screen trả rất lớn (~100-200 KB, nhiều lớp rác như Mask, Status Bar):
   chỉ gọi khi ticket chưa nêu tên nút của màn,
-  ưu tiên targetLayerName, bỏ qua lớp status bar / mask / trang trí;
-  chỉ dùng tên lớp để đặt tên items.
+  ưu tiên targetLayerName, bỏ qua lớp status bar / mask / trang trí.
+- label của nút = đúng chữ hiện trên nút trong thiết kế (nội dung lớp text, vd. "Tìm căn hộ"), không dùng tên lớp
+  kiểu "Button/Primary": app đặt vùng bấm lên ảnh màn Zeplin bằng cách khớp chữ này.
 
 Link:
 - Mỗi hành động của người dùng là một item của màn + một link: src = "idMàn.idNút", to = id màn đích,

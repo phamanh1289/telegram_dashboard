@@ -40,6 +40,7 @@
       badLinks: "Bỏ {n} liên kết hỏng", badEntries: "Bỏ {n} màn / nút không có id",
       back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
       noItems: "Màn này chưa có nút",
+      offShot: "Nút chưa thấy trên thiết kế",
       addScreen: "+ Màn", addItem: "+ Nút", del: "Xoá", newScreen: "Màn mới", newItem: "Nút mới",
       acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối",
       arrow: "Mũi tên", button: "Nút", lastScreen: "Sơ đồ cần ít nhất một màn",
@@ -61,6 +62,7 @@
       badLinks: "Dropped {n} broken links", badEntries: "Dropped {n} screens / buttons without an id",
       back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
       noItems: "No buttons on this screen yet",
+      offShot: "Buttons not found on the design",
       addScreen: "+ Screen", addItem: "+ Button", del: "Delete", newScreen: "New screen", newItem: "New button",
       acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link",
       arrow: "Arrow", button: "Button", lastScreen: "The flow needs at least one screen",
@@ -82,7 +84,10 @@
   const itm = (src) => (src.includes(".") ? src.slice(src.indexOf(".") + 1) : null);
   const str = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
   const num = (v) => (Number.isFinite(v) ? v : null);
-  const isOverlay = (s) => s.kind !== "screen";
+  /** Shown as a card over its parent. A popup / sheet / toast with a Zeplin image is a full frame instead (the
+   *  design draws its own scrim), laid out like a screen; it still opens as an overlay in Prototype (`isPop`). */
+  const isOverlay = (s) => s.kind !== "screen" && !shotOf(s);
+  const isPop = (s) => s.kind !== "screen";
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   /** A fresh, well-formed copy plus what had to go: {flow, dropped: {screens: [dup id], items: ["s.i"], links: n,
@@ -167,7 +172,7 @@
     const next = new Map();
     for (const l of f.links) {
       const a = owner(scr(l.src)), b = owner(l.to);
-      if (l.act !== "navigate" || a === b) continue;
+      if ((l.act !== "navigate" && !(l.act === "open" && !par.get(l.to))) || a === b) continue;
       if (!next.has(a)) next.set(a, []);
       next.get(a).push(b);
     }
@@ -278,11 +283,62 @@
     return [...brokenRows(dropped, t), ...gaps(f, t)];
   }
 
+  // ------------------------------------------------------------------ Zeplin images (shots)
+  // {zeplin url: {src, w, h, hits: [[label, x, y, w, h]]}} in design units, from the dashboard (or the file's own
+  // block). Kept out of the flow: undo / dirty compare the flow as JSON, and images would make that heavy.
+  // ponytail: one set per page (the dashboard shows one flow at a time); a map per mount if two ever share a page
+  let SHOTS = {};
+  const hotCache = new Map(); // "url \n labels" -> {items, back}; cleared with SHOTS
+  const shotOf = (s) => (s.zeplin && SHOTS[s.zeplin]) || null;
+  const norm = (v) => str(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+    .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const BACK = /(^| )(back|quay lai|tro lai|tro ve)( |$)/;
+  function setShots(map) {
+    SHOTS = map && typeof map === "object" ? map : {};
+    hotCache.clear();
+  }
+  /** Where each button of `s` sits on its Zeplin image (frame units; null: label not found) and the back button:
+   *  same text first, then one containing the other; each hit used once, in reading order. */
+  function hotspots(s, sh) {
+    const key = s.zeplin + "\n" + s.items.map((i) => i.label).join("\n");
+    let got = hotCache.get(key);
+    if (got) return got;
+    const k = W / sh.w, hits = Array.isArray(sh.hits) ? sh.hits : [], ns = hits.map((x) => norm(x[0])), used = new Set();
+    const at = (j) => {
+      const [, x, y, w, hh] = hits[j];
+      return { x: x * k, y: y * k, w: Math.max(w * k, 24), h: Math.max(hh * k, 24) };
+    };
+    // best tier wins: same text, the text starts with the label ("Tìm căn hộ" + its subtitle), contains it, is
+    // contained in it; within a tier, the order the server sent (buttons before titles, reading order)
+    const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " "), (x, n) => x.includes(n), (x, n) => x.length >= 3 && n.includes(x)];
+    const find = (label) => {
+      const n = norm(label);
+      if (!n) return -1;
+      for (const [i, ok] of tiers.entries()) {
+        if (i > 0 && n.length < 3) return -1;
+        const j = ns.findIndex((x, k) => !used.has(k) && ok(x, n));
+        if (j >= 0) return j;
+      }
+      return -1;
+    };
+    const items = s.items.map((it) => {
+      const j = find(it.label);
+      if (j < 0) return null;
+      used.add(j);
+      return at(j);
+    });
+    const b = ns.findIndex((x, i) => !used.has(i) && BACK.test(x));
+    got = { items, back: b >= 0 ? at(b) : null };
+    hotCache.set(key, got);
+    return got;
+  }
+
   // ------------------------------------------------------------------ geometry (pure, canvas units)
   /** The visible card inside a 390 × 844 frame: the whole phone for a screen, a dialog / sheet / toast otherwise.
    *  head / headH: the title bar; top / step: where item rows start and their pitch. */
   function cardOf(s) {
     const n = s.items.length;
+    if (shotOf(s)) return { x: 0, y: 0, w: W, h: H, head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
     if (!isOverlay(s))
       return { x: 0, y: 0, w: W, h: H, head: STATUS, headH: HEAD, top: TOP, step: n ? Math.min(STEP, (H - TOP - BOTTOM) / n) : STEP };
     const step = n ? Math.min(STEP, (H * 0.8 - CARD_HEAD - CARD_PAD) / n) : STEP;
@@ -296,6 +352,25 @@
     return { x: 16, y: card.top + i * card.step, w: card.w - 32, h: card.step - Math.min(12, card.step * 0.22) };
   }
   const cardAbs = (s, c = cardOf(s)) => ({ x: s.x + c.x, y: s.y + c.y, w: c.w, h: c.h });
+  /** Each button's box in its card: on the Zeplin image where its label is (`hot`) when that is inside the frame,
+   *  else a row stacked at the bottom; without an image, the plain rows. */
+  function rowsOf(s) {
+    const c = cardOf(s), sh = shotOf(s);
+    if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
+    const { items } = hotspots(s, sh), fold = H - BOTTOM;
+    const off = items.filter((r) => !r || r.y + r.h > fold).length;
+    let n = 0;
+    return items.map((r) => (r && r.y + r.h <= fold ? { r, hot: true }
+      : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
+  }
+  /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
+  function freeShots(f) {
+    for (const s of f.screens) {
+      if (s.kind === "screen" || !shotOf(s) || s.x === null) continue;
+      if (f.screens.some((o) => o !== s && o.x !== null && Math.abs(o.x - s.x) < W && Math.abs(o.y - s.y) < H)) s.x = s.y = null;
+    }
+    return f;
+  }
 
   /** Arrow ends: p (start) with its direction, q (end) on the nearest edge of the target card with that edge's normal. */
   function linkEnds(l, by) {
@@ -303,7 +378,7 @@
     const i = a.items.findIndex((it) => it.id === itm(l.src));
     let p, dir;
     if (i >= 0) {
-      const r = rowOf(ca, i);
+      const r = rowsOf(a)[i].r;
       p = { x: A.x + r.x + r.w, y: A.y + r.y + r.h / 2 };
       dir = { x: 1, y: 0 };
     } else {
@@ -370,6 +445,17 @@
   }
   const box = (e, r) => Object.assign(e.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
   const placeFrame = (el, s) => { el.style.transform = `translate(${s.x}px,${s.y}px)`; };
+  /** A Zeplin image at frame width; `lazy`: the map, where most frames start off screen. */
+  function shotImg(sh, alt, lazy) {
+    const img = h("img", "uf-img");
+    img.alt = alt;
+    img.decoding = "async";
+    img.draggable = false;
+    if (lazy) img.loading = "lazy";
+    img.style.height = (sh.h * W) / sh.w + "px";
+    img.src = sh.src;
+    return img;
+  }
 
   function zeplinLink(url, t) {
     const a = h("a", "uf-zeplin");
@@ -388,11 +474,16 @@
    *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
    *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
   function buildFrame(s, t, linked, edit, lead = "") {
-    const c = cardOf(s);
-    const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : ""));
+    const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
+    const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : ""));
     el.dataset.id = s.id;
-    const card = h("div", "uf-card" + (s.items.length ? "" : " uf-empty"));
+    const card = h("div", "uf-card" + (s.items.length || sh ? "" : " uf-empty"));
     box(card, c);
+    if (sh) {
+      const pic = h("div", "uf-imgbox");
+      pic.append(shotImg(sh, "", true));
+      card.append(pic);
+    }
     const head = h("div", "uf-head");
     box(head, { x: 0, y: c.head, w: c.w, h: c.headH });
     head.append(h("div", "uf-title", s.title));
@@ -406,8 +497,10 @@
     if (s.ac) label.append(h("span", "uf-lac", s.ac));
     card.append(label, head);
     s.items.forEach((it, i) => {
-      const r = rowOf(c, i), row = h("div", "uf-item " + (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
+      const { r, hot } = rows[i];
+      const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
       row.dataset.item = it.id;
+      if (!hot && sh) row.title = t("offShot");
       box(row, r);
       row.style.lineHeight = r.h - 2 + "px";
       card.append(row);
@@ -425,7 +518,7 @@
       };
       dot(s.id, c.w, c.head + c.headH / 2);
       s.items.forEach((it, i) => {
-        const r = rowOf(c, i);
+        const r = rows[i].r;
         dot(`${s.id}.${it.id}`, r.x + r.w, r.y + r.h / 2);
       });
     }
@@ -519,6 +612,18 @@ container-type:inline-size}
 font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uf-item.uf-linked::after{content:"›";position:absolute;right:12px;top:0;color:var(--uf-ink2);font-size:20px}
 .uf-root .uf-dead{border-style:dashed;background:transparent;color:var(--uf-ink2)}
+/* a frame drawn from its Zeplin image: buttons are boxes over the design, the title rides on its status bar */
+.uf-shot .uf-card{border-radius:54px}
+.uf-shot::before,.uf-shot::after{display:none}
+.uf-imgbox{position:absolute;inset:0;overflow:hidden;border-radius:inherit;background:var(--uf-screen)}
+.uf-img{display:block;width:100%;max-width:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.uf-shot .uf-head{border-radius:54px 54px 0 0;padding-left:44px;background:color-mix(in srgb,var(--uf-screen) 88%,transparent);
+border-bottom:1px solid var(--uf-line)}
+.uf-item.uf-hot{padding:0 6px;border:2px solid var(--uf-accent);border-radius:10px;background:var(--uf-accent-soft);
+color:transparent;font-size:13px}
+.uf-item.uf-hot::after{content:none}
+.uf-root .uf-hot.uf-dead{border-color:var(--uf-warn);background:transparent;color:transparent}
+.uf-hot.uf-edit-on{color:var(--uf-ink)}
 .uf-focus .uf-screen:not(.uf-on){opacity:.2}
 .uf-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .uf-link{fill:none;stroke:var(--uf-accent);stroke-width:3;stroke-linecap:round;transition:opacity .2s ease-out}
@@ -567,6 +672,17 @@ border-top:2px solid var(--uf-ink2);border-right:2px solid var(--uf-ink2);transf
 pointer-events:none}
 .uf-flash::before{opacity:1}
 .uf-row:focus-visible,.uf-pback:focus-visible,.uf-crumb:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
+/* prototype on a Zeplin image: the phone's own bars step aside; tap areas show on hover / focus */
+.uf-full .uf-status,.uf-full .uf-nav,.uf-phone.uf-full::before,.uf-phone.uf-full::after{display:none}
+.uf-pshot{position:relative}
+.uf-phot{position:absolute;padding:0;border:0;border-radius:10px;background:transparent;cursor:pointer;
+-webkit-tap-highlight-color:transparent}
+.uf-phot:hover{background:var(--uf-accent-soft);box-shadow:inset 0 0 0 2px var(--uf-accent)}
+.uf-phot:active{opacity:.6}
+.uf-phot:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
+.uf-phot::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--uf-warn);opacity:0;
+pointer-events:none}
+.uf-fullov .uf-pscreen{position:absolute;inset:0}
 .uf-phone:focus-visible{outline:2px solid var(--uf-accent);outline-offset:${BEZEL + 4}px}
 .uf-overlay{position:absolute;inset:0;z-index:2}
 .uf-overlay.uf-toast,.uf-leaving{pointer-events:none}
@@ -900,7 +1016,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     function follow(l) {
       const to = by(l.to);
       if (l.act === "close") return drop(ovs.findLast((o) => o.id === scr(l.src)) || ovs[ovs.length - 1]);
-      if (isOverlay(to)) return openOverlay(to);
+      if (isPop(to)) return openOverlay(to);
       if (l.act !== "back") return go([...path, to.id], "push");
       const i = path.lastIndexOf(to.id);
       go(i >= 0 ? path.slice(0, i + 1) : [...path, to.id], "back");
@@ -917,16 +1033,40 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     }
 
     // rendering
-    function itemRows(s) {
-      return rowList(s.items.map((it) => {
+    function itemRows(s, only = s.items) {
+      return rowList(only.map((it) => {
         const links = from(`${s.id}.${it.id}`);
         return { label: it.label, cls: links.length ? "uf-linked" : "uf-dead", onTap: (b) => tap(b, links) };
       }));
     }
     function screenNode(s) {
       const el = h("div", "uf-pscreen");
-      if (s) el.append(s.items.length ? itemRows(s) : h("p", "uf-none", t("noItems")));
+      const sh = s && shotOf(s);
+      if (sh) el.append(...shotNodes(s, sh));
+      else if (s) el.append(s.items.length ? itemRows(s) : h("p", "uf-none", t("noItems")));
       return el;
+    }
+    /** The Zeplin image with a tap area on each button found on it (and on its back button); the buttons not
+     *  found stay as rows under it. */
+    function shotNodes(s, sh) {
+      const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot");
+      pic.append(shotImg(sh, s.title, false));
+      s.items.forEach((it, i) => {
+        if (!items[i]) return;
+        const links = from(`${s.id}.${it.id}`);
+        const b = btn(null, "uf-phot " + (links.length ? "uf-linked" : "uf-dead"), () => tap(b, links));
+        b.setAttribute("aria-label", it.label);
+        box(b, items[i]);
+        pic.append(b);
+      });
+      if (back && !isPop(s)) {
+        const b = btn(null, "uf-phot uf-linked", goBack);
+        b.setAttribute("aria-label", t("back"));
+        box(b, back);
+        pic.append(b);
+      }
+      const off = s.items.filter((_, i) => !items[i]);
+      return off.length ? [pic, h("p", "uf-none", t("offShot")), itemRows(s, off)] : [pic];
     }
     /** Build the next screen, then slide it in (push: from the right, back: from the left); dir null = no motion. */
     function show(dir) {
@@ -942,6 +1082,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         motion(old, [{ transform: "none" }, { transform: `translateX(${outX})` }], reduced, () => old.remove());
       }
       ui.title.textContent = s ? s.title : "";
+      ui.phone.classList.toggle("uf-full", !!(s && shotOf(s))); // the image has its own status and nav bars
       ui.back.classList.toggle("uf-off", !backLink() && path.length < 2);
       fillTrail();
       if (s) onGo(s.id);
@@ -956,8 +1097,8 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     }
 
     // overlays
-    function layer(id, kind, title, list) {
-      const o = { id, kind, timer: 0, ...overlayNode(kind, title, list) };
+    function layer(id, kind, title, list, full) {
+      const o = { id, kind, timer: 0, ...(full ? fullNode(kind, full) : overlayNode(kind, title, list)) };
       o.hit?.addEventListener("click", (e) => { // the scrim closes; so does any tap on a card without buttons
         if (!e.target.closest("button") && (!list || !o.card.contains(e.target))) drop(o);
       });
@@ -966,12 +1107,22 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       ui.phone.append(o.el);
       gate();
       if (o.scrim) motion(o.scrim, FADE_IN, reduced);
-      motion(o.card, CARD_IN[kind], reduced);
+      motion(o.card, full ? FADE_IN : CARD_IN[kind], reduced);
       if (kind !== "toast") o.card.focus({ preventScroll: true });
       return o;
     }
     function openOverlay(s) {
-      if (!ovs.some((o) => o.id === s.id)) layer(s.id, s.kind, s.title, s.items.length ? itemRows(s) : null);
+      if (ovs.some((o) => o.id === s.id)) return;
+      if (shotOf(s)) layer(s.id, s.kind, s.title, null, screenNode(s));
+      else layer(s.id, s.kind, s.title, s.items.length ? itemRows(s) : null);
+    }
+    /** An overlay drawn from its Zeplin image: the whole phone (the design has its own scrim). */
+    function fullNode(kind, card) {
+      const el = h("div", `uf-overlay uf-fullov${kind === "toast" ? " uf-toast" : ""}`);
+      card.tabIndex = -1;
+      card.setAttribute("role", kind === "toast" ? "status" : "dialog");
+      el.append(card);
+      return { el, card, scrim: null, hit: null };
     }
     /** A button with several links: pick the case (its `when`) to follow. */
     function choose(links) {
@@ -989,7 +1140,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       if (instant) o.el.remove();
       else {
         if (o.scrim) motion(o.scrim, backwards(FADE_IN), reduced);
-        motion(o.card, backwards(CARD_IN[o.kind]), reduced, () => o.el.remove());
+        motion(o.card, backwards(o.el.classList.contains("uf-fullov") ? FADE_IN : CARD_IN[o.kind]), reduced, () => o.el.remove());
       }
       if (refocus) ui.phone.focus({ preventScroll: true });
     }
@@ -1023,7 +1174,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       open(id) {
         const s = by(id) || flow().screens[0];
         if (!s) return;
-        const p = isOverlay(s) && parents(flow()).get(s.id);
+        const p = isPop(s) && parents(flow()).get(s.id);
         go([p || s.id], null);
         if (p) openOverlay(s);
       },
@@ -1246,7 +1397,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       }
       if (to && f.links.length >= MAX_LINKS) ctx.note(t("maxLinks", { n: MAX_LINKS }));
       else if (to && to.id !== d.src && !f.links.some((l) => l.src === d.src && l.to === to.id)) {
-        f.links.push({ src: d.src, to: to.id, act: isOverlay(to) ? "open" : "navigate", when: "", ac: "" });
+        f.links.push({ src: d.src, to: to.id, act: isPop(to) ? "open" : "navigate", when: "", ac: "" });
         return ctx.commit(f, d.before);
       }
       back();
@@ -1437,8 +1588,9 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     const t = tr(lang), uid = "uf" + ++mounts;
 
     // state
+    setShots(opts.shots);
     const first = sanitize(flow);
-    let cur = layout(first.flow), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
+    let cur = layout(freeShots(first.flow)), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
     let shown = "map", focusId = null, here = null, editing = false;
     let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
 
@@ -1707,7 +1859,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         ed.cancel(); // whatever the pointer was doing points at the flow that is being replaced
         const before = ids(cur);
         ({ flow: cur, dropped } = sanitize(f));
-        cur = layout(cur);
+        cur = layout(freeShots(cur));
         base = JSON.stringify(cur);
         hist = [];
         ed.clear();
@@ -1728,6 +1880,12 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         writeHash();
       },
       goto: (id) => goto(id, true),
+      /** New Zeplin images ({url: shot}): frames redraw, positions stay. */
+      shots(map) {
+        ed.cancel();
+        setShots(map);
+        render();
+      },
       fit: () => fitAll(true),
       /** Steps back through `hist` (snapshots pushed by edits, Task 7). */
       undo() {
@@ -1780,7 +1938,11 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       host.textContent = tr(/^vi/i.test(navigator.language || "") ? "vi" : "en")("bad");
       return;
     }
-    host.uiflow = mount(host, flow, { edit: true }, src); // the only handle an exported file has on its engine
+    let shots = {};
+    try {
+      shots = JSON.parse(document.getElementById("uiflow-shots")?.textContent || "{}");
+    } catch { /* a file without images: plain frames */ }
+    host.uiflow = mount(host, flow, { edit: true, shots }, src); // the only handle an exported file has on its engine
   }
 
   window.UIFlow = Object.freeze({ SCREEN, layout, check, mount: (el, flow, opts) => mount(el, flow, opts, null) });

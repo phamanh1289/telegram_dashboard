@@ -3411,7 +3411,7 @@
 "tab": "youtrack",
 "area": "Side panel › Ticket › UI flow",
 "title": "UI flow: the ticket's screens and the taps between them",
-"what": "The AI reads the ticket's AC, rules and Zeplin links (for a sub-task, its parent story in full, where the ACs, the \"Luồng màn\" tree and the Zeplin links live) and builds the flow: which screens exist, which button leads where, which popups show, where Back goes. View it as a map or tap through it like a prototype, fix it up, then press Update to write uiflow-<ticket>.html onto the ticket with a comment listing what changed. The uiflow-<ticket>.html row under Attachments opens this same view. If someone else has just updated it, the app says so and offers the new version instead of overwriting it.",
+"what": "The AI reads the ticket's AC, rules and Zeplin links (for a sub-task, its parent story in full, where the ACs, the \"Luồng màn\" tree and the Zeplin links live) and builds the flow: which screens exist, which button leads where, which popups show, where Back goes. Screens with a Zeplin link are drawn from the real design image, each button a tap area in its place on it (matched by the text on the button; buttons not found on the design show as rows below); needs the Zeplin MCP set up. View it as a map or tap through it like a prototype, fix it up, then press Update to write uiflow-<ticket>.html onto the ticket with a comment listing what changed. The uiflow-<ticket>.html row under Attachments opens this same view. If someone else has just updated it, the app says so and offers the new version instead of overwriting it.",
 "how": [
 {
 "t": "Click \"Tickets\"",

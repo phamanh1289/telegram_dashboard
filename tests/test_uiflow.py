@@ -41,7 +41,7 @@ def test_html_round_trip_and_script_escape():
     f = u.clean(RAW, "VA-1")
     f.screens[0].title = 'x</script><script>alert(1)</script>'
     html = u.build_html(f, "/*ENGINE*/")
-    assert html.count("</script>") == 2            # engine + data, không thêm cái nào từ nhãn
+    assert html.count("</script>") == 3            # engine + data + ảnh, không thêm cái nào từ nhãn
     assert "/*ENGINE*/" in html and "http" not in html.split("/*ENGINE*/")[0]   # không link ngoài trong khung
     assert u.extract(html) == f
     with pytest.raises(ValueError):
@@ -166,3 +166,45 @@ def test_changes_summarises_mostly_unrelated_render():
     new = u.clean({"screens": [{"id": f"n{i}", "title": f"Khác {i}", "items": []} for i in range(3)],
                    "links": [{"src": "n0", "to": "n1"}]}, "VA-1")
     assert u.changes(old, new) == ["Render lại: 3 màn, 1 liên kết (trước: 6 màn, 5 liên kết)"]
+
+
+def _layer(kind, name, x, y, w, h, content="", layers=()):
+    return {"type": kind, "name": name, "content": content, "layers": list(layers),
+            "rect": {"x": 0, "y": 0, "width": w, "height": h, "absolute": {"x": x, "y": y}}}
+
+
+def test_zeplin_hits_tap_area_is_the_button_and_icon_glyphs_go():
+    from telegram_dashboard import zeplin
+    btn = _layer("group", "Button/Primary", 20, 500, 335, 50, layers=[
+        _layer("group", "Stack", 148, 514, 79, 22, layers=[_layer("text", "Type", 148, 514, 79, 22, "Tìm căn hộ")])])
+    back = _layer("group", "Back_Nav", 20, 50, 40, 40, layers=[_layer("text", "i", 20, 50, 40, 40, "\U00100189")])
+    text = _layer("text", "t", 40, 620, 200, 20, "Giá  trung\nbình")
+    long = _layer("group", "Card", 20, 600, 335, 300, layers=[text])
+    root = _layer("group", "Screen", 0, 0, 375, 2928, layers=[btn, back, long])
+    got = zeplin.hits([root], 375)
+    assert got[:2] == [["Tìm căn hộ", 20, 500, 335, 50], ["Giá trung bình", 40, 620, 200, 20]]
+    assert ["Back_Nav", 20, 50, 40, 40] in got and not any(h[0] == "" for h in got)
+
+
+def test_html_embeds_only_the_shots_its_screens_link():
+    raw = {"screens": [{"id": "a", "title": "A", "zeplin": "https://zpl.io/a", "items": []}], "links": []}
+    f = u.clean(raw, "VA-1")
+    pic = u.Shot(src="data:image/webp;base64,AAAA", w=375, h=812, hits=[("Tìm", 1, 2, 3, 4)])
+    html = u.build_html(f, "/*e*/", {"https://zpl.io/a": pic, "https://zpl.io/other": pic})
+    assert 'id="uiflow-shots">{"https://zpl.io/a"' in html and "zpl.io/other" not in html
+    assert u.extract(html) == f
+
+
+def test_shot_refuses_anything_but_an_image_data_uri():
+    with pytest.raises(ValueError):
+        u.Shot(src="https://evil/x.png", w=1, h=1)
+    with pytest.raises(ValueError):
+        u.Shot(src="data:text/html;base64,AAAA", w=1, h=1)
+
+
+def test_zeplin_image_proxy_only_reads_zeplin_image_hosts():
+    from telegram_dashboard import zeplin
+    assert zeplin._image_host("https://img.zeplin.io/p/x.png?key=1")
+    assert zeplin._image_host("https://public-cdn.zeplin.dev/a/b.png")
+    for bad in ("http://img.zeplin.io/x", "https://img.zeplin.io.evil.com/x", "https://127.0.0.1/x", "file:///etc/passwd"):
+        assert not zeplin._image_host(bad)

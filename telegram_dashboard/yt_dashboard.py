@@ -21,7 +21,7 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import providers, telegram, uiflow
+from . import providers, telegram, uiflow, zeplin
 from .agent import read_task_result, task_result_path
 from .ai import ASK_STYLE, TICKET_FORMAT, AiJobs, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
@@ -88,6 +88,11 @@ class FlowSave(BaseModel):
     id: str
     flow: dict
     base: str | None = None  # attachment id of the version the user opened (None: there was none)
+    shots: dict[str, uiflow.Shot] = Field({}, max_length=uiflow.MAX_SCREENS)  # Zeplin URL -> image, for the file
+
+
+class FlowShots(BaseModel):
+    urls: list[Annotated[str, Field(max_length=300)]] = Field(max_length=uiflow.MAX_SCREENS)
 
 
 class FieldSet(BaseModel):
@@ -1496,6 +1501,26 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         att, flow = cur
         return {"att": att, "flow": flow and flow.model_dump(), "broken": flow is None}
 
+    shots = zeplin.Shots()
+
+    @r.post("/flow/shots")
+    async def flow_shots(body: FlowShots):
+        """The Zeplin screens a flow links: image URL, design size, where its texts / buttons sit (no AI, cached)."""
+        try:
+            got, missing = await shots.get([u for u in body.urls if providers.ZEPLIN.fullmatch(u)])
+        except zeplin.ZeplinError as e:
+            raise YtError(502, str(e)) from None
+        return {"shots": got, "missing": missing}
+
+    @r.get("/flow/image")
+    async def flow_image(u: str = Query(max_length=2000)):
+        """One Zeplin image, same-origin, so the page can compress it into the file it saves."""
+        try:
+            data, kind = await zeplin.image(u)
+        except zeplin.ZeplinError as e:
+            raise YtError(502, str(e)) from None
+        return Response(data, media_type=kind, headers={"Cache-Control": "private, max-age=86400"})
+
     flow_lock = asyncio.Lock()  # ponytail: one for every ticket, saves are rare; other users still race on YouTrack
 
     @r.post("/flow")
@@ -1523,8 +1548,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
                 raise YtError(503, "Thiếu uiflow.js — build lại web") from None
             name = uiflow.NAME.format(issue=i)
             try:
+                html = uiflow.build_html(new, engine, body.shots).encode()
+            except ValueError as e:
+                raise YtError(400, str(e)) from None
+            try:
                 try:
-                    att, stored = await svc.upload(i, name, uiflow.build_html(new, engine).encode(), mime="text/html")
+                    att, stored = await svc.upload(i, name, html, mime="text/html")
                 except YtUnreachable:  # YouTrack may have stored it: never let a blind retry add a second file
                     raise YtError(502, "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại") from None
                 if stored != name:  # renamed on upload: no read would ever find it (and every save would 409)

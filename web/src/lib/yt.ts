@@ -110,6 +110,9 @@ export type UiFlow = { v: number; ticket: string; rev: number; screens: { id: st
 /** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
 export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean };
 export type FlowSaved = { att: string; rev: number; changes: string[]; warn: string };
+/** A Zeplin screen for the UI flow: image (a URL here, a data URI in the file), design size, where texts / buttons sit. */
+export type FlowShot = { src: string; w: number; h: number; hits: [string, number, number, number, number][] };
+export type FlowShots = { shots: Record<string, FlowShot>; missing: string[] };
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),
@@ -152,7 +155,10 @@ export const yt = {
   aiFilter: (text: string, options: unknown, session?: string) => ytApi<Record<string, unknown>>("/ai/filter", { json: { text, options }, session }),
   flow: (issue: string, signal?: AbortSignal) => ytApi<FlowFile>(`/flow?issue=${enc(issue)}`, { signal }),
   /** Uploads it over `base` (the attachment opened; null = none). 409: someone else saved since; 502: outcome unknown. */
-  saveFlow: (id: string, flow: UiFlow, base: string | null) => ytApi<FlowSaved>("/flow", { json: { id, flow, base } }),
+  saveFlow: (id: string, flow: UiFlow, base: string | null, shots: Record<string, FlowShot> = {}) =>
+    ytApi<FlowSaved>("/flow", { json: { id, flow, base, shots } }),
+  /** The Zeplin screens the flow links (read with the user's Zeplin MCP token, no AI). */
+  flowShots: (urls: string[], signal?: AbortSignal) => ytApi<FlowShots>("/flow/shots", { json: { urls }, signal }),
   /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
   aiFlow: (id: string, note: string, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note }, signal }),
 };

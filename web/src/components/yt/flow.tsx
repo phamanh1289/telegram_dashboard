@@ -1,7 +1,7 @@
 "use client";
 
 import { Menu } from "@base-ui/react/menu";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Ellipsis, RotateCw, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AiBot, AiPromptBox } from "@/components/ai/chat";
@@ -12,7 +12,7 @@ import { Empty } from "@/components/ui/empty";
 import { Hint } from "@/components/ui/hint";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { useLang, useT } from "@/lib/i18n";
-import { useUiFlow } from "@/lib/uiflow";
+import { packShots, useUiFlow, zeplinUrls } from "@/lib/uiflow";
 import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 import { YtFetching } from "./bits";
@@ -42,7 +42,24 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   const q = useQuery({ ...ytFlowQuery(issue), enabled: open });
   const flow = mine?.flow ?? q.data?.flow ?? null;
   const base = mine ? mine.base : q.data?.att ?? null;
-  const engine = useUiFlow(el, flow, { lang, onChange: (_f, d) => { setDirty(d); if (d) setHid(false); } });
+  // the Zeplin screens the flow links (edits included): frames drawn from their images; the engine mounts once the
+  // first answer is in (or failed), so it lays out with them and never shifts frames under the user
+  const [edited, setEdited] = useState<string | null>(null); // the edited flow's links, "\n"-joined
+  const urls = edited !== null ? edited.split("\n").filter(Boolean) : zeplinUrls(flow);
+  const sq = useQuery({
+    queryKey: ["yt", "flow-shots", ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal),
+    enabled: open && !!flow && urls.length > 0, staleTime: 30 * 60_000, retry: false, placeholderData: keepPreviousData,
+  });
+  const shotsReady = !urls.length || !!sq.data || sq.isError;
+  const engine = useUiFlow(el, shotsReady ? flow : null, {
+    lang, shots: sq.data?.shots,
+    onChange: (f, d) => {
+      setDirty(d);
+      if (d) setHid(false);
+      const k = zeplinUrls(f).join("\n");
+      setEdited((e) => (e === k ? e : k));
+    },
+  });
 
   const ctl = useRef<AbortController | null>(null); // the AI run, so Dừng cancels the request
   // a background run on the server (X-Ai-Job), its id kept per ticket: closing the dialog leaves it going, opening it
@@ -68,7 +85,12 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
     onSuccess: (r) => { if (r) { setMine(r); setHid(false); setNote(""); } },
   });
   const save = useMutation({
-    mutationFn: (f: UiFlow) => yt.saveFlow(issue, f, base),
+    mutationFn: async (f: UiFlow) => {
+      const p = await packShots(f, sq.data?.shots); // the images go into the file, so it opens anywhere, offline
+      const r = await yt.saveFlow(issue, f, base, p.shots);
+      const lost = p.failed ? t("{n} ảnh Zeplin chưa nhúng được vào file, màn đó vẽ khung đơn giản", { n: p.failed }) : "";
+      return { ...r, warn: [r.warn, lost].filter(Boolean).join(". ") };
+    },
     retry: false, // an upload whose outcome is unknown must never be sent again on its own
     onSuccess: (r, f) => {
       qc.setQueryData(ytFlowQuery(issue).queryKey, { att: r.att, flow: { ...f, rev: r.rev }, broken: false });
@@ -98,17 +120,18 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
 
   const unsaved = !!mine || dirty;
   // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
-  const run = () => { setSaved(null); setDirty(false); save.reset(); ai.mutate(undefined); };
+  const run = () => { setSaved(null); setDirty(false); setEdited(null); save.reset(); ai.mutate(undefined); };
   const stopAi = () => { ctl.current?.abort(); ctl.current = null; ai.reset(); }; // → DELETE the server's run, the key goes
   const close = () => { if (unsaved) setAsk("close"); else setShown(false); };
   const fresh = () => { // "Xem bản mới": drop my version, read the ticket's
     setMine(null);
     setDirty(false);
+    setEdited(null);
     save.reset();
     void qc.invalidateQueries({ queryKey: ytFlowQuery(issue).queryKey });
   };
 
-  const waiting = useAiWait(q.isPending || ai.isPending);
+  const waiting = useAiWait(q.isPending || ai.isPending || (!!flow && !shotsReady));
   const conflict = statusOf(save.error) === 409;
   // the ticket's file could not be read: never the empty state, and no Render here (what it would replace is unknown)
   const readErr = q.isError && !flow;
@@ -158,6 +181,8 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
                   </Hint>
                 )} />
             )}
+            {sq.isError && flow && <p role="alert" className="mt-2 text-xs text-warn">{t("Không lấy được ảnh Zeplin: {msg}", { msg: say(sq.error) })}</p>}
+            {!!sq.data?.missing.length && flow && <p className="mt-2 text-xs text-ink-3">{t("{n} màn Zeplin không đọc được (chưa chia sẻ với tài khoản này hoặc đã xoá)", { n: sq.data.missing.length })}</p>}
             {ai.isError && (ai.error as Error).name !== "AbortError" && <p role="alert" className="mt-2 text-sm text-error">{t("Không render được: {msg}", { msg: say(ai.error) })}</p>}
             {save.isError && (
               <p role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-error">
