@@ -152,8 +152,12 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       <ConfirmDialog open={ask === "close"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
         description={t("Đóng UI flow sẽ mất các thay đổi chưa cập nhật lên ticket.")} confirmLabel={t("Bỏ thay đổi")}
         onConfirm={() => { setAsk(null); setShown(false); }} />
+      {/* a render replaces the flow on screen, so say so — and name the loss when something is unsaved */}
       <ConfirmDialog open={ask === "again"} onOpenChange={(o) => !o && setAsk(null)} tone="default" icon={Sparkles}
-        title={t("Render lại bằng AI?")} description={t("AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem. File trên ticket chỉ đổi khi bạn bấm Cập nhật.")}
+        title={t("Render lại bằng AI?")}
+        description={unsaved
+          ? t("Render lại sẽ bỏ các thay đổi chưa lưu. AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem.")
+          : t("AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem. File trên ticket chỉ đổi khi bạn bấm Cập nhật.")}
         confirmLabel={t("Render lại")} onConfirm={() => { setAsk(null); run(); }} />
     </>
   );

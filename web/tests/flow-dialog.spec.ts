@@ -14,6 +14,7 @@ async function ctl(path: string, body?: object) {
 }
 type Post = { id: string; base: string | null; flow: { rev: number; screens: { id: string; x?: number }[] } };
 const posts = async () => (await ctl("/state")).flow_posts as Post[];
+const aiCalls = async () => (await ctl("/state")).ai_calls as number;
 
 const BAR = "Có thay đổi chưa lưu — cập nhật file trên ticket?";
 const dialog = (page: Page) => page.getByRole("dialog", { name: "UI flow VA-1" });
@@ -34,7 +35,7 @@ async function render(page: Page) {
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0 });
+  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0 });
 });
 test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
@@ -104,6 +105,23 @@ test("re-render over a saved file posts with its base; Không hides the bar and 
   await d.getByRole("button", { name: "Đóng" }).click();
   await expect(page.getByText("UI flow cập nhật (rev 1)")).toBeVisible(); // the AI flow is rev 0, saved as rev 1
   await expect(page.getByRole("button", { name: /uiflow-VA-1\.html/ })).toBeVisible();
+});
+
+test("Render lại with unsaved changes warns first; Hủy changes nothing", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  const d = dialog(page);
+  await render(page); // the AI flow on screen is unsaved
+  expect(await aiCalls()).toBe(1);
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  const ask = page.getByRole("alertdialog");
+  await expect(ask).toContainText("Render lại sẽ bỏ các thay đổi chưa lưu");
+  await ask.getByRole("button", { name: "Hủy" }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await expect(d.getByText(BAR)).toBeVisible(); // my unsaved flow is still there
+  expect(await aiCalls()).toBe(1); // nothing ran
+  expect(await posts()).toEqual([]);
 });
 
 test("a render hides the bar while it runs; Dừng leaves the flow and posts nothing", async ({ page }) => {

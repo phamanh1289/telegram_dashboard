@@ -57,7 +57,7 @@ fake.history[A][-1] = msg(A, 120, XSS)
 fake.history[B] = [msg(B, i, f"Tin B số {i}", sender="8") for i in range(1, 6)]
 
 control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_changes": 0,
-           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "att": "1-1"}
+           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "ai_calls": 0, "att": "1-1"}
 
 # UI flow (ticket VA-1, YouTrack in mock mode): the ticket, its uiflow file and the AI run, faked here.
 # `yt`: off until a spec asks for it, so the other specs keep the real (token-less) YouTrack routes.
@@ -147,6 +147,7 @@ async def fake_yt(scope, receive, send) -> bool:
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
     elif path == "/api/yt/ai/flow":
         await body_of(receive)
+        control["ai_calls"] += 1
         await asyncio.sleep(control["ai_ms"] / 1000)
         await answer(send, 200, {"flow": {**FLOW, "rev": 0}})
     else:
