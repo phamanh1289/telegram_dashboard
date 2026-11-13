@@ -99,7 +99,7 @@
         ids.add(it.id);
         items.push({ id: it.id, label: str(it.label, it.id) });
       }
-      screens.push({ id: s.id, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
+      screens.push({ id: s.id, title: str(s.title, s.id) || s.id, kind: KINDS.includes(s.kind) ? s.kind : "screen",
         parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
         zeplin: str(s.zeplin), ac: str(s.ac), items });
     }
@@ -112,8 +112,9 @@
     const links = all.filter((l) => l && okSrc(l.src) && by.has(l.to))
       .map((l) => ({ src: l.src, to: l.to, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
     dropped.links = all.length - links.length;
-    const rev = Number.isFinite(f.rev) ? f.rev : 0;
-    return { flow: { v: f.v ?? 1, ticket: str(f.ticket), rev, device: str(f.device, "mobile"), screens, links }, dropped };
+    // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
+    const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
+    return { flow: { v: 1, ticket: str(f.ticket), rev, device: "mobile", screens, links }, dropped };
   }
   const normalize = (raw) => sanitize(raw).flow;
 
@@ -546,13 +547,12 @@ border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-lin
 .uf-insp h2{margin:0 0 8px;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uf-chips{display:flex;flex-wrap:wrap;gap:4px}
 .uf-chips .uf-btn{height:26px;padding:0 10px;font-size:12px}
-.uf-field{display:flex;align-items:center;gap:8px;margin-top:8px}
+.uf-field{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
 .uf-flab{flex:none;width:62px;color:var(--uf-ink2);font-size:12px;font-weight:650}
 .uf-input{flex:1;min-width:0;height:28px;padding:0 9px;border:1px solid var(--uf-line);border-radius:9px;
 background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px}
 .uf-input:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
 .uf-acts{display:flex;gap:6px;margin-top:10px}
-.uf-field{flex-wrap:wrap}
 .uf-bad{display:none;flex-basis:100%;padding:4px 0 0 70px;color:var(--uf-warn);font-size:12px}
 .uf-has-bad .uf-bad{display:block}
 .uf-has-bad .uf-input{border-color:var(--uf-warn)}
@@ -1034,6 +1034,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
    *  tempLink, drawAll, centre}. */
   function editor(ctx) {
     let sel = null; // {t: "screen" | "item" | "link", id?, item?, i?}
+    let badVal = null; // text in a checked field that cannot be stored; kept so the panel can show it again
     let drag = null, raf = 0, at = null; // at: where the pointer is now, painted on the next frame
     const t = ctx.t, get = ctx.get;
 
@@ -1072,6 +1073,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
     }
     function select(s) {
       sel = s;
+      badVal = null; // it belonged to the field that is going away
       paint();
       fill();
     }
@@ -1213,23 +1215,32 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       return g;
     }
     /** One text field, capped exactly like the backend model so a round-trip never changes what is stored.
-     *  `bad`: {ok(v), text} — a value it rejects is shown as wrong instead of being saved. */
+     *  `bad`: {ok(v), text} turns the field into a checked one — what it rejects (pattern or over `cap`) is shown
+     *  as wrong and the stored value is cleared, so the box and the flow never say different things. The typed
+     *  text survives the re-render that clearing causes (`badVal`). */
     function field(label, value, cap, set, bad) {
       const w = h("label", "uf-field");
       const i = h("input", "uf-input");
       i.type = "text";
-      i.maxLength = cap;
-      i.value = value;
-      i.addEventListener("change", () => {
-        const v = i.value.trim().slice(0, cap);
-        const wrong = !!v && !!bad && !bad.ok(v);
+      if (!bad) i.maxLength = cap; // a checked field must show what the user typed, over-long included
+      i.value = bad && badVal !== null ? badVal : value;
+      const mark = (wrong) => {
         w.classList.toggle("uf-has-bad", wrong);
         i.setAttribute("aria-invalid", String(wrong));
-        if (!wrong) set(v);
+      };
+      i.addEventListener("change", () => {
+        const raw = i.value.trim(), v = bad ? raw : raw.slice(0, cap);
+        const wrong = !!v && !!bad && (!bad.ok(v) || v.length > cap);
+        mark(wrong);
+        if (bad) badVal = wrong ? v : null;
+        set(wrong ? "" : v);
       });
       i.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") i.blur(); });
       w.append(h("span", "uf-flab", label), i);
-      if (bad) w.append(h("span", "uf-bad", bad.text));
+      if (bad) {
+        w.append(h("span", "uf-bad", bad.text));
+        if (badVal !== null) mark(true);
+      }
       return w;
     }
     function fill() {
@@ -1240,7 +1251,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
         rows.push(h("h2", null, o.title),
           chips(KINDS, o.kind, "kind_", (k) => change((s) => {
             s.kind = k;
-            if (k === "screen") s.parent = null; // a screen has no parent; the backend would drop it anyway
+            if (k === "screen") s.parent = null; // a screen has no parent
           })),
           field(t("acField"), o.ac, CAP_AC, (v) => change((s) => { s.ac = v; })),
           field(t("zeplinField"), o.zeplin, CAP_URL, (v) => change((s) => { s.zeplin = v; }),
@@ -1308,7 +1319,14 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       addScreen,
       remove,
       selected: () => sel,
-      busy: () => !!drag, // undo mid-gesture would re-render under the pointer and commit half a link
+      busy: () => !!drag, // a flow change mid-gesture would strand the objects and frames the drag holds
+      cancel() {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        drag = null;
+        at = null;
+        ctx.tempLink(null);
+      },
       clear: () => select(null),
       /** After a re-render: drop a selection whose shape is gone, then paint the new nodes. */
       sync,
@@ -1515,12 +1533,18 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       },
     });
     const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
+    /** The one way the flow changes. Refused while a drag is in flight: that gesture holds the screen objects
+     *  and the frames of the current render, and a rebuild under it would strand them (and could commit half a
+     *  link). A change that changes nothing costs no undo step. */
     const commit = (next, before = JSON.stringify(cur)) => {
+      if (ed.busy()) return;
+      const laid = layout(next), now = JSON.stringify(laid);
+      if (now === before) return;
       hist.push(before);
       if (hist.length > UNDO) hist.shift();
-      cur = layout(next);
+      cur = laid;
       render();
-      opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
+      opts.onChange?.(structuredClone(cur), now !== base);
     };
     const ed = editor({
       t, insp, cam, view, layer,
@@ -1582,6 +1606,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       get: () => structuredClone(cur),
       /** Replace the flow and treat it as clean; refit only when the set of screens changed. */
       set(f) {
+        ed.cancel(); // whatever the pointer was doing points at the flow that is being replaced
         const before = ids(cur);
         ({ flow: cur, dropped } = sanitize(f));
         cur = layout(cur);
@@ -1619,6 +1644,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
         clearTimeout(noteTimer);
         window.removeEventListener("beforeunload", onLeave);
         host.replaceChildren();
+        host.uiflow = null;
       },
     };
 

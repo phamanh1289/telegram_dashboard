@@ -888,4 +888,66 @@ test("destroy() takes the leave-page guard with it", async ({ page }) => {
   await page.evaluate(() => (document.getElementById("uiflow") as HTMLElement & { uiflow: Api }).uiflow.destroy());
   expect(await ask()).toBe(false);
   await expect(page.locator(".uf-root")).toHaveCount(0);
+  expect(await page.evaluate(() => (document.getElementById("uiflow") as HTMLElement & { uiflow: Api | null }).uiflow))
+    .toBe(null);
+});
+
+test("a flow change during a drag is refused, and the drag still finishes", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click(); // something is selected: Delete has a target
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 120, head.y + head.height / 2 + 40, { steps: 5 });
+  await page.keyboard.press("Delete"); // would rebuild the frames the drag is holding
+  await page.evaluate(() => document.querySelector<HTMLButtonElement>(".uf-add")!.click());
+  expect((await flowOf(page)).screens).toHaveLength(4);
+  await page.mouse.up();
+  const f = await flowOf(page);
+  expect(f.screens).toHaveLength(4);
+  expect(f.screens.find((s) => s.id === "code")!.x).toBeGreaterThan(610); // the move landed
+
+  const next = await box(page, '.uf-screen[data-id="login"] .uf-head'); // the gesture really ended
+  await page.mouse.move(next.x + 20, next.y + next.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(next.x + 120, next.y + next.height / 2, { steps: 5 });
+  await page.mouse.up();
+  expect((await flowOf(page)).screens.find((s) => s.id === "login")!.x).toBeGreaterThan(0);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  await page.keyboard.press("Delete"); // and editing works again
+  expect((await flowOf(page)).screens).toHaveLength(3);
+});
+
+test("values the backend model would reject are clamped on the way in", async ({ page }) => {
+  await open(page);
+  const f = await page.evaluate(() => {
+    const g = structuredClone(window.SAMPLE) as Omit<Flow, "v"> & { v: number };
+    g.v = 2;
+    g.device = "web";
+    g.rev = 1.5;
+    g.screens[0].title = "";
+    window.__api.set(g as unknown as Flow);
+    return window.__api.get();
+  });
+  expect([f.v, f.device, f.rev]).toEqual([1, "mobile", 1]);
+  expect(f.screens[0].title).toBe("login"); // an empty title would fail the model's min_length
+});
+
+test("a too long Zeplin link is wrong, not silently cut, and clears what was stored", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').click();
+  await expect(insp(page).getByLabel("Zeplin")).toHaveValue("https://zpl.io/abc123");
+  const long = "https://zpl.io/" + "a".repeat(400); // matches the pattern, but far over the field's cap
+  await insp(page).getByLabel("Zeplin").fill(long);
+  await insp(page).getByLabel("Zeplin").press("Enter");
+  expect((await flowOf(page)).screens[0].zeplin).toBe(""); // not a cut-down link that still looks valid
+  await expect(insp(page).getByLabel("Zeplin")).toHaveValue(long); // shown and stored agree: nothing is kept
+  await expect(insp(page).getByLabel("Zeplin")).toHaveAttribute("aria-invalid", "true");
+  await expect(insp(page).locator(".uf-bad")).toBeVisible();
+  await insp(page).getByLabel("Zeplin").fill("https://zpl.io/ok");
+  await insp(page).getByLabel("Zeplin").press("Enter");
+  expect((await flowOf(page)).screens[0].zeplin).toBe("https://zpl.io/ok");
+  await expect(insp(page).locator(".uf-bad")).toBeHidden();
 });
