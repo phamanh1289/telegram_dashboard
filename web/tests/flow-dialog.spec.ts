@@ -225,3 +225,71 @@ test("an edit made while the save is in flight survives it, unsaved, with the ba
   expect(second).toMatchObject({ base: "1-2" }); // over the file just saved
   expect(second.flow.screens).toHaveLength(5);
 });
+
+// A render outlives its dialog: it runs on the server under a job id kept per ticket (localStorage), read again on open.
+const JOB_KEY = "uiflow-job:VA-1";
+const stored = (page: Page) => page.evaluate((k) => localStorage.getItem(k), JOB_KEY);
+const job = async (id: string) => ((await ctl("/state")).jobs as Record<string, string>)[id];
+const flowButton = (page: Page) => page.getByRole("button", { name: "UI flow", exact: true });
+
+test("closing the dialog mid-render keeps it going; reopening shows the result, unsaved, with the bar", async ({ page }) => {
+  await ctl("/set", { flow: "none", ai_ms: 1500 });
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Render bằng AI" }).click();
+  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  expect(await stored(page)).toContain('"id"');
+  await expect(flowButton(page).locator("[data-flow-running]")).toBeVisible(); // the button says a render is going
+  const id = JSON.parse((await stored(page))!).id as string;
+  await expect.poll(() => job(id)).toBe("done"); // not stopped by the close
+  await flowButton(page).click();
+  await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
+  await expect(dialog(page).getByText(BAR)).toBeVisible();
+  expect(await stored(page)).toBeNull(); // shown: nothing left to read
+  expect(await aiCalls()).toBe(1);
+  expect(await posts()).toEqual([]);
+});
+
+test("reopened while it still runs: the running box, and Dừng stops the server run and forgets it", async ({ page }) => {
+  await ctl("/set", { flow: "none", ai_ms: 8000 });
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Render bằng AI" }).click();
+  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  const id = JSON.parse((await stored(page))!).id as string;
+  await flowButton(page).hover(); // the indicator explains itself
+  await expect(page.getByText("Đang render UI flow — mở để xem")).toBeVisible();
+  await flowButton(page).click();
+  await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
+  await expect(dialog(page).getByText(BAR)).toHaveCount(0);
+  expect(await job(id)).toBe("running");
+  await dialog(page).getByRole("button", { name: "Dừng" }).click();
+  await expect.poll(() => job(id)).toBe("error"); // DELETE: the server run stopped
+  expect(await stored(page)).toBeNull();
+  await expect(dialog(page).getByText("Ticket này chưa có UI flow")).toBeVisible();
+  await expect(dialog(page).getByRole("alert")).toHaveCount(0);
+});
+
+test("a stored run the server no longer has: the normal view, the key cleared, no error", async ({ page }) => {
+  await page.addInitScript((k) => { // once: the page's own reads decide after that
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem(k, JSON.stringify({ id: "gone-12345678", at: Date.now() }));
+  }, JOB_KEY);
+  await page.addInitScript(() => localStorage.setItem("ytMode", "dev"));
+  await page.goto("/youtrack?ticket=VA-1");
+  await expect(flowButton(page).locator("[data-flow-running]")).toBeVisible();
+  await flowButton(page).click();
+  const d = dialog(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(4); // the ticket's own file
+  await expect(d.getByRole("alert")).toHaveCount(0);
+  await expect(d.getByText(BAR)).toHaveCount(0);
+  expect(await stored(page)).toBeNull();
+  expect(await aiCalls()).toBe(0);
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await expect(flowButton(page).locator("[data-flow-running]")).toHaveCount(0);
+});

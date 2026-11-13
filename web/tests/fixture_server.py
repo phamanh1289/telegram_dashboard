@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 from conftest import FakeTransport, msg  # noqa: E402
 
+from telegram_dashboard.ai import AiJobs  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
@@ -91,6 +92,7 @@ ISSUE: dict = {
 
 
 ISSUE0 = json.loads(json.dumps(ISSUE))
+JOBS = AiJobs()  # the AI flow run with X-Ai-Job: a background run, as yt_dashboard's `background` starts it
 
 
 async def answer(send, status: int, body) -> None:
@@ -150,8 +152,25 @@ async def fake_yt(scope, receive, send) -> bool:
     elif path == "/api/yt/ai/flow":
         await body_of(receive)
         control["ai_calls"] += 1
-        await asyncio.sleep(control["ai_ms"] / 1000)
-        await answer(send, 200, {"flow": {**FLOW, "rev": 0}})
+
+        async def work(_on_text=None):
+            await asyncio.sleep(control["ai_ms"] / 1000)
+            return {"flow": {**FLOW, "rev": 0}}
+
+        job = dict(scope["headers"]).get(b"x-ai-job", b"").decode()
+        if job:
+            await JOBS.start(job, work)(scope, receive, send)
+        else:
+            await answer(send, 200, await work())
+    elif path.startswith("/api/yt/ai/job/"):  # the real routes, on the fixture's runs
+        job = path.rsplit("/", 1)[1]
+        if scope["method"] == "DELETE":
+            JOBS.stop(job)
+            await answer(send, 200, {})
+        elif got := JOBS.attach(job):
+            await got(scope, receive, send)
+        else:
+            await answer(send, 404, {"error": "Lượt AI này không còn trên máy chủ: chạy lại"})
     else:
         return False
     return True
@@ -214,7 +233,7 @@ async def set_(request: Request):
 
 @ctl.get("/state")
 async def state():
-    return {**control, "send_calls": len(fake.send_calls)}
+    return {**control, "send_calls": len(fake.send_calls), "jobs": JOBS.status()}
 
 
 @ctl.post("/message")

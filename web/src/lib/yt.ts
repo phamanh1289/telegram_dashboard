@@ -59,13 +59,15 @@ export const aiJobs = new WeakMap<AbortSignal, string>();
 /** The AI history session of an AI call, as shown ("YT-xxxxxx", header X-Ai-Session): the server logs it with the run. */
 export const aiSessions = new WeakMap<AbortSignal, string>();
 export const newJobId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+/** Abort reason of a page that leaves a background run (the UI flow dialog closing): its read stops, the run goes on. */
+export const AI_LEAVE = new DOMException("left", "AbortError");
 
 /** /api/yt/* call; the YouTrack router answers errors as {error: "text"}, the shared API as {error: {code, detail}}. */
 export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal; session?: string } = {}): Promise<T> {
   if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
-  const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
-  // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, the run goes on)
-  if (job) init.signal!.addEventListener("abort", () => void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}), { once: true });
+  const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|flow|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
+  // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, or aborts with AI_LEAVE: the run goes on)
+  if (job) init.signal!.addEventListener("abort", () => { if (init.signal!.reason !== AI_LEAVE) void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}); }, { once: true });
   const ses = init.session || (job && aiSessions.get(init.signal!)); // `session`: a one-shot run with no job (AI filter / draft)
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   const res = await fetch(`/api/yt${path}`, {
@@ -138,7 +140,7 @@ export const yt = {
   aiTickets: (ids: string[], scope: string, kind: "review" | "today" | "summary" | "ask" | "standup" | "plan" | "testcases" | "triage" | "regression" | "groom" | "quality", signal?: AbortSignal, ask = "", stats?: unknown, since = 0, changes: string[] = [], folder = "", shell = false) =>
     ytApi<AiText>("/ai/tickets", { json: { ids, scope, kind, ask, stats, since, changes, folder, shell }, signal }),
   /** A background run read again from its start, live if it still runs (after a reload). */
-  aiJob: (id: string, signal?: AbortSignal) => ytApi<AiText>(`/ai/job/${encodeURIComponent(id)}`, { signal }),
+  aiJob: <T = AiText>(id: string, signal?: AbortSignal) => ytApi<T>(`/ai/job/${encodeURIComponent(id)}`, { signal }),
   /** running / done / error of each background run the server keeps. */
   aiJobStatus: () => ytApi<Record<string, "running" | "done" | "error">>("/ai/jobs"),
   /** A saved first request sent again (a history session whose answer never came). */
@@ -151,9 +153,27 @@ export const yt = {
   flow: (issue: string, signal?: AbortSignal) => ytApi<FlowFile>(`/flow?issue=${enc(issue)}`, { signal }),
   /** Uploads it over `base` (the attachment opened; null = none). 409: someone else saved since; 502: outcome unknown. */
   saveFlow: (id: string, flow: UiFlow, base: string | null) => ytApi<FlowSaved>("/flow", { json: { id, flow, base } }),
-  /** One AI run: the ticket as a flow, rev 0, not saved. */
+  /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
   aiFlow: (id: string, note: string, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note }, signal }),
 };
+/** The UI flow render still going on the server for a ticket (its dialog closed mid-run): `at` when it started.
+ *  Per browser, by id only; past the server's keep (1 h after it ends) it is surely gone, so read as none. */
+type FlowJob = { id: string; at: number };
+const flowJobKey = (issue: string) => `uiflow-job:${issue}`;
+const FLOW_JOB_KEEP = 3 * 3600_000;
+export function flowJob(issue: string): FlowJob | null {
+  try { // storage may be off (private window): no indicator, no re-read
+    const j = JSON.parse(localStorage.getItem(flowJobKey(issue)) ?? "null") as FlowJob | null;
+    return j?.id && Date.now() - j.at < FLOW_JOB_KEEP ? j : null;
+  } catch { return null; }
+}
+/** Save the run's id (`null`: forget it; `only`: only if it is still that run, not a newer one). */
+export function setFlowJob(issue: string, id: string | null, only?: string) {
+  try {
+    if (id) localStorage.setItem(flowJobKey(issue), JSON.stringify({ id, at: Date.now() }));
+    else if (!only || flowJob(issue)?.id === only) localStorage.removeItem(flowJobKey(issue));
+  } catch { /* storage off: the run is only read while the dialog stays open */ }
+}
 export const ytFlowQuery = (issue: string) => ({ queryKey: ["yt", "flow", issue], queryFn: ({ signal }: { signal: AbortSignal }) => yt.flow(issue, signal), retry: false });
 export const AI_MAX = 40; // the server's cap on tickets in one review
 /** Shared query options: one per cache key, so every reader has the same staleTime / retry whichever mounts first. */

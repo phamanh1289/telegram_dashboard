@@ -1697,21 +1697,27 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
 
-    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
-        """The AI answer, streamed. With header X-Ai-Job (an id the page picked): a background run the page can
-        leave and read again (GET /ai/job/{id}); without: it stops when the page goes."""
+    def background(request: Request, work):
+        """With header X-Ai-Job (an id the page picked): `work(on_text, detached=True)` as a background run the page
+        can leave and read again (GET /ai/job/{id}), its result the last NDJSON item; None without the header."""
         job = request.headers.get("x-ai-job", "")
-        if job and not svc.jobs.free(job):
+        if not job:
+            return None
+        if not svc.jobs.free(job):
             raise YtError(409, "Mã lượt AI không hợp lệ hoặc đã dùng, gửi lại")
+        return svc.jobs.start(job, lambda on_text: work(on_text, detached=True))
 
-        async def work(on_text):
-            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=bool(job))
+    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
+        """The AI answer, streamed: a background run (`background`), or one that stops when the page goes."""
+
+        async def work(on_text, detached=False):
+            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=detached)
             if not draft:
                 return {"text": text}
             brief, _, rest = text.partition("\n===")  # a ticket answer may end with a comment draft
             return {"text": brief.strip(), "draft": rest.strip()}
 
-        return svc.jobs.start(job, work) if job else stream_answer(work)
+        return background(request, work) or stream_answer(work)
 
     @r.get("/ai/jobs")
     async def ai_jobs():
@@ -1781,15 +1787,20 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         zep, hint = providers.zeplin_for(f"{ticket}{story}{links}")  # what the prompt carries; none set up: AC only
         prompt = (f"{uiflow.AI_FLOW}{hint}\n<ticket>\n{ticket}\n</ticket>{story}{links}"
                   f"\n<ask>{data_json(body.note)}</ask>")  # fmt: skip
-        raw = json_object(await _ai(svc, request, prompt, heavy=True, notes=False, zeplin=zep))
-        try:
-            flow = uiflow.clean(raw, i)
-        except (ValueError, TypeError, AttributeError):  # unreadable answer, or a shape clean refuses
-            raise YtError(502, "AI trả về không đọc được, thử lại") from None
-        flow.rev = 0  # whatever the AI wrote: the dialog saves over the version it opened
-        for s in flow.screens:
-            s.x = s.y = None  # the layout is the dialog's job
-        return {"flow": flow.model_dump()}
+
+        async def work(_on_text=None, detached=False):  # the JSON as it is written means nothing to the page
+            raw = json_object(await _ai(svc, request, prompt, heavy=True, notes=False, zeplin=zep, detached=detached))
+            try:
+                flow = uiflow.clean(raw, i)
+            except (ValueError, TypeError, AttributeError):  # unreadable answer, or a shape clean refuses
+                raise YtError(502, "AI trả về không đọc được, thử lại") from None
+            flow.rev = 0  # whatever the AI wrote: the dialog saves over the version it opened
+            for s in flow.screens:
+                s.x = s.y = None  # the layout is the dialog's job
+            return {"flow": flow.model_dump()}
+
+        # with X-Ai-Job the render goes on when the dialog closes; the page reads it again by its id
+        return background(request, work) or await work()
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):

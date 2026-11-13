@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { fmtNum, type Key, t as tNow, useT } from "@/lib/i18n";
 import { toast, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { AI_MAX, type Detail, type Field, fileUrl, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
+import { AI_MAX, type Detail, type Field, fileUrl, flowJob, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
 import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
 import { Related } from "./ticket-extras";
@@ -201,6 +201,8 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
     ...(i.estimate ? [["Estimate", `${+(i.estimate / 60).toFixed(1)}h`] as [Key, string]] : []),
     ["Ngày tạo", when(i.created)], ["Cập nhật lúc", when(i.updated)], ["Reporter", d.data?.reporter || (d.isPending ? "…" : "—")],
   ];
+  // a UI flow render left going when its dialog closed (read again on open); this re-renders as the dialog closes
+  const flowRun = !flowOpen && !!flowJob(id);
   return (
     <motion.div className="grid gap-5" initial="h" animate="v" variants={{ v: { transition: { staggerChildren: 0.03 } } }}>
       {!row && <p className="text-xs text-ink-3">{t("Ticket ngoài dữ liệu đã tải.")}</p>}
@@ -213,8 +215,11 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
 
       {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
         <motion.div variants={fade} className="flex flex-wrap gap-2">
-          <Hint text={t("Sơ đồ màn hình và luồng bấm của ticket này")}>
-            <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}><Workflow aria-hidden /> {t("UI flow")}</Button>
+          <Hint text={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")}>
+            <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}>
+              <Workflow aria-hidden /> {t("UI flow")}
+              {flowRun && <span data-flow-running aria-hidden className="size-2 animate-pulse rounded-full bg-hl" />}
+            </Button>
           </Hint>
         </motion.div>
       )}

@@ -3426,6 +3426,7 @@
 "at": "UI flow"
 },
 "No file yet: add a note for the AI in the box below (optional), then click \"Render with AI\"; while it runs you can click \"Stop rendering\"",
+"Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow it or get the result",
 "With a flow: use the toolbar inside the frame (Map / Prototype, Edit, Fit, Check)",
 "After an edit the bar below says there are unsaved changes: click \"Update\" to write them to the ticket, or \"No\" to keep them on screen only",
 {

@@ -13,7 +13,7 @@ import { Hint } from "@/components/ui/hint";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { useLang, useT } from "@/lib/i18n";
 import { useUiFlow } from "@/lib/uiflow";
-import { fileUrl, type FlowSaved, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
+import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 import { YtFetching } from "./bits";
 
@@ -45,14 +45,25 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   const engine = useUiFlow(el, flow, { lang, onChange: (_f, d) => { setDirty(d); if (d) setHid(false); } });
 
   const ctl = useRef<AbortController | null>(null); // the AI run, so Dừng cancels the request
+  // a background run on the server (X-Ai-Job), its id kept per ticket: closing the dialog leaves it going, opening it
+  // again reads it (`again`: that id) — still running, its result, or its error, the same as a run started here
   const ai = useMutation({
-    mutationFn: () => {
-      ctl.current?.abort();
+    mutationFn: async (again?: string) => {
+      ctl.current?.abort(); // a new run replaces the old one, on the server too
       const c = (ctl.current = new AbortController());
-      return yt.aiFlow(issue, note.trim(), c.signal);
+      const job = again ?? newJobId();
+      aiJobs.set(c.signal, job);
+      if (!again) setFlowJob(issue, job);
+      try {
+        return again
+          ? await yt.aiJob<{ flow: UiFlow }>(job, c.signal).catch((e) => { if (statusOf(e) === 404) return null; throw e; }) // gone (a restart): nothing to show
+          : await yt.aiFlow(issue, note.trim(), c.signal);
+      } finally {
+        if (c.signal.reason !== AI_LEAVE) setFlowJob(issue, null, job); // shown, failed or stopped: nothing left to read
+      }
     },
     retry: false,
-    onSuccess: (r) => { setMine({ flow: r.flow, base: q.data?.att ?? null }); setHid(false); setNote(""); },
+    onSuccess: (r) => { if (r) { setMine({ flow: r.flow, base: q.data?.att ?? null }); setHid(false); setNote(""); } },
   });
   const save = useMutation({
     mutationFn: (f: UiFlow) => yt.saveFlow(issue, f, base),
@@ -68,7 +79,12 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       // no invalidate of the flow key: the answer above is the saved version, and a refetch would api.set over the view
     },
   });
-  useEffect(() => () => ctl.current?.abort(), []); // the dialog closed: no answer to land on
+  // the dialog closed: stop reading, the server's run goes on (opening the dialog again reads it)
+  useEffect(() => () => { ctl.current?.abort(AI_LEAVE); ctl.current = null; }, []);
+  useEffect(() => { // a run left going: once the ticket's file is read (the base a result would replace), read it again
+    const j = q.isSuccess && !ctl.current && flowJob(issue);
+    if (j) ai.mutate(j.id);
+  }, [q.isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps -- once per open; `ai` / `issue` are this dialog's
   useEffect(() => { // what changed, shown for a moment
     if (!saved) return;
     const k = setTimeout(() => setSaved(null), CHANGES_MS);
@@ -77,8 +93,8 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
 
   const unsaved = !!mine || dirty;
   // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
-  const run = () => { setSaved(null); setDirty(false); save.reset(); ai.mutate(); };
-  const stopAi = () => { ctl.current?.abort(); ctl.current = null; ai.reset(); };
+  const run = () => { setSaved(null); setDirty(false); save.reset(); ai.mutate(undefined); };
+  const stopAi = () => { ctl.current?.abort(); ctl.current = null; ai.reset(); }; // → DELETE the server's run, the key goes
   const close = () => { if (unsaved) setAsk("close"); else setShown(false); };
   const fresh = () => { // "Xem bản mới": drop my version, read the ticket's
     setMine(null);

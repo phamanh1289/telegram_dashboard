@@ -531,6 +531,7 @@ export default {
   // UI flow (yt/flow.tsx, the button and the file row in the ticket sheet)
   "UI flow": "UI flow",
   "Sơ đồ màn hình và luồng bấm của ticket này": "This ticket's screens and the taps between them",
+  "Đang render UI flow — mở để xem": "Rendering the UI flow — open it to see",
   "UI flow {id}": "UI flow {id}",
   "Thao tác UI flow": "UI flow actions",
   "Thao tác với UI flow của ticket này": "Act on this ticket's UI flow",

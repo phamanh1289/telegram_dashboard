@@ -950,8 +950,9 @@ FLOW_RAW = """```json
 ```"""
 
 
-async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None):
-    """`others`: other tickets by id, a detail dict or an error status."""
+async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None, job="", then=None):
+    """`others`: other tickets by id, a detail dict or an error status. `job`: sent as X-Ai-Job (a background run);
+    `then(client, svc)`: more calls on the same app."""
     me = {"login": "anh", "fullName": "A"}
 
     def handler(req):
@@ -963,13 +964,16 @@ async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thê
         return httpx.Response(200, json=o or {**issue(1), "description": desc, "comments": [], "links": list(links)})
 
     svc = make(handler)
-    agent = FakeAgent(reply)
+    agent = reply if callable(reply) else FakeAgent(reply)
     app = FastAPI()
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.yt = svc  # link_block reads ticket links with it
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note})
+        if then:
+            return await then(c, svc)
+        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note},
+                                   headers={"X-Ai-Job": job} if job else None)  # fmt: skip
 
 
 async def test_ai_flow_returns_clean_flow_and_wraps_ticket_text():
@@ -1064,3 +1068,44 @@ async def test_ai_flow_502_on_unreadable_answer():
             assert e.status == 502, reply
         else:
             raise AssertionError(reply)
+
+
+def _items(r):
+    return [json.loads(x) for x in r.text.splitlines()]
+
+
+async def test_ai_flow_as_a_background_job_ends_with_the_cleaned_flow_read_again_by_id():
+    async def then(c, svc):
+        r = await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": ""}, headers={"X-Ai-Job": "flow-job-1"})
+        flow = _items(r)[-1]["done"]["flow"]
+        assert flow["ticket"] == "VA-1" and flow["rev"] == 0 and len(flow["links"]) == 2
+        assert all(s["x"] is None and s["y"] is None for s in flow["screens"])
+        again = await c.get("/api/yt/ai/job/flow-job-1")  # the dialog closed and opened again
+        assert again.text == r.text and (await c.get("/api/yt/ai/jobs")).json() == {"flow-job-1": "done"}
+
+    await _flow_post(FLOW_RAW, then=then)
+
+
+async def test_ai_flow_job_with_an_unreadable_answer_ends_with_an_error_item():
+    _, r = await _flow_post("xin lỗi", job="flow-job-2")
+    err = {"status": 502, "code": "ai_failed", "detail": "AI trả về không đọc được, thử lại"}
+    assert _items(r)[-1] == {"error": err}
+
+
+async def test_ai_flow_job_is_stopped_by_delete():
+    gate = asyncio.Event()
+
+    async def agent(prompt, **_):
+        await gate.wait()
+        return FLOW_RAW
+
+    async def then(c, svc):
+        post = asyncio.create_task(c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": ""},
+                                          headers={"X-Ai-Job": "flow-job-3"}))  # fmt: skip
+        while svc.jobs.status().get("flow-job-3") != "running":
+            await asyncio.sleep(0.01)
+        assert (await c.delete("/api/yt/ai/job/flow-job-3")).status_code == 204
+        assert _items(await post)[-1]["error"]["code"] == "ai_cancelled"
+        assert svc.jobs.status() == {"flow-job-3": "error"}
+
+    await _flow_post(agent, then=then)
