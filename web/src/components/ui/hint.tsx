@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { cloneElement, type FocusEvent, type PointerEvent, type ReactElement, useEffect, useId, useState } from "react";
+import { cloneElement, type FocusEvent, type PointerEvent, type ReactElement, type SyntheticEvent, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -42,33 +42,55 @@ const closed = () => { shown = Math.max(0, shown - 1); closedAt = Date.now(); };
  */
 export function Hint({ title, text, side = "right", children }: { title?: string; text: string; side?: Side; children: ReactElement<Record<string, unknown>> }) {
   const [at, setAt] = useState<DOMRect | null>(null);
+  // The portal exists only while the note shows or animates out: a long list has thousands of closed Hints.
+  const [mounted, setMounted] = useState(false);
   const id = useId();
   useEffect(() => cancel, []);
   useEffect(() => { if (!at) return; opened(); return closed; }, [at]); // also on unmount, so "warm" never sticks
-  const later = (el: Element) => schedule(() => setAt(el.getBoundingClientRect()));
+  const later = (el: Element) => schedule(() => { setMounted(true); setAt(el.getBoundingClientRect()); });
   const hide = () => { cancel(); setAt(null); };
   const right = side === "right";
+  // Measure the note, then flip to the other side / slide along the edge so it never runs off-screen or gets squeezed.
+  const box = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ left: 0, top: 0, flip: false });
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!at || !el) return;
+    const w = el.offsetWidth, h = el.offsetHeight, m = 8;
+    const fit = (v: number, room: number) => Math.max(m, Math.min(v, room - m));
+    if (right) {
+      const flip = at.right + 8 + w > innerWidth - m;
+      setPos({ left: fit(flip ? at.left - 8 - w : at.right + 8, innerWidth - w), top: fit(at.top + at.height / 2 - 16, innerHeight - h), flip });
+    } else {
+      const flip = at.bottom + 6 + h > innerHeight - m;
+      setPos({ left: fit(at.left + at.width / 2 - 16, innerWidth - w), top: flip ? at.top - 6 - h : at.bottom + 6, flip });
+    }
+  }, [at, right]);
+  const off = (pos.flip ? 1 : -1) * 10;
+  const own = children.props as Partial<Record<"onPointerEnter" | "onPointerLeave" | "onPointerDown" | "onFocus" | "onBlur", (e: SyntheticEvent) => void>>;
   return (
     <>
       {cloneElement(children, {
-        onPointerEnter: (e: PointerEvent) => { if (e.pointerType === "mouse") later(e.currentTarget); },
-        onPointerLeave: hide,
-        onPointerDown: hide, // clicked: it did its job
-        onFocus: (e: FocusEvent) => { if (e.currentTarget.matches(":focus-visible")) later(e.currentTarget); },
-        onBlur: hide,
+        // The child's own handlers still run (cloneElement would replace them).
+        onPointerEnter: (e: PointerEvent) => { own.onPointerEnter?.(e); if (e.pointerType === "mouse") later(e.currentTarget); },
+        onPointerLeave: (e: PointerEvent) => { own.onPointerLeave?.(e); hide(); },
+        onPointerDown: (e: PointerEvent) => { own.onPointerDown?.(e); hide(); }, // clicked: it did its job
+        onFocus: (e: FocusEvent) => { own.onFocus?.(e); if (e.currentTarget.matches(":focus-visible")) later(e.currentTarget); },
+        onBlur: (e: FocusEvent) => { own.onBlur?.(e); hide(); },
         "aria-describedby": at ? id : undefined, // screen readers hear the note with the control
       })}
-      {typeof document !== "undefined" && createPortal(
-        <AnimatePresence>
+      {(mounted || at) && createPortal(
+        <AnimatePresence onExitComplete={() => setMounted(false)}>
           {at && (
-            <motion.div key="hint" id={id} role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: -10 } : { y: -10 }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-              exit={{ opacity: 0, scale: 0.6, ...(right ? { x: -8 } : { y: -8 }) }} transition={{ type: "spring", stiffness: 520, damping: 22 }}
-              style={right ? { left: at.right + 8, top: at.top + at.height / 2 - 16 } : { left: Math.min(at.left + at.width / 2 - 16, innerWidth - 300), top: at.bottom + 6 }}
-              className={cn("pointer-events-none fixed z-50 flex max-w-72 gap-1", right ? "origin-left items-start" : "origin-top-left items-start")}>
+            <motion.div ref={box} key="hint" id={id} role="tooltip" initial={{ opacity: 0, scale: 0.5, ...(right ? { x: off } : { y: off }) }} animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+              exit={{ opacity: 0, scale: 0.6, ...(right ? { x: off * 0.8 } : { y: off * 0.8 }) }} transition={{ type: "spring", stiffness: 520, damping: 22 }}
+              style={{ left: pos.left, top: pos.top }}
+              className={cn("pointer-events-none fixed z-50 flex w-max max-w-72 items-start gap-1",
+                right ? (pos.flip ? "origin-right flex-row-reverse" : "origin-left") : (pos.flip ? "origin-bottom-left" : "origin-top-left"))}>
               <GuideBulb className="size-8 shrink-0 drop-shadow-sm" />
               <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-                className="mt-4 grid gap-0.5 rounded-lg rounded-tl-none bg-cotton px-2.5 py-1.5 text-xs text-ink-2 shadow-pop">
-                {title && <b className="font-semibold text-ink">{title}</b>}
+                className={cn("mt-4 grid min-w-0 gap-0.5 rounded-lg bg-cotton px-2.5 py-1.5 text-xs text-ink-2 shadow-pop", right && pos.flip ? "rounded-tr-none" : "rounded-tl-none")}>
+                {title && <b className="font-bold text-ink">{title}</b>}
                 {text}
               </motion.span>
             </motion.div>

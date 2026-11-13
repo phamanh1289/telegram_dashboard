@@ -13,12 +13,12 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
           node-version-file: .node-version
           cache: npm
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78  # v7.6.0
       - run: npm ci
       - run: npm run build
       - run: uv run --no-project --python 3.14 scripts/package.py ${{ github.ref_name }}
@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          if (-not (Test-Path $iscc)) { choco install innosetup --version 6.7.1 -y --no-progress }
           & $iscc "/DVersion=$('${{ github.ref_name }}'.TrimStart('v'))" packaging\windows\setup.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           $errs = $null
@@ -37,7 +37,7 @@ jobs:
       - name: macOS install script (curl | bash avoids Gatekeeper's quarantine block)
         if: runner.os == 'macOS'
         run: cp packaging/macos/install.sh dist/install-macos.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
         with:
           name: pkg-${{ matrix.os }}
           path: |
@@ -52,12 +52,33 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0 (for release_key.pem)
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131  # v7.0.0
         with:
           path: dist
           merge-multiple: true
+      - name: Sign every zip (the app installs an update only if its .sig matches telegram_dashboard/release_key.pem)
+        env:
+          KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::Secret RELEASE_SIGNING_KEY is missing (see .claude/skills/release/SKILL.md)"; exit 1; }
+          umask 077
+          # PEM, or the PEM as one base64 line (survives web-UI pastes that mangle line breaks)
+          case "$KEY" in
+            *"-----BEGIN"*) printf '%s\n' "$KEY" | tr -d '\r' > "$RUNNER_TEMP/key.pem" ;;
+            *) printf '%s' "$KEY" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/key.pem" 2>/dev/null || true ;;
+          esac
+          openssl rsa -check -noout -in "$RUNNER_TEMP/key.pem" -passin pass: >/dev/null 2>&1 || {
+            echo "::error::RELEASE_SIGNING_KEY is not an unencrypted RSA private key ($(wc -l < "$RUNNER_TEMP/key.pem") lines, PUBLIC markers: $(grep -c PUBLIC "$RUNNER_TEMP/key.pem" || true), ENCRYPTED markers: $(grep -c ENCRYPTED "$RUNNER_TEMP/key.pem" || true)). Set it to: base64 -i ~/.config/telegram-dashboard/release_signing_key.pem"
+            exit 1; }
+          openssl rsa -RSAPublicKey_in -in telegram_dashboard/release_key.pem -pubout -out "$RUNNER_TEMP/pub.pem"
+          for z in dist/*.zip; do
+            openssl dgst -sha256 -sign "$RUNNER_TEMP/key.pem" -out "$z.sig" "$z"
+            openssl dgst -sha256 -verify "$RUNNER_TEMP/pub.pem" -signature "$z.sig" "$z"  # secret matches the app's key
+          done
+          rm -f "$RUNNER_TEMP/key.pem"
       - run: ls -la dist
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3  # v3.0.4
         with:
           files: dist/*
           generate_release_notes: true

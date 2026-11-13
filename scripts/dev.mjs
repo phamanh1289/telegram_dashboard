@@ -32,4 +32,5 @@ function stop(code = 0) {
 for (const p of procs) p.on("exit", (code) => stop(code ?? 1));
 process.on("SIGINT", () => stop(0));
 process.on("SIGTERM", () => stop(0));
-console.log("Mở http://127.0.0.1:3000 (dùng 127.0.0.1, không dùng localhost)");
+// The server prints the first link with ?t=<API token>: open that once per browser (it sets a cookie).
+console.log("Mở link http://127.0.0.1:3000/?t=… server in ra bên dưới (dùng 127.0.0.1, không dùng localhost)");

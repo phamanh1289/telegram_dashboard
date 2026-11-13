@@ -3,13 +3,17 @@
 import { Popover as BasePopover } from "@base-ui/react/popover";
 import { Check, ChevronDown, Copy, MessageSquareText, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { createContext, Fragment, use, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, Fragment, use, useId, useLayoutEffect, useRef, useState } from "react";
 import { AiBot, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble } from "@/components/ai/chat";
+import { AiFetching } from "@/components/ai/fetching";
+import { AiSteps } from "@/components/ai/steps";
 import { Markdown as SharedMarkdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
+import type { AiStep } from "@/lib/api";
+import { fmtNum, t as tNow, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, yt } from "@/lib/yt";
+import { aiJobs, aiParts, aiSessions, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, newJobId, yt } from "@/lib/yt";
 import { ModelEffortPicker } from "@/components/ai";
 import { copyText, fold } from "@/lib/inbox";
 import { useYt } from "./state";
@@ -18,7 +22,7 @@ import { useYt } from "./state";
 
 export function Avatar({ name, className }: { name: string; className?: string }) {
   return (
-    <b aria-hidden className={cn("inline-grid size-6 shrink-0 place-items-center rounded-full text-xs font-semibold text-ink-2", className)}
+    <b aria-hidden className={cn("inline-grid size-6 shrink-0 place-items-center rounded-full text-xs font-bold text-ink-2", className)}
       style={{ background: `oklch(var(--av-l) var(--av-c) ${hue(name)})` }}>{initials(name)}</b>
   );
 }
@@ -30,9 +34,10 @@ export function Person({ name, empty = "—" }: { name: string | null; empty?: s
 
 /** State as a chip tinted with its workflow tier colour (the swatch keeps it readable without colour too). */
 export function StatePill({ state }: { state: string | null }) {
+  const t = useT();
   const sem = stateSem(state), c = stateColor(state);
   return (
-    <span aria-label={`Trạng thái: ${state || "—"}`} style={{ background: `color-mix(in oklch, ${c} 15%, transparent)` }}
+    <span aria-label={t("Trạng thái: {state}", { state: state || "—" })} style={{ background: `color-mix(in oklch, ${c} 15%, transparent)` }}
       className={cn("inline-flex items-center gap-1.5 rounded-[var(--radius-input)] px-1.5 text-xs leading-[22px] font-medium whitespace-nowrap text-ink",
         sem === "ok" && "text-ok", sem === "bad" && "text-error")}>
       <i className="size-2 shrink-0 rounded-[2px]" style={{ background: c }} />{state || "—"}
@@ -48,10 +53,11 @@ export function Tag({ name }: { name: string }) {
 }
 
 export function Prio({ p }: { p: string | null }) {
+  const t = useT();
   if (!p || !PCOL[p]) return <span className="text-ink-3">—</span>;
   const hi = rank({ priority: p }) < 3;
   return (
-    <span aria-label={`${p} ưu tiên`} className={cn("inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap text-ink-2", hi && "font-semibold")} style={hi ? { color: PCOL[p] } : undefined}>
+    <span aria-label={t("{p} ưu tiên", { p })} className={cn("inline-flex items-center gap-1.5 text-xs font-medium whitespace-nowrap text-ink-2", hi && "font-bold")} style={hi ? { color: PCOL[p] } : undefined}>
       <span aria-hidden className="inline-flex h-3 items-end gap-0.5">
         {[5, 7, 10, 12].map((h, k) => <i key={h} className="w-[3px] rounded-[1px]" style={{ height: h, background: k < PLVL[p] ? "currentColor" : "var(--color-rule-2)" }} />)}
       </span>{p}
@@ -60,7 +66,7 @@ export function Prio({ p }: { p: string | null }) {
 }
 
 export function TypeTag({ type }: { type: string | null }) {
-  if (type === "Bug") return <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-input)] bg-error-wash px-1.5 text-xs leading-[22px] font-semibold whitespace-nowrap text-error"><i className="size-1.5 rounded-full bg-error" />Bug</span>;
+  if (type === "Bug") return <span className="inline-flex items-center gap-1.5 rounded-[var(--radius-input)] bg-error-wash px-1.5 text-xs leading-[22px] font-bold whitespace-nowrap text-error"><i className="size-1.5 rounded-full bg-error" />Bug</span>;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-ink-2">
       <i className="size-1.5 rounded-full" style={{ background: typeColor(type) }} />{type || "—"}
@@ -98,6 +104,7 @@ export type PickOpt = { v: string; node: React.ReactNode; text?: string; hint?: 
 export function Picker({ label, title, value, options, onPick, search, foot, disabled, className }: {
   label: React.ReactNode; title: string; value: string; options: PickOpt[]; onPick: (v: string) => void; search?: string; foot?: React.ReactNode; disabled?: boolean; className?: string;
 }) {
+  const t = useT();
   const id = useId(), btn = useRef<HTMLButtonElement>(null), pop = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [q, setQ] = useState("");
   const shown = q ? options.filter((o) => fold(`${o.text ?? o.v} ${o.v}`).includes(fold(q))) : options;
@@ -145,7 +152,7 @@ export function Picker({ label, title, value, options, onPick, search, foot, dis
                   <Check aria-hidden className={cn("size-4 shrink-0 text-hl-2", o.v !== value && "invisible")} />
                 </button>
               ))}
-              {!shown.length && <p className="px-2 py-1.5 text-sm text-ink-3 italic">Không thấy “{q}”</p>}
+              {!shown.length && <p className="px-2 py-1.5 text-sm text-ink-3 italic">{t("Không thấy “{q}”", { q })}</p>}
             </div>
             {foot && <p className="shrink-0 border-t px-3 py-1.5 text-xs text-ink-3">{foot}</p>}
           </div>
@@ -160,16 +167,17 @@ export function MultiSelect({ label, all, options, value, onChange, render = (v)
   label: string; all: string; options: string[]; value: string[]; onChange: (v: string[]) => void; render?: (v: string) => React.ReactNode; search?: boolean; className?: string;
   count?: (v: string) => number | undefined; swatch?: (v: string) => string;
 }) {
+  const t = useT();
   const [q, setQ] = useState("");
-  const shown = value.length === 0 ? all : value.length <= 2 ? value.map((v) => String(render(v))).join(", ") : `${label}: ${value.length} đã chọn`;
+  const shown = value.length === 0 ? all : value.length <= 2 ? value.map((v) => String(render(v))).join(", ") : `${label}: ${t("{n} đã chọn", { n: value.length })}`;
   return (
     <Popover label={shown} title={label} className={className}>
       {() => (
         <>
-          {search && <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Tìm ${label.toLowerCase()}…`} aria-label={`Tìm ${label.toLowerCase()}`}
+          {search && <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("Tìm {what}…", { what: label.toLowerCase() })} aria-label={t("Tìm {what}", { what: label.toLowerCase() })}
             className="m-2 mb-1 h-8 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />}
           <div className="grid overflow-y-auto p-1">
-            <button type="button" onClick={() => onChange([])} className="rounded px-2 py-1.5 text-left text-xs text-ink-3 hover:bg-paper-2 hover:text-ink">Bỏ chọn tất cả</button>
+            <button type="button" onClick={() => onChange([])} className="rounded px-2 py-1.5 text-left text-xs text-ink-3 hover:bg-paper-2 hover:text-ink">{t("Bỏ chọn tất cả")}</button>
             {options.filter((o) => !q || fold(o).includes(fold(q))).map((o) => {
               const on = value.includes(o);
               return (
@@ -178,7 +186,7 @@ export function MultiSelect({ label, all, options, value, onChange, render = (v)
                   <span className={cn("grid size-4 shrink-0 place-items-center rounded-[4px] border", on ? "border-hl bg-hl text-hl-ink" : "border-rule-2")}>{on && <Check className="size-3" />}</span>
                   {swatch && <i aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ background: swatch(o) }} />}
                   <span className="truncate">{o}</span>
-                  {count && <b className="ml-auto font-mono text-xs font-medium text-ink-3 tabular-nums">{(count(o) ?? 0).toLocaleString("vi-VN")}</b>}
+                  {count && <b className="ml-auto font-mono text-xs font-medium text-ink-3 tabular-nums">{fmtNum(count(o) ?? 0, t.lang)}</b>}
                 </button>
               );
             })}
@@ -201,57 +209,80 @@ function ytText(text: string, f?: Files) {
     .replace(YT_IMG, (_, alt: string, src: string) => {
       if (/^https?:\/\//i.test(src)) return `![${alt}](${src})`;
       const name = unname(src), a = f && (f.list.find((x) => x.name === name && x.comment === (f.comment ?? null)) ?? f.list.find((x) => x.name === name));
-      return a && f ? `![${alt || a.name}](${fileUrl(f.issue, a)})` : `[ảnh${name ? `: ${name}` : ""}]`;
+      return a && f ? `![${alt || a.name}](${fileUrl(f.issue, a)})` : `[${tNow("ảnh")}${name ? `: ${name}` : ""}]`;
     }))).join("");
 }
 
 export function Markdown({ text, className, onTicket, files }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void; files?: Files }) {
   // reading text (descriptions, comments, AI answers): 15px, 1.55, ~70ch a line (DESIGN.md Type); tables keep the full width
-  return <SharedMarkdown text={files ? ytText(text ?? "", files) : (text ?? "").replace(IMG, "[ảnh]")} className={cn("text-[0.9375rem] leading-[1.55] [&>:not(table)]:max-w-[70ch]", className)} onTicket={onTicket} />;
+  const t = useT(); // the [image] placeholders follow the language
+  return <SharedMarkdown text={files ? ytText(text ?? "", files) : (text ?? "").replace(IMG, `[${t("ảnh")}]`)} className={cn("text-md leading-[1.55] [&>:not(table)]:max-w-[70ch]", className)} onTicket={onTicket} />;
 }
 
 // ---------- AI ----------
+/** A turn saved as it starts, before (or without) its answer. */
+export type AiPending = { q: string; label: string; job?: string }; // job: its background run on the server
 export type AiRun = { label: string; q?: string; run: (signal: AbortSignal) => Promise<{ text: string; draft?: string }> };
-type AiState = { status: "idle" } | { status: "busy"; label: string; text?: string } | { status: "done"; text: string; draft?: string } | { status: "error"; error: string };
+// steps: the run's working steps (reading code, running a command), shown like AI Agent's
+type AiState = { status: "idle" } | { status: "busy"; label: string; text?: string; steps?: AiStep[] } | { status: "done"; text: string; draft?: string; steps?: AiStep[] } | { status: "error"; error: string };
 
-/** One AI run at a time per box: busy line with Hủy, then the answer with Copy. Aborts on unmount / new run.
+/** One AI run at a time per box: busy line with Hủy, then the answer with Copy. Aborts on a new run or Hủy; closing the
+ *  view does not (the run goes on in the background and lands in the history: `onTurn`).
  *  After an answer, `ask` sends a follow-up: the first request again (same data) + the thread so far + the question.
- *  `onTurn`: each answered turn (`first`: a new conversation), for the history. */
-export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean) => void) {
+ *  `onTurn`: each turn for the history (`first`: a new conversation): once as it starts (`pending`: its question and
+ *  label, not answered yet, kept if it never is; `stop` aborts it) and again with the answer. What the start call
+ *  returns is called when the run ends, however it ends. */
+export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => void | (() => void),
+  session?: (first: boolean) => string) { // `session`: the history session code of the turn about to run, sent with it
   const [s, setS] = useState<AiState>({ status: "idle" });
   const [thread, setThread] = useState<AiTurn[]>([]); // finished turns; when done, the last one is `s.text`
   const [q, setQ] = useState(""); // the follow-up being answered (busy / error)
   const [req, setReq] = useState<AiReq | null>(null); // the first request, sent again with each follow-up
   const ctl = useRef<AbortController | null>(null);
-  useEffect(() => () => ctl.current?.abort(), []);
-  async function start(label: string, run: AiRun["run"], ask: string, first = false) {
+  /** `at`: reading again a turn saved before a reload (its request, the thread before it, its server run id). */
+  async function start(label: string, run: AiRun["run"], ask: string, first = false, at?: { req: AiReq | null; thread: AiTurn[]; job: string }) {
     ctl.current?.abort();
     const c = (ctl.current = new AbortController());
     setQ(ask);
     setS({ status: "busy", label });
-    aiParts.set(c.signal, (text) => { if (c === ctl.current) setS({ status: "busy", label, text }); });
+    let live: string | undefined, steps: AiStep[] = [];
+    const show = () => { if (c === ctl.current) setS({ status: "busy", label, text: live, steps }); };
+    aiParts.set(c.signal, { text: (t) => { live = t; show(); }, step: (e) => { steps = [...steps, e]; show(); } });
+    const job = at?.job ?? newJobId();
+    aiJobs.set(c.signal, job); // the server runs it on if this page goes (a reload: read again by `job`)
+    const ses = session?.(first);
+    if (ses) aiSessions.set(c.signal, ses); // logged with the run on the server: a bug report's YT-xxxxxx finds it
+    let settle: void | (() => void) = undefined;
     try {
-      const out = await run(c.signal);
+      const p = run(c.signal); // ytApi notes the request (aiReqs) before its first await
+      const r = at ? at.req : first ? aiReqs.get(c.signal) ?? null : req;
+      const before = at ? at.thread : first ? [] : thread;
+      settle = onTurn?.(r, before, first, { q: ask, label, job }, () => c.abort());
+      const out = await p;
       if (c === ctl.current) {
-        const text = out.text || "(trống)";
-        const r = first ? aiReqs.get(c.signal) ?? null : req;
-        const next = [...(first ? [] : thread), { q: ask, a: text }];
+        const text = out.text || tNow("(trống)");
+        const next = [...before, { q: ask, a: text }];
         setReq(r);
         setThread(next);
         setQ("");
-        setS({ status: "done", text, draft: out.draft });
+        setS({ status: "done", text, draft: out.draft, steps });
         onTurn?.(r, next, first);
         return { ...out, req: r };
       }
     } catch (e) {
       if (c === ctl.current && (e as Error).name !== "AbortError") setS({ status: "error", error: (e as Error).message });
+    } finally {
+      settle?.();
     }
   }
   const run = (r: AiRun) => { setReq(null); setThread([]); return start(r.label, r.run, r.q ?? "", true); }; // `q`: the user's own prompt, shown above the answer
   const ask = (text: string) => {
     const r = req, h = thread;
-    if (r && h.length) return start("AI đang trả lời", (sig) => yt.aiFollow(r, h, text, sig), text);
+    if (r && h.length) return start(tNow("AI đang trả lời"), (sig) => yt.aiFollow(r, h, text, sig), text);
   };
+  /** Read again a turn that ran on in the server after a reload (live if it still runs), then go on as usual. */
+  const attach = (p: AiPending & { job: string }, r: AiReq | null, t: AiTurn[]) =>
+    start(p.label, (sig) => yt.aiJob(p.job, sig), p.q, !t.length, { req: r, thread: t, job: p.job });
   /** Show a saved exchange as if just run, so it can be followed up (`r`: its request, if kept). */
   const seed = (t: AiTurn[], r: AiReq | null) => {
     const last = t.at(-1);
@@ -265,7 +296,7 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
     setS(last ? { status: "done", text: last.a } : { status: "idle" });
   };
   const cancel = () => { ctl.current?.abort(); ctl.current = null; setReq(null); setThread([]); setQ(""); setS({ status: "idle" }); };
-  return { s, thread, q, canAsk: !!req && thread.length > 0, heavy: heavyReq(req), run, ask, seed, stop, cancel, set: setS };
+  return { s, thread, q, canAsk: !!req && thread.length > 0, heavy: heavyReq(req), run, ask, attach, seed, stop, cancel, set: setS };
 }
 
 /** Whether a YouTrack AI request runs heavy on the server (yt_dashboard): it reads code, or sends over 10 tickets.
@@ -277,8 +308,9 @@ export function heavyReq(req: AiReq | null) {
 
 /** The model + effort (short) a YouTrack prompt box will run on: the light picks, or the heavy ones (code, many tickets). */
 export function YtPicks({ heavy, className }: { heavy: boolean; className?: string }) {
+  const t = useT();
   return (
-    <Hint side="bottom" text={`Model và effort cho lượt này: ${heavy ? "Đọc code, nhiều ticket" : "Hỏi AI, báo cáo, soạn ticket"}. Đổi ở đây hoặc Cài đặt › YouTrack › AI và prompt.`}>
+    <Hint side="bottom" text={t(heavy ? "Model và effort cho lượt này: Đọc code, nhiều ticket. Đổi ở đây hoặc Cài đặt › AI." : "Model và effort cho lượt này: Hỏi AI, báo cáo, soạn ticket. Đổi ở đây hoặc Cài đặt › AI.")}>
       <span className={cn("flex", className)}><ModelEffortPicker kind={heavy ? "yt_task" : "yt"} compact className="gap-x-1.5" /></span>
     </Hint>
   );
@@ -288,6 +320,7 @@ export function YtPicks({ heavy, className }: { heavy: boolean; className?: stri
  *  writing. `ids={false}`: ticket IDs stay plain text (in the AI sheet, opening one would replace the answer).
  *  `stop={false}`: no stop button by the live turn (the page's prompt box has its own). */
 export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; ids?: boolean; stop?: boolean }) {
+  const t = useT();
   const y = useYt();
   const s = ai.s;
   if (s.status === "idle") return null;
@@ -295,33 +328,35 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
   const close = () => { ai.cancel(); onClose?.(); };
   const turns = s.status === "done" ? ai.thread.slice(0, -1) : ai.thread; // done: the last turn is drawn below with its actions
   const lastQ = s.status === "done" ? ai.thread.at(-1)?.q : ai.q;
-  const closeBtn = <Button size="icon-xs" variant="ghost" aria-label="Đóng" onClick={close}><X /></Button>;
+  const closeBtn = <Button size="icon-xs" variant="ghost" aria-label={t("Đóng")} onClick={close}><X /></Button>;
   return (
     <div aria-live="polite" className={cn("grid grid-cols-[minmax(0,1fr)] gap-3", className)}>
-      {turns.map((t, k) => (
+      {turns.map((x, k) => (
         <Fragment key={k}>
-          {t.q && <UserBubble>{t.q}</UserBubble>}
-          <AiResultCard dim><Markdown text={t.a} onTicket={open} /></AiResultCard>
+          {x.q && <UserBubble>{x.q}</UserBubble>}
+          <AiResultCard dim><Markdown text={x.a} onTicket={open} /></AiResultCard>
         </Fragment>
       ))}
       {lastQ && <UserBubble>{lastQ}</UserBubble>}
       {s.status === "busy" ? <>
+        <AiSteps items={s.steps} live={!s.text?.trim()} />
         {s.text?.trim() && <Markdown text={s.text.replace(/\n\s*={3,}\s*(\n|$)/, "\n\n")} className="px-0.5 text-ink animate-in fade-in-0 duration-(--dur-short)" />}
         <div className="flex items-center gap-2">
-          {s.text?.trim() ? <AiWriting /> : <AiThinking label={s.label} className="min-w-0 flex-1" />}
-          {stop && <span className="ml-auto"><AiStop onClick={ai.stop} label="Hủy" /></span>}
+          {s.text?.trim() ? <AiWriting /> : !s.steps?.length && <AiThinking label={s.label} className="min-w-0 flex-1" />}
+          {stop && <span className="ml-auto"><AiStop onClick={ai.stop} label={t("Hủy")} /></span>}
         </div>
       </> : s.status === "error" ? (
         <AiResultCard error actions={closeBtn}>{s.error}</AiResultCard>
-      ) : (
+      ) : <>
+        <AiSteps items={s.steps} />
         <AiResultCard actions={<>
-          {onUse && <Hint side="bottom" text="Đặt vào ô bình luận để sửa rồi gửi lên YouTrack"><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> Đưa vào bình luận</Button></Hint>}
+          {onUse && <Hint side="bottom" text={t("Đặt vào ô bình luận để sửa rồi gửi lên YouTrack")}><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> {t("Đưa vào bình luận")}</Button></Hint>}
           <Button size="xs" variant="ghost" onClick={() => void copyText(s.text)}><Copy /> Copy</Button>
           {closeBtn}
         </>}>
           <Markdown text={s.text} onTicket={open} />
         </AiResultCard>
-      )}
+      </>}
     </div>
   );
 }
@@ -330,12 +365,13 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
 export const CardAi = createContext<((title: string) => void) | null>(null);
 
 /** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. */
-export function AiAsk({ label, onClick, hint = "Hỏi mình về số liệu này nhé!", big }: { label: string; onClick: () => void; hint?: string; big?: boolean }) {
+export function AiAsk({ label, onClick, hint, big }: { label: string; onClick: () => void; hint?: string; big?: boolean }) {
+  const t = useT();
   const [peek, setPeek] = useState(false);
   return (
     <button type="button" onClick={onClick} aria-label={label}
       onPointerEnter={() => setPeek(true)} onPointerLeave={() => setPeek(false)} onFocus={() => setPeek(true)} onBlur={() => setPeek(false)}
-      className={cn("ai-chip yt-noprint relative inline-flex shrink-0 items-center gap-1 rounded-full font-semibold", big ? "h-7 px-3 text-xs" : "h-6 px-2 text-[11px]")}>
+      className={cn("ai-chip yt-noprint relative inline-flex shrink-0 items-center gap-1 rounded-full font-bold", big ? "h-7 px-3 text-xs" : "h-6 px-2 text-2xs")}>
       <AnimatePresence>
         {peek && (
           // big (sticky nav, under the header): drops below, right-aligned; on a card: pops up over the title
@@ -344,26 +380,27 @@ export function AiAsk({ label, onClick, hint = "Hỏi mình về số liệu nà
             className={cn("pointer-events-none absolute z-30 flex gap-1", big ? "top-full right-0 mt-1.5 origin-top-right flex-row-reverse items-start" : "bottom-full right-0 mb-1 origin-bottom-right flex-row-reverse items-end")}>
             <AiBot className="size-8 drop-shadow-sm" />
             <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-              className={cn("rounded-lg bg-cotton px-2 py-1 text-[11px] font-medium whitespace-nowrap text-ink shadow-pop", big ? "mt-4 rounded-tr-none" : "mb-4 rounded-br-none")}>{hint}</motion.span>
+              className={cn("rounded-lg bg-cotton px-2 py-1 text-2xs font-medium whitespace-nowrap text-ink shadow-pop", big ? "mt-4 rounded-tr-none" : "mb-4 rounded-br-none")}>{hint ?? t("Hỏi mình về số liệu này nhé!")}</motion.span>
           </motion.span>
         )}
       </AnimatePresence>
-      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{big ? "Hỏi AI tổng quan" : "AI"}
+      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{big ? t("Hỏi AI tổng quan") : "AI"}
     </button>
   );
 }
 
 /** A dashboard / home card. */
 export function Card({ title, meta, children, className, onMeta }: { title: React.ReactNode; meta?: React.ReactNode; children: React.ReactNode; className?: string; onMeta?: () => void }) {
+  const t = useT();
   const ai = use(CardAi);
   return (
     <motion.section initial={{ opacity: 0, y: 12 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, margin: "-40px" }} transition={{ duration: 0.35, ease: [0.2, 0, 0, 1] }}
       className={cn("yt-card grid min-w-0 grid-cols-1 content-start gap-3 rounded-[var(--radius-card)] bg-cotton p-4 shadow-stock transition-shadow duration-(--dur-short) hover:shadow-pop", className)}>
       <div className="flex min-h-6 flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        <h3 className="text-sm font-bold text-ink">{title}</h3>
         <div className="ml-auto flex items-center gap-2">
           {meta && (onMeta ? <button type="button" onClick={onMeta} className="text-xs text-ink-3 hover:text-ink">{meta}</button> : <span className="text-xs text-ink-3">{meta}</span>)}
-          {ai && typeof title === "string" && <AiAsk label={`Hỏi AI về ${title}`} onClick={() => ai(title)} />}
+          {ai && typeof title === "string" && <AiAsk label={t("Hỏi AI về {name}", { name: title })} onClick={() => ai(title)} />}
         </div>
       </div>
       {children}
@@ -373,7 +410,7 @@ export function Card({ title, meta, children, className, onMeta }: { title: Reac
 
 /** Section label inside a card / sheet: a step smaller, quiet, sentence case (never uppercase, DESIGN.md). */
 export const Label = ({ children, className }: { children: React.ReactNode; className?: string }) => (
-  <h4 className={cn("flex items-center gap-1.5 text-xs font-semibold text-ink-3", className)}>{children}</h4>
+  <h4 className={cn("flex items-center gap-1.5 text-xs font-bold text-ink-3", className)}>{children}</h4>
 );
 
 /** A button that opens a short list of actions (AI ▾, Hiển thị ▾). */
@@ -396,4 +433,9 @@ export function Menu({ label, items, align = "left", title, className }: {
       )}
     </Popover>
   );
+}
+
+/** Waiting on YouTrack: the feature's AI scene (tickets: first load / a scope not warmed yet, release, people), with this project's ticket IDs. */
+export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people" | "sessions"; className?: string }) {
+  return <AiFetching kind={kind} project={useYt().project} className={className} />;
 }

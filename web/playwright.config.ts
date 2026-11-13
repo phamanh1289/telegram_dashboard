@@ -8,7 +8,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   reporter: "list",
-  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure" },
+  // locale: the specs assert the Vietnamese UI (lib/i18n follows the browser's language)
+  use: { baseURL: `http://127.0.0.1:${PORT}`, trace: "retain-on-failure", locale: "vi-VN" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "uv run --no-sync python web/tests/fixture_server.py",

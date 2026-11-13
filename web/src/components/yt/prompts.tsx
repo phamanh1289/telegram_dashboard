@@ -9,6 +9,7 @@ import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
+import { type Key, t as tNow, useT } from "@/lib/i18n";
 import { toast } from "@/lib/inbox";
 import type { YtRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,8 @@ export const shownFor = (lib: PromptLib, ctx: PromptCtx): string[] => (lib.shown
 /** A built-in fits one ticket or several. */
 export const fitsCount = (b: Builtin, many: boolean) => b.for === "any" || (b.for === "many") === many;
 export const builtin = (name: string) => BUILTINS.find((b) => b.name === name);
+/** A prompt's name on screen: a built-in's in the UI language (stored and matched by its Vietnamese name), a team prompt's as written. */
+export const promptName = (t: (k: Key) => string, name: string) => { const b = builtin(name); return b ? t(b.name) : name; };
 const ROLES: [YtRole, string][] = [["dev", "Dev"], ["qa", "QC"], ["po", "PO"]];
 const KEY = ["yt", "prompts"];
 
@@ -53,19 +56,20 @@ export function usePrompts() {
   const m = useMutation({
     mutationFn: yt.setPrompts,
     onSuccess: (next) => qc.setQueryData(KEY, next),
-    onError: (e) => toast({ text: `Không lưu được prompt: ${(e as Error).message}` }),
+    onError: (e) => toast({ text: tNow("Không lưu được prompt: {msg}", { msg: (e as Error).message }) }),
   });
   const lib: PromptLib = { prompts: [], shown: {}, hidden: [], ...q.data };
   return { q, lib, save: m.mutate, saving: m.isPending };
 }
 
-type Item = { name: string; sub: string; mine?: number }; // mine: index in lib.prompts (a team prompt)
+type Item = { name: string; label: string; sub: string; mine?: number }; // name: the stored one (identity), label: shown; mine: index in lib.prompts (a team prompt)
 
 /**
  * The prompt library: built-ins and the team's prompts in one list, pinned ones (the session's buttons, ≤ 5 per role and ticket count) first.
  * With `onPick` a click runs the prompt (the session popup); without it a click opens a team prompt to edit (Settings).
  */
 export function PromptManager({ onPick, role: role0, many: many0 = false }: { onPick?: (name: string) => void; role: YtRole; many?: boolean }) {
+  const t = useT();
   const { q, lib, save: put, saving } = usePrompts();
   const list = lib.prompts;
   const [role, setRole] = useState(role0);
@@ -81,11 +85,11 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
   const everywhere = (f: (names: string[]) => string[]) => Object.fromEntries(Object.entries(lib.shown).map(([k, v]) => [k, f(v)])); // every context's buttons
 
   const items: Item[] = [
-    ...list.map((p, k) => ({ name: p.name, sub: p.text, mine: k })),
-    ...BUILTINS.filter((b) => fitsCount(b, many) && !lib.hidden.includes(b.name)).map((b) => ({ name: b.name, sub: b.hint })),
+    ...list.map((p, k) => ({ name: p.name, label: p.name, sub: p.text, mine: k })),
+    ...BUILTINS.filter((b) => fitsCount(b, many) && !lib.hidden.includes(b.name)).map((b) => ({ name: b.name, label: t(b.name), sub: t(b.hint) })),
   ];
   const f = find.trim().toLowerCase();
-  const hit = (i: Item) => !f || i.name.toLowerCase().includes(f) || i.sub.toLowerCase().includes(f);
+  const hit = (i: Item) => !f || i.name.toLowerCase().includes(f) || i.label.toLowerCase().includes(f) || i.sub.toLowerCase().includes(f);
   const pinned = shown.map((n) => items.find((i) => i.name === n)).filter((i): i is Item => !!i && hit(i));
   const rest = items.filter((i) => !shown.includes(i.name) && hit(i));
   const deleted = BUILTINS.filter((b) => lib.hidden.includes(b.name));
@@ -124,17 +128,17 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
   const form = (
     <form className="grid gap-2 rounded-lg bg-cotton p-3 shadow-stock animate-in fade-in-0 duration-(--dur-short)" onSubmit={(e) => { e.preventDefault(); save(); }}
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); setEdit(null); } }}>
-      <p className="text-xs font-semibold text-ink-2">{edit === "new" ? "Prompt mới" : "Sửa prompt"}</p>
-      <Input aria-label="Tên prompt" placeholder="Tên ngắn, hiện trên nút. Ví dụ: Rủi ro release" value={draft.name} maxLength={40} autoFocus
+      <p className="text-xs font-bold text-ink-2">{t(edit === "new" ? "Prompt mới" : "Sửa prompt")}</p>
+      <Input aria-label={t("Tên prompt")} placeholder={t("Tên ngắn, hiện trên nút. Ví dụ: Rủi ro release")} value={draft.name} maxLength={40} autoFocus
         aria-invalid={taken || undefined} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-      {taken && <p className="-mt-1 text-xs text-error">Đã có prompt tên này.</p>}
-      <Textarea aria-label="Nội dung prompt" rows={5} maxLength={2000} placeholder="AI nhận các ticket đã chọn kèm nội dung này. Ví dụ: Liệt kê rủi ro khi release các ticket này, xếp theo mức độ."
+      {taken && <p className="-mt-1 text-xs text-error">{t("Đã có prompt tên này.")}</p>}
+      <Textarea aria-label={t("Nội dung prompt")} rows={5} maxLength={2000} placeholder={t("AI nhận các ticket đã chọn kèm nội dung này. Ví dụ: Liệt kê rủi ro khi release các ticket này, xếp theo mức độ.")}
         value={draft.text} onChange={(e) => setDraft({ ...draft, text: e.target.value })} className="max-h-72 resize-y"
         onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } }} />
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[0.6875rem] text-ink-3 tabular-nums">{draft.text.length}/2000</span>
-        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={() => setEdit(null)}>Huỷ</Button>
-        <Button type="submit" size="sm" disabled={!ok || saving}>Lưu</Button>
+        <span className="font-mono text-2xs text-ink-3 tabular-nums">{draft.text.length}/2000</span>
+        <Button type="button" size="sm" variant="ghost" className="ml-auto" onClick={() => setEdit(null)}>{t("Huỷ")}</Button>
+        <Button type="submit" size="sm" disabled={!ok || saving}>{t("Lưu")}</Button>
       </div>
     </form>
   );
@@ -155,25 +159,25 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
           </span>
           <span className="grid min-w-0 gap-0.5">
             <span className="flex items-center gap-1.5 text-sm font-medium text-ink">
-              <span className="truncate">{i.name}</span>
-              {i.mine === undefined && <span className="shrink-0 rounded px-1 text-[0.6875rem] leading-4 font-medium text-ink-3 ring-1 ring-rule">Có sẵn</span>}
+              <span className="truncate">{i.label}</span>
+              {i.mine === undefined && <span className="shrink-0 rounded px-1 text-2xs leading-4 font-medium text-ink-3 ring-1 ring-rule">{t("Có sẵn")}</span>}
             </span>
             <span className="line-clamp-1 text-xs text-ink-3">{i.sub}</span>
           </span>
         </button>
         {sure ? (
           <span className="flex shrink-0 items-center gap-1 animate-in fade-in-0 duration-(--dur-micro)">
-            <Button size="xs" variant="destructive" disabled={saving} onClick={() => remove(i)} autoFocus onBlur={() => setConfirm(null)}>Xóa</Button>
-            <Button size="xs" variant="ghost" onMouseDown={(e) => e.preventDefault()} onClick={() => setConfirm(null)}>Huỷ</Button>
+            <Button size="xs" variant="destructive" disabled={saving} onClick={() => remove(i)} autoFocus onBlur={() => setConfirm(null)}>{t("Xóa")}</Button>
+            <Button size="xs" variant="ghost" onMouseDown={(e) => e.preventDefault()} onClick={() => setConfirm(null)}>{t("Huỷ")}</Button>
           </span>
         ) : (
           <span className="flex shrink-0 items-center">
-            {onPick && <Hint side="bottom" text="Chạy ngay"><Button size="icon-xs" variant="ghost" className={hover} aria-label={`Chạy “${i.name}”`} onClick={() => onPick(i.name)}><Play /></Button></Hint>}
-            {i.mine !== undefined && <Hint side="bottom" text="Sửa prompt này"><Button size="icon-xs" variant="ghost" className={hover} aria-label={`Sửa “${i.name}”`} onClick={() => open(i.mine!)}><Pencil /></Button></Hint>}
-            <Hint side="bottom" text="Xóa prompt này"><Button size="icon-xs" variant="ghost" disabled={saving} className={cn(hover, "hover:bg-error-wash hover:text-error")} aria-label={`Xóa “${i.name}”`} onClick={() => setConfirm(i.name)}><Trash2 /></Button></Hint>
-            <Hint side="bottom" text={full ? `Đã ghim đủ ${SHOWN_MAX}` : on ? "Bỏ ghim khỏi phiên AI" : "Ghim thành nút ở phiên AI"}>
+            {onPick && <Hint side="bottom" text={t("Chạy ngay")}><Button size="icon-xs" variant="ghost" className={hover} aria-label={t("Chạy “{name}”", { name: i.label })} onClick={() => onPick(i.name)}><Play /></Button></Hint>}
+            {i.mine !== undefined && <Hint side="bottom" text={t("Sửa prompt này")}><Button size="icon-xs" variant="ghost" className={hover} aria-label={t("Sửa “{name}”", { name: i.label })} onClick={() => open(i.mine!)}><Pencil /></Button></Hint>}
+            <Hint side="bottom" text={t("Xóa prompt này")}><Button size="icon-xs" variant="ghost" disabled={saving} className={cn(hover, "hover:bg-error-wash hover:text-error")} aria-label={t("Xóa “{name}”", { name: i.label })} onClick={() => setConfirm(i.name)}><Trash2 /></Button></Hint>
+            <Hint side="bottom" text={full ? t("Đã ghim đủ {n}", { n: SHOWN_MAX }) : t(on ? "Bỏ ghim khỏi phiên AI" : "Ghim thành nút ở phiên AI")}>
               <Button size="icon-xs" variant="ghost" disabled={saving || full} aria-pressed={on} className={cn(on ? "text-hl-2" : hover)}
-                aria-label={`${on ? "Bỏ ghim" : "Ghim"} “${i.name}”`} onClick={() => pin(i.name)}>
+                aria-label={t(on ? "Bỏ ghim “{name}”" : "Ghim “{name}”", { name: i.label })} onClick={() => pin(i.name)}>
                 <Pin className={cn(on && "fill-current")} />
               </Button>
             </Hint>
@@ -188,41 +192,41 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
       <div className="flex flex-wrap items-center gap-2">
         <label className="relative min-w-40 flex-1">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" />
-          <Input aria-label="Tìm prompt" placeholder="Tìm prompt…" value={find} onChange={(e) => setFind(e.target.value)} className="h-8 pl-8 text-sm"
+          <Input aria-label={t("Tìm prompt")} placeholder={t("Tìm prompt…")} value={find} onChange={(e) => setFind(e.target.value)} className="h-8 pl-8 text-sm"
             autoFocus={!!onPick} onKeyDown={(e) => { const first = pinned[0] ?? rest[0]; if (e.key === "Enter" && onPick && first) { e.preventDefault(); onPick(first.name); } }} />
         </label>
-        <Button type="button" size="sm" disabled={edit === "new"} onClick={() => open("new")}><Plus /> Prompt mới</Button>
+        <Button type="button" size="sm" disabled={edit === "new"} onClick={() => open("new")}><Plus /> {t("Prompt mới")}</Button>
       </div>
       {edit === "new" && form}
 
       <div className="flex flex-wrap items-center gap-2 border-y border-rule py-2">
-        <span className="text-xs text-ink-3">Nút ở phiên AI cho</span>
-        <Segmented id="prompt-role" label="Vai trò" value={role} onChange={setRole} items={ROLES.map(([value, label]) => ({ value, label }))} />
-        <Segmented id="prompt-many" label="Số ticket" value={many ? "many" : "one"} onChange={(v) => setMany(v === "many")} items={[{ value: "one", label: "1 ticket" }, { value: "many", label: "Nhiều ticket" }]} />
+        <span className="text-xs text-ink-3">{t("Nút ở phiên AI cho")}</span>
+        <Segmented id="prompt-role" label={t("Vai trò")} value={role} onChange={setRole} items={ROLES.map(([value, label]) => ({ value, label }))} />
+        <Segmented id="prompt-many" label={t("Số ticket")} value={many ? "many" : "one"} onChange={(v) => setMany(v === "many")} items={[{ value: "one", label: t("1 ticket") }, { value: "many", label: t("Nhiều ticket") }]} />
       </div>
 
-      {q.isError && <p className="text-sm text-error">Không tải được prompt: {(q.error as Error).message}</p>}
+      {q.isError && <p className="text-sm text-error">{t("Không tải được prompt: {msg}", { msg: (q.error as Error).message })}</p>}
 
-      <section className="grid gap-1" aria-label="Đã ghim">
+      <section className="grid gap-1" aria-label={t("Đã ghim")}>
         <header className="flex items-center gap-2 px-2 text-xs text-ink-3">
-          <Pin className="size-3" /><b className="font-semibold text-ink-2">Đã ghim</b>
+          <Pin className="size-3" /><b className="font-bold text-ink-2">{t("Đã ghim")}</b>
           <span className="font-mono tabular-nums">{shown.length}/{SHOWN_MAX}</span>
-          <span>({custom ? "team chọn" : "mặc định"})</span>
-          {custom && <button type="button" disabled={saving} onClick={reset} className="ml-auto inline-flex items-center gap-1 hover:text-ink"><RotateCcw className="size-3" />Về mặc định</button>}
+          <span>({t(custom ? "team chọn" : "mặc định")})</span>
+          {custom && <button type="button" disabled={saving} onClick={reset} className="ml-auto inline-flex items-center gap-1 hover:text-ink"><RotateCcw className="size-3" />{t("Về mặc định")}</button>}
         </header>
-        {pinned.length ? <ul className="grid">{pinned.map(row)}</ul>
-          : <p className="px-2 py-3 text-xs text-ink-3">{f ? "Không có prompt ghim nào khớp." : "Chưa ghim prompt nào: phiên AI sẽ không có nút gợi ý. Bấm ghim ở một prompt bên dưới."}</p>}
+        {pinned.length ? <ul className="zebra grid">{pinned.map(row)}</ul>
+          : <p className="px-2 py-3 text-xs text-ink-3">{t(f ? "Không có prompt ghim nào khớp." : "Chưa ghim prompt nào: phiên AI sẽ không có nút gợi ý. Bấm ghim ở một prompt bên dưới.")}</p>}
       </section>
 
-      <section className="grid gap-1" aria-label="Prompt khác">
-        <header className="px-2 text-xs font-semibold text-ink-2">Khác</header>
-        {rest.length ? <ul className="grid">{rest.map(row)}</ul>
-          : <p className="px-2 py-3 text-xs text-ink-3">{f ? `Không có prompt khớp “${find.trim()}”.` : "Mọi prompt đều đã ghim."}</p>}
+      <section className="grid gap-1" aria-label={t("Prompt khác")}>
+        <header className="px-2 text-xs font-bold text-ink-2">{t("Khác")}</header>
+        {rest.length ? <ul className="zebra grid">{rest.map(row)}</ul>
+          : <p className="px-2 py-3 text-xs text-ink-3">{f ? t("Không có prompt khớp “{q}”.", { q: find.trim() }) : t("Mọi prompt đều đã ghim.")}</p>}
       </section>
 
       {deleted.length > 0 && (
         <button type="button" disabled={saving} onClick={() => update({ hidden: [] })} className="inline-flex items-center gap-1.5 justify-self-start px-2 text-xs text-ink-3 hover:text-ink">
-          <RotateCcw className="size-3" />Khôi phục {deleted.length} prompt có sẵn đã xóa
+          <RotateCcw className="size-3" />{t("Khôi phục {n} prompt có sẵn đã xóa", { n: deleted.length })}
         </button>
       )}
     </div>
@@ -231,11 +235,12 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
 
 /** The prompt library as a popup; picking one hands its name back and closes. */
 export function PromptsDialog({ open, onOpenChange, onPick, role, many }: { open: boolean; onOpenChange: (open: boolean) => void; onPick: (name: string) => void; role: YtRole; many: boolean }) {
+  const t = useT();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="ai-in flex h-[min(88dvh,42rem)] flex-col sm:max-w-xl">
-        <DialogTitle>Kho prompt</DialogTitle>
-        <DialogDescription className="-mt-2">Bấm một prompt để chạy với các ticket đang chọn. Ghim để hiện thành nút. Dùng chung cho cả team.</DialogDescription>
+        <DialogTitle>{t("Kho prompt")}</DialogTitle>
+        <DialogDescription className="-mt-2">{t("Bấm một prompt để chạy với các ticket đang chọn. Ghim để hiện thành nút. Dùng chung cho cả team.")}</DialogDescription>
         <div className="-mx-5 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-1">
           {open && <PromptManager role={role} many={many} onPick={(n) => { onPick(n); onOpenChange(false); }} />}
         </div>

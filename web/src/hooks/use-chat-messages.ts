@@ -1,7 +1,7 @@
 "use client";
 
 import { type InfiniteData, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api, type MessagesPage } from "@/lib/api";
 
 /** "pending" / "done": stored tags; "live": every message of the group, live from Telegram (search and dates ignored). */
@@ -12,10 +12,12 @@ const PAGE = 50;
 const livePath = (chatId: string, before?: string | null) =>
   `/chats/${encodeURIComponent(chatId)}/live?limit=${PAGE}${before ? `&before=${before}` : ""}`;
 
-/** Pages newest-first; each page's items are ascending. `range`: query string from rangeQuery() ("" = all time). */
+/** Pages newest-first; each page's items are ascending. `range`: query string from rangeQuery() ("" = all time).
+ *  `pollError`: the live view's last poll failed (flood wait, a drop): the list is not updating. */
 export function useChatMessages(chatId: string | null, q: string, range: string, view: View) {
   const live = view === "live" && !q;
   const qc = useQueryClient();
+  const [failed, setFailed] = useState<{ chat: string; e: unknown } | null>(null);
   // Plain group messages are not stored, so no SSE change reaches them: while shown, poll the newest page only and merge
   // it into the first loaded page (older pages don't change often). Paused while the tab is hidden.
   useEffect(() => {
@@ -23,8 +25,9 @@ export function useChatMessages(chatId: string | null, q: string, range: string,
     const key = ["live", chatId];
     const t = setInterval(async () => {
       if (document.hidden || qc.isFetching({ queryKey: key })) return;
-      const head = await api<MessagesPage>(livePath(chatId)).catch(() => null);
+      const head = await api<MessagesPage>(livePath(chatId)).catch((e: unknown) => { setFailed({ chat: chatId, e }); return null; });
       if (!head) return;
+      setFailed(null);
       const cur = qc.getQueryData<Pages>(key)?.pages[0];
       const lastSeen = cur?.items.at(-1)?.message_id;
       // More new messages than one page: the merge would leave a hole, so reload the whole view.
@@ -40,7 +43,7 @@ export function useChatMessages(chatId: string | null, q: string, range: string,
     }, 10_000);
     return () => clearInterval(t);
   }, [live, chatId, qc]);
-  return useInfiniteQuery({
+  const query = useInfiniteQuery({
     // "live" root: SSE changes refetch ["messages", chat] only, never the whole live history
     queryKey: live ? ["live", chatId] : ["messages", chatId, q, range, q ? "" : view],
     enabled: chatId !== null,
@@ -56,5 +59,9 @@ export function useChatMessages(chatId: string | null, q: string, range: string,
       return api<MessagesPage>(`/chats/${encodeURIComponent(chatId!)}/messages?${p}`, { signal });
     },
     getNextPageParam: (last) => (last.has_more && last.items[0] ? last.items[0].message_id : null),
+    // a snooze running out sends no change: Chưa xử lý looks again each minute, like Việc cần xử lý does.
+    // ponytail: first page only (a refetch re-reads every loaded page); a scrolled-back list waits for its next change
+    refetchInterval: (qy) => (!live && !q && view === "pending" && (qy.state.data?.pages.length ?? 1) <= 1 ? 60_000 : false),
   });
+  return { query, pollError: live && failed?.chat === chatId ? failed.e : null };
 }

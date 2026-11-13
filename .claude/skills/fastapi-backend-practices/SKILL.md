@@ -6,6 +6,7 @@ description: Use when writing or reviewing Python code under telegram_dashboard/
 # FastAPI backend best practices (telegram_dashboard/)
 
 ## Hợp đồng API
+- **Lỗi đã gặp trong repo này** (cache cũ, nuốt lỗi, gửi trùng, prompt injection, poll theo dòng…): đọc skill `avoiding-dashboard-pitfalls` trước khi báo xong.
 - Endpoint khai báo trong `create_app()` (`app.py`), prefix `/api/…`, danh từ số nhiều, REST verb đúng nghĩa (`PUT` idempotent, `DELETE` trả 204).
 - Request/response là Pydantic model trong `models.py` (`…Request`, `…DTO`, `…Page`). ID trên wire là **string** (`StoredMessage` nội bộ dùng int).
 - Đổi model → frontend phải regen kiểu: `uv run python -m telegram_dashboard export-openapi` rồi `cd web && npm run api:types`. Quên bước này = lệch hợp đồng.

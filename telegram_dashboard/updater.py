@@ -27,9 +27,24 @@ log = logging.getLogger("telegram_dashboard.updater")
 CHECK_EVERY = 3600  # seconds between background checks (badge; auto-update when on)
 restart_requested = False  # read by __main__._serve after uvicorn returns
 behind = 0  # last background/manual check, for the badge on the Settings button
+last_error = ""  # the last auto-update failure (shown in Settings), "" once a check/update succeeds
 _lock = asyncio.Lock()
 REPO = "phamanh1289/telegram_dashboard"
 RESTART_CODE = 75  # launcher loop: start versions/<current> again
+# Release zips are signed in CI (RSA PKCS#1 v1.5, SHA-256; .github/workflows/release.yml) with the private half of
+# this key: the sha256 GitHub reports only catches corruption, the signature catches a release nobody here built.
+RELEASE_KEY = Path(__file__).with_name("release_key.pem")
+
+
+def _signed(path: Path, sig: bytes) -> bool:
+    import rsa  # Telethon's dependency
+
+    try:
+        with open(path, "rb") as f:
+            rsa.verify(f, sig, rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()))
+    except (rsa.VerificationError, OSError, ValueError):
+        return False
+    return True
 
 
 def home() -> Path | None:
@@ -60,7 +75,11 @@ async def _releases() -> list[dict]:
             r.raise_for_status()
     except httpx.HTTPError as e:
         raise ApiError(502, "update_failed", detail=f"Không đọc được GitHub Releases: {e}") from None
-    return [x for x in r.json() if not x.get("draft") and not x.get("prerelease")]
+    try:
+        data = r.json()
+    except ValueError:  # an HTML error page from a proxy / captive portal
+        raise ApiError(502, "update_failed", detail="GitHub Releases trả về không phải JSON.") from None
+    return [x for x in data if not x.get("draft") and not x.get("prerelease")]
 
 
 async def _check_release(root: Path) -> dict:
@@ -117,6 +136,9 @@ async def _apply_release(root: Path, h: Path) -> dict:
     )
     if not asset:
         raise ApiError(409, "update_failed", detail=f"Bản {latest['tag_name']} chưa có gói {platform_tag()}.")
+    sig_asset = next((a for a in latest.get("assets", []) if a["name"] == f"{asset['name']}.sig"), None)
+    if not sig_asset:
+        raise ApiError(409, "update_failed", detail=f"Bản {latest['tag_name']} chưa có chữ ký: không cài (an toàn).")
     name = latest["tag_name"].removeprefix("v")
     versions = h / "versions"
     versions.mkdir(exist_ok=True)
@@ -132,6 +154,8 @@ async def _apply_release(root: Path, h: Path) -> dict:
                 async for chunk in r.aiter_bytes(1 << 20):
                     sha.update(chunk)
                     f.write(chunk)
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as c2:
+                sig = (await c2.get(sig_asset["browser_download_url"])).raise_for_status().content
     except httpx.HTTPError as e:
         tmp.unlink(missing_ok=True)
         raise ApiError(502, "update_failed", detail=f"Tải gói lỗi: {e}") from None
@@ -139,8 +163,13 @@ async def _apply_release(root: Path, h: Path) -> dict:
     if not digest.startswith("sha256:") or digest[7:] != sha.hexdigest():
         tmp.unlink(missing_ok=True)
         raise ApiError(502, "update_failed", detail="Gói tải về sai checksum.")
+    if not await asyncio.to_thread(_signed, tmp, sig):
+        tmp.unlink(missing_ok=True)
+        raise ApiError(502, "update_failed", detail="Chữ ký gói không khớp khóa của app: không cài (an toàn).")
     try:
         await asyncio.to_thread(_extract, tmp, name, versions / name)
+    except (zipfile.BadZipFile, OSError) as e:  # a broken zip, a full disk: say so, not "no GitHub"
+        raise ApiError(502, "update_failed", detail=f"Giải nén gói lỗi: {type(e).__name__}: {e}") from None
     finally:
         tmp.unlink(missing_ok=True)
     (h / "current").write_text(name)
@@ -180,7 +209,9 @@ async def check(root: Path) -> dict:
         return info
     try:
         upstream = await _run(root, "git", "rev-parse", "--abbrev-ref", "@{u}")
-    except ApiError:
+    except ApiError as e:
+        if e.status != 502:  # git missing (503) / timed out (504): say that, not "no upstream"
+            raise
         detail = "Thư mục này không phải bản git có nhánh theo dõi trên GitHub."
         raise ApiError(409, "no_upstream", detail=detail) from None
     await _run(root, "git", "fetch", "--quiet", timeout=60)
@@ -216,17 +247,23 @@ async def apply(root: Path) -> dict:
                 await _run(root, "npm", "ci")
             if any(f.startswith("web/") or f == "package-lock.json" for f in changed):
                 await _run(root, "npm", "run", "build")
-        except ApiError as e:  # the code is new, its deps / UI are not: say what to rerun
-            detail = f"Đã pull code mới nhưng chưa xong, cần chạy lại: {e.detail}"
+        except ApiError as e:  # deps / UI didn't build: back to the running code, so disk matches memory
+            await _run(root, "git", "reset", "--hard", "--quiet", before)  # clean tree checked above
+            detail = f"Cập nhật lỗi, đã quay về bản đang chạy (thử lại sau): {e.detail}"
             raise ApiError(e.status, e.code, detail=detail) from None
         return {**info, "updated": True}
 
 
-def restart() -> None:
-    """Graceful uvicorn shutdown (as Ctrl+C), then __main__ re-execs the server."""
+def restart(agent) -> None:
+    """Graceful uvicorn shutdown (as Ctrl+C), then __main__ re-execs the server. Waits while an AI
+    Agent task runs: one may have started while the update was building."""
     global restart_requested
+    loop = asyncio.get_running_loop()
+    if agent.busy:
+        loop.call_later(15, restart, agent)
+        return
     restart_requested = True
-    asyncio.get_running_loop().call_later(0.5, signal.raise_signal, signal.SIGINT)
+    loop.call_later(0.5, signal.raise_signal, signal.SIGINT)
 
 
 def auto_enabled(settings) -> bool:
@@ -236,19 +273,23 @@ def auto_enabled(settings) -> bool:
 async def auto_loop(settings, agent) -> None:
     """Check every CHECK_EVERY (feeds the badge). When auto-update is on in Settings and no AI Agent
     task is running: pull, rebuild, restart; open pages reload when /api/update/state's version changes."""
+    global last_error
     await asyncio.sleep(60)
     while True:
         try:
             await check(settings.root)
-            if (behind and auto_enabled(settings) and not agent.procs
+            if (behind and auto_enabled(settings) and not agent.busy
                     and (await apply(settings.root))["updated"]):
                 log.info("auto-update applied, restarting")
-                restart()
+                restart(agent)
                 return
+            last_error = ""
         except ApiError as e:
             log.warning("update check skipped: %s %s", e.code, e.detail)
-        except Exception:  # a bad zip, a full disk, GitHub's HTML error page: try again next time
+            last_error = e.detail or e.code
+        except Exception as e:  # a bad zip, a full disk, GitHub's HTML error page: try again next time
             log.warning("update check failed", exc_info=True)
+            last_error = f"{type(e).__name__}: {e}"[:300]
         await asyncio.sleep(CHECK_EVERY)
 
 
@@ -257,7 +298,7 @@ def build_router(settings) -> APIRouter:
 
     @r.get("")
     async def get_update() -> dict:
-        return {**await check(settings.root), "auto": auto_enabled(settings)}
+        return {**await check(settings.root), "auto": auto_enabled(settings), "error": last_error}
 
     @r.get("/state")
     async def get_state() -> dict:
@@ -268,15 +309,18 @@ def build_router(settings) -> APIRouter:
                 ver = await _run(settings.root, "git", "rev-parse", "--short", "HEAD")
             except ApiError:
                 ver = ""
-        return {"version": ver, "behind": behind}
+        return {"version": ver, "behind": behind, "error": last_error}
 
     @r.post("")
     async def post_update(request: Request) -> dict:
-        if request.app.state.agent.procs:
+        global last_error
+        agent = request.app.state.agent
+        if agent.busy:
             raise ApiError(409, "agent_running", detail="Đang có task AI Agent chạy; đợi xong rồi cập nhật.")
         res = await apply(settings.root)
+        last_error = ""
         if res["updated"]:
-            restart()
+            restart(agent)
         return res
 
     @r.put("/auto", status_code=204)

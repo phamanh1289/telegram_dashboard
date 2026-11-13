@@ -2,15 +2,16 @@
 
 import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { t, useT } from "@/lib/i18n";
 import { getPref, setPref } from "@/lib/prefs";
-import { addLoopItems } from "@/lib/report-back";
-import { type Ticket, yt } from "@/lib/yt";
+import { deskNotify, type Ticket } from "@/lib/yt";
 import { ago } from "@/lib/time";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
 
-// What changed on my tickets (assignee or QC) between two refreshes: state moved, newly given to me, updated by someone
-// (a comment, an edit). Kept for the session; a desktop notification when the tab is in the background and it is on.
+// What changed on my tickets (assignee or QC) between two refreshes: state moved, updated by someone (a comment, an edit);
+// tickets newly given to me come from checkNew in the shell (`note`). Kept for the session; a desktop notification when
+// the tab is in the background and it is on.
 
 type Event = { id: string; text: string; at: number };
 let events: Event[] = [];
@@ -20,25 +21,12 @@ const emit = () => subs.forEach((f) => f());
 const sub = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 
 type Snap = { state: string | null; assignee: string | null; updated: number };
-const FINISHED = /^(fixed|done|resolved|verified|closed)$/i; // whole state names: not "Unresolved" / "Not fixed"
 
-const note = (id: string, text: string) => {
+export const note = (id: string, text: string) => {
   events = [{ id, text, at: Date.now() }, ...events].slice(0, 40);
   unread += 1;
   emit();
 };
-
-/** A ticket of mine reached Fixed / Done: queue "Báo lại" for the Telegram messages that mention it (to-do list). */
-function loopBack(i: Ticket) {
-  yt.mentions(i.id).then((ms) => {
-    // My own "đã tạo VA-1" answers the tag it replied to; one not sent as a reply is answered in its own thread.
-    const n = addLoopItems(ms.map((m) => ({ ticket: i.id, state: i.state ?? "Done", chat_id: m.chat_id, message_id: (m.outgoing && m.reply_to_id) || m.message_id })));
-    if (n) note(i.id, `Báo lại trên Telegram: ${n} tin nhắc ticket này (xem Việc cần xử lý)`);
-  }, (e) => {
-    console.warn("Báo lại: mentions", i.id, e); // runs once per state change: say so instead of missing it silently
-    note(i.id, "Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại");
-  });
-}
 
 /** Runs in the shell: diffs each refreshed list for the same scope. */
 export function useWatch() {
@@ -53,33 +41,25 @@ export function useWatch() {
     const p = prev.current;
     prev.current = { key, m };
     if (!p || p.key !== key) return; // first load or another scope: nothing to compare with
-    for (const i of data) {
-      const o = p.m.get(i.id); // mine and open last time (my own move to Fixed counts too)
-      if (o && o.state !== i.state && (i.resolved || FINISHED.test(i.state ?? ""))) loopBack(i);
-    }
     const now = Date.now(), out: Event[] = [];
     for (const i of data.filter(mine)) {
       const o = p.m.get(i.id);
       if ((selfEdits.get(i.id) ?? 0) > now - 3 * 60_000) continue;
-      if (!o) { if (i.assignee === y.me) out.push({ id: i.id, text: `Mới giao cho bạn: ${i.summary ?? ""}`, at: now }); }
-      else if (o.state !== i.state) out.push({ id: i.id, text: `${o.state ?? "—"} → ${i.state ?? "—"}`, at: now });
-      else if (o.updated !== i.updated) out.push({ id: i.id, text: "Có cập nhật mới (bình luận hoặc sửa)", at: now });
+      if (!o) continue; // newly mine: checkNew in the shell (persists across reloads and scopes)
+      if (o.state !== i.state) out.push({ id: i.id, text: `${o.state ?? "—"} → ${i.state ?? "—"}`, at: now });
+      else if (o.updated !== i.updated) out.push({ id: i.id, text: t("Có cập nhật mới (bình luận hoặc sửa)"), at: now });
     }
     if (!out.length) return;
     events = [...out, ...events].slice(0, 40);
     unread += out.length;
     emit();
-    try {
-      if (document.hidden && getPref("ytNotify") === "1" && Notification.permission === "granted") {
-        const n = new Notification(out.length === 1 ? `${out[0].id}: ${out[0].text}` : `${out.length} ticket của bạn vừa thay đổi`,
-          { body: out.slice(0, 4).map((e) => `${e.id}: ${e.text}`).join("\n"), tag: "yt-watch" });
-        n.onclick = () => { focus(); y.openTicket(out[0].id); n.close(); };
-      }
-    } catch {} // no Notification API
+    deskNotify(out.length === 1 ? `${out[0].id}: ${out[0].text}` : t("{n} ticket của bạn vừa thay đổi", { n: out.length }),
+      out.slice(0, 4).map((e) => `${e.id}: ${e.text}`).join("\n"), () => y.openTicket(out[0].id));
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps -- one diff per refreshed list
 }
 
 export function WatchBell() {
+  const t = useT();
   const y = useYt();
   const list = useSyncExternalStore(sub, () => events, () => events);
   const n = useSyncExternalStore(sub, () => unread, () => 0);
@@ -93,25 +73,25 @@ export function WatchBell() {
   }
   return (
     <span onPointerDown={() => { if (unread) { unread = 0; emit(); } }}>
-      <Popover align="right" chevron={false} title="Thay đổi trên ticket của bạn" className="px-2"
+      <Popover align="right" chevron={false} title={t("Thay đổi trên ticket của bạn")} className="px-2"
         label={<span className="relative inline-flex">{n ? <BellRing className="size-4 text-signal-2" /> : <Bell className="size-4" />}
-          {n > 0 && <b className="absolute -top-1.5 -right-2 rounded-full bg-signal px-1 font-mono text-xs leading-4 text-(--color-signal-ink)">{n}</b>}</span>}>
+          {n > 0 && <b className="absolute -top-1.5 -right-2 rounded-full bg-signal px-1 font-mono text-xs leading-4 text-white">{n}</b>}</span>}>
         {(close) => (
           <div className="grid">
             <div className="flex items-center gap-2 border-b border-rule px-3 py-2 text-xs">
-              <span className="font-medium">Ticket của bạn</span>
-              <label className="ml-auto flex items-center gap-1.5 text-ink-3"><input type="checkbox" checked={desk} onChange={(e) => void toggle(e.target.checked)} />Thông báo trên máy</label>
+              <span className="font-medium">{t("Ticket của bạn")}</span>
+              <label className="ml-auto flex items-center gap-1.5 text-ink-3"><input type="checkbox" checked={desk} onChange={(e) => void toggle(e.target.checked)} />{t("Thông báo trên máy")}</label>
             </div>
             {list.length ? (
-              <ul className="grid max-h-80 overflow-y-auto p-1">
+              <ul className="zebra grid max-h-80 overflow-y-auto p-1">
                 {list.map((e, k) => (
-                  <li key={k}><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
+                  <li key={k} className="rounded"><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
                     <span className="flex gap-2 text-xs"><b className="font-mono">{e.id}</b><span className="ml-auto text-ink-3">{ago(e.at)}</span></span>
                     <span className="truncate text-sm">{e.text}</span>
                   </button></li>
                 ))}
               </ul>
-            ) : <p className="px-3 py-4 text-sm text-ink-3">Chưa có thay đổi nào từ lúc mở trang. Dữ liệu tự làm mới mỗi phút.</p>}
+            ) : <p className="px-3 py-4 text-sm text-ink-3">{t("Chưa có thay đổi nào từ lúc mở trang. Dữ liệu tự làm mới mỗi phút.")}</p>}
           </div>
         )}
       </Popover>

@@ -2,11 +2,12 @@
 
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { t as tNow } from "@/lib/i18n";
 import { toast } from "@/lib/inbox";
 import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
-import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, type Sprint, type Ticket, QUICK, UNASSIGNED, yt } from "@/lib/yt";
+import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytMeQuery, ytProjectsQuery } from "@/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
@@ -23,16 +24,30 @@ export type Sheet =
   | { kind: "list"; title: string; rows: Ticket[] }
   | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession };
 
-/** Tickets I just changed from the dashboard (assignee, field, comment): their next update is mine, not news (watch.tsx). */
-export const selfEdits = new Map<string, number>();
+export { selfEdits };
 
 export type TicketPatch = Partial<Ticket> & { id: string };
-/** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error. */
+/** The newest save per ticket (`id`) and per field (`id:key`): an older answer or rollback never lands over a newer edit. */
+const newest = new Map<string, number>();
+let saves = 0;
+/** Tickets with a save in flight (count per id): their cached values are not YouTrack's yet, the watch must not act on them. */
+export const saving = new Map<string, number>();
+const unsave = (id: string) => { const c = (saving.get(id) ?? 1) - 1; if (c > 0) saving.set(id, c); else saving.delete(id); };
+/** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error.
+ *  The newest save on a ticket takes YouTrack's whole answer (a State change can resolve it); an older one only its own fields.
+ *  ponytail: a newest answer read before an older save landed can still hide that save until its own answer arrives. */
 export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ticket, local: Partial<Ticket>, call: () => Promise<Ticket>) {
-  const back = Object.fromEntries(Object.keys(local).map((k) => [k, t[k as keyof Ticket] ?? null]));
-  await patch({ id: t.id, ...local });
-  try { await patch(await call()); return true; }
-  catch (e) { await patch({ id: t.id, ...back }); toast({ text: `${t.id}: không đổi được — ${(e as Error).message}` }); return false; }
+  const n = ++saves, keys = Object.keys(local) as (keyof Ticket)[];
+  for (const k of [t.id, ...keys.map((k) => `${t.id}:${k}`)]) newest.set(k, n);
+  const own = (from: Partial<Ticket>) => ({ id: t.id, ...Object.fromEntries(keys.filter((k) => newest.get(`${t.id}:${k}`) === n).map((k) => [k, from[k] ?? null])) });
+  const back = Object.fromEntries(keys.map((k) => [k, t[k] ?? null])) as Partial<Ticket>;
+  saving.set(t.id, (saving.get(t.id) ?? 0) + 1);
+  let r: Ticket;
+  try { await patch({ id: t.id, ...local }); r = await call(); }
+  catch (e) { unsave(t.id); await patch(own(back)); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
+  unsave(t.id);
+  await patch(newest.get(t.id) === n ? r : own(r));
+  return true;
 }
 
 const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view
@@ -75,11 +90,12 @@ const b2s = (b: boolean) => (b ? "1" : "0");
 function useYtState() {
   const qc = useQueryClient();
   const config = useQuery({ queryKey: ["yt", "config"], queryFn: yt.config, staleTime: Infinity });
-  const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity });
-  const meQ = useQuery({ queryKey: ["yt", "me"], queryFn: yt.me, staleTime: Infinity });
+  const projects = useQuery(ytProjectsQuery);
+  const meQ = useQuery(ytMeQuery);
   const me = meQ.data?.name ?? null;
 
-  const [wanted, setProjectRaw] = useState(() => qp().get("project") || getPref("project") || "VA");
+  // a link's ?project= becomes the saved one: the ticket form and the shell's watch read the tab's project from the pref
+  const [wanted, setProjectRaw] = useState(() => { const u = qp().get("project"); if (u) put("project", u); return u || getPref("project") || "VA"; });
   const ps = projects.data; // the saved project no longer exists: fall back to VA, else the first one
   const project = resolveProject(ps, wanted);
 
@@ -129,6 +145,8 @@ function useYtState() {
     enabled: !!config.data && who !== undefined && !waitMe && !!role,
     placeholderData: keepPreviousData,
     refetchInterval: 60_000, // background tabs wait until visible again
+    // not isFetching / dataUpdatedAt: each refetch would re-render every useYt() reader (the header reads those itself)
+    notifyOnChangeProps: ["data", "error", "isPending", "isError", "isSuccess", "isPlaceholderData"],
   });
   const rows = issues.data ?? EMPTY;
   // Warm the other scope presets once the current one is in, so switching tabs shows data at once instead of a dimmed wait.
@@ -228,6 +246,7 @@ function useYtState() {
   const tried = useRef(new Set<string>());
   const chain = useRef(Promise.resolve());
   const [sinceBusy, setSinceBusy] = useState(0);
+  const [sinceError, setSinceError] = useState<Error | null>(null); // the server re-raises a refused token: show it, not "no data"
   const since = useCallback((i: Ticket) => sinceMap.get(`${i.id}@${i.updated}`) ?? null, [sinceMap]);
   const loadSince = useCallback((list: Ticket[]) => {
     const todo = list.filter((i) => !tried.current.has(`${i.id}@${i.updated}`));
@@ -235,11 +254,11 @@ function useYtState() {
       const batch = todo.slice(n, n + 100), keys = batch.map((i) => `${i.id}@${i.updated}`);
       keys.forEach((k) => tried.current.add(k));
       setSinceBusy((b) => b + 1);
-      chain.current = chain.current.then(() => yt.since(keys).then((r) => setSinceMap((m) => {
+      chain.current = chain.current.then(() => yt.since(keys).then((r) => { setSinceError(null); setSinceMap((m) => {
         const next = new Map(m);
         for (const i of batch) if (r[i.id] != null) next.set(`${i.id}@${i.updated}`, +r[i.id] || i.created || i.updated);
         return next;
-      })).catch(() => keys.forEach((k) => tried.current.delete(k))).finally(() => setSinceBusy((b) => b - 1)));
+      }); }).catch((e: Error) => { keys.forEach((k) => tried.current.delete(k)); setSinceError(e); }).finally(() => setSinceBusy((b) => b - 1)));
     }
   }, []);
 
@@ -251,6 +270,7 @@ function useYtState() {
     qc.setQueriesData<Ticket[]>({ queryKey: ["yt", "issues", project] }, (old) => old?.map((i) => (i.id === t.id ? { ...i, ...t } : i)));
   }, [qc, project]);
   const refresh = () => {
+    setSinceError(null);
     void qc.invalidateQueries({ queryKey: ["yt", "issues", project] });
     void qc.invalidateQueries({ queryKey: ["yt", "sprints", project] });
     qc.removeQueries({ queryKey: ["yt", "detail"] });
@@ -270,7 +290,7 @@ function useYtState() {
   const aiOn = !!config.data?.ai && !config.data.mock;
 
   return {
-    config: config.data, configError: config.error, projects: projects.data ?? [], project, setProject, me, people: people.data ?? NO_PEOPLE, loginOf,
+    config: config.data, configError: config.error, sinceError, issuesKey: issuesQuery(who ?? null).queryKey, projects: projects.data ?? [], project, setProject, me, people: people.data ?? NO_PEOPLE, loginOf,
     sprints, sprintOptions, peopleOptions, rows, issues, refresh, filters, setFilters, team, members, setMembers, group, setGroup, scope, setScope, role, mode, setMode, page, setPage, cap, setCap,
     picked, setPicked, sheet, setSheet, newTicket, setNewTicket, aiOn, seen, since, loadSince, sinceBusy: sinceBusy > 0, patchTicket,
     hiddenCols, setHiddenCols, dense, setDense, view, setView, showRes, setShowRes, hiOn, setHiOn, range, setRange, wip, setWip, agingStates, setAgingStates,

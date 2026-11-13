@@ -2,12 +2,14 @@
  * One source: Next imports this file (web/src/app/globals.css), the YouTrack page links it. Spec: DESIGN.md.
  * Two signals that never share a job: --color-hl (terracotta) = where you are and what you act on (selection, current tab, primary button, focus);
  * --color-signal (honey amber) = what needs you (overdue, waiting long, new). Primary button is espresso ink (--color-board). Contrast: text ≥ 4.5:1, marks and borders ≥ 3:1, in both modes.
- * waive: fonts · Be Vietnam Pro (Vietnamese-native grotesk) for text, Geist Mono for figures. */
+ * waive: fonts · one face for the whole app: Quicksand (rounded, full Vietnamese), weights 400 regular / 500 medium / 700 bold only; no tabular digits in this face, so figure columns are not monospaced. */
 :root {
   color-scheme: light;
-  /* scale (app range: 1.2 ratio, no fluid heads) */
+  /* scale. Type by role (the only sizes; no text-[Npx] in components): 2xs 12 badge, count, kbd · xs 13 meta, label, nav section · sm 15 UI body, card head
+   * · md 16 reading text (messages, tickets, AI answers, composer) · base 17 dialog title, detail head · lg 20 page title · xl 22 hero line · 2xl/3xl 26/32 big figures */
   --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
-  --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem; --text-3xl: 2.074rem;
+  /* --text-scale: the member's text size (Cài đặt chung › Cỡ chữ, lib/fonts FONT_SIZES), set on <html> by the boot script */
+  --text-2xs: calc(0.75rem * var(--text-scale, 1)); --text-xs: calc(0.8125rem * var(--text-scale, 1)); --text-sm: calc(0.9375rem * var(--text-scale, 1)); --text-md: calc(1rem * var(--text-scale, 1)); --text-base: calc(1.0625rem * var(--text-scale, 1)); --text-lg: calc(1.25rem * var(--text-scale, 1)); --text-xl: calc(1.375rem * var(--text-scale, 1)); --text-2xl: calc(1.625rem * var(--text-scale, 1)); --text-3xl: calc(2rem * var(--text-scale, 1));
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in: cubic-bezier(0.7, 0, 0.84, 0); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-emph: cubic-bezier(0.2, 0, 0, 1); /* pages and popups arriving: a soft deceleration that still moves in the last frames (--ease-out spends itself in the first) */
   --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 420ms;
@@ -15,10 +17,13 @@
   --control-h: 36px; --control-h-sm: 30px; --hit: 44px;
 
   /* faces */
-  --font-body: "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Quicksand", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: var(--font-body);
-  --font-figure: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --tracking-display: -0.02em; --display-weight: 600;
+  --font-figure: var(--font-body);
+  --tracking-display: -0.02em; --display-weight: 700;
+  /* weights: font-normal / font-medium read these (Tailwind's names). Quicksand's 400 is a hairline, so its regular is 500; the boot
+   * script (app/layout.tsx) swaps both per picked face (lib/fonts `w`). Bold stays 700 everywhere. */
+  --font-weight-normal: 500; --font-weight-medium: 600; --font-weight-bold: 700;
 
   /* surfaces: a warm cream ground (never pure white) so cotton cards still separate; --ground-wash is a faint top-to-bottom warm gradient on the ground only */
   --color-paper: oklch(96.4% 0.012 75);    /* app ground */
@@ -28,22 +33,22 @@
   --ground-wash: linear-gradient(180deg, oklch(95.2% 0.022 62) 0%, var(--color-paper) 45%, oklch(96.8% 0.014 88) 100%);
   /* text: warm brown-black, not grey */
   --color-ink: oklch(22% 0.02 50);    /* headings, body */
-  --color-ink-2: oklch(34% 0.02 50);  /* secondary text */
-  --color-ink-3: oklch(46% 0.022 55); /* labels, meta (≥ 4.5:1 on paper-3) */
+  --color-ink-2: oklch(32% 0.02 50);  /* secondary text */
+  --color-ink-3: oklch(43% 0.022 55); /* labels, meta (≥ 5:1 on paper-3: small text carries most of the screen) */
   /* lines */
   --color-rule: oklch(89.2% 0.015 70);   /* hairline dividers */
   --color-rule-2: oklch(63% 0.022 60);   /* control borders (≥ 3:1) */
 
   /* highlight: terracotta by default. selection, current, focus. Each member picks the hue (--hl-h, gradient end --hl-h2) in Cài đặt chung;
    * the boot script in app/layout.tsx sets them inline on <html>. --hl-c scales chroma per style (see "styles" at the end). */
-  --hl-h: 40; --hl-h2: 40; --hl-c: 1;
-  --color-hl: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h));         /* fills, marks, underlines */
-  --color-hl-b: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h2));      /* gradient end */
-  --color-hl-2: oklch(48% calc(0.13 * var(--hl-c)) calc(var(--hl-h) - 2));        /* as text on cotton/paper and on hl-wash */
-  --color-hl-wash: oklch(93.6% calc(0.032 * var(--hl-c)) calc(var(--hl-h) + 12));  /* selected row / item background */
+  --hl-h: 40; --hl-h2: 40; --hl-c: 1; --hl-k: 1;
+  --color-hl: oklch(53% calc(0.135 * var(--hl-c) * var(--hl-k)) var(--hl-h));         /* fills, marks, underlines */
+  --color-hl-b: oklch(53% calc(0.135 * var(--hl-c) * var(--hl-k)) var(--hl-h2));      /* gradient end */
+  --color-hl-2: oklch(48% calc(0.13 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 2));        /* as text on cotton/paper and on hl-wash */
+  --color-hl-wash: oklch(93.6% calc(0.032 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) + 12));  /* selected row / item background */
   --color-hl-ink: oklch(99% 0.006 80);     /* text on hl */
   --color-board: oklch(27% 0.025 45); --color-board-type: oklch(97% 0.012 80); /* primary button: espresso ink */
-  --color-focus: oklch(55% calc(0.14 * var(--hl-c)) var(--hl-h));
+  --color-focus: oklch(55% calc(0.14 * var(--hl-c) * var(--hl-k)) var(--hl-h));
   /* highlight fill: `background: var(--hl-fill)` is the solid hl, or the gradient under [data-gradient]; glow and flow only in vivid */
   --hl-fill: var(--color-hl); --hl-glow: none; --hl-flow: none;
 
@@ -57,6 +62,7 @@
   --color-ok: oklch(48% 0.11 150); --color-ok-wash: oklch(94.5% 0.035 145);
   --color-warn: oklch(50% 0.1 95); --color-warn-wash: oklch(95.5% 0.05 100);
   --color-error: oklch(50% 0.17 22); --color-error-wash: oklch(94.5% 0.03 22);
+  --color-badge: oklch(55% 0.2 25); /* new-items count on the module switch: red fill, white text, same in both modes */
   --color-info: oklch(48% 0.09 225); --color-info-wash: oklch(94.5% 0.025 225);
   /* code / key chips in messages: the one cool hue in the text, so keys never read as body copy or as the highlight */
   --color-code: oklch(45% 0.11 258); --color-code-wash: oklch(94.5% 0.028 255);
@@ -89,16 +95,16 @@
   --color-paper-3: oklch(26.5% 0.035 255);  /* pressed, chips */
   --color-cotton: oklch(21.5% 0.026 255);  /* cards, rows, popovers */
   --ground-wash: linear-gradient(180deg, oklch(20% 0.035 255) 0%, var(--color-paper) 40%, var(--color-paper) 100%);
-  --color-ink: oklch(93.5% 0.01 80); --color-ink-2: oklch(81% 0.012 75); --color-ink-3: oklch(67% 0.014 70);
+  --color-ink: oklch(93.5% 0.01 80); --color-ink-2: oklch(84% 0.012 75); --color-ink-3: oklch(71% 0.014 70);
   --color-rule: oklch(29.5% 0.03 255); --color-rule-2: oklch(52% 0.025 255);
   /* dark highlight is a deeper, redder copper than light's terracotta: lifted terracotta sat too close to the amber signal */
-  --color-hl: oklch(65% calc(0.115 * var(--hl-c)) calc(var(--hl-h) - 5));
-  --color-hl-b: oklch(65% calc(0.115 * var(--hl-c)) calc(var(--hl-h2) - 5));
-  --color-hl-2: oklch(77% calc(0.09 * var(--hl-c)) calc(var(--hl-h) - 2));
-  --color-hl-wash: oklch(28% calc(0.05 * var(--hl-c)) calc(var(--hl-h) - 7));
+  --color-hl: oklch(65% calc(0.115 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 5));
+  --color-hl-b: oklch(65% calc(0.115 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h2) - 5));
+  --color-hl-2: oklch(77% calc(0.09 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 2));
+  --color-hl-wash: oklch(28% calc(0.05 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 7));
   --color-hl-ink: oklch(16% 0.02 calc(var(--hl-h) - 5));
   --color-board: oklch(91% 0.015 75); --color-board-type: oklch(18% 0.01 60);
-  --color-focus: oklch(70% calc(0.11 * var(--hl-c)) calc(var(--hl-h) - 5));
+  --color-focus: oklch(70% calc(0.11 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 5));
   --color-signal: oklch(79% 0.13 76); --color-signal-ink: oklch(19% 0.03 70);
   --color-signal-2: oklch(84% 0.11 80);
   --color-signal-wash: oklch(27.5% 0.045 72);

@@ -31,12 +31,44 @@ def _load_dotenv(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("'\""))
 
 
-SECRET_ENV = ("TELEGRAM_", "YOUTRACK_", "YT_")  # .env lands in os.environ (yt_dashboard reads it)
+SECRET_ENV = (
+    "TELEGRAM_",
+    "YOUTRACK_",
+    "YT_",  # .env lands in os.environ (yt_dashboard reads it)
+    # the user's other credentials: an agent's shell has no business with them (the AI CLIs keep theirs)
+    "GH_TOKEN",
+    "GITHUB_TOKEN",
+    "NPM_TOKEN",
+    "AWS_",
+    "AZURE_",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+)
+RUN_DIR = Path.home() / ".telegram_dashboard"  # outside every install's data/: one server per machine
 
 
 def child_env() -> dict[str, str]:
-    """os.environ minus this app's secrets (Telegram API, YouTrack token): for claude runs."""
+    """os.environ minus secrets (this app's Telegram API / YouTrack token, cloud and git tokens): for AI CLI runs."""
     return {k: v for k, v in os.environ.items() if not k.startswith(SECRET_ENV)}
+
+
+def api_token_path() -> Path:
+    return RUN_DIR / "api_token"
+
+
+def ensure_api_token() -> str:
+    """The local API's token (auth.py), made once (0600) and kept across restarts so the browser's cookie
+    stays valid. Machine-wide like the server lock: any install's launcher opens the running server."""
+    path = api_token_path()
+    with contextlib.suppress(OSError):
+        if tok := path.read_text().strip():
+            return tok
+    import secrets
+
+    RUN_DIR.mkdir(mode=0o700, exist_ok=True)
+    tok = secrets.token_urlsafe(32)
+    with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as f:
+        f.write(tok)
+    return tok
 
 
 async def run_cli(
@@ -81,14 +113,14 @@ def on_path(command: str) -> bool:
     """Is the command's executable installed?"""
     try:
         return shutil.which(shlex.split(command)[0]) is not None
-    except (ValueError, IndexError):
+    except ValueError, IndexError:
         return False
 
 
 def _read_json(path: Path) -> dict:
     try:
         data = json.loads(path.read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -117,9 +149,7 @@ class Settings:
     ai_model: str = "haiku"  # model for drafts/summaries/digests ("" = the CLI default)
     ai_effort: str = "medium"  # low|medium|high|xhigh|max ("" = the CLI default)
     # Agent used when a project is selected: read-only tools, run with cwd = project.
-    ai_agent_project_command: str = (
-        "claude -p --tools Read,Grep,Glob --allowedTools Read,Grep,Glob"
-    )
+    ai_agent_project_command: str = "claude -p --tools Read,Grep,Glob,Skill --allowedTools Read,Grep,Glob,Skill"
     # Headless agent for tasks / AI Agent (`claude -p` per turn, run with cwd = project).
     ai_task_command: str = "claude"
     ai_task_model: str = "sonnet"  # model for tasks and the AI Agent ("" = the CLI default)
@@ -136,6 +166,7 @@ class Settings:
     youtrack_url: str | None = None
     youtrack_token: str | None = field(default=None, repr=False)
     youtrack_project: str | None = None  # short name, e.g. "SDK"
+    api_token: str | None = field(default=None, repr=False)  # local API auth (auth.py); None = off (tests)
 
     @property
     def data_dir(self) -> Path:
@@ -203,8 +234,7 @@ class Settings:
             ai_agent_command=env.get("AI_AGENT_COMMAND") or Settings.ai_agent_command,
             ai_model=env["AI_MODEL"].strip() if "AI_MODEL" in env else Settings.ai_model,
             ai_effort=env["AI_EFFORT"].strip() if "AI_EFFORT" in env else Settings.ai_effort,
-            ai_agent_project_command=env.get("AI_AGENT_PROJECT_COMMAND")
-            or Settings.ai_agent_project_command,
+            ai_agent_project_command=env.get("AI_AGENT_PROJECT_COMMAND") or Settings.ai_agent_project_command,
             ai_task_command=env.get("AI_TASK_COMMAND") or Settings.ai_task_command,
             ai_task_model=env["AI_TASK_MODEL"].strip() if "AI_TASK_MODEL" in env else Settings.ai_task_model,
             ai_task_effort=env["AI_TASK_EFFORT"].strip() if "AI_TASK_EFFORT" in env else Settings.ai_task_effort,
@@ -214,9 +244,6 @@ class Settings:
             done_reaction=env.get("DONE_REACTION", Settings.done_reaction).strip(),
             telegram_me=env.get("TELEGRAM_ME", "").strip(),
             youtrack_url=saved.get("url") or env.get("YOUTRACK_URL") or env.get("YT_URL") or None,
-            youtrack_token=saved.get("token")
-            or env.get("YOUTRACK_TOKEN")
-            or env.get("YT_TOKEN")
-            or None,
+            youtrack_token=saved.get("token") or env.get("YOUTRACK_TOKEN") or env.get("YT_TOKEN") or None,
             youtrack_project=env.get("YOUTRACK_PROJECT") or None,
         )

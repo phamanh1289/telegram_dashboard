@@ -1,4 +1,6 @@
-// Dates and durations, in Vietnam time (Asia/Ho_Chi_Minh, UTC+7 all year). Pure: no React, no storage.
+// Dates and durations, in Vietnam time (Asia/Ho_Chi_Minh, UTC+7 all year), worded in the current UI language (lib/i18n).
+
+import { type Key, readLang, t } from "@/lib/i18n";
 
 const VN_PARTS = new Intl.DateTimeFormat("en-GB", {
   timeZone: "Asia/Ho_Chi_Minh", hourCycle: "h23", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
@@ -9,7 +11,7 @@ const vnParts = (d: Date) => Object.fromEntries(VN_PARTS.formatToParts(d).map((p
 export function timeLabel(date: string, full = false) {
   const p = vnParts(new Date(date));
   const time = `${p.hour}:${p.minute}`;
-  return full ? `${time}, ${p.day}/${p.month}/${p.year}` : `${time}, ${dayLabel(date).toLocaleLowerCase("vi")}`;
+  return full ? `${time}, ${p.day}/${p.month}/${p.year}` : `${time}, ${dayLabel(date).toLocaleLowerCase(readLang())}`;
 }
 
 const dayNo = (x: Record<string, string>) => Date.UTC(+x.year, +x.month - 1, +x.day) / 86_400_000;
@@ -17,7 +19,8 @@ const dayNo = (x: Record<string, string>) => Date.UTC(+x.year, +x.month - 1, +x.
 /** Vietnam calendar day: "Hôm nay", "Hôm qua", "Ngày mai", else "28/10/2026". Also the key for day separators. */
 export function dayLabel(date: string) {
   const p = vnParts(new Date(date));
-  return { [-1]: "Hôm qua", 0: "Hôm nay", 1: "Ngày mai" }[dayNo(p) - dayNo(vnParts(new Date()))] ?? `${p.day}/${p.month}/${p.year}`;
+  const k = ({ [-1]: "Hôm qua", 0: "Hôm nay", 1: "Ngày mai" } as const)[dayNo(p) - dayNo(vnParts(new Date()))];
+  return k ? t(k) : `${p.day}/${p.month}/${p.year}`;
 }
 
 /** Vietnam wall-clock h:m, `days` after today in Vietnam, as an instant (Vietnam is UTC+7 all year). */
@@ -35,8 +38,9 @@ export const vnInput = (t: Date) => {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
 };
 
-/** A snooze preset: its label, when, and whether the menu adds the clock time (relative ones: "1 giờ" → "16:12"). */
-export type SnoozeChoice = { label: string; at: Date; clock: boolean };
+/** A snooze preset: its label (an i18n key, stable across languages: render it with `t`), when, and whether the menu
+ *  adds the clock time (relative ones: "1 giờ" → "16:12"). */
+export type SnoozeChoice = { label: Key; at: Date; clock: boolean };
 /** Snooze presets, in Vietnam time like their labels; "14:00 hôm nay" only before 14:00. */
 export function snoozeChoices(now = Date.now()): SnoozeChoice[] {
   const p = vnParts(new Date(now));
@@ -45,7 +49,7 @@ export function snoozeChoices(now = Date.now()): SnoozeChoice[] {
   return [
     { label: "1 giờ", at: new Date(now + 3600_000), clock: true },
     { label: "3 giờ", at: new Date(now + 3 * 3600_000), clock: true },
-    ...(two.getTime() > now ? [{ label: "14:00 hôm nay", at: two, clock: false }] : []),
+    ...(two.getTime() > now ? [{ label: "14:00 hôm nay" as const, at: two, clock: false }] : []),
     { label: "Sáng mai 9:00", at: vnAt(1, 9, 0, now), clock: false },
     { label: "Thứ Hai 9:00", at: vnAt((8 - weekday) % 7 || 7, 9, 0, now), clock: false },
   ];
@@ -66,11 +70,15 @@ export const dm = (d: number | string) => {
 };
 
 /** Minutes in the largest whole unit: [12, "phút"], [3, "giờ"], [2, "ngày"]. */
-export const byUnit = (mins: number): [number, string] =>
-  mins < 60 ? [mins, "phút"] : mins < 1440 ? [Math.floor(mins / 60), "giờ"] : [Math.floor(mins / 1440), "ngày"];
+export const byUnit = (mins: number): [number, string] => {
+  const [n, u] = mins < 60 ? [mins, "phút"] as const : mins < 1440 ? [Math.floor(mins / 60), "giờ"] as const : [Math.floor(mins / 1440), "ngày"] as const;
+  return [n, t(u, { n })];
+};
+/** "12 phút", "3 giờ", "2 ngày" (en: "12 min", "3 h", "2 days"). */
+export const span = (mins: number) => byUnit(mins).join(" ");
 
-/** "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước" (`t`: ms or ISO). */
-export function ago(t: number | string, now = Date.now()) {
-  const mins = Math.max(0, Math.floor((now - new Date(t).getTime()) / 60_000));
-  return mins < 1 ? "vừa xong" : `${byUnit(mins).join(" ")} trước`;
+/** "vừa xong", "5 phút trước", "3 giờ trước", "2 ngày trước" (`at`: ms or ISO). */
+export function ago(at: number | string, now = Date.now()) {
+  const mins = Math.max(0, Math.floor((now - new Date(at).getTime()) / 60_000));
+  return mins < 1 ? t("vừa xong") : t("{span} trước", { span: span(mins) });
 }

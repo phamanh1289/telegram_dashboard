@@ -30,6 +30,19 @@ async def test_reply_to_other_chat_rejected(ready):
     assert ready.fake.send_calls == []
 
 
+async def test_reply_to_attached_message_never_kept(ready):
+    """An ask replies to a message attached to a session: never stored (a BE answer), in a group maybe untracked."""
+    C = "-1003"
+    ready.store.upsert_chat_info(C, "Q&A only", "supergroup")  # known, untracked
+    with pytest.raises(ApiError) as e:
+        await ready.bridge.submit_reply(req(chat=C, reply="77"))
+    assert e.value.code == "not_tracking"
+    ready.store.add_task_refs("t1", [(C, 77, ""), (B, 9, "")])
+    rec = await ready.bridge.submit_reply(req(chat=C, reply="77"))
+    assert rec.status == "sent" and ready.fake.send_calls[-1]["reply_to"] == 77
+    assert (await ready.bridge.submit_reply(req(chat=B, reply="9"))).status == "sent"  # tracked, unstored
+
+
 async def test_concurrent_same_uuid_one_rpc(ready):
     async def slow(call):
         await asyncio.sleep(0.05)
@@ -44,6 +57,14 @@ async def test_concurrent_same_uuid_one_rpc(ready):
     assert len(ready.fake.send_calls) == 1
     target = ready.store.get_message(r.chat_id, int(r.reply_to_message_id))
     assert target.handled  # a reply sent from the dashboard handles the tag
+
+
+async def test_new_message_next_to_the_tag(ready):
+    """quote=False (AI Agent asks): a new message in the tag's group, not a reply; the tag stays open."""
+    r = ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="5", text="hỏi BE", quote=False)
+    assert (await ready.bridge.submit_reply(r)).status == "sent"
+    assert ready.fake.send_calls[-1]["reply_to"] is None
+    assert not ready.store.get_message(A, 5).handled
 
 
 async def test_same_uuid_changed_payload_conflicts(ready):
@@ -188,3 +209,16 @@ async def test_send_code_retries_once_after_phone_migrate(tmp_path):
     c._sender, c.is_connected, c.is_user_authorized, c._switch_dc = Sender(), lambda: True, noop, noop
     await t.send_code("+84900000000")
     assert t._code_hash == "h" and len(calls) == 2
+
+
+def test_split_format_utf16_offsets():
+    from telegram_dashboard.telegram import split_format
+
+    text, ents = split_format("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
+    assert text == "😀 hỏi Lan QA và Minh nhé"
+    assert ents == [(7, 6, 43), (17, 4, 42)]  # 😀 is 2 UTF-16 units, as Telegram and JS count
+    assert split_format("không tag [x](https://a.b)") == ("không tag [x](https://a.b)", [])
+    # code spans: backticks dropped, a tag inside backticks stays code, a lone ` stays text
+    text, ents = split_format("1. Q171: `data` và `[a](tg://user?id=1)` lẻ ` nhé\n```json\n{}\n```")
+    assert text == "1. Q171: data và [a](tg://user?id=1) lẻ ` nhé\n{}"
+    assert ents == [(9, 4, "code"), (17, 19, "code"), (46, 2, "pre")]

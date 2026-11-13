@@ -1,4 +1,5 @@
 import type { components } from "./api.generated";
+import { t, tMaybe } from "@/lib/i18n";
 
 type S = components["schemas"];
 export type Message = S["MessageDTO"];
@@ -23,14 +24,22 @@ export type AiPrefs = S["AiPrefs"];
 export type AiPicks = S["AiPicks"];
 export type AiCatalogEntry = S["AiCatalogEntry"];
 export type AiAccount = S["AiAccount"];
+export type AiResetResult = S["AiResetResult"];
 export type AiRun = S["AiRun"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
 export type DigestItem = S["DigestItem"];
+export type BeReply = S["BeReply"];
+export type DigestTopic = S["DigestTopic"];
 export type HistoryPage = S["HistoryPage"];
 export type BriefingItem = S["BriefingItem"];
+export type QaItem = S["QaItem"];
+export type QaPosted = S["QaPosted"];
 export type SavedDigest = S["SavedDigest"];
 export type GroupInfo = S["GroupInfo"];
+export type Member = S["Member"];
+export type LoopItem = S["LoopItem"];
+export type LoopBack = S["LoopBack"];
 
 export class ApiError extends Error {
   constructor(
@@ -40,6 +49,8 @@ export class ApiError extends Error {
     public detail: string | null = null,
   ) {
     super(code);
+    // No token cookie (auth.py): the shell shows the unlock screen (components/auth-gate).
+    if (code === "auth_required" && typeof window !== "undefined") dispatchEvent(new Event("auth-required"));
   }
 }
 
@@ -53,7 +64,7 @@ export async function api<T>(
     credentials: "same-origin",
     cache: "no-store",
     signal: init.signal,
-    headers: init.json === undefined ? undefined : { "Content-Type": "application/json" },
+    headers: init.json !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
   if (res.status === 204) return undefined as T;
@@ -70,8 +81,12 @@ export async function api<T>(
   return body as T;
 }
 
-/** NDJSON lines of an AI answer as Claude writes it: `onPart` gets the text so far, the result comes last. */
-export async function readAnswer<T>(res: Response, onPart?: (text: string) => void): Promise<T> {
+/** A working step of an AI run that reads code: a tool call ("<name>  <input>") or its output; `at` in seconds. */
+export type AiStep = { kind: "tool" | "tool_result"; text: string; error?: boolean; at?: number };
+
+/** NDJSON lines of an AI answer as Claude writes it: `onPart` gets the text so far, `onStep` each working step, the
+ *  result comes last. */
+export async function readAnswer<T>(res: Response, onPart?: (text: string) => void, onStep?: (step: AiStep) => void): Promise<T> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buf = "", text = "";
   for (;;) {
@@ -84,31 +99,50 @@ export async function readAnswer<T>(res: Response, onPart?: (text: string) => vo
       const m = JSON.parse(line);
       if ("done" in m) return m.done as T;
       if ("error" in m) throw new ApiError(m.error.status, m.error.code, null, m.error.detail);
+      if ("step" in m) { onStep?.(m.step); continue; }
       text = m.reset ? "" : text + m.delta;
       onPart?.(text);
     }
   }
 }
 
-/** POST to an AI route that streams its answer (see `readAnswer`). */
-export async function apiStream<T>(path: string, json: unknown, signal?: AbortSignal, onPart?: (text: string) => void): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method: "POST", credentials: "same-origin", cache: "no-store", signal,
-    headers: { "Content-Type": "application/json" }, body: JSON.stringify(json),
-  });
+/** POST to an AI route that streams its answer (see `readAnswer`); `json` undefined: GET it (a background run read
+ *  again, /ai/job/{id}). `job`: run it in the background under that id (header X-Ai-Job), the page may leave. */
+export async function apiStream<T>(path: string, json: unknown, signal?: AbortSignal, onPart?: (text: string) => void, job?: string): Promise<T> {
+  return readAnswer<T>(await openStream(path, json, signal, job), onPart);
+}
+
+/** Starts a background AI run (its own job id) and returns once the server took it; the answer is read elsewhere
+ *  (a saved session's log). */
+export async function apiStart(path: string, json: unknown): Promise<void> {
+  const ctl = new AbortController();
+  await openStream(path, json, ctl.signal, crypto.randomUUID());
+  ctl.abort(); // a job outlives its reader
+}
+
+async function openStream(path: string, json: unknown, signal?: AbortSignal, job?: string) {
+  const res = await fetch(`/api${path}`, json === undefined
+    ? { credentials: "same-origin", cache: "no-store", signal }
+    : { method: "POST", credentials: "same-origin", cache: "no-store", signal, body: JSON.stringify(json),
+        headers: { "Content-Type": "application/json", ...(job ? { "X-Ai-Job": job } : {}) } });
   if (!res.ok) {
     const e = (await res.json().catch(() => null))?.error;
     throw new ApiError(res.status, e?.code ?? (res.status === 422 ? "validation" : "http_error"), e?.retry_after ?? null, e?.detail ?? null);
   }
-  return readAnswer<T>(res, onPart);
+  return res;
 }
 
-/** Codes any call may answer, worded once; a caller's `map` wins over these. */
+/** Codes any call may answer, worded once (in the current UI language); a caller's `map` wins over these. */
 const COMMON: Record<string, (e: ApiError) => string> = {
-  flood_wait: (e) => `Telegram yêu cầu chờ${e.retryAfter ? ` ${e.retryAfter} giây` : ""} rồi thử lại. `,
-  telegram_error: (e) => `Telegram báo lỗi${e.detail ? ` (${e.detail})` : ""}, thử lại sau. `,
-  task_cancelled: () => "Phiên đã bị dừng khi đang khởi động. ",
-  ai_scope_not_allowed: () => "Tin này không còn được theo dõi hoặc đã bị xóa. ",
+  flood_wait: (e) => (e.retryAfter ? t("Telegram yêu cầu chờ {n} giây rồi thử lại. ", { n: e.retryAfter }) : t("Telegram yêu cầu chờ rồi thử lại. ")),
+  claude_cli_timeout: () => t("Lệnh claude không trả lời sau 15 giây (có thể đang chờ mở khóa Keychain), thử lại. "),
+  claude_login_failed: () => t("Lệnh đăng nhập claude dừng ngay. "),
+  ai_login_failed: () => t("Lệnh đăng nhập dừng ngay. "),
+  auth_required: () => t("Trình duyệt này chưa được mở khóa: mở lại app bằng Start Dashboard. "),
+  delivery_unknown: () => t("Chưa rõ đã gửi chưa (mất kết nối giữa chừng). Xem nhóm trước khi gửi lại. "),
+  telegram_error: (e) => (e.detail ? t("Telegram báo lỗi ({detail}), thử lại sau. ", { detail: e.detail }) : t("Telegram báo lỗi, thử lại sau. ")),
+  task_cancelled: () => t("Phiên đã bị dừng khi đang khởi động. "),
+  ai_scope_not_allowed: () => t("Tin này không còn được theo dõi hoặc đã bị xóa. "),
 };
 
 /** The backend's status (Telegram, AI, YouTrack); one cache shared by the shell, Settings and the Digest actions. */
@@ -117,8 +151,11 @@ export const statusQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Status>("/status", { signal }),
 };
 
+/** Codes whose `detail` is the CLI's own words, worth showing after ours. */
+const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_login_failed", "ai_login_failed"]);
+
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
-export function errorText(e: unknown, map: Record<string, string>, fallback = "Có lỗi xảy ra.") {
+export function errorText(e: unknown, map: Record<string, string>, fallback = t("Có lỗi xảy ra.")) {
   const text = (e instanceof ApiError && (map[e.code] || COMMON[e.code]?.(e))) || fallback;
-  return e instanceof ApiError && e.code === "ai_provider_error" && e.detail ? `${text.trimEnd()} (${e.detail}) ` : text;
+  return e instanceof ApiError && WITH_DETAIL.has(e.code) && e.detail ? `${text.trimEnd()} (${tMaybe(e.detail)}) ` : text;
 }

@@ -4,6 +4,7 @@ import { Dialog } from "@base-ui/react/dialog";
 import { CornerDownLeft, Search } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 import { Kbd } from "@/components/ui/kbd";
+import { useT } from "@/lib/i18n";
 import { fold } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
@@ -16,11 +17,12 @@ export type PaletteItem = { key: string; group: string; label: React.ReactNode; 
 export const matches = (terms: string[], s: unknown) => { const h = fold(s); return terms.every((x) => h.includes(x)); };
 
 export function PaletteDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: React.ReactNode }) {
+  const t = useT();
   return (
     <Dialog.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <Dialog.Portal>
         <Dialog.Backdrop className="scrim fixed inset-0 z-50 bg-(--scrim)" />
-        <Dialog.Popup aria-label="Lệnh nhanh"
+        <Dialog.Popup aria-label={t("Lệnh nhanh")}
           className="fixed top-[12vh] left-1/2 z-50 grid w-[min(40rem,calc(100vw-2rem))] -translate-x-1/2 overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-pop outline-none pop pop-top">
           {children}
         </Dialog.Popup>
@@ -37,6 +39,7 @@ export function PaletteList({ q, onQuery, items, label, placeholder }: {
   label: string;
   placeholder: string;
 }) {
+  const t = useT();
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLDivElement>(null);
@@ -62,7 +65,7 @@ export function PaletteList({ q, onQuery, items, label, placeholder }: {
         <input ref={input} value={q} onChange={(e) => { onQuery(e.target.value); setAt(0); }} onKeyDown={onKey} maxLength={500} aria-label={label}
           role="combobox" aria-expanded={items.length > 0} aria-controls={`${id}-list`} aria-autocomplete="list"
           aria-activedescendant={items.length ? `${id}-${cur}` : undefined}
-          placeholder={placeholder} className="h-12 flex-1 bg-transparent text-[0.9375rem] outline-none" />
+          placeholder={placeholder} className="h-12 flex-1 bg-transparent text-md outline-none" />
         <Kbd>Esc</Kbd>
       </label>
       <div ref={list} id={`${id}-list`} role="listbox" aria-label={label} className="grid max-h-[60vh] overflow-y-auto p-1.5">
@@ -80,7 +83,7 @@ export function PaletteList({ q, onQuery, items, label, placeholder }: {
             ))}
           </div>
         ))}
-        {!items.length && <p className="px-3 py-6 text-center text-sm text-ink-3">Không có kết quả.</p>}
+        {!items.length && <p className="px-3 py-6 text-center text-sm text-ink-3">{t("Không có kết quả.")}</p>}
       </div>
     </>
   );

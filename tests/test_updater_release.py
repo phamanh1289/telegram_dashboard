@@ -25,3 +25,27 @@ def test_release_unpack_and_prune(tmp_path, monkeypatch):
     updater.prune_versions()
     assert [p.name for p in (home / "versions").iterdir()] == ["1.1.0"]
     assert Settings.from_env(tmp_path).data_dir == home / "data"  # data lives outside versions/
+
+
+def test_only_a_zip_signed_with_the_release_key_installs(tmp_path, monkeypatch):
+    import rsa
+
+    pub, priv = rsa.newkeys(1024)
+    key = tmp_path / "k.pem"
+    key.write_bytes(pub.save_pkcs1())
+    monkeypatch.setattr(updater, "RELEASE_KEY", key)
+    z = tmp_path / "pkg.zip"
+    z.write_bytes(b"zip bytes")
+    good = rsa.sign(b"zip bytes", priv, "SHA-256")
+    assert updater._signed(z, good)
+    assert not updater._signed(z, good[:-1] + bytes([good[-1] ^ 1]))
+    z.write_bytes(b"other bytes")
+    assert not updater._signed(z, good)
+
+
+def test_the_shipped_release_key_loads():
+    import rsa
+
+    from telegram_dashboard.updater import RELEASE_KEY
+
+    assert rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()).n.bit_length() >= 3072

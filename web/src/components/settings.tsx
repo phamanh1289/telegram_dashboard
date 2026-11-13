@@ -1,36 +1,51 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, ExternalLink, GitBranch, Info, Keyboard, Monitor, Moon, RotateCw, Search, Send, SlidersHorizontal, Sparkles, Sun } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, GitBranch, Grid2x2, ImagePlus, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, Palette, PencilLine, PenLine, Pipette, RotateCcw, RotateCw, Search, Send, SlidersHorizontal, Smile, Sparkles, Sun, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AiAccounts, ModelEffortPicker, PrefsSection, type Provider, useAccounts, useAiPrefs } from "@/components/ai";
+import { AiAccounts, ModelEffortPicker, PrefsSection, useAiPrefs } from "@/components/ai";
+import { PROVIDERS } from "@/components/ai/prefs";
+import { CHIP, Dropdown } from "@/components/ui/dropdown";
+import { FONT_SIZES, FONTS, type FontId } from "@/lib/fonts";
 import { TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
+import { LookPreview } from "@/components/look-preview";
+import { AiFetching, UpdateHero } from "@/components/ai/fetching";
+import { AiBot, AiBotIcon, AiPromptBox, AiThinking, Mascot } from "@/components/ai/chat";
+import { BotStage } from "@/components/ui/empty";
+import { type MascotStyle, mascotUrl, useMascotActions, useMascotError, useMascotJobs } from "@/lib/mascot";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
+import { type Key, type Lang, saveLang, t as tPlain, tMaybe, tr, useT } from "@/lib/i18n";
 import { Textarea } from "@/components/ui/textarea";
+import { type ShortcutGroup, ShortcutList, TG_KEYS, YT_KEYS } from "@/components/shortcuts";
+import { RulesSection } from "@/components/tools-menu";
 import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
 import { api, ApiError, errorText, statusQuery } from "@/lib/api";
 import { clearDrafts, fold, toast } from "@/lib/inbox";
-import { ACCENTS, applyRowActions, applyTheme, INTRO_MAX, type Look, onPrefs, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, type ReportAt, saveLook, saveReportAt, saveYtRole, setPref, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
-import { clearLoopItems } from "@/lib/report-back";
+import { AUTO_BRIEF } from "@/components/briefing-page";
+import { ACCENTS, applyRowActions, CHROMA_MAX, CHROMA_MIN, hexToAccent, MIXES, oklchHex, applyTheme, INTRO_MAX, type Look, MASCOT_MAX, MASCOTS, onPrefs, readMascot, useMascot, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, getPref, type ReportAt, saveLook, saveQuotaAgent, useQuotaAgent, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, type BotCorner, type BotMode, type BotSize, useBotCode, useBotDock, useBotMode, useBotShow, useBotSize, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 
-type GroupId = "general" | "telegram" | "youtrack" | "ai" | "github" | "shortcuts";
-/** id, name, the nav's one-liner, the page's lead. */
-const GROUPS: [GroupId, string, React.ComponentType<{ className?: string }>, string, string][] = [
-  ["general", "Chung", SlidersHorizontal, "Vai trò, giao diện", "Vai trò và giao diện, dùng cho cả Telegram lẫn YouTrack. Lưu trên trình duyệt này."],
-  ["telegram", "Telegram", Send, "Tài khoản, AI, hàng chờ", "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này."],
-  ["youtrack", "YouTrack", YtLogo, "Kết nối, AI, workflow", "Kết nối, hướng dẫn cho AI, kho prompt, workflow và báo cáo release."],
-  ["ai", "AI", Sparkles, "CLI, model, tài khoản", "CLI nào chạy các tính năng AI, model/effort cho từng loại việc và tài khoản của từng CLI."],
-  ["github", "Cập nhật", GitBranch, "Bản mới từ GitHub", "Lấy bản mới từ GitHub rồi khởi động lại server."],
-  ["shortcuts", "Phím tắt", Keyboard, "Inbox và YouTrack", "Phím một chữ không chạy khi đang gõ trong ô nhập. Bấm ? trong Inbox để mở nhanh."],
+type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "shortcuts" | "github";
+type Section = "me" | "services" | "system";
+const SECTIONS: [Section, Key][] = [["me", "Cá nhân"], ["services", "Dịch vụ"], ["system", "Hệ thống"]];
+/** id, name, icon, the nav's one-liner, the page's lead, the nav section. Chung holds only what every module reads. */
+const GROUPS: [GroupId, Key, React.ComponentType<{ className?: string }>, Key, Key, Section][] = [
+  ["general", "Chung", SlidersHorizontal, "Vai trò, ngôn ngữ, về bạn", "Bạn là ai và dùng ngôn ngữ nào: Telegram, YouTrack và AI cùng theo. Lưu trên trình duyệt này.", "me"],
+  ["look", "Giao diện", Palette, "Màu, chữ, linh vật", "Sáng / tối, phong cách, font, màu chủ đạo và linh vật AI; khung xem trước đổi theo ngay. Lưu trên trình duyệt này.", "me"],
+  ["bot", "Trợ lý biết tuốt", AiBotIcon, "Bot hướng dẫn, F1", "Bot nổi ở góc màn hình: hỏi gì về app cũng được, nó chỉ cách làm rồi dẫn bạn tới tận nơi (F1). Lưu trên trình duyệt này.", "me"],
+  ["telegram", "Telegram", Send, "Tài khoản, hàng chờ, Q&A", "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này.", "services"],
+  ["youtrack", "YouTrack", YtLogo, "Kết nối, prompt, workflow", "Kết nối, hướng dẫn cho AI, kho prompt, workflow và báo cáo release.", "services"],
+  ["ai", "AI", Sparkles, "Model, tài khoản CLI", "CLI nào chạy các tính năng AI, model/effort cho từng loại việc và tài khoản của từng CLI.", "services"],
+  ["shortcuts", "Phím tắt", Keyboard, "Inbox và YouTrack", "Phím một chữ không chạy khi đang gõ trong ô nhập. Bấm ? trong Inbox để mở nhanh.", "system"],
+  ["github", "Cập nhật", GitBranch, "Bản mới từ GitHub", "Lấy bản mới từ GitHub rồi khởi động lại server.", "system"],
 ];
 
 function useStatus() {
@@ -48,23 +63,25 @@ export function SettingsPage() {
     addEventListener("hashchange", read);
     return () => removeEventListener("hashchange", read);
   }, []);
+  const t = useT();
+  const docTitle = `${t("Cài đặt")} · Radar`; // app/settings/page.tsx sets no title, so Next leaves this one alone
+  useEffect(() => { document.title = docTitle; }, [docTitle]);
   const [, label, Icon, , lead] = GROUPS.find(([id]) => id === (tab ?? "general"))!;
-  const [switched, setSwitched] = useState(false); // group switches get their own quick rise; opening the page uses .page-in on the whole body
-  const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); setSwitched(true); scrollTo({ top: 0 }); };
+  const pick = (id: GroupId) => { history.replaceState(null, "", `#${id}`); setTab(id); scrollTo({ top: 0 }); };
   const [ytView, setYtView] = useState<YtView>("connect");
   // A search hit: open its group (and YouTrack sub-view), then bring its card into view and flash it.
   const [jump, setJump] = useState<{ card?: string; at: number } | null>(null);
   const go = (e: Entry) => {
     history.replaceState(null, "", `#${e.g}`);
     setTab(e.g);
-    setSwitched(true);
     if (e.view) setYtView(e.view);
     setJump({ card: e.card, at: Date.now() });
   };
   useEffect(() => {
     if (!jump) return;
-    const el = jump.card ? document.querySelector<HTMLElement>(`main section[aria-label="${CSS.escape(jump.card)}"]`) : null;
+    const el = jump.card ? document.querySelector<HTMLElement>(`main section[data-card="${CSS.escape(jump.card)}"]`) : null;
     if (!el) return void scrollTo({ top: 0 });
+    el.querySelector<HTMLButtonElement>(":scope > header button[aria-expanded=false]")?.click(); // a folded advanced card opens
     el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     el.dataset.flash = "";
     const t = setTimeout(() => delete el.dataset.flash, 1600);
@@ -75,21 +92,24 @@ export function SettingsPage() {
   // A dot on the groups that need a look: Telegram not signed in / offline, YouTrack on sample data.
   const st = useStatus().data;
   const attention: Partial<Record<GroupId, string>> = st ? {
-    ...(st.state !== "connected" && st.state !== "connecting" && { telegram: "Telegram chưa kết nối" }),
-    ...(!st.youtrack_configured && { youtrack: "Chưa có token YouTrack" }),
+    ...(st.state !== "connected" && st.state !== "connecting" && { telegram: t("Telegram chưa kết nối") }),
+    ...(!st.youtrack_configured && { youtrack: t("Chưa có token YouTrack") }),
   } : {};
   return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
       <div className="sticky top-0 z-30"><TopBar module="settings" /></div>
-      <div className="page-in mx-auto grid w-full max-w-5xl grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10 md:py-10">
-        <nav aria-label="Mục cài đặt" className="sticky top-11 z-20 -mx-4 -mt-6 grid min-w-0 content-start gap-3 bg-paper px-4 pt-6 pb-2 md:top-[calc(2.75rem+2.5rem)] md:m-0 md:self-start md:bg-transparent md:p-0">
+      <div className="grid w-full grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10 md:px-8 md:py-10 xl:px-12">
+        <nav aria-label={t("Mục cài đặt")} className="page-in sticky top-11 z-20 -mx-4 -mt-6 grid min-w-0 content-start gap-3 bg-paper px-4 pt-6 pb-2 md:top-[calc(2.75rem+2.5rem)] md:m-0 md:self-start md:bg-transparent md:p-0">
           <button type="button" onClick={back} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
-            <ArrowLeft className="size-4" aria-hidden /> Quay lại
+            <ArrowLeft className="size-4" aria-hidden /> {t("Quay lại")}
           </button>
-          <h1 className="text-xl font-semibold tracking-tight">Cài đặt</h1>
+          <h1 className="text-xl font-bold tracking-tight">{t("Cài đặt")}</h1>
           <SettingsSearch onGo={go} />
-          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 md:mx-0 md:grid md:gap-0.5 md:overflow-visible md:px-0">
-            {GROUPS.map(([id, name, NavIcon, short]) => {
+          <div className="-mx-4 flex gap-1 overflow-x-auto px-4 md:mx-0 md:grid md:gap-4 md:overflow-visible md:px-0">
+            {SECTIONS.map(([sec, secName]) => (
+            <div key={sec} role="group" aria-label={t(secName)} className="flex shrink-0 gap-1 md:grid md:gap-0.5">
+              <span className="hidden px-2 pb-1 text-2xs font-medium tracking-wide text-ink-3 uppercase md:block">{t(secName)}</span>
+            {GROUPS.filter((g) => g[5] === sec).map(([id, name, NavIcon, short]) => {
               const on = tab === id;
               return (
                 <a key={id} href={`#${id}`} aria-current={on ? "page" : undefined} onClick={(e) => { e.preventDefault(); pick(id); }}
@@ -99,25 +119,29 @@ export function SettingsPage() {
                     <NavIcon className="size-4" aria-hidden />
                   </span>
                   <span className="relative grid min-w-0">
-                    <span className={cn("text-sm", on ? "font-semibold text-hl-2" : "font-medium text-ink-2 group-hover:text-ink")}>{name}</span>
-                    <span className="hidden truncate text-xs text-ink-3 md:block">{short}</span>
+                    <span className={cn("text-sm", on ? "font-bold text-hl-2" : "font-medium text-ink-2 group-hover:text-ink")}>{t(name)}</span>
+                    <span className="hidden truncate text-xs text-ink-3 md:block">{t(short)}</span>
                   </span>
                   {attention[id] && <span role="img" aria-label={attention[id]} className="relative ml-auto size-2 shrink-0 rounded-full bg-signal" />}
                 </a>
               );
             })}
+            </div>
+            ))}
           </div>
         </nav>
 
-        <main key={tab ?? ""} className={cn("grid min-w-0 content-start gap-4", switched && "animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short) ease-(--ease-out) motion-reduce:animate-none")}>
+        <main key={tab ?? ""} className="rise-in grid min-w-0 content-start gap-4">
           <header className={cn("mb-1 flex items-start gap-3", !tab && "invisible")}>
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-hl-wash text-hl-2"><Icon className="size-5" aria-hidden /></span>
             <span className="grid gap-0.5">
-              <h2 className="text-lg leading-tight font-semibold">{label}</h2>
-              <p className="text-sm text-ink-3">{lead}</p>
+              <h2 className="text-lg leading-tight font-bold">{t(label)}</h2>
+              <p className="text-sm text-ink-3">{t(lead)}</p>
             </span>
           </header>
           {tab === "general" && <GeneralGroup />}
+          {tab === "look" && <LookSection />}
+          {tab === "bot" && <BotSection />}
           {tab === "telegram" && <TelegramGroup />}
           {tab === "youtrack" && <YouTrackGroup view={ytView} setView={setYtView} />}
           {tab === "ai" && <AiGroup />}
@@ -132,39 +156,51 @@ export function SettingsPage() {
 // ---- search -------------------------------------------------------------------------------------
 
 /** One findable setting: its name, group, the card holding it (scrolled to), YouTrack's sub-view, extra words to match. */
-type Entry = { t: string; g: GroupId; card?: string; view?: YtView; k?: string };
+type Entry = { t: Key; g: GroupId; card?: Key; view?: YtView; k?: string };
 const ENTRIES: Entry[] = [
   { t: "Vai trò Dev, QA/QC, PO/PM", g: "general", card: "Vai trò", k: "role" },
-  { t: "Chế độ màu sáng / tối", g: "general", card: "Giao diện", k: "theme dark light he thong" },
-  { t: "Phong cách giao diện", g: "general", card: "Giao diện", k: "don gian mac dinh ruc ro style" },
-  { t: "Màu chủ đạo và gradient", g: "general", card: "Giao diện", k: "accent hue mau" },
+  { t: "Ngôn ngữ Tiếng Việt / English", g: "general", card: "Ngôn ngữ", k: "language lang vietnamese tieng anh" },
+  { t: "Giới thiệu bản thân cho AI", g: "general", card: "Giới thiệu bản thân cho AI", k: "intro toi la ai" },
+  { t: "Tóm tắt theo nền tảng", g: "general", card: "Giới thiệu bản thân cho AI", k: "android ios mobile platform" },
+  { t: "Chế độ màu sáng / tối", g: "look", card: "Chủ đề và chữ", k: "theme dark light he thong" },
+  { t: "Phong cách giao diện", g: "look", card: "Chủ đề và chữ", k: "don gian mac dinh ruc ro style font chu co chu" },
+  { t: "Màu chủ đạo và gradient", g: "look", card: "Màu sắc", k: "accent hue mau do dam pha san" },
+  { t: "Linh vật AI (icon robot)", g: "look", card: "Linh vật AI", k: "robot icon mascot loading emoji anh avatar" },
+  { t: "Trợ lý biết tuốt (bot nổi)", g: "bot", card: "Hiển thị", k: "bot huong dan guide help f1 kich thuoc size goc canh mep neo vi tri an hien cach hien thi noi co dinh ben phai thanh cong cu" },
+  { t: "Model cho trợ lý", g: "bot", card: "Cách trả lời", k: "bot doc code model effort" },
   { t: "Tài khoản Telegram, API ID/Hash", g: "telegram", card: "Tài khoản Telegram", k: "dang nhap login so dien thoai 2fa ma" },
-  { t: "Giới thiệu bản thân cho AI", g: "telegram", card: "Giới thiệu bản thân cho AI", k: "intro toi la ai" },
-  { t: "Tóm tắt theo nền tảng", g: "telegram", card: "AI cho Telegram", k: "android ios mobile platform" },
-  { t: "Model và effort cho Briefing, Digest", g: "telegram", card: "AI cho Telegram", k: "tom tat nhom" },
-  { t: "Ngưỡng quá hạn", g: "telegram", card: "Hàng chờ và thông báo", k: "overdue gio cho lau" },
-  { t: "Thông báo khi có tag mới", g: "telegram", card: "Hàng chờ và thông báo", k: "notification bao" },
-  { t: "Nút thao tác trên tin", g: "telegram", card: "Hàng chờ và thông báo", k: "ghim ngu canh mo telegram hover" },
+  { t: "Ngưỡng quá hạn", g: "telegram", card: "Hàng chờ", k: "overdue gio cho lau" },
+  { t: "Nút thao tác trên tin", g: "telegram", card: "Hàng chờ", k: "ghim ngu canh mo telegram hover" },
+  { t: "Thông báo khi có tag mới", g: "telegram", card: "Thông báo", k: "notification bao" },
+  { t: "Hiện nội dung tin trong thông báo macOS", g: "telegram", card: "Thông báo", k: "notification banner preview man hinh khoa" },
+  { t: "Nhắc câu hỏi Q&A chưa ai trả lời", g: "telegram", card: "Q&A", k: "qa remind nhac lai phut canh bao" },
+  { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Q&A", k: "qa tag nguoi duoc hoi tra loi" },
+  { t: "Tự tóm tắt Briefing", g: "telegram", card: "Briefing", k: "tu dong nen briefing auto" },
+  { t: "Luôn bỏ qua người gửi / từ khóa", g: "telegram", card: "Luôn bỏ qua", k: "tat bat lai thong bao mute quy tac rule tu danh dau da xu ly" },
   { t: "Xóa nháp và danh sách Báo lại", g: "telegram", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
   { t: "Tài khoản YouTrack, URL và token", g: "youtrack", card: "Tài khoản YouTrack", view: "connect", k: "ket noi" },
   { t: "Báo cáo release tự động", g: "youtrack", card: "Báo cáo release", view: "connect", k: "report lich hang ngay" },
   { t: "Instructions cho AI (YouTrack)", g: "youtrack", card: "Instructions cho AI", view: "ai", k: "huong dan notes team" },
   { t: "Kho prompt", g: "youtrack", card: "Kho prompt", view: "ai", k: "ghim phien ai" },
   { t: "Workflow State", g: "youtrack", card: "Workflow", view: "workflow", k: "luong mui ten board" },
-  { t: "Dùng AI nào: Claude, Codex, Antigravity", g: "ai", card: "Dùng AI nào", k: "provider cli" },
-  { t: "Model và effort", g: "ai", card: "Model và effort", k: "tom tat soan nhap task agent briefing thu model" },
-  { t: "Model và effort cho AI YouTrack", g: "youtrack", card: "Model và effort", view: "ai", k: "model effort youtrack doc code ticket" },
+  { t: "Model và effort (Claude, Codex, Antigravity)", g: "ai", card: "Model và effort", k: "dung ai nao provider cli tom tat soan nhap task agent thu model" },
+  { t: "Model và effort cho Briefing, Digest", g: "ai", card: "Model và effort", k: "tom tat nhom briefing digest" },
+  { t: "Model và effort cho AI YouTrack", g: "ai", card: "Model và effort", k: "model effort youtrack doc code ticket" },
   { t: "Tự hạ model khi gần hết hạn mức", g: "ai", card: "Model và effort", k: "fallback quota" },
-  { t: "Tài khoản CLI AI", g: "ai", card: "Tài khoản", k: "dang nhap usage history claude codex antigravity" },
+  { t: "Tài khoản CLI AI", g: "ai", card: "Tài khoản", k: "dang nhap usage history claude codex antigravity han muc thanh tren cung" },
+  { t: "Ẩn SĐT / email khi gửi AI", g: "ai", card: "Quyền riêng tư", k: "privacy redact so dien thoai email" },
   { t: "Cập nhật app từ GitHub", g: "github", card: "Cập nhật app", k: "update phien ban moi" },
   { t: "Tự động cập nhật", g: "github", card: "Cập nhật app", k: "auto update" },
   { t: "Phím tắt Telegram Inbox và YouTrack", g: "shortcuts", k: "keyboard shortcut" },
 ];
-const GROUP_NAME = Object.fromEntries(GROUPS.map(([id, name]) => [id, name])) as Record<GroupId, string>;
-const INDEX = ENTRIES.map((e) => ({ e, hay: fold(`${e.t} ${e.card ?? ""} ${GROUP_NAME[e.g]} ${e.k ?? ""}`) }));
+const GROUP_NAME = Object.fromEntries(GROUPS.map(([id, name]) => [id, name])) as Record<GroupId, Key>;
+// Both languages are searchable whichever one is on: the Vietnamese key and its English text.
+const both = (k?: Key) => (k ? `${k} ${tr("en", k)}` : "");
+const INDEX = ENTRIES.map((e) => ({ e, hay: fold(`${both(e.t)} ${both(e.card)} ${both(GROUP_NAME[e.g])} ${e.k ?? ""}`) }));
 
 /** Find a setting by name across every group; Enter / click opens it. "/" focuses the box. */
 function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const [open, setOpen] = useState(false);
@@ -172,8 +208,7 @@ function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
-      const t = e.target as HTMLElement;
-      if (t.closest("input, textarea, select, [contenteditable]")) return;
+      if ((e.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
       box.current?.focus();
     };
@@ -187,27 +222,27 @@ function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
   return (
     <div className="relative">
       <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-      <Input ref={box} role="combobox" aria-label="Tìm cài đặt" aria-autocomplete="list" aria-expanded={open && words.length > 0} aria-controls="settings-search-list"
-        aria-activedescendant={open && hits.length ? `settings-hit-${cur}` : undefined} placeholder="Tìm cài đặt…" value={q} className="h-8 pr-7 pl-8"
+      <Input ref={box} role="combobox" aria-label={t("Tìm cài đặt")} aria-autocomplete="list" aria-expanded={open && words.length > 0} aria-controls="settings-search-list"
+        aria-activedescendant={open && hits.length ? `settings-hit-${cur}` : undefined} placeholder={t("Tìm cài đặt…")} value={q} className="h-8 pr-7 pl-8"
         onChange={(e) => { setQ(e.target.value); setAt(0); setOpen(true); }} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); setAt(Math.max(0, Math.min(hits.length - 1, cur + (e.key === "ArrowDown" ? 1 : -1)))); }
           else if (e.key === "Enter" && hits[cur]) { e.preventDefault(); pick(hits[cur]); }
           else if (e.key === "Escape") { if (q) setQ(""); else e.currentTarget.blur(); }
         }} />
-      {!q && <kbd aria-hidden className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-rule bg-paper-2 px-1 font-mono text-[0.625rem] text-ink-3">/</kbd>}
+      {!q && <kbd aria-hidden className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded border border-rule bg-paper-2 px-1 font-mono text-2xs text-ink-3">/</kbd>}
       {open && words.length > 0 && (
-        <ul id="settings-search-list" role="listbox" aria-label="Kết quả tìm cài đặt"
+        <ul id="settings-search-list" role="listbox" aria-label={t("Kết quả tìm cài đặt")}
           className="absolute inset-x-0 top-full z-40 mt-1 grid max-h-80 overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop animate-in fade-in-0 zoom-in-95 duration-(--dur-micro) motion-reduce:animate-none">
           {hits.map((e, i) => (
             <li key={e.t} id={`settings-hit-${i}`} role="option" aria-selected={i === cur}
               onMouseDown={(ev) => ev.preventDefault()} onMouseEnter={() => setAt(i)} onClick={() => pick(e)}
               className={cn("grid cursor-pointer gap-0.5 rounded-md px-2.5 py-1.5", i === cur && "bg-paper-2")}>
-              <span className="text-sm text-ink">{e.t}</span>
-              <span className="truncate text-xs text-ink-3">{GROUP_NAME[e.g]}{e.card && ` › ${e.card}`}</span>
+              <span className="text-sm text-ink">{t(e.t)}</span>
+              <span className="truncate text-xs text-ink-3">{t(GROUP_NAME[e.g])}{e.card && ` › ${t(e.card)}`}</span>
             </li>
           ))}
-          {!hits.length && <li className="px-2.5 py-2 text-sm text-ink-3">Không có cài đặt nào khớp “{q.trim()}”.</li>}
+          {!hits.length && <li className="px-2.5 py-2 text-sm text-ink-3">{t("Không có cài đặt nào khớp “{q}”.", { q: q.trim() })}</li>}
         </ul>
       )}
     </div>
@@ -217,23 +252,34 @@ function SettingsSearch({ onGo }: { onGo: (e: Entry) => void }) {
 // ---- building blocks ----------------------------------------------------------------------------
 
 /** A settings card: title (+ the long explanation behind the bulb), an optional action on the right, then its rows. */
-function Card({ title, info, action, children }: { title: string; info?: string; action?: React.ReactNode; children: React.ReactNode }) {
+/** `advanced`: rarely changed; folded to its title until opened, so the everyday settings come first. `title` (the key) is
+ *  also the search's scroll anchor (`data-card`), the same in both languages. */
+function Card({ title, info, action, advanced, children }: { title: Key; info?: Key; action?: React.ReactNode; advanced?: boolean; children: React.ReactNode }) {
+  const t = useT();
+  const [open, setOpen] = useState(!advanced);
   return (
-    <section aria-label={title} className="grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl">
-      <header className="flex min-h-11 items-center gap-1.5 px-4 pt-3 sm:px-5">
-        <h3 className="text-sm font-semibold text-ink">{title}</h3>
-        {info && <InfoHint title={title} text={info} />}
-        {action && <span className="ml-auto flex items-center gap-2">{action}</span>}
+    <section aria-label={t(title)} data-card={title} className="grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl">
+      <header className={cn("flex min-h-11 items-center gap-1.5 px-4 pt-3 sm:px-5", !open && "pb-3")}>
+        {advanced ? (
+          <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-sm text-sm font-bold text-ink">
+            <ChevronDown className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", !open && "-rotate-90")} aria-hidden />
+            <h3>{t(title)}</h3>
+            <span className="rounded-full bg-paper-2 px-1.5 text-2xs font-medium text-ink-3">{t("Nâng cao")}</span>
+          </button>
+        ) : <h3 className="text-sm font-bold text-ink">{t(title)}</h3>}
+        {info && <InfoHint title={t(title)} text={t(info)} />}
+        {action && open && <span className="ml-auto flex items-center gap-2">{action}</span>}
       </header>
-      <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5">{children}</div>
+      {open && <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5 animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short) ease-(--ease-out) motion-reduce:animate-none">{children}</div>}
     </section>
   );
 }
 
 function InfoHint({ title, text }: { title: string; text: string }) {
+  const t = useT();
   return (
     <Hint side="bottom" title={title} text={text}>
-      <button type="button" aria-label={`Giải thích: ${title}`} className="grid size-6 place-items-center rounded-full text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-2 hover:text-ink">
+      <button type="button" aria-label={t("Giải thích: {title}", { title })} className="grid size-6 place-items-center rounded-full text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-2 hover:text-ink">
         <Info className="size-3.5" aria-hidden />
       </button>
     </Hint>
@@ -281,116 +327,427 @@ function Switch({ label, checked, onChange, disabled }: { label: string; checked
 
 const THEMES = [["light", "Sáng", Sun], ["dark", "Tối", Moon], ["system", "Theo hệ thống", Monitor]] as const;
 
+/** Only what every module reads: who you are (role, platform, intro for the AI) and the language. */
 function GeneralGroup() {
-  const [theme, setTheme] = useState<ThemePref>(readTheme);
+  const t = useT();
+  // Live: the top bar's language button changes it too.
+  const lang = useSyncExternalStore(onPrefs, () => (getPref("lang") as Lang | null) ?? "system", () => "system" as const);
+  const [platform, setPlatform] = useState(readPlatform);
   return <>
     <Card title="Vai trò" info="Telegram và YouTrack theo vai trò này: trang chủ, Dashboard, góc nhìn của AI khi tóm tắt và tạo ticket. QA, PO không dùng AI Agent nên không cần thư mục code.">
       <RoleSection />
     </Card>
-    <Card title="Giao diện">
-      <Row label="Chế độ màu" stack>
-        <Segmented id="set-theme" variant="card" label="Giao diện" value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
-          items={THEMES.map(([v, name, ThemeIcon]) => ({ value: v, label: <><ThemeIcon className="size-3.5" aria-hidden />{name}</> }))} />
+    <Card title="Ngôn ngữ">
+      <Row label={<span className="font-normal text-ink-3">{t("Theo máy: Tiếng Việt khi máy dùng tiếng Việt, còn lại English.")}</span>}>
+        <Segmented id="set-lang" variant="card" label={t("Ngôn ngữ")} value={lang} onChange={(v) => saveLang(v === "system" ? null : v)}
+          items={[{ value: "system", label: t("Theo máy") }, { value: "vi", label: "Tiếng Việt" }, { value: "en", label: "English" }]} />
       </Row>
-      <LookSection />
+    </Card>
+    <Card title="Giới thiệu bản thân cho AI" info="AI phía Telegram (tóm tắt, soạn nháp, Briefing, tạo ticket từ tin, Đối chiếu BE, AI Agent) đọc phần này để biết bạn làm gì, rành gì, cần gì. Chưa có thì AI phải đoán, dễ lan man và lệch chuyên môn. Bên YouTrack dùng Instructions cho AI riêng (Cài đặt › YouTrack). Lưu trên trình duyệt này.">
+      <IntroSection />
+      <Row label={t("Tóm tắt theo nền tảng")} desc={t("AI tập trung vào phần việc của nền tảng này khi tóm tắt và soạn nháp.")} stack>
+        <Segmented id="set-platform" variant="card" label={t("Tóm tắt theo nền tảng")} value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
+          items={PLATFORMS.map(([value, name]) => ({ value, label: t(name) }))} />
+      </Row>
+    </Card>
+  </>;
+}
+
+const BOT_SIZE_ITEMS: [BotSize, Key, string][] = [["s", "Nhỏ", "size-3.5"], ["m", "Vừa", "size-4"], ["l", "Lớn", "size-5"]];
+const BOT_CORNERS: [BotCorner, Key][] = [["tl", "Trên trái"], ["tr", "Trên phải"], ["bl", "Dưới trái"], ["br", "Dưới phải"]];
+const BOT_MODES: [BotMode, Key, Key][] = [
+  ["float", "Nổi", "Bot nổi, kéo tới chỗ nào sát mép màn hình cũng được; khung chat mở ra từ chính nó."],
+  ["side", "Cố định bên phải", "Bot nằm yên ở giữa cạnh phải; khung chat trượt ra từ bên phải, giữa màn hình."],
+  ["bar", "Trên thanh công cụ", "Không nổi trên nội dung: bot là một nút trên thanh trên cùng, khung chat thả xuống ngay dưới."],
+];
+
+/** The know-it-all bot (components/guide): shown or F1 only, how it shows, size, where it docks, and whether it reads the app's code. */
+function BotSection() {
+  const t = useT();
+  const show = useBotShow(), mode = useBotMode(), size = useBotSize(), dock = useBotDock(), code = useBotCode();
+  const corner = BOT_CORNERS.some(([c]) => c === dock) ? (dock as BotCorner) : null; // docked mid-edge: no corner lit
+  return <>
+    <Card title="Hiển thị">
+    <Row label={t("Hiện bot trên màn hình")} desc={t("Tắt: bot ẩn đi, vẫn mở được bằng F1.")}>
+      <Switch label={t("Hiện bot trên màn hình")} checked={show} onChange={(v) => setPref("botShow", v ? null : "0")} />
+    </Row>
+    <Row label={t("Cách hiển thị")} desc={t(BOT_MODES.find(([m]) => m === mode)![2])} stack>
+      <Segmented id="set-bot-mode" variant="card" label={t("Cách hiển thị")} value={mode} onChange={(v) => setPref("botMode", v === "float" ? null : v)}
+        items={BOT_MODES.map(([v, name]) => ({ value: v, label: t(name) }))} />
+    </Row>
+    {mode !== "bar" && <Row label={t("Kích thước bot")} stack>
+      <Segmented id="set-bot-size" variant="card" label={t("Kích thước bot")} value={size} onChange={(v) => setPref("botSize", v === "m" ? null : v)}
+        items={BOT_SIZE_ITEMS.map(([v, name, cls]) => ({ value: v, label: <><AiBot className={cls} />{t(name)}</> }))} />
+    </Row>}
+    {mode === "float" && <Row label={t("Vị trí")} desc={t("Chọn nhanh một góc, hoặc kéo bot rồi thả ở bất kỳ chỗ nào sát một trong 4 mép màn hình: bot tự bám vào mép gần nhất.")} stack>
+      <Segmented id="set-bot-corner" variant="card" label={t("Vị trí")} value={corner} onChange={(v) => setPref("botCorner", v === "br" ? null : v)}
+        items={BOT_CORNERS.map(([v, name]) => ({ value: v, label: t(name) }))} />
+    </Row>}
+    </Card>
+    <Card title="Cách trả lời">
+    <Row label={t("Đọc code khi trả lời")} desc={t("Bật: AI đọc code của app (chỉ đọc) để trả lời rule, giới hạn, vì sao một nút ẩn / hiện; chậm hơn. Tắt: chỉ dựa vào hướng dẫn, nhanh hơn.")}>
+      <Switch label={t("Đọc code khi trả lời")} checked={code} onChange={(v) => setPref("botCode", v ? null : "0")} />
+    </Row>
+    <Row label={t("Model cho trợ lý")} desc={t("Riêng cho bot. “Như tóm tắt”: dùng model/effort của tóm tắt, soạn nháp (Cài đặt › AI). Model nhanh trả lời gọn hơn.")} stack>
+      <ModelEffortPicker kind="guide" variant="full" />
+    </Row>
     </Card>
   </>;
 }
 
 /** The role (Telegram + YouTrack): pick one, or clear it so the YouTrack page asks again. */
 function RoleSection() {
+  const t = useT();
   const [role, setRole] = useState(readYtRole);
   const pick = (r: YtRole | null) => { setRole(r); saveYtRole(r); };
   return (
     <div className="grid gap-2.5 pt-1">
-      <div role="radiogroup" aria-label="Vai trò" className="grid gap-2 sm:grid-cols-3">
+      <div role="radiogroup" aria-label={t("Vai trò")} className="grid gap-2 sm:grid-cols-3">
         {YT_ROLES.map(([r, name, what]) => (
           <button key={r} type="button" role="radio" aria-checked={role === r} onClick={() => pick(r)}
             className={cn("grid content-start gap-1 rounded-lg border p-3 text-left transition-[background-color,border-color] duration-(--dur-micro)", role === r ? "border-hl bg-hl-wash" : "border-rule hover:border-rule-2 hover:bg-paper-2")}>
-            <span className="flex items-center justify-between gap-2 text-sm font-semibold">
-              {name}
+            <span className="flex items-center justify-between gap-2 text-sm font-bold">
+              {t(name)}
               <span aria-hidden className={cn("grid size-4 place-items-center rounded-full border", role === r ? "border-hl bg-hl text-hl-ink" : "border-rule-2")}>
                 {role === r && <Check className="size-3" />}
               </span>
             </span>
-            <span className="text-xs leading-relaxed text-ink-3">{what}</span>
+            <span className="text-xs leading-relaxed text-ink-3">{t(what)}</span>
           </button>
         ))}
       </div>
       <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-3">
-        {role ? "Xóa thì trang YouTrack sẽ hỏi lại; Telegram tạm coi như Dev." : "Chưa chọn: Telegram coi như Dev, mở YouTrack sẽ hỏi bạn chọn."}
-        {role && <button type="button" className={quietBtn} onClick={() => pick(null)}>Bỏ chọn vai trò</button>}
+        {role ? t("Xóa thì trang YouTrack sẽ hỏi lại; Telegram tạm coi như Dev.") : t("Chưa chọn: Telegram coi như Dev, mở YouTrack sẽ hỏi bạn chọn.")}
+        {role && <button type="button" className={quietBtn} onClick={() => pick(null)}>{t("Bỏ chọn vai trò")}</button>}
       </span>
     </div>
   );
 }
 
-const STYLES: { value: UiStyle; label: React.ReactNode; hint: string }[] = [
+const STYLES: { value: UiStyle; label: Key; hint: Key; pro?: boolean }[] = [
   { value: "simple", label: "Đơn giản", hint: "Phẳng, màu dịu, không gradient, chuyển động nhanh gọn." },
   { value: "default", label: "Mặc định", hint: "Cân bằng: nền ấm nhẹ, bóng mềm, màu nhấn rõ." },
-  { value: "vivid", label: <>Rực rỡ <span className="rounded-sm bg-hl-wash px-1 text-[10px] font-semibold text-hl-2">Pro</span></>,
+  { value: "vivid", label: "Rực rỡ", pro: true,
     hint: "Màu đậm hơn, nền loang theo màu của bạn, nút phát sáng, chuyển động nảy; bật gradient thì màu chạy chậm." },
 ];
 const WHEEL = `linear-gradient(to right in oklch, ${Array.from({ length: 37 }, (_, i) => `oklch(66% 0.17 ${i * 10})`).join()})`;
-const swatch = (h: number) => `oklch(58% 0.13 ${h})`;
+const swatch = (h: number, k = 1) => `oklch(58% ${0.13 * k} ${h})`;
+
+/** The AI mascot (every AI loading scene, empty page, AI box): the robot, an emoji, or an image of the member's own. */
+function MascotRow() {
+  const t = useT();
+  const m = useMascot();
+  const [err, setErr] = useState("");
+  const [draw, setDraw] = useState(false);
+  const drawing = useMascotJobs().data?.some((j) => j.state === "running");
+  useEffect(() => { // the "done" toast's Xem lands on /settings?mascot=1: open the drawings, drop the param
+    if (!new URLSearchParams(location.search).has("mascot")) return;
+    history.replaceState(null, "", location.pathname + location.hash);
+    setDraw(true); // eslint-disable-line react-hooks/set-state-in-effect -- a one-off read of the URL on arrival
+  }, []);
+  const pick = (v: string) => setErr(setPref("mascot", v || null) ? "" : t("Không lưu được: bộ nhớ trình duyệt đã đầy."));
+  const upload = (f?: File) => {
+    if (!f) return;
+    if (!f.type.startsWith("image/")) return setErr(t("Chỉ nhận file ảnh."));
+    if (f.size > MASCOT_MAX) return setErr(t("Ảnh quá lớn, tối đa {n} KB.", { n: MASCOT_MAX / 1000 }));
+    const r = new FileReader();
+    r.onload = () => pick(String(r.result));
+    r.onerror = () => setErr(t("Không đọc được file ảnh."));
+    r.readAsDataURL(f);
+  };
+  const img = m.startsWith("data:image/") ? m : "";
+  const tile = (on: boolean) => cn("grid size-11 place-items-center rounded-xl border transition-[background-color,border-color] duration-(--dur-micro)",
+    on ? "border-hl bg-hl-wash" : "border-rule hover:border-rule-2 hover:bg-paper-2");
+  const opts: [string, string][] = [["", t("Robot (mặc định)")], ...MASCOTS.map((e): [string, string] => [e, e]), ...(img ? [[img, t("Ảnh của bạn")] as [string, string]] : [])];
+  const upHint = t("Tải ảnh của bạn (PNG, JPG, GIF, SVG, tối đa {n} KB)", { n: MASCOT_MAX / 1000 });
+  return (
+    <div className="grid gap-2.5 pt-1">
+      <p className={cn("text-xs leading-relaxed", err ? "text-error" : "text-ink-3")}>{err || t("Thay robot ở mọi cảnh AI đang tải, trang trống và ô AI; lưu trên trình duyệt này.")}</p>
+      <div role="radiogroup" aria-label={t("Linh vật AI")} className="flex flex-wrap gap-1.5">
+        {opts.map(([v, name]) => (
+          <Hint key={v === img && img ? "img" : v} side="bottom" text={name}>
+            <button type="button" role="radio" aria-checked={m === v} aria-label={name} onClick={() => pick(v)} className={tile(m === v)}>
+              <Mascot m={v} className="size-7" />
+            </button>
+          </Hint>
+        ))}
+        <Hint side="bottom" text={drawing ? t("AI đang vẽ linh vật…") : t("Nhờ AI vẽ linh vật theo mô tả")}>
+          <button type="button" aria-label={t("Nhờ AI vẽ linh vật theo mô tả")} onClick={() => setDraw(true)} className={cn(tile(false), "relative text-hl-2", drawing && "ai-ring")}>
+            <Sparkles className={cn("size-5", drawing && "ai-twinkle")} aria-hidden />
+          </button>
+        </Hint>
+        <Hint side="bottom" text={upHint}>
+          <label className={cn(tile(false), "relative cursor-pointer text-ink-3 has-focus-visible:ring-2 has-focus-visible:ring-hl")}>
+            <ImagePlus className="size-5" aria-hidden />
+            <input type="file" accept="image/*" aria-label={upHint} className="absolute inset-0 size-full cursor-pointer opacity-0"
+              onChange={(e) => { upload(e.target.files?.[0]); e.target.value = ""; }} />
+          </label>
+        </Hint>
+      </div>
+      {draw && <MascotDraw onClose={() => setDraw(false)} onUse={(v) => { pick(v); setDraw(false); }} />}
+    </div>
+  );
+}
+
+const MASCOT_STYLES: { value: MascotStyle; label: Key; hint: Key; icon: LucideIcon }[] = [
+  { value: "cute", label: "Dễ thương", hint: "Mắt to, khối tròn, màu phẳng", icon: Smile },
+  { value: "pixel", label: "Pixel", hint: "Ô vuông như game cổ điển", icon: Grid2x2 },
+  { value: "line", label: "Nét mảnh", hint: "Chỉ nét vẽ, gần như không tô màu", icon: PenLine },
+];
+const MASCOT_IDEAS: Key[] = ["Mèo cam đeo kính", "Cáo nhỏ cầm laptop", "Gấu trúc phi hành gia", "Cú mèo đọc sách", "Bạch tuộc lập trình viên", "Khủng long xanh dễ thương"];
+const MASCOT_DRAWING: Key[] = ["Đang phác dáng…", "Đang vẽ đôi mắt…", "Đang tô màu…", "Thêm chút lấp lánh…"];
+/** Sketch strokes (80 × 80): a head, two ears, two eyes, a smile; each draws itself in turn (.mascot-sketch). */
+const SKETCH = ["M40 18c14 0 25 10 25 24s-11 24-25 24-25-10-25-24 11-24 25-24z", "M21 30 17 12l14 9", "M59 30l4-18-14 9", "M32 40v3", "M48 40v3", "M34 52q6 5 12 0"];
+
+/** "AI vẽ linh vật": a description (and a style) in, an SVG mascot out. The server draws in the background (lib/mascot),
+ *  so the dialog may close and a toast says when it is done. The mascot stands on the robot's stage; while the AI draws, a
+ *  sketch draws itself there with the current mascot as the artist. Every drawing stays pickable, previewed where the
+ *  mascot really shows (nav, button, AI thinking). */
+function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string) => void }) {
+  const t = useT();
+  const [text, setText] = useState("");
+  const [style, setStyle] = useState<MascotStyle>("cute");
+  const [pick, setPick] = useState<string | null>(null); // the drawing picked; null = the newest
+  const jobs = useMascotJobs().data ?? [];
+  const { start, stop } = useMascotActions();
+  const why = useMascotError();
+  const shots = jobs.filter((j) => j.state === "done");
+  const running = jobs.find((j) => j.state === "running");
+  const failed = jobs.at(-1)?.state === "error" ? jobs.at(-1) : undefined;
+  const shot = shots.find((j) => j.id === pick) ?? shots.at(-1);
+  const busy = !!running || start.isPending;
+  const run = (v = text) => { if (v.trim() && !busy) { setPick(null); start.mutate({ description: v.trim(), style }); } };
+  const verb = shots.length ? t("Vẽ lại") : t("Vẽ");
+  const StyleIcon = MASCOT_STYLES.find((o) => o.value === style)!.icon;
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="gap-4 sm:max-w-lg">
+        <div className="-mx-(--dlg-p) -mt-(--dlg-p) grid justify-items-center gap-1 bg-radial-[at_50%_45%] from-hl-wash to-transparent to-70% px-(--dlg-p) pt-5">
+          <BotStage>
+            {busy ? <>
+              <svg viewBox="0 0 80 80" className="relative size-24 overflow-visible" fill="none" stroke="var(--color-hl-2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                {SKETCH.map((d, k) => <path key={d} d={d} pathLength={1} className="mascot-sketch" style={{ animationDelay: `${k * 0.18}s` }} />)}
+              </svg>
+              <span className="ai-spin absolute inset-9 [animation-duration:2.6s]"><PencilLine className="absolute top-0 left-1/2 size-4 -translate-x-1/2 -translate-y-1/2 text-hl-2" /></span>
+              <AiBot className="ai-hop absolute right-1 bottom-4 size-10 drop-shadow-sm" />
+            </> : (
+              <span key={shot?.id ?? "now"} className="sk-pop relative grid place-items-center">
+                <Mascot m={shot ? mascotUrl(shot.svg) : readMascot()} className="ai-float size-24 drop-shadow-lg" />
+                {shot && <>
+                  <Sparkles className="ai-twinkle absolute -top-2 -right-3 size-4 text-hl-2" />
+                  <Sparkles className="ai-twinkle absolute bottom-3 -left-4 size-3 text-hl-2/70 [animation-delay:0.3s]" />
+                </>}
+              </span>
+            )}
+          </BotStage>
+          <DialogTitle className="text-center">{t("AI vẽ linh vật")}</DialogTitle>
+          <div className="grid min-h-7 justify-items-center gap-0.5 text-center">
+            {busy ? <>
+              <AiThinking lines={MASCOT_DRAWING.map((k) => t(k))} />
+              <p className="text-xs text-ink-3">{t("Có thể đóng cửa sổ này: AI vẽ tiếp ở nền, xong sẽ báo.")}</p>
+            </> : start.isError ? <p role="alert" className="text-sm text-error">{errorText(start.error, {}, t("Không bắt đầu vẽ được."))}</p>
+              : failed ? <p role="alert" className="text-sm text-error">{why(failed)}</p>
+              : shot ? <p className="max-w-sm truncate text-sm text-ink-2">“{shot.description}”</p>
+              : <p className="text-sm text-ink-3">{t("Linh vật hiện tại. Mô tả con vật bạn muốn, AI vẽ thành biểu tượng.")}</p>}
+          </div>
+        </div>
+
+        {shot && !busy && <>
+          <div className="grid gap-1.5">
+            <span className="text-xs text-ink-3">{t("Trong app trông thế này")}</span>
+            <div aria-hidden className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-rule bg-paper px-3 py-2.5">
+              <span className="flex items-center gap-2 rounded-lg bg-hl-wash px-2.5 py-1.5 text-sm font-medium text-hl-2"><Mascot m={mascotUrl(shot.svg)} className="agent-still size-[1.125rem]" />AI Agent</span>
+              <span className="flex h-[30px] items-center gap-1 rounded-full border border-rule-2 bg-cotton px-2.5 text-xs font-medium text-ink"><Mascot m={mascotUrl(shot.svg)} className="agent-still size-3.5" />AI Agent</span>
+              <span className="flex min-w-0 items-center gap-2"><Mascot m={mascotUrl(shot.svg)} className="ai-hop size-7 shrink-0" /><span className="ai-text truncate text-sm font-medium">{t("AI đang suy nghĩ")}</span></span>
+            </div>
+          </div>
+          {shots.length > 1 && (
+            <div className="grid gap-1.5">
+              <span className="text-xs text-ink-3">{t("Các bản đã vẽ")}</span>
+              <div role="radiogroup" aria-label={t("Các bản đã vẽ")} className="flex flex-wrap gap-1.5">
+                {shots.map((x) => (
+                  <Hint key={x.id} side="bottom" text={x.description}>
+                    <button type="button" role="radio" aria-checked={x.id === shot.id} aria-label={x.description} onClick={() => setPick(x.id)}
+                      className={cn("grid size-12 place-items-center rounded-xl border transition-[background-color,border-color] duration-(--dur-micro)",
+                        x.id === shot.id ? "border-hl bg-hl-wash" : "border-rule hover:border-rule-2 hover:bg-paper-2")}>
+                      <Mascot m={mascotUrl(x.svg)} className="size-8" />
+                    </button>
+                  </Hint>
+                ))}
+              </div>
+            </div>
+          )}
+          <Button type="button" onClick={() => onUse(mascotUrl(shot.svg))}><Check aria-hidden />{t("Dùng linh vật này")}</Button>
+        </>}
+
+        <AiPromptBox aria-label={t("Mô tả linh vật")} autoFocus maxLength={200} value={text} onChange={setText} onSend={() => run()}
+          placeholder={t("Ví dụ: chú mèo cam đeo kính, cầm laptop")}
+          running={busy} onStop={() => running && stop.mutate(running.id)} stopping={stop.isPending}
+          top={!shots.length && !busy && (
+            <div className="flex flex-wrap gap-1.5">
+              {MASCOT_IDEAS.map((k) => (
+                <button key={k} type="button" onClick={() => { setText(t(k)); run(t(k)); }}
+                  className="rounded-full border border-rule bg-paper px-2.5 py-1 text-xs text-ink-2 transition-colors duration-(--dur-micro) hover:border-hl hover:text-ink">
+                  {t(k)}
+                </button>
+              ))}
+            </div>
+          )}
+          tools={<Dropdown label={t("Phong cách vẽ")} value={style} onChange={(v) => setStyle(v as MascotStyle)} trigger={CHIP}
+            prefix={<StyleIcon aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
+            options={MASCOT_STYLES.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))} />}
+          actions={!busy && (
+            <Hint text={verb}>
+              <Button type="button" size="sm" aria-label={verb} disabled={!text.trim()} onClick={() => run()} className="rounded-full bg-hl">
+                <Sparkles aria-hidden />{verb}
+              </Button>
+            </Hint>
+          )} />
+        {stop.isError && <p role="alert" className="text-xs text-error">{errorText(stop.error, {}, t("Không dừng được."))}</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 /** Each member's look, saved in this browser and applied in every open tab (the boot script in app/layout.tsx). */
 function LookSection() {
+  const t = useT();
   const [look, setLook] = useState<Look>(readLook);
   const set = (patch: Partial<Look>) => { const next = { ...look, ...patch }; setLook(next); saveLook(next); };
   const simple = look.style === "simple";
-  return <>
-    <Row label="Phong cách" desc={STYLES.find((o) => o.value === look.style)?.hint} stack>
-      <Segmented id="set-style" variant="card" label="Phong cách" value={look.style} onChange={(style) => set({ style })} items={STYLES} />
+  const [theme, setTheme] = useState<ThemePref>(readTheme);
+  // Cards on the left, the live preview pinned on the right (below them when the page is narrow).
+  return (
+  <div className="@container">
+  <div className="grid gap-4 @min-[52rem]:grid-cols-[minmax(0,1fr)_19rem] @min-[52rem]:items-start">
+  <div className="grid min-w-0 content-start gap-4">
+  <Card title="Chủ đề và chữ">
+    <Row label={t("Chế độ màu")} stack>
+      <Segmented id="set-theme" variant="card" label={t("Giao diện")} value={theme} onChange={(v) => { setTheme(v); applyTheme(v); }}
+        items={THEMES.map(([v, name, ThemeIcon]) => ({ value: v, label: <><ThemeIcon className="size-3.5" aria-hidden />{t(name)}</> }))} />
     </Row>
-    <Row label="Màu chủ đạo" desc={look.hue >= 60 && look.hue <= 100 ? <span className="text-warn">Gần màu hổ phách dùng cho tin “cần bạn” (quá hạn), dễ lẫn.</span> : undefined} stack>
-      <div className="grid gap-2.5">
-        <div role="radiogroup" aria-label="Màu có sẵn" className="flex flex-wrap gap-1.5">
-          {ACCENTS.map(([h, name]) => (
-            <Hint key={h} side="bottom" text={name}><button type="button" role="radio" aria-checked={look.hue === h} aria-label={name} onClick={() => set({ hue: h })}
-              className={cn("grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
-                look.hue === h ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-rule-2")}
-              style={{ background: swatch(h) }}>
-              {look.hue === h && <Check className="size-3.5 text-white" aria-hidden />}
-            </button></Hint>
-          ))}
-        </div>
-        <HueSlider label="Kéo để chọn màu chủ đạo" value={look.hue} onChange={(hue) => set({ hue })} />
-      </div>
+    <Row label={t("Phong cách")} desc={t(STYLES.find((o) => o.value === look.style)!.hint)} stack>
+      <Segmented id="set-style" variant="card" label={t("Phong cách")} value={look.style} onChange={(style) => set({ style })}
+        items={STYLES.map((o) => ({ value: o.value, label: o.pro ? <>{t(o.label)} <span className="rounded-sm bg-hl-wash px-1 text-2xs font-bold text-hl-2">Pro</span></> : t(o.label) }))} />
     </Row>
-    <Row label="Gradient" desc={simple ? "Phong cách Đơn giản không dùng gradient." : "Nút, tab đang mở, chip chọn phối từ màu chủ đạo sang màu thứ hai."}>
-      <Switch label="Gradient" checked={look.gradient && !simple} disabled={simple} onChange={(gradient) => set({ gradient })} />
+    <Row label={t("Font chữ")} desc={t("Áp dụng cho cả Telegram và YouTrack trên trình duyệt này.")}>
+      <Dropdown label={t("Font chữ")} className="w-48" value={look.font} onChange={(v) => set({ font: v as FontId })}
+        options={FONTS.map((f) => ({ value: f.id, label: tMaybe(f.label), hint: tMaybe(f.hint) }))} />
     </Row>
-    {look.gradient && !simple && (
-      <div className="grid gap-2 py-3 last:pb-0">
-        <HueSlider label="Kéo để chọn màu thứ hai của gradient" value={look.hue2} onChange={(hue2) => set({ hue2 })} />
-        <div aria-hidden className="h-7 rounded-md" style={{ background: `linear-gradient(120deg, ${swatch(look.hue)}, ${swatch(look.hue2)})` }} />
-      </div>
-    )}
-  </>;
+    <Row label={t("Cỡ chữ")} desc={t("Phóng to / thu nhỏ chữ toàn app; khoảng cách giữ nguyên.")}>
+      <Segmented id="set-font-size" variant="card" label={t("Cỡ chữ")} value={look.size} onChange={(size) => set({ size })}
+        items={FONT_SIZES.map((z) => ({ value: z.id, label: t(z.label) }))} />
+    </Row>
+  </Card>
+  <Card title="Màu sắc">
+          <Row label={t("Màu chủ đạo")} desc={look.hue >= 60 && look.hue <= 100 ? <span className="text-warn">{t("Gần màu hổ phách dùng cho tin “cần bạn” (quá hạn), dễ lẫn.")}</span> : undefined} stack>
+            <div className="grid gap-2.5">
+              <div role="radiogroup" aria-label={t("Màu có sẵn")} className="flex flex-wrap gap-1.5">
+                {ACCENTS.map(([h, name]) => (
+                  <Hint key={h} side="bottom" text={t(name)}><button type="button" role="radio" aria-checked={look.hue === h} aria-label={t(name)} onClick={() => set({ hue: h })}
+                    className={cn("grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
+                      look.hue === h ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-rule-2")}
+                    style={{ background: swatch(h, look.chroma) }}>
+                    {look.hue === h && <Check className="size-3.5 text-white" aria-hidden />}
+                  </button></Hint>
+                ))}
+                <Hint side="bottom" text={t("Chọn màu bất kỳ (bảng màu, mã hex)")}>
+                  <label className="relative grid size-7 cursor-pointer place-items-center rounded-full ring-offset-2 ring-offset-cotton hover:ring-2 hover:ring-rule-2 has-focus-visible:ring-2 has-focus-visible:ring-focus"
+                    style={{ background: `conic-gradient(in oklch longer hue, ${swatch(0)}, ${swatch(0)})` }}>
+                    <Pipette className="size-3.5 text-white drop-shadow-sm" aria-hidden />
+                    <input type="color" aria-label={t("Chọn màu bất kỳ (bảng màu, mã hex)")} value={oklchHex(0.53, 0.135 * look.chroma, look.hue)}
+                      onChange={(e) => set(hexToAccent(e.target.value))} className="absolute inset-0 size-full cursor-pointer opacity-0" />
+                  </label>
+                </Hint>
+              </div>
+              <HueSlider label={t("Kéo để chọn màu chủ đạo")} value={look.hue} onChange={(hue) => set({ hue })} chroma={look.chroma} />
+            </div>
+          </Row>
+          <Row label={t("Độ đậm")} desc={t("Kéo trái cho màu dịu, kéo phải cho màu rực.")} stack>
+            <Slider label={t("Độ đậm")} min={CHROMA_MIN} max={CHROMA_MAX} step={0.05} value={look.chroma} onChange={(chroma) => set({ chroma })}
+              track={`linear-gradient(to right in oklch, ${swatch(look.hue, 0)}, ${swatch(look.hue, CHROMA_MAX)})`} thumb={swatch(look.hue, look.chroma)} />
+          </Row>
+          <Row label="Gradient" desc={simple ? t("Phong cách Đơn giản không dùng gradient.") : t("Nút, tab đang mở, chip chọn phối từ màu chủ đạo sang màu thứ hai.")}>
+            <Switch label="Gradient" checked={look.gradient && !simple} disabled={simple} onChange={(gradient) => set({ gradient })} />
+          </Row>
+          {look.gradient && !simple && (
+            <div className="grid gap-2 py-3">
+              <HueSlider label={t("Kéo để chọn màu thứ hai của gradient")} value={look.hue2} onChange={(hue2) => set({ hue2 })} chroma={look.chroma} />
+              <div aria-hidden className="h-7 rounded-md" style={{ background: `linear-gradient(120deg, ${swatch(look.hue, look.chroma)}, ${swatch(look.hue2, look.chroma)})` }} />
+            </div>
+          )}
+          <Row label={t("Pha sẵn")} desc={t("Một chạm: bật Gradient với cặp màu này.")} stack>
+            <div role="radiogroup" aria-label={t("Pha sẵn")} className="flex flex-wrap gap-1.5">
+              {MIXES.map(([a, b, name]) => {
+                const on = look.gradient && !simple && look.hue === a && look.hue2 === b;
+                return (
+                  <button key={name} type="button" role="radio" aria-checked={on} disabled={simple} onClick={() => set({ hue: a, hue2: b, gradient: true })}
+                    className={cn("flex h-8 items-center gap-1.5 rounded-full border pr-3 pl-1 text-xs transition-[background-color,border-color] duration-(--dur-micro) disabled:cursor-not-allowed disabled:opacity-40",
+                      on ? "border-hl bg-hl-wash text-hl-2" : "border-rule hover:border-rule-2 hover:bg-paper-2")}>
+                    <span aria-hidden className="size-6 rounded-full" style={{ background: `linear-gradient(120deg, ${swatch(a, look.chroma)}, ${swatch(b, look.chroma)})` }} />
+                    {t(name)}
+                  </button>
+                );
+              })}
+            </div>
+          </Row>
+          {(look.hue !== 40 || look.chroma !== 1 || look.gradient) && (
+            <span className="pt-3"><button type="button" className={cn(quietBtn, "inline-flex items-center gap-1")} onClick={() => set({ hue: 40, hue2: 355, chroma: 1, gradient: false })}>
+              <RotateCcw className="size-3.5" aria-hidden />{t("Về màu mặc định")}
+            </button></span>
+          )}
+  </Card>
+  <Card title="Linh vật AI"><MascotRow /></Card>
+  </div>
+  <LookPreview className="@min-[52rem]:sticky @min-[52rem]:top-20" />
+  </div>
+  </div>
+  );
 }
 
-function HueSlider({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
+const HueSlider = ({ label, value, onChange, chroma }: { label: string; value: number; onChange: (v: number) => void; chroma: number }) => (
+  <Slider label={label} min={0} max={359} step={1} value={value} onChange={onChange} track={WHEEL} thumb={swatch(value, chroma)} />
+);
+
+function Slider({ label, min, max, step, value, onChange, track, thumb }: { label: string; min: number; max: number; step: number; value: number; onChange: (v: number) => void; track: string; thumb: string }) {
   return (
-    <input type="range" min={0} max={359} step={1} value={value} aria-label={label} onChange={(e) => onChange(Number(e.target.value))}
-      className="hue-range" style={{ "--track": WHEEL, "--thumb": swatch(value) } as React.CSSProperties} />
+    <input type="range" min={min} max={max} step={step} value={value} aria-label={label} onChange={(e) => onChange(Number(e.target.value))}
+      className="hue-range" style={{ "--track": track, "--thumb": thumb } as React.CSSProperties} />
   );
 }
 
 // ---- Telegram -----------------------------------------------------------------------------------
 
-/** Telegram-only preferences: account, who you are for the AI, Briefing's model, the queue. */
+/** Server-side privacy switches (telegram_dashboard/privacy.py, data/config.json). */
+type Privacy = { redact: boolean; notify_preview: boolean };
+function usePrivacy() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["privacy"], queryFn: ({ signal }) => api<Privacy>("/privacy", { signal }), retry: false });
+  const m = useMutation({
+    mutationFn: (v: Privacy) => api<Privacy>("/privacy", { method: "PUT", json: v }),
+    onSuccess: (v) => qc.setQueryData(["privacy"], v),
+    onError: (e) => toast({ text: errorText(e, {}, tPlain("Không lưu được, thử lại")) }),
+  });
+  const p = (m.isPending && m.variables) || q.data;
+  return { p, set: (patch: Partial<Privacy>) => p && m.mutate({ ...p, ...patch }), busy: m.isPending };
+}
+
+/** Telegram-only preferences: the account, the queue, notifications, Q&A, Briefing, rules, local data. */
 function TelegramGroup() {
+  const t = useT();
+  const privacy = usePrivacy();
   const [overdue, setOverdue] = useState(readOverdueHours);
+  const qaRemind = useQaRemind();
+  const qaAnswerBy = useSyncExternalStore(onPrefs, readQaAnswerBy, () => "tagged" as const);
   const [rowActions, setRowActions] = useState(readRowActions);
-  const [platform, setPlatform] = useState(readPlatform);
+  const [autoBrief, setAutoBrief] = useState(() => getPref(AUTO_BRIEF) !== "0");
   const [notify, setNotify] = useState(readNotify);
   const [notifyNote, setNotifyNote] = useState("");
   async function toggleNotify(on: boolean) {
     if (on) {
-      if (typeof Notification === "undefined") return setNotifyNote("Trình duyệt này không hỗ trợ thông báo.");
+      if (typeof Notification === "undefined") return setNotifyNote(t("Trình duyệt này không hỗ trợ thông báo."));
       const p = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
-      if (p !== "granted") return setNotifyNote("Trình duyệt đang chặn thông báo cho trang này; bật lại trong quyền của trang.");
+      if (p !== "granted") return setNotifyNote(t("Trình duyệt đang chặn thông báo cho trang này; bật lại trong quyền của trang."));
     }
     setNotifyNote("");
     setNotify(on);
@@ -402,64 +759,83 @@ function TelegramGroup() {
       <TelegramSection />
     </Card>
 
-    <Card title="Giới thiệu bản thân cho AI" info="AI phía Telegram (tóm tắt, soạn nháp, Briefing, tạo ticket từ tin, Đối chiếu BE, AI Agent) đọc phần này để biết bạn làm gì, rành gì, cần gì. Chưa có thì AI phải đoán, dễ lan man và lệch chuyên môn. Bên YouTrack dùng Instructions cho AI riêng (Cài đặt › YouTrack). Lưu trên trình duyệt này.">
-      <IntroSection />
-    </Card>
-
-    <Card title="AI cho Telegram">
-      <Row label="Tóm tắt theo nền tảng" desc="AI tập trung vào phần việc của nền tảng này khi tóm tắt và soạn nháp." stack>
-        <Segmented id="set-platform" variant="card" label="Tóm tắt theo nền tảng" value={platform} onChange={(v) => { setPlatform(v); setPref("aiPlatform", v); }}
-          items={PLATFORMS.map(([value, name]) => ({ value, label: name }))} />
+    <Card title="Hàng chờ">
+      <Row label={t("Ngưỡng quá hạn")} desc={t("Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách.")} stack>
+        <Segmented id="set-overdue" variant="card" label={t("Ngưỡng quá hạn")} value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
+          items={OVERDUE_CHOICES.map((h) => ({ value: h, label: t("{n} giờ", { n: h }) }))} />
       </Row>
-      <Row label="Model cho Briefing và Digest" desc="Riêng cho tóm tắt cả nhóm. “Như tóm tắt”: dùng model/effort của tóm tắt, soạn nháp (Cài đặt › AI)." stack>
-        <ModelEffortPicker kind="brief" variant="full" />
+      <Row label={t("Nút thao tác trên tin")} desc={t("Hoãn, ngữ cảnh, Đối chiếu BE, đính kèm, chép ID và menu ⋯. Màn hình cảm ứng luôn hiện.")} stack>
+        <Segmented id="set-row-actions" variant="card" label={t("Nút thao tác trên tin")} value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
+          items={[{ value: "hover", label: t("Khi rê vào nút Xong") }, { value: "always", label: t("Luôn hiện") }]} />
       </Row>
     </Card>
 
-    <Card title="Hàng chờ và thông báo">
-      <Row label="Ngưỡng quá hạn" desc="Tin tag chờ lâu hơn ngưỡng này hiện màu hổ phách." stack>
-        <Segmented id="set-overdue" variant="card" label="Ngưỡng quá hạn" value={overdue} onChange={(v) => { setOverdue(v); setPref("overdueHours", String(v)); }}
-          items={OVERDUE_CHOICES.map((h) => ({ value: h, label: `${h} giờ` }))} />
+    <Card title="Thông báo">
+      <Row label={t("Thông báo khi có tag mới")} desc={notifyNote ? <span role="alert" className="text-warn">{notifyNote}</span> : t("Khi tab đang ẩn: tag mới, và câu hỏi Q&A của bạn quá ngưỡng nhắc mà chưa ai trả lời. Giữ luồng cập nhật chạy nền.")}>
+        <Switch label={t("Thông báo khi có tag mới")} checked={notify} onChange={(v) => void toggleNotify(v)} />
       </Row>
-      <Row label="Thông báo khi có tag mới" desc={notifyNote ? <span role="alert" className="text-warn">{notifyNote}</span> : "Khi tab đang ẩn; giữ luồng cập nhật chạy nền."}>
-        <Switch label="Thông báo khi có tag mới" checked={notify} onChange={(v) => void toggleNotify(v)} />
+      {privacy.p && (
+        <Row label={t("Hiện nội dung tin trong thông báo macOS")} desc={t("Banner macOS khi có tag mới hoặc ticket YouTrack mới giao cho bạn (cả trên màn hình khóa, Notification Center). Tắt: chỉ hiện nhóm và người gửi / mã ticket.")}>
+          <Switch label={t("Hiện nội dung tin trong thông báo macOS")} checked={privacy.p.notify_preview} disabled={privacy.busy} onChange={(v) => privacy.set({ notify_preview: v })} />
+        </Row>
+      )}
+    </Card>
+
+    <Card title="Q&A">
+      <Row label={t("Nhắc câu hỏi Q&A chưa ai trả lời")} desc={t("Câu hỏi bạn đăng ở Q&A mà chưa ai trả lời sau khoảng này (tính từ tin cuối của bạn trong chuỗi): trang Q&A báo và cho nhắc lại ngay trong nhóm. Đổi nhanh được ở trang Q&A.")} stack>
+        <Segmented id="set-qa-remind" variant="card" label={t("Nhắc câu hỏi Q&A chưa ai trả lời")} value={qaRemind} onChange={(v) => setPref("qaRemindMins", String(v))}
+          items={QA_REMIND_CHOICES.map((m) => ({ value: m, label: qaRemindLabel(m) }))} />
       </Row>
-      <Row label="Nút thao tác trên tin" desc="Ghim, ngữ cảnh, mở Telegram. Màn hình cảm ứng luôn hiện." stack>
-        <Segmented id="set-row-actions" variant="card" label="Nút thao tác trên tin" value={rowActions} onChange={(v) => { setRowActions(v); applyRowActions(v); }}
-          items={[{ value: "hover", label: "Khi rê vào nút Xong" }, { value: "always", label: "Luôn hiện" }]} />
+      <Row label={t("Câu hỏi Q&A tính là đã trả lời khi")} desc={t("“Người được tag”: chỉ khi chính người câu hỏi tag (@tên) trả lời; câu không tag ai thì ai trả lời cũng tính. Chốt câu trả lời thì luôn tính là xong.")} stack>
+        <Segmented id="set-qa-answer-by" variant="card" label={t("Câu hỏi Q&A tính là đã trả lời khi")} value={qaAnswerBy} onChange={(v) => setPref("qaAnswerBy", v)}
+          items={[{ value: "any", label: t("Bất kỳ ai khác trả lời") }, { value: "tagged", label: t("Người được tag trả lời") }]} />
       </Row>
     </Card>
 
-    <Card title="Dữ liệu trên trình duyệt này">
-      <Row label="Nháp và danh sách Báo lại" desc="Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.">
+    <Card title="Briefing">
+      <Row label={t("Tự tóm tắt Briefing")} desc={t("Khi app đang mở, nhóm có tin mới được tóm tắt nền tối đa 2 giờ một lần, mở Briefing là có sẵn. Tắt: chỉ tóm tắt khi bạn bấm.")}>
+        <Switch label={t("Tự tóm tắt Briefing")} checked={autoBrief} onChange={(v) => { setAutoBrief(v); setPref(AUTO_BRIEF, v ? null : "0"); }} />
+      </Row>
+    </Card>
+
+    <Card advanced title="Luôn bỏ qua" info="Người gửi (thêm bằng “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo; tin của người gửi trong danh sách không vào tóm tắt Briefing / Digest. Xóa một dòng để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
+      <RulesSection />
+    </Card>
+
+    <Card advanced title="Dữ liệu trên trình duyệt này">
+      <Row label={t("Nháp trả lời")} desc={t("Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.")}>
         <Button type="button" size="sm" variant="outline"
-          onClick={() => { clearDrafts(); clearLoopItems(); toast({ text: "Đã xóa nháp và danh sách Báo lại trên máy này" }); }}>
-          Xóa nháp
+          onClick={() => { clearDrafts(); toast({ text: t("Đã xóa nháp trên máy này") }); }}>
+          {t("Xóa nháp")}
         </Button>
       </Row>
     </Card>
   </>;
 }
 
-const INTRO_EXAMPLE = "Ví dụ:\nTôi là Android dev (Kotlin, Jetpack Compose, MVVM), team Mobile dự án Bán V2.\nRành: code app, API client. Không rành: BE, Web.\nMuốn AI tập trung: việc phía Android phải làm, câu hỏi cho BE theo từng field.\nBỏ qua phần iOS/Web trừ khi ảnh hưởng tới Android.";
+const INTRO_EXAMPLE: Key = "Ví dụ:\nTôi là Android dev (Kotlin, Jetpack Compose, MVVM), team Mobile dự án Bán V2.\nRành: code app, API client. Không rành: BE, Web.\nMuốn AI tập trung: việc phía Android phải làm, câu hỏi cho BE theo từng field.\nBỏ qua phần iOS/Web trừ khi ảnh hưởng tới Android.";
 
 /** Saved as you type (this browser); the counter and the "not written yet" nudge follow it. */
 function IntroSection() {
+  const t = useT();
   const [text, setText] = useState(readIntro);
   return (
-    <div className="grid gap-2 pt-1">
-      <Textarea aria-label="Giới thiệu bản thân cho AI" rows={5} maxLength={INTRO_MAX} value={text} placeholder={INTRO_EXAMPLE} className="text-sm md:text-sm"
+    <div className="grid gap-2 pt-1 pb-3">
+      <Textarea aria-label={t("Giới thiệu bản thân cho AI")} rows={5} maxLength={INTRO_MAX} value={text} placeholder={t(INTRO_EXAMPLE)} className="text-sm md:text-sm"
         onChange={(e) => { setText(e.target.value); setPref("aiIntro", e.target.value.trim() ? e.target.value : null); }} />
       <span className="flex items-center justify-between gap-3 text-xs text-ink-3">
-        {text.trim() ? <span className="flex items-center gap-1 text-ok"><Check className="size-3.5" aria-hidden /> Đã lưu, AI dùng từ lần chạy kế tiếp</span>
-          : <span className="text-signal-2">Chưa có: AI phải đoán bạn làm gì.</span>}
+        {text.trim() ? <span className="flex items-center gap-1 text-ok"><Check className="size-3.5" aria-hidden /> {t("Đã lưu, AI dùng từ lần chạy kế tiếp")}</span>
+          : <span className="text-signal-2">{t("Chưa có: AI phải đoán bạn làm gì.")}</span>}
         <span className="font-mono tabular-nums">{text.length}/{INTRO_MAX}</span>
       </span>
     </div>
   );
 }
 
-const TG_ERRORS: Record<string, string> = {
+/** An error-code map of keys, translated for `errorText`. */
+const tMap = (t: (k: Key) => string, m: Record<string, Key>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, t(v)]));
+
+const TG_ERRORS: Record<string, Key> = {
   phone_invalid: "Số điện thoại không hợp lệ (ghi kèm mã nước, vd. +84…).",
   api_invalid: "API ID/Hash sai, kiểm tra lại trên my.telegram.org.",
   code_invalid: "Mã không đúng.",
@@ -472,6 +848,7 @@ const TG_ERRORS: Record<string, string> = {
 
 /** API ID/Hash from my.telegram.org, then phone → code → 2FA: the whole Telegram setup without .env or a terminal. */
 function TelegramSection() {
+  const t = useT();
   const qc = useQueryClient();
   const status = useStatus().data;
   const [editApi, setEditApi] = useState(false);
@@ -494,39 +871,39 @@ function TelegramSection() {
     mutationFn: () => api<{ password_required: boolean }>("/telegram/sign-in", { method: "POST", json: step === "password" ? { password } : { code: code.trim() } }),
     onSuccess: (r) => { if (r.password_required) setStep("password"); else { setPassword(""); refresh(); } },
   });
-  if (!status) return <div className="pt-1"><StatusLine tone="idle">Đang kiểm tra…</StatusLine></div>;
+  if (!status) return <div className="pt-1"><StatusLine tone="idle">{t("Đang kiểm tra…")}</StatusLine></div>;
   const err = saveApi.error ?? sendCode.error ?? signIn.error;
-  const errLine = err && <p role="alert" className="text-xs text-error">{errorText(err, TG_ERRORS, "Không thực hiện được, thử lại.")}</p>;
+  const errLine = err && <p role="alert" className="text-xs text-error">{errorText(err, tMap(t, TG_ERRORS), t("Không thực hiện được, thử lại."))}</p>;
 
   if (editApi || !status.telegram_api_id) {
     return (
       <form className="grid gap-2.5 pt-1" onSubmit={(e) => { e.preventDefault(); saveApi.mutate(); }}>
         <a href="https://my.telegram.org/apps" target="_blank" rel="noreferrer" className={linkCls}>
-          Lấy API ID/Hash tại my.telegram.org → API development tools <ExternalLink className="size-3" aria-hidden />
+          {t("Lấy API ID/Hash tại my.telegram.org → API development tools")} <ExternalLink className="size-3" aria-hidden />
         </a>
         <div className="grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
           <Input aria-label="API ID" placeholder="API ID" inputMode="numeric" maxLength={12}
             value={apiId} onChange={(e) => setApiId(e.target.value.replace(/\D/g, ""))} />
-          <Input aria-label="API Hash" type="password" autoComplete="off" placeholder="API Hash (32 ký tự)" maxLength={32}
+          <Input aria-label="API Hash" type="password" autoComplete="off" placeholder={t("API Hash (32 ký tự)")} maxLength={32}
             value={apiHash} onChange={(e) => setApiHash(e.target.value)} />
         </div>
         <div className="flex gap-2">
           <Button type="submit" size="sm" aria-busy={saveApi.isPending} disabled={saveApi.isPending || !apiId || !/^[0-9a-fA-F]{32}$/.test(apiHash.trim())}>
-            {saveApi.isPending ? "Đang lưu…" : "Lưu"}
+            {saveApi.isPending ? t("Đang lưu…") : t("Lưu")}
           </Button>
-          {editApi && <Button type="button" size="sm" variant="ghost" onClick={() => setEditApi(false)}>Hủy</Button>}
+          {editApi && <Button type="button" size="sm" variant="ghost" onClick={() => setEditApi(false)}>{t("Hủy")}</Button>}
         </div>
         {errLine}
       </form>
     );
   }
 
-  const changeApi = <button type="button" className={quietBtn} onClick={() => { setApiId(String(status.telegram_api_id)); setEditApi(true); }}>Đổi API ID/Hash</button>;
+  const changeApi = <button type="button" className={quietBtn} onClick={() => { setApiId(String(status.telegram_api_id)); setEditApi(true); }}>{t("Đổi API ID/Hash")}</button>;
   if (status.state === "degraded") {
     return (
       <div className="grid gap-1.5 pt-1">
-        <StatusLine tone="warn">Không kết nối được tới Telegram{status.detail ? ` (${status.detail})` : ""}</StatusLine>
-        <p className="text-xs text-ink-3">Mạng có thể đang chặn Telegram: bật VPN, app sẽ tự thử lại.</p>
+        <StatusLine tone="warn">{t("Không kết nối được tới Telegram")}{status.detail ? ` (${status.detail})` : ""}</StatusLine>
+        <p className="text-xs text-ink-3">{t("Mạng có thể đang chặn Telegram: bật VPN, app sẽ tự thử lại.")}</p>
         {changeApi}
       </div>
     );
@@ -535,40 +912,40 @@ function TelegramSection() {
     const ok = status.state === "connected";
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        <StatusLine tone={ok ? "ok" : "idle"}>{ok ? <>Đã đăng nhập{status.telegram_me && <b className="ml-1 font-semibold">{status.telegram_me}</b>}</> : "Đang kết nối Telegram…"}</StatusLine>
+        <StatusLine tone={ok ? "ok" : "idle"}>{ok ? <>{t("Đã đăng nhập")}{status.telegram_me && <b className="ml-1 font-bold">{status.telegram_me}</b>}</> : t("Đang kết nối Telegram…")}</StatusLine>
         {changeApi}
       </div>
     );
   }
   return (
     <form className="grid gap-2.5 pt-1" onSubmit={(e) => { e.preventDefault(); if (step === "phone") sendCode.mutate(); else signIn.mutate(); }}>
-      <StatusLine tone="warn">Chưa đăng nhập Telegram</StatusLine>
-      <ol aria-label="Các bước đăng nhập" className="flex gap-1.5 text-xs text-ink-3">
+      <StatusLine tone="warn">{t("Chưa đăng nhập Telegram")}</StatusLine>
+      <ol aria-label={t("Các bước đăng nhập")} className="flex gap-1.5 text-xs text-ink-3">
         {(["phone", "code", "password"] as const).map((s, i) => (
-          <li key={s} className={cn("rounded-full px-2 py-0.5", step === s ? "bg-hl-wash font-medium text-hl-2" : "bg-paper-2")}>{i + 1}. {{ phone: "Số điện thoại", code: "Mã", password: "2FA" }[s]}</li>
+          <li key={s} className={cn("rounded-full px-2 py-0.5", step === s ? "bg-hl-wash font-medium text-hl-2" : "bg-paper-2")}>{i + 1}. {{ phone: t("Số điện thoại"), code: t("Mã"), password: "2FA" }[s]}</li>
         ))}
       </ol>
       {step === "phone" ? (
         <div className="flex gap-2">
-          <Input aria-label="Số điện thoại" type="tel" autoComplete="tel" placeholder="+84 9xx xxx xxx" maxLength={20}
+          <Input aria-label={t("Số điện thoại")} type="tel" autoComplete="tel" placeholder="+84 9xx xxx xxx" maxLength={20}
             value={phone} onChange={(e) => setPhone(e.target.value)} />
           <Button type="submit" variant="outline" aria-busy={sendCode.isPending} disabled={sendCode.isPending || !/^\+?[0-9 ]{6,20}$/.test(phone.trim())}>
-            {sendCode.isPending ? "Đang gửi…" : "Gửi mã"}
+            {sendCode.isPending ? t("Đang gửi…") : t("Gửi mã")}
           </Button>
         </div>
       ) : (
         <div className="flex gap-2">
           {step === "code"
-            ? <Input aria-label="Mã đăng nhập" inputMode="numeric" autoComplete="one-time-code" placeholder="Mã Telegram vừa gửi" maxLength={8} autoFocus
+            ? <Input aria-label={t("Mã đăng nhập")} inputMode="numeric" autoComplete="one-time-code" placeholder={t("Mã Telegram vừa gửi")} maxLength={8} autoFocus
                 value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} />
-            : <Input aria-label="Mật khẩu 2FA" type="password" autoComplete="current-password" placeholder="Mật khẩu 2FA" maxLength={256} autoFocus
+            : <Input aria-label={t("Mật khẩu 2FA")} type="password" autoComplete="current-password" placeholder={t("Mật khẩu 2FA")} maxLength={256} autoFocus
                 value={password} onChange={(e) => setPassword(e.target.value)} />}
           <Button type="submit" variant="outline" aria-busy={signIn.isPending} disabled={signIn.isPending || (step === "code" ? code.length < 3 : !password)}>
-            {signIn.isPending ? "Đang đăng nhập…" : "Đăng nhập"}
+            {signIn.isPending ? t("Đang đăng nhập…") : t("Đăng nhập")}
           </Button>
         </div>
       )}
-      {step !== "phone" && <button type="button" className={quietBtn} onClick={() => { signIn.reset(); setStep("phone"); }}>Đổi số / gửi lại mã</button>}
+      {step !== "phone" && <button type="button" className={quietBtn} onClick={() => { signIn.reset(); setStep("phone"); }}>{t("Đổi số / gửi lại mã")}</button>}
       {step === "phone" && changeApi}
       {errLine}
     </form>
@@ -578,55 +955,52 @@ function TelegramSection() {
 // ---- YouTrack -----------------------------------------------------------------------------------
 
 type YtView = "connect" | "ai" | "workflow";
-const YT_VIEWS: { value: YtView; label: string; title: string }[] = [
+const YT_VIEWS: { value: YtView; label: Key; title: Key }[] = [
   { value: "connect", label: "Kết nối và báo cáo", title: "Token YouTrack, báo cáo release tự động" },
-  { value: "ai", label: "AI và prompt", title: "Model và effort, instructions cho AI theo vai trò, kho prompt" },
+  { value: "ai", label: "AI và prompt", title: "Instructions cho AI theo vai trò, kho prompt" },
   { value: "workflow", label: "Workflow", title: "Luồng State cho từng project và vai trò" },
 ];
 
 function YouTrackGroup({ view, setView }: { view: YtView; setView: (v: YtView) => void }) {
+  const t = useT();
   const role = useSyncExternalStore(onPrefs, readYtRole, () => null);
   const roleName = YT_ROLES.find(([r]) => r === role)?.[1];
-  const { p } = useAiPrefs();
   return <>
-    <Segmented id="set-yt-view" variant="card" label="Nhóm cài đặt YouTrack" value={view} onChange={setView} items={YT_VIEWS} />
+    <Segmented id="set-yt-view" variant="card" label={t("Nhóm cài đặt YouTrack")} value={view} onChange={setView}
+      items={YT_VIEWS.map((v) => ({ value: v.value, label: t(v.label), title: t(v.title) }))} />
     {view === "connect" && <>
       <Card title="Tài khoản YouTrack" info="Token chỉ lưu trên máy này (thư mục data/), dùng cho trang YouTrack và nút tạo issue.">
         <YouTrackSection />
       </Card>
-      <Card title="Báo cáo release" info="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
+      <Card advanced title="Báo cáo release" info="AI tự viết báo cáo (kịp release không, bàn giao QC, stuck, kết quả test, việc trễ, quá tải, bug) theo vai trò và project đang chọn bên trang YouTrack. Chạy khi trang YouTrack đang mở; lỡ giờ thì tạo lúc mở lại trong ngày. Xuất MD / PDF / CSV ở card Báo cáo.">
         <ReportSection />
       </Card>
     </>}
     {view === "ai" && <>
-      {p && (
-        <Card title="Model và effort" info="Cho các tính năng AI YouTrack, của AI đang dùng (Cài đặt › AI). Để “Như Telegram” thì dùng lựa chọn tương ứng bên Telegram. Áp dụng từ lần chạy kế tiếp.">
-          <PrefsSection provider={p.provider} scope="youtrack" fixed plain />
-        </Card>
-      )}
-      <Card title="Instructions cho AI" action={roleName && <span className="rounded-full bg-paper-2 px-2 py-0.5 text-xs text-ink-2 shadow-groove">Vai trò: <b className="font-semibold">{roleName}</b></span>}
+      <Card title="Instructions cho AI" action={roleName && <span className="rounded-full bg-paper-2 px-2 py-0.5 text-xs text-ink-2 shadow-groove">{t("Vai trò:")} <b className="font-bold">{t(roleName)}</b></span>}
         info="Hướng dẫn riêng của team cho vai trò đang chọn (Cài đặt › Chung), AI làm theo ở mọi tính năng YouTrack (phiên AI, test case, triage, báo cáo, tạo ticket…), trừ lọc ticket. Lưu trên máy này (data/).">
         <NotesSection role={role} />
       </Card>
-      <Card title="Kho prompt" info="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
+      <Card advanced title="Kho prompt" info="Prompt cho phiên AI YouTrack, dùng chung cả team (data/). Ghim tối đa 5 làm nút cho từng vai trò và số ticket; mặc định 4 prompt có sẵn theo vai trò. Prompt có sẵn xóa được, khôi phục ở cuối danh sách.">
         <div className="pt-1"><PromptManager role={role ?? "dev"} /></div>
       </Card>
     </>}
     {view === "workflow" && (
-      <Card title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
+      <Card advanced title="Workflow" info="Luồng State cho từng project và vai trò đang chọn (Cài đặt › Chung): Dev, QA, PO mỗi vai trò một luồng, dùng chung cả team (data/). Kéo ô để di chuyển, kéo chấm tròn sang ô khác để nối mũi tên, bấm mũi tên rồi Delete (hoặc ×) để xóa; × ở góc ô để ẩn state khỏi workflow, hiện lại ở dòng Đã ẩn. Bật Áp dụng thì menu State và kéo thả trên Board chỉ cho đi theo mũi tên; YouTrack vẫn kiểm tra luồng của nó.">
         <div className="pt-1"><WorkflowSection /></div>
       </Card>
     )}
   </>;
 }
 
-const YT_ERRORS: Record<string, string> = {
+const YT_ERRORS: Record<string, Key> = {
   youtrack_unauthorized: "Token sai, đã thu hồi hoặc không đủ quyền.",
   youtrack_unreachable: "Không kết nối được YouTrack ở URL này.",
 };
 
 /** Paste a permanent token (made on the YouTrack profile page); the server checks it before keeping it. Connected: the form folds away. */
 function YouTrackSection() {
+  const t = useT();
   const qc = useQueryClient();
   const cfg = useQuery({
     queryKey: ["yt-config"],
@@ -646,42 +1020,42 @@ function YouTrackSection() {
       qc.removeQueries({ queryKey: ["yt"] }); // projects/me/issues of the old token (or sample data) are cached forever
     },
   });
-  if (!cfg.data) return <div className="pt-1"><StatusLine tone={cfg.isError ? "error" : "idle"}>{cfg.isError ? "Không đọc được cấu hình YouTrack" : "Đang kiểm tra…"}</StatusLine></div>;
+  if (!cfg.data) return <div className="pt-1"><StatusLine tone={cfg.isError ? "error" : "idle"}>{cfg.isError ? t("Không đọc được cấu hình YouTrack") : t("Đang kiểm tra…")}</StatusLine></div>;
   const live = !cfg.data.mock;
   const validUrl = /^https?:\/\/\S+$/.test(base);
   return (
     <div className="grid gap-2.5 pt-1">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <StatusLine tone={live ? "ok" : "warn"}>
-          {save.isSuccess ? <>Đã kết nối: <b className="font-semibold">{save.data.name}</b></> : live ? <>Đang dùng <span className="font-mono text-xs">{cfg.data.base}</span></> : "Chưa có token, trang YouTrack đang hiện dữ liệu mẫu"}
+          {save.isSuccess ? <>{t("Đã kết nối:")} <b className="font-bold">{save.data.name}</b></> : live ? <>{t("Đang dùng")} <span className="font-mono text-xs">{cfg.data.base}</span></> : t("Chưa có token, trang YouTrack đang hiện dữ liệu mẫu")}
         </StatusLine>
-        {live && !edit && <Button size="sm" variant="outline" onClick={() => setEdit(true)}>Đổi URL / token</Button>}
+        {live && !edit && <Button size="sm" variant="outline" onClick={() => setEdit(true)}>{t("Đổi URL / token")}</Button>}
       </div>
       {(!live || edit) && (
         <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
           <Input aria-label="URL YouTrack" placeholder="https://youtrack.example.com" inputMode="url" maxLength={200}
             value={url ?? cfg.data.base} onChange={(e) => setUrl(e.target.value)} />
           <div className="flex gap-2">
-            <Input aria-label="Token YouTrack" type="password" autoComplete="off" placeholder={cfg.data.hint ?? "perm-…"} maxLength={500}
+            <Input aria-label={t("Token YouTrack")} type="password" autoComplete="off" placeholder={cfg.data.hint ?? "perm-…"} maxLength={500}
               value={token} onChange={(e) => setToken(e.target.value)} />
             <Button type="submit" aria-busy={save.isPending} disabled={save.isPending || !validUrl || token.trim().length < 8}>
-              {save.isPending ? "Đang kiểm tra…" : cfg.data.hint ? "Cập nhật" : "Lưu"}
+              {save.isPending ? t("Đang kiểm tra…") : cfg.data.hint ? t("Cập nhật") : t("Lưu")}
             </Button>
-            {edit && <Button type="button" variant="ghost" onClick={() => setEdit(false)}>Hủy</Button>}
+            {edit && <Button type="button" variant="ghost" onClick={() => setEdit(false)}>{t("Hủy")}</Button>}
           </div>
           {validUrl && (
             <a href={`${base}/users/me?tab=account-security`} target="_blank" rel="noreferrer" className={linkCls}>
-              Tạo token trên YouTrack (Hồ sơ → Account Security → New token) <ExternalLink className="size-3" aria-hidden />
+              {t("Tạo token trên YouTrack (Hồ sơ → Account Security → New token)")} <ExternalLink className="size-3" aria-hidden />
             </a>
           )}
         </form>
       )}
-      {save.isError && <p role="alert" className="text-xs text-error">{errorText(save.error, YT_ERRORS, "Không lưu được. Kiểm tra URL (bắt đầu bằng https://) và token.")}</p>}
+      {save.isError && <p role="alert" className="text-xs text-error">{errorText(save.error, tMap(t, YT_ERRORS), t("Không lưu được. Kiểm tra URL (bắt đầu bằng https://) và token."))}</p>}
     </div>
   );
 }
 
-const NOTES_HINT: Record<YtRole, string> = {
+const NOTES_HINT: Record<YtRole, Key> = {
   qa: "Vd.\n- Test case dạng bảng: ID | Tiền điều kiện | Bước | Kết quả mong đợi | Mức ưu tiên\n- Luôn kiểm cả iOS và Android; môi trường dev rồi staging\n- Khi phân tích bug: nêu mức ảnh hưởng người dùng và vùng regression\n- Viết test case bằng tiếng Việt, tên màn hình giữ tiếng Anh",
   dev: "Vd.\n- Khi chia task: ước lượng theo giờ, tách FE / BE\n- Standup ngắn, tối đa 5 dòng",
   po: "Vd.\n- Báo cáo cho khách hàng: tránh thuật ngữ kỹ thuật\n- Luôn nêu rủi ro về deadline trước",
@@ -689,6 +1063,7 @@ const NOTES_HINT: Record<YtRole, string> = {
 
 /** Team instructions per role, kept on the server; this box edits the role picked in Chung. */
 function NotesSection({ role }: { role: YtRole | null }) {
+  const t = useT();
   const q = useQuery({ queryKey: ["yt", "notes"], queryFn: () => yt.notes() });
   const qc = useQueryClient();
   const [edit, setEdit] = useState<{ role: YtRole; text: string } | null>(null); // null: showing the saved text
@@ -696,50 +1071,51 @@ function NotesSection({ role }: { role: YtRole | null }) {
     mutationFn: (text: string) => yt.setNotes({ ...q.data!, [role!]: text }),
     onSuccess: (d) => { qc.setQueryData(["yt", "notes"], d); setEdit(null); },
   });
-  if (!role) return <p className="pt-1 text-sm text-ink-3">Chọn vai trò ở Cài đặt › Chung trước.</p>;
+  if (!role) return <p className="pt-1 text-sm text-ink-3">{t("Chọn vai trò ở Cài đặt › Chung trước.")}</p>;
   if (!q.data) return (
     <p className="flex items-center gap-2 pt-1 text-sm text-ink-3">
-      {q.isError ? <>Không tải được: {(q.error as Error).message} <Button size="xs" variant="outline" onClick={() => void q.refetch()}><RotateCw /> Thử lại</Button></> : "Đang tải…"}
+      {q.isError ? <>{t("Không tải được:")} {tMaybe((q.error as Error).message)} <Button size="xs" variant="outline" onClick={() => void q.refetch()}><RotateCw /> {t("Thử lại")}</Button></> : t("Đang tải…")}
     </p>
   );
   const draft = edit?.role === role ? edit.text : null; // an edit belongs to the role it was typed for
   const text = draft ?? q.data[role];
-  const name = YT_ROLES.find(([r]) => r === role)?.[1];
+  const name = YT_ROLES.find(([r]) => r === role)![1];
   return (
     <form className="grid gap-2 pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate(text.trim()); }}>
-      <Textarea rows={6} maxLength={4000} value={text} onChange={(e) => setEdit({ role, text: e.target.value })} aria-label={`Instructions cho AI, vai trò ${name}`} placeholder={NOTES_HINT[role]} className="text-sm" />
+      <Textarea rows={6} maxLength={4000} value={text} onChange={(e) => setEdit({ role, text: e.target.value })} aria-label={t("Instructions cho AI, vai trò {role}", { role: t(name) })} placeholder={t(NOTES_HINT[role])} className="text-sm" />
       <div className="flex flex-wrap items-center gap-2">
-        <Button type="submit" size="sm" disabled={draft === null || save.isPending}>Lưu</Button>
-        {draft !== null && <Button type="button" size="sm" variant="ghost" onClick={() => setEdit(null)}>Hủy</Button>}
+        <Button type="submit" size="sm" disabled={draft === null || save.isPending}>{t("Lưu")}</Button>
+        {draft !== null && <Button type="button" size="sm" variant="ghost" onClick={() => setEdit(null)}>{t("Hủy")}</Button>}
         <span className="ml-auto font-mono text-xs text-ink-3 tabular-nums">{text.length}/4000</span>
       </div>
-      {save.isError && <p role="alert" className="text-xs text-error">Không lưu được: {(save.error as Error).message}</p>}
+      {save.isError && <p role="alert" className="text-xs text-error">{t("Không lưu được:")} {tMaybe((save.error as Error).message)}</p>}
     </form>
   );
 }
 
-const WEEK = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const WEEK = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"] as const;
 
 /** When the YouTrack release report writes itself (per browser); the report follows the role and the project on the YouTrack page. */
 function ReportSection() {
+  const t = useT();
   const [v, setV] = useState(readReportAt);
   const set = (next: Partial<ReportAt>) => { const n = { ...v, ...next }; setV(n); saveReportAt(n); };
   return <>
-    <Row label="Tự tạo báo cáo" desc="Theo vai trò và project đang chọn bên trang YouTrack.">
-      <Switch label="Tự tạo báo cáo" checked={v.on} onChange={(on) => set({ on })} />
+    <Row label={t("Tự tạo báo cáo")} desc={t("Theo vai trò và project đang chọn bên trang YouTrack.")}>
+      <Switch label={t("Tự tạo báo cáo")} checked={v.on} onChange={(on) => set({ on })} />
     </Row>
     {v.on && (
-      <Row label="Lịch" stack>
+      <Row label={t("Lịch")} stack>
         <div className="flex flex-wrap items-center gap-2">
-          <div role="group" aria-label="Ngày tạo báo cáo" className="flex flex-wrap gap-1">
+          <div role="group" aria-label={t("Ngày tạo báo cáo")} className="flex flex-wrap gap-1">
             {WEEK.map((d, k) => {
               const on = v.days.includes(k);
               return <Button key={d} type="button" size="xs" variant={on ? "default" : "outline"} aria-pressed={on} className="w-9"
-                onClick={() => set({ days: on ? v.days.filter((x) => x !== k) : [...v.days, k].sort() })}>{d}</Button>;
+                onClick={() => set({ days: on ? v.days.filter((x) => x !== k) : [...v.days, k].sort() })}>{t(d)}</Button>;
             })}
           </div>
-          <span className="text-xs text-ink-3">lúc</span>
-          <Input aria-label="Giờ tạo báo cáo" type="time" className="h-8 w-28" value={v.time} onChange={(e) => /^\d\d:\d\d$/.test(e.target.value) && set({ time: e.target.value })} />
+          <span className="text-xs text-ink-3">{t("lúc")}</span>
+          <Input aria-label={t("Giờ tạo báo cáo")} type="time" className="h-8 w-28" value={v.time} onChange={(e) => /^\d\d:\d\d$/.test(e.target.value) && set({ time: e.target.value })} />
         </div>
       </Row>
     )}
@@ -749,55 +1125,53 @@ function ReportSection() {
 // ---- AI -----------------------------------------------------------------------------------------
 
 function AiGroup() {
-  const { p } = useAiPrefs();
+  const t = useT();
+  const { p, used, info } = useAiPrefs();
+  const quotaAgent = useQuotaAgent();
+  const privacy = usePrivacy();
   return <>
-    <Card title="Dùng AI nào" info="Áp dụng cho mọi tính năng AI: tóm tắt, soạn nháp, Briefing, Digest, YouTrack, Task và AI Agent. Mỗi AI giữ model và effort riêng, đổi qua lại không mất lựa chọn.">
-      <ProviderSection />
-    </Card>
     {p && (
-      <Card title="Model và effort" info="Của AI đang dùng, riêng cho Telegram và YouTrack; mỗi AI giữ lựa chọn riêng, áp dụng từ lần chạy kế tiếp. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
-        <PrefsSection provider={p.provider} plain />
+      <Card title="Model và effort" info="Một danh sách gồm model của mọi AI (Claude, Codex, Antigravity): chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước. Riêng cho Telegram và YouTrack; mỗi AI giữ lựa chọn riêng, áp dụng từ lần chạy kế tiếp. Model mạnh hơn và effort cao hơn thì chậm hơn, tốn hạn mức hơn.">
+        <PrefsSection plain />
       </Card>
     )}
     <Card title="Tài khoản" info="Mỗi CLI tự giữ đăng nhập và token trên máy này; trang chỉ đọc ai đang đăng nhập. Chi tiết: hạn mức, usage và lịch sử chạy.">
       <AiAccounts />
+      <Row label={t("Hạn mức trên thanh trên cùng")} desc={t("AI có hạn mức (Phiên 5 giờ, 7 ngày) hiện ở góc phải thanh trên cùng. Tự động: AI đang chạy việc hằng ngày ở trang đang mở. Đổi nhanh được ngay trong nút đó.")}>
+        <Dropdown label={t("AI hiện hạn mức trên thanh trên cùng")} className="w-44" value={quotaAgent} onChange={saveQuotaAgent}
+          options={[{ value: "", label: t("Tự động"), hint: t("Theo trang đang mở") }, ...PROVIDERS.map((id) => ({ value: id, label: info(id)?.name ?? id }))]} />
+      </Row>
+    </Card>
+    <Card title="Quyền riêng tư">
+      <p className="py-2 text-xs text-ink-2">
+        {t("Tin nhắn của người khác (nhóm Telegram) và nội dung ticket được gửi tới AI của model đang chọn ({ai}) khi bạn dùng tóm tắt, soạn nháp, Briefing, Q&A, YouTrack AI hay AI Agent; nhà cung cấp xử lý theo điều khoản của họ.", { ai: p ? used().map((id) => info(id)?.name ?? id).join(", ") : "Claude" })}
+      </p>
+      {privacy.p && (
+        <Row label={t("Ẩn SĐT / email khi gửi AI")} desc={t("Thay số điện thoại và email trong tin nhắn, ticket, nội dung link bằng [SĐT] / [email] trước khi gửi (nháp, tóm tắt, Briefing, Q&A, YouTrack AI). Lời dặn bạn tự gõ cho AI Agent gửi nguyên văn.")}>
+          <Switch label={t("Ẩn SĐT / email khi gửi AI")} checked={privacy.p.redact} disabled={privacy.busy} onChange={(v) => privacy.set({ redact: v })} />
+        </Row>
+      )}
     </Card>
   </>;
 }
 
-/** Which CLI runs every AI feature (drafts, summaries, Digest, YouTrack, tasks, AI Agent); saved in data/claude.json. */
-function ProviderSection() {
-  const { p, set, info, name } = useAiPrefs();
-  const accounts = useAccounts();
-  if (!p) return null;
-  const ready = (v: Provider) => accounts[v].installed && accounts[v].loggedIn;
-  const items = (["claude", "codex", "antigravity"] as const).map((v) => ({
-    value: v, label: <span className={cn(!ready(v) && "opacity-50")}>{info(v)?.name ?? v}</span>,
-  }));
-  return (
-    <div className="grid gap-2 pt-1">
-      <Segmented id="set-provider" variant="card" label="AI cho mọi tính năng" value={p.provider} onChange={(v) => set({ provider: v })} items={items} />
-      {!accounts[p.provider].checking && !ready(p.provider) && <span className="text-xs text-warn">{name} chưa cài hoặc chưa đăng nhập: lần chạy sẽ lỗi.</span>}
-      <p className="text-xs text-ink-3">Task đang dở tiếp tục bằng AI đã bắt đầu nó.</p>
-    </div>
-  );
-}
-
 // ---- Cập nhật -----------------------------------------------------------------------------------
 
-type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
+type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
 
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 function UpdateSection() {
+  const t = useT();
   const qc = useQueryClient();
   const info = useQuery({ queryKey: ["update"], retry: false,
     queryFn: async ({ signal }) => { const r = await api<UpdateInfo>("/update", { signal }); void qc.invalidateQueries({ queryKey: ["update-state"] }); return r; }, staleTime: 60_000 });
   const [restarting, setRestarting] = useState(false);
   const [restartFailed, setRestartFailed] = useState(false);
+  const [ask, setAsk] = useState(false);
   const run = useMutation({
     mutationFn: () => api<UpdateInfo>("/update", { method: "POST" }),
     onSuccess: async (r) => {
-      if (!r.updated) return void qc.invalidateQueries({ queryKey: ["update"] });
+      if (!r.updated) { setAsk(false); return void qc.invalidateQueries({ queryKey: ["update"] }); }
       setRestarting(true);
       setRestartFailed(false);
       await new Promise((ok) => setTimeout(ok, 2000));
@@ -807,28 +1181,34 @@ function UpdateSection() {
       }
       setRestarting(false); // a minute without the server: say so instead of spinning forever
       setRestartFailed(true);
+      setAsk(false);
     },
   });
   const auto = useMutation({
     mutationFn: (on: boolean) => api("/update/auto", { method: "PUT", json: { on } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["update"] }),
+    onError: (e) => toast({ text: errorText(e, {}, tPlain("Không đổi được tự cập nhật, thử lại")) }),
   });
   const d = info.data;
-  const err = (e: unknown) => (e instanceof ApiError && e.detail) || "Không kết nối được GitHub.";
+  // The updater's `detail` is fixed Vietnamese text from the server (English in en/common.ts): translated when known.
+  const err = (e: unknown) => (e instanceof ApiError && ((e.detail && tMaybe(e.detail)) || t("Cập nhật lỗi ({code}).", { code: e.code }))) || t("Không kết nối được GitHub.");
+  const busy = run.isPending || restarting;
+  const latest = d?.commits[0]?.sha ?? "";
+  const release = d?.branch === "GitHub Releases";
   return <>
     <div className="grid gap-2.5 py-3 first:pt-1">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StatusLine tone={info.isFetching ? "idle" : !d ? "error" : d.behind ? "warn" : "ok"}>
-          {info.isFetching ? "Đang kiểm tra…" : !d ? "Chưa kiểm tra được" : d.behind ? <>Có <b className="font-semibold">{d.behind}</b> bản mới trên {d.branch}</> : <>Đã mới nhất <span className="font-mono text-xs text-ink-3">{d.current} · {d.branch}</span></>}
+          {info.isFetching ? t("Đang kiểm tra…") : !d ? t("Chưa kiểm tra được") : d.behind ? t.n("Có {n} bản mới trên {branch}", { n: <b className="font-bold">{d.behind}</b>, branch: d.branch }) : <>{t("Đã mới nhất")} <span className="font-mono text-xs text-ink-3">{d.current} · {d.branch}</span></>}
         </StatusLine>
         <div className="flex gap-2">
-          <Hint side="bottom" text="Kiểm tra lại bản mới trên GitHub">
-            <Button variant="ghost" size="icon-sm" aria-label="Kiểm tra" disabled={info.isFetching || run.isPending} onClick={() => void info.refetch()}>
+          <Hint side="bottom" text={t("Kiểm tra lại bản mới trên GitHub")}>
+            <Button variant="ghost" size="icon-sm" aria-label={t("Kiểm tra")} disabled={info.isFetching || run.isPending} onClick={() => void info.refetch()}>
               <RotateCw className={cn(info.isFetching && "animate-spin")} />
             </Button>
           </Hint>
-          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || run.isPending || restarting} onClick={() => run.mutate()}>
-            {restarting ? "Đang khởi động lại…" : run.isPending ? "Đang cập nhật…" : "Cập nhật"}
+          <Button size="sm" aria-busy={run.isPending || restarting} disabled={!d?.behind || d.dirty || busy} onClick={() => { run.reset(); setAsk(true); }}>
+            {restarting ? t("Đang khởi động lại…") : run.isPending ? t("Đang cập nhật…") : t("Cập nhật")}
           </Button>
         </div>
       </div>
@@ -841,87 +1221,152 @@ function UpdateSection() {
           ))}
         </ul>
       )}
-      {d?.dirty && <p className="text-xs text-warn">Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.</p>}
-      {(info.isError || run.isError) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
-      {restartFailed && <p role="alert" className="text-xs text-error">Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.</p>}
+      {d?.error && !run.isPending && <p role="alert" className="text-xs text-warn">{t("Lần tự cập nhật gần nhất lỗi:")} {tMaybe(d.error)}</p>}
+      {d?.dirty && <p className="text-xs text-warn">{t("Thư mục app có file đã sửa tay: không tự cập nhật được, dùng git.")}</p>}
+      {(info.isError || (run.isError && !ask)) && <p role="alert" className="text-xs text-error">{err(info.error ?? run.error)}</p>}
+      {restartFailed && <p role="alert" className="text-xs text-error">{t("Đã cập nhật nhưng server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi tải lại trang.")}</p>}
     </div>
     {d && (
-      <Row label="Tự động cập nhật" desc="Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.">
-        <Switch label="Tự động cập nhật" checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
+      <UpdateDialog open={ask} onOpenChange={setAsk} info={d} latest={latest} release={release} phase={restarting ? "restart" : run.isPending ? "install" : "idle"}
+        error={run.isError ? err(run.error) : undefined} onConfirm={() => run.mutate()} />
+    )}
+    {d && (
+      <Row label={t("Tự động cập nhật")} desc={t("Server kiểm tra mỗi giờ (tắt thì chỉ hiện chấm trên nút Cài đặt). Bật: có bản mới thì tự cập nhật, khởi động lại server và tải lại trang; bỏ qua khi đang có task AI Agent.")}>
+        <Switch label={t("Tự động cập nhật")} checked={auto.isPending ? !!auto.variables : d.auto} disabled={auto.isPending} onChange={(v) => auto.mutate(v)} />
       </Row>
     )}
   </>;
 }
 
+type UpdatePhase = "idle" | "install" | "restart";
+type Tip = { area: string; title: string; what: string };
+
+/** While the update runs: how long it has been, and a tip from the user guide every 6s (loaded only now: guide.json is big). */
+function WaitTips() {
+  const tl = useT();
+  const [tips, setTips] = useState<Tip[]>([]);
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    void (tl.lang === "en" ? import("@/lib/guide.en.json") : import("@/lib/guide.json"))
+      .then((m) => setTips((m.default as Tip[]).filter((t) => t.title && t.what).sort(() => Math.random() - 0.5)));
+  }, [tl.lang]);
+  useEffect(() => {
+    const t = setInterval(() => setSec((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const tip = tips[Math.floor(sec / 6) % (tips.length || 1)];
+  return (
+    <div className="grid gap-1.5 rounded-lg border border-rule bg-paper-2 px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-xs text-ink-3">
+        <Lightbulb aria-hidden className="size-3.5 text-warn" />{tl("Trong lúc chờ, bạn có biết")}
+        <span className="ml-auto font-mono tabular-nums">{String(Math.floor(sec / 60)).padStart(2, "0")}:{String(sec % 60).padStart(2, "0")}</span>
+      </div>
+      {tip ? (
+        <div key={tip.title} className="grid min-h-14 gap-0.5 animate-in fade-in-0 slide-in-from-right-3 duration-(--dur-short)">
+          <span className="text-2xs text-hl-2">{tip.area}</span>
+          <span className="text-sm font-medium text-ink">{tip.title}</span>
+          <span className="line-clamp-2 text-xs text-ink-2">{tip.what}</span>
+        </div>
+      ) : <div className="min-h-14" />}
+    </div>
+  );
+}
+
+/** Hero first: GitHub → robot → app (at rest), versions, what's new folded; once confirmed the same hero runs (AI pulls
+ *  the release) over a stepper of the two phases the server really reports (install, restart). */
+function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, error, onConfirm }: {
+  open: boolean; onOpenChange: (o: boolean) => void; info: UpdateInfo; latest: string; release: boolean
+  phase: UpdatePhase; error?: string; onConfirm: () => void
+}) {
+  const t = useT();
+  const busy = phase !== "idle";
+  const stages: [Key, UpdatePhase][] = [["Kéo & cài bản mới", "install"], ["Khởi động lại", "restart"], ["Tải lại trang", "idle"]];
+  const at = stages.findIndex(([, p]) => p === phase);
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o); }}>
+      <DialogContent showCloseButton={!busy} className="gap-5 sm:max-w-md">
+        <div className="-mx-(--dlg-p) -mt-(--dlg-p) grid justify-items-center bg-radial-[at_50%_70%] from-hl-wash to-transparent to-70% px-(--dlg-p) pt-6">
+          {busy
+            ? <AiFetching kind={phase === "restart" ? "restart" : "update"} project={latest} className="min-h-0 py-0" />
+            : <UpdateHero className="animate-in fade-in-0 zoom-in-95 duration-(--dur-short)" />}
+        </div>
+        <div className="grid justify-items-center gap-1.5 text-center">
+          <div className="flex items-center gap-2.5 font-mono text-lg">
+            <span className="text-ink-3">{d.current}</span>
+            <ArrowRight aria-hidden className="size-4 text-ink-3" />
+            <span className="font-bold text-ink">{latest}</span>
+          </div>
+          <DialogTitle className="pr-0">{busy ? t.n("Đang cập nhật lên {v}", { v: <span className="font-mono">{latest}</span> }) : t("Có {n} bản mới trên GitHub", { n: d.behind })}</DialogTitle>
+          <DialogDescription>{busy ? t("Giữ trang này mở, xong sẽ tự tải lại.") : release ? t("Tải gói đã ký từ GitHub Releases, kiểm checksum + chữ ký rồi mới cài.") : t("git pull từ {branch}, build lại khi cần.", { branch: d.branch })}</DialogDescription>
+        </div>
+        {busy ? <>
+          <ol className="flex items-start">
+            {stages.map(([label], i) => {
+              const done = i < at, now = i === at;
+              return (
+                <li key={label} className="relative grid flex-1 justify-items-center gap-1.5 text-center">
+                  {i > 0 && <span aria-hidden className={cn("absolute top-3 right-[calc(50%+1rem)] left-[calc(-50%+1rem)] h-px", done || now ? "bg-hl" : "bg-rule")} />}
+                  <span className={cn("relative grid size-6 place-items-center rounded-full border text-2xs font-bold [&_svg]:size-3.5",
+                    done ? "border-ok bg-ok text-cotton" : now ? "border-hl bg-hl-wash text-hl-2" : "border-rule bg-cotton text-ink-3")}>
+                    {done ? <Check /> : now ? <Loader2 className="animate-spin" /> : i + 1}
+                  </span>
+                  <span className={cn("text-xs", now ? "font-medium text-ink" : "text-ink-3")}>{t(label)}</span>
+                </li>
+              );
+            })}
+          </ol>
+          <WaitTips />
+        </> : <div className="grid gap-2">
+          {!!d.commits.length && (
+            <details className="group rounded-lg border border-rule">
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-2 select-none hover:bg-paper-2 [&::-webkit-details-marker]:hidden">
+                <ChevronDown aria-hidden className="size-4 -rotate-90 text-ink-3 transition-transform group-open:rotate-0" />
+                {t("Có gì mới")} <span className="text-ink-3">({d.commits.length})</span>
+              </summary>
+              <ul className="grid max-h-36 grid-cols-1 overflow-y-auto border-t border-rule py-1 text-xs">
+                {d.commits.map((c, i) => (
+                  <li key={c.sha} className="flex items-center gap-2.5 px-3 py-1.5">
+                    <span className={cn("shrink-0 font-mono", i ? "text-ink-3" : "text-hl-2")}>{c.sha}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-2">{c.subject}</span>
+                    <span className="shrink-0 text-ink-3 tabular-nums">{c.when}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          <Hint text={t("Server chạy code cũ tới khi khởi động lại, nên luôn khởi động lại sau khi cài; đang có task AI Agent thì đợi task xong.")}>
+            <p tabIndex={0} className="flex w-fit items-center gap-2 rounded px-3 text-xs text-ink-3 outline-none focus-visible:ring-2 focus-visible:ring-hl"><RotateCw aria-hidden className="size-3.5" />{t("Tự khởi động lại server sau khi cài")}</p>
+          </Hint>
+          {error && <p role="alert" className="flex gap-2 rounded-lg bg-error-wash px-3 py-2 text-xs text-error"><TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />{error}</p>}
+        </div>}
+        <DialogFooter className="border-t-0 bg-transparent pt-0 sm:justify-stretch [&>*]:sm:flex-1">
+          <DialogClose disabled={busy} render={<Button variant="outline" />}>{t("Hủy")}</DialogClose>
+          <Button aria-busy={busy} disabled={busy} onClick={onConfirm}>
+            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Download aria-hidden />}
+            {phase === "restart" ? t("Đang khởi động lại…") : busy ? t("Đang cập nhật…") : error ? t("Thử lại") : t("Cập nhật lên {v}", { v: latest })}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ---- Phím tắt -----------------------------------------------------------------------------------
 
-function Keycap({ children }: { children: React.ReactNode }) {
-  return <kbd className="inline-grid h-6 min-w-6 place-items-center rounded-md border border-rule-2 border-b-2 bg-cotton px-1.5 font-mono text-[0.6875rem] font-medium text-ink shadow-stock">{children}</kbd>;
-}
-const k = (...keys: string[]) => <span className="inline-flex items-center gap-1">{keys.map((x, i) => <Keycap key={i}>{x}</Keycap>)}</span>;
-const plus = (...parts: React.ReactNode[]) => <span className="inline-flex items-center gap-1">{parts.map((x, i) => <span key={i} className="inline-flex items-center gap-1">{i > 0 && <span className="text-ink-3">+</span>}{x}</span>)}</span>;
-const or = (...parts: React.ReactNode[]) => <span className="inline-flex items-center gap-1">{parts.map((x, i) => <span key={i} className="inline-flex items-center gap-1">{i > 0 && <span className="text-ink-3">/</span>}{x}</span>)}</span>;
-const MOD_KEY = "⌘/Ctrl";
-
-type Shortcut = [React.ReactNode, string];
-type ShortcutGroup = [string, Shortcut[]];
-
-const TG_KEYS: ShortcutGroup[] = [
-  ["Di chuyển", [
-    [or(k("j"), k("k")), "Chọn tin dưới / trên (màn rộng, khi đang trả lời: sang tin đó luôn)"],
-    [plus(k("Alt"), or(k("↑"), k("↓"))), "Sang tag trước / kế (khi đang trả lời)"],
-    [<span key="g" className="inline-flex items-center gap-1">{k("g")}<span className="text-ink-3">rồi</span>{or(k("i"), k("p"), k("a"), k("b"))}</span>, "Đi tới Việc cần xử lý / Tag đã ghim / AI Agent / Briefing"],
-    [k("/"), "Tìm kiếm"],
-    [plus(k(MOD_KEY), k("K")), "Lệnh nhanh: nhóm, trang, ticket, phiên AI, tìm tin"],
-  ]],
-  ["Xử lý tin", [
-    [k("x"), "Xong / mở lại tin đang chọn"],
-    [plus(k("Shift"), k("x")), "Xong, không thả reaction trên Telegram"],
-    [k("s"), "Hoãn tin đang chọn 1 giờ"],
-    [k("p"), "Ghim / bỏ ghim tin đang chọn"],
-    [k("o"), "Mở tin đang chọn trong Telegram"],
-    [or(k("Space"), plus(k("Shift"), <span key="c" className="text-xs text-ink-2">bấm</span>)), "Chọn nhiều tin, rồi Xong / Hoãn / Ghim cả loạt"],
-    [k("z"), "Hoàn tác thao tác vừa làm"],
-  ]],
-  ["Trả lời", [
-    [or(k("Enter"), k("r")), "Trả lời tin đang chọn"],
-    [k("a"), "Nhập yêu cầu cho AI (khi đang trả lời)"],
-    [plus(k(MOD_KEY), k("Enter")), "Gửi trả lời"],
-    [k("Esc"), "Bỏ chọn nhiều tin, rồi đóng trả lời (nháp được giữ lại)"],
-  ]],
-  ["Trợ giúp", [
-    [k("?"), "Mở bảng phím tắt"],
-    [k("F1"), "Mở hướng dẫn"],
-  ]],
-];
-
-const YT_KEYS: ShortcutGroup[] = [
-  ["Di chuyển", [
-    [plus(k(MOD_KEY), k("K")), "Lệnh nhanh"],
-    [k("/"), "Tìm ticket"],
-    [or(k("j"), k("k")), "Chọn ticket dưới / trên"],
-    [k("Enter"), "Mở ticket đang chọn"],
-  ]],
-  ["Chọn và trợ giúp", [
-    [k("x"), "Chọn / bỏ chọn ticket (chọn nhiều)"],
-    [k("Esc"), "Xóa ô tìm, rồi bỏ chọn các ticket"],
-    [k("F1"), "Mở hướng dẫn"],
-  ]],
-];
-
 function ShortcutsGroup() {
+  const t = useT();
   const [find, setFind] = useState("");
   const [app, setApp] = useState<"tg" | "yt">("tg");
   const f = fold(find.trim());
   const groups = (app === "tg" ? TG_KEYS : YT_KEYS)
-    .map(([name, list]): ShortcutGroup => [name, list.filter(([, what]) => !f || fold(what).includes(f) || fold(name).includes(f))])
+    .map(([name, list]): ShortcutGroup => [name, list.filter(([, what]) => !f || fold(`${what} ${t(what)}`).includes(f) || fold(`${name} ${t(name)}`).includes(f))])
     .filter(([, list]) => list.length);
   return <>
     <div className="flex flex-wrap items-center gap-2">
-      <Segmented id="set-keys-app" label="Phím tắt của" value={app} onChange={setApp} items={[{ value: "tg", label: "Telegram Inbox" }, { value: "yt", label: "YouTrack" }]} />
+      <Segmented id="set-keys-app" label={t("Phím tắt của")} value={app} onChange={setApp} items={[{ value: "tg", label: "Telegram Inbox" }, { value: "yt", label: "YouTrack" }]} />
       <label className="relative ml-auto w-full sm:w-64">
         <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
-        <Input aria-label="Tìm phím tắt" placeholder="Tìm: hoãn, ghim, gửi…" value={find} onChange={(e) => setFind(e.target.value)} className="h-8 pl-8" />
+        <Input aria-label={t("Tìm phím tắt")} placeholder={t("Tìm: hoãn, ghim, gửi…")} value={find} onChange={(e) => setFind(e.target.value)} className="h-8 pl-8" />
       </label>
     </div>
     {groups.length ? (
@@ -930,38 +1375,7 @@ function ShortcutsGroup() {
           <Card key={name} title={name}><ShortcutList list={list} /></Card>
         ))}
       </div>
-    ) : <p className="py-6 text-center text-sm text-ink-3">Không có phím tắt nào khớp “{find}”.</p>}
+    ) : <p className="py-6 text-center text-sm text-ink-3">{t("Không có phím tắt nào khớp “{q}”.", { q: find })}</p>}
   </>;
 }
 
-function ShortcutList({ list }: { list: Shortcut[] }) {
-  return (
-    <dl className="grid">
-      {list.map(([keys, what]) => (
-        <div key={what} className="flex items-center justify-between gap-4 border-t border-rule py-2 first:border-0 first:pt-1">
-          <dt className="text-sm text-ink-2">{what}</dt>
-          <dd className="shrink-0">{keys}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-/** The Inbox's "?" sheet: the Telegram groups, two columns on a wide screen. */
-export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogTitle>Phím tắt</DialogTitle>
-        <div className="grid max-h-[70vh] gap-x-8 gap-y-5 overflow-y-auto md:grid-cols-2">
-          {TG_KEYS.map(([name, list]) => (
-            <section key={name} aria-label={name} className="grid content-start gap-1">
-              <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">{name}</h3>
-              <ShortcutList list={list} />
-            </section>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}

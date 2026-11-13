@@ -1,7 +1,8 @@
 """The AI CLIs (Claude, Codex, Antigravity): which one runs, its model/effort, logins, commands and output.
 
-One pick in Settings › AI runs every AI feature; each CLI keeps its own model/effort picks, so
-switching away and back finds them again. `catalog` is what each CLI offers, read in one place.
+Each kind of run (drafts, Briefing, tasks / AI Agent, YouTrack light / heavy) runs on the CLI of the
+model picked for it (`use`), so one model list holds every CLI's models; each CLI keeps its own
+model/effort picks, so switching away and back finds them again. `catalog` is what each CLI offers, read in one place.
 Like Claude, each CLI owns its login and its token; the dashboard only starts a login, reads who
 is signed in, and turns the CLI's JSON events into the same items a Claude run gives.
 A task's session id carries its CLI ("codex:<thread>", "antigravity:<conversation>"; bare = Claude), so a
@@ -20,11 +21,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .claude import USAGE_EVERY, flags_for, quota_now, spawn
+from .claude import USAGE_EVERY, flags_for, login_failed, quota_now, spawn
 from .config import _read_json, child_env, run_cli, write_private_json
 from .errors import ApiError
 
@@ -36,10 +38,17 @@ INSTALL = {
     "codex": "npm i -g @openai/codex",
     "antigravity": "curl -fsSL https://antigravity.google/cli/install.sh | bash",
 }
-EFFORTS = ("low", "medium", "high", "xhigh", "max")
+EFFORTS = ("low", "medium", "high", "xhigh", "max")  # Claude's
+CODEX_EFFORTS = (*EFFORTS, "ultra")  # what Codex's catalog may list per model
 PICKS = ("model", "effort", "task_model", "task_effort", "brief_model", "brief_effort",
-         "yt_model", "yt_effort", "yt_task_model", "yt_task_effort")  # fmt: skip
-MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*$")  # an alias or id, never a flag
+         "yt_model", "yt_effort", "yt_task_model", "yt_task_effort", "guide_model", "guide_effort")  # fmt: skip
+# Each kind of run, the kind its "" picks fall back to, and its model / effort keys in a CLI's picks.
+BASE = {"chat": "chat", "brief": "chat", "task": "task", "yt": "chat", "yt_task": "task", "guide": "chat"}
+KEYS = {k: ("model", "effort") if k == "chat" else (f"{k}_model", f"{k}_effort") for k in BASE}
+# An alias or id, never a flag; "provider/model": a model a local proxy (opencodex) routes for Codex.
+MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*(/[\w.\-\[\]]+)?$")
+# Codex's base URL when the user routes it through a local proxy (opencodex: http://127.0.0.1:10100/v1).
+LOOPBACK = re.compile(r"^http://(127\.0\.0\.1|localhost|\[::1\]):\d{2,5}(/[\w.\-/]*)?$")
 CLAUDE_MODELS = [
     ("haiku", "Haiku", "Nhanh, tiết kiệm hạn mức"),
     ("sonnet", "Sonnet", "Cân bằng tốc độ và chất lượng"),
@@ -58,30 +67,75 @@ AGY_MODELS = [
 TIERS = {"haiku": 0, "sonnet": 1, "opus": 2, "fable": 3}
 # Antigravity runs as a custom agent with only these built-in tools (no web or browser; shell only in
 # task sessions), none of the user's skills/plugins, and deny rules over the user's own allow rules.
-AGY_TOOLS = {"read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
+# No shell at all: agy has no sandbox, and its prompts carry text written by others (Telegram, tickets).
+AGY_TOOLS = {"none": [], "read": ["view_file", "list_dir", "grep_search", "find_by_name"]}
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
-AGY_SHELL = ["run_command", "command_status", "send_command_input"]
-_AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)"]
+_AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)", "command(*)"]
+# Secrets outside this app's data dir that no AI run reads (Claude: Read rules; agy: read_file dirs).
+SECRET_HOME = (".ssh", ".codex", ".aws", ".config/gh", ".gnupg", ".telegram_dashboard")  # last: the API token
 # Claude task turns, enforced here, not left to ~/.claude settings: shell only in `edit` (plan prompts
 # carry Telegram text written by others, e.g. deep thinking, so a read-only run must not reach a
 # shell), no web, no MCP servers, no reads of this app's data dir (Telegram session, tokens), and no
 # edits to files that run code later (hooks, git hooks, CI). An Edit(path) rule also covers Write;
 # neither binds Bash.
 PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
-ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
-DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
-        # files that run code later (on folder open, commit, cd) or load tools into the next session
-        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
-        # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
-        "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)")
+# Edit turns run Bash in Claude Code's sandbox: writes only inside the project, network only to package
+# registries (loopback too is out: injected text can't reach the dashboard's own API or exfiltrate).
+# ponytail: fixed registry list; add a host when a build needs another mirror.
+SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]
+SANDBOX = json.dumps(
+    {
+        "sandbox": {
+            "enabled": True,
+            "failIfUnavailable": sys.platform
+            != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
+            "autoAllowBashIfSandboxed": True,
+            "allowUnsandboxedCommands": False,  # the model can't opt a command out
+            "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
+        }
+    }
+)
+# Gradle always binds a loopback socket (FileLockContentionHandler) and Java ignores HTTPS_PROXY. Opening loopback
+# (allowLocalBinding) would let sandboxed code drive the user's own Gradle/Kotlin daemons outside the sandbox, so
+# JVM builds stay out: the model leaves them to the user instead of failing at them.
+NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy. Cuối câu trả lời ghi rõ lệnh build / "
+          "test để người dùng tự chạy kiểm tra.")  # fmt: skip
+SANDBOXED = ["--settings", SANDBOX, "--append-system-prompt", NO_JVM]
+# Skill: the user's skills load as text; a skill's !`cmd` still needs Bash, so a read-only turn can't run it.
+ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
+# A project indexed with codegraph (`.codegraph/`): Claude turns query it through its MCP server, one read-only tool
+# (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
+# DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
+CODEGRAPH_MCP = json.dumps(
+    {
+        "mcpServers": {
+            "codegraph": {
+                "type": "stdio",
+                "command": "codegraph",
+                "args": ["serve", "--mcp"],
+                "env": {"DO_NOT_TRACK": "1"},
+            }
+        }
+    }
+)
+CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
+SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
+DENY = (
+    "WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
+    # files that run code later (on folder open, commit, cd) or load tools into the next session
+    "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
+    # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
+    "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)"
+)
 
 
 # ---- prefs: which CLI, and each CLI's model/effort ----
 
 
 def prefs(settings) -> dict:
-    """The picked CLI and every CLI's model/effort ("" = that CLI's default) over the .env
-    defaults (Claude's). A file from before per-CLI picks holds Claude's picks at the top level."""
+    """The CLI each kind of run uses and every CLI's model/effort ("" = that CLI's default) over the
+    .env defaults (Claude's). A file from before per-CLI picks holds Claude's picks at the top level;
+    one from before per-kind CLIs has one `provider` for all."""
     saved = _read_json(settings.claude_prefs_path)
     old = saved.get("by")
     by_saved = old if isinstance(old, dict) else {"claude": saved}
@@ -98,9 +152,12 @@ def prefs(settings) -> dict:
         by["claude"][k] = re.sub(r"^claude-(haiku|sonnet|opus|fable)\b.*", r"\1", by["claude"][k])
     at = saved.get("fallback_at")
     # Gemini CLI's Google login is gone: its pick moves to Antigravity
-    picked = "antigravity" if saved.get("provider") == "gemini" else saved.get("provider")
+    old = "antigravity" if saved.get("provider") == "gemini" else saved.get("provider")
+    old = old if old in PROVIDERS else "claude"
+    got = saved.get("use") if isinstance(saved.get("use"), dict) else {}
+    use = {k: got[k] if got.get(k) in PROVIDERS else old if BASE[k] == k else "" for k in BASE}
     return {
-        "provider": picked if picked in PROVIDERS else "claude",
+        "use": use,
         "by": by,
         "fallback": saved.get("fallback") is True,
         "fallback_at": at if isinstance(at, int) and not isinstance(at, bool) else 90,
@@ -112,29 +169,48 @@ def save_prefs(settings, p: dict) -> None:
     write_private_json(settings.claude_prefs_path, p)
 
 
-def chosen(settings) -> str:
-    """The CLI that runs every AI feature (a resumed task keeps the CLI that started it)."""
-    return prefs(settings)["provider"]
+def _kind(task: bool, brief: bool, yt: bool, guide: bool = False) -> str:
+    if guide:
+        return "guide"
+    return ("yt_task" if task else "yt") if yt else "task" if task else "brief" if brief else "chat"
+
+
+def _on(p: dict, kind: str) -> str:
+    return p["use"][kind] or p["use"][BASE[kind]]
+
+
+def chosen(settings, *, task: bool = False, brief: bool = False, yt: bool = False, guide: bool = False) -> str:
+    """The CLI a kind of run uses: drafts (default), `brief`, `task` / AI Agent, `yt` (a resumed task
+    keeps the CLI that started it), `guide` (the know-it-all bot)."""
+    return _on(prefs(settings), _kind(task, brief, yt, guide))
 
 
 def run_choice(
-    settings, task: bool = False, provider: str | None = None, brief: bool = False, yt: bool = False
+    settings,
+    task: bool = False,
+    provider: str | None = None,
+    brief: bool = False,
+    yt: bool = False,
+    *,
+    guide: bool = False,
 ) -> tuple[str, str, bool]:
-    """Model, effort and whether the model was stepped down, for `provider` (default: the picked
-    CLI): drafts/summaries, Briefing/Digest (`brief`; "" = same as drafts), or tasks/AI Agent.
-    `yt`: a YouTrack run, on its own picks (yt_* light, yt_task_* heavy; "" = the Telegram pick).
+    """Model, effort and whether the model was stepped down, for `provider` (default: the CLI of the
+    kind's pick): drafts/summaries, Briefing/Digest (`brief`), or tasks/AI Agent (`task`); `yt`: a
+    YouTrack run (yt_* light, yt_task_* heavy); `guide`: the know-it-all bot. A Briefing / YouTrack / bot ""
+    pick is its base kind's (drafts; YouTrack heavy: tasks): the model on the same CLI, the effort on any.
     Claude only: with fallback on, a window at or past `fallback_at`% runs the cheap model."""
     p = prefs(settings)
-    provider = provider or p["provider"]
+    kind = _kind(task, brief, yt, guide)
+    base, provider = BASE[kind], provider or _on(p, kind)
     c = p["by"][provider]
-    model, effort = (c["task_model"], c["task_effort"]) if task else (c["model"], c["effort"])
-    if brief and not task:
-        model, effort = c["brief_model"] or model, c["brief_effort"] or effort
-    if yt:
-        k = "yt_task" if task else "yt"
-        model, effort = c[f"{k}_model"] or model, c[f"{k}_effort"] or effort
-    if provider != "claude":
-        return model, effort if provider == "codex" else "", False  # Antigravity's models carry their level
+    (m, e), (bm, be) = KEYS[kind], KEYS[base]
+    model, effort = c[m], c[e]
+    if kind != base:
+        on = _on(p, base)
+        model, effort = model or (c[bm] if provider == on else ""), effort or p["by"][on][be]
+    if provider != "claude":  # Antigravity's models carry their level; each Codex model lists its own
+        return model, effort if provider == "codex" and effort in _codex_levels(model) else "", False
+    effort = effort if effort in EFFORTS else ""  # a Codex-only level ("ultra") picked for the base kind
     cheap = "sonnet" if task else "haiku"
     if (
         p["fallback"]
@@ -145,38 +221,93 @@ def run_choice(
     return model, effort, False
 
 
+def fast_choice(provider: str) -> tuple[str, str, bool]:
+    """The quickest model / effort of a CLI, for a small run that should not wait on deep reasoning (AI mascot)."""
+    if provider == "codex":
+        return "", "low" if "low" in _codex_levels("") else "", False
+    return {"claude": "haiku", "antigravity": AGY_MODELS[0][0]}.get(provider, ""), "", False
+
+
 def _options(rows) -> list[dict]:
     return [{"value": "", "label": "Mặc định", "hint": "Model mặc định của CLI"},
             *({"value": v, "label": label, "hint": hint} for v, label, hint in rows)]  # fmt: skip
 
 
-def _codex_models() -> tuple[list, list[str]]:
-    """The models Codex lists (its own cache of the account's models) and the efforts they take.
-    A routed id ("Provider/model") needs the user's own config, which a run here ignores."""
-    data = _read_json(_codex_home() / "models_cache.json").get("models")
-    rows, efforts = [], set()
+def _codex_config() -> dict:
+    """The user's Codex config.toml; runs here ignore it, but read the proxy and catalog it names."""
+    with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
+        return tomllib.loads((_codex_home() / "config.toml").read_text())
+    return {}
+
+
+def _codex_proxy(cfg: dict | None = None) -> str:
+    """The loopback base URL the user's Codex goes through (opencodex), "" if none: routed "provider/model"
+    ids run through it. Never a remote URL: config text is not trusted to redirect a run."""
+    url = (_codex_config() if cfg is None else cfg).get("openai_base_url")
+    return url if isinstance(url, str) and LOOPBACK.match(url) else ""
+
+
+def _codex_catalog(cfg: dict) -> Path:
+    """The model list Codex reads: the proxy's catalog file (opencodex writes one) or Codex's own cache."""
+    got = cfg.get("model_catalog_json")
+    p = Path(got).expanduser() if isinstance(got, str) and got else None
+    return p if p and p.is_file() and p.is_relative_to(_codex_home()) else _codex_home() / "models_cache.json"
+
+
+def _codex_models() -> tuple[list[dict], list[str]]:
+    """The models Codex lists (shown ones only) with each one's efforts, and every effort any takes.
+    Routed ids ("AgentAPI/agentgw-opus-5.5", "combo/gemini": opencodex) only when a local proxy routes them,
+    grouped by their provider like the proxy's own model page."""
+    cfg = _codex_config()
+    data = _read_json(_codex_catalog(cfg)).get("models")
+    proxy = bool(_codex_proxy(cfg))
+    rows, union = [], set()
     for m in data if isinstance(data, list) else []:
         if not isinstance(m, dict) or m.get("visibility") != "list":
             continue
         slug = m.get("slug")
-        if not isinstance(slug, str) or len(slug) > 80 or not MODEL_RE.match(slug):
+        if not isinstance(slug, str) or len(slug) > 80 or not MODEL_RE.match(slug) or ("/" in slug and not proxy):
             continue
-        rows.append((slug, str(m.get("display_name") or slug), str(m.get("description") or "")))
         levels = m.get("supported_reasoning_levels")
-        for lv in levels if isinstance(levels, list) else []:
-            if isinstance(lv, dict):
-                efforts.add(lv.get("effort"))
-    return rows, [e for e in EFFORTS if e in efforts] or ["low", "medium", "high", "xhigh"]
+        got = {lv.get("effort") for lv in levels if isinstance(lv, dict)} if isinstance(levels, list) else set()
+        efforts = [e for e in CODEX_EFFORTS if e in got]
+        union |= set(efforts)
+        group, _, name = slug.rpartition("/")
+        label = str(m.get("display_name") or slug).rpartition("/")[2] if group else str(m.get("display_name") or slug)
+        hint = f"Qua opencodex → {group}" if group else str(m.get("description") or "")
+        rows.append(
+            {
+                "value": slug,
+                "label": label or name,
+                "hint": hint,
+                "group": group,
+                "efforts": ["", *efforts] if efforts else [],
+            }
+        )
+    return rows, [e for e in CODEX_EFFORTS if e in union] or ["low", "medium", "high", "xhigh"]
+
+
+def _codex_levels(model: str) -> list[str]:
+    """The efforts a Codex model takes ("" or an unlisted id: any Codex lists)."""
+    rows, union = _codex_models()
+    return next((r["efforts"] for r in rows if r["value"] == model), union)
 
 
 def catalog(settings) -> list[dict]:
     """What each CLI offers: models and efforts ("" = its default, listed first; no efforts: the
     CLI takes none), whether it has a quota and model fallback (Claude), and how to install it."""
     codex, codex_efforts = _codex_models()
-    rows = {"claude": (CLAUDE_MODELS, EFFORTS), "codex": (codex, codex_efforts), "antigravity": (AGY_MODELS, ())}
+    rows = {"claude": (_options(CLAUDE_MODELS), EFFORTS), "codex": ([*_options([])[:1], *codex], codex_efforts),
+            "antigravity": (_options(AGY_MODELS), ())}  # fmt: skip
     return [
-        {"id": p, "name": NAMES[p], "models": _options(rows[p][0]),
-         "efforts": ["", *rows[p][1]] if rows[p][1] else [], "quota": p == "claude", "install": INSTALL[p]}  # fmt: skip
+        {
+            "id": p,
+            "name": NAMES[p],
+            "models": rows[p][0],
+            "efforts": ["", *rows[p][1]] if rows[p][1] else [],
+            "quota": p == "claude",
+            "install": INSTALL[p],
+        }  # fmt: skip
         for p in PROVIDERS
     ]
 
@@ -199,9 +330,9 @@ def installed(settings, p: str) -> bool:
 
 
 def new_session(settings, provider: str | None = None) -> str:
-    """Session id for a new task on `provider` (default: the picked CLI); Codex and Antigravity name
-    theirs once it starts."""
-    p = provider or chosen(settings)
+    """Session id for a new task on `provider` (default: the CLI of the task pick); Codex and
+    Antigravity name theirs once it starts."""
+    p = provider or chosen(settings, task=True)
     return {"claude": str(uuid.uuid4()), "codex": "codex:", "antigravity": "antigravity:"}[p]
 
 
@@ -213,19 +344,37 @@ def split_session(session_id: str) -> tuple[str, str]:
 # ---- commands ----
 
 
+# Built in, so --ignore-user-config keeps them: ChatGPT apps (codex_apps MCP: web_run "open", upload from URL, …),
+# plugins, browsers, computer use, image generation. Every run's prompt may carry others' text: no way out but the
+# sandbox.
+CODEX_OFF = [x for f in ("apps", "plugins", "browser_use", "in_app_browser", "computer_use", "image_generation")
+             for x in ("-c", f"features.{f}=false")]  # fmt: skip
+
+
 def _codex_base(settings, model: str, effort: str) -> list[str]:
-    return ["--json", "--skip-git-repo-check", "--ignore-user-config", "-c", 'web_search="disabled"',
+    """The user's config stays out (its MCP servers, hooks, plugins); a routed model ("combo/gemini") takes
+    just the proxy's base URL and model catalog from it."""
+    route = []
+    if "/" in model and (proxy := _codex_proxy(cfg := _codex_config())):
+        route = [
+            "-c",
+            f"openai_base_url={json.dumps(proxy)}",
+            "-c",
+            f"model_catalog_json={json.dumps(str(_codex_catalog(cfg)))}",
+        ]
+    return ["--json", "--skip-git-repo-check", "--ignore-user-config", "-c", 'web_search="disabled"', *route,
+            *CODEX_OFF,
             *(["-m", model] if model else []),
-            *(["-c", f'model_reasoning_effort="{effort}"'] if effort in EFFORTS else [])]  # fmt: skip
+            *(["-c", f'model_reasoning_effort="{effort}"'] if effort in CODEX_EFFORTS else [])]  # fmt: skip
 
 
-def _agy_agent(kind: str, shell: bool) -> str:
-    """The custom agent a run uses, written where agy looks agents up by name: `read` or `edit` (+ shell)."""
-    name = f"telegram-dashboard-{kind}{'-shell' if shell else ''}"
+def _agy_agent(kind: str) -> str:
+    """The custom agent a run uses, written where agy looks agents up by name: `none`, `read` or `edit`."""
+    name = f"telegram-dashboard-{kind}"
     path = _agy_home() / "agents" / f"{name}.md"
-    tools = [*AGY_TOOLS[kind], *(AGY_SHELL if shell else [])]
-    cannot = "browse" if shell else "run commands or browse"
-    text = (f"---\nname: {name}\ndescription: Telegram Dashboard run ({kind})\n"
+    tools = AGY_TOOLS[kind]
+    cannot = "use any tool: answer from the prompt alone" if not tools else "run commands or browse"
+    text = (f"---\nname: {name}\ndescription: Radar run ({kind})\n"
             f"tools: [{', '.join(tools)}]\ninheritCustomizations: false\n---\n"
             f"Work only through the tools you have; you cannot {cannot}.\n")  # fmt: skip
     if not path.is_file() or path.read_text() != text:
@@ -234,13 +383,14 @@ def _agy_agent(kind: str, shell: bool) -> str:
     return name
 
 
-def _agy_base(settings, kind: str, model: str, shell: bool = False) -> list[str]:
-    deny = [*_AGY_DENY, *(["write_file(*)"] if kind == "read" else []), *([] if shell else ["command(*)"])]
-    # headless agy auto-denies what it would prompt for: shell needs an explicit allow
-    perms = {"deny": deny, **({"allow": ["command(*)"]} if shell else {})}
+def _agy_base(settings, kind: str, model: str) -> list[str]:
+    # read_file(<dir>) covers the whole dir; headless agy auto-denies anything it would prompt for
+    reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in _secret_dirs(settings)]
+    deny = [*_AGY_DENY, *reads, *(["write_file(*)"] if kind != "edit" else [])]
+    perms = json.dumps({"permissions": {"deny": deny}})
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
-            "--disable-slash-commands", "--agent", _agy_agent(kind, shell),
-            "--settings", json.dumps({"permissions": perms}), *(["--model", model] if model else [])]  # fmt: skip
+            "--disable-slash-commands", "--agent", _agy_agent(kind),
+            "--settings", perms, *(["--model", model] if model else [])]  # fmt: skip
 
 
 def stdin(p: str, text: str) -> bytes:
@@ -250,11 +400,29 @@ def stdin(p: str, text: str) -> bytes:
     return text.encode()
 
 
+def _secret_dirs(settings) -> list[str]:
+    home = Path.home()
+    return [str(settings.data_dir.resolve()), *(str(home / h) for h in SECRET_HOME)]
+
+
+def _rule_path(p: Path) -> str:
+    """An absolute path in a Claude permission rule: `//abs`. Windows paths match in POSIX form (C:\\x -> /c/x)."""
+    s = p.as_posix()
+    if re.match(r"^[A-Za-z]:/", s):
+        s = f"/{s[0].lower()}{s[2:]}"
+    return f"/{s}"
+
+
 def _data_deny(settings) -> str:
-    """Rules for this app's data dir (Telegram session, tokens): prompts carry others' text. Read() also
-    binds reader commands in Bash; the Bash rules catch a command naming the dir or its secrets."""
+    """Rules for this app's data dir (Telegram session, tokens, API token) and the user's other secrets: prompts
+    carry others' text. Read() also binds reader commands in Bash (and the edit sandbox's reads); the Bash rules
+    catch a command naming the dir or its secrets."""
     d = settings.data_dir.resolve()
-    return f"Read(/{d}/**),Bash(*{d}*),Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
+    home = ",".join(f"Read(~/{h}/**)" for h in SECRET_HOME)
+    return (
+        f"Read({_rule_path(d)}/**),Read({_rule_path(settings.root.resolve())}/.env),{home},Bash(*{d}*),"
+        f"Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
+    )
 
 
 def is_claude(cmd: list[str]) -> bool:
@@ -263,13 +431,27 @@ def is_claude(cmd: list[str]) -> bool:
 
 
 def ask_cmd(
-    settings, p: str, *, tools: bool, read_dir: str | None, model: str, effort: str, stream: bool = False
+    settings,
+    p: str,
+    *,
+    tools: bool,
+    read_dir: str | None,
+    model: str,
+    effort: str,
+    stream: bool = False,
+    shell: bool = False,
 ) -> list[str]:
-    """One read-only answer (prompt on stdin). `tools`: may read the project (cwd); else none.
-    `read_dir`: another folder it may read (photos). `stream`: Claude sends the answer as it writes."""
+    """One answer (prompt on stdin), no file edits. `tools`: may read the project (cwd); else none.
+    `read_dir`: another folder it may read (photos). `stream`: Claude sends the answer as it writes.
+    `shell` (with `tools`): may also run commands (build, test) in the sandbox: writes only in the project,
+    network only to package registries. Antigravity has no sandbox: no shell there."""
+    shell = shell and tools
     if p == "claude":
         try:
-            cmd = shlex.split(settings.ai_agent_project_command if tools else settings.ai_agent_command)
+            cmd = (
+                [*exe(settings, p), "-p", "--tools", SHELL_TOOLS, "--allowedTools", SHELL_TOOLS, *SANDBOXED]
+                if shell else shlex.split(settings.ai_agent_project_command if tools else settings.ai_agent_command)
+            )  # fmt: skip
         except ValueError:
             raise ApiError(502, "ai_provider_error") from None
         cmd += flags_for(model, effort)
@@ -278,7 +460,7 @@ def ask_cmd(
                 cmd.append("--strict-mcp-config")  # the user's MCP servers would bring tools back
             cmd += ["--output-format", "stream-json", "--verbose", *(["--include-partial-messages"] if stream else [])]
             if tools:
-                cmd += ["--disallowedTools", _data_deny(settings)]
+                cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
         return [*cmd, *(["--add-dir", read_dir] if read_dir else [])]
     if p == "codex":
         off = [] if tools else ["--disable", "shell_tool", "--disable", "unified_exec"]
@@ -288,22 +470,36 @@ def ask_cmd(
             *_codex_base(settings, model, effort),
             "--ephemeral",
             "-s",
-            "read-only",
+            "workspace-write" if shell else "read-only",
             *off,
             "-",
         ]
-    return [*_agy_base(settings, "read", model), *(["--add-dir", read_dir] if read_dir else [])]
+    kind = "read" if tools or read_dir else "none"  # no tools asked: none at all, not just "no project"
+    return [*_agy_base(settings, kind, model), *(["--add-dir", read_dir] if read_dir else [])]
 
 
 def task_cmd(
-    settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str, read_dir: str | None = None
+    settings,
+    p: str,
+    mode: str,
+    sid: str,
+    resume: bool,
+    model: str,
+    effort: str,
+    read_dir: str | None = None,
+    *,
+    index: bool = False,
 ) -> list[str]:
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
-    `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere)."""
+    `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere).
+    `index`: the project has a codegraph index; Claude gets its read-only tool (Codex runs the CLI in its sandbox)."""
     add = ["--add-dir", read_dir] if read_dir else []
     if p == "claude":
+        mcp = ["--mcp-config", CODEGRAPH_MCP] if index else []
+        allow = f"{ALLOW[mode]},{CODEGRAPH_TOOL}" if index else ALLOW[mode]
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
-                "--permission-mode", PERMISSION[mode], "--strict-mcp-config", "--allowedTools", ALLOW[mode],
+                "--permission-mode", PERMISSION[mode], "--strict-mcp-config", *mcp, "--allowedTools", allow,
+                *(["--tools", ALLOW["plan"]] if mode == "plan" else SANDBOXED),
                 "--disallowedTools", DENY, _data_deny(settings), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
@@ -311,7 +507,7 @@ def task_cmd(
         head = [*exe(settings, p), "exec", *(["resume"] if resume else [])]
         return [*head, *_codex_base(settings, model, effort), *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, shell=mode != "plan"), *edit,
+    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip
 
 
@@ -491,7 +687,8 @@ async def events(stream, idle=lambda: None):
 # ---- accounts ----
 
 _login: dict = {"proc": None, "url": None}  # a dashboard-started `codex login`
-_quota: dict = {}  # provider -> (monotonic time read, windows, ISO time read)
+_codex_login_lock = asyncio.Lock()
+_quota: dict = {}  # provider -> (monotonic time read, {"usage": windows, …}, ISO time read)
 _quota_lock: dict[str, asyncio.Lock] = {}
 _CODEX_URL = re.compile(r"https://auth\.openai\.com/\S+")
 
@@ -519,12 +716,13 @@ def _login_pending() -> bool:
     return p is not None and p.returncode is None
 
 
-async def _codex_quota(settings) -> list[dict]:
-    """The ChatGPT plan's windows, from `codex app-server` (read only: no model call)."""
+async def _codex_rpc(settings, method: str, params: dict | None = None) -> dict | None:
+    """One request to `codex app-server` (JSON-RPC on stdio): its reply ({"result"} or {"error"}),
+    None when the CLI didn't start or answer in time."""
     hello = {"clientInfo": {"name": "telegram-dashboard", "version": "0"}}
     msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello},
             {"jsonrpc": "2.0", "method": "initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read"}]  # fmt: skip
+            {"jsonrpc": "2.0", "id": 2, "method": method, **({"params": params} if params else {})}]  # fmt: skip
     cmd = [*exe(settings, "codex"), "app-server"]
     proc = None
     with contextlib.suppress(OSError):
@@ -533,46 +731,83 @@ async def _codex_quota(settings) -> list[dict]:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=1 << 22,
         )  # fmt: skip
     if proc is None:
-        return []
+        return None
 
-    async def answer() -> dict:  # the server stays up while stdin is open: read until our reply
+    async def answer() -> dict | None:  # the server stays up while stdin is open: read until our reply
         proc.stdin.write("".join(json.dumps(m) + "\n" for m in msgs).encode())
         await proc.stdin.drain()
         async for raw in proc.stdout:
             with contextlib.suppress(ValueError):
                 ev = json.loads(raw)
                 if isinstance(ev, dict) and ev.get("id") == 2:
-                    return ev.get("result") or {}
-        return {}
+                    return ev
+        return None
 
     try:
-        res = await asyncio.wait_for(answer(), 20)
-    except (TimeoutError, OSError):
-        res = {}
+        return await asyncio.wait_for(answer(), 20)
+    except TimeoutError, OSError:
+        return None
     finally:
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
+
+
+def _iso(at) -> str | None:
+    return datetime.fromtimestamp(at, UTC).isoformat() if isinstance(at, int) else None
+
+
+async def _codex_quota(settings) -> dict:
+    """The ChatGPT plan's windows and its free rate-limit resets, from `codex app-server` (read only: no model call)."""
+    res = (await _codex_rpc(settings, "account/rateLimits/read") or {}).get("result")
+    res = res if isinstance(res, dict) else {}
     rl = res.get("rateLimits") if isinstance(res.get("rateLimits"), dict) else {}
     out = []
     for w in (rl.get("primary"), rl.get("secondary")):
         if isinstance(w, dict) and isinstance(w.get("usedPercent"), int | float):
             mins = w.get("windowDurationMins")
-            at = w.get("resetsAt")
             out.append({"label": "5h" if mins == 300 else "1w" if mins == 10080 else f"{mins} phút",
-                        "percent": w["usedPercent"],
-                        "resets_at": datetime.fromtimestamp(at, UTC).isoformat() if isinstance(at, int) else None,
-                        })  # fmt: skip
-    return out
+                        "percent": w["usedPercent"], "resets_at": _iso(w.get("resetsAt"))})  # fmt: skip
+    rc = res.get("rateLimitResetCredits") if isinstance(res.get("rateLimitResetCredits"), dict) else {}
+    resets = [
+        {
+            "id": c["id"],
+            "title": c.get("title"),
+            "description": c.get("description"),
+            "expires_at": _iso(c.get("expiresAt")),
+        }  # fmt: skip
+        for c in rc.get("credits") or []
+        if isinstance(c, dict) and isinstance(c.get("id"), str) and c.get("status") == "available"
+    ]
+    n = rc.get("availableCount")
+    return {"usage": out, "resets": resets, "resets_left": n if isinstance(n, int) else len(resets)}
 
 
-async def _agy_quota(settings) -> list[dict]:
+async def codex_reset(settings, credit_id: str | None, *, request_id: str | None = None) -> str:
+    """Redeem one free rate-limit reset (the next available one without `credit_id`), then read the quota
+    again. No answer = it may have gone through: never retried here, the user looks at the quota first."""
+    if not installed(settings, "codex"):
+        raise ApiError(422, "ai_cli_missing")
+    ask = {"idempotencyKey": request_id or str(uuid.uuid4()), "creditId": credit_id}
+    got = await _codex_rpc(settings, "account/rateLimitResetCredit/consume", ask)
+    with contextlib.suppress(Exception):  # the fresh quota is best effort; the outcome is what matters
+        await quota(settings, "codex", fresh=True)
+    if got is None:
+        raise ApiError(504, "ai_reset_unknown")
+    if not isinstance(got.get("result"), dict):
+        err = got.get("error")
+        raise ApiError(502, "ai_provider_error", detail=str(err.get("message") if isinstance(err, dict) else err)[:300])
+    o = got["result"].get("outcome")
+    return o if o in ("reset", "nothingToReset", "noCredit", "alreadyRedeemed") else "unknown"
+
+
+async def _agy_quota(settings) -> dict:
     """Remaining share of each model group's 5-hour and weekly limit, from `agy -p /usage`."""
     got = await run_cli([*exe(settings, "antigravity"), "-p", "/usage", "--output-format", "json"])
     try:
         data = json.loads(got[1] if got else b"")["command"]["data"]
-    except (ValueError, KeyError, TypeError):
-        return []
+    except ValueError, KeyError, TypeError:
+        return {"usage": []}
     out = []
     for g in data.get("groups") or [] if isinstance(data, dict) else []:
         name = str(g.get("name") or "").removesuffix(" Models").removesuffix(" models").replace(" and ", " & ")
@@ -582,21 +817,21 @@ async def _agy_quota(settings) -> list[dict]:
             if isinstance(left, int | float) and b.get("window") in ("5h", "weekly"):
                 out.append({"label": f"{'5h' if b['window'] == '5h' else '1w'} · {name}",
                             "percent": round((1 - left) * 100, 1), "resets_at": b.get("reset_time")})  # fmt: skip
-    return out
+    return {"usage": out}
 
 
-async def quota(settings, p: str, fresh: bool = False) -> tuple[list[dict], str | None]:
-    """A signed-in CLI's plan windows ({label, percent used, resets_at}) and when they were read;
-    read at most every USAGE_EVERY seconds (the account card polls), unless `fresh`."""
+async def quota(settings, p: str, fresh: bool = False) -> tuple[dict, str | None]:
+    """A signed-in CLI's plan windows ({"usage": [{label, percent used, resets_at}]}, Codex adds its free
+    "resets") and when they were read; read at most every USAGE_EVERY seconds (the card polls), unless `fresh`."""
     async with _quota_lock.setdefault(p, asyncio.Lock()):  # polls that overlap share one read
         got = _quota.get(p)
         if fresh or got is None or time.monotonic() - got[0] >= USAGE_EVERY:
-            windows = await (_codex_quota if p == "codex" else _agy_quota)(settings)
-            got = (time.monotonic(), windows, datetime.now(UTC).isoformat(timespec="seconds"))
-            if windows or p not in _quota:  # a failed read keeps the last good one
+            q = await (_codex_quota if p == "codex" else _agy_quota)(settings)
+            got = (time.monotonic(), q, datetime.now(UTC).isoformat(timespec="seconds"))
+            if q["usage"] or p not in _quota:  # a failed read keeps the last good one
                 _quota[p] = got
             got = _quota[p]
-    return got[1], got[2] if got[1] else None
+    return got[1], got[2] if got[1]["usage"] else None
 
 
 async def account(settings, p: str, fresh: bool = False) -> dict:
@@ -618,9 +853,7 @@ async def account(settings, p: str, fresh: bool = False) -> dict:
             tokens = _read_json(_codex_home() / "auth.json").get("tokens") or {}
             c = _jwt_claims(tokens.get("id_token") if isinstance(tokens, dict) else None)
             auth = (
-                c.get("https://api.openai.com/auth")
-                if isinstance(c.get("https://api.openai.com/auth"), dict)
-                else {}
+                c.get("https://api.openai.com/auth") if isinstance(c.get("https://api.openai.com/auth"), dict) else {}
             )
             out["email"] = c.get("email")
             out["plan"] = auth.get("chatgpt_plan_type")
@@ -630,7 +863,8 @@ async def account(settings, p: str, fresh: bool = False) -> dict:
         done = _read_json(_agy_home() / "cache" / "onboarding.json").get("onboardingComplete") is True
         out |= {"loggedIn": out["installed"] and done, "method": "Google"}
     if out["loggedIn"]:
-        out["usage"], out["usage_at"] = await quota(settings, p, fresh)
+        q, out["usage_at"] = await quota(settings, p, fresh)
+        out |= q
     return out
 
 
@@ -653,28 +887,33 @@ async def login(settings, p: str) -> str | None:
         if code != 0:
             raise ApiError(502, "terminal_failed", detail=out[-200:] or None)
         return None
-    if _login_pending():
+    async with _codex_login_lock:  # two clicks: one `codex login`, not two fighting over its callback port
+        if _login_pending():
+            return _login["url"]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *exe(settings, p), "login", env=child_env(),
+                stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+            )  # fmt: skip
+        except OSError:
+            raise ApiError(502, "ai_cli_unavailable") from None
+        _login.update(proc=proc, url=None)
+        last = [""]
+
+        async def read_url() -> None:
+            async for line in proc.stdout:
+                last[0] = line.decode(errors="replace").strip() or last[0]
+                if m := _CODEX_URL.search(last[0]):
+                    _login["url"] = m.group(0)
+                    return
+
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(read_url(), 10)
+        if not _login["url"]:
+            await login_failed(proc, last[0], "ai_login_failed")
+        # ponytail: an abandoned login keeps its local callback server up until the next login/logout.
+        spawn(proc.communicate())  # drain and reap it when it finishes
         return _login["url"]
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            *exe(settings, p), "login", env=child_env(),
-            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )  # fmt: skip
-    except OSError:
-        raise ApiError(502, "ai_cli_unavailable") from None
-    _login.update(proc=proc, url=None)
-
-    async def read_url() -> None:
-        async for line in proc.stdout:
-            if m := _CODEX_URL.search(line.decode(errors="replace")):
-                _login["url"] = m.group(0)
-                return
-
-    with contextlib.suppress(TimeoutError):
-        await asyncio.wait_for(read_url(), 10)
-    # ponytail: an abandoned login keeps its local callback server up until the next login/logout.
-    spawn(proc.communicate())  # drain and reap it when it finishes
-    return _login["url"]
 
 
 async def logout(settings, p: str) -> None:

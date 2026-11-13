@@ -5,7 +5,9 @@ from types import SimpleNamespace as NS
 from telegram_dashboard.links import INLINE_CHARS, MAX_CHARS, delete_links, expand, link_block, links_dir
 from telegram_dashboard.models import StoredMessage
 
-URLS = "xem https://works.citics.vn/articles/VA-A-134 và https://t.me/c/1234/273/39671 https://other.host/articles/X-A-1"
+URLS = (
+    "xem https://works.citics.vn/articles/VA-A-134 và https://t.me/c/1234/273/39671 https://other.host/articles/X-A-1"
+)
 
 
 async def _no_ai(*_, **__):
@@ -119,3 +121,23 @@ async def test_link_block_without_files_for_a_one_shot_ai(tmp_path):
     assert "- ## Mục 1\n  đầu mục" in out and "w " * 5000 not in out
     assert "Tóm tắt (AI" in out and len(asked) == 1  # few headings, no file to page: summarized
     assert await link_block(s, "không link", None) == ""
+
+
+async def test_ticket_link_is_read_as_youtrack_ai_sees_it(tmp_path):
+    s = state(tmp_path, "")
+    seen = []
+
+    async def cached(key, fn):
+        seen.append(key)
+        return await fn()
+
+    async def detail(i):
+        return {"id": i, "summary": "Sửa màn login", "description": "Nút Đăng nhập bị mờ", "links": [],
+                "comments": [{"author": "An", "created": None, "text": "đã có API"}]}  # fmt: skip
+
+    s.yt.cached, s.yt.detail = cached, detail
+    text = "làm https://works.citics.vn/issue/VA-12/sua-login và https://other.host/issue/X-1"
+    out = await expand(s, text, "t2")
+    assert seen == ["issue:VA-12"] and "Sửa màn login" in out and "Nút Đăng nhập bị mờ" in out and "đã có API" in out
+    assert out.count("dashboard không đọc được") == 1  # the other YouTrack never gets our token
+    delete_links(s.settings, "t2")

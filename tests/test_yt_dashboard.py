@@ -1,6 +1,8 @@
 import asyncio
 import dataclasses
 import json
+import pathlib
+import time
 import types
 from urllib.parse import parse_qs
 
@@ -132,7 +134,9 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.db = types.SimpleNamespace(read=lambda fn, *a: asyncio.sleep(0, fn(*a)))
-    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [])
+    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [],
+                                            list_tasks=lambda *a: [])
+    app.state.settings = types.SimpleNamespace(data_dir=pathlib.Path("/nonexistent"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
         r = await c.post("/api/yt/ai/tickets", json=body)
@@ -171,7 +175,7 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
 
 async def test_ai_answer_streams_pieces_then_result():
     async def ask(prompt, on_text=None, **_):
-        for t in ("Đọc file…", None, "**Tổng", " quan:**"):
+        for t in ("Đọc file…", {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}, None, "**Tổng", " quan:**"):
             on_text(t)
         return "**Tổng quan:**"
 
@@ -182,8 +186,9 @@ async def test_ai_answer_streams_pieces_then_result():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/yt/ai/data", json={"kind": "weekly", "data": {}})
     lines = [json.loads(x) for x in r.text.splitlines()]
-    assert lines == [{"delta": "Đọc file…"}, {"reset": True}, {"delta": "**Tổng"},
-                     {"delta": " quan:**"}, {"done": {"text": "**Tổng quan:**"}}]  # fmt: skip
+    assert lines == [{"delta": "Đọc file…"}, {"step": {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}},
+                     {"reset": True}, {"delta": "**Tổng"}, {"delta": " quan:**"},
+                     {"done": {"text": "**Tổng quan:**"}}]  # fmt: skip
 
 
 async def test_qc_query_failure_other_than_400_is_not_hidden():
@@ -338,16 +343,22 @@ async def test_transitions_keep_state_changes_across_pages():
         seen.append(q.get("cursor", [None])[0])
         assert "project: {VA}" in q["issueQuery"][0]
         if "cursor" not in q:
-            page = {"activities": [act(1), act(2, "Priority")], "hasAfter": True}
-            page["afterCursor"] = "c1"
+            page = {"activities": [act(1), act(2, "Priority")], "hasAfter": True, "afterCursor": "c1"}
             return httpx.Response(200, json=page)
         return httpx.Response(200, json={"activities": [act(3, to="Done")], "hasAfter": False})
 
-    out = await make(handler).transitions("VA", 14)
+    svc = make(handler)
+    out = await svc.transitions("VA", 14)
     assert seen == [None, "c1"]  # the second page follows the cursor
     assert [(t["id"], t["from"], t["to"], t["by"]) for t in out] == [
         ("VA-1", "Ready for test", "In Progress", "Q"), ("VA-3", "Ready for test", "Done", "Q"),
-    ]  # only State changes  # fmt: skip
+    ]  # only State changes, oldest first  # fmt: skip
+    assert svc._trans_until["VA:14"] > 0  # read to the end: not cut
+
+    n = iter(range(100))  # a project busier than TRANS_PAGES: cut, flagged
+    svc = make(lambda req: httpx.Response(200, json={"activities": [], "hasAfter": True, "afterCursor": f"c{next(n)}"}))
+    await svc.transitions("VA", 14)
+    assert svc._trans_until["VA:14"] == 0
 
 
 async def test_team_instructions_follow_the_role_header_but_not_the_filter(tmp_path):
@@ -409,12 +420,20 @@ async def test_ai_reads_only_a_registered_code_folder():
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=None)
     app.state.db, app.state.store = types.SimpleNamespace(read=read), store
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief", "folder": "/code/ios"})
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief", "folder": "/code/ios"},
+                     headers={"X-Ai-Session": "YT-abc123"})  # fmt: skip
         assert agent.projects == ["/code/ios"] and "chỉ đọc, không sửa" in agent.calls[0]
         follow = {"path": "/ai/ticket", "body": {"id": "VA-1", "kind": "brief", "folder": "/code/ios"},
                   "history": [{"q": "", "a": "ok"}], "question": "thêm"}  # fmt: skip
-        await c.post("/api/yt/ai/followup", json=follow)
+        await c.post("/api/yt/ai/followup", json=follow, headers={"X-Ai-Session": "YT-abc123\nx"})
+        assert agent.refs == ["YT-abc123", ""]  # the run log keeps the session code; anything else is dropped
         assert agent.projects[-1] == "/code/ios"  # the follow-up reads the same folder
+        assert agent.shells == [False, False]  # commands only when asked
+        follow["body"]["shell"] = True
+        await c.post("/api/yt/ai/followup", json=follow)
+        assert agent.shells[-1] is True  # a session that may run commands stays one
+        await c.post("/api/yt/ai/followup", json=follow, headers={"X-Yt-Role": "qa"})
+        assert agent.projects[-1] is None and agent.shells[-1] is False  # code is a Dev tool
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"})
         assert agent.projects[-1] is None
         try:
@@ -423,7 +442,7 @@ async def test_ai_reads_only_a_registered_code_folder():
             assert e.status == 403
         else:
             raise AssertionError("expected YtError")
-        assert len(agent.calls) == 3
+        assert len(agent.calls) == 5
 
 
 async def test_who_lists_come_from_the_cached_whole_project():
@@ -474,7 +493,7 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     def handler(req):
         seen.append(parse_qs(req.url.query.decode())["query"][0])
         return httpx.Response(200, json=[{
-            "idReadable": "VA-1",
+            "idReadable": "VA-1", "description": "Cho phép xuất PDF.",
             "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}}],
             "links": [{"direction": "INWARD", "linkType": {"name": "Depend", "targetToSource": "is required for"},
                        "issues": [issue(9, "In Progress")]}, {"direction": "OUTWARD", "issues": []}],
@@ -488,5 +507,179 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     assert seen == ["issue id: VA-1, VA-2"]  # bad ids dropped, one search
     t = out["VA-1"]
     assert t["last"] == {"text": "new", "created": 5, "author": "B"}
+    assert t["desc"] == "Cho phép xuất PDF."
     assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
     assert t["links"][0]["issues"][0]["state"] == "In Progress"
+
+
+async def test_assignee_endpoint_also_sets_qc():
+    sent = []
+
+    def handler(req):
+        sent.append(json.loads(req.content)["customFields"][0])
+        return httpx.Response(200, json=issue(1))
+
+    app = FastAPI()
+    app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
+    app.include_router(build_router(make(handler)))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        assert (await c.post("/api/yt/issue/qc", json={"id": "VA-1", "login": "q"})).status_code == 200
+        assert (await c.post("/api/yt/issue/assignee", json={"id": "VA-1", "login": None})).status_code == 200
+        assert (await c.post("/api/yt/issue/qc", json={"id": "VA-1", "login": "{x}"})).status_code == 400
+    assert [(f["name"], f["value"]) for f in sent] == [("QC", {"login": "q"}), ("Assignee", None)]
+
+
+async def test_statesince_reads_project_transitions_once_then_falls_back_per_ticket():
+    calls = []
+
+    def handler(req):
+        path = req.url.path
+        calls.append(path)
+        if path == "/api/activitiesPage":
+            acts = [{"timestamp": t, "target": {"idReadable": i}, "field": {"name": "State"},
+                     "removed": [{"name": "Open"}], "added": [{"name": "Fixed"}], "author": {}}
+                    for i, t in (("VA-1", 100), ("VA-1", 300), ("VA-2", 200))]  # fmt: skip
+            return httpx.Response(200, json={"activities": acts, "hasAfter": False})
+        assert path == "/api/issues/VA-3/activities"  # only the ticket the window doesn't cover
+        return httpx.Response(200, json=[{"timestamp": 50, "field": {"name": "State"}}])
+
+    svc = make(handler)
+    out = await svc.since_all(["VA-1@400", "VA-2@250", "VA-3@60"])
+    assert out == {"VA-1": 300, "VA-2": 200, "VA-3": 50}  # the latest change per ticket
+    assert calls.count("/api/activitiesPage") == 1
+    await svc.since_all(["VA-1@400", "VA-2@250"])
+    assert calls.count("/api/activitiesPage") == 1  # cached: no second project read
+
+
+async def test_an_ai_run_with_a_job_id_can_be_read_again_and_the_id_is_used_once():
+    import json
+
+    svc = make(lambda req: httpx.Response(200, json={
+        **issue(1), "description": "d", "comments": [], "links": [], "login": None}))  # fmt: skip
+    agent = FakeAgent("ok")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=None)
+    job = {"X-Ai-Job": "sess1-turn1"}
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"}, headers=job)
+        assert json.loads(r.text.splitlines()[-1]) == {"done": {"text": "ok", "draft": ""}}
+        again = await c.get("/api/yt/ai/job/sess1-turn1")
+        assert again.text == r.text and (await c.get("/api/yt/ai/jobs")).json() == {"sess1-turn1": "done"}
+        try:
+            await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief"}, headers=job)
+        except YtError as e:
+            assert e.status == 409
+        else:
+            raise AssertionError("expected YtError")
+        try:
+            await c.get("/api/yt/ai/job/gone-12345")
+        except YtError as e:
+            assert e.status == 404
+        else:
+            raise AssertionError("expected YtError")
+    await svc.aclose()
+
+
+async def test_watch_once_banners_only_tickets_newly_mine(tmp_path, monkeypatch):
+    from telegram_dashboard import telegram
+
+    monkeypatch.setattr(telegram, "NOTIFY_PREVIEW", False)
+    rows = []
+
+    def mine(n, rep="PO", qc=False):
+        i = issue(n)
+        i["reporter"] = {"login": "x", "fullName": rep}
+        i["customFields"][1]["value"] = {"login": "z" if qc else "me", "fullName": "Z" if qc else "Me"}
+        return i
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "me", "fullName": "Me"})
+        return httpx.Response(200, json=rows)
+
+    svc = make(handler)
+    svc.watch_path = tmp_path / "yt_watch.json"
+    sent = []
+
+    async def notify(*a):
+        sent.append(a)
+
+    rows[:] = [mine(1)]
+    assert await svc.watch_once(notify) == [] and sent == []  # first look: record only
+    rows[:] = [mine(1), mine(2), mine(3, qc=True), mine(4, rep="Me"), mine(5)]
+    svc.touched["VA-5"] = time.monotonic()  # I just assigned it from the dashboard
+    await svc.watch_once(notify)
+    assert sent == [
+        ("Ticket mới · VA-2", "Giao cho bạn", "Mở dashboard để xem chi tiết"),
+        ("Ticket mới · VA-3", "Nhờ bạn test", "Mở dashboard để xem chi tiết"),
+    ]
+    await svc.watch_once(notify)
+    assert len(sent) == 2  # no repeat
+    rows[:] = [mine(n) for n in range(10, 15)]
+    await svc.watch_once(notify)
+    assert sent[-1] == ("5 ticket mới cho bạn", "", "VA-10, VA-11, VA-12, VA-13, VA-14")  # one banner, not five
+    svc.watch_path.write_text(json.dumps({"login": "other", "ids": []}))
+    rows[:] = [mine(20)]
+    assert await svc.watch_once(notify) == []  # another account: record only
+
+
+async def test_watch_queues_bao_lai_and_wakes_ticket_snoozes(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from telegram_dashboard.events import Hub
+    from telegram_dashboard.models import StoredMessage
+    from telegram_dashboard.storage import Db, Store
+
+    st = Store(tmp_path / "d.sqlite3")
+    db = Db(st, Hub())
+    st.set_tracking("c1", True, "G", "group")
+
+    def msg(mid, text, reply=None, out=False):
+        return StoredMessage(chat_id="c1", message_id=mid, sender_id="9", sender_name="A", text=text,
+                             date=datetime(2026, 11, 1, tzinfo=UTC), edit_date=None, reply_to_id=reply, topic_id=None,
+                             outgoing=out, media_kind=None, deleted=False)  # fmt: skip
+
+    for m in (msg(1, "VA-2 lỗi?"), msg(2, "hỏi"), msg(3, "đã tạo VA-3", reply=2, out=True), msg(4, "chờ VA-9")):
+        st.apply_message(m)
+    st.set_snooze("c1", 4, datetime.now(UTC) + timedelta(days=7), "ticket:VA-9")
+    rows, one = [], {}
+
+    def mine(n, state="Open", resolved=None):
+        i = issue(n, state)
+        i["customFields"][1]["value"] = {"login": "me", "fullName": "Me"}
+        return {**i, "resolved": resolved}
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "me", "fullName": "Me"})
+        if req.url.path.startswith("/api/issues/"):
+            return httpx.Response(200, json=one[req.url.path.rsplit("/", 1)[1]])
+        return httpx.Response(200, json=rows)
+
+    svc = make(handler)
+    svc.watch_path = tmp_path / "yt_watch.json"
+    rows[:] = [mine(2), mine(3), mine(5)]
+    await svc.watch_once(None, db)  # first look: record only
+    assert st.loop_items() == []
+    rows[:] = [mine(3, "Fixed"), mine(5, "In Progress")]  # VA-2 left the open list: read again
+    one["VA-2"] = mine(2, "Done", resolved=5)
+    rev = st.loop_rev
+    await svc.watch_once(None, db)
+    # my own "đã tạo VA-3" is answered on the tag it replied to; VA-5 moved, but not to a finished state
+    assert {(i["ticket"], i["message_id"]) for i in st.loop_items()} == {("VA-2", 1), ("VA-3", 2)}
+    assert st.loop_rev > rev
+    await svc.watch_once(None, db)
+    assert len(st.loop_items()) == 2  # queued once
+    st.set_handled("c1", 2, True, "reply")  # my reply (any device) answers it
+    assert [i["ticket"] for i in st.loop_items()] == ["VA-2"]
+    st.done_loop("c1", 1, "VA-2")  # Bỏ qua
+    assert st.loop_items() == [] and st.add_loop_items([("VA-2", "Done", "c1", 1)]) == 0  # never queued again
+
+    one["VA-9"] = mine(9, "In Progress")
+    await svc.wake_snoozes(db)
+    assert st.get_message("c1", 4).snoozed_until is not None
+    one["VA-9"] = mine(9, "Done")
+    await svc.wake_snoozes(db)
+    assert st.get_message("c1", 4).snoozed_until is None
+    await svc.aclose()

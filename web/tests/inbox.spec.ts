@@ -16,7 +16,7 @@ async function ctl(path: string, body?: object) {
 }
 
 async function open(page: Page) {
-  await page.goto("/");
+  await page.goto("/?chat=__all__"); // "/" lands on Hôm nay; these tests work the tag list
   await expect(page.getByTestId("message").first()).toBeVisible();
   await expect(page.getByTestId("tg-sub")).toHaveText("Cập nhật trực tiếp");
 }
@@ -229,10 +229,25 @@ test("an AI draft fills the reply box and is never sent on its own", async ({ pa
   await open(page);
   const calls = (await ctl("/state")).send_calls;
   await row(page, 112).locator("p").first().click();
+  const aiPane = page.getByRole("group", { name: "Khung" }).getByText("Trợ lý AI"); // narrow reply (split view): AI is a pane
+  if (await aiPane.isVisible()) await aiPane.click();
   const ask = page.getByRole("button", { name: "Tóm tắt & gợi ý" });
   await ask.click();
   await expect(reply(page)).toHaveValue("Bản nháp AI: cảm ơn mọi người!");
-  await expect(ask).toBeEnabled(); // the AI run has settled
+  await expect(reply(page)).toBeVisible(); // the run settled with one draft: the reply shows it (narrow: its pane comes back)
   await expect(page.getByRole("button", { name: "Gửi", exact: true })).toBeEnabled(); // waiting for the user
   expect((await ctl("/state")).send_calls).toBe(calls);
+  // the ask is a turn of the tag's saved Trợ lý AI session: the panel opened again (after a reload) shows it
+  await page.reload();
+  await row(page, 112).locator("p").first().click();
+  if (await aiPane.isVisible()) await aiPane.click();
+  const feed = page.getByRole("list", { name: "Hội thoại với AI" });
+  await expect(feed.getByText("Bản nháp AI: cảm ơn mọi người!")).toBeVisible();
+  // AI Agent › Trợ lý AI asks on in the same session; the run outlives the request that started it
+  await page.goto("/?chat=__tasks__");
+  await page.getByRole("button", { name: /^Trợ lý AI \d/ }).click(); // the session tab, with its count
+  await page.getByLabel("Nhắn tiếp cho AI").fill("thêm câu hỏi về deadline");
+  await page.keyboard.press("Enter");
+  await expect(feed.getByText("thêm câu hỏi về deadline")).toBeVisible();
+  await expect(feed.getByText("Bản nháp AI: cảm ơn mọi người!")).toHaveCount(2);
 });

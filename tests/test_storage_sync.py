@@ -98,6 +98,19 @@ async def test_migrated_group_stops_ingest(env):
     assert chat["migrated_to"] == "-1009" and not chat["tracking"]
 
 
+def test_outbox_qa_mints_one_code_for_a_tagged_ask(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1))
+    env.store.outbox_create("r1", A, 1, "@nam_be API trả field gì?", 1, quote=False, qa=True)
+    sent = env.store.outbox_claim("r1")["text"]
+    assert sent.startswith("@nam_be API trả field gì?\n#QA"), sent
+    env.store.outbox_create("r1", A, 1, "@nam_be API trả field gì?", 1, quote=False, qa=True)  # retry: no 409
+    env.store.outbox_create("r2", A, 1, "hỏi chung", 2, quote=False, qa=True)
+    assert env.store.outbox_claim("r2")["text"] == "hỏi chung"  # tags nobody: plain message
+    env.store.outbox_create("r3", A, 1, "@nam_be chốt status?", 3, quote=False, qa=True, qa_role="BE")
+    assert "\n#QA_BE_" in env.store.outbox_claim("r3")["text"]  # who it asks, in the code
+
+
 def test_purge_clears_outbox_content_and_blocks_late_callback(env):
     env.track(A)
     env.store.apply_message(msg(A, 1))
@@ -288,17 +301,45 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     """A live database already ran the earlier steps: new columns need a new step, not an edit of an old one."""
     import sqlite3
 
-    from telegram_dashboard.storage import MIGRATIONS, Store
+    from telegram_dashboard.storage import MIGRATIONS, Store, _priority
 
     path = tmp_path / "prev.sqlite3"
     Store(path).set_tracking(A, True, "Team", "supergroup")
     c = sqlite3.connect(path)
-    c.executescript("ALTER TABLE messages DROP COLUMN handled_by; ALTER TABLE messages DROP COLUMN handled_at;")
-    c.execute(f"PRAGMA user_version={len(MIGRATIONS) - 1}")
+    c.executescript("ALTER TABLE messages DROP COLUMN priority;")  # _priority's column
+    c.execute(f"PRAGMA user_version={MIGRATIONS.index(_priority)}")
     c.close()
     store = Store(path)
     store.apply_message(msg(A, 1, "@me hi", sender="7"))
-    assert store.set_handled(A, 1, True, "quiet") and store.get_message(A, 1).handled_by == "quiet"
+    assert store.get_message(A, 1).priority is False
+    store.outbox_create("r1", A, 1, "hỏi BE", 1, quote=False)
+    assert store.outbox_claim("r1", False)["reply_to"] is None  # a new message, not a reply
+    store.outbox_create("r2", A, 999, "hỏi BE", 2, quote=False)  # anchor read live, never stored: still posts
+    assert store.outbox_claim("r2", False)["topic_id"] is None
+
+
+def test_old_deep_batch_session_gets_an_anchor(tmp_path):
+    """Đối chiếu BE of several topics made before sessions always sat on a message: anchored on the newest cited one."""
+    import sqlite3
+
+    from telegram_dashboard.ai import data_json
+    from telegram_dashboard.storage import MIGRATIONS, Store, _deep_anchor
+
+    path = tmp_path / "prev.sqlite3"
+    store = Store(path)
+    store.set_tracking(A, True, "Team", "supergroup")
+    for i, text in [(1, "BE: field là <status>"), (2, "câu khác không dẫn"), (3, "BE chốt discount 5%")]:
+        store.apply_message(msg(A, i, text, sender="7"))
+    prompt = "Đối chiếu\n<items>\n" + data_json([{"messages": [{"text": "BE: field là <status>"}]}]) + "\n</items>"
+    store.add_task("t1", A, None, "/p", prompt, kind="deep")
+    store.add_task("t2", A, None, "/p", "không dẫn tin nào", kind="deep")
+    c = sqlite3.connect(path)
+    c.execute(f"PRAGMA user_version={MIGRATIONS.index(_deep_anchor)}")
+    c.close()
+    Store(path)
+    c = sqlite3.connect(path)
+    assert dict(c.execute("SELECT id, message_id FROM tasks").fetchall()) == {"t1": 1, "t2": None}
+    c.close()
 
 
 def test_my_replies_keeps_the_newest_oldest_first(env):

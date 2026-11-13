@@ -37,7 +37,7 @@ export function AiPlug({ pose, live, icon, sock, title, sub, subWarn, hint, href
         <span className="sr-only">{title}</span>
       </span>
       <span className={cn("grid min-w-0 gap-0.5 whitespace-nowrap px-0.5 text-xs leading-tight", textClass)}>
-        <span className={cn("truncate font-semibold", pose === "on" ? "text-ink" : pose === "try" ? "text-ink-2" : "text-warn")}>{title}</span>
+        <span className={cn("truncate font-bold", pose === "on" ? "text-ink" : pose === "try" ? "text-ink-2" : "text-warn")}>{title}</span>
         <span data-testid={testId && `${testId}-sub`} className={cn("truncate", subWarn ? "text-warn" : "text-ink-3")}>{sub}</span>
       </span>
     </>

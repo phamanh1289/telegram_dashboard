@@ -5,6 +5,7 @@ import { CalendarDays, ChevronDown, X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
+import { type Key, t, useT } from "@/lib/i18n";
 import { dm, ymd } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -29,29 +30,36 @@ export function rangeQuery({ from, to }: DayRange) {
   return p.toString();
 }
 
-function presets() {
+/** Default range of the tag lists: the last 7 days, open-ended so tags arriving after midnight still show. */
+export const lastWeek = (): DayRange => ({ from: daysAgo(6), to: "" });
+
+function presets(): { label: Key; range: DayRange }[] {
   const today = ymd();
   const first = new Date();
   first.setDate(1);
   return [
     { label: "Hôm nay", range: { from: today, to: today } },
     { label: "Hôm qua", range: { from: daysAgo(1), to: daysAgo(1) } },
-    { label: "7 ngày qua", range: { from: daysAgo(6), to: today } },
-    { label: "30 ngày qua", range: { from: daysAgo(29), to: today } },
-    { label: "Tháng này", range: { from: ymd(first), to: today } },
+    { label: "7 ngày qua", range: lastWeek() },
+    { label: "30 ngày qua", range: { from: daysAgo(29), to: "" } },
+    { label: "Tháng này", range: { from: ymd(first), to: "" } },
     { label: "Tất cả", range: { from: "", to: "" } },
   ];
 }
 
+/** Rendered label (plain `t`: callers render it from a component that re-renders on a language change). */
 export function rangeLabel({ from, to }: DayRange) {
-  if (!from && !to) return "Tất cả thời gian";
-  if (from && from === to) return from === ymd() ? "Hôm nay" : dm(from);
-  if (from && !to) return `Từ ${dm(from)}`;
-  if (!from && to) return `Đến ${dm(to)}`;
+  if (!from && !to) return t("Tất cả thời gian");
+  const p = presets().find((x) => x.range.from === from && x.range.to === to);
+  if (p) return t(p.label);
+  if (from && from === to) return from === ymd() ? t("Hôm nay") : dm(from);
+  if (from && !to) return t("Từ {d}", { d: dm(from) });
+  if (!from && to) return t("Đến {d}", { d: dm(to) });
   return `${dm(from)} – ${dm(to)}`;
 }
 
 export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRange; onChange: (r: DayRange) => void; emptyLabel?: string }) {
+  const tt = useT();
   const [open, setOpen] = useState(false);
   const active = !!(value.from || value.to);
   const label = !active && emptyLabel ? emptyLabel : rangeLabel(value);
@@ -60,9 +68,9 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       {/* Hover lives on the button, not the pill: the pill only carries the active fill. */}
-      <div className={cn("flex h-9 items-center rounded-md text-[0.8125rem]", active ? "bg-ink-2 text-paper" : "text-ink-2")}>
-        <Hint side="bottom" text="Chọn khoảng ngày của tin tag">
-          <Popover.Trigger aria-label={`Khoảng ngày: ${label}`}
+      <div className={cn("flex h-9 items-center rounded-md text-sm", active ? "bg-ink-2 text-paper" : "text-ink-2")}>
+        <Hint side="bottom" text={tt("Chọn khoảng ngày của tin tag")}>
+          <Popover.Trigger aria-label={tt("Khoảng ngày: {label}", { label })}
             className={cn("flex h-full items-center gap-1.5 rounded-md px-2.5 transition-[background-color,color] duration-(--dur-micro)", !active && "hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink")}>
             <CalendarDays className="size-4 shrink-0" aria-hidden />
             <span className={cn("whitespace-nowrap", !active && "hidden lg:inline", active && "font-medium")}>{label}</span>
@@ -70,7 +78,7 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
           </Popover.Trigger>
         </Hint>
         {active && (
-          <button type="button" aria-label="Bỏ lọc ngày" className="grid h-full place-items-center rounded-r-md border-l border-paper/25 px-2 opacity-80 hover:opacity-100"
+          <button type="button" aria-label={tt("Bỏ lọc ngày")} className="grid h-full place-items-center rounded-r-md border-l border-paper/25 px-2 opacity-80 hover:opacity-100"
             onClick={() => onChange({ from: "", to: "" })}>
             <X className="size-3.5" aria-hidden />
           </button>
@@ -78,9 +86,9 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
       </div>
       <Popover.Portal>
         <Popover.Positioner sideOffset={6} align="end" className="z-40 outline-none">
-          <Popover.Popup aria-label="Chọn khoảng ngày"
+          <Popover.Popup aria-label={tt("Chọn khoảng ngày")}
             className="grid w-80 max-w-[calc(100vw-2rem)] origin-(--transform-origin) gap-3 rounded-lg bg-cotton p-3 text-sm shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-            <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="Khoảng có sẵn">
+            <div className="grid grid-cols-3 gap-1.5" role="group" aria-label={tt("Khoảng có sẵn")}>
               {presets().map((p) => {
                 const on = p.range.from === value.from && p.range.to === value.to;
                 return (
@@ -90,7 +98,7 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
                       onChange(p.range);
                       setOpen(false);
                     }}>
-                    {p.label}
+                    {tt(p.label)}
                   </button>
                 );
               })}
@@ -98,7 +106,7 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
             <div className="grid grid-cols-2 gap-2 border-t border-rule pt-3">
               {(["from", "to"] as const).map((k) => (
                 <label key={k} className="grid gap-1 text-xs font-medium text-ink-3">
-                  {k === "from" ? "Từ ngày" : "Đến ngày"}
+                  {k === "from" ? tt("Từ ngày") : tt("Đến ngày")}
                   <input
                     type="date"
                     value={value[k]}
@@ -108,13 +116,13 @@ export function DateRangePicker({ value, onChange, emptyLabel }: { value: DayRan
                     onClick={(e) => {
                       try { e.currentTarget.showPicker(); } catch {}
                     }}
-                    className="h-9 rounded-md border border-rule-2 bg-cotton px-2 font-mono text-[0.8125rem] font-normal text-ink hover:border-ink-3 focus-visible:-outline-offset-1"
+                    className="h-9 rounded-md border border-rule-2 bg-cotton px-2 font-mono text-sm font-normal text-ink hover:border-ink-3 focus-visible:-outline-offset-1"
                   />
                 </label>
               ))}
             </div>
             <div className="flex justify-end">
-              <Popover.Close render={<Button size="sm" />}>Xong</Popover.Close>
+              <Popover.Close render={<Button size="sm" />}>{tt("Xong")}</Popover.Close>
             </div>
           </Popover.Popup>
         </Popover.Positioner>

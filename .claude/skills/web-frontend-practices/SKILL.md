@@ -6,6 +6,7 @@ description: Use when writing or reviewing code under web/ (Next.js 16 static ex
 # Web frontend best practices (web/)
 
 ## Ràng buộc của dự án (đọc trước)
+- **Lỗi đã gặp trong repo này** (cache cũ, nuốt lỗi, gửi trùng, prompt injection, poll theo dòng…): đọc skill `avoiding-dashboard-pitfalls` trước khi báo xong.
 - **Next 16 khác dữ liệu huấn luyện:** đọc guide trong `web/node_modules/next/dist/docs/` trước khi dùng API Next (xem `web/AGENTS.md`).
 - **Static export** (`output: "export"`, FastAPI serve `out/`): không Server Actions, không route handler, không `cookies()/headers()`, không ISR, không `next/image` tối ưu. Mọi thứ là client component gọi `/api`.
 - **Design đã khóa:** màu / khoảng cách / radius / motion lấy từ token (`web/src/app/tokens.css`, `DESIGN.md`); không viết literal màu hay `px` lạ trong component.

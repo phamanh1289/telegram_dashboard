@@ -1,8 +1,13 @@
 "use client";
 
-import { CheckCircle2, CircleAlert, Loader2, Square } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { ArrowUp, Bug, Check, CheckCircle2, CircleAlert, Code, FileSearch, ListChecks, Loader2, type LucideIcon, PenLine, ScrollText, Square } from "lucide-react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import type { Mention } from "@/components/mention";
+import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
+import { type Key, useT } from "@/lib/i18n";
+import { copyText } from "@/lib/inbox";
+import { useMascot } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 // The AI chat look every AI feature shares (AI Agent, Trợ lý AI of a tag, YouTrack AI): the ask in a bubble, the AI
@@ -16,7 +21,7 @@ export function dur(s: number) {
 }
 
 /** A little robot head: blinking eyes, a glowing antenna, an arm that waves while it is shown. */
-export const AiBot = ({ className }: { className?: string }) => (
+const Robot = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 32 32" aria-hidden className={className}>
     <line x1="16" y1="3.5" x2="16" y2="8" stroke="var(--color-hl-2)" strokeWidth="1.6" strokeLinecap="round" />
     <circle cx="16" cy="3.2" r="2" fill="var(--color-hl)" className="ai-glow" />
@@ -31,6 +36,24 @@ export const AiBot = ({ className }: { className?: string }) => (
   </svg>
 );
 
+/** The mascot `m` ("" = the robot, an emoji, or an image data: URL) in the robot's 32 × 32 box, so every size and
+ *  animation class callers put on it fits the same. */
+export function Mascot({ m, className }: { m: string; className?: string }) {
+  if (!m) return <Robot className={className} />;
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden className={className}>
+      {m.startsWith("data:image/") ? <image href={m} width="32" height="32" preserveAspectRatio="xMidYMid meet" />
+        : <text x="16" y="17" fontSize="26" textAnchor="middle" dominantBaseline="central">{m}</text>}
+    </svg>
+  );
+}
+
+/** The AI mascot picked in Cài đặt (the robot by default): every AI loading scene, empty page and AI box draws this. */
+export const AiBot = ({ className }: { className?: string }) => <Mascot m={useMascot()} className={className} />;
+/** The mascot as a still glyph where a lucide icon stands (buttons, menus, nav, step lists): sized by `className` like one,
+ *  no animation. Typed as a LucideIcon so icon tables take it; it reads only `className`. */
+export const AiBotIcon = (({ className }: { className?: string }) => <AiBot className={cn("agent-still", className)} />) as unknown as LucideIcon;
+
 /** Three dots in a wave (still under reduced motion). */
 export const AiDots = ({ className }: { className?: string }) => (
   <span className={cn("flex shrink-0 gap-1", className)} aria-hidden>
@@ -38,15 +61,27 @@ export const AiDots = ({ className }: { className?: string }) => (
   </span>
 );
 
-/** Waiting on the first word: the hopping robot and a shimmering status line; `lines` rotate every 2.2s. */
-export function AiThinking({ label = "AI đang suy nghĩ", lines, className }: { label?: string; lines?: string[]; className?: string }) {
+/** 0…n-1, the next every `ms`. */
+function useTick(n: number, ms: number) {
   const [i, setI] = useState(0);
   useEffect(() => {
-    if (!lines?.length) return;
-    const t = setInterval(() => setI((n) => (n + 1) % lines.length), 2200);
+    if (n < 2) return;
+    const t = setInterval(() => setI((k) => (k + 1) % n), ms);
     return () => clearInterval(t);
-  }, [lines]);
-  const text = lines?.length ? lines[i % lines.length] : label;
+  }, [n, ms]);
+  return n ? i % n : 0;
+}
+
+/** One of `lines`, the next every `ms`. */
+function useRotate(lines: string[] | undefined, ms: number) {
+  const i = useTick(lines?.length ?? 0, ms);
+  return lines?.length ? lines[i] : undefined;
+}
+
+/** Waiting on the first word: the hopping robot and a shimmering status line; `lines` rotate every 2.2s. */
+export function AiThinking({ label, lines, className }: { label?: string; lines?: string[]; className?: string }) {
+  const t = useT();
+  const text = useRotate(lines, 2200) ?? label ?? t("AI đang suy nghĩ");
   return (
     <div role="status" className={cn("flex items-center gap-2.5 px-0.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)", className)}>
       <AiBot className="ai-hop size-7 shrink-0 drop-shadow-sm" />
@@ -56,10 +91,133 @@ export function AiThinking({ label = "AI đang suy nghĩ", lines, className }: {
   );
 }
 
-/** Under text that is still streaming in. */
-export const AiWriting = ({ label = "AI đang viết" }: { label?: string }) => (
-  <p role="status" className="flex items-center gap-2 px-0.5 text-xs"><span className="ai-text font-medium">{label}</span><AiDots /></p>
+/** A line being written: grows from the left after `d` ms. */
+const Bar = ({ w, d = 0, className }: { w: string; d?: number; className?: string }) => (
+  <span className={cn("sk-grow block h-1.5 shrink-0 rounded-full bg-rule-2", className)} style={{ width: w, animationDelay: `${d}ms` }} />
 );
+const pop = (d: number) => ({ animationDelay: `${d}ms` });
+
+export type AiSkill = "summary" | "steps" | "reply" | "ticket" | "code" | "answer";
+
+/** What the assistant can do, each with a tiny scene of its result being written (replays every time it comes round). */
+const SKILLS: Record<AiSkill, { icon: LucideIcon; label: Key; scene: ReactNode }> = {
+  summary: { icon: ScrollText, label: "Tóm tắt ý chính", scene: (
+    <ul className="grid gap-2">
+      {([["92%", "bg-hl/70"], ["68%", ""], ["80%", ""]] as const).map(([w, c], i) => (
+        <li key={i} className="flex items-center gap-2"><span className="sk-pop size-1.5 shrink-0 rounded-full bg-hl" style={pop(i * 220)} /><Bar w={w} d={i * 220 + 80} className={c} /></li>
+      ))}
+    </ul>
+  ) },
+  steps: { icon: ListChecks, label: "Gợi ý bước tiếp theo", scene: (
+    <ul className="grid gap-2">
+      {["76%", "60%", "84%"].map((w, i) => (
+        <li key={i} className="flex items-center gap-2">
+          <span className="grid size-3.5 shrink-0 place-items-center rounded-[4px] border border-rule-2"><Check className="sk-pop size-3 text-ok" style={pop(350 + i * 380)} /></span>
+          <Bar w={w} d={i * 380} />
+        </li>
+      ))}
+    </ul>
+  ) },
+  reply: { icon: PenLine, label: "Soạn sẵn mẫu trả lời", scene: (
+    <div className="grid justify-items-end gap-2">
+      <div className="sk-pop grid w-4/5 origin-bottom-right gap-1.5 rounded-2xl rounded-br-sm bg-hl-wash px-3 py-2">
+        <Bar w="100%" d={250} className="bg-hl/60" />
+        <span className="flex items-center gap-0.5"><Bar w="55%" d={650} className="bg-hl/60" /><span className="sk-caret h-2.5 w-px bg-hl-2" /></span>
+      </div>
+      <span className="flex gap-1">{[0, 1, 2].map((k) => <span key={k} className="sk-pop h-1 w-4 rounded-full bg-hl/50" style={pop(1000 + k * 160)} />)}</span>
+    </div>
+  ) },
+  ticket: { icon: Bug, label: "Soạn ticket YouTrack", scene: (
+    <div className="grid gap-2">
+      <span className="flex items-center gap-2"><span className="sk-pop rounded-sm bg-paper-3 px-1 font-mono text-[0.625rem] leading-4 text-ink-2">APP-128</span><Bar w="55%" d={200} className="bg-ink-3/60" /></span>
+      <Bar w="90%" d={420} />
+      <span className="flex gap-1.5 text-[0.625rem] leading-4">
+        <span className="sk-pop rounded-full bg-error-wash px-1.5 text-error" style={pop(750)}>Bug</span>
+        <span className="sk-pop rounded-full bg-warn-wash px-1.5 text-warn" style={pop(900)}>High</span>
+        <span className="sk-pop rounded-full bg-paper-3 px-1.5 text-ink-2" style={pop(1050)}><You /></span>
+      </span>
+    </div>
+  ) },
+  code: { icon: Code, label: "Giao AI Agent đọc code", scene: (
+    <div className="grid gap-1.5 rounded-md bg-paper-2 p-2">
+      {([[["16%", "bg-hl/70"], ["38%", "bg-info/60"]], [["8%", ""], ["30%", "bg-ok/60"], ["20%", ""]], [["8%", ""], ["44%", "bg-ink-3/50"]]] as const).map((row, i) => (
+        <span key={i} className="flex gap-1">{row.map(([w, c], j) => <Bar key={j} w={w} d={i * 300 + j * 120} className={c} />)}</span>
+      ))}
+    </div>
+  ) },
+  answer: { icon: FileSearch, label: "Trả lời từ code", scene: (
+    <div className="grid gap-2">
+      <div className="grid gap-1.5 rounded-md bg-paper-2 p-2">
+        {([["30%", "bg-info/60"], ["52%", "bg-ok/60"]] as const).map(([w, c], i) => <Bar key={i} w={w} d={i * 200} className={c} />)}
+      </div>
+      <div className="sk-pop grid w-4/5 origin-bottom-right justify-self-end rounded-2xl rounded-br-sm bg-hl-wash px-3 py-2" style={pop(600)}>
+        <Bar w="100%" d={800} className="bg-hl/60" />
+      </div>
+    </div>
+  ) },
+};
+
+/** "@you", in the live language (the skill scenes are module constants). */
+function You() { return useT()("@bạn"); }
+
+const STAGE = 192; // px; the skills sit on a ring of radius R around the robot
+const R = 74;
+
+/** An AI panel with nothing asked yet: the robot works through `skills` one by one, leaning to the one in hand and
+ *  beaming to it, while a small card under it writes out that skill's kind of result. */
+export function AiIdle({ skills, className }: { skills: AiSkill[]; className?: string }) {
+  const t = useT();
+  const i = useTick(skills.length, 2800);
+  const at = (k: number) => { const a = (k / skills.length) * 2 * Math.PI - Math.PI / 2; return [Math.cos(a), Math.sin(a)] as const; };
+  const [cx, cy] = at(i);
+  const c = STAGE / 2;
+  const cur = SKILLS[skills[i]];
+  const Icon = cur.icon;
+  return (
+    <div className={cn("grid place-content-center justify-items-center gap-4 py-6 animate-in fade-in-0 zoom-in-95 duration-(--dur-long)", className)}>
+      <div aria-hidden className="relative" style={{ width: STAGE, height: STAGE }}>
+        <span className="ai-halo absolute inset-12 rounded-full bg-hl/30 blur-2xl" />
+        <span className="absolute rounded-full border border-dashed border-rule-2" style={{ inset: c - R }} />
+        <svg viewBox={`0 0 ${STAGE} ${STAGE}`} className="absolute inset-0 overflow-visible">
+          <line key={i} x1={c + cx * 34} y1={c + cy * 34} x2={c + cx * (R - 21)} y2={c + cy * (R - 21)}
+            stroke="var(--color-hl)" strokeWidth="2" strokeLinecap="round" className="ai-beam animate-in fade-in-0 duration-(--dur-short)" />
+        </svg>
+        <span key={`p${i}`} className="ai-packet absolute size-2 rounded-full bg-hl shadow-[0_0_8px_var(--color-hl)]"
+          style={{ left: c - 4, top: c - 4, "--dx": `${cx * (R - 20)}px`, "--dy": `${cy * (R - 20)}px` } as CSSProperties} />
+        {skills.map((s, k) => {
+          const [x, y] = at(k);
+          const SkillIcon = SKILLS[s].icon;
+          return (
+            <span key={s} style={{ left: c + x * R - 18, top: c + y * R - 18 }}
+              className={cn("absolute grid size-9 place-items-center rounded-full border transition-[background-color,color,border-color,scale,box-shadow] duration-(--dur-short) ease-(--ease-out)",
+                k === i ? "scale-115 border-hl bg-hl text-hl-ink shadow-[0_0_0_5px_color-mix(in_oklch,var(--color-hl)_18%,transparent)]" : "border-rule bg-cotton text-ink-3")}>
+              <SkillIcon className="size-4" />
+            </span>
+          );
+        })}
+        {/* leans toward the skill in hand */}
+        <span className="absolute inset-0 grid place-items-center transition-[translate,rotate] duration-500 ease-(--ease-out)"
+          style={{ translate: `${cx * 5}px ${cy * 5}px`, rotate: `${cx * 8}deg` }}>
+          <AiBot className="ai-float size-16 drop-shadow-lg" />
+        </span>
+        <span className="ai-shadow absolute h-1.5 w-10 rounded-full bg-ink-3/40 blur-[2px]" style={{ left: c - 20, top: c + 38 }} />
+      </div>
+      <figure key={i} className="grid w-64 max-w-full gap-2.5 rounded-xl border border-rule bg-cotton p-3 shadow-sm animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
+        <figcaption className="flex items-center gap-1.5 text-xs font-medium text-hl-2"><Icon className="size-3.5" aria-hidden />{t(cur.label)}</figcaption>
+        <div aria-hidden>{cur.scene}</div>
+      </figure>
+      <span aria-hidden className="flex gap-1">
+        {skills.map((s, k) => <span key={s} className={cn("h-1 rounded-full transition-[width,background-color] duration-(--dur-short)", k === i ? "w-4 bg-hl" : "w-1 bg-rule-2")} />)}
+      </span>
+    </div>
+  );
+}
+
+/** Under text that is still streaming in. */
+export function AiWriting({ label }: { label?: string }) {
+  const t = useT();
+  return <p role="status" className="flex items-center gap-2 px-0.5 text-xs"><span className="ai-text font-medium">{label ?? t("AI đang viết")}</span><AiDots /></p>;
+}
 
 /** What the user asked, right-aligned. */
 export function UserBubble({ children, className }: { children: ReactNode; className?: string }) {
@@ -73,29 +231,60 @@ export function UserBubble({ children, className }: { children: ReactNode; class
 }
 
 /** A finished answer (green, "Kết quả") or a failed one (red, "Có lỗi"); `took` in seconds, `dim` for an older turn. */
-export function AiResultCard({ children, error, title, took, actions, dim, className, ...rest }: {
-  children: ReactNode; error?: boolean; title?: ReactNode; took?: number; actions?: ReactNode; dim?: boolean; className?: string; "aria-label"?: string;
+/** The AI's answer in its card. `busy`: still being written — the same card from the first words (a spinner for the tick,
+ *  "AI đang viết" at the bottom), so the finished answer does not jump into a box. */
+export function AiResultCard({ children, error, busy, title, took, actions, dim, className, ...rest }: {
+  children: ReactNode; error?: boolean; busy?: boolean; title?: ReactNode; took?: number; actions?: ReactNode; dim?: boolean; className?: string; "aria-label"?: string;
 }) {
+  const t = useT();
   return (
     <div {...rest} role={error ? "alert" : undefined}
       className={cn("rounded-xl border p-3.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-long)",
         error ? "border-error/25 bg-error-wash" : "border-ok/25 bg-ok-wash", dim && "opacity-75", className)}>
-      <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-semibold", error ? "text-error" : "text-ok")}>
-        {error ? <CircleAlert className="size-4" aria-hidden /> : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
-        {title ?? (error ? "Có lỗi" : "Kết quả")}
+      <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-bold", error ? "text-error" : "text-ok")}>
+        {error ? <CircleAlert className="size-4" aria-hidden /> : busy ? <Loader2 className="size-4 animate-spin" aria-hidden />
+          : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
+        {title ?? (error ? t("Có lỗi") : t("Kết quả"))}
         {took !== undefined && <span className="ml-auto font-mono font-normal tabular-nums text-ink-3">{dur(took)}</span>}
       </p>
       <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 break-words text-sm leading-[1.55]", error ? "text-error" : "text-ink-2")}>{children}</div>
+      {busy && <div className="mt-2"><AiWriting /></div>}
       {actions && <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1">{actions}</div>}
     </div>
   );
 }
 
-/** Round stop button with a spinning rim, shown while the AI runs. */
-export function AiStop({ onClick, busy, label = "Dừng", hint = "Dừng AI" }: { onClick: () => void; busy?: boolean; label?: string; hint?: string }) {
+/** A run going on, as a list row's icon: a spinner with a soft ping behind it. */
+export function AiSpin({ className }: { className?: string }) {
   return (
-    <Hint text={hint} side="bottom">
-      <button type="button" aria-label={label} aria-busy={busy} disabled={busy} onClick={onClick}
+    <span className={cn("relative grid size-4 shrink-0 place-items-center", className)}>
+      <span className="absolute inset-0 animate-ping rounded-full bg-hl/30 motion-reduce:animate-none" aria-hidden />
+      <Loader2 className="size-4 animate-spin text-hl-2" aria-hidden />
+    </span>
+  );
+}
+
+/** The prompt box's round send button (Enter): pops in, an arrow, a spinner while the prompt is on its way / running. */
+export function AiSend({ onClick, disabled, busy, hint, label, icon }: {
+  onClick: () => void; disabled?: boolean; busy?: boolean; hint?: string; label?: string; icon?: ReactNode;
+}) {
+  const t = useT();
+  return (
+    <Hint text={hint ?? t("Gửi cho AI (Enter)")}>
+      <Button type="button" size="icon-sm" aria-label={label ?? t("Gửi")} aria-busy={busy} disabled={disabled || busy} onClick={onClick}
+        className="rounded-full bg-hl text-hl-ink shadow-[0_0_0_4px_color-mix(in_oklch,var(--color-hl)_15%,transparent)] transition-[scale,filter] hover:brightness-110 active:scale-90 disabled:shadow-none animate-in zoom-in-95 fade-in-0 duration-(--dur-short)">
+        {busy ? <Loader2 className="animate-spin" aria-hidden /> : icon ?? <ArrowUp />}
+      </Button>
+    </Hint>
+  );
+}
+
+/** Round stop button with a spinning rim, shown while the AI runs. */
+export function AiStop({ onClick, busy, label, hint }: { onClick: () => void; busy?: boolean; label?: string; hint?: string }) {
+  const t = useT();
+  return (
+    <Hint text={hint ?? t("Dừng AI")} side="bottom">
+      <button type="button" aria-label={label ?? t("Dừng")} aria-busy={busy} disabled={busy} onClick={onClick}
         className="relative grid size-8 shrink-0 place-items-center rounded-full bg-error-wash text-error transition-[scale,background-color] duration-(--dur-micro) hover:scale-105 hover:bg-error hover:text-cotton active:scale-95 disabled:opacity-60 animate-in zoom-in-50 fade-in-0 duration-(--dur-short)">
         <span className="absolute inset-0 animate-spin rounded-full border-2 border-error/20 border-t-error motion-reduce:animate-none" aria-hidden />
         {busy ? <Loader2 className="size-3.5 animate-spin" aria-hidden /> : <Square className="size-3 fill-current" aria-hidden />}
@@ -108,30 +297,35 @@ export function AiStop({ onClick, busy, label = "Dừng", hint = "Dừng AI" }: 
  * The prompt box: one rounded field, the ring orbits while the AI runs. Enter sends, Shift+Enter breaks the line,
  * ⌘/Ctrl+Enter calls `onModEnter` when given. `top`: chips / attachments above the text; `tools`: left of the bottom
  * row (model picker…); `actions`: right of it (picker, send / queue), then the stop button while `running`.
- * A plain div, never a form: it may sit inside another form (the reply).
+ * A plain div, never a form: it may sit inside another form (the reply). `mention` (useMention): "@" lists the group's
+ * members; only for a box whose text goes to Telegram.
  */
-export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onStop, stopping, stopHint, stopLabel, top, tools, actions, className, ...field }: {
+export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onStop, stopping, stopHint, stopLabel, top, tools, actions, className, mention, ...field }: {
   value: string; onChange: (v: string) => void; onSend: () => void; onModEnter?: () => void;
   running?: boolean; onStop?: () => void; stopping?: boolean; stopHint?: string; stopLabel?: string;
-  top?: ReactNode; tools?: ReactNode; actions?: ReactNode; className?: string;
+  top?: ReactNode; tools?: ReactNode; actions?: ReactNode; className?: string; mention?: Mention;
   id?: string; "aria-label": string; placeholder?: string; maxLength?: number; autoFocus?: boolean;
   onPaste?: React.ClipboardEventHandler<HTMLTextAreaElement>;
 }) {
   return (
-    <div className={cn("rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
+    <div className={cn("relative rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
       running && "ai-ring", className)}>
+      {mention?.popup}
       {top && <div className="relative px-3 pt-3">{top}</div>}
-      <textarea {...field} rows={2} value={value} onChange={(e) => onChange(e.target.value)}
+      <textarea {...field} ref={mention?.attach} rows={2} value={value}
+        onChange={(e) => { onChange(e.target.value); mention?.track(e); }} onSelect={mention?.track}
         onKeyDown={(e) => {
+          if (mention?.onKeyDown(e)) return;
           if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
           e.preventDefault();
           if ((e.metaKey || e.ctrlKey) && onModEnter) onModEnter();
           else onSend();
         }}
         className="relative block max-h-48 min-h-14 w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm text-ink outline-none field-sizing-content placeholder:text-ink-3" />
-      <div className="relative flex flex-wrap items-center gap-x-3 gap-y-2 px-2.5 pb-2.5 text-xs text-ink-2">
-        {tools}
-        <div className="ml-auto flex min-w-0 items-center gap-2">
+      {/* Tools wrap within their own column, so the send / stop button keeps its corner instead of dropping to a row of its own. */}
+      <div className="relative flex items-end gap-2 px-2.5 pb-2.5 text-xs text-ink-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{tools}</div>
+        <div className="flex shrink-0 items-center gap-2">
           {actions}
           {running && onStop && <AiStop onClick={onStop} busy={stopping} hint={stopHint} label={stopLabel} />}
         </div>
@@ -154,4 +348,18 @@ export function useFollow(trigger: unknown, reset?: unknown) {
     ref,
     onScroll: (e: React.UIEvent<HTMLElement>) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; },
   };
+}
+
+/** A session's short ID ("REF-e03a28", "YT-e03a28"): click copies it; pasted in the session search (or Cài đặt › AI ›
+ *  Lịch sử chạy) it finds the session and its runs. */
+export function SessionCode({ code, className }: { code: string; className?: string }) {
+  const t = useT();
+  return (
+    <Hint side="bottom" title={code} text={t("ID phiên. Bấm để chép; gõ hoặc dán vào ô tìm phiên để mở lại nhanh.")}>
+      <button type="button" aria-label={t("Chép ID phiên {id}", { id: code })} onClick={() => void copyText(code, t("Đã chép {id}", { id: code }))}
+        className={cn("shrink-0 rounded-sm px-1 font-mono text-xs text-ink-3 tabular-nums transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink", className)}>
+        {code}
+      </button>
+    </Hint>
+  );
 }
