@@ -57,9 +57,10 @@ fake.history[A][-1] = msg(A, 120, XSS)
 fake.history[B] = [msg(B, i, f"Tin B số {i}", sender="8") for i in range(1, 6)]
 
 control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_changes": 0,
-           "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "att": "1-1"}
+           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "att": "1-1"}
 
 # UI flow (ticket VA-1, YouTrack in mock mode): the ticket, its uiflow file and the AI run, faked here.
+# `yt`: off until a spec asks for it, so the other specs keep the real (token-less) YouTrack routes.
 # `flow`: what GET /api/yt/flow answers (file / none / broken / fail); `flow_save`: POST /api/yt/flow (ok / 409 / 502);
 # `flow_posts`: the bodies POST /api/yt/flow got; `ai_ms`: how long the AI run takes.
 FLOW = {
@@ -78,14 +79,17 @@ FLOW = {
         {"src": "code", "to": "login", "act": "back", "when": "", "ac": ""},
     ],
 }
-FLOW0 = json.loads(json.dumps(FLOW))  # what /set puts back: a save rewrites FLOW, tests share one backend
-ISSUE = {
+FLOW0 = json.loads(json.dumps(FLOW))  # what /set puts back: a save rewrites FLOW and ISSUE, tests share one backend
+ISSUE: dict = {
     "id": "VA-1", "summary": "Đăng nhập bằng OTP", "created": 1_700_000_000_000, "updated": 1_700_000_000_000,
     "resolved": None, "type": "Feature", "state": "Open", "priority": "Normal", "assignee": None, "assigneeLogin": None,
     "qc": None, "reporter": "PO", "due": None, "estimate": None, "sprints": [],
     "description": "AC-1: gửi OTP. AC-2: sai mã báo lỗi. AC-3: để sau về trang chủ.", "comments": [], "links": [],
     "attachments": [{"id": "1-1", "name": "uiflow-VA-1.html", "mime": "text/html", "size": 2048, "comment": None}],
 }
+
+
+ISSUE0 = json.loads(json.dumps(ISSUE))
 
 
 async def answer(send, status: int, body) -> None:
@@ -135,6 +139,11 @@ async def fake_yt(scope, receive, send) -> bool:
             FLOW.update({**b["flow"], "rev": rev})
             control["flow"], control["att"] = "file", "1-2"
             changes = ["thêm màn Trang chủ", "Để sau: Nhập OTP → Trang chủ"]
+            ISSUE["attachments"] = [{**ISSUE["attachments"][0], "id": "1-2"}]
+            ISSUE["comments"] = [*ISSUE["comments"], {  # as yt_dashboard writes it: the file named in plain text
+                "id": f"c{rev}", "author": "Tôi", "created": 1_700_000_100_000,
+                "text": f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n" + "\n".join(f"- {c}" for c in changes),
+            }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
     elif path == "/api/yt/ai/flow":
         await body_of(receive)
@@ -172,7 +181,7 @@ class Faults:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             path = scope["path"]
-            if path.startswith("/api/yt/") and await fake_yt(scope, receive, send):
+            if control["yt"] and path.startswith("/api/yt/") and await fake_yt(scope, receive, send):
                 return
             if control["slow_chat"] and path == f"/api/chats/{control['slow_chat']}/messages":
                 await asyncio.sleep(control["slow_ms"] / 1000)
@@ -190,9 +199,11 @@ ctl = FastAPI()
 @ctl.post("/set")
 async def set_(request: Request):
     b = await request.json()
-    if "flow" in b:  # a UI flow test: start from the pristine file on the ticket
+    if "flow" in b:  # a UI flow test: start from the pristine ticket and file
         FLOW.clear()
         FLOW.update(json.loads(json.dumps(FLOW0)))
+        ISSUE.clear()
+        ISSUE.update(json.loads(json.dumps(ISSUE0)))
         control["att"] = "1-1"
     control.update(b)
     return control

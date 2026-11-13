@@ -34,8 +34,9 @@ async function render(page: Page) {
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0 });
+  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0 });
 });
+test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
 test("ticket detail opens the saved UI flow, from the button and from its file row", async ({ page }) => {
   await openFlow(page);
@@ -98,6 +99,30 @@ test("re-render over a saved file posts with its base; Không hides the bar and 
   await expect(d.getByText(BAR)).toHaveCount(0);
   const [p] = await posts();
   expect(p).toMatchObject({ id: "VA-1", base: "1-1" });
+  // the comment the server posts names the file in plain text: its row must stay in Tệp đính kèm, not be hidden
+  await expect(d.getByText("Đã cập nhật file trên ticket")).toBeVisible();
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await expect(page.getByText("UI flow cập nhật (rev 1)")).toBeVisible(); // the AI flow is rev 0, saved as rev 1
+  await expect(page.getByRole("button", { name: /uiflow-VA-1\.html/ })).toBeVisible();
+});
+
+test("a render hides the bar while it runs; Dừng leaves the flow and posts nothing", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  const d = dialog(page);
+  await render(page);
+  await expect(d.getByText(BAR)).toBeVisible();
+  await ctl("/set", { ai_ms: 5000 }); // long enough to catch it running
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  // while it runs nothing can be saved: the engine (and the edits it held) is gone with the old flow
+  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toHaveCount(0);
+  await expect(d.getByText(BAR)).toHaveCount(0);
+  await d.getByRole("button", { name: "Dừng" }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await page.waitForTimeout(500);
+  expect(await posts()).toEqual([]);
 });
 
 test("409 shows the conflict message and keeps my edit until Xem bản mới", async ({ page }) => {

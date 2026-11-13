@@ -7,18 +7,14 @@ import { useEffect, useRef, useState } from "react";
 import { type Lang, t } from "@/lib/i18n";
 import type { UiFlow } from "@/lib/yt";
 
+/** What the dashboard uses of the engine's api (it also has mode / goto / fit / undo, driven by its own toolbar). */
 export type FlowApi = {
   get(): UiFlow;
-  /** Replace the flow, treated as clean (its undo history cleared). */
+  /** Replace the flow, treated as clean (it lays the screens out and clears the undo history). */
   set(f: UiFlow): void;
-  mode(m: "map" | "play"): void;
-  goto(id: string): void;
-  fit(): void;
-  undo(): void;
   destroy(): void;
 };
 type Engine = {
-  layout(f: UiFlow): UiFlow;
   mount(el: HTMLElement, f: UiFlow, o: { edit?: boolean; lang?: Lang; onChange?: (f: UiFlow, dirty: boolean) => void }): FlowApi;
 };
 /** The engine's global. Not a `declare global`: the engine's own spec declares the same name with its own types. */

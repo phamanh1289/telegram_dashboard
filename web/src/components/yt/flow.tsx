@@ -37,6 +37,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   const [saved, setSaved] = useState<FlowSaved | null>(null);
   const [ask, setAsk] = useState<"close" | "again" | null>(null);
   const [note, setNote] = useState("");
+  const [shown, setShown] = useState(true); // false: sliding out; `onClose` comes when that animation ends
 
   const q = useQuery({ ...ytFlowQuery(issue), enabled: open });
   const flow = mine?.flow ?? q.data?.flow ?? null;
@@ -62,7 +63,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       setDirty(false);
       setSaved(r);
       void qc.invalidateQueries({ queryKey: ["yt", "detail", issue] }); // its attachments and the new comment
-      void qc.invalidateQueries({ queryKey: ytFlowQuery(issue).queryKey });
+      // no invalidate of the flow key: the answer above is the saved version, and a refetch would api.set over the view
     },
   });
   useEffect(() => () => ctl.current?.abort(), []); // the dialog closed: no answer to land on
@@ -73,9 +74,10 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   }, [saved]);
 
   const unsaved = !!mine || dirty;
-  const run = () => { setSaved(null); save.reset(); ai.mutate(); };
+  // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
+  const run = () => { setSaved(null); setDirty(false); save.reset(); ai.mutate(); };
   const stopAi = () => { ctl.current?.abort(); ctl.current = null; ai.reset(); };
-  const close = () => { if (unsaved) setAsk("close"); else onClose(); };
+  const close = () => { if (unsaved) setAsk("close"); else setShown(false); };
   const fresh = () => { // "Xem bản mới": drop my version, read the ticket's
     setMine(null);
     setDirty(false);
@@ -98,13 +100,11 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
         <p className="max-w-sm text-sm text-ink-2">{t("File UI flow trên ticket không đọc được")}</p>
         <Button size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}><Sparkles aria-hidden />{t("Render lại bằng AI")}</Button>
       </Center>
-    : <Empty className="h-full content-center" art={<AiBot className="ai-float size-16 drop-shadow-lg" />} title={t("Ticket này chưa có UI flow")}>
-        {t("AI đọc AC, rule và link Zeplin của ticket rồi dựng sơ đồ màn hình; bạn sửa lại rồi cập nhật file lên ticket.")}
-      </Empty>;
+    : <Empty className="h-full content-center" art={<AiBot className="ai-float size-16 drop-shadow-lg" />} title={t("Ticket này chưa có UI flow")} />;
 
   return (
     <>
-      <Dialog open={open} onOpenChange={(o) => { if (!o) close(); }}>
+      <Dialog open={open && shown} onOpenChange={(o) => { if (!o) close(); }} onOpenChangeComplete={(o) => { if (!o) onClose(); }}>
         <DialogContent showCloseButton={false} className={cn(DIALOG_SHEET, "left-0 w-full sm:max-w-none")}>
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rule bg-paper-2 px-4">
             <DialogTitle className="truncate pr-0 text-sm">{t("UI flow {id}", { id: issue })}</DialogTitle>
@@ -113,15 +113,15 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
           </header>
           <div className="relative min-h-0 flex-1">{body}</div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3">
-            {readErr ? null : unsaved && !hid ? (
+            {readErr ? null : unsaved && !hid && !waiting && engine.api ? (
               <div className="flex flex-wrap items-center gap-2">
                 <p role="status" className="min-w-0 flex-1 text-sm text-ink">{t("Có thay đổi chưa lưu — cập nhật file trên ticket?")}</p>
-                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending} onClick={() => { const f = engine.api?.get() ?? flow; if (f) save.mutate(f); }}>{t("Cập nhật")}</Button>
+                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending} onClick={() => engine.api && save.mutate(engine.api.get())}>{t("Cập nhật")}</Button>
                 <Button size="sm" variant="outline" disabled={save.isPending} onClick={() => setHid(true)}>{t("Không")}</Button>
               </div>
-            ) : flow ? (
+            ) : flow && !ai.isPending ? (
               <p className="text-xs text-ink-3">{t("Kéo thả để sửa; mọi thay đổi chỉ lên ticket khi bạn bấm Cập nhật.")}</p>
-            ) : (
+            ) : ( // a run, even over a flow already on screen, keeps the box: its ring and Dừng are the run's controls
               <AiPromptBox aria-label={t("Ghi chú thêm cho AI")} placeholder={t("Ghi chú thêm cho AI (không bắt buộc)")} maxLength={2000}
                 value={note} onChange={setNote} onSend={run} running={ai.isPending} onStop={stopAi} stopHint={t("Dừng render")}
                 actions={!ai.isPending && (
@@ -151,7 +151,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       </Dialog>
       <ConfirmDialog open={ask === "close"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
         description={t("Đóng UI flow sẽ mất các thay đổi chưa cập nhật lên ticket.")} confirmLabel={t("Bỏ thay đổi")}
-        onConfirm={() => { setAsk(null); onClose(); }} />
+        onConfirm={() => { setAsk(null); setShown(false); }} />
       <ConfirmDialog open={ask === "again"} onOpenChange={(o) => !o && setAsk(null)} tone="default" icon={Sparkles}
         title={t("Render lại bằng AI?")} description={t("AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem. File trên ticket chỉ đổi khi bạn bấm Cập nhật.")}
         confirmLabel={t("Render lại")} onConfirm={() => { setAsk(null); run(); }} />

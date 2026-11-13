@@ -542,8 +542,6 @@ export default {
   "Dừng render": "Stop rendering",
   "AI đọc ticket rồi dựng sơ đồ màn hình và luồng bấm (Enter)": "The AI reads the ticket and builds the screens and taps (Enter)",
   "Ticket này chưa có UI flow": "This ticket has no UI flow yet",
-  "AI đọc AC, rule và link Zeplin của ticket rồi dựng sơ đồ màn hình; bạn sửa lại rồi cập nhật file lên ticket.":
-    "The AI reads the ticket's AC, rules and Zeplin links and builds the screens; you fix them up, then update the file on the ticket.",
   "File UI flow trên ticket không đọc được": "The UI flow file on the ticket cannot be read",
   "Không đọc được UI flow của ticket: {msg}": "Couldn't read the ticket's UI flow: {msg}",
   "Không nạp được bộ vẽ UI flow": "Couldn't load the UI flow renderer",
