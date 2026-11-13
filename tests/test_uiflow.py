@@ -18,13 +18,14 @@ RAW = {"screens": [
 def test_clean_drops_broken_links_and_sets_ticket():
     f = u.clean(RAW, "VA-1")
     assert f.ticket == "VA-1" and f.rev == 0
-    assert [(l.src, l.to) for l in f.links] == [("login.otp", "code"), ("code.ok", "err"), ("code", "login")]
+    assert [(k.src, k.to) for k in f.links] == [("login.otp", "code"), ("code.ok", "err"), ("code", "login")]
 
 
 def test_clean_rejects_empty_duplicate_and_oversized():
     for bad in ({"screens": [], "links": []},
                 {"screens": [RAW["screens"][0]] * 2, "links": []},
-                {"screens": [{"id": f"s{i}", "title": "t", "items": []} for i in range(u.MAX_SCREENS + 1)], "links": []}):
+                {"screens": [{"id": f"s{i}", "title": "t", "items": []} for i in range(u.MAX_SCREENS + 1)],
+                 "links": []}):
         with pytest.raises(ValueError):
             u.clean(bad, "VA-1")
 
@@ -66,7 +67,8 @@ def test_changes_lists_retarget_add_remove_rename_in_vietnamese():
     ]
     assert u.changes(None, old) == ["Tạo UI flow: 3 màn, 3 liên kết"]
     assert u.changes(old, old) == []
-    moved = old.model_copy(deep=True); moved.screens[0].x = 99.0
+    moved = old.model_copy(deep=True)
+    moved.screens[0].x = 99.0
     assert u.changes(old, moved) == ["Sắp xếp lại vị trí màn"]
 
 

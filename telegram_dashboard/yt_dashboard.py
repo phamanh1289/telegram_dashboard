@@ -56,6 +56,13 @@ class YtError(Exception):
         self.status, self.message = status, message
 
 
+class YtUnreachable(YtError):
+    """No answer from YouTrack (network / timeout): a write may or may not have happened."""
+
+    def __init__(self):
+        super().__init__(502, "Không kết nối được YouTrack")
+
+
 class Mention(BaseModel):
     chat_id: str
     chat: str | None
@@ -628,7 +635,7 @@ class YouTrackDashboard:
         try:
             r = await self._http().request(method, path, **kw)
         except httpx.HTTPError:
-            raise YtError(502, "Không kết nối được YouTrack") from None
+            raise YtUnreachable from None
         if r.status_code >= 400:
             msg = {
                 401: "Token YouTrack hết hạn hoặc sai — dán token mới trong Cài đặt",
@@ -756,12 +763,14 @@ class YouTrackDashboard:
             if r["resolved"] or FINISHED.match(r["state"] or ""):
                 await db.write(db.store.wake_ticket, i)
 
-    async def upload(self, issue: str, name: str, data: bytes, *, mime: str) -> str:
-        """Add one file to a ticket's attachments; its new id."""
+    async def upload(self, issue: str, name: str, data: bytes, *, mime: str) -> tuple[str, str]:
+        """Add one file to a ticket's attachments; (its new id, the name YouTrack stored it under)."""
         path = f"/api/issues/{issue}/attachments"
-        d = self._json(await self._call("POST", path, params={"fields": "id"}, files={"upload": (name, data, mime)}))
+        kw = {"params": {"fields": "id,name"}, "files": {"upload": (name, data, mime)}}
+        d = self._json(await self._call("POST", path, **kw))
         try:
-            return (d[0] if isinstance(d, list) else d)["id"]  # YouTrack answers the list of files it added
+            a = d[0] if isinstance(d, list) else d  # YouTrack answers the list of files it added
+            return a["id"], a.get("name") or ""
         except LookupError, TypeError:
             raise YtError(502, "YouTrack không trả id tệp vừa tải lên") from None
 
@@ -1017,7 +1026,7 @@ class YouTrackDashboard:
         try:
             r = await self._http().get(url, headers={"Accept": "*/*"})
         except httpx.HTTPError:
-            raise YtError(502, "Không kết nối được YouTrack") from None
+            raise YtUnreachable from None
         if r.status_code >= 400:
             raise YtError(502, f"YouTrack {r.status_code} khi tải tệp")
         return r.content
@@ -1447,22 +1456,28 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             except OSError:
                 raise YtError(503, "Thiếu uiflow.js — build lại web") from None
             name = uiflow.NAME.format(issue=i)
-            att = await svc.upload(i, name, uiflow.build_html(new, engine).encode(), mime="text/html")
-            warn = []
-            if old_id:
-                try:
-                    await svc.detach(i, old_id)
-                except YtError as e:
-                    warn.append(f"chưa xoá được file cũ: {e.message}")
-            head = f"UI flow {'mới' if new.rev == 1 else 'cập nhật'} (rev {new.rev}) — tệp đính kèm {name}"
-            more = [f"- … và {len(ch) - 20} thay đổi khác"] if len(ch) > 20 else []
             try:
-                await svc.comment(i, "\n".join([head, *(f"- {c}" for c in ch[:20]), *more]))
-            except YtError as e:
-                warn.append(f"chưa post được comment: {e.message}")
-            svc.stale(i)
-        return {"att": att, "rev": new.rev, "changes": ch,
-                "warn": f"Đã tải bản mới nhưng {'; '.join(warn)}" if warn else ""}  # fmt: skip
+                try:
+                    att, stored = await svc.upload(i, name, uiflow.build_html(new, engine).encode(), mime="text/html")
+                except YtUnreachable:  # YouTrack may have stored it: never let a blind retry add a second file
+                    raise YtError(502, "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại") from None
+                warn = ["Đã thay file UI flow hỏng trên ticket"] if old_id and old is None else []
+                if old_id and stored != name:  # renamed on upload: the next read would not find it, keep the old
+                    warn.append("Đã tải bản mới nhưng tên tệp trên YouTrack khác, chưa xoá file cũ")
+                elif old_id:
+                    try:
+                        await svc.detach(i, old_id)
+                    except YtError as e:
+                        warn.append(f"Đã tải bản mới nhưng chưa xoá được file cũ: {e.message}")
+                head = f"UI flow {'mới' if new.rev == 1 else 'cập nhật'} (rev {new.rev}) — tệp đính kèm {name}"
+                more = [f"- … và {len(ch) - 20} thay đổi khác"] if len(ch) > 20 else []
+                try:
+                    await svc.comment(i, "\n".join([head, *(f"- {c}" for c in ch[:20]), *more]))
+                except YtError as e:
+                    warn.append(f"Đã tải bản mới nhưng chưa post được comment: {e.message}")
+            finally:
+                svc.stale(i)
+        return {"att": att, "rev": new.rev, "changes": ch, "warn": ". ".join(warn)}
 
     @r.get("/fields")
     async def fields(project: str):

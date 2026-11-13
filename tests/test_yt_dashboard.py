@@ -700,18 +700,21 @@ def flow_html(rev: int, raw: dict = FLOW) -> str:
 
 
 class FakeYt:
-    """One ticket VA-1 with `files` ({id, name, created, removed?, body}); records every write."""
+    """One ticket VA-1 with `files` ({id, name, created, removed?, body}); records every write.
+    `fail`: (method, path) -> HTTP status, or an exception to raise; `stored`: the name YouTrack answers on upload."""
 
-    def __init__(self, files: list[dict], fail: dict | None = None):
-        self.files, self.fail, self.writes = files, fail or {}, []
+    def __init__(self, files: list[dict], fail: dict | None = None, stored: str = "uiflow-VA-1.html"):
+        self.files, self.fail, self.writes, self.stored = files, fail or {}, [], stored
         self.upload = self.comment = None
 
     def __call__(self, req):
         m, p = req.method, req.url.path
         if m != "GET":
             self.writes.append((m, p))
-        if (m, p) in self.fail:
-            return httpx.Response(self.fail[m, p], text="no")
+        if isinstance(f := self.fail.get((m, p)), Exception):
+            raise f
+        if f:
+            return httpx.Response(f, text="no")
         if p == "/api/issues/VA-1":
             keep = ("id", "name", "created", "removed")
             atts = [{k: f[k] for k in keep if k in f} | {"size": 9, "url": f"/files/{f['id']}"} for f in self.files]
@@ -720,7 +723,7 @@ class FakeYt:
             return httpx.Response(200, text=next(f["body"] for f in self.files if f["id"] == p[7:]))
         if p == "/api/issues/VA-1/attachments":
             self.upload = req.content
-            return httpx.Response(200, json=[{"id": "1-9"}])
+            return httpx.Response(200, json=[{"id": "1-9", "name": self.stored}])
         if p == "/api/issues/VA-1/comments":
             self.comment = json.loads(req.content)["text"]
             return httpx.Response(200, json={"id": "c"})
@@ -870,3 +873,46 @@ async def test_upload_401_reaches_the_ui_message():
         assert (e.status, e.message) == (502, "Không kết nối được YouTrack")
     else:
         raise AssertionError("expected YtError")
+
+
+UPLOAD = ("POST", "/api/issues/VA-1/attachments")
+
+
+async def test_flow_save_upload_timeout_is_unknown_not_failed(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}],
+                {UPLOAD: httpx.ReadTimeout("slow")})  # fmt: skip
+    c, svc = flow_app(yt, tmp_path)
+    svc._cache["issue:VA-1"] = (time.monotonic(), {})
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 502 and r.json()["error"].startswith("Không rõ đã lưu chưa")
+    assert yt.writes == [UPLOAD]  # no DELETE, no comment
+    assert "issue:VA-1" not in svc._cache  # stale ran on this path too
+
+
+async def test_flow_save_upload_500_is_a_plain_failure(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}], {UPLOAD: 500})
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 502 and r.json()["error"].startswith("YouTrack 500") and yt.writes == [UPLOAD]
+
+
+async def test_flow_save_keeps_old_file_when_youtrack_renames_the_upload(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}],
+                stored="uiflow-VA-1 (1).html")  # fmt: skip
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 200
+    assert r.json()["warn"] == "Đã tải bản mới nhưng tên tệp trên YouTrack khác, chưa xoá file cũ"
+    assert [m for m, _ in yt.writes] == ["POST", "POST"]  # upload + comment, the old file stays
+
+
+async def test_flow_save_replaces_a_broken_file(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": "<html>broken"}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": "1-1"})
+    assert r.status_code == 200 and r.json()["warn"] == "Đã thay file UI flow hỏng trên ticket"
+    assert ("DELETE", "/api/issues/VA-1/attachments/1-1") in yt.writes and r.json()["rev"] == 1
