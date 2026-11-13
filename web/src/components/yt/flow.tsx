@@ -83,7 +83,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   });
   const reread = useRef(false); // the stored run is read once per open (not again on a refetch of the file)
   // the dialog closed: stop reading, the server's run goes on (opening the dialog again reads it)
-  useEffect(() => () => { ctl.current?.abort(AI_LEAVE); ctl.current = null; reread.current = false; }, []);
+  useEffect(() => () => { ctl.current?.abort(AI_LEAVE); ctl.current = null; }, []); // a real close unmounts: `reread` goes with it
   useEffect(() => { // a run left going: once the ticket's file is read, read it again — never over unsaved edits
     if (!q.isSuccess || reread.current) return;
     reread.current = true;
