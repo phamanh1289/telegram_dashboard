@@ -18,7 +18,8 @@ import { cn } from "@/lib/utils";
 export function dur(s: number) {
   if (s < 10) return `${Math.max(0, s).toFixed(1)}s`;
   if (s < 60) return `${Math.round(s)}s`;
-  return `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
+  const r = Math.round(s); // round first: 119.6s is 2m 00s, not 1m 60s
+  return `${Math.floor(r / 60)}m ${String(r % 60).padStart(2, "0")}s`;
 }
 
 /** A little robot head: blinking eyes, a glowing antenna, an arm that waves while it is shown. */

@@ -3426,7 +3426,9 @@
 "at": "UI flow"
 },
 "No file yet: pick \"Fast\" (light model, few tokens) or \"Thorough\" (stronger model, for long stories) in the box below, add a note for the AI if needed, then click \"Render with AI\"; while it runs you can click \"Stop rendering\"",
-"Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow it or get the result",
+"While it renders, the view shows its progress: % done, how long it has run and roughly how long is left, each stage (reading the ticket and story, each Zeplin screen, the AI planning the flow, each screen drawn, each button linked to its screen, the check) with its numbers and time, the screens just drawn and the links just made",
+"Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow its progress or get the result. When a render shows an error (a lost connection too), the AI run has stopped and the line names the stage it failed at: click \"Render with AI\" to run it again",
+"Once rendered, the bar below says how many screens and links the AI drew and how long it took; on \"Update\" it shows the Zeplin images being embedded (n/total), then the file being uploaded to the ticket",
 "With a flow: use the toolbar inside the frame (Map / Prototype, Edit, Fit, Check)",
 "After an edit the bar below says there are unsaved changes: click \"Update\" to write them to the ticket, or \"No\" to keep them on screen only",
 {

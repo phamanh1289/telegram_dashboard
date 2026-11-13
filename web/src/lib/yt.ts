@@ -70,17 +70,22 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
   if (job) init.signal!.addEventListener("abort", () => { if (init.signal!.reason !== AI_LEAVE) void fetch(`/api/yt/ai/job/${encodeURIComponent(job)}`, { method: "DELETE" }).catch(() => {}); }, { once: true });
   const ses = init.session || (job && aiSessions.get(init.signal!)); // `session`: a one-shot run with no job (AI filter / draft)
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
+  // an AI run cut mid-way (sleep, Wi-Fi, server restart) in words, not "ai_provider_error"; other calls keep the
+  // browser's TypeError (loadError words it)
+  const lost = (e: unknown) => job && (e instanceof TypeError || (e as { cut?: boolean } | null)?.cut)
+    ? new Error(t("Mất kết nối với dashboard giữa chừng, thử lại")) : e;
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
     signal: init.signal,
     headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}), ...(ses && init.json !== undefined ? { "X-Ai-Session": ses } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
-  });
+  }).catch((e) => { throw lost(e); });
   if (res.ok && res.headers.get("content-type")?.includes("ndjson")) { // an AI answer, streamed as Claude writes it
     const on = init.signal && aiParts.get(init.signal);
     return readAnswer<T>(res, on?.text, on?.step)
-      .catch((e) => { throw e instanceof ApiError ? new Error(e.detail || e.code) : e; });
+      // no status: a run's own 404 (ticket gone) must not read as the job's 404 (FlowDialog: "gone, show nothing")
+      .catch((e) => { const l = lost(e); throw l !== e ? l : e instanceof ApiError ? new Error(e.detail ? tMaybe(e.detail) : e.code) : e; });
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) {

@@ -15,9 +15,10 @@ import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { useLang, useT } from "@/lib/i18n";
 import { getPref, put } from "@/lib/prefs";
 import { packShots, useUiFlow, zeplinUrls } from "@/lib/uiflow";
-import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
+import { AI_LEAVE, aiJobs, aiParts, fileUrl, flowJob, type FlowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 import { YtFetching, YtPicks } from "./bits";
+import { type FlowEvent, FlowProgress, flowStage, flowSummary } from "./flow-progress";
 
 // The ticket's UI flow: the file on the ticket drawn by the engine (web/public/uiflow.js), one AI run to build it, and
 // the bar that uploads what changed back. The dialog orchestrates; the calls live in lib/yt, the engine in lib/uiflow.
@@ -33,7 +34,8 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   const qc = useQueryClient();
   const [el, setEl] = useState<HTMLDivElement | null>(null);
   // the flow being shown over the ticket's own: an AI result, not saved yet (`base`: the file it would replace)
-  const [mine, setMine] = useState<{ flow: UiFlow; base: string | null } | null>(null);
+  // (`sum`: what the AI drew and could not read, for the bar under a fresh render)
+  const [mine, setMine] = useState<{ flow: UiFlow; base: string | null; sum?: ReturnType<typeof flowSummary> } | null>(null);
   const [dirty, setDirty] = useState(false); // the engine's edits since it was last given a flow
   const [hid, setHid] = useState(false); // "Không": the bar stays away until the next edit or "Cập nhật lên ticket"
   const [saved, setSaved] = useState<FlowSaved | null>(null);
@@ -67,6 +69,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   });
 
   const ctl = useRef<AbortController | null>(null); // the AI run, so Dừng cancels the request
+  const [ev, setEv] = useState<FlowEvent[]>([]); // the run's stages as the server tells them (FlowProgress)
+  const [started, setStarted] = useState(0);
+  const [saving, setSaving] = useState(""); // what an upload is doing now (embedding images, sending)
   // a background run on the server (X-Ai-Job), its id kept per ticket: closing the dialog leaves it going, opening it
   // again reads it (`again`: that run) — still running, its result, or its error, the same as a run started here.
   // Its result saves over the file the run started from (`base`), so a save made meanwhile gets the 409, not overwritten.
@@ -76,12 +81,21 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       const c = (ctl.current = new AbortController());
       const job = again ?? { id: newJobId(), base: q.data?.att ?? null };
       aiJobs.set(c.signal, job.id);
+      const got: FlowEvent[] = [];
+      setEv([]);
+      setStarted((again?.at ?? Date.now()) / 1000);
+      aiParts.set(c.signal, { text: () => {}, step: (e) => { got.push(e); if (ctl.current === c) setEv([...got]); } });
       if (!again) setFlowJob(issue, job);
       try {
         const r = again
           ? await yt.aiJob<{ flow: UiFlow }>(job.id, c.signal).catch((e) => { if (statusOf(e) === 404) return null; throw e; }) // gone (a restart): nothing to show
           : await yt.aiFlow(issue, note.trim(), deep, c.signal);
-        return r && r.flow?.ticket === issue ? { flow: r.flow, base: job.base } : null; // another ticket's: not this one's flow
+        return r && r.flow?.ticket === issue ? { flow: r.flow, base: job.base, sum: flowSummary(t, got) } : null; // another ticket's: not this one's flow
+      } catch (e) {
+        // any error the dialog shows stops the server's run too (abort → DELETE /ai/job → its CLI killed): never one
+        // left going behind an error, nor two when Render is pressed again
+        if (!c.signal.aborted) c.abort();
+        throw e;
       } finally {
         if (c.signal.reason !== AI_LEAVE) setFlowJob(issue, null, job.id); // shown, failed or stopped: nothing left to read
       }
@@ -91,7 +105,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   });
   const save = useMutation({
     mutationFn: async (f: UiFlow) => {
-      const p = await packShots(f, sq.data?.shots); // the images go into the file, so it opens anywhere, offline
+      setSaving(t("Đang nhúng ảnh Zeplin vào file…"));
+      const p = await packShots(f, sq.data?.shots, (n, of) => setSaving(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of }))); // the images go into the file, so it opens anywhere, offline
+      setSaving(t("Đang tải file lên ticket và ghi bình luận thay đổi…"));
       const r = await yt.saveFlow(issue, f, base, p.shots);
       const lost = p.failed ? t("{n} ảnh Zeplin chưa nhúng được vào file, màn đó vẽ khung đơn giản", { n: p.failed }) : "";
       return { ...r, warn: [r.warn, lost].filter(Boolean).join(". ") };
@@ -136,7 +152,8 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
     void qc.invalidateQueries({ queryKey: ytFlowQuery(issue).queryKey });
   };
 
-  const waiting = useAiWait(q.isPending || ai.isPending || (!!flow && !shotsReady));
+  // the AI run has its own view (FlowProgress); this is the file and its Zeplin images being read
+  const waiting = useAiWait(q.isPending || (!!flow && !shotsReady));
   const conflict = statusOf(save.error) === 409;
   // the ticket's file could not be read: never the empty state, and no Render here (what it would replace is unknown)
   const readErr = q.isError && !flow;
@@ -144,6 +161,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       <p role="alert" className="max-w-sm text-sm text-error">{t("Không đọc được UI flow của ticket: {msg}", { msg: say(q.error) })}</p>
       <Button size="sm" variant="outline" onClick={() => void q.refetch()}><RotateCw aria-hidden />{t("Thử lại")}</Button>
     </Center>
+    : ai.isPending ? <FlowProgress events={ev} started={started} deep={deep} />
     : engine.error ? <Center><p role="alert" className="text-sm text-error">{say(engine.error)}</p><Button size="sm" variant="outline" onClick={engine.retry}><RotateCw aria-hidden />{t("Thử lại")}</Button></Center>
     : waiting ? <YtFetching kind="flow" />
     : flow ? <div ref={setEl} className="h-full" />
@@ -164,9 +182,16 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
           </header>
           <div className="relative min-h-0 flex-1">{body}</div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3">
-            {readErr ? null : unsaved && !hid && !waiting && engine.api ? (
+            {readErr ? null : unsaved && !hid && !waiting && !ai.isPending && engine.api ? (
               <div className="flex flex-wrap items-center gap-2">
-                <p role="status" className="min-w-0 flex-1 text-sm text-ink">{t("Có thay đổi chưa lưu — cập nhật file trên ticket?")}</p>
+                <p role="status" className="min-w-0 flex-1 text-sm text-ink">
+                  {save.isPending && saving ? <span className="ai-text">{saving}</span>
+                    : mine?.sum?.text && !dirty ? <>
+                        {t("{s} — chưa lưu, cập nhật file trên ticket?", { s: mine.sum.text })}
+                        {mine.sum.warn && <span role="alert" className="mt-0.5 block text-xs text-warn">{mine.sum.warn}</span>}
+                      </>
+                    : t("Có thay đổi chưa lưu — cập nhật file trên ticket?")}
+                </p>
                 <Button size="sm" aria-busy={save.isPending} disabled={save.isPending} onClick={() => engine.api && save.mutate(engine.api.get())}>{t("Cập nhật")}</Button>
                 <Button size="sm" variant="outline" disabled={save.isPending} onClick={() => setHid(true)}>{t("Không")}</Button>
               </div>
@@ -197,7 +222,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
             )}
             {sq.isError && flow && <p role="alert" className="mt-2 text-xs text-warn">{t("Không lấy được ảnh Zeplin: {msg}", { msg: say(sq.error) })}</p>}
             {!!sq.data?.missing.length && flow && <p className="mt-2 text-xs text-ink-3">{t("{n} màn Zeplin không đọc được (chưa chia sẻ với tài khoản này hoặc đã xoá)", { n: sq.data.missing.length })}</p>}
-            {ai.isError && (ai.error as Error).name !== "AbortError" && <p role="alert" className="mt-2 text-sm text-error">{t("Không render được: {msg}", { msg: say(ai.error) })}</p>}
+            {ai.isError && (ai.error as Error).name !== "AbortError" && <p role="alert" className="mt-2 text-sm text-error">
+              {flowStage(t, ev) ? t("Không render được (bước “{stage}”): {msg}", { stage: flowStage(t, ev), msg: say(ai.error) }) : t("Không render được: {msg}", { msg: say(ai.error) })}
+            </p>}
             {save.isError && (
               <p role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-error">
                 {say(save.error)}

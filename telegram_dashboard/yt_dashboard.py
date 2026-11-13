@@ -1724,7 +1724,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
 
-    def background(request: Request, work):
+    def background(request: Request, work, key: str = ""):
         """With header X-Ai-Job (an id the page picked): `work(on_text, detached=True)` as a background run the page
         can leave and read again (GET /ai/job/{id}), its result the last NDJSON item; None without the header."""
         job = request.headers.get("x-ai-job", "")
@@ -1732,7 +1732,7 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             return None
         if not svc.jobs.free(job):
             raise YtError(409, "Mã lượt AI không hợp lệ hoặc đã dùng, gửi lại")
-        return svc.jobs.start(job, lambda on_text: work(on_text, detached=True))
+        return svc.jobs.start(job, lambda on_text: work(on_text, detached=True), key)
 
     def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
         """The AI answer, streamed: a background run (`background`), or one that stops when the page goes."""
@@ -1809,23 +1809,66 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def ai_flow(body: AiFlow, request: Request):
         """One AI run turns the ticket (AC, rules, Zeplin links) into UI flow data: cleaned, rev 0, not saved."""
         i = _issue_id(body.id)
-        story = await _stories(svc, i)  # full text: a summary drops the tree, the AC ids and the Zeplin links
-        # no links block: the tickets / articles a story names are other flows (and long ones cost an AI summary)
-        ticket, _ = await _ticket_block(svc, request, i, links=False, desc=STORY_DESC)
-        # the texts of each linked Zeplin screen, read here (REST, cached): the AI used to open every screen through
-        # the Zeplin MCP, 100-200 KB of layers each, minutes per render. No token / Zeplin down: AC only, as before
-        urls = list(dict.fromkeys(zeplin.canonical(u) for u in providers.ZEPLIN.findall(f"{ticket}{story}")))
-        try:
-            got = (await shots.get(urls[: uiflow.MAX_SCREENS]))[0] if urls else {}
-        except zeplin.ZeplinError as e:
-            log.info("UI flow render without Zeplin texts: %s", e)
-            got = {}
-        design = {u: x["texts"] for u, x in got.items() if x.get("texts")}
-        prompt = (f"{uiflow.AI_FLOW}\n<ticket>\n{ticket}\n</ticket>{story}"
-                  f"\n<zeplin>{data_json(design)}</zeplin>\n<ask>{data_json(body.note)}</ask>")  # fmt: skip
 
-        async def work(_on_text=None, detached=False):  # the JSON as it is written means nothing to the page
-            raw = json_object(await _ai(svc, request, prompt, heavy=body.deep, notes=False, detached=detached))
+        async def work(on_text=None, detached=False):
+            # each stage as a {"kind": "stage"} step: the dialog shows what is read, drawn and checked, and how far
+            def say(**e):
+                if on_text:
+                    on_text({"kind": "stage", "at": round(time.time(), 1), **e})
+
+            say(stage="ticket", id=i)
+            story = await _stories(svc, i)  # full text: a summary drops the tree, the AC ids and the Zeplin links
+            # no links block: the tickets / articles a story names are other flows (and long ones cost an AI summary)
+            ticket, _ = await _ticket_block(svc, request, i, links=False, desc=STORY_DESC)
+            say(stage="ticket", id=i, done=True, chars=len(ticket) + len(story),
+                stories=re.findall(r'<story>\s*\{"id":\s*"([^"]+)"', story),  # "id" is _ticket_json's first key
+                lost=re.findall(r"<story>(\S+): dashboard không đọc được", story))  # fmt: skip
+            # the texts of each linked Zeplin screen, read here (REST, cached): the AI used to open every screen through
+            # the Zeplin MCP, 100-200 KB of layers each, minutes per render. No token / Zeplin down: AC only, as before
+            urls = list(dict.fromkeys(zeplin.canonical(u) for u in providers.ZEPLIN.findall(f"{ticket}{story}")))
+            urls = urls[: uiflow.MAX_SCREENS]
+            read = 0
+
+            def ready(k: int):
+                nonlocal read
+                read += k
+                say(stage="zeplin", n=read, of=len(urls))
+
+            say(stage="zeplin", n=0, of=len(urls))
+            try:
+                got, missing = await shots.get(urls, done=ready) if urls else ({}, [])
+            except zeplin.ZeplinError as e:
+                log.info("UI flow render without Zeplin texts: %s", e)
+                got = {}
+                say(stage="zeplin", n=read, of=len(urls), done=True, error=str(e))
+            else:
+                texts = sum(1 for x in got.values() if x.get("texts"))
+                say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
+            design = {u: x["texts"] for u, x in got.items() if x.get("texts")}
+            prompt = (f"{uiflow.AI_FLOW}\n<ticket>\n{ticket}\n</ticket>{story}"
+                      f"\n<zeplin>{data_json(design)}</zeplin>\n<ask>{data_json(body.note)}</ask>")  # fmt: skip
+            start = {"stage": "ai", "deep": body.deep, "chars": len(prompt), "screens": len(urls)}
+            say(**start)
+            seen = uiflow.Progress()
+
+            # the JSON as it is written: told as the screens / links it holds so far. Only stage steps reach the page:
+            # raw deltas would make each replay (a reopened dialog) thousands of items
+            def on_ai(t):
+                nonlocal seen
+                if isinstance(t, dict):  # a tool step (the Zeplin MCP): shown as it is
+                    on_text(t)
+                elif t is None:  # every message starts with one (Claude): a restart only once text was written
+                    if seen.text:
+                        seen = uiflow.Progress()
+                        say(**start, again=True)
+                else:
+                    for e in seen.feed(t):
+                        say(**e)
+
+            out = await _ai(svc, request, prompt, heavy=body.deep, on_text=on_ai if on_text else None, notes=False,
+                            detached=detached)  # fmt: skip
+            say(stage="check", chars=len(out))
+            raw = json_object(out)
             try:
                 flow = uiflow.clean(raw, i)
             except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
@@ -1833,10 +1876,13 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
             flow.rev = 0  # whatever the AI wrote: the dialog saves over the version it opened
             for s in flow.screens:
                 s.x = s.y = None  # the layout is the dialog's job
+            dropped = len(raw.get("links") or []) - len(flow.links)  # raw: a dict, clean took it
+            say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped))
             return {"flow": flow.model_dump()}
 
         # with X-Ai-Job the render goes on when the dialog closes; the page reads it again by its id
-        return background(request, work) or await work()
+        # one render per ticket: a new one stops the older (a reload / reopen that started over), not two CLIs
+        return background(request, work, key=f"flow:{i}") or await work()
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):

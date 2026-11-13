@@ -117,13 +117,17 @@ class Shots:
     def __init__(self) -> None:
         self._cache: dict[str, tuple[float, dict | None]] = {}  # url -> (when, shot | None: no such screen)
 
-    async def get(self, urls: list[str]) -> tuple[dict[str, dict], list[str]]:
-        """({url: shot}, urls with no screen behind them). ZeplinError when nothing can be read at all."""
+    async def get(self, urls: list[str], *, done=None) -> tuple[dict[str, dict], list[str]]:
+        """({url: shot}, urls with no screen behind them). ZeplinError when nothing can be read at all.
+        `done(k)` as screens are ready: the cached ones at once, then each one read from Zeplin."""
         tok = token()
         if not tok:
             raise ZeplinError("Chưa cấu hình Zeplin MCP (cần ZEPLIN_ACCESS_TOKEN) — UI flow vẽ khung đơn giản")
         now = time.monotonic()
-        todo = [u for u in dict.fromkeys(urls) if not (c := self._cache.get(u)) or now - c[0] > TTL]
+        wanted = list(dict.fromkeys(urls))
+        todo = [u for u in wanted if not (c := self._cache.get(u)) or now - c[0] > TTL]
+        if done and len(wanted) > len(todo):
+            done(len(wanted) - len(todo))
         if todo:
             sem = asyncio.Semaphore(PARALLEL)
             headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
@@ -132,10 +136,17 @@ class Shots:
                 async def one(url: str) -> None:
                     async with sem:
                         self._cache[url] = (time.monotonic(), await self._read(c, url))
+                    if done:
+                        done(1)
 
-                await asyncio.gather(*(one(u) for u in todo))
+                try:  # the first error stops the other reads before the client closes under them
+                    async with asyncio.TaskGroup() as g:
+                        for u in todo:
+                            g.create_task(one(u))
+                except ExceptionGroup as eg:
+                    raise eg.exceptions[0] from None
         got = {u: self._cache[u][1] for u in urls if u in self._cache}
-        return {u: s for u, s in got.items() if s}, [u for u in dict.fromkeys(urls) if not got.get(u)]
+        return {u: s for u, s in got.items() if s}, [u for u in wanted if not got.get(u)]
 
     @staticmethod
     async def _read(c: httpx.AsyncClient, url: str) -> dict | None:

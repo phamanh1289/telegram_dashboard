@@ -16,7 +16,8 @@ type Post = { id: string; base: string | null; flow: { rev: number; screens: { i
 const posts = async () => (await ctl("/state")).flow_posts as Post[];
 const aiCalls = async () => (await ctl("/state")).ai_calls as number;
 
-const BAR = "Có thay đổi chưa lưu — cập nhật file trên ticket?";
+// an edit: "Có thay đổi chưa lưu — …"; a fresh render: "AI vừa vẽ 4 màn, … — chưa lưu, …"
+const BAR = /cập nhật file trên ticket\?$/;
 const dialog = (page: Page) => page.getByRole("dialog", { name: "UI flow VA-1" });
 
 async function openFlow(page: Page) {

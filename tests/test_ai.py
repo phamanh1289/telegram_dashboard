@@ -635,6 +635,23 @@ async def test_a_background_ai_run_outlives_its_reader_and_is_read_again_from_th
     assert jobs.status()["job-87654321"] == "error" and jobs.attach("nope-0000") is None
 
 
+async def test_a_quiet_ai_run_keeps_its_stream_alive_and_a_new_run_of_the_same_key_stops_the_old(monkeypatch):
+    import telegram_dashboard.ai as ai
+
+    monkeypatch.setattr(ai, "HEARTBEAT", 0.01)
+    jobs = ai.AiJobs()
+    lines = jobs.start("old-12345678", lambda on_text: asyncio.Event().wait(), key="flow:VA-1").body_iterator
+    assert await anext(lines) == "\n"  # nothing to say yet: a blank line, so no proxy cuts the stream
+    await lines.aclose()
+    jobs.start("other-1234567", lambda on_text: asyncio.Event().wait(), key="flow:VA-2")
+    jobs.start("new-12345678", lambda on_text: asyncio.Event().wait(), key="flow:VA-1")
+    await asyncio.gather(jobs._jobs["old-12345678"].task, return_exceptions=True)
+    assert jobs.status() == {"old-12345678": "error", "other-1234567": "running", "new-12345678": "running"}
+    for k in ("other-1234567", "new-12345678"):
+        jobs.stop(k)
+    await asyncio.gather(*(j.task for j in jobs._jobs.values()), return_exceptions=True)
+
+
 async def test_overloaded_provider_is_tried_once_more(tmp_path):
     exe, count = tmp_path / "claude", tmp_path / "n"  # first run: overloaded; second: the answer
     exe.write_text(f'#!/bin/sh\ncat >/dev/null\nif [ -f {count} ]; then\n'

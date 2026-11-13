@@ -1001,7 +1001,7 @@ def _zeplin_texts(monkeypatch, texts=("Gửi OTP",)):
     """Shots.get faked: the URLs it was asked for, each screen with `texts`."""
     asked = []
 
-    async def get(_self, urls):
+    async def get(_self, urls, **_):
         asked.extend(urls)
         return {u: {"src": "", "w": 375, "h": 812, "hits": [], "texts": list(texts)} for u in urls}, []
 
@@ -1039,7 +1039,7 @@ async def test_ai_flow_on_a_story_reads_no_other_stories():
 
 
 async def test_ai_flow_renders_without_zeplin_texts_when_zeplin_fails(monkeypatch):
-    async def get(_self, _urls):
+    async def get(_self, _urls, **_):
         raise zeplin.ZeplinError("Chưa cấu hình Zeplin MCP")
 
     monkeypatch.setattr(zeplin.Shots, "get", get)
@@ -1121,6 +1121,30 @@ async def test_ai_flow_as_a_background_job_ends_with_the_cleaned_flow_read_again
         assert again.text == r.text and (await c.get("/api/yt/ai/jobs")).json() == {"flow-job-1": "done"}
 
     await _flow_post(FLOW_RAW, then=then)
+
+
+async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch):
+    _zeplin_texts(monkeypatch)
+
+    async def agent(prompt, on_text=None, **_):
+        body = FLOW_RAW.split("\n", 1)[1]
+        on_text(None)  # Claude: every message starts with a reset, the first one too
+        for i in range(0, len(body), 9):
+            on_text(body[i : i + 9])
+        return FLOW_RAW
+
+    _, r = await _flow_post(agent, desc="Thiết kế https://zpl.io/abc", job="flow-job-4")
+    steps = [x["step"] for x in _items(r) if "step" in x]
+    assert all(s["kind"] == "stage" and s["at"] for s in steps)
+    stages = [s["stage"] for s in steps]
+    assert stages[:2] == ["ticket", "ticket"] and steps[1]["done"] and stages[-1] == "check"
+    zep = {"stage": "zeplin", "n": 1, "of": 1, "done": True, "texts": 1, "missing": 0}
+    assert zep.items() <= steps[3].items()  # the fake reads no screen one by one
+    assert [s["title"] for s in steps if s["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP"]
+    assert not any(s.get("again") for s in steps)  # the opening reset is no restart
+    assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 2,
+                                     "links": 2, "dropped": 1}
+    assert "flow" in _items(r)[-1]["done"]
 
 
 async def test_ai_flow_job_with_an_unreadable_answer_ends_with_an_error_item():

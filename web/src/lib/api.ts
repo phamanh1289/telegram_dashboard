@@ -92,7 +92,7 @@ export async function readAnswer<T>(res: Response, onPart?: (text: string) => vo
   let buf = "", text = "";
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) throw new ApiError(502, "ai_provider_error");
+    if (done) throw Object.assign(new ApiError(502, "ai_provider_error"), { cut: true }); // the server always ends with done / error: the connection was cut
     buf += value;
     const lines = buf.split("\n");
     buf = lines.pop()!;

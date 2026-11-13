@@ -3426,7 +3426,9 @@
 "at": "UI flow"
 },
 "Chưa có file: chọn \"Nhanh\" (model nhẹ, ít token) hoặc \"Kỹ\" (model mạnh, cho story dài) trong ô dưới, ghi chú thêm cho AI nếu cần rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng render\"",
-"Đóng khung khi đang render không dừng AI: nút \"UI flow\" có chấm báo đang chạy, mở lại để xem tiếp hoặc lấy kết quả",
+"Đang render, khung hiện tiến trình: % đã xong, đã chạy bao lâu và ước tính còn bao lâu, từng bước (đọc ticket và story, đọc từng màn Zeplin, AI lên luồng, vẽ từng màn, nối từng nút với màn đích, kiểm tra) kèm số liệu và thời gian của bước đó, tên các màn vừa vẽ và liên kết vừa nối",
+"Đóng khung khi đang render không dừng AI: nút \"UI flow\" có chấm báo đang chạy, mở lại để xem tiếp tiến trình hoặc lấy kết quả. Render báo lỗi (kể cả mất kết nối) thì lượt AI đã dừng hẳn, dòng lỗi ghi bước bị hỏng: bấm \"Render bằng AI\" để chạy lại",
+"Render xong, thanh dưới ghi AI vừa vẽ bao nhiêu màn, liên kết, mất bao lâu; bấm \"Cập nhật\" thì thanh báo đang nhúng ảnh Zeplin (n/tổng) rồi đang tải file lên ticket",
 "Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, Vừa màn hình, Soát luồng)",
 "Sửa xong, thanh dưới hiện \"Có thay đổi chưa lưu\": bấm \"Cập nhật\" để ghi lên ticket, hoặc \"Không\" để giữ trên màn",
 {

@@ -236,6 +236,68 @@ def _props(flow: Flow) -> dict:
     return flow.model_dump(exclude={"rev": True, "screens": {"__all__": {"x", "y"}}})
 
 
+_STR = r'"((?:[^"\\]|\\.)*)"'  # a JSON string written to its closing quote
+TITLE = re.compile(rf'"title"\s*:\s*{_STR}')
+LABEL = re.compile(r'"label"\s*:')
+LINK = re.compile(rf'"src"\s*:\s*{_STR}\s*,\s*"to"\s*:\s*{_STR}')
+LINKS = re.compile(r'"links"\s*:')  # the key, not a "links" id or label
+
+
+def _str(s: str) -> str:
+    try:
+        return json.loads(f'"{s}"')
+    except ValueError:
+        return s
+
+
+class Progress:
+    """The flow JSON as the AI writes it, told once per new screen / link: the dialog's live progress. Each delta is
+    scanned from where the last one stopped (a full-size flow is ~150 KB, written a few characters at a time)."""
+
+    def __init__(self) -> None:
+        self.text, self.screens, self.links, self.items = "", 0, 0, 0
+        self.cut = -1  # where "links" starts: the screens part ends there
+        self._title = self._label = self._link = 0  # where each scan resumes
+        self.names: dict[str, tuple[str, dict[str, str]]] | None = None
+
+    def feed(self, delta: str) -> list[dict]:
+        self.text += delta
+        if self.cut < 0 and (m := LINKS.search(self.text, max(0, len(self.text) - len(delta) - 16))):
+            self.cut = m.start()
+        end = len(self.text) if self.cut < 0 else self.cut
+        for m in LABEL.finditer(self.text, self._label, end):
+            self.items, self._label = self.items + 1, m.end()
+        out = []  # one per screen / link, even when a delta closes several (the dialog lists each one)
+        for m in TITLE.finditer(self.text, self._title, end):
+            self.screens, self._title = self.screens + 1, m.end()
+            out.append({"stage": "draw", "n": self.screens, "title": _str(m[1]), "items": self.items})
+        if self.cut >= 0:
+            for m in LINK.finditer(self.text, max(self._link, self.cut)):
+                self.links, self._link = self.links + 1, m.end()
+                out.append({"stage": "link", "n": self.links, "items": self.items, **self._names(m[1], m[2])})
+        return out
+
+    def _names(self, src: str, to: str) -> dict:
+        """A link in the screens' own words: button "label" on screen "title" → screen "title"."""
+        if self.names is None:  # the screens part is complete once "links" starts: read it once
+            head = self.text[: self.cut]
+            try:
+                raw = json.loads(head[head.index("{") :].rstrip().rstrip(",") + "}")
+                self.names = {
+                    s["id"]: (
+                        s.get("title") or s["id"],
+                        {i["id"]: i.get("label") or i["id"] for i in s.get("items") or []},
+                    )
+                    for s in raw["screens"]
+                }
+            except ValueError, KeyError, TypeError, AttributeError:
+                self.names = {}
+        screen, _, item = _str(src).partition(".")
+        title, labels = self.names.get(screen, (screen, {}))
+        to = _str(to)
+        return {"from": title, "item": labels.get(item, item), "to": self.names[to][0] if to in self.names else to}
+
+
 AI_FLOW = """\
 Từ ticket và story (mô tả, AC, link / tên màn Zeplin) dựng UI flow của app mobile.
 CHỈ trả MỘT JSON, không chữ nào ngoài JSON: {"screens": [...], "links": [...]}.

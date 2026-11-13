@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -20,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from conftest import FakeTransport, msg  # noqa: E402
 
+from telegram_dashboard import uiflow  # noqa: E402
 from telegram_dashboard.ai import AiJobs  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
@@ -154,8 +156,21 @@ async def fake_yt(scope, receive, send) -> bool:
         await body_of(receive)
         control["ai_calls"] += 1
 
-        async def work(_on_text=None):
-            await asyncio.sleep(control["ai_ms"] / 1000)
+        async def work(on_text=None):
+            # the stages the real route tells (ai_flow), spread over ai_ms: the dialog's progress view has data
+            say = (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e})) if on_text else (lambda **e: None)
+            body = json.dumps({"screens": FLOW["screens"], "links": FLOW["links"]}, ensure_ascii=False)
+            steps = [{"stage": "ticket", "id": "VA-1"}, {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
+                     {"stage": "zeplin", "n": 0, "of": 2}, {"stage": "zeplin", "n": 1, "of": 2},
+                     {"stage": "zeplin", "n": 2, "of": 2, "done": True, "texts": 2, "missing": 0},
+                     {"stage": "ai", "deep": False, "chars": 12800, "screens": 2}]
+            seen = uiflow.Progress()
+            steps += [e for i in range(0, len(body), 40) for e in seen.feed(body[i : i + 40])]
+            steps += [{"stage": "check", "chars": len(body)},
+                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]), "links": len(FLOW["links"]), "dropped": 0}]
+            for e in steps:
+                say(**e)
+                await asyncio.sleep(control["ai_ms"] / 1000 / len(steps))
             return {"flow": {**FLOW, "rev": 0}}
 
         job = dict(scope["headers"]).get(b"x-ai-job", b"").decode()

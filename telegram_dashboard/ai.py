@@ -939,10 +939,14 @@ async def _answer_items(work, put) -> None:
 JOB_ID = re.compile(r"^[a-z0-9-]{8,64}$")
 JOB_KEEP = 3600.0  # an ended run waits this long for its page to come back for the answer
 JOB_MAX = 50  # ended runs kept at most; the oldest go first
+# a blank line this often while a run is quiet (the AI thinking for minutes): a proxy cuts a silent stream (`next dev`'s
+# rewrite: 30 s), the page then saw an error while the run went on. Readers skip blank lines.
+HEARTBEAT = 15.0
 
 
 class _Job:
-    def __init__(self) -> None:
+    def __init__(self, key: str = "") -> None:
+        self.key = key
         self.items: list[dict] = []
         self.changed = asyncio.Event()
         self.task: asyncio.Task | None = None
@@ -970,7 +974,10 @@ class _Job:
                     yield json.dumps(item, ensure_ascii=False) + "\n"
                     if "done" in item or "error" in item:
                         return
-                await ev.wait()
+                try:
+                    await asyncio.wait_for(ev.wait(), HEARTBEAT)
+                except TimeoutError:
+                    yield "\n"
 
         return StreamingResponse(lines(), media_type="application/x-ndjson")
 
@@ -986,10 +993,14 @@ class AiJobs:
     def free(self, job_id: str) -> bool:
         return bool(JOB_ID.match(job_id)) and job_id not in self._jobs
 
-    def start(self, job_id: str, work) -> StreamingResponse:
-        """`work(on_text)` in the background (check `free` first); the response streams it like `stream_answer`."""
+    def start(self, job_id: str, work, key: str = "") -> StreamingResponse:
+        """`work(on_text)` in the background (check `free` first); the response streams it like `stream_answer`.
+        `key`: one run at a time for it (a ticket's UI flow): an older run still going is stopped, its CLI killed."""
         self._prune()
-        job = self._jobs[job_id] = _Job()
+        for k, j in self._jobs.items():
+            if key and j.key == key and j.ended is None:
+                self.stop(k)
+        job = self._jobs[job_id] = _Job(key)
 
         async def run():
             client_gone.set(None)  # this task's own context: a page that left doesn't stop it, only `stop`
@@ -1042,7 +1053,11 @@ def stream_answer(work) -> StreamingResponse:
         task = asyncio.create_task(run())
         try:
             while True:
-                item = await q.get()
+                try:
+                    item = await asyncio.wait_for(q.get(), HEARTBEAT)
+                except TimeoutError:
+                    yield "\n"  # see HEARTBEAT
+                    continue
                 yield json.dumps(item, ensure_ascii=False) + "\n"
                 if "done" in item or "error" in item:
                     break

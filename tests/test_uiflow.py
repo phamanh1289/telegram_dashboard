@@ -218,3 +218,37 @@ def test_zeplin_texts_for_the_ai_and_links_as_tickets_write_them():
     assert zeplin.texts([root]) == ["Tiêu đề", "Tìm căn hộ"]
     z = "https://app.zeplin.io/project/6a86b68fa244cff502f98251/screen/6a86b912c7dfad3ef64e765c"
     assert zeplin.canonical(z + "),") == z and zeplin.canonical("https://zpl.io/aB3)\\n|") == "https://zpl.io/aB3"
+
+
+def test_progress_tells_each_screen_and_link_once_as_the_json_streams():
+    import json as _json
+    text = _json.dumps({k: RAW[k][:3] for k in ("screens", "links")}, ensure_ascii=False)
+    p, out = u.Progress(), []
+    for i in range(0, len(text), 7):  # deltas cut anywhere, mid-string included
+        out += p.feed(text[i : i + 7])
+    draw = [e for e in out if e["stage"] == "draw"]
+    link = [e for e in out if e["stage"] == "link"]
+    assert [e["title"] for e in draw] == ["Đăng nhập", "Nhập OTP", "Sai mã"] and draw[-1]["items"] == 2
+    assert [e["n"] for e in link] == [1, 2, 3]
+    assert link[0] == {"stage": "link", "n": 1, "items": 2, "from": "Đăng nhập", "item": "Gửi OTP", "to": "Nhập OTP"}
+    assert link[2]["item"] == "" and link[2]["to"] == "Đăng nhập"  # back: the screen itself, no button
+
+
+def test_progress_cuts_at_the_links_key_not_a_links_value():
+    text = ('{"screens": [{"id": "a", "title": "A", "items": [{"id": "links", "label": "links"}]},'
+            ' {"id": "b", "title": "B", "items": []}], "links": [{"src": "a.links", "to": "b"}]}')
+    p, out = u.Progress(), []
+    for ch in text:
+        out += p.feed(ch)
+    assert [e["title"] for e in out if e["stage"] == "draw"] == ["A", "B"]
+    assert [e for e in out if e["stage"] == "link"] == [
+        {"stage": "link", "n": 1, "items": 1, "from": "A", "item": "links", "to": "B"}]
+
+
+def test_progress_tells_every_screen_and_link_a_big_delta_closes():
+    import json as _json
+
+    text = _json.dumps({k: RAW[k][:3] for k in ("screens", "links")}, ensure_ascii=False)
+    out = u.Progress().feed(text)  # the whole answer in one delta
+    assert [e["title"] for e in out if e["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP", "Sai mã"]
+    assert [e["n"] for e in out if e["stage"] == "link"] == [1, 2, 3]

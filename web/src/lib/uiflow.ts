@@ -112,10 +112,13 @@ function pack(src: string): Promise<string> {
   return p;
 }
 
-/** The images a flow's file embeds ({url: shot with a data URI}) and how many could not be packed (drawn plain). */
-export async function packShots(f: UiFlow, shots: Shots | undefined): Promise<{ shots: Shots; failed: number }> {
+/** The images a flow's file embeds ({url: shot with a data URI}) and how many could not be packed (drawn plain);
+ *  `onEach(done, total)` as each one is packed. */
+export async function packShots(f: UiFlow, shots: Shots | undefined, onEach?: (done: number, total: number) => void): Promise<{ shots: Shots; failed: number }> {
   const urls = zeplinUrls(f).filter((u) => shots?.[u]);
-  const got = await Promise.all(urls.map((u) => pack(shots![u].src).then((src) => (src.length <= PACK_MAX ? src : null), () => null)));
+  let done = 0;
+  const got = await Promise.all(urls.map((u) => pack(shots![u].src).then((src) => (src.length <= PACK_MAX ? src : null), () => null)
+    .finally(() => onEach?.(++done, urls.length))));
   const out: Shots = {};
   urls.forEach((u, i) => { if (got[i]) out[u] = { ...shots![u], src: got[i] }; });
   return { shots: out, failed: urls.length - Object.keys(out).length };
