@@ -950,14 +950,24 @@ FLOW_RAW = """```json
 ```"""
 
 
-async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm"):
+async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None):
+    """`others`: other tickets by id, a detail dict or an error status."""
     me = {"login": "anh", "fullName": "A"}
-    svc = make(lambda req: httpx.Response(200, json=me if req.url.path == "/api/users/me" else {
-        **issue(1), "description": desc, "comments": [], "links": []}))  # fmt: skip
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json=me)
+        o = (others or {}).get(req.url.path.rsplit("/", 1)[1])
+        if isinstance(o, int):
+            return httpx.Response(o, json={"error": "x"})
+        return httpx.Response(200, json=o or {**issue(1), "description": desc, "comments": [], "links": list(links)})
+
+    svc = make(handler)
     agent = FakeAgent(reply)
     app = FastAPI()
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.yt = svc  # link_block reads ticket links with it
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note})
 
@@ -987,12 +997,56 @@ async def test_ai_flow_finds_a_zeplin_link_in_the_links_block(monkeypatch):
     zep = {"command": "npx", "args": ["zeplin-mcp"]}
     monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
 
-    async def block(*_):
+    async def block(*_, **__):
         return "{}", "\n<links>https://zpl.io/abc</links>"
 
     monkeypatch.setattr(yt_dashboard, "_ticket_block", block)
     agent, _ = await _flow_post(FLOW_RAW)
     assert agent.kwargs["zeplin"] == zep
+
+
+STORY_DESC = (  # > 8000 chars; the tree's tail and the Zeplin link past 8000
+    "## AC1\n" + "Chi tiết AC. " * 800
+    + '\nLuồng màn\n├─ "Gửi OTP" → Nhập OTP\nĐUÔI-STORY ([Nhập OTP](https://app.zeplin.io/project/p1/screen/s1))'
+)  # fmt: skip
+SUBTASK = "Làm theo AC1 đến AC4 của story [VA-2](http://yt/issue/VA-2) trên Android"
+PARENT = {"direction": "INWARD", "issues": [{"idReadable": "VA-3", "summary": "story"}],
+          "linkType": {"name": "Subtask", "sourceToTarget": "parent for", "targetToSource": "subtask of"}}  # fmt: skip
+
+
+def story(n, desc=STORY_DESC):
+    return {**issue(n), "description": desc, "comments": [], "links": []}
+
+
+async def test_ai_flow_sends_the_linked_story_in_full(monkeypatch):
+    zep = {"command": "npx", "args": ["zeplin-mcp"]}
+    monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
+    assert len(STORY_DESC) > 8000 and STORY_DESC.index("ĐUÔI-STORY") > 8000
+    agent, r = await _flow_post(FLOW_RAW, desc=SUBTASK, others={"VA-2": story(2)})
+    assert r.json()["flow"] and len(agent.calls) == 1  # no AI summary of the story as a link
+    p = agent.calls[0]
+    body = p.split("</ticket>\n<story>")[1].split("</story>")[0]
+    assert "ĐUÔI-STORY" in body and "https://app.zeplin.io/project/p1/screen/s1" in body and "Luồng màn" in body
+    assert "</story>" in p.split("</ticket>\n<story>")[1].split("<ask>")[0] and "Tóm tắt (AI tạo" not in p
+    assert agent.kwargs["zeplin"] == zep
+
+
+async def test_ai_flow_reads_the_parent_known_only_as_subtask_of():
+    agent, _ = await _flow_post(FLOW_RAW, links=[PARENT], others={"VA-3": story(3, "Story cha ĐUÔI-3")})
+    assert "ĐUÔI-3" in agent.calls[0].split("</ticket>\n<story>")[1]
+
+
+async def test_ai_flow_skips_an_unreadable_story_but_not_a_401():
+    others = {"VA-2": 404, "VA-3": story(3, "ĐUÔI-3")}
+    agent, r = await _flow_post(FLOW_RAW, desc=SUBTASK, links=[PARENT], others=others)
+    p = agent.calls[0]
+    assert r.json()["flow"] and "VA-2: dashboard không đọc được ticket này" in p and "ĐUÔI-3" in p
+    try:
+        await _flow_post(FLOW_RAW, desc=SUBTASK, others={"VA-2": 401})
+    except YtError as e:
+        assert e.status == 401
+    else:
+        raise AssertionError("401 swallowed")
 
 
 async def test_ai_flow_502_on_unreadable_answer():

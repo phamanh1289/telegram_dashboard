@@ -27,7 +27,7 @@ from .ai import ASK_STYLE, TICKET_FORMAT, AiJobs, client_gone, data_json, json_o
 from .config import _read_json, write_private_json
 from .digest import VN
 from .errors import ApiError
-from .links import link_block
+from .links import ISSUE, _ours, link_block
 
 log = logging.getLogger(__name__)
 
@@ -1212,14 +1212,49 @@ def _ticket_json(d: dict, desc: int = 8000, ncom: int = 30, clen: int = 1500, **
     )
 
 
-async def _ticket_block(svc: YouTrackDashboard, request: Request, i: str, links: bool = True) -> tuple[str, str]:
-    """(ticket JSON, KB / ticket / Telegram links in it read for the AI; no web) of ticket `i`."""
+async def _ticket_block(
+    svc: YouTrackDashboard, request: Request, i: str, links: bool = True, *,
+    desc: int = 8000, skip: frozenset[str] = frozenset(),
+) -> tuple[str, str]:  # fmt: skip
+    """(ticket JSON, KB / ticket / Telegram links in it read for the AI; no web) of ticket `i`.
+    `skip`: tickets the prompt already carries in full, not read (nor summarized) again as links."""
     svc.need_token()
     d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
-    ticket = _ticket_json(d)
+    ticket = _ticket_json(d, desc=desc)
     if not links:
         return ticket, ""
-    return ticket, await svc.cached(f"links:{i}", lambda: link_block(request.app.state, ticket, None))
+    text = ISSUE.sub(lambda m: "" if m[2].upper() in skip else m[0], ticket)
+    key = f"links:{i}:{desc}:{','.join(sorted(skip))}"
+    return ticket, await svc.cached(key, lambda: link_block(request.app.state, text, None))
+
+
+STORY_DESC = 30_000  # a story's ACs, "Luồng màn" tree and Zeplin links run long (VA-11840: ~11.6k chars)
+STORY_CHARS = 60_000  # all stories together
+MAX_STORIES = 3
+
+
+async def _stories(svc: YouTrackDashboard, i: str) -> tuple[str, frozenset[str]]:
+    """(<story> blocks, their ids): the tickets ticket `i` belongs to, in full. A platform sub-task only names its part
+    ("AC1 đến AC4 của story VA-…"); the ACs, screen flow and Zeplin links live in the story. Stories: its parent
+    ("subtask of") and our YouTrack's tickets its description links; one level. One that 404s / 403s is noted."""
+    svc.need_token()
+    d = await svc.cached(f"issue:{i}", lambda: svc.detail(i))
+    ids = [t["id"] for x in d["links"] if x["rel"].lower() == "subtask of" for t in x["issues"]]
+    ids += [m[2].upper() for m in ISSUE.finditer(d["description"]) if _ours(svc, m[1])]
+    ids = [s for s in dict.fromkeys(ids) if s != i][:MAX_STORIES]
+    parts, left = [], STORY_CHARS
+    for s in ids:
+        try:
+            j = _ticket_json(await svc.cached(f"issue:{s}", lambda s=s: svc.detail(s)), desc=STORY_DESC)
+        except YtError as e:
+            if e.status not in (403, 404):  # 401 / network: the user must see it
+                raise
+            parts.append(f"<story>{s}: dashboard không đọc được ticket này ({e.status})</story>")
+            continue
+        cut = f"\n(… bị cắt: các story chỉ gửi {STORY_CHARS} ký tự)" if len(j) > left else ""
+        parts.append(f"<story>\n{j[:left]}{cut}\n</story>")
+        left = max(0, left - len(j))
+    return "".join(f"\n{p}" for p in parts), frozenset(ids)
 
 
 async def _whoami(svc: YouTrackDashboard) -> str:
@@ -1736,9 +1771,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def ai_flow(body: AiFlow, request: Request):
         """One AI run turns the ticket (AC, rules, Zeplin links) into UI flow data: cleaned, rev 0, not saved."""
         i = _issue_id(body.id)
-        ticket, links = await _ticket_block(svc, request, i)
-        zep, hint = providers.zeplin_for(f"{ticket}{links}")  # what the prompt carries; none set up: AC only
-        prompt = f"{uiflow.AI_FLOW}{hint}\n<ticket>\n{ticket}\n</ticket>{links}\n<ask>{data_json(body.note)}</ask>"
+        story, ids = await _stories(svc, i)  # full text: a summary drops the tree, the AC ids and the Zeplin links
+        ticket, links = await _ticket_block(svc, request, i, desc=STORY_DESC, skip=ids)
+        zep, hint = providers.zeplin_for(f"{ticket}{story}{links}")  # what the prompt carries; none set up: AC only
+        prompt = (f"{uiflow.AI_FLOW}{hint}\n<ticket>\n{ticket}\n</ticket>{story}{links}"
+                  f"\n<ask>{data_json(body.note)}</ask>")  # fmt: skip
         raw = json_object(await _ai(svc, request, prompt, heavy=True, notes=False, zeplin=zep))
         try:
             flow = uiflow.clean(raw, i)

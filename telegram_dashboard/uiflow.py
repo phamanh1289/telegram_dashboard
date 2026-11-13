@@ -172,12 +172,14 @@ def _props(flow: Flow) -> dict:
 
 
 AI_FLOW = """\
-Từ ticket (mô tả, AC, link / tên màn Zeplin) dựng UI flow của app mobile.
+Từ ticket và story (mô tả, AC, link / tên màn Zeplin) dựng UI flow của app mobile.
 CHỈ trả MỘT JSON, không chữ nào ngoài JSON: {"screens": [...], "links": [...]}.
 screens[]: {"id", "title", "kind", "parent", "zeplin", "ac", "items": [{"id", "label"}]}
 links[]: {"src", "to", "act", "when", "ac"}
 
 Nguồn:
+- `<story>`: story cha của ticket. Ticket thường là sub-task một nền tảng, chỉ nói phần cần vẽ (nền tảng,
+  khoảng AC); AC, cây "Luồng màn", link Zeplin nằm trong story. Chỉ vẽ phần ticket nói, lấy chi tiết từ story.
 - Ticket có khối chữ "Luồng màn" vẽ dạng cây (`├─ "nút" → Màn`) thì đó là nguồn chính cho màn / nút / link;
   AC chỉ bổ sung.
 - Dòng có tiền tố như `[Update 13.11]` thì bản mới hơn thắng. Không bịa màn hay hành động không có trong ticket.
