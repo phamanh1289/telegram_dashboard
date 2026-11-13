@@ -28,7 +28,9 @@
       orphan: "Không có đường nào dẫn tới màn “{s}”", dead: "Nút “{i}” trên màn “{s}” chưa nối tới đâu",
       noback: "Màn “{s}” chưa có đường quay lại", noacScreen: "Màn “{s}” chưa gắn AC",
       noacLink: "Mũi tên “{i}” → “{s}” chưa gắn AC",
-      k_orphan: "Không lối vào", k_dead: "Nút cụt", k_noback: "Thiếu quay lại", k_noac: "Thiếu AC",
+      k_orphan: "Không lối vào", k_dead: "Nút cụt", k_noback: "Thiếu quay lại", k_noac: "Thiếu AC", k_broken: "Dữ liệu hỏng",
+      dupScreen: "Bỏ màn trùng id “{s}”", dupItem: "Bỏ nút trùng id “{i}” trên màn “{s}”",
+      badLinks: "Bỏ {n} liên kết hỏng", badEntries: "Bỏ {n} màn / nút không có id",
     },
     en: {
       map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
@@ -37,7 +39,9 @@
       orphan: "Nothing leads to “{s}”", dead: "“{i}” on “{s}” goes nowhere",
       noback: "“{s}” has no way back", noacScreen: "“{s}” has no AC",
       noacLink: "Arrow “{i}” → “{s}” has no AC",
-      k_orphan: "Unreachable", k_dead: "Dead end", k_noback: "No back", k_noac: "No AC",
+      k_orphan: "Unreachable", k_dead: "Dead end", k_noback: "No back", k_noac: "No AC", k_broken: "Bad data",
+      dupScreen: "Dropped duplicate screen id “{s}”", dupItem: "Dropped duplicate button id “{i}” on “{s}”",
+      badLinks: "Dropped {n} broken links", badEntries: "Dropped {n} screens / buttons without an id",
     },
   };
   /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
@@ -53,33 +57,44 @@
   const num = (v) => (Number.isFinite(v) ? v : null);
   const isOverlay = (s) => s.kind !== "screen";
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-  const uniq = (seen) => (o) => o && typeof o.id === "string" && !seen.has(o.id) && !!seen.add(o.id);
 
-  /** A fresh, well-formed copy: known kinds / acts, string labels, duplicate ids and broken links dropped. */
-  function normalize(raw) {
+  /** A fresh, well-formed copy plus what had to go: {flow, dropped: {screens: [dup id], items: ["s.i"], links: n,
+   *  bad: n}}. Known kinds / acts, string labels; no field is added that the Flow schema doesn't have. */
+  function sanitize(raw) {
     const f = raw && typeof raw === "object" ? raw : {};
-    const screens = (Array.isArray(f.screens) ? f.screens : []).filter(uniq(new Set())).map((s) => ({
-      ...s, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
-      parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
-      zeplin: str(s.zeplin), ac: str(s.ac),
-      items: (Array.isArray(s.items) ? s.items : []).filter(uniq(new Set())).map((it) => ({ ...it, label: str(it.label, it.id) })),
-    }));
+    const dropped = { screens: [], items: [], links: 0, bad: 0 };
+    const seen = new Set(), screens = [];
+    for (const s of Array.isArray(f.screens) ? f.screens : []) {
+      if (!s || typeof s.id !== "string") { dropped.bad++; continue; }
+      if (seen.has(s.id)) { dropped.screens.push(s.id); continue; }
+      seen.add(s.id);
+      const ids = new Set(), items = [];
+      for (const it of Array.isArray(s.items) ? s.items : []) {
+        if (!it || typeof it.id !== "string") { dropped.bad++; continue; }
+        if (ids.has(it.id)) { dropped.items.push(`${s.id}.${it.id}`); continue; }
+        ids.add(it.id);
+        items.push({ ...it, label: str(it.label, it.id) });
+      }
+      screens.push({ ...s, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
+        parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
+        zeplin: str(s.zeplin), ac: str(s.ac), items });
+    }
     const by = new Map(screens.map((s) => [s.id, s]));
     const okSrc = (src) => {
       const s = typeof src === "string" && by.get(scr(src));
       return !!s && (itm(src) === null || s.items.some((it) => it.id === itm(src)));
     };
-    const links = (Array.isArray(f.links) ? f.links : [])
-      .filter((l) => l && okSrc(l.src) && by.has(l.to))
+    const all = Array.isArray(f.links) ? f.links : [];
+    const links = all.filter((l) => l && okSrc(l.src) && by.has(l.to))
       .map((l) => ({ ...l, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
-    return { ...f, screens, links };
+    dropped.links = all.length - links.length;
+    return { flow: { ...f, screens, links }, dropped };
   }
+  const normalize = (raw) => sanitize(raw).flow;
 
-  /** Fills x / y of screens that have none; returns a new flow. Columns = BFS depth over `navigate` links from the
-   *  first screen (unreachable: one last column), rows in order of appearance. Popup / sheet / toast sit 60 / 60
-   *  right-down of their parent (declared, else the screen that opens it) and take no row of their own. */
-  function layout(flow) {
-    const f = normalize(flow);
+  /** id -> the screen an overlay sits on: its declared parent, else the screen whose `open` link targets it; null
+   *  for screens and for overlays nothing opens. One rule for layout and focus. */
+  function parents(f) {
     const by = new Map(f.screens.map((s) => [s.id, s]));
     const parentOf = (s) => {
       if (!isOverlay(s)) return null;
@@ -87,8 +102,31 @@
       const l = f.links.find((l) => l.to === s.id && l.act === "open" && scr(l.src) !== s.id);
       return l ? scr(l.src) : null;
     };
-    const par = new Map(f.screens.map((s) => [s.id, parentOf(s)]));
+    return new Map(f.screens.map((s) => [s.id, parentOf(s)]));
+  }
+
+  /** Fills x / y of screens that have none; returns a new flow. Columns = BFS depth over `navigate` links from the
+   *  first screen (unreachable: one last column), rows in order of appearance. The k-th popup / sheet / toast of a
+   *  parent sits 60·k / 60·k right-down of it; the parent's row and its column grow by that much, so overlays never
+   *  cover another screen. */
+  function layout(flow) {
+    const f = normalize(flow);
+    const by = new Map(f.screens.map((s) => [s.id, s]));
+    const par = parents(f);
     const owner = (id) => { for (let n = 0; par.get(id) && n < 20; n++) id = par.get(id); return id; };
+
+    // overlay offsets: nth among its parent's overlays, cumulated up to the owner screen; room = owner's largest
+    const nth = new Map(), count = new Map(), off = new Map(), room = new Map();
+    for (const s of f.screens) {
+      const p = par.get(s.id);
+      if (p) { count.set(p, (count.get(p) || 0) + 1); nth.set(s.id, count.get(p)); }
+    }
+    const offOf = (id, guard = 0) => {
+      if (!par.get(id) || guard > 20) return 0;
+      if (!off.has(id)) off.set(id, offOf(par.get(id), guard + 1) + SHIFT * nth.get(id));
+      return off.get(id);
+    };
+    for (const s of f.screens) if (par.get(s.id)) room.set(owner(s.id), Math.max(room.get(owner(s.id)) || 0, offOf(s.id)));
 
     const next = new Map();
     for (const l of f.links) {
@@ -106,20 +144,19 @@
         for (const n of next.get(id) || []) if (!depth.has(n)) { depth.set(n, depth.get(id) + 1); q.push(n); }
       }
     }
-    const last = Math.max(-1, ...depth.values()) + 1;
-    const rows = new Map();
-    for (const s of f.screens) {
-      if (par.get(s.id)) continue;
-      const col = depth.get(s.id) ?? last, row = rows.get(col) || 0;
-      rows.set(col, row + 1);
-      if (s.x === null || s.y === null) { s.x = col * COL; s.y = row * ROW; }
+    const last = Math.max(-1, ...depth.values()) + 1, cols = [];
+    for (const s of f.screens) if (!par.get(s.id)) (cols[depth.get(s.id) ?? last] ||= []).push(s);
+    let x = 0;
+    for (const col of cols) {
+      if (!col) continue;
+      let y = 0;
+      for (const s of col) {
+        if (s.x === null || s.y === null) { s.x = x; s.y = y; }
+        y += ROW + (room.get(s.id) || 0);
+      }
+      x += COL + Math.max(...col.map((s) => room.get(s.id) || 0));
     }
 
-    const nth = new Map(), count = new Map();
-    for (const s of f.screens) {
-      const p = par.get(s.id);
-      if (p) { count.set(p, (count.get(p) || 0) + 1); nth.set(s.id, count.get(p)); }
-    }
     const place = (s, guard) => {
       if ((s.x !== null && s.y !== null) || guard > 20) return;
       const p = by.get(par.get(s.id));
@@ -131,10 +168,18 @@
     return f;
   }
 
-  /** Gaps in the flow: [{kind: "orphan" | "dead" | "noback" | "noac", screen, item?, text}]. */
-  function check(flow, lang) {
-    const f = normalize(flow), t = tr(lang), out = [];
-    const first = f.screens[0]?.id;
+  /** Rows for what `sanitize` dropped (kind "broken"); screen set when there is one to go to. */
+  function brokenRows(d, t) {
+    return [
+      ...d.screens.map((id) => ({ kind: "broken", screen: id, text: t("dupScreen", { s: id }) })),
+      ...d.items.map((src) => ({ kind: "broken", screen: scr(src), item: itm(src), text: t("dupItem", { i: itm(src), s: scr(src) }) })),
+      ...(d.links ? [{ kind: "broken", text: t("badLinks", { n: d.links }) }] : []),
+      ...(d.bad ? [{ kind: "broken", text: t("badEntries", { n: d.bad }) }] : []),
+    ];
+  }
+  /** Gaps in a normalized flow: orphan, dead, noback, noac. */
+  function gaps(f, t) {
+    const out = [], first = f.screens[0]?.id;
     const by = new Map(f.screens.map((s) => [s.id, s]));
     const into = new Set(f.links.map((l) => l.to));
     const from = new Set(f.links.map((l) => l.src));
@@ -154,6 +199,11 @@
       out.push({ kind: "noac", screen: s.id, ...(i ? { item: i } : {}), text: t("noacLink", { i: name, s: by.get(l.to).title }) });
     }
     return out;
+  }
+  /** [{kind: "broken" | "orphan" | "dead" | "noback" | "noac", screen?, item?, text}] for a raw flow. */
+  function check(flow, lang) {
+    const { flow: f, dropped } = sanitize(flow), t = tr(lang);
+    return [...brokenRows(dropped, t), ...gaps(f, t)];
   }
 
   // ------------------------------------------------------------------ geometry (pure, canvas units)
@@ -323,7 +373,7 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 .uf-view{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;outline:none}
 .uf-btn:focus-visible,.uf-issue:focus-visible,.uf-zeplin:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
 .uf-view:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-2px}
-.uf-moving .uf-view{cursor:grabbing}
+.uf-view.uf-moving{cursor:grabbing}
 .uf-layer{position:absolute;left:0;top:0;transform-origin:0 0}
 .uf-moving .uf-layer{will-change:transform}
 .uf-play{position:absolute;inset:0;display:none}
@@ -374,7 +424,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-issue:hover{background:var(--uf-soft)}
 .uf-txt{min-width:0;overflow-wrap:anywhere}
 .uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
-.uf-tag-orphan,.uf-tag-dead{background:var(--uf-warn-soft);color:var(--uf-warn)}
+.uf-tag-orphan,.uf-tag-dead,.uf-tag-broken{background:var(--uf-warn-soft);color:var(--uf-warn)}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
 @media (prefers-reduced-motion:reduce){.uf-root *{transition:none!important;animation:none!important}}
 `;
@@ -404,6 +454,138 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     setTimeout(() => URL.revokeObjectURL(a.href), 0);
   }
 
+  // ------------------------------------------------------------------ camera (pan / zoom of one layer)
+  /** Owns the transform of `layer` inside `view` and the gestures that drive it (Figma convention): drag pans, two
+   *  pointers pinch, ctrl / ⌘ + wheel (also a trackpad pinch) zooms around the cursor, plain wheel / two-finger
+   *  scroll pans. One transform write per animation frame; no layout reads while moving. `fit(box)` while the view
+   *  has no size (hidden, not laid out yet) waits and applies once it has one; the latest request wins.
+   *  onTap(target): a press that did not move. reduced: MediaQueryList for prefers-reduced-motion. */
+  function camera(view, layer, { onTap, reduced }) {
+    let cam = { x: 0, y: 0, k: 1 }, rect = view.getBoundingClientRect(), pending = null;
+    let raf = 0, anim = 0, idle = 0, wheel = null;
+    const pts = new Map();
+    let g = null, tapOn = null, moved = false;
+
+    const apply = () => { layer.style.transform = `translate3d(${cam.x}px,${cam.y}px,0) scale(${cam.k})`; };
+    const moving = (on) => view.classList.toggle("uf-moving", on);
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(tick); };
+    function stopAnim() {
+      if (!anim) return;
+      cancelAnimationFrame(anim);
+      anim = 0;
+      moving(false);
+    }
+    function move(to, animate) {
+      stopAnim();
+      if (!animate || reduced.matches) { cam = to; apply(); return; }
+      const from = cam, t0 = performance.now();
+      moving(true);
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / ANIM_MS), e = 1 - (1 - p) ** 3;
+        cam = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, k: from.k + (to.k - from.k) * e };
+        apply();
+        if (p < 1) anim = requestAnimationFrame(step);
+        else { anim = 0; moving(false); }
+      };
+      anim = requestAnimationFrame(step);
+    }
+    function fit(box, animate) {
+      const w = view.clientWidth, h = view.clientHeight;
+      if (!w || !h) { pending = box; return; }
+      pending = null;
+      move(fitCam(box, w, h), animate);
+    }
+    const ro = new ResizeObserver(() => {
+      if (!view.clientWidth || !view.clientHeight) return; // hidden: keep the last real size and camera
+      rect = view.getBoundingClientRect();
+      if (pending) fit(pending, false);
+    });
+    ro.observe(view);
+
+    const at = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    function snap() {
+      const p = [...pts.values()];
+      g = { cam: { ...cam }, p, mid: p[1] && mid(p[0], p[1]), dist: p[1] && (Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1) };
+    }
+    function gestureCam() {
+      const p = [...pts.values()];
+      if (p.length < 2 || !g.mid) return { k: g.cam.k, x: g.cam.x + p[0].x - g.p[0].x, y: g.cam.y + p[0].y - g.p[0].y };
+      const m = mid(p[0], p[1]), k = clamp((g.cam.k * Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)) / g.dist, ZMIN, ZMAX);
+      const wx = (g.mid.x - g.cam.x) / g.cam.k, wy = (g.mid.y - g.cam.y) / g.cam.k;
+      return { k, x: m.x - wx * k, y: m.y - wy * k };
+    }
+    function tick() {
+      raf = 0;
+      if (g && pts.size) cam = gestureCam();
+      if (wheel) {
+        cam = { ...cam, x: cam.x + wheel.dx, y: cam.y + wheel.dy };
+        if (wheel.f !== 1) cam = zoomAt(cam, cam.k * wheel.f, wheel.x, wheel.y);
+        wheel = null;
+      }
+      apply();
+    }
+    const flush = () => { if (raf) { cancelAnimationFrame(raf); tick(); } };
+
+    function onDown(e) {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (e.target.closest("a, button, input, textarea, [contenteditable]")) return;
+      stopAnim();
+      flush();
+      rect = view.getBoundingClientRect();
+      try { view.setPointerCapture(e.pointerId); } catch { /* synthetic or already released pointer */ }
+      pts.set(e.pointerId, at(e));
+      if (pts.size === 1) { tapOn = e.target; moved = false; } else moved = true;
+      snap();
+      moving(true);
+    }
+    function onMove(e) {
+      if (!pts.has(e.pointerId)) return;
+      const p = at(e);
+      pts.set(e.pointerId, p);
+      if (!moved && Math.hypot(p.x - g.p[0].x, p.y - g.p[0].y) > 4) moved = true;
+      schedule();
+    }
+    function onUp(e) {
+      if (!pts.has(e.pointerId)) return;
+      flush();
+      pts.delete(e.pointerId);
+      if (pts.size) return snap();
+      g = null;
+      moving(false);
+      if (!moved && e.type === "pointerup") onTap(tapOn);
+    }
+    function onWheel(e) {
+      e.preventDefault();
+      stopAnim();
+      if (!idle) { rect = view.getBoundingClientRect(); moving(true); } // once per burst: ancestors may have scrolled
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1, p = at(e);
+      wheel ||= { f: 1, x: p.x, y: p.y, dx: 0, dy: 0 };
+      if (e.ctrlKey || e.metaKey) Object.assign(wheel, { f: wheel.f * Math.exp(-clamp(e.deltaY * unit, -50, 50) * 0.01), x: p.x, y: p.y });
+      else { wheel.dx -= e.deltaX * unit; wheel.dy -= e.deltaY * unit; }
+      clearTimeout(idle);
+      idle = setTimeout(() => { idle = 0; if (!pts.size) moving(false); }, 160);
+      schedule();
+    }
+    view.addEventListener("pointerdown", onDown);
+    view.addEventListener("pointermove", onMove);
+    view.addEventListener("pointerup", onUp);
+    view.addEventListener("pointercancel", onUp);
+    view.addEventListener("wheel", onWheel, { passive: false });
+
+    return {
+      get: () => ({ ...cam }),
+      move,
+      fit,
+      destroy() {
+        ro.disconnect();
+        cancelAnimationFrame(raf);
+        stopAnim();
+        clearTimeout(idle);
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ mount
   let mounts = 0;
 
@@ -412,12 +594,11 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     injectStyle();
     const lang = opts.lang || (/^vi/i.test(navigator.language || "") ? "vi" : "en");
     const t = tr(lang), uid = "uf" + ++mounts;
-    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
     // state
-    let cur = layout(flow), base = JSON.stringify(cur), hist = [], issues = [];
+    const first = sanitize(flow);
+    let cur = layout(first.flow), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
     let shown = "map", focusId = null, here = null, editing = false;
-    let cam = { x: 0, y: 0, k: 1 }, vw = 0, vh = 0, rect = null, ready = false;
     let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
 
     // shell
@@ -498,9 +679,9 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     function applyFocus() {
       root.classList.toggle("uf-focus", focusId !== null);
       const near = new Set([focusId]);
-      for (const s of cur.screens) {
-        if (s.parent === focusId) near.add(s.id); // its popups
-        if (s.id === focusId && s.parent) near.add(s.parent); // the screen under it
+      for (const [id, p] of parents(cur)) {
+        if (p === focusId) near.add(id); // its popups
+        if (id === focusId && p) near.add(p); // the screen under it
       }
       for (const m of marks) {
         const on = focusId !== null && (m.a === focusId || m.b === focusId);
@@ -517,14 +698,14 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 
     // flow check panel
     function refreshChecks() {
-      issues = check(cur, lang);
+      issues = [...brokenRows(dropped, t), ...gaps(cur, t)];
       bCheck.textContent = t("check", { n: issues.length });
       if (!panel.hidden) fillPanel();
     }
     function fillPanel() {
       if (!issues.length) return panel.replaceChildren(h("p", "uf-none", t("ok")));
       panel.replaceChildren(...issues.map((it) => {
-        const b = btn(null, "uf-issue", () => { togglePanel(); api.goto(it.screen); });
+        const b = btn(null, "uf-issue", () => { togglePanel(); if (it.screen) api.goto(it.screen); });
         b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
         return b;
       }));
@@ -535,109 +716,20 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       if (!panel.hidden) fillPanel();
     }
 
-    // camera: one transform on one layer; frames coalesced with requestAnimationFrame
-    let raf = 0, anim = 0, idle = 0, wheel = null;
-    const apply = () => { layer.style.transform = `translate3d(${cam.x}px,${cam.y}px,0) scale(${cam.k})`; };
-    const moving = (on) => root.classList.toggle("uf-moving", on);
-    const schedule = () => { if (!raf) raf = requestAnimationFrame(tick); };
-    function stopAnim() {
-      if (!anim) return;
-      cancelAnimationFrame(anim);
-      anim = 0;
-      moving(false);
-    }
-    function moveCam(to, animate) {
-      stopAnim();
-      if (!animate || reduced.matches) { cam = to; apply(); return; }
-      const from = cam, t0 = performance.now();
-      moving(true);
-      const step = (now) => {
-        const p = Math.min(1, (now - t0) / ANIM_MS), e = 1 - (1 - p) ** 3;
-        cam = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, k: from.k + (to.k - from.k) * e };
-        apply();
-        if (p < 1) anim = requestAnimationFrame(step);
-        else { anim = 0; moving(false); }
-      };
-      anim = requestAnimationFrame(step);
-    }
-    const fitAll = () => fitCam(bounds(cur.screens), vw, vh);
-
-    // input: drag to pan, two pointers to pinch, wheel to zoom around the cursor, tap to focus
-    const pts = new Map();
-    let g = null, tapOn = null, moved = false;
-    const at = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    function snap() {
-      const p = [...pts.values()];
-      g = { cam: { ...cam }, p, mid: p[1] && mid(p[0], p[1]), dist: p[1] && (Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1) };
-    }
-    function gestureCam() {
-      const p = [...pts.values()];
-      if (p.length < 2 || !g.mid) return { k: g.cam.k, x: g.cam.x + p[0].x - g.p[0].x, y: g.cam.y + p[0].y - g.p[0].y };
-      const m = mid(p[0], p[1]), k = clamp((g.cam.k * Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)) / g.dist, ZMIN, ZMAX);
-      const wx = (g.mid.x - g.cam.x) / g.cam.k, wy = (g.mid.y - g.cam.y) / g.cam.k;
-      return { k, x: m.x - wx * k, y: m.y - wy * k };
-    }
-    function tick() {
-      raf = 0;
-      if (g && pts.size) cam = gestureCam();
-      if (wheel) { cam = zoomAt(cam, cam.k * wheel.f, wheel.x, wheel.y); wheel = null; }
-      apply();
-    }
-    const flush = () => { if (raf) { cancelAnimationFrame(raf); tick(); } };
-    function onDown(e) {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      if (e.target.closest("a, button, input, textarea, [contenteditable]")) return;
-      stopAnim();
-      flush();
-      rect = view.getBoundingClientRect();
-      view.setPointerCapture(e.pointerId);
-      pts.set(e.pointerId, at(e));
-      if (pts.size === 1) { tapOn = e.target; moved = false; } else moved = true;
-      snap();
-      moving(true);
-    }
-    function onMove(e) {
-      if (!pts.has(e.pointerId)) return;
-      const p = at(e);
-      pts.set(e.pointerId, p);
-      if (!moved && Math.hypot(p.x - g.p[0].x, p.y - g.p[0].y) > 4) moved = true;
-      schedule();
-    }
-    function onUp(e) {
-      if (!pts.has(e.pointerId)) return;
-      flush();
-      pts.delete(e.pointerId);
-      if (pts.size) return snap();
-      g = null;
-      moving(false);
-      if (!moved && e.type === "pointerup") {
-        const f = tapOn?.closest?.(".uf-screen");
+    const cam = camera(view, layer, {
+      reduced: matchMedia("(prefers-reduced-motion: reduce)"),
+      onTap: (target) => {
+        const f = target?.closest?.(".uf-screen");
         setFocus(f && layer.contains(f) ? f.dataset.id : null);
-      }
-    }
-    function onWheel(e) {
-      e.preventDefault();
-      stopAnim();
-      if (!rect) rect = view.getBoundingClientRect();
-      const p = at(e), f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : e.ctrlKey ? 0.01 : 0.0015));
-      wheel = { f: (wheel ? wheel.f : 1) * f, x: p.x, y: p.y };
-      moving(true);
-      clearTimeout(idle);
-      idle = setTimeout(() => pts.size || moving(false), 160);
-      schedule();
-    }
+      },
+    });
+    const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
+
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (!panel.hidden) togglePanel();
       else setFocus(null);
     };
-    view.addEventListener("pointerdown", onDown);
-    view.addEventListener("pointermove", onMove);
-    view.addEventListener("pointerup", onUp);
-    view.addEventListener("pointercancel", onUp);
-    view.addEventListener("wheel", onWheel, { passive: false });
-    view.addEventListener("pointerenter", () => { rect = view.getBoundingClientRect(); });
     root.addEventListener("keydown", onKey);
 
     // hash (#s=<screen>&m=play): read on mount, written only when standalone
@@ -653,36 +745,21 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       if (!s) return;
       here = id;
       setFocus(id);
-      moveCam(fitCam({ x: s.x, y: s.y, w: W, h: H }, vw, vh), animate);
+      cam.fit({ x: s.x, y: s.y, w: W, h: H }, animate);
       writeHash();
     }
-    function start() {
-      ready = true;
-      const hs = readHash();
-      if (hs.s && cur.screens.some((s) => s.id === hs.s)) goto(hs.s, false);
-      else moveCam(fitAll(), false);
-      if (hs.m === "play") api.mode("play");
-    }
-    const measure = () => {
-      vw = view.clientWidth;
-      vh = view.clientHeight;
-      rect = view.getBoundingClientRect();
-      if (!ready && vw && vh) start();
-    };
-    const ro = new ResizeObserver(measure);
-    ro.observe(view);
-
     const ids = (f) => f.screens.map((s) => s.id).join("\n");
     const api = {
       get: () => structuredClone(cur),
       /** Replace the flow and treat it as clean; refit only when the set of screens changed. */
       set(f) {
         const before = ids(cur);
-        cur = layout(f);
+        ({ flow: cur, dropped } = sanitize(f));
+        cur = layout(cur);
         base = JSON.stringify(cur);
         hist = [];
         render();
-        if (ready && ids(cur) !== before) moveCam(fitAll(), false);
+        if (ids(cur) !== before) fitAll(false);
       },
       mode(m) {
         if (m !== "map" && m !== "play") return;
@@ -693,7 +770,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
         writeHash();
       },
       goto: (id) => goto(id, true),
-      fit: () => moveCam(fitAll(), true),
+      fit: () => fitAll(true),
       /** Steps back through `hist` (snapshots pushed by edits, Task 7). */
       undo() {
         if (!hist.length) return;
@@ -702,17 +779,17 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
         opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
       },
       destroy() {
-        ro.disconnect();
-        cancelAnimationFrame(raf);
-        stopAnim();
-        clearTimeout(idle);
+        cam.destroy(); // window-level listeners added later (beforeunload) must be removed here too
         host.replaceChildren();
       },
     };
 
     render();
     api.mode("map");
-    measure();
+    const hs = readHash(); // a goto() before the view has a size replaces this pending camera
+    if (hs.s && frames.has(hs.s)) goto(hs.s, false);
+    else fitAll(false);
+    if (hs.m === "play") api.mode("play");
     return api;
   }
 

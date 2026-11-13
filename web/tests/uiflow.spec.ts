@@ -8,12 +8,13 @@ type Screen = { id: string; title: string; kind: string; parent: string | null; 
   zeplin: string; ac: string; items: Item[] };
 type Link = { src: string; to: string; act: string; when: string; ac: string };
 type Flow = { v: 1; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[] };
-type Issue = { kind: string; screen: string; item?: string; text: string };
+type Issue = { kind: string; screen?: string; item?: string; text: string };
+type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void };
 declare global {
   interface Window {
-    UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[] };
+    UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; mount(el: Element, f: Flow, o: object): Api };
     SAMPLE: Flow;
-    __api: { get(): Flow; set(f: Flow): void };
+    __api: Api;
   }
 }
 
@@ -21,6 +22,13 @@ const FIXTURE = pathToFileURL(path.join(__dirname, "uiflow-fixture.html")).href;
 const open = (page: Page, hash = "") => page.goto(FIXTURE + hash);
 const box = async (page: Page, sel: string) => (await page.locator(sel).first().boundingBox())!;
 const centre = (b: { x: number; y: number; width: number; height: number }) => [b.x + b.width / 2, b.y + b.height / 2];
+/** Distance between the centre of a screen frame and the centre of the canvas view. */
+const offCentre = async (page: Page, id: string) => {
+  const [sx, sy] = centre(await box(page, `.uf-screen[data-id="${id}"]`));
+  const [vx, vy] = centre(await box(page, ".uf-view"));
+  return Math.max(Math.abs(sx - vx), Math.abs(sy - vy));
+};
+const layerTransform = (page: Page) => page.locator(".uf-layer").evaluate((l) => (l as HTMLElement).style.transform);
 
 /** n screens in a chain with long Vietnamese / emoji labels, plus `extra` links so the map gets dense. */
 function bigFlow(n: number, extra = 0): Flow {
@@ -40,7 +48,7 @@ test("layout puts screens in columns by depth and popups beside their parent", a
   const f = await page.evaluate(() => window.UIFlow.layout(window.SAMPLE));
   const by = Object.fromEntries(f.screens.map((s) => [s.id, s]));
   expect(by.code.x! - by.login.x!).toBe(610);
-  expect(by.home.x! - by.code.x!).toBe(610);
+  expect(by.home.x! - by.code.x!).toBe(670); // code's column grows by the 60 its popup sticks out
   expect([by.err.x! - by.code.x!, by.err.y! - by.code.y!]).toEqual([60, 60]);
   expect(await page.evaluate(() => window.SAMPLE.screens[0].x ?? null)).toBeNull(); // not modified in place
 });
@@ -143,7 +151,7 @@ test("clicking a screen dims the unrelated ones, clicking the canvas clears it",
   await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
 });
 
-test("60 screens / 300 links: drag pans and wheel zooms around the cursor without redrawing", async ({ page }) => {
+test("60 screens / 300 links: drag pans and ctrl + wheel zooms around the cursor without redrawing", async ({ page }) => {
   await open(page);
   const t0 = await page.evaluate((f) => { const t = performance.now(); window.__api.set(f); return performance.now() - t; },
     bigFlow(60, 241));
@@ -165,7 +173,9 @@ test("60 screens / 300 links: drag pans and wheel zooms around the cursor withou
   // zoom in around a point: the distance from it to the frame scales with the frame
   const [px, py] = [view.x + view.width / 2, view.y + view.height / 2];
   await page.mouse.move(px, py);
+  await page.keyboard.down("Control"); // ctrl / ⌘ + wheel zooms (a trackpad pinch arrives the same way)
   await page.mouse.wheel(0, -300);
+  await page.keyboard.up("Control");
   await expect.poll(async () => (await box(page, '.uf-screen[data-id="s0"]')).width).toBeGreaterThan(b.width * 1.2);
   const c = await box(page, '.uf-screen[data-id="s0"]');
   const f = c.width / b.width;
@@ -175,4 +185,134 @@ test("60 screens / 300 links: drag pans and wheel zooms around the cursor withou
   // same DOM nodes: pan / zoom only touched the layer transform
   expect(await page.evaluate(() => [...document.querySelectorAll("path.uf-link, .uf-screen")]
     .every((n) => (n as Element & { __k?: 1 }).__k === 1))).toBe(true);
+});
+
+test("plain wheel / two-finger scroll pans instead of zooming", async ({ page }) => {
+  await open(page);
+  const a = await box(page, '.uf-screen[data-id="login"]');
+  const view = await box(page, ".uf-view");
+  await page.mouse.move(view.x + 10, view.y + 10);
+  await page.mouse.wheel(30, 40);
+  await expect.poll(async () => (await box(page, '.uf-screen[data-id="login"]')).y - a.y).toBeCloseTo(-40, 0);
+  const b = await box(page, '.uf-screen[data-id="login"]');
+  expect(b.x - a.x).toBeCloseTo(-30, 0);
+  expect(b.width).toBeCloseTo(a.width, 1);
+});
+
+test("two touch pointers pinch-zoom around their midpoint", async ({ page }) => {
+  await open(page);
+  const view = await box(page, ".uf-view");
+  const a = await box(page, '.uf-screen[data-id="code"]');
+  const [mx, my] = [view.x + view.width / 2, view.y + view.height / 2];
+  await page.locator(".uf-view").evaluate((v, [mx, my]) => {
+    const ev = (type: string, id: number, x: number, y: number) => v.dispatchEvent(new PointerEvent(type,
+      { pointerId: id, pointerType: "touch", clientX: x, clientY: y, bubbles: true, isPrimary: id === 1 }));
+    ev("pointerdown", 1, mx - 50, my);
+    ev("pointerdown", 2, mx + 50, my);
+    ev("pointermove", 1, mx - 100, my);
+    ev("pointermove", 2, mx + 100, my);
+    ev("pointerup", 1, mx - 100, my);
+    ev("pointerup", 2, mx + 100, my);
+  }, [mx, my]);
+  const b = await box(page, '.uf-screen[data-id="code"]');
+  expect(b.width / a.width).toBeCloseTo(2, 1);
+  expect(b.x - mx).toBeCloseTo((a.x - mx) * 2, 0);
+});
+
+test("reduced motion: fit and goto jump at once", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page);
+  const before = await layerTransform(page);
+  const [now, later] = await page.evaluate(async () => {
+    window.__api.goto("home");
+    const l = document.querySelector<HTMLElement>(".uf-layer")!;
+    const now = l.style.transform;
+    await new Promise((r) => setTimeout(r, 300));
+    return [now, l.style.transform];
+  });
+  expect(now).not.toBe(before);
+  expect(now).toBe(later);
+});
+
+test("Esc clears the focus", async ({ page }) => {
+  await open(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-focus/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
+});
+
+test("goto from the check panel while in Prototype is applied when Map is shown again", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await page.locator(".uf-issue", { hasText: "Đăng xuất" }).click();
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  await expect.poll(() => offCentre(page, "home")).toBeLessThan(2);
+});
+
+test("goto right after mounting into a hidden host wins over the initial fit", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.id = "late";
+    host.style.cssText = "position:fixed;inset:0;display:none";
+    document.body.append(host);
+    window.__api = window.UIFlow.mount(host, window.SAMPLE, { lang: "vi" });
+    window.__api.goto("home");
+    host.style.display = "block";
+  });
+  await expect.poll(async () => {
+    const [sx, sy] = centre(await box(page, '#late .uf-screen[data-id="home"]'));
+    const [vx, vy] = centre(await box(page, "#late .uf-view"));
+    return Math.max(Math.abs(sx - vx), Math.abs(sy - vy));
+  }).toBeLessThan(2);
+});
+
+test("dropped data shows in the check panel; get() keeps the Flow shape", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE);
+    f.screens.push({ ...f.screens[0] }); // duplicate id "login"
+    f.links.push({ src: "code.ok", to: "ghost", act: "navigate", when: "", ac: "AC-1" });
+    f.links.push({ src: "nope.x", to: "code", act: "navigate", when: "", ac: "AC-1" });
+    window.__api.set(f);
+  });
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await expect(page.locator(".uf-issue", { hasText: "Bỏ 2 liên kết hỏng" })).toHaveCount(1);
+  await expect(page.locator(".uf-issue", { hasText: "Bỏ màn trùng id “login”" })).toHaveCount(1);
+  const keys = await page.evaluate(() => {
+    const f = window.__api.get();
+    return [Object.keys(f), ...f.screens.map(Object.keys), ...f.screens.flatMap((s) => s.items.map(Object.keys)), ...f.links.map(Object.keys)];
+  });
+  const allowed = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
+    "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
+  expect(keys.flat().filter((k) => !allowed.has(k))).toEqual([]);
+});
+
+test("a parent with 3 overlays: no frame overlaps a frame of another family", async ({ page }) => {
+  await open(page);
+  const f = await page.evaluate(() => window.UIFlow.layout({
+    v: 1, ticket: "VA-3", rev: 0, device: "mobile",
+    screens: [
+      { id: "a", title: "A", kind: "screen", parent: null, zeplin: "", ac: "", items: [{ id: "b", label: "B" }, { id: "c", label: "C" }] },
+      { id: "b", title: "B", kind: "screen", parent: null, zeplin: "", ac: "", items: [{ id: "d", label: "D" }] },
+      { id: "p1", title: "P1", kind: "popup", parent: "b", zeplin: "", ac: "", items: [] },
+      { id: "p2", title: "P2", kind: "sheet", parent: "b", zeplin: "", ac: "", items: [] },
+      { id: "p3", title: "P3", kind: "toast", parent: "b", zeplin: "", ac: "", items: [] },
+      { id: "c", title: "C", kind: "screen", parent: null, zeplin: "", ac: "", items: [] },
+      { id: "d", title: "D", kind: "screen", parent: null, zeplin: "", ac: "", items: [] },
+    ],
+    links: [
+      { src: "a.b", to: "b", act: "navigate", when: "", ac: "" },
+      { src: "a.c", to: "c", act: "navigate", when: "", ac: "" },
+      { src: "b.d", to: "d", act: "navigate", when: "", ac: "" },
+    ],
+  }));
+  const by = Object.fromEntries(f.screens.map((s) => [s.id, s]));
+  expect([by.p3.x! - by.b.x!, by.p3.y! - by.b.y!]).toEqual([180, 180]);
+  const fam = (s: Screen) => s.parent ?? s.id;
+  const hit = (a: Screen, b: Screen) => a.x! < b.x! + 390 && b.x! < a.x! + 390 && a.y! < b.y! + 844 && b.y! < a.y! + 844;
+  const clashes = f.screens.flatMap((a) => f.screens.filter((b) => a.id < b.id && fam(a) !== fam(b) && hit(a, b)).map((b) => `${a.id}/${b.id}`));
+  expect(clashes).toEqual([]);
 });
