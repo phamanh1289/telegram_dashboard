@@ -115,3 +115,13 @@ def test_clean_truncates_long_strings_and_extra_items_instead_of_rejecting():
     s = f.screens[0]
     assert (len(s.title), len(s.ac), len(s.items), len(s.items[0].label), s.parent) == (80, 40, 20, 80, None)
     assert len(f.links) == u.MAX_LINKS and len(f.links[0].when) == 80
+
+
+def test_malformed_shapes_raise_value_error_and_extract_returns_none():
+    ok = RAW["screens"][:1]
+    for bad in ({"screens": ["x"], "links": []}, {"screens": ok, "links": {"a": 1}},
+                {"screens": [{"id": "a", "title": "A", "items": ["x"]}], "links": []}, []):
+        with pytest.raises(ValueError):
+            u.clean(bad, "VA-1")
+    html = '<script type="application/json" id="uiflow-data">{"screens":["x"],"links":[],"ticket":"T"}</script>'
+    assert u.extract(html) is None

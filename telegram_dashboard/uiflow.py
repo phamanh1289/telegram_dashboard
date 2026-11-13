@@ -74,7 +74,11 @@ def _trim(raw: dict) -> dict:
 
 def clean(raw: dict, ticket: str) -> Flow:
     """Kiểm schema, bỏ phần hỏng (nút trùng, link mất nguồn / đích, parent lạ); ValueError nếu không dùng được."""
-    flow = Flow.model_validate({**_trim(raw), "ticket": ticket})
+    try:
+        trimmed = _trim(raw)
+    except (AttributeError, TypeError, KeyError) as e:  # hình dạng sai (màn không phải object, links không phải list…)
+        raise ValueError("UI flow sai định dạng") from e
+    flow = Flow.model_validate({**trimmed, "ticket": ticket})
     ids = [s.id for s in flow.screens]
     if not ids or len(set(ids)) != len(ids):
         raise ValueError("UI flow cần ≥1 màn, id màn không trùng")
