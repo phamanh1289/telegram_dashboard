@@ -1,7 +1,8 @@
 """YouTrack dashboard API (/api/yt/*): a thin proxy with a short TTL cache.
 
 Reuses YOUTRACK_URL / YOUTRACK_TOKEN. Without a token the endpoints answer empty so the UI can
-explain what to configure. Writes: the assignee of one ticket, a comment the user typed.
+explain what to configure. Writes: the assignee of one ticket, a comment the user typed, a ticket's UI flow
+(an attachment, see uiflow.py).
 AI (/api/yt/ai/*): one `claude -p` run per click, text back only; it never writes to YouTrack.
 Also `whoami` (check a pasted token) and `create_issue` (a ticket from a tagged message).
 """
@@ -20,7 +21,7 @@ from fastapi import APIRouter, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from . import providers, telegram
+from . import providers, telegram, uiflow
 from .agent import read_task_result, task_result_path
 from .ai import ASK_STYLE, TICKET_FORMAT, AiJobs, client_gone, data_json, json_object, parse_ticket, stream_answer
 from .config import _read_json, write_private_json
@@ -74,6 +75,12 @@ class Assignee(BaseModel):
 class Comment(BaseModel):
     id: str
     text: str = Field(min_length=1, max_length=20000)
+
+
+class FlowSave(BaseModel):
+    id: str
+    flow: dict
+    base: str | None = None  # attachment id of the version the user opened (None: there was none)
 
 
 class FieldSet(BaseModel):
@@ -616,9 +623,10 @@ class YouTrackDashboard:
             )
         return self._client
 
-    async def yt(self, path: str, *, post: dict | None = None, **params):
+    async def _call(self, method: str, path: str, **kw) -> httpx.Response:
+        """One REST call; network and HTTP errors become a YtError the UI can show."""
         try:
-            r = await self._http().request("POST" if post is not None else "GET", path, params=params, json=post)
+            r = await self._http().request(method, path, **kw)
         except httpx.HTTPError:
             raise YtError(502, "Không kết nối được YouTrack") from None
         if r.status_code >= 400:
@@ -628,10 +636,17 @@ class YouTrackDashboard:
                 404: "ticket not found" if path.startswith("/api/issues/") else f"Không thấy trên YouTrack: {path}",
             }.get(r.status_code, f"YouTrack {r.status_code}: {r.text[:200]}")
             raise YtError(r.status_code if r.status_code in (400, 401, 403, 404) else 502, msg)
+        return r
+
+    @staticmethod
+    def _json(r: httpx.Response):
         try:
             return r.json()
         except ValueError:  # a redirect / SSO login page: the URL is wrong, not the ticket
             raise YtError(502, "YouTrack trả về không phải JSON — kiểm tra URL YouTrack trong Cài đặt") from None
+
+    async def yt(self, path: str, *, post: dict | None = None, **params):
+        return self._json(await self._call("POST" if post is not None else "GET", path, params=params, json=post))
 
     async def watch(self, db, notify) -> None:
         """Background rounds, page open or not: a banner for an open ticket newly given to me (`notify`, None = no
@@ -741,17 +756,35 @@ class YouTrackDashboard:
             if r["resolved"] or FINISHED.match(r["state"] or ""):
                 await db.write(db.store.wake_ticket, i)
 
-    async def attach(self, issue: str, path) -> None:
-        """Upload one file to a ticket's attachments."""
+    async def upload(self, issue: str, name: str, data: bytes, *, mime: str) -> str:
+        """Add one file to a ticket's attachments; its new id."""
+        path = f"/api/issues/{issue}/attachments"
+        d = self._json(await self._call("POST", path, params={"fields": "id"}, files={"upload": (name, data, mime)}))
         try:
-            r = await self._http().post(
-                f"/api/issues/{issue}/attachments", params={"fields": "id"},
-                files={"upload": (path.name, path.read_bytes(), "image/jpeg")},
-            )  # fmt: skip
-        except httpx.HTTPError:
-            raise YtError(502, "Không kết nối được YouTrack") from None
-        if r.status_code >= 400:
-            raise YtError(502, f"YouTrack {r.status_code}: {r.text[:200]}")
+            return (d[0] if isinstance(d, list) else d)["id"]  # YouTrack answers the list of files it added
+        except LookupError, TypeError:
+            raise YtError(502, "YouTrack không trả id tệp vừa tải lên") from None
+
+    async def attach(self, issue: str, path) -> None:
+        """Upload one photo to a ticket's attachments."""
+        await self.upload(issue, path.name, path.read_bytes(), mime="image/jpeg")
+
+    async def detach(self, issue: str, att: str) -> None:
+        await self._call("DELETE", f"/api/issues/{issue}/attachments/{att}")
+
+    async def comment(self, issue: str, text: str) -> None:
+        await self.yt(f"/api/issues/{issue}/comments", post={"text": text}, fields="id")
+
+    async def flow_file(self, issue: str) -> tuple[str, uiflow.Flow | None] | None:
+        """(attachment id, flow) of the ticket's newest uiflow-<issue>.html; flow None when it is not ours / broken.
+        None when the ticket has no such file."""
+        d = await self.yt(f"/api/issues/{issue}", fields="attachments(id,name,created,removed,size,url)")
+        name = uiflow.NAME.format(issue=issue)
+        mine = [a for a in d.get("attachments") or [] if a.get("name") == name and not a.get("removed")]
+        if not mine:
+            return None
+        a = max(mine, key=lambda a: (a.get("created") or 0, a["id"]))
+        return a["id"], uiflow.extract((await self._bytes(a)).decode("utf-8", "replace"))
 
     def need_token(self) -> None:
         """A write / detail read without a token: say where to paste one (lists just come back empty)."""
@@ -964,6 +997,18 @@ class YouTrackDashboard:
         """One attachment's bytes, fetched with the token (the browser has none)."""
         path = f"/api/issues/{issue_id}/attachments/{att}"
         a = await self.yt(path, fields="url,mimeType,name,size")
+        content = await self._bytes(a)
+        mime = a.get("mimeType") or "application/octet-stream"
+        show = mime.startswith("image/") and mime != "image/svg+xml"  # svg may hold script
+        name = quote(a.get("name") or "file")
+        return Response(content, media_type=mime, headers={
+            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+            "Content-Disposition": f"{'inline' if show else 'attachment'}; filename*=UTF-8''{name}",
+        })  # fmt: skip
+
+    async def _bytes(self, a: dict) -> bytes:
+        """An attachment's content from its {url, size}: only on the YouTrack host, at most MAX_FILE."""
         if (a.get("size") or 0) > MAX_FILE:
             raise YtError(413, "Tệp quá lớn để xem trong dashboard — mở trên YouTrack")
         url = urljoin(self.base + "/", a.get("url") or "")  # a path from the host root
@@ -975,14 +1020,7 @@ class YouTrackDashboard:
             raise YtError(502, "Không kết nối được YouTrack") from None
         if r.status_code >= 400:
             raise YtError(502, f"YouTrack {r.status_code} khi tải tệp")
-        mime = a.get("mimeType") or "application/octet-stream"
-        show = mime.startswith("image/") and mime != "image/svg+xml"  # svg may hold script
-        name = quote(a.get("name") or "file")
-        return Response(r.content, media_type=mime, headers={
-            "Cache-Control": "private, max-age=86400", "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy": "sandbox",
-            "Content-Disposition": f"{'inline' if show else 'attachment'}; filename*=UTF-8''{name}",
-        })  # fmt: skip
+        return r.content
 
     async def state_since(self, issue_id: str, updated: str) -> int:
         """Latest State change in the activity log (0 = never changed). Cached per id@updated."""
@@ -1369,9 +1407,62 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     async def comment(body: Comment):
         i = _issue_id(body.id)
         svc.need_token()
-        await svc.yt(f"/api/issues/{i}/comments", post={"text": body.text}, fields="id")
+        await svc.comment(i, body.text)
         svc.stale(i)
         return {"ok": True}
+
+    @r.get("/flow")
+    async def get_flow(issue: str = Query()):
+        i = _issue_id(issue)
+        svc.need_token()
+        cur = await svc.flow_file(i)
+        if cur is None:
+            return {"att": None, "flow": None, "broken": False}
+        att, flow = cur
+        return {"att": att, "flow": flow and flow.model_dump(), "broken": flow is None}
+
+    flow_lock = asyncio.Lock()  # ponytail: one for every ticket, saves are rare; other users still race on YouTrack
+
+    @r.post("/flow")
+    async def save_flow(body: FlowSave, request: Request):
+        """Save the ticket's UI flow as a new attachment, only over the version the user opened (409 otherwise);
+        then drop the old file and comment what changed. Those two steps failing only warn: the new file is in."""
+        i = _issue_id(body.id)
+        try:
+            new = uiflow.clean(body.flow, i)
+        except ValueError:
+            raise YtError(400, "UI flow không hợp lệ") from None
+        svc.need_token()
+        async with flow_lock:
+            cur = await svc.flow_file(i)
+            old_id, old = cur if cur else (None, None)
+            if old_id != body.base:
+                raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
+            ch = uiflow.changes(old, new)
+            if not ch:
+                raise YtError(400, "Không có thay đổi")
+            new.rev = (old.rev if old else 0) + 1
+            try:
+                engine = (request.app.state.settings.static_dir / "uiflow.js").read_text(encoding="utf-8")
+            except OSError:
+                raise YtError(503, "Thiếu uiflow.js — build lại web") from None
+            name = uiflow.NAME.format(issue=i)
+            att = await svc.upload(i, name, uiflow.build_html(new, engine).encode(), mime="text/html")
+            warn = []
+            if old_id:
+                try:
+                    await svc.detach(i, old_id)
+                except YtError as e:
+                    warn.append(f"chưa xoá được file cũ: {e.message}")
+            head = f"UI flow {'mới' if new.rev == 1 else 'cập nhật'} (rev {new.rev}) — tệp đính kèm {name}"
+            more = [f"- … và {len(ch) - 20} thay đổi khác"] if len(ch) > 20 else []
+            try:
+                await svc.comment(i, "\n".join([head, *(f"- {c}" for c in ch[:20]), *more]))
+            except YtError as e:
+                warn.append(f"chưa post được comment: {e.message}")
+            svc.stale(i)
+        return {"att": att, "rev": new.rev, "changes": ch,
+                "warn": f"Đã tải bản mới nhưng {'; '.join(warn)}" if warn else ""}  # fmt: skip
 
     @r.get("/fields")
     async def fields(project: str):

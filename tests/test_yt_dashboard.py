@@ -11,6 +11,7 @@ from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from telegram_dashboard import uiflow
 from telegram_dashboard.config import Settings
 from telegram_dashboard.yt_dashboard import (
     DEV_FLOW,
@@ -683,3 +684,189 @@ async def test_watch_queues_bao_lai_and_wakes_ticket_snoozes(tmp_path):
     await svc.wake_snoozes(db)
     assert st.get_message("c1", 4).snoozed_until is None
     await svc.aclose()
+
+
+FLOW = {"screens": [
+    {"id": "login", "title": "Đăng nhập", "items": [{"id": "otp", "label": "Gửi OTP"}]},
+    {"id": "code", "title": "Nhập OTP", "items": []},
+    {"id": "home", "title": "Trang chủ", "items": []},
+], "links": [{"src": "login.otp", "to": "code"}]}  # fmt: skip
+
+
+def flow_html(rev: int, raw: dict = FLOW) -> str:
+    f = uiflow.clean(raw, "VA-1")
+    f.rev = rev
+    return uiflow.build_html(f, "/*engine*/")
+
+
+class FakeYt:
+    """One ticket VA-1 with `files` ({id, name, created, removed?, body}); records every write."""
+
+    def __init__(self, files: list[dict], fail: dict | None = None):
+        self.files, self.fail, self.writes = files, fail or {}, []
+        self.upload = self.comment = None
+
+    def __call__(self, req):
+        m, p = req.method, req.url.path
+        if m != "GET":
+            self.writes.append((m, p))
+        if (m, p) in self.fail:
+            return httpx.Response(self.fail[m, p], text="no")
+        if p == "/api/issues/VA-1":
+            keep = ("id", "name", "created", "removed")
+            atts = [{k: f[k] for k in keep if k in f} | {"size": 9, "url": f"/files/{f['id']}"} for f in self.files]
+            return httpx.Response(200, json={"attachments": atts})
+        if p.startswith("/files/"):
+            return httpx.Response(200, text=next(f["body"] for f in self.files if f["id"] == p[7:]))
+        if p == "/api/issues/VA-1/attachments":
+            self.upload = req.content
+            return httpx.Response(200, json=[{"id": "1-9"}])
+        if p == "/api/issues/VA-1/comments":
+            self.comment = json.loads(req.content)["text"]
+            return httpx.Response(200, json={"id": "c"})
+        return httpx.Response(200)  # DELETE
+
+
+def flow_app(yt: FakeYt, tmp_path) -> tuple[httpx.AsyncClient, YouTrackDashboard]:
+    (tmp_path / "uiflow.js").write_text("/*engine*/")
+    svc = make(yt)
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.settings = types.SimpleNamespace(static_dir=tmp_path)
+    app.exception_handler(YtError)(lambda _, e: JSONResponse({"error": e.message}, status_code=e.status))
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t"), svc
+
+
+def moved(raw: dict = FLOW) -> dict:
+    """The same flow with "Gửi OTP" now going to Trang chủ."""
+    return {**raw, "links": [{"src": "login.otp", "to": "home"}]}
+
+
+async def test_flow_save_uploads_then_deletes_old_then_comments(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+    c, svc = flow_app(yt, tmp_path)
+    svc._cache["issue:VA-1"] = (time.monotonic(), {})
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    out = r.json()
+    assert r.status_code == 200, out
+    assert yt.writes == [("POST", "/api/issues/VA-1/attachments"),
+                         ("DELETE", "/api/issues/VA-1/attachments/1-1"),
+                         ("POST", "/api/issues/VA-1/comments")]  # fmt: skip
+    assert (out["att"], out["rev"], out["warn"]) == ("1-9", 3, "")
+    assert yt.comment.startswith("UI flow cập nhật (rev 3) — tệp đính kèm uiflow-VA-1.html")
+    assert out["changes"] == ['"Gửi OTP" (Đăng nhập): "Nhập OTP" → "Trang chủ"']
+    assert '- "Gửi OTP" (Đăng nhập)' in yt.comment
+    assert b'filename="uiflow-VA-1.html"' in yt.upload and b"Content-Type: text/html" in yt.upload
+    assert uiflow.extract(yt.upload.decode()).rev == 3
+    assert "issue:VA-1" not in svc._cache  # svc.stale after the write
+
+
+async def test_flow_save_conflict_writes_nothing(tmp_path):
+    yt = FakeYt([{"id": "1-2", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+        assert r.status_code == 409 and "người khác" in r.json()["error"] and yt.writes == []
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved()})  # opened before the file existed
+        assert r.status_code == 409 and yt.writes == []
+
+
+async def test_flow_save_first_time_has_no_delete(tmp_path):
+    yt = FakeYt([{"id": "1-5", "name": "spec.html", "created": 9, "body": "x"}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": None})
+    assert r.status_code == 200 and r.json()["rev"] == 1
+    assert [m for m, _ in yt.writes] == ["POST", "POST"]
+    assert yt.comment.startswith("UI flow mới (rev 1) — tệp đính kèm uiflow-VA-1.html\n- Tạo UI flow: 3 màn")
+
+
+async def test_flow_save_keeps_new_file_when_delete_or_comment_fails(tmp_path):
+    files = [{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}]
+    yt = FakeYt(files, {("DELETE", "/api/issues/VA-1/attachments/1-1"): 403})
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 200 and "chưa xoá được file cũ" in r.json()["warn"]
+    assert yt.writes[-1] == ("POST", "/api/issues/VA-1/comments")  # the comment still goes
+    yt = FakeYt(files, {("POST", "/api/issues/VA-1/comments"): 500})
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 200 and "chưa post được comment" in r.json()["warn"]
+    assert "xoá" not in r.json()["warn"]
+
+
+async def test_flow_save_comment_lists_at_most_20_changes(tmp_path):
+    many = {"screens": [{"id": f"s{i}", "title": f"M{i}", "items": []} for i in range(25)], "links": []}
+    renamed = {**many, "screens": [{**s, "title": s["title"] + "x"} for s in many["screens"]]}
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(1, many)}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": renamed, "base": "1-1"})
+    assert r.status_code == 200 and len(r.json()["changes"]) == 25
+    lines = yt.comment.splitlines()
+    assert len(lines) == 22 and lines[-1] == "- … và 5 thay đổi khác"
+
+
+async def test_flow_get_reads_only_our_file_and_flags_broken(tmp_path):
+    yt = FakeYt([{"id": "1-2", "name": "spec.html", "created": 9, "body": flow_html(4)},
+                 {"id": "1-3", "name": "uiflow-VA-1.html", "created": 5, "body": "<html>broken"}])  # fmt: skip
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
+        assert r.json() == {"att": "1-3", "flow": None, "broken": True}
+        yt.files = [yt.files[0]]
+        r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
+        assert r.json() == {"att": None, "flow": None, "broken": False}
+        yt.files = [
+            {"id": "1-4", "name": "uiflow-VA-1.html", "created": 3, "body": flow_html(1)},
+            {"id": "1-5", "name": "uiflow-VA-1.html", "created": 7, "body": flow_html(2)},
+            {"id": "1-6", "name": "uiflow-VA-1.html", "created": 9, "removed": True, "body": flow_html(3)},
+        ]
+        r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
+        out = r.json()
+        assert (out["att"], out["flow"]["rev"], out["broken"]) == ("1-5", 2, False)
+    assert yt.writes == []
+
+
+async def test_flow_save_rejects_no_change_and_bad_flow(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": "1-1"})
+        assert r.status_code == 400 and r.json()["error"] == "Không có thay đổi"
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": {"screens": [], "links": []}, "base": "1-1"})
+        assert r.status_code == 400 and r.json()["error"] == "UI flow không hợp lệ"
+    assert yt.writes == []
+
+
+async def test_flow_save_without_engine_writes_nothing(tmp_path):
+    yt = FakeYt([])
+    c, _ = flow_app(yt, tmp_path)
+    (tmp_path / "uiflow.js").unlink()
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW})
+    assert r.status_code == 503 and "uiflow.js" in r.json()["error"] and yt.writes == []
+
+
+async def test_upload_401_reaches_the_ui_message():
+    for status, code, text in ((401, 401, "Token YouTrack hết hạn"), (403, 403, "không có quyền")):
+        svc = make(lambda req, s=status: httpx.Response(s, text="no"))
+        try:
+            await svc.upload("VA-1", "a.png", b"x", mime="image/png")
+        except YtError as e:
+            assert e.status == code and text in e.message
+        else:
+            raise AssertionError("expected YtError")
+
+    def down(req):
+        raise httpx.ConnectError("down")
+
+    try:
+        await make(down).detach("VA-1", "1-1")
+    except YtError as e:
+        assert (e.status, e.message) == (502, "Không kết nối được YouTrack")
+    else:
+        raise AssertionError("expected YtError")
