@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import providers
-from .ai import LANG_TURN, cli_reason
+from .ai import LANG_TURN, at_usernames, cli_reason
 from .claude import note_run
 from .config import child_env, kill_tree, on_path
 from .errors import ApiError
@@ -46,7 +46,7 @@ def task_result_path(settings, task_id: str) -> Path:
 
 def read_task_result(settings, task_id: str) -> str | None:
     p = task_result_path(settings, task_id)
-    return p.read_text(errors="replace")[:20000] if p.is_file() else None
+    return at_usernames(p.read_text(errors="replace")[:20000]) if p.is_file() else None
 
 
 def task_active_at(settings, task_id: str) -> datetime | None:
@@ -67,7 +67,6 @@ def delete_task_files(settings, task_id: str) -> None:
     delete_links(settings, task_id)
 
 
-
 def prime_codegraph(project: str) -> None:
     """A read-only turn can't create the index's -wal / -shm files (the Codex sandbox denies writes), so its
     `codegraph` fails with "unable to open database file" unless they exist (a running daemon keeps them). A
@@ -83,6 +82,7 @@ def prime_codegraph(project: str) -> None:
             c.close()
     except sqlite3.Error as e:  # the agent still runs; it falls back to grep
         log.info("codegraph index not primed: %s", e)
+
 
 class AgentRunner:
     def __init__(self, settings):
@@ -100,6 +100,14 @@ class AgentRunner:
     def available(self) -> bool:
         p = providers.chosen(self.settings, task=True)
         return on_path(self.settings.ai_task_command) if p == "claude" else providers.installed(self.settings, p)
+
+    def _zeplin(self, task_id: str, text: str) -> bool:
+        """A Zeplin link in this turn or an earlier one of the session (its log)."""
+        if providers.ZEPLIN.search(text):
+            return True
+        with contextlib.suppress(OSError):
+            return bool(providers.ZEPLIN.search(self.log_path(task_id).read_text(errors="replace")))
+        return False
 
     def log_path(self, task_id: str) -> Path:
         return tasks_dir(self.settings) / f"{task_id}.log.jsonl"
@@ -120,7 +128,7 @@ class AgentRunner:
         items = []
         for ln in lines[after:]:
             try:
-                items.append(json.loads(ln))
+                items.append(json.loads(at_usernames(ln)))  # a JSON line: "@user" needs no escaping
             except ValueError:
                 log.warning("task %s: unreadable log line skipped", task_id)
         return items, len(lines)
@@ -136,13 +144,15 @@ class AgentRunner:
 
     async def start(
         self, task_id: str, project: str, text: str | Callable[[], Awaitable[str]], mode: str, session_id: str,
-        resume: bool, ai: tuple[str | None, str | None] = (None, None),
+        resume: bool, ai: tuple[str | None, str | None] = (None, None), *, auto: bool = False, mcp: bool = False,
     ) -> str:  # fmt: skip
         """Run one turn. `text` may be made here (reading links takes seconds): the task already
         shows running meanwhile, not stopped, and a second send meanwhile is busy.
         Returns once the process has the prompt; output streams into the log.
         A new session (not `resume`) replaces the old log and result, once it is running.
-        `ai`: the session's own model/effort (None: the task picks in AI settings).
+        `ai`: the session's own model/effort (None: the task picks in AI settings; an effort alone goes on that pick).
+        `mcp`: this turn may use the user's own MCP servers / plugins (providers.task_cmd; an edit turn).
+        `auto`: Vòng BE sent this turn, not the user (marked in the log: how much the automation runs can be counted).
         Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out).
         Stopped while starting: the process is killed and 409 task_cancelled."""
         if self.running(task_id):
@@ -156,17 +166,22 @@ class AgentRunner:
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
             if ai[0] is not None:  # picked for this session: used as is, no step-down
                 choice = (ai[0], ai[1] or "", False)
+            elif ai[1]:
+                choice = (choice[0], ai[1], choice[2])
             links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
             read_dir = str(links) if links.is_dir() else None
             index = (Path(project) / ".codegraph").is_dir() and on_path("codegraph")
-            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index)
+            zeplin = self._zeplin(task_id, text) and providers.zeplin_server() or None
+            text += providers.ZEPLIN_HINT if zeplin else ""
+            cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index,
+                                     mcp=mcp, zeplin=zeplin)  # fmt: skip
             if index and mode == "plan":
                 await asyncio.to_thread(prime_codegraph, project)
             try:  # its own process group: a kill also reaches the shell commands it started
                 proc = await asyncio.create_subprocess_exec(
                     *cmd, cwd=project, stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-                    limit=STREAM_LIMIT, env=child_env(), start_new_session=True,
+                    limit=STREAM_LIMIT, env={**child_env(), **providers.mcp_env(zeplin)}, start_new_session=True,
                 )  # fmt: skip
             except OSError as e:
                 log.warning("agent for task %s not started: %s", task_id, e)
@@ -201,7 +216,8 @@ class AgentRunner:
         if not resume:
             task_result_path(self.settings, task_id).unlink(missing_ok=True)
             self.log_path(task_id).unlink(missing_ok=True)
-        self._append(task_id, {"kind": "user", "text": text, "mode": mode})  # mode: autobe reads whether edits were let
+        # mode: autobe reads whether edits were let
+        self._append(task_id, {"kind": "user", "text": text, "mode": mode, **({"auto": True} if auto else {})})
         return session_id
 
     def side_start(self, task_id: str, prompt: dict, run: Callable[[], Awaitable], text_of: Callable[..., str]):
@@ -348,7 +364,7 @@ class AgentRunner:
             self._why.pop(task_id, None)  # cancelled before it ran: nobody read it
 
     async def stop_all(self) -> None:
-        why = "Server khởi động lại nên lượt này dừng giữa chừng. Gửi tin (vd \"tiếp tục\") để chạy tiếp."
+        why = 'Server khởi động lại nên lượt này dừng giữa chừng. Gửi tin (vd "tiếp tục") để chạy tiếp.'
         await asyncio.gather(*(self.stop(t, why) for t in {*self.procs, *self._starting, *self.side}))
 
     def new_session(self, provider: str | None = None) -> str:

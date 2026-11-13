@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from conftest import ORIGIN, FakeTransport, TestClient, create_app
 
+from telegram_dashboard import autobe
 from telegram_dashboard.config import Settings
 from telegram_dashboard.models import StoredMessage
 
@@ -24,7 +25,7 @@ def msg(mid, text, sender="5", reply=None, out=False):
                          topic_id=None, outgoing=out, media_kind=None, deleted=False)  # fmt: skip
 
 
-def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path):
+def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, monkeypatch):
     fake = tmp_path / "fake_claude.py"
     fake.write_text(FAKE)
     out = tmp_path / "web" / "out"
@@ -92,7 +93,38 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path):
         assert len(last) == 4 and [x["mode"] for x in last[-2:]] == ["edit", "edit"] and "[#6] U77" in last[-1]["text"]
         assert not auto.pending.get(t["id"]) and auto.error == ""
 
+        assert last[-1].get("auto") is True and "auto" not in last[-2]  # the log tells whose turn it was
+
+        # quota at the threshold: the answer waits (kept in the DB: a restart reads it back), runs once quota is back
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {"5h": 85.0})
+        tag(msg(7, "@me thêm ý 3", sender="77", reply=2))
+        assert auto.pending.get(t["id"]) and auto.error.startswith("tạm dừng, quota Claude 5h 85%")
+        held = c.get(f"/api/tasks/{t['id']}/events").json()["items"]
+        assert sum(i["kind"] == "user" for i in held) == 4 and "Vòng BE tạm dừng" in held[-1]["text"]  # said why
+        assert [m.message_id for m in st.auto_pending()[t["id"]]] == [7]  # what AutoBe.restore reads at the next start
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {})
+        c.portal.call(auto.flush, t["id"])
+        assert "[#7] U77" in turns(t["id"], 5)[-1]["text"] and auto.error == "" and st.auto_pending() == {}
+
         # Done: no more relays into it
         c.put(f"/api/tasks/{t['id']}/handled", json={"handled": True, "react": False}, headers=H)
-        tag(msg(7, "@me còn nữa", sender="77", reply=2))
-        assert len(turns(t["id"])) == len(last)
+        tag(msg(8, "@me còn nữa", sender="77", reply=2))
+        assert len(turns(t["id"])) == 5
+
+        # relay + a Q&A thread no open session holds: the answer opens a plan session on the rule's project (the
+        # question attached); the thread's next answer goes on in that session, not a second one
+        c.post("/api/rules", json={"kind": "relay", "value": "77", "label": "BE HT", "project": str(proj)}, headers=H)
+        st.apply_message(msg(20, "@be_bot field X có chưa?\n#QA_BE_123", out=True))
+        tag(msg(21, "@me field X có rồi", sender="77", reply=20))
+        (q,) = [x for x in tasks() if x["id"] != t["id"]]
+        assert (q["message_id"], q["mode"], q["project"]) == ("21", "plan", str(proj))
+        first = turns(q["id"])[0]["text"]
+        assert "field X có rồi" in first and "[#20] Bạn" in first and "#QA_BE_123" in first
+        tag(msg(22, "@me thêm: field Y cũng có", sender="77", reply=20))
+        assert len(tasks()) == 2 and "[#22] U77" in turns(q["id"], 2)[-1]["text"]
+
+        # Xóa dữ liệu nhóm: the sessions holding the group's messages go with it (row, log, result)
+        log = cfg.data_dir / "tasks" / f"{t['id']}.log.jsonl"
+        assert log.is_file()
+        assert c.delete(f"/api/chats/{A}/data", headers=H).status_code == 204
+        assert tasks() == [] and not log.exists() and not list(log.parent.glob(f"{t['id']}*"))

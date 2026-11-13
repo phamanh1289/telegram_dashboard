@@ -49,7 +49,7 @@ const label = (m: Member) => `@${m.name.replace(/[[\]\n]/g, "").slice(0, 64)}`;
 
 /** Wire onto a textarea: `ref={attach}`, `track` (onChange + onSelect), `onKeyDown` first; `popup` inside a `relative` parent.
  *  Send `wire(text)`. Used by the inbox reply box, Q&A (AiPromptBox `mention`), YouTrack comments and ticket description. */
-export function useMention<T>(source: MentionSource<T>, text: string, setText: (s: string) => void) {
+export function useMention<T>(source: MentionSource<T>, text: string, setText: (s: string) => void, known?: Record<string, string>) { // known: "@Name" → id put in the box by code (Q&A nudge)
   const t = useT();
   const [box, setBox] = useState<HTMLTextAreaElement | null>(null); // callback ref: the textarea, for focus after a pick
   const [caret, setCaret] = useState<number | null>(null);
@@ -95,7 +95,7 @@ export function useMention<T>(source: MentionSource<T>, text: string, setText: (
 
   /** The text as sent: each "@Name" picked here becomes [Name](tg://user?id=N), longest first ("@Minh BE" before "@Minh"). */
   const wire = (s: string) =>
-    Object.entries(named).sort(([a], [b]) => b.length - a.length)
+    Object.entries({ ...known, ...named }).sort(([a], [b]) => b.length - a.length)
       .reduce((s2, [tag, id]) => s2.split(tag).join(nameTag(tag.slice(1), id)), s);
 
   // `errors` texts are i18n keys (module constants): translated here, where they render.

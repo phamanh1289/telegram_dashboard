@@ -214,6 +214,7 @@ def test_entity_spans_keep_links_mentions_and_code():
     assert _span(NS(offset=0, length=3, url="https://x.y")).kind == "link"
     assert _span(NS(offset=4, length=4, user_id=42)).url == "tg://user?id=42"
     assert _span(MessageEntityCode(offset=9, length=3)).kind == "code"
+
     class MessageEntityBlockquote(NS): ...
 
     assert _span(MessageEntityBlockquote(offset=0, length=9)).kind == "blockquote"
@@ -388,10 +389,29 @@ def test_clearing_old_messages_keeps_what_is_still_used_and_never_brings_them_ba
     assert env.store.store_mentions([("A", "supergroup", msg(A, 1), False)]) == []
     assert env.store.get_message(A, 1) is None
 
-    # the Settings › Dữ liệu endpoints (their own app and database)
+    # the Settings › Dữ liệu endpoints (their own app and database), with finished sessions to list
+    st = client.app.state.store
+    for tid in ("d1", "d2"):
+        st.add_task(tid, None, None, "/p", "x")
+        st.set_task_done(tid, True)
     r = client.get("/api/data")
+    assert next(i for i in r.json()["items"] if i["id"] == "sessions")["count"] == 2
     assert r.status_code == 200 and {i["id"] for i in r.json()["items"]} >= {"messages", "media", "logs", "login"}
     o = {"Origin": "http://127.0.0.1:8765"}
     assert client.delete("/api/data/logs", headers=o).status_code == 204
     assert client.delete("/api/data/messages", headers=o).status_code == 204
+    assert client.delete("/api/data/sessions", headers=o).status_code == 204
+    assert st.list_tasks() == []
     assert client.delete("/api/data/nope", headers=o).status_code == 422
+
+
+def test_search_ignores_accents_through_edits_and_forgets_deleted_text(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "Luận ơi xem ĐƠN hàng"))
+    find = lambda q: [m.message_id for m in env.store.query_messages(A, q=q)[0]]  # noqa: E731
+    assert find("luan") == find("Đơn") == find("don hang") == ["1"] and find("zzz") == []
+    env.store.apply_message(msg(A, 1, "đã chốt", edit=5))  # an edit replaces the searchable copy too
+    assert find("luan") == [] and find("da chot") == ["1"]
+    env.store.apply_deletion(A, ["1"])
+    with env.store._conn() as c:
+        assert c.execute("SELECT text, text_fold FROM messages").fetchone()[:] == ("", "")

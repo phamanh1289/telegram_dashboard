@@ -26,7 +26,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Textarea } from "@/components/ui/textarea";
 import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type Task } from "@/lib/api";
-import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, toast, useSessionOn } from "@/lib/inbox";
+import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, ticketClick, toast, useSessionOn } from "@/lib/inbox";
 import { splitAttachments } from "@/lib/attach";
 import { timeLabel } from "@/lib/time";
 import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/lib/prefs";
@@ -507,7 +507,7 @@ export function Composer({
               <ul className="grid grid-cols-1 gap-1">
                 {related.data.slice(0, 3).map((tk) => (
                   <li key={tk.id} className="flex min-h-9 items-center gap-2 rounded-lg border border-rule bg-cotton py-0.5 pr-0.5 pl-2 text-xs transition-colors duration-(--dur-micro) hover:border-rule-2">
-                    <a href={`/youtrack/?ticket=${tk.id}`} title={tk.summary} className="flex min-w-0 flex-1 items-center gap-2 hover:[&>span:last-child]:underline">
+                    <a href={`/youtrack/?ticket=${tk.id}`} onClick={ticketClick(tk.id)} title={tk.summary} className="flex min-w-0 flex-1 items-center gap-2 hover:[&>span:last-child]:underline">
                       <span className="shrink-0 rounded-md bg-hl-wash px-1.5 py-0.5 font-mono text-2xs font-medium text-hl-2">{tk.id}</span>
                       <span className="truncate text-ink">{tk.summary}</span>
                     </a>

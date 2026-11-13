@@ -38,6 +38,8 @@ done
 set +e  # interactive loop below: a failed kill/curl must not close the window
 URL="http://127.0.0.1:8765"
 LOG="data/server.log"
+# Cài đặt › Dữ liệu › Đổi thư mục: the log goes with the data (an unplugged disk: back here, where serve says so)
+[ -s data_home ] && [ -d "$(cat data_home)/data" ] && LOG="$(cat data_home)/data/server.log"
 PID=""
 
 build_if_stale() {

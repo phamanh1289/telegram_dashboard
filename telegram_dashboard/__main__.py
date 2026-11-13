@@ -6,7 +6,17 @@ import os
 import sys
 from pathlib import Path
 
-from .config import RUN_DIR, Settings, api_token_path, ensure_api_token
+from .config import RUN_DIR, Settings, api_token_path, data_home, default_home, ensure_api_token, home_file
+
+
+def _data_gone(settings: Settings) -> bool:
+    """The data was moved (Cài đặt › Dữ liệu) and is not there: never start empty beside the real data, an
+    unplugged disk would read as "logged out, everything gone"."""
+    if data_home(settings.root) == default_home(settings.root) or settings.data_dir.is_dir():
+        return False
+    print(f"Không thấy thư mục dữ liệu {settings.data_dir} (ổ đĩa chưa gắn?). Gắn lại rồi mở lại app, hoặc "
+          f"xóa tệp {home_file(settings.root)} để dùng thư mục mặc định.", file=sys.stderr, flush=True)  # fmt: skip
+    return True
 
 
 def _login(settings: Settings) -> int:
@@ -15,12 +25,12 @@ def _login(settings: Settings) -> int:
         return 2
     from telethon import TelegramClient
 
+    if _data_gone(settings):
+        return 1
     settings.ensure_data_dir()
 
     async def run() -> None:
-        client = TelegramClient(
-            str(settings.session_path), settings.telegram_api_id, settings.telegram_api_hash
-        )
+        client = TelegramClient(str(settings.session_path), settings.telegram_api_id, settings.telegram_api_hash)
         await client.start()  # interactive: phone, code, 2FA typed in this terminal only
         me = await client.get_me()
         print(f"Đã đăng nhập: {getattr(me, 'first_name', '') or 'OK'}")
@@ -56,7 +66,6 @@ def _claim(settings: Settings) -> Settings | None:
     import webbrowser
 
     global _lock
-    settings.ensure_data_dir()
     RUN_DIR.mkdir(mode=0o700, exist_ok=True)  # outside every install's data/
     port_file = RUN_DIR / "server.port"
     _lock = open(RUN_DIR / "server.lock", "a")  # noqa: SIM115 (held until exit)
@@ -90,9 +99,7 @@ def _claim(settings: Settings) -> Settings | None:
                     continue
             if port != settings.port:
                 print(f"Port {settings.port} đang bận, dùng {port}.", flush=True)
-                settings = dataclasses.replace(
-                    settings, port=port, app_origin=f"http://{settings.host}:{port}"
-                )
+                settings = dataclasses.replace(settings, port=port, app_origin=f"http://{settings.host}:{port}")
             break
     port_file.write_text(str(settings.port))
     return settings
@@ -115,6 +122,12 @@ def _serve(settings: Settings) -> int:
     claimed = _claim(settings)
     if claimed is None:
         return 0
+    from . import local_data
+
+    local_data.apply_move(claimed.root)  # "Đổi thư mục" asked before this restart: the lock is ours, nothing is open
+    if _data_gone(claimed):
+        return 1
+    claimed.ensure_data_dir()
     settings = dataclasses.replace(claimed, api_token=ensure_api_token())
     link = _with_token(settings.app_origin)
     if os.environ.get("TD_OPEN"):  # packaged launcher, first start: open the page once it serves

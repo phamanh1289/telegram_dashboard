@@ -9,7 +9,7 @@ import { Markdown } from "@/components/markdown";
 import { Button } from "@/components/ui/button";
 import type { Message } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { msgKey, openQa, openReply, openTask, smooth, qaAskKey, QaCodes, ticketsIn, useTaskList } from "@/lib/inbox";
+import { msgKey, openQa, openReply, openTask, smooth, qaAskKey, QaCodes, ticketClick, ticketsIn, useTaskList } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 import { ytDetailQuery, ytProjectsQuery } from "@/lib/yt";
 
@@ -70,7 +70,7 @@ export function WorkTrail({ m }: { m: Message }) {
 function TicketStep({ id }: { id: string }) {
   const d = useQuery({ ...ytDetailQuery(id), retry: false }).data;
   return (
-    <Link href={`/youtrack/?ticket=${encodeURIComponent(id)}`} className={CHIP}>
+    <Link href={`/youtrack/?ticket=${encodeURIComponent(id)}`} onClick={ticketClick(id)} className={CHIP}>
       <Bug className="size-3.5 text-ink-3" aria-hidden /><b className="font-mono font-medium">{id}</b>
       {d?.state && <span className={cn(d.resolved ? "text-ok" : "text-ink-3")}>· {d.state}</span>}
     </Link>

@@ -24,6 +24,9 @@ log = logging.getLogger("telegram_dashboard.links")
 ARTICLE = re.compile(r"https?://([^\s/]+)\S*?/articles/([A-Za-z][\w]*-A-\d+)")
 ISSUE = re.compile(r"https?://([^\s/]+)\S*?/issue/([A-Za-z][\w]*-\d+)\b")
 TG = re.compile(r"https?://t\.me/c/(\d+)/(?:\d+/)?(\d+)")  # /c/<chat>/<msg> or /c/<chat>/<topic>/<msg>
+# A ticket named without a link ("VA-123", not inside a URL or an article ID): read when its project is ours.
+BARE = re.compile(r"(?<![\w/-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)")
+BARE_ARTICLE = re.compile(r"(?<![\w/-])([A-Z][A-Z0-9]{1,9}-A-\d{1,6})(?!\w)")  # a Knowledge Base article: "VA-A-134"
 MAX_LINKS = 10
 INLINE_CHARS = 8000  # longer goes to a file: KB articles run long (VA-A-134 is ~72k chars)
 MAX_CHARS = 200_000  # per link, saved or not: untrusted text fed to an agent that may run shell
@@ -51,7 +54,7 @@ def links_dir(settings, task_id: str) -> Path:
 
 
 def has_links(text: str) -> bool:
-    return bool(ARTICLE.search(text) or ISSUE.search(text) or TG.search(text))
+    return bool(ARTICLE.search(text) or ISSUE.search(text) or TG.search(text) or BARE.search(text))
 
 
 def delete_links(settings, task_id: str) -> None:
@@ -139,6 +142,26 @@ async def _issue(yt, host: str, iid: str) -> str | None:
     return _ticket_json(await yt.cached(f"issue:{iid}", lambda: yt.detail(iid)))
 
 
+async def _bare(yt, text: str, linked: set[str]) -> list:
+    """Tickets and Knowledge Base articles `text` names by ID only, as links to our YouTrack. Only IDs of its projects
+    ("UTF-8" is no ticket); a project list that fails keeps them all, so each shows as unread instead of going
+    missing."""
+    ids = list(dict.fromkeys(i for i in [*BARE.findall(text), *BARE_ARTICLE.findall(text)] if i not in linked))
+    if not ids or not yt.token:
+        return []
+    from .yt_dashboard import _projects  # late: yt_dashboard imports this module
+
+    try:
+        known = {p["shortName"] for p in await yt.cached("projects", lambda: _projects(yt))}
+        ids = [i for i in ids if i.split("-")[0] in known]
+    except Exception as e:  # noqa: BLE001 — listed below as unread links
+        log.info("YouTrack projects not read: %s", type(e).__name__)
+    host = urlsplit(yt.base).netloc
+    base = yt.base.rstrip("/")
+    return [(f"{base}/articles/{i}", "yt", (host, i)) if "-A-" in i else (f"{base}/issue/{i}", "issue", (host, i))
+            for i in ids]  # fmt: skip
+
+
 async def _telegram(s, chat: str, mid: int) -> str | None:
     chat_id = f"-100{chat}"
     # Tracked chats only, not any the session can see: a link in someone else's message must not pull
@@ -155,20 +178,27 @@ async def _telegram(s, chat: str, mid: int) -> str | None:
 
 
 async def expand(s, text: str, task_id: str, summarize: bool = True, chat_id: str | None = None) -> str:
-    """`text` plus a block with each readable link's content (see link_block). `summarize`: AI
-    summaries of the saved ones (off when only the files are re-saved)."""
-    return text + await link_block(s, text, task_id, summarize, chat_id)
+    """`text` plus a block with each readable link's content (see link_block), the tickets it names by ID and the
+    documents those tickets link to. `summarize`: AI summaries of the saved ones (off when only the files are
+    re-saved)."""
+    return text + await link_block(s, text, task_id, summarize, chat_id, tickets=True)
 
 
-async def link_block(s, text: str, task_id: str | None, summarize: bool = True, chat_id: str | None = None) -> str:
+async def link_block(
+    s, text: str, task_id: str | None, summarize: bool = True, chat_id: str | None = None, *, tickets: bool = False
+) -> str:
     """A block with each readable link's content in `text`, "" without links; a link that fails is
     listed as such, so the AI says so instead of trying to fetch it. `task_id` None: nothing saved
     (a one-shot AI without Read), a long link sends only its outline / summary. `chat_id`: the group the
     text came from; t.me links to other groups stay unread (someone in group A must not pull group B's
-    messages into an answer that goes back to A)."""
+    messages into an answer that goes back to A). `tickets` (AI Agent sessions): also the tickets named by ID
+    alone ("VA-123") and the Knowledge Base articles a read ticket links to, so a session asks nothing the ticket or
+    its document already answers; off for YouTrack AI, whose ticket text names itself."""
     found = [(m.group(0), "yt", m.groups()) for m in ARTICLE.finditer(text)]
     found += [(m.group(0), "issue", m.groups()) for m in ISSUE.finditer(text)]
     found += [(m.group(0), "tg", m.groups()) for m in TG.finditer(text)]
+    if tickets:
+        found += await _bare(s.yt, text, {g[1].upper() for _, k, g in found if k in ("issue", "yt")})
     if not found:
         return ""
     d = links_dir(s.settings, task_id) if task_id else None
@@ -178,7 +208,8 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
         except OSError as e:
             log.warning("links dir of task %s not made: %s", task_id, type(e).__name__)
     parts, jobs = [], []
-    for url, kind, g in list({u: (u, k, g) for u, k, g in found}.values())[:MAX_LINKS]:
+    todo = list({u: (u, k, g) for u, k, g in found}.values())[:MAX_LINKS]
+    for url, kind, g in todo:  # grows below: a ticket's documents
         try:
             if kind == "tg" and chat_id and f"-100{g[0]}" != chat_id:
                 body = None  # another group's message
@@ -191,6 +222,10 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
         except Exception as e:  # noqa: BLE001 — one bad link never blocks the task
             log.info("link %s not read: %s", url, type(e).__name__)
             body = None
+        if body and kind == "issue" and tickets:  # one level: an article's own links are not followed
+            have = {u for u, _, _ in todo}
+            docs = {m.group(0): (m.group(0), "yt", m.groups()) for m in ARTICLE.finditer(body)}
+            todo += [v for u, v in docs.items() if u not in have][: MAX_LINKS - len(todo)]
         if body:  # the text must not close our frame and go on as "instructions"
             body = _TAG.sub("[untrusted_link_content]", ai.redact(body) if ai.REDACT else body)
         if body and len(body) > MAX_CHARS:

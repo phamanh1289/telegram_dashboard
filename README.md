@@ -304,7 +304,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 ## Dữ liệu và bảo mật
 
-- Mọi dữ liệu nằm trong thư mục `data/` của bản cài trên máy bạn: phiên Telegram (`account.session`), database (`dashboard.sqlite3`), cấu hình (`config.json`), log (`server.log`). File quyền 0600, thư mục 0700.
+- Mọi dữ liệu nằm trong thư mục `data/` của bản cài trên máy bạn: phiên Telegram (`account.session`), database (`dashboard.sqlite3`), cấu hình (`config.json`), log (`server.log`). File quyền 0600, thư mục 0700. Muốn để chỗ khác (ổ khác, thư mục khác): **Cài đặt › Dữ liệu › Đổi thư mục**; app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ (`server.log` đi theo từ lần mở app kế tiếp). Thư mục đã có dữ liệu Radar thì app hỏi có dùng dữ liệu ở đó không (dữ liệu đang dùng giữ nguyên, không xóa). Thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database.
 - **`data/account.session` = quyền đăng nhập Telegram của bạn.** Không copy, không gửi ai.
 - Server chỉ nghe trên `127.0.0.1`, kiểm tra Host / Origin; máy khác trong mạng không truy cập được, Firewall không hỏi.
 - API chỉ nhận trình duyệt đã mở khóa bằng mã (`~/.telegram_dashboard/api_token`).

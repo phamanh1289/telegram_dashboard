@@ -19,11 +19,11 @@ export function PurgeChat({ chatId, title, onClose, onPurged }: { chatId: string
       onClose();
       onPurged?.();
     },
-    onSettled: () => Promise.all([qc.invalidateQueries({ queryKey: ["chats"] }), qc.invalidateQueries({ queryKey: ["data"] })]),
+    onSettled: () => Promise.all([["chats"], ["data"], ["tasks"]].map((queryKey) => qc.invalidateQueries({ queryKey }))),
   });
   return (
     <ConfirmDialog open onOpenChange={(o) => { if (!o) onClose(); }} title={t("Xóa dữ liệu nhóm?")} confirmLabel={t("Xóa dữ liệu")}
-      description={t("Xóa tin đã lưu của “{title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn. Tin đang gửi có thể đã tới Telegram và không thu hồi được.", { title })}
+      description={t("Xóa tin đã lưu của “{title}”, nội dung chưa gửi và mọi phiên AI có tin của nhóm này (kể cả phiên trích thêm nhóm khác; phiên đang chạy bị dừng) trên máy này. Nhóm sẽ hiện lại khi có người tag bạn. Tin đang gửi có thể đã tới Telegram và không thu hồi được.", { title })}
       busy={purge.isPending} error={purge.isError && t("Không xóa được dữ liệu nhóm. Thử lại.")} onConfirm={() => purge.mutate()} />
   );
 }

@@ -57,3 +57,32 @@ def test_actions_pinned_to_commit_sha():
     files = list((ROOT / ".github" / "workflows").glob("*.y*ml"))
     uses = re.compile(r"^\s*-?\s*uses:\s*(?!\./|docker://)\S+@(?![0-9a-f]{40}\b)")
     assert _hits(files, uses) == []
+
+
+def test_guide_targets_exist_in_ui():
+    """The live guide lights a step's control by its label or CSS (guide.json `at`). A label renamed in the UI
+    ("My team" → "Team") left the walk-through dark with no error; every label / aria-label / id it names must
+    still be in the web code, written out or as the head of a template ("Đổi {field} {id}" → "Đổi Assignee")."""
+    import json
+
+    src = "\n".join(p.read_text(errors="ignore") for p in _web_files() if "lib/i18n/" not in p.as_posix())
+    # a comment naming an old label is not the UI
+    src = re.sub(r"/\*[\s\S]*?\*/|(?:^|(?<=\s))//.*", "", src, flags=re.M)
+    heads = {h for h in re.findall(r"[\"'`]([^\"'`\n{$]{4,})(?:\{|\$\{)", src)}  # literal part before a placeholder
+
+    def needles(at: str) -> list[str]:
+        if at.startswith("css:"):
+            sel = at[4:]
+            attrs = re.findall(r'(?:aria-label|placeholder|title)[\^$*]?="([^"]+)"', sel)
+            return attrs + re.findall(r"#([\w-]+)", sel) + re.findall(r'data-(?:testid|drill)="([^"]+)"', sel)
+        label = re.split(r"\s(?:N|<[^>]*>)(?:\s|$)", at)[0].rstrip("….").strip()  # as findControl reads it
+        return [label] if len(label) >= 2 else []
+
+    missing = []
+    for f in json.loads((WEB / "lib" / "guide.json").read_text()):
+        for k, step in enumerate(f["how"]):
+            at = step.get("at") if isinstance(step, dict) else None
+            for a in at if isinstance(at, list) else [at] if at else []:
+                missing += [f"{f['id']} step {k + 1}: {n}" for n in needles(a)
+                            if n not in src and not any(n.startswith(h) for h in heads)]  # fmt: skip
+    assert missing == []

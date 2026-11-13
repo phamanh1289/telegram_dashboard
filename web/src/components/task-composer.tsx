@@ -1,7 +1,7 @@
 "use client";
 
 import { type UseQueryResult, useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, X } from "lucide-react";
+import { FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, TriangleAlert, X } from "lucide-react";
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/components/ai";
 import { AiPromptBox, AiSend } from "@/components/ai/chat";
@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/lib/api";
 import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeWantEdit, useConfirm, useRefs, useWantEdit, withAttachments } from "@/lib/attach";
-import { readIntro, readPlatform, useRole } from "@/lib/prefs";
+import { readIntro, readPlatform, setPref, useAgentMcp, useRole } from "@/lib/prefs";
 import { toast } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
 import { cn, MOD } from "@/lib/utils";
@@ -91,8 +91,18 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   const wanted = useWantEdit(id); // a message attached from a row: ticked for the user
   const edit = picked || wanted;
   const setEdit = (v: boolean) => { takeWantEdit(id); setPicked(v); }; // unticked, or sent: the user's own from now
+  // An edit turn uses the user's own MCP servers / plugins (outside the sandbox), on every CLI: on until unticked, remembered.
+  const mcpOn = useAgentMcp();
+  const canMcp = !assist && (task.mode === "edit" || (plan && edit));
+  const mcp = canMcp && mcpOn;
   // Messages pasted (ID / t.me link) or sent here from a message row: quoted under the typed text on send.
   const refs = useRefs(id);
+  // Text written by others in the session: what this turn may do with it, on a warning icon beside the boxes
+  const others = !!task.chat_id || refs.length > 0 || /https?:\/\//.test(task.prompt);
+  const warn = !others ? "" : [
+    plan && edit && t("Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt."),
+    mcp && t("Lượt này AI được gọi MCP / plugin của bạn ngoài sandbox (có thể ghi lên YouTrack, mở trình duyệt, gọi mạng). Tin / link do người khác viết trong phiên có thể lái AI dùng chúng: chỉ bật khi bạn tin nội dung phiên."),
+  ].filter(Boolean).join(" ");
   // An answer attached from a "#QA_PO_…" thread: "PO đã confirm. Hãy trace…" added to the prompt once, the user's text after that.
   const confirmed = useConfirm(id);
   useEffect(() => {
@@ -113,7 +123,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   };
   const send = useMutation({
     mutationFn: ({ line, refs }: Queued & { queued?: boolean }) => {
-      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit } });
+      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit, mcp } });
       // the AI reads attached messages as group messages, so only the session's group (its tag first)
       if (refs.some((r) => r.chat_id !== task.chat_id)) throw new ApiError(422, "assist_other_chat", null, null);
       return apiStart("/ai/draft", {
@@ -204,6 +214,21 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
             </label>
           </Hint>
         )}
+        {canMcp && ( // an edit turn only: it shows once "Cho sửa code" is ticked
+          <Hint text={t("Lượt sửa code dùng cả MCP server và plugin bạn đã cài cho CLI của phiên (Claude, Codex, Antigravity: YouTrack, markitdown, Zeplin…), như tự chạy CLI đó. Chúng chạy ngoài sandbox bằng đăng nhập của bạn; bỏ tick để tắt, app nhớ lựa chọn.")} side="bottom">
+            <label className="flex items-center gap-1.5 animate-in fade-in-0 duration-(--dur-short)">
+              <Checkbox checked={mcp} onCheckedChange={(v) => setPref("agentMcp", v ? null : "0")} disabled={running} />
+              {t("Dùng MCP / plugin")}
+            </label>
+          </Hint>
+        )}
+        {warn && ( // in the row, not a line under the box: ticking a box never moves the page
+          <Hint text={warn} side="bottom">
+            <button type="button" aria-label={warn} className="grid size-6 place-items-center rounded-full text-warn hover:bg-warn-wash animate-in fade-in-0 duration-(--dur-short)">
+              <TriangleAlert className="size-4" aria-hidden />
+            </button>
+          </Hint>
+        )}
       </>}
       actions={<>
         {!assist && <SessionAi t={task} disabled={running} />}
@@ -215,9 +240,6 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
           <AiSend onClick={submit} disabled={!ready} busy={send.isPending || resolving} />
         )}
       </>} />
-    {plan && edit && (task.chat_id || refs.length > 0 || /https?:\/\//.test(task.prompt)) && (
-      <p className="text-xs text-warn">{t("Phiên này có tin / link do người khác viết: lượt sau được sửa file và chạy lệnh (trong sandbox, chỉ mạng tới kho package). Đọc kỹ plan trước khi duyệt.")}</p>
-    )}
     {failed && <p role="alert" className="text-xs text-error">{t("Có tin đính kèm không đọc được: bỏ tin đó (×) rồi gửi.")}</p>}
     {send.isError && <p role="alert" className="text-xs text-error">{busy ? t("AI đang làm lượt trước.") : errorText(send.error, {
       assist_other_chat: t("Trợ lý AI chỉ đọc được tin trong nhóm của phiên: bỏ tin nhóm khác (×) rồi gửi."),

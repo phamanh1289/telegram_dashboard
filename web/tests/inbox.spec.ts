@@ -147,9 +147,9 @@ test("group data is deleted from the group's menu, focus comes back", async ({ p
   const trigger = page.getByRole("button", { name: "Thao tác với nhóm" });
   await trigger.click();
   await page.getByRole("menuitem", { name: /Xóa dữ liệu nhóm/ }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("alertdialog")).toBeVisible(); // a destructive confirm (ConfirmDialog)
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(trigger).toBeFocused();
 });
 
@@ -239,6 +239,7 @@ test("an AI draft fills the reply box and is never sent on its own", async ({ pa
   expect((await ctl("/state")).send_calls).toBe(calls);
   // the ask is a turn of the tag's saved Trợ lý AI session: the panel opened again (after a reload) shows it
   await page.reload();
+  await page.getByRole("button", { name: /^Đang xử lý/ }).click(); // a tag with an AI session waits there, not in Đang chờ
   await row(page, 112).locator("p").first().click();
   if (await aiPane.isVisible()) await aiPane.click();
   const feed = page.getByRole("list", { name: "Hội thoại với AI" });

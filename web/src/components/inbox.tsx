@@ -26,7 +26,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status, statusQuery } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
-import { ALL, askInQa, BRIEFING, TODAY, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { ALL, askInQa, BRIEFING, TODAY, goKey, msgKey, openQa, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { TicketSheetHost } from "@/components/message-item";
 import { useBriefs } from "@/lib/briefs";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -297,9 +298,29 @@ function Inbox({ status }: { status: Status }) {
     setQaGroup((e as CustomEvent<Message>).detail.chat_id);
     go(QA);
   });
+  /** A deep link to one piece of work (the page's URL, once; "Mở …" in the bot's answer; Hôm nay rows' `to`):
+   *  ?chat=&msg= that message's reply (YouTrack sheet "Nhắc trên Telegram"), ?qa=<group>&code= that Q&A thread,
+   *  ?qa=<group>&ask= its box pre-filled ("Hỏi lại trong nhóm"), ?task= an AI Agent session, ?brief=<group> its
+   *  Briefing. False: the URL names none of them. */
+  const openLink = useEffectEvent((q: URLSearchParams) => {
+    const chat = q.get("chat"), msg = q.get("msg"), qa = q.get("qa"), code = q.get("code"), task = q.get("task"), brief = q.get("brief");
+    if (chat && msg) void openReplyById(chat, msg);
+    else if (qa && code) openQa(qa, code);
+    else if (qa) askInQa(qa, q.get("ask") ?? "");
+    else if (task) openTask(task);
+    else if (brief) { setBriefGroup(brief); go(BRIEFING); }
+    else return false;
+    return true;
+  });
+  // "Mở <trang>" in the know-it-all bot's answer (guide.tsx), already on Telegram: that work or page, no reload.
+  const onGuideGo = useEffectEvent((e: Event) => {
+    const q = (e as CustomEvent<URLSearchParams>).detail;
+    if (!openLink(q)) go(q.get("chat") ?? TODAY);
+  });
   useEffect(() => {
     addEventListener("qa-answer", onQaAnswer);
-    return () => removeEventListener("qa-answer", onQaAnswer);
+    addEventListener("guide-go", onGuideGo);
+    return () => { removeEventListener("qa-answer", onQaAnswer); removeEventListener("guide-go", onGuideGo); };
   }, []);
   useEffect(() => {
     addEventListener("open-task", onOpenTask);
@@ -311,22 +332,12 @@ function Inbox({ status }: { status: Status }) {
       removeEventListener("open-qa", onOpenQa);
     };
   }, []);
-  useEffect(() => { // ?chat=…&msg=… (YouTrack sheet "Nhắc trên Telegram"): that message's reply, once
-    const q = new URLSearchParams(location.search), msg = q.get("msg"), chat = q.get("chat");
-    if (!msg || !chat) return;
-    q.delete("msg");
-    history.replaceState(history.state, "", `${location.pathname}?${q}`);
-    void openReplyById(chat, msg);
-  }, []);
-  useEffect(() => { // ?qa=<chat>&ask=<text> (YouTrack sheet "Hỏi lại trong nhóm"): that group's Q&A, the box pre-filled, once
-    const q = new URLSearchParams(location.search), group = q.get("qa");
-    if (!group) return;
-    const ask = q.get("ask") ?? "";
-    q.delete("qa");
-    q.delete("ask");
+  useEffect(() => { // the deep link the page was opened with, once (after the open-* listeners above); ?chat= stays
+    const q = new URLSearchParams(location.search);
+    if (!openLink(q)) return;
+    for (const k of ["msg", "qa", "code", "ask", "task", "brief"]) q.delete(k);
     history.replaceState(history.state, "", `${location.pathname}${q.size ? `?${q}` : ""}`);
-    askInQa(group, ask);
-  }, []); // once, from the URL the page was opened with
+  }, []);
 
   const hints: Record<string, string> = {
     [TODAY]: t("Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)"),
@@ -401,7 +412,8 @@ function Inbox({ status }: { status: Status }) {
       {menuOpen && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden animate-in fade-in-0 duration-(--dur-short)" onClick={() => setMenuOpen(false)} />}
       {/* Sidebar, the YouTrack recipe: brand, views, groups, footer (the module switch lives in the top bar). */}
       <aside className={cn(
-        "group/side fixed bottom-0 top-0 left-0 z-50 md:top-11 flex w-[15.5rem] flex-col gap-1 border-r bg-paper-2 p-3 transition-[translate,clip-path,box-shadow] duration-(--dur-short) ease-out",
+        // a window too short for the pages + a few groups scrolls the whole sidebar (the group list keeps min-h-40 below)
+        "group/side no-scrollbar fixed bottom-0 top-0 left-0 z-50 md:top-11 flex w-[15.5rem] flex-col gap-1 overflow-y-auto border-r bg-paper-2 p-3 transition-[translate,clip-path,box-shadow] duration-(--dur-short) ease-out",
         menuOpen ? "translate-x-0 shadow-pop" : "-translate-x-full",
         "md:translate-x-0 md:shadow-none",
         collapsed && "md:[clip-path:inset(0_calc(100%-4rem)_0_0)] md:hover:[clip-path:inset(0_-3rem_0_0)] md:hover:shadow-pop md:focus-within:[clip-path:inset(0_-3rem_0_0)] md:focus-within:shadow-pop",
@@ -453,7 +465,7 @@ function Inbox({ status }: { status: Status }) {
             </button>
           </div>
         )}
-        <div className="-mx-3 mt-2 flex min-h-0 flex-1 flex-col border-t pt-1">
+        <div className="-mx-3 mt-2 flex min-h-40 flex-1 flex-col border-t pt-1">
           <div className="px-3">
             <SideHeading fade={fade} rail={collapsed}
               label={showBrief ? t("Nhóm · Briefing") : showQa ? t("Nhóm · Q&A") : t("Nhóm có tag")}
@@ -620,6 +632,7 @@ function Inbox({ status }: { status: Status }) {
           setSearch(q);
           setSearchOpen(true);
         }} /></QaCodes.Provider>
+      <TicketSheetHost />
       <Toaster />
     </div>
   );

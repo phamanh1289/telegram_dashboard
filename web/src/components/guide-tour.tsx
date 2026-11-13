@@ -14,7 +14,9 @@ import { type Feature, type Module, type Step, StepText, stepText } from "./guid
 // it stays lit and clickable while the rest goes dark, and clicking it moves to the next step. The walk survives a route
 // change (sessionStorage), and a feature on another module starts with the click that gets there.
 
-const SEL = "button, a[href], [role=tab], [role=button], [role=menuitem], [role=option], [role=checkbox], [role=switch], input, select, textarea, label, summary";
+// [role=group]: a Segmented / filter group carries the name ("Ngưỡng WIP"), its buttons only the values; lighting the group
+// still moves on when one of its buttons is clicked
+const SEL = "button, a[href], [role=tab], [role=button], [role=menuitem], [role=option], [role=checkbox], [role=switch], [role=group], input, select, textarea, label, summary";
 const clean = (s: string) => fold(s).replace(/\s+/g, " ").trim().replace(/(…|\.\.\.)$/, "").trim();
 const shown = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !el.closest("[data-guide-tour]"); };
 
@@ -25,6 +27,9 @@ const inView = (el: Element) => {
   const hit = document.elementFromPoint(x, y);
   return !hit || el.contains(hit) || hit.contains(el);
 };
+/** Inside the window, whatever covers it. */
+const onScreen = (el: Element) => { const r = el.getBoundingClientRect(); return r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; };
+const SETTLE = 20; // lookups (250 ms each) a found control is moved back on screen if it leaves it
 /** Of several matches, one already on screen (a list scrolled to its newest row), else the first. The tour's own shade is see-through meanwhile. */
 function pick(els: HTMLElement[]) {
   if (els.length < 2) return els[0] ?? null;
@@ -117,9 +122,11 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
   useEffect(() => {
     const at = targets(steps[i]);
     if (!at.length) return;
-    let n = 0, cur: HTMLElement | null = null;
+    let n = 0, ticks = 0, cur: HTMLElement | null = null;
     const look = () => {
-      if (cur?.isConnected && shown(cur)) return;
+      // kept while on screen; in the step's first seconds one that left it (a list that jumped to its newest row once loaded,
+      // or picked under a loading cover) is picked again (pick prefers one on screen) and scrolled to; later, the user scrolled
+      if (cur?.isConnected && shown(cur) && (++ticks > SETTLE || onScreen(cur))) return;
       const hit = at.flatMap(localized).map(findControl).find(Boolean) ?? null;
       if (hit) {
         cur = hit;

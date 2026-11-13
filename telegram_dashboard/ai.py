@@ -117,7 +117,9 @@ ASK_MSG = (
     "đậm chỉ ghi đúng một vai trò: `**BE:**`, `**PO:**` hoặc `**QC:**` (dashboard gắn mã `#QA_BE_…` theo nhãn này). "
     "Mở đầu tin chỉ bằng tag người đó, chép y như `tag` "
     "của họ trong dữ liệu (`@username` hoặc `[Tên](tg://user?id=…)`) hoặc một @username đã có trong tin; không tự "
-    'ghép @ với tên hiển thị ("@BE Hỗ trợ" không tag được ai, tin sẽ không có mã Q&A); không chào / gọi ("ơi"), '
+    'ghép @ với tên hiển thị ("@BE Hỗ trợ" không tag được ai, tin sẽ không có mã Q&A); tin `**BE:**` (câu cần BE '
+    "confirm) luôn mở bằng `@citics_be_support_bot` (BE phụ trách hỏi đáp), không tag BE khác hay username lấy từ "
+    'ticket / tài liệu (Works / YouTrack); không chào / gọi ("ơi"), '
     "không nhắc tôi là ai hay nền tảng của tôi (người nhận đã biết); không ghi lại (BE)/(PO)/(QC) ở từng câu. "
     "Mỗi tin tối đa 3 ý, mỗi ý một dòng đánh số, chỉ hỏi điều người đó cần trả lời, bỏ bối cảnh dài, chỉ giữ mã "
     "ticket / API liên quan. Quá 3 ý thì tách thành nhiều tin (mỗi tin một khối trích dẫn riêng, đều mở bằng @tag, "
@@ -188,7 +190,10 @@ ROLE_LABEL = {"dev": "Dev", "qa": "QA/QC", "po": "PO/PM"}
 PLATFORM_LABEL = {"android": "Android", "ios": "iOS", "mobile": "Mobile chung"}
 TASK_RULES = (
     "Luật làm việc:\n"
-    '- Đọc HẾT tài liệu đính kèm (nội dung link, file được chỉ ra) trước khi kết luận. "Phân tích của AI" chỉ để tham '
+    "- BẮT BUỘC đọc HẾT ticket và tài liệu đính kèm (nội dung ticket, link tài liệu, file được chỉ ra; dashboard "
+    "đã tải sẵn ở cuối prompt hoặc lưu thành file) TRƯỚC khi kết luận và trước khi soạn bất kỳ câu hỏi / ý cần "
+    "confirm nào: điều ticket hay tài liệu đã trả lời thì không hỏi lại, dẫn lại chỗ đó. Ticket / link ghi "
+    '"dashboard không đọc được" thì nói rõ là chưa đọc được, không đoán nội dung. "Phân tích của AI" chỉ để tham '
     "khảo, đối chiếu lại với code.\n"
     "- Dẫn chứng bằng file:dòng.\n"
     "- Không đoán: chỗ tài liệu và code chưa đủ để kết luận thì ghi rõ là giả định hoặc câu hỏi.\n"
@@ -208,7 +213,8 @@ ANSWER_SHAPE = (
 # chưa / còn hỏi gì"; a "chờ trả lời" session takes the answer on its own when it comes (autobe.py).
 TASK_STATE_LINE = (
     "- Trạng thái: đúng một trong `xong` (đã làm hết, có thể đóng phiên), `chờ trả lời` (còn câu hỏi gửi BE / PO / QC "
-    "chưa được trả lời), `cần bạn` (cần tôi quyết, kiểm tra hoặc cho sửa code)."
+    "chưa được trả lời), `cần bạn` (cần tôi quyết, kiểm tra hoặc cho sửa code). Ba từ khóa này là mã máy đọc: giữ "
+    "nguyên tiếng Việt trong backtick dù câu trả lời viết bằng ngôn ngữ nào."
 )
 TASK_ANSWER = {
     "plan": (
@@ -228,8 +234,14 @@ TASK_ANSWER = {
         f"{TASK_STATE_LINE}"
     ),
 }
-_TASK_STATE = re.compile(r"\*\*Trạng thái\*\*\s*\n+\s*[-•*]?\s*`?(xong|chờ trả lời|cần bạn)", re.IGNORECASE)
-TASK_STATES = {"xong": "done", "chờ trả lời": "waiting", "cần bạn": "you"}
+# The label and the keyword also in English: LANG_RULE lets an answer follow the user's language, and a session that
+# translated them anyway must not lose its state (Hôm nay, the AI Agent list and autobe.py read it).
+_TASK_STATE = re.compile(
+    r"\*\*(?:Trạng thái|Status|State)\*\*:?\s*\n*\s*[-•*]?\s*`?(xong|chờ trả lời|cần bạn|done|waiting|needs you)",
+    re.IGNORECASE,
+)
+TASK_STATES = {"xong": "done", "chờ trả lời": "waiting", "cần bạn": "you",
+               "done": "done", "waiting": "waiting", "needs you": "you"}  # fmt: skip
 
 
 def task_state(result: str | None) -> str | None:
@@ -286,7 +298,10 @@ DEEP_BATCH_TASK = (
 SVG_NS = "http://www.w3.org/2000/svg"
 _SVG_TAGS = {"svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "defs", "stop",
              "linearGradient", "radialGradient"}  # fmt: skip
-_SVG_DROP = {"href", "style", "class"}
+_SVG_DROP = {"href", "style", "class", "transform-origin"}
+# a mascot's parts the app animates like the robot's (globals.css .m-*), and the point a limb turns around
+SVG_PARTS = {"m-blink", "m-wave", "m-glow"}
+_SVG_ORIGIN = re.compile(r"-?\d+(\.\d+)?( -?\d+(\.\d+)?)?")
 
 
 def _svg_shapes(el: ET.Element) -> ET.Element | None:
@@ -295,14 +310,19 @@ def _svg_shapes(el: ET.Element) -> ET.Element | None:
         return None
     keep = {k: v for k, v in el.attrib.items()
             if "}" not in k and k not in _SVG_DROP and not k.lower().startswith("on")}  # fmt: skip
+    if tag == "g" and el.get("class") in SVG_PARTS:
+        keep["class"] = el.get("class", "")
+        if _SVG_ORIGIN.fullmatch(el.get("transform-origin", "")):
+            keep["transform-origin"] = el.get("transform-origin", "")
     out = ET.Element(tag, keep)
     out.extend(c for c in map(_svg_shapes, el) if c is not None)
     return out
 
 
 def clean_svg(text: str) -> str | None:
-    """The first <svg> of an AI answer cut down to plain shapes and gradients (no script, link, text, style, event),
-    with the SVG namespace so it renders as an image; None when there is none or it does not parse."""
+    """The first <svg> of an AI answer cut down to plain shapes and gradients (no script, link, text, style, event;
+    a class only on a mascot's moving part, SVG_PARTS), with the SVG namespace so it renders as an image; None when
+    there is none or it does not parse."""
     m = re.search(r"<svg\b.*?</svg>", text, re.S | re.I)
     if not m or len(m[0]) > 30_000:
         return None
@@ -378,6 +398,18 @@ def data_json(v) -> str:
 # without it a sender with a @username is tagged by name ("[BE Hỗ trợ](tg://…)" instead of "@citics_be_support_bot").
 def cached_username(_uid: str) -> str | None:
     return None
+
+
+NAME_TAG = re.compile(r"\[([^\[\]\n]{1,64})\]\(tg://user\?id=(\d{1,20})\)")  # telegram.split_format's tag by name
+
+
+def at_usernames(text: str) -> str:
+    """Tags by name ([Name](tg://user?id=N)) of people with a @username become that @username: AI sessions always tag
+    by @username, in what they read (prompts the page builds from stored messages, which keep no username) and in what
+    they wrote before (log, result). Someone without one keeps the tag by name (it still tags them)."""
+    if "tg://user?id=" not in text:
+        return text
+    return NAME_TAG.sub(lambda m: f"@{u}" if (u := cached_username(m[2])) else m[0], text)
 
 
 def who(m) -> dict:
@@ -719,6 +751,8 @@ class AiService:
         ref: str = "",
         fast: bool = False,
         guide: bool = False,
+        session: tuple[str, bool] | None = None,
+        pick: tuple[str, str] | None = None,
     ) -> str:
         """One `claude -p` run (or the Codex/Antigravity CLI picked instead): prompt on stdin, answer on stdout.
         `heavy`: a long read (many tickets), run on the task model with the longer timeout.
@@ -729,14 +763,18 @@ class AiService:
         (its own model / effort picks). `yt`: a YouTrack run (YouTrack's picks). `guide`: the know-it-all bot's picks.
         `shell` (with `project`):
         may run commands in the sandbox (build, test), see providers.ask_cmd.
-        `ref`: the session code (YT-xxxxxx), in the run log. `fast`: the CLI's quickest model, not the picked one."""
+        `ref`: the session code (YT-xxxxxx), in the run log. `fast`: the CLI's quickest model, not the picked one.
+        `pick` (model, effort): this run's own, over both.
+        `session` (id, resume): the run starts that CLI session or carries it on (providers.keeps_session says
+        where); such a run is not retried here, its id being taken by the first try."""
         s = self.settings
         cwd = project or read_dir  # anything to read => the read-only tool command
         provider = providers.chosen(s, task=heavy, brief=brief, yt=yt, guide=guide)
-        choice = (providers.fast_choice(provider) if fast else
+        choice = ((*pick, False) if pick else providers.fast_choice(provider) if fast else
                   providers.run_choice(s, task=heavy, provider=provider, brief=brief, yt=yt, guide=guide))  # fmt: skip
         cmd = providers.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
-                                model=choice[0], effort=choice[1], stream=on_text is not None, shell=shell)  # fmt: skip
+                                model=choice[0], effort=choice[1], stream=on_text is not None, shell=shell,
+                                session=session)  # fmt: skip
         if provider == "claude" and not providers.is_claude(cmd):
             provider = None  # another AI command only prints its answer
         prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}\n\n{user_prompt}")
@@ -744,7 +782,7 @@ class AiService:
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref)
         except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt
-            if e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
+            if session or e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
                 raise
             log.info("AI run for %s retried after: %s", feature, e.detail)
             if on_text:

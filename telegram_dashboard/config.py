@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import functools
 import json
 import os
 import shlex
@@ -14,10 +15,43 @@ HOST = "127.0.0.1"
 PORT = 8765
 
 
-def data_root(root: Path) -> Path:
+def default_home(root: Path) -> Path:
     """Packaged install: the launcher sets TD_HOME (outside versions/, so updates keep the data)."""
     home = os.environ.get("TD_HOME")
-    return Path(home) / "data" if home else root / "data"
+    return Path(home) if home else root
+
+
+def left_file(root: Path) -> Path:
+    return default_home(root) / "data_left"  # an old data/ a move could not delete: local_data.sweep_left
+
+
+def kept_file(root: Path) -> Path:
+    # the data/ in use before "Dùng dữ liệu ở đó": left as it was, still not for AI runs
+    # ponytail: the last one only; a second switch drops the first from the deny rules
+    return default_home(root) / "data_kept"
+
+
+def home_file(root: Path) -> Path:
+    """Where "Đổi thư mục" keeps its path: in the install, so another install or a test's own root (the e2e
+    fixture server) never lands on this one's data."""
+    return default_home(root) / "data_home"
+
+
+@functools.cache  # data_dir is read all the time; only local_data._set_home writes the file (and clears this)
+def _pointed(f: Path) -> Path | None:
+    with contextlib.suppress(OSError):
+        if p := f.read_text().strip():
+            return Path(p)
+    return None
+
+
+def data_home(root: Path) -> Path:
+    """The folder holding data/ and agent-links/: the one picked in Cài đặt › Dữ liệu, else the install's."""
+    return _pointed(home_file(root)) or default_home(root)
+
+
+def data_root(root: Path) -> Path:
+    return data_home(root) / "data"
 
 
 def _load_dotenv(path: Path) -> None:
@@ -44,6 +78,7 @@ SECRET_ENV = (
     "GOOGLE_APPLICATION_CREDENTIALS",
 )
 RUN_DIR = Path.home() / ".telegram_dashboard"  # outside every install's data/: one server per machine
+DB_NAME = "dashboard.sqlite3"
 
 
 def child_env() -> dict[str, str]:
@@ -173,6 +208,14 @@ class Settings:
         return data_root(self.root)
 
     @property
+    def secret_dirs(self) -> list[Path]:
+        """What an AI run may not read: data/, the install's own data/ (a log from before a move holds the
+        sign-in link), an old data/ a move has not managed to delete yet, and the one kept by "Dùng dữ liệu ở đó"."""
+        files = (left_file(self.root), kept_file(self.root))
+        dirs = [self.data_dir, default_home(self.root) / "data", *map(_pointed, files)]
+        return list(dict.fromkeys(d.resolve() for d in dirs if d))
+
+    @property
     def youtrack_path(self) -> Path:
         return self.data_dir / "youtrack.json"  # URL + token pasted in Settings; wins over .env
 
@@ -189,7 +232,7 @@ class Settings:
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "dashboard.sqlite3"
+        return self.data_dir / DB_NAME
 
     @property
     def session_path(self) -> Path:

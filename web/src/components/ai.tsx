@@ -423,11 +423,12 @@ const SCOPES: Record<AiScope, RunKind[]> = { telegram: ["chat", "brief", "task"]
 const stepsOf = (c: AiCatalogEntry, model: string) => c.models.find((o) => o.value === model)?.efforts ?? c.efforts;
 
 /** One CLI's model dropdown and effort slider, both from its catalog entry (no efforts: the model takes none, no slider).
- *  `inherit`: what "" means here when it is not the CLI default (Briefing: the "chat" picks). `bare`: no "Effort" caption (a table with a header). */
-export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass, inherit, bare, variant = "full" }: {
+ *  `inherit`: what "" means here when it is not the CLI default (Briefing: the "chat" picks). `bare`: no "Effort" caption (a table with a header).
+ *  `chip`: pills sized for a prompt box's tool row. */
+export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, effortClass, inherit, bare, variant = "full", chip }: {
   c: AiCatalogEntry; label: string; model: string; effort: Effort;
   onModel: (v: string) => void; onEffort: (v: Effort) => void; modelClass?: string; effortClass?: string; inherit?: readonly [string, string]; bare?: boolean;
-  variant?: EffortVariant;
+  variant?: EffortVariant; chip?: boolean;
 }) {
   const t = useT();
   // A saved id the CLI no longer lists still shows, so the dropdown never looks empty.
@@ -437,7 +438,8 @@ export function Picks({ c, label, model, effort, onModel, onEffort, modelClass, 
   const steps = stepsOf(c, model);
   return (
     <>
-      <span className={modelClass}><Dropdown label={t("Model {name} cho {label}", { name: c.name, label })} value={model} onChange={onModel} options={models} /></span>
+      <span className={modelClass}><Dropdown label={t("Model {name} cho {label}", { name: c.name, label })} value={model} onChange={onModel} options={models}
+        {...chip && { trigger: CHIP, prefix: <Cpu aria-hidden className="size-3.5 shrink-0 text-ink-3" /> }} /></span>
       {steps.length > 0 && <EffortSlider label={t("Effort {name} cho {label}", { name: c.name, label })} steps={steps} value={effort} onChange={onEffort} className={effortClass} inherit={inherit?.[0]} bare={bare} variant={variant} />}
     </>
   );

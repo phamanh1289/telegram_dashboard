@@ -58,6 +58,7 @@ class GroupInfo(BaseModel):
 
 class Member(BaseModel):
     """A group member the reply box can tag (@ popup): by @username, or by name when there is none."""
+
     user_id: str
     name: str
     username: str | None = None
@@ -136,9 +137,7 @@ class ChangesPage(BaseModel):
 
 
 class StatusDTO(BaseModel):
-    state: Literal[
-        "setup_required", "login_required", "connecting", "connected", "degraded", "stopped"
-    ]
+    state: Literal["setup_required", "login_required", "connecting", "connected", "degraded", "stopped"]
     detail: str | None = None
     ai_configured: bool
     youtrack_configured: bool = False
@@ -256,6 +255,7 @@ class PinRequest(BaseModel):
 class PrRequest(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     body: str = Field("", max_length=5000)
+    mixed_ok: bool = False  # the user confirmed a PR that carries edits from before the session (gitops.open_pr)
 
 
 class SnoozeRequest(BaseModel):
@@ -273,7 +273,7 @@ class RemindResult(BaseModel):
 
 
 class LoopItem(BaseModel):
-    """"Báo lại": my ticket reached `state`; the stored message to answer about it."""
+    """ "Báo lại": my ticket reached `state`; the stored message to answer about it."""
 
     ticket: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*-\d{1,9}$")]
     state: Annotated[str, Field(max_length=100)]
@@ -319,7 +319,7 @@ class SlowGroup(BaseModel):
 
 
 class WeekStats(BaseModel):
-    """"Tuần của tôi": the last 7 days (`cur`), the 7 before (`prev`), this week's slowest groups."""
+    """ "Tuần của tôi": the last 7 days (`cur`), the 7 before (`prev`), this week's slowest groups."""
 
     cur: WeekNumbers
     prev: WeekNumbers
@@ -485,8 +485,6 @@ class ClaudeAccount(BaseModel):
     login_url: str | None = None
 
 
-
-
 class AiPicks(BaseModel):
     """One CLI's model/effort ("" = its default); task_* apply to tasks and the AI Agent, brief_* to
     Briefing / Digest ("" = same as model / effort), yt_* / yt_task_* to YouTrack's light / heavy runs
@@ -617,6 +615,19 @@ class AiMascotRequest(BaseModel):
 
     description: str = Field(min_length=1, max_length=200)
     style: Literal["cute", "pixel", "line"] = "cute"
+    # a reference picture to draw after (data: URL, PNG / JPEG / WebP / GIF, ~300 KB)
+    image: str = Field("", max_length=420_000)
+    # the model / effort to draw with, on the drafts CLI ("" = its default); None: the quick model (the drafts picks
+    # with a reference picture)
+    model: AiModel | None = None
+    effort: AiEffort = ""
+
+
+class AiMascotRig(BaseModel):
+    """The model / effort to ready a drawing to move with (Dùng linh vật này); None: the drafts picks."""
+
+    model: AiModel | None = None
+    effort: AiEffort = ""
 
 
 class AiMascotJob(BaseModel):
@@ -627,6 +638,7 @@ class AiMascotJob(BaseModel):
     style: str
     state: Literal["running", "done", "error"]
     svg: str = ""
+    rigged: bool = False  # its eyes / a limb / an accent grouped to move like the robot's (POST …/rig)
     error: str = ""
     detail: str = ""
 
@@ -671,6 +683,7 @@ class TaskRequest(AboutMe):
     prompt: str = Field(min_length=1, max_length=8000)
     chat_id: str | None = None
     message_id: str | None = None
+    mcp: bool = False  # an edit session's first turn may use the user's own MCP servers / plugins (TaskMessage.mcp)
 
 
 class TaskRef(BaseModel):
@@ -682,6 +695,7 @@ class TaskMessage(BaseModel):
     text: str = Field(min_length=1, max_length=16000)  # 8000 typed + attached messages
     refs: list[TaskRef] = Field(default=[], max_length=10)  # attached messages (MAX_REFS): Done ticks them
     edit: bool = False  # "Accept edit": run this turn of a plan task allowed to edit files
+    mcp: bool = False  # this turn may use the user's own MCP servers / plugins, outside the sandbox (edit turns)
 
 
 class TaskAi(BaseModel):
@@ -707,6 +721,13 @@ class AiGuideRequest(BaseModel):
     page: str = Field("", max_length=200)  # the page the user is on (path), so "here" / "this button" make sense
     code: bool = True  # may read the app's own code (rules, show / hide conditions); off: the guide only, faster
     name: str = Field("", max_length=80)  # how the bot calls the user (YouTrack, else Telegram name); "": anh/chị
+    state: str = Field("", max_length=300)  # what this machine has set up (Telegram, AI, YouTrack, role)
+    # the Hôm nay list as the page reads it now (today-page.tsx workText): "còn việc nào chờ?" answered from it; sent
+    # every turn, a session carried on too, since it changes
+    work: str = Field("", max_length=12_000)
+    # the AI session of the turns before (the answer's `sid`): this one carries it on, so `guide` holds only the
+    # features not sent yet and `history` is empty
+    sid: UUID | None = None
 
 
 class AiResult(BaseModel):

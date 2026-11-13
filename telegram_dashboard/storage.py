@@ -33,25 +33,27 @@ log = logging.getLogger("telegram_dashboard.storage")
 
 KEEP_CHANGES = 50_000  # change-log rows kept on startup; older cursors get a reset
 # A tag still waiting for the user (messages aliased `m`); snoozed ones come back on their own.
-PENDING = (
-    "m.outgoing=0 AND m.handled=0 AND m.deleted=0 AND COALESCE(m.snoozed_until,0)<=unixepoch()"
-)
+PENDING = "m.outgoing=0 AND m.handled=0 AND m.deleted=0 AND COALESCE(m.snoozed_until,0)<=unixepoch()"
 # A session is Done (tasks `t`, its tag `m`): a kept tag's Done, else its own. A reply (on Telegram, or the session's
 # asks) handles the tag but leaves the session in Doing.
-_TASK_DONE = (
-    "(CASE WHEN m.deleted=0 THEN m.handled AND m.handled_by NOT IN ('reply', 'dashboard') ELSE t.done END)"
-)
+_TASK_DONE = "(CASE WHEN m.deleted=0 THEN m.handled AND m.handled_by NOT IN ('reply', 'dashboard') ELSE t.done END)"
 
 # Old enough to clear (Settings › Dữ liệu): handled tags and our replies, not pinned, not used by an AI session
 # (its turns or its tag) or by an open Báo lại item. Alias `m`, one parameter: the cutoff.
+# NOT IN lists (read once each), not NOT EXISTS: those lookups have no index and ran once per message (75 s at
+# 190k messages against 0.4 s).
 _OLD_MSG = (
     "m.deleted=0 AND m.pinned=0 AND (m.handled=1 OR m.outgoing=1) AND m.date<? "
-    "AND NOT EXISTS (SELECT 1 FROM task_refs r WHERE r.chat_id=m.chat_id AND r.message_id=m.message_id) "
-    "AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.chat_id=m.chat_id AND t.message_id=m.message_id) "
-    "AND NOT EXISTS (SELECT 1 FROM loop_back l WHERE l.chat_id=m.chat_id AND l.message_id=m.message_id AND l.done=0)"
+    "AND (m.chat_id, m.message_id) NOT IN (SELECT chat_id, message_id FROM task_refs) "
+    "AND (m.chat_id, m.message_id) NOT IN "
+    "(SELECT chat_id, message_id FROM tasks WHERE chat_id IS NOT NULL AND message_id IS NOT NULL) "
+    "AND (m.chat_id, m.message_id) NOT IN (SELECT chat_id, message_id FROM loop_back WHERE done=0)"
 )
 # ponytail: a stored message's size, estimated from its text columns plus a fixed row overhead
-_ROW_BYTES = "COALESCE(SUM(LENGTH(m.text) + LENGTH(m.links) + LENGTH(COALESCE(m.sender_name, '')) + 64), 0)"
+_ROW_BYTES = (
+    "COALESCE(SUM(LENGTH(m.text) + LENGTH(m.text_fold) + LENGTH(m.links) "
+    "+ LENGTH(COALESCE(m.sender_name, '')) + 64), 0)"
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -124,6 +126,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   effort TEXT,
   done INTEGER NOT NULL DEFAULT 0,
   git_base TEXT  -- the project's working tree (git tree id) when the session started: Thay đổi diffs from it
+);
+CREATE TABLE IF NOT EXISTS auto_pending (  -- Vòng BE tự chạy: answers waiting for their session's turn (autobe.py)
+  task_id TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,
+  PRIMARY KEY (task_id, chat_id, message_id)
 );
 CREATE TABLE IF NOT EXISTS task_refs (  -- messages attached to a session's turns: Done on the session ticks them too
   task_id TEXT NOT NULL,
@@ -262,8 +270,10 @@ def fold(text: str | None) -> str:
 
 
 # Tags snoozed until a reply that a message answering ?2 wakes: ?2 itself, or the tag my reply ?2 answered.
-_REPLY_SNOOZED = ("SELECT message_id FROM messages WHERE chat_id=?1 AND snooze_on='reply' AND (message_id=?2 OR "
-                  "message_id=(SELECT reply_to_id FROM messages WHERE chat_id=?1 AND message_id=?2 AND outgoing=1))")
+_REPLY_SNOOZED = (
+    "SELECT message_id FROM messages WHERE chat_id=?1 AND snooze_on='reply' AND (message_id=?2 OR "
+    "message_id=(SELECT reply_to_id FROM messages WHERE chat_id=?1 AND message_id=?2 AND outgoing=1))"
+)
 
 
 def _like(text: str) -> str:
@@ -353,8 +363,13 @@ def _qa_text(c: sqlite3.Connection, cid: str, mid: int | None) -> tuple:
     """(chat_id, text) of the nearest stored message naming a #QA code: this one or one up its reply chain (a BE
     answer replies to the copied ask that carries the code); ("", "") when none."""
     for _ in range(CHAIN_MAX):
-        r = None if mid is None else c.execute(
-            "SELECT text, reply_to_id FROM messages WHERE chat_id=? AND message_id=?", (cid, mid)).fetchone()
+        r = (
+            None
+            if mid is None
+            else c.execute(
+                "SELECT text, reply_to_id FROM messages WHERE chat_id=? AND message_id=?", (cid, mid)
+            ).fetchone()
+        )
         if r is None:
             break
         if qa_codes(r[0]):
@@ -474,10 +489,26 @@ def _rule_extra(c: sqlite3.Connection) -> None:
     _add_cols(c, "rules", {"extra": "TEXT NOT NULL DEFAULT ''"})
 
 
+def _text_fold(c: sqlite3.Connection) -> None:
+    """The search's accent-less copy of `text`, kept by every write of it (_upsert_message, apply_deletion):
+    `fold(text) LIKE` called Python once per stored message of the group (3.3 s at 110k messages, 90 ms on this)."""
+    _add_cols(c, "messages", {"text_fold": "TEXT NOT NULL DEFAULT ''"})
+    c.execute("UPDATE messages SET text_fold=fold(text) WHERE text<>''")
+
+
+def _flag_indexes(c: sqlite3.Connection) -> None:
+    """Pinned and snoozed tags are a handful among every stored message: without these, list_pinned and
+    ticket_snoozes (read on every Inbox refresh / YouTrack round) scan the whole table."""
+    if not {"pinned", "deleted", "snoozed_until"} <= {r["name"] for r in c.execute("PRAGMA table_info(messages)")}:
+        return  # a database from before these columns (as _pending_indexes)
+    c.execute("CREATE INDEX IF NOT EXISTS messages_pinned ON messages(date) WHERE pinned=1 AND deleted=0")
+    c.execute("CREATE INDEX IF NOT EXISTS messages_snoozed ON messages(snoozed_until) WHERE snoozed_until IS NOT NULL")
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
-    _task_ref_ask, _rule_extra,
+    _task_ref_ask, _rule_extra, _flag_indexes, _text_fold,
 ]  # fmt: skip
 
 
@@ -494,6 +525,10 @@ class Store:
         conn.create_function("fold", 1, fold, deterministic=True)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
+        # WAL: NORMAL syncs at checkpoints, not on every commit (4x faster commits here, far more on slow disks).
+        # An app crash loses nothing; a power cut may drop the last commits, never corrupt (a send caught
+        # mid-way comes back as "unknown", as outbox_recover already does).
+        conn.execute("PRAGMA synchronous=NORMAL")
         return conn
 
     @contextmanager
@@ -526,6 +561,7 @@ class Store:
         c = sqlite3.connect(self.path, isolation_level=None)
         try:
             c.execute("PRAGMA journal_mode=WAL")  # persistent: set once here
+            c.execute("PRAGMA journal_size_limit=8388608")  # a WAL grown by a burst shrinks back at the next checkpoint
             c.executescript(SCHEMA)  # idempotent CREATE ... IF NOT EXISTS
         finally:
             c.close()
@@ -552,17 +588,13 @@ class Store:
 
     @staticmethod
     def _msg(c: sqlite3.Connection, chat_id: str, message_id: int) -> sqlite3.Row | None:
-        return c.execute(
-            "SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)
-        ).fetchone()
+        return c.execute("SELECT * FROM messages WHERE chat_id=? AND message_id=?", (chat_id, message_id)).fetchone()
 
     def _cursor(self, c: sqlite3.Connection) -> str:
         return format_cursor(self._epoch(c), self._rev(c))
 
     @staticmethod
-    def _record(
-        c: sqlite3.Connection, chat_id: str, message_id: int | None, kind: str, generation: int
-    ) -> None:
+    def _record(c: sqlite3.Connection, chat_id: str, message_id: int | None, kind: str, generation: int) -> None:
         c.execute(
             "INSERT INTO changes (chat_id, message_id, kind, generation) VALUES (?,?,?,?)",
             (chat_id, message_id, kind, generation),
@@ -631,9 +663,7 @@ class Store:
                 (chat_id, title, kind),
             )
 
-    def set_tracking(
-        self, chat_id: str, enabled: bool, title: str | None = None, kind: str | None = None
-    ) -> int:
+    def set_tracking(self, chat_id: str, enabled: bool, title: str | None = None, kind: str | None = None) -> int:
         """Returns the chat's current generation. Disabling bumps it so late work is dropped."""
         with self._conn(write=True) as c:
             return self._set_tracking(c, chat_id, enabled, title, kind)
@@ -646,17 +676,14 @@ class Store:
         if row is None:
             if title is None or kind is None:
                 raise ApiError(404, "unknown_chat")
-            c.execute(
-                "INSERT INTO chats (chat_id,title,kind) VALUES (?,?,?)", (chat_id, title, kind)
-            )
+            c.execute("INSERT INTO chats (chat_id,title,kind) VALUES (?,?,?)", (chat_id, title, kind))
             row = self._chat(c, chat_id)
         if enabled:
             if row["migrated_to"]:
                 raise ApiError(409, "chat_migrated")
             if not row["tracking"]:
                 c.execute(
-                    "UPDATE chats SET tracking=1, tracked_at=?, title=COALESCE(?,title) "
-                    "WHERE chat_id=?",
+                    "UPDATE chats SET tracking=1, tracked_at=?, title=COALESCE(?,title) WHERE chat_id=?",
                     (now_ts(), title, chat_id),
                 )
                 self._record(c, chat_id, None, "tracking", row["generation"])
@@ -705,6 +732,7 @@ class Store:
             c.execute("DELETE FROM digests WHERE chat_id=?", (chat_id,))
             if c.execute("DELETE FROM loop_back WHERE chat_id=?", (chat_id,)).rowcount:
                 self.loop_rev += 1
+            c.execute("DELETE FROM auto_pending WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
             self._record(c, chat_id, None, "purge", gen)
 
@@ -717,12 +745,12 @@ class Store:
         row = self.get_chat(chat_id)
         return bool(row and row["tracking"])
 
-    def list_chats(
-        self, since: datetime | None = None, until: datetime | None = None
-    ) -> tuple[list[ChatDTO], str]:
+    def list_chats(self, since: datetime | None = None, until: datetime | None = None) -> tuple[list[ChatDTO], str]:
         """With a range, only chats that have a kept message in [since, until). Groups with a tag waiting first, the
         one waiting longest on top (what needs you first), then by title."""
-        mine = (f"FROM messages m WHERE m.chat_id=chats.chat_id AND {PENDING} "
+        # INDEXED BY: with no ANALYZE statistics the planner takes messages_chat_date and walks every message of
+        # each group (125 ms at 190k messages; 0.6 ms on the partial index). The index is made by _pending_indexes.
+        mine = (f"FROM messages m INDEXED BY messages_pending WHERE m.chat_id=chats.chat_id AND {PENDING} "
                 "AND (?1 IS NULL OR m.date>=?1) AND (?2 IS NULL OR m.date<?2)")  # fmt: skip
         with self._conn() as c:
             rows = c.execute(
@@ -762,8 +790,8 @@ class Store:
                 return False  # cleared in Settings › Dữ liệu: an old message edited or backfilled is not a new tag
             c.execute(
                 "INSERT INTO messages (sender_id,sender_name,text,date,edit_date,reply_to_id,"
-                "topic_id,outgoing,media_kind,links,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (*values, m.chat_id, m.message_id),
+                "topic_id,outgoing,media_kind,links,text_fold,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (*values, fold(m.text), m.chat_id, m.message_id),
             )
             c.execute("UPDATE messages SET priority=1 WHERE chat_id=? AND message_id=? AND sender_id IN "
                       "(SELECT value FROM rules WHERE kind='priority')", (m.chat_id, m.message_id))  # fmt: skip
@@ -785,8 +813,8 @@ class Store:
             return True
         c.execute(
             "UPDATE messages SET sender_id=?,sender_name=?,text=?,date=?,edit_date=?,reply_to_id=?,"
-            "topic_id=?,outgoing=?,media_kind=?,links=? WHERE chat_id=? AND message_id=?",
-            (*values, m.chat_id, m.message_id),
+            "topic_id=?,outgoing=?,media_kind=?,links=?,text_fold=? WHERE chat_id=? AND message_id=?",
+            (*values, fold(m.text), m.chat_id, m.message_id),
         )
         self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
         return True
@@ -856,13 +884,12 @@ class Store:
                     continue
                 if existing is None:
                     c.execute(
-                        "INSERT INTO messages (chat_id,message_id,text,date,deleted) "
-                        "VALUES (?,?,'',0,1)",
+                        "INSERT INTO messages (chat_id,message_id,text,date,deleted) VALUES (?,?,'',0,1)",
                         (cid, mid),
                     )
                 else:
                     c.execute(
-                        "UPDATE messages SET text='', sender_name=NULL, sender_id=NULL, "
+                        "UPDATE messages SET text='', text_fold='', sender_name=NULL, sender_id=NULL, "
                         "media_kind=NULL, deleted=1 WHERE chat_id=? AND message_id=?",
                         (cid, mid),
                     )
@@ -958,14 +985,18 @@ class Store:
     def ticket_snoozes(self) -> list[str]:
         """Tickets some snoozed tag waits on (still hidden)."""
         with self._conn() as c:
-            return [r[0][7:] for r in c.execute(
-                "SELECT DISTINCT snooze_on FROM messages "
-                "WHERE snooze_on LIKE 'ticket:%' AND snoozed_until>unixepoch()")]
+            return [
+                r[0][7:]
+                for r in c.execute(
+                    "SELECT DISTINCT snooze_on FROM messages "
+                    "WHERE snooze_on LIKE 'ticket:%' AND snoozed_until>unixepoch()"
+                )
+            ]
 
     def remind(
         self, chat_id: str, message_id: int, until: datetime | None, *, restore: str | None = None
     ) -> str | None:
-        """"Nhắc lại sau": reopen a kept tag and hide it until `until` (None: back now), in one write, so it comes
+        """ "Nhắc lại sau": reopen a kept tag and hide it until `until` (None: back now), in one write, so it comes
         back to the to-do list then. `restore` (its Undo): done again as before, by that HANDLED_BY. Returns how it
         was handled before ("" while open), None when the message is not kept (or deleted)."""
         with self._conn(write=True) as c:
@@ -1045,8 +1076,7 @@ class Store:
         with self._conn() as c:
             q = ",".join("?" * len(ids))
             rows = c.execute(
-                f"SELECT * FROM messages WHERE chat_id=? AND message_id IN ({q}) "
-                "ORDER BY message_id",
+                f"SELECT * FROM messages WHERE chat_id=? AND message_id IN ({q}) ORDER BY message_id",
                 (chat_id, *ids),
             ).fetchall()
             return [_row_to_message(r) for r in rows], self._cursor(c)
@@ -1067,7 +1097,7 @@ class Store:
         limit = max(1, min(limit, 100))
         where, args = ["chat_id=?"], [chat_id]
         if q:
-            where.append("deleted=0 AND fold(text) LIKE ? ESCAPE '\\'")
+            where.append("deleted=0 AND text_fold LIKE ? ESCAPE '\\'")  # native scan: no Python call per row
             args.append(_like(fold(q)))
         if pending:
             where.append(PENDING)
@@ -1086,10 +1116,7 @@ class Store:
             where.append("message_id>?")
             args.append(after)
         order = "ASC" if after is not None else "DESC"
-        sql = (
-            f"SELECT * FROM messages m WHERE {' AND '.join(where)} "
-            f"ORDER BY message_id {order} LIMIT ?"
-        )
+        sql = f"SELECT * FROM messages m WHERE {' AND '.join(where)} ORDER BY message_id {order} LIMIT ?"
         with self._conn() as c:
             chat = self._chat(c, chat_id)
             if chat is None or not chat["tracking"]:
@@ -1156,8 +1183,16 @@ class Store:
         )
 
     def outbox_create(
-        self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int, quote: bool = True,
-        *, qa: bool = False, qa_role: str | None = None,
+        self,
+        request_id: str,
+        chat_id: str,
+        reply_to: int,
+        text: str,
+        random_id: int,
+        quote: bool = True,
+        *,
+        qa: bool = False,
+        qa_role: str | None = None,
     ) -> tuple[OutboxDTO, bool]:
         """Returns (record, created). Same id with different payload => 409. `qa`: a "#QA…" line under a text that
         tags someone, minted once here (the hash is over the text as typed), so a retry sends the same code; `qa_role`
@@ -1243,8 +1278,7 @@ class Store:
                 "UPDATE outbox SET status=?, message_id=?, error_code=?, retry_after=?, "
                 "updated_at=?, text=CASE WHEN ?='sent' THEN '' ELSE text END, "
                 "sent_at=CASE WHEN ?='sent' THEN ? ELSE sent_at END WHERE request_id=?",
-                (status, message_id, error_code, retry_after, now_ts(), status, status,
-                 now_ts(), request_id),
+                (status, message_id, error_code, retry_after, now_ts(), status, status, now_ts(), request_id),
             )
             if sent is not None:
                 chat = self._chat(c, sent.chat_id)
@@ -1252,26 +1286,31 @@ class Store:
                     self._upsert_message(c, sent, chat)
             if status == "sent" and r["quote"]:  # replying from the dashboard handles the tag
                 self._mark(c, r["chat_id"], r["reply_to_message_id"], True, "dashboard")
-            return self._outbox_dto(
-                c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
-            )
+            return self._outbox_dto(c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone())
 
     def outbox_recover(self) -> None:
         """After restart: unclaimed pending is certainly unsent; sending is unknown."""
         with self._conn(write=True) as c:
             ts = now_ts()
             c.execute(
-                "UPDATE outbox SET status='failed', error_code='restart', updated_at=? "
-                "WHERE status='pending'",
+                "UPDATE outbox SET status='failed', error_code='restart', updated_at=? WHERE status='pending'",
                 (ts,),
             )
             c.execute(
-                "UPDATE outbox SET status='unknown', error_code='restart', updated_at=? "
-                "WHERE status='sending'",
+                "UPDATE outbox SET status='unknown', error_code='restart', updated_at=? WHERE status='sending'",
                 (ts,),
             )
 
     # ---- auto-handle rules ---------------------------------------------
+    def known_senders(self, limit: int = 500) -> list[dict]:
+        """People who wrote messages saved here (tags, threads), latest first, each with their newest name: the
+        "Người gửi bỏ qua" picker in Settings. Local only, no Telegram read."""
+        with self._conn() as c:
+            rows = c.execute(  # SQLite: a bare column next to MAX() comes from the row holding the max
+                "SELECT sender_id, sender_name, MAX(date) FROM messages WHERE outgoing=0 AND sender_id IS NOT NULL "
+                "AND sender_id != '' GROUP BY sender_id ORDER BY MAX(date) DESC LIMIT ?", (limit,))
+            return [{"user_id": r[0], "name": r[1] or f"#{r[0]}"} for r in rows]
+
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
             rows = c.execute("SELECT * FROM rules ORDER BY id")  # every kind RuleKind knows
@@ -1304,9 +1343,7 @@ class Store:
                 "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label, extra=excluded.extra",
                 (kind, value, label, extra),
             )
-            rule = dict(
-                c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
-            )
+            rule = dict(c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone())
             rule["project"] = json.loads(rule.pop("extra") or "{}").get("project", "")
             if kind == "priority":
                 self._set_priority(c, value, True)
@@ -1424,7 +1461,43 @@ class Store:
     def delete_task(self, task_id: str) -> bool:
         with self._conn(write=True) as c:
             c.execute("DELETE FROM task_refs WHERE task_id=?", (task_id,))
+            c.execute("DELETE FROM auto_pending WHERE task_id=?", (task_id,))
             return bool(c.execute("DELETE FROM tasks WHERE id=?", (task_id,)).rowcount)
+
+    def chat_tasks(self, chat_id: str) -> list[str]:
+        """Sessions holding that group's text: opened on one of its messages or with one attached (Xóa dữ liệu nhóm)."""
+        with self._conn() as c:
+            return [r[0] for r in c.execute(
+                "SELECT id FROM tasks WHERE chat_id=?1 UNION SELECT task_id FROM task_refs WHERE chat_id=?1", (chat_id,)
+            )]  # fmt: skip
+
+    def auto_pending_add(self, task_id: str, refs: list[tuple[str, int]]) -> None:
+        with self._conn(write=True) as c:
+            c.executemany("INSERT OR IGNORE INTO auto_pending VALUES (?,?,?)", [(task_id, *r) for r in refs])
+
+    def auto_pending_drop(self, task_id: str, refs: list[tuple[str, int]] | None = None) -> None:
+        """The answers a turn took (or gave up on); `refs` None: everything waiting for that session."""
+        with self._conn(write=True) as c:
+            if refs is None:
+                c.execute("DELETE FROM auto_pending WHERE task_id=?", (task_id,))
+            else:
+                c.executemany("DELETE FROM auto_pending WHERE task_id=? AND chat_id=? AND message_id=?",
+                              [(task_id, *r) for r in refs])  # fmt: skip
+
+    def auto_pending(self) -> dict[str, list[StoredMessage]]:
+        """Session -> the answers still waiting for it, oldest first (read once at start). Rows whose message or
+        session is gone (deleted, cleared in Cài đặt › Dữ liệu) are dropped here."""
+        out: dict[str, list[StoredMessage]] = {}
+        with self._conn(write=True) as c:
+            c.execute(
+                "DELETE FROM auto_pending WHERE task_id NOT IN (SELECT id FROM tasks) OR NOT EXISTS (SELECT 1 FROM "
+                "messages m WHERE m.chat_id=auto_pending.chat_id AND m.message_id=auto_pending.message_id AND "
+                "m.deleted=0)"
+            )
+            for r in c.execute("SELECT p.task_id, m.* FROM auto_pending p JOIN messages m USING (chat_id, message_id) "
+                               "ORDER BY m.message_id"):  # fmt: skip
+                out.setdefault(r["task_id"], []).append(_row_to_message(r))
+        return out
 
     def add_task_refs(self, task_id: str, refs: list[tuple[str, int, str]], *, ask: bool = True) -> None:
         """(chat_id, message_id, "#QA…" or ""): attaching again fills a code missed before, never clears one.
@@ -1438,7 +1511,7 @@ class Store:
             )
 
     def sent_refs(self) -> dict[str, list[str]]:
-        """"chat_id:message_id" -> the sessions it went to, newest first: attached to a sent turn, cited by Đối chiếu
+        """ "chat_id:message_id" -> the sessions it went to, newest first: attached to a sent turn, cited by Đối chiếu
         BE, or the tag a session was started on (rows are written only once the turn started)."""
         # ponytail: every group, all time, full scan (~3k rows a year: a few ms); grown slow -> ?chat_id= + an index on
         # task_refs(chat_id, message_id), and the query key per group.
@@ -1505,7 +1578,7 @@ class Store:
             return [dict(r) for r in itertools.islice((r for r in rows if word.search(r["text"])), limit)]
 
     def week_stats(self, now: datetime | None = None) -> dict:
-        """"Tuần của tôi": tags received in the last 7 days and the 7 before, how they got handled and how fast
+        """ "Tuần của tôi": tags received in the last 7 days and the 7 before, how they got handled and how fast
         (handled_at - date; rule auto-handles and rows from before handled_at was kept are left out of the timing),
         and this week's slowest groups by median time to handle (2+ timed tags)."""
         end = _ts(now or datetime.now(UTC))
@@ -1665,7 +1738,7 @@ class Store:
         with self._conn() as c:
             try:  # dbstat: compiled into the bundled SQLite; elsewhere sizes fall back to row counts only
                 size = dict(c.execute(
-                    "SELECT COALESCE(s.tbl_name, d.name), SUM(d.pgsize) FROM dbstat d "
+                    "SELECT COALESCE(s.tbl_name, d.name), SUM(d.pgsize) FROM dbstat('main', 1) d "
                     "LEFT JOIN sqlite_schema s ON s.name=d.name GROUP BY 1"
                 ).fetchall())  # fmt: skip
             except sqlite3.Error:

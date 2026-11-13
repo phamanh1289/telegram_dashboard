@@ -3,7 +3,7 @@
 import { type InfiniteData, type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, BrainCircuit, Check, CheckCheck, SquareCheck, Square, CornerDownRight, ExternalLink, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, Repeat, RotateCcw, Star, UserX, Users } from "lucide-react";
 import { AiBotIcon } from "@/components/ai/chat";
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, memo, Suspense, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { CommentDialog } from "@/components/composer-dialogs";
@@ -17,7 +17,7 @@ import { MENU_ACTION, MENU_ITEM, MENU_POPUP, MENU_SEP } from "@/components/ui/me
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Message, type MessagesPage, statusQuery, type Task } from "@/lib/api";
 import { attach, MAX_REFS, messageQuery, sameRef, wantConfirm, wantEdit } from "@/lib/attach";
-import { answerQa, autoSender, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, qaRole, sentQuery, sessionId, SESSION_CODE, setHandled, settled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, ticketsIn, toast, useHasDraft, waitLabel } from "@/lib/inbox";
+import { answerQa, autoSender, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, ticketClick, PartialError, pin, QA_CODE, qaRole, sentQuery, sessionId, SESSION_CODE, setHandled, settled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, ticketsIn, toast, useHasDraft, waitLabel } from "@/lib/inbox";
 import { ago, clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
 import { readOverdueHours, useRole, usesCode } from "@/lib/prefs";
 import { useRetest, yt, ytDetailQuery, ytProjectsQuery } from "@/lib/yt";
@@ -58,7 +58,21 @@ export function inline(text: string, key: number) {
   return out;
 }
 
-/** VA-123 of a known YouTrack project: a chip that opens the ticket sheet. Hover / focus shows a peek card (summary,
+const TicketSheet = lazy(() => import("@/components/yt/sheet").then((m) => ({ default: m.TicketSheet }))); // loaded on the first open
+/** Where a ticket chip's sheet opens (openTicketHere): once, at the Telegram page's root, a sibling of its layout (the
+ *  sheet makes its siblings inert; React events from it don't bubble into the row the chip sits in). */
+export function TicketSheetHost() {
+  const [id, setId] = useState<string | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => setId((e as CustomEvent<string>).detail);
+    addEventListener("open-ticket", on);
+    return () => removeEventListener("open-ticket", on);
+  }, []);
+  return id && <Suspense fallback={null}><TicketSheet key={id} id={id} onClose={() => setId(null)} /></Suspense>;
+}
+
+/** VA-123 of a known YouTrack project: a chip that opens the YouTrack tab's ticket sheet right here (⌘ / middle click:
+ *  the YouTrack page). Hover / focus shows a peek card (summary,
  *  state, priority, assignee, last update) with links to the YouTrack module and to YouTrack itself, so a reply needn't
  *  leave Telegram to check a ticket. */
 export function TicketChip({ id }: { id: string }) {
@@ -73,6 +87,7 @@ export function TicketChip({ id }: { id: string }) {
     <span className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}
       onKeyDown={(e) => { if (e.key === "Escape" && hover) { e.stopPropagation(); setHover(false); } }}>
       <a href={`/youtrack/?ticket=${id}`} aria-describedby={hover ? `peek-${id}` : undefined}
+        onClick={(e) => { setHover(false); ticketClick(id)(e); }}
         className={cn(codeCls, "font-bold no-underline hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/30", tk?.resolved && "line-through")}>{id}</a>
       {hover && (
         // pt, not mt: the pointer crosses into the card without leaving the chip's box.

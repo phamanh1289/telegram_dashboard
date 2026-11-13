@@ -10,6 +10,10 @@ const DEFAULT = "\u0000default"; // Select reads "" as nothing chosen; "" (e.g. 
 /** The quiet pill a prompt box's pickers wear (model, project…): pass as `trigger`, or merge into a trigger's className. */
 export const CHIP = "flex h-7 min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-full border border-transparent bg-paper-2 pr-1.5 pl-2.5 text-xs font-medium text-ink-2 transition-[background-color,color] duration-(--dur-micro) hover:bg-paper-3 hover:text-ink data-popup-open:bg-paper-3 data-popup-open:text-ink";
 
+/** The popup and option look every pick list shares (also the sender picker's Combobox in Settings). */
+export const POPUP = "max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
+export const OPTION = "grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2";
+
 /** `group`: a heading over a run of options sharing it (the trigger then reads "<group> · <label>"). */
 export type DropdownOption = { value: string; label: string; hint?: string; group?: string };
 
@@ -31,7 +35,7 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
   }
   const item = (o: (typeof items)[number]) => (
     <Select.Item key={o.value} value={o.value}
-      className="grid cursor-default grid-cols-[minmax(0,1fr)_1rem] items-center gap-3 rounded-md py-1.5 pr-2 pl-2.5 text-sm text-ink outline-none select-none data-highlighted:bg-paper-2">
+      className={OPTION}>
       <span className="grid">
         <Select.ItemText className="font-medium">{o.text}</Select.ItemText>
         {o.hint && <span className="text-xs whitespace-nowrap text-ink-3">{o.hint}</span>}
@@ -51,7 +55,7 @@ export function Dropdown({ label, value, onChange, options, className, trigger, 
       </Select.Trigger>
       <Select.Portal>
         <Select.Positioner sideOffset={6} align="start" alignItemWithTrigger={false} className="z-50 outline-none">
-          <Select.Popup className="max-h-(--available-height) min-w-(--anchor-width) origin-(--transform-origin) overflow-y-auto rounded-lg bg-cotton p-1 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+          <Select.Popup className={POPUP}>
             {runs.map((run) => run[0].group
               ? <Select.Group key={run[0].group} className="not-first:mt-1 not-first:border-t not-first:border-rule not-first:pt-1">
                   <Select.GroupLabel className="px-2.5 pt-1 pb-0.5 text-2xs font-bold text-ink-3">{run[0].group}</Select.GroupLabel>

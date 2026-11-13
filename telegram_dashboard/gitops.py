@@ -14,8 +14,11 @@ from .errors import ApiError
 
 MAX_DIFF = 200_000  # chars of patch text sent to the page
 TIMEOUT = 60.0
-SECRET_FILE = re.compile(r"(^|/)(\.env(\.[\w.-]+)?|id_(rsa|dsa|ecdsa|ed25519)\w*|[^/]*\.(pem|key|p12|pfx|jks|keystore)|"
-                         r"credentials(\.json)?|secrets?\.(json|ya?ml|properties))$", re.I)
+SECRET_FILE = re.compile(
+    r"(^|/)(\.env(\.[\w.-]+)?|id_(rsa|dsa|ecdsa|ed25519)\w*|[^/]*\.(pem|key|p12|pfx|jks|keystore)|"
+    r"credentials(\.json)?|secrets?\.(json|ya?ml|properties))$",
+    re.I,
+)
 BASE_BRANCHES = {"main", "master", "develop", "dev"}
 
 
@@ -123,10 +126,21 @@ async def _diff(cwd: str, a: str, b: str, prefix: str = "") -> tuple[list[dict],
     return files, patch
 
 
+async def _mixed(root: str, base: str, paths: list[str]) -> set[str]:
+    """Of `paths`, the ones the user had already edited when the session started (HEAD against its start tree): a
+    commit of such a file carries those edits too, though the session's diff does not show them."""
+    if not paths:
+        return set()
+    git = ("--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z")
+    code, out, _ = await _git(root, *git, "HEAD", base, "--", *paths)
+    return set() if code else set(filter(None, out.split("\0")))  # no HEAD yet (a repo without commits): none
+
+
 async def changes(project: str, base: str | None = None) -> dict:
     """What changed: since `base` (the session's start `snapshot`) when given, else the working tree against HEAD.
     Checked-out submodules too (paths prefixed with theirs; one without a start tree: against its HEAD).
-    Branch, changed files (secrets flagged), and the patch (secret-looking files never read)."""
+    Branch, changed files (secrets flagged; `mixed`: edited before the session too), `baseline` (False: no start
+    tree, so everything in the working tree is listed), and the patch (secret-looking files never read)."""
     code, top, _ = await _git(project, "rev-parse", "--show-toplevel")
     if code:
         raise ApiError(422, "not_git_repo")
@@ -144,13 +158,22 @@ async def changes(project: str, base: str | None = None) -> dict:
             if f["status"] == "??" and not f["secret"] and len(patch) <= MAX_DIFF:
                 patch += _new_file(root, f["path"], MAX_DIFF + 1 - len(patch))
     files = [f for f in files if f["path"] not in subs]  # a submodule's own files come next, not its commit pointer
+    mixed = await _mixed(root, bases[""], [f["path"] for f in files]) if bases[""] else set()
+    for f in files:
+        f["mixed"] = f["path"] in mixed
     for p in subs:
         cwd = os.path.join(root, p)
         more, text = await _diff(cwd, bases.get(p) or "HEAD", await _tree(cwd), p + "/")
         files += more
         patch += text
-    return {"root": root, "branch": branch.strip(), "files": files,
-            "diff": patch[:MAX_DIFF], "truncated": len(patch) > MAX_DIFF}
+    return {
+        "root": root,
+        "branch": branch.strip(),
+        "files": files,
+        "baseline": bool(bases[""]),
+        "diff": patch[:MAX_DIFF],
+        "truncated": len(patch) > MAX_DIFF,
+    }
 
 
 def _new_file(root: str, path: str, budget: int) -> str:
@@ -171,11 +194,14 @@ def _new_file(root: str, path: str, budget: int) -> str:
     return head + f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n" + "".join(f"+{ln}\n" for ln in lines)
 
 
-async def open_pr(project: str, branch: str, title: str, body: str, base: str | None = None) -> dict:
+async def open_pr(
+    project: str, branch: str, title: str, body: str, base: str | None = None, *, mixed_ok: bool = False
+) -> dict:
     """Commit the changed files (since `base`, see `changes`) except secret-looking and submodule ones on a branch (a
     new `branch` when on a base branch or detached), push it and open a PR with gh. Only those paths are committed:
     other files the user changed or staged stay out. Returns url (None when gh is missing / failed: the branch is
-    pushed), branch and the files left out."""
+    pushed), branch and the files left out. A commit takes whole files, so one that would carry more than the session's
+    own edits (a file edited before it started, or no start tree at all) needs `mixed_ok`: the user saw the warning."""
     now = await changes(project, base)
     inner = tuple(p + "/" for p in await _subs(now["root"]))  # a submodule's files commit in its own repo, not here
     keep = [f["path"] for f in now["files"] if not f["secret"] and not f["path"].startswith(inner)]
@@ -183,6 +209,9 @@ async def open_pr(project: str, branch: str, title: str, body: str, base: str | 
     if not keep:
         only_sub = any(f["path"].startswith(inner) for f in now["files"])
         raise ApiError(422, "submodule_only" if only_sub else "no_changes")
+    mixed = [f["path"] for f in now["files"] if f.get("mixed") and f["path"] in keep]
+    if not mixed_ok and (mixed or not now["baseline"]):
+        raise ApiError(409, "mixed_changes" if mixed else "no_baseline", detail=", ".join(mixed)[:300] or None)
     cur = now["branch"]
     if not cur or cur in BASE_BRANCHES:
         code, _, err = await _git(project, "switch", "-c", branch)

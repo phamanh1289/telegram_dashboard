@@ -63,6 +63,7 @@ def test_pinned_sticks_to_top(client):
 def test_rules_clear_existing_and_new_tags(client):
     store = client.app.state.store
     _seed(store)
+    assert [m["user_id"] for m in client.get("/api/senders").json()] == ["5", "9"]  # the picker: latest first
     r = client.post("/api/rules", json={"kind": "keyword", "value": "#TB"}, headers=H).json()
     assert r["handled"] == 1 and r["rule"]["value"] == "#tb"
     assert [i["message"]["message_id"] for i in client.get("/api/pending").json()] == ["1"]

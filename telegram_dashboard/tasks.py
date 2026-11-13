@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 
 from . import gitops
 from .agent import delete_task_files, read_task_prompt, read_task_result, task_active_at
-from .ai import session_rules, task_state
+from .ai import at_usernames, session_rules, task_state
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
@@ -95,7 +95,8 @@ async def set_task_handled(s, row: dict, handled: bool, react: bool) -> None:
     if kept:
         by = "me" if react else "quiet"
         changed = await s.db.write(s.store.set_handled, cid, mid, handled, by) or (
-            handled and await s.db.write(s.store.claim_handled, cid, mid, by))  # a reply had handled it
+            handled and await s.db.write(s.store.claim_handled, cid, mid, by)
+        )  # a reply had handled it
     else:
         changed = await s.db.write(s.store.set_task_done, task_id, handled)
     if changed and react and mid is not None:
@@ -108,11 +109,11 @@ async def set_task_handled(s, row: dict, handled: bool, react: bool) -> None:
 
 async def start_task(
     s, task_id: str, chat_id: str | None, message_id: int | None, project: str, prompt: str, mode: str,
-    kind: str = "task", title: str | None = None, *, about, refs=(), ask_refs: bool = True,
+    kind: str = "task", title: str | None = None, *, about, refs=(), ask_refs: bool = True, mcp: bool = False,
 ) -> None:  # fmt: skip
     """Save the task, then start its first turn: a run is never without its row (a failed start
     takes the row back). `refs`: messages it is about (Đối chiếu BE's cited ones); `ask_refs`: its asks reply to the
-    last of them."""
+    last of them. `mcp`: its first turn may use the user's own MCP servers / plugins (an edit session)."""
     session = s.agent.new_session()
     try:  # the tree before the AI touches it: Thay đổi shows this session's edits only
         base = await gitops.snapshot(project)
@@ -126,21 +127,38 @@ async def start_task(
         rules = session_rules(mode, about.role, about.platform, about.intro)
 
         async def text() -> str:
-            return await expand(s, prompt, task_id, chat_id=chat_id) + f"\n\n{rules}"
+            return await expand(s, at_usernames(prompt), task_id, chat_id=chat_id) + f"\n\n{rules}"
 
-        named = await s.agent.start(task_id, project, text, mode, session, False)
+        named = await s.agent.start(task_id, project, text, mode, session, False, mcp=mcp)
     except BaseException:
         await s.db.write(s.store.delete_task, task_id)
         await asyncio.to_thread(delete_links, s.settings, task_id)  # link text saved by expand()
         raise
     if named != session:  # Codex / Antigravity name their session once it runs
         await s.db.write(s.store.set_task_session, task_id, named)
+    if message_id is not None:  # the tag itself, with its Q&A code: a later answer in that thread finds this session
+        await add_refs(s, task_id, [(chat_id, message_id)], ask=False)  # (open_task_by_qa); asks keep their target
     await add_refs(s, task_id, refs, ask=ask_refs)
 
 
-async def send_turn(s, row: dict, typed: str, refs, edit: bool) -> None:
+async def remove_task(s, task_id: str) -> bool:
+    """Delete a session for good: its run stopped first (so nothing writes back), then its row, refs, log, result and
+    saved links. One path for the session's own Xóa, Cài đặt › Dữ liệu and Xóa dữ liệu nhóm. False: no such session."""
+    await s.agent.stop(task_id)
+    if not await s.db.write(s.store.delete_task, task_id):
+        return False
+    await asyncio.to_thread(delete_task_files, s.settings, task_id)
+    return True
+
+
+RELAY_EFFORT = "medium"  # a turn Vòng BE sends on its own: the session's model, at most this effort
+
+
+async def send_turn(s, row: dict, typed: str, refs, edit: bool, *, auto: bool = False, mcp: bool = False) -> None:
     """A follow-up turn of a session (resumes it): typed text (+ its attached messages, `refs`), allowed to edit files
-    when `edit` (per turn, so a plan can be approved). The composer and autobe's relayed answers."""
+    when `edit` (per turn, so a plan can be approved). The composer and autobe's relayed answers (`auto`: nobody
+    asked for that turn, so it runs at RELAY_EFFORT unless the session's own effort is lower). `mcp`: the user let this
+    turn use their own MCP servers / plugins (an edit turn only)."""
     task_id = row["id"]
 
     # made in start(), once reserved: a double send must not rewrite the files a turn reads
@@ -148,10 +166,14 @@ async def send_turn(s, row: dict, typed: str, refs, edit: bool) -> None:
         if has_links(row["prompt"] or "") and not links_dir(s.settings, task_id).is_dir():
             log.info("task %s: saved link content gone, fetching it again", task_id)
             await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])  # re-saves earlier files
-        return await expand(s, typed, task_id, chat_id=row["chat_id"])
+        return await expand(s, at_usernames(typed), task_id, chat_id=row["chat_id"])
 
     mode = "edit" if edit else row["mode"]
-    await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, (row["model"], row["effort"]))
+    effort = row["effort"]
+    if auto and effort not in ("low", RELAY_EFFORT):
+        effort = RELAY_EFFORT
+    await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, (row["model"], effort), auto=auto,
+                        mcp=mcp)  # fmt: skip
     await add_refs(s, task_id, refs)
 
 
@@ -175,7 +197,8 @@ def build_router(settings) -> APIRouter:
             raise ApiError(422, "ai_agent_missing")
         mid = None if body.message_id is None else int_or_404(body.message_id, "message_not_found")
         task_id = new_task_id()
-        await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode, about=body)
+        await start_task(s, task_id, body.chat_id, mid, body.project, body.prompt, body.mode, about=body,
+                         mcp=body.mcp)  # fmt: skip
         return {"id": task_id}
 
     @r.get("")
@@ -237,7 +260,8 @@ def build_router(settings) -> APIRouter:
         row = await _task(s, task_id, headless=True)
         if not row["session_id"]:
             raise ApiError(404, "task_not_found")
-        await send_turn(s, row, body.text, [(x.chat_id, x.message_id) for x in body.refs], body.edit)
+        await send_turn(s, row, body.text, [(x.chat_id, x.message_id) for x in body.refs], body.edit,
+                        mcp=body.mcp)  # fmt: skip
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:
@@ -266,7 +290,8 @@ def build_router(settings) -> APIRouter:
         if s.agent.running(task_id):
             raise ApiError(409, "task_busy")
         title, text = body.title.strip(), body.body.strip()
-        res = await gitops.open_pr(row["project"], f"ai/{task_id}", title, text, row["git_base"])
+        base = row["git_base"]
+        res = await gitops.open_pr(row["project"], f"ai/{task_id}", title, text, base, mixed_ok=body.mixed_ok)
         if row["git_base"]:  # what went into the PR is no longer this session's open change
             await s.db.write(s.store.set_task_base, task_id, await gitops.snapshot(row["project"]))
         pushed = f"Đã đẩy nhánh `{res['branch']}`. {res['note'] or ''}"
@@ -279,10 +304,7 @@ def build_router(settings) -> APIRouter:
 
     @r.delete("/{task_id}", status_code=204)
     async def delete_task(task_id: str, request: Request) -> None:
-        s = request.app.state
-        await s.agent.stop(task_id)
-        if not await s.db.write(s.store.delete_task, task_id):
+        if not await remove_task(request.app.state, task_id):
             raise ApiError(404, "task_not_found")
-        await asyncio.to_thread(delete_task_files, settings, task_id)
 
     return r

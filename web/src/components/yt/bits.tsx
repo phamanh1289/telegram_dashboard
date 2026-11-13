@@ -77,8 +77,11 @@ export function TypeTag({ type }: { type: string | null }) {
 /** Button + floating panel (Base UI: closes on outside click and Esc, focus goes back to the button). `title`: a Hint on the button. */
 export function Popover({ label, children, className, align = "left", title, chevron = true }: { label: React.ReactNode; children: (close: () => void) => React.ReactNode; className?: string; align?: "left" | "right"; title?: string; chevron?: boolean }) {
   const [open, setOpen] = useState(false);
+  // the button shows the value ("Tất cả sprint"), so the field's name goes in its label: screen readers (and the live
+  // guide, which finds a control by name) have only the value otherwise — `title` is a hover hint, not a name
+  const name = title && (typeof label === "string" ? `${title}: ${label}` : title);
   const trigger = (
-    <BasePopover.Trigger render={<Button size="sm" variant="outline" className={cn("max-w-56 justify-between", className)} />}>
+    <BasePopover.Trigger render={<Button size="sm" variant="outline" aria-label={name} className={cn("max-w-56 justify-between", className)} />}>
       <span className="truncate">{label}</span>{chevron && <ChevronDown className="text-ink-3" />}
     </BasePopover.Trigger>
   );

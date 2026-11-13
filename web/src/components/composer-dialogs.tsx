@@ -16,7 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { type AiTicketDraft, api, errorText, type Message, type YouTrackIssue } from "@/lib/api";
 import { TASK_MODES, tagOf, telegramLink, textWithLinks, toast } from "@/lib/inbox";
-import { aboutMe, readAgentProject, readIntro, readPlatform, readYtRole, setPref, useIntro } from "@/lib/prefs";
+import { aboutMe, readAgentMcp, readAgentProject, readIntro, readPlatform, readYtRole, setPref, useIntro } from "@/lib/prefs";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -190,7 +190,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
     mutationFn: () =>
       api<{ id: string }>("/tasks", {
         method: "POST",
-        json: { project, prompt: custom ?? generated, mode, chat_id: m.chat_id, message_id: m.message_id, ...aboutMe() },
+        json: { project, prompt: custom ?? generated, mode, mcp: mode === "edit" && readAgentMcp(), chat_id: m.chat_id, message_id: m.message_id, ...aboutMe() },
       }),
     onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
     onSuccess: (r) => onCreated(r.id),

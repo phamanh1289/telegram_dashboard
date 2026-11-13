@@ -290,6 +290,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/data/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move
+         * @description Move data/ (and agent-links/) under another folder: planned here, done by the restart this asks for.
+         */
+        post: operations["move_api_data_move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/data": {
         parameters: {
             query?: never;
@@ -1272,6 +1292,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/senders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Senders
+         * @description Everyone seen writing in the saved messages: Settings › Luôn bỏ qua picks a sender to ignore from it.
+         */
+        get: operations["senders_api_senders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rules/{rule_id}": {
         parameters: {
             query?: never;
@@ -1467,8 +1507,9 @@ export interface paths {
         put?: never;
         /**
          * Ai Mascot
-         * @description Start drawing an SVG mascot from the member's description (Cài đặt › Linh vật AI) on the CLI's quickest
-         *     model, in the background like an AI session: the page may close; GET shows it running, then its drawing.
+         * @description Start drawing an SVG mascot from the member's description (Cài đặt › Linh vật AI) on the model / effort the
+         *     dialog sends (None: the CLI's quickest model; the drafts picks with a reference picture, the quick one draws
+         *     it poorly), in the background like an AI session: the page may close; GET shows it running, then its drawing.
          */
         post: operations["ai_mascot_api_ai_mascot_post"];
         delete?: never;
@@ -1492,6 +1533,28 @@ export interface paths {
          * @description Stop a running drawing, or forget a finished one.
          */
         delete: operations["ai_mascot_drop_api_ai_mascot__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/mascot/{job_id}/rig": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Mascot Rig
+         * @description Ready a drawing to move like the robot (Dùng linh vật này): the AI groups its eyes, a limb and an accent
+         *     under the classes the app animates (ai.SVG_PARTS); every shape stays, else mascot_rig_invalid. Once per
+         *     drawing: the job keeps it. Waits for the run (one quick answer), unlike the drawing.
+         */
+        post: operations["ai_mascot_rig_api_ai_mascot__job_id__rig_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1913,6 +1976,18 @@ export interface components {
              * @default
              */
             name: string;
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /**
+             * Work
+             * @default
+             */
+            work: string;
+            /** Sid */
+            sid?: string | null;
         };
         /** AiLoginStarted */
         AiLoginStarted: {
@@ -1941,6 +2016,11 @@ export interface components {
              */
             svg: string;
             /**
+             * Rigged
+             * @default false
+             */
+            rigged: boolean;
+            /**
              * Error
              * @default
              */
@@ -1964,6 +2044,33 @@ export interface components {
              * @enum {string}
              */
             style: "cute" | "pixel" | "line";
+            /**
+             * Image
+             * @default
+             */
+            image: string;
+            /** Model */
+            model?: string | null;
+            /**
+             * Effort
+             * @default
+             * @enum {string}
+             */
+            effort: "" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+        };
+        /**
+         * AiMascotRig
+         * @description The model / effort to ready a drawing to move with (Dùng linh vật này); None: the drafts picks.
+         */
+        AiMascotRig: {
+            /** Model */
+            model?: string | null;
+            /**
+             * Effort
+             * @default
+             * @enum {string}
+             */
+            effort: "" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
         };
         /** AiOption */
         AiOption: {
@@ -2654,6 +2761,17 @@ export interface components {
             tables: components["schemas"]["DataTable"][];
             /** Chats */
             chats: components["schemas"]["DataChat"][];
+            /**
+             * Move Error
+             * @default
+             * @enum {string}
+             */
+            move_error: "" | "failed" | "old_left";
+            /**
+             * Move Old
+             * @default
+             */
+            move_old: string;
         };
         /** DataTable */
         DataTable: {
@@ -3079,6 +3197,16 @@ export interface components {
             /** Has More */
             has_more: boolean;
         };
+        /** MoveBody */
+        MoveBody: {
+            /** Path */
+            path: string;
+            /**
+             * Adopt
+             * @default false
+             */
+            adopt: boolean;
+        };
         /** OutboxDTO */
         OutboxDTO: {
             /** Request Id */
@@ -3121,6 +3249,11 @@ export interface components {
              * @default
              */
             body: string;
+            /**
+             * Mixed Ok
+             * @default false
+             */
+            mixed_ok: boolean;
         };
         /** Privacy */
         Privacy: {
@@ -3490,6 +3623,11 @@ export interface components {
              * @default false
              */
             edit: boolean;
+            /**
+             * Mcp
+             * @default false
+             */
+            mcp: boolean;
         };
         /** TaskRef */
         TaskRef: {
@@ -3527,6 +3665,11 @@ export interface components {
             chat_id?: string | null;
             /** Message Id */
             message_id?: string | null;
+            /**
+             * Mcp
+             * @default false
+             */
+            mcp: boolean;
         };
         /** TelegramApp */
         TelegramApp: {
@@ -4177,6 +4320,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Privacy"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    move_api_data_move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -5930,6 +6106,26 @@ export interface operations {
             };
         };
     };
+    senders_api_senders_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Member"][];
+                };
+            };
+        };
+    };
     remove_rule_api_rules__rule_id__delete: {
         parameters: {
             query?: never;
@@ -6275,6 +6471,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_mascot_rig_api_ai_mascot__job_id__rig_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiMascotRig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiMascotJob"];
+                };
             };
             /** @description Validation Error */
             422: {

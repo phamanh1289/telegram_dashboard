@@ -16,12 +16,23 @@ import { toast, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type Detail, type Field, fileUrl, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
-import { saveTicket, selfEdits, useYt, type Yt } from "./state";
+import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
 import { useFlow } from "./workflow";
 
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
+
+/** One ticket's sheet over another page (Telegram's ticket chip: AI sessions, messages, Briefing): the YouTrack tab's
+ *  own sheet, on a provider that loads no list and leaves the URL alone. Mounted on open; `onClose` once it slid out. */
+export function TicketSheet({ id, onClose }: { id: string; onClose: () => void }) {
+  return <YtProvider embed={id}><Sheet /><Closed onClose={onClose} /></YtProvider>;
+}
+function Closed({ onClose }: { onClose: () => void }) {
+  const open = !!useYt().sheet;
+  useEffect(() => { if (!open) { const t = setTimeout(onClose, 300); return () => clearTimeout(t); } }, [open, onClose]); // after the exit slide
+  return null;
+}
 
 export function Sheet() {
   const t = useT();
