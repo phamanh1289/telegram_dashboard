@@ -58,9 +58,23 @@ def _items_by_screen(flow: Flow) -> dict[str, dict[str, str]]:
     return {s.id: {i.id: i.label for i in s.items} for s in flow.screens}
 
 
+def _cut(d: dict, **limits: int) -> dict:
+    return {k: v[: limits[k]] if k in limits and isinstance(v, str) else v for k, v in d.items()}
+
+
+def _trim(raw: dict) -> dict:
+    """Cắt chuỗi / danh sách quá dài thay vì từ chối cả flow AI trả về."""
+    screens = [
+        _cut(s, title=80, ac=40) | {"items": [_cut(i, label=80) for i in s.get("items") or []][:MAX_ITEMS]}
+        for s in raw.get("screens") or []
+    ]
+    links = [_cut(k, when=80, ac=40) for k in (raw.get("links") or [])[:MAX_LINKS]]
+    return {**raw, "screens": screens, "links": links}
+
+
 def clean(raw: dict, ticket: str) -> Flow:
     """Kiểm schema, bỏ phần hỏng (nút trùng, link mất nguồn / đích, parent lạ); ValueError nếu không dùng được."""
-    flow = Flow.model_validate({**raw, "ticket": ticket})
+    flow = Flow.model_validate({**_trim(raw), "ticket": ticket})
     ids = [s.id for s in flow.screens]
     if not ids or len(set(ids)) != len(ids):
         raise ValueError("UI flow cần ≥1 màn, id màn không trùng")
@@ -69,7 +83,7 @@ def clean(raw: dict, ticket: str) -> Flow:
         for i in s.items:
             first.setdefault(i.id, i)  # trùng id: giữ cái đầu
         s.items = list(first.values())
-        s.parent = s.parent if s.parent in ids else None
+        s.parent = s.parent if s.parent in ids and s.parent != s.id else None
     items = _items_by_screen(flow)
 
     def ok(link: Link) -> bool:
@@ -86,7 +100,7 @@ SHELL = (
     '<title>UI flow · {ticket}</title><div id="uiflow"></div>'
     '<script type="application/json" id="uiflow-data">{data}</script><script>{engine}</script>'
 )
-DATA = re.compile(r'<script type="application/json" id="uiflow-data">(.*?)</script>', re.S)
+DATA = re.compile(r"""<script\b[^>]*\bid=["']uiflow-data["'][^>]*>(.*?)</script>""", re.S | re.I)
 
 
 def build_html(flow: Flow, engine: str) -> str:
@@ -141,8 +155,16 @@ def changes(old: Flow | None, new: Flow) -> list[str]:
         return [f"Tạo UI flow: {len(new.screens)} màn, {len(new.links)} liên kết"]
     out = _renames("màn", {s.id: s.title for s in old.screens}, {s.id: s.title for s in new.screens})
     out += _item_changes(old, new) + _link_changes(old, new)
-    pos = lambda f: {s.id: (s.x, s.y) for s in f.screens}  # noqa: E731
-    return out or (["Sắp xếp lại vị trí màn"] if pos(old) != pos(new) else [])
+    if out:
+        return out
+    if _props(old) != _props(new):
+        return ["Sửa thuộc tính màn / liên kết"]
+    moved = [(s.x, s.y) for s in old.screens] != [(s.x, s.y) for s in new.screens]
+    return ["Sắp xếp lại vị trí màn"] if moved else []
+
+
+def _props(flow: Flow) -> dict:
+    return flow.model_dump(exclude={"rev": True, "screens": {"__all__": {"x", "y"}}})
 
 
 AI_FLOW = """\

@@ -68,3 +68,50 @@ def test_changes_lists_retarget_add_remove_rename_in_vietnamese():
     assert u.changes(old, old) == []
     moved = old.model_copy(deep=True); moved.screens[0].x = 99.0
     assert u.changes(old, moved) == ["Sắp xếp lại vị trí màn"]
+
+
+def test_extract_matches_data_block_by_id_in_any_attribute_order():
+    f = u.clean(RAW, "VA-1")
+    html = u.build_html(f, "")
+    swapped = html.replace('type="application/json" id="uiflow-data"', 'id="uiflow-data" type="application/json"')
+    assert swapped != html and u.extract(swapped) == f
+    other = u.clean({"screens": [{"id": "z", "title": "Z", "items": []}], "links": []}, "VA-2")
+    assert u.extract(u.build_html(f, "") + u.build_html(other, "")) == f
+
+
+def test_changes_flags_property_only_edits_and_not_rev():
+    old = u.clean(RAW, "VA-1")
+    for edit in (lambda f: setattr(f.screens[2], "kind", "sheet"), lambda f: setattr(f.links[0], "when", "x"),
+                 lambda f: setattr(f.screens[0], "zeplin", "https://zpl.io/q")):
+        new = old.model_copy(deep=True)
+        edit(new)
+        assert u.changes(old, new) == ["Sửa thuộc tính màn / liên kết"]
+    bumped = old.model_copy(deep=True, update={"rev": 5})
+    assert u.changes(old, bumped) == []
+
+
+def test_changes_add_remove_link_remove_screen_and_back_link_format():
+    old = u.clean(RAW, "VA-1")
+    new = old.model_copy(deep=True)
+    new.links[2].to = "err"                                   # back: Đăng nhập -> Sai mã
+    del new.links[1]                                          # Xác nhận -> Sai mã bị bỏ
+    new.links.append(u.Link(src="login.otp", to="login", act="open"))
+    assert u.changes(old, new) == [
+        'Màn "Nhập OTP" (back): "Đăng nhập" → "Sai mã"',
+        'Nối "Gửi OTP" (Đăng nhập) → "Đăng nhập"',
+        'Bỏ nối "Xác nhận" (Nhập OTP) → "Sai mã"',
+    ]
+    gone = old.model_copy(deep=True)
+    gone.screens.pop()
+    gone.links = [k for k in gone.links if k.to != "err"]
+    assert u.changes(old, gone)[0] == 'Xoá màn "Sai mã"'
+
+
+def test_clean_truncates_long_strings_and_extra_items_instead_of_rejecting():
+    raw = {"screens": [{"id": "a", "title": "t" * 100, "ac": "c" * 50, "parent": "a",
+                        "items": [{"id": f"i{n}", "label": "l" * 81} for n in range(21)]}],
+           "links": [{"src": "a.i0", "to": "a", "when": "w" * 90}] * (u.MAX_LINKS + 5)}
+    f = u.clean(raw, "VA-1")
+    s = f.screens[0]
+    assert (len(s.title), len(s.ac), len(s.items), len(s.items[0].label), s.parent) == (80, 40, 20, 80, None)
+    assert len(f.links) == u.MAX_LINKS and len(f.links[0].when) == 80
