@@ -12,6 +12,8 @@ type Flow = { v: 1; ticket: string; rev: number; device: string; screens: Screen
 type Issue = { kind: string; screen?: string; item?: string; text: string };
 type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; destroy(): void;
   mode(m: "map" | "play"): void };
+const SCHEMA = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
+  "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
 declare global {
   interface Window {
     UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; mount(el: Element, f: Flow, o: object): Api };
@@ -289,9 +291,7 @@ test("dropped data shows in the check panel; get() keeps the Flow shape", async 
     const f = window.__api.get();
     return [Object.keys(f), ...f.screens.map(Object.keys), ...f.screens.flatMap((s) => s.items.map(Object.keys)), ...f.links.map(Object.keys)];
   });
-  const allowed = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
-    "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
-  expect(keys.flat().filter((k) => !allowed.has(k))).toEqual([]);
+  expect(keys.flat().filter((k) => !SCHEMA.has(k))).toEqual([]);
 });
 
 test("a parent with 3 overlays: no frame overlaps a frame of another family", async ({ page }) => {
@@ -445,10 +445,14 @@ test("hash #s=code&m=play opens Prototype on that screen", async ({ page }) => {
 
 /** A page shaped like an exported uiflow-<ticket>.html (data block + the engine inline), served over http so the
  *  engine treats it as standalone: hash writing and "Lưu file" are on. */
-async function standalone(page: Page, hash = "") {
+async function standalone(page: Page, hash = "", tweak = "") {
   const engine = fs.readFileSync(path.join(__dirname, "../public/uiflow.js"), "utf8");
   await open(page);
-  const flow = JSON.stringify(await page.evaluate(() => window.SAMPLE)).replace(/</g, "\\u003c");
+  const flow = JSON.stringify(await page.evaluate((tweak) => {
+    const f = structuredClone(window.SAMPLE);
+    if (tweak) new Function("f", tweak)(f);
+    return f;
+  }, tweak)).replace(/</g, "\\u003c");
   const html = `<!doctype html><meta charset="utf-8"><title>uiflow</title>
 <style>html,body{margin:0;height:100%}#uiflow{position:fixed;inset:0}</style>
 <script type="application/json" id="uiflow-data">${flow}</script><script>${engine}</script>`;
@@ -710,21 +714,21 @@ test("saved file reopens with the edit and still has exactly one data block", as
 });
 
 test("Lưu file writes only Flow-schema fields, dropping what a hand-edited file added", async ({ page }) => {
-  await open(page);
-  const keys = await page.evaluate(() => {
-    const f = structuredClone(window.SAMPLE) as Flow & { note?: string };
+  await standalone(page, "", `
     f.note = "thêm tay";
-    (f.screens[0] as Screen & { img?: string }).img = "data:image/png;base64,xx";
-    (f.screens[0].items[0] as Item & { rect?: number[] }).rect = [1, 2, 3, 4];
-    (f.links[0] as Link & { note?: string }).note = "thêm tay";
-    window.__api.set(f);
-    const g = window.__api.get();
-    return [Object.keys(g), ...g.screens.map(Object.keys), ...g.screens.flatMap((s) => s.items.map(Object.keys)),
-      ...g.links.map(Object.keys)].flat();
-  });
-  const allowed = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
-    "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
-  expect([...new Set(keys.filter((k) => !allowed.has(k)))]).toEqual([]);
+    f.screens[0].img = "data:image/png;base64,xx";
+    f.screens[0].items[0].rect = [1, 2, 3, 4];
+    f.links[0].note = "thêm tay";`);
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Lưu file" }).click(),
+  ]);
+  const html = fs.readFileSync((await dl.path())!, "utf8");
+  const saved = JSON.parse(/id="uiflow-data">([\s\S]*?)<\/script>/.exec(html)![1]) as Flow;
+  const keys = [Object.keys(saved), ...saved.screens.map(Object.keys),
+    ...saved.screens.flatMap((s) => s.items.map(Object.keys)), ...saved.links.map(Object.keys)].flat();
+  expect([...new Set(keys.filter((k) => !SCHEMA.has(k)))]).toEqual([]);
+  expect(html).not.toContain("thêm tay"); // the extras are gone from the file, not just from api.get()
 });
 
 test("an exported file asks before leaving with unsaved edits; the dashboard mount does not", async ({ page }) => {
@@ -748,4 +752,140 @@ test("an exported file asks before leaving with unsaved edits; the dashboard mou
   await page.keyboard.press("Enter");
   expect(await dirty(page)).toBe(true);
   expect(await ask()).toBe(false);
+});
+
+// ------------------------------------------------------------------ editing: the backend's limits
+const insp = (page: Page) => page.locator(".uf-insp");
+const flowOf = (page: Page) => page.evaluate(() => window.__api.get());
+/** n screens, each with `items` buttons, plus `extraLinks` copies of one link. */
+function sized(n: number, items: number, extraLinks = 0): Flow {
+  const screens: Screen[] = Array.from({ length: n }, (_, i) => ({
+    id: `s${i}`, title: `Màn ${i}`, kind: "screen", parent: null, zeplin: "", ac: "AC",
+    items: Array.from({ length: items }, (_, j) => ({ id: `i${j}`, label: `Nút ${j}` })),
+  }));
+  const links: Link[] = Array.from({ length: extraLinks }, () =>
+    ({ src: "s0.i0", to: "s1", act: "navigate", when: "", ac: "AC" }));
+  return { v: 1, ticket: "VA-9", rev: 0, device: "mobile", screens, links };
+}
+
+test("a field never stores more than the backend keeps, and a bad Zeplin link is shown, not saved", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="code"] .uf-title').click();
+  await insp(page).getByLabel("AC").fill("A".repeat(60));
+  await insp(page).getByLabel("AC").press("Enter");
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.ac).toHaveLength(40);
+
+  const zep = insp(page).getByLabel("Zeplin");
+  await zep.fill("https://example.com/not-zeplin");
+  await zep.press("Enter");
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.zeplin).toBe(""); // refused, not stored
+  await expect(zep).toHaveAttribute("aria-invalid", "true");
+  await expect(insp(page).locator(".uf-bad")).toBeVisible();
+  await zep.fill("https://zpl.io/ok123");
+  await zep.press("Enter");
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.zeplin).toBe("https://zpl.io/ok123");
+
+  await page.locator('.uf-handle[data-link="login.otp>code"]').click();
+  await insp(page).getByLabel("Điều kiện").fill("Đ".repeat(100));
+  await insp(page).getByLabel("Điều kiện").press("Enter");
+  expect((await flowOf(page)).links.find((l) => l.src === "login.otp")!.when).toHaveLength(80);
+});
+
+test("the editor refuses to pass the file's limits: 60 screens, 20 buttons, 300 links", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const add = page.getByRole("button", { name: "+ Màn" });
+  await page.evaluate((f) => window.__api.set(f), sized(59, 1));
+  await expect(add).toBeEnabled();
+  await add.click();
+  expect((await flowOf(page)).screens).toHaveLength(60);
+  await expect(add).toBeDisabled();
+  await expect(add).toHaveAttribute("title", "Tối đa 60 màn");
+
+  await page.evaluate((f) => window.__api.set(f), sized(2, 20));
+  await page.locator('.uf-screen[data-id="s0"] .uf-title').click();
+  const addItem = insp(page).getByRole("button", { name: "+ Nút" });
+  await expect(addItem).toBeDisabled();
+  await expect(addItem).toHaveAttribute("title", "Tối đa 20 nút mỗi màn");
+
+  await page.evaluate((f) => window.__api.set(f), sized(3, 1, 300));
+  await drag(page, '.uf-dot[data-src="s2.i0"]', await centreOf(page, '.uf-screen[data-id="s1"]'));
+  expect((await flowOf(page)).links).toHaveLength(300);
+  await expect(page.locator(".uf-note")).toHaveText("Tối đa 300 liên kết");
+  await expect(page.locator(".uf-note")).toBeHidden({ timeout: 4000 });
+});
+
+test("a snapped-back arrow keeps its selection; a self link is refused", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-handle[data-link="login.otp>code"]').click();
+  await expect(page.locator("path.uf-link.uf-sel")).toHaveCount(1);
+  const view = await box(page, ".uf-view");
+  await drag(page, '.uf-handle[data-link="login.otp>code"]', [view.x + 8, view.y + view.height - 8]);
+  await expect(page.locator("path.uf-link.uf-sel")).toHaveCount(1); // the ring follows the redrawn arrow
+  await expect(insp(page).locator("h2")).toContainText("Mũi tên");
+
+  const n = (await flowOf(page)).links.length;
+  await drag(page, '.uf-dot[data-src="login"]', await centreOf(page, '.uf-screen[data-id="login"]'));
+  expect((await flowOf(page)).links).toHaveLength(n);
+});
+
+test("turning an overlay into a screen clears its parent", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="err"] .uf-title').click();
+  await insp(page).getByRole("button", { name: "Màn", exact: true }).click();
+  const err = (await flowOf(page)).screens.find((s) => s.id === "err")!;
+  expect([err.kind, err.parent]).toEqual(["screen", null]);
+});
+
+test("undo is ignored while a drag is in flight", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await page.keyboard.type("Màn đầu");
+  await page.keyboard.press("Enter");
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 120, head.y + head.height / 2 + 40, { steps: 5 });
+  await page.keyboard.press("ControlOrMeta+z"); // mid-gesture: must not re-render under the pointer
+  expect((await flowOf(page)).screens[0].title).toBe("Màn đầu");
+  await page.mouse.up();
+  const f = await flowOf(page);
+  expect(f.screens[0].title).toBe("Màn đầu");
+  expect(f.screens.find((s) => s.id === "code")!.x).toBeGreaterThan(610); // the move still landed
+  await page.keyboard.press("ControlOrMeta+z"); // and undo works again once the pointer is up
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.x).toBe(610);
+});
+
+test("undo remembers 50 steps, no more", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const adds = await page.evaluate(() => {
+    for (let i = 0; i < 51; i++) document.querySelector<HTMLButtonElement>(".uf-add")!.click();
+    return window.__api.get().screens.length;
+  });
+  expect(adds).toBe(55); // 4 + 51, under the 60 cap
+  await page.evaluate(() => { for (let i = 0; i < 60; i++) window.__api.undo(); });
+  expect((await flowOf(page)).screens).toHaveLength(5); // 50 steps back, the 51st is gone for good
+  expect(await dirty(page)).toBe(true);
+});
+
+test("destroy() takes the leave-page guard with it", async ({ page }) => {
+  const ask = () => page.evaluate(() => {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  await standalone(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await page.keyboard.type("Nhà");
+  await page.keyboard.press("Enter");
+  expect(await ask()).toBe(true);
+  await page.evaluate(() => (document.getElementById("uiflow") as HTMLElement & { uiflow: Api }).uiflow.destroy());
+  expect(await ask()).toBe(false);
+  await expect(page.locator(".uf-root")).toHaveCount(0);
 });
