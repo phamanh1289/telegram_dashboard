@@ -1081,3 +1081,65 @@ for (const [w, hh] of [[390, 844], [1440, 900]]) {
     await expect(title(page)).toHaveText("Nhập OTP");
   });
 }
+
+// ------------------------------------------------------------------ layout of real, loosely connected flows
+const scr = (id: string, kind = "screen", parent: string | null = null, items: string[] = []): Screen =>
+  ({ id, title: id, kind, parent, zeplin: "", ac: "", items: items.map((i) => ({ id: i, label: i })) });
+const nav = (src: string, to: string): Link => ({ src, to, act: "navigate", when: "", ac: "" });
+const flowOfShape = (screens: Screen[], links: Link[]): Flow => ({ v: 1, ticket: "VA-7", rev: 0, device: "mobile", screens, links });
+const laid = async (page: Page, f: Flow) => Object.fromEntries(
+  (await page.evaluate((f) => window.UIFlow.layout(f), f)).screens.map((s) => [s.id, s]));
+
+/** Shaped like the VA-12584 flow: 15 screens + 2 popups, 11 links; only 5 screens reachable from the first. */
+const VA12584 = flowOfShape([
+  scr("S44", "screen", null, ["btn_ttts", "btn_phaply"]), scr("S44B", "screen", null, ["btn_vtda", "btn_vttd", "btn_cttd", "btn_httd"]),
+  scr("S44C", "screen", null, ["a"]), scr("S44D"), scr("S44E"), scr("S44G"), scr("S45A", "screen", null, ["a"]),
+  scr("S45B", "screen", null, ["a"]), scr("S47A", "screen", null, ["btn_gtpl"]), scr("S47C", "screen", null, ["a"]),
+  scr("S56", "screen", null, ["btn_vtda", "btn_ttch"]), scr("S56A", "screen", null, ["a"]), scr("S56B", "screen", null, ["a"]),
+  scr("S56B2", "screen", null, ["a"]), scr("S41"),
+  scr("P_lostperm44", "popup", "S44", ["btn_vedanhsach"]), scr("P_lostperm56", "popup", "S56", ["btn_vedanhsach"]),
+], [
+  nav("S44.btn_ttts", "S44C"), nav("S44B.btn_vtda", "S44C"), nav("S44B.btn_vttd", "S44D"), nav("S44B.btn_cttd", "S45A"),
+  nav("S44B.btn_httd", "S45B"), nav("S44.btn_phaply", "S47A"), nav("S47A.btn_gtpl", "S47C"), nav("S56.btn_vtda", "S56A"),
+  nav("S56.btn_ttch", "S56B"), nav("P_lostperm44.btn_vedanhsach", "S41"), nav("P_lostperm56.btn_vedanhsach", "S41"),
+]);
+
+test("a 17-screen, loosely linked flow fits 1440x900 as a landscape map, not one tall column", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await open(page);
+  const by = await laid(page, VA12584);
+  const xs = new Set(Object.values(by).filter((s) => s.kind === "screen").map((s) => s.x));
+  const rows = new Set(Object.values(by).filter((s) => s.kind === "screen").map((s) => s.y));
+  expect(rows.size).toBeLessThanOrEqual(3); // the row cap for 15 screens; it used to be a column 10 tall
+  expect(xs.size).toBeGreaterThanOrEqual(5);
+  await page.evaluate((f) => window.__api.set(f), VA12584);
+  const k = Number(/scale\(([\d.]+)\)/.exec(await layerTransform(page))![1]);
+  // 15 phone frames (610 x 964 with their gaps) in a 1376 x 787 view cannot do better than ~0.28 even packed
+  // perfectly, so 0.25 is the bar; the single-column layout gave 0.1 (the minimum zoom)
+  expect(k).toBeGreaterThanOrEqual(0.25);
+});
+
+test("screens nothing links to or from form a grid, not a column", async ({ page }) => {
+  await open(page);
+  const lone = ["b", "c", "d", "e", "f", "g", "h"];
+  const by = await laid(page, flowOfShape([scr("a"), ...lone.map((id) => scr(id))], []));
+  const xs = new Set(lone.map((id) => by[id].x!)), ys = new Set(lone.map((id) => by[id].y!));
+  expect(ys.size).toBe(3); // row cap max(3, ceil(sqrt(8 * 0.4))) = 3
+  expect(xs.size).toBe(3); // 7 screens, 3 per column
+  expect(Math.min(...xs)).toBeGreaterThan(by.a.x!); // to the right of the main flow
+});
+
+test("two groups that do not hang off the first screen are each laid out by BFS, in order", async ({ page }) => {
+  await open(page);
+  const by = await laid(page, flowOfShape(
+    [scr("a", "screen", null, ["x"]), scr("b"), scr("c", "screen", null, ["x", "y"]), scr("d"), scr("e"),
+      scr("f", "screen", null, ["x"]), scr("g")],
+    [nav("a.x", "b"), nav("c.x", "d"), nav("c.y", "e"), nav("f.x", "g")]));
+  expect(by.b.x! - by.a.x!).toBe(610); // main flow: a, then b
+  expect([by.d.x! - by.c.x!, by.e.x! - by.c.x!]).toEqual([610, 610]); // c's group: c, then d and e in one column
+  expect(by.e.y! - by.d.y!).toBe(964);
+  expect(by.g.x! - by.f.x!).toBe(610); // f's group
+  expect(by.c.x!).toBeGreaterThan(by.b.x!); // groups sit right of the main flow, by first appearance
+  expect(by.f.x!).toBeGreaterThan(by.d.x!);
+  expect([by.a.y, by.c.y, by.f.y]).toEqual([0, 0, 0]); // each group starts at the top
+});

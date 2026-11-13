@@ -11,6 +11,7 @@
   const SCREEN = Object.freeze({ w: 390, h: 844 });
   const W = SCREEN.w, H = SCREEN.h;
   const COL = W + 220, ROW = H + 120, SHIFT = 60; // column / row step; overlay offset from its parent
+  const GROUP_GAP = 200; // extra space between the main flow, each separate group and the loose screens
   const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40; // phone: status bar, nav bar, first row, home bar
   const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64; // overlay card header, bottom padding; max row step
   const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
@@ -133,10 +134,15 @@
     return new Map(f.screens.map((s) => [s.id, parentOf(s)]));
   }
 
-  /** Fills x / y of screens that have none; returns a new flow. Columns = BFS depth over `navigate` links from the
-   *  first screen (unreachable: one last column), rows in order of appearance. The k-th popup / sheet / toast of a
-   *  parent sits 60·k / 60·k right-down of it; the parent's row and its column grow by that much, so overlays never
-   *  cover another screen. */
+  /** Fills x / y of screens that have none; returns a new flow (the input is not touched; x / y already set stay).
+   *  - Regions, left to right: the main flow (BFS over `navigate` links from the first screen), then every other
+   *    linked group (BFS from its own root: a screen nothing else in the group leads to), ordered by first
+   *    appearance, then the screens with no links of their own as a grid.
+   *  - In a region a BFS layer is a column, in order of appearance; a column longer than the row cap wraps into
+   *    sub-columns beside it. Cap = max(3, ceil(√(0.4·n))) for n screens: a frame cell is 610 × 964, so this many
+   *    rows makes a full grid about 16 : 10, landscape like the screens it is read on.
+   *  - The k-th popup / sheet / toast of a parent sits 60·k / 60·k right-down of it; the parent's row and its column
+   *    grow by that much, so overlays never cover another screen. */
   function layout(flow) {
     const f = normalize(flow);
     const by = new Map(f.screens.map((s) => [s.id, s]));
@@ -156,34 +162,59 @@
     };
     for (const s of f.screens) if (par.get(s.id)) room.set(owner(s.id), Math.max(room.get(owner(s.id)) || 0, offOf(s.id)));
 
+    // navigate links between top-level screens (an overlay's links count as its owner's)
     const next = new Map();
     for (const l of f.links) {
-      if (l.act !== "navigate") continue;
-      const a = owner(scr(l.src));
+      const a = owner(scr(l.src)), b = owner(l.to);
+      if (l.act !== "navigate" || a === b) continue;
       if (!next.has(a)) next.set(a, []);
-      next.get(a).push(owner(l.to));
+      next.get(a).push(b);
     }
-    const depth = new Map();
-    if (f.screens.length) {
-      const q = [owner(f.screens[0].id)];
-      depth.set(q[0], 0);
-      while (q.length) {
-        const id = q.shift();
-        for (const n of next.get(id) || []) if (!depth.has(n)) { depth.set(n, depth.get(id) + 1); q.push(n); }
+    const tops = f.screens.filter((s) => !par.get(s.id)).map((s) => s.id);
+    const order = new Map(tops.map((id, i) => [id, i]));
+    const cap = Math.max(3, Math.ceil(Math.sqrt(0.4 * tops.length)));
+    const done = new Set();
+    /** BFS layers from `root` over screens no region has taken yet; each layer in order of appearance. */
+    function layers(root) {
+      const out = [[root]];
+      done.add(root);
+      for (;;) {
+        const n = [];
+        for (const id of out[out.length - 1]) for (const k of next.get(id) || []) if (!done.has(k)) { done.add(k); n.push(k); }
+        if (!n.length) return out;
+        out.push(n.sort((p, q) => order.get(p) - order.get(q)));
       }
     }
-    const last = Math.max(-1, ...depth.values()) + 1, cols = [];
-    for (const s of f.screens) if (!par.get(s.id)) (cols[depth.get(s.id) ?? last] ||= []).push(s);
+    const regions = [];
+    if (tops.length) regions.push(layers(owner(f.screens[0].id)));
+    const rest = tops.filter((id) => !done.has(id)), led = new Set(); // led: something else left over leads to it
+    for (const id of rest) for (const k of next.get(id) || []) if (!done.has(k)) led.add(k);
+    const groups = [], lone = [];
+    for (const id of [...rest.filter((r) => !led.has(r)), ...rest]) { // true roots first; then what cycles left
+      if (done.has(id)) continue;
+      const g = layers(id);
+      if (g.length > 1) groups.push(g);
+      else lone.push(id);
+    }
+    const first = (g) => Math.min(...g.flat().map((id) => order.get(id)));
+    regions.push(...groups.sort((p, q) => first(p) - first(q)));
+    if (lone.length) regions.push([lone.sort((p, q) => order.get(p) - order.get(q))]); // one long column: wraps into a grid
+
     let x = 0;
-    for (const col of cols) {
-      if (!col) continue;
-      let y = 0;
-      for (const s of col) {
-        if (s.x === null || s.y === null) { s.x = x; s.y = y; }
-        y += ROW + (room.get(s.id) || 0);
+    regions.forEach((cols, r) => {
+      if (r) x += GROUP_GAP;
+      for (const col of cols) {
+        for (let i = 0; i < col.length; i += cap) {
+          const part = col.slice(i, i + cap).map((id) => by.get(id));
+          let y = 0;
+          for (const s of part) {
+            if (s.x === null || s.y === null) { s.x = x; s.y = y; }
+            y += ROW + (room.get(s.id) || 0);
+          }
+          x += COL + Math.max(...part.map((s) => room.get(s.id) || 0));
+        }
       }
-      x += COL + Math.max(...col.map((s) => room.get(s.id) || 0));
-    }
+    });
 
     const place = (s, guard) => {
       if ((s.x !== null && s.y !== null) || guard > 20) return;
