@@ -563,6 +563,10 @@ border-radius:999px;background:var(--uf-ink);color:var(--uf-screen);font-size:13
 transform:translateX(-50%);animation:uf-in .18s ease-out}
 .uf-btn:disabled{opacity:.45;cursor:not-allowed}
 .uf-danger{border-color:var(--uf-warn);color:var(--uf-warn)}
+/* an exported file: the shell carries no CSS, so the engine makes its host fill the viewport (insets kept clear) */
+.uf-file,.uf-file body{height:100%;margin:0;overflow:hidden}
+.uf-file #uiflow{position:fixed;inset:0;box-sizing:border-box;padding:env(safe-area-inset-top,0px)
+env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 @media (prefers-reduced-motion:reduce){.uf-root *,.uf-root *::before,.uf-root *::after{transition:none!important;animation:none!important}}
 `;
   function injectStyle() {
@@ -1689,6 +1693,9 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
     const data = document.getElementById("uiflow-data");
     if (!data) return; // the dashboard mounts the engine itself
     const src = document.documentElement.outerHTML; // before mount: what "Lưu file" writes back
+    // the host fills the page (styles above). Added after `src`, so a saved file stays as built and gets it again
+    // when it is opened; the dashboard mounts through UIFlow.mount and sizes its own container.
+    document.documentElement.classList.add("uf-file");
     let host = document.getElementById("uiflow");
     if (!host) {
       host = h("div");

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -372,6 +373,8 @@ test("phone frame is centred and fits a 375x667 viewport", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Prototype" }).click();
   await expect(title(page)).toHaveText("Đăng nhập");
+  await expect.poll(() => page.locator(".uf-phone").evaluate((e) => (e as HTMLElement).style.getPropertyValue("--k")))
+    .not.toBe(""); // scaled by a ResizeObserver: before the first paint, but maybe after this read
   const [px, py] = centre(await box(page, ".uf-phone"));
   const [sx, sy] = centre(await box(page, ".uf-stage"));
   expect(Math.max(Math.abs(px - sx), Math.abs(py - sy))).toBeLessThan(2);
@@ -1031,3 +1034,50 @@ test("an edit clears the dropped-data rows of the loaded file", async ({ page })
   await page.getByRole("button", { name: "+ Màn" }).click();
   await expect(dup).toHaveCount(0);
 });
+
+// ------------------------------------------------------------------ the exported file, as the backend builds it
+/** The page `uiflow.build_html` writes to the ticket — its real SHELL (no CSS at all), the engine inline and the data
+ *  block — produced by the backend function itself, so this test cannot drift from what users download. */
+function exported(flow: Flow): string {
+  const engine = path.join(__dirname, "../public/uiflow.js");
+  return execFileSync("uv", ["run", "--quiet", "python", "-c",
+    "import json, sys\nfrom telegram_dashboard import uiflow as u\nf = json.load(sys.stdin)\n" +
+    "sys.stdout.write(u.build_html(u.clean(f, f['ticket']), open(sys.argv[1], encoding='utf-8').read()))", engine],
+  { cwd: path.join(__dirname, "../.."), input: JSON.stringify(flow), encoding: "utf8" });
+}
+
+for (const [w, hh] of [[390, 844], [1440, 900]]) {
+  test(`an exported file fills a ${w}x${hh} screen: map, then a centred, tappable phone`, async ({ page }) => {
+    await open(page);
+    const html = exported(await page.evaluate(() => window.SAMPLE));
+    expect(html).not.toMatch(/<style/i); // the point: the shell brings no layout of its own
+    await page.setViewportSize({ width: w, height: hh });
+    await page.route("http://uiflow.test/**", (r) => r.fulfill({ contentType: "text/html", body: html }));
+    await page.goto("http://uiflow.test/uiflow-VA-1.html");
+
+    const root = await box(page, ".uf-root");
+    expect([root.x, root.y, root.width, root.height]).toEqual([0, 0, w, hh]); // the whole viewport, no body margin
+    for (const id of ["login", "code", "home"]) {
+      const f = await box(page, `.uf-screen[data-id="${id}"]`);
+      expect(f.width).toBeGreaterThan(20);
+      expect(f.height).toBeGreaterThan(40);
+    }
+    expect(await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]))
+      .toEqual([w, hh]);
+
+    await page.getByRole("button", { name: "Prototype" }).click();
+    await expect(title(page)).toHaveText("Đăng nhập");
+    // the frame is scaled by a ResizeObserver, which runs before the first paint but may run after this read
+    await expect.poll(() => page.locator(".uf-phone").evaluate((e) => (e as HTMLElement).style.getPropertyValue("--k")))
+      .not.toBe("");
+    const phone = await box(page, ".uf-phone"), stage = await box(page, ".uf-stage"), bar = await box(page, ".uf-bar");
+    expect(phone.x).toBeGreaterThanOrEqual(0); // whole phone on screen
+    expect(phone.y).toBeGreaterThanOrEqual(bar.y + bar.height); // below the real (possibly wrapped) toolbar
+    expect(phone.x + phone.width).toBeLessThanOrEqual(w);
+    expect(phone.y + phone.height).toBeLessThanOrEqual(hh);
+    const [px, py] = centre(phone), [sx, sy] = centre(stage);
+    expect(Math.max(Math.abs(px - sx), Math.abs(py - sy))).toBeLessThan(2);
+    await tapIn(page, "Gửi OTP");
+    await expect(title(page)).toHaveText("Nhập OTP");
+  });
+}
