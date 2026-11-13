@@ -154,9 +154,49 @@ def _link_changes(old: Flow, new: Flow) -> list[str]:
     return out + [f'Bỏ nối {_label(old, ol[k])} → "{ot[ol[k].to]}"' for k in ol if k not in nl]
 
 
+def _match(old_keys: dict[str, str], new_keys: dict[str, str]) -> dict[str, str]:
+    """new id → old id: cùng id trước, rồi cùng nhãn đúng từng chữ (cái chưa dùng đầu tiên)."""
+    out = {n: n for n in new_keys if n in old_keys}
+    used = set(out.values())
+    for n, label in new_keys.items():
+        if n in out:
+            continue
+        o = next((o for o, t in old_keys.items() if t == label and o not in used), None)
+        if o is not None:
+            out[n] = o
+            used.add(o)
+    return out
+
+
+def _align(old: Flow, new: Flow) -> tuple[Flow, int]:
+    """Bản sao `new` mà id màn / nút đã đổi về id cũ tương ứng (AI dựng lại thường đổi id); kèm số màn khớp."""
+    flow = new.model_copy(deep=True)
+    olds = {s.id: s for s in old.screens}
+    smap = _match({i: s.title for i, s in olds.items()}, {s.id: s.title for s in flow.screens})
+    imaps: dict[str, dict[str, str]] = {}
+    for s in flow.screens:
+        if s.id in smap:
+            imaps[s.id] = _match({i.id: i.label for i in olds[smap[s.id]].items}, {i.id: i.label for i in s.items})
+            for i in s.items:
+                i.id = imaps[s.id].get(i.id, i.id)
+    for k in flow.links:
+        screen, _, item = k.src.partition(".")
+        k.src = smap.get(screen, screen) + (f".{imaps.get(screen, {}).get(item, item)}" if item else "")
+        k.to = smap.get(k.to, k.to)
+    for s in flow.screens:
+        s.parent = smap.get(s.parent, s.parent) if s.parent else None
+        s.id = smap.get(s.id, s.id)
+    return flow, len(smap)
+
+
 def changes(old: Flow | None, new: Flow) -> list[str]:
     if old is None:
         return [f"Tạo UI flow: {len(new.screens)} màn, {len(new.links)} liên kết"]
+    raw = new
+    new, matched = _align(old, raw)
+    if matched * 2 < len(old.screens):
+        n0, m0 = len(old.screens), len(old.links)
+        return [f"Render lại: {len(raw.screens)} màn, {len(raw.links)} liên kết (trước: {n0} màn, {m0} liên kết)"]
     out = _renames("màn", {s.id: s.title for s in old.screens}, {s.id: s.title for s in new.screens})
     out += _item_changes(old, new) + _link_changes(old, new)
     if out:

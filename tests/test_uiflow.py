@@ -127,3 +127,42 @@ def test_malformed_shapes_raise_value_error_and_extract_returns_none():
             u.clean(bad, "VA-1")
     html = '<script type="application/json" id="uiflow-data">{"screens":["x"],"links":[],"ticket":"T"}</script>'
     assert u.extract(html) is None
+
+
+def _live(n=6):
+    screens = [{"id": f"S{i}B" if i % 2 else f"S{i}", "title": f"Màn {i}",
+                "items": [{"id": f"B{i}", "label": f"Nút {i}"}]} for i in range(n)]
+    links = [{"src": f"{screens[i]['id']}.B{i}", "to": screens[i + 1]["id"]} for i in range(n - 1)]
+    return {"screens": screens, "links": links}
+
+
+def _lower(raw):
+    low = {"screens": [{**s, "id": s["id"].lower(), "items": [{**i, "id": i["id"].lower()} for i in s["items"]]}
+                       for s in raw["screens"]],
+           "links": [{**k, "src": k["src"].lower(), "to": k["to"].lower()} for k in raw["links"]]}
+    return low
+
+
+def test_changes_ignores_regenerated_ids_with_same_titles():
+    raw = _live()
+    assert u.changes(u.clean(raw, "VA-1"), u.clean(_lower(raw), "VA-1")) == []
+
+
+def test_changes_after_id_regen_shows_only_real_differences():
+    raw = _live()
+    low = _lower(raw)
+    low["links"][0]["to"] = "s3b"                              # Nút 0: Màn 1 -> Màn 3
+    low["screens"].pop(5)                                      # Màn 5 bị gộp / xoá
+    low["links"] = [k for k in low["links"] if "s5" not in k["src"] and k["to"] != "s5b"]
+    assert u.changes(u.clean(raw, "VA-1"), u.clean(low, "VA-1")) == [
+        'Xoá màn "Màn 5"',
+        '"Nút 0" (Màn 0): "Màn 1" → "Màn 3"',
+        'Bỏ nối "Nút 4" (Màn 4) → "Màn 5"',
+    ]
+
+
+def test_changes_summarises_mostly_unrelated_render():
+    old = u.clean(_live(), "VA-1")
+    new = u.clean({"screens": [{"id": f"n{i}", "title": f"Khác {i}", "items": []} for i in range(3)],
+                   "links": [{"src": "n0", "to": "n1"}]}, "VA-1")
+    assert u.changes(old, new) == ["Render lại: 3 màn, 1 liên kết (trước: 6 màn, 5 liên kết)"]
