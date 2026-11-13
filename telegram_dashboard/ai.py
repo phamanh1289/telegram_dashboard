@@ -783,7 +783,8 @@ class AiService:
         prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}\n\n{user_prompt}")
         # Briefing / Digest parts read many messages, a Zeplin run reads designs: the longer timeout
         long = bool(project or heavy or brief or zeplin)
-        env = {**child_env(), **providers.mcp_env(zeplin)}
+        # the token only where the command loads the zeplin server (Antigravity runs its own)
+        env = {**child_env(), **(providers.mcp_env(zeplin) if provider in ("claude", "codex") else {})}
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)
         except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt

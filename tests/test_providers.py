@@ -101,7 +101,8 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     z = task_cmd(s, "claude", "plan", "sid", True, "", "", index=True, zeplin=zs)
     assert set(json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]) == {"codegraph", "zeplin"}
     assert z[z.index("--allowedTools") + 1].endswith(",mcp__zeplin__get_design_tokens") and "--strict-mcp-config" in z
-    assert "download_layer_asset" not in " ".join(z)
+    assert "download_layer_asset" not in z[z.index("--allowedTools") + 1]
+    assert "mcp__zeplin__download_layer_asset" in z[z.index("--disallowedTools") :]  # past a user's allow rule
     assert z[z.index("--permission-mode") + 1] == "default" and z[z.index("--tools") + 1] == "Read,Grep,Glob,Skill"
     assert "ZEPLIN_ACCESS_TOKEN" in z[z.index("--mcp-config") + 1] and '"x"' not in " ".join(z)  # by ${NAME} only
     # Codex: read-only zeplin tools approved ahead, token from the env; with MCP on, the user's config
@@ -226,10 +227,12 @@ def test_ask_cmd_with_zeplin_allows_only_its_read_tools(settings):
     assert cmd[cmd.index("--allowedTools") + 1] == providers.ZEPLIN_TOOLS
     assert cmd[cmd.index("--tools") + 1] == "" and cmd[cmd.index("--permission-mode") + 1] == "default"
     assert "s3cret" not in " ".join(cmd)  # token only in the env
-    assert "download_layer_asset" not in " ".join(cmd)
+    assert cmd[cmd.index("--disallowedTools") + 1] == providers.ZEPLIN_DENY  # denied, never allowed
+    assert "download_layer_asset" not in cmd[cmd.index("--allowedTools") + 1]
     # the project read command keeps its own tools, Zeplin's are added to them
     p = providers.ask_cmd(settings, "claude", tools=True, read_dir=None, model="m", effort="low", zeplin=ZEP)
     assert p[p.index("--allowedTools") + 1] == f"Read,Grep,Glob,Skill,{providers.ZEPLIN_TOOLS}"
+    assert p.count("--disallowedTools") == 1 and providers.ZEPLIN_DENY in " ".join(p)
 
 
 def test_ask_cmd_without_zeplin_is_unchanged(settings):

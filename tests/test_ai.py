@@ -999,10 +999,16 @@ def test_fast_choice_is_each_clis_quickest_model():
 
 
 async def test_a_zeplin_ask_run_gets_the_servers_token_in_its_env_only(tmp_path):
-    exe = tmp_path / "agent.sh"  # prints the token it was given, never the prompt
-    exe.write_text('#!/bin/sh\ncat >/dev/null\nprintf "%s" "${ZEPLIN_TOKEN-none}"\n')
+    exe = tmp_path / "claude"  # a claude CLI that answers with the token it was given
+    exe.write_text('#!/bin/sh\ncat >/dev/null\n'
+                   'printf \'{"type":"result","is_error":false,"result":"%s"}\\n\' "${ZEPLIN_TOKEN-none}"\n')
     exe.chmod(0o755)
     s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)), ai_model="", ai_effort="")
     zep = {"command": "npx", "args": ["zeplin-mcp"], "env": {"ZEPLIN_TOKEN": "s3cret"}}
     assert await AiService(s, None, None).ask("hi", zeplin=zep) == "s3cret"
     assert await AiService(s, None, None).ask("hi") == "none"
+    other = tmp_path / "agent.sh"  # another AI command loads no zeplin server: no token for it
+    other.write_text('#!/bin/sh\ncat >/dev/null\nprintf "%s" "${ZEPLIN_TOKEN-none}"\n')
+    other.chmod(0o755)
+    s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(other)), ai_model="", ai_effort="")
+    assert await AiService(s, None, None).ask("hi", zeplin=zep) == "none"

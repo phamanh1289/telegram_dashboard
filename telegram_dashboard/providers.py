@@ -120,6 +120,8 @@ ZEPLIN = re.compile(r"https?://(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)/\S+
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
 ZEPLIN_AGY = [f"mcp(zeplin/{t})" for t in ZEPLIN_READ]  # Antigravity's allow rules for them (_agy_base `mcp`)
+# denied outright wherever we load the zeplin server: a user's "always allow" for mcp__zeplin__* must not reach it
+ZEPLIN_DENY = "mcp__zeplin__download_layer_asset"
 ZEPLIN_HINT = (
     "\n\nLink Zeplin (zpl.io, app.zeplin.io) trong phiên: BẮT BUỘC đọc thiết kế bằng tool get_screen (màn) / "
     "get_component (component) của MCP server zeplin, includeVariants=false trừ khi cần biến thể, targetLayerName khi "
@@ -154,6 +156,15 @@ def _by_ref(server: dict) -> dict:
 def _mcp_config(servers: dict) -> list[str]:
     """Claude's --mcp-config for these servers ({name: server}); none: no flag."""
     return ["--mcp-config", json.dumps({"mcpServers": servers})] if servers else []
+
+
+def _add_to(cmd: list[str], flag: str, tools: str) -> None:
+    """Add tools to a list flag (--allowedTools / --disallowedTools): after the value already given, else a new flag."""
+    if flag in cmd:
+        at = cmd.index(flag) + 1
+        cmd[at] = f"{cmd[at]},{tools}"
+    else:
+        cmd += [flag, tools]
 
 
 def _codex_zeplin(server: dict) -> list[str]:
@@ -568,11 +579,8 @@ def ask_cmd(
             if tools:
                 cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
             if zeplin:  # MCP tools are not built-in tools: `--tools ""` leaves them; only the allowed ones run
-                at = cmd.index("--allowedTools") + 1 if "--allowedTools" in cmd else 0
-                if at:
-                    cmd[at] = f"{cmd[at]},{ZEPLIN_TOOLS}"
-                else:
-                    cmd += ["--allowedTools", ZEPLIN_TOOLS]
+                _add_to(cmd, "--allowedTools", ZEPLIN_TOOLS)
+                _add_to(cmd, "--disallowedTools", ZEPLIN_DENY)
                 cmd += [*_mcp_config({"zeplin": _by_ref(zeplin)}), "--permission-mode", "default"]
             if session:
                 cmd += ["--resume" if session[1] else "--session-id", session[0]]
@@ -636,7 +644,8 @@ def task_cmd(
                 "--permission-mode", "default" if plan and zeplin else PERMISSION[mode],
                 *([] if own else ["--strict-mcp-config"]), *mcp,
                 "--allowedTools", allow, *box,
-                "--disallowedTools", DENY if shell or plan else f"{DENY},Bash", _data_deny(settings), *add,
+                "--disallowedTools", DENY if shell or plan else f"{DENY},Bash", _data_deny(settings),
+                *([ZEPLIN_DENY] if zeplin and not own else []), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
         sandbox = _codex_sandbox(settings, mode != "plan")
