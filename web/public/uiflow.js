@@ -1,0 +1,743 @@
+/* UI flow engine: layout, map view, flow checks. Plain JS, no dependencies.
+ * Runs inside the dashboard (mounted by the app) and inside an exported, self-contained uiflow-<ticket>.html opened
+ * offline. Exposes window.UIFlow only. Every label coming from data is set via textContent, never as markup.
+ *
+ * Sections: constants · i18n · model (normalize / layout / check) · geometry · DOM builders · mount (render, camera,
+ * input, toolbar, api) · standalone auto-run. Pure parts never touch the DOM. */
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------ constants
+  const SCREEN = Object.freeze({ w: 390, h: 844 });
+  const W = SCREEN.w, H = SCREEN.h;
+  const COL = W + 220, ROW = H + 120, SHIFT = 60; // column / row step; overlay offset from its parent
+  const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40; // phone: status bar, nav bar, first row, home bar
+  const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64; // overlay card header, bottom padding; max row step
+  const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
+  const KINDS = ["screen", "popup", "sheet", "toast"];
+  const ACTS = ["navigate", "open", "back", "close"];
+  const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/; // = providers.ZEPLIN
+  const SVGNS = "http://www.w3.org/2000/svg";
+
+  // ------------------------------------------------------------------ i18n
+  const T = {
+    vi: {
+      map: "Toàn cục", play: "Prototype", edit: "Sửa", fit: "Vừa màn hình", check: "Soát luồng ({n})",
+      save: "Lưu file", zeplin: "Mở trên Zeplin", canvas: "Sơ đồ luồng màn hình",
+      ok: "Không thấy lỗ hổng nào trong luồng.", bad: "Không đọc được dữ liệu UI flow trong file này.",
+      orphan: "Không có đường nào dẫn tới màn “{s}”", dead: "Nút “{i}” trên màn “{s}” chưa nối tới đâu",
+      noback: "Màn “{s}” chưa có đường quay lại", noacScreen: "Màn “{s}” chưa gắn AC",
+      noacLink: "Mũi tên “{i}” → “{s}” chưa gắn AC",
+      k_orphan: "Không lối vào", k_dead: "Nút cụt", k_noback: "Thiếu quay lại", k_noac: "Thiếu AC",
+    },
+    en: {
+      map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
+      save: "Save file", zeplin: "Open in Zeplin", canvas: "Screen flow map",
+      ok: "No gaps found in this flow.", bad: "Could not read the UI flow data in this file.",
+      orphan: "Nothing leads to “{s}”", dead: "“{i}” on “{s}” goes nowhere",
+      noback: "“{s}” has no way back", noacScreen: "“{s}” has no AC",
+      noacLink: "Arrow “{i}” → “{s}” has no AC",
+      k_orphan: "Unreachable", k_dead: "Dead end", k_noback: "No back", k_noac: "No AC",
+    },
+  };
+  /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
+  function tr(lang) {
+    const d = T[lang] || T.vi;
+    return (key, vars) => (d[key] ?? key).replace(/\{(\w)\}/g, (_, k) => String(vars?.[k] ?? ""));
+  }
+
+  // ------------------------------------------------------------------ model (pure)
+  const scr = (src) => src.split(".")[0];
+  const itm = (src) => (src.includes(".") ? src.slice(src.indexOf(".") + 1) : null);
+  const str = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const isOverlay = (s) => s.kind !== "screen";
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+  const uniq = (seen) => (o) => o && typeof o.id === "string" && !seen.has(o.id) && !!seen.add(o.id);
+
+  /** A fresh, well-formed copy: known kinds / acts, string labels, duplicate ids and broken links dropped. */
+  function normalize(raw) {
+    const f = raw && typeof raw === "object" ? raw : {};
+    const screens = (Array.isArray(f.screens) ? f.screens : []).filter(uniq(new Set())).map((s) => ({
+      ...s, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
+      parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
+      zeplin: str(s.zeplin), ac: str(s.ac),
+      items: (Array.isArray(s.items) ? s.items : []).filter(uniq(new Set())).map((it) => ({ ...it, label: str(it.label, it.id) })),
+    }));
+    const by = new Map(screens.map((s) => [s.id, s]));
+    const okSrc = (src) => {
+      const s = typeof src === "string" && by.get(scr(src));
+      return !!s && (itm(src) === null || s.items.some((it) => it.id === itm(src)));
+    };
+    const links = (Array.isArray(f.links) ? f.links : [])
+      .filter((l) => l && okSrc(l.src) && by.has(l.to))
+      .map((l) => ({ ...l, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
+    return { ...f, screens, links };
+  }
+
+  /** Fills x / y of screens that have none; returns a new flow. Columns = BFS depth over `navigate` links from the
+   *  first screen (unreachable: one last column), rows in order of appearance. Popup / sheet / toast sit 60 / 60
+   *  right-down of their parent (declared, else the screen that opens it) and take no row of their own. */
+  function layout(flow) {
+    const f = normalize(flow);
+    const by = new Map(f.screens.map((s) => [s.id, s]));
+    const parentOf = (s) => {
+      if (!isOverlay(s)) return null;
+      if (s.parent && s.parent !== s.id && by.has(s.parent)) return s.parent;
+      const l = f.links.find((l) => l.to === s.id && l.act === "open" && scr(l.src) !== s.id);
+      return l ? scr(l.src) : null;
+    };
+    const par = new Map(f.screens.map((s) => [s.id, parentOf(s)]));
+    const owner = (id) => { for (let n = 0; par.get(id) && n < 20; n++) id = par.get(id); return id; };
+
+    const next = new Map();
+    for (const l of f.links) {
+      if (l.act !== "navigate") continue;
+      const a = owner(scr(l.src));
+      if (!next.has(a)) next.set(a, []);
+      next.get(a).push(owner(l.to));
+    }
+    const depth = new Map();
+    if (f.screens.length) {
+      const q = [owner(f.screens[0].id)];
+      depth.set(q[0], 0);
+      while (q.length) {
+        const id = q.shift();
+        for (const n of next.get(id) || []) if (!depth.has(n)) { depth.set(n, depth.get(id) + 1); q.push(n); }
+      }
+    }
+    const last = Math.max(-1, ...depth.values()) + 1;
+    const rows = new Map();
+    for (const s of f.screens) {
+      if (par.get(s.id)) continue;
+      const col = depth.get(s.id) ?? last, row = rows.get(col) || 0;
+      rows.set(col, row + 1);
+      if (s.x === null || s.y === null) { s.x = col * COL; s.y = row * ROW; }
+    }
+
+    const nth = new Map(), count = new Map();
+    for (const s of f.screens) {
+      const p = par.get(s.id);
+      if (p) { count.set(p, (count.get(p) || 0) + 1); nth.set(s.id, count.get(p)); }
+    }
+    const place = (s, guard) => {
+      if ((s.x !== null && s.y !== null) || guard > 20) return;
+      const p = by.get(par.get(s.id));
+      place(p, guard + 1);
+      s.x = (p.x ?? 0) + SHIFT * nth.get(s.id);
+      s.y = (p.y ?? 0) + SHIFT * nth.get(s.id);
+    };
+    for (const s of f.screens) if (par.get(s.id)) place(s, 0);
+    return f;
+  }
+
+  /** Gaps in the flow: [{kind: "orphan" | "dead" | "noback" | "noac", screen, item?, text}]. */
+  function check(flow, lang) {
+    const f = normalize(flow), t = tr(lang), out = [];
+    const first = f.screens[0]?.id;
+    const by = new Map(f.screens.map((s) => [s.id, s]));
+    const into = new Set(f.links.map((l) => l.to));
+    const from = new Set(f.links.map((l) => l.src));
+    const back = new Set(f.links.filter((l) => l.act === "back").map((l) => scr(l.src)));
+    for (const s of f.screens) {
+      if (s.id !== first && !into.has(s.id)) out.push({ kind: "orphan", screen: s.id, text: t("orphan", { s: s.title }) });
+      for (const it of s.items)
+        if (!from.has(`${s.id}.${it.id}`))
+          out.push({ kind: "dead", screen: s.id, item: it.id, text: t("dead", { s: s.title, i: it.label }) });
+      if (s.kind === "screen" && s.id !== first && s.items.length && !back.has(s.id))
+        out.push({ kind: "noback", screen: s.id, text: t("noback", { s: s.title }) });
+      if (!s.ac) out.push({ kind: "noac", screen: s.id, text: t("noacScreen", { s: s.title }) });
+    }
+    for (const l of f.links) {
+      if (l.ac) continue;
+      const s = by.get(scr(l.src)), i = itm(l.src), name = i ? s.items.find((it) => it.id === i).label : s.title;
+      out.push({ kind: "noac", screen: s.id, ...(i ? { item: i } : {}), text: t("noacLink", { i: name, s: by.get(l.to).title }) });
+    }
+    return out;
+  }
+
+  // ------------------------------------------------------------------ geometry (pure, canvas units)
+  /** The visible card inside a 390 × 844 frame: the whole phone for a screen, a dialog / sheet / toast otherwise.
+   *  head / headH: the title bar; top / step: where item rows start and their pitch. */
+  function cardOf(s) {
+    const n = s.items.length;
+    if (!isOverlay(s))
+      return { x: 0, y: 0, w: W, h: H, head: STATUS, headH: HEAD, top: TOP, step: n ? Math.min(STEP, (H - TOP - BOTTOM) / n) : STEP };
+    const step = n ? Math.min(STEP, (H * 0.8 - CARD_HEAD - CARD_PAD) / n) : STEP;
+    const h = Math.max(s.kind === "toast" ? CARD_HEAD + CARD_PAD : 140, CARD_HEAD + n * step + CARD_PAD);
+    const w = s.kind === "sheet" ? W : s.kind === "popup" ? W - 70 : W - 48;
+    const y = s.kind === "popup" ? (H - h) / 2 : s.kind === "sheet" ? H - h : H - h - 56;
+    return { x: (W - w) / 2, y, w, h, head: 0, headH: CARD_HEAD, top: CARD_HEAD, step };
+  }
+  /** Row i of a card, relative to the card. */
+  function rowOf(card, i) {
+    return { x: 16, y: card.top + i * card.step, w: card.w - 32, h: card.step - Math.min(12, card.step * 0.22) };
+  }
+  const cardAbs = (s, c = cardOf(s)) => ({ x: s.x + c.x, y: s.y + c.y, w: c.w, h: c.h });
+
+  /** Arrow ends: p (start) with its direction, q (end) on the nearest edge of the target card with that edge's normal. */
+  function linkEnds(l, by) {
+    const a = by.get(scr(l.src)), ca = cardOf(a), A = cardAbs(a, ca), B = cardAbs(by.get(l.to));
+    const i = a.items.findIndex((it) => it.id === itm(l.src));
+    let p, dir;
+    if (i >= 0) {
+      const r = rowOf(ca, i);
+      p = { x: A.x + r.x + r.w, y: A.y + r.y + r.h / 2 };
+      dir = { x: 1, y: 0 };
+    } else {
+      const left = B.x + B.w / 2 < A.x + A.w / 2;
+      p = { x: left ? A.x : A.x + A.w, y: A.y + ca.head + ca.headH / 2 };
+      dir = { x: left ? -1 : 1, y: 0 };
+    }
+    const m = 28, cy = clamp(p.y, B.y + m, B.y + B.h - m), cx = clamp(p.x, B.x + m, B.x + B.w - m);
+    if (p.x <= B.x) return { p, dir, q: { x: B.x, y: cy }, n: { x: -1, y: 0 } };
+    if (p.x >= B.x + B.w) return { p, dir, q: { x: B.x + B.w, y: cy }, n: { x: 1, y: 0 } };
+    if (p.y < B.y) return { p, dir, q: { x: cx, y: B.y }, n: { x: 0, y: -1 } };
+    return { p, dir, q: { x: cx, y: B.y + B.h }, n: { x: 0, y: 1 } };
+  }
+  const r1 = (v) => Math.round(v * 10) / 10;
+  /** Cubic bezier path for the ends + its midpoint (label anchor). */
+  function curve({ p, dir, q, n }) {
+    const d = clamp(Math.hypot(q.x - p.x, q.y - p.y) * 0.45, 40, 260);
+    const c1 = { x: p.x + dir.x * d, y: p.y + dir.y * d }, c2 = { x: q.x + n.x * d, y: q.y + n.y * d };
+    return {
+      d: `M${r1(p.x)} ${r1(p.y)}C${r1(c1.x)} ${r1(c1.y)} ${r1(c2.x)} ${r1(c2.y)} ${r1(q.x)} ${r1(q.y)}`,
+      mid: { x: (p.x + 3 * c1.x + 3 * c2.x + q.x) / 8, y: (p.y + 3 * c1.y + 3 * c2.y + q.y) / 8 },
+    };
+  }
+  const linkText = (l) => {
+    const s = [l.when, l.ac].filter(Boolean).join(" · ");
+    return s.length > 48 ? s.slice(0, 47) + "…" : s;
+  };
+  function bounds(screens) {
+    if (!screens.length) return { x: 0, y: 0, w: W, h: H };
+    const xs = screens.map((s) => s.x), ys = screens.map((s) => s.y);
+    const x = Math.min(...xs), y = Math.min(...ys);
+    return { x, y, w: Math.max(...xs) + W - x, h: Math.max(...ys) + H - y };
+  }
+  /** Camera {x, y, k} (screen = world * k + x / y) that centres box b in a vw × vh view, never above 100%. Past the
+   *  minimum zoom the box can't fit: that axis starts at its top / left edge, so the first screen stays in view. */
+  function fitCam(b, vw, vh) {
+    const k = clamp(Math.min((vw - 2 * PAD) / b.w, (vh - 2 * PAD) / b.h), ZMIN, 1);
+    const at = (size, view, start) => (size * k <= view - 2 * PAD ? (view - size * k) / 2 : PAD) - start * k;
+    return { k, x: at(b.w, vw, b.x), y: at(b.h, vh, b.y) };
+  }
+  /** Zoom to k keeping view point (px, py) over the same world point. */
+  function zoomAt(c, k, px, py) {
+    k = clamp(k, ZMIN, ZMAX);
+    return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
+  }
+
+  // ------------------------------------------------------------------ DOM builders
+  function h(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function svg(tag, attrs) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  const box = (e, r) => Object.assign(e.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px" });
+  const placeFrame = (el, s) => { el.style.transform = `translate(${s.x}px,${s.y}px)`; };
+
+  function zeplinLink(url, t) {
+    const a = h("a", "uf-zeplin");
+    a.target = "_blank";
+    a.rel = "noopener";
+    if (ZEPLIN.test(url)) a.href = url;
+    a.setAttribute("aria-label", t("zeplin"));
+    const i = svg("svg", { viewBox: "0 0 24 24", width: 18, height: 18, fill: "none", stroke: "currentColor",
+      "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
+    i.append(svg("path", { d: "M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" }));
+    a.append(i);
+    return a;
+  }
+
+  /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
+   *  `linked`: set of "screen.item" sources that have a link. Reused by the prototype view. */
+  function buildFrame(s, t, linked) {
+    const c = cardOf(s);
+    const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : ""));
+    el.dataset.id = s.id;
+    const card = h("div", "uf-card" + (s.items.length ? "" : " uf-empty"));
+    box(card, c);
+    const head = h("div", "uf-head");
+    box(head, { x: 0, y: c.head, w: c.w, h: c.headH });
+    head.append(h("div", "uf-title", s.title));
+    if (s.ac) head.append(h("span", "uf-ac", s.ac));
+    if (s.zeplin) head.append(zeplinLink(s.zeplin, t));
+    card.append(head);
+    s.items.forEach((it, i) => {
+      const r = rowOf(c, i), row = h("div", "uf-item " + (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
+      row.dataset.item = it.id;
+      box(row, r);
+      row.style.lineHeight = r.h - 2 + "px";
+      card.append(row);
+    });
+    el.append(card);
+    placeFrame(el, s);
+    return el;
+  }
+
+  function markers(uid) {
+    const defs = svg("defs", {});
+    for (const k of ["a", "b"]) {
+      const m = svg("marker", { id: `${uid}-${k}`, class: `uf-mk-${k}`, viewBox: "0 0 10 10", refX: 8, refY: 5,
+        markerWidth: 14, markerHeight: 14, markerUnits: "userSpaceOnUse", orient: "auto" });
+      m.append(svg("path", { d: "M0 0.5L10 5L0 9.5z" }));
+      defs.append(m);
+    }
+    return defs;
+  }
+
+  // ------------------------------------------------------------------ styles (injected once)
+  const DARK = "--uf-bg:#0d0f14;--uf-screen:#181b22;--uf-ink:#e8eaee;--uf-ink2:#9aa1ad;--uf-line:#2c313b;" +
+    "--uf-soft:#22262e;--uf-accent:#8b8cf8;--uf-on-accent:#0d0f14;--uf-accent-soft:rgba(139,140,248,.16);" +
+    "--uf-muted:#697282;--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
+    "--uf-shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px -14px rgba(0,0,0,.7);color-scheme:dark";
+  const CSS = `
+.uf-root{--uf-bg:#f3f4f7;--uf-screen:#fff;--uf-ink:#111827;--uf-ink2:#6b7280;--uf-line:#d9dce3;--uf-soft:#f1f3f6;
+--uf-accent:#4f46e5;--uf-on-accent:#fff;--uf-accent-soft:rgba(79,70,229,.1);--uf-muted:#9aa1ad;--uf-warn:#c2410c;
+--uf-warn-soft:rgba(234,88,12,.1);--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
+position:relative;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
+color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+-webkit-font-smoothing:antialiased}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]) .uf-root{${DARK}}}
+[data-theme=dark] .uf-root{${DARK}}
+.uf-root *{box-sizing:border-box}
+.uf-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;background:var(--uf-screen);
+border-bottom:1px solid var(--uf-line)}
+.uf-sp{flex:1}
+.uf-btn{height:32px;padding:0 13px;border:1px solid var(--uf-line);border-radius:999px;background:var(--uf-screen);
+color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.uf-btn:hover{background:var(--uf-soft)}
+.uf-btn:active{transform:scale(.97)}
+.uf-btn[aria-pressed=true]{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
+.uf-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--uf-line);border-radius:999px;background:var(--uf-soft)}
+.uf-seg .uf-btn{height:26px;border:0;background:transparent;color:var(--uf-ink2)}
+.uf-seg .uf-btn[aria-pressed=true]{background:var(--uf-screen);color:var(--uf-ink);box-shadow:0 1px 3px rgba(16,24,40,.18)}
+.uf-main{position:relative;flex:1;min-height:0}
+.uf-view{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;outline:none}
+.uf-btn:focus-visible,.uf-issue:focus-visible,.uf-zeplin:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
+.uf-view:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-2px}
+.uf-moving .uf-view{cursor:grabbing}
+.uf-layer{position:absolute;left:0;top:0;transform-origin:0 0}
+.uf-moving .uf-layer{will-change:transform}
+.uf-play{position:absolute;inset:0;display:none}
+.uf-root[data-mode=play] .uf-view{display:none}
+.uf-root[data-mode=play] .uf-play{display:block}
+.uf-screen{position:absolute;left:0;top:0;width:${W}px;height:${H}px;border-radius:54px;background:var(--uf-screen);
+box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);transition:opacity .2s ease-out}
+.uf-screen:not(.uf-ov)::before{content:"";position:absolute;top:11px;left:50%;width:120px;height:33px;margin-left:-60px;
+border-radius:20px;background:#000;opacity:.88}
+.uf-screen:not(.uf-ov)::after{content:"";position:absolute;bottom:9px;left:50%;width:134px;height:5px;margin-left:-67px;
+border-radius:3px;background:var(--uf-ink);opacity:.45}
+.uf-ov{background:none;box-shadow:none;pointer-events:none}
+.uf-card{position:absolute}
+.uf-ov .uf-card{pointer-events:auto;border-radius:22px;background:var(--uf-screen);box-shadow:var(--uf-shadow);
+outline:1.5px dashed var(--uf-accent);outline-offset:0}
+.uf-sheet .uf-card{border-radius:28px 28px 14px 14px}
+.uf-popup .uf-empty::after,.uf-sheet .uf-empty::after{content:"";position:absolute;left:20px;right:72px;top:72px;height:10px;
+border-radius:5px;background:var(--uf-soft);box-shadow:0 22px 0 var(--uf-soft)}
+.uf-head{position:absolute;display:flex;align-items:center;gap:8px;padding:0 18px 0 20px}
+.uf-screen:not(.uf-ov) .uf-head{border-bottom:1px solid var(--uf-soft)}
+.uf-title{flex:1;min-width:0;font-size:17px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-ac{flex:none;max-width:120px;padding:2px 8px;border-radius:999px;background:var(--uf-accent-soft);color:var(--uf-accent);
+font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-zeplin{flex:none;display:grid;place-items:center;width:30px;height:30px;border-radius:9px;color:var(--uf-ink2)}
+.uf-zeplin[href]{color:var(--uf-accent)}
+.uf-zeplin[href]:hover{background:var(--uf-accent-soft)}
+.uf-zeplin:not([href]){opacity:.4}
+.uf-item{position:absolute;padding:0 30px 0 14px;border:1px solid var(--uf-line);border-radius:12px;background:var(--uf-soft);
+font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-linked::after{content:"›";position:absolute;right:12px;top:0;color:var(--uf-ink2);font-size:20px}
+.uf-dead{border-style:dashed;background:transparent;color:var(--uf-ink2)}
+.uf-focus .uf-screen:not(.uf-on){opacity:.2}
+.uf-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
+.uf-link{fill:none;stroke:var(--uf-accent);stroke-width:3;stroke-linecap:round;transition:opacity .2s ease-out}
+.uf-open{stroke-width:1.75}
+.uf-back{stroke:var(--uf-muted);stroke-width:2;stroke-dasharray:8 7}
+.uf-mk-a{fill:var(--uf-accent)}
+.uf-mk-b{fill:var(--uf-muted)}
+.uf-label{font-size:14px;font-weight:650;fill:var(--uf-ink2);text-anchor:middle;dominant-baseline:central;paint-order:stroke;
+stroke:var(--uf-bg);stroke-width:6px;stroke-linejoin:round;transition:opacity .2s ease-out}
+.uf-focus .uf-link:not(.uf-on),.uf-focus .uf-label:not(.uf-on){opacity:.08}
+.uf-panel{position:absolute;top:8px;right:8px;z-index:2;width:min(380px,calc(100% - 16px));max-height:min(60%,520px);
+overflow:auto;padding:6px;border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);
+animation:uf-in .18s ease-out}
+@keyframes uf-in{from{opacity:0;transform:translateY(-6px)}}
+.uf-issue{display:flex;align-items:flex-start;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;background:none;
+color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.uf-issue:hover{background:var(--uf-soft)}
+.uf-txt{min-width:0;overflow-wrap:anywhere}
+.uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
+.uf-tag-orphan,.uf-tag-dead{background:var(--uf-warn-soft);color:var(--uf-warn)}
+.uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
+@media (prefers-reduced-motion:reduce){.uf-root *{transition:none!important;animation:none!important}}
+`;
+  function injectStyle() {
+    if (document.getElementById("uf-style")) return;
+    const s = h("style", null, CSS);
+    s.id = "uf-style";
+    document.head.append(s);
+  }
+
+  // ------------------------------------------------------------------ standalone helpers
+  function readHash() {
+    const q = new URLSearchParams(location.hash.slice(1));
+    return { s: q.get("s"), m: q.get("m") };
+  }
+  /** Download the page as captured before mount, with the data block replaced by `flow`. */
+  function saveFile(src, flow) {
+    const json = JSON.stringify(flow).replace(/</g, "\\u003c");
+    const html = "<!doctype html>\n" +
+      src.replace(/(<script[^>]*\bid=["']?uiflow-data["']?[^>]*>)[\s\S]*?(<\/script>)/i, (_, a, b) => a + json + b);
+    const a = h("a");
+    a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    a.download = `uiflow-${str(flow.ticket, "flow").replace(/[^\w.-]/g, "_")}.html`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  }
+
+  // ------------------------------------------------------------------ mount
+  let mounts = 0;
+
+  /** src: the page's own HTML when standalone (enables "Lưu file" and hash writing), else null. */
+  function mount(host, flow, opts = {}, src = null) {
+    injectStyle();
+    const lang = opts.lang || (/^vi/i.test(navigator.language || "") ? "vi" : "en");
+    const t = tr(lang), uid = "uf" + ++mounts;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+    // state
+    let cur = layout(flow), base = JSON.stringify(cur), hist = [], issues = [];
+    let shown = "map", focusId = null, here = null, editing = false;
+    let cam = { x: 0, y: 0, k: 1 }, vw = 0, vh = 0, rect = null, ready = false;
+    let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
+
+    // shell
+    const root = h("div", "uf-root");
+    root.dataset.mode = shown;
+    const bar = h("div", "uf-bar");
+    const btn = (label, cls, onClick) => {
+      const b = h("button", cls, label);
+      b.type = "button";
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    const seg = h("div", "uf-seg");
+    seg.setAttribute("role", "group");
+    const bMap = btn(t("map"), "uf-btn", () => api.mode("map"));
+    const bPlay = btn(t("play"), "uf-btn", () => api.mode("play"));
+    seg.append(bMap, bPlay);
+    bar.append(seg);
+    if (opts.edit) {
+      const bEdit = btn(t("edit"), "uf-btn", () => {
+        editing = !editing; // Task 7 hooks its handles on .uf-editing
+        bEdit.setAttribute("aria-pressed", String(editing));
+        root.classList.toggle("uf-editing", editing);
+      });
+      bEdit.setAttribute("aria-pressed", "false");
+      bar.append(bEdit);
+    }
+    bar.append(h("span", "uf-sp"), btn(t("fit"), "uf-btn", () => api.fit()));
+    const bCheck = btn("", "uf-btn", togglePanel);
+    bCheck.setAttribute("aria-expanded", "false");
+    bar.append(bCheck);
+    if (src !== null) bar.append(btn(t("save"), "uf-btn", () => saveFile(src, cur)));
+
+    const main = h("div", "uf-main");
+    const view = h("div", "uf-view");
+    view.tabIndex = 0;
+    view.setAttribute("aria-label", t("canvas"));
+    const layer = h("div", "uf-layer");
+    const links = svg("svg", { class: "uf-links", "aria-hidden": "true" });
+    const defs = markers(uid);
+    view.append(layer);
+    const play = h("div", "uf-play"); // prototype view (Task 6) renders here
+    const panel = h("div", "uf-panel");
+    panel.hidden = true;
+    main.append(view, play, panel);
+    root.append(bar, main);
+    host.replaceChildren(root);
+
+    // render: whole map on data change; links alone when only geometry changes
+    function render() {
+      const linked = new Set(cur.links.map((l) => l.src));
+      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked)]));
+      const nodes = [...frames.values()].sort((a, b) => a.classList.contains("uf-ov") - b.classList.contains("uf-ov"));
+      layer.replaceChildren(...nodes, links);
+      drawLinks();
+      if (focusId && !frames.has(focusId)) focusId = null;
+      applyFocus();
+      refreshChecks();
+    }
+    function drawLinks() {
+      const by = new Map(cur.screens.map((s) => [s.id, s])), paths = [], labels = [];
+      marks = cur.links.map((l) => {
+        const g = curve(linkEnds(l, by)), dashed = l.act === "back" || l.act === "close";
+        const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back" : ""}`,
+          "marker-end": `url(#${uid}-${dashed ? "b" : "a"})` });
+        paths.push(path);
+        const text = linkText(l);
+        let lab = null;
+        if (text) {
+          lab = svg("text", { x: r1(g.mid.x), y: r1(g.mid.y), class: "uf-label" });
+          lab.textContent = text;
+          labels.push(lab);
+        }
+        return { path, lab, a: scr(l.src), b: l.to };
+      });
+      links.replaceChildren(defs, ...paths, ...labels);
+    }
+    function applyFocus() {
+      root.classList.toggle("uf-focus", focusId !== null);
+      const near = new Set([focusId]);
+      for (const s of cur.screens) {
+        if (s.parent === focusId) near.add(s.id); // its popups
+        if (s.id === focusId && s.parent) near.add(s.parent); // the screen under it
+      }
+      for (const m of marks) {
+        const on = focusId !== null && (m.a === focusId || m.b === focusId);
+        if (on) { near.add(m.a); near.add(m.b); }
+        m.path.classList.toggle("uf-on", on);
+        m.lab?.classList.toggle("uf-on", on);
+      }
+      frames.forEach((f, id) => f.classList.toggle("uf-on", focusId !== null && near.has(id)));
+    }
+    function setFocus(id) {
+      focusId = id;
+      applyFocus();
+    }
+
+    // flow check panel
+    function refreshChecks() {
+      issues = check(cur, lang);
+      bCheck.textContent = t("check", { n: issues.length });
+      if (!panel.hidden) fillPanel();
+    }
+    function fillPanel() {
+      if (!issues.length) return panel.replaceChildren(h("p", "uf-none", t("ok")));
+      panel.replaceChildren(...issues.map((it) => {
+        const b = btn(null, "uf-issue", () => { togglePanel(); api.goto(it.screen); });
+        b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
+        return b;
+      }));
+    }
+    function togglePanel() {
+      panel.hidden = !panel.hidden;
+      bCheck.setAttribute("aria-expanded", String(!panel.hidden));
+      if (!panel.hidden) fillPanel();
+    }
+
+    // camera: one transform on one layer; frames coalesced with requestAnimationFrame
+    let raf = 0, anim = 0, idle = 0, wheel = null;
+    const apply = () => { layer.style.transform = `translate3d(${cam.x}px,${cam.y}px,0) scale(${cam.k})`; };
+    const moving = (on) => root.classList.toggle("uf-moving", on);
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(tick); };
+    function stopAnim() {
+      if (!anim) return;
+      cancelAnimationFrame(anim);
+      anim = 0;
+      moving(false);
+    }
+    function moveCam(to, animate) {
+      stopAnim();
+      if (!animate || reduced.matches) { cam = to; apply(); return; }
+      const from = cam, t0 = performance.now();
+      moving(true);
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / ANIM_MS), e = 1 - (1 - p) ** 3;
+        cam = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e, k: from.k + (to.k - from.k) * e };
+        apply();
+        if (p < 1) anim = requestAnimationFrame(step);
+        else { anim = 0; moving(false); }
+      };
+      anim = requestAnimationFrame(step);
+    }
+    const fitAll = () => fitCam(bounds(cur.screens), vw, vh);
+
+    // input: drag to pan, two pointers to pinch, wheel to zoom around the cursor, tap to focus
+    const pts = new Map();
+    let g = null, tapOn = null, moved = false;
+    const at = (e) => ({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    function snap() {
+      const p = [...pts.values()];
+      g = { cam: { ...cam }, p, mid: p[1] && mid(p[0], p[1]), dist: p[1] && (Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) || 1) };
+    }
+    function gestureCam() {
+      const p = [...pts.values()];
+      if (p.length < 2 || !g.mid) return { k: g.cam.k, x: g.cam.x + p[0].x - g.p[0].x, y: g.cam.y + p[0].y - g.p[0].y };
+      const m = mid(p[0], p[1]), k = clamp((g.cam.k * Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y)) / g.dist, ZMIN, ZMAX);
+      const wx = (g.mid.x - g.cam.x) / g.cam.k, wy = (g.mid.y - g.cam.y) / g.cam.k;
+      return { k, x: m.x - wx * k, y: m.y - wy * k };
+    }
+    function tick() {
+      raf = 0;
+      if (g && pts.size) cam = gestureCam();
+      if (wheel) { cam = zoomAt(cam, cam.k * wheel.f, wheel.x, wheel.y); wheel = null; }
+      apply();
+    }
+    const flush = () => { if (raf) { cancelAnimationFrame(raf); tick(); } };
+    function onDown(e) {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+      if (e.target.closest("a, button, input, textarea, [contenteditable]")) return;
+      stopAnim();
+      flush();
+      rect = view.getBoundingClientRect();
+      view.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, at(e));
+      if (pts.size === 1) { tapOn = e.target; moved = false; } else moved = true;
+      snap();
+      moving(true);
+    }
+    function onMove(e) {
+      if (!pts.has(e.pointerId)) return;
+      const p = at(e);
+      pts.set(e.pointerId, p);
+      if (!moved && Math.hypot(p.x - g.p[0].x, p.y - g.p[0].y) > 4) moved = true;
+      schedule();
+    }
+    function onUp(e) {
+      if (!pts.has(e.pointerId)) return;
+      flush();
+      pts.delete(e.pointerId);
+      if (pts.size) return snap();
+      g = null;
+      moving(false);
+      if (!moved && e.type === "pointerup") {
+        const f = tapOn?.closest?.(".uf-screen");
+        setFocus(f && layer.contains(f) ? f.dataset.id : null);
+      }
+    }
+    function onWheel(e) {
+      e.preventDefault();
+      stopAnim();
+      if (!rect) rect = view.getBoundingClientRect();
+      const p = at(e), f = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : e.ctrlKey ? 0.01 : 0.0015));
+      wheel = { f: (wheel ? wheel.f : 1) * f, x: p.x, y: p.y };
+      moving(true);
+      clearTimeout(idle);
+      idle = setTimeout(() => pts.size || moving(false), 160);
+      schedule();
+    }
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      if (!panel.hidden) togglePanel();
+      else setFocus(null);
+    };
+    view.addEventListener("pointerdown", onDown);
+    view.addEventListener("pointermove", onMove);
+    view.addEventListener("pointerup", onUp);
+    view.addEventListener("pointercancel", onUp);
+    view.addEventListener("wheel", onWheel, { passive: false });
+    view.addEventListener("pointerenter", () => { rect = view.getBoundingClientRect(); });
+    root.addEventListener("keydown", onKey);
+
+    // hash (#s=<screen>&m=play): read on mount, written only when standalone
+    function writeHash() {
+      if (src === null) return;
+      const q = new URLSearchParams();
+      if (here) q.set("s", here);
+      if (shown === "play") q.set("m", "play");
+      history.replaceState(history.state, "", "#" + q);
+    }
+    function goto(id, animate) {
+      const s = cur.screens.find((x) => x.id === id);
+      if (!s) return;
+      here = id;
+      setFocus(id);
+      moveCam(fitCam({ x: s.x, y: s.y, w: W, h: H }, vw, vh), animate);
+      writeHash();
+    }
+    function start() {
+      ready = true;
+      const hs = readHash();
+      if (hs.s && cur.screens.some((s) => s.id === hs.s)) goto(hs.s, false);
+      else moveCam(fitAll(), false);
+      if (hs.m === "play") api.mode("play");
+    }
+    const measure = () => {
+      vw = view.clientWidth;
+      vh = view.clientHeight;
+      rect = view.getBoundingClientRect();
+      if (!ready && vw && vh) start();
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(view);
+
+    const ids = (f) => f.screens.map((s) => s.id).join("\n");
+    const api = {
+      get: () => structuredClone(cur),
+      /** Replace the flow and treat it as clean; refit only when the set of screens changed. */
+      set(f) {
+        const before = ids(cur);
+        cur = layout(f);
+        base = JSON.stringify(cur);
+        hist = [];
+        render();
+        if (ready && ids(cur) !== before) moveCam(fitAll(), false);
+      },
+      mode(m) {
+        if (m !== "map" && m !== "play") return;
+        shown = m;
+        root.dataset.mode = m;
+        bMap.setAttribute("aria-pressed", String(m === "map"));
+        bPlay.setAttribute("aria-pressed", String(m === "play"));
+        writeHash();
+      },
+      goto: (id) => goto(id, true),
+      fit: () => moveCam(fitAll(), true),
+      /** Steps back through `hist` (snapshots pushed by edits, Task 7). */
+      undo() {
+        if (!hist.length) return;
+        cur = JSON.parse(hist.pop());
+        render();
+        opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
+      },
+      destroy() {
+        ro.disconnect();
+        cancelAnimationFrame(raf);
+        stopAnim();
+        clearTimeout(idle);
+        host.replaceChildren();
+      },
+    };
+
+    render();
+    api.mode("map");
+    measure();
+    return api;
+  }
+
+  // ------------------------------------------------------------------ standalone auto-run
+  function auto() {
+    const data = document.getElementById("uiflow-data");
+    if (!data) return; // the dashboard mounts the engine itself
+    const src = document.documentElement.outerHTML; // before mount: what "Lưu file" writes back
+    let host = document.getElementById("uiflow");
+    if (!host) {
+      host = h("div");
+      host.id = "uiflow";
+      document.body.append(host);
+    }
+    let flow;
+    try {
+      flow = JSON.parse(data.textContent);
+    } catch {
+      host.textContent = tr(/^vi/i.test(navigator.language || "") ? "vi" : "en")("bad");
+      return;
+    }
+    mount(host, flow, { edit: true }, src);
+  }
+
+  window.UIFlow = Object.freeze({ SCREEN, layout, check, mount: (el, flow, opts) => mount(el, flow, opts, null) });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", auto, { once: true });
+  else auto();
+})();
