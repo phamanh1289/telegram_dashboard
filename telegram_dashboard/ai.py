@@ -753,6 +753,7 @@ class AiService:
         guide: bool = False,
         session: tuple[str, bool] | None = None,
         pick: tuple[str, str] | None = None,
+        zeplin: dict | None = None,
     ) -> str:
         """One `claude -p` run (or the Codex/Antigravity CLI picked instead): prompt on stdin, answer on stdout.
         `heavy`: a long read (many tickets), run on the task model with the longer timeout.
@@ -766,7 +767,9 @@ class AiService:
         `ref`: the session code (YT-xxxxxx), in the run log. `fast`: the CLI's quickest model, not the picked one.
         `pick` (model, effort): this run's own, over both.
         `session` (id, resume): the run starts that CLI session or carries it on (providers.keeps_session says
-        where); such a run is not retried here, its id being taken by the first try."""
+        where); such a run is not retried here, its id being taken by the first try.
+        `zeplin`: the user's zeplin MCP server: the run may read the design with its read-only tools (the longer
+        timeout), its token in the run's env only (providers.mcp_env)."""
         s = self.settings
         cwd = project or read_dir  # anything to read => the read-only tool command
         provider = providers.chosen(s, task=heavy, brief=brief, yt=yt, guide=guide)
@@ -774,25 +777,30 @@ class AiService:
                   providers.run_choice(s, task=heavy, provider=provider, brief=brief, yt=yt, guide=guide))  # fmt: skip
         cmd = providers.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
                                 model=choice[0], effort=choice[1], stream=on_text is not None, shell=shell,
-                                session=session)  # fmt: skip
+                                session=session, zeplin=zeplin)  # fmt: skip
         if provider == "claude" and not providers.is_claude(cmd):
             provider = None  # another AI command only prints its answer
         prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}\n\n{user_prompt}")
-        long = bool(project or heavy or brief)  # Briefing / Digest parts read many messages: the longer timeout
+        # Briefing / Digest parts read many messages, a Zeplin run reads designs: the longer timeout
+        long = bool(project or heavy or brief or zeplin)
+        env = {**child_env(), **providers.mcp_env(zeplin)}
         try:
-            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref)
+            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)
         except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt
             if session or e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
                 raise
             log.info("AI run for %s retried after: %s", feature, e.detail)
             if on_text:
                 on_text(None)  # the page drops the half answer
-            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref)
+            return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)
 
-    async def _run(self, cmd, cwd, prompt: bytes, long: bool, on_text, feature, choice, provider, ref="") -> str:
+    async def _run(
+        self, cmd, cwd, prompt: bytes, long: bool, on_text, feature, choice, provider, ref="", env=None
+    ) -> str:
         """Run one AI command to its answer. `provider`: whose JSON events it prints (None: plain
-        text). `on_text` set: the answer streams to it. The process (and anything it started) never
-        outlives the call: timeout, Hủy, a closed page or an error all kill it."""
+        text). `env`: the process's environment (default child_env()). `on_text` set: the answer streams to it.
+        The process (and anything it started) never outlives the call: timeout, Hủy, a closed page or an error
+        all kill it."""
         t0, final, error, proc = time.monotonic(), None, "ai_failed", None
         try:
             try:
@@ -802,7 +810,7 @@ class AiService:
                     stdin=asyncio.subprocess.PIPE,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
-                    env=child_env(),
+                    env=env or child_env(),
                     limit=STREAM_LIMIT,
                     start_new_session=True,
                 )

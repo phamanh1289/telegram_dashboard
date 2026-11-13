@@ -119,6 +119,7 @@ CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 ZEPLIN = re.compile(r"https?://(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)/\S+")
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
+ZEPLIN_AGY = [f"mcp(zeplin/{t})" for t in ZEPLIN_READ]  # Antigravity's allow rules for them (_agy_base `mcp`)
 ZEPLIN_HINT = (
     "\n\nLink Zeplin (zpl.io, app.zeplin.io) trong phiên: BẮT BUỘC đọc thiết kế bằng tool get_screen (màn) / "
     "get_component (component) của MCP server zeplin, includeVariants=false trừ khi cần biến thể, targetLayerName khi "
@@ -148,6 +149,11 @@ def _by_ref(server: dict) -> dict:
     """The server for Claude's --mcp-config with each env value as ${NAME}: Claude expands it from its own env."""
     return {"type": "stdio", "command": server["command"], "args": list(server.get("args") or []),
             "env": {k: f"${{{k}}}" for k in mcp_env(server)}}  # fmt: skip
+
+
+def _mcp_config(servers: dict) -> list[str]:
+    """Claude's --mcp-config for these servers ({name: server}); none: no flag."""
+    return ["--mcp-config", json.dumps({"mcpServers": servers})] if servers else []
 
 
 def _codex_zeplin(server: dict) -> list[str]:
@@ -434,7 +440,8 @@ def _agy_agent(kind: str, inherit: bool = False) -> str:
     name = f"telegram-dashboard-{kind}{'-mcp' if inherit else ''}"
     path = _agy_home() / "agents" / f"{name}.md"
     tools = AGY_TOOLS[kind]
-    cannot = "use any tool: answer from the prompt alone" if not tools else "run commands or browse"
+    alone = "use any tool but the MCP tools allowed to you" if inherit else "use any tool: answer from the prompt alone"
+    cannot = alone if not tools else "run commands or browse"
     text = (f"---\nname: {name}\ndescription: Radar run ({kind})\n"
             f"tools: [{', '.join(tools)}]\ninheritCustomizations: {str(inherit).lower()}\n---\n"
             f"Work only through the tools you have; you cannot {cannot}.\n")  # fmt: skip
@@ -534,8 +541,11 @@ def ask_cmd(
     stream: bool = False,
     shell: bool = False,
     session: tuple[str, bool] | None = None,
+    zeplin: dict | None = None,
 ) -> list[str]:
     """One answer (prompt on stdin), no file edits. `tools`: may read the project (cwd); else none.
+    `zeplin`: the user's zeplin MCP server (task_cmd `zeplin`): its read-only tools too, with or without `tools`,
+    its token in the run's env (mcp_env); never a shell or another MCP tool.
     `session` (id, resume): the run starts that session, or carries it on (only where `keeps_session`).
     `read_dir`: another folder it may read (photos). `stream`: Claude sends the answer as it writes.
     `shell` (with `tools`): may also run commands (build, test) in the sandbox: writes only in the project,
@@ -557,6 +567,13 @@ def ask_cmd(
             cmd += ["--output-format", "stream-json", "--verbose", *(["--include-partial-messages"] if stream else [])]
             if tools:
                 cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
+            if zeplin:  # MCP tools are not built-in tools: `--tools ""` leaves them; only the allowed ones run
+                at = cmd.index("--allowedTools") + 1 if "--allowedTools" in cmd else 0
+                if at:
+                    cmd[at] = f"{cmd[at]},{ZEPLIN_TOOLS}"
+                else:
+                    cmd += ["--allowedTools", ZEPLIN_TOOLS]
+                cmd += [*_mcp_config({"zeplin": _by_ref(zeplin)}), "--permission-mode", "default"]
             if session:
                 cmd += ["--resume" if session[1] else "--session-id", session[0]]
         return [*cmd, *(["--add-dir", read_dir] if read_dir else [])]
@@ -566,13 +583,17 @@ def ask_cmd(
             *exe(settings, p),
             "exec",
             *_codex_base(settings, model, effort),
+            *(_codex_zeplin(zeplin) if zeplin else []),
             "--ephemeral",
             *_codex_sandbox(settings, shell),
             *off,
             "-",
         ]
     kind = "read" if tools or read_dir else "none"  # no tools asked: none at all, not just "no project"
-    return [*_agy_base(settings, kind, model), *(["--add-dir", read_dir] if read_dir else [])]
+    return [
+        *_agy_base(settings, kind, model, ZEPLIN_AGY if zeplin else None),
+        *(["--add-dir", read_dir] if read_dir else []),
+    ]
 
 
 def task_cmd(
@@ -604,7 +625,7 @@ def task_cmd(
     if p == "claude":
         servers = {**({"codegraph": CODEGRAPH} if index else {}),
                    **({"zeplin": _by_ref(zeplin)} if zeplin and not own else {})}  # fmt: skip
-        mcp = ["--mcp-config", json.dumps({"mcpServers": servers})] if servers else []
+        mcp = _mcp_config(servers)
         shell = mode != "plan" and SHELL_OK
         allow = ALLOW[mode] if shell else ALLOW["plan"]
         allow = f"{allow},{CODEGRAPH_TOOL}" if index else allow
@@ -623,7 +644,7 @@ def task_cmd(
         zep = _codex_zeplin(zeplin) if zeplin and not own else []
         return [*head, *_codex_base(settings, model, effort, own), *zep, *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
-    allow = ["mcp(*)"] if own else [f"mcp(zeplin/{t})" for t in ZEPLIN_READ] if zeplin else None
+    allow = ["mcp(*)"] if own else ZEPLIN_AGY if zeplin else None
     return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, allow), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip
 

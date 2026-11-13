@@ -213,3 +213,41 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
     got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))["usage"]
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip
+
+
+ZEP = {"command": "npx", "args": ["zeplin-mcp"], "env": {"ZEPLIN_TOKEN": "s3cret"}}
+
+
+def test_ask_cmd_with_zeplin_allows_only_its_read_tools(settings):
+    from telegram_dashboard import providers
+
+    cmd = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert "--strict-mcp-config" in cmd and "--mcp-config" in cmd
+    assert cmd[cmd.index("--allowedTools") + 1] == providers.ZEPLIN_TOOLS
+    assert cmd[cmd.index("--tools") + 1] == "" and cmd[cmd.index("--permission-mode") + 1] == "default"
+    assert "s3cret" not in " ".join(cmd)  # token only in the env
+    assert "download_layer_asset" not in " ".join(cmd)
+    # the project read command keeps its own tools, Zeplin's are added to them
+    p = providers.ask_cmd(settings, "claude", tools=True, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert p[p.index("--allowedTools") + 1] == f"Read,Grep,Glob,Skill,{providers.ZEPLIN_TOOLS}"
+
+
+def test_ask_cmd_without_zeplin_is_unchanged(settings):
+    from telegram_dashboard import providers
+
+    a = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low")
+    b = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=None)
+    assert a == b and "--mcp-config" not in a
+
+
+def test_ask_cmd_zeplin_for_codex_and_antigravity(settings, tmp_path, monkeypatch):
+    from telegram_dashboard import providers
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    c = providers.ask_cmd(settings, "codex", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert any("mcp_servers.zeplin.command" in x for x in c) and "s3cret" not in " ".join(c)
+    assert "shell_tool" in c  # still no shell
+    g = providers.ask_cmd(settings, "antigravity", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert "mcp(zeplin/get_screen)" in " ".join(g)
+    deny = json.loads(g[g.index("--settings") + 1])["permissions"]["deny"]
+    assert "read_file(*)" in deny and "command(*)" in deny and "mcp(zeplin/download_layer_asset)" in deny
