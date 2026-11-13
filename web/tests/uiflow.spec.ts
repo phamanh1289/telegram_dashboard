@@ -1214,3 +1214,37 @@ test("a narrow label shows what tells screens apart: no shared title prefix, no 
   await page.evaluate(() => window.__api.goto("S44B")); // close in, the label has room again... and steps aside anyway
   await expect.poll(() => s44b.locator(".uf-flabel").evaluate((e) => getComputedStyle(e).opacity)).toBe("0");
 });
+
+test("a frame label is hidden from screen readers; the frame's accessible text has the title once", async ({ page }) => {
+  await open(page);
+  const s = page.locator('.uf-screen[data-id="code"]');
+  await expect(s.locator(".uf-flabel")).toHaveAttribute("aria-hidden", "true");
+  const title = await s.locator(".uf-title").innerText();
+  const heard = await s.evaluate((e) => {
+    const c = e.cloneNode(true) as HTMLElement;
+    c.querySelectorAll("[aria-hidden=true]").forEach((n) => n.remove());
+    return c.textContent ?? "";
+  });
+  expect(heard.split(title).length - 1).toBe(1);
+});
+
+test("a leftover root that only leads to an already taken screen is laid out with the groups, not the grid", async ({ page }) => {
+  await open(page);
+  const by = await laid(page, flowOfShape(
+    [scr("r1"), scr("r2"), scr("X"), scr("U"), scr("V")], [nav("r1", "X"), nav("r2", "X")]));
+  expect(by.r2.x).toBeGreaterThanOrEqual(by.X.x!); // with the groups: not left of the main flow
+  expect(by.U.x).toBe(by.V.x); // unlinked screens share the grid
+  expect(by.U.x).toBeGreaterThan(by.r2.x!); // the grid comes after every group
+});
+
+test("a label never ends up empty when the shared title prefix is stripped", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const g = structuredClone(window.SAMPLE);
+    g.screens.forEach((s) => { if (s.kind === "screen") s.title = `Ban ${s.id}`; });
+    g.screens.find((s) => s.kind !== "screen")!.title = "Ban ";
+    window.__api.set(g);
+  });
+  const t = await page.locator(".uf-ltitle").allInnerTexts();
+  expect(t.every((x) => x.trim() !== "")).toBe(true);
+});

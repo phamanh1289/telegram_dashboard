@@ -190,11 +190,12 @@
     if (tops.length) regions.push(layers(owner(f.screens[0].id)));
     const rest = tops.filter((id) => !done.has(id)), led = new Set(); // led: something else left over leads to it
     for (const id of rest) for (const k of next.get(id) || []) if (!done.has(k)) led.add(k);
+    const linkedTo = new Set([...next.keys(), ...[...next.values()].flat()]); // has a navigate edge, either way
     const groups = [], lone = [];
     for (const id of [...rest.filter((r) => !led.has(r)), ...rest]) { // true roots first; then what cycles left
       if (done.has(id)) continue;
       const g = layers(id);
-      if (g.length > 1) groups.push(g);
+      if (g.length > 1 || linkedTo.has(id)) groups.push(g); // a root whose target another group took is still linked
       else lone.push(id);
     }
     const first = (g) => Math.min(...g.flat().map((id) => order.get(id)));
@@ -400,7 +401,8 @@
     // the name above the frame at a constant on-screen size (Figma style): readable when the map is zoomed out.
     // Pure CSS from the camera's --zk; no per-label work on a pan, none in JS on a zoom.
     const label = h("div", "uf-flabel");
-    label.append(h("span", "uf-ltitle", lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title));
+    label.setAttribute("aria-hidden", "true"); // the in-frame title is the accessible name; this one only repeats it
+    label.append(h("span", "uf-ltitle", (lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title) || s.title));
     if (s.ac) label.append(h("span", "uf-lac", s.ac));
     card.append(label, head);
     s.items.forEach((it, i) => {

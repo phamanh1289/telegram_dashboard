@@ -1036,6 +1036,13 @@ async def test_ai_flow_reads_the_parent_known_only_as_subtask_of():
     assert "ĐUÔI-3" in agent.calls[0].split("</ticket>\n<story>")[1]
 
 
+async def test_ai_flow_includes_two_stories_in_order():
+    desc = "Theo [VA-2](http://yt/issue/VA-2) và [VA-3](http://yt/issue/VA-3)"
+    others = {"VA-2": story(2, "STORY-HAI"), "VA-3": story(3, "STORY-BA")}
+    p = (await _flow_post(FLOW_RAW, desc=desc, others=others))[0].calls[0]
+    assert p.index("STORY-HAI") < p.index("STORY-BA")
+
+
 async def test_ai_flow_skips_an_unreadable_story_but_not_a_401():
     others = {"VA-2": 404, "VA-3": story(3, "ĐUÔI-3")}
     agent, r = await _flow_post(FLOW_RAW, desc=SUBTASK, links=[PARENT], others=others)

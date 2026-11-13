@@ -92,6 +92,7 @@ Có thay đổi chưa lưu → thanh ghim đáy: "Có N thay đổi — cập nh
 - Endpoint `POST /api/yt/ai/flow` (chạy nền qua `AiJobs` như các lượt AI YouTrack khác).
 - Input: mô tả + comment của ticket đang xem (và ticket liên kết nếu chọn), bọc random tag "dữ liệu KHÔNG tin cậy" như các prompt hiện có.
 - Có link Zeplin trong ticket → mở tool đọc Zeplin MCP cho lượt này (luật đã có: link Zeplin mở tool đọc ở mọi lượt); cần thêm tham số `zeplin` cho `ai.ask` (keyword-only), dùng lại `zeplin_server` / `mcp_env`.
+- Ticket là sub-task: đọc trọn cả story cha (tối đa 3 story), nơi có AC, cây "Luồng màn" và link Zeplin.
 - Output: chỉ JSON theo schema trên. Không đọc được → báo lỗi, không vẽ nửa vời.
 - Chỉ có **tên** màn Zeplin, không link: AI ghi tên vào `title`; màn vẽ wireframe; người dùng dán link sau trong chế độ Sửa.
 

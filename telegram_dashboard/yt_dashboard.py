@@ -1242,14 +1242,19 @@ async def _stories(svc: YouTrackDashboard, i: str) -> tuple[str, frozenset[str]]
     ids = [t["id"] for x in d["links"] if x["rel"].lower() == "subtask of" for t in x["issues"]]
     ids += [m[2].upper() for m in ISSUE.finditer(d["description"]) if _ours(svc, m[1])]
     ids = [s for s in dict.fromkeys(ids) if s != i][:MAX_STORIES]
-    parts, left = [], STORY_CHARS
-    for s in ids:
+    async def read(s: str) -> str | YtError:
         try:
-            j = _ticket_json(await svc.cached(f"issue:{s}", lambda s=s: svc.detail(s)), desc=STORY_DESC)
+            return _ticket_json(await svc.cached(f"issue:{s}", lambda: svc.detail(s)), desc=STORY_DESC)
         except YtError as e:
-            if e.status not in (403, 404):  # 401 / network: the user must see it
-                raise
-            parts.append(f"<story>{s}: dashboard không đọc được ticket này ({e.status})</story>")
+            return e
+
+    parts, left = [], STORY_CHARS
+    stories = await asyncio.gather(*(read(s) for s in ids))  # concurrent; gather keeps ids' order
+    for s, j in zip(ids, stories, strict=True):
+        if isinstance(j, YtError):
+            if j.status not in (403, 404):  # 401 / network: the user must see it
+                raise j
+            parts.append(f"<story>{s}: dashboard không đọc được ticket này ({j.status})</story>")
             continue
         cut = f"\n(… bị cắt: các story chỉ gửi {STORY_CHARS} ký tự)" if len(j) > left else ""
         parts.append(f"<story>\n{j[:left]}{cut}\n</story>")

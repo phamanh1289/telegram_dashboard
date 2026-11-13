@@ -100,7 +100,7 @@ def clean(raw: dict, ticket: str) -> Flow:
 
 SHELL = (
     '<!doctype html><meta charset="utf-8">'
-    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
     '<title>UI flow · {ticket}</title><div id="uiflow"></div>'
     '<script type="application/json" id="uiflow-data">{data}</script><script>{engine}</script>'
 )

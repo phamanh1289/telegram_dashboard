@@ -3411,7 +3411,7 @@
 "tab": "youtrack",
 "area": "Bảng bên › Ticket › UI flow",
 "title": "UI flow: sơ đồ màn hình và luồng bấm của ticket",
-"what": "AI đọc AC, rule và link Zeplin của ticket rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file uiflow-<ticket>.html lên ticket kèm bình luận ghi rõ đã đổi gì. Dòng uiflow-<ticket>.html trong Tệp đính kèm mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè.",
+"what": "AI đọc AC, rule và link Zeplin của ticket (với sub-task, đọc trọn story cha, nơi có AC, cây \"Luồng màn\" và link Zeplin) rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file uiflow-<ticket>.html lên ticket kèm bình luận ghi rõ đã đổi gì. Dòng uiflow-<ticket>.html trong Tệp đính kèm mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè.",
 "how": [
 {
 "t": "Bấm \"Ticket\"",
