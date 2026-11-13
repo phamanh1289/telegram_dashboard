@@ -551,6 +551,8 @@ export default {
   "Xem bản mới": "See the new version",
   "Đã cập nhật file trên ticket (rev {n})": "Updated the file on the ticket (rev {n})",
   "Bỏ thay đổi chưa lưu?": "Discard the unsaved changes?",
+  "Xem bản mới trên ticket sẽ mất các thay đổi chưa lưu của bạn.": "Viewing the ticket's newer version discards your unsaved changes.",
+  "Cập nhật lên ticket": "Update the ticket",
   "Đóng UI flow sẽ mất các thay đổi chưa cập nhật lên ticket.": "Closing the UI flow loses every change not yet updated on the ticket.",
   "Bỏ thay đổi": "Discard changes",
   "Render lại bằng AI?": "Render again with AI?",

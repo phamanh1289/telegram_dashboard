@@ -39,8 +39,8 @@
       back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
       noItems: "Màn này chưa có nút",
       addScreen: "+ Màn", addItem: "+ Nút", del: "Xoá", newScreen: "Màn mới", newItem: "Nút mới",
-      acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối", headHint: "Đầu mũi tên",
-      arrow: "Mũi tên", button: "Nút", props: "Thuộc tính",
+      acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối",
+      arrow: "Mũi tên", button: "Nút", lastScreen: "Sơ đồ cần ít nhất một màn",
       maxScreens: "Tối đa {n} màn", maxItems: "Tối đa {n} nút mỗi màn", maxLinks: "Tối đa {n} liên kết",
       dragging: "Thả chuột xong rồi hãy sửa",
       badZeplin: "Link Zeplin không đúng (zpl.io, app.zeplin.io)",
@@ -60,8 +60,8 @@
       back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
       noItems: "No buttons on this screen yet",
       addScreen: "+ Screen", addItem: "+ Button", del: "Delete", newScreen: "New screen", newItem: "New button",
-      acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link", headHint: "Arrow head",
-      arrow: "Arrow", button: "Button", props: "Properties",
+      acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link",
+      arrow: "Arrow", button: "Button", lastScreen: "The flow needs at least one screen",
       maxScreens: "At most {n} screens", maxItems: "At most {n} buttons per screen", maxLinks: "At most {n} links",
       dragging: "Drop what you are dragging first",
       badZeplin: "Not a Zeplin link (zpl.io, app.zeplin.io)",
@@ -1323,6 +1323,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       } else {
         const gone = family(f, sel.id);
         f.screens = f.screens.filter((s) => !gone.has(s.id));
+        if (!f.screens.length) return ctx.note(t("lastScreen")); // the backend refuses a flow with no screen
         f.links = f.links.filter((l) => !gone.has(scr(l.src)) && !gone.has(l.to));
       }
       sel = null;
@@ -1561,6 +1562,7 @@ transform:translateX(-50%);animation:uf-in .18s ease-out}
       if (ed.busy()) return;
       const laid = layout(next), now = JSON.stringify(laid);
       if (now === before) return;
+      dropped = sanitize(next).dropped; // the "Dữ liệu hỏng" rows describe what is on screen now, as api.set does
       hist.push(before);
       if (hist.length > UNDO) hist.shift();
       cur = laid;

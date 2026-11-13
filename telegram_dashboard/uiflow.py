@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from .providers import ZEPLIN
 
-NAME = "uiflow-{issue}.html"
+NAME = "uiflow-{issue}.html"  # = flowName() in web/src/components/yt/sheet.tsx
 MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 60, 20, 300
 ID = r"^[A-Za-z0-9_-]{1,40}$"
 SRC = r"^[A-Za-z0-9_-]{1,40}(\.[A-Za-z0-9_-]{1,40})?$"

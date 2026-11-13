@@ -8,7 +8,7 @@ import { type Lang, t } from "@/lib/i18n";
 import type { UiFlow } from "@/lib/yt";
 
 /** What the dashboard uses of the engine's api (it also has mode / goto / fit / undo, driven by its own toolbar). */
-export type FlowApi = {
+type FlowApi = {
   get(): UiFlow;
   /** Replace the flow, treated as clean (it lays the screens out and clears the undo history). */
   set(f: UiFlow): void;
@@ -22,7 +22,7 @@ const win = () => window as unknown as { UIFlow?: Engine };
 
 let loading: Promise<Engine> | null = null;
 /** The engine, its script added once per page; a failed load is forgotten so the next call tries again. */
-export function loadEngine(): Promise<Engine> {
+function loadEngine(): Promise<Engine> {
   const w = win();
   if (w.UIFlow) return Promise.resolve(w.UIFlow);
   return (loading ??= new Promise<Engine>((ok, fail) => {

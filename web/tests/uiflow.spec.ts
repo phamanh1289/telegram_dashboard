@@ -1000,3 +1000,34 @@ test("switching to Prototype mid-drag ends the gesture instead of stranding it",
   await page.keyboard.press("Delete");
   expect((await flowOf(page)).screens.map((s) => s.id)).toEqual(["login", "code", "err"]);
 });
+
+test("deleting the last screen is refused with a note", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE);
+    f.screens = f.screens.filter((s) => s.id === "login").map((s) => ({ ...s, parent: null }));
+    f.links = [];
+    window.__api.set(f);
+  });
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').click();
+  await page.locator(".uf-insp").getByRole("button", { name: "Xoá" }).click();
+  await expect(page.locator(".uf-note")).toHaveText("Sơ đồ cần ít nhất một màn");
+  expect(await page.evaluate(() => window.__api.get().screens.length)).toBe(1);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("an edit clears the dropped-data rows of the loaded file", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE);
+    f.screens.push({ ...f.screens[0] }); // duplicate id "login"
+    window.__api.set(f);
+  });
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  const dup = page.locator(".uf-issue", { hasText: "Bỏ màn trùng id “login”" });
+  await expect(dup).toHaveCount(1);
+  await edit(page);
+  await page.getByRole("button", { name: "+ Màn" }).click();
+  await expect(dup).toHaveCount(0);
+});

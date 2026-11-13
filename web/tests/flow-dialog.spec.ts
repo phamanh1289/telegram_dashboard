@@ -35,7 +35,7 @@ async function render(page: Page) {
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0 });
+  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0 });
 });
 test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
@@ -85,6 +85,10 @@ test("re-render over a saved file posts with its base; Không hides the bar and 
   await d.getByRole("button", { name: "Không", exact: true }).click();
   await expect(d.getByText(BAR)).toHaveCount(0);
   expect(await posts()).toEqual([]);
+  // with no further edit the change can still be saved: the hint line brings the bar back
+  await d.getByRole("button", { name: "Cập nhật lên ticket" }).click();
+  await expect(d.getByText(BAR)).toBeVisible();
+  await d.getByRole("button", { name: "Không", exact: true }).click();
   // closing with an unsaved change asks first
   await d.getByRole("button", { name: "Đóng" }).click();
   const ask = page.getByRole("alertdialog");
@@ -153,7 +157,14 @@ test("409 shows the conflict message and keeps my edit until Xem bản mới", a
   await expect(d.getByText(BAR)).toBeVisible(); // my change is still there to save
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await ctl("/set", { flow: "file" });
+  // it throws my change away: asked first, and Hủy keeps it
   await d.getByRole("button", { name: "Xem bản mới" }).click();
+  const ask = page.getByRole("alertdialog");
+  await expect(ask).toContainText("Xem bản mới trên ticket sẽ mất các thay đổi chưa lưu của bạn.");
+  await ask.getByRole("button", { name: "Hủy" }).click();
+  await expect(d.getByText(BAR)).toBeVisible();
+  await d.getByRole("button", { name: "Xem bản mới" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Xem bản mới" }).click();
   await expect(d.getByText(BAR)).toHaveCount(0);
   await expect(d.getByText("UI flow vừa được người khác cập nhật")).toHaveCount(0);
   await expect(d.locator(".uf-screen")).toHaveCount(4);
@@ -192,4 +203,25 @@ test("a broken file says so and offers to render again", async ({ page }) => {
   await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toBeVisible();
+});
+
+test("an edit made while the save is in flight survives it, unsaved, with the bar back", async ({ page }) => {
+  await ctl("/set", { flow: "none", save_ms: 1500 });
+  await openFlow(page);
+  const d = dialog(page);
+  await render(page);
+  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await d.getByRole("button", { name: "Sửa" }).click(); // the canvas stays editable during the upload
+  await d.getByRole("button", { name: "+ Màn" }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await expect(d.getByText("Đã cập nhật file trên ticket")).toBeVisible();
+  await expect(d.locator(".uf-screen")).toHaveCount(5); // not replaced by the saved version
+  await expect(d.getByText(BAR)).toBeVisible();
+  const [first] = await posts();
+  expect(first.flow.screens).toHaveLength(4);
+  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await expect(d.getByText(BAR)).toHaveCount(0);
+  const [, second] = await posts();
+  expect(second).toMatchObject({ base: "1-2" }); // over the file just saved
+  expect(second.flow.screens).toHaveLength(5);
 });

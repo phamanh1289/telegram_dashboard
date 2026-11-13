@@ -57,12 +57,13 @@ fake.history[A][-1] = msg(A, 120, XSS)
 fake.history[B] = [msg(B, i, f"Tin B số {i}", sender="8") for i in range(1, 6)]
 
 control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_changes": 0,
-           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "ai_calls": 0, "att": "1-1"}
+           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "ai_calls": 0, "att": "1-1",
+           "save_ms": 0}
 
 # UI flow (ticket VA-1, YouTrack in mock mode): the ticket, its uiflow file and the AI run, faked here.
 # `yt`: off until a spec asks for it, so the other specs keep the real (token-less) YouTrack routes.
 # `flow`: what GET /api/yt/flow answers (file / none / broken / fail); `flow_save`: POST /api/yt/flow (ok / 409 / 502);
-# `flow_posts`: the bodies POST /api/yt/flow got; `ai_ms`: how long the AI run takes.
+# `flow_posts`: the bodies POST /api/yt/flow got; `ai_ms`: how long the AI run takes; `save_ms`: the save.
 FLOW = {
     "v": 1, "ticket": "VA-1", "rev": 1, "device": "mobile",
     "screens": [
@@ -128,6 +129,7 @@ async def fake_yt(scope, receive, send) -> bool:
     elif path == "/api/yt/flow":
         b = await body_of(receive)
         control["flow_posts"].append(b)
+        await asyncio.sleep(control["save_ms"] / 1000)
         mode = control["flow_save"]
         if mode == "409":
             await answer(send, 409, {"error": "UI flow vừa được người khác cập nhật — mở lại để xem bản mới"})

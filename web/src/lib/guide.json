@@ -3425,7 +3425,7 @@
 "t": "Bấm \"UI flow\"",
 "at": "UI flow"
 },
-"Chưa có file: ghi chú thêm cho AI ở ô dưới (không bắt buộc) rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng\"",
+"Chưa có file: ghi chú thêm cho AI ở ô dưới (không bắt buộc) rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng render\"",
 "Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, Vừa màn hình, Soát luồng)",
 "Sửa xong, thanh dưới hiện \"Có thay đổi chưa lưu\": bấm \"Cập nhật\" để ghi lên ticket, hoặc \"Không\" để giữ trên màn",
 {

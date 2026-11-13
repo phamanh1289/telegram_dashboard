@@ -140,6 +140,13 @@ def zeplin_server() -> dict | None:
     return got if isinstance(got, dict) and got.get("command") else None
 
 
+def zeplin_for(text: str, *, found: bool | None = None) -> tuple[dict | None, str]:
+    """(zeplin server, ZEPLIN_HINT) for a run whose text has a Zeplin link (`found`: decided by the caller, e.g. an
+    earlier turn of the session had one); (None, "") when there is none or the server is not set up."""
+    server = zeplin_server() if (ZEPLIN.search(text) if found is None else found) else None
+    return server, ZEPLIN_HINT if server else ""
+
+
 def mcp_env(server: dict | None) -> dict[str, str]:
     """A server's environment (its token): given to the run's process, never put on its command line (any local
     user could read it there); the command line names the variables only."""

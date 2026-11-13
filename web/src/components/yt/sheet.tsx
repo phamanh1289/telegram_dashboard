@@ -25,7 +25,7 @@ import { useFlow } from "./workflow";
 // The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
 const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
 /** The ticket's UI flow file, as the dashboard names it: its row in the attachments opens the same dialog. */
-const flowName = (issue: string) => `uiflow-${issue}.html`;
+const flowName = (issue: string) => `uiflow-${issue}.html`; // = uiflow.NAME (telegram_dashboard/uiflow.py)
 
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
 
@@ -211,11 +211,13 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       </motion.dl>
 
 
-      <motion.div variants={fade} className="flex flex-wrap gap-2">
-        <Hint text={t("Sơ đồ màn hình và luồng bấm của ticket này")}>
-          <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}><Workflow aria-hidden /> {t("UI flow")}</Button>
-        </Hint>
-      </motion.div>
+      {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
+        <motion.div variants={fade} className="flex flex-wrap gap-2">
+          <Hint text={t("Sơ đồ màn hình và luồng bấm của ticket này")}>
+            <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}><Workflow aria-hidden /> {t("UI flow")}</Button>
+          </Hint>
+        </motion.div>
+      )}
       {flowOpen && <FlowDialog issue={id} open onClose={() => setFlowOpen(false)} />}
 
       <motion.section variants={fade} className="grid gap-2">

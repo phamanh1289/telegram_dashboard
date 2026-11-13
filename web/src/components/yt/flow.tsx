@@ -33,9 +33,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   // the flow being shown over the ticket's own: an AI result, not saved yet (`base`: the file it would replace)
   const [mine, setMine] = useState<{ flow: UiFlow; base: string | null } | null>(null);
   const [dirty, setDirty] = useState(false); // the engine's edits since it was last given a flow
-  const [hid, setHid] = useState(false); // "Không": the bar stays away until the next edit
+  const [hid, setHid] = useState(false); // "Không": the bar stays away until the next edit or "Cập nhật lên ticket"
   const [saved, setSaved] = useState<FlowSaved | null>(null);
-  const [ask, setAsk] = useState<"close" | "again" | null>(null);
+  const [ask, setAsk] = useState<"close" | "again" | "fresh" | null>(null);
   const [note, setNote] = useState("");
   const [shown, setShown] = useState(true); // false: sliding out; `onClose` comes when that animation ends
 
@@ -59,7 +59,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
     retry: false, // an upload whose outcome is unknown must never be sent again on its own
     onSuccess: (r, f) => {
       qc.setQueryData(ytFlowQuery(issue).queryKey, { att: r.att, flow: { ...f, rev: r.rev }, broken: false });
-      setMine(null);
+      // the canvas stayed editable during the upload: what was changed meanwhile is kept, unsaved, over the new file
+      const now = engine.api?.get();
+      setMine(now && JSON.stringify(now) !== JSON.stringify(f) ? { flow: { ...now, rev: r.rev }, base: r.att } : null);
       setDirty(false);
       setSaved(r);
       void qc.invalidateQueries({ queryKey: ["yt", "detail", issue] }); // its attachments and the new comment
@@ -120,7 +122,10 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
                 <Button size="sm" variant="outline" disabled={save.isPending} onClick={() => setHid(true)}>{t("Không")}</Button>
               </div>
             ) : flow && !ai.isPending ? (
-              <p className="text-xs text-ink-3">{t("Kéo thả để sửa; mọi thay đổi chỉ lên ticket khi bạn bấm Cập nhật.")}</p>
+              <p className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
+                {t("Kéo thả để sửa; mọi thay đổi chỉ lên ticket khi bạn bấm Cập nhật.")}
+                {unsaved && hid && <Button size="xs" variant="outline" onClick={() => setHid(false)}>{t("Cập nhật lên ticket")}</Button>}
+              </p>
             ) : ( // a run, even over a flow already on screen, keeps the box: its ring and Dừng are the run's controls
               <AiPromptBox aria-label={t("Ghi chú thêm cho AI")} placeholder={t("Ghi chú thêm cho AI (không bắt buộc)")} maxLength={2000}
                 value={note} onChange={setNote} onSend={run} running={ai.isPending} onStop={stopAi} stopHint={t("Dừng render")}
@@ -136,7 +141,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
             {save.isError && (
               <p role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-error">
                 {say(save.error)}
-                {conflict && <Button size="xs" variant="outline" onClick={fresh}>{t("Xem bản mới")}</Button>}
+                {conflict && <Button size="xs" variant="outline" onClick={() => (unsaved ? setAsk("fresh") : fresh())}>{t("Xem bản mới")}</Button>}
               </p>
             )}
             {saved && (
@@ -152,6 +157,10 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       <ConfirmDialog open={ask === "close"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
         description={t("Đóng UI flow sẽ mất các thay đổi chưa cập nhật lên ticket.")} confirmLabel={t("Bỏ thay đổi")}
         onConfirm={() => { setAsk(null); setShown(false); }} />
+      {/* after a 409: the ticket's version replaces mine, and mine cannot be read back */}
+      <ConfirmDialog open={ask === "fresh"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
+        description={t("Xem bản mới trên ticket sẽ mất các thay đổi chưa lưu của bạn.")} confirmLabel={t("Xem bản mới")}
+        onConfirm={() => { setAsk(null); fresh(); }} />
       {/* a render replaces the flow on screen, so say so — and name the loss when something is unsaved */}
       <ConfirmDialog open={ask === "again"} onOpenChange={(o) => !o && setAsk(null)} tone="default" icon={Sparkles}
         title={t("Render lại bằng AI?")}

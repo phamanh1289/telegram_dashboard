@@ -191,7 +191,7 @@ class FakeAgent:
         ref="",
         zeplin=None,
     ):
-        self.kwargs = {"zeplin": zeplin}
+        self.kwargs = {"zeplin": zeplin, "system": system}
         self.calls.append(prompt)
         self.projects.append(project)
         self.shells.append(shell)

@@ -171,8 +171,8 @@ class AgentRunner:
             links = links_dir(self.settings, task_id)  # long link content saved for this task (links.py)
             read_dir = str(links) if links.is_dir() else None
             index = (Path(project) / ".codegraph").is_dir() and on_path("codegraph")
-            zeplin = self._zeplin(task_id, text) and providers.zeplin_server() or None
-            text += providers.ZEPLIN_HINT if zeplin else ""
+            zeplin, hint = providers.zeplin_for(text, found=self._zeplin(task_id, text))
+            text += hint
             cmd = providers.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index,
                                      mcp=mcp, zeplin=zeplin)  # fmt: skip
             if index and mode == "plan":
