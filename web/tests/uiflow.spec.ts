@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -315,4 +316,133 @@ test("a parent with 3 overlays: no frame overlaps a frame of another family", as
   const hit = (a: Screen, b: Screen) => a.x! < b.x! + 390 && b.x! < a.x! + 390 && a.y! < b.y! + 844 && b.y! < a.y! + 844;
   const clashes = f.screens.flatMap((a) => f.screens.filter((b) => a.id < b.id && fam(a) !== fam(b) && hit(a, b)).map((b) => `${a.id}/${b.id}`));
   expect(clashes).toEqual([]);
+});
+
+// ------------------------------------------------------------------ prototype
+const title = (page: Page) => page.locator(".uf-phone .uf-title");
+const tapIn = (page: Page, text: string) => page.locator(".uf-phone").getByRole("button", { name: text, exact: true }).click();
+/** SAMPLE plus whatever `edit` adds, set through the api before entering Prototype. */
+const withFlow = (page: Page, edit: string) => page.evaluate((edit) => {
+  const f = structuredClone(window.SAMPLE);
+  new Function("f", edit)(f);
+  window.__api.set(f);
+}, edit);
+
+test("prototype walks a path, opens and closes a popup, and goes back", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Đăng nhập");
+  await page.locator(".uf-phone").getByText("Gửi OTP").click();
+  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Nhập OTP");
+  await expect(page.locator(".uf-trail")).toContainText("Đăng nhập›Nhập OTP");
+  await page.locator(".uf-phone").getByText("Xác nhận").click();
+  await expect(page.locator(".uf-overlay .uf-title")).toHaveText("Sai mã");
+  await page.locator(".uf-backdrop").click();
+  await expect(page.locator(".uf-overlay")).toHaveCount(0);
+  await page.getByRole("button", { name: "Quay lại" }).click();
+  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Đăng nhập");
+  await expect(page.getByRole("button", { name: "Quay lại" })).toHaveCount(0); // first screen: no back
+  await expect(page.locator(".uf-pscreen")).toHaveCount(1); // only the shown screen is rendered
+});
+
+test("a button without a target flashes and stays", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Gửi OTP");
+  await tapIn(page, "Để sau");
+  await expect(title(page)).toHaveText("Trang chủ");
+  const out = page.locator(".uf-phone").getByRole("button", { name: "Đăng xuất" });
+  await out.click();
+  await expect(out).toHaveClass(/uf-flash/);
+  await expect(title(page)).toHaveText("Trang chủ");
+  await expect(out).not.toHaveClass(/uf-flash/, { timeout: 1500 });
+  await expect(title(page)).toHaveText("Trang chủ");
+});
+
+test("phone frame is centred and fits a 375x667 viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Đăng nhập");
+  const [px, py] = centre(await box(page, ".uf-phone"));
+  const [sx, sy] = centre(await box(page, ".uf-stage"));
+  expect(Math.max(Math.abs(px - sx), Math.abs(py - sy))).toBeLessThan(2);
+  const p = await box(page, ".uf-phone"), s = await box(page, ".uf-stage");
+  expect(p.y).toBeGreaterThanOrEqual(s.y);
+  expect(p.y + p.height).toBeLessThanOrEqual(s.y + s.height);
+  expect(p.width).toBeLessThanOrEqual(375);
+  expect(await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]))
+    .toEqual([375, 667]);
+  await expect(page.locator(".uf-trail")).toBeInViewport({ ratio: 1 });
+});
+
+test("a button with two conditions asks which one", async ({ page }) => {
+  await open(page);
+  await withFlow(page, 'f.links.push({ src: "code.ok", to: "home", act: "navigate", when: "Mã đúng", ac: "AC-3" });');
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Gửi OTP");
+  await tapIn(page, "Xác nhận");
+  const pick = page.locator(".uf-overlay");
+  await expect(pick.locator(".uf-title")).toHaveText("Chọn trường hợp");
+  await expect(pick.getByRole("button")).toHaveText(["Mã sai", "Mã đúng"]);
+  await pick.getByRole("button", { name: "Mã đúng" }).click();
+  await expect(title(page)).toHaveText("Trang chủ");
+  await expect(page.locator(".uf-overlay")).toHaveCount(0);
+});
+
+test("a toast hides itself; Esc closes the top overlay; the trail goes back", async ({ page }) => {
+  await open(page);
+  await withFlow(page, `
+    f.screens[0].items.push({ id: "save", label: "Lưu" });
+    f.screens.push({ id: "saved", title: "Đã lưu", kind: "toast", parent: "login", zeplin: "", ac: "", items: [] });
+    f.links.push({ src: "login.save", to: "saved", act: "open", when: "", ac: "" });`);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Lưu");
+  await expect(page.locator(".uf-overlay .uf-title")).toHaveText("Đã lưu");
+  await page.waitForTimeout(1000);
+  await expect(page.locator(".uf-overlay")).toHaveCount(1); // still up after 1s
+  await expect(page.locator(".uf-overlay")).toHaveCount(0, { timeout: 2000 }); // gone after 2s
+  await tapIn(page, "Gửi OTP");
+  await tapIn(page, "Xác nhận");
+  await expect(page.locator(".uf-overlay")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-overlay")).toHaveCount(0);
+  await page.locator(".uf-trail").getByRole("button", { name: "Đăng nhập" }).click();
+  await expect(title(page)).toHaveText("Đăng nhập");
+  await tapIn(page, "Gửi OTP");
+  await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+  await expect(title(page)).toHaveText("Đăng nhập");
+});
+
+test("reduced motion: prototype swaps screens at once", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Đăng nhập");
+  const after = await page.evaluate(() => {
+    [...document.querySelectorAll<HTMLButtonElement>(".uf-phone button")].find((b) => b.textContent === "Gửi OTP")!.click();
+    return [document.querySelectorAll(".uf-pscreen").length, document.querySelector(".uf-phone .uf-title")!.textContent,
+      document.getAnimations().length];
+  });
+  expect(after).toEqual([1, "Nhập OTP", 0]);
+});
+
+test("hash #s=code&m=play opens Prototype on that screen", async ({ page }) => {
+  await open(page, "#s=code&m=play");
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await expect(page.getByRole("button", { name: "Prototype" })).toHaveAttribute("aria-pressed", "true");
+});
+
+test("standalone file: navigation in Prototype keeps the hash", async ({ page }) => {
+  const engine = fs.readFileSync(path.join(__dirname, "../public/uiflow.js"), "utf8");
+  await open(page);
+  const flow = JSON.stringify(await page.evaluate(() => window.SAMPLE)).replace(/</g, "\\u003c");
+  const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%}#uiflow{position:fixed;inset:0}</style>
+<script type="application/json" id="uiflow-data">${flow}</script><script>${engine}</script>`;
+  await page.route("http://uiflow.test/**", (r) => r.fulfill({ contentType: "text/html", body: html }));
+  await page.goto("http://uiflow.test/uiflow-VA-1.html#s=code&m=play");
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await tapIn(page, "Để sau");
+  await expect(title(page)).toHaveText("Trang chủ");
+  await expect(page).toHaveURL(/#s=home&m=play$/);
 });

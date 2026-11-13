@@ -2,8 +2,8 @@
  * Runs inside the dashboard (mounted by the app) and inside an exported, self-contained uiflow-<ticket>.html opened
  * offline. Exposes window.UIFlow only. Every label coming from data is set via textContent, never as markup.
  *
- * Sections: constants · i18n · model (normalize / layout / check) · geometry · DOM builders · mount (render, camera,
- * input, toolbar, api) · standalone auto-run. Pure parts never touch the DOM. */
+ * Sections: constants · i18n · model (normalize / layout / check) · geometry · DOM builders · camera · prototype
+ * (player) · mount (render, toolbar, api) · standalone auto-run. Pure parts never touch the DOM. */
 (function () {
   "use strict";
 
@@ -14,6 +14,7 @@
   const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40; // phone: status bar, nav bar, first row, home bar
   const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64; // overlay card header, bottom padding; max row step
   const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
+  const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, BEZEL = 11, GAP = 16; // prototype: motion, phone bezel, margin
   const KINDS = ["screen", "popup", "sheet", "toast"];
   const ACTS = ["navigate", "open", "back", "close"];
   const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/; // = providers.ZEPLIN
@@ -31,6 +32,8 @@
       k_orphan: "Không lối vào", k_dead: "Nút cụt", k_noback: "Thiếu quay lại", k_noac: "Thiếu AC", k_broken: "Dữ liệu hỏng",
       dupScreen: "Bỏ màn trùng id “{s}”", dupItem: "Bỏ nút trùng id “{i}” trên màn “{s}”",
       badLinks: "Bỏ {n} liên kết hỏng", badEntries: "Bỏ {n} màn / nút không có id",
+      back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
+      noItems: "Màn này chưa có nút",
     },
     en: {
       map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
@@ -42,6 +45,8 @@
       k_orphan: "Unreachable", k_dead: "Dead end", k_noback: "No back", k_noac: "No AC", k_broken: "Bad data",
       dupScreen: "Dropped duplicate screen id “{s}”", dupItem: "Dropped duplicate button id “{i}” on “{s}”",
       badLinks: "Dropped {n} broken links", badEntries: "Dropped {n} screens / buttons without an id",
+      back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
+      noItems: "No buttons on this screen yet",
     },
   };
   /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
@@ -285,6 +290,12 @@
     if (text != null) e.textContent = text;
     return e;
   }
+  function btn(label, cls, onClick) {
+    const b = h("button", cls, label);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
   function svg(tag, attrs) {
     const e = document.createElementNS(SVGNS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -346,11 +357,11 @@
   // ------------------------------------------------------------------ styles (injected once)
   const DARK = "--uf-bg:#0d0f14;--uf-screen:#181b22;--uf-ink:#e8eaee;--uf-ink2:#9aa1ad;--uf-line:#2c313b;" +
     "--uf-soft:#22262e;--uf-accent:#8b8cf8;--uf-on-accent:#0d0f14;--uf-accent-soft:rgba(139,140,248,.16);" +
-    "--uf-muted:#697282;--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
+    "--uf-muted:#697282;--uf-bezel:#2e333c;--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
     "--uf-shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px -14px rgba(0,0,0,.7);color-scheme:dark";
   const CSS = `
 .uf-root{--uf-bg:#f3f4f7;--uf-screen:#fff;--uf-ink:#111827;--uf-ink2:#6b7280;--uf-line:#d9dce3;--uf-soft:#f1f3f6;
---uf-accent:#4f46e5;--uf-on-accent:#fff;--uf-accent-soft:rgba(79,70,229,.1);--uf-muted:#9aa1ad;--uf-warn:#c2410c;
+--uf-accent:#4f46e5;--uf-on-accent:#fff;--uf-bezel:#1b1d22;--uf-accent-soft:rgba(79,70,229,.1);--uf-muted:#9aa1ad;--uf-warn:#c2410c;
 --uf-warn-soft:rgba(234,88,12,.1);--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
 position:relative;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
 color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
@@ -378,12 +389,13 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 .uf-moving .uf-layer{will-change:transform}
 .uf-play{position:absolute;inset:0;display:none}
 .uf-root[data-mode=play] .uf-view{display:none}
-.uf-root[data-mode=play] .uf-play{display:block}
+.uf-root[data-mode=play] .uf-play{display:flex;flex-direction:column}
+.uf-root[data-mode=play] .uf-fit{display:none}
 .uf-screen{position:absolute;left:0;top:0;width:${W}px;height:${H}px;border-radius:54px;background:var(--uf-screen);
 box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);transition:opacity .2s ease-out}
-.uf-screen:not(.uf-ov)::before{content:"";position:absolute;top:11px;left:50%;width:120px;height:33px;margin-left:-60px;
+.uf-screen:not(.uf-ov)::before,.uf-phone::before{content:"";position:absolute;top:11px;left:50%;width:120px;height:33px;margin-left:-60px;
 border-radius:20px;background:#000;opacity:.88}
-.uf-screen:not(.uf-ov)::after{content:"";position:absolute;bottom:9px;left:50%;width:134px;height:5px;margin-left:-67px;
+.uf-screen:not(.uf-ov)::after,.uf-phone::after{content:"";position:absolute;bottom:9px;left:50%;width:134px;height:5px;margin-left:-67px;
 border-radius:3px;background:var(--uf-ink);opacity:.45}
 .uf-ov{background:none;box-shadow:none;pointer-events:none}
 .uf-card{position:absolute}
@@ -403,8 +415,8 @@ font-size:12px;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-spac
 .uf-zeplin:not([href]){opacity:.4}
 .uf-item{position:absolute;padding:0 30px 0 14px;border:1px solid var(--uf-line);border-radius:12px;background:var(--uf-soft);
 font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.uf-linked::after{content:"›";position:absolute;right:12px;top:0;color:var(--uf-ink2);font-size:20px}
-.uf-dead{border-style:dashed;background:transparent;color:var(--uf-ink2)}
+.uf-item.uf-linked::after{content:"›";position:absolute;right:12px;top:0;color:var(--uf-ink2);font-size:20px}
+.uf-root .uf-dead{border-style:dashed;background:transparent;color:var(--uf-ink2)}
 .uf-focus .uf-screen:not(.uf-on){opacity:.2}
 .uf-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .uf-link{fill:none;stroke:var(--uf-accent);stroke-width:3;stroke-linecap:round;transition:opacity .2s ease-out}
@@ -426,7 +438,57 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
 .uf-tag-orphan,.uf-tag-dead,.uf-tag-broken{background:var(--uf-warn-soft);color:var(--uf-warn)}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
-@media (prefers-reduced-motion:reduce){.uf-root *{transition:none!important;animation:none!important}}
+/* prototype: one phone, scaled to fit (--k), centred in the stage; the path walked below it */
+.uf-stage{position:relative;flex:1;min-height:0;overflow:hidden}
+.uf-phone{position:absolute;left:50%;top:50%;width:${W}px;height:${H}px;margin:${-H / 2}px 0 0 ${-W / 2}px;
+transform:scale(var(--k,1));display:flex;flex-direction:column;overflow:hidden;border-radius:54px;background:var(--uf-screen);
+box-shadow:0 0 0 ${BEZEL - 1}px var(--uf-bezel),0 0 0 ${BEZEL}px var(--uf-line),var(--uf-shadow);outline:none}
+.uf-phone::before,.uf-phone::after{z-index:3;pointer-events:none}
+.uf-status{flex:none;height:${STATUS}px;padding:14px 0 0 40px;font-size:15px;font-weight:650}
+.uf-nav{flex:none;display:flex;align-items:center;gap:2px;height:${HEAD}px;padding:0 20px 0 6px;border-bottom:1px solid var(--uf-soft)}
+.uf-pback{flex:none;display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:none;
+color:var(--uf-accent);cursor:pointer}
+.uf-pback:active{opacity:.5}
+.uf-off{visibility:hidden}
+.uf-pbody{position:relative;flex:1;min-height:0;overflow:hidden}
+.uf-pscreen{position:absolute;inset:0;overflow-y:auto;overscroll-behavior:contain;padding-bottom:${BOTTOM}px;background:var(--uf-screen)}
+.uf-rows{display:flex;flex-direction:column;gap:10px;padding:16px}
+.uf-row{position:relative;flex:none;display:block;width:100%;height:52px;padding:0 34px 0 16px;border:1px solid var(--uf-line);
+border-radius:14px;background:var(--uf-soft);color:var(--uf-ink);font:inherit;font-size:16px;font-weight:550;line-height:50px;
+text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;-webkit-tap-highlight-color:transparent;
+transition:transform .1s ease-out,opacity .1s ease-out}
+.uf-row:active{transform:scale(.98);opacity:.75}
+.uf-row.uf-linked::after{content:"";position:absolute;right:16px;top:50%;width:8px;height:8px;margin-top:-4px;
+border-top:2px solid var(--uf-ink2);border-right:2px solid var(--uf-ink2);transform:rotate(45deg)}
+.uf-row::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--uf-warn);opacity:0;
+pointer-events:none}
+.uf-flash::before{opacity:1;animation:uf-flash ${FLASH_MS}ms ease-out forwards}
+@keyframes uf-flash{0%,100%{opacity:0}15%,65%{opacity:1}}
+.uf-row:focus-visible,.uf-pback:focus-visible,.uf-crumb:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
+.uf-phone:focus-visible{outline:2px solid var(--uf-accent);outline-offset:${BEZEL + 4}px}
+.uf-overlay{position:absolute;inset:0;z-index:2}
+.uf-overlay.uf-toast,.uf-leaving{pointer-events:none}
+.uf-backdrop{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 35px}
+.uf-sheet .uf-backdrop{align-items:flex-end;padding:0}
+.uf-scrim{position:absolute;inset:0;background:rgba(10,12,16,.45)}
+.uf-pcard{position:relative;width:100%;max-height:80%;overflow-y:auto;border-radius:22px;background:var(--uf-screen);
+box-shadow:var(--uf-shadow);outline:none}
+.uf-overlay:not(.uf-toast) .uf-pcard.uf-empty{min-height:130px}
+.uf-pcard>.uf-title{padding:20px 20px 0}
+.uf-pcard .uf-rows{padding:14px 16px 18px}
+.uf-sheet .uf-pcard{border-radius:28px 28px 0 0;padding-bottom:${BOTTOM - 16}px}
+.uf-toast .uf-pcard{position:absolute;left:24px;right:24px;bottom:56px;width:auto;border-radius:16px;pointer-events:auto;
+background:var(--uf-ink);color:var(--uf-screen)}
+.uf-toast .uf-pcard>.uf-title{padding:14px 18px;font-size:15px}
+.uf-trail{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--uf-line);
+background:var(--uf-screen)}
+.uf-crumbs{flex:1;min-width:0;display:flex;align-items:center;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
+.uf-crumb{flex:none;padding:4px 8px;border:0;border-radius:8px;background:none;color:var(--uf-ink2);font:inherit;font-size:13px;
+cursor:pointer}
+.uf-crumb:hover:not(:disabled){background:var(--uf-soft);color:var(--uf-ink)}
+.uf-crumb:disabled{color:var(--uf-ink);font-weight:650;cursor:default}
+.uf-sep{flex:none;color:var(--uf-muted)}
+@media (prefers-reduced-motion:reduce){.uf-root *,.uf-root *::before,.uf-root *::after{transition:none!important;animation:none!important}}
 `;
   function injectStyle() {
     if (document.getElementById("uf-style")) return;
@@ -586,6 +648,239 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     };
   }
 
+  // ------------------------------------------------------------------ prototype (player)
+  const CARD_IN = {
+    popup: [{ opacity: 0, transform: "scale(.96)" }, { opacity: 1, transform: "none" }],
+    sheet: [{ transform: "translateY(100%)" }, { transform: "none" }],
+    toast: [{ opacity: 0, transform: "translateY(calc(100% + 56px))" }, { opacity: 1, transform: "none" }],
+  };
+  const FADE_IN = [{ opacity: 0 }, { opacity: 1 }];
+  const backwards = (frames) => [...frames].reverse();
+
+  /** Transform / opacity animation; done() at the end, or at once under reduced motion. */
+  function motion(el, frames, reduced, done) {
+    if (reduced.matches || !el.animate) return done?.();
+    const a = el.animate(frames, { duration: SLIDE_MS, easing: "ease-out" });
+    if (done) a.finished.then(done, done);
+  }
+
+  /** Tappable rows: [{label, cls, onTap(button)}]. */
+  function rowList(rows) {
+    const list = h("div", "uf-rows");
+    for (const r of rows) {
+      const b = btn(r.label, "uf-row " + r.cls, () => r.onTap(b));
+      list.append(b);
+    }
+    return list;
+  }
+
+  /** One overlay layer: scrim + card (popup / sheet), card alone (toast). list: rows element or null. */
+  function overlayNode(kind, title, list) {
+    const el = h("div", `uf-overlay uf-${kind}`);
+    const card = h("div", "uf-pcard" + (list ? "" : " uf-empty"));
+    card.tabIndex = -1;
+    card.setAttribute("role", kind === "toast" ? "status" : "dialog");
+    card.setAttribute("aria-label", title);
+    card.append(h("div", "uf-title", title));
+    if (list) card.append(list);
+    if (kind === "toast") {
+      el.append(card);
+      return { el, card, scrim: null, hit: null };
+    }
+    const hit = h("div", "uf-backdrop"), scrim = h("div", "uf-scrim");
+    hit.append(scrim, card);
+    el.append(hit);
+    return { el, card, scrim, hit };
+  }
+
+  /** The phone shell: status bar, nav bar (back + title), body for screens; the path walked below it. */
+  function phoneShell(t) {
+    const stage = h("div", "uf-stage"), phone = h("div", "uf-phone");
+    phone.tabIndex = -1;
+    const status = h("div", "uf-status", "9:41");
+    status.setAttribute("aria-hidden", "true");
+    const back = btn(null, "uf-pback", null);
+    back.setAttribute("aria-label", t("back"));
+    const i = svg("svg", { viewBox: "0 0 24 24", width: 26, height: 26, fill: "none", stroke: "currentColor",
+      "stroke-width": 2.4, "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" });
+    i.append(svg("path", { d: "M15 18l-6-6 6-6" }));
+    back.append(i);
+    const nav = h("div", "uf-nav"), title = h("div", "uf-title"), body = h("div", "uf-pbody");
+    nav.append(back, title);
+    phone.append(status, nav, body);
+    stage.append(phone);
+    const crumbs = h("nav", "uf-crumbs");
+    crumbs.setAttribute("aria-label", t("trail"));
+    const trail = h("div", "uf-trail");
+    return { stage, phone, back, title, body, crumbs, trail };
+  }
+
+  /** Prototype: a phone you tap through as if running the app. Owns its state (path of screens walked, open
+   *  overlays, timers) and renders only the current screen + its overlays. flow(): the current flow (read on every
+   *  tap, so edits apply); onGo(id): the shown screen changed. */
+  function player(host, { flow, t, reduced, onGo }) {
+    let path = [], ovs = [], cur = null, flash = null; // ovs: [{id, kind, el, card, scrim, timer}]
+    const ui = phoneShell(t);
+    const restart = btn(t("restart"), "uf-btn", () => go([flow().screens[0]?.id].filter(Boolean), "back"));
+    ui.back.addEventListener("click", goBack);
+    ui.trail.append(ui.crumbs, restart);
+    host.replaceChildren(ui.stage, ui.trail);
+
+    const ro = new ResizeObserver(([e]) => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
+      const { width: w, height: hh } = e.contentRect, m = 2 * (BEZEL + GAP);
+      if (w && hh) ui.phone.style.setProperty("--k", String(Math.min(1, (hh - m) / H, (w - m) / W)));
+    });
+    ro.observe(ui.stage);
+
+    const by = (id) => flow().screens.find((s) => s.id === id);
+    const from = (src) => flow().links.filter((l) => l.src === src);
+    const here = () => path[path.length - 1];
+    const backLink = () => from(here()).find((l) => l.act === "back");
+
+    // state changes
+    function go(next, dir) {
+      const refocus = ui.phone.contains(document.activeElement);
+      closeAll();
+      path = next;
+      show(dir);
+      if (refocus) ui.phone.focus({ preventScroll: true });
+    }
+    function follow(l) {
+      const to = by(l.to);
+      if (l.act === "close") return drop(ovs.findLast((o) => o.id === scr(l.src)) || ovs[ovs.length - 1]);
+      if (isOverlay(to)) return openOverlay(to);
+      if (l.act !== "back") return go([...path, to.id], "push");
+      const i = path.lastIndexOf(to.id);
+      go(i >= 0 ? path.slice(0, i + 1) : [...path, to.id], "back");
+    }
+    function goBack() {
+      const l = backLink();
+      if (l) follow(l);
+      else if (path.length > 1) go(path.slice(0, -1), "back");
+    }
+    function tap(b, links) {
+      if (links.length === 1) follow(links[0]);
+      else if (links.length) choose(links);
+      else blink(b);
+    }
+
+    // rendering
+    function itemRows(s) {
+      return rowList(s.items.map((it) => {
+        const links = from(`${s.id}.${it.id}`);
+        return { label: it.label, cls: links.length ? "uf-linked" : "uf-dead", onTap: (b) => tap(b, links) };
+      }));
+    }
+    function screenNode(s) {
+      const el = h("div", "uf-pscreen");
+      if (s) el.append(s.items.length ? itemRows(s) : h("p", "uf-none", t("noItems")));
+      return el;
+    }
+    /** Build the next screen, then slide it in (push: from the right, back: from the left); dir null = no motion. */
+    function show(dir) {
+      const s = by(here()), old = cur;
+      cur = screenNode(s);
+      ui.body.replaceChildren(...(old && dir ? [old] : [])); // drops a screen still sliding out
+      if (dir === "back") ui.body.prepend(cur);
+      else ui.body.append(cur);
+      if (old && dir) {
+        const [inX, outX] = dir === "push" ? ["100%", "-28%"] : ["-28%", "100%"];
+        old.classList.add("uf-leaving");
+        motion(cur, [{ transform: `translateX(${inX})` }, { transform: "none" }], reduced);
+        motion(old, [{ transform: "none" }, { transform: `translateX(${outX})` }], reduced, () => old.remove());
+      }
+      ui.title.textContent = s ? s.title : "";
+      ui.back.classList.toggle("uf-off", !backLink() && path.length < 2);
+      fillTrail();
+      if (s) onGo(s.id);
+    }
+    function fillTrail() {
+      ui.crumbs.replaceChildren(...path.flatMap((id, i) => {
+        const c = btn(by(id)?.title ?? id, "uf-crumb", () => go(path.slice(0, i + 1), "back"));
+        if (i === path.length - 1) { c.disabled = true; c.setAttribute("aria-current", "page"); }
+        return i ? [h("span", "uf-sep", "›"), c] : [c];
+      }));
+      ui.crumbs.scrollLeft = ui.crumbs.scrollWidth; // keep the current screen in view (one read per step)
+    }
+
+    // overlays
+    function layer(id, kind, title, list) {
+      const o = { id, kind, timer: 0, ...overlayNode(kind, title, list) };
+      o.hit?.addEventListener("click", (e) => { // the scrim closes; so does any tap on a card without buttons
+        if (!e.target.closest("button") && (!list || !o.card.contains(e.target))) drop(o);
+      });
+      if (kind === "toast") o.timer = setTimeout(() => drop(o), TOAST_MS);
+      ovs.push(o);
+      ui.phone.append(o.el);
+      if (o.scrim) motion(o.scrim, FADE_IN, reduced);
+      motion(o.card, CARD_IN[kind], reduced);
+      if (kind !== "toast") o.card.focus({ preventScroll: true });
+      return o;
+    }
+    function openOverlay(s) {
+      if (!ovs.some((o) => o.id === s.id)) layer(s.id, s.kind, s.title, s.items.length ? itemRows(s) : null);
+    }
+    /** A button with several links: pick the case (its `when`) to follow. */
+    function choose(links) {
+      const o = layer(null, "sheet", t("pick"), rowList(links.map((l) => ({
+        label: l.when || by(l.to).title, cls: "uf-linked", onTap: () => { drop(o, true); follow(l); },
+      }))));
+    }
+    function drop(o, instant) {
+      if (!o || !ovs.includes(o)) return;
+      ovs = ovs.filter((x) => x !== o);
+      clearTimeout(o.timer);
+      const refocus = o.el.contains(document.activeElement);
+      o.el.classList.add("uf-leaving");
+      if (instant) o.el.remove();
+      else {
+        if (o.scrim) motion(o.scrim, backwards(FADE_IN), reduced);
+        motion(o.card, backwards(CARD_IN[o.kind]), reduced, () => o.el.remove());
+      }
+      if (refocus) ui.phone.focus({ preventScroll: true });
+    }
+    function closeAll() {
+      for (const o of ovs) clearTimeout(o.timer);
+      ovs = [];
+      ui.phone.querySelectorAll(".uf-overlay").forEach((n) => n.remove()); // leaving ones too
+    }
+    function blink(b) {
+      if (flash) { clearTimeout(flash.timer); flash.b.classList.remove("uf-flash"); }
+      b.classList.add("uf-flash");
+      flash = { b, timer: setTimeout(() => { b.classList.remove("uf-flash"); flash = null; }, FLASH_MS) };
+    }
+
+    return {
+      /** Jump to a screen (an overlay: its parent with the overlay open), as a fresh path. */
+      open(id) {
+        const s = by(id) || flow().screens[0];
+        if (!s) return;
+        const p = isOverlay(s) && parents(flow()).get(s.id);
+        go([p || s.id], null);
+        if (p) openOverlay(s);
+      },
+      /** First entry into Prototype: start at id (or the first screen); later entries keep where the user was. */
+      start(id) { if (!path.length) this.open(id); },
+      /** The flow changed: keep the walked screens that still exist, redraw without motion. */
+      refresh() {
+        if (!path.length) return;
+        go(path.filter((id) => by(id)), null);
+        if (!path.length) this.open(null);
+      },
+      /** Esc: close the top overlay; false when there is none. */
+      escape() {
+        if (!ovs.length) return false;
+        drop(ovs[ovs.length - 1]);
+        return true;
+      },
+      destroy() {
+        ro.disconnect();
+        closeAll();
+        if (flash) clearTimeout(flash.timer);
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ mount
   let mounts = 0;
 
@@ -605,12 +900,6 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     const root = h("div", "uf-root");
     root.dataset.mode = shown;
     const bar = h("div", "uf-bar");
-    const btn = (label, cls, onClick) => {
-      const b = h("button", cls, label);
-      b.type = "button";
-      b.addEventListener("click", onClick);
-      return b;
-    };
     const seg = h("div", "uf-seg");
     seg.setAttribute("role", "group");
     const bMap = btn(t("map"), "uf-btn", () => api.mode("map"));
@@ -626,7 +915,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       bEdit.setAttribute("aria-pressed", "false");
       bar.append(bEdit);
     }
-    bar.append(h("span", "uf-sp"), btn(t("fit"), "uf-btn", () => api.fit()));
+    bar.append(h("span", "uf-sp"), btn(t("fit"), "uf-btn uf-fit", () => api.fit()));
     const bCheck = btn("", "uf-btn", togglePanel);
     bCheck.setAttribute("aria-expanded", "false");
     bar.append(bCheck);
@@ -640,7 +929,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
     const links = svg("svg", { class: "uf-links", "aria-hidden": "true" });
     const defs = markers(uid);
     view.append(layer);
-    const play = h("div", "uf-play"); // prototype view (Task 6) renders here
+    const play = h("div", "uf-play"); // prototype view: filled by player()
     const panel = h("div", "uf-panel");
     panel.hidden = true;
     main.append(view, play, panel);
@@ -657,6 +946,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       if (focusId && !frames.has(focusId)) focusId = null;
       applyFocus();
       refreshChecks();
+      proto.refresh();
     }
     function drawLinks() {
       const by = new Map(cur.screens.map((s) => [s.id, s])), paths = [], labels = [];
@@ -716,18 +1006,21 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       if (!panel.hidden) fillPanel();
     }
 
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)");
     const cam = camera(view, layer, {
-      reduced: matchMedia("(prefers-reduced-motion: reduce)"),
+      reduced,
       onTap: (target) => {
         const f = target?.closest?.(".uf-screen");
         setFocus(f && layer.contains(f) ? f.dataset.id : null);
       },
     });
     const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
+    const proto = player(play, { flow: () => cur, t, reduced, onGo: (id) => { here = id; writeHash(); } });
 
     const onKey = (e) => {
       if (e.key !== "Escape") return;
       if (!panel.hidden) togglePanel();
+      else if (shown === "play") proto.escape();
       else setFocus(null);
     };
     root.addEventListener("keydown", onKey);
@@ -746,6 +1039,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       here = id;
       setFocus(id);
       cam.fit({ x: s.x, y: s.y, w: W, h: H }, animate);
+      if (shown === "play") proto.open(id);
       writeHash();
     }
     const ids = (f) => f.screens.map((s) => s.id).join("\n");
@@ -767,6 +1061,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
         root.dataset.mode = m;
         bMap.setAttribute("aria-pressed", String(m === "map"));
         bPlay.setAttribute("aria-pressed", String(m === "play"));
+        if (m === "play") proto.start(here);
         writeHash();
       },
       goto: (id) => goto(id, true),
@@ -780,14 +1075,15 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
       },
       destroy() {
         cam.destroy(); // window-level listeners added later (beforeunload) must be removed here too
+        proto.destroy();
         host.replaceChildren();
       },
     };
 
     render();
+    const hs = readHash(); // before the first writeHash, which mode() runs
     api.mode("map");
-    const hs = readHash(); // a goto() before the view has a size replaces this pending camera
-    if (hs.s && frames.has(hs.s)) goto(hs.s, false);
+    if (hs.s && frames.has(hs.s)) goto(hs.s, false); // a goto() before the view has a size replaces the pending camera
     else fitAll(false);
     if (hs.m === "play") api.mode("play");
     return api;
