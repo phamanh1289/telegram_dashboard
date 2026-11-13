@@ -10,12 +10,15 @@ type Screen = { id: string; title: string; kind: string; parent: string | null; 
 type Link = { src: string; to: string; act: string; when: string; ac: string };
 type Flow = { v: 1; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[] };
 type Issue = { kind: string; screen?: string; item?: string; text: string };
-type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void };
+type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; destroy(): void;
+  mode(m: "map" | "play"): void };
 declare global {
   interface Window {
     UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; mount(el: Element, f: Flow, o: object): Api };
     SAMPLE: Flow;
     __api: Api;
+    __dirty: boolean;
+    __live: Set<number>;
   }
 }
 
@@ -119,7 +122,7 @@ test("40 screens with long Vietnamese / emoji labels: no horizontal page scroll 
   const [first, view] = [await box(page, '.uf-screen[data-id="s0"]'), await box(page, ".uf-view")];
   expect(first.x).toBeGreaterThanOrEqual(view.x);
   expect(first.x + first.width).toBeLessThanOrEqual(view.x + view.width);
-  for (const b of await page.locator(".uf-bar button").all()) {
+  for (const b of await page.locator(".uf-bar button:visible").all()) {
     const r = (await b.boundingBox())!;
     expect(r.x).toBeGreaterThanOrEqual(0);
     expect(r.x + r.width).toBeLessThanOrEqual(390);
@@ -319,7 +322,7 @@ test("a parent with 3 overlays: no frame overlaps a frame of another family", as
 });
 
 // ------------------------------------------------------------------ prototype
-const title = (page: Page) => page.locator(".uf-phone .uf-title");
+const title = (page: Page) => page.locator(".uf-nav .uf-title"); // not .uf-phone .uf-title: overlay cards have one too
 const tapIn = (page: Page, text: string) => page.locator(".uf-phone").getByRole("button", { name: text, exact: true }).click();
 /** SAMPLE plus whatever `edit` adds, set through the api before entering Prototype. */
 const withFlow = (page: Page, edit: string) => page.evaluate((edit) => {
@@ -331,16 +334,16 @@ const withFlow = (page: Page, edit: string) => page.evaluate((edit) => {
 test("prototype walks a path, opens and closes a popup, and goes back", async ({ page }) => {
   await open(page);
   await page.getByRole("button", { name: "Prototype" }).click();
-  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Đăng nhập");
+  await expect(page.locator(".uf-nav .uf-title")).toHaveText("Đăng nhập");
   await page.locator(".uf-phone").getByText("Gửi OTP").click();
-  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Nhập OTP");
+  await expect(page.locator(".uf-nav .uf-title")).toHaveText("Nhập OTP");
   await expect(page.locator(".uf-trail")).toContainText("Đăng nhập›Nhập OTP");
   await page.locator(".uf-phone").getByText("Xác nhận").click();
   await expect(page.locator(".uf-overlay .uf-title")).toHaveText("Sai mã");
   await page.locator(".uf-backdrop").click();
   await expect(page.locator(".uf-overlay")).toHaveCount(0);
   await page.getByRole("button", { name: "Quay lại" }).click();
-  await expect(page.locator(".uf-phone .uf-title")).toHaveText("Đăng nhập");
+  await expect(page.locator(".uf-nav .uf-title")).toHaveText("Đăng nhập");
   await expect(page.getByRole("button", { name: "Quay lại" })).toHaveCount(0); // first screen: no back
   await expect(page.locator(".uf-pscreen")).toHaveCount(1); // only the shown screen is rendered
 });
@@ -355,6 +358,11 @@ test("a button without a target flashes and stays", async ({ page }) => {
   await out.click();
   await expect(out).toHaveClass(/uf-flash/);
   await expect(title(page)).toHaveText("Trang chủ");
+  await page.waitForTimeout(300); // tapped again mid-flash: the flash restarts instead of ending early
+  await out.click();
+  expect(await page.evaluate(() => document.getAnimations().map((a) => Number(a.currentTime)))).toEqual([0]);
+  await page.waitForTimeout(400);
+  await expect(out).toHaveClass(/uf-flash/);
   await expect(out).not.toHaveClass(/uf-flash/, { timeout: 1500 });
   await expect(title(page)).toHaveText("Trang chủ");
 });
@@ -370,6 +378,8 @@ test("phone frame is centred and fits a 375x667 viewport", async ({ page }) => {
   const p = await box(page, ".uf-phone"), s = await box(page, ".uf-stage");
   expect(p.y).toBeGreaterThanOrEqual(s.y);
   expect(p.y + p.height).toBeLessThanOrEqual(s.y + s.height);
+  expect(p.x).toBeGreaterThanOrEqual(s.x);
+  expect(p.x + p.width).toBeLessThanOrEqual(s.x + s.width);
   expect(p.width).toBeLessThanOrEqual(375);
   expect(await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.scrollHeight]))
     .toEqual([375, 667]);
@@ -421,7 +431,7 @@ test("reduced motion: prototype swaps screens at once", async ({ page }) => {
   await expect(title(page)).toHaveText("Đăng nhập");
   const after = await page.evaluate(() => {
     [...document.querySelectorAll<HTMLButtonElement>(".uf-phone button")].find((b) => b.textContent === "Gửi OTP")!.click();
-    return [document.querySelectorAll(".uf-pscreen").length, document.querySelector(".uf-phone .uf-title")!.textContent,
+    return [document.querySelectorAll(".uf-pscreen").length, document.querySelector(".uf-nav .uf-title")!.textContent,
       document.getAnimations().length];
   });
   expect(after).toEqual([1, "Nhập OTP", 0]);
@@ -433,16 +443,309 @@ test("hash #s=code&m=play opens Prototype on that screen", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Prototype" })).toHaveAttribute("aria-pressed", "true");
 });
 
-test("standalone file: navigation in Prototype keeps the hash", async ({ page }) => {
+/** A page shaped like an exported uiflow-<ticket>.html (data block + the engine inline), served over http so the
+ *  engine treats it as standalone: hash writing and "Lưu file" are on. */
+async function standalone(page: Page, hash = "") {
   const engine = fs.readFileSync(path.join(__dirname, "../public/uiflow.js"), "utf8");
   await open(page);
   const flow = JSON.stringify(await page.evaluate(() => window.SAMPLE)).replace(/</g, "\\u003c");
-  const html = `<!doctype html><meta charset="utf-8"><style>html,body{margin:0;height:100%}#uiflow{position:fixed;inset:0}</style>
+  const html = `<!doctype html><meta charset="utf-8"><title>uiflow</title>
+<style>html,body{margin:0;height:100%}#uiflow{position:fixed;inset:0}</style>
 <script type="application/json" id="uiflow-data">${flow}</script><script>${engine}</script>`;
   await page.route("http://uiflow.test/**", (r) => r.fulfill({ contentType: "text/html", body: html }));
-  await page.goto("http://uiflow.test/uiflow-VA-1.html#s=code&m=play");
+  await page.goto("http://uiflow.test/uiflow-VA-1.html" + hash);
+}
+
+test("standalone file: navigation in Prototype keeps the hash", async ({ page }) => {
+  await standalone(page, "#s=code&m=play");
   await expect(title(page)).toHaveText("Nhập OTP");
   await tapIn(page, "Để sau");
   await expect(title(page)).toHaveText("Trang chủ");
   await expect(page).toHaveURL(/#s=home&m=play$/);
+});
+
+test("Back falls back to the path walked when the screen has no back link", async ({ page }) => {
+  await open(page);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Gửi OTP");
+  await tapIn(page, "Để sau");
+  await expect(title(page)).toHaveText("Trang chủ"); // home declares no back link
+  await page.getByRole("button", { name: "Quay lại" }).click();
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await expect(page.locator(".uf-trail")).not.toContainText("Trang chủ");
+});
+
+test("nested overlays: close drops the top one, the rows behind it are inert", async ({ page }) => {
+  await open(page);
+  await withFlow(page, `
+    f.screens[2].items.push({ id: "more", label: "Mở thêm" });
+    f.screens.push({ id: "p2", title: "Lớp hai", kind: "sheet", parent: "err", zeplin: "", ac: "",
+      items: [{ id: "x", label: "Đóng lớp hai" }] });
+    f.links.push({ src: "err.more", to: "p2", act: "open", when: "", ac: "" });
+    f.links.push({ src: "p2.x", to: "err", act: "close", when: "", ac: "" });`);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Gửi OTP");
+  await tapIn(page, "Xác nhận");
+  await expect(page.locator(".uf-overlay")).toHaveCount(1);
+  // the screen behind the popup is out of reach: inert, so it takes neither focus nor taps
+  expect(await page.locator(".uf-pbody").evaluate((e) => (e as HTMLElement).inert)).toBe(true);
+  expect(await page.locator(".uf-nav").evaluate((e) => (e as HTMLElement).inert)).toBe(true);
+  expect(await page.evaluate(() => {
+    const b = document.querySelector<HTMLElement>(".uf-pbody button")!;
+    b.focus();
+    return document.activeElement === b;
+  })).toBe(false);
+  await tapIn(page, "Mở thêm");
+  await expect(page.locator(".uf-overlay")).toHaveCount(2);
+  await tapIn(page, "Đóng lớp hai");
+  await expect(page.locator(".uf-overlay")).toHaveCount(1);
+  await expect(page.locator(".uf-overlay .uf-title")).toHaveText("Sai mã");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-overlay")).toHaveCount(0);
+  expect(await page.locator(".uf-pbody").evaluate((e) => (e as HTMLElement).inert)).toBe(false);
+});
+
+test("destroy() clears the prototype timers", async ({ page }) => {
+  await open(page);
+  await withFlow(page, `
+    f.screens[0].items.push({ id: "save", label: "Lưu" }, { id: "nowhere", label: "Chưa nối" });
+    f.screens.push({ id: "saved", title: "Đã lưu", kind: "toast", parent: "login", zeplin: "", ac: "", items: [] });
+    f.links.push({ src: "login.save", to: "saved", act: "open", when: "", ac: "" });`);
+  await page.evaluate(() => {
+    const live = new Set<number>(), st = window.setTimeout, ct = window.clearTimeout;
+    window.__live = live;
+    window.setTimeout = ((f: TimerHandler, ms?: number) => { const id = st(f, ms); live.add(id); return id; }) as typeof setTimeout;
+    window.clearTimeout = ((id?: number) => { live.delete(id!); return ct(id); }) as typeof clearTimeout;
+  });
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Chưa nối"); // flash timer
+  await tapIn(page, "Lưu"); // toast timer
+  const before = await page.evaluate(() => window.__live.size);
+  await page.evaluate(() => window.__api.destroy());
+  expect(await page.evaluate(() => window.__live.size)).toBeLessThanOrEqual(before - 2);
+  await expect(page.locator(".uf-root")).toHaveCount(0);
+});
+
+// ------------------------------------------------------------------ editing (Sửa)
+const edit = async (page: Page) => page.getByRole("button", { name: "Sửa" }).click();
+const dirty = (page: Page) => page.evaluate(() => window.__dirty);
+const links = (page: Page) => page.evaluate(() => window.__api.get().links);
+const drag = async (page: Page, from: string, to: [number, number]) => {
+  const b = await box(page, from);
+  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to[0], to[1], { steps: 8 });
+  await page.mouse.up();
+};
+const centreOf = async (page: Page, sel: string): Promise<[number, number]> => {
+  const [x, y] = centre(await box(page, sel));
+  return [x, y];
+};
+
+test("dragging an arrow head onto another screen retargets the link", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await drag(page, '.uf-handle[data-link="login.otp>code"]', await centreOf(page, '.uf-screen[data-id="home"]'));
+  expect((await links(page)).find((l) => l.src === "login.otp")!.to).toBe("home");
+  expect(await dirty(page)).toBe(true);
+  await expect(page.locator('.uf-handle[data-link="login.otp>home"]')).toHaveCount(1);
+});
+
+test("dropping the head on empty canvas keeps the old target", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const view = await box(page, ".uf-view");
+  await drag(page, '.uf-handle[data-link="login.otp>code"]', [view.x + 8, view.y + view.height - 8]);
+  expect((await links(page)).find((l) => l.src === "login.otp")!.to).toBe("code");
+  expect(await dirty(page)).toBe(false);
+  await expect(page.locator('.uf-handle[data-link="login.otp>code"]')).toHaveCount(1);
+});
+
+test("dragging from a button's dot to a screen adds one link, twice adds none", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const n = (await links(page)).length;
+  await drag(page, '.uf-dot[data-src="home.out"]', await centreOf(page, '.uf-screen[data-id="login"]'));
+  const added = (await links(page)).find((l) => l.src === "home.out");
+  expect([added?.to, added?.act]).toEqual(["login", "navigate"]);
+  expect((await links(page)).length).toBe(n + 1);
+  await drag(page, '.uf-dot[data-src="home.out"]', await centreOf(page, '.uf-screen[data-id="login"]'));
+  expect((await links(page)).length).toBe(n + 1); // the same link again: nothing added
+  await drag(page, '.uf-dot[data-src="login.otp"]', await centreOf(page, '.uf-screen[data-id="err"]'));
+  expect((await links(page)).find((l) => l.src === "login.otp" && l.to === "err")!.act).toBe("open"); // overlay
+});
+
+test("dragging a screen by its title bar moves it and its popup", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const before = await page.evaluate(() => window.__api.get().screens.map((s) => [s.id, s.x, s.y]));
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.evaluate(() => document.querySelectorAll(".uf-screen, path.uf-link")
+    .forEach((n) => ((n as Element & { __k?: 1 }).__k = 1)));
+  await page.mouse.move(head.x + 20, head.y + head.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 20 + 120, head.y + head.height / 2 + 60, { steps: 6 });
+  // mid-drag: the frame moved, but nothing was rebuilt — the same nodes, only transforms and path data changed
+  expect(await page.evaluate(() => [...document.querySelectorAll(".uf-screen, path.uf-link")]
+    .every((n) => (n as Element & { __k?: 1 }).__k === 1))).toBe(true);
+  expect((await box(page, '.uf-screen[data-id="code"]')).x).toBeGreaterThan(head.x + 100);
+  await page.mouse.up();
+  const after = await page.evaluate(() => window.__api.get().screens.map((s) => [s.id, s.x, s.y]));
+  const moved = Object.fromEntries(after.map(([id, x, y]) => [id, [x, y]]));
+  const was = Object.fromEntries(before.map(([id, x, y]) => [id, [x, y]]));
+  const k = await page.evaluate(() => Number(/scale\(([\d.]+)\)/.exec(
+    (document.querySelector(".uf-layer") as HTMLElement).style.transform)![1]));
+  expect((moved.code[0] as number) - (was.code[0] as number)).toBeCloseTo(120 / k, 0);
+  expect((moved.err[1] as number) - (was.err[1] as number)).toBeCloseTo(60 / k, 0); // the popup follows its parent
+  expect(moved.login).toEqual(was.login);
+  expect(await dirty(page)).toBe(true);
+});
+
+test("rename by double click, delete a screen removes its links and children, undo restores", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await page.keyboard.type("Màn đầu tiên");
+  await page.keyboard.press("Enter");
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-title')).toHaveText("Màn đầu tiên");
+  expect(await page.evaluate(() => window.__api.get().screens[0].title)).toBe("Màn đầu tiên");
+
+  await page.locator('.uf-screen[data-id="code"] .uf-title').click();
+  await expect(page.locator('.uf-screen[data-id="code"]')).toHaveClass(/uf-sel/);
+  await page.keyboard.press("Delete");
+  const f = await page.evaluate(() => window.__api.get());
+  expect(f.screens.map((s) => s.id)).toEqual(["login", "home"]); // the popup "err" went with its parent
+  expect(f.links.map((l) => l.src)).toEqual([]); // every link touched code or err
+  await page.keyboard.press("ControlOrMeta+z");
+  const back = await page.evaluate(() => window.__api.get());
+  expect(back.screens.map((s) => s.id)).toEqual(["login", "code", "err", "home"]);
+  expect(back.links.length).toBe(4);
+  expect(back.screens[0].title).toBe("Màn đầu tiên"); // undo steps back one edit, not all of them
+});
+
+test("undo back to the opened state clears dirty", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await page.keyboard.type("Nhà");
+  await page.keyboard.press("Enter");
+  expect(await dirty(page)).toBe(true);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.title)).toBe("Trang chủ");
+  expect(await dirty(page)).toBe(false);
+});
+
+test("the toolbar adds a screen; the panel changes a link's act and a screen's kind", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.getByRole("button", { name: "+ Màn" }).click();
+  const added = await page.evaluate(() => window.__api.get().screens.at(-1)!);
+  expect([added.kind, added.items.length]).toEqual(["screen", 0]);
+  await expect(page.locator(`.uf-screen[data-id="${added.id}"]`)).toHaveClass(/uf-sel/);
+  await page.locator(".uf-insp").getByRole("button", { name: "+ Nút" }).click();
+  expect(await page.evaluate(() => window.__api.get().screens.at(-1)!.items.length)).toBe(1);
+  await page.locator(".uf-insp").getByRole("button", { name: "Popup" }).click();
+  expect(await page.evaluate(() => window.__api.get().screens.at(-1)!.kind)).toBe("popup");
+
+  await page.locator('.uf-handle[data-link="login.otp>code"]').click();
+  await page.locator(".uf-insp").getByRole("button", { name: "Quay lại", exact: true }).click();
+  expect((await links(page)).find((l) => l.src === "login.otp")!.act).toBe("back");
+  await page.locator(".uf-insp").getByLabel("AC").fill("AC-7");
+  await page.locator(".uf-insp").getByLabel("AC").press("Enter");
+  expect((await links(page)).find((l) => l.src === "login.otp")!.ac).toBe("AC-7");
+  await page.locator('.uf-handle[data-link="login.otp>code"]').click();
+  await page.keyboard.press("Backspace");
+  expect((await links(page)).some((l) => l.src === "login.otp")).toBe(false);
+});
+
+test("edit controls are absent when edit is off", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const host = document.createElement("div");
+    host.id = "ro";
+    host.style.cssText = "position:fixed;inset:0;background:#fff";
+    document.body.append(host);
+    window.UIFlow.mount(host, window.SAMPLE, { lang: "vi" });
+  });
+  const ro = page.locator("#ro");
+  await expect(ro.getByRole("button", { name: "Sửa" })).toHaveCount(0);
+  await expect(ro.getByRole("button", { name: "+ Màn" })).toHaveCount(0);
+  await expect(ro.locator(".uf-dot, .uf-handle, .uf-insp")).toHaveCount(0);
+  await ro.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await expect(ro.locator("[contenteditable]")).toHaveCount(0);
+});
+
+test("editing in Map leaves the hash and the prototype alone", async ({ page }) => {
+  await standalone(page, "#s=code");
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await page.keyboard.type("Nhà");
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => window.__api?.get === undefined)).toBe(true); // standalone: no test api
+  await expect(page).toHaveURL(/#s=code$/);
+  await expect(page.locator(".uf-pscreen")).toHaveCount(0); // the player did not render
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Nhập OTP");
+});
+
+test("saved file reopens with the edit and still has exactly one data block", async ({ page }) => {
+  await standalone(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await page.keyboard.type("Màn đăng nhập mới");
+  await page.keyboard.press("Enter");
+  const [dl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Lưu file" }).click(),
+  ]);
+  expect(dl.suggestedFilename()).toBe("uiflow-VA-1.html");
+  const html = fs.readFileSync((await dl.path())!, "utf8");
+  expect(html.split('id="uiflow-data"').length - 1).toBe(1);
+  const data = /id="uiflow-data">([\s\S]*?)<\/script>/.exec(html)![1];
+  expect(data).not.toContain("<"); // "<" is escaped, so the JSON cannot close its own block
+  expect(JSON.parse(data).screens[0].title).toBe("Màn đăng nhập mới");
+  await page.setContent(html);
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-title')).toHaveText("Màn đăng nhập mới");
+  await expect(page.locator(".uf-screen")).toHaveCount(4);
+});
+
+test("Lưu file writes only Flow-schema fields, dropping what a hand-edited file added", async ({ page }) => {
+  await open(page);
+  const keys = await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE) as Flow & { note?: string };
+    f.note = "thêm tay";
+    (f.screens[0] as Screen & { img?: string }).img = "data:image/png;base64,xx";
+    (f.screens[0].items[0] as Item & { rect?: number[] }).rect = [1, 2, 3, 4];
+    (f.links[0] as Link & { note?: string }).note = "thêm tay";
+    window.__api.set(f);
+    const g = window.__api.get();
+    return [Object.keys(g), ...g.screens.map(Object.keys), ...g.screens.flatMap((s) => s.items.map(Object.keys)),
+      ...g.links.map(Object.keys)].flat();
+  });
+  const allowed = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
+    "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
+  expect([...new Set(keys.filter((k) => !allowed.has(k)))]).toEqual([]);
+});
+
+test("an exported file asks before leaving with unsaved edits; the dashboard mount does not", async ({ page }) => {
+  const ask = () => page.evaluate(() => {
+    const e = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(e);
+    return e.defaultPrevented;
+  });
+  await standalone(page);
+  expect(await ask()).toBe(false); // nothing changed yet
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await page.keyboard.type("Nhà");
+  await page.keyboard.press("Enter");
+  expect(await ask()).toBe(true);
+
+  await open(page); // the same edit inside the dashboard: the app owns leaving, not the engine
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await page.keyboard.type("Nhà");
+  await page.keyboard.press("Enter");
+  expect(await dirty(page)).toBe(true);
+  expect(await ask()).toBe(false);
 });

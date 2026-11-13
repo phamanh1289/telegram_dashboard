@@ -15,6 +15,7 @@
   const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64; // overlay card header, bottom padding; max row step
   const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
   const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, BEZEL = 11, GAP = 16; // prototype: motion, phone bezel, margin
+  const CAP = 80, UNDO = 50, DRAG_PX = 4; // edit: schema cap for a title / label / condition, undo depth, tap slop
   const KINDS = ["screen", "popup", "sheet", "toast"];
   const ACTS = ["navigate", "open", "back", "close"];
   const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/; // = providers.ZEPLIN
@@ -34,6 +35,11 @@
       badLinks: "Bỏ {n} liên kết hỏng", badEntries: "Bỏ {n} màn / nút không có id",
       back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
       noItems: "Màn này chưa có nút",
+      addScreen: "+ Màn", addItem: "+ Nút", del: "Xoá", newScreen: "Màn mới", newItem: "Nút mới",
+      acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối", headHint: "Đầu mũi tên",
+      arrow: "Mũi tên", button: "Nút", props: "Thuộc tính",
+      act_navigate: "Đi tới", act_open: "Mở", act_back: "Quay lại", act_close: "Đóng",
+      kind_screen: "Màn", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
     },
     en: {
       map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
@@ -47,6 +53,11 @@
       badLinks: "Dropped {n} broken links", badEntries: "Dropped {n} screens / buttons without an id",
       back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
       noItems: "No buttons on this screen yet",
+      addScreen: "+ Screen", addItem: "+ Button", del: "Delete", newScreen: "New screen", newItem: "New button",
+      acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link", headHint: "Arrow head",
+      arrow: "Arrow", button: "Button", props: "Properties",
+      act_navigate: "Navigate", act_open: "Open", act_back: "Back", act_close: "Close",
+      kind_screen: "Screen", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
     },
   };
   /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
@@ -64,7 +75,8 @@
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   /** A fresh, well-formed copy plus what had to go: {flow, dropped: {screens: [dup id], items: ["s.i"], links: n,
-   *  bad: n}}. Known kinds / acts, string labels; no field is added that the Flow schema doesn't have. */
+   *  bad: n}}. Known kinds / acts, string labels, and ONLY Flow-schema fields — a hand-edited file's extras are
+   *  dropped here, so what "Lưu file" writes matches what the backend model accepts. */
   function sanitize(raw) {
     const f = raw && typeof raw === "object" ? raw : {};
     const dropped = { screens: [], items: [], links: 0, bad: 0 };
@@ -78,9 +90,9 @@
         if (!it || typeof it.id !== "string") { dropped.bad++; continue; }
         if (ids.has(it.id)) { dropped.items.push(`${s.id}.${it.id}`); continue; }
         ids.add(it.id);
-        items.push({ ...it, label: str(it.label, it.id) });
+        items.push({ id: it.id, label: str(it.label, it.id) });
       }
-      screens.push({ ...s, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
+      screens.push({ id: s.id, title: str(s.title, s.id), kind: KINDS.includes(s.kind) ? s.kind : "screen",
         parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
         zeplin: str(s.zeplin), ac: str(s.ac), items });
     }
@@ -91,9 +103,10 @@
     };
     const all = Array.isArray(f.links) ? f.links : [];
     const links = all.filter((l) => l && okSrc(l.src) && by.has(l.to))
-      .map((l) => ({ ...l, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
+      .map((l) => ({ src: l.src, to: l.to, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
     dropped.links = all.length - links.length;
-    return { flow: { ...f, screens, links }, dropped };
+    const rev = Number.isFinite(f.rev) ? f.rev : 0;
+    return { flow: { v: f.v ?? 1, ticket: str(f.ticket), rev, device: str(f.device, "mobile"), screens, links }, dropped };
   }
   const normalize = (raw) => sanitize(raw).flow;
 
@@ -293,7 +306,7 @@
   function btn(label, cls, onClick) {
     const b = h("button", cls, label);
     b.type = "button";
-    b.addEventListener("click", onClick);
+    if (onClick) b.addEventListener("click", onClick);
     return b;
   }
   function svg(tag, attrs) {
@@ -318,8 +331,8 @@
   }
 
   /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
-   *  `linked`: set of "screen.item" sources that have a link. Reused by the prototype view. */
-  function buildFrame(s, t, linked) {
+   *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from. */
+  function buildFrame(s, t, linked, edit) {
     const c = cardOf(s);
     const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : ""));
     el.dataset.id = s.id;
@@ -338,6 +351,23 @@
       row.style.lineHeight = r.h - 2 + "px";
       card.append(row);
     });
+    if (edit) {
+      const dot = (src, x, y) => {
+        const d = btn(null, "uf-dot");
+        d.dataset.src = src;
+        d.dataset.x = s.x + c.x + x; // world coordinates: where the new arrow starts
+        d.dataset.y = s.y + c.y + y;
+        d.style.left = x + "px";
+        d.style.top = y + "px";
+        d.setAttribute("aria-label", t("dotHint"));
+        card.append(d);
+      };
+      dot(s.id, c.w, c.head + c.headH / 2);
+      s.items.forEach((it, i) => {
+        const r = rowOf(c, i);
+        dot(`${s.id}.${it.id}`, r.x + r.w, r.y + r.h / 2);
+      });
+    }
     el.append(card);
     placeFrame(el, s);
     return el;
@@ -424,8 +454,9 @@ font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-spac
 .uf-back{stroke:var(--uf-muted);stroke-width:2;stroke-dasharray:8 7}
 .uf-mk-a{fill:var(--uf-accent)}
 .uf-mk-b{fill:var(--uf-muted)}
-.uf-label{font-size:14px;font-weight:650;fill:var(--uf-ink2);text-anchor:middle;dominant-baseline:central;paint-order:stroke;
-stroke:var(--uf-bg);stroke-width:6px;stroke-linejoin:round;transition:opacity .2s ease-out}
+.uf-labels{position:absolute;left:0;top:0;width:1px;height:1px}
+.uf-label{position:absolute;left:0;top:0;padding:1px 7px;border-radius:8px;background:var(--uf-bg);color:var(--uf-ink2);
+font-size:14px;font-weight:650;white-space:nowrap;pointer-events:none;transition:opacity .2s ease-out}
 .uf-focus .uf-link:not(.uf-on),.uf-focus .uf-label:not(.uf-on){opacity:.08}
 .uf-panel{position:absolute;top:8px;right:8px;z-index:2;width:min(380px,calc(100% - 16px));max-height:min(60%,520px);
 overflow:auto;padding:6px;border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);
@@ -462,8 +493,7 @@ transition:transform .1s ease-out,opacity .1s ease-out}
 border-top:2px solid var(--uf-ink2);border-right:2px solid var(--uf-ink2);transform:rotate(45deg)}
 .uf-row::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--uf-warn);opacity:0;
 pointer-events:none}
-.uf-flash::before{opacity:1;animation:uf-flash ${FLASH_MS}ms ease-out forwards}
-@keyframes uf-flash{0%,100%{opacity:0}15%,65%{opacity:1}}
+.uf-flash::before{opacity:1}
 .uf-row:focus-visible,.uf-pback:focus-visible,.uf-crumb:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
 .uf-phone:focus-visible{outline:2px solid var(--uf-accent);outline-offset:${BEZEL + 4}px}
 .uf-overlay{position:absolute;inset:0;z-index:2}
@@ -488,6 +518,34 @@ cursor:pointer}
 .uf-crumb:hover:not(:disabled){background:var(--uf-soft);color:var(--uf-ink)}
 .uf-crumb:disabled{color:var(--uf-ink);font-weight:650;cursor:default}
 .uf-sep{flex:none;color:var(--uf-muted)}
+/* edit mode (Sửa): drag handles, dots, selection, the properties panel */
+.uf-root:not(.uf-editing) .uf-add,.uf-root[data-mode=play] .uf-add,.uf-root[data-mode=play] .uf-editbtn,
+.uf-root[data-mode=play] .uf-insp{display:none}
+.uf-dot{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
+border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40,.3);cursor:crosshair;touch-action:none}
+.uf-dot:hover{transform:scale(1.25)}
+.uf-handle{fill:var(--uf-screen);stroke:var(--uf-accent);stroke-width:3;pointer-events:auto;cursor:grab;touch-action:none}
+.uf-handle:hover{fill:var(--uf-accent-soft)}
+.uf-editing .uf-label{pointer-events:auto;cursor:text}
+.uf-editing .uf-head{cursor:move}
+.uf-temp{fill:none;stroke:var(--uf-accent);stroke-width:2.5;stroke-dasharray:7 6;stroke-linecap:round;pointer-events:none}
+.uf-screen.uf-sel{box-shadow:0 0 0 3px var(--uf-accent),var(--uf-shadow)}
+.uf-item.uf-sel{border-color:var(--uf-accent);box-shadow:0 0 0 2px var(--uf-accent-soft)}
+.uf-link.uf-sel{stroke-width:5}
+.uf-edit-on{background:var(--uf-screen);box-shadow:0 0 0 2px var(--uf-accent);cursor:text;text-overflow:clip;
+user-select:text;-webkit-user-select:text}
+.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;width:min(320px,calc(100% - 16px));padding:10px;
+border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);animation:uf-in .18s ease-out}
+.uf-insp h2{margin:0 0 8px;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-chips{display:flex;flex-wrap:wrap;gap:4px}
+.uf-chips .uf-btn{height:26px;padding:0 10px;font-size:12px}
+.uf-field{display:flex;align-items:center;gap:8px;margin-top:8px}
+.uf-flab{flex:none;width:62px;color:var(--uf-ink2);font-size:12px;font-weight:650}
+.uf-input{flex:1;min-width:0;height:28px;padding:0 9px;border:1px solid var(--uf-line);border-radius:9px;
+background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px}
+.uf-input:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
+.uf-acts{display:flex;gap:6px;margin-top:10px}
+.uf-danger{border-color:var(--uf-warn);color:var(--uf-warn)}
 @media (prefers-reduced-motion:reduce){.uf-root *,.uf-root *::before,.uf-root *::after{transition:none!important;animation:none!important}}
 `;
   function injectStyle() {
@@ -655,13 +713,19 @@ cursor:pointer}
     toast: [{ opacity: 0, transform: "translateY(calc(100% + 56px))" }, { opacity: 1, transform: "none" }],
   };
   const FADE_IN = [{ opacity: 0 }, { opacity: 1 }];
+  const PULSE = [{ opacity: 0 }, { opacity: 1, offset: 0.15 }, { opacity: 1, offset: 0.65 }, { opacity: 0 }];
   const backwards = (frames) => [...frames].reverse();
 
-  /** Transform / opacity animation; done() at the end, or at once under reduced motion. */
-  function motion(el, frames, reduced, done) {
-    if (reduced.matches || !el.animate) return done?.();
-    const a = el.animate(frames, { duration: SLIDE_MS, easing: "ease-out" });
+  /** Transform / opacity animation; done() at the end, or at once under reduced motion. Returns the animation
+   *  (null when it did not run) so a new one can cancel it. `o`: extra KeyframeEffect options. */
+  function motion(el, frames, reduced, done, o) {
+    if (reduced.matches || !el.animate) {
+      done?.();
+      return null;
+    }
+    const a = el.animate(frames, { duration: SLIDE_MS, easing: "ease-out", ...o });
     if (done) a.finished.then(done, done);
+    return a;
   }
 
   /** Tappable rows: [{label, cls, onTap(button)}]. */
@@ -680,6 +744,7 @@ cursor:pointer}
     const card = h("div", "uf-pcard" + (list ? "" : " uf-empty"));
     card.tabIndex = -1;
     card.setAttribute("role", kind === "toast" ? "status" : "dialog");
+    if (kind !== "toast") card.setAttribute("aria-modal", "true");
     card.setAttribute("aria-label", title);
     card.append(h("div", "uf-title", title));
     if (list) card.append(list);
@@ -712,7 +777,7 @@ cursor:pointer}
     const crumbs = h("nav", "uf-crumbs");
     crumbs.setAttribute("aria-label", t("trail"));
     const trail = h("div", "uf-trail");
-    return { stage, phone, back, title, body, crumbs, trail };
+    return { stage, phone, back, title, body, nav, crumbs, trail };
   }
 
   /** Prototype: a phone you tap through as if running the app. Owns its state (path of screens walked, open
@@ -812,6 +877,7 @@ cursor:pointer}
       if (kind === "toast") o.timer = setTimeout(() => drop(o), TOAST_MS);
       ovs.push(o);
       ui.phone.append(o.el);
+      gate();
       if (o.scrim) motion(o.scrim, FADE_IN, reduced);
       motion(o.card, CARD_IN[kind], reduced);
       if (kind !== "toast") o.card.focus({ preventScroll: true });
@@ -830,6 +896,7 @@ cursor:pointer}
       if (!o || !ovs.includes(o)) return;
       ovs = ovs.filter((x) => x !== o);
       clearTimeout(o.timer);
+      gate();
       const refocus = o.el.contains(document.activeElement);
       o.el.classList.add("uf-leaving");
       if (instant) o.el.remove();
@@ -843,11 +910,25 @@ cursor:pointer}
       for (const o of ovs) clearTimeout(o.timer);
       ovs = [];
       ui.phone.querySelectorAll(".uf-overlay").forEach((n) => n.remove()); // leaving ones too
+      gate();
     }
+    /** Only the top layer takes input: everything under it is inert, so it is out of the tab order and the
+     *  accessibility tree. A toast takes no input at all, so it never gates the screen. */
+    function gate() {
+      const top = ovs.findLast((o) => o.kind !== "toast");
+      ui.body.inert = ui.nav.inert = !!top;
+      for (const o of ovs) o.el.inert = !!top && o !== top;
+    }
+    /** A button that goes nowhere: pulse its border. Tapped again mid-pulse, it starts over. */
     function blink(b) {
-      if (flash) { clearTimeout(flash.timer); flash.b.classList.remove("uf-flash"); }
+      if (flash) {
+        flash.a?.cancel();
+        clearTimeout(flash.timer);
+        flash.b.classList.remove("uf-flash");
+      }
       b.classList.add("uf-flash");
-      flash = { b, timer: setTimeout(() => { b.classList.remove("uf-flash"); flash = null; }, FLASH_MS) };
+      const a = motion(b, PULSE, reduced, null, { duration: FLASH_MS, pseudoElement: "::before" });
+      flash = { b, a, timer: setTimeout(() => { b.classList.remove("uf-flash"); flash = null; }, FLASH_MS) };
     }
 
     return {
@@ -881,6 +962,292 @@ cursor:pointer}
     };
   }
 
+  // ------------------------------------------------------------------ editing (Sửa)
+  /** Edit one label in place: plain text, Enter / blur keeps it, Esc drops it, cut to `max`. done(value | null).
+   *  `start` is what to put in the box when the element shows something else (an arrow shows "when · ac"). */
+  function inlineEdit(el, max, done, start) {
+    if (el.isContentEditable) return;
+    const shown = el.textContent;
+    if (start != null) el.textContent = start;
+    el.setAttribute("contenteditable", "plaintext-only");
+    el.classList.add("uf-edit-on");
+    el.focus();
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    let over = false;
+    const end = (keep) => {
+      if (over) return;
+      over = true;
+      const val = el.textContent.replace(/\s+/g, " ").trim().slice(0, max);
+      el.removeAttribute("contenteditable");
+      el.classList.remove("uf-edit-on");
+      el.textContent = shown; // a commit re-renders with the real value; a cancel keeps what was drawn
+      done(keep && val ? val : null);
+    };
+    el.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // Delete / ⌘Z belong to the text while it is being edited
+      if (e.key === "Enter") { e.preventDefault(); end(true); }
+      else if (e.key === "Escape") { e.preventDefault(); end(false); }
+    });
+    el.addEventListener("blur", () => end(true), { once: true });
+  }
+
+  /** id plus every overlay hanging off it (a popup of a popup too). */
+  function family(f, id) {
+    const par = parents(f), out = new Set([id]);
+    for (let n = 0; n < 20; n++) {
+      const was = out.size;
+      for (const [k, p] of par) if (p && out.has(p)) out.add(k);
+      if (out.size === was) break;
+    }
+    return out;
+  }
+  const nextId = (used, p) => { let n = 1; while (used.has(p + n)) n++; return p + n; };
+
+  /** Edit mode: drag an arrow head to retarget it, drag a dot to add a link, drag a title bar to move a screen,
+   *  double-click to rename, click to select (Delete removes, the panel changes what the shape cannot show).
+   *  It never writes to the flow itself: every change goes through ctx.commit(flow, before), so undo and `dirty`
+   *  stay in one place. ctx: {t, insp, cam, view, layer, get, commit, marks, frames, moveScreens, liveLink,
+   *  tempLink, drawAll, centre}. */
+  function editor(ctx) {
+    let sel = null; // {t: "screen" | "item" | "link", id?, item?, i?}
+    let drag = null;
+    const t = ctx.t, get = ctx.get;
+
+    const world = (e, rect) => {
+      const c = ctx.cam.get();
+      return { x: (e.clientX - rect.left - c.x) / c.k, y: (e.clientY - rect.top - c.y) / c.k };
+    };
+    /** The screen under a world point; an overlay wins, since it is drawn on top. */
+    function hit(p) {
+      const on = get().screens.filter((s) => {
+        const b = cardAbs(s);
+        return p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h;
+      });
+      return on.find(isOverlay) || on[0] || null;
+    }
+
+    // ---------------- selection
+    const target = (f) => (sel.t === "link" ? f.links[sel.i]
+      : sel.t === "item" ? f.screens.find((s) => s.id === sel.id).items.find((i) => i.id === sel.item)
+        : f.screens.find((s) => s.id === sel.id));
+    function alive(f) {
+      if (!sel) return false;
+      if (sel.t === "link") return !!f.links[sel.i];
+      const s = f.screens.find((x) => x.id === sel.id);
+      return !!s && (sel.t !== "item" || s.items.some((i) => i.id === sel.item));
+    }
+    function node() {
+      if (!sel) return null;
+      if (sel.t === "link") return ctx.marks()[sel.i]?.path;
+      const f = ctx.frames().get(sel.id);
+      return sel.t === "item" ? f?.querySelector(`[data-item="${CSS.escape(sel.item)}"]`) : f;
+    }
+    function paint() {
+      for (const el of ctx.layer.querySelectorAll(".uf-sel")) el.classList.remove("uf-sel");
+      node()?.classList.add("uf-sel");
+    }
+    function select(s) {
+      sel = s;
+      paint();
+      fill();
+    }
+    /** Click that was not a drag: pick what is under it. */
+    function tap(el) {
+      const link = el?.closest?.(".uf-label, .uf-handle"); // the arrow itself is not a target: see .uf-handle
+      if (link) return select({ t: "link", i: +link.dataset.i });
+      const frame = el?.closest?.(".uf-screen"), item = el?.closest?.(".uf-item");
+      if (frame && item) return select({ t: "item", id: frame.dataset.id, item: item.dataset.item });
+      select(frame ? { t: "screen", id: frame.dataset.id } : null);
+    }
+
+    // ---------------- pointer
+    function down(e) {
+      const el = e.target;
+      if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
+      const knob = el.closest?.(".uf-handle"), dot = el.closest?.(".uf-dot"), head = el.closest?.(".uf-head");
+      if (!knob && !dot && !head) return;
+      e.stopPropagation(); // keep the camera from panning. No preventDefault: it would swallow the renaming dblclick
+      const rect = ctx.view.getBoundingClientRect(), f = get();
+      drag = { rect, c0: { x: e.clientX, y: e.clientY }, before: JSON.stringify(f), moved: false };
+      if (knob) Object.assign(drag, { kind: "link", m: ctx.marks()[+knob.dataset.i] });
+      else if (dot) Object.assign(drag, { kind: "new", src: dot.dataset.src, from: { x: +dot.dataset.x, y: +dot.dataset.y } });
+      else {
+        const id = head.closest(".uf-screen").dataset.id, ids = [...family(f, id)];
+        Object.assign(drag, { kind: "move", id, ids, at: world(e, rect),
+          start: new Map(ids.map((i) => { const s = f.screens.find((x) => x.id === i); return [i, { x: s.x, y: s.y }]; })) });
+      }
+    }
+    function move(e) {
+      if (!drag) return;
+      if (!drag.moved && Math.hypot(e.clientX - drag.c0.x, e.clientY - drag.c0.y) <= DRAG_PX) return;
+      if (!drag.moved) {
+        drag.moved = true;
+        // capture only once it really is a drag: a captured pointer would retarget the click, and with it the
+        // double-click that renames
+        try { ctx.layer.setPointerCapture(e.pointerId); } catch { /* synthetic pointer */ }
+      }
+      const p = world(e, drag.rect);
+      if (drag.kind === "move") {
+        const f = get(), dx = p.x - drag.at.x, dy = p.y - drag.at.y;
+        for (const id of drag.ids) {
+          const s = f.screens.find((x) => x.id === id), o = drag.start.get(id);
+          s.x = Math.round(o.x + dx);
+          s.y = Math.round(o.y + dy);
+        }
+        ctx.moveScreens(drag.ids); // one transform per frame + the arrows that touch them; no re-render
+      } else if (drag.kind === "link") ctx.liveLink(drag.m, p);
+      else ctx.tempLink(drag.from, p);
+    }
+    function up(e) {
+      if (!drag) return;
+      const d = drag;
+      drag = null;
+      ctx.tempLink(null);
+      if (!d.moved) { // a plain click on a handle, a dot or a title bar selects
+        if (d.kind === "link") return select({ t: "link", i: d.m.i });
+        if (d.kind === "move") return select({ t: "screen", id: d.id });
+        return select(d.src.includes(".") ? { t: "item", id: scr(d.src), item: itm(d.src) } : { t: "screen", id: d.src });
+      }
+      const f = get(), to = hit(world(e, d.rect));
+      if (d.kind === "move") return ctx.commit(f, d.before);
+      if (d.kind === "link") {
+        if (to && to.id !== f.links[d.m.i].to) {
+          f.links[d.m.i] = { ...f.links[d.m.i], to: to.id };
+          return ctx.commit(f, d.before);
+        }
+        return ctx.drawAll(); // dropped on nothing: the arrow snaps back
+      }
+      if (to && !f.links.some((l) => l.src === d.src && l.to === to.id)) {
+        f.links.push({ src: d.src, to: to.id, act: isOverlay(to) ? "open" : "navigate", when: "", ac: "" });
+        return ctx.commit(f, d.before);
+      }
+      ctx.drawAll();
+    }
+    function dbl(e) {
+      const el = ctx.on() ? e.target.closest?.(".uf-title, .uf-item, .uf-label") : null;
+      if (!el || !ctx.layer.contains(el)) return;
+      e.preventDefault();
+      const frame = el.closest(".uf-screen");
+      const kind = el.classList.contains("uf-label") ? "link" : el.classList.contains("uf-item") ? "item" : "screen";
+      const f0 = get(), link = kind === "link" ? f0.links[+el.dataset.i] : null;
+      inlineEdit(el, CAP, (val) => {
+        ctx.view.focus({ preventScroll: true }); // leaving the text box must not drop focus out of the engine
+        if (val === null) return;
+        const f = structuredClone(get());
+        if (kind === "link") f.links[+el.dataset.i].when = val;
+        else {
+          const s = f.screens.find((x) => x.id === frame.dataset.id);
+          if (kind === "item") s.items.find((i) => i.id === el.dataset.item).label = val;
+          else s.title = val;
+        }
+        ctx.commit(f);
+      }, link ? link.when : null);
+    }
+
+    // ---------------- the properties panel
+    const change = (fn) => {
+      const f = structuredClone(get());
+      fn(target(f), f);
+      ctx.commit(f);
+    };
+    function chips(vals, now, key, pick) {
+      const g = h("div", "uf-chips");
+      for (const v of vals) {
+        const b = btn(t(key + v), "uf-btn", () => pick(v));
+        b.setAttribute("aria-pressed", String(v === now));
+        g.append(b);
+      }
+      return g;
+    }
+    function field(label, value, set) {
+      const w = h("label", "uf-field");
+      const i = h("input", "uf-input");
+      i.type = "text";
+      i.value = value;
+      i.addEventListener("change", () => set(i.value.trim().slice(0, 400)));
+      i.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") i.blur(); });
+      w.append(h("span", "uf-flab", label), i);
+      return w;
+    }
+    function fill() {
+      ctx.insp.hidden = !sel;
+      if (!sel) return ctx.insp.replaceChildren();
+      const f = get(), o = target(f), rows = [];
+      if (sel.t === "screen") {
+        rows.push(h("h2", null, o.title),
+          chips(KINDS, o.kind, "kind_", (k) => change((s) => { s.kind = k; })),
+          field(t("acField"), o.ac, (v) => change((s) => { s.ac = v; })),
+          field(t("zeplinField"), o.zeplin, (v) => change((s) => { s.zeplin = v; })));
+      } else if (sel.t === "item") {
+        rows.push(h("h2", null, `${t("button")}: ${o.label}`));
+      } else {
+        rows.push(h("h2", null, `${t("arrow")}: ${f.screens.find((s) => s.id === scr(o.src)).title} → ${f.screens.find((s) => s.id === o.to).title}`),
+          chips(ACTS, o.act, "act_", (a) => change((l) => { l.act = a; })),
+          field(t("whenField"), o.when, (v) => change((l) => { l.when = v; })),
+          field(t("acField"), o.ac, (v) => change((l) => { l.ac = v; })));
+      }
+      const acts = h("div", "uf-acts");
+      if (sel.t === "screen") acts.append(btn(t("addItem"), "uf-btn", addItem));
+      acts.append(btn(t("del"), "uf-btn uf-danger", remove));
+      rows.push(acts);
+      ctx.insp.replaceChildren(...rows);
+    }
+
+    // ---------------- add / remove
+    function addScreen() {
+      const f = structuredClone(get()), c = ctx.centre();
+      const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
+      f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x: Math.round(c.x - W / 2),
+        y: Math.round(c.y - H / 2), zeplin: "", ac: "", items: [] });
+      sel = { t: "screen", id };
+      ctx.commit(f);
+    }
+    function addItem() {
+      if (sel?.t !== "screen") return;
+      change((s) => s.items.push({ id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: t("newItem") }));
+    }
+    /** Delete what is selected: a screen takes its overlays and every arrow touching them. */
+    function remove() {
+      if (!sel) return;
+      const f = structuredClone(get());
+      if (sel.t === "link") f.links.splice(sel.i, 1);
+      else if (sel.t === "item") {
+        const s = f.screens.find((x) => x.id === sel.id);
+        s.items = s.items.filter((i) => i.id !== sel.item);
+        f.links = f.links.filter((l) => l.src !== `${sel.id}.${sel.item}`);
+      } else {
+        const gone = family(f, sel.id);
+        f.screens = f.screens.filter((s) => !gone.has(s.id));
+        f.links = f.links.filter((l) => !gone.has(scr(l.src)) && !gone.has(l.to));
+      }
+      sel = null;
+      ctx.commit(f);
+    }
+
+    ctx.layer.addEventListener("pointerdown", down);
+    ctx.layer.addEventListener("pointermove", move);
+    ctx.layer.addEventListener("pointerup", up);
+    ctx.layer.addEventListener("pointercancel", up);
+    ctx.layer.addEventListener("dblclick", dbl);
+    return {
+      tap,
+      addScreen,
+      remove,
+      selected: () => sel,
+      clear: () => select(null),
+      /** After a re-render: drop a selection whose shape is gone, then paint the new nodes. */
+      sync() {
+        if (!alive(get())) sel = null;
+        paint();
+        fill();
+      },
+    };
+  }
+
   // ------------------------------------------------------------------ mount
   let mounts = 0;
 
@@ -907,13 +1274,15 @@ cursor:pointer}
     seg.append(bMap, bPlay);
     bar.append(seg);
     if (opts.edit) {
-      const bEdit = btn(t("edit"), "uf-btn", () => {
-        editing = !editing; // Task 7 hooks its handles on .uf-editing
+      const bEdit = btn(t("edit"), "uf-btn uf-editbtn", () => {
+        editing = !editing;
         bEdit.setAttribute("aria-pressed", String(editing));
         root.classList.toggle("uf-editing", editing);
+        if (!editing) ed.clear();
+        render(); // the dots and arrow handles only exist while editing
       });
       bEdit.setAttribute("aria-pressed", "false");
-      bar.append(bEdit);
+      bar.append(bEdit, btn(t("addScreen"), "uf-btn uf-add", () => ed.addScreen()));
     }
     bar.append(h("span", "uf-sp"), btn(t("fit"), "uf-btn uf-fit", () => api.fit()));
     const bCheck = btn("", "uf-btn", togglePanel);
@@ -927,44 +1296,89 @@ cursor:pointer}
     view.setAttribute("aria-label", t("canvas"));
     const layer = h("div", "uf-layer");
     const links = svg("svg", { class: "uf-links", "aria-hidden": "true" });
-    const defs = markers(uid);
+    const labels = h("div", "uf-labels");
+    const defs = markers(uid), tmp = svg("path", { class: "uf-temp" });
     view.append(layer);
     const play = h("div", "uf-play"); // prototype view: filled by player()
     const panel = h("div", "uf-panel");
     panel.hidden = true;
+    const insp = h("div", "uf-insp"); // properties of what is selected while editing
+    insp.hidden = true;
     main.append(view, play, panel);
+    if (opts.edit) main.append(insp);
     root.append(bar, main);
     host.replaceChildren(root);
 
     // render: whole map on data change; links alone when only geometry changes
     function render() {
+      const had = root.contains(document.activeElement);
       const linked = new Set(cur.links.map((l) => l.src));
-      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked)]));
+      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked, editing)]));
       const nodes = [...frames.values()].sort((a, b) => a.classList.contains("uf-ov") - b.classList.contains("uf-ov"));
-      layer.replaceChildren(...nodes, links);
+      layer.replaceChildren(...nodes, links, labels);
       drawLinks();
       if (focusId && !frames.has(focusId)) focusId = null;
       applyFocus();
       refreshChecks();
-      proto.refresh();
+      ed.sync();
+      if (shown === "play") proto.refresh();
+      if (had && !root.contains(document.activeElement)) view.focus({ preventScroll: true }); // Delete / ⌘Z keep working // in Map the phone is hidden: no DOM to rebuild, no hash to write
     }
+    const atMid = (el, mid) => { el.style.transform = `translate(${r1(mid.x)}px,${r1(mid.y)}px) translate(-50%,-50%)`; };
     function drawLinks() {
-      const by = new Map(cur.screens.map((s) => [s.id, s])), paths = [], labels = [];
-      marks = cur.links.map((l) => {
-        const g = curve(linkEnds(l, by)), dashed = l.act === "back" || l.act === "close";
+      const by = new Map(cur.screens.map((s) => [s.id, s])), paths = [], labs = [], knobs = [];
+      marks = cur.links.map((l, i) => {
+        const ends = linkEnds(l, by), g = curve(ends), dashed = l.act === "back" || l.act === "close";
         const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back" : ""}`,
-          "marker-end": `url(#${uid}-${dashed ? "b" : "a"})` });
+          "marker-end": `url(#${uid}-${dashed ? "b" : "a"})`, "data-i": i });
         paths.push(path);
         const text = linkText(l);
         let lab = null;
         if (text) {
-          lab = svg("text", { x: r1(g.mid.x), y: r1(g.mid.y), class: "uf-label" });
-          lab.textContent = text;
-          labels.push(lab);
+          lab = h("div", "uf-label", text);
+          lab.dataset.i = i;
+          atMid(lab, g.mid);
+          labs.push(lab);
         }
-        return { path, lab, a: scr(l.src), b: l.to };
+        let knob = null;
+        if (editing) {
+          knob = svg("circle", { class: "uf-handle", r: 9, cx: r1(ends.q.x), cy: r1(ends.q.y), "data-i": i,
+            "data-link": `${l.src}>${l.to}` });
+          knobs.push(knob);
+        }
+        return { l, i, path, lab, knob, a: scr(l.src), b: l.to };
       });
-      links.replaceChildren(defs, ...paths, ...labels);
+      links.replaceChildren(defs, tmp, ...paths, ...knobs);
+      labels.replaceChildren(...labs);
+      tempLink(null);
+    }
+    /** Redraw just the arrows that touch `ids` (a Set / array of screen ids), in place. */
+    function moveLinks(ids) {
+      const by = new Map(cur.screens.map((s) => [s.id, s])), on = new Set(ids);
+      for (const m of marks) {
+        if (!on.has(m.a) && !on.has(m.b)) continue;
+        const ends = linkEnds(m.l, by), g = curve(ends);
+        m.path.setAttribute("d", g.d);
+        if (m.lab) atMid(m.lab, g.mid);
+        if (m.knob) { m.knob.setAttribute("cx", r1(ends.q.x)); m.knob.setAttribute("cy", r1(ends.q.y)); }
+      }
+    }
+    function moveScreens(ids) {
+      const by = new Map(cur.screens.map((s) => [s.id, s]));
+      for (const id of ids) placeFrame(frames.get(id), by.get(id));
+      moveLinks(ids);
+    }
+    /** One arrow following the pointer while its head is dragged. */
+    function liveLink(m, p) {
+      const ends = linkEnds(m.l, new Map(cur.screens.map((s) => [s.id, s])));
+      m.path.setAttribute("d", curve({ p: ends.p, dir: ends.dir, q: p, n: { x: -1, y: 0 } }).d);
+      m.knob.setAttribute("cx", r1(p.x));
+      m.knob.setAttribute("cy", r1(p.y));
+    }
+    /** The dashed arrow drawn while a new link is being dragged out of a dot. */
+    function tempLink(from, to) {
+      if (!from) return tmp.removeAttribute("d");
+      tmp.setAttribute("d", curve({ p: from, dir: { x: 1, y: 0 }, q: to, n: { x: -1, y: 0 } }).d);
     }
     function applyFocus() {
       root.classList.toggle("uf-focus", focusId !== null);
@@ -1010,17 +1424,52 @@ cursor:pointer}
     const cam = camera(view, layer, {
       reduced,
       onTap: (target) => {
+        if (editing) return ed.tap(target && layer.contains(target) ? target : null);
         const f = target?.closest?.(".uf-screen");
         setFocus(f && layer.contains(f) ? f.dataset.id : null);
       },
     });
     const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
-    const proto = player(play, { flow: () => cur, t, reduced, onGo: (id) => { here = id; writeHash(); } });
+    const commit = (next, before = JSON.stringify(cur)) => {
+      hist.push(before);
+      if (hist.length > UNDO) hist.shift();
+      cur = layout(next);
+      render();
+      opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
+    };
+    const ed = editor({
+      t, insp, cam, view, layer,
+      on: () => editing && shown === "map",
+      get: () => cur,
+      commit,
+      marks: () => marks,
+      frames: () => frames,
+      moveScreens,
+      liveLink,
+      tempLink,
+      drawAll: drawLinks,
+      centre: () => {
+        const c = cam.get();
+        return { x: (view.clientWidth / 2 - c.x) / c.k, y: (view.clientHeight / 2 - c.y) / c.k };
+      },
+    });
+    const proto = player(play, { flow: () => cur, t, reduced, onGo: (id) => { if (shown === "play") { here = id; writeHash(); } } });
 
     const onKey = (e) => {
+      const tag = e.target?.tagName;
+      if (e.target?.isContentEditable || tag === "INPUT" || tag === "TEXTAREA") return;
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+        e.preventDefault();
+        return api.undo();
+      }
+      if (editing && shown === "map" && (e.key === "Delete" || e.key === "Backspace")) {
+        e.preventDefault();
+        return ed.remove();
+      }
       if (e.key !== "Escape") return;
       if (!panel.hidden) togglePanel();
       else if (shown === "play") proto.escape();
+      else if (editing && ed.selected()) ed.clear();
       else setFocus(null);
     };
     root.addEventListener("keydown", onKey);
@@ -1052,6 +1501,7 @@ cursor:pointer}
         cur = layout(cur);
         base = JSON.stringify(cur);
         hist = [];
+        ed.clear();
         render();
         if (ids(cur) !== before) fitAll(false);
       },
@@ -1061,7 +1511,10 @@ cursor:pointer}
         root.dataset.mode = m;
         bMap.setAttribute("aria-pressed", String(m === "map"));
         bPlay.setAttribute("aria-pressed", String(m === "play"));
-        if (m === "play") proto.start(here);
+        if (m === "play") {
+          proto.start(here);
+          proto.refresh(); // a path kept from an earlier visit may name screens an edit has since removed
+        }
         writeHash();
       },
       goto: (id) => goto(id, true),
@@ -1074,11 +1527,15 @@ cursor:pointer}
         opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
       },
       destroy() {
-        cam.destroy(); // window-level listeners added later (beforeunload) must be removed here too
+        cam.destroy();
         proto.destroy();
+        window.removeEventListener("beforeunload", onLeave);
         host.replaceChildren();
       },
     };
+
+    const onLeave = (e) => { if (JSON.stringify(cur) !== base) e.preventDefault(); };
+    if (src !== null) window.addEventListener("beforeunload", onLeave);
 
     render();
     const hs = readHash(); // before the first writeHash, which mode() runs
