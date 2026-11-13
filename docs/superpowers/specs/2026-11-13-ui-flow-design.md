@@ -39,9 +39,9 @@ Từ một (hoặc vài) ticket YouTrack có AC, rule và link / tên màn Zepli
 ```json
 {"v":1,"ticket":"VA-123","rev":3,"device":"mobile",
  "screens":[{"id":"login","title":"Đăng nhập","kind":"screen|popup|sheet|toast",
-   "parent":null,"x":0,"y":0,"zeplin":"https://zpl.io/…","img":null,
-   "items":[{"id":"btnOtp","label":"Gửi OTP","rect":null}]}],
- "links":[{"from":"login.btnOtp","to":"otp","act":"navigate|open|back|close",
+   "parent":null,"x":0,"y":0,"zeplin":"https://zpl.io/…",
+   "items":[{"id":"btnOtp","label":"Gửi OTP"}]}],
+ "links":[{"src":"login.btnOtp","to":"otp","act":"navigate|open|back|close",
    "when":"OTP hợp lệ","ac":"AC-2"}]}
 ```
 
