@@ -10,12 +10,14 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from "@/components/ui/dialog";
 import { Empty } from "@/components/ui/empty";
 import { Hint } from "@/components/ui/hint";
+import { Segmented } from "@/components/ui/segmented";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { useLang, useT } from "@/lib/i18n";
+import { getPref, put } from "@/lib/prefs";
 import { packShots, useUiFlow, zeplinUrls } from "@/lib/uiflow";
 import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
-import { YtFetching } from "./bits";
+import { YtFetching, YtPicks } from "./bits";
 
 // The ticket's UI flow: the file on the ticket drawn by the engine (web/public/uiflow.js), one AI run to build it, and
 // the bar that uploads what changed back. The dialog orchestrates; the calls live in lib/yt, the engine in lib/uiflow.
@@ -37,6 +39,9 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
   const [saved, setSaved] = useState<FlowSaved | null>(null);
   const [ask, setAsk] = useState<"close" | "again" | "fresh" | null>(null);
   const [note, setNote] = useState("");
+  // "Nhanh": the light YouTrack picks (Hỏi AI…), enough once the Zeplin texts come with the ticket; "Kỹ": the heavy
+  // picks, for a long or tangled story. Remembered per browser.
+  const [deep, setDeep] = useState(() => getPref("uiflowDeep") === "1");
   const [shown, setShown] = useState(true); // false: sliding out; `onClose` comes when that animation ends
 
   const q = useQuery({ ...ytFlowQuery(issue), enabled: open });
@@ -75,7 +80,7 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       try {
         const r = again
           ? await yt.aiJob<{ flow: UiFlow }>(job.id, c.signal).catch((e) => { if (statusOf(e) === 404) return null; throw e; }) // gone (a restart): nothing to show
-          : await yt.aiFlow(issue, note.trim(), c.signal);
+          : await yt.aiFlow(issue, note.trim(), deep, c.signal);
         return r && r.flow?.ticket === issue ? { flow: r.flow, base: job.base } : null; // another ticket's: not this one's flow
       } finally {
         if (c.signal.reason !== AI_LEAVE) setFlowJob(issue, null, job.id); // shown, failed or stopped: nothing left to read
@@ -173,6 +178,15 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
             ) : ( // a run, even over a flow already on screen, keeps the box: its ring and Dừng are the run's controls
               <AiPromptBox aria-label={t("Ghi chú thêm cho AI")} placeholder={t("Ghi chú thêm cho AI (không bắt buộc)")} maxLength={2000}
                 value={note} onChange={setNote} onSend={run} running={ai.isPending} onStop={stopAi} stopHint={t("Dừng render")}
+                tools={!ai.isPending && <>
+                  <Segmented id="uiflow-depth" label={t("Cách render")} value={deep ? "deep" : "fast"}
+                    onChange={(v) => { setDeep(v === "deep"); put("uiflowDeep", v === "deep" ? "1" : null); }}
+                    items={[
+                      { value: "fast", label: t("Nhanh"), title: t("Model nhẹ: nhanh, ít token. Đủ cho hầu hết ticket có AC và màn Zeplin rõ.") },
+                      { value: "deep", label: t("Kỹ"), title: t("Model mạnh: chậm và tốn token hơn. Dùng khi story dài, nhiều nhánh hoặc bản Nhanh thiếu màn.") },
+                    ]} />
+                  <YtPicks heavy={deep} />
+                </>}
                 actions={!ai.isPending && (
                   <Hint side="bottom" text={t("AI đọc ticket rồi dựng sơ đồ màn hình và luồng bấm (Enter)")}>
                     <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}>

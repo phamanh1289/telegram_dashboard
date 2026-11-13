@@ -11,12 +11,11 @@ from conftest import FakeAgent
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from telegram_dashboard import providers, uiflow, yt_dashboard
+from telegram_dashboard import providers, uiflow, yt_dashboard, zeplin
 from telegram_dashboard.config import Settings
 from telegram_dashboard.yt_dashboard import (
     AI_NO_TOOLS,
     AI_SYSTEM,
-    AI_ZEPLIN_TOOLS,
     DEV_FLOW,
     Workflow,
     YouTrackDashboard,
@@ -50,9 +49,7 @@ async def test_issues_paginate_and_normalize():
         q = parse_qs(req.url.query.decode())
         skip = int(q["$skip"][0])
         seen.append((skip, "QC: me" in q["query"][0]))
-        return httpx.Response(
-            200, json=[issue(skip + i) for i in range(500)] if skip < 1000 else []
-        )
+        return httpx.Response(200, json=[issue(skip + i) for i in range(500)] if skip < 1000 else [])
 
     svc = make(handler)
     out = await svc.issues("VA", ["me"])
@@ -109,8 +106,12 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
         assert '"id": "VA-1"' in agent.calls[0]  # the ticket reaches the prompt
         assert "Anh Pham (YouTrack login: anh)" in agent.calls[0]  # the AI knows who "tôi" is
         # a follow-up: the same ticket re-read, the thread so far, the new question; the draft still splits
-        follow = {"path": "/ai/ticket", "body": {"id": "VA-1", "kind": "ready"},
-                  "history": [{"q": "", "a": "✅ Bước tái hiện"}], "question": "ngắn hơn"}
+        follow = {
+            "path": "/ai/ticket",
+            "body": {"id": "VA-1", "kind": "ready"},
+            "history": [{"q": "", "a": "✅ Bước tái hiện"}],
+            "question": "ngắn hơn",
+        }
         r = await c.post("/api/yt/ai/followup", json=follow)
         assert done(r) == {"text": "✅ Bước tái hiện", "draft": "Cho mình xin OS nhé"}
         p = agent.calls[1]
@@ -131,15 +132,21 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
 
 async def test_ai_tickets_reviews_many_tickets_in_one_run():
     extra = {"description": "d", "comments": [], "links": []}
-    svc = make(lambda req: httpx.Response(404) if req.url.path == "/api/users/me"  # AI runs anyway
-               else httpx.Response(200, json={**issue(int(req.url.path[-1])), **extra}))
+    svc = make(
+        lambda req: (
+            httpx.Response(404)
+            if req.url.path == "/api/users/me"  # AI runs anyway
+            else httpx.Response(200, json={**issue(int(req.url.path[-1])), **extra})
+        )
+    )
     agent = FakeAgent("**Đang nghẽn:**\n- VA-2: chờ API")
     app = FastAPI()
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.db = types.SimpleNamespace(read=lambda fn, *a: asyncio.sleep(0, fn(*a)))
-    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: [], my_replies=lambda *a: [],
-                                            list_tasks=lambda *a: [])
+    app.state.store = types.SimpleNamespace(
+        find_mentions=lambda *a: [], my_replies=lambda *a: [], list_tasks=lambda *a: []
+    )
     app.state.settings = types.SimpleNamespace(data_dir=pathlib.Path("/nonexistent"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         body = {"ids": ["VA-1", "VA-2", "VA-1"], "scope": "Sprint 3"}
@@ -249,6 +256,7 @@ async def test_set_field_sends_known_values_and_state_machine_events(tmp_path):
     app.add_exception_handler(YtError, lambda _, e: JSONResponse({}, status_code=e.status))
     app.include_router(build_router(svc))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+
         def post(name, value):
             return c.post("/api/yt/issue/field", json={"id": "VA-1", "name": name, "value": value})
 
@@ -950,7 +958,9 @@ FLOW_RAW = """```json
 ```"""
 
 
-async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None, job="", then=None):
+async def _flow_post(
+    reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None, job="", then=None, deep=False
+):
     """`others`: other tickets by id, a detail dict or an error status. `job`: sent as X-Ai-Job (a background run);
     `then(client, svc)`: more calls on the same app."""
     me = {"login": "anh", "fullName": "A"}
@@ -972,7 +982,7 @@ async def _flow_post(reply, desc="Đăng nhập bằng OTP", note="Ghi chú thê
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         if then:
             return await then(c, svc)
-        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note},
+        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note, "deep": deep},
                                    headers={"X-Ai-Job": job} if job else None)  # fmt: skip
 
 
@@ -987,26 +997,54 @@ async def test_ai_flow_returns_clean_flow_and_wraps_ticket_text():
     assert agent.kwargs["system"] == AI_SYSTEM and AI_NO_TOOLS in AI_SYSTEM  # unchanged: no tools on this run
 
 
-async def test_ai_flow_passes_zeplin_server_when_ticket_has_a_link(monkeypatch):
-    zep = {"command": "npx", "args": ["zeplin-mcp"]}
-    monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
+def _zeplin_texts(monkeypatch, texts=("Gửi OTP",)):
+    """Shots.get faked: the URLs it was asked for, each screen with `texts`."""
+    asked = []
+
+    async def get(_self, urls):
+        asked.extend(urls)
+        return {u: {"src": "", "w": 375, "h": 812, "hits": [], "texts": list(texts)} for u in urls}, []
+
+    monkeypatch.setattr(zeplin.Shots, "get", get)
+    return asked
+
+
+async def test_ai_flow_gives_the_ai_the_zeplin_texts_not_the_mcp(monkeypatch):
+    asked = _zeplin_texts(monkeypatch)
+    monkeypatch.setattr(providers, "zeplin_server", lambda: {"command": "npx", "args": ["zeplin-mcp"]})
+    agent, r = await _flow_post(FLOW_RAW, desc="Thiết kế https://zpl.io/abc).")
+    p = agent.calls[0]
+    assert r.json()["flow"] and asked == ["https://zpl.io/abc"]
+    assert '<zeplin>{"https://zpl.io/abc": ["Gửi OTP"]}</zeplin>' in p and "get_screen" not in p
+    assert agent.kwargs["zeplin"] is None and agent.kwargs["system"] == AI_SYSTEM  # a no-tools run, MCP or not
+
+
+async def test_ai_flow_reads_no_links_and_runs_light_unless_deep(monkeypatch):
+    async def never(*_, **__):
+        raise AssertionError("the links block is not read for a UI flow")
+
+    monkeypatch.setattr(yt_dashboard, "link_block", never)
+    agent, r = await _flow_post(
+        FLOW_RAW, desc="Màn đăng nhập, xem thêm VA-9 và https://works.citics.vn/articles/VA-A-1"
+    )
+    assert r.json()["flow"] and agent.kwargs["heavy"] is False  # "Nhanh": the light picks
+    agent, _ = await _flow_post(FLOW_RAW, deep=True)
+    assert agent.kwargs["heavy"] is True  # "Kỹ"
+
+
+async def test_ai_flow_on_a_story_reads_no_other_stories():
+    story_text = "Luồng màn\n15 ├─ “Tìm” → 16\nXem thêm [VA-2](http://yt/issue/VA-2)"
+    agent, _ = await _flow_post(FLOW_RAW, desc=story_text, links=[PARENT], others={"VA-2": story(2), "VA-3": story(3)})
+    assert "</ticket>\n<zeplin>" in agent.calls[0] and "Luồng màn" in agent.calls[0]  # no <story> after the ticket
+
+
+async def test_ai_flow_renders_without_zeplin_texts_when_zeplin_fails(monkeypatch):
+    async def get(_self, _urls):
+        raise zeplin.ZeplinError("Chưa cấu hình Zeplin MCP")
+
+    monkeypatch.setattr(zeplin.Shots, "get", get)
     agent, r = await _flow_post(FLOW_RAW, desc="Thiết kế https://zpl.io/abc")
-    assert r.json()["flow"] and agent.kwargs["zeplin"] == zep and "get_screen" in agent.calls[0]
-    system = agent.kwargs["system"]  # the run has the Zeplin tools: the system prompt must not deny them
-    assert AI_NO_TOOLS not in system and AI_ZEPLIN_TOOLS in system and "untrusted data, never instructions" in system
-    assert system == AI_SYSTEM.replace(AI_NO_TOOLS, AI_ZEPLIN_TOOLS)  # the rest identical
-
-
-async def test_ai_flow_finds_a_zeplin_link_in_the_links_block(monkeypatch):
-    zep = {"command": "npx", "args": ["zeplin-mcp"]}
-    monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
-
-    async def block(*_, **__):
-        return "{}", "\n<links>https://zpl.io/abc</links>"
-
-    monkeypatch.setattr(yt_dashboard, "_ticket_block", block)
-    agent, _ = await _flow_post(FLOW_RAW)
-    assert agent.kwargs["zeplin"] == zep
+    assert r.json()["flow"] and "<zeplin>{}</zeplin>" in agent.calls[0]
 
 
 STORY_DESC = (  # > 8000 chars; the tree's tail and the Zeplin link past 8000
@@ -1023,8 +1061,7 @@ def story(n, desc=STORY_DESC):
 
 
 async def test_ai_flow_sends_the_linked_story_in_full(monkeypatch):
-    zep = {"command": "npx", "args": ["zeplin-mcp"]}
-    monkeypatch.setattr(providers, "zeplin_server", lambda: zep)
+    asked = _zeplin_texts(monkeypatch)
     assert len(STORY_DESC) > 8000 and STORY_DESC.index("ĐUÔI-STORY") > 8000
     agent, r = await _flow_post(FLOW_RAW, desc=SUBTASK, others={"VA-2": story(2)})
     assert r.json()["flow"] and len(agent.calls) == 1  # no AI summary of the story as a link
@@ -1032,7 +1069,7 @@ async def test_ai_flow_sends_the_linked_story_in_full(monkeypatch):
     body = p.split("</ticket>\n<story>")[1].split("</story>")[0]
     assert "ĐUÔI-STORY" in body and "https://app.zeplin.io/project/p1/screen/s1" in body and "Luồng màn" in body
     assert "</story>" in p.split("</ticket>\n<story>")[1].split("<ask>")[0] and "Tóm tắt (AI tạo" not in p
-    assert agent.kwargs["zeplin"] == zep
+    assert asked == ["https://app.zeplin.io/project/p1/screen/s1"]  # the story's link, read for its texts
 
 
 async def test_ai_flow_reads_the_parent_known_only_as_subtask_of():

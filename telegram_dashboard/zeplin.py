@@ -78,12 +78,39 @@ def hits(layers: list, width: float) -> list[list]:
     return out[:MAX_HITS]
 
 
+def texts(layers: list) -> list[str]:
+    """Every text shown on the screen, top to bottom, once each: what the AI names buttons from (a few hundred bytes,
+    where the MCP's get_screen returns 100-200 KB of layers)."""
+    found: list[tuple[float, float, str]] = []
+
+    def walk(ls: list) -> None:
+        for layer in ls:
+            if not isinstance(layer, dict):
+                continue
+            if layer.get("type") == "text" and (label := _text(layer.get("content") or "")):
+                a = (layer.get("rect") or {}).get("absolute") or {}
+                found.append((a.get("y", 0), a.get("x", 0), label))
+            walk(layer.get("layers") or [])
+
+    walk(layers)
+    return list(dict.fromkeys(t for *_, t in sorted(found)))[:MAX_HITS]
+
+
 def shot(version: dict) -> dict:
-    """A screen version as the page draws it: image URL, design size, hits."""
+    """A screen version as the page draws it (image URL, design size, hits) and its texts for the AI."""
     w = float(version.get("width") or 0)
     thumbs = version.get("thumbnails") or {}
+    layers = version.get("layers") or []
     return {"src": thumbs.get("medium") or version.get("image_url") or "", "w": w,
-            "h": float(version.get("height") or 0), "hits": hits(version.get("layers") or [], w)}  # fmt: skip
+            "h": float(version.get("height") or 0), "hits": hits(layers, w), "texts": texts(layers)}  # fmt: skip
+
+
+def canonical(url: str) -> str:
+    """A Zeplin link as written in a ticket (markdown / JSON leave ")" or "\\n" on it): its screen URL, or the link."""
+    if m := SCREEN.search(url):
+        return f"https://app.zeplin.io/project/{m[1]}/screen/{m[2]}"
+    m = re.match(r"https?://[A-Za-z0-9._~:/?#@!$&*+=%-]+", url)
+    return m[0].rstrip(".,:;") if m else url
 
 
 class Shots:

@@ -208,3 +208,13 @@ def test_zeplin_image_proxy_only_reads_zeplin_image_hosts():
     assert zeplin._image_host("https://public-cdn.zeplin.dev/a/b.png")
     for bad in ("http://img.zeplin.io/x", "https://img.zeplin.io.evil.com/x", "https://127.0.0.1/x", "file:///etc/passwd"):
         assert not zeplin._image_host(bad)
+
+
+def test_zeplin_texts_for_the_ai_and_links_as_tickets_write_them():
+    from telegram_dashboard import zeplin
+    root = _layer("group", "S", 0, 0, 375, 812, layers=[
+        _layer("text", "b", 20, 500, 100, 20, "Tìm căn hộ"), _layer("text", "a", 20, 50, 100, 20, "Tiêu đề"),
+        _layer("text", "c", 20, 600, 100, 20, "Tìm căn hộ"), _layer("text", "i", 0, 0, 10, 10, "\U00100189")])
+    assert zeplin.texts([root]) == ["Tiêu đề", "Tìm căn hộ"]
+    z = "https://app.zeplin.io/project/6a86b68fa244cff502f98251/screen/6a86b912c7dfad3ef64e765c"
+    assert zeplin.canonical(z + "),") == z and zeplin.canonical("https://zpl.io/aB3)\\n|") == "https://zpl.io/aB3"

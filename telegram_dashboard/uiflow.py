@@ -257,11 +257,10 @@ Màn:
 - Link Zeplin màn viết inline `([màn](https://app.zeplin.io/project/<pid>/screen/<sid>))` cạnh AC:
   ghi URL đó vào "zeplin" của màn tương ứng.
   Chỉ có tên màn Zeplin thì dùng tên đó làm title.
-- Zeplin get_screen trả rất lớn (~100-200 KB, nhiều lớp rác như Mask, Status Bar):
-  chỉ gọi khi ticket chưa nêu tên nút của màn,
-  ưu tiên targetLayerName, bỏ qua lớp status bar / mask / trang trí.
-- label của nút = đúng chữ hiện trên nút trong thiết kế (nội dung lớp text, vd. "Tìm căn hộ"), không dùng tên lớp
-  kiểu "Button/Primary": app đặt vùng bấm lên ảnh màn Zeplin bằng cách khớp chữ này.
+- `<zeplin>`: chữ hiện trên từng màn Zeplin đã link (đọc sẵn từ thiết kế, trên xuống dưới), theo URL màn.
+  label của nút = đúng chữ hiện trên nút trong đó (vd. "Tìm căn hộ"), không dùng tên lớp kiểu "Button/Primary":
+  app đặt vùng bấm lên ảnh màn Zeplin bằng cách khớp chữ này. Ticket chưa nêu nút của màn thì lấy nút từ đây
+  (bỏ chữ trang trí: giờ, nhãn trường, giá trị mẫu). Không có màn trong `<zeplin>` thì chỉ dựa vào ticket.
 
 Link:
 - Mỗi hành động của người dùng là một item của màn + một link: src = "idMàn.idNút", to = id màn đích,

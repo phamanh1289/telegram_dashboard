@@ -160,7 +160,7 @@ export const yt = {
   /** The Zeplin screens the flow links (read with the user's Zeplin MCP token, no AI). */
   flowShots: (urls: string[], signal?: AbortSignal) => ytApi<FlowShots>("/flow/shots", { json: { urls }, signal }),
   /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
-  aiFlow: (id: string, note: string, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note }, signal }),
+  aiFlow: (id: string, note: string, deep: boolean, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note, deep }, signal }),
 };
 /** The UI flow render still going on the server for a ticket (its dialog closed mid-run): `at` when it started, `base`
  *  the ticket's file it was started over (its result saves over that one, so a save made since gets the 409).
