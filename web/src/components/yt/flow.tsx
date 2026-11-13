@@ -13,7 +13,7 @@ import { Hint } from "@/components/ui/hint";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/components/ui/menu";
 import { useLang, useT } from "@/lib/i18n";
 import { useUiFlow } from "@/lib/uiflow";
-import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
+import { AI_LEAVE, aiJobs, fileUrl, flowJob, type FlowJob, type FlowSaved, newJobId, setFlowJob, type UiFlow, yt, ytFlowQuery } from "@/lib/yt";
 import { cn } from "@/lib/utils";
 import { YtFetching } from "./bits";
 
@@ -46,24 +46,26 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
 
   const ctl = useRef<AbortController | null>(null); // the AI run, so Dừng cancels the request
   // a background run on the server (X-Ai-Job), its id kept per ticket: closing the dialog leaves it going, opening it
-  // again reads it (`again`: that id) — still running, its result, or its error, the same as a run started here
+  // again reads it (`again`: that run) — still running, its result, or its error, the same as a run started here.
+  // Its result saves over the file the run started from (`base`), so a save made meanwhile gets the 409, not overwritten.
   const ai = useMutation({
-    mutationFn: async (again?: string) => {
+    mutationFn: async (again?: FlowJob) => {
       ctl.current?.abort(); // a new run replaces the old one, on the server too
       const c = (ctl.current = new AbortController());
-      const job = again ?? newJobId();
-      aiJobs.set(c.signal, job);
+      const job = again ?? { id: newJobId(), base: q.data?.att ?? null };
+      aiJobs.set(c.signal, job.id);
       if (!again) setFlowJob(issue, job);
       try {
-        return again
-          ? await yt.aiJob<{ flow: UiFlow }>(job, c.signal).catch((e) => { if (statusOf(e) === 404) return null; throw e; }) // gone (a restart): nothing to show
+        const r = again
+          ? await yt.aiJob<{ flow: UiFlow }>(job.id, c.signal).catch((e) => { if (statusOf(e) === 404) return null; throw e; }) // gone (a restart): nothing to show
           : await yt.aiFlow(issue, note.trim(), c.signal);
+        return r && r.flow?.ticket === issue ? { flow: r.flow, base: job.base } : null; // another ticket's: not this one's flow
       } finally {
-        if (c.signal.reason !== AI_LEAVE) setFlowJob(issue, null, job); // shown, failed or stopped: nothing left to read
+        if (c.signal.reason !== AI_LEAVE) setFlowJob(issue, null, job.id); // shown, failed or stopped: nothing left to read
       }
     },
     retry: false,
-    onSuccess: (r) => { if (r) { setMine({ flow: r.flow, base: q.data?.att ?? null }); setHid(false); setNote(""); } },
+    onSuccess: (r) => { if (r) { setMine(r); setHid(false); setNote(""); } },
   });
   const save = useMutation({
     mutationFn: (f: UiFlow) => yt.saveFlow(issue, f, base),
@@ -79,11 +81,14 @@ export function FlowDialog({ issue, open, onClose }: { issue: string; open: bool
       // no invalidate of the flow key: the answer above is the saved version, and a refetch would api.set over the view
     },
   });
+  const reread = useRef(false); // the stored run is read once per open (not again on a refetch of the file)
   // the dialog closed: stop reading, the server's run goes on (opening the dialog again reads it)
-  useEffect(() => () => { ctl.current?.abort(AI_LEAVE); ctl.current = null; }, []);
-  useEffect(() => { // a run left going: once the ticket's file is read (the base a result would replace), read it again
-    const j = q.isSuccess && !ctl.current && flowJob(issue);
-    if (j) ai.mutate(j.id);
+  useEffect(() => () => { ctl.current?.abort(AI_LEAVE); ctl.current = null; reread.current = false; }, []);
+  useEffect(() => { // a run left going: once the ticket's file is read, read it again — never over unsaved edits
+    if (!q.isSuccess || reread.current) return;
+    reread.current = true;
+    const j = !ctl.current && !mine && !dirty && flowJob(issue);
+    if (j) ai.mutate(j);
   }, [q.isSuccess]); // eslint-disable-line react-hooks/exhaustive-deps -- once per open; `ai` / `issue` are this dialog's
   useEffect(() => { // what changed, shown for a moment
     if (!saved) return;

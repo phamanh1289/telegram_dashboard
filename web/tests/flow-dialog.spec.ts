@@ -293,3 +293,41 @@ test("a stored run the server no longer has: the normal view, the key cleared, n
   await d.getByRole("button", { name: "Đóng" }).click();
   await expect(flowButton(page).locator("[data-flow-running]")).toHaveCount(0);
 });
+
+test("a save made while a closed render ran is not overwritten: its result saves over the old file and gets the 409", async ({ page }) => {
+  await ctl("/set", { ai_ms: 1500 });
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  expect(JSON.parse((await stored(page))!).base).toBe("1-1"); // the file the run started over
+  // meanwhile a teammate saves: the ticket's file is now 1-2
+  const theirs = await (await page.request.get("/api/yt/flow?issue=VA-1")).json();
+  expect((await page.request.post("/api/yt/flow", { data: { id: "VA-1", flow: theirs.flow, base: "1-1" } })).ok()).toBe(true);
+  await expect.poll(async () => job(JSON.parse((await stored(page))!).id)).toBe("done");
+  await flowButton(page).click();
+  await expect(dialog(page).getByText(BAR)).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await expect(dialog(page).getByText("UI flow vừa được người khác cập nhật")).toBeVisible();
+  await expect(dialog(page).getByRole("button", { name: "Xem bản mới" })).toBeVisible();
+  const all = await posts();
+  expect(all).toHaveLength(2);
+  expect(all[1].base).toBe("1-1"); // not the newer file: nothing overwritten
+});
+
+test("a stored run whose id is not one the server could give is dropped", async ({ page }) => {
+  await page.addInitScript((k) => {
+    if (sessionStorage.getItem("seeded")) return;
+    sessionStorage.setItem("seeded", "1");
+    localStorage.setItem(k, JSON.stringify({ id: "../flow?x", at: Date.now(), base: null }));
+  }, JOB_KEY);
+  await page.addInitScript(() => localStorage.setItem("ytMode", "dev"));
+  await page.goto("/youtrack?ticket=VA-1");
+  await expect(flowButton(page)).toBeVisible();
+  await expect(flowButton(page).locator("[data-flow-running]")).toHaveCount(0);
+  expect(await stored(page)).toBeNull();
+});

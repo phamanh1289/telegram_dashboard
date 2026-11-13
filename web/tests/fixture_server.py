@@ -133,7 +133,8 @@ async def fake_yt(scope, receive, send) -> bool:
         control["flow_posts"].append(b)
         await asyncio.sleep(control["save_ms"] / 1000)
         mode = control["flow_save"]
-        if mode == "409":
+        now = control["att"] if control["flow"] in ("file", "broken") else None  # the file a save must be based on
+        if mode == "409" or b.get("base") != now:  # as yt_dashboard checks it: someone saved since
             await answer(send, 409, {"error": "UI flow vừa được người khác cập nhật — mở lại để xem bản mới"})
         elif mode == "502":
             await answer(send, 502, {"error": "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại"})

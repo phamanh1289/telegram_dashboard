@@ -67,7 +67,7 @@ export async function ytApi<T>(path: string, init: { json?: unknown; signal?: Ab
   if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
   const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|flow|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
   // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, or aborts with AI_LEAVE: the run goes on)
-  if (job) init.signal!.addEventListener("abort", () => { if (init.signal!.reason !== AI_LEAVE) void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}); }, { once: true });
+  if (job) init.signal!.addEventListener("abort", () => { if (init.signal!.reason !== AI_LEAVE) void fetch(`/api/yt/ai/job/${encodeURIComponent(job)}`, { method: "DELETE" }).catch(() => {}); }, { once: true });
   const ses = init.session || (job && aiSessions.get(init.signal!)); // `session`: a one-shot run with no job (AI filter / draft)
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   const res = await fetch(`/api/yt${path}`, {
@@ -156,21 +156,27 @@ export const yt = {
   /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
   aiFlow: (id: string, note: string, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note }, signal }),
 };
-/** The UI flow render still going on the server for a ticket (its dialog closed mid-run): `at` when it started.
- *  Per browser, by id only; past the server's keep (1 h after it ends) it is surely gone, so read as none. */
-type FlowJob = { id: string; at: number };
+/** The UI flow render still going on the server for a ticket (its dialog closed mid-run): `at` when it started, `base`
+ *  the ticket's file it was started over (its result saves over that one, so a save made since gets the 409).
+ *  Per browser; past the server's keep (1 h after it ends) it is surely gone, so read as none. */
+export type FlowJob = { id: string; at: number; base: string | null };
 const flowJobKey = (issue: string) => `uiflow-job:${issue}`;
 const FLOW_JOB_KEEP = 3 * 3600_000;
+const JOB_ID = /^[a-z0-9-]{8,64}$/; // = ai.JOB_ID: anything else the server refuses
 export function flowJob(issue: string): FlowJob | null {
   try { // storage may be off (private window): no indicator, no re-read
-    const j = JSON.parse(localStorage.getItem(flowJobKey(issue)) ?? "null") as FlowJob | null;
-    return j?.id && Date.now() - j.at < FLOW_JOB_KEEP ? j : null;
+    const j = JSON.parse(localStorage.getItem(flowJobKey(issue)) ?? "null") as Partial<FlowJob> | null;
+    if (j && typeof j.id === "string" && JOB_ID.test(j.id) && typeof j.at === "number") {
+      return Date.now() - j.at < FLOW_JOB_KEEP ? { id: j.id, at: j.at, base: typeof j.base === "string" ? j.base : null } : null;
+    }
+    if (j) localStorage.removeItem(flowJobKey(issue)); // not one of ours: drop it
+    return null;
   } catch { return null; }
 }
-/** Save the run's id (`null`: forget it; `only`: only if it is still that run, not a newer one). */
-export function setFlowJob(issue: string, id: string | null, only?: string) {
+/** Save the run (`null`: forget it; `only`: only if it is still that run, not a newer one). */
+export function setFlowJob(issue: string, job: { id: string; base: string | null } | null, only?: string) {
   try {
-    if (id) localStorage.setItem(flowJobKey(issue), JSON.stringify({ id, at: Date.now() }));
+    if (job) localStorage.setItem(flowJobKey(issue), JSON.stringify({ ...job, at: Date.now() }));
     else if (!only || flowJob(issue)?.id === only) localStorage.removeItem(flowJobKey(issue));
   } catch { /* storage off: the run is only read while the dialog stays open */ }
 }
