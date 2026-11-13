@@ -18,10 +18,16 @@ def test_remind_reopens_a_handled_tag_later(client):
     client.put(f"/api/chats/{A}/messages/1/handled", json={"handled": True}, headers=H)
     assert client.get("/api/pending").json() == []
     later = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
-    assert client.put(f"/api/chats/{A}/messages/1/remind", json={"until": later}, headers=H).status_code == 204
+    r = client.put(f"/api/chats/{A}/messages/1/remind", json={"until": later}, headers=H)
+    assert r.status_code == 200 and r.json() == {"was": "me"}
     m = store.get_message(A, 1)
     assert not m.handled and m.handled_by == "" and m.snoozed_until is not None
     assert client.get("/api/pending").json() == []  # hidden until then
+    # Undo puts back how it was done, quietly (no cascade to its Q&A / sessions)
+    client.put(f"/api/chats/{A}/messages/1/remind", json={"until": None, "restore": "me"}, headers=H)
+    m = store.get_message(A, 1)
+    assert m.handled and m.handled_by == "me" and m.snoozed_until is None
+    client.put(f"/api/chats/{A}/messages/1/remind", json={"until": later}, headers=H)
     client.put(f"/api/chats/{A}/messages/1/remind", json={"until": None}, headers=H)
     assert [i["message"]["message_id"] for i in client.get("/api/pending").json()] == ["1"]
     assert client.put(f"/api/chats/{A}/messages/9/remind", json={"until": None}, headers=H).status_code == 404

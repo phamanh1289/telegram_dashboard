@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 
 from . import gitops
 from .agent import delete_task_files, read_task_prompt, read_task_result, task_active_at
-from .ai import session_rules
+from .ai import session_rules, task_state
 from .errors import ApiError, int_or_404
 from .links import delete_links, expand, has_links, links_dir
 from .models import HandledRequest, PrRequest, TaskAi, TaskDTO, TaskMessage, TaskRequest
@@ -138,6 +138,23 @@ async def start_task(
     await add_refs(s, task_id, refs, ask=ask_refs)
 
 
+async def send_turn(s, row: dict, typed: str, refs, edit: bool) -> None:
+    """A follow-up turn of a session (resumes it): typed text (+ its attached messages, `refs`), allowed to edit files
+    when `edit` (per turn, so a plan can be approved). The composer and autobe's relayed answers."""
+    task_id = row["id"]
+
+    # made in start(), once reserved: a double send must not rewrite the files a turn reads
+    async def text() -> str:
+        if has_links(row["prompt"] or "") and not links_dir(s.settings, task_id).is_dir():
+            log.info("task %s: saved link content gone, fetching it again", task_id)
+            await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])  # re-saves earlier files
+        return await expand(s, typed, task_id, chat_id=row["chat_id"])
+
+    mode = "edit" if edit else row["mode"]
+    await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, (row["model"], row["effort"]))
+    await add_refs(s, task_id, refs)
+
+
 def build_router(settings) -> APIRouter:
     r = APIRouter(prefix="/api/tasks")
 
@@ -179,7 +196,7 @@ def build_router(settings) -> APIRouter:
                 message_text=r["message_text"], handled=bool(r["handled"]),
                 kind=r["kind"], title=r["title"], model=r["model"], effort=r["effort"],
                 provider=split_session(r["session_id"] or "")[0],
-                ask_to=json.loads(r["ask_to"]) if r["ask_to"] else None,
+                ask_to=json.loads(r["ask_to"]) if r["ask_to"] else None, state=task_state(result),
             )
             for r, (result, prompt, active) in zip(rows, files, strict=True)
         ]  # fmt: skip
@@ -220,19 +237,7 @@ def build_router(settings) -> APIRouter:
         row = await _task(s, task_id, headless=True)
         if not row["session_id"]:
             raise ApiError(404, "task_not_found")
-        mode = "edit" if body.edit else row["mode"]  # per turn, so a plan can be approved
-        ai = (row["model"], row["effort"])
-
-        # made in start(), once reserved: a double send must not rewrite the files a turn reads
-        async def text() -> str:
-            if has_links(row["prompt"] or "") and not links_dir(settings, task_id).is_dir():
-                log.info("task %s: saved link content gone, fetching it again", task_id)
-                # re-saves earlier files
-                await expand(s, row["prompt"], task_id, summarize=False, chat_id=row["chat_id"])
-            return await expand(s, body.text, task_id, chat_id=row["chat_id"])
-
-        await s.agent.start(task_id, row["project"], text, mode, row["session_id"], True, ai)
-        await add_refs(s, task_id, [(x.chat_id, x.message_id) for x in body.refs])
+        await send_turn(s, row, body.text, [(x.chat_id, x.message_id) for x in body.refs], body.edit)
 
     @r.put("/{task_id}/ai", status_code=204)
     async def task_ai(task_id: str, body: TaskAi, request: Request) -> None:

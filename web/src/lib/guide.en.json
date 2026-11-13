@@ -4,10 +4,10 @@
 "tab": "telegram",
 "area": "Top bar › Telegram / YouTrack",
 "title": "Switch between Telegram and YouTrack",
-"what": "The Telegram / YouTrack tabs at the left of the top bar (also on the Settings page) switch between the two modules; the open tab is highlighted, and the YouTrack tab shows a red badge = the number of your tickets that need action now. Each sidebar holds only its own module's pages; ⌘K on either side still finds pages of the other.",
+"what": "The Telegram / YouTrack tabs at the left of the top bar (also on the Settings page) switch between the two modules; the open tab is highlighted, and the other tab shows a red badge for what is new: on Telegram = the tags under Việc cần xử lý › Đang chờ (no AI session yet), on YouTrack = tickets newly given to you since you last opened YouTrack (opening it clears them); with nothing new, the YouTrack tab shows an amber badge = the number of your tickets that need action now. Each sidebar holds only its own module's pages; ⌘K on either side still finds pages of the other.",
 "how": [
 {
-"t": "Hover \"YouTrack\" to see the tickets that need action now (yellow badge), then click to go to YouTrack",
+"t": "Hover \"YouTrack\" to see new tickets (red badge) or those that need action now (yellow badge), then click to go to YouTrack",
 "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
 },
 {
@@ -15,17 +15,17 @@
 "at": "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]"
 }
 ],
-"keys": "switch module youtrack telegram badge tickets need action now tabs"
+"keys": "switch module youtrack telegram badge tickets need action now tabs red badge new tickets new messages"
 },
 {
 "id": "ai-quota-pill",
 "tab": "telegram",
 "area": "Top bar › AI quota",
 "title": "See your current AI quota",
-"what": "The top bar button shows the AI mascot and a ring with the quota left (5-hour session, 7 days) and when it resets; it warns if the AI is not installed or not signed in. By default (Auto) it follows the AI running the everyday work on the open page; pick another AI (Claude, Codex, Agy) right in the button or in Settings › AI › Accounts › \"Quota in the top bar\".",
+"what": "The top bar button shows the AI mascot and a ring with the quota used (5-hour session, 7 days) and when it resets; it warns if the AI is not installed or not signed in. By default (Auto) it follows the AI running the everyday work on the open page; pick another AI (Claude, Codex, Agy) right in the button or in Settings › AI › Accounts › \"Quota in the top bar\".",
 "how": [
 {
-"t": "Watch the quota ring: it empties with the % left, turns yellow at 70% used and red from 90%; hover for details, click to open the quota panel",
+"t": "Watch the quota ring: it fills up with the % used, turns yellow at 70% used and red from 90%; hover for details, click to open the quota panel",
 "at": "Hạn mức AI"
 },
 {
@@ -45,17 +45,44 @@
 "keys": "quota usage limit claude codex antigravity agy 5h 7 days ai in use switch ai top bar pick agent"
 },
 {
+"id": "guide-bot",
+"tab": "telegram",
+"area": "Screen corner › Know-it-all assistant",
+"title": "Ask the know-it-all assistant about the app",
+"what": "The bot floating in a corner of every page is the user guide and a chat AI assistant in one. Ask in your own words: it searches the guide (and reads the app's own code, read-only, for rules, limits, why a button or item is shown or hidden, citing where), answers with the steps, then adds buttons that take you there: \"Open …\" opens the right page or Settings group, a feature's name runs a walk-through that lights each control to click. Ask follow-ups, it knows which page you are on; the conversation stays as you move between pages. Drag the bot and let go anywhere along a screen edge: it sticks to the nearest edge. It calls you by your YouTrack name (else your Telegram name). Settings › Know-it-all assistant: show / hide the bot, how it shows (Floating, Fixed at the right, In the top bar), its size, position, whether it reads the code, and its own model / effort.",
+"how": [
+{
+"t": "Click the bot in the screen corner (or F1); drag it to another corner if it covers a button",
+"at": "Hỏi trợ lý biết tuốt"
+},
+{
+"t": "Type a question (e.g. \"why don't I see the Send button?\") and press Enter, or click a suggested one",
+"at": "Hỏi trợ lý biết tuốt"
+},
+"Under the answer: click \"Open …\" to go to the right page, or a feature's name to have the app show you on screen; click \"New conversation\" to start over",
+{
+"t": "Change how it shows, its size, position, hide the bot, stop it reading the code or pick its model / effort in Settings › \"Know-it-all assistant\"",
+"at": "css:a[href^=\"/settings\"]"
+}
+],
+"keys": "know it all assistant bot user guide help f1 ask ai chat rule condition shown hidden why don't i see button code drag dock corner edge display floating fixed right top bar size"
+},
+{
 "id": "ai-account-dialog",
 "tab": "telegram",
 "area": "Top bar › AI quota › Accounts",
 "title": "AI accounts page (Overview / Model / Usage / History)",
-"what": "A panel sliding in from the right with every AI (Claude, Codex, Antigravity), one card each with its own animated mascot: sign-in, quota left, the features using that AI; plus model/effort choice, a cost report and the history of every AI run.",
+"what": "A panel sliding in from the right with every AI (Claude, Codex, Antigravity), one card each with its own animated mascot: sign-in, quota used, the features using that AI; plus model/effort choice, a cost report and the history of every AI run.",
 "how": [
 {
 "t": "Click the AI quota button in the top bar, then \"Account, usage and history\"",
 "at": "Hạn mức AI"
 },
-"\"Overview\" tab: one card per AI with sign in/out, quota left (hover the time to see when it resets) and \"Used for\" (which features run on that AI, with which model/effort)",
+"\"Overview\" tab: one card per AI with sign in/out, quota used (hover the time to see when it resets) and \"Used for\" (which features run on that AI, with which model/effort)",
+{
+"t": "Claude and Codex have free resets from your plan: a ticket icon with the count sits next to \"Quota used\" (and after \"In use\" in Settings › AI); click it to see each one (a grant holding several resets shows “×N”), the soonest to expire first (time left; hover for the exact time); click \"Reset now\" on the one to use and confirm to bring the quota back to 0%. Claude lists its resets only to a recent Claude CLI: run claude update when asked",
+"at": "Reset ngay"
+},
 {
 "t": "Open the \"Model\" tab to choose the model and effort for each feature",
 "at": "Model"
@@ -73,15 +100,15 @@
 "at": "30 ngày"
 },
 {
-"t": "Open the \"History\" tab for every AI run, including requests typed in Claude Code / Claude Desktop / Codex",
+"t": "Open the \"History\" tab (\"Run history\") for every AI run by day (the first day of the current page opens by itself), including requests typed in Claude Code / Claude Desktop / Codex",
 "at": "History"
 },
 {
-"t": "Filter by AI (Claude / Codex / Agy), choose rows per page (50 / 100 / 200 / 500) and page through at the bottom; the download button next to it exports CSV",
+"t": "Filter by AI (Claude / Codex / Agy), choose rows per page (50 / 100 / 200 / 500) and page through at the bottom; the download button next to it exports CSV. Paste a session code (YT-… from the YouTrack AI history, REF-… from AI Agent) into the \"Find session ID\" box to list just that session's runs (every day opens); open a row to see its error and Claude's session (transcript at ~/.claude/projects/*/<session>.jsonl)",
 "at": "Lọc theo AI"
 }
 ],
-"keys": "ai account accounts usage history runs cost csv model effort test model sign in claude"
+"keys": "ai account accounts usage history runs cost csv model effort test model sign in claude reset free resets codex"
 },
 {
 "id": "theme-toggle",
@@ -123,10 +150,10 @@
 "tab": "telegram",
 "area": "Top bar › Settings",
 "title": "Open Settings and see when an update is out",
-"what": "Opens the Settings page. When a new version is on GitHub, the button shows a dot and opens the GitHub section directly. Click it again while in Settings to go back.",
+"what": "Opens the Settings page. When a new version is on GitHub, the button shows a dot and opens the Update section directly. Click it again while in Settings to go back.",
 "how": [
 {
-"t": "Click the \"Settings\" gear; a small dot means an update is available and the page opens at the GitHub section",
+"t": "Click the \"Settings\" gear; a small dot means an update is available and the page opens at the Update section",
 "at": "css:a[aria-label^=\"Cài đặt\"]"
 },
 {
@@ -160,14 +187,14 @@
 "tab": "telegram",
 "area": "Sidebar › To do",
 "title": "To do (one inbox for every group)",
-"what": "Collects every tag you have not handled from all groups as cards, split into Pinned / Overdue / Waiting, the longest-waiting on top. The first line sums up how many are waiting and how many are overdue; filter by group with the buttons right below. Each card has Reply, Done, Snooze, Pin and Context buttons. The number on the item is the total unhandled; the browser tab title shows it too.",
+"what": "Collects every tag you have not handled from all groups as cards, split into 3 tabs at the top: Waiting / In progress / Pinned. Waiting holds tags with no AI session yet, split into Pinned / Overdue / Waiting, the longest-waiting on top. In progress (with a count) gathers tags that have at least one AI Agent, Check vs BE or AI assistant session, split into AI done, your turn (read the result, then reply) / AI working / Session stopped without a result; pinned tags stay in Waiting. The first line sums up how many are waiting and how many are overdue; filter by group with the buttons right below. Each card has the same buttons as a message row: Done, Snooze, Context, Check vs BE, the paperclip, # and the ⋯ menu (Pin to top, Open in Telegram…); click the card to reply. The number on the item is the total unhandled; the browser tab title shows it too. The ↻ button at the end of the top bar reads the tags and their AI sessions again; while it reads, the robot gathers messages from Telegram and writes them up as a to-do list. With no tags left it shows \"All done!\".",
 "how": [
 {
 "t": "Click \"To do\" in the sidebar; click it again to scroll back to the top",
 "at": "Việc cần xử lý"
 },
 {
-"t": "Click a message card (or the \"Reply\" button) to open the reply panel",
+"t": "Click a message card (or press Enter / r) to open the reply panel",
 "at": "css:li[data-testid=\"message\"]"
 }
 ],
@@ -178,13 +205,13 @@
 "tab": "telegram",
 "area": "Sidebar › Today",
 "title": "Today: everything waiting on you",
-"what": "The app's start page. It gathers work from both Telegram and YouTrack into one list, most urgent first: waiting tags (overdue in red), your tickets at risk, Q&A questions to nudge or with new answers, finished AI Agent sessions you have not seen, Report back, and open items in Briefing. The \"You are waiting on\" block lists snoozed tags (including those snoozed until someone replies / a ticket is done) and your Q&A questions nobody has answered. Click a row to go straight there; keys g then h.",
+"what": "The app's start page. It gathers work from both Telegram and YouTrack into one list, most urgent first: waiting tags (overdue in red), your tickets at risk, Q&A questions to nudge or with new answers, finished AI Agent sessions you have not seen, Report back, and open items in Briefing. Items about the same work are grouped into one thread by ID: the tag leads, with its AI sessions (REF-… IDs, including the AI assistant and running sessions), Q&A threads (#QA… codes; questions posted from a session reply to that tag) and tickets (ticket IDs named in the tag, Report back) under it; the count at the top counts threads. Under the title, chips sum up by kind (Urgent, Tag, AI Agent, Q&A…) with counts. Each thread is one row (narrow: the wait goes under the title); the small chip on the right with icons and a number (e.g. robot 2) says it has linked items: click it to show / hide them; hover the icon at the start of a row to see its source and group. The page is split into Urgent / Waiting on you / You are waiting on blocks: click a block's bar to fold / unfold it; each block shows its first 6 threads, click \"Show more\" for the rest. The \"You are waiting on\" block (folded at first; it opens by itself when nothing waits on you) lists snoozed tags (including those snoozed until someone replies / a ticket is done) and your Q&A questions nobody has answered. The ↻ button by the title reads every source again (tags, AI sessions, Q&A, tickets, Briefing); while it reads, the robot gathers the sources and writes them up as a to-do list. With nothing left it shows \"All done!\". The \"You are waiting on\" block has its own scene (the robot holding an hourglass, snoozed tags and Q&A questions drifting in) while your snoozed tags and Q&A threads are still being read. Click a row to go straight there; keys g then h.",
 "how": [
 {
 "t": "Click \"Today\" at the top of the sidebar",
 "at": "Hôm nay"
 },
-"Click a row to reply to a tag, open a ticket, open a Q&A thread or an AI Agent session"
+"Click a row (the tag or an item in its thread) to reply to a tag, open a ticket, open a Q&A thread or an AI Agent session"
 ],
 "keys": "today home start page waiting on you my work overview"
 },
@@ -211,15 +238,15 @@
 "tab": "telegram",
 "area": "Sidebar › Q&A",
 "title": "Q&A: ask in a group and track the answers",
-"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from a Give to AI Agent or Check vs BE session (the send button next to the point) with an @name get this code too: the AI tags the recipient by @username, or by name for someone without one (the copy button turns it into @Name). When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
+"what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from a Give to AI Agent or Check vs BE session (the send button next to the point) with an @name get this code too, naming who is asked from the AI's label above the message (#QA_BE_… / #QA_PO_… / #QA_QC_…) so you can tell who confirmed; attaching an answer (not your own message) from such a thread to a session adds \"PO confirmed\" / \"BE confirmed\" / \"QC confirmed\" plus \"Trace the codebase, then fix or refactor.\" to the session's prompt box: the AI tags the recipient by @username, or by name for someone without one (the copy button turns it into @Name). When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). Questions with a #QA code posted from an AI Agent / Check vs BE session also put that group on the Q&A follow list (My questions, unanswered reminders). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
 "how": [
 "Click Q&A in the sidebar (or g then q) and pick a group",
 "Click \"New question\", type the question with @name of the person asked, then Post",
-"Click a question on the left to read the whole thread and reply right in it",
-"Click a date header in the list to collapse / expand that day's questions",
+"Click a question on the left to read the whole thread and reply right in it; click the open question again to deselect it",
+"Days start collapsed except today (or the nearest day with questions); click a date header to collapse / expand it",
 "Mark a thread done: click the check button on it. Its tagged messages (someone else's question, the replies) become handled too (no reaction), and AI Agent sessions on them follow; Reopen undoes them",
 "Remove from Q&A: hover a question and click the trash can (undo in the notice); remove a whole day: the trash can on the date header, click twice. The messages stay on Telegram",
-"Send every answer to the AI Agent: click the paperclip on a message in the thread, tick \"Every reply in the thread\" (question not included), then pick a session (up to 10 messages per turn). Attaching a message (from Q&A or a tag) to a read-only (plan) session ticks its \"Allow code edits\" for the next turn; untick it if you only want to ask",
+"Send every answer to the AI Agent: click the paperclip on a message in the thread: with several messages, the popup lists each reply, all ticked; untick the ones you don't need (or \"Every reply in the thread\") then pick a session (up to 10 messages per turn). Attaching a message (from Q&A or a tag) to a read-only (plan) session ticks its \"Allow code edits\" for the next turn; untick it if you only want to ask",
 "See what went to AI (the label also shows on tags outside Q&A): a thread message sent with an AI Agent session's turn or a Check vs BE session shows \"Sent\" (click to open the session). It counts only once that turn was really sent (Enter, or the queue ran it), not when attached then removed; several messages in one turn are each marked. The question row says \"Sent to AI\" (or \"Sent to AI 1/3\" when only some replies went); the \"Not sent to AI\" filter gathers threads with messages not sent yet. The paperclip menu says \"already sent this\" next to a session that got that message"
 ],
 "keys": "qa q&a questions answers #qa code thread remind nudge reply attach ai agent session sent to ai not sent"
@@ -241,14 +268,14 @@
 "tab": "telegram",
 "area": "Sidebar › AI Agent",
 "title": "AI Agent page",
-"what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, AI assistant (the AI assistant asks in the reply panel, one session per message, no project needed; ask on, post questions to the group, Done like any session), and Briefing assistant chats. Sessions are ordered by their latest activity and grouped into Today / Yesterday / Last 7 days / Older; the day label sticks to the top while scrolling, click it to fold / unfold. The time on each session is its latest activity. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included).",
+"what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, AI assistant (the AI assistant asks in the reply panel, one session per message, no project needed; ask on, post questions to the group, Done like any session), and Briefing assistant chats (reopened like a session: ask on in the question box pinned at the bottom, Saved Messages / Copy on each answer). Sessions are ordered by their latest activity and grouped into Today / Yesterday / Last 7 days / Older; the day label sticks to the top while scrolling; only Today starts open (or the nearest group with sessions), click a label to fold / unfold. The time on each session is its latest activity. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included). Links in the task or a follow-up are read for the AI by the dashboard: Knowledge Base articles and YouTrack tickets (of the connected YouTrack), messages of tracked groups; other links (Zeplin, web) the AI can't open, so paste what it needs into the message.",
 "how": [
 {
 "t": "Click \"AI Agent\" in the sidebar",
 "at": "AI Agent"
 },
 {
-"t": "Pick a session on the left to see its details on the right",
+"t": "Pick a session on the left to see its details on the right; click the open session again to deselect it",
 "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 }
 ],
@@ -281,7 +308,7 @@
 "tab": "telegram",
 "area": "Briefing › My week",
 "title": "My week (tag handling time)",
-"what": "The \"My week\" clock button at the top of Briefing compares this week with last week: tags received, handled (replied / Done / auto-done), the median handling time and the time 90% of tags were done within, plus the 5 slowest groups.",
+"what": "The \"My week\" clock button at the top of Briefing compares this week with last week: tags received, handled (replied / Done / auto-done), the median handling time and the time 90% of tags were done within, plus the 5 slowest groups. If the numbers fail to load, an error line \"Couldn't read this week's numbers.\" shows instead of \"No numbers for this week yet.\".",
 "how": [
 {
 "t": "Open Briefing and click the \"My week\" clock button at the top right",
@@ -368,7 +395,7 @@
 "tab": "telegram",
 "area": "Header › Date range",
 "title": "Filter by date range",
-"what": "Shows only tags within the chosen dates; applies to the group list, counts and message lists.",
+"what": "Shows only tags within the chosen dates (the last 7 days by default; pick \"All\" to see every stored tag); applies to the group list, counts and message lists.",
 "how": [
 {
 "t": "Click the calendar button \"Pick the date range of tagged messages\"",
@@ -390,7 +417,7 @@
 "tab": "telegram",
 "area": "Group page › Message filter",
 "title": "Open / Handled / Whole group",
-"what": "Switches between unhandled tags, handled tags, and every message in the group read live from Telegram (not saved, no tag actions).",
+"what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Snoozing a message in Whole group saves it as a tag, back in the unhandled view when the time comes. \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
 "how": [
 {
 "t": "Click a group in the sidebar",
@@ -501,7 +528,7 @@
 "tab": "telegram",
 "area": "Group page › Summary (Digest)",
 "title": "Group summary (Digest)",
-"what": "The AI sums up the group's conversation: To confirm, Settled, Changes, Team impact, To-dos and Topics; read live from Telegram, regardless of tags. Busy groups (up to 2,000 messages at a time) are read in several passes and merged. To confirm / To-dos nobody resolved carry over to the next summary (labeled \"open since …\") until a new message answers / completes them, so nothing slips. For a group already in Briefing, the \"Summary\" button opens that group's Briefing (the summary continues from the last one); to see details or summarize another range, use the \"Open\" button next to the group in Briefing. Summaries of a custom range or of selected messages are for viewing only and do not replace the one in Briefing.",
+"what": "The AI sums up the group's conversation: To confirm, Settled, Changes, Team impact, To-dos and Topics; read live from Telegram, regardless of tags; messages from senders in Settings › Telegram › Always ignore are left out. Busy groups (up to 2,000 messages at a time) are read in several passes and merged. To confirm / To-dos nobody resolved carry over to the next summary (labeled \"open since …\") until a new message answers / completes them, so nothing slips. For a group already in Briefing, the \"Summary\" button opens that group's Briefing (the summary continues from the last one); to see details or summarize another range, use the \"Open\" button next to the group in Briefing. Summaries of a custom range or of selected messages are for viewing only and do not replace the one in Briefing.",
 "how": [
 {
 "t": "Click a group in the sidebar",
@@ -659,7 +686,7 @@
 "tab": "telegram",
 "area": "Briefing › Briefing assistant",
 "title": "Briefing assistant: ask the AI about every group",
-"what": "The right column (on phones: the \"AI assistant\" tab; on desktop hidden by default so the list is wider: click \"Ask AI\" at the top right to open it, X in the panel to hide it, the chat is kept and the app remembers your choice; available once at least one group is summarized) is a chat about the latest summary of every group: what to do first today, who is waiting on you, blockers, writing a standup… The AI reads only the summaries, no further Telegram messages. Answers can be copied or sent to Saved Messages. Each chat is saved under AI Agent › Briefing in this browser.",
+"what": "The right column (on phones: the \"AI assistant\" tab; on desktop hidden by default so the list is wider: click \"Ask AI\" at the top right to open it, X in the panel to hide it, the chat is kept and the app remembers your choice; available once at least one group is summarized) is a chat about the latest summary of every group: what to do first today, who is waiting on you, blockers, writing a standup… The AI reads only the summaries, no further Telegram messages. Answers can be copied or sent to Saved Messages. Each sourced point carries a group · #message chip (hover to see the item) and the same buttons as Briefing's rows: \"Reply\", \"Create ticket\", \"Check code\" (BE questions, decisions / changes; Dev role). Questions to ask come ready per group, each message with a copy button and \"Ask in Q&A\": that group's Q&A opens with the question filled in, tag who you ask, then send. Under the latest answer a few \"Ask next\" questions fill the box when clicked. Each chat is saved under AI Agent › Briefing in this browser.",
 "how": [
 {
 "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
@@ -885,6 +912,18 @@
 "keys": "priority always prioritize sender rules vip"
 },
 {
+"id": "msg-auto-be",
+"tab": "telegram",
+"area": "Tag › Snooze › BE automation",
+"title": "BE automation: AI sessions take BE's answers by themselves",
+"what": "Two per-sender rules so you no longer pass answers on by hand. \"Pass {name}'s answers on to the AI session\": when that person answers a question an AI Agent session posted (found up the reply chain by its #REF-… or #QA… code), that session goes on with the answer attached: it does what is now clear and drafts the next questions for the rest; it edits code only if the session was ever allowed to, a running session waits for its turn to end, a Done one is left alone. \"Always assign {name}'s messages to AI Agent\": each new message from that person opens a read-only session in the project you picked last in Assign AI Agent. Every session answer ends with a Status (Awaiting reply / Ready for Done / Needs you), shown in the AI Agent list and Today. Nothing is sent to Telegram by itself. Remove the rules in Settings › Telegram › Always ignore. Dev role only.",
+"how": [
+"Open the Snooze menu of a message from the BE bot and choose \"Pass {name}'s answers on to the AI session\" or \"Always assign {name}'s messages to AI Agent\"",
+"The notice at the bottom of the screen has an Undo button"
+],
+"keys": "be automation auto relay pass answers ai session agent bot be confirm status awaiting reply ready for done"
+},
+{
 "id": "msg-pin",
 "tab": "telegram",
 "area": "Message row › Pin",
@@ -892,15 +931,19 @@
 "what": "Pins a message to the top of the list and keeps it in \"Pinned\" (top of the To do page), even after it is handled.",
 "how": [
 {
-"t": "Click the pin icon \"Pin\" (hover the message's Done button to show it)",
-"at": "Ghim"
+"t": "Hover (or click) the ⋯ \"More actions\" button on a tag row to open the menu",
+"at": "Thêm thao tác"
+},
+{
+"t": "Click \"Pin to top\" (key P)",
+"at": "Ghim lên đầu"
 },
 {
 "t": "Click \"Pinned\" at the top of the To do page to see the message you just pinned.",
 "at": "Đã ghim"
 },
 {
-"t": "Click \"Unpin\" to remove it.",
+"t": "To unpin: open the ⋯ menu again and click \"Unpin\".",
 "at": "Bỏ ghim"
 }
 ],
@@ -933,19 +976,29 @@
 "what": "Opens that exact message in the Telegram app (basic groups can only be opened as a group on Telegram Web).",
 "how": [
 {
-"t": "Click the outward-arrow icon \"Open Telegram\" (hover the Done button to show it).",
-"at": "Mở Telegram"
+"t": "Hover (or click) the ⋯ \"More actions\" button on the message row to open the menu",
+"at": "Thêm thao tác"
 },
-"Hold Alt while clicking to open the web version."
+{
+"t": "Click \"Open in Telegram\" (key O); for a basic group the item reads \"Open the group in Telegram Web\"",
+"at": [
+"Mở trong Telegram",
+"Mở nhóm trên Telegram Web"
+]
+},
+{
+"t": "For the web version: click \"Open with Telegram Web\" just below",
+"at": "Mở bằng Telegram Web"
+}
 ],
-"keys": "open telegram open in telegram app telegram web message link alt"
+"keys": "open telegram open in telegram app telegram web message link menu"
 },
 {
 "id": "msg-row-actions-visibility",
 "tab": "telegram",
 "area": "Message row › Action buttons",
 "title": "Show the action buttons on messages",
-"what": "By default only the Done button is always shown; Snooze, Pin, Context, Check vs BE and Open Telegram sit behind it and appear on hover; you can make them always visible (touch screens always show them).",
+"what": "By default only the Done button is always shown; Snooze, Context, Check vs BE, the paperclip (attach to an AI session), # (copy message ID) and ⋯ (Pin to top, Open in Telegram…) sit behind it and appear on hover; you can make them always visible (touch screens always show them).",
 "how": [
 "By default only the Done button is always shown; hover it to reveal the rest.",
 {
@@ -967,14 +1020,14 @@
 "id": "msg-copy-id",
 "tab": "telegram",
 "area": "Message row › Message ID",
-"title": "Copy a message ID (for bug reports)",
-"what": "Click the #ID number to copy the message's database ID, for bug reports.",
+"title": "Copy a message ID",
+"what": "The # button in the message row's action strip copies the message ID (chat_id/message_id) in one click: paste it into an AI session's message box (Done sessions too) to attach the message, or use it in a bug report.",
 "how": [
 {
-"t": "Click the \"#<id>\" number at the right of the message row to copy the ID.",
-"at": "css:[data-testid=\"message\"] button[title^=\"ID \"]"
+"t": "Hover the message row and click the # button next to the paperclip in the action strip on the right.",
+"at": "css:[data-testid=\"message\"] button[aria-label=\"Chép ID tin\"]"
 },
-"A \"Copied ID …\" notice appears; paste it into your bug report."
+"A \"Copied ID …\" notice appears; paste it into an AI session or a bug report."
 ],
 "keys": "copy id message id bug report"
 },
@@ -1035,14 +1088,14 @@
 "tab": "telegram",
 "area": "Message row › Task",
 "title": "AI Agent results right on the message",
-"what": "A message assigned to the AI shows a \"Task in progress…\" / \"Task has a result\" block; you can use the result as a draft or reopen the session.",
+"what": "Right after the message time come labels for what has been done with it: the AI session (\"AI working…\" / \"AI answered\"), Check vs BE, Sent (attached to a session), the #REF session code, #QA, Draft, Retest. The most pressing label comes first (AI done > Check vs BE done > Retest > working > Sent > #REF / #QA > Draft) and every label spells itself out; several AI sessions in the same state share one label with \"+N\" (click opens the latest).",
 "how": [
 "Shown only on messages assigned to the AI.",
 {
-"t": "Click \"Open session\" to open it on the AI Agent page.",
-"at": "Mở phiên"
+"t": "Click the AI session label to open the session detail on the AI Agent page (Use as reply draft is there); hover the label to reveal copy session code; delete the session on the AI Agent page.",
+"at": "AI đã trả lời"
 },
-"Click the session code (REF-…) to copy #REF-…; paste it into a group message and the next message attaches to that session (a read-only session gets \"Allow code edits\" ticked). Hover the paperclip on a reply: the app reads the whole reply chain (the original of the original…) to find #REF-… and #QA…. A message carried by a session turn that was actually sent (attached then Enter, or the assigned tag) shows \"Sent\" in every message list (tags, Q&A); click it to open the session."
+"The copy session code button copies #REF-…; paste it into a group message and the next message attaches to that session (a read-only session gets \"Allow code edits\" ticked). Hover the paperclip on a reply: the app reads the whole reply chain (the original of the original…) to find #REF-… and #QA…. A message carried by a session turn that was actually sent (attached then Enter, or the assigned tag) shows \"Sent\" in every message list (tags, Q&A); click it to open the session."
 ],
 "keys": "task result session code ref open session use result as draft reply ai agent"
 },
@@ -1051,7 +1104,7 @@
 "tab": "telegram",
 "area": "Message row, Briefing › Check vs BE",
 "title": "Check vs BE (check BE's answer against the code)",
-"what": "The AI reads the question sent to BE and BE's answer, then inspects the project code: is it done right, what is missing, what needs fixing. Start it from the brain button on any message (that message is the answer; the question is picked for you: the message it replies to, otherwise the latest message from someone else), or the \"Check code\" button under Settled / Changes in Briefing and Summary, or the \"Check vs BE\" button on the Settled bar of a Q&A thread (question = the question message, answer = the decided message). The dialog stays open, showing the AI inspecting the code (the current step) and then the result in place; close it any time, the session keeps running in the background under AI Agent › Check vs BE; the message gets a \"Checking vs BE\" label, then \"View BE check\", click the label to open the result. The result uses the same template as Give to AI Agent sessions (Summary · Current state · To do · Risks · Questions to ask; several topics open with a ✅ / ⚠️ / ❌ / ⏳ table), and Questions to ask points have copy and send-to-group buttons as in AI Agent.",
+"what": "The AI reads the question sent to BE and BE's answer, then inspects the project code: is it done right, what is missing, what needs fixing. Start it from the brain button on any message (that message is the answer; the question is picked for you: the message it replies to, otherwise the latest message from someone else), or the \"Check code\" button under Settled / Changes in Briefing and Summary, or the \"Check vs BE\" button on the Settled bar of a Q&A thread (question = the question message, answer = the decided message). The dialog stays open, showing the AI inspecting the code (the current step) and then the result in place; close it any time, the session keeps running in the background under AI Agent › Check vs BE; the message gets a \"Checking vs BE\" label, then \"View BE check\", click the label to open the result. The result uses the same template as Give to AI Agent sessions (Summary · Current state · To do · Risks · Questions to ask; several topics open with a ✅ / ⚠️ / ❌ / ⏳ table), and Questions to ask points have copy and send-to-group buttons as in AI Agent. Dev role only.",
 "how": [
 {
 "t": "Click the brain icon \"Check vs BE\" on a reply (hover to show it), or \"Check code\" under Settled in Briefing, or \"Check vs BE\" on the Settled bar of a Q&A thread.",
@@ -1084,7 +1137,7 @@
 "tab": "telegram",
 "area": "Briefing › With BE · Group page › Summary",
 "title": "With BE: Q&A with BE grouped by topic",
-"what": "The AI marks the questions / answers / decisions with BE (API, fields, data) and groups them by topic: each card is a topic with a summary and a status \"Awaiting reply\" / \"Settled\" (waiting cards first); inside a card, each question (with who asked) is paired with BE's answer, or \"Awaiting BE's answer\" if there is none, with the background below: the issue and how it was settled. Each line names who raised it (if the AI left it blank, the sender of the first message; items carried over from an older summary may lack a name, click \"Re-read 7 days\" to get it). In Briefing, click \"Source · n\" under a line to read the messages the AI relied on (with sender and time; the asker's messages are highlighted \"asker\"); on a group's Summary page click the #id chip to jump to the message. An older summary without pairs: click Summarize again. When BE just replied to a question that was not summarized again yet, the card shows \"New reply\" with the reply (click Summarize again for the AI to settle it), and that question no longer counts as waiting; when the person who must answer writes after the question without using reply, the card shows \"Maybe answered\" (only a guess, still counted as waiting). The number on the tab counts only topics still waiting on BE. Items marked handled, or that you answered on Telegram, leave With BE by themselves. In Briefing it is the \"With BE\" tab across all groups; on a group's Summary page, choose \"With BE\". Summaries made before this feature have no BE items: the With BE tab shows a \"Re-read 7 days\" button for the AI to read again and group by topic.",
+"what": "The AI marks the questions / answers / decisions with BE (API, fields, data) and groups them by topic: each card is a topic with a summary and a status \"Awaiting reply\" / \"Settled\" (waiting cards first); inside a card, each question (with who asked) is paired with BE's answer, or \"Awaiting BE's answer\" if there is none, with the background below: the issue and how it was settled. Each line names who raised it (if the AI left it blank, the sender of the first message; items carried over from an older summary may lack a name, click \"Re-read 7 days\" to get it). In Briefing, click \"Source · n\" under a line to read the messages the AI relied on (with sender and time; the asker's messages are highlighted \"asker\"); on a group's Summary page click the #id chip to jump to the message. An older summary without pairs: click Summarize again. When BE just replied to a question that was not summarized again yet, the card shows \"New reply\" with the reply (click Summarize again for the AI to settle it), and that question no longer counts as waiting; when the person who must answer writes after the question without using reply, the card shows \"Maybe answered\" (only a guess, still counted as waiting). The number on the tab counts only topics still waiting on BE. Items marked handled, or that you answered on Telegram, leave With BE by themselves. In Briefing it is the \"With BE\" tab across all groups; on a group's Summary page, choose \"With BE\". Summaries made before this feature have no BE items: the With BE tab shows a \"Re-read 7 days\" button for the AI to read again and group by topic. Dev role only (QA / PO see these items in the To confirm / Settled tabs).",
 "how": [
 {
 "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\"",
@@ -1102,7 +1155,7 @@
 "tab": "telegram",
 "area": "Briefing › With BE · Group page › Summary",
 "title": "Check the code per topic discussed with BE",
-"what": "Inspects the project code against each topic discussed with BE (the button at the top of the tab sends the topics BE has answered / settled, up to 20 topics at a time; topics still waiting on BE are checked from their own card): settled topics are checked ✅ adapted / ⚠️ off / ❌ not done, topics still waiting on BE get ⏳ what the code does now and what to change depending on the answer; with path:line evidence. It runs in the background as a Read only session under AI Agent › Check vs BE. Each topic card has an ID #… (the message that opened the topic, click to jump to it in Summary): it stays the same when the AI re-summarizes or renames the topic, so the check result stays on the right topic. When done, each topic card in With BE shows a verdict label \"Code: adapted / off / not done / waiting on BE\" (click to open the session) and the top of the tab totals the verdicts; a topic with new messages since the check shows \"old\", so check it again. A topic that comes out ✅ adapted (with no new messages) has its items marked handled by themselves and leaves With BE; marking a Check vs BE session (AI Agent) Done also closes the topics it checked, along with their tags and Q&A; click \"Undo\" in the notice or untick to reopen. Leaving the page while it runs: a notice with the verdict totals appears when done (plus a system notification if enabled in Settings and the tab is hidden). Reopening the Check code page: if it is running you see the AI scene again; if there is a result there is a \"Last check\" line with a \"View table\" button, and a \"Skip N adapted topics\" button to recheck only the rest. Handled items are not sent.",
+"what": "Inspects the project code against each topic discussed with BE (the button at the top of the tab sends the topics BE has answered / settled, up to 20 topics at a time; topics still waiting on BE are checked from their own card): settled topics are checked ✅ adapted / ⚠️ off / ❌ not done, topics still waiting on BE get ⏳ what the code does now and what to change depending on the answer; with path:line evidence. It runs in the background as a Read only session under AI Agent › Check vs BE. Each topic card has an ID #… (the message that opened the topic, click to jump to it in Summary): it stays the same when the AI re-summarizes or renames the topic, so the check result stays on the right topic. When done, each topic card in With BE shows a verdict label \"Code: adapted / off / not done / waiting on BE\" (click to open the session) and the top of the tab totals the verdicts; a topic with new messages since the check shows \"old\", so check it again. A topic that comes out ✅ adapted (with no new messages) has its items marked handled by themselves and leaves With BE; marking a Check vs BE session (AI Agent) Done also closes the topics it checked, along with their tags and Q&A; click \"Undo\" in the notice or untick to reopen. Leaving the page while it runs: a notice with the verdict totals appears when done (plus a system notification if enabled in Settings and the tab is hidden). Reopening the Check code page: if it is running you see the AI scene again; if there is a result there is a \"Last check\" line with a \"View table\" button, and a \"Skip N adapted topics\" button to recheck only the rest. Handled items are not sent. Dev role only.",
 "how": [
 "Open Briefing › the \"With BE\" tab (or a group's Summary page › \"With BE\")",
 "Click \"Check code for N answered topics\" to run every topic BE answered / settled in the group, or \"Check code\" on one card (waiting cards too)",
@@ -1413,7 +1466,7 @@
 "tab": "telegram",
 "area": "AI Agent › Filters",
 "title": "Filter AI Agent sessions",
-"what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete them here, continue in the Assistant), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; only replying to the tag (the session's asks included) keeps the session in Doing; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running.",
+"what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete / ask on right here, question box pinned at the bottom like other sessions), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; only replying to the tag (the session's asks included) keeps the session in Doing; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running. The QA / PO roles only see AI assistant and Briefing (Give to AI Agent / Check vs BE show only when such a session already exists).",
 "how": [
 {
 "t": "Open \"AI Agent\" in the sidebar.",
@@ -1508,7 +1561,7 @@
 "tab": "telegram",
 "area": "AI Agent › Session › Actions",
 "title": "Done, stop, delete a session, open the group, per-session model",
-"what": "Manage a session: mark the tag Done (with / without a reaction), stop the running AI (the chat is kept), delete the session, open the group scrolled to the assigned message, use the result as a reply draft; pick a model and effort just for the session right in the message box. The \"Changes\" button at the top of a session (any session type, Check vs BE too once you allow file edits in the message box) opens the Changes page, only the files changed since the session started (your edits or another session's from before are left out; sessions from older versions still compare the whole folder with the last commit): the top shows the number of changed files, files by kind (new / edited / renamed / deleted) and total +/− lines; the left column lists files grouped New / Edited / Renamed / Deleted (click to jump), each file is a card you click to collapse / expand (the arrow button at the top collapses / expands all; long files start collapsed); view \"Side by side\" (Before on the left, After on the right) or \"One column\" (red − is before, green + is after), changed words within a line are bold; the \"Sessions\" button goes back. \"Branch + PR\" at the bottom (click twice to confirm) commits just those files (other files you are editing or staged stay as they are) on branch ai/<session>, pushes to the remote and opens a PR with gh. Files that look like secrets (.env, keys, certificates) are never committed. A turn that was cut off (server restart, stop) has a \"Continue\" button. The top of the chat shows the number of turns and the session's estimated cost; each turn shows its own cost (at the API price the CLI reports; subscription plans are not charged by this number).",
+"what": "Manage a session: mark the tag Done (with / without a reaction), stop the running AI (the chat is kept), delete the session, open the group scrolled to the assigned message, use the result as a reply draft; pick a model and effort just for the session right in the message box. The \"Changes\" button at the top of a session (any session type, Check vs BE too once you allow file edits in the message box) opens the Changes page, only the files changed since the session started (your edits or another session's from before are left out; sessions from older versions still compare the whole folder with the last commit; files inside a submodule show too, their path starting with the submodule's name, but “Branch + PR” only commits the main repo's files): the top shows the number of changed files and total +/− lines; the left column is a folder tree (a folder holding just one folder merges into one row a/b/c, click a folder to fold / unfold it, the A / M / R / D by a file means new / edited / renamed / deleted, click a file to jump to it), on the right the files sit under the same folders, each file is a card you click to collapse / expand (the arrow button at the top collapses / expands all; long files start collapsed); view \"Side by side\" (Before on the left, After on the right) or \"One column\" (red − is before, green + is after), changed words within a line are bold; the \"Sessions\" button goes back. \"Branch + PR\" at the bottom (click twice to confirm) commits just those files (other files you are editing or staged stay as they are) on branch ai/<session>, pushes to the remote and opens a PR with gh. Files that look like secrets (.env, keys, certificates) are never committed. A turn that was cut off (server restart, stop) has a \"Continue\" button. The top of the chat shows the number of turns and the session's estimated cost; each turn shows its own cost (at the API price the CLI reports; subscription plans are not charged by this number).",
 "how": [
 {
 "t": "Open \"AI Agent\" in the sidebar.",
@@ -1519,7 +1572,7 @@
 "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
 },
 {
-"t": "Pick a session in the list.",
+"t": "Pick a session in the list. Hover a session to show the trash icon: delete it quickly (asks to confirm) without opening it. The trash on a day bar (Today, Yesterday…) deletes every session of that day, also after asking.",
 "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
 },
 {
@@ -1578,7 +1631,7 @@
 "tab": "telegram",
 "area": "Browser notifications",
 "title": "Notify me of new tags",
-"what": "When the tab is hidden, the browser shows a notification with the sender's name and \"New tag\" (up to 3, plus \"N more new tags\"); click it to get back to the app. Message text is shown only when \"Show message text in macOS notifications\" is on in Settings › AI › Privacy (applies to both browser and macOS notifications).",
+"what": "When the tab is hidden, the browser shows a notification with the sender's name and \"New tag\" (up to 3, plus \"N more new tags\"); click it to get back to the app. Message text is shown only when \"Show message text in macOS notifications\" is on in Settings › Telegram › \"Notifications\" (applies to both browser and macOS notifications).",
 "how": [
 {
 "t": "Click the \"Settings\" gear",
@@ -1589,7 +1642,7 @@
 "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
 },
 {
-"t": "Under \"Queue\", turn on the \"Notify on new tags\" switch",
+"t": "Under \"Notifications\", turn on the \"Notify on new tags\" switch",
 "at": "Thông báo khi có tag mới"
 },
 "Allow notifications when the browser asks"
@@ -1634,11 +1687,11 @@
 "id": "settings-privacy",
 "tab": "settings",
 "area": "Settings › AI › Privacy",
-"title": "Privacy: hide phone numbers / emails, notification text",
-"what": "Other people's messages and ticket text are sent to the AI you choose. \"Hide phone / email sent to AI\" replaces phone numbers and emails with [phone] / [email] before sending (drafts, summaries, Briefing, Q&A, YouTrack AI). \"Show message text in macOS notifications\" (off by default) lets tag notifications show the text; off, they show only the group and sender.",
+"title": "Privacy: hide phone numbers / emails sent to AI",
+"what": "Other people's messages and ticket text are sent to the AI you choose. \"Hide phone / email sent to AI\" replaces phone numbers and emails with [phone] / [email] before sending (drafts, summaries, Briefing, Q&A, YouTrack AI). The \"Show message text in macOS notifications\" switch (off by default) is not here but in Settings › Telegram › \"Notifications\".",
 "how": [
 "Open Settings › AI and scroll down to \"Privacy\"",
-"Turn each switch on / off; it takes effect right away"
+"Turn the switch on / off; it takes effect right away"
 ],
 "keys": "privacy hide phone email notification text redact"
 },
@@ -1655,15 +1708,33 @@
 "keys": "access code token sign in lock open app bookmark browser unlock"
 },
 {
-"id": "settings-theme",
+"id": "settings-language",
 "tab": "settings",
-"area": "Settings › General › Appearance",
-"title": "Language, appearance, style, font, accent color, gradient",
-"what": "Choose the language (Match device / Tiếng Việt / English); choose Light / Dark / System; the Simple / Default / Vivid style; the font (Quicksand, Be Vietnam Pro, Inter, Nunito or the system font); the text size (Small / Medium / Large / Extra large); the accent color (a preset or pick your own); turn on Gradient with a second color. Saved in the browser.",
+"area": "Settings › General › Language",
+"title": "Language (Match device / Tiếng Việt / English)",
+"what": "Choose the app's language; \"Match device\" uses Vietnamese when the device does, English otherwise. Also switchable with the VI / EN button on the top bar. Saved in the browser.",
 "how": [
+{
+"t": "Choose the \"General\" section",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+},
 {
 "t": "Under \"Language\" choose \"Match device\", \"Tiếng Việt\" or \"English\"",
 "at": "css:[aria-label=\"Ngôn ngữ\"]"
+}
+],
+"keys": "language english vietnamese match device ngon ngu"
+},
+{
+"id": "settings-theme",
+"tab": "settings",
+"area": "Settings › Appearance",
+"title": "Appearance, style, font, AI mascot, accent color, gradient",
+"what": "Choose Light / Dark / System; the Simple / Default / Vivid style; the font (Quicksand, Be Vietnam Pro, Inter, Nunito or the system font); the text size (Small / Medium / Large / Extra large); the AI mascot that replaces the robot in every loading scene, empty page and AI box (the robot, an emoji, an AI drawing from your description or your own image; it also replaces the AI Agent icon on buttons and menus); the accent color (a preset, the slider, or the eyedropper button for any color / hex code) and Strength; turn on Gradient with a second color or pick a Blend. The Preview beside it (Group chat / Ticket / Loading) recolors as you drag. Saved in the browser.",
+"how": [
+{
+"t": "Choose the \"Appearance\" section",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#look\"]"
 },
 {
 "t": "Choose \"Light\", \"Dark\" or \"System\"",
@@ -1682,6 +1753,10 @@
 "at": "css:[aria-label=\"Cỡ chữ\"]"
 },
 {
+"t": "Under \"AI mascot\" pick the robot, an emoji, click the sparkle tile to have AI draw one from a description (tap an idea or type your own, pick the Cute / Pixel / Line art style, preview it in the app, then click \"Use this mascot\"; the AI draws in the background, so you can close the window and carry on, and a notice with \"View\" tells you when it is done), or click the image tile to upload your own",
+"at": "css:[aria-label=\"Linh vật AI\"]"
+},
+{
 "t": "Click a preset color swatch",
 "at": "css:[aria-label=\"Màu có sẵn\"]"
 },
@@ -1690,7 +1765,7 @@
 "at": "Gradient"
 }
 ],
-"keys": "language english vietnamese match device appearance theme light dark system style simple default vivid font text size accent color gradient"
+"keys": "appearance theme light dark system style simple default vivid font text size accent color gradient"
 },
 {
 "id": "settings-telegram-account",
@@ -1736,7 +1811,7 @@
 {
 "id": "settings-overdue",
 "tab": "settings",
-"area": "Settings › Telegram › Queue and notifications",
+"area": "Settings › Telegram › Queue",
 "title": "Overdue threshold",
 "what": "Tags waiting longer than the threshold (1, 2, 4, 8 or 24 hours) turn amber as overdue.",
 "how": [
@@ -1754,7 +1829,7 @@
 {
 "id": "settings-notify",
 "tab": "settings",
-"area": "Settings › Telegram › Queue and notifications",
+"area": "Settings › Telegram › Notifications",
 "title": "Turn on new tag notifications",
 "what": "Turns on browser notifications for new tags while the tab is hidden.",
 "how": [
@@ -1772,7 +1847,7 @@
 {
 "id": "settings-row-actions",
 "tab": "settings",
-"area": "Settings › Telegram › Queue and notifications",
+"area": "Settings › Telegram › Queue",
 "title": "Message action buttons",
 "what": "Choose to show the Pin, Context and Open Telegram buttons \"On hover over Done\" or \"Always\".",
 "how": [
@@ -1790,13 +1865,13 @@
 {
 "id": "settings-reply",
 "tab": "settings",
-"area": "Settings › Telegram › AI for Telegram",
+"area": "Settings › General › About you, for the AI",
 "title": "Summary platform",
 "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Mobile in general, No limit).",
 "how": [
 {
-"t": "Choose the \"Telegram\" section",
-"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+"t": "Choose the \"General\" section",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
 },
 {
 "t": "Pick the platform under \"Summarize for platform\"",
@@ -1808,17 +1883,17 @@
 {
 "id": "settings-briefing-model",
 "tab": "settings",
-"area": "Settings › Telegram › AI for Telegram",
+"area": "Settings › AI › Model and effort",
 "title": "A separate model and effort for Briefing / Digest",
-"what": "Briefing and Digest (whole-group summaries) run their own model/effort; leave \"Like summaries\" to use the choice for summaries and drafts. Also adjustable right on the Briefing page and in Settings › AI › Model and effort.",
+"what": "Briefing and Digest (whole-group summaries) run their own model/effort; leave \"Like summaries\" to use the choice for summaries and drafts. Also adjustable right on the Briefing page.",
 "how": [
 {
-"t": "Choose the \"Telegram\" section",
-"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+"t": "Choose the \"AI\" section",
+"at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
 },
 {
-"t": "Under \"Model for Briefing and Digest\", pick a model and drag the effort",
-"at": "css:[aria-label$=\"model và effort cho Briefing và Digest\"]"
+"t": "On the \"Briefing and Digest\" row, pick a model and drag the effort",
+"at": "css:[aria-label=\"Model cho Briefing và Digest\"]"
 }
 ],
 "keys": "briefing digest model effort separate group summary same as summary"
@@ -2078,23 +2153,23 @@
 "tab": "youtrack",
 "area": "Sidebar › AI history",
 "title": "AI history",
-"what": "Keeps up to 40 recent AI chats in the browser, split into Ticket / Dashboard tabs; reopen one to see the whole exchange and keep asking. Every AI use with a chat answer (tickets, home page, dashboard, members, release, reports, scheduled reports too) lands here as soon as it starts; AI ticket filtering and AI ticket drafts are saved too for review (no follow-up): closing the panel, reloading the page or closing the tab while the AI runs leaves it running in the background on your machine (shows \"Running\", open it to keep watching, with a Stop button; if it finished after the page reloaded it shows \"Done, open to view\", results kept for 1 hour); if it was stopped, failed or the server restarted it shows \"Not finished\", reopen it and click \"Run again\". Deleting a running session stops it. Rename a session with the pencil next to its name (leave it empty to go back to the automatic name). Code-reading sessions show each step the AI takes (reading files, searching, running commands) like the AI Agent, even when you reopen one running in the background. YouTrack only: Briefing assistant chats live under AI Agent › Briefing on the Telegram side. On the Telegram side, open it from the AI history icon in the sidebar.",
+"what": "Keeps up to 40 recent AI chats in the browser, split into All / Ticket / Metrics tabs; reopen one to see the whole exchange and keep asking. Every AI use with a chat answer (tickets, home page, dashboard, members, release, reports, scheduled reports too) lands here as soon as it starts; AI ticket filtering and AI ticket drafts are saved too for review (no follow-up): closing the panel, reloading the page or closing the tab while the AI runs leaves it running in the background on your machine (shows \"Running\", open it to keep watching, with a Stop button; once it finishes it switches to \"Done, open to view\" by itself, even after a reload, results kept for 1 hour); if it was stopped, failed or the server restarted it shows \"Not finished\", reopen it and click \"Run again\". Deleting a running session stops it. Rename a session with the pencil next to its name (leave it empty to go back to the automatic name). Code-reading sessions show each step the AI takes (reading files, searching, running commands) like the AI Agent, even when you reopen one running in the background. Each session (AI ticket filtering and AI ticket drafts too) has a YT-… code in the ticket bar at the top: click to copy it, type it in the session search to reopen it; a bug report with this code leads to the exact runs in Settings › AI › History. YouTrack only: Briefing assistant chats live under AI Agent › Briefing on the Telegram side. On the Telegram side, open it from the AI history icon in the sidebar.",
 "how": [
 {
 "t": "Click \"AI history\" in the sidebar (shown only when AI is on)",
 "at": "Lịch sử AI"
 },
 {
-"t": "Pick the \"Tickets\" or \"Dashboard\" tab",
-"at": "css:[role=\"tablist\"][aria-label=\"Loại phiên AI\"]"
+"t": "Pick the \"All\", \"Ticket\" or \"Metrics\" tab",
+"at": "css:[role=\"group\"][aria-label=\"Loại phiên AI\"]"
 },
 {
-"t": "Type in the \"Filter AI history\" box to search",
-"at": "Lọc lịch sử AI"
+"t": "Type in the \"Search AI sessions\" box to search",
+"at": "Tìm phiên AI"
 },
 {
 "t": "Click a session to reopen it and keep asking",
-"at": "css:aside[role=\"dialog\"] li.group > button"
+"at": "css:nav[aria-label=\"Phiên AI\"] li.group > button"
 },
 {
 "t": "A \"Not finished\" session: open it and click \"Run again\" to rerun the unanswered turn",
@@ -2106,11 +2181,11 @@
 },
 {
 "t": "Delete one session: click the trash can while hovering the session",
-"at": "css:aside[role=\"dialog\"] button[aria-label^=\"Xóa phiên\"]"
+"at": "css:nav[aria-label=\"Phiên AI\"] button[aria-label^=\"Xóa phiên\"]"
 },
 {
-"t": "Or \"Clear all\", then click again at \"Really delete … sessions?\"",
-"at": "css:label:has(input[aria-label=\"Lọc lịch sử AI\"]) + button"
+"t": "Or \"Clear all\" (on the other tabs \"Delete N sessions\"), then click again at \"Click again to delete N sessions\"",
+"at": "css:nav[aria-label=\"Phiên AI\"] > button:last-child"
 }
 ],
 "keys": "ai history sessions reopen keep asking delete session rename run again"
@@ -2120,31 +2195,31 @@
 "tab": "youtrack",
 "area": "Sidebar › Create ticket",
 "title": "Create a new ticket (AI drafts it from rough notes)",
-"what": "Create a YouTrack ticket right in the dashboard. The AI can draft the title, Type, Priority and a templated description from rough notes; before creating, similar open tickets are flagged.",
+"what": "Create a YouTrack ticket right in the dashboard. The AI can draft the title, Type, Priority and a templated description from rough notes; before creating, similar open tickets are flagged; if that check fails, the form shows an error.",
 "how": [
 {
-"t": "Click \"Create ticket\" in the sidebar (hidden with MOCK data)",
+"t": "Click \"Create ticket\" in the sidebar",
 "at": "Tạo ticket"
 },
 {
-"t": "Paste rough notes into the \"Rough notes for the AI\" box",
-"at": "Ghi chú thô cho AI"
+"t": "In \"AI draft\" mode, describe the problem / paste rough notes into the \"Problem / request for the AI\" box at the bottom of the dialog",
+"at": "Vấn đề / yêu cầu cho AI"
 },
 {
-"t": "Click \"AI drafts the ticket\" (when AI is on)",
-"at": "AI soạn ticket"
+"t": "Click \"AI draft\" in the box (or Enter; when AI is on)",
+"at": "css:[data-slot=\"dialog-content\"] footer button.bg-hl"
 },
 {
-"t": "Check the \"Title\"; if a similar ticket is flagged, click its ID to view it",
+"t": "Check the \"Title\"; if a \"… related tickets\" button shows at the bottom of the dialog, click it to review them (if the check fails it says \"Could not check for duplicate tickets\")",
 "at": "Tiêu đề"
 },
 {
-"t": "Choose Type, Priority, Assignee",
-"at": "css:[data-slot=\"dialog-content\"] div.grid-cols-3"
+"t": "Choose Project, Type, Priority, Assignee",
+"at": "css:[data-slot=\"dialog-content\"] fieldset"
 },
 {
 "t": "Click \"Create ticket\" at the bottom of the dialog",
-"at": "css:[data-slot=\"dialog-footer\"] > button:last-child"
+"at": "css:[data-slot=\"dialog-content\"] footer > button:last-child"
 }
 ],
 "keys": "create ticket create issue new ticket ai draft rough notes duplicate ticket"
@@ -2486,8 +2561,8 @@
 "what": "When new bugs in the last 7 days reach 3 or more and exceed 1.5 times the average of the previous 4 weeks (project-wide or per module), a yellow \"Bug spike\" button appears with the hot modules.",
 "how": [
 {
-"t": "Click the red \"Bug spike\" box (shown only when new bugs rise unusually) to see \"New bugs, 7 days\"",
-"at": "css:button[role=alert]"
+"t": "Click the yellow \"Bug spike\" button (shown only when new bugs rise unusually) to see \"New bugs, 7 days\"",
+"at": "Bug tăng đột biến"
 },
 "Press Esc to close the side panel"
 ],
@@ -2498,7 +2573,7 @@
 "tab": "youtrack",
 "area": "Testing (QA)",
 "title": "My test results + Copy standup",
-"what": "How many tickets you tested Today / the last 24 hours / 7 days, split into passed and returned (read from the state history); a ready-made QC standup paragraph.",
+"what": "How many tickets you tested Today / the last 24 hours / 7 days, split into passed and returned (read from the state history); a ready-made QC standup paragraph. Counts all your verdicts, regardless of the Sprint / People filter at the top.",
 "how": [
 {
 "t": "Click \"… pass\" (e.g. \"2 pass\") in a column to see the list of passed tickets",
@@ -2978,8 +3053,8 @@
 "id": "yt-chon-nhieu-thao-tac-hang-loat",
 "tab": "youtrack",
 "area": "Ticket › Table › Bulk actions",
-"title": "Select several tickets, bulk-change the assignee, ask the AI",
-"what": "Tick several tickets to change their assignee at once (with undo) or open an AI session about the selected tickets.",
+"title": "Select several tickets, bulk-change Assignee / State / Priority, ask the AI",
+"what": "Tick several tickets to change their Assignee, State (following the workflow) or Priority at once: picking a value applies it right away, with undo; tickets that fail stay selected so you can retry. Or open an AI session about the selected tickets.",
 "how": [
 {
 "t": "Click \"Tickets\"",
@@ -2994,23 +3069,20 @@
 "at": "css:tbody tr[data-id] input[type=\"checkbox\"]"
 },
 {
-"t": "Click \"Assignee: unchanged\" on the \"… tickets selected\" bar",
-"at": "Assignee: giữ nguyên"
+"t": "Click \"Assignee\" on the \"… tickets selected\" bar (or \"State\" / \"Priority\")",
+"at": "css:[role=\"region\"][aria-label=\"Thao tác hàng loạt\"] button[aria-label^=\"Đổi assignee\"]"
 },
 {
-"t": "Type a name in the \"Search people\" box",
-"at": "Tìm người"
+"t": "Type a name in the \"Search people…\" box",
+"at": "Tìm người…"
 },
 {
-"t": "Pick a person",
-"at": "css:[role=\"region\"][aria-label=\"Thao tác hàng loạt\"] button[aria-current]"
+"t": "Pick a person: it applies to every selected ticket right away",
+"at": "css:[role=\"listbox\"][aria-label^=\"Đổi assignee\"] [role=\"option\"]"
 },
-{
-"t": "Click \"Apply\"",
-"at": "Áp dụng"
-}
+"If it was a mistake, click Undo in the notice"
 ],
-"keys": "select several bulk change assignee apply deselect select all"
+"keys": "select several bulk change assignee change state priority deselect select all"
 },
 {
 "id": "yt-doi-assignee-trong-bang",
@@ -3127,19 +3199,16 @@
 "id": "yt-hien-them",
 "tab": "youtrack",
 "area": "Ticket › Bottom of the table",
-"title": "Show more tickets",
-"what": "The table shows the first 600 tickets; click to load more.",
+"title": "More tickets as you scroll",
+"what": "The table shows the first 150 rows; scrolling near its end shows 150 more by itself.",
 "how": [
 {
 "t": "Click \"Tickets\"",
 "at": "Ticket"
 },
-{
-"t": "Scroll to the bottom of the table and click \"Show … more tickets\" (only with more than 600 tickets)",
-"at": "Hiện thêm"
-}
+"Scroll to the bottom of the table: the next rows appear by themselves"
 ],
-"keys": "show more load more pagination"
+"keys": "show more load more pagination scroll infinite"
 },
 {
 "id": "yt-tim-toan-cuc",
@@ -3215,7 +3284,7 @@
 "tab": "youtrack",
 "area": "Report back",
 "title": "Follow up when a ticket moves to Fixed / Done (even while on Telegram)",
-"what": "When one of your tickets that someone asked about on Telegram moves to Fixed / Done, the app reminds you to get back to the person who asked, even while you are on the Telegram page or have just reopened the app (what you have seen is saved in the browser). It costs no extra YouTrack calls.",
+"what": "When one of your tickets that someone asked about on Telegram moves to Fixed / Done, the app reminds you to get back to the person who asked. The server checks every 3 minutes even with no page open (the same round wakes tags snoozed until a ticket is done); the list is kept on this machine, so every browser sees the same one. Reply to that message (on the web or your phone) and the item is done; click X to skip it.",
 "how": [
 "A notice at the bottom of the screen shows \"<ID>: …\"",
 "Open the message in To do to write your follow-up"
@@ -3254,7 +3323,7 @@
 "tab": "youtrack",
 "area": "Side panel › Ticket",
 "title": "Change State / Priority / Assignee",
-"what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow); the notice has an undo button.",
+"what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
 "how": [
 {
 "t": "Click \"Tickets\"",
@@ -3266,15 +3335,15 @@
 },
 {
 "t": "Click State (with the ▾ arrow) and pick a new value",
-"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi State\"]"
+"at": "css:aside[role=\"dialog\"] dl > div:nth-child(1) dd button[aria-haspopup]"
 },
 {
 "t": "Click Priority and pick a new value",
-"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi Priority\"]"
+"at": "css:aside[role=\"dialog\"] dl > div:nth-child(3) dd button[aria-haspopup]"
 },
 {
 "t": "Under Assignee, pick a new person or \"Unassigned\"",
-"at": "css:aside[role=\"dialog\"] select[aria-label^=\"Đổi assignee\"]"
+"at": "css:aside[role=\"dialog\"] dl > div:nth-child(2) dd button[aria-haspopup]"
 },
 "Click undo in the notice if it was a mistake"
 ],
@@ -3342,40 +3411,6 @@
 "keys": "similar tickets related duplicate ai duplicate check"
 },
 {
-"id": "yt-ai-agent-lien-ket",
-"tab": "youtrack",
-"area": "Side panel › Ticket › AI Agent",
-"title": "AI Agent results about a ticket",
-"what": "AI Agent runs (Telegram › AI Agent) that mention this ticket show up here; you can copy a result or put it into the comment box.",
-"how": [
-{
-"t": "Click \"Tickets\"",
-"at": "Ticket"
-},
-{
-"t": "Click a ticket row (click the title) to open the side panel",
-"at": "css:tbody tr[data-id]"
-},
-{
-"t": "Under \"AI Agent\", click a run to expand it",
-"at": "css:aside[role=\"dialog\"] section button:has(svg.lucide-chevron-down)"
-},
-{
-"t": "Click \"Post as comment\" (fills the comment box so you can edit, then send)",
-"at": "Đăng làm bình luận"
-},
-{
-"t": "Or click \"Copy\"",
-"at": "Copy"
-},
-{
-"t": "Or click \"Open AI Agent\"",
-"at": "Mở AI Agent"
-}
-],
-"keys": "ai agent trace code analysis result post as comment"
-},
-{
 "id": "yt-phien-ai",
 "tab": "youtrack",
 "area": "Side panel › AI session",
@@ -3399,12 +3434,8 @@
 "at": "Yêu cầu cho AI về các ticket đã chọn"
 },
 {
-"t": "Add tickets: type an ID in the \"Add ticket by ID\" box",
-"at": "Thêm ticket theo ID"
-},
-{
-"t": "Click +",
-"at": "Thêm ticket"
+"t": "Add tickets: type numbers or IDs in the \"Add 123, 456\" box (several separated by commas), then Enter",
+"at": "Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
 },
 {
 "t": "Click \"New chat\" to start over (or \"Cancel\" to stop, \"Copy\" to copy)",
@@ -3757,7 +3788,7 @@
 "tab": "youtrack",
 "area": "Dashboard › Work pace (Dev) / Speed & forecast (PO)",
 "title": "Tickets done per day, Lead time, Velocity, Moved across sprints",
-"what": "Tickets done per day (pick 7/14/30 days), Lead time (median, 85%, by Bug/Feature/Task), Velocity per sprint (PO), tickets moved across sprints several times.",
+"what": "Tickets done per day (pick 7/14/30 days), Lead time (median, 85%, by Bug/Feature/Task), Velocity per sprint (PO; a carried-over ticket counts only in the sprint it closed), tickets moved across sprints several times.",
 "how": [
 {
 "t": "Click \"Dashboard\" in the sidebar",
@@ -3843,7 +3874,7 @@
 "tab": "youtrack",
 "area": "Sidebar › Members",
 "title": "Members page (one person at a time)",
-"what": "Pick a person to see their numbers for a period (Open, In progress, Awaiting QC, Blocked, Overdue, No update >7 days, Moved sprint ≥2 times, Done, Bugs, Lead time) and the Open / Done lists.",
+"what": "Pick a person to see their numbers for a period (Open, In progress, Awaiting QC, Blocked, Overdue, No update >7 days, Moved sprint ≥2 times, Done, Bugs, Lead time) and the Open / Needs attention / Done lists. Lead time leaves out bulk-closure days, like the Dashboard.",
 "how": [
 {
 "t": "Click \"Members\" in the sidebar",
@@ -3859,10 +3890,10 @@
 },
 {
 "t": "Choose a \"Period\" of 7/14/30/60/90 days",
-"at": "css:main select"
+"at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
 },
 {
-"t": "Click a ticket under \"Open\" or \"Done\" to open it",
+"t": "Pick \"Open\" / \"Needs attention\" / \"Done\", then click a ticket to open it",
 "at": "css:main ul.divide-y > li > button"
 }
 ],
@@ -3884,17 +3915,17 @@
 "at": "css:main li > button[aria-current]"
 },
 {
-"t": "On the \"AI analysis …\" card click a button, e.g. \"Work summary\" (also \"Review\", \"Assessment\", \"Prep 1:1\")",
+"t": "On the \"Ask AI about {name}\" card click a button, e.g. \"Work summary\" (also \"Review\", \"Assessment\", \"Prep 1:1\")",
 "at": "Tóm tắt công việc"
 },
 "Wait for the AI to finish, then press Esc to close the panel",
 {
-"t": "Or edit the prompt in the request box",
+"t": "Or edit the prompt in the request box (the default prompt follows the \"Period\" unless you edited it)",
 "at": "Yêu cầu cho AI"
 },
 {
-"t": "Choose \"Tickets sent to AI\": Open / Done in the period / Both",
-"at": "css:select:has(option[value=both])"
+"t": "Choose \"Tickets sent to AI\": Open / Done / Both",
+"at": "css:[role=\"group\"][aria-label=\"Ticket gửi cho AI\"]"
 },
 {
 "t": "Click \"Analyze\"",
@@ -3906,33 +3937,33 @@
 {
 "id": "yt-so-sanh-team",
 "tab": "youtrack",
-"area": "Members › Compare the whole team",
+"area": "Members › Whole team",
 "title": "Compare the whole team + AI work split",
-"what": "Everyone side by side for a period (colored by value), sortable by column; the AI analyzes the load and suggests how to rebalance work.",
+"what": "Everyone side by side for a period (load bar, blocked / overdue / quiet >7 days, done count, lead time), sorted by Load / In progress / Risk / Done / Lead time; the AI analyzes the load and suggests how to rebalance work. Lead time leaves out bulk-closure days, like the Dashboard.",
 "how": [
 {
 "t": "Click \"Members\" in the sidebar",
 "at": "Thành viên"
 },
 {
-"t": "Click \"Compare the whole team\" at the top of the list",
-"at": "So sánh cả team"
+"t": "Click \"Whole team\" at the top of the list",
+"at": "Cả team"
 },
 {
-"t": "Choose a period of 7-90 days in the \"Period\" box",
-"at": "Kỳ"
+"t": "Choose a period of 7-90 days under \"Period\"",
+"at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
 },
 {
-"t": "Click a column header (e.g. \"Blocked\") to sort",
-"at": "Blocked"
+"t": "Pick the sort: Load / In progress / Risk / Done / Lead time",
+"at": "css:[role=\"group\"][aria-label=\"Sắp xếp\"]"
 },
 {
-"t": "Click \"AI workload analysis & split\"; the AI runs in the side panel",
-"at": "AI phân tích tải"
+"t": "Click \"AI work split\"; the AI runs in the side panel",
+"at": "AI chia việc"
 },
 {
-"t": "Press Esc to close the panel, then click a row to see that person's details",
-"at": "css:tbody tr[tabindex=\"0\"]"
+"t": "Press Esc to close the panel, then click a person to see their details",
+"at": "css:main ul.divide-y > li > button"
 }
 ],
 "keys": "compare whole team team compare team load split work rebalance workload"
@@ -3956,11 +3987,14 @@
 {
 "id": "yt-du-lieu-mock",
 "tab": "youtrack",
-"area": "Top of page",
-"title": "MOCK data without a token",
-"what": "Until a YouTrack token is pasted, the page shows sample data and write actions (creating tickets, changing state, comments) and AI are off.",
+"area": "YouTrack › No token yet",
+"title": "No token yet: opens Settings › YouTrack",
+"what": "Until a YouTrack token is pasted, opening the YouTrack tab switches to Settings › YouTrack to connect; there is no sample data.",
 "how": [
-"If you see the line \"Using MOCK data…\" at the top of the page, there is no token yet",
+{
+"t": "Click \"YouTrack\" in the top bar: without a token the page switches to Settings › YouTrack by itself",
+"at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+},
 {
 "t": "Click the \"Settings\" icon at the right of the top bar",
 "at": "Cài đặt"
@@ -3982,7 +4016,7 @@
 "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
 }
 ],
-"keys": "mock sample data token youtrack connect settings"
+"keys": "no token not connected token youtrack connect settings mock"
 },
 {
 "id": "ai-dock",
@@ -4001,7 +4035,7 @@
 "tab": "telegram",
 "area": "Reply panel › Work trail",
 "title": "A message's work trail",
-"what": "Under the message you are replying to there is a \"Work trail\" line: tickets mentioned in the message with their state, the AI Agent session on this message, the Q&A thread, whether it has been answered. Click each step to go straight there. Hidden while the message has not reached any step.",
+"what": "Under the message you are replying to there is a \"Work trail\" line: tickets mentioned in the message with their state, the AI Agent / Check vs BE sessions on this message, the Q&A thread, whether it has been answered. Click each step to go straight there; a session step with a result opens the result right below, with “Use as reply draft” (into the open reply box) and “Open session”. Hidden while the message has not reached any step.",
 "how": [
 "Open the reply to a tag",
 "Click a step in the \"Work trail\" line"

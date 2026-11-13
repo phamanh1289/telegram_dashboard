@@ -1,5 +1,6 @@
 import asyncio
 import dataclasses
+import json
 
 import pytest
 
@@ -89,6 +90,19 @@ async def test_empty_zero_turn_result_on_resume_does_not_end_the_turn(tmp_path, 
     assert [(i["kind"], i.get("text")) for i in r.read("t1")[0]] == [("user", "hi"), ("result", "ok")]
 
 
+async def test_resumed_turn_reminds_the_prompt_language(tmp_path):
+    """A follow-up tells the AI to answer in the turn's language (old sessions carried "write in English");
+    the page's log keeps the user's own text."""
+    from telegram_dashboard.ai import LANG_TURN
+
+    sent = tmp_path / "stdin.txt"
+    done = '{"type":"result","result":"ok","num_turns":1}'
+    r = runner(tmp_path, f"#!/bin/sh\ncat >'{sent}'\necho '{done}'\n")
+    await r.start("t1", str(tmp_path), "còn câu hỏi nào không", "plan", "s1", True)
+    await asyncio.wait_for(r.pumps["t1"], 5)
+    assert LANG_TURN.strip() in sent.read_text() and r.read("t1")[0][0]["text"] == "còn câu hỏi nào không"
+
+
 async def test_stop_while_starting_cancels_the_launch(tmp_path):
     r = runner(tmp_path, SLOW)  # as Codex: it never names its session, so start() waits for it
     r.settings = dataclasses.replace(r.settings, codex_command=r.settings.ai_task_command)
@@ -149,7 +163,8 @@ async def test_git_changes_and_pr_leave_secrets_out(tmp_path, monkeypatch):
     (repo / ".env").write_text("TOKEN=x\n")
     (repo / "new.py").write_text("x = 1\n")
     c = await gitops.changes(str(repo))
-    assert c["branch"] == "main" and {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True, "new.py": False}
+    assert c["branch"] == "main"
+    assert {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True, "new.py": False}
     assert "+2" in c["diff"] and "+++ b/new.py\n@@ -0,0 +1,1 @@\n+x = 1" in c["diff"] and "TOKEN" not in c["diff"]
     monkeypatch.setenv("PATH", "/usr/bin:/bin")  # no gh here: the branch is pushed, the PR left to the user
     r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "")
@@ -214,3 +229,36 @@ def test_prime_codegraph_leaves_the_wal_files_a_read_only_sandbox_needs(tmp_path
     prime_codegraph(str(tmp_path))
     assert (tmp_path / ".codegraph" / "codegraph.db-shm").exists()
     prime_codegraph(str(tmp_path / "no-index"))  # no index: nothing to do
+
+
+async def test_git_changes_see_edits_inside_a_submodule(tmp_path, monkeypatch):
+    import subprocess
+
+    from telegram_dashboard import gitops
+    from telegram_dashboard.errors import ApiError
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    sub, repo = tmp_path / "sub", tmp_path / "repo"
+    g = lambda d, *a: subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)  # noqa: E731
+    for d in (sub, repo):
+        subprocess.run(["git", "init", "-q", "-b", "main", str(d)], check=True)
+        (d / "a.txt").write_text("1\n")
+        g(d, "add", ".")
+        g(d, "commit", "-qm", "init")
+    g(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(sub), "lib")
+    g(repo, "commit", "-qm", "sub")
+    (repo / "lib" / "a.txt").write_text("user\n")  # the user's edit before the session: not the session's
+    base = await gitops.snapshot(str(repo))
+    (repo / "lib" / "a.txt").write_text("ai\n")
+    (repo / "lib" / "new.kt").write_text("x\n")
+    c = await gitops.changes(str(repo), base)
+    assert {f["path"]: f["status"] for f in c["files"]} == {"lib/a.txt": "M", "lib/new.kt": "A"}
+    assert "+++ b/lib/a.txt" in c["diff"] and "-user\n+ai" in c["diff"]
+    old = await gitops.changes(str(repo), json.loads(base)[""])  # a session from before: the submodule against its HEAD
+    assert "-1\n+ai" in old["diff"]
+    with pytest.raises(ApiError) as e:
+        await gitops.open_pr(str(repo), "ai/x", "Sửa", "", base)
+    assert e.value.code == "submodule_only"

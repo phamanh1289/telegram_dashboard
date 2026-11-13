@@ -30,6 +30,9 @@ export type TicketPatch = Partial<Ticket> & { id: string };
 /** The newest save per ticket (`id`) and per field (`id:key`): an older answer or rollback never lands over a newer edit. */
 const newest = new Map<string, number>();
 let saves = 0;
+/** Tickets with a save in flight (count per id): their cached values are not YouTrack's yet, the watch must not act on them. */
+export const saving = new Map<string, number>();
+const unsave = (id: string) => { const c = (saving.get(id) ?? 1) - 1; if (c > 0) saving.set(id, c); else saving.delete(id); };
 /** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error.
  *  The newest save on a ticket takes YouTrack's whole answer (a State change can resolve it); an older one only its own fields.
  *  ponytail: a newest answer read before an older save landed can still hide that save until its own answer arrives. */
@@ -38,9 +41,13 @@ export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ti
   for (const k of [t.id, ...keys.map((k) => `${t.id}:${k}`)]) newest.set(k, n);
   const own = (from: Partial<Ticket>) => ({ id: t.id, ...Object.fromEntries(keys.filter((k) => newest.get(`${t.id}:${k}`) === n).map((k) => [k, from[k] ?? null])) });
   const back = Object.fromEntries(keys.map((k) => [k, t[k] ?? null])) as Partial<Ticket>;
-  await patch({ id: t.id, ...local });
-  try { const r = await call(); await patch(newest.get(t.id) === n ? r : own(r)); return true; }
-  catch (e) { await patch(own(back)); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
+  saving.set(t.id, (saving.get(t.id) ?? 0) + 1);
+  let r: Ticket;
+  try { await patch({ id: t.id, ...local }); r = await call(); }
+  catch (e) { unsave(t.id); await patch(own(back)); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
+  unsave(t.id);
+  await patch(newest.get(t.id) === n ? r : own(r));
+  return true;
 }
 
 const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view
@@ -87,7 +94,8 @@ function useYtState() {
   const meQ = useQuery(ytMeQuery);
   const me = meQ.data?.name ?? null;
 
-  const [wanted, setProjectRaw] = useState(() => qp().get("project") || getPref("project") || "VA");
+  // a link's ?project= becomes the saved one: the ticket form and the shell's watch read the tab's project from the pref
+  const [wanted, setProjectRaw] = useState(() => { const u = qp().get("project"); if (u) put("project", u); return u || getPref("project") || "VA"; });
   const ps = projects.data; // the saved project no longer exists: fall back to VA, else the first one
   const project = resolveProject(ps, wanted);
 

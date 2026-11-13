@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Bot, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Link2, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square, TicketPlus } from "lucide-react";
+import { ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Link2, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square, TicketPlus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
-import { type AiSkill, AiIdle, AiPromptBox, AiSend, AiResultCard, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
+import { AiFetching } from "@/components/ai/fetching";
+import { AiBotIcon, AiIdle, AiPromptBox, AiResultCard, AiSend, AiThinking, AiWriting, type AiSkill, useFollow, UserBubble } from "@/components/ai/chat";
 import { Avatar } from "@/components/chat-list";
 import { IssueDialog, TaskPage } from "@/components/composer-dialogs";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
@@ -27,7 +28,6 @@ import { onChanges } from "@/hooks/use-events";
 import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type Task } from "@/lib/api";
 import { copyText, draftKey, msgKey, remind, saveDraft, telegramLink, toast, useSessionOn } from "@/lib/inbox";
 import { splitAttachments } from "@/lib/attach";
-import { doneLoopMessage } from "@/lib/report-back";
 import { timeLabel } from "@/lib/time";
 import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/lib/prefs";
 import { cn, MOD } from "@/lib/utils";
@@ -281,7 +281,6 @@ export function Composer({
       unsure.current = false;
       latest.current = "";
       saveDraft(replyTo, ""); // also when it lands after the panel closed
-      doneLoopMessage(replyTo); // a "Báo lại" item for this tag is answered
       void qc.invalidateQueries({ queryKey: ["briefing-answered"] }); // …and a Briefing item citing it
       const at = remindAt(remindAfter); // "để mình check rồi báo": back on the list at that time (the pick at send)
       if (at) remind(replyTo, at).catch((e) => toast({ text: errorText(e, {}, t("Đã gửi, nhưng chưa đặt được nhắc lại")) }));
@@ -489,7 +488,7 @@ export function Composer({
                 <div role="toolbar" aria-label={t("Công cụ")} className="flex gap-1">
                   {aiConfigured && usesCode(role) && (
                     <Hint side="bottom" title="AI Agent" text={t("Giao cho AI Agent làm trong một dự án (sửa bug, thêm tính năng…)")}>
-                      <Button type="button" size="xs" variant="outline" className="rounded-full" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><Bot /> AI Agent</Button>
+                      <Button type="button" size="xs" variant="outline" className="rounded-full" aria-label="AI Agent" disabled={targetDeleted} onClick={() => setTaskOpen(true)}><AiBotIcon /> AI Agent</Button>
                     </Hint>
                   )}
                   {youtrackConfigured && (
@@ -745,15 +744,6 @@ const readJob = (key: string): SavedJob | null => {
 // error "": cancelled; code: the project read for it ("Trả lời từ code")
 type Turn = { prompt: string; at: number; analysis?: string; took?: number; error?: string; code?: string };
 
-const CODE_THINKING: Key[] = [
-  "Đang đọc câu hỏi…",
-  "Đang lục code dự án…",
-  "Đang lần theo màn hình và API…",
-  "Đang soi rule validate…",
-  "Đang đối chiếu nghiệp vụ…",
-  "Đang viết câu trả lời có căn cứ…",
-];
-
 const THINKING: Key[] = [
   "Đang đọc tin nhắn…",
   "Đang lục lại ngữ cảnh nhóm…",
@@ -784,7 +774,8 @@ function AiTurns({ turns, running, partial, missing, onMissing, session }: {
                   <Md text={live} />
                 </li>
                 <li><AiWriting /></li>
-              </> : <li><AiThinking lines={(turn.code ? CODE_THINKING : THINKING).map((l) => t(l))} /></li>
+              </> : turn.code ? <li><AiFetching kind="code" project={turn.code} className="min-h-0 py-2 [&_[role=status]]:w-auto" /></li>
+                : <li><AiThinking lines={THINKING.map((l) => t(l))} /></li>
             ) : turn.analysis ? (
               <li>
                 <AiResultCard aria-label={turn.code ? t("Trả lời từ code") : t("Tóm tắt và bước tiếp theo")} took={turn.took} dim={!last}

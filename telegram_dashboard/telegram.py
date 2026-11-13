@@ -5,11 +5,13 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from . import ai
 from .ai import _applescript_str
 from .config import run_cli
 from .errors import ApiError
@@ -100,6 +102,8 @@ class TelegramBridge:
         self._swap_lock = asyncio.Lock()  # two credential saves must not leave two clients on one session
         self._bg: set[asyncio.Task] = set()  # reactions, notifications
         self.me = ""  # logged-in account (@username or name), set by the transport on connect
+        self.me_name = ""  # its display name (the know-it-all bot calls the user by it)
+        self.on_tags = None  # async (new pending tags) -> None: autobe.AutoBe.on_tags, set by the app
         self._backfilled_at = datetime.fromtimestamp(0, UTC)  # last backfill that read everything
         if transport is not None:
             transport.attach(self)
@@ -204,7 +208,10 @@ class TelegramBridge:
             except PartialBackfill as e:  # keep what it read; the retry looks back as far again
                 log.warning("mention backfill cut short after %d tags", len(e.found))
                 found, retry = e.found, e.wait + 5
-            await self.db.write(self.store.store_mentions, found)
+            fresh = set(await self.db.write(self.store.store_mentions, found))
+            # ponytail: ids only (store_mentions' shape); the same id fresh in two groups at once is not told apart
+            if fresh and self.on_tags:
+                self._spawn(self.on_tags([m for _, _, m, _ in found if m.message_id in fresh]))
             if retry is None:
                 self._backfilled_at = started
         except Exception as e:
@@ -230,6 +237,8 @@ class TelegramBridge:
                 type(e).__name__,
             )  # fmt: skip
             return
+        if fresh and self.on_tags:
+            self._spawn(self.on_tags([m]))
         if fresh and self.notify:
             # the text only when Settings allow it: banners show on the lock screen / Notification Center
             body = m.text if NOTIFY_PREVIEW else "Mở dashboard để xem nội dung"
@@ -336,7 +345,8 @@ class TelegramBridge:
         except ValueError:
             raise ApiError(404, "reply_not_found") from None
         rec, _ = await self.db.write(
-            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote, qa=req.qa
+            self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote,
+            qa=req.qa, qa_role=req.qa_role,
         )
         if rec.status in ("sent", "sending") or (rec.status == "unknown" and not req.retry_unknown):
             return rec
@@ -374,7 +384,7 @@ class TelegramBridge:
         msg = sent.message or StoredMessage(
             chat_id=job["chat_id"],
             message_id=sent.message_id,
-            text=split_mentions(job["text"])[0],
+            text=split_format(job["text"])[0],
             date=datetime.now(UTC),
             reply_to_id=job["reply_to"],
             topic_id=job["topic_id"],
@@ -468,10 +478,21 @@ class TelethonTransport:
         from telethon import events
 
         self.bridge = bridge
+        ai.cached_username = self.cached_username
         c = self.client
         c.add_event_handler(self._on_new, events.NewMessage())
         c.add_event_handler(self._on_edit, events.MessageEdited())
         c.add_event_handler(self._on_deleted, events.MessageDeleted())
+
+    def cached_username(self, user_id: str) -> str | None:
+        """A user's @username from the session's entity cache (no network call): stored messages keep none."""
+        if not self.client.is_connected():
+            return None  # logged out: the session file may be gone, and a read would create an empty one
+        try:  # ponytail: Telethon's private _execute; its public lookups return (id, hash) only
+            row = self.client.session._execute("select username from entities where id = ?", int(user_id))
+        except (AttributeError, ValueError, sqlite3.Error):
+            return None
+        return row[0] if row and row[0] else None
 
     async def _convert(self, msg) -> StoredMessage:
         from telethon import utils
@@ -513,6 +534,10 @@ class TelethonTransport:
             await b.on_mention(await self._convert(msg), title, kind)
         elif await b.db.read(b.store.get_message, chat_id, msg.id):  # edit of a kept message
             await b.on_message(await self._convert(msg))
+        elif not edit and (reply_to := getattr(msg.reply_to, "reply_to_msg_id", None) if msg.is_reply else None):
+            # someone answers a tag (or my reply to it) without tagging me: a "Tới khi có người trả lời" snooze wakes
+            if await b.db.read(b.store.reply_snoozed, chat_id, reply_to):
+                await b.db.write(b.store.wake_on_reply, chat_id, reply_to)
 
     async def _on_edit(self, event) -> None:
         await self._on_new(event, edit=True)  # on_mention notifies only for tags it has not seen before
@@ -549,7 +574,10 @@ class TelethonTransport:
         except Exception as e:  # drafts just miss the hint
             log.debug("get_me failed: %s", type(e).__name__)
             return ""
-        return f"@{me.username}" if getattr(me, "username", None) else utils.get_display_name(me)
+        name = utils.get_display_name(me)
+        if self.bridge is not None:
+            self.bridge.me_name = name
+        return f"@{me.username}" if getattr(me, "username", None) else name
 
     # ---- login from the dashboard (Settings) --------------------------------
     async def send_code(self, phone: str) -> None:
@@ -759,12 +787,18 @@ class TelethonTransport:
         except errors.FloodWaitError as e:
             raise SendRejected("retry_after", int(e.seconds)) from e
 
-    async def _mention_entities(self, tags: list[tuple[int, int, int]]) -> list:
+    async def _entities(self, tags: list[tuple[int, int, int | str]]) -> list:
         from telethon import utils
         from telethon.tl import types
 
         out = []
         for off, length, uid in tags:
+            if uid == "code":
+                out.append(types.MessageEntityCode(off, length))
+                continue
+            if uid == "pre":
+                out.append(types.MessageEntityPre(off, length, ""))
+                continue
             try:  # known from the members list (session cache); unknown: the name goes as plain text
                 user = utils.get_input_user(await self.client.get_input_entity(uid))
             except (ValueError, TypeError):
@@ -779,8 +813,8 @@ class TelethonTransport:
         from telethon import errors
         from telethon.tl import functions, types
 
-        text, tags = split_mentions(text)
-        entities = await self._mention_entities(tags)
+        text, tags = split_format(text)
+        entities = await self._entities(tags)
         try:
             peer = await self.client.get_input_entity(int(chat_id))
             result = await self.client(
@@ -831,22 +865,27 @@ class TelethonTransport:
         raise RuntimeError("send result without message id")
 
 
-_MENTION = re.compile(r"\[([^\[\]\n]{1,64})\]\(tg://user\?id=(\d{1,20})\)")
+# ```block``` -> pre, `x` -> code, `[Name](tg://user?id=N)` (the reply box's tag of someone without a @username)
+# -> mention; leftmost match wins, so a tag inside backticks stays code.
+_FORMAT = re.compile(
+    r"```(?:[^\n`]*\n)?([\s\S]+?)\n?```|`([^`\n]+)`|\[([^\[\]\n]{1,64})\]\(tg://user\?id=(\d{1,20})\)"
+)
 
 
 def _u16(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
 
-def split_mentions(text: str) -> tuple[str, list[tuple[int, int, int]]]:
-    """`[Name](tg://user?id=N)` (the reply box's tag of someone without a @username) -> the text with just "Name",
-    and (offset, length, user_id) per tag in UTF-16 units, as Telegram entities count."""
+def split_format(text: str) -> tuple[str, list[tuple[int, int, int | str]]]:
+    """Markdown code spans and name tags -> plain text plus (offset, length, user_id | "code" | "pre") per span,
+    in UTF-16 units as Telegram entities count."""
     out, ents, at = [], [], 0
-    for m in _MENTION.finditer(text):
+    for m in _FORMAT.finditer(text):
         out.append(text[at : m.start()])
         off = _u16("".join(out))
-        out.append(m[1])
-        ents.append((off, _u16(m[1]), int(m[2])))
+        body, kind = (m[1], "pre") if m[1] is not None else (m[2], "code") if m[2] is not None else (m[3], int(m[4]))
+        out.append(body)
+        ents.append((off, _u16(body), kind))
         at = m.end()
     out.append(text[at:])
     return "".join(out), ents

@@ -17,9 +17,19 @@ const SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\))/; // code and links
 
 // Sections whose items the user forwards as is: questions to ask, things to confirm (the AI may answer in English).
 const ASK = /hỏi|confirm|xác nhận|làm rõ|\bask|clarif/i;
+// Who a section's asks go to, from its label ("**BE:**", "Tin gửi QC"): exactly one role named, else none.
+const ROLE = /\b(BE|PO|PM|QC|QA)\b/g;
+const ROLE_OF: Record<string, AskRole> = { BE: "BE", PO: "PO", PM: "PO", QC: "QC", QA: "QC" };
+export type AskRole = "BE" | "PO" | "QC";
+const roleIn = (t: string) => {
+  const r = new Set([...t.matchAll(ROLE)].map((m) => ROLE_OF[m[1]]));
+  return r.size === 1 ? [...r][0] : null;
+};
 type Pos = { start: { offset?: number }; end: { offset?: number } };
 type MdNode = { type: string; value?: string; position?: Pos; children?: MdNode[]; data?: { hProperties?: Record<string, unknown> } };
 const plain = (n: MdNode): string => n.value ?? (n.children ?? []).map(plain).join("");
+/** A section label: a heading, or a paragraph opening in bold ("**Cần hỏi lại**", "**BE:** x": its bold part). */
+const labelOf = (n: MdNode) => n.type === "heading" ? n : n.type === "paragraph" && n.children?.[0]?.type === "strong" ? n.children[0] : null;
 // A message to one person: "1. (BE) x / 2. (BE) y" → "1. x / 2. y" (the @mention already says who); mixed roles stay.
 const ITEM = /^(\s*(?:[-*+]|\d+[.)])\s+)(\([^)\n]{1,12}\)\s+)?/gm;
 const dropRole = (t: string) => {
@@ -72,9 +82,10 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
   const parse = (md: string) => this.parse(md); // the processor's parser, GFM included
   return (root: MdNode, file: { value: unknown }) => {
     const src = String(file.value);
-    const raw = (from?: number, to?: number) => src.slice(from, to).split("\n")
-      .map((l) => l.replace(/^(\s*>\s?)+/, "")).join("\n") // quote markers, on every line
-      .replace(/^\s*([-*+]|\d+[.)])\s+/, "").trim(); // the item's own bullet / number
+    const raw = (from?: number, to?: number, quote = false) => { // quote: a whole message, its "1." stays like its "2."
+      const t = src.slice(from, to).split("\n").map((l) => l.replace(/^(\s*>\s?)+/, "")).join("\n"); // quote markers, every line
+      return (quote ? t : t.replace(/^\s*([-*+]|\d+[.)])\s+/, "")).trim(); // a list item's own bullet / number
+    };
     const mark = (n: MdNode, text = raw(n.position?.start.offset, n.position?.end.offset)) => {
       text = text && dropRole(text);
       if (text && !/^\(.*\)$/.test(text)) n.data = { ...n.data, hProperties: { ...n.data?.hProperties, dataCopy: text } }; // "(gửi thẳng vào nhóm)" is a note
@@ -83,7 +94,13 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
     let cur: MdNode[] | null = null;
     let byHeading = false;
     for (const n of root.children ?? []) {
-      const label = n.type === "heading" ? n : n.type === "paragraph" && n.children?.[0]?.type === "strong" ? n.children[0] : null;
+      const label = labelOf(n);
+      // in an ask section, a bold role line ("**BE:**", "**Tin gửi QC:**") is a sub-label: the section goes on, the
+      // asks below it are that role's (dataRole); "**BE:** x" carries its own ask
+      if (label && cur && n.type !== "heading" && roleIn(plain(label)) && !ASK.test(plain(label))) {
+        mark(n, raw(label.position?.end.offset, n.position?.end.offset).replace(/^\**\s*:\s*/, ""));
+        continue;
+      }
       // under an ask heading, a bold line ("**Tin gửi BE:**") is a sub-label: only the next heading ends the section
       if (label && !(cur && byHeading && n.type !== "heading")) {
         cur = ASK.test(plain(label)) ? [] : null;
@@ -107,15 +124,27 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
           mark(n, n.value?.trim() && to(n) + n.value.trim());
           Object.assign(n, { type: "blockquote", children: parse(n.value ?? "").children, value: undefined });
         }
-        else if (n.type === "blockquote") mark(n, to(n) + raw(n.position?.start.offset, n.position?.end.offset));
+        else if (n.type === "blockquote") mark(n, to(n) + raw(n.position?.start.offset, n.position?.end.offset, true));
         else if (n.type === "paragraph") mark(n);
       }
     }
     // a quote opening with "@be_bot": a message to send, wherever it sits (e.g. after "Tin gửi BE:" in prose, no ask label)
     for (const n of root.children ?? []) {
       if (n.type !== "blockquote" || n.data?.hProperties?.dataCopy != null) continue;
-      const text = raw(n.position?.start.offset, n.position?.end.offset);
+      const text = raw(n.position?.start.offset, n.position?.end.offset, true);
       if (new RegExp(`^${TAG_AT}`).test(text)) mark(n, text);
+    }
+    // each ask's role (`dataRole`): the nearest label above (heading / bold line) naming one; a label naming none ends
+    // it. Prose naming a role in passing never sets it.
+    let role: AskRole | null = null;
+    const tagRole = (n: MdNode) => {
+      if (role && n.data?.hProperties?.dataCopy != null) n.data.hProperties.dataRole = role;
+    };
+    for (const n of root.children ?? []) {
+      const label = labelOf(n);
+      if (label) role = roleIn(plain(label));
+      tagRole(n);
+      if (n.type === "list") n.children?.forEach(tagRole);
     }
   };
 }
@@ -123,9 +152,9 @@ const ASK_PLUGINS = [remarkGfm, remarkAsks, remarkBreaks]; // breaks after asks:
 /** The AI Agent session's ID ("REF-97c501"): copied asks end with "#REF-97c501", so the tagged reply finds its session. */
 export const AskTag = createContext("");
 /** The send button next to each ask's copy button (AI Agent: post it to the session's group); null: none. */
-export const AskPost = createContext<((text: string) => ReactNode) | null>(null);
+export const AskPost = createContext<((text: string, role: AskRole | null) => ReactNode) | null>(null);
 export const ASK_BTN = "ml-1 inline-grid size-5 place-items-center rounded-sm align-[-0.2em] text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink";
-function CopyAsk({ text }: { text: unknown }) {
+function CopyAsk({ text, role }: { text: unknown; role?: unknown }) {
   const tag = use(AskTag);
   const post = use(AskPost);
   const t = useT();
@@ -135,7 +164,7 @@ function CopyAsk({ text }: { text: unknown }) {
     <Hint text={t("Copy ý này để hỏi / confirm")}>
       <button type="button" aria-label={t("Copy ý này")} onClick={() => void copyText(full.replace(/\[([^\]]+)\]\(tg:\/\/user\?id=\d+\)/g, "@$1"))} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
     </Hint>
-    {post?.(full)}
+    {post?.(full, typeof role === "string" ? role as AskRole : null)}
   </>;
 }
 
@@ -147,7 +176,10 @@ const Link = ({ href, children }: { href?: string; children?: ReactNode }) => <a
  * `asks`: items under a "cần hỏi / confirm" section get a copy button (AI answers).
  * Memoised: a long AI Agent log re-renders on every poll, but its old answers keep the same text.
  */
-export const Markdown = memo(function Markdown({ text, className, onTicket, asks }: { text: string | null | undefined; className?: string; onTicket?: (id: string) => void; asks?: boolean }) {
+export const Markdown = memo(function Markdown({ text, className, onTicket, asks, anchor }: {
+  text: string | null | undefined; className?: string; onTicket?: (id: string) => void; asks?: boolean;
+  anchor?: (hash: string) => ReactNode; // an in-page "[x](#…)" link drawn by the caller (Briefing answers' sources)
+}) {
   const t = useT(); // memo: re-renders on a language change through this subscription
   const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
   let src = asks ? splitAsks(text ?? "") : text ?? "";
@@ -157,15 +189,14 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
     // prompt-injected AI answer leaking data in its URL), so it stays a link the user chooses to open
     img: ({ src, alt }) => (typeof src !== "string" || !src ? null
       : src.startsWith("/api/") ? <ImageView src={src} alt={alt} /> : <Link href={src}>[{alt ? t("ảnh: {alt}", { alt }) : t("ảnh")}]</Link>),
-    a: onTicket
-      ? ({ href, children }) => (href?.startsWith("#ticket:") ? <button type="button" onClick={() => onTicket(href.slice(8))}>{children}</button> : <Link href={href}>{children}</Link>)
-      : Link,
+    a: ({ href, children }) => onTicket && href?.startsWith("#ticket:") ? <button type="button" onClick={() => onTicket(href.slice(8))}>{children}</button>
+      : anchor && href?.startsWith("#") ? anchor(href.slice(1)) : <Link href={href}>{children}</Link>,
     ...(asks && {
-      li: ({ node, children, ...p }) => <li {...p}>{children}<CopyAsk text={node?.properties.dataCopy} /></li>,
-      p: ({ node, children, ...p }) => <p {...p}>{children}<CopyAsk text={node?.properties.dataCopy} /></p>,
+      li: ({ node, children, ...p }) => <li {...p}>{children}<CopyAsk text={node?.properties.dataCopy} role={node?.properties.dataRole} /></li>,
+      p: ({ node, children, ...p }) => <p {...p}>{children}<CopyAsk text={node?.properties.dataCopy} role={node?.properties.dataRole} /></p>,
       // a message to send as is: the button sits top-right of the quote / code block
-      blockquote: ({ node, children, ...p }) => <blockquote {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-0 right-0 flex"><CopyAsk text={node.properties.dataCopy} /></span>}</blockquote>,
-      pre: ({ node, children, ...p }) => <pre {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-1 right-1 flex"><CopyAsk text={node.properties.dataCopy} /></span>}</pre>,
+      blockquote: ({ node, children, ...p }) => <blockquote {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-0 right-0 flex"><CopyAsk text={node.properties.dataCopy} role={node.properties.dataRole} /></span>}</blockquote>,
+      pre: ({ node, children, ...p }) => <pre {...p} className={cn(node?.properties.dataCopy != null && pad)}>{children}{node?.properties.dataCopy != null && <span className="absolute top-1 right-1 flex"><CopyAsk text={node.properties.dataCopy} role={node.properties.dataRole} /></span>}</pre>,
     }),
   };
   return (

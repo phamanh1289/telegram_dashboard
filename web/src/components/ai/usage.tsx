@@ -1,24 +1,26 @@
 "use client";
 
+import { Popover } from "@base-ui/react/popover";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, RefreshCw, RotateCcw } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, RefreshCw, RotateCcw, Search, Ticket } from "lucide-react";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Segmented } from "@/components/ui/segmented";
 import { AgentIcon } from "@/components/ai/agent-icon";
+import { useDayFold } from "@/components/ai/day-groups";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { Skeleton } from "@/components/ui/skeleton";
-import { type AiAccount, type AiRun, api, type ClaudeAccount } from "@/lib/api";
+import { type AiAccount, type AiResetResult, type AiRun, api, type ClaudeAccount, errorText } from "@/lib/api";
 import { fmtDate, type Key, t, tMaybe, useT } from "@/lib/i18n";
-import { useNow } from "@/lib/inbox";
+import { toast, useNow } from "@/lib/inbox";
 import { byUnit, clockLabel, dm, timeLabel } from "@/lib/time";
-import { cn, downloadCsv } from "@/lib/utils";
-import { card, type Effort, effortLabel, meterTone, type Provider, resetIn, sectionHead, useAccounts, useAiPrefs, windowName } from "@/components/ai/prefs";
+import { cn, downloadCsv, groupBy } from "@/lib/utils";
+import { type AccountView, card, type Effort, effortLabel, meterTone, type Provider, resetIn, sectionHead, useAccounts, useAiPrefs, windowName } from "@/components/ai/prefs";
 
 // The AI page's live quota (each CLI's card in Tổng quan), the Usage report and the History of every run in the period.
 
-/** Every quota window of this CLI, one line each: left %, a meter, when it resets (hover: the exact time). Nothing when it reports none. */
+/** Every quota window of this CLI, one line each: used %, a meter, when it resets (hover: the exact time). Nothing when it reports none. */
 export function Quota({ provider }: { provider: Provider }) {
   const t = useT();
   const a = useAccounts(60_000)[provider];
@@ -29,15 +31,16 @@ export function Quota({ provider }: { provider: Provider }) {
     mutationFn: () => provider === "claude"
       ? api<ClaudeAccount>("/claude/refresh", { method: "POST" }).then((x) => qc.setQueryData(["claude-account"], x))
       : api<AiAccount[]>("/ai/accounts?fresh=true").then((x) => qc.setQueryData(["ai-accounts"], x)),
+    onError: (e) => toast({ text: errorText(e, {}, t("Không đọc lại được hạn mức")) }),
   });
   if (a.checking) return <Skeleton className="h-12" />;
   const stale = a.usage_error === "no_token";
   if (!a.loggedIn || (!a.usage.length && !stale)) return null;
   const peak = Math.max(0, ...a.usage.map((u) => u.percent));
   return (
-    <section aria-label={t("Hạn mức còn lại")} className="grid gap-2">
+    <section aria-label={t("Hạn mức đã dùng")} className="grid gap-2">
       <span className="flex items-center justify-between gap-3 text-xs text-ink-3">
-        <span>{t("Hạn mức còn lại")}</span>
+        <span className="flex items-center gap-2">{t("Hạn mức đã dùng")}<ResetTicket provider={provider} /></span>
         <span className="flex items-center gap-1">
           {a.usage_at && <span>{t("Cập nhật {time}", { time: clockLabel(a.usage_at) })}</span>}
           <Hint side="bottom" text={t("Đọc lại hạn mức ngay")}>
@@ -61,16 +64,15 @@ export function Quota({ provider }: { provider: Provider }) {
       <ul className="grid gap-1.5">
         {a.usage.map((u) => {
           const used = Math.round(Math.min(100, Math.max(0, u.percent)));
-          const left = 100 - used;
           const name = windowName(u.label);
           return (
             <li key={u.label} className="grid grid-cols-[minmax(0,9.5rem)_minmax(3rem,1fr)_2.75rem_4.5rem] items-center gap-x-3 text-xs">
               <span className="truncate text-ink-2">{name}</span>
-              <span role="meter" aria-label={t("Còn lại, {name}", { name })} aria-valuenow={left} aria-valuemin={0} aria-valuemax={100}
+              <span role="meter" aria-label={t("Đã dùng, {name}", { name })} aria-valuenow={used} aria-valuemin={0} aria-valuemax={100}
                 className="h-1.5 overflow-hidden rounded-full bg-rule-2/45">
-                <span className={cn("block h-full origin-left rounded-full transition-transform duration-500 ease-(--ease-out)", meterTone(used))} style={{ transform: `scaleX(${left / 100})` }} />
+                <span className={cn("block h-full origin-left rounded-full transition-transform duration-500 ease-(--ease-out)", meterTone(used))} style={{ transform: `scaleX(${used / 100})` }} />
               </span>
-              <span className={cn("text-right font-mono font-bold tabular-nums", left <= 10 ? "text-error" : "text-ink")}>{left}%</span>
+              <span className={cn("text-right font-mono font-bold tabular-nums", used >= 90 ? "text-error" : "text-ink")}>{used}%</span>
               {u.resets_at ? (
                 <Hint side="bottom" text={t("Đặt lại lúc {time} {day}", { time: clockLabel(u.resets_at), day: dm(vnDay(u.resets_at)) })}>
                   <span tabIndex={0} aria-label={t("Đặt lại sau {span}", { span: resetIn(u.resets_at, now) })} className="flex items-center justify-end gap-1 truncate text-ink-3"><RotateCcw aria-hidden className="size-3 shrink-0" />{resetIn(u.resets_at, now)}</span>
@@ -80,7 +82,106 @@ export function Quota({ provider }: { provider: Provider }) {
           );
         })}
       </ul>
+      {a.resets_blocked === "cli_version" && (
+        <p className="text-xs text-ink-3">{t.n("Có thể còn lượt reset miễn phí: {name} chỉ báo cho CLI bản mới, chạy {cmd} rồi bấm đọc lại.", { name: "Claude", cmd: <code className="font-mono text-ink-2">claude update</code> })}</p>
+      )}
     </section>
+  );
+}
+
+type Credit = AccountView["resets"][number];
+
+/** The plan's free limit resets (Claude, Codex) as a ticket badge with the count, nothing when there are none.
+ *  Click (not hover: the list has buttons, and touch has no hover) opens each one, the soonest to expire first:
+ *  what it resets, time left (hover: the exact time), "Reset ngay" asks first, then uses that one.
+ *  Not answering is never "failed": the quota may already be back to 0%. */
+export function ResetTicket({ provider }: { provider: Provider }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const now = useNow();
+  const a = useAccounts(60_000)[provider];
+  const { info } = useAiPrefs();
+  const name = info(provider)?.name ?? provider;
+  const [open, setOpen] = useState(false);
+  // `key`: one per confirm, resent on a retry after no answer, so the provider spends the reset at most once
+  const [pick, setPick] = useState<(Credit & { key: string }) | null>(null);
+  const use = useMutation({
+    mutationFn: (p: Credit & { key: string }) => api<AiResetResult>(`/ai/${provider}/reset`, { method: "POST", json: { credit_id: p.id, request_id: p.key } }),
+    onSuccess: (r) => { if (r.outcome === "reset") { setPick(null); toast({ text: t("Đã reset hạn mức của {name}", { name }) }); } },
+    // the backend read the quota again
+    onSettled: () => qc.invalidateQueries({ queryKey: [provider === "claude" ? "claude-account" : "ai-accounts"] }),
+  });
+  if (!a.loggedIn || a.resets_left <= 0) return null;
+  const list = [...a.resets].sort((x, y) => (x.expires_at ?? "~").localeCompare(y.expires_at ?? "~"));
+  const more = a.resets_left - list.reduce((n, r) => n + (r.left ?? 1), 0); // Codex may cap its list
+  const until = (iso?: string | null) => (iso ? t("hết hạn {day}", { day: dm(vnDay(iso)) }) : t("không hết hạn"));
+  const NOT_USED: Partial<Record<AiResetResult["outcome"], string>> = {
+    nothingToReset: t("Hạn mức chưa dùng gì nên chưa cần reset; lượt vẫn còn."),
+    noCredit: t("Không còn lượt reset nào dùng được."),
+    alreadyRedeemed: t("Lượt này đã được dùng trước đó."),
+    cooldown: t("Vừa reset gần đây, chờ một lúc mới dùng được lượt tiếp; lượt vẫn còn."),
+    unknown: t("{name} trả kết quả lạ, xem lại hạn mức.", { name }),
+  };
+  const outcome = use.data && use.data.outcome !== "reset" && NOT_USED[use.data.outcome];
+  const label = t("{n} lượt reset miễn phí", { n: a.resets_left });
+  return (
+    <>
+      <Popover.Root open={open} onOpenChange={(o) => { setOpen(o); if (!o && !use.isPending) setPick(null); }}>
+        <Hint side="bottom" text={t("{label}: bấm để xem từng lượt và dùng", { label })}>
+          <Popover.Trigger aria-label={label}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-hl-wash px-1.5 text-2xs leading-5 font-bold text-hl-2 tabular-nums transition-colors duration-(--dur-micro) hover:bg-hl/25 data-popup-open:bg-hl/25">
+            <Ticket aria-hidden className="size-3.5" />{a.resets_left}
+          </Popover.Trigger>
+        </Hint>
+        <Popover.Portal>
+          <Popover.Positioner sideOffset={6} align="start" className="z-50 outline-none">
+            <Popover.Popup aria-label={t("Lượt reset miễn phí")}
+              className="grid w-80 max-w-[calc(100vw-2rem)] origin-(--transform-origin) grid-cols-1 gap-2 rounded-lg bg-cotton p-3 text-xs shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+              <Popover.Title className="flex items-center gap-1.5 text-sm font-bold text-ink">
+                <Ticket aria-hidden className="size-4 text-hl-2" />{t("Lượt reset miễn phí")}
+                <span className="ml-auto font-mono tabular-nums">{a.resets_left}</span>
+              </Popover.Title>
+              <ul className="grid gap-1">
+                {list.map((r) => {
+                  const soon = !!r.expires_at && Date.parse(r.expires_at) - now < 3 * 86_400_000;
+                  return (
+                    <li key={r.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-md bg-paper-2 px-2.5 py-2">
+                      <span className="grid min-w-0 gap-0.5">
+                        <span className="line-clamp-2 text-ink">{r.title ?? t("Lượt reset")}{(r.left ?? 1) > 1 && <span className="font-mono text-ink-3 tabular-nums"> ×{r.left}</span>}</span>
+                        {r.expires_at ? (
+                          <Hint side="bottom" text={t("Hết hạn lúc {time} {day}", { time: clockLabel(r.expires_at), day: dm(vnDay(r.expires_at)) })}>
+                            <span tabIndex={0} className={cn("w-fit", soon ? "font-bold text-warn" : "text-ink-3")}>{t("còn {span}", { span: resetIn(r.expires_at, now) })} · {until(r.expires_at)}</span>
+                          </Hint>
+                        ) : <span className="text-ink-3">{t("không hết hạn")}</span>}
+                      </span>
+                      {r.usable === false
+                        ? <span className="whitespace-nowrap text-ink-3">{t("chưa dùng được")}</span>
+                        : <Button variant="outline" size="xs" disabled={use.isPending} onClick={() => { use.reset(); setPick({ ...r, key: crypto.randomUUID() }); }}>{t("Reset ngay")}</Button>}
+                    </li>
+                  );
+                })}
+                {more > 0 && <li className="px-2.5 text-ink-3">{t("+{n} lượt khác", { n: more })}</li>}
+              </ul>
+              {/* asked here, not in a dialog: this sits inside the quota popover, which a dialog's click would close */}
+              {pick && (
+                <div role="alertdialog" aria-label={t("Dùng 1 lượt reset?")} className="grid gap-2 rounded-md border border-hl/40 bg-hl-wash/50 p-2.5">
+                  <p className="font-bold text-ink">{t("Dùng 1 lượt reset?")} <span className="font-normal text-ink-3">{pick.title ?? t("Lượt reset")} · {until(pick.expires_at)}</span></p>
+                  {(use.isError || outcome) && <p role="alert" className="text-error">{(use.isError && errorText(use.error, {
+                    ai_reset_unknown: t("{name} không trả lời nên chưa rõ đã reset chưa. Xem hạn mức trước khi bấm lại.", { name }),
+                    ai_reset_auth: t("Token đăng nhập của {name} CLI đã hết hạn: bấm đọc lại hạn mức rồi thử lại.", { name }),
+                    ai_reset_rate_limited: t("{name} đang chặn gọi dồn, thử lại sau ít phút (lượt chưa bị dùng).", { name }),
+                  }, t("Không reset được, thử lại sau."))) || outcome}</p>}
+                  <span className="flex justify-end gap-2">
+                    <Button variant="ghost" size="xs" disabled={use.isPending} onClick={() => setPick(null)}>{t("Hủy")}</Button>
+                    <Button size="xs" aria-busy={use.isPending} disabled={use.isPending} onClick={() => use.mutate(pick)}>{t("Reset ngay")}</Button>
+                  </span>
+                </div>
+              )}
+            </Popover.Popup>
+          </Popover.Positioner>
+        </Popover.Portal>
+      </Popover.Root>
+    </>
   );
 }
 
@@ -108,22 +209,11 @@ function totals(rows: AiRun[]): Totals {
   return rows.reduce((t, r) => ({ n: t.n + 1, failed: t.failed + (r.ok ? 0 : 1), tokens: t.tokens + tokens(r), cost: t.cost + (r.cost ?? 0), ms: t.ms + r.ms }),
     { n: 0, failed: 0, tokens: 0, cost: 0, ms: 0 });
 }
-/** Rows by key, keeping order. */
-function bucket(rows: AiRun[], key: (r: AiRun) => string) {
-  const m = new Map<string, AiRun[]>();
-  for (const r of rows) {
-    const k = key(r);
-    const list = m.get(k);
-    if (list) list.push(r);
-    else m.set(k, [r]);
-  }
-  return m;
-}
-function groupBy(rows: AiRun[], key: (r: AiRun) => string) {
-  return [...bucket(rows, key)].map(([k, rs]) => [k, totals(rs)] as const).sort((a, b) => b[1].cost - a[1].cost || b[1].n - a[1].n);
+function totalsBy(rows: AiRun[], key: (r: AiRun) => string) {
+  return [...groupBy(rows, key)].map(([k, rs]) => [k, totals(rs)] as const).sort((a, b) => b[1].cost - a[1].cost || b[1].n - a[1].n);
 }
 /** Rows (newest first) into Vietnam days, keeping order. */
-const byVnDay = (rows: AiRun[]) => bucket(rows, (r) => vnDay(r.at));
+const byVnDay = (rows: AiRun[]) => groupBy(rows, (r) => vnDay(r.at));
 
 function useRuns(days: number) {
   return useQuery({
@@ -170,7 +260,7 @@ export function UsageTab({ days, setDays }: { days: number; setDays: (d: number)
       <section className="grid gap-2.5">
         <PeriodHead title={t("Báo cáo")} days={days} setDays={setDays} />
         {runs.isError ? runsError()
-          : wait ? <AiFetching kind="runs" className="min-h-[40vh]" />
+          : wait ? <AiFetching kind="runs" />
           : !rows.length ? emptyRuns(days)
           : (
             <>
@@ -190,8 +280,8 @@ export function UsageTab({ days, setDays }: { days: number; setDays: (d: number)
               </dl>
               <Bars rows={rows} days={days} />
               <div className="grid gap-2 sm:grid-cols-2">
-                <Breakdown title={t("Theo tính năng")} groups={groupBy(rows, (r) => feat(r.feature))} total={sum} />
-                <Breakdown title={t("Theo model")} groups={groupBy(rows, (r) => shortModel(r.model))} total={sum} />
+                <Breakdown title={t("Theo tính năng")} groups={totalsBy(rows, (r) => feat(r.feature))} total={sum} />
+                <Breakdown title={t("Theo model")} groups={totalsBy(rows, (r) => shortModel(r.model))} total={sum} />
               </div>
               <p className="text-xs text-ink-3">{t("Chi phí quy đổi là giá token nếu trả theo API, không phải tiền bị trừ: gói Pro/Max/Team tính theo hạn mức.")}</p>
             </>
@@ -208,7 +298,7 @@ function Bars({ rows, days }: { rows: AiRun[]; days: number }) {
   const now = useNow();
   const hourly = days === 1;
   const slots = useMemo(() => {
-    const by = hourly ? bucket(rows, (r) => String(Math.floor(Date.parse(r.at) / HOUR))) : byVnDay(rows);
+    const by = hourly ? groupBy(rows, (r) => String(Math.floor(Date.parse(r.at) / HOUR))) : byVnDay(rows);
     const h0 = Math.floor(now / HOUR);
     return hourly
       ? Array.from({ length: 24 }, (_, i) => {
@@ -264,13 +354,13 @@ function Bars({ rows, days }: { rows: AiRun[]; days: number }) {
 /** Share of the period per group (by cost, by count when every run is free): name, requests, cost. */
 function Breakdown({ title, groups, total }: { title: string; groups: (readonly [string, Totals])[]; total: Totals }) {
   return (
-    <div className={cn(card, "content-start gap-2.5 p-3")}>
+    <div className={cn(card, "grid-cols-1 content-start gap-2.5 p-3")}>
       <h4 className="text-xs text-ink-2">{title}</h4>
-      <ul className="grid gap-2.5">
+      <ul className="grid grid-cols-1 gap-2.5">
         {groups.map(([k, t]) => {
           const share = total.cost > 0 ? t.cost / total.cost : t.n / total.n;
           return (
-            <li key={k} className="grid gap-1 text-xs">
+            <li key={k} className="grid grid-cols-1 gap-1 text-xs">
               <span className="flex items-baseline gap-2">
                 <span className="min-w-0 flex-1 truncate font-medium text-ink">{k}</span>
                 <span className="shrink-0 font-mono text-ink-3 tabular-nums">{t.n} req</span>
@@ -299,6 +389,7 @@ export function HistoryTab({ days, setDays }: { days: number; setDays: (d: numbe
   const runs = useRuns(days);
   const wait = useAiWait(!runs.data && !runs.isError);
   const [ai, setAi] = useState<Provider | "">("");
+  const [q, setQ] = useState(""); // a session ID from a bug report (YT-…, REF-…) or Claude's session id
   const [size, setSize] = useState<number>(SIZES[0]);
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
@@ -312,19 +403,25 @@ export function HistoryTab({ days, setDays }: { days: number; setDays: (d: numbe
     return () => ro.disconnect();
   }, [runs.data]);
   const all = useMemo(() => runs.data ?? [], [runs.data]);
-  const rows = useMemo(() => (ai ? all.filter((r) => r.provider === ai) : all), [all, ai]);
+  const rows = useMemo(() => {
+    const k = q.trim().toLowerCase().replace(/^#/, "");
+    return all.filter((r) => (!ai || r.provider === ai) && (!k || `${r.ref ?? ""} ${r.sid ?? ""}`.toLowerCase().includes(k)));
+  }, [all, ai, q]);
   const pages = Math.max(1, Math.ceil(rows.length / size));
   const at = Math.min(page, pages - 1);
   const sum = totals(rows);
   const byDay = useMemo(() => byVnDay(rows), [rows]); // a day's totals count all its rows, not just this page's
   const shown = useMemo(() => [...byVnDay(rows.slice(at * size, (at + 1) * size))], [rows, at, size]);
   const today = vnDay(useNow());
+  // rows are newest first: the page's first day starts open (today on page 1), a session-ID search opens every day
+  const firstDay = shown[0]?.[0];
+  const [isOpen, toggleDay] = useDayFold((d) => d === firstDay);
   const reset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(0); setOpen(null); };
   const go = (n: number) => { setPage(n); setOpen(null); document.getElementById("ai-tabpanel")?.scrollTo({ top: 0 }); };
   const exportRows = () => downloadCsv([
-    [t("Thời gian"), "AI", t("Tính năng"), t("Dự án (ngoài app)"), "Model", "Effort", t("Tự hạ model"), t("Thành công"), t("Lỗi"), t("Thời gian chạy (ms)"), "Input", "Output",
+    [t("Thời gian"), "AI", t("Tính năng"), t("ID phiên"), "Session", t("Dự án (ngoài app)"), "Model", "Effort", t("Tự hạ model"), t("Thành công"), t("Lỗi"), t("Thời gian chạy (ms)"), "Input", "Output",
       t("Đọc cache"), t("Ghi cache"), t("Chi phí quy đổi (USD)"), t("5h % sau"), t("7 ngày % sau")],
-    ...rows.map((r) => [r.at, r.provider, feat(r.feature), r.project, r.model, r.effort, r.fallback ? t("có") : "", r.ok ? t("có") : t("không"), r.error ?? "", r.ms,
+    ...rows.map((r) => [r.at, r.provider, feat(r.feature), r.ref ?? "", r.sid ?? "", r.project, r.model, r.effort, r.fallback ? t("có") : "", r.ok ? t("có") : t("không"), r.error ?? "", r.ms,
       r.input_tokens, r.output_tokens, r.cache_read, r.cache_write, r.cost ?? "", r.quota["5h"] ?? "", r.quota["1w"] ?? ""]),
   ], `ai-runs-${days}d.csv`);
   const count = (id: Provider) => all.filter((r) => r.provider === id).length;
@@ -344,6 +441,11 @@ export function HistoryTab({ days, setDays }: { days: number; setDays: (d: numbe
                 ...AIS.map(([id, name]) => ({ value: id as Provider | "", label: (
                   <span className="flex items-center gap-1"><AgentIcon provider={id} className="agent-still size-3.5" />{name} · {count(id)}</span>
                 ) }))]} />
+            <label className="relative min-w-40 flex-1 sm:max-w-56">
+              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
+              <input value={q} onChange={(e) => reset(setQ)(e.target.value)} placeholder={t("Tìm ID phiên (YT-…, REF-…)")} aria-label={t("Tìm lượt chạy theo ID phiên")}
+                className="h-7 w-full rounded-md border border-rule bg-paper pr-2 pl-7 font-mono text-xs placeholder:font-sans focus:border-hl" />
+            </label>
             <span className="flex items-center gap-1.5 text-xs text-ink-3">
               {t("Mỗi trang")}
               <Segmented id="history-size" label={t("Số dòng mỗi trang")} value={size} onChange={reset(setSize)} items={SIZES.map((n) => ({ value: n, label: String(n) }))} />
@@ -362,25 +464,31 @@ export function HistoryTab({ days, setDays }: { days: number; setDays: (d: numbe
       </div>
 
       {runs.isError ? runsError()
-        : wait || !runs.data ? <AiFetching kind="runs" className="min-h-[40vh]" />
+        : wait || !runs.data ? <AiFetching kind="runs" />
         : !all.length ? emptyRuns(days)
+        : !rows.length && q.trim() ? <p className={cn(card, "text-sm text-ink-2")}>{t("Không có lượt chạy nào của phiên “{id}” trong {period}.", { id: q.trim(), period: periodName(days) })}</p>
         : !rows.length ? <p className={cn(card, "text-sm text-ink-2")}>{t("{ai} chưa chạy request nào trong {period}.", { ai: AIS.find(([id]) => id === ai)?.[1] ?? "", period: periodName(days) })}</p>
         : (
           <>
             {shown.map(([d, rs]) => {
-              const tot = totals(byDay.get(d) ?? rs);
+              const tot = totals(byDay.get(d) ?? rs), on = !!q.trim() || isOpen(d);
               return (
                 <section key={d} aria-label={`${weekday(d)} ${dm(d)}`} className="grid gap-1">
-                  <h4 className="sticky z-10 -mx-5 flex items-baseline justify-between gap-3 bg-paper/95 px-5 py-1.5 text-xs backdrop-blur-sm" style={{ top: "calc(var(--hist-h) - 1.25rem)" }}>
-                    <span className="font-bold text-ink first-letter:uppercase">{d === today ? t("Hôm nay") : weekday(d)}, {dm(d)}</span>
-                    <span className="font-mono text-ink-3 tabular-nums">{tot.n} req · {usd(tot.cost)}</span>
+                  <h4 className="sticky z-10 -mx-5 bg-paper/95 px-5 py-1.5 text-xs backdrop-blur-sm" style={{ top: "calc(var(--hist-h) - 1.25rem)" }}>
+                    <button type="button" aria-expanded={on} onClick={() => toggleDay(d)} className="flex w-full items-baseline justify-between gap-3 text-left">
+                      <span className="flex items-center gap-1">
+                        <ChevronRight className={cn("size-3.5 shrink-0 text-ink-3 transition-transform duration-(--dur-short)", on && "rotate-90")} aria-hidden />
+                        <span className="font-bold text-ink first-letter:uppercase">{d === today ? t("Hôm nay") : weekday(d)}, {dm(d)}</span>
+                      </span>
+                      <span className="font-mono text-ink-3 tabular-nums">{tot.n} req · {usd(tot.cost)}</span>
+                    </button>
                   </h4>
-                  <ul className="grid divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
+                  {on && <ul className="grid divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
                     {rs.map((r, i) => {
                       const id = r.at + i;
                       return <RunRow key={id} r={r} open={open === id} onToggle={() => setOpen(open === id ? null : id)} />;
                     })}
-                  </ul>
+                  </ul>}
                 </section>
               );
             })}
@@ -420,6 +528,7 @@ function RunRow({ r, open, onToggle }: { r: AiRun; open: boolean; onToggle: () =
           <span aria-label={r.ok ? t("Thành công") : t("Lỗi")} className={cn("size-1.5 shrink-0 rounded-full", r.ok ? "bg-ok" : "bg-error")} />
           <AgentIcon provider={r.provider as Provider} className="agent-still size-4 shrink-0" />
           <span className="shrink-0 font-medium text-ink">{feat(r.feature)}</span>
+          {r.ref && <span className="shrink-0 font-mono text-ink-3">{r.ref}</span>}
           <span className="min-w-0 truncate text-ink-3">{r.ok ? shortModel(r.model) : <span className="text-error">{r.error ?? t("Lỗi")}</span>}</span>
           {r.fallback && <span className="shrink-0 rounded bg-warn-wash px-1 text-ink">{t("hạ model")}</span>}
           {r.imported && <span className="shrink-0 rounded bg-paper-3 px-1 text-ink-3">{t("nhập lại")}</span>}
@@ -441,7 +550,9 @@ function RunRow({ r, open, onToggle }: { r: AiRun; open: boolean; onToggle: () =
               </div>
             ))}
           </dl>
-          <p className="flex flex-wrap gap-x-3 text-ink-3"><span>{timeLabel(r.at, true)}</span><span className="font-mono">{tMaybe(r.model)}</span></p>
+          <p className="flex flex-wrap gap-x-3 text-ink-3"><span>{timeLabel(r.at, true)}</span><span className="font-mono">{tMaybe(r.model)}</span>
+            {r.ref && <span className="font-mono select-all">{r.ref}</span>}
+            {r.sid && <Hint side="bottom" text={t("Session của Claude: transcript ở ~/.claude/projects/*/{sid}.jsonl", { sid: r.sid })}><span className="font-mono select-all">session {r.sid}</span></Hint>}</p>
         </div>
       )}
     </li>

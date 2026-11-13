@@ -22,3 +22,15 @@ export function downloadText(text: string, filename: string, type = "text/markdo
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+
+/** `Map.groupBy` (ES2024, missing before Safari 17.4): items by key, keeping order. */
+export function groupBy<T, K>(items: Iterable<T>, key: (item: T) => K) {
+  const m = new Map<K, T[]>();
+  for (const it of items) {
+    const k = key(it);
+    const list = m.get(k);
+    if (list) list.push(it);
+    else m.set(k, [it]);
+  }
+  return m;
+}

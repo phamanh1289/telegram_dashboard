@@ -17,10 +17,10 @@ const FONT_MAP = JSON.stringify(Object.fromEntries(FONTS.map((f) => [f.id, [f.fa
 const SIZE_MAP = JSON.stringify(Object.fromEntries(FONT_SIZES.map((s) => [s.id, s.scale])));
 const THEME_BOOT = `try{var t=localStorage.theme;if(t!=="light"&&t!=="dark")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";var r=document.documentElement;r.classList.toggle("dark",t==="dark");r.dataset.theme=t;if(localStorage.rowActions==="always")r.dataset.rowActions="always"}catch(e){}
 (function(){var r=document.documentElement;function g(k){try{return localStorage[k]}catch(e){}}function h(v,d){var n=parseFloat(v);return n>=0&&n<360?n:d}
-window.applyLook=function(){var l=g("uiStyle"),a=h(g("accent"),40),x=g("gradient")==="1"&&l!=="simple";if(l==="simple"||l==="vivid")r.dataset.look=l;else delete r.dataset.look;r.toggleAttribute("data-gradient",x);r.style.setProperty("--hl-h",a);r.style.setProperty("--hl-h2",x?h(g("accent2"),355):a);
+window.applyLook=function(){var l=g("uiStyle"),a=h(g("accent"),40),x=g("gradient")==="1"&&l!=="simple";if(l==="simple"||l==="vivid")r.dataset.look=l;else delete r.dataset.look;r.toggleAttribute("data-gradient",x);r.style.setProperty("--hl-h",a);r.style.setProperty("--hl-h2",x?h(g("accent2"),355):a);var c=parseFloat(g("accentC"));r.style.setProperty("--hl-k",c>=0.3&&c<=1.8?c:1);
 var F=${FONT_MAP},k=g("font"),f=F[k]||F[k="${DEFAULT_FONT}"];r.style.setProperty("--font-body",(f[0]?f[0]+",":"")+'ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif');r.style.setProperty("--font-weight-normal",f[2]);r.style.setProperty("--font-weight-medium",f[3]);r.style.setProperty("--text-scale",${SIZE_MAP}[g("fontSize")]||1);
 if(f[1]&&!document.getElementById("font-"+k)){var n=document.createElement("link");n.id="font-"+k;n.rel="stylesheet";n.href="https://fonts.googleapis.com/css2?family="+f[1]+"&display=swap";document.head.appendChild(n)}};
-window.applyLook();var L=g("lang");if(L!=="vi"&&L!=="en")L=/^vi\\b/i.test((navigator.languages&&navigator.languages[0])||navigator.language||"")?"vi":"en";r.lang=L;if(L!=="vi"){r.dataset.i18nWait="";setTimeout(function(){delete r.dataset.i18nWait},1500)}addEventListener("storage",function(e){if(["uiStyle","accent","accent2","gradient","font","fontSize"].indexOf(e.key)>=0)window.applyLook()})})();`;
+window.applyLook();var L=g("lang");if(L!=="vi"&&L!=="en")L=/^vi\\b/i.test((navigator.languages&&navigator.languages[0])||navigator.language||"")?"vi":"en";r.lang=L;if(L!=="vi"){r.dataset.i18nWait="";setTimeout(function(){delete r.dataset.i18nWait},1500)}addEventListener("storage",function(e){if(["uiStyle","accent","accent2","accentC","gradient","font","fontSize"].indexOf(e.key)>=0)window.applyLook()})})();`;
 
 // Before any app code: a `?t=<token>` link (server / launcher / `myradar open`) is traded for the local API's
 // cookie (auth.py), synchronously so the first API calls already carry it, then dropped from the address bar.
@@ -28,7 +28,8 @@ const AUTH_BOOT = `;(function(){try{var q=new URLSearchParams(location.search),t
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi" suppressHydrationWarning>
+    // translate="no": the UI has its own i18n; browser auto-translate would rewrite Telegram / YouTrack data too
+    <html lang="vi" translate="no" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT + AUTH_BOOT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />

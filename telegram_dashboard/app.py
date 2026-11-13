@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 import re
+import secrets
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -17,14 +18,16 @@ from fastapi.staticfiles import StaticFiles
 from telethon import errors as tg_errors
 
 from . import privacy, providers, updater
-from .agent import AgentRunner
-from .ai import AiService, client_gone, parse_ticket, pick_folder, reply_lang, stream_answer
+from .agent import AgentRunner, session_ref
+from .ai import AiService, clean_svg, client_gone, parse_ticket, pick_folder, stream_answer
 from .auth import LocalGuardMiddleware
+from .autobe import AutoBe
 from .claude import (
     claude_account,
     claude_login,
     claude_login_code,
     claude_logout,
+    claude_reset,
     claude_runs,
     refresh_usage,
 )
@@ -41,8 +44,12 @@ from .models import (
     AiDraftRequest,
     AiGuideRequest,
     AiLoginStarted,
+    AiMascotJob,
+    AiMascotRequest,
     AiPrefs,
     AiProvider,
+    AiResetRequest,
+    AiResetResult,
     AiResult,
     AiRun,
     AiTestRequest,
@@ -65,6 +72,9 @@ from .models import (
     HandledAllResponse,
     HandledRequest,
     HistoryPage,
+    LoopBack,
+    LoopDoneRequest,
+    LoopImportRequest,
     Member,
     MessageDTO,
     MessageRef,
@@ -79,6 +89,8 @@ from .models import (
     QaPosted,
     QaPostRequest,
     QaSummaryRequest,
+    RemindRequest,
+    RemindResult,
     ReplyRequest,
     RuleAdded,
     RuleDTO,
@@ -92,7 +104,6 @@ from .models import (
     TelegramPhone,
     TelegramSignIn,
     TelegramSignInResult,
-    WakeTicketRequest,
     WeekStats,
     YouTrackAuth,
     YouTrackIssue,
@@ -116,30 +127,59 @@ MEMBERS_TTL = 300.0  # seconds a group's member list (reply box @ popup) is reus
 
 
 GUIDE_PROMPT = (
-    "Bạn là trợ lý hướng dẫn sử dụng ứng dụng Radar (2 tab: Telegram và YouTrack, cùng Cài đặt). "
-    "Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước. Chỉ dựa vào danh mục đó; "
-    "nếu không có tính năng phù hợp thì nói rõ là không thấy, đừng bịa. Trả lời tiếng Việt, ngắn gọn, markdown: "
-    "nêu tính năng phù hợp nhất (tên in đậm kèm [id]), rồi các bước làm theo đánh số, ghi đúng nhãn nút/phím tắt. "
-    "Có thể gợi ý thêm 1-2 tính năng liên quan."
+    "Em là trợ lý biết tuốt của ứng dụng Radar (2 tab: Telegram và YouTrack, cùng Cài đặt), trò chuyện với "
+    "người dùng. Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước. Câu hỏi"
+    " về cách dùng: trả lời từ danh mục; không thấy thì nói rõ là không thấy, đừng bịa. Trả lời ngắn gọn, "
+    "markdown, theo thứ tự: một câu trả lời thẳng; rồi các bước làm đánh số, ghi đúng nhãn nút/phím tắt; tính"
+    ' năng phù hợp ghi tên in đậm kèm [id] (app biến [id] thành nút "Chỉ tôi tận nơi"). Khi cần mở một trang,'
+    " thêm link markdown tới đúng một trong các trang sau (app biến thành nút mở trang): Telegram [Hôm "
+    "nay](/?chat=__today__), [Việc cần xử lý](/?chat=__all__), [Đã ghim](/?chat=__pinned__), "
+    "[Q&A](/?chat=__qa__), [Briefing](/?chat=__briefing__), [AI Agent](/?chat=__tasks__); YouTrack [Trang "
+    "chủ](/youtrack/?view=home), [Dashboard](/youtrack/?view=dash), [Ticket](/youtrack/?view=tickets), "
+    "[Release](/youtrack/?view=release), [Thành viên](/youtrack/?view=people), [YouTrack "
+    "AI](/youtrack/?view=ai); Cài đặt [Chung](/settings/#general), [Telegram](/settings/#telegram), "
+    "[YouTrack](/settings/#youtrack), [AI](/settings/#ai), [Cập nhật](/settings/#github), [Phím "
+    "tắt](/settings/#shortcuts). Nhãn link ghi rõ đích, vd. [Cài đặt › Telegram](/settings/#telegram); không "
+    "bịa đường dẫn khác. <page> là trang người dùng đang mở; <history> là các lượt hỏi trước."
+)
+# The bot is junior to the user: it calls itself "em" and the user by name (YouTrack, else Telegram), or "anh/chị".
+GUIDE_VOICE = (
+    ' Xưng hô: em là bot, ngôi thấp hơn người dùng; luôn xưng "em", gọi người dùng là {name}. Giọng vui vẻ, lễ '
+    "phép, gần gũi (có thể thêm một emoji hợp ngữ cảnh), vẫn ngắn gọn. Trả lời tiếng Anh: xưng I, gọi bằng tên nếu có."
 )
 
 
-class LangMiddleware:
-    """The page's UI language (X-Lang: vi | en) for this request's AI runs (ai.reply_lang); background
-    work started from the request inherits it, scheduled runs keep Vietnamese."""
+def _guide_name(name: str) -> str:
+    """How the bot calls the user: by their display name (one line, no markup), else "anh/chị"."""
+    name = re.sub(r"[^\w .'-]", "", (name.strip().splitlines() or [""])[0]).strip()[:60]
+    if not name:
+        return '"anh/chị"'
+    return (f'tên gọi trong "{name}" (tên tiếng Việt: một hai chữ cuối); không đoán giới tính từ tên, cần đại từ '
+            'thì dùng "anh/chị"')  # fmt: skip
 
-    def __init__(self, app):
-        self.app = app
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-        lang = "en" if dict(scope["headers"]).get(b"x-lang") == b"en" else "vi"
-        token = reply_lang.set(lang)
-        try:
-            await self.app(scope, receive, send)
-        finally:
-            reply_lang.reset(token)
+GUIDE_CODE = (
+    " Em được đọc (chỉ đọc) mã nguồn của chính app: thư mục hiện tại là backend Python, web/src (nếu có) là "
+    "giao diện. Câu hỏi về rule, điều kiện một nút / mục ẩn hay hiện, vì sao không thấy, giới hạn, mặc định: "
+    "đọc code để trả lời đúng như code đang chạy, nói điều kiện bằng lời người dùng, cuối câu ghi nguồn "
+    "`file:dòng`."
+)
+
+MASCOT_PROMPT = (
+    "You draw a mascot icon for an app's AI assistant, from the user's description and style. "
+    'Reply with ONE <svg> element only, no prose, no code fence. viewBox="0 0 32 32", '
+    "the character fills the box, has a face and reads clearly at 16 px. "
+    "Allowed elements: g, path, circle, ellipse, rect, line, polyline, polygon, defs, "
+    "linearGradient, radialGradient, stop. "
+    "Presentation attributes only (fill, stroke, stroke-width, opacity, transform…), hex colours: "
+    "no style, class, text, image, href, script, filter or animation. Under 6000 characters."
+)
+MASCOT_STYLES = {
+    "cute": "cute and friendly, flat, big eyes, soft rounded shapes, 2-4 solid colours plus at most one gradient",
+    "pixel": "pixel art on a 16x16 grid of 2x2 cells, chunky, 3-5 colours: ONE <path> per colour, each cell written "
+    "as M x y h2 v2 h-2 z (x, y even)",
+    "line": "minimal line art: rounded strokes in one or two colours, stroke-width 1.5-2, almost no fill",
+}
 
 
 def create_app(
@@ -168,19 +208,20 @@ def create_app(
         app.state.ai.me = lambda: bridge.me
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
-        app.state.yt = yt_dashboard  # links.py reads YouTrack articles with its token
+        app.state.autobe = auto = AutoBe(app.state)  # Vòng BE tự chạy: rules relay / agent on new tags
+        app.state.agent.on_idle, bridge.on_tags = auto.on_idle, auto.on_tags
+        app.state.yt = yt_dashboard  # links.py reads YouTrack articles / tickets with its token
         app.state.settings = settings
         await bridge.start()
         auto = asyncio.create_task(updater.auto_loop(settings, app.state.agent))
-        # macOS banner for a YouTrack ticket newly given to me, even with no page open (the page toasts on its own)
+        # YouTrack rounds with no page open: new-ticket banner (macOS; the page toasts), Báo lại, ticket snoozes
         mac = settings.notify and sys.platform == "darwin"
-        watch = asyncio.create_task(yt_dashboard.watch_new(notify_mac)) if mac else None
+        watch = asyncio.create_task(yt_dashboard.watch(db, notify_mac if mac else None))
         try:
             yield
         finally:
             auto.cancel()
-            if watch:
-                watch.cancel()
+            watch.cancel()
             # Agents and Telegram first; one failing step never skips the others.
             for step in (app.state.agent.stop_all, bridge.stop, yt_dashboard.aclose):
                 try:
@@ -188,15 +229,15 @@ def create_app(
                 except Exception:
                     log.warning("shutdown step %s failed", step.__name__, exc_info=True)
             for task in (auto, watch):
-                if task:
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
 
     yt_dashboard = YouTrackDashboard(settings)
     app = FastAPI(title="Radar", lifespan=lifespan)
-    app.add_middleware(LangMiddleware)
     app.add_middleware(
-        LocalGuardMiddleware, host_header=settings.host_header, app_origin=settings.app_origin,
+        LocalGuardMiddleware,
+        host_header=settings.host_header,
+        app_origin=settings.app_origin,
         token=settings.api_token,
     )
 
@@ -245,14 +286,13 @@ def create_app(
             youtrack_configured=settings.youtrack_configured,
             telegram_api_id=settings.telegram_api_id,
             telegram_me=s.bridge.me or None,
+            telegram_name=s.bridge.me_name or None,
             db_epoch=cursor.rpartition(":")[0],
             cursor=cursor,
         )
 
     @app.get("/api/chats")
-    async def chats(
-        request: Request, since: datetime | None = None, until: datetime | None = None
-    ) -> ChatsResponse:
+    async def chats(request: Request, since: datetime | None = None, until: datetime | None = None) -> ChatsResponse:
         s = S(request)
         items, cursor = await s.db.read(s.store.list_chats, since, until)
         return ChatsResponse(items=[c for c in items if c.tracking], snapshot_cursor=cursor)
@@ -309,9 +349,7 @@ def create_app(
         return MessagesPage(items=items, snapshot_cursor="", has_more=len(msgs) == limit)
 
     @app.put("/api/chats/{chat_id}/messages/{message_id}/handled", status_code=204)
-    async def handled(
-        chat_id: str, message_id: str, body: HandledRequest, request: Request
-    ) -> None:
+    async def handled(chat_id: str, message_id: str, body: HandledRequest, request: Request) -> None:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
         if await s.db.read(s.store.get_message, chat_id, mid) is None:
@@ -347,7 +385,7 @@ def create_app(
     @app.get("/api/events", response_class=EventSourceResponse)
     async def events(
         request: Request,
-            cursor: str | None = None,
+        cursor: str | None = None,
         last_event_id: Annotated[str | None, Header()] = None,
     ):
         s = S(request)
@@ -359,16 +397,15 @@ def create_app(
             return not await request.is_disconnected()
 
         def bridge_status() -> dict:
-            return {"state": s.bridge.state}
+            # loop: the Báo lại list changed; auto: the last failure of the BE automation (autobe.py)
+            return {"state": s.bridge.state, "loop": s.store.loop_rev, "auto": [s.autobe.rev, s.autobe.error]}
 
         yield ServerSentEvent(retry=3000, comment="open")
         async for ev in event_stream(s.store, s.hub, start, alive=alive, status=bridge_status):
             yield ev
 
     @app.post("/api/messages/reply", responses={202: {"model": OutboxDTO}})
-    async def reply(
-        body: ReplyRequest, request: Request, response: Response
-    ) -> OutboxDTO:
+    async def reply(body: ReplyRequest, request: Request, response: Response) -> OutboxDTO:
         rec = await S(request).bridge.submit_reply(body)
         if rec.status == "failed":
             code = rec.error_code or "send_failed"
@@ -386,8 +423,7 @@ def create_app(
         return rec
 
     async def _draft_extras(request: Request, body: AiDraftRequest):
-        """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images).
-"""
+        """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
         s = S(request)
         nearby, images = None, []
         ids = [int_or_404(i, "message_not_found") for i in body.message_ids]
@@ -406,8 +442,10 @@ def create_app(
                 log.warning("draft without context for %s: %r", body.chat_id, e)
         return nearby, images
 
-    @app.post("/api/ai/draft", responses={200: {
-        "model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}})
+    @app.post(
+        "/api/ai/draft",
+        responses={200: {"model": AiResult, "description": "NDJSON: delta / reset lines, then {done: AiResult}"}},
+    )
     async def ai_draft(body: AiDraftRequest, request: Request) -> StreamingResponse:
         """With header X-Ai-Job (an id the page picked): a background run that outlives the reply panel ("Trả lời từ
         code" takes minutes), read again by GET /api/ai/job/{id}; without: it stops when the page goes."""
@@ -419,11 +457,11 @@ def create_app(
         kind = "answer" if body.project else "draft"  # a project picked: "Trả lời từ code"
         tickets = await yt_dashboard.brief(body.ticket_ids) if kind == "answer" else ""
 
-        def run(on_text, history=None):
+        def run(on_text, history=None, ref=""):
             return S(request).ai.run(
                 kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
                 platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
-                history=history,
+                history=history, ref=ref,
             )  # fmt: skip
 
         async def work(on_text):
@@ -445,7 +483,7 @@ def create_app(
         prompt = {"text": body.shown or body.instruction, **({"code": body.project} if body.project else {})}
         if background:  # the turn's task copies this context: a reader leaving must not stop its run
             client_gone.set(None)
-        turn = s.agent.side_start(task_id, prompt, lambda: run(lambda t: relay[0](t), history),
+        turn = s.agent.side_start(task_id, prompt, lambda: run(lambda t: relay[0](t), history, session_ref(task_id)),
                                   lambda r: r.analysis or r.text)  # fmt: skip
         await add_refs(s, task_id, [(body.chat_id, m) for m in body.message_ids[1:]])
 
@@ -521,10 +559,21 @@ def create_app(
     async def ai_guide(body: AiGuideRequest, request: Request) -> StreamingResponse:
         """Which features answer the user's question, and how to use them: from the guide the page sends."""
         client_gone.set(request.is_disconnected)
-        user = f"<guide>\n{body.guide}\n</guide>\n\nCâu hỏi của người dùng: {body.question}"
+        s = S(request)
+        past = "".join(f"<turn>\nHỏi: {h.q}\nĐáp: {h.a}\n</turn>\n" for h in body.history)
+        user = (
+            f"<guide>\n{body.guide}\n</guide>\n<page>{body.page}</page>\n<history>\n{past}</history>\n\n"
+            f"Câu hỏi của người dùng: {body.question}"
+        )
+        # the app's own code, read-only: the backend always ships; the web source only in a checkout (not the installs)
+        web = s.settings.root / "web" / "src"
+
+        here = str(Path(__file__).parent)
+        code = {"project": here, "read_dir": str(web) if web.is_dir() else None} if body.code else {}
 
         async def work(on_text):
-            return {"text": await S(request).ai.ask(user, system=GUIDE_PROMPT, on_text=on_text, feature="guide")}
+            system = GUIDE_PROMPT + GUIDE_VOICE.format(name=_guide_name(body.name)) + (GUIDE_CODE if body.code else "")
+            return {"text": await s.ai.ask(user, system=system, on_text=on_text, feature="guide", guide=True, **code)}
 
         return stream_answer(work)
 
@@ -555,9 +604,7 @@ def create_app(
         return await _consent(s, chat_id)
 
     @app.put("/api/chats/{chat_id}/digest-consent")
-    async def put_digest_consent(
-        chat_id: str, body: DigestConsentRequest, request: Request
-    ) -> DigestConsent:
+    async def put_digest_consent(chat_id: str, body: DigestConsentRequest, request: Request) -> DigestConsent:
         s = S(request)
         await _known_chat(s, chat_id)
         exp = datetime.now(UTC) + timedelta(days=body.days) if body.enabled else None
@@ -673,14 +720,11 @@ def create_app(
         return msgs
 
     @app.get("/api/qa")
-    async def qa(
-        chat_id: str, request: Request, days: Annotated[int, Query(ge=1, le=30)] = 7
-    ) -> list[QaItem]:
+    async def qa(chat_id: str, request: Request, days: Annotated[int, Query(ge=1, le=30)] = 7) -> list[QaItem]:
         """Q&A threads of one group over the last `days`, live from Telegram (not stored, no AI), latest activity first.
         Tags we keep come as their stored copy (kept, with done / pin state), so the row offers its tag actions."""
         s = S(request)
-        if s.bridge.state != "connected":
-            return []
+        s.bridge.ensure_connected()  # offline: 503 not_connected, not "no Q&A"
         await _known_chat(s, chat_id)
         msgs = await _qa_msgs(s, chat_id, days)
         ids = [m.message_id for m in msgs]
@@ -832,29 +876,46 @@ def create_app(
     async def snooze(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if not await s.db.write(s.store.set_snooze, chat_id, mid, body.until, body.on if body.until else None):
+        on = body.on if body.until else None
+        if await s.db.write(s.store.set_snooze, chat_id, mid, body.until, on):
+            return
+        # Cả nhóm: a plain message, not kept yet. Keep it (tracked groups only), so it comes back as a tag.
+        live = next(iter(await s.bridge.fetch_ids(chat_id, [mid])), None) if body.until and 0 < mid < 2**31 else None
+        if not (live and not live.deleted and await s.db.write(s.store.apply_message, live)
+                and await s.db.write(s.store.set_snooze, chat_id, mid, body.until, on)):
             raise ApiError(404, "message_not_found")
 
-    @app.get("/api/snooze/tickets")
-    async def snooze_tickets(request: Request) -> list[str]:
-        """Tickets that snoozed tags wait on: the YouTrack watch wakes them once done."""
+    @app.get("/api/loopback")
+    async def loop_back(request: Request) -> LoopBack:
+        """ "Báo lại" items the background YouTrack watch queued, and its last failure."""
         s = S(request)
-        return await s.db.read(s.store.ticket_snoozes)
+        rows = await s.db.read(s.store.loop_items)
+        return LoopBack(items=[{**r, "message_id": str(r["message_id"])} for r in rows], error=yt_dashboard.watch_error)
 
-    @app.post("/api/snooze/wake")
-    async def snooze_wake(body: WakeTicketRequest, request: Request) -> dict[str, int]:
-        """The ticket is done: tags snoozed until then come back."""
+    @app.post("/api/loopback/done", status_code=204)
+    async def loop_done(body: LoopDoneRequest, request: Request) -> None:
+        """Dismissed ("Bỏ qua"); a reply sent to the message closes its items on its own."""
         s = S(request)
-        return {"woke": await s.db.write(s.store.wake_ticket, body.ticket.upper())}
+        await s.db.write(s.store.done_loop, body.chat_id, int(body.message_id), body.ticket)
 
-    @app.put("/api/chats/{chat_id}/messages/{message_id}/remind", status_code=204)
-    async def remind(chat_id: str, message_id: str, body: SnoozeRequest, request: Request) -> None:
-        """"Nhắc lại sau": reopen a tag (e.g. just answered "để mình check") and hide it until `until`; it comes
-        back to Việc cần xử lý then. No reaction change on Telegram."""
+    @app.post("/api/loopback/import")
+    async def loop_import(body: LoopImportRequest, request: Request) -> dict[str, int]:
+        """ponytail: one-time move of a browser's old localStorage queue; drop after a few releases."""
+        s = S(request)
+        items = [(i.ticket, i.state, i.chat_id, int(i.message_id)) for i in body.items]
+        return {"added": await s.db.write(s.store.add_loop_items, items)}
+
+    @app.put("/api/chats/{chat_id}/messages/{message_id}/remind")
+    async def remind(chat_id: str, message_id: str, body: RemindRequest, request: Request) -> RemindResult:
+        """ "Nhắc lại sau": reopen a tag (e.g. just answered "để mình check") and hide it until `until`; it comes
+        back to Việc cần xử lý then. No reaction change on Telegram. `restore` (Undo) puts back how it was done,
+        without closing its Q&A or sessions as Xong would."""
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if not await s.db.write(s.store.remind, chat_id, mid, body.until):
+        was = await s.db.write(s.store.remind, chat_id, mid, body.until, restore=body.restore)
+        if was is None:
             raise ApiError(404, "message_not_found")
+        return RemindResult(was=was)
 
     @app.get("/api/stats/week")
     async def week_stats(request: Request) -> WeekStats:
@@ -897,9 +958,7 @@ def create_app(
         return to_dto(m)
 
     @app.get("/api/chats/{chat_id}/messages/{message_id}/before")
-    async def before(
-        chat_id: str, message_id: str, request: Request, reply_to: int | None = None
-    ) -> list[MessageDTO]:
+    async def before(chat_id: str, message_id: str, request: Request, reply_to: int | None = None) -> list[MessageDTO]:
         """Live, not stored: Deep thinking's question candidates for a BE answer (see fetch_before)."""
         s = S(request)
         await _known_chat(s, chat_id)
@@ -942,7 +1001,12 @@ def create_app(
     @app.post("/api/rules")
     async def add_rule(body: RuleRequest, request: Request) -> RuleAdded:
         s = S(request)
-        rule, cleared = await s.db.write(s.store.add_rule, body.kind, body.value, body.label)
+        extra = ""
+        if body.kind == "agent":  # its sessions run without the page: they keep the project and who the user is
+            if not await s.db.read(s.store.has_project, body.project):
+                raise ApiError(404, "project_not_found")
+            extra = body.model_dump_json(include={"project", "role", "platform", "intro"})
+        rule, cleared = await s.db.write(s.store.add_rule, body.kind, body.value, body.label, extra)
         refs = [MessageRef(chat_id=c, message_id=str(m)) for c, m in cleared]
         return RuleAdded(rule=RuleDTO(**rule), handled=len(refs), cleared=refs)
 
@@ -1002,9 +1066,53 @@ def create_app(
         """One tiny run on the picked CLI and model: does it answer, and how fast."""
         t0 = time.monotonic()
         text = await S(request).ai.ask(
-            "Reply with exactly: OK", system="", heavy=body.task, brief=body.brief, yt=body.yt, feature="test"
+            "Reply with exactly: OK",
+            system="",
+            heavy=body.task,
+            brief=body.brief,
+            yt=body.yt,
+            feature="test",
+            guide=body.guide,
         )
         return AiTestResult(text=text[:200], ms=round((time.monotonic() - t0) * 1000))
+
+    # ponytail: AI mascot drawings live in memory (the last 8); a restart forgets them, the page then shows none
+    mascots: list[dict] = []
+
+    @app.post("/api/ai/mascot", status_code=202)
+    async def ai_mascot(body: AiMascotRequest, request: Request) -> AiMascotJob:
+        """Start drawing an SVG mascot from the member's description (Cài đặt › Linh vật AI) on the CLI's quickest
+        model, in the background like an AI session: the page may close; GET shows it running, then its drawing."""
+        ai = S(request).ai
+        job = {"id": secrets.token_hex(6), "description": body.description, "style": body.style, "state": "running"}
+        user = f"Style: {MASCOT_STYLES[body.style]}\nMascot: {body.description}"
+
+        async def draw() -> None:
+            try:
+                svg = clean_svg(await ai.ask(user, system=MASCOT_PROMPT, feature="mascot", fast=True))
+                job.update({"state": "done", "svg": svg} if svg else {"state": "error", "error": "mascot_invalid"})
+            except ApiError as e:
+                job.update(state="error", error=e.code, detail=e.detail or "")
+            except Exception:
+                log.exception("AI mascot drawing failed")
+                job.update(state="error", error="ai_failed")
+
+        mascots.append(job)
+        del mascots[:-8]
+        job["task"] = asyncio.get_running_loop().create_task(draw())  # held by the job; DELETE cancels it
+        return AiMascotJob(**job)
+
+    @app.get("/api/ai/mascot")
+    async def ai_mascots() -> list[AiMascotJob]:
+        """The mascot drawings since the server started, oldest first (running ones included)."""
+        return [AiMascotJob(**j) for j in mascots]
+
+    @app.delete("/api/ai/mascot/{job_id}", status_code=204)
+    async def ai_mascot_drop(job_id: str) -> None:
+        """Stop a running drawing, or forget a finished one."""
+        for j in [j for j in mascots if j["id"] == job_id]:
+            j["task"].cancel()
+            mascots.remove(j)
 
     @app.get("/api/ai/accounts")
     async def ai_accounts(fresh: bool = False) -> list[AiAccount]:
@@ -1012,6 +1120,15 @@ def create_app(
         reads the quotas now instead of from the last few minutes."""
         got = await asyncio.gather(*(providers.account(settings, p, fresh) for p in providers.OTHERS))
         return [AiAccount(**a) for a in got]
+
+    @app.post("/api/ai/{provider}/reset")
+    async def ai_reset(provider: AiProvider, body: AiResetRequest) -> AiResetResult:
+        """Use one of the plan's free limit resets now: Claude's or Codex's (504 ai_reset_unknown: no answer,
+        it may have gone through)."""
+        if provider == "antigravity":
+            raise ApiError(404, "not_found")
+        run = claude_reset if provider == "claude" else providers.codex_reset
+        return AiResetResult(outcome=await run(settings, body.credit_id, request_id=body.request_id))
 
     @app.post("/api/ai/{provider}/login")
     async def ai_login(provider: AiProvider) -> AiLoginStarted:
@@ -1103,9 +1220,7 @@ def create_app(
         """YouTrack's own search (its relevance order); [] when it refuses the query (400). A bad token /
         no YouTrack is raised: "no matching ticket" would make the user file a duplicate."""
         try:
-            rows = await yt_dashboard.yt(
-                "/api/issues", query=query, fields="idReadable,summary", **{"$top": top}
-            )
+            rows = await yt_dashboard.yt("/api/issues", query=query, fields="idReadable,summary", **{"$top": top})
         except YtError as e:
             if e.status != 400:
                 raise

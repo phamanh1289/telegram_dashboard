@@ -115,7 +115,7 @@ export function TicketList({ rows }: { rows: Ticket[] }) {
     <div className="grid gap-2">
       <p className="text-xs text-ink-3">{t("{n} ticket", { n: fmtNum(rows.length, t.lang) })}{rows.length > MAX ? t(", hiện {n} đầu", { n: MAX }) : ""}</p>
       {rows.length ? (
-        <ul className="divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
+        <ul className="zebra divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
           {rows.slice(0, MAX).map((i) => (
             <li key={i.id}>
               <button type="button" onClick={() => y.openTicket(i.id, rows.slice(0, MAX))} className="grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left hover:bg-paper-2 max-sm:grid-cols-[5.5rem_minmax(0,1fr)]">
@@ -138,11 +138,15 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const row = y.rows.find((i) => i.id === id);
   const d = useQuery(ytDetailQuery(id));
   const mentions = useQuery({ queryKey: ["yt", "mentions", id], queryFn: () => yt.mentions(id), staleTime: 60_000 });
+  // a ticket of another project (a link, a chip): Assignee / QC pick from that project's team (same query as the tab's)
+  const proj = id.split("-")[0], other = proj !== y.project;
+  const team = useQuery({ queryKey: ["yt", "people", proj], queryFn: () => yt.people(proj), staleTime: 10 * 60_000, enabled: other });
+  const acts: AssigneeActs = other ? { ...y, people: team.data ?? [], loginOf: new Map([...y.loginOf, ...(team.data ?? []).map((p) => [p.name, p.login] as const)]) } : y;
   const i: Ticket | Detail | undefined = d.data ?? row;
   const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
-  const { attach, ...mention } = useMention(ytPeople(id.split("-")[0]), comment, setComment); // "@" tags the project's team
+  const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
   const now = useNow();
 
   async function send() {
@@ -159,9 +163,9 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
     finally { setSending(false); }
   }
 
+  const loadError = d.isError && <p role="alert" className="text-sm text-error">{t("Không tải được {id}: {msg}", { id, msg: (d.error as Error).message })}</p>;
   if (!i) {
-    return d.isError ? <p role="alert" className="text-sm text-error">{t("Không tải được {id}: {msg}", { id, msg: (d.error as Error).message })}</p>
-      : (
+    return loadError || (
         <div aria-label={t("Đang tải {id}…", { id })} className="grid gap-5">
           <Skeleton className="h-6 w-3/4" />
           <Skeleton className="h-24 rounded-[var(--radius-card)]" />
@@ -173,8 +177,8 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const said = [d.data?.description, ...(d.data?.comments.map((c) => c.text) ?? [])].join("\n");
   const loose = files.filter((a) => !said.includes(`(${a.name}`) && !said.includes(`(${encodeURI(a.name)}`)); // not shown inline in any text
   const meta: [Key, React.ReactNode][] = [
-    ["State", <FieldSelect key="s" ticket={i} name="State" />], ["Assignee", <AssigneeSelect key="a" ticket={i} />], ["Priority", <FieldSelect key="p" ticket={i} name="Priority" />],
-    ["QC", <AssigneePicker key="q" ticket={i} acts={y} field="QC" className="-ml-1.5" />], ["Type", <FieldSelect key="t" ticket={i} name="Type" />],
+    ["State", <FieldSelect key="s" ticket={i} name="State" />], ["Assignee", <AssigneeSelect key="a" ticket={i} acts={acts} />], ["Priority", <FieldSelect key="p" ticket={i} name="Priority" />],
+    ["QC", <AssigneePicker key="q" ticket={i} acts={acts} field="QC" className="-ml-1.5" />], ["Type", <FieldSelect key="t" ticket={i} name="Type" />],
     ["Sprint", i.sprints.join(", ") || "—"], ...(i.due ? [["Hạn", <span key="d" className={cn(i.due < now && !i.resolved && "font-medium text-error")}>{when(i.due)}</span>] as [Key, React.ReactNode]] : []),
     ...(i.estimate ? [["Estimate", `${+(i.estimate / 60).toFixed(1)}h`] as [Key, string]] : []),
     ["Ngày tạo", when(i.created)], ["Cập nhật lúc", when(i.updated)], ["Reporter", d.data?.reporter || (d.isPending ? "…" : "—")],
@@ -183,6 +187,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
     <motion.div className="grid gap-5" initial="h" animate="v" variants={{ v: { transition: { staggerChildren: 0.03 } } }}>
       {!row && <p className="text-xs text-ink-3">{t("Ticket ngoài dữ liệu đã tải.")}</p>}
       <motion.h3 variants={fade} className="text-lg leading-snug font-bold">{i.summary}</motion.h3>
+      {loadError}
       <motion.dl variants={fade} className="grid grid-cols-1 gap-x-6 gap-y-2 rounded-[var(--radius-card)] bg-paper-2 p-3 text-sm sm:grid-cols-2">
         {meta.map(([k, v]) => <div key={k} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2"><dt className="text-xs text-ink-3">{t(k)}</dt><dd className="min-w-0 truncate">{v}</dd></div>)}
       </motion.dl>
@@ -194,7 +199,8 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
           <div aria-label={t("Đang tải mô tả…")} className="grid gap-2 rounded-lg bg-cotton p-3 shadow-edge">
             {[96, 88, 92, 60].map((w) => <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />)}
           </div>
-        ) : d.data?.description ? <Markdown text={d.data.description} files={{ issue: id, list: files }} className="rounded-lg bg-cotton p-3 shadow-edge" /> : <p className="text-sm text-ink-3 italic">{t("Không có mô tả")}</p>}
+        ) : d.data?.description ? <Markdown text={d.data.description} files={{ issue: id, list: files }} className="rounded-lg bg-cotton p-3 shadow-edge" />
+          : d.data ? <p className="text-sm text-ink-3 italic">{t("Không có mô tả")}</p> : <p className="text-sm text-ink-3">—</p>}
       </motion.section>
 
       {!!loose.length && (
@@ -255,8 +261,10 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         </motion.section>
       )}
 
+      {mentions.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được tin Telegram nhắc ticket này: {msg}", { msg: (mentions.error as Error).message })}</p>}
+
       <motion.section variants={fade} className="grid gap-2">
-        <Label>{t("Bình luận ({n})", { n: d.data?.comments.length ?? "…" })}</Label>
+        <Label>{t("Bình luận ({n})", { n: d.data?.comments.length ?? (d.isError ? "—" : "…") })}</Label>
         {d.data?.comments.map((c, k) => (
           <div key={c.id ?? k} className="grid gap-1 rounded-lg bg-cotton p-3 shadow-edge">
             <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{c.author || "—"}</span><time className="ml-auto">{when(c.created)}</time></small>
@@ -280,9 +288,9 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
 const fade = { h: { opacity: 0, y: 6 }, v: { opacity: 1, y: 0 } };
 
 /** Change the assignee; "Nhận" takes it. The toast offers to put it back. */
-export function AssigneeSelect({ ticket }: { ticket: Ticket }) {
+export function AssigneeSelect({ ticket, acts: y }: { ticket: Ticket; acts: AssigneeActs }) {
   const t = useT();
-  const y = useYt(), me = y.me ? y.loginOf.get(y.me) : undefined;
+  const me = y.me ? y.loginOf.get(y.me) : undefined;
   return (
     <span className="flex min-w-0 items-center gap-1">
       <AssigneePicker ticket={ticket} acts={y} className="-ml-1.5" />

@@ -41,14 +41,14 @@
 
   /* highlight: terracotta by default. selection, current, focus. Each member picks the hue (--hl-h, gradient end --hl-h2) in Cài đặt chung;
    * the boot script in app/layout.tsx sets them inline on <html>. --hl-c scales chroma per style (see "styles" at the end). */
-  --hl-h: 40; --hl-h2: 40; --hl-c: 1;
-  --color-hl: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h));         /* fills, marks, underlines */
-  --color-hl-b: oklch(53% calc(0.135 * var(--hl-c)) var(--hl-h2));      /* gradient end */
-  --color-hl-2: oklch(48% calc(0.13 * var(--hl-c)) calc(var(--hl-h) - 2));        /* as text on cotton/paper and on hl-wash */
-  --color-hl-wash: oklch(93.6% calc(0.032 * var(--hl-c)) calc(var(--hl-h) + 12));  /* selected row / item background */
+  --hl-h: 40; --hl-h2: 40; --hl-c: 1; --hl-k: 1;
+  --color-hl: oklch(53% calc(0.135 * var(--hl-c) * var(--hl-k)) var(--hl-h));         /* fills, marks, underlines */
+  --color-hl-b: oklch(53% calc(0.135 * var(--hl-c) * var(--hl-k)) var(--hl-h2));      /* gradient end */
+  --color-hl-2: oklch(48% calc(0.13 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 2));        /* as text on cotton/paper and on hl-wash */
+  --color-hl-wash: oklch(93.6% calc(0.032 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) + 12));  /* selected row / item background */
   --color-hl-ink: oklch(99% 0.006 80);     /* text on hl */
   --color-board: oklch(27% 0.025 45); --color-board-type: oklch(97% 0.012 80); /* primary button: espresso ink */
-  --color-focus: oklch(55% calc(0.14 * var(--hl-c)) var(--hl-h));
+  --color-focus: oklch(55% calc(0.14 * var(--hl-c) * var(--hl-k)) var(--hl-h));
   /* highlight fill: `background: var(--hl-fill)` is the solid hl, or the gradient under [data-gradient]; glow and flow only in vivid */
   --hl-fill: var(--color-hl); --hl-glow: none; --hl-flow: none;
 
@@ -62,6 +62,7 @@
   --color-ok: oklch(48% 0.11 150); --color-ok-wash: oklch(94.5% 0.035 145);
   --color-warn: oklch(50% 0.1 95); --color-warn-wash: oklch(95.5% 0.05 100);
   --color-error: oklch(50% 0.17 22); --color-error-wash: oklch(94.5% 0.03 22);
+  --color-badge: oklch(55% 0.2 25); /* new-items count on the module switch: red fill, white text, same in both modes */
   --color-info: oklch(48% 0.09 225); --color-info-wash: oklch(94.5% 0.025 225);
   /* code / key chips in messages: the one cool hue in the text, so keys never read as body copy or as the highlight */
   --color-code: oklch(45% 0.11 258); --color-code-wash: oklch(94.5% 0.028 255);
@@ -97,13 +98,13 @@
   --color-ink: oklch(93.5% 0.01 80); --color-ink-2: oklch(84% 0.012 75); --color-ink-3: oklch(71% 0.014 70);
   --color-rule: oklch(29.5% 0.03 255); --color-rule-2: oklch(52% 0.025 255);
   /* dark highlight is a deeper, redder copper than light's terracotta: lifted terracotta sat too close to the amber signal */
-  --color-hl: oklch(65% calc(0.115 * var(--hl-c)) calc(var(--hl-h) - 5));
-  --color-hl-b: oklch(65% calc(0.115 * var(--hl-c)) calc(var(--hl-h2) - 5));
-  --color-hl-2: oklch(77% calc(0.09 * var(--hl-c)) calc(var(--hl-h) - 2));
-  --color-hl-wash: oklch(28% calc(0.05 * var(--hl-c)) calc(var(--hl-h) - 7));
+  --color-hl: oklch(65% calc(0.115 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 5));
+  --color-hl-b: oklch(65% calc(0.115 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h2) - 5));
+  --color-hl-2: oklch(77% calc(0.09 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 2));
+  --color-hl-wash: oklch(28% calc(0.05 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 7));
   --color-hl-ink: oklch(16% 0.02 calc(var(--hl-h) - 5));
   --color-board: oklch(91% 0.015 75); --color-board-type: oklch(18% 0.01 60);
-  --color-focus: oklch(70% calc(0.11 * var(--hl-c)) calc(var(--hl-h) - 5));
+  --color-focus: oklch(70% calc(0.11 * var(--hl-c) * var(--hl-k)) calc(var(--hl-h) - 5));
   --color-signal: oklch(79% 0.13 76); --color-signal-ink: oklch(19% 0.03 70);
   --color-signal-2: oklch(84% 0.11 80);
   --color-signal-wash: oklch(27.5% 0.045 72);

@@ -3,20 +3,20 @@
 import { Popover } from "@base-ui/react/popover";
 import { type QueryClient, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronRight, CircleAlert, CircleCheckBig, ClipboardList, Copy, Gauge, GitCompareArrows, ListTodo, Loader2,
-  type LucideIcon, MessageCircleQuestion, PanelRightClose, Plus, RotateCw, Send, ShieldCheck, Sparkles, Sun, Trash2, TriangleAlert, UserRound, X,
+  ArrowLeft, ArrowUp, ArrowUpRight, Check, ChevronRight, CircleAlert, CircleCheckBig, ClipboardList, Copy, CornerDownRight, Gauge, GitCompareArrows, ListTodo, Loader2,
+  type LucideIcon, MessageCircleQuestion, MessagesSquare, PanelRightClose, Plus, RotateCw, Send, ShieldCheck, Sparkles, Sun, Trash2, TriangleAlert, UserRound, X,
 } from "lucide-react";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
-import { AiBot, AiPromptBox, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble, useFollow } from "@/components/ai/chat";
+import { AiBot, AiPromptBox, AiResultCard, AiStop, AiThinking, UserBubble, useFollow } from "@/components/ai/chat";
 import { AiFetching, digestLines, useAiWait } from "@/components/ai/fetching";
 import { Avatar, railHide } from "@/components/chat-list";
 import { BeTopics } from "@/components/be-topics";
-import { DeepItemAction } from "@/components/deep-think";
+import { DeepItemAction, DeepTopicAction } from "@/components/deep-think";
 import { NavPill } from "@/components/shell";
 import { answeredQuery, beRepliesQuery, closedIds, digestError, Evidence, isClosedItem, ItemActions, ItemFlags, isAnswered, openCount, Tickets, todoKey, toMarkdown, useDone } from "@/components/digest-page";
-import { Markdown } from "@/components/markdown";
+import { ASK_BTN, AskPost, Markdown } from "@/components/markdown";
 import { TicketChip } from "@/components/message-item";
 import { useOpenSimilar } from "@/components/ticket-form";
 import { Button } from "@/components/ui/button";
@@ -27,10 +27,10 @@ import { Segmented } from "@/components/ui/segmented";
 import { WeekStatsCard } from "@/components/week-stats";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, apiStream, type BriefingItem, type DigestItem, type DigestResult, errorText, type GroupInfo, statusQuery } from "@/lib/api";
-import { saveBrief } from "@/lib/briefs";
+import { type Brief, saveBrief } from "@/lib/briefs";
 import { type Key, t as tr, useT } from "@/lib/i18n";
-import { copyText, toast, useNow } from "@/lib/inbox";
-import { getPref, put, readDigestTeams, readIntro, useRole } from "@/lib/prefs";
+import { askInQa, copyText, toast, useNow } from "@/lib/inbox";
+import { getPref, put, readDigestTeams, readIntro, useRole, usesCode } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
@@ -102,6 +102,9 @@ async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: number)
 const AUTO_MS = 2 * 3_600_000; // a group with news is summarized again at most this often
 const AUTO_TICK = 5 * 60_000;
 export const AUTO_BRIEF = "autoBrief"; // "0": no background runs (Cài đặt › Telegram)
+// when each group last ran in the background: a run that fails (no text, too many messages, quota) keeps the group
+// "has news" with the old digest, so without this it would run again every tick
+const autoTried = new Map<string, number>();
 
 /** Keeps Briefing fresh while the app is open: every few minutes (one shared timer) the groups that have news and a
  *  digest older than AUTO_MS run in the background batch, so opening Briefing shows it ready. Off when AI isn't set. */
@@ -113,7 +116,9 @@ export function useAutoBrief(on: boolean) {
       if (brief.batch || getPref(AUTO_BRIEF) === "0") return;
       const items = await qc.fetchQuery({ ...briefingQuery, staleTime: AUTO_TICK }).catch(() => []);
       const now = Date.now();
-      const due = items.filter((i) => i.consent && hasNews(i) && (!i.saved || now - Date.parse(i.saved.created_at) >= AUTO_MS));
+      const due = items.filter((i) => i.consent && hasNews(i) && (!i.saved || now - Date.parse(i.saved.created_at) >= AUTO_MS)
+        && now - (autoTried.get(i.chat_id) ?? 0) >= AUTO_MS);
+      for (const i of due) autoTried.set(i.chat_id, now);
       if (due.length) await runBrief(qc, due);
     };
     const first = setTimeout(() => void tick(), 60_000); // after the app has settled
@@ -209,18 +214,28 @@ function tgBriefing(open: Todo[]) {
 }
 
 /** "Trả lời" / "Tạo ticket"; a to-do with no ticket is checked against YouTrack: a likely match is shown, else creating one is suggested. */
-function TodoActions({ t, onCreated }: { t: Todo; onCreated: () => void }) {
+function TodoActions({ chatId, it, kind, onCreated }: { chatId: string; it: DigestItem; kind: string; onCreated?: () => void }) {
   const tx = useT();
   const ytOn = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
-  const check = !!ytOn && t.kind === "actions" && !t.tickets?.length;
-  const similar = useOpenSimilar(t.text, { enabled: check });
+  const check = !!ytOn && kind === "actions" && !it.tickets?.length;
+  const similar = useOpenSimilar(it.text, { enabled: check });
   const hit = similar.data?.[0];
   return (
     <>
       {hit && <span className="inline-flex items-center gap-1">{tx("có thể đã có")} <TicketChip id={hit.id} /></span>}
-      <ItemActions chatId={t.chat.chat_id} ids={t.message_ids ?? []} text={t.text} suggest={check && similar.isSuccess && !hit} onCreated={onCreated} />
+      <ItemActions chatId={chatId} ids={it.message_ids ?? []} text={it.text} suggest={check && similar.isSuccess && !hit} onCreated={onCreated} />
     </>
   );
+}
+
+/** The next step on a digest item, for Briefing's rows and the Trợ lý's cited points alike: an open question / to-do
+ *  is answered or made a ticket (one with BE also checked against the code); the rest checked against the code. */
+function NextSteps({ chatId, it, kind, onCreated }: { chatId: string; it: DigestItem; kind: string; onCreated?: () => void }) {
+  if (kind !== "confirmations" && kind !== "actions") return <DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />;
+  return <>
+    <TodoActions chatId={chatId} it={it} kind={kind} onCreated={onCreated} />
+    {it.be && <DeepTopicAction chatId={chatId} item={{ text: it.text, message_ids: it.message_ids ?? [], waiting: kind === "confirmations" }} />}
+  </>;
 }
 
 const TOPIC: Record<string, [Key, string]> = { decided: ["đã chốt", "text-ok"], open: ["đang bàn", "text-signal-2"], dropped: ["bỏ", "text-ink-3"] };
@@ -302,9 +317,7 @@ function TodoRow({ t, closed, showKind, showGroup, onToggle, onOpen }: {
               <button type="button" onClick={onOpen} className="max-w-48 truncate rounded-sm underline-offset-2 hover:text-ink hover:underline">{t.chat.title}</button>
             </Hint>
           )}
-          {!closed && (t.kind === "confirmations" || t.kind === "actions"
-            ? <TodoActions t={t} onCreated={onToggle} />
-            : <DeepItemAction chatId={t.chat.chat_id} ids={t.message_ids ?? []} />)}
+          {!closed && <NextSteps chatId={t.chat.chat_id} it={t} kind={t.kind} onCreated={onToggle} />}
         </div>
         <AnimatePresence initial={false}>{open && <TodoDetail key="detail" t={t} onOpen={onOpen} />}</AnimatePresence>
       </div>
@@ -338,7 +351,7 @@ function AddGroup({ blocked, known, onPick, className, children }: {
   const waiting = blocked.filter((b) => match(b.title));
   const others = (groups.data ?? []).filter((g) => !known.has(g.chat_id) && match(g.title));
   const item = (id: string, title: string, allow?: boolean) => (
-    <li key={id}>
+    <li key={id} className="rounded-md">
       <button type="button" onClick={() => { onOpenChange(false); onPick(id, title); }}
         className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-ink-2 hover:bg-paper-2 hover:text-ink">
         {allow && <ShieldCheck className="size-3.5 shrink-0 text-ink-3" aria-hidden />}
@@ -361,14 +374,14 @@ function AddGroup({ blocked, known, onPick, className, children }: {
               {waiting.length > 0 && (
                 <div className="grid gap-0.5">
                   <p className="px-2 text-xs font-medium text-ink-3">{tx("Chưa cho phép AI")}</p>
-                  <ul className="grid gap-0.5">{waiting.map((b) => item(b.chat_id, b.title, true))}</ul>
+                  <ul className="zebra grid gap-0.5">{waiting.map((b) => item(b.chat_id, b.title, true))}</ul>
                 </div>
               )}
               <div className="grid gap-0.5">
                 <p className="px-2 text-xs font-medium text-ink-3">{tx("Nhóm khác")}</p>
                 {groups.isPending && <Skeleton className="mx-2 h-12" />}
                 {groups.isError && <p role="alert" className="px-2 text-error">{digestError(groups.error)}</p>}
-                {groups.data && (others.length ? <ul className="grid gap-0.5">{others.map((g) => item(g.chat_id, g.title))}</ul>
+                {groups.data && (others.length ? <ul className="zebra grid gap-0.5">{others.map((g) => item(g.chat_id, g.title))}</ul>
                   : <p className="px-2 text-ink-3">{tx("Không có nhóm nào khác.")}</p>)}
               </div>
             </div>
@@ -387,6 +400,79 @@ const SUGGEST: [LucideIcon, Key, string][] = [
   [TriangleAlert, "Blocker và rủi ro", "Có blocker hay rủi ro nào cần để ý không?"],
   [ClipboardList, "Cần confirm gì?", "Những câu nào đang chờ tôi confirm hoặc chốt, ở nhóm nào?"],
 ];
+// ---- a Trợ lý answer and its next steps (digest.py ASK): ⟦group:message⟧ sources, asks per group, "Hỏi tiếp" -------
+
+const REF = /\s*⟦(-?\d+)(?::(\d+))?⟧/g;
+const NEXT = /^\s*\*\*Hỏi tiếp:?\*\*:?\s*$/m;
+const CITED = ["confirmations", "actions", "decisions", "changes", "impacts"] as const;
+const NO_GROUPS: BriefingItem[] = [];
+const LEAVE = ["open-reply", "open-qa", "open-task"]; // lib/inbox events that open another page
+
+/** An answer split for drawing: `md` with its sources as "#cite:" links (none in a quote; a group's ask label loses its
+ *  own), `asks` [group id, line] of the quoted messages under each group's label, `next` the follow-up questions. */
+export function parseAnswer(text: string) {
+  const at = text.search(NEXT);
+  const next = at < 0 ? [] : text.slice(at).split("\n").slice(1).flatMap((l) => /^\s*[-*+]\s+(.+)/.exec(l)?.[1].replace(REF, "").trim() || []);
+  const lines = (at < 0 ? text : text.slice(0, at)).trimEnd().split("\n");
+  const asks: [string, string][] = [];
+  let group: string | null = null;
+  const md = lines.map((l, i) => {
+    if (/^\s*>/.test(l)) {
+      if (group) asks.push([group, l.replace(/^\s*>\s?/, "")]);
+      return l.replace(REF, "");
+    }
+    const label = [...l.matchAll(REF)].find((m) => !m[2]);
+    if (label && /^\s*>/.test(lines.slice(i + 1).find((x) => x.trim()) ?? "")) { group = label[1]; return l.replace(REF, ""); }
+    if (l.trim()) group = null; // blank lines keep a group's messages together; any other line ends them
+    return l.replace(REF, (_, chat: string, msg?: string) => ` [↗](#cite:${chat}${msg ? `:${msg}` : ""})`);
+  });
+  return { md: md.join("\n"), asks, next };
+}
+/** The answer as text to copy / send: no sources, no follow-ups. */
+const plainAnswer = (text: string) => { const at = text.search(NEXT); return (at < 0 ? text : text.slice(0, at)).replace(REF, "").trimEnd(); };
+
+/** A cited source: its group (the item on hover), then the next step on that item (same buttons as Briefing's rows). */
+function Cite({ hash, groups }: { hash: string; groups: BriefingItem[] }) {
+  const tx = useT();
+  const [, chatId, msg] = hash.split(":");
+  const g = groups.find((x) => x.chat_id === chatId);
+  if (!g) return null;
+  const res = g.saved?.result;
+  const hit = msg && res ? CITED.flatMap((k) => (res[k] ?? []).map((it) => [k, it] as const)).find(([, it]) => it.message_ids?.includes(msg)) : undefined;
+  return (
+    <span className="ml-1 inline-flex flex-wrap items-center gap-y-0.5 align-baseline text-xs">
+      <Hint side="bottom" text={hit?.[1].text || tx("Nhóm {group}", { group: g.title })}>
+        <span className="inline-block max-w-44 truncate rounded-sm bg-paper-3 px-1 align-bottom text-ink-2">{g.title}{msg && ` · #${msg}`}</span>
+      </Hint>
+      {hit ? <NextSteps chatId={chatId} it={hit[1]} kind={hit[0]} /> : msg && <ItemActions chatId={chatId} ids={[msg]} text="" />}
+    </span>
+  );
+}
+
+/** Next to a quoted ask's copy button: that group's Q&A, the ask pre-filled (tag / edit, then send there). */
+function QaAsk({ text, chatId, title }: { text: string; chatId: string; title: string }) {
+  const tx = useT();
+  return (
+    <Hint text={tx("Hỏi trong Q&A của {group}: mở với câu hỏi điền sẵn, tag người được hỏi rồi gửi", { group: title })}>
+      <button type="button" aria-label={tx("Hỏi trong Q&A")} onClick={() => askInQa(chatId, text)} className={ASK_BTN}>
+        <MessagesSquare className="size-3.5" aria-hidden />
+      </button>
+    </Hint>
+  );
+}
+
+function BriefAnswer({ text, groups }: { text: string; groups: BriefingItem[] }) {
+  const { md, asks } = useMemo(() => parseAnswer(text), [text]);
+  const anchor = useCallback((h: string) => (h.startsWith("cite:") ? <Cite hash={h} groups={groups} /> : null), [groups]);
+  const post = useCallback((ask: string) => {
+    const first = ask.split("\n").map((l) => l.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, "").trim()).find(Boolean);
+    const id = first && asks.find(([, l]) => l.includes(first))?.[0];
+    const g = id ? groups.find((x) => x.chat_id === id) : undefined;
+    return g ? <QaAsk text={ask} chatId={g.chat_id} title={g.title} /> : null;
+  }, [asks, groups]);
+  return <AskPost value={post}><Markdown asks text={md} anchor={anchor} className="text-ink" /></AskPost>;
+}
+
 const ASK_ERR: Record<string, Key> = { briefing_empty: "Chưa có bản tóm tắt nào; bấm “Tóm tắt” trước.", ai_not_configured: "AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI." };
 const THINK: Key[] = ["Đang đọc tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp"];
 type Turn = { id: number; q: string; text: string; busy: boolean; error?: string };
@@ -394,6 +480,12 @@ type Turn = { id: number; q: string; text: string; busy: boolean; error?: string
 /** ⌘J from any Telegram page: the Briefing assistant in a drawer (the same pane as on the Briefing page), so a question
  *  about every group needs no trip to Briefing. Mounted only while open (its portal and its reads). */
 export function AiDock({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  useEffect(() => { // an answer's Trả lời / Hỏi trong Q&A opens a page under the drawer: let it show
+    if (!open) return;
+    const close = () => onOpenChange(false);
+    for (const e of LEAVE) addEventListener(e, close);
+    return () => { for (const e of LEAVE) removeEventListener(e, close); };
+  }, [open, onOpenChange]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {open && <DockBody />}
@@ -403,32 +495,43 @@ export function AiDock({ open, onOpenChange }: { open: boolean; onOpenChange: (o
 
 function DockBody() {
   const tx = useT();
+  return (
+    <DialogContent className={cn(DIALOG_SHEET, "sm:max-w-md")}>
+      <DialogTitle className="sr-only">{tx("Trợ lý AI (⌘J)")}</DialogTitle>
+      <BriefAssistant className="h-full lg:border-l-0" />
+    </DialogContent>
+  );
+}
+
+/** The Briefing assistant outside the Briefing page: ⌘J, and AI Agent › Briefing going on with a kept `brief`
+ *  (`bare`: that page shows its own title bar). */
+export function BriefAssistant({ brief, bare, className }: { brief?: Brief; bare?: boolean; className?: string }) {
   const ready = (useQuery(briefingQuery).data ?? []).some((i) => i.consent && i.saved);
   const save = useMutation({
     mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
     onSuccess: () => toast({ text: tr("Đã gửi vào Saved Messages") }),
     onError: (e) => toast({ text: errorText(e, { not_connected: tr("Telegram chưa kết nối.") }, tr("Không gửi được, thử lại sau")) }),
   });
-  return (
-    <DialogContent className={cn(DIALOG_SHEET, "sm:max-w-md")}>
-      <DialogTitle className="sr-only">{tx("Trợ lý AI (⌘J)")}</DialogTitle>
-      <AiPane ready={ready} onSave={(t) => save.mutate(t)} saving={save.isPending} className="h-full lg:border-l-0" />
-    </DialogContent>
-  );
+  return <AiPane ready={ready} brief={brief} bare={bare} onSave={(t) => save.mutate(t)} saving={save.isPending} className={className} />;
 }
 
-function AiPane({ ready, onSave, saving, onClose, className }: { ready: boolean; onSave: (text: string) => void; saving: boolean; onClose?: () => void; className?: string }) {
+function AiPane({ ready, brief, bare, onSave, saving, onClose, className }: {
+  ready: boolean; brief?: Brief; bare?: boolean; onSave: (text: string) => void; saving: boolean; onClose?: () => void; className?: string;
+}) {
   const tx = useT();
   const [q, setQ] = useState("");
-  const [turns, setTurns] = useState<Turn[]>([]);
+  // brief: a kept conversation going on (its turns first, new ones saved under the same id)
+  const [turns, setTurns] = useState<Turn[]>(() => (brief?.turns ?? []).map((t, i) => ({ id: -1 - i, q: t.q, text: t.a, busy: false })));
   const abort = useRef<AbortController | null>(null);
   const seq = useRef(0);
-  const histId = useRef(sessionKey()); // this conversation in AI Agent › Briefing
-  const done = useRef<{ q: string; a: string }[]>([]);
+  const histId = useRef(brief?.id ?? sessionKey()); // this conversation in AI Agent › Briefing
+  const done = useRef<{ q: string; a: string }[]>([...(brief?.turns ?? [])]);
   useEffect(() => () => abort.current?.abort(), []);
   const last = turns.at(-1);
   const busy = !!last?.busy;
   const { ref: feedRef, onScroll } = useFollow(last?.text, turns.length);
+  const groups = useQuery(briefingQuery).data ?? NO_GROUPS; // what the answers' sources point at
+  const next = last && !busy && !last.error ? parseAnswer(last.text).next : [];
 
   async function ask(question = q.trim()) {
     if (!question || busy || !ready) return;
@@ -450,7 +553,7 @@ function AiPane({ ready, onSave, saving, onClose, className }: { ready: boolean;
 
   return (
     <aside aria-label={tx("Trợ lý AI")} className={cn("flex min-h-0 flex-col bg-paper-2/40 lg:border-l", className)}>
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
+      {!bare && <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
         <AiBot className="size-6 shrink-0" />
         <span className="text-sm font-bold text-ink">{tx("Trợ lý Briefing")}</span>
         <span className="truncate text-xs text-ink-3">{tx("đọc tóm tắt mọi nhóm")}</span>
@@ -466,7 +569,7 @@ function AiPane({ ready, onSave, saving, onClose, className }: { ready: boolean;
             </Hint>
           )}
         </div>
-      </div>
+      </div>}
       <div ref={feedRef} onScroll={onScroll} aria-live="polite" className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] content-start gap-4 overflow-y-auto px-4 py-4">
         {turns.length === 0 ? (
           <motion.div {...FADE} className="grid gap-4 pt-2">
@@ -491,18 +594,29 @@ function AiPane({ ready, onSave, saving, onClose, className }: { ready: boolean;
           <div key={t.id} className="grid grid-cols-[minmax(0,1fr)] gap-3">
             <UserBubble>{t.q}</UserBubble>
             {t.error ? <AiResultCard error>{t.error}</AiResultCard>
-              : t.busy ? (t.text ? <><Markdown text={t.text} className="px-0.5 text-ink" /><AiWriting /></>
-                : <AiThinking lines={THINK.map((l) => tx(l))} />)
+              : t.busy && !t.text ? <AiThinking lines={THINK.map((l) => tx(l))} />
               : (
-                <AiResultCard title={tx("Trả lời")} dim={t !== last} actions={<>
-                  <Button size="xs" variant="ghost" disabled={saving} onClick={() => onSave(tgText(t.text))}><Send /> Saved Messages</Button>
-                  <Button size="xs" variant="ghost" onClick={() => void copyText(t.text, tr("Đã copy"))}><Copy /> Copy</Button>
+                <AiResultCard title={tx("Trả lời")} busy={t.busy} dim={t !== last} actions={!t.busy && <>
+                  <Button size="xs" variant="ghost" disabled={saving} onClick={() => onSave(tgText(plainAnswer(t.text)))}><Send /> Saved Messages</Button>
+                  <Button size="xs" variant="ghost" onClick={() => void copyText(plainAnswer(t.text), tr("Đã copy"))}><Copy /> Copy</Button>
                 </>}>
-                  <Markdown text={t.text} className="text-ink" />
+                  <BriefAnswer text={t.text} groups={groups} />
                 </AiResultCard>
               )}
           </div>
         ))}
+        {next.length > 0 && (
+          <div role="group" aria-label={tx("Hỏi tiếp")} className="flex flex-wrap gap-1.5">
+            {next.map((n) => (
+              <Hint key={n} text={tx("Điền câu này vào ô hỏi")}>
+                <button type="button" onClick={() => setQ(n)}
+                  className="inline-flex items-center gap-1 rounded-full border border-rule bg-cotton px-2.5 py-1 text-left text-xs text-ink-2 transition-colors duration-(--dur-micro) hover:border-hl/50 hover:text-ink">
+                  <CornerDownRight className="size-3 shrink-0 text-hl" aria-hidden />{n}
+                </button>
+              </Hint>
+            ))}
+          </div>
+        )}
       </div>
       <div className="shrink-0 p-3">
         <AiPromptBox value={q} onChange={setQ} onSend={() => void ask()} running={busy} onStop={() => abort.current?.abort()}
@@ -583,7 +697,8 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
   const shown = group ? todos.filter((t) => t.chat.chat_id === group) : todos;
   const tabs: [Tab, Key, string][] = [
     ...(todos.some((x) => x.mine) ? [["mine", "Cần bạn", "bg-hl"] as [Tab, Key, string]] : []),
-    ["be", "Với BE", "bg-code"] as [Tab, Key, string], // always: an empty one says how to get BE topics
+    // always for Dev (an empty one says how to get BE topics); QA / PO: none, its items stay in the kind tabs
+    ...(usesCode(role) ? [["be", "Với BE", "bg-code"] as [Tab, Key, string]] : []),
     ...KINDS.map((k) => [k, KIND[k].label, KIND[k].dot] as [Tab, Key, string]),
   ];
   const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
@@ -798,12 +913,12 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                                     </button>
                                   </Hint>
                                 </h3>
-                                <ul className="grid gap-0.5"><AnimatePresence initial={false}>{its.map(row)}</AnimatePresence></ul>
+                                <ul className="zebra grid gap-0.5"><AnimatePresence initial={false}>{its.map(row)}</AnimatePresence></ul>
                               </section>
                             ))}
                           </div>
                         ) : (
-                          <ul aria-label={tx("Việc cần xử lý")} className="grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
+                          <ul aria-label={tx("Việc cần xử lý")} className="zebra grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
                         )
                       ) : (
                         <div className="grid justify-items-center gap-2 px-4 py-10 text-center">
@@ -824,7 +939,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                           </button>
                           <AnimatePresence initial={false}>
                             {showDone && (
-                              <motion.ul key="done" {...FADE} className="-mx-2.5 grid gap-0.5">
+                              <motion.ul key="done" {...FADE} className="zebra -mx-2.5 grid gap-0.5">
                                 <AnimatePresence initial={false}>{closedItems.map(row)}</AnimatePresence>
                               </motion.ul>
                             )}
@@ -894,9 +1009,9 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
   };
   return (
     <nav aria-label={tx("Nhóm Briefing")} className="no-scrollbar h-full min-h-0 overflow-y-auto px-2 pb-3">
-      <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
+      <ul className="zebra grid grid-cols-[minmax(0,1fr)] gap-1">
         {groups.map((i) => (
-          <li key={i.chat_id} className="group/g relative">
+          <li key={i.chat_id} className="group/g relative rounded-md">
             <Hint side="right" text={status(i)}>
               <button type="button" aria-current={selected === i.chat_id} onClick={() => onSelect(i.chat_id)} className={row(selected === i.chat_id)}>
                 {selected === i.chat_id && <NavPill />}

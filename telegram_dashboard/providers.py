@@ -41,9 +41,9 @@ INSTALL = {
 EFFORTS = ("low", "medium", "high", "xhigh", "max")  # Claude's
 CODEX_EFFORTS = (*EFFORTS, "ultra")  # what Codex's catalog may list per model
 PICKS = ("model", "effort", "task_model", "task_effort", "brief_model", "brief_effort",
-         "yt_model", "yt_effort", "yt_task_model", "yt_task_effort")  # fmt: skip
+         "yt_model", "yt_effort", "yt_task_model", "yt_task_effort", "guide_model", "guide_effort")  # fmt: skip
 # Each kind of run, the kind its "" picks fall back to, and its model / effort keys in a CLI's picks.
-BASE = {"chat": "chat", "brief": "chat", "task": "task", "yt": "chat", "yt_task": "task"}
+BASE = {"chat": "chat", "brief": "chat", "task": "task", "yt": "chat", "yt_task": "task", "guide": "chat"}
 KEYS = {k: ("model", "effort") if k == "chat" else (f"{k}_model", f"{k}_effort") for k in BASE}
 # An alias or id, never a flag; "provider/model": a model a local proxy (opencodex) routes for Codex.
 MODEL_RE = re.compile(r"^[A-Za-z][\w.\-\[\]]*(/[\w.\-\[\]]+)?$")
@@ -83,32 +83,50 @@ PERMISSION = {"plan": "plan", "edit": "acceptEdits"}
 # registries (loopback too is out: injected text can't reach the dashboard's own API or exfiltrate).
 # ponytail: fixed registry list; add a host when a build needs another mirror.
 SANDBOX_DOMAINS = ["*.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org"]
-SANDBOX = json.dumps({"sandbox": {
-    "enabled": True,
-    "failIfUnavailable": sys.platform != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
-    "autoAllowBashIfSandboxed": True,
-    "allowUnsandboxedCommands": False,  # the model can't opt a command out
-    "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
-}})
+SANDBOX = json.dumps(
+    {
+        "sandbox": {
+            "enabled": True,
+            "failIfUnavailable": sys.platform
+            != "win32",  # ponytail: no Claude sandbox on Windows; runs unsandboxed there
+            "autoAllowBashIfSandboxed": True,
+            "allowUnsandboxedCommands": False,  # the model can't opt a command out
+            "network": {"allowedDomains": SANDBOX_DOMAINS, "strictAllowlist": True},
+        }
+    }
+)
 # Gradle always binds a loopback socket (FileLockContentionHandler) and Java ignores HTTPS_PROXY. Opening loopback
 # (allowLocalBinding) would let sandboxed code drive the user's own Gradle/Kotlin daemons outside the sandbox, so
 # JVM builds stay out: the model leaves them to the user instead of failing at them.
 NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy. Cuối câu trả lời ghi rõ lệnh build / "
           "test để người dùng tự chạy kiểm tra.")  # fmt: skip
 SANDBOXED = ["--settings", SANDBOX, "--append-system-prompt", NO_JVM]
-ALLOW = {"plan": "Read,Grep,Glob", "edit": "Bash"}
+# Skill: the user's skills load as text; a skill's !`cmd` still needs Bash, so a read-only turn can't run it.
+ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
 # A project indexed with codegraph (`.codegraph/`): Claude turns query it through its MCP server, one read-only tool
 # (codegraph_explore: no shell, no writes, no network), so a read-only turn finds code without grepping around.
 # DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
-CODEGRAPH_MCP = json.dumps({"mcpServers": {"codegraph": {
-    "type": "stdio", "command": "codegraph", "args": ["serve", "--mcp"], "env": {"DO_NOT_TRACK": "1"}}}})
+CODEGRAPH_MCP = json.dumps(
+    {
+        "mcpServers": {
+            "codegraph": {
+                "type": "stdio",
+                "command": "codegraph",
+                "args": ["serve", "--mcp"],
+                "env": {"DO_NOT_TRACK": "1"},
+            }
+        }
+    }
+)
 CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
-SHELL_TOOLS = "Read,Grep,Glob,Bash"  # an answer that may run commands, never Edit/Write
-DENY = ("WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
-        # files that run code later (on folder open, commit, cd) or load tools into the next session
-        "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
-        # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
-        "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)")
+SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
+DENY = (
+    "WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
+    # files that run code later (on folder open, commit, cd) or load tools into the next session
+    "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
+    # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
+    "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)"
+)
 
 
 # ---- prefs: which CLI, and each CLI's model/effort ----
@@ -151,7 +169,9 @@ def save_prefs(settings, p: dict) -> None:
     write_private_json(settings.claude_prefs_path, p)
 
 
-def _kind(task: bool, brief: bool, yt: bool) -> str:
+def _kind(task: bool, brief: bool, yt: bool, guide: bool = False) -> str:
+    if guide:
+        return "guide"
     return ("yt_task" if task else "yt") if yt else "task" if task else "brief" if brief else "chat"
 
 
@@ -159,22 +179,28 @@ def _on(p: dict, kind: str) -> str:
     return p["use"][kind] or p["use"][BASE[kind]]
 
 
-def chosen(settings, *, task: bool = False, brief: bool = False, yt: bool = False) -> str:
+def chosen(settings, *, task: bool = False, brief: bool = False, yt: bool = False, guide: bool = False) -> str:
     """The CLI a kind of run uses: drafts (default), `brief`, `task` / AI Agent, `yt` (a resumed task
-    keeps the CLI that started it)."""
-    return _on(prefs(settings), _kind(task, brief, yt))
+    keeps the CLI that started it), `guide` (the know-it-all bot)."""
+    return _on(prefs(settings), _kind(task, brief, yt, guide))
 
 
 def run_choice(
-    settings, task: bool = False, provider: str | None = None, brief: bool = False, yt: bool = False
+    settings,
+    task: bool = False,
+    provider: str | None = None,
+    brief: bool = False,
+    yt: bool = False,
+    *,
+    guide: bool = False,
 ) -> tuple[str, str, bool]:
     """Model, effort and whether the model was stepped down, for `provider` (default: the CLI of the
     kind's pick): drafts/summaries, Briefing/Digest (`brief`), or tasks/AI Agent (`task`); `yt`: a
-    YouTrack run (yt_* light, yt_task_* heavy). A Briefing / YouTrack "" pick is its base kind's
-    (drafts; YouTrack heavy: tasks): the model on the same CLI, the effort on any.
+    YouTrack run (yt_* light, yt_task_* heavy); `guide`: the know-it-all bot. A Briefing / YouTrack / bot ""
+    pick is its base kind's (drafts; YouTrack heavy: tasks): the model on the same CLI, the effort on any.
     Claude only: with fallback on, a window at or past `fallback_at`% runs the cheap model."""
     p = prefs(settings)
-    kind = _kind(task, brief, yt)
+    kind = _kind(task, brief, yt, guide)
     base, provider = BASE[kind], provider or _on(p, kind)
     c = p["by"][provider]
     (m, e), (bm, be) = KEYS[kind], KEYS[base]
@@ -193,6 +219,13 @@ def run_choice(
     ):
         return cheap, effort, True
     return model, effort, False
+
+
+def fast_choice(provider: str) -> tuple[str, str, bool]:
+    """The quickest model / effort of a CLI, for a small run that should not wait on deep reasoning (AI mascot)."""
+    if provider == "codex":
+        return "", "low" if "low" in _codex_levels("") else "", False
+    return {"claude": "haiku", "antigravity": AGY_MODELS[0][0]}.get(provider, ""), "", False
 
 
 def _options(rows) -> list[dict]:
@@ -242,7 +275,15 @@ def _codex_models() -> tuple[list[dict], list[str]]:
         group, _, name = slug.rpartition("/")
         label = str(m.get("display_name") or slug).rpartition("/")[2] if group else str(m.get("display_name") or slug)
         hint = f"Qua opencodex → {group}" if group else str(m.get("description") or "")
-        rows.append({"value": slug, "label": label or name, "hint": hint, "group": group, "efforts": ["", *efforts] if efforts else []})
+        rows.append(
+            {
+                "value": slug,
+                "label": label or name,
+                "hint": hint,
+                "group": group,
+                "efforts": ["", *efforts] if efforts else [],
+            }
+        )
     return rows, [e for e in CODEX_EFFORTS if e in union] or ["low", "medium", "high", "xhigh"]
 
 
@@ -259,8 +300,14 @@ def catalog(settings) -> list[dict]:
     rows = {"claude": (_options(CLAUDE_MODELS), EFFORTS), "codex": ([*_options([])[:1], *codex], codex_efforts),
             "antigravity": (_options(AGY_MODELS), ())}  # fmt: skip
     return [
-        {"id": p, "name": NAMES[p], "models": rows[p][0],
-         "efforts": ["", *rows[p][1]] if rows[p][1] else [], "quota": p == "claude", "install": INSTALL[p]}  # fmt: skip
+        {
+            "id": p,
+            "name": NAMES[p],
+            "models": rows[p][0],
+            "efforts": ["", *rows[p][1]] if rows[p][1] else [],
+            "quota": p == "claude",
+            "install": INSTALL[p],
+        }  # fmt: skip
         for p in PROVIDERS
     ]
 
@@ -309,7 +356,12 @@ def _codex_base(settings, model: str, effort: str) -> list[str]:
     just the proxy's base URL and model catalog from it."""
     route = []
     if "/" in model and (proxy := _codex_proxy(cfg := _codex_config())):
-        route = ["-c", f"openai_base_url={json.dumps(proxy)}", "-c", f"model_catalog_json={json.dumps(str(_codex_catalog(cfg)))}"]
+        route = [
+            "-c",
+            f"openai_base_url={json.dumps(proxy)}",
+            "-c",
+            f"model_catalog_json={json.dumps(str(_codex_catalog(cfg)))}",
+        ]
     return ["--json", "--skip-git-repo-check", "--ignore-user-config", "-c", 'web_search="disabled"', *route,
             *CODEX_OFF,
             *(["-m", model] if model else []),
@@ -367,8 +419,10 @@ def _data_deny(settings) -> str:
     catch a command naming the dir or its secrets."""
     d = settings.data_dir.resolve()
     home = ",".join(f"Read(~/{h}/**)" for h in SECRET_HOME)
-    return (f"Read({_rule_path(d)}/**),Read({_rule_path(settings.root.resolve())}/.env),{home},Bash(*{d}*),"
-            f"Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)")
+    return (
+        f"Read({_rule_path(d)}/**),Read({_rule_path(settings.root.resolve())}/.env),{home},Bash(*{d}*),"
+        f"Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
+    )
 
 
 def is_claude(cmd: list[str]) -> bool:
@@ -377,7 +431,14 @@ def is_claude(cmd: list[str]) -> bool:
 
 
 def ask_cmd(
-    settings, p: str, *, tools: bool, read_dir: str | None, model: str, effort: str, stream: bool = False,
+    settings,
+    p: str,
+    *,
+    tools: bool,
+    read_dir: str | None,
+    model: str,
+    effort: str,
+    stream: bool = False,
     shell: bool = False,
 ) -> list[str]:
     """One answer (prompt on stdin), no file edits. `tools`: may read the project (cwd); else none.
@@ -418,8 +479,16 @@ def ask_cmd(
 
 
 def task_cmd(
-    settings, p: str, mode: str, sid: str, resume: bool, model: str, effort: str, read_dir: str | None = None,
-    *, index: bool = False,
+    settings,
+    p: str,
+    mode: str,
+    sid: str,
+    resume: bool,
+    model: str,
+    effort: str,
+    read_dir: str | None = None,
+    *,
+    index: bool = False,
 ) -> list[str]:
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
     `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere).
@@ -619,7 +688,7 @@ async def events(stream, idle=lambda: None):
 
 _login: dict = {"proc": None, "url": None}  # a dashboard-started `codex login`
 _codex_login_lock = asyncio.Lock()
-_quota: dict = {}  # provider -> (monotonic time read, windows, ISO time read)
+_quota: dict = {}  # provider -> (monotonic time read, {"usage": windows, …}, ISO time read)
 _quota_lock: dict[str, asyncio.Lock] = {}
 _CODEX_URL = re.compile(r"https://auth\.openai\.com/\S+")
 
@@ -647,12 +716,13 @@ def _login_pending() -> bool:
     return p is not None and p.returncode is None
 
 
-async def _codex_quota(settings) -> list[dict]:
-    """The ChatGPT plan's windows, from `codex app-server` (read only: no model call)."""
+async def _codex_rpc(settings, method: str, params: dict | None = None) -> dict | None:
+    """One request to `codex app-server` (JSON-RPC on stdio): its reply ({"result"} or {"error"}),
+    None when the CLI didn't start or answer in time."""
     hello = {"clientInfo": {"name": "telegram-dashboard", "version": "0"}}
     msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": hello},
             {"jsonrpc": "2.0", "method": "initialized"},
-            {"jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read"}]  # fmt: skip
+            {"jsonrpc": "2.0", "id": 2, "method": method, **({"params": params} if params else {})}]  # fmt: skip
     cmd = [*exe(settings, "codex"), "app-server"]
     proc = None
     with contextlib.suppress(OSError):
@@ -661,46 +731,83 @@ async def _codex_quota(settings) -> list[dict]:
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL, limit=1 << 22,
         )  # fmt: skip
     if proc is None:
-        return []
+        return None
 
-    async def answer() -> dict:  # the server stays up while stdin is open: read until our reply
+    async def answer() -> dict | None:  # the server stays up while stdin is open: read until our reply
         proc.stdin.write("".join(json.dumps(m) + "\n" for m in msgs).encode())
         await proc.stdin.drain()
         async for raw in proc.stdout:
             with contextlib.suppress(ValueError):
                 ev = json.loads(raw)
                 if isinstance(ev, dict) and ev.get("id") == 2:
-                    return ev.get("result") or {}
-        return {}
+                    return ev
+        return None
 
     try:
-        res = await asyncio.wait_for(answer(), 20)
-    except (TimeoutError, OSError):
-        res = {}
+        return await asyncio.wait_for(answer(), 20)
+    except TimeoutError, OSError:
+        return None
     finally:
         if proc.returncode is None:
             proc.kill()
         await proc.wait()
+
+
+def _iso(at) -> str | None:
+    return datetime.fromtimestamp(at, UTC).isoformat() if isinstance(at, int) else None
+
+
+async def _codex_quota(settings) -> dict:
+    """The ChatGPT plan's windows and its free rate-limit resets, from `codex app-server` (read only: no model call)."""
+    res = (await _codex_rpc(settings, "account/rateLimits/read") or {}).get("result")
+    res = res if isinstance(res, dict) else {}
     rl = res.get("rateLimits") if isinstance(res.get("rateLimits"), dict) else {}
     out = []
     for w in (rl.get("primary"), rl.get("secondary")):
         if isinstance(w, dict) and isinstance(w.get("usedPercent"), int | float):
             mins = w.get("windowDurationMins")
-            at = w.get("resetsAt")
             out.append({"label": "5h" if mins == 300 else "1w" if mins == 10080 else f"{mins} phút",
-                        "percent": w["usedPercent"],
-                        "resets_at": datetime.fromtimestamp(at, UTC).isoformat() if isinstance(at, int) else None,
-                        })  # fmt: skip
-    return out
+                        "percent": w["usedPercent"], "resets_at": _iso(w.get("resetsAt"))})  # fmt: skip
+    rc = res.get("rateLimitResetCredits") if isinstance(res.get("rateLimitResetCredits"), dict) else {}
+    resets = [
+        {
+            "id": c["id"],
+            "title": c.get("title"),
+            "description": c.get("description"),
+            "expires_at": _iso(c.get("expiresAt")),
+        }  # fmt: skip
+        for c in rc.get("credits") or []
+        if isinstance(c, dict) and isinstance(c.get("id"), str) and c.get("status") == "available"
+    ]
+    n = rc.get("availableCount")
+    return {"usage": out, "resets": resets, "resets_left": n if isinstance(n, int) else len(resets)}
 
 
-async def _agy_quota(settings) -> list[dict]:
+async def codex_reset(settings, credit_id: str | None, *, request_id: str | None = None) -> str:
+    """Redeem one free rate-limit reset (the next available one without `credit_id`), then read the quota
+    again. No answer = it may have gone through: never retried here, the user looks at the quota first."""
+    if not installed(settings, "codex"):
+        raise ApiError(422, "ai_cli_missing")
+    ask = {"idempotencyKey": request_id or str(uuid.uuid4()), "creditId": credit_id}
+    got = await _codex_rpc(settings, "account/rateLimitResetCredit/consume", ask)
+    with contextlib.suppress(Exception):  # the fresh quota is best effort; the outcome is what matters
+        await quota(settings, "codex", fresh=True)
+    if got is None:
+        raise ApiError(504, "ai_reset_unknown")
+    if not isinstance(got.get("result"), dict):
+        err = got.get("error")
+        raise ApiError(502, "ai_provider_error", detail=str(err.get("message") if isinstance(err, dict) else err)[:300])
+    o = got["result"].get("outcome")
+    return o if o in ("reset", "nothingToReset", "noCredit", "alreadyRedeemed") else "unknown"
+
+
+async def _agy_quota(settings) -> dict:
     """Remaining share of each model group's 5-hour and weekly limit, from `agy -p /usage`."""
     got = await run_cli([*exe(settings, "antigravity"), "-p", "/usage", "--output-format", "json"])
     try:
         data = json.loads(got[1] if got else b"")["command"]["data"]
-    except (ValueError, KeyError, TypeError):
-        return []
+    except ValueError, KeyError, TypeError:
+        return {"usage": []}
     out = []
     for g in data.get("groups") or [] if isinstance(data, dict) else []:
         name = str(g.get("name") or "").removesuffix(" Models").removesuffix(" models").replace(" and ", " & ")
@@ -710,21 +817,21 @@ async def _agy_quota(settings) -> list[dict]:
             if isinstance(left, int | float) and b.get("window") in ("5h", "weekly"):
                 out.append({"label": f"{'5h' if b['window'] == '5h' else '1w'} · {name}",
                             "percent": round((1 - left) * 100, 1), "resets_at": b.get("reset_time")})  # fmt: skip
-    return out
+    return {"usage": out}
 
 
-async def quota(settings, p: str, fresh: bool = False) -> tuple[list[dict], str | None]:
-    """A signed-in CLI's plan windows ({label, percent used, resets_at}) and when they were read;
-    read at most every USAGE_EVERY seconds (the account card polls), unless `fresh`."""
+async def quota(settings, p: str, fresh: bool = False) -> tuple[dict, str | None]:
+    """A signed-in CLI's plan windows ({"usage": [{label, percent used, resets_at}]}, Codex adds its free
+    "resets") and when they were read; read at most every USAGE_EVERY seconds (the card polls), unless `fresh`."""
     async with _quota_lock.setdefault(p, asyncio.Lock()):  # polls that overlap share one read
         got = _quota.get(p)
         if fresh or got is None or time.monotonic() - got[0] >= USAGE_EVERY:
-            windows = await (_codex_quota if p == "codex" else _agy_quota)(settings)
-            got = (time.monotonic(), windows, datetime.now(UTC).isoformat(timespec="seconds"))
-            if windows or p not in _quota:  # a failed read keeps the last good one
+            q = await (_codex_quota if p == "codex" else _agy_quota)(settings)
+            got = (time.monotonic(), q, datetime.now(UTC).isoformat(timespec="seconds"))
+            if q["usage"] or p not in _quota:  # a failed read keeps the last good one
                 _quota[p] = got
             got = _quota[p]
-    return got[1], got[2] if got[1] else None
+    return got[1], got[2] if got[1]["usage"] else None
 
 
 async def account(settings, p: str, fresh: bool = False) -> dict:
@@ -746,9 +853,7 @@ async def account(settings, p: str, fresh: bool = False) -> dict:
             tokens = _read_json(_codex_home() / "auth.json").get("tokens") or {}
             c = _jwt_claims(tokens.get("id_token") if isinstance(tokens, dict) else None)
             auth = (
-                c.get("https://api.openai.com/auth")
-                if isinstance(c.get("https://api.openai.com/auth"), dict)
-                else {}
+                c.get("https://api.openai.com/auth") if isinstance(c.get("https://api.openai.com/auth"), dict) else {}
             )
             out["email"] = c.get("email")
             out["plan"] = auth.get("chatgpt_plan_type")
@@ -758,7 +863,8 @@ async def account(settings, p: str, fresh: bool = False) -> dict:
         done = _read_json(_agy_home() / "cache" / "onboarding.json").get("onboardingComplete") is True
         out |= {"loggedIn": out["installed"] and done, "method": "Google"}
     if out["loggedIn"]:
-        out["usage"], out["usage_at"] = await quota(settings, p, fresh)
+        q, out["usage_at"] = await quota(settings, p, fresh)
+        out |= q
     return out
 
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, ShieldOff, Sparkles, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { IssueDialog } from "@/components/composer-dialogs";
@@ -11,13 +11,14 @@ import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/compon
 import { DeepItemAction, DeepPick } from "@/components/deep-think";
 import { TicketChip } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/dialog";
 import { Dropdown } from "@/components/ui/dropdown";
 import { Hint } from "@/components/ui/hint";
 import { api, ApiError, type BeReply, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/lib/api";
 import { type Key, t as tr, useT } from "@/lib/i18n";
 import { copyText, getMessage, openReplyById, smooth, toast } from "@/lib/inbox";
 import { dayLabel, timeLabel } from "@/lib/time";
-import { isString, put, readDigestTeams, readIntro, readList } from "@/lib/prefs";
+import { isString, put, readDigestTeams, readIntro, readList, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { lastSp, yt } from "@/lib/yt";
 import { Segmented } from "@/components/ui/segmented";
@@ -185,6 +186,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
     queryFn: ({ signal }) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { signal }),
   });
   const [consentDays, setConsentDays] = useState<number>(30);
+  const [revoking, setRevoking] = useState(false); // "Thu hồi" asks first: it deletes the saved summary, as Briefing's "Bỏ nhóm"
   const setConsent = useMutation({
     mutationFn: (enabled: boolean) => api<DigestConsent>(`/chats/${enc}/digest-consent`, { method: "PUT", json: { enabled, days: consentDays } }),
     onSuccess: (d) => {
@@ -333,9 +335,15 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
       {enabled && consent.data?.expires_at && (
         <p className="flex items-center gap-2 border-b px-3 py-1 text-xs text-ink-3 md:px-5">
           <ShieldCheck className="size-3.5" aria-hidden /> {t("AI được đọc nhóm này đến {time}", { time: timeLabel(consent.data.expires_at, true) })}
-          <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => setConsent.mutate(false)}>{t("Thu hồi")}</button>
+          <button type="button" className="underline underline-offset-2 hover:text-ink" onClick={() => { setConsent.reset(); setRevoking(true); }}>{t("Thu hồi")}</button>
         </p>
       )}
+
+      <ConfirmDialog open={revoking} onOpenChange={setRevoking} icon={ShieldOff}
+        title={t("Thu hồi quyền AI đọc nhóm này?")} confirmLabel={t("Thu hồi")}
+        description={t("AI thôi đọc nhóm này và bản tóm tắt đã lưu bị xóa. Cho phép lại lúc nào cũng được.")}
+        busy={setConsent.isPending} error={setConsent.isError && t("Không đổi được quyền AI: {e}", { e: digestError(setConsent.error) })}
+        onConfirm={() => setConsent.mutate(false, { onSuccess: () => setRevoking(false) })} />
 
       <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-y-auto lg:grid-cols-2 lg:grid-rows-1 lg:overflow-hidden">
         {/* Result: first on phones, right column on desktop. */}
@@ -355,7 +363,7 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           )}
         </div>
 
-        <ol aria-label={t("Hội thoại")} className="grid content-start divide-y divide-rule lg:order-1 lg:min-h-0 lg:overflow-y-auto">
+        <ol aria-label={t("Hội thoại")} className="zebra grid content-start divide-y divide-rule lg:order-1 lg:min-h-0 lg:overflow-y-auto">
           {wait && <li><AiFetching kind="history" /></li>}
           {history.isError && (
             <li role="alert" className="flex items-center gap-2 px-3 py-3 text-sm text-error md:px-5">
@@ -585,7 +593,8 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
   const beOpen = (key: string, it: DigestItem) => !!it.be && !closed(key, it);
   const beCount = SECTIONS.reduce((n, [k]) => n + (r[k] ?? []).filter((it) => beOpen(k, it)).length, 0);
   const beDone = SECTIONS.reduce((n, [k]) => n + (r[k] ?? []).filter((it) => it.be && closed(k, it)).length, 0);
-  const be = only === "be";
+  const code = usesCode(useRole()); // QA / PO: no "Với BE" filter (BE topics are checked against the code)
+  const be = code && only === "be";
   const empty = !r.raw && !r.topics?.length && SECTIONS.every(([k]) => !r[k]?.length);
   return (
     <div className="grid gap-5">
@@ -594,7 +603,7 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
         <span>{t("{n} tin", { n: r.source_count })}</span>
         <Button size="xs" variant="outline" className="ml-auto" onClick={onCopy}><Copy /> Copy markdown</Button>
       </div>
-      {!empty && !r.raw && (
+      {code && !empty && !r.raw && (
         <div className="flex flex-wrap items-center gap-2">
           <Segmented id="tg-digest-be" label={t("Lọc mục")} value={only} onChange={setOnly}
             items={[{ value: "all", label: t("Tất cả") }, { value: "be", label: t("Với BE · {n}", { n: beCount }), title: t("Hỏi / trả lời / chốt với BE (API, field, data) còn chưa xử lý") }]} />

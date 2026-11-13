@@ -1,5 +1,5 @@
 """Links in a task prompt that the agent cannot open itself (no web, no tokens, no Telegram session):
-YouTrack Knowledge Base articles and private Telegram message links. The dashboard reads them with
+YouTrack Knowledge Base articles, YouTrack tickets and private Telegram message links. The dashboard reads them with
 its own YouTrack token and Telegram session. Short content goes into the prompt; a long one is saved
 to the task's links dir, which the agent may read (its Read tool pages through a long file).
 A saved one comes with an outline (headings, their line in the file, the start of each part verbatim),
@@ -22,6 +22,7 @@ from . import ai
 log = logging.getLogger("telegram_dashboard.links")
 
 ARTICLE = re.compile(r"https?://([^\s/]+)\S*?/articles/([A-Za-z][\w]*-A-\d+)")
+ISSUE = re.compile(r"https?://([^\s/]+)\S*?/issue/([A-Za-z][\w]*-\d+)\b")
 TG = re.compile(r"https?://t\.me/c/(\d+)/(?:\d+/)?(\d+)")  # /c/<chat>/<msg> or /c/<chat>/<topic>/<msg>
 MAX_LINKS = 10
 INLINE_CHARS = 8000  # longer goes to a file: KB articles run long (VA-A-134 is ~72k chars)
@@ -50,7 +51,7 @@ def links_dir(settings, task_id: str) -> Path:
 
 
 def has_links(text: str) -> bool:
-    return bool(ARTICLE.search(text) or TG.search(text))
+    return bool(ARTICLE.search(text) or ISSUE.search(text) or TG.search(text))
 
 
 def delete_links(settings, task_id: str) -> None:
@@ -118,11 +119,24 @@ async def _summary(s, task: str, body: str) -> str | None:
         return None
 
 
+def _ours(yt, host: str) -> bool:
+    return bool(yt.token) and urlsplit(yt.base).netloc.lower() == host.lower()  # another YouTrack: not our token's
+
+
 async def _article(yt, host: str, aid: str) -> str | None:
-    if not yt.token or urlsplit(yt.base).netloc.lower() != host.lower():  # another YouTrack: not our token's
+    if not _ours(yt, host):
         return None
     a = await yt.yt(f"/api/articles/{aid}", fields="idReadable,summary,content")
     return f"# {a.get('idReadable', aid)} {a.get('summary') or ''}\n\n{a.get('content') or ''}"
+
+
+async def _issue(yt, host: str, iid: str) -> str | None:
+    """The ticket as YouTrack AI on one ticket sees it (same detail, cache and JSON)."""
+    from .yt_dashboard import _ticket_json  # late: yt_dashboard imports this module
+
+    if not _ours(yt, host):
+        return None
+    return _ticket_json(await yt.cached(f"issue:{iid}", lambda: yt.detail(iid)))
 
 
 async def _telegram(s, chat: str, mid: int) -> str | None:
@@ -153,6 +167,7 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
     text came from; t.me links to other groups stay unread (someone in group A must not pull group B's
     messages into an answer that goes back to A)."""
     found = [(m.group(0), "yt", m.groups()) for m in ARTICLE.finditer(text)]
+    found += [(m.group(0), "issue", m.groups()) for m in ISSUE.finditer(text)]
     found += [(m.group(0), "tg", m.groups()) for m in TG.finditer(text)]
     if not found:
         return ""
@@ -167,8 +182,12 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
         try:
             if kind == "tg" and chat_id and f"-100{g[0]}" != chat_id:
                 body = None  # another group's message
+            elif kind == "yt":
+                body = await _article(s.yt, *g)
+            elif kind == "issue":
+                body = await _issue(s.yt, *g)
             else:
-                body = await (_article(s.yt, *g) if kind == "yt" else _telegram(s, g[0], int(g[1])))
+                body = await _telegram(s, g[0], int(g[1]))
         except Exception as e:  # noqa: BLE001 — one bad link never blocks the task
             log.info("link %s not read: %s", url, type(e).__name__)
             body = None
@@ -199,7 +218,8 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
                 body = body[:INLINE_CHARS] + "\n\n(… bị cắt: dashboard không lưu được bản đầy đủ)"
         parts.append(
             f"## {url}\n\n<untrusted_link_content>\n{body}\n</untrusted_link_content>"
-            if body else f"## {url}\n\n(dashboard không đọc được link này)"
+            if body
+            else f"## {url}\n\n(dashboard không đọc được link này)"
         )
     for (i, _), out in zip(jobs, await asyncio.gather(*(j for _, j in jobs)), strict=True):
         if out:  # written from the link: just as untrusted
@@ -215,6 +235,9 @@ async def link_block(s, text: str, task_id: str | None, summarize: bool = True, 
 if __name__ == "__main__":  # self-check of the link patterns
     t = "xem https://works.citics.vn/articles/VA-A-134 và https://t.me/c/1234/273/39671, https://t.me/c/1234/5"
     assert [m.groups() for m in ARTICLE.finditer(t)] == [("works.citics.vn", "VA-A-134")]
+    assert [m.groups() for m in ISSUE.finditer("https://works.citics.vn/issue/VA-12/ten-ticket")] == [
+        ("works.citics.vn", "VA-12")
+    ]
     assert [m.groups() for m in TG.finditer(t)] == [("1234", "39671"), ("1234", "5")]
     assert _outline("intro\n# A\nmở đầu\n```\n# not\n```\n## B") == ("- dòng 5: # A\n  mở đầu\n- dòng 10: ## B", 2)
     print("ok")

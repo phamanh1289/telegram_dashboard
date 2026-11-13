@@ -129,6 +129,7 @@ export function TicketsPage() {
     snap.current = null;
     return s && page.current ? morph(s, page.current) : undefined;
   }, [view]);
+  useFlip(page, [fq, folded, y.showRes], still); // filter / sort / fold: the rows glide into their new order
 
   const fold = (g: string) => setFolded((s) => { const n = new Set(s); if (!n.delete(g)) n.add(g); return n; });
   const anyFilter = !!(f.sprint.length || f.assignee.length || f.tier != null || f.quick || f.state.length || f.priority.length || f.type.length || f.q);
@@ -202,12 +203,12 @@ export function TicketsPage() {
                 })}
               </tr>
             </thead>
-            <tbody ref={bodyRef}>
+            <tbody ref={bodyRef} className="zebra">
               {!groups
                 ? shown.map(row)
                 : parts.map(([g, items, part]) => (
                   <Fragment key={g}>
-                    <tr className="z-[5] bg-paper-2 md:sticky md:top-[33px]">
+                    <tr data-zebra-off data-g={g} className="z-[5] bg-paper-2 md:sticky md:top-[33px]">
                       <td colSpan={tcols.length + 1} className="px-3.5 py-1.5">
                         <button type="button" aria-expanded={!folded.has(g)} className="flex w-full items-center gap-2 text-left text-sm font-bold text-ink" onClick={() => fold(g)}>
                           <ChevronDown className={cn("size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-in-out)", folded.has(g) && "-rotate-90")} />
@@ -316,6 +317,42 @@ function morph(snap: Snap, root: HTMLElement) {
   return done;
 }
 
+// Filter / sort / fold: rows and cards that stay glide from their old place to the new one (FLIP), new ones rise in. Places are
+// offsetTop inside the table / lane, so scrolling between renders doesn't skew them; a far jump starts one screen away, not miles off.
+const FLIP_ITEMS = "tr[data-id], tr[data-g], [data-card]";
+const flipKey = (el: HTMLElement) => el.dataset.id ?? el.dataset.g ?? el.dataset.card!;
+function useFlip(root: React.RefObject<HTMLElement | null>, deps: unknown[], still: boolean | null) {
+  const last = useRef(new Map<string, { top: number; parent: Element | null }>());
+  const mounted = useRef(false);
+  useLayoutEffect(() => {
+    const box = root.current;
+    if (!mounted.current || still || !box) { mounted.current = true; return; }
+    const prev = last.current, runs: Animation[] = [];
+    const ease = getComputedStyle(box).getPropertyValue("--ease-out").trim() || "ease-out";
+    let moved = 0, born = 0;
+    for (const el of box.querySelectorAll<HTMLElement>(FLIP_ITEMS)) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) continue; // off screen: nothing to see
+      const p = prev.get(flipKey(el));
+      if (p && el.dataset.g != null) continue; // a sticky group header: its offsets follow the scroll, it only fades in when new
+      if (!p || p.parent !== el.offsetParent) {
+        runs.push(el.animate({ opacity: [0, 1], transform: ["translateY(12px)", "none"] }, { duration: 380, delay: Math.min(born++ * 22, 260), easing: ease, fill: "backwards" }));
+        continue;
+      }
+      const dy = Math.max(-innerHeight, Math.min(innerHeight, p.top - el.offsetTop));
+      if (Math.abs(dy) < 1) continue;
+      runs.push(el.animate({ transform: [`translateY(${dy}px)`, "none"] }, { duration: 520, delay: Math.min(moved++ * 12, 180), easing: ease, fill: "backwards" }));
+    }
+    return () => runs.forEach((a) => a.cancel());
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  // after every commit: where each item sits now, the "before" of the next change
+  useLayoutEffect(() => {
+    const m = new Map<string, { top: number; parent: Element | null }>();
+    for (const el of root.current?.querySelectorAll<HTMLElement>(FLIP_ITEMS) ?? []) m.set(flipKey(el), { top: el.offsetTop, parent: el.offsetParent });
+    last.current = m;
+  });
+}
+
 /** Display options: density, resolved tickets, priority tint, grouping, columns. */
 function Display({ onGroup }: { onGroup: () => void }) {
   const t = useT();
@@ -388,7 +425,7 @@ const Row = memo(function Row({ i, cols, now, onOpen, onPick, acts, picked, dens
   return (
     <tr data-id={i.id} tabIndex={0} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,button,select,input")) onOpen(i); }}
       onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) onOpen(i); }}
-      style={tint ? { background: `color-mix(in oklch, ${PCOL[i.priority!]} ${tint}%, transparent)` } : undefined}
+      style={tint ? { backgroundColor: `color-mix(in oklch, ${PCOL[i.priority!]} ${tint}%, transparent)` } : undefined}
       className={cn("group/row cursor-pointer border-t border-rule/60 align-middle transition-colors duration-(--dur-micro) first:border-0 hover:bg-paper-2 focus-visible:bg-hl-wash focus-visible:outline-none", picked && "bg-hl-wash/60", i.resolved && "text-ink-3")}>
       <td className={cn("pr-1 pl-3.5", pad)} style={{ boxShadow: `inset 3px 0 0 ${stateColor(i.state)}` }} onClick={(e) => { e.stopPropagation(); onPick(i.id); }}>
         <input type="checkbox" checked={picked} onChange={() => onPick(i.id)} onClick={(e) => e.stopPropagation()} aria-label={t("Chọn {id}", { id: i.id })} />
@@ -414,9 +451,9 @@ function BulkBar() {
     const offText = off ? t("{n} ticket không có mũi tên sang {label} trong workflow", { n: off, label }) : "";
     if (!todo.length) { toast({ text: offText || t("Không có gì thay đổi") }); return; }
     setBusy(true);
-    const done: [string, string | null][] = [], fail: string[] = [];
+    const done: [string, string | null][] = [], fail: string[] = [], failed = new Set<string>();
     for (let k = 0; k < todo.length; k += 5) await Promise.all(todo.slice(k, k + 5).map(async (x) => {
-      try { await y.patchTicket(await call(x.id, v)); done.push([x.id, prevOf(x)]); } catch (e) { fail.push(`${x.id}: ${(e as Error).message}`); }
+      try { await y.patchTicket(await call(x.id, v)); done.push([x.id, prevOf(x)]); } catch (e) { fail.push(`${x.id}: ${(e as Error).message}`); failed.add(x.id); }
     }));
     setBusy(false);
     const err = [offText, fail.length ? t("Lỗi {n} ticket — {first}", { n: fail.length, first: fail[0] }) : ""].filter(Boolean).join(". ");
@@ -426,7 +463,7 @@ function BulkBar() {
       for (const [id, prev] of back) await call(id, prev).then(y.patchTicket, (e: Error) => { bad.push(`${id}: ${e.message}`); });
       if (bad.length) throw new Told(`${bad.length < back.length ? t("Chỉ hoàn tác được {n}/{all} ticket", { n: back.length - bad.length, all: back.length }) : t("Không hoàn tác được")} — ${bad[0]}`);
     } });
-    y.setPicked(new Set());
+    y.setPicked(failed); // the failed ones stay picked: try again
   }
   const none = "\u0000"; // nothing ticked in the list: every pick is a change
   const bar = "h-8 bg-board-type/15 px-2.5 text-board-type hover:bg-board-type/25 aria-expanded:bg-board-type/25";
@@ -472,9 +509,9 @@ export async function aiFilterApply(y: Yt, text: string) {
   const options = { state: uniq("state"), priority: uniq("priority"), type: uniq("type"), assignee: y.peopleOptions, sprint: y.sprintOptions.slice(0, 40),
     me: y.me, current_sprint: [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now: Date.now() }).set][0] ?? null };
   setFilterBusy(true);
-  const done = saveOneShot(tNow("AI · Lọc: {q}", { q: ask.slice(0, 60) }), ask, tNow("AI lọc ticket"));
+  const { done, session } = saveOneShot(tNow("AI · Lọc: {q}", { q: ask.slice(0, 60) }), ask, tNow("AI lọc ticket"));
   try {
-    const r = await yt.aiFilter(ask, options);
+    const r = await yt.aiFilter(ask, options, session);
     const pick = (k: keyof typeof options) => (Array.isArray(r[k]) ? (r[k] as unknown[]).filter((v): v is string => typeof v === "string" && (options[k] as string[]).includes(v)) : []);
     const f = { state: pick("state"), priority: pick("priority"), type: pick("type"), assignee: pick("assignee"), sprint: pick("sprint"), q: typeof r.q === "string" ? r.q.slice(0, 100) : "" };
     y.setFilters({ ...f, tier: null, quick: null });
@@ -735,7 +772,7 @@ function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) => void }
             className={cn("relative flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,box-shadow,opacity] duration-(--dur-short)",
               st === target && "bg-hl-wash shadow-[inset_0_0_0_2px_var(--color-hl)]",
               live && st !== live.from && st !== "—" && !canGo(live.t, st) && "opacity-40")}>
-            <ul className="flex min-h-16 flex-col overflow-y-auto px-2 pb-1">
+            <ul className="zebra-in flex min-h-16 flex-col overflow-y-auto px-2 pb-1">
               <AnimatePresence initial={false} custom={!!drag?.land}>
                 {shown.map((i) => i === GHOST ? <Slot key={GHOST} h={live!.h} open grow />
                   : drag && !drag.land && i.id === drag.t.id ? <Slot key={i.id} h={drag.h} open={!away} />

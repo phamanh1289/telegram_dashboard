@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, FileText, Gauge, GitBranch, Hourglass, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
+import { AlarmClock, Check, FileText, Gauge, GitBranch, History, Hourglass, LayoutDashboard, ListChecks, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
+import { type QueryKey, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentIcon } from "@/components/ai/agent-icon";
 import { AiBot, AiThinking } from "@/components/ai/chat";
@@ -11,7 +12,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "runs";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -19,16 +20,19 @@ const LINES: Record<FetchKind, Key[]> = {
   release: ["AI đang kết nối YouTrack", "Đang gom ticket của release", "Đang đọc liên kết, bình luận", "Đang dò ticket chặn go-live", "Sắp xong rồi"],
   people: ["AI đang kết nối YouTrack", "Đang gom ticket cả team", "Đang đếm việc từng người", "Đang tìm ticket blocked, quá hạn", "Sắp xong rồi"],
   chat: ["AI đang kết nối Telegram", "Đang gom tin của nhóm", "Đang đọc tag, reply, người gửi", "Sắp xong rồi"],
-  inbox: ["AI đang kết nối Telegram", "Đang gom tin tag / reply bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
+  inbox: ["AI đang kết nối Telegram", "Đang gom tin tag / reply bạn", "Đang xếp theo độ gấp", "Đang viết danh sách việc cần xử lý"],
   history: ["AI đang kết nối Telegram", "Đang đọc hội thoại của nhóm", "Đang gom tin trong khoảng đã chọn", "Sắp xong rồi"],
   qa: ["AI đang kết nối Telegram", "Đang đọc các câu hỏi #QA", "Đang gom câu trả lời trong chuỗi", "Đang tìm câu chưa ai trả lời", "Sắp xong rồi"],
   brief: ["AI đang kết nối Telegram", "Đang gom tóm tắt các nhóm", "Đang tìm việc chờ bạn", "Đang xếp theo độ gấp", "Sắp xong rồi"],
   digest: ["AI đang đọc hội thoại của nhóm", "Đang ghép câu hỏi với câu trả lời", "Đang gom theo chủ đề, đánh dấu trao đổi với BE", "Đang tìm việc cần confirm, điều đã chốt", "Sắp xong rồi"],
-  today: ["AI đang gom việc của bạn", "Đang đọc tag chờ và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang xếp theo độ gấp", "Sắp xong rồi"],
+  waiting: ["AI đang xem việc bạn đang chờ người khác", "Đang đọc tag đã hoãn", "Đang dò câu hỏi Q&A chưa ai trả lời", "Sắp xong rồi"],
+  today: ["AI đang gom việc của bạn", "Đang đọc tag chờ, phiên AI và câu hỏi Q&A", "Đang soi ticket YouTrack rủi ro", "Đang tổng hợp theo từng việc", "Đang viết danh sách việc chờ bạn"],
   update: ["AI đang kết nối GitHub", "Đang kéo bản mới về", "Đang kiểm checksum và chữ ký", "Đang cài bản mới", "Sắp xong rồi"],
   restart: ["Đã cài bản mới", "Đang khởi động lại server", "Đang chờ server lên lại", "Sắp tải lại trang"],
   deep: ["AI đang mở dự án", "Đang đọc câu hỏi gửi BE và câu BE trả lời", "Đang soi code: API, model, màn hình", "Đang so: đã adapt, lệch hay chưa làm", "Đang viết bảng đối chiếu"],
+  code: ["AI đang mở dự án", "Đang tìm và đọc code liên quan", "Đang so sánh các đoạn code", "Đang đọc tin nhắn và bình luận", "Đang so code với nội dung trao đổi", "Đang viết lại báo cáo"],
   runs: ["AI đang lắng nghe Claude, Codex", "Đang mở file của từng request", "Đang gom model, token, thời gian chạy", "Đang ghi chú lại thành lịch sử", "Sắp xong rồi"],
+  sessions: ["AI đang mở lịch sử phiên AI", "Đang gom ticket của từng phiên", "Đang đọc lại câu hỏi và câu trả lời", "Đang xếp phiên theo ngày", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -56,15 +60,29 @@ export function useAiWait(pending: boolean, ms = AI_WAIT_MS) {
   return pending || hold;
 }
 
+/** A page's ↻: refetch its active queries under `keys`; `busy` while they run (feed it to useAiWait to replay the scene).
+ *  A failed read shows where that query is used, so nothing is swallowed here. */
+export function useReload(keys: QueryKey[]) {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const run = () => {
+    setBusy(true);
+    void Promise.all(keys.map((queryKey) => qc.refetchQueries({ queryKey, type: "active" }))).finally(() => setBusy(false));
+  };
+  return [busy, run] as const;
+}
+
 /**
  * Waiting on the data a feature reads; `project` names YouTrack ticket IDs (for `agent`: the project folder), `lines` replaces the feature's own.
- * `cover`: laid over the (relative) list box, so the rows render and scroll into place underneath during the hold.
+ * `cover`: laid over the (relative) list box, so the rows render and scroll into place underneath during the hold. Put it
+ * in a non-scrolling `relative` wrapper beside the scroll box, never inside it (inside, it rides the scroll out of view).
+ * Otherwise it fills the box it waits in (flex-1 / h-full, at least 50vh) so the scene sits in its middle, not at its top.
  */
 export function AiFetching({ kind, project = "", lines, cover, className }: { kind: FetchKind; project?: string; lines?: string[]; cover?: boolean; className?: string }) {
   const t = useT();
   const Scene = SCENES[kind];
   return (
-    <div className={cn("@container grid w-full place-items-center", cover ? "absolute inset-0 z-10 bg-cotton" : "min-h-[50vh] py-6", className)}>
+    <div className={cn("@container grid w-full place-items-center", cover ? "absolute inset-0 z-10 bg-cotton" : "h-full min-h-[50vh] flex-1 py-6", className)}>
       <div className="grid justify-items-center gap-5 animate-in fade-in-0 zoom-in-95 duration-(--dur-short) @max-[21rem]:[zoom:0.8]">
         {/* the scene is drawn in px (positions, flight paths): it grows with the frame by zoom, never by its box */}
         <div aria-hidden className="relative h-40 w-80 @min-[36rem]:[zoom:1.3] @min-[52rem]:[zoom:1.55]"><Scene p={project} t={t} /></div>
@@ -84,6 +102,27 @@ export function UpdateHero({ className }: { className?: string }) {
       <Tile label="GitHub" className="top-1/2 left-1 -translate-y-1/2"><GitHubMark /></Tile>
       <Bot className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
       <Tile label="App" className="top-1/2 right-1 -translate-y-1/2"><PackageCheck className="size-8 text-ok" /></Tile>
+    </div>
+  );
+}
+
+/** Nothing left to do (Hôm nay, Việc cần xử lý; same 320 × 160 box): the robot rests, the jobs it cleared circle it as ticked cards. */
+export function AllDone({ className }: { className?: string }) {
+  return (
+    <div aria-hidden className={cn("relative h-40 w-80", className)}>
+      <span className="absolute top-1/2 left-1/2 size-36 -translate-1/2 rounded-full border border-dashed border-ok/40" />
+      <span className="ai-spin absolute top-1/2 left-1/2 size-36 -translate-1/2" style={{ animationDuration: "14s" }}>
+        {[0, 120, 240].map((deg) => (
+          <span key={deg} className="absolute top-1/2 left-1/2 -translate-1/2" style={{ transform: `rotate(${deg}deg) translateY(-72px) rotate(-${deg}deg)` }}>
+            <span className="ai-spin grid size-6 place-items-center rounded-full border border-rule bg-cotton shadow-stock" style={{ animationDuration: "14s", animationDirection: "reverse" }}><Check className="size-3.5 text-ok" /></span>
+          </span>
+        ))}
+      </span>
+      {([["top-3 left-16", "size-3"], ["right-14 bottom-5", "size-4"], ["top-8 right-20", "size-2.5"]] as const).map(([at, sz], k) => (
+        <Sparkles key={k} className={cn("ai-twinkle absolute text-hl-2", at, sz)} style={{ animationDelay: `${k * 0.4}s` }} />
+      ))}
+      <Bot className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
+      <span className="sk-pop absolute top-[88px] left-[172px] grid size-7 place-items-center rounded-full bg-ok text-cotton shadow-stock" style={{ animationDelay: "0.3s" }}><Check className="size-4" strokeWidth={3} /></span>
     </div>
   );
 }
@@ -150,6 +189,22 @@ const Bubble = ({ me, w, tag }: { me?: boolean; w: string; tag?: string }) => (
   </div>
 );
 
+/** The to-do list the robot writes (right of the box): a title, then `rows` ([width, dot colour]) written one by one. */
+const Sheet = ({ rows }: { rows: (readonly [number, string])[] }) => (
+  <div className="absolute top-2 right-1 bottom-2 w-[100px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+    <Line w="60%" className="h-1.5 bg-ink-3/40" />
+    {rows.map(([w, c], k) => {
+      const at = v({ "--fx-d": "4.4s", animationDelay: `${0.6 + k * 0.7}s` });
+      return (
+        <div key={k} className="mt-3 flex items-center gap-1.5">
+          <span className="fx-step size-2 shrink-0 rounded-full" style={{ ...at, background: c }} />
+          <span className="fx-step block h-1 rounded-full bg-ink-3/30" style={{ ...at, width: w }} />
+        </div>
+      );
+    })}
+  </div>
+);
+
 // ---- scenes
 
 type Scene = (a: { p: string; t: T }) => ReactNode;
@@ -157,15 +212,39 @@ const tid = (p: string, n: number) => `${p || "YT"}-${n}`; // a ticket ID of the
 const ARCS = ["M44 70C110 -6 200 0 268 80", "M44 70C110 150 200 160 268 80"];
 
 const SCENES: Record<FetchKind, Scene> = {
-  // Hôm nay: tags (Telegram) and tickets (YouTrack) stream into the robot from both sides; what is urgent comes out on top
-  today: ({ p, t }) => <>
-    <Cone className="inset-y-7 right-1/2 left-12" />
-    <Cone className="inset-y-7 right-12 left-1/2 -scale-x-100" />
-    {([[t("@bạn"), C.info, 0], [tid(p, 214), C.hl, 1], ["#QA", C.ok, 0], ["Blocked", C.err, 1], [t("@bạn"), C.info, 0], [t("Quá hạn"), C.warn, 1]] as const)
-      .map(([s, c, side], k) => <Fly key={k} k={k} dot={c} gap={0.5} path={side ? "M276 80C236 30 196 40 160 80" : "M44 80C84 130 124 120 160 80"}>{s}</Fly>)}
-    <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
-    <Tile label={p || "YouTrack"} className="top-1/2 right-1 -translate-y-1/2"><YtLogo className="size-9" /></Tile>
+  // Hôm nay: the sources (Telegram tags, YouTrack tickets, Q&A) stream into the robot, which writes them up as a to-do list,
+  // the urgent item first
+  today: ({ p, t }) => {
+    const src = [[14, <Tg key="tg" className="size-7" icon="size-4" />, "Telegram"], [62, <YtLogo key="yt" className="size-7" />, p || "YouTrack"],
+      [110, <MessageCircleQuestion key="qa" className="size-6 text-info" />, "Q&A"]] as const;
+    const chips = [[t("@bạn"), C.info, 0], [tid(p, 214), C.hl, 1], ["#QA", C.ok, 2], ["Blocked", C.err, 1], ["REF-", C.hl2, 0], [t("Quá hạn"), C.warn, 0]] as const;
+    return <>
+      {chips.map(([s, c, row], k) => {
+        const y = src[row][0] + 18;
+        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>;
+      })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      {src.map(([y, icon, label]) => (
+        <div key={label} className="absolute left-0 flex h-9 w-[54px] items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
+          {icon}<span className="sr-only">{label}</span>
+        </div>
+      ))}
+      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <Sheet rows={[[58, C.warn], [46, C.hl], [62, C.info], [40, C.ok]]} />
+    </>;
+  },
+
+  // Bạn đang chờ: snoozed tags (left) and your questions still awaiting a reply (right, typing dots) drift into the robot,
+  // which holds them on its hourglass until someone answers
+  waiting: ({ p, t }) => <>
+    {([[t("Hoãn"), C.warn, 0], ["#QA", C.info, 1], [tid(p, 12), C.hl, 0], ["@BE", C.info, 1], [t("Hoãn"), C.warn, 0], ["#QA", C.info, 1]] as const)
+      .map(([s, c, side], k) => <Fly key={k} k={k} dot={c} gap={0.55} dur={2.8} path={side ? "M276 80C240 36 196 46 170 80" : "M44 80C80 124 124 114 150 80"}>{s}</Fly>)}
+    <Tile label={t("Hoãn")} className="top-1/2 left-1 -translate-y-1/2"><AlarmClock className="size-8 text-warn" /></Tile>
+    <Tile label="Q&A" className="top-1/2 right-1 -translate-y-1/2">
+      <span className="flex gap-1">{[0, 1, 2].map((k) => <span key={k} className="ai-dot size-2 rounded-full bg-info" style={{ animationDelay: `${k * 0.15}s` }} />)}</span>
+    </Tile>
     <Bot ring className="top-1/2 left-1/2 size-20 -translate-x-1/2 -translate-y-1/2" />
+    <span className="absolute top-[98px] left-[176px] grid size-7 place-items-center rounded-full border border-rule bg-cotton shadow-stock"><Hourglass className="ai-hop size-4 text-hl-2" /></span>
   </>,
 
   // the ticket list: the robot pulls ticket IDs and fields out of YouTrack
@@ -227,22 +306,16 @@ const SCENES: Record<FetchKind, Scene> = {
   },
 
   // tags waiting on you: each passes through the robot and drops into its urgency lane
-  inbox: ({ t }) => {
-    const lanes = [[t("Quá hạn"), C.err, 34], [t("Hôm nay"), C.warn, 80], [t("Để sau"), C.info, 126]] as const;
-    return <>
-      {([[t("@bạn"), 0], ["Reply", 1], ["Tag", 2], [`${t("@bạn")} 3h`, 0], [t("Hỏi"), 1], ["FYI", 2]] as const).map(([s, l], k) => {
-        const [, c, y] = lanes[l];
-        return <Fly key={k} k={k} gap={0.5} dur={3} dot={c} path={`M44 72C90 72 112 80 150 80C196 80 214 ${y} 262 ${y}`}>{s}</Fly>;
-      })}
-      <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
-      <Bot className="top-1/2 left-[118px] size-16 -translate-y-1/2" size="size-11" />
-      {lanes.map(([l, c, y]) => (
-        <span key={l} className="absolute right-0 flex h-7 w-[68px] -translate-y-1/2 items-center gap-1 rounded-md border border-rule bg-cotton px-1.5 text-[10px] font-medium text-ink-2 shadow-stock" style={{ top: y }}>
-          <span className="size-1.5 rounded-full" style={{ background: c }} />{l}
-        </span>
-      ))}
-    </>;
-  },
+  // Việc cần xử lý: tags and replies to you stream from Telegram into the robot, which writes them up as a to-do list,
+  // overdue first
+  inbox: ({ t }) => <>
+    {([[t("@bạn"), C.err], ["Reply", C.info], ["Tag", C.warn], [`${t("@bạn")} 3h`, C.err], [t("Hỏi"), C.warn], ["FYI", C.info]] as const)
+      .map(([s, c], k) => <Fly key={k} k={k} gap={0.5} dur={2.6} dot={c} path="M44 80C80 52 104 52 140 80">{s}</Fly>)}
+    {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+    <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
+    <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+    <Sheet rows={[[58, C.err], [44, C.err], [62, C.warn], [40, C.info]]} />
+  </>,
 
   // the digest's conversation: messages pop up day by day along a timeline, the picked range sweeps over them
   history: ({ t }) => {
@@ -473,6 +546,46 @@ const SCENES: Record<FetchKind, Scene> = {
       </div>
     </>;
   },
+  // Lịch sử AI (YouTrack): the robot reopens the sessions kept in this browser (their questions / answers) and pulls each
+  // one's tickets from YouTrack, then files them into the history log by day
+  sessions: ({ p, t }) => {
+    const src = [[36, <YtLogo key="yt" className="size-6" />, p || "YouTrack"], [124, <History key="h" className="size-5 text-hl-2" />, t("Phiên AI")]] as const;
+    const days = [[t("Hôm nay"), [[ListChecks, 52], [LayoutDashboard, 40], [ListChecks, 60]]], [t("Hôm qua"), [[ListChecks, 46], [LayoutDashboard, 56]]]] as const;
+    let row = 0;
+    return <>
+      {([[tid(p, 128), C.hl, 0], ["Q", C.info, 1], [tid(p, 342), C.hl, 0], ["A", C.ok, 1], [tid(p, 517), C.hl, 0], [t("Phiên AI"), C.hl2, 1]] as const)
+        .map(([s, c, from], k) => { const y = src[from][0]; return <Fly key={k} k={k} dot={c} gap={0.3} dur={2} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.4} dur={1.6} path={`M170 80C190 80 196 ${48 + k * 24} 214 ${48 + k * 24}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      {src.map(([y, icon, l]) => (
+        <div key={l} className="absolute left-0 flex h-9 w-[54px] -translate-y-1/2 items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
+          {icon}<span className="sr-only">{l}</span>
+        </div>
+      ))}
+      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <div className="absolute top-2 right-0 bottom-2 w-[100px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
+        <div className="flex items-center gap-1 border-b border-rule bg-paper-2 px-1.5 py-1">
+          <History className="size-2.5 text-hl-2" />
+          <span className="truncate font-mono text-[8px] font-bold text-ink-2">{t("Lịch sử AI")}</span>
+        </div>
+        <div className="grid gap-1 p-1.5">
+          {days.map(([d, rows]) => (
+            <Fragment key={d}>
+              <span className="font-mono text-[7px] leading-none font-bold text-ink-3 uppercase">{d}</span>
+              {rows.map(([Icon, w]) => {
+                const at = v({ "--fx-d": "3s", animationDelay: `${row++ * 0.18}s` }); // quick: the page opens on a short hold
+                return (
+                  <div key={row} className="fx-step flex items-center gap-1 border-l border-rule-2 pl-1" style={at}>
+                    <Icon className="size-2.5 shrink-0 text-ink-3" />
+                    <Line w={w} className="bg-ink-3/30" />
+                  </div>
+                );
+              })}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+    </>;
+  },
   // Đối chiếu BE: the Q&A with BE scrolls by on the left, each question / answer flies into the robot, which runs its
   // magnifier down the project's code on the right and pins a verdict on the lines it checked (adapted, off, missing, waiting)
   deep: ({ p, t }) => {
@@ -520,6 +633,71 @@ const SCENES: Record<FetchKind, Scene> = {
       <span className="fx-scan absolute top-3 left-[178px] grid size-7 place-items-center rounded-full border-2 border-hl bg-cotton/80 shadow-stock" style={v({ "--fx-y": "100px" })}>
         <Search className="size-3.5 text-hl-2" strokeWidth={2.5} />
       </span>
+    </>;
+  },
+  // Trả lời từ code (Trợ lý AI): the message and its comments on the left are read and fly into the robot, which searches the
+  // project, compares the code (a diff, each change marked matches / off / missing), then writes the report line by line
+  code: ({ p, t }) => {
+    const diff = [[" ", 44, C.hl2], ["-", 52, C.err], ["+", 48, C.ok], [" ", 36, C.info], ["-", 40, C.err], ["+", 46, C.ok]] as const;
+    const marks = [[1, X, C.err], [2, Check, C.ok], [5, TriangleAlert, C.warn]] as const;
+    return <>
+      <div className="absolute top-1 bottom-1 left-0 w-[88px] overflow-hidden rounded-xl border border-rule bg-paper-2 p-1.5 pt-3">
+        <div className="grid gap-1.5">
+          <div className="grid gap-1 rounded-lg bg-cotton px-1.5 py-1.5 shadow-stock">
+            <span className="font-mono text-[8px] leading-none font-bold text-hl-2">#BE</span>
+            <Line w="95%" /><Line w="80%" /><Line w="60%" />
+          </div>
+          {[64, 50, 58].map((w, k) => (
+            <div key={k} className="flex items-start gap-1">
+              <span className="mt-0.5 size-2.5 shrink-0 rounded-full" style={{ background: [C.info, C.warn, C.ok][k] }} />
+              <div className="grid gap-1 rounded-lg rounded-tl-sm bg-cotton px-1.5 py-1" style={{ width: w }}><Line w="90%" /><Line w="55%" /></div>
+            </div>
+          ))}
+        </div>
+        <span className="fx-scan absolute top-1 left-0 h-6 w-full bg-linear-to-b from-transparent via-info/25 to-transparent" style={v({ "--fx-y": "120px" })} />
+      </div>
+      <span className="absolute -top-1 -left-1 grid size-6 place-items-center rounded-full bg-info text-cotton shadow-stock"><MessageCircleQuestion className="size-3.5" /></span>
+      {([[t("Hỏi?"), 30, C.info], ["@BE", 64, C.warn], ["rule", 98, C.hl2], [t("Hỏi?"), 126, C.info]] as const)
+        .map(([s, y, c], k) => <Fly key={k} k={k} gap={0.7} dur={3} dot={c} path={`M80 ${y}C100 ${y} 104 88 124 88`}>{s}</Fly>)}
+      <span className={cn(CHIP, "absolute top-0 left-[96px] max-w-[96px] text-hl-2")}>
+        <Search className="size-2.5 shrink-0" strokeWidth={3} /><span className="truncate">{p || "grep"}</span><span className="h-2 w-px shrink-0 animate-pulse bg-hl" />
+      </span>
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`d${k}`} k={k} gap={0.5} dur={1.6} path={`M162 82C180 82 182 ${26 + k * 14} 200 ${26 + k * 14}`} className="size-1.5 rounded-full bg-hl" />)}
+      {([[Check, C.ok], [X, C.err], [Check, C.ok]] as const).map(([Icon, c], k) => (
+        <Fly key={`r${k}`} k={k} gap={1} dur={3} path="M162 100C180 100 182 128 200 128" className="grid size-4 place-items-center rounded-full bg-cotton shadow-stock">
+          <Icon className="size-2.5" style={{ color: c }} strokeWidth={3} />
+        </Fly>
+      ))}
+      <Bot ring className="top-[90px] left-[90px] size-[76px] -translate-y-1/2" size="size-11" />
+      <div className="absolute top-1 right-0 h-[86px] w-[120px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
+        <div className="flex items-center gap-0.5 border-b border-rule bg-paper-2 px-1.5 py-1">
+          {[C.err, C.warn, C.ok].map((c) => <span key={c} className="size-1.5 rounded-full" style={{ background: c }} />)}
+          <span className="ml-1 truncate font-mono text-[8px] text-ink-3">{p || "project"}</span>
+        </div>
+        <div className="relative grid gap-0.5 py-1.5 pr-5 pl-1">
+          {diff.map(([s, w, c], k) => (
+            <div key={k} className="flex h-2 items-center gap-1 rounded-sm px-0.5" style={{ background: s === " " ? undefined : `color-mix(in oklch, ${s === "+" ? C.ok : C.err} 15%, transparent)` }}>
+              <span className="w-1.5 shrink-0 font-mono text-[7px] leading-none font-bold" style={{ color: s === "+" ? C.ok : s === "-" ? C.err : "var(--color-ink-3)" }}>{s}</span>
+              <span className="block h-1 rounded-full opacity-60" style={{ width: w * 0.35, background: c }} />
+              <span className="block h-1 rounded-full bg-ink-3/25" style={{ width: w * 0.6 }} />
+            </div>
+          ))}
+          {marks.map(([row, Icon, c], k) => (
+            <span key={row} className="fx-step absolute right-1 grid size-3.5 place-items-center rounded-full bg-cotton shadow-stock" style={v({ top: 3 + row * 10, "--fx-d": "4.8s", animationDelay: `${0.6 + k * 1.2}s` })}>
+              <Icon className="size-2.5" style={{ color: c }} strokeWidth={3} />
+            </span>
+          ))}
+        </div>
+        <span className="fx-scan absolute top-3 left-0 h-5 w-full bg-linear-to-b from-transparent via-hl/25 to-transparent" style={v({ "--fx-y": "56px" })} />
+      </div>
+      <div className="absolute right-0 bottom-1 h-[60px] w-[120px] overflow-hidden rounded-lg border border-rule bg-cotton px-1.5 py-1 shadow-stock">
+        <span className="flex items-center gap-1 font-mono text-[8px] font-bold text-ink-3"><FileText className="size-2.5 text-hl-2" />{t("Báo cáo")}</span>
+        <div className="mt-1 grid gap-1.5">
+          {["92%", "70%", "84%", "48%"].map((w, k) => (
+            <span key={k} className="fx-step block h-1 rounded-full bg-hl/40" style={v({ width: w, "--fx-d": "4.8s", animationDelay: `${1 + k * 0.8}s` })} />
+          ))}
+        </div>
+      </div>
     </>;
   },
 };

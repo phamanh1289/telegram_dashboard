@@ -214,13 +214,13 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
           <span>({t(custom ? "team chọn" : "mặc định")})</span>
           {custom && <button type="button" disabled={saving} onClick={reset} className="ml-auto inline-flex items-center gap-1 hover:text-ink"><RotateCcw className="size-3" />{t("Về mặc định")}</button>}
         </header>
-        {pinned.length ? <ul className="grid">{pinned.map(row)}</ul>
+        {pinned.length ? <ul className="zebra grid">{pinned.map(row)}</ul>
           : <p className="px-2 py-3 text-xs text-ink-3">{t(f ? "Không có prompt ghim nào khớp." : "Chưa ghim prompt nào: phiên AI sẽ không có nút gợi ý. Bấm ghim ở một prompt bên dưới.")}</p>}
       </section>
 
       <section className="grid gap-1" aria-label={t("Prompt khác")}>
         <header className="px-2 text-xs font-bold text-ink-2">{t("Khác")}</header>
-        {rest.length ? <ul className="grid">{rest.map(row)}</ul>
+        {rest.length ? <ul className="zebra grid">{rest.map(row)}</ul>
           : <p className="px-2 py-3 text-xs text-ink-3">{f ? t("Không có prompt khớp “{q}”.", { q: find.trim() }) : t("Mọi prompt đều đã ghim.")}</p>}
       </section>
 

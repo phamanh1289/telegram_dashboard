@@ -10,6 +10,7 @@ import re
 import sqlite3
 import statistics
 import threading
+import unicodedata
 import uuid
 from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
@@ -91,7 +92,7 @@ CREATE TABLE IF NOT EXISTS outbox (
 );
 CREATE TABLE IF NOT EXISTS rules (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind TEXT NOT NULL,   -- keyword (value: lowercase text) | sender (value: sender id)
+  kind TEXT NOT NULL,   -- keyword (value: lowercase text) | sender / priority / relay / agent (value: sender id)
   value TEXT NOT NULL,
   label TEXT NOT NULL DEFAULT '',
   UNIQUE (kind, value)
@@ -150,6 +151,15 @@ CREATE TABLE IF NOT EXISTS qa_marks (  -- a Q&A thread (live from Telegram, neve
   state TEXT NOT NULL CHECK (state IN ('done', 'deleted')),
   at INTEGER NOT NULL,
   PRIMARY KEY (chat_id, code)
+);
+CREATE TABLE IF NOT EXISTS loop_back (  -- "Báo lại": my ticket reached Fixed / Done, a stored message asked about it
+  ticket TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  message_id INTEGER NOT NULL,          -- the message to answer
+  state TEXT NOT NULL,                  -- the state it reached
+  created_at INTEGER NOT NULL,
+  done INTEGER NOT NULL DEFAULT 0,      -- answered or dismissed: kept so a later round never queues it again
+  PRIMARY KEY (ticket, chat_id, message_id)
 );
 """
 
@@ -231,6 +241,18 @@ def _rule_matches(rules: list[dict], m: StoredMessage) -> bool:
         r["value"] in text if r["kind"] == "keyword" else r["kind"] == "sender" and r["value"] == m.sender_id
         for r in rules
     )
+
+
+def fold(text: str | None) -> str:
+    """Lower case without Vietnamese accents ("Luận" -> "luan"), as the page's `fold` (web/src/lib/inbox.ts):
+    a search finds the same tags in a group as in Việc cần xử lý."""
+    s = unicodedata.normalize("NFD", text or "")
+    return "".join(ch for ch in s if not unicodedata.combining(ch)).replace("đ", "d").replace("Đ", "d").lower()
+
+
+# Tags snoozed until a reply that a message answering ?2 wakes: ?2 itself, or the tag my reply ?2 answered.
+_REPLY_SNOOZED = ("SELECT message_id FROM messages WHERE chat_id=?1 AND snooze_on='reply' AND (message_id=?2 OR "
+                  "message_id=(SELECT reply_to_id FROM messages WHERE chat_id=?1 AND message_id=?2 AND outgoing=1))")
 
 
 def _like(text: str) -> str:
@@ -436,10 +458,15 @@ def _snooze_on(c: sqlite3.Connection) -> None:
     _add_cols(c, "messages", {"snooze_on": "TEXT"})
 
 
+def _rule_extra(c: sqlite3.Connection) -> None:
+    """An "agent" rule keeps its project and who the user is (JSON): the sessions it opens need them."""
+    _add_cols(c, "rules", {"extra": "TEXT NOT NULL DEFAULT ''"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
-    _task_ref_ask,
+    _task_ref_ask, _rule_extra,
 ]  # fmt: skip
 
 
@@ -447,11 +474,13 @@ class Store:
     def __init__(self, path: Path):
         self.path = Path(path)
         self._local = threading.local()  # one connection per thread, reused (Db runs calls in a pool)
+        self.loop_rev = 0  # bumped when the Báo lại list changes: the SSE status tells the page to read it again
         self._init()
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path, timeout=5, isolation_level=None)
         conn.row_factory = sqlite3.Row
+        conn.create_function("fold", 1, fold, deterministic=True)
         conn.execute("PRAGMA busy_timeout=5000")
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
@@ -548,11 +577,16 @@ class Store:
     def _mark(self, c: sqlite3.Connection, chat_id: str, message_id: int, handled: bool, by: str) -> bool:
         """Handled or not, with how (HANDLED_BY) and when, so the row can say why it is done; reopening clears
         both. Emits an edit change; True only when it flipped."""
+        if handled and by in ("reply", "dashboard"):  # my reply (any device) answers its Báo lại items
+            self._loop_done(c, chat_id, message_id)
         cur = c.execute(
             "UPDATE messages SET handled=?1, handled_by=?2, handled_at=?3 "
             "WHERE chat_id=?4 AND message_id=?5 AND deleted=0 AND handled IS NOT ?1",
             (int(handled), by if handled else "", now_ts() if handled else None, chat_id, message_id),
         )
+        if cur.rowcount and not handled:  # reopened: a snooze left from before would hide it from every list
+            c.execute("UPDATE messages SET snoozed_until=NULL, snooze_on=NULL WHERE chat_id=? AND message_id=?",
+                      (chat_id, message_id))  # fmt: skip
         if cur.rowcount and (chat := self._chat(c, chat_id)) is not None:
             self._record(c, chat_id, message_id, "edit", chat["generation"])
         return bool(cur.rowcount)
@@ -658,6 +692,8 @@ class Store:
             self._clear_outbox_text(c, chat_id, None)
             c.execute("DELETE FROM digest_consents WHERE chat_id=?", (chat_id,))
             c.execute("DELETE FROM digests WHERE chat_id=?", (chat_id,))
+            if c.execute("DELETE FROM loop_back WHERE chat_id=?", (chat_id,)).rowcount:
+                self.loop_rev += 1
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
             self._record(c, chat_id, None, "purge", gen)
 
@@ -844,14 +880,21 @@ class Store:
             c.execute("UPDATE messages SET snooze_on=? WHERE chat_id=? AND message_id=?", (on, chat_id, message_id))
             return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
 
+    def reply_snoozed(self, chat_id: str, reply_to: int) -> bool:
+        """A tag snoozed until a reply waits on `reply_to` (itself, or my reply to it): read before waking, so the
+        many replies that wake nothing never take the write lock or ping the page."""
+        with self._conn() as c:
+            return c.execute(_REPLY_SNOOZED + " LIMIT 1", (chat_id, reply_to)).fetchone() is not None
+
+    def wake_on_reply(self, chat_id: str, reply_to: int) -> None:
+        """A message not kept (it tags nobody) answers `reply_to`: wake the tags snoozed until a reply to it."""
+        with self._conn(write=True) as c:
+            self._wake_on_reply(c, chat_id, reply_to)
+
     def _wake_on_reply(self, c: sqlite3.Connection, chat_id: str, reply_to: int) -> None:
         """A new message answers `reply_to`: wake tags snoozed "until a reply" that it answers, directly or through
         my own reply to them."""
-        rows = c.execute(
-            "SELECT message_id FROM messages WHERE chat_id=?1 AND snooze_on='reply' AND (message_id=?2 OR message_id="
-            "(SELECT reply_to_id FROM messages WHERE chat_id=?1 AND message_id=?2 AND outgoing=1))",
-            (chat_id, reply_to),
-        ).fetchall()  # fmt: skip
+        rows = c.execute(_REPLY_SNOOZED, (chat_id, reply_to)).fetchall()
         for (mid,) in rows:
             c.execute("UPDATE messages SET snooze_on=NULL WHERE chat_id=? AND message_id=?", (chat_id, mid))
             self._set_col(c, chat_id, mid, "snoozed_until", None)
@@ -866,6 +909,38 @@ class Store:
                 self._set_col(c, chat_id, mid, "snoozed_until", None)
             return len(rows)
 
+    # ---- Báo lại ---------------------------------------------------------
+    def add_loop_items(self, items: list[tuple[str, str, str, int]]) -> int:
+        """(ticket, state, chat_id, message_id) each; one already queued, answered or dismissed is skipped.
+        Returns how many were added."""
+        with self._conn(write=True) as c:
+            n = sum(c.execute(
+                "INSERT OR IGNORE INTO loop_back (ticket, state, chat_id, message_id, created_at) VALUES (?,?,?,?,?)",
+                (ticket, state, chat_id, mid, now_ts()),
+            ).rowcount for ticket, state, chat_id, mid in items)  # fmt: skip
+            self.loop_rev += bool(n)
+            return n
+
+    def loop_items(self, limit: int = 30) -> list[dict]:
+        """Open Báo lại items, newest first."""
+        with self._conn() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT ticket, state, chat_id, message_id FROM loop_back WHERE done=0 "
+                "ORDER BY created_at DESC, ticket LIMIT ?", (limit,))]  # fmt: skip
+
+    def done_loop(self, chat_id: str, message_id: int, ticket: str | None = None) -> int:
+        """Answered or dismissed: one ticket's item for the message, or every item for it."""
+        with self._conn(write=True) as c:
+            return self._loop_done(c, chat_id, message_id, ticket)
+
+    def _loop_done(self, c: sqlite3.Connection, chat_id: str, message_id: int, ticket: str | None = None) -> int:
+        n = c.execute(
+            "UPDATE loop_back SET done=1 WHERE chat_id=? AND message_id=? AND done=0 AND (?3 IS NULL OR ticket=?3)",
+            (chat_id, message_id, ticket),
+        ).rowcount
+        self.loop_rev += bool(n)
+        return n
+
     def ticket_snoozes(self) -> list[str]:
         """Tickets some snoozed tag waits on (still hidden)."""
         with self._conn() as c:
@@ -873,14 +948,23 @@ class Store:
                 "SELECT DISTINCT snooze_on FROM messages "
                 "WHERE snooze_on LIKE 'ticket:%' AND snoozed_until>unixepoch()")]
 
-    def remind(self, chat_id: str, message_id: int, until: datetime | None) -> bool:
+    def remind(
+        self, chat_id: str, message_id: int, until: datetime | None, *, restore: str | None = None
+    ) -> str | None:
         """"Nhắc lại sau": reopen a kept tag and hide it until `until` (None: back now), in one write, so it comes
-        back to the to-do list then. False when the message is not kept (or deleted)."""
+        back to the to-do list then. `restore` (its Undo): done again as before, by that HANDLED_BY. Returns how it
+        was handled before ("" while open), None when the message is not kept (or deleted)."""
         with self._conn(write=True) as c:
-            if self._msg(c, chat_id, message_id) is None:
-                return False
+            if (row := self._msg(c, chat_id, message_id)) is None or row["deleted"]:
+                return None
+            was = (row["handled_by"] or "me") if row["handled"] else ""  # done before handled_by existed: "me"
+            if restore:
+                self._set_col(c, chat_id, message_id, "snoozed_until", None)
+                self._mark(c, chat_id, message_id, True, restore)
+                return was
             self._mark(c, chat_id, message_id, False, "")
-            return self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
+            self._set_col(c, chat_id, message_id, "snoozed_until", _ts(until))
+            return was
 
     def set_pinned(self, chat_id: str, message_id: int, pinned: bool) -> bool:
         with self._conn(write=True) as c:
@@ -969,8 +1053,8 @@ class Store:
         limit = max(1, min(limit, 100))
         where, args = ["chat_id=?"], [chat_id]
         if q:
-            where.append("deleted=0 AND text LIKE ? ESCAPE '\\'")
-            args.append(_like(q))
+            where.append("deleted=0 AND fold(text) LIKE ? ESCAPE '\\'")
+            args.append(_like(fold(q)))
         if pending:
             where.append(PENDING)
         if handled:
@@ -1059,11 +1143,13 @@ class Store:
 
     def outbox_create(
         self, request_id: str, chat_id: str, reply_to: int, text: str, random_id: int, quote: bool = True,
-        *, qa: bool = False,
+        *, qa: bool = False, qa_role: str | None = None,
     ) -> tuple[OutboxDTO, bool]:
         """Returns (record, created). Same id with different payload => 409. `qa`: a "#QA…" line under a text that
-        tags someone, minted once here (the hash is over the text as typed), so a retry sends the same code."""
-        h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew") + ("\nqa" if qa else ""))
+        tags someone, minted once here (the hash is over the text as typed), so a retry sends the same code; `qa_role`
+        (BE / PO / QC) goes in it: "#QA_BE_…"."""
+        qa_key = f"\nqa{qa_role or ''}" if qa else ""
+        h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew") + qa_key)
         with self._conn(write=True) as c:
             row = c.execute("SELECT * FROM outbox WHERE request_id=?", (request_id,)).fetchone()
             if row is not None:
@@ -1072,7 +1158,8 @@ class Store:
                 return self._outbox_dto(row), False
             chat = self._chat(c, chat_id)
             # A new message (not quote) only borrows the target's topic: it may be a message read live and never
-            # stored (Đối chiếu BE from Với BE / Briefing). ponytail: unstored => General topic, fetch it if forums need it.
+            # stored (Đối chiếu BE from Với BE / Briefing).
+            # ponytail: unstored => General topic, fetch it if forums need it.
             target = self._msg(c, chat_id, reply_to)
             attached = target is None and _attached(c, chat_id, reply_to)
             if chat is None or not (chat["tracking"] or attached):
@@ -1081,7 +1168,7 @@ class Store:
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
             if qa and has_tag(text):
-                text = f"{text.strip()}\n{qa_code(datetime.now(UTC))}"
+                text = f"{text.strip()}\n{qa_code(datetime.now(UTC), role=qa_role)}"
             c.execute(
                 "INSERT INTO outbox (request_id,chat_id,reply_to_message_id,text,text_hash,"
                 "random_id,status,created_at,updated_at,code,quote) VALUES (?,?,?,?,?,?,'pending',?,?,?,?)",
@@ -1173,13 +1260,21 @@ class Store:
     # ---- auto-handle rules ---------------------------------------------
     def list_rules(self) -> list[dict]:
         with self._conn() as c:
-            rows = c.execute("SELECT * FROM rules WHERE kind IN ('keyword','sender','priority') ORDER BY id")
-            return [dict(r) for r in rows]
+            rows = c.execute("SELECT * FROM rules ORDER BY id")  # every kind RuleKind knows
+            return [{**dict(r), "project": json.loads(r["extra"] or "{}").get("project", "")} for r in rows]
 
-    def add_rule(self, kind: str, value: str, label: str = "") -> tuple[dict, list[tuple[str, int]]]:
+    def auto_rules(self) -> dict[str, dict[str, dict]]:
+        """Sender id -> {"relay" / "agent": the rule's extra (agent: project, role, platform, intro)}."""
+        out: dict[str, dict[str, dict]] = {}
+        with self._conn() as c:
+            for r in c.execute("SELECT kind, value, extra FROM rules WHERE kind IN ('relay','agent')"):
+                out.setdefault(r["value"], {})[r["kind"]] = json.loads(r["extra"] or "{}")
+        return out
+
+    def add_rule(self, kind: str, value: str, label: str = "", extra: str = "") -> tuple[dict, list[tuple[str, int]]]:
         """Save a rule (keyword: text in the tag, any case; sender: a sender id) and clear the
         pending tags it already matches; returns the rule and the (chat_id, message_id) it cleared.
-        `priority` (a sender id) clears nothing: that sender's tags sort first from now on."""
+        `priority` (a sender id) clears nothing: that sender's tags sort first from now on; nor do `relay` / `agent`."""
         value = value.strip().lower() if kind == "keyword" else value.strip()
         if not value:  # "" is in every text: it would clear every tag
             raise ApiError(422, "rule_value_empty")
@@ -1191,15 +1286,17 @@ class Store:
                 c.execute("DELETE FROM rules WHERE kind='priority' AND value=?", (value,))
                 self._set_priority(c, value, False)
             c.execute(
-                "INSERT INTO rules (kind,value,label) VALUES (?,?,?) "
-                "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label",
-                (kind, value, label),
+                "INSERT INTO rules (kind,value,label,extra) VALUES (?,?,?,?) "
+                "ON CONFLICT(kind,value) DO UPDATE SET label=excluded.label, extra=excluded.extra",
+                (kind, value, label, extra),
             )
             rule = dict(
                 c.execute("SELECT * FROM rules WHERE kind=? AND value=?", (kind, value)).fetchone()
             )
+            rule["project"] = json.loads(rule.pop("extra") or "{}").get("project", "")
             if kind == "priority":
                 self._set_priority(c, value, True)
+            if kind in ("priority", "relay", "agent"):
                 return rule, []
             rows = c.execute("SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0").fetchall()
             cleared = []
@@ -1286,6 +1383,24 @@ class Store:
                 (chat_id,),
             ).fetchall()
         return [dict(r) | {"created_at": _dt(r["created_at"])} for r in rows]
+
+    def open_task_by_ref(self, tail: str) -> str | None:
+        """The AI Agent session a "#REF-<tail>" names, unless it is Done (Trợ lý AI ones have no CLI session)."""
+        return self._open_task(c_where="t.id LIKE ?", arg=f"%-{tail}")
+
+    def open_task_by_qa(self, code: str) -> str | None:
+        """The newest session not Done holding a message of that Q&A thread."""
+        return self._open_task(c_where="t.id IN (SELECT task_id FROM task_refs WHERE qa=?)", arg=code)
+
+    def _open_task(self, c_where: str, arg: str) -> str | None:
+        with self._conn() as c:
+            r = c.execute(  # c-sec-ignore: c_where is one of the two fixed clauses above, the value is a parameter
+                "SELECT t.id FROM tasks t LEFT JOIN messages m ON m.chat_id=t.chat_id AND m.message_id=t.message_id "
+                f"WHERE {c_where} AND t.kind<>'assist' AND t.mode<>'terminal' AND t.session_id IS NOT NULL "
+                f"AND NOT {_TASK_DONE} ORDER BY t.created_at DESC LIMIT 1",
+                (arg,),
+            ).fetchone()
+        return r[0] if r else None
 
     def get_task(self, task_id: str) -> dict | None:
         with self._conn() as c:

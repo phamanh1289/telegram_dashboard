@@ -24,13 +24,13 @@ export function useStats() {
   const now = useNow();
   const latest = y.sprintOptions[0] ?? null, hist = y.config?.hist ?? 0;
   const d = useMemo(() => {
-    const k = [y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, Math.floor(now / 60_000)];
+    const k = [y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, y.mode, Math.floor(now / 60_000)];
     const hit = shared.get(y.rows);
     if (hit && k.every((v, i) => v === hit.k[i])) return hit.d;
-    const d = dashStats({ rows: y.rows, f: y.filters, sprints: y.sprints, latestSprint: latest, range: y.range, hist, aging: new Set(y.agingStates), since: y.since, now });
+    const d = dashStats({ rows: y.rows, f: y.filters, sprints: y.sprints, latestSprint: latest, range: y.range, hist, aging: new Set(y.agingStates), since: y.since, now, mode: y.mode });
     shared.set(y.rows, { k, d });
     return d;
-  }, [y.rows, y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, now]);
+  }, [y.rows, y.filters, y.sprints, latest, y.range, hist, y.agingStates, y.since, y.mode, now]);
   const { loadSince } = y;
   useEffect(() => { if (d.aging.need.length) loadSince(d.aging.need); }, [d.aging.need, loadSince]);
   return d;
@@ -164,7 +164,11 @@ export function useQc() {
   const s = useMemo(() => {
     const as = byAs(f), sp = bySp(f);
     const byId = new Map(y.rows.filter((i) => as(i) && sp(i)).map((i) => [i.id, i]));
-    const v = verdicts(q.data ?? []).filter((x) => byId.has(x.id));
+    const all = verdicts(q.data ?? []);
+    const v = all.filter((x) => byId.has(x.id));
+    // my own test results ignore the header filters: every pass / fail I made on a loaded ticket
+    const rowOf = new Map(y.rows.map((i) => [i.id, i]));
+    const mine = all.filter((x) => x.kind !== "reopen" && !!y.me && x.by === y.me && rowOf.has(x.id));
     const of = (k: Verdict["kind"]) => v.filter((x) => x.kind === k);
     const pass = of("pass"), fail = of("fail"), reopen = of("reopen");
     const fails = new Map<string, number>();
@@ -174,17 +178,17 @@ export function useQc() {
     const tickets = (list: Verdict[]) => [...new Set(list.map((x) => x.id))].map((id) => byId.get(id)!);
     const tally = (list: Verdict[], key: (x: Verdict) => string) => { const c = new Map<string, [number, number]>(); for (const x of list) (c.get(key(x)) ?? c.set(key(x), [0, 0]).get(key(x))!)[x.kind === "pass" ? 0 : 1]++; return [...c].sort((a, b) => b[1][1] - a[1][1] || b[1][0] - a[1][0]); };
     return {
-      pass, fail, reopen, tested: tested.size, firstPass: [...tested].filter((id) => !fails.has(id)).length, tickets, byId,
+      pass, fail, reopen, mine, rowOf, tested: tested.size, firstPass: [...tested].filter((id) => !fails.has(id)).length, tickets, byId,
       // tickets bounced twice or more, or reopened: the ones worth a look
       pong: [...new Set([...fails.keys(), ...reopened])].filter((id) => (fails.get(id) || 0) >= 2 || reopened.has(id))
         .map((id) => ({ i: byId.get(id)!, n: fails.get(id) || 0, re: reopened.has(id) })).sort((a, b) => b.n - a.n || +b.re - +a.re),
       who: tally([...pass, ...fail], (x) => x.by || "—"),
       dev: tally(fail, (x) => byId.get(x.id)!.assignee || "Chưa assign"),
     };
-  }, [q.data, y.rows, f]);
+  }, [q.data, y.rows, y.me, f]);
   return { ...s, q };
 }
-const QcState = ({ q }: { q: ReturnType<typeof useQc>["q"] }) => {
+export const QcState = ({ q }: { q: ReturnType<typeof useQc>["q"] }) => {
   const y = useYt();
   const t = useT();
   return <p className="text-sm text-ink-3">{y.config?.mock ? t("Cần token YouTrack để đọc lịch sử state.") : y.configError ? t("Chưa kết nối được YouTrack.") : q.isError ? t("Không đọc được lịch sử state: {e}", { e: (q.error as Error).message }) : t("Đang đọc lịch sử state…")}</p>;
@@ -331,22 +335,13 @@ function Count({ n, suffix = "" }: { n: number | null; suffix?: string }) {
   return n == null ? <>—</> : <motion.span>{text}</motion.span>;
 }
 
-const SEV = { bad: 0, warn: 1 };
-/** What each role must act on: QUICK keys with how bad a non-zero count is. */
-const ATTN: Record<Mode, [string, keyof typeof SEV][]> = {
-  dev: [["blocked", "bad"], ["overdue", "bad"], ["critical", "bad"], ["noest", "warn"]],
-  qa: [["bugcrit", "bad"], ["noqc", "warn"], ["blocked", "bad"], ["bugnew", "warn"], ["stale", "warn"]],
-  po: [["waitpo", "bad"], ["critical", "bad"], ["overdue", "bad"], ["blocked", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]],
-};
+/** What the current role must act on (dashStats' per-role list, also what "Hỏi AI" reads). */
 function Attention({ d }: { d: Stats }) {
-  const y = useYt();
   const drill = useDrill(d);
   const t = useT();
-  const est = y.rows.some((i) => i.estimate != null); // a team that never estimates: "chưa estimate" is noise
-  const ranked = ATTN[y.mode].filter(([q]) => q !== "noest" || est).map(([q, sev]) => ({ q, sev, n: d.detail("q", q)?.[1].length ?? 0 })).sort((a, b) => +!a.n - +!b.n || SEV[a.sev] - SEV[b.sev] || b.n - a.n);
   return (
     <div className="grid gap-1.5">
-      {ranked.map(({ q, sev, n }) => (
+      {d.attn.map(({ q, sev, n }) => (
         <Hint key={q} side="bottom" text={t("Bấm để xem danh sách ticket")}><motion.button layout type="button" data-drill="list" onClick={() => drill("q", q)}
           className={cn("flex items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors duration-(--dur-micro)",
             !n ? "bg-paper-2 text-ink-3" : sev === "bad" ? "bg-error-wash text-error hover:bg-error-wash/70" : "bg-warn-wash text-warn hover:bg-warn-wash/70")}>
@@ -390,7 +385,7 @@ function TicketRows({ rows, all, empty, more, moreN }: { rows: { i: Ticket; righ
   const t = useT();
   if (!rows.length) return <p className="text-sm text-ink-3">{empty}</p>;
   return (
-    <ul className="divide-y divide-rule">
+    <ul className="zebra divide-y divide-rule">
       {rows.map(({ i, right }) => (
         <li key={i.id}>
           <button type="button" onClick={() => y.openTicket(i.id, all)} className="grid w-full grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-3 py-1.5 text-left hover:bg-paper-2">

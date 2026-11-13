@@ -6,14 +6,16 @@ from datetime import UTC, datetime
 
 from .models import StoredMessage
 
-_CODE = re.compile(r"#QA(\d+)\b", re.IGNORECASE)
+# "#QA27012345", or with who it asks "#QA_BE_27012345" (AI Agent asks to BE / PO / QC); group 1: the part after "#QA".
+_CODE = re.compile(r"#QA((?:_(?:BE|PO|QC)_)?\d+)\b", re.IGNORECASE)
 _EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
 
 
-def qa_code(now: datetime) -> str:
-    """#QA27012345: seconds since 2026, known before sending (the question's own id is not). Digits only, so Telegram
-    makes it a hashtag and tapping it lists the thread."""
-    return f"#QA{int((now - _EPOCH).total_seconds())}"
+def qa_code(now: datetime, *, role: str | None = None) -> str:
+    """#QA27012345: seconds since 2026, known before sending (the question's own id is not). `role` (BE / PO / QC):
+    "#QA_BE_27012345", who it asks. Letters, digits and "_" only: Telegram makes it a hashtag listing the thread."""
+    n = int((now - _EPOCH).total_seconds())
+    return f"#QA_{role}_{n}" if role else f"#QA{n}"
 
 
 def names_code(text: str) -> bool:
@@ -22,7 +24,7 @@ def names_code(text: str) -> bool:
 
 def codes(text: str) -> set[str]:
     """Every "#QA…" code a message names, as the Q&A list keys them."""
-    return {f"#QA{d}" for d in _CODE.findall(text)}
+    return {f"#QA{d.upper()}" for d in _CODE.findall(text)}
 
 
 _TAG = re.compile(r"(?<![\w.])@[A-Za-z0-9_]{5,32}")  # a Telegram @username, not an e-mail address
@@ -30,25 +32,31 @@ _TAG = re.compile(r"(?<![\w.])@[A-Za-z0-9_]{5,32}")  # a Telegram @username, not
 
 def has_tag(text: str) -> bool:
     """Tags someone: only such a message opens a Q&A (an untagged one goes out as a plain message)."""
-    return bool(_TAG.search(text)) or "](tg://user?id=" in text  # or a tag by name (split_mentions)
+    return bool(_TAG.search(text)) or "](tg://user?id=" in text  # or a tag by name (split_format)
 
 
 Fetch = Callable[[list[int]], Awaitable[list[StoredMessage]]]
 
 
-async def chain_code(fetch: Fetch, mid: int, hops: int = 10) -> str | None:
-    """The "#QA…" code of the thread a message sits in, found up its reply chain (the message itself first): answering
-    with Q&A a reply to an existing question then answers in that thread instead of opening a second one.
-    ponytail: one Telegram read per hop, only on such sends; `hops` caps a deep chain."""
+async def chain_walk(fetch: Fetch, mid: int, hops: int = 10):
+    """The message, then each one up its reply chain (a message not found ends it). ponytail: one read per hop;
+    `hops` caps a deep chain."""
     for _ in range(hops):
         m = next(iter(await fetch([mid])), None)
         if m is None:
-            return None
-        if found := _CODE.search(m.text):
-            return f"#QA{found[1]}"
+            return
+        yield m
         if not m.reply_to_id:
-            return None
+            return
         mid = m.reply_to_id
+
+
+async def chain_code(fetch: Fetch, mid: int, hops: int = 10) -> str | None:
+    """The "#QA…" code of the thread a message sits in, found up its reply chain (the message itself first): answering
+    with Q&A a reply to an existing question then answers in that thread instead of opening a second one."""
+    async for m in chain_walk(fetch, mid, hops):
+        if found := _CODE.search(m.text):
+            return f"#QA{found[1].upper()}"
     return None
 
 
@@ -61,7 +69,7 @@ def find_threads(msgs: list[StoredMessage]) -> list[tuple[str, list[StoredMessag
     threads: dict[str, list[StoredMessage]] = {}
     owner: dict[int, str] = {}  # message id -> its thread's code
     for m in live:
-        codes = _CODE.findall(m.text)
+        codes = [c.upper() for c in _CODE.findall(m.text)]
         code = next((c for c in codes if c in threads), None) or owner.get(m.reply_to_id) or next(iter(codes), None)
         if not code:
             continue
@@ -87,6 +95,10 @@ if __name__ == "__main__":
     got = [(c, [m.message_id for m in ms]) for c, ms in found]
     assert got == [("#QA11", [1, 3, 4, 5, 12]), ("#QA22", [6, 7]), ("#QA33", [9, 10, 11])], got  # 12: stays
     assert qa_code(datetime(2026, 1, 1, 0, 1, tzinfo=UTC)) == "#QA60"
+    assert qa_code(datetime(2026, 1, 1, 0, 1, tzinfo=UTC), role="BE") == "#QA_BE_60"
+    assert codes("hỏi\n#QA_BE_7 #qa_qc_8 #QA9 #QA_XX_1") == {"#QA_BE_7", "#QA_QC_8", "#QA9"}
+    got = [(c, [m.message_id for m in ms]) for c, ms in find_threads([msg(1, "API?\n#QA_BE_5"), msg(2, "ok #qa_be_5")])]
+    assert got == [("#QA_BE_5", [1, 2])], got
     assert has_tag("@minh_be xem giúp") and has_tag("hỏi @MinhBE nhé")
     assert has_tag("hỏi [Minh](tg://user?id=42) nhé")
     assert not has_tag("mail a.b@citics.vn") and not has_tag("@abc ngắn") and not has_tag("không tag ai")

@@ -6,6 +6,8 @@ import type { Mention } from "@/components/mention";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { type Key, useT } from "@/lib/i18n";
+import { copyText } from "@/lib/inbox";
+import { useMascot } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
 // The AI chat look every AI feature shares (AI Agent, Trợ lý AI of a tag, YouTrack AI): the ask in a bubble, the AI
@@ -19,7 +21,7 @@ export function dur(s: number) {
 }
 
 /** A little robot head: blinking eyes, a glowing antenna, an arm that waves while it is shown. */
-export const AiBot = ({ className }: { className?: string }) => (
+const Robot = ({ className }: { className?: string }) => (
   <svg viewBox="0 0 32 32" aria-hidden className={className}>
     <line x1="16" y1="3.5" x2="16" y2="8" stroke="var(--color-hl-2)" strokeWidth="1.6" strokeLinecap="round" />
     <circle cx="16" cy="3.2" r="2" fill="var(--color-hl)" className="ai-glow" />
@@ -33,6 +35,24 @@ export const AiBot = ({ className }: { className?: string }) => (
     <path d="M26 27.5q3-1 3.5-5" stroke="var(--color-hl-2)" strokeWidth="2" fill="none" strokeLinecap="round" className="ai-wave" />
   </svg>
 );
+
+/** The mascot `m` ("" = the robot, an emoji, or an image data: URL) in the robot's 32 × 32 box, so every size and
+ *  animation class callers put on it fits the same. */
+export function Mascot({ m, className }: { m: string; className?: string }) {
+  if (!m) return <Robot className={className} />;
+  return (
+    <svg viewBox="0 0 32 32" aria-hidden className={className}>
+      {m.startsWith("data:image/") ? <image href={m} width="32" height="32" preserveAspectRatio="xMidYMid meet" />
+        : <text x="16" y="17" fontSize="26" textAnchor="middle" dominantBaseline="central">{m}</text>}
+    </svg>
+  );
+}
+
+/** The AI mascot picked in Cài đặt (the robot by default): every AI loading scene, empty page and AI box draws this. */
+export const AiBot = ({ className }: { className?: string }) => <Mascot m={useMascot()} className={className} />;
+/** The mascot as a still glyph where a lucide icon stands (buttons, menus, nav, step lists): sized by `className` like one,
+ *  no animation. Typed as a LucideIcon so icon tables take it; it reads only `className`. */
+export const AiBotIcon = (({ className }: { className?: string }) => <AiBot className={cn("agent-still", className)} />) as unknown as LucideIcon;
 
 /** Three dots in a wave (still under reduced motion). */
 export const AiDots = ({ className }: { className?: string }) => (
@@ -211,8 +231,10 @@ export function UserBubble({ children, className }: { children: ReactNode; class
 }
 
 /** A finished answer (green, "Kết quả") or a failed one (red, "Có lỗi"); `took` in seconds, `dim` for an older turn. */
-export function AiResultCard({ children, error, title, took, actions, dim, className, ...rest }: {
-  children: ReactNode; error?: boolean; title?: ReactNode; took?: number; actions?: ReactNode; dim?: boolean; className?: string; "aria-label"?: string;
+/** The AI's answer in its card. `busy`: still being written — the same card from the first words (a spinner for the tick,
+ *  "AI đang viết" at the bottom), so the finished answer does not jump into a box. */
+export function AiResultCard({ children, error, busy, title, took, actions, dim, className, ...rest }: {
+  children: ReactNode; error?: boolean; busy?: boolean; title?: ReactNode; took?: number; actions?: ReactNode; dim?: boolean; className?: string; "aria-label"?: string;
 }) {
   const t = useT();
   return (
@@ -220,11 +242,13 @@ export function AiResultCard({ children, error, title, took, actions, dim, class
       className={cn("rounded-xl border p-3.5 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-long)",
         error ? "border-error/25 bg-error-wash" : "border-ok/25 bg-ok-wash", dim && "opacity-75", className)}>
       <p className={cn("mb-2 flex items-center gap-1.5 text-xs font-bold", error ? "text-error" : "text-ok")}>
-        {error ? <CircleAlert className="size-4" aria-hidden /> : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
+        {error ? <CircleAlert className="size-4" aria-hidden /> : busy ? <Loader2 className="size-4 animate-spin" aria-hidden />
+          : <CheckCircle2 className="size-4 animate-in zoom-in-50 spin-in-45 duration-(--dur-long)" aria-hidden />}
         {title ?? (error ? t("Có lỗi") : t("Kết quả"))}
         {took !== undefined && <span className="ml-auto font-mono font-normal tabular-nums text-ink-3">{dur(took)}</span>}
       </p>
       <div className={cn("grid min-w-0 grid-cols-[minmax(0,1fr)] gap-1.5 break-words text-sm leading-[1.55]", error ? "text-error" : "text-ink-2")}>{children}</div>
+      {busy && <div className="mt-2"><AiWriting /></div>}
       {actions && <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1">{actions}</div>}
     </div>
   );
@@ -324,4 +348,18 @@ export function useFollow(trigger: unknown, reset?: unknown) {
     ref,
     onScroll: (e: React.UIEvent<HTMLElement>) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; },
   };
+}
+
+/** A session's short ID ("REF-e03a28", "YT-e03a28"): click copies it; pasted in the session search (or Cài đặt › AI ›
+ *  Lịch sử chạy) it finds the session and its runs. */
+export function SessionCode({ code, className }: { code: string; className?: string }) {
+  const t = useT();
+  return (
+    <Hint side="bottom" title={code} text={t("ID phiên. Bấm để chép; gõ hoặc dán vào ô tìm phiên để mở lại nhanh.")}>
+      <button type="button" aria-label={t("Chép ID phiên {id}", { id: code })} onClick={() => void copyText(code, t("Đã chép {id}", { id: code }))}
+        className={cn("shrink-0 rounded-sm px-1 font-mono text-xs text-ink-3 tabular-nums transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink", className)}>
+        {code}
+      </button>
+    </Hint>
+  );
 }

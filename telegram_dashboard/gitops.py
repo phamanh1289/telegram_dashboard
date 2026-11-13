@@ -4,6 +4,7 @@ Only fixed git / gh commands with argument lists (no shell). Secret-looking file
 the PR happen only on the user's click after they saw the file list (the page confirms first)."""
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -67,7 +68,7 @@ async def recent(project: str, days: int = 14, limit: int = 40) -> dict | None:
     return {"branch": branch.strip(), "commits": out.splitlines() if not code else []}
 
 
-async def snapshot(project: str) -> str | None:
+async def _tree(project: str) -> str | None:
     """The whole working tree (tracked + untracked, .gitignore kept) as a git tree id, staged in a throwaway copy of
     the index so the user's own staging is untouched. None when `project` is not a git repo."""
     code, idx, _ = await _git(project, "rev-parse", "--path-format=absolute", "--git-path", "index")
@@ -87,40 +88,74 @@ async def snapshot(project: str) -> str | None:
     return tree.strip()
 
 
+async def _subs(root: str) -> list[str]:
+    """Checked-out submodules of the repo at `root` (paths from it): edits inside one never reach the parent's tree."""
+    code, out, _ = await _git(root, "config", "--file", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$")
+    paths = [ln.split(" ", 1)[1] for ln in out.splitlines() if " " in ln] if not code else []
+    return [p for p in paths if os.path.exists(os.path.join(root, p, ".git"))]
+
+
+async def snapshot(project: str) -> str | None:
+    """`_tree` of the repo, plus one per checked-out submodule (then JSON {"": repo tree, path: tree}). None when
+    `project` is not a git repo."""
+    code, top, _ = await _git(project, "rev-parse", "--show-toplevel")
+    if code:
+        return None
+    root = top.strip()
+    subs = {p: t for p in await _subs(root) if (t := await _tree(os.path.join(root, p)))}
+    tree = await _tree(root)
+    return json.dumps({"": tree, **subs}) if subs and tree else tree
+
+
+async def _diff(cwd: str, a: str, b: str, prefix: str = "") -> tuple[list[dict], str]:
+    """Files and patch between two tree-ishes of the repo at `cwd`, paths under `prefix` (a submodule's place);
+    secret-looking files never read."""
+    _, names, _ = await _git(cwd, "diff", "--no-renames", "--name-status", "-z", a, b)
+    parts = names.split("\0")
+    pairs = list(zip(parts[0:-1:2], parts[1::2], strict=True))  # "-z": status, path, ..., ""
+    files = [{"path": prefix + p, "status": st, "secret": bool(SECRET_FILE.search(p))} for st, p in pairs]
+    shown = [p for _, p in pairs if not SECRET_FILE.search(p)]
+    if not shown:
+        return files, ""
+    opts = ("--no-renames", "--no-color", "--no-ext-diff", f"--src-prefix=a/{prefix}", f"--dst-prefix=b/{prefix}")
+    git = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff")
+    _, patch, _ = await _git(cwd, *git, *opts, a, b, "--", *shown)
+    return files, patch
+
+
 async def changes(project: str, base: str | None = None) -> dict:
     """What changed: since `base` (the session's start `snapshot`) when given, else the working tree against HEAD.
+    Checked-out submodules too (paths prefixed with theirs; one without a start tree: against its HEAD).
     Branch, changed files (secrets flagged), and the patch (secret-looking files never read)."""
     code, top, _ = await _git(project, "rev-parse", "--show-toplevel")
     if code:
         raise ApiError(422, "not_git_repo")
     _, branch, _ = await _git(project, "branch", "--show-current")
     root = top.strip()
-    if base:
-        now = await snapshot(project)
-        _, names, _ = await _git(project, "diff", "--no-renames", "--name-status", "-z", base, now)
-        parts = names.split("\0")
-        pairs = zip(parts[0:-1:2], parts[1::2], strict=True)  # "-z": status, path, ..., ""
-        files = [{"path": p, "status": st, "secret": bool(SECRET_FILE.search(p))} for st, p in pairs]
-        shown = [f["path"] for f in files if not f["secret"]]
-        patch = ""
-        if shown:
-            opts = ("--no-renames", "--no-color", "--no-ext-diff")
-            _, patch, _ = await _git(project, "--literal-pathspecs", "-c", "core.quotePath=false", "diff", *opts,
-                                     base, now, "--", *shown)  # fmt: skip
-        return {"root": root, "branch": branch.strip(), "files": files,
-                "diff": patch[:MAX_DIFF], "truncated": len(patch) > MAX_DIFF}
-    _, st, _ = await _git(project, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-    _, patch, _ = await _git(project, "-c", "core.quotePath=false", "diff", "HEAD", "--no-color", "--no-ext-diff")
-    files = _files(st)
-    for f in files:  # untracked files are not in `git diff HEAD`: show them as all-added (secret-looking ones never read)
-        if f["status"] == "??" and not f["secret"] and len(patch) <= MAX_DIFF:
-            patch += _new_file(root, f["path"], MAX_DIFF + 1 - len(patch))
+    bases = json.loads(base) if base and base.startswith("{") else {"": base}
+    subs = await _subs(root)
+    if bases[""]:
+        files, patch = await _diff(root, bases[""], await _tree(root))
+    else:
+        _, st, _ = await _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+        _, patch, _ = await _git(root, "-c", "core.quotePath=false", "diff", "HEAD", "--no-color", "--no-ext-diff")
+        files = _files(st)
+        for f in files:  # untracked files are not in `git diff HEAD`: show them as all-added (secrets never read)
+            if f["status"] == "??" and not f["secret"] and len(patch) <= MAX_DIFF:
+                patch += _new_file(root, f["path"], MAX_DIFF + 1 - len(patch))
+    files = [f for f in files if f["path"] not in subs]  # a submodule's own files come next, not its commit pointer
+    for p in subs:
+        cwd = os.path.join(root, p)
+        more, text = await _diff(cwd, bases.get(p) or "HEAD", await _tree(cwd), p + "/")
+        files += more
+        patch += text
     return {"root": root, "branch": branch.strip(), "files": files,
             "diff": patch[:MAX_DIFF], "truncated": len(patch) > MAX_DIFF}
 
 
 def _new_file(root: str, path: str, budget: int) -> str:
-    """A new-file patch for an untracked file, read at most `budget` bytes; symlinks and paths outside the repo skipped."""
+    """A new-file patch for an untracked file, read at most `budget` bytes; symlinks and paths outside the repo
+    skipped."""
     full = os.path.join(root, path)
     if os.path.islink(full) or not os.path.realpath(full).startswith(os.path.realpath(root) + os.sep):
         return ""
@@ -137,15 +172,17 @@ def _new_file(root: str, path: str, budget: int) -> str:
 
 
 async def open_pr(project: str, branch: str, title: str, body: str, base: str | None = None) -> dict:
-    """Commit the changed files (since `base`, see `changes`) except secret-looking ones on a branch (a new `branch`
-    when on a base branch or detached), push it and open a PR with gh. Only those paths are committed: other files the
-    user changed or staged stay out. Returns url (None when gh is missing / failed: the branch is pushed), branch and
-    the files left out."""
+    """Commit the changed files (since `base`, see `changes`) except secret-looking and submodule ones on a branch (a
+    new `branch` when on a base branch or detached), push it and open a PR with gh. Only those paths are committed:
+    other files the user changed or staged stay out. Returns url (None when gh is missing / failed: the branch is
+    pushed), branch and the files left out."""
     now = await changes(project, base)
-    keep = [f["path"] for f in now["files"] if not f["secret"]]
-    skipped = [f["path"] for f in now["files"] if f["secret"]]
+    inner = tuple(p + "/" for p in await _subs(now["root"]))  # a submodule's files commit in its own repo, not here
+    keep = [f["path"] for f in now["files"] if not f["secret"] and not f["path"].startswith(inner)]
+    skipped = [f["path"] for f in now["files"] if f["path"] not in keep]
     if not keep:
-        raise ApiError(422, "no_changes")
+        only_sub = any(f["path"].startswith(inner) for f in now["files"])
+        raise ApiError(422, "submodule_only" if only_sub else "no_changes")
     cur = now["branch"]
     if not cur or cur in BASE_BRANCHES:
         code, _, err = await _git(project, "switch", "-c", branch)

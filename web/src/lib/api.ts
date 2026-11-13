@@ -1,5 +1,5 @@
 import type { components } from "./api.generated";
-import { readLang, t, tMaybe } from "@/lib/i18n";
+import { t, tMaybe } from "@/lib/i18n";
 
 type S = components["schemas"];
 export type Message = S["MessageDTO"];
@@ -24,6 +24,7 @@ export type AiPrefs = S["AiPrefs"];
 export type AiPicks = S["AiPicks"];
 export type AiCatalogEntry = S["AiCatalogEntry"];
 export type AiAccount = S["AiAccount"];
+export type AiResetResult = S["AiResetResult"];
 export type AiRun = S["AiRun"];
 export type DigestConsent = S["DigestConsent"];
 export type DigestResult = S["DigestResult"];
@@ -37,6 +38,8 @@ export type QaPosted = S["QaPosted"];
 export type SavedDigest = S["SavedDigest"];
 export type GroupInfo = S["GroupInfo"];
 export type Member = S["Member"];
+export type LoopItem = S["LoopItem"];
+export type LoopBack = S["LoopBack"];
 
 export class ApiError extends Error {
   constructor(
@@ -51,9 +54,6 @@ export class ApiError extends Error {
   }
 }
 
-/** The UI language, so AI answers come back in it (backend: `X-Lang`, ai.reply_lang). */
-export const LANG = () => ({ "X-Lang": readLang() });
-
 /** Same-origin JSON call to the local backend. Never caches private responses. */
 export async function api<T>(
   path: string,
@@ -64,7 +64,7 @@ export async function api<T>(
     credentials: "same-origin",
     cache: "no-store",
     signal: init.signal,
-    headers: { ...LANG(), ...(init.json !== undefined && { "Content-Type": "application/json" }) },
+    headers: init.json !== undefined ? { "Content-Type": "application/json" } : undefined,
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
   if (res.status === 204) return undefined as T;
@@ -122,9 +122,9 @@ export async function apiStart(path: string, json: unknown): Promise<void> {
 
 async function openStream(path: string, json: unknown, signal?: AbortSignal, job?: string) {
   const res = await fetch(`/api${path}`, json === undefined
-    ? { credentials: "same-origin", cache: "no-store", signal, headers: LANG() }
+    ? { credentials: "same-origin", cache: "no-store", signal }
     : { method: "POST", credentials: "same-origin", cache: "no-store", signal, body: JSON.stringify(json),
-        headers: { "Content-Type": "application/json", ...LANG(), ...(job ? { "X-Ai-Job": job } : {}) } });
+        headers: { "Content-Type": "application/json", ...(job ? { "X-Ai-Job": job } : {}) } });
   if (!res.ok) {
     const e = (await res.json().catch(() => null))?.error;
     throw new ApiError(res.status, e?.code ?? (res.status === 422 ? "validation" : "http_error"), e?.retry_after ?? null, e?.detail ?? null);

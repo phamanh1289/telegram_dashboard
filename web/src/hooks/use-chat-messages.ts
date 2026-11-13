@@ -59,6 +59,9 @@ export function useChatMessages(chatId: string | null, q: string, range: string,
       return api<MessagesPage>(`/chats/${encodeURIComponent(chatId!)}/messages?${p}`, { signal });
     },
     getNextPageParam: (last) => (last.has_more && last.items[0] ? last.items[0].message_id : null),
+    // a snooze running out sends no change: Chưa xử lý looks again each minute, like Việc cần xử lý does.
+    // ponytail: first page only (a refetch re-reads every loaded page); a scrolled-back list waits for its next change
+    refetchInterval: (qy) => (!live && !q && view === "pending" && (qy.state.data?.pages.length ?? 1) <= 1 ? 60_000 : false),
   });
   return { query, pollError: live && failed?.chat === chatId ? failed.e : null };
 }

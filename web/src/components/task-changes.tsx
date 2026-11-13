@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, ExternalLink, GitBranch, GitPullRequest, Loader2, RotateCw, Rows2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, ExternalLink, Folder, FolderOpen, GitBranch, GitPullRequest, Loader2, RotateCw, Rows2, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AiFetching } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
@@ -14,14 +14,16 @@ import { sessionId, toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 
 // AI Agent › Thay đổi: a full page over the session list. Only what changed since the session started (the backend
-// diffs from a snapshot taken then; older sessions: the whole working tree against HEAD). Files grouped new / edited / deleted, each a card that folds
-// (CSS grid-rows, body mounted on first open), before / after side by side or in one column, then branch + PR.
+// diffs from a snapshot taken then; older sessions: the whole working tree against HEAD). A folder tree on the left, the diffs
+// grouped by the same folders on the right, each file a card that folds (CSS grid-rows, body mounted on hover / first open),
+// before / after side by side or in one column, then branch + PR.
 
 type Changes = { root: string; branch: string; files: { path: string; status: string; secret: boolean }[]; diff: string; truncated: boolean };
 type Pr = { url: string | null; branch: string; skipped: string[]; note: string | null };
 
 const ERR_KEYS: Record<string, Key> = {
   not_git_repo: "Thư mục dự án không phải repo git.", git_missing: "Máy chưa cài git.", no_changes: "Không có thay đổi nào để commit.",
+  submodule_only: "File đổi đều nằm trong submodule: commit và mở PR trong repo submodule đó.",
   git_push_failed: "Không đẩy được nhánh lên remote (quyền hoặc mạng).", git_failed: "Git báo lỗi.", git_timeout: "Git chạy quá lâu, thử lại.",
   task_busy: "AI đang chạy: đợi xong lượt này.",
 };
@@ -29,13 +31,12 @@ const ERR_KEYS: Record<string, Key> = {
 const errs = () => Object.fromEntries(Object.entries(ERR_KEYS).map(([k, v]) => [k, tNow(v)]));
 
 type Kind = "new" | "edit" | "del" | "rename";
-const KIND: Record<Kind, { label: Key; group: Key; badge: string; edge: string }> = {
-  new: { label: "Mới", group: "File mới tạo", badge: "bg-ok-wash text-ok", edge: "border-l-ok" },
-  edit: { label: "Sửa", group: "File đã sửa", badge: "bg-warn-wash text-warn", edge: "border-l-warn" },
-  rename: { label: "Đổi tên", group: "File đổi tên", badge: "bg-info-wash text-info", edge: "border-l-info" },
-  del: { label: "Xóa", group: "File đã xóa", badge: "bg-error-wash text-error", edge: "border-l-error" },
+const KIND: Record<Kind, { label: Key; letter: string; badge: string; fg: string }> = {
+  new: { label: "Mới", letter: "A", badge: "bg-ok-wash text-ok", fg: "text-ok" },
+  edit: { label: "Sửa", letter: "M", badge: "bg-warn-wash text-warn", fg: "text-warn" },
+  rename: { label: "Đổi tên", letter: "R", badge: "bg-info-wash text-info", fg: "text-info" },
+  del: { label: "Xóa", letter: "D", badge: "bg-error-wash text-error", fg: "text-error" },
 };
-const ORDER: Kind[] = ["new", "edit", "rename", "del"];
 const kindOf = (s: string): Kind => (s === "??" || s.includes("A") ? "new" : s.includes("D") ? "del" : s.includes("R") ? "rename" : "edit");
 
 type Line = { k: " " | "+" | "-"; text: string; o?: number; n?: number; hl?: [number, number] }; // hl: the changed span of a paired line
@@ -106,6 +107,34 @@ function parse(diff: string): Map<string, FileDiff> {
   return out;
 }
 
+type Dir = { name: string; path: string; dirs: Dir[]; files: File[]; n: number }; // path: "a/b/" ("" = the root), n: files under it
+
+/** The files as a folder tree, folders before files, by name; a folder holding just one folder merges into it (a/b/c). */
+function treeOf(files: File[]): Dir {
+  const root: Dir = { name: "", path: "", dirs: [], files: [], n: 0 };
+  for (const f of files) {
+    let d = root;
+    d.n++;
+    for (const name of f.path.split("/").slice(0, -1)) {
+      let c = d.dirs.find((x) => x.name === name);
+      if (!c) d.dirs.push((c = { name, path: `${d.path}${name}/`, dirs: [], files: [], n: 0 }));
+      d = c;
+      d.n++;
+    }
+    d.files.push(f);
+  }
+  const tidy = (d: Dir, top: boolean): Dir => {
+    while (!top && !d.files.length && d.dirs.length === 1) d = { ...d.dirs[0], name: `${d.name}/${d.dirs[0].name}` };
+    d.dirs = d.dirs.map((c) => tidy(c, false)).sort((x, y) => x.name.localeCompare(y.name));
+    d.files.sort((x, y) => base(x.path).localeCompare(base(y.path)));
+    return d;
+  };
+  return tidy(root, true);
+}
+
+/** The folders holding files, in tree order: the right column's groups. */
+const groupsOf = (d: Dir): Dir[] => [...d.dirs.flatMap(groupsOf), ...(d.files.length ? [d] : [])];
+
 const OPEN_MAX = 400; // files longer than this start folded
 
 /** What the session's project changed, as a page: back to the session, the files, branch + PR (push needs a second click). */
@@ -114,18 +143,22 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
   const q = useQuery({ queryKey: ["task-changes", t.id], queryFn: ({ signal }) => api<Changes>(`/tasks/${t.id}/changes`, { signal }), staleTime: 0, retry: false });
   const [view, setView] = useState<"split" | "unified">(() => (matchMedia("(min-width: 48rem)").matches ? "split" : "unified")); // phones: one column
   const [fold, setFold] = useState<Record<string, boolean>>({}); // user's open / closed per path, over the size default
-  const files = useMemo<File[]>(() => {
-    if (!q.data) return [];
-    const parsed = parse(q.data.diff);
-    return q.data.files.map((f) => {
+  const { tree, groups, files } = useMemo(() => {
+    const parsed = parse(q.data?.diff ?? "");
+    const tree = treeOf((q.data?.files ?? []).map((f) => {
       const d = parsed.get(f.path) ?? { hunks: [], add: 0, del: 0, binary: false };
       return { ...d, path: f.path, kind: kindOf(f.status), secret: f.secret, size: d.hunks.reduce((s, h) => s + h.lines.length, 0) };
-    }).sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind) || a.path.localeCompare(b.path));
+    }));
+    const groups = groupsOf(tree);
+    return { tree, groups, files: groups.flatMap((g) => g.files) };
   }, [q.data]);
+  const [shut, setShut] = useState<Record<string, boolean>>({}); // tree folders the user closed
+  const [cur, setCur] = useState<string | null>(null); // the file last picked in the tree
   const isOpen = (f: File) => fold[f.path] ?? f.size <= OPEN_MAX;
   const allOpen = files.length > 0 && files.every(isOpen);
   const add = files.reduce((s, f) => s + f.add, 0), del = files.reduce((s, f) => s + f.del, 0);
   const jump = (f: File) => {
+    setCur(f.path);
     setFold((v) => ({ ...v, [f.path]: true }));
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     document.getElementById(cardId(f.path))?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
@@ -147,21 +180,13 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
           </Hint>
         )}
         {files.length > 0 && (
-          <span className="flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums">
-            <span className="font-medium text-ink">{tt("{n} file thay đổi", { n: files.length })}</span>
-            {ORDER.map((k) => {
-              const n = files.filter((f) => f.kind === k).length;
-              return n > 0 && <span key={k} className={cn("rounded-sm px-1.5 py-0.5 font-sans text-2xs font-medium", KIND[k].badge)}>{n} {tt(KIND[k].label).toLowerCase()}</span>;
-            })}
+          <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
+            <span className="font-sans text-ink-2">{tt("{n} file thay đổi", { n: files.length })}</span>
             <span className="text-ok">+{add}</span><span className="text-error">−{del}</span>
           </span>
         )}
         <span className="flex-1" />
         {files.length > 0 && <>
-          <span className="hidden items-center gap-1 text-xs lg:flex" aria-label={tt("Chú thích màu")}>
-            <span className="rounded-sm bg-error-wash px-1.5 py-0.5 font-medium text-error">− {tt("Trước")}</span>
-            <span className="rounded-sm bg-ok-wash px-1.5 py-0.5 font-medium text-ok">+ {tt("Sau")}</span>
-          </span>
           <Segmented id="diff-view" label={tt("Kiểu xem")} value={view} onChange={setView} items={[
             { value: "split", label: <span className="flex items-center gap-1.5"><Columns2 className="size-3.5" aria-hidden />{tt("Song song")}</span>, title: tt("Trước sửa bên trái, sau sửa bên phải") },
             { value: "unified", label: <span className="flex items-center gap-1.5"><Rows2 className="size-3.5" aria-hidden />{tt("Một cột")}</span>, title: tt("Một cột: dòng đỏ (−) là trước, dòng xanh (+) là sau") },
@@ -180,7 +205,7 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
         </Hint>
       </header>
 
-      {q.isPending ? <AiFetching kind="agent" lines={[tt("Đang mở dự án"), tt("Đang đọc git status"), tt("Đang lấy diff")]} className="flex-1" />
+      {q.isPending ? <AiFetching kind="agent" lines={[tt("Đang mở dự án"), tt("Đang đọc git status"), tt("Đang lấy diff")]} />
         : q.isError ? (
           <div role="alert" className="grid justify-items-start gap-2 p-5 text-sm">
             <p className="text-error">{errorText(q.error, errs(), tt("Không đọc được thay đổi."))}</p>
@@ -193,42 +218,24 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
           </div>
         ) : <>
           <div className="flex min-h-0 flex-1">
-            <nav aria-label={tt("File thay đổi")} className="hidden w-64 shrink-0 overflow-y-auto border-r p-2 md:block">
-              {ORDER.map((k) => {
-                const list = files.filter((f) => f.kind === k);
-                return list.length > 0 && (
-                  <section key={k} className="mb-3">
-                    <h3 className="flex items-center gap-1.5 px-2 pb-1 text-xs font-medium text-ink-3">
-                      <span className={cn("rounded-sm px-1 text-2xs", KIND[k].badge)}>{tt(KIND[k].label)}</span>
-                      {tt(KIND[k].group)} <span className="font-mono tabular-nums">{list.length}</span>
-                    </h3>
-                    <ul className="grid gap-px">
-                      {list.map((f) => (
-                        <li key={f.path}>
-                          <button type="button" onClick={() => jump(f)}
-                            className={cn("grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors duration-(--dur-micro) hover:bg-paper-2", f.secret && "text-ink-3 line-through")}>
-                            <span className="truncate font-mono text-ink">{base(f.path)}</span>
-                            <span className="font-mono text-2xs tabular-nums">
-                              {f.add > 0 && <span className="text-ok">+{f.add}</span>} {f.del > 0 && <span className="text-error">−{f.del}</span>}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                );
-              })}
+            <nav aria-label={tt("File thay đổi")} className="hidden w-72 shrink-0 overflow-y-auto border-r p-2 md:block">
+              <TreeDir d={tree} shut={shut} cur={cur} onDir={(p) => setShut((v) => ({ ...v, [p]: !v[p] }))} onFile={jump} />
             </nav>
             <div className="min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5">
-              <div className="mx-auto grid max-w-[110rem] grid-cols-[minmax(0,1fr)] gap-3">
+              <div className="mx-auto grid max-w-[110rem] grid-cols-[minmax(0,1fr)] gap-6">
                 {files.some((f) => f.secret) && (
                   <p className="flex items-start gap-2 rounded-md bg-warn-wash px-3 py-2 text-xs text-warn">
                     <ShieldAlert className="size-4 shrink-0" aria-hidden />
                     {tt("File trông như chứa bí mật (.env, khóa, chứng chỉ) sẽ không được commit: {files}", { files: files.filter((f) => f.secret).map((f) => f.path).join(", ") })}
                   </p>
                 )}
-                {files.map((f) => (
-                  <FileCard key={f.path} f={f} open={isOpen(f)} split={view === "split"} onToggle={() => setFold((v) => ({ ...v, [f.path]: !isOpen(f) }))} />
+                {groups.map((g) => (
+                  <section key={g.path} aria-label={g.path || tt("Thư mục gốc")} className="grid grid-cols-[minmax(0,1fr)] gap-2">
+                    <DirLabel path={g.path} n={g.files.length} />
+                    {g.files.map((f) => (
+                      <FileCard key={f.path} f={f} open={isOpen(f)} split={view === "split"} onToggle={() => setFold((v) => ({ ...v, [f.path]: !isOpen(f) }))} />
+                    ))}
+                  </section>
                 ))}
                 {q.data.truncated && <p className="text-center text-xs text-ink-3">{tt("… Diff dài, phần còn lại không hiện.")}</p>}
               </div>
@@ -242,24 +249,79 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
 
 const cardId = (path: string) => `chg-${path.replace(/[^\w-]/g, "_")}`;
 const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+const ROW = "grid w-full grid-cols-[0.875rem_0.875rem_minmax(0,1fr)_auto] items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs transition-colors duration-(--dur-micro) hover:bg-paper-2";
+
+/** One tree level: folders (click folds them) then files (click jumps to the card). Nested levels hang on a guide line. */
+function TreeDir({ d, shut, cur, onDir, onFile }: { d: Dir; shut: Record<string, boolean>; cur: string | null; onDir: (path: string) => void; onFile: (f: File) => void }) {
+  const tt = useT();
+  return (
+    <ul className="grid gap-px">
+      {d.dirs.map((c) => {
+        const on = !shut[c.path];
+        return (
+          <li key={c.path}>
+            <button type="button" aria-expanded={on} onClick={() => onDir(c.path)} className={ROW}>
+              <ChevronRight className={cn("size-3.5 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-emph)", on && "rotate-90")} aria-hidden />
+              {on ? <FolderOpen className="size-3.5 text-ink-3" aria-hidden /> : <Folder className="size-3.5 text-ink-3" aria-hidden />}
+              <span className="truncate text-ink-2">{c.name}</span>
+              <span className="font-mono text-2xs text-ink-3 tabular-nums">{c.n}</span>
+            </button>
+            <div className="fold" data-open={on || undefined}>
+              <div><div className="ml-[0.8rem] border-l pl-1"><TreeDir d={c} shut={shut} cur={cur} onDir={onDir} onFile={onFile} /></div></div>
+            </div>
+          </li>
+        );
+      })}
+      {d.files.map((f) => (
+        <li key={f.path}>
+          <button type="button" onClick={() => onFile(f)} aria-current={cur === f.path || undefined}
+            className={cn(ROW, cur === f.path && "bg-hl-wash", f.secret && "text-ink-3 line-through")}>
+            <span />
+            <span className={cn("text-center font-mono text-2xs font-bold", KIND[f.kind].fg)} aria-hidden>{KIND[f.kind].letter}</span>
+            <span className="truncate font-mono text-ink">{base(f.path)}<span className="sr-only"> ({tt(KIND[f.kind].label)})</span></span>
+            <span className="font-mono text-2xs tabular-nums">
+              {f.add > 0 && <span className="text-ok">+{f.add}</span>} {f.del > 0 && <span className="text-error">−{f.del}</span>}
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A group's folder over its cards: the far end (last two folders) always shows, the start gives way on narrow screens. */
+function DirLabel({ path, n }: { path: string; n: number }) {
+  const tt = useT();
+  const parts = path.split("/").filter(Boolean);
+  const head = parts.slice(0, -2).join("/"), tail = parts.slice(-2).join("/");
+  return (
+    <h3 className="flex min-w-0 items-center gap-1.5 px-1 font-mono text-xs">
+      <Folder className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+      {path ? <span className="flex min-w-0">
+        {head && <span className="truncate text-ink-3">{head}/</span>}
+        <span className="shrink-0 font-medium text-ink-2">{tail}</span>
+      </span> : <span className="font-sans text-ink-2">{tt("Thư mục gốc")}</span>}
+      <span className="shrink-0 font-sans text-ink-3 tabular-nums">· {n}</span>
+    </h3>
+  );
+}
 
 /** One file: sticky header (kind, path, +/-), the diff folding under it. The body mounts on first open and stays for the fold-up. */
 function FileCard({ f, open, split, onToggle }: { f: File; open: boolean; split: boolean; onToggle: () => void }) {
   const tt = useT();
-  const [seen, setSeen] = useState(open);
+  const [seen, setSeen] = useState(open); // body mounted: on hover already, so a click only animates
   if (open && !seen) setSeen(true);
-  const dir = f.path.slice(0, f.path.length - base(f.path).length);
   const one = !split || f.kind === "new" || f.kind === "del"; // a new / deleted file has one side only
   return (
-    <section id={cardId(f.path)} aria-label={f.path} className={cn("scroll-mt-2 rounded-lg border border-l-[3px] bg-cotton shadow-edge", KIND[f.kind].edge)}>
-      <button type="button" aria-expanded={open} onClick={onToggle}
-        className={cn("sticky top-0 z-10 grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2.5 rounded-t-lg bg-cotton px-3 py-2 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2",
+    <section id={cardId(f.path)} aria-label={f.path} className="scroll-mt-2 rounded-lg border bg-cotton shadow-edge">
+      <button type="button" aria-expanded={open} onClick={onToggle} onPointerEnter={() => setSeen(true)} onFocus={() => setSeen(true)}
+        className={cn("sticky top-0 z-10 grid w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 rounded-t-lg bg-cotton px-3 py-1.5 text-left transition-[background-color,border-radius] duration-(--dur-short) hover:bg-paper-2",
           !open && "rounded-b-lg")}>
-        <ChevronRight className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", open && "rotate-90")} aria-hidden />
+        <ChevronRight className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-emph)", open && "rotate-90")} aria-hidden />
         <span className={cn("rounded-sm px-1.5 py-0.5 text-2xs font-bold", KIND[f.kind].badge)}>{tt(KIND[f.kind].label)}</span>
         <span className={cn("truncate font-mono text-sm", f.secret && "line-through")}>
           {f.from && <span className="text-ink-3 line-through decoration-ink-3/60">{f.from}</span>}{f.from && <span className="px-1.5 text-info">→</span>}
-          <span className="text-ink-3">{dir}</span><span className="font-medium text-ink">{base(f.path)}</span>
+          <span className="font-medium text-ink">{base(f.path)}</span>
         </span>
         <span className="flex items-center gap-2 font-mono text-xs tabular-nums">
           {f.add > 0 && <span className="text-ok">+{f.add}</span>}

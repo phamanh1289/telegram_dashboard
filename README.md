@@ -39,7 +39,7 @@ irm https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/i
 
 ---
 
-Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm Telegram vào một hàng chờ, chờ lâu nhất lên đầu. Bạn trả lời ngay trên web bằng chính tài khoản Telegram của mình, hoãn, ghim, đánh dấu xong, hoặc nhờ AI soạn nháp và tạo ticket YouTrack từ tin. Tab **YouTrack** là dashboard ticket theo vai trò Dev / QA / PO.
+Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm Telegram vào một hàng chờ, chờ lâu nhất lên đầu. Bạn trả lời ngay trên web bằng chính tài khoản Telegram của mình, hoãn, ghim, đánh dấu xong, hoặc nhờ AI tóm tắt, soạn nháp, trả lời từ code dự án và tạo ticket YouTrack từ tin. Tab **YouTrack** là dashboard ticket theo vai trò Dev / QA / PO.
 
 <table>
 <tr>
@@ -47,11 +47,12 @@ Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm
 
 ### Telegram Inbox
 
-- **Việc cần xử lý**: mọi tag chưa xử lý của mọi nhóm, quá hạn tô màu.
+- **Hôm nay**: mọi việc đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên đầu.
+- **Việc cần xử lý**: mọi tag chưa xử lý của mọi nhóm (Đang chờ / Đang xử lý / Đã ghim), quá hạn tô màu.
 - **Trả lời** tại chỗ, nháp tự lưu, không bao giờ tự gửi lại.
-- **Hoãn / Nhắc lại sau / Ghim / Xong**, quy tắc tự bỏ qua.
+- **Hoãn / Nhắc lại sau / Ghim / Xong**, quy tắc tự bỏ qua / ưu tiên / Vòng BE tự chạy.
 - **Q&A**: hỏi trong nhóm, theo dõi câu trả lời, nhắc khi chưa ai trả lời.
-- **Briefing / Digest**: AI tóm tắt mọi nhóm, gom "Cần confirm", "Việc cần làm".
+- **Briefing / Digest**: AI tóm tắt mọi nhóm, gom "Cần confirm", "Việc cần làm", "Với BE".
 
 </td>
 <td width="50%" valign="top">
@@ -61,8 +62,8 @@ Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm
 - **Tab YouTrack** theo vai trò: Hôm nay (Dev), Kiểm thử (QA), Brief (PO).
 - Bảng / Board ticket, bộ lọc, view đã lưu, xuất CSV, báo cáo release.
 - **Tạo ticket** từ tin Telegram, AI điền sẵn tiêu đề, Type, Priority, mô tả.
-- **AI Agent**: giao việc cho Claude Code / Codex / Antigravity chạy trong thư mục dự án.
-- **Trợ lý AI** ở mọi trang (`⌘J` / `Ctrl+J`).
+- **AI Agent / Đối chiếu BE / Trả lời từ code**: Claude Code / Codex / Antigravity đọc (hoặc sửa) code trong thư mục dự án.
+- **Trợ lý AI** ở mọi trang (`⌘J` / `Ctrl+J`), **Trợ lý biết tuốt** hướng dẫn dùng app (`F1`).
 
 </td>
 </tr>
@@ -154,7 +155,7 @@ Xong là dùng được ngay; lần sau không hỏi lại. Chỉ nhập mã / 2
 
 ### 3. Chọn vai trò
 
-**Cài đặt › Chung › Vai trò**: **Dev**, **QA/QC** hoặc **PO/PM**. Vai trò quyết định trang chủ, dashboard YouTrack và cách AI tóm tắt / tạo ticket. QA và PO không dùng AI Agent nên không cần thư mục code.
+**Cài đặt › Chung › Vai trò**: **Dev**, **QA/QC** hoặc **PO/PM**. Vai trò quyết định trang chủ, dashboard YouTrack và cách AI tóm tắt / tạo ticket. Các tính năng đọc code (AI Agent, Đối chiếu BE, Trả lời từ code, Vòng BE tự chạy) chỉ có với Dev, nên QA và PO không cần thư mục code. Cùng chỗ: **Ngôn ngữ** (Theo máy / Tiếng Việt / English) và **Giới thiệu bản thân cho AI** (nền tảng Android / iOS / Mobile để AI tóm tắt đúng phần của bạn).
 
 ### 4. Chờ tag đầu tiên
 
@@ -167,18 +168,19 @@ App **không nạp lịch sử cũ**: lúc mới cài inbox trống. Khi có ng�
 | Tab **YouTrack**, tạo ticket từ tin | URL YouTrack + token (YouTrack › Profile › **Account Security › New token**) | **Cài đặt › YouTrack** |
 | AI soạn nháp, tóm tắt, AI Agent | Một AI CLI đã đăng nhập: Claude Code, Codex hoặc Antigravity | **Cài đặt › AI** (xem [AI](#ai-tùy-chọn)) |
 | Thông báo khi có tag mới (macOS) | Cho phép thông báo | **Cài đặt › Telegram › Hàng chờ và thông báo** |
-| Giao diện sáng / tối, màu chủ đạo | — | **Cài đặt › Chung › Giao diện** |
+| Sáng / tối, phong cách, font, cỡ chữ, màu chủ đạo, linh vật AI | — | **Cài đặt › Giao diện** |
+| Bot hướng dẫn nổi ở góc màn hình | — | **Cài đặt › Trợ lý biết tuốt** (ẩn / hiện, vị trí, model) |
 
 ## Hướng dẫn sử dụng
 
-Trong app, bấm `?` để xem toàn bộ phím tắt; **Cài đặt › Tìm cài đặt** để tìm nhanh một tùy chọn.
+Trong app, bấm `?` để xem toàn bộ phím tắt, `F1` (hoặc con bot ở góc màn hình) để hỏi **Trợ lý biết tuốt**: hỏi bằng câu thường, bot chỉ từng bước và dẫn tới đúng nút. **Cài đặt › Tìm cài đặt** để tìm nhanh một tùy chọn. Hai tab **Telegram / YouTrack** ở góc trái thanh trên cùng chuyển module (huy hiệu báo việc mới bên kia).
 
 ### Telegram Inbox (`/`)
 
 **Hàng chờ**
 
-- **Việc cần xử lý** (mục đầu thanh bên, mặc định khi mở): mọi tag chưa xử lý của mọi nhóm, chờ lâu nhất lên đầu; thời gian chờ canh phải, đổi màu khi quá ngưỡng (đổi ngưỡng ở Cài đặt › Telegram). Tiêu đề tab trình duyệt hiện số tin chờ.
-- **Hôm nay**: một dòng đếm mọi việc đang chờ bạn ở cả hai module (tag chờ lâu nhất, quá hạn, ticket rủi ro, Q&A tới hạn nhắc, phiên AI Agent xong chưa xem); bấm để tới đúng chỗ.
+- **Hôm nay** (trang mở đầu, `g h`): gom việc của cả hai module thành một danh sách, chia khối Gấp / Đang chờ bạn / Bạn đang chờ: tag chờ, ticket rủi ro, Q&A cần nhắc, phiên AI Agent xong chưa xem, Báo lại, việc mở trong Briefing. Mục cùng một việc (tin tag, phiên AI `REF-…`, chuỗi `#QA…`, ticket) gom thành một chuỗi; bấm để tới đúng chỗ.
+- **Việc cần xử lý** (`g i`): mọi tag chưa xử lý của mọi nhóm, chia 3 tab: **Đang chờ** (chưa có phiên AI, chờ lâu nhất lên đầu, quá ngưỡng đổi màu; đổi ngưỡng ở Cài đặt › Telegram), **Đang xử lý** (đã có phiên AI: AI xong chờ bạn / AI đang làm / phiên dừng), **Đã ghim**. Tiêu đề tab trình duyệt hiện số tin chờ.
 - Tin được tính **đã xử lý** khi bạn reply nó (từ web, điện thoại hay máy khác) hoặc bấm **Xong** (Shift+bấm: xong mà không thả reaction).
 
 **Trên mỗi tin**
@@ -188,7 +190,7 @@ Trong app, bấm `?` để xem toàn bộ phím tắt; **Cài đặt › Tìm c�
 | **Trả lời** | Bấm tin (hoặc `Enter`) → gõ → **Gửi** hoặc `Ctrl/⌘+Enter` (Enter = xuống dòng). Nháp lưu theo từng tin, tải lại trang không mất |
 | **Mẫu** | Câu trả lời soạn sẵn trong ô trả lời (hoặc gõ `/` ở ô trống), điền `{tên}` / `{ticket}` |
 | **@** | Tag thành viên nhóm |
-| **Hoãn** | 1 giờ / 3 giờ / 14:00 hôm nay / 9:00 sáng mai / thứ Hai 9:00 / giờ tự chọn (giờ Việt Nam) |
+| **Hoãn** | 1 giờ / 3 giờ / 14:00 hôm nay / 9:00 sáng mai / thứ Hai 9:00 / giờ tự chọn (giờ Việt Nam), hoặc *Tới khi có người trả lời* / *Tới khi VA-123 xong* |
 | **Nhắc lại sau** | Chọn mốc trước khi Gửi, hoặc ⋯ › *Nhắc lại sau…* trên tag đã xong: tag quay lại hàng chờ đúng giờ |
 | **Ghim** | Giữ tin ở mục *Đã ghim* |
 | **Ngữ cảnh** | ~15 tin trước / sau, lấy trực tiếp từ Telegram |
@@ -196,24 +198,27 @@ Trong app, bấm `?` để xem toàn bộ phím tắt; **Cài đặt › Tìm c�
 
 - **Chọn nhiều**: `Space` hoặc Shift+bấm → thanh "N đã chọn: Xong / Xong không reaction / Hoãn / Ghim"; `Esc` bỏ chọn.
 - **Màn rộng** (≥ 1280px): khung trả lời mở bên phải, danh sách vẫn ở bên trái; `j`/`k` sang tag kế.
+- **Nhãn trên tin**: phiên AI (đang làm / đã trả lời), Đối chiếu BE, Đã gửi, `#REF`, `#QA`, Nháp, Cần retest. Khung trả lời có dòng **Luồng việc**: ticket, phiên AI, chuỗi Q&A của tin, bấm để tới đúng chỗ hoặc *Dùng làm nháp trả lời*.
 - **Gửi "chưa rõ"** (mạng chập chờn): mở nhóm kiểm tra trước, rồi dùng **Kiểm tra** hoặc **Thử lại cùng yêu cầu** (Telegram không tạo tin thứ hai). App **không bao giờ tự gửi lại**.
 
 **Quy tắc tự động**
 
 - **Luôn bỏ qua**: theo từ khóa (ví dụ `#TB`, thêm ở Cài đặt › Telegram) hoặc theo người gửi (menu **Hoãn** › *Luôn bỏ qua {tên}*, có Hoàn tác). Tin khớp tự chuyển "đã xử lý", không báo.
 - **Luôn ưu tiên {tên}**: tag của người đó lên đầu, quá hạn ở nửa ngưỡng.
+- **Vòng BE tự chạy** (Dev, menu **Hoãn** trên tin của bot / người BE): *Tự chuyển trả lời của {tên} vào phiên AI*: khi người đó trả lời câu hỏi một phiên AI Agent đã gửi (theo `#REF-…` / `#QA…`), phiên tự chạy tiếp với câu trả lời đính kèm; chỉ được sửa code nếu phiên đã từng được cho sửa. *Luôn giao AI Agent cho tin của {tên}*: mỗi tin mới của người đó tự mở một phiên chỉ đọc. Không có gì tự gửi lên Telegram.
+- Gỡ quy tắc ở **Cài đặt › Telegram › Luôn bỏ qua**.
 
 **Các trang khác ở thanh bên**
 
-- **Q&A**: đăng câu hỏi có mã `#QA…` vào nhóm, theo dõi cả chuỗi trả lời, nhắc khi chưa ai trả lời. *Câu hỏi của tôi* gom câu chưa ai trả lời ở mọi nhóm.
-- **Briefing**: AI tóm tắt mọi nhóm có tin mới; mục *Cần bạn / Cần confirm / Việc cần làm* có **Trả lời** và **Tạo ticket**; thẻ **Tuần của tôi** (tag nhận, đã xử lý, thời gian xử lý trung vị / 90%); gửi briefing vào Saved Messages.
+- **Q&A** (`g q`): đăng câu hỏi có mã `#QA…` vào nhóm, theo dõi cả chuỗi trả lời, nhắc khi chưa ai trả lời, AI tóm tắt kết luận chuỗi. Câu hỏi gửi từ phiên AI cũng vào đây; lọc *Chưa gửi AI* để thấy câu trả lời chưa đưa cho phiên nào. *Câu hỏi của tôi* gom câu chưa ai trả lời ở mọi nhóm.
+- **Briefing** (`g b`, mục *Trợ lý AI* ở thanh bên): AI tóm tắt mọi nhóm có tin mới; danh sách nhóm nằm ngay ở thanh bên (*Thêm nhóm* để thêm nhóm chưa tag bạn). Mục *Cần bạn / Cần confirm / Việc cần làm* có **Trả lời**, **Tạo ticket**, **Đối chiếu code**; tab **Với BE** (Dev) gom hỏi / đáp với BE theo chủ đề, *Chờ trả lời* / *Đã chốt*, rồi **Đối chiếu code** cả loạt chủ đề (✅ đã adapt / ⚠️ lệch / ❌ chưa làm / ⏳ chờ BE). Nút **Hỏi AI** mở Trợ lý Briefing; thẻ **Tuần của tôi**; gửi briefing vào Saved Messages.
 - **Trang nhóm**: lọc *Chưa xử lý / Đã xử lý / Cả nhóm*, lọc theo người gửi, tìm, *Xong tất cả*, **Tóm tắt (Digest)** của nhóm.
-- **AI Agent**: danh sách phiên AI, nhắn tiếp, duyệt plan rồi cho sửa code.
+- **AI Agent** (`g a`): mọi phiên AI, lọc theo loại *Giao AI Agent / Đối chiếu BE / Trợ lý AI / Briefing* và *Doing / Done*; nhắn tiếp (có hàng đợi), duyệt plan rồi tích *Cho sửa code*, gửi câu hỏi của phiên vào nhóm.
 - **Báo lại**: ticket của bạn chuyển Fixed / Done thì hàng chờ hiện mục nhắc báo lại cho các tin Telegram nhắc ticket đó.
 
 ### Tab YouTrack (`/youtrack/`)
 
-Bấm **YouTrack** trên thanh trên cùng (huy hiệu đỏ = số ticket của bạn cần xử lý ngay). Cần URL + token ở **Cài đặt › YouTrack**; chưa có token thì trang hiện dữ liệu mẫu, các thao tác ghi (tạo ticket, đổi state, bình luận) và AI bị tắt.
+Bấm **YouTrack** trên thanh trên cùng (huy hiệu đỏ = ticket mới giao cho bạn, vàng = ticket của bạn cần xử lý ngay). Cần URL + token ở **Cài đặt › YouTrack**; chưa có token thì trang hiện dữ liệu mẫu, các thao tác ghi (tạo ticket, đổi state, bình luận) và AI bị tắt.
 
 | Vai trò | Trang chủ | Có gì |
 |---|---|---|
@@ -221,24 +226,27 @@ Bấm **YouTrack** trên thanh trên cùng (huy hiệu đỏ = số ticket của
 | QA/QC | **Kiểm thử** | Hàng đợi test, cảnh báo bug tăng đột biến, kết quả test + Copy standup, gợi ý chia QC |
 | PO/PM | **Brief** | AI Brief, Lên sprint, Grooming, Bản tin tuần, Release notes, Báo cáo release (xuất MD / PDF / CSV) |
 
+- **Phạm vi** *Của tôi / Team / Nhóm chọn*, lọc Sprint / Người; **chuông** báo ticket của bạn đổi state, mới giao, có bình luận (macOS có banner cả khi không mở tab).
 - **Ticket**: Bảng / Board (kéo thả đổi State), bộ lọc Priority / Type / State, **AI lọc** (gõ câu tiếng Việt), view đã lưu, gom nhóm, đổi assignee hàng loạt, xuất CSV.
 - **Chi tiết ticket**: đổi State / Priority / Assignee, bình luận (tag `@`), ticket giống / liên quan + AI kiểm tra trùng, **Phiên AI** về ticket, **Nhắc trên Telegram › Hỏi lại trong nhóm**.
 - **Dashboard**: Cần chú ý, KPI sprint, Burndown, Lead time, Velocity, tải việc, số liệu QC và bug.
 - **Thành viên**: số liệu từng người, AI phân tích, so sánh cả team + AI chia việc.
 - **Tạo ticket**: AI soạn từ ghi chú thô; cùng một form với nút tạo ticket bên Telegram.
+- **Lịch sử AI**: 40 phiên hỏi AI gần nhất (ticket, số liệu, báo cáo), mở lại hỏi tiếp; AI vẫn chạy nền khi đóng bảng / tải lại trang.
 
 ### Phím tắt hay dùng
 
 | Phím | Làm gì |
 |---|---|
-| `?` | Xem toàn bộ phím tắt |
-| `⌘K` / `Ctrl+K` | Lệnh nhanh: nhóm, trang, ticket `VA-123`, phiên `AI-xxxxxx`, tìm tin |
+| `?` · `F1` | Xem toàn bộ phím tắt · hỏi Trợ lý biết tuốt |
+| `⌘K` / `Ctrl+K` | Lệnh nhanh: nhóm, trang, ticket `VA-123`, phiên `REF-xxxxxx`, tìm tin |
 | `⌘J` / `Ctrl+J` | Trợ lý AI ở mọi trang (Telegram: hỏi về Briefing; YouTrack: hỏi về ticket đang xem) |
 | `j` / `k` | Chọn tin trên / dưới |
-| `Enter` / `r` | Trả lời tin đang chọn |
-| `x` · `s` · `p` | Xong · hoãn 1 giờ · ghim |
+| `Enter` / `r` · `a` | Trả lời tin đang chọn · nhập yêu cầu cho AI |
+| `x` · `s` · `p` · `z` | Xong · hoãn 1 giờ · ghim · hoàn tác |
 | `o` | Mở tin trong Telegram |
-| `g` rồi `i` / `q` / `p` / `a` / `b` | Đổi trang |
+| `g` rồi `h` / `i` / `q` / `p` / `a` / `b` | Hôm nay / Việc cần xử lý / Q&A / Đã ghim / AI Agent / Briefing |
+| `g` rồi `h` / `t` / `d` / `r` / `p` / `a` (YouTrack) | Trang chính / Ticket / Dashboard / Release / Thành viên / Lịch sử AI |
 | `Esc` | Thoát / bỏ chọn |
 
 ## AI (tùy chọn)
@@ -256,22 +264,24 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 - **Tài khoản**: CLI phải hiện "đang dùng" kèm tài khoản. CLI chưa cài / chưa đăng nhập hiện mờ.
 - **Model và effort**: ô Model của từng việc (nháp, tóm tắt, Briefing / Digest, YouTrack, AI Agent) gộp model của mọi AI theo nhóm Claude / Codex / Antigravity; chọn model của AI nào thì việc đó chạy bằng AI ấy. Codex đi qua [opencodex](https://github.com/lidge-jun/opencodex) thì danh sách có thêm model opencodex định tuyến (nhóm `Codex · AgentAPI`, `Codex · combo`…). Mỗi AI giữ model / effort riêng.
 - **Quyền riêng tư**: *Ẩn SĐT / email khi gửi AI*, nội dung trong thông báo.
-- Nút đồng hồ đo trên thanh trên cùng hiện % hạn mức AI (xanh / vàng từ 70% / đỏ từ 90%).
+- Nút đồng hồ đo trên thanh trên cùng hiện % hạn mức AI (xanh / vàng từ 70% / đỏ từ 90%); bấm › *Tài khoản, usage và lịch sử* mở trang tài khoản AI: mỗi AI một thẻ (đăng nhập, hạn mức, tính năng đang dùng AI đó, lượt reset miễn phí), tab Model / Usage / History.
 
-**Dùng AI trong Inbox**
+**Dùng AI trong Inbox** (mở trả lời một tin → khung **Trợ lý AI** bên phải)
 
-- **Nhờ AI**: mở trả lời một tin → khung *Nhờ AI* → chọn **dự án** (nút **Thêm** mở hộp thoại chọn thư mục) → nhập prompt → Enter. AI trả 3 bản nháp, bấm để đưa vào khung soạn. Có **prompt mẫu**, **Kèm ngữ cảnh nhóm**, AI đọc được ảnh trong tin.
-- **Giao AI Agent**: chạy AI trong thư mục dự án. Chế độ **plan** chỉ đọc; **edit** được sửa file và chạy lệnh trong sandbox (chỉ ghi trong thư mục dự án). Kết quả hiện ngay dưới tin, kèm nút *Dùng kết quả làm nháp trả lời*. Windows chưa có sandbox: chỉ dùng **edit** với tin / link bạn tin tưởng.
+- **Tóm tắt & gợi ý**: AI tóm tắt tin (kèm ngữ cảnh nhóm, đọc được ảnh) theo vai trò, đề xuất bước tiếp và **Mẫu AI** theo quan hệ với người gửi (cấp trên / ngang cấp…); bấm mẫu để đưa vào ô trả lời. Gõ thêm yêu cầu ở ô prompt (`a`). Mỗi tin có một phiên Trợ lý AI (`REF-…`): mở lại tin thấy các lượt trước, hỏi tiếp được, phiên nằm ở AI Agent › Trợ lý AI. QA: nút *Hỏi thông tin còn thiếu* khi tóm tắt có `[cần bổ sung]`.
+- **Trả lời từ code** (Dev): chọn dự án ở ô prompt, AI đọc code (chỉ đọc) trả lời kèm căn cứ file / hàm, độ chắc chắn và 2 bản nháp *Ngắn gọn / Đầy đủ* theo vai trò người hỏi; câu hỏi tiến độ đọc thêm commit 14 ngày và ticket liên quan. Chạy nền, đóng khung vẫn chạy.
+- **Giao AI Agent** (Dev): chạy AI trong thư mục dự án. Chế độ **Chỉ đọc** (khuyên dùng) hoặc **Được sửa file** (sửa file và chạy lệnh trong sandbox, chỉ ghi trong thư mục dự án). Kết quả hiện ngay trên tin, kèm *Dùng làm nháp trả lời*. Câu hỏi AI soạn gửi người khác (*Cần hỏi / Cần ping / Cần chốt*) tối đa 3 ý một tin, có nút gửi thẳng vào nhóm (reply tin đã đính kèm, gắn `#QA…`). Windows chưa có sandbox: chỉ dùng **Được sửa file** với tin / link bạn tin tưởng.
+- **Đối chiếu BE** (Dev, nút bộ não trên tin, hoặc *Đối chiếu code* trong Briefing / Q&A): AI soi câu BE trả lời với code dự án: đã đúng chưa, còn thiếu gì, cần sửa gì; chạy nền thành phiên ở AI Agent › Đối chiếu BE.
 - **Tạo ticket YouTrack** từ tin: **AI soạn** điền sẵn tiêu đề, Type / Priority và mô tả, rồi chèn link ticket vào khung trả lời.
-- **Đối chiếu BE**: soi câu trả lời của BE với code dự án.
+- Chọn **model / effort** ngay trong ô prompt cho từng lượt.
 
 <details>
 <summary><b>Chi tiết kỹ thuật AI (biến môi trường, sandbox, quyền dữ liệu)</b></summary>
 
 - Nháp / tóm tắt / Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`, effort `AI_EFFORT` mặc định `medium`). Model / effort chọn trong Cài đặt được ưu tiên.
-- Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read / Grep / Glob).
+- Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read / Grep / Glob / Skill; skill có lệnh shell bị chặn).
 - AI Agent: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT` (mặc định `sonnet`). AI YouTrack đọc trên 10 ticket cũng chạy bằng model này. Briefing / Digest có model / effort riêng (`by.<cli>.brief_*`; để trống thì theo model tóm tắt).
-- AI Agent **edit**: sửa file (trừ `.claude/`, `.git/`, `.github/`) và chạy shell trong sandbox của Claude Code; mạng chỉ tới kho package (npm, PyPI, Maven, Google Maven, Gradle), không tới `127.0.0.1`. Luôn tắt WebFetch / WebSearch và MCP; không đọc được `data/`, `.env`, `~/.ssh`, `~/.codex`, `~/.aws`, `~/.config/gh`.
+- AI Agent **edit**: sửa file (trừ `.claude/`, `.git/`, `.github/`) và chạy shell trong sandbox của Claude Code; mạng chỉ tới kho package (npm, PyPI, Maven, Google Maven, Gradle), không tới `127.0.0.1`. Luôn tắt WebFetch / WebSearch và MCP (trừ codegraph); dùng được skill / plugin của Claude Code; không đọc được `data/`, `.env`, `~/.ssh`, `~/.codex`, `~/.aws`, `~/.config/gh`.
 - Codex chạy sandbox `read-only` (Task sửa file: `workspace-write`), nháp thì tắt shell. Antigravity chạy custom agent `telegram-dashboard-none` / `-read` / `-edit` (app tự ghi vào `~/.gemini/antigravity-cli/agents/`): nháp / tóm tắt không có tool, lượt đọc chỉ đọc file, Task sửa file chỉ có tool đọc / sửa, không shell. Hạn mức và tự hạ model chỉ có ở Claude. Đổi lệnh bằng `CODEX_COMMAND` / `ANTIGRAVITY_COMMAND`.
 - Nháp AI biết mention nào là bạn (tự lấy @username, `TELEGRAM_ME` để ghi đè), nhớ bạn là cấp gì với từng người gửi và bắt chước giọng các tin bạn từng gửi.
 - Các lệnh AI không nhận biến môi trường `TELEGRAM_*`, `YOUTRACK_*`, `YT_*`, `GH_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `AWS_*`, `AZURE_*`, `GOOGLE_APPLICATION_CREDENTIALS`.
@@ -281,7 +291,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 ## Cập nhật
 
-- **Trong app (khuyên dùng)**: **Cài đặt › Cập nhật**. App kiểm tra GitHub mỗi giờ; có bản mới thì nút bánh răng hiện chấm → bấm **Cập nhật**, hoặc bật **Tự động cập nhật** (bỏ qua khi đang có task AI Agent). App tải gói mới, khởi động lại và tải lại trang; đăng nhập, cài đặt và dữ liệu giữ nguyên.
+- **Trong app (khuyên dùng)**: **Cài đặt › Cập nhật**. App kiểm tra GitHub mỗi giờ; có bản mới thì nút bánh răng hiện chấm → bấm **Cập nhật** (hộp xác nhận hiện bản mới, danh sách thay đổi và lệnh sẽ chạy), hoặc bật **Tự động cập nhật** (bỏ qua khi đang có task AI Agent). App tải gói mới, khởi động lại và tải lại trang; đăng nhập, cài đặt và dữ liệu giữ nguyên.
 - **Bằng lệnh**: đóng app rồi chạy lại lệnh cài ở trên (hoặc Setup.exe bản mới hơn).
 
 ## Gỡ cài đặt
@@ -322,6 +332,8 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 | `FloodWaitError` khi đăng nhập | Telegram giới hạn số lần thử, đợi đủ số giây báo rồi thử lại |
 | Báo "chưa rõ đã gửi" | Mở nhóm kiểm tra trước khi gửi lại; dùng **Thử lại cùng yêu cầu** (không tạo tin trùng) |
 | Không thấy tính năng AI | CLI chưa có trên PATH hoặc chưa đăng nhập → mục [AI](#ai-tùy-chọn), rồi khởi động lại Radar |
+| Không thấy AI Agent / Đối chiếu BE / Trả lời từ code / Vòng BE tự chạy | Chỉ có với vai trò **Dev** → Cài đặt › Chung › Vai trò |
+| Không biết nút nằm đâu | Bấm `F1` hỏi **Trợ lý biết tuốt**, bot chỉ đường tới tận nút |
 | Windows: server đứng im | Tiêu đề cửa sổ đen có chữ *Select* (lỡ bôi đen chữ) → bấm **Esc** |
 | Windows: hộp thoại chọn thư mục không hiện | Có thể nằm sau cửa sổ trình duyệt, kiểm tra thanh taskbar |
 | macOS: "Apple could not verify…" | Dùng lệnh cài thay vì tải zip; hoặc System Settings › Privacy & Security › **Open Anyway** |
@@ -334,13 +346,67 @@ Báo lỗi: trên tin có nút chép **ID tin**; gửi kèm đoạn cuối `data
 ## Cho developer
 
 <details>
-<summary><b>Kiến trúc</b></summary>
+<summary><b>Kiến trúc và tech stack</b></summary>
 
-- Frontend: Next.js (App Router, static export) + React + TypeScript, Tailwind v4, shadcn/ui (Base UI), Motion, TanStack Query.
-- Backend: FastAPI + Telethon + SQLite (WAL) trong một Python process; REST + SSE.
-- Bản build: FastAPI phục vụ cả UI tĩnh và `/api` tại `http://127.0.0.1:8765`. Static export vẫn là app React tương tác, chỉ không có Next server lúc chạy; API, cookie và Telegram đều thuộc Python.
-- Module: **Telegram Inbox** `/`, **Cài đặt** `/settings/` (nhóm Chung / Telegram / YouTrack / AI / GitHub / Phím tắt, `#nhóm` trên URL), **YouTrack** `/youtrack/` (`web/src/components/yt/`) + API `/api/yt/*` (`telegram_dashboard/yt_dashboard.py`, cache 50s, gộp request trùng, tải trang song song).
-- YouTrack dùng `YOUTRACK_URL` / `YOUTRACK_TOKEN`; tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`.
+**Tổng quan**: một Python process duy nhất (FastAPI + Telethon + SQLite) nghe trên `127.0.0.1:8765`, phục vụ cả UI tĩnh (Next.js static export trong `web/out/`) lẫn `/api`. Không có Next server lúc chạy: UI là app React chạy trên trình duyệt; API, cookie, phiên Telegram và mọi lệnh AI đều thuộc Python. Dev thì Next dev `:3000` proxy `/api` sang `:8765`.
+
+```text
+Trình duyệt (React, TanStack Query) ──REST /api/*──▶ FastAPI ──▶ SQLite (data/dashboard.sqlite3, WAL)
+        ▲                                │  ├─ Telethon ──MTProto──▶ Telegram (tài khoản của bạn)
+        └──────────SSE /api/events───────┘  ├─ httpx ──REST──▶ YouTrack (token của bạn), GitHub Releases
+                (chỉ metadata, UI tự refetch)  └─ subprocess ──▶ claude / codex / agy CLI (đã đăng nhập sẵn)
+```
+
+**Stack** (phiên bản pin trong `pyproject.toml` / `uv.lock`, `web/package.json` / `package-lock.json`)
+
+| Lớp | Công nghệ |
+|---|---|
+| Runtime | Python **3.14** (`.python-version`, quản lý bằng [uv](https://docs.astral.sh/uv/)), Node **24 LTS** (`.node-version` 24.22.1, `engines >=24.14`, chỉ để build UI) |
+| Backend | **FastAPI** 0.162 (REST + SSE qua `fastapi.sse`), **Pydantic** 2.14 (DTO, sinh OpenAPI), **Uvicorn**, **Telethon** 1.45 (MTProto, tài khoản người dùng), **httpx** (YouTrack, GitHub), `sqlite3` stdlib (WAL, không ORM) |
+| Frontend | **Next.js** 16.4 (App Router, `output: "export"`, `trailingSlash`), **React** 19.3, **TypeScript** 5.9, **TanStack Query** 5 (cache + refetch theo SSE) |
+| UI | **Tailwind CSS** 4.3 (`@tailwindcss/postcss`, token ở `web/src/app/tokens.css`, container query), **shadcn** trên **Base UI** 1.9 (`web/src/components/ui/`), **Motion** 14 (animation, `Pill` / `Segmented`), **lucide-react** (icon), `class-variance-authority`, `tw-animate-css` |
+| Nội dung | `react-markdown` + `remark-gfm` + `remark-breaks` (kết quả AI, tin nhắn); font Quicksand / Be Vietnam Pro / Inter / Nunito tải từ Google Fonts khi được chọn (hoặc font máy) |
+| Kiểu API | `openapi-typescript`: Python xuất OpenAPI → `web/src/lib/api.generated.d.ts` (`npm run api:types`) |
+| AI | Không gọi API trực tiếp: chạy **Claude Code** (`claude -p`), **Codex** (`codex exec`), **Antigravity** (`agy`) dưới dạng subprocess không tương tác, prompt qua stdin; sandbox / tool theo từng lượt (`providers.py`). Project có `.codegraph/` thì lượt đọc code dùng MCP codegraph (chỉ đọc) |
+| Kiểm tra | **pytest** + pytest-asyncio, **Ruff** (line 120, `E F I B UP SIM`), **ESLint** 10 + `eslint-config-next`, `tsc --noEmit`, **Playwright** 1.64 (e2e với backend fixture) |
+| Đóng gói | `scripts/package.py`: CPython standalone (python-build-standalone qua `uv python install`) + deps + app + `web/out` → zip; Windows thêm **Inno Setup** (`packaging/windows/setup.iss`); macOS tạo `Radar.app` từ `install.sh` |
+| Phát hành | GitHub Actions `.github/workflows/release.yml` (action pin theo SHA), ký từng gói bằng **RSA** (`.sig`, khóa công khai `telegram_dashboard/release_key.pem`), lệnh cài kiểm sha256 |
+
+**Backend** (`telegram_dashboard/`, ~12k dòng)
+
+| File | Vai trò |
+|---|---|
+| `__main__.py` | CLI: `serve`, `login`, `open`, `export-openapi`; tự đổi port nếu 8765 bận, re-exec khi cập nhật |
+| `app.py` | FastAPI app, route REST, `/api/events` (SSE), phục vụ `web/out` |
+| `auth.py` | `LocalGuardMiddleware`: kiểm Host / Origin / `Sec-Fetch-Site`, cookie `td_auth_<port>` cấp từ mã trong `~/.telegram_dashboard/api_token` |
+| `config.py` | Cấu hình: `data/config.json` (nhập trên UI) thắng `.env` |
+| `storage.py` | SQLite (WAL, sync, chạy ngoài event loop qua `Db`), revision cho SSE |
+| `telegram.py` | Cầu Telegram: ingest tin tag / reply, recovery, gửi trả lời (`_send_lock`, `delivery_unknown`, không tự gửi lại) |
+| `events.py` | SSE chỉ mang metadata; DB revision là nguồn sự thật |
+| `qa.py` | Q&A: câu hỏi `#QA…` và chuỗi trả lời |
+| `digest.py` | Digest / Briefing: tóm tắt nhóm đọc live từ Telegram, chia đợt, gom "Với BE" |
+| `ai.py` | Prompt nháp / tóm tắt / ticket / trả lời từ code; `ASK_STYLE` dùng chung; chỉ trả text |
+| `providers.py` · `claude.py` | AI CLI: chọn CLI, model / effort, đăng nhập, lệnh, sandbox, hạn mức; tài khoản Claude và run log |
+| `tasks.py` · `agent.py` | Phiên AI Agent / Đối chiếu BE / Trợ lý AI: chạy headless trong thư mục dự án, hàng đợi, nhắn tiếp |
+| `autobe.py` | Vòng BE tự chạy: chuyển câu trả lời vào phiên, tự giao phiên chỉ đọc |
+| `links.py` | Đọc sẵn link trong prompt (ticket YouTrack, Knowledge Base, tin nhóm) cho AI không có mạng |
+| `gitops.py` | Diff phiên AI Agent → branch + PR (`git`, `gh`) |
+| `external_runs.py` | Lần chạy AI ngoài app (Claude Code / Codex CLI, Desktop) cho trang tài khoản AI |
+| `privacy.py` | Ẩn SĐT / email khi gửi AI, nội dung trong thông báo |
+| `yt_dashboard.py` | API `/api/yt/*`: proxy YouTrack, cache TTL 50s, gộp request trùng, tải trang song song |
+| `updater.py` | Cập nhật: git checkout (pull, sync deps, build UI) hoặc bản cài (tải Release đã ký vào `versions/<ver>`, đổi `current`) |
+
+**Frontend** (`web/src/`)
+
+- `app/`: 3 route tĩnh `/` (Telegram Inbox), `/youtrack/`, `/settings/` (nhóm cài đặt theo `#hash`: `#general` `#look` `#bot` `#telegram` `#youtrack` `#ai` `#shortcuts` `#github`); `tokens.css` (màu, cỡ chữ), `globals.css`.
+- `components/`: màn Telegram (`inbox`, `pending-inbox`, `today-page`, `qa-page`, `briefing-page`, `digest-page`, `tasks-page`, `composer`…), `yt/` (tab YouTrack), `ai/` (khung chat AI dùng chung: `chat.tsx`, cảnh chờ `fetching.tsx`), `ui/` (primitive: `Segmented` / `Pill`, `Dropdown`, `Hint`, `Dialog`…), `ticket-form.tsx` (form ticket duy nhất cho cả 2 tab).
+- `hooks/use-events.ts`: một kết nối SSE, áp thay đổi vào cache TanStack Query; `lib/api.ts` + `api.generated.d.ts`: client có kiểu.
+- `lib/i18n/`: tiếng Việt làm key, bản dịch `en/` (thiếu là typecheck lỗi); `lib/guide.json` + `guide.en.json`: hướng dẫn trong app, nguồn cho Trợ lý biết tuốt và tour.
+- Quy ước UI chi tiết: [DESIGN.md](DESIGN.md), luật cho AI agent: [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md).
+
+**Dữ liệu chạy** (`data/`, quyền 0600 / 0700): `account.session` (Telethon), `dashboard.sqlite3` (+ WAL), `config.json`, `server.log` / `server.port` / `server.lock`, `tasks/` (log phiên AI Agent), `claude_runs.jsonl` / `claude_usage.json` (lịch sử chạy, hạn mức), `yt_*.json` (kho prompt, workflow, theo dõi ticket YouTrack), `media/`. Bản cài: `data/` nằm ngoài `versions/` nên cập nhật không đụng tới.
+
+**Biến môi trường YouTrack**: `YOUTRACK_URL` / `YOUTRACK_TOKEN` (hoặc nhập trên UI); tùy chọn `YT_HISTORY_DAYS`, `YT_WIP`, `YT_STALE`, `YT_DEAD`. Biến AI: xem *Chi tiết kỹ thuật AI* ở mục [AI](#ai-tùy-chọn).
 
 Tài liệu: [plan](docs/superpowers/plans/2026-10-29-local-web-implementation.md) · [thiết kế](docs/superpowers/specs/2026-10-29-local-web-design.md) · [rà stack](docs/decisions/2026-10-29-stack-review.md) · [nghiệm thu](docs/verification/local-web-smoke.md) · [cài từ source chi tiết](docs/SETUP.md).
 

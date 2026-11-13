@@ -30,6 +30,9 @@ export function rangeQuery({ from, to }: DayRange) {
   return p.toString();
 }
 
+/** Default range of the tag lists: the last 7 days, open-ended so tags arriving after midnight still show. */
+export const lastWeek = (): DayRange => ({ from: daysAgo(6), to: "" });
+
 function presets(): { label: Key; range: DayRange }[] {
   const today = ymd();
   const first = new Date();
@@ -37,9 +40,9 @@ function presets(): { label: Key; range: DayRange }[] {
   return [
     { label: "Hôm nay", range: { from: today, to: today } },
     { label: "Hôm qua", range: { from: daysAgo(1), to: daysAgo(1) } },
-    { label: "7 ngày qua", range: { from: daysAgo(6), to: today } },
-    { label: "30 ngày qua", range: { from: daysAgo(29), to: today } },
-    { label: "Tháng này", range: { from: ymd(first), to: today } },
+    { label: "7 ngày qua", range: lastWeek() },
+    { label: "30 ngày qua", range: { from: daysAgo(29), to: "" } },
+    { label: "Tháng này", range: { from: ymd(first), to: "" } },
     { label: "Tất cả", range: { from: "", to: "" } },
   ];
 }
@@ -47,6 +50,8 @@ function presets(): { label: Key; range: DayRange }[] {
 /** Rendered label (plain `t`: callers render it from a component that re-renders on a language change). */
 export function rangeLabel({ from, to }: DayRange) {
   if (!from && !to) return t("Tất cả thời gian");
+  const p = presets().find((x) => x.range.from === from && x.range.to === to);
+  if (p) return t(p.label);
   if (from && from === to) return from === ymd() ? t("Hôm nay") : dm(from);
   if (from && !to) return t("Từ {d}", { d: dm(from) });
   if (!from && to) return t("Đến {d}", { d: dm(to) });

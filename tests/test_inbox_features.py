@@ -36,6 +36,17 @@ def test_unified_pending_oldest_first_and_snooze(client):
     assert len(client.get("/api/pending").json()) == 2
 
 
+def test_snooze_keeps_a_live_message(client):
+    store = client.app.state.store
+    client.app.state.bridge.state = "connected"
+    store.set_tracking(A, True, "Alpha", "supergroup")
+    client.app.state.bridge.transport.history[A] = [msg(A, 11, "plain", sender="5")]
+    later = (datetime.now(UTC) + timedelta(hours=2)).isoformat()
+    assert client.put(f"/api/chats/{A}/messages/11/snooze", json={"until": later}, headers=H).status_code == 204
+    assert store.get_message(A, 11).snoozed_until is not None
+    assert client.put(f"/api/chats/{A}/messages/12/snooze", json={"until": later}, headers=H).status_code == 404
+
+
 def test_pinned_sticks_to_top(client):
     _seed(client.app.state.store)
     assert client.put(f"/api/chats/{A}/messages/1/pin", json={"pinned": True}, headers=H).status_code == 204
@@ -60,7 +71,8 @@ def test_rules_clear_existing_and_new_tags(client):
     for blank in ("", "   "):  # "" is in every text: it would clear every tag
         assert client.post("/api/rules", json={"kind": "keyword", "value": blank}, headers=H).status_code == 422
     r = client.post("/api/rules", json={"kind": "sender", "value": "5", "label": "Alice"}, headers=H).json()
-    assert r["handled"] == 1 and r["rule"] | {"id": 0} == {"id": 0, "kind": "sender", "value": "5", "label": "Alice"}
+    assert r["handled"] == 1
+    assert r["rule"] | {"id": 0} == {"id": 0, "kind": "sender", "value": "5", "label": "Alice", "project": ""}
     assert r["cleared"] == [{"chat_id": A, "message_id": "1"}]  # what an Undo reopens
     assert client.get("/api/pending").json() == []
     assert store.store_mentions([("Alpha", "supergroup", msg(A, 5, "@me again", sender="5"), False)]) == []
@@ -404,7 +416,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
             if len(ev["items"]) == 6 and not ev["running"]:
                 break
             time.sleep(0.05)
-        assert ev["items"][3] | {"at": 0} == {"kind": "user", "text": "tiếp", "at": 0}
+        assert ev["items"][3] | {"at": 0} == {"kind": "user", "text": "tiếp", "mode": "plan", "at": 0}
         assert "--resume" in ev["items"][-1]["text"]
         assert "--permission-mode plan" in ev["items"][-1]["text"]
         # Accept edit: the plan task's next turn resumes the same session allowed to edit
@@ -569,3 +581,23 @@ def test_snooze_until_reply_or_ticket_wakes_early(tmp_path):
     st.apply_message(msg(4, reply=3))  # answers my reply to tag 1
     assert st.get_message("c1", 1).snoozed_until is None and st.get_message("c1", 2).snoozed_until is not None
     assert st.wake_ticket("VA-7") == 1 and st.get_message("c1", 2).snoozed_until is None
+    st.set_snooze("c1", 1, later, "reply")
+    st.wake_on_reply("c1", 2)  # a reply to another tag wakes nothing
+    assert st.get_message("c1", 1).snoozed_until is not None
+    st.wake_on_reply("c1", 1)  # an untagged reply (never kept) to the tag itself
+    assert st.get_message("c1", 1).snoozed_until is None
+    # reopening a done tag drops a snooze left from before, or it would be in no list at all
+    st.set_snooze("c1", 2, later)
+    st.set_handled("c1", 2, True)
+    st.set_handled("c1", 2, False)
+    assert st.get_message("c1", 2).snoozed_until is None
+
+
+def test_loop_back_api_import_list_skip(client):
+    item = {"ticket": "VA-2", "state": "Done", "chat_id": "c1", "message_id": "5"}
+    assert client.post("/api/loopback/import", json={"items": [item, item]}, headers=H).json() == {"added": 1}
+    assert client.get("/api/loopback").json() == {"items": [item], "error": ""}
+    assert client.post("/api/loopback/done", json={"chat_id": "c1", "message_id": "5"}, headers=H).status_code == 204
+    assert client.get("/api/loopback").json()["items"] == []
+    again = client.post("/api/loopback/import", json={"items": [item]}, headers=H)
+    assert again.json() == {"added": 0}  # skipped stays skipped

@@ -21,15 +21,14 @@ export function CreateTicket() {
         <TicketForm
           title={<>{t("Tạo ticket")} <span className="rounded bg-paper-2 px-1.5 font-mono text-xs font-medium text-ink-2">{y.project}</span></>}
           hint={t("Tự điền, hoặc kể vấn đề cho AI soạn theo mẫu rồi sửa lại trước khi tạo.")}
-          project={y.project}
           initial={{ summary: start.split("\n")[0].slice(0, 200), description: start.includes("\n") ? start : "" }}
           note={start}
           notePlaceholder={t("vd. Màn chốt giá trên Android bấm Ký sau bị crash khi chưa có hợp đồng, máy Samsung A52, bản 3.2.1")}
           aiOn={y.aiOn}
           aiKind="yt"
           aiDraft={async (note, f, signal) => {
-            const done = saveOneShot(tNow("AI · Soạn ticket {project}", { project: y.project }), note, tNow("AI soạn ticket"));
-            const d = await yt.aiDraft(note, f.types, f.priorities, signal);
+            const { done, session } = saveOneShot(tNow("AI · Soạn ticket {project}", { project: y.project }), note, tNow("AI soạn ticket"));
+            const d = await yt.aiDraft(note, f.types, f.priorities, signal, session);
             done(`**${d.summary}**\n\n${[d.type && `Type: ${d.type}`, d.priority && `Priority: ${d.priority}`].filter(Boolean).join(" · ")}\n\n${d.description}`);
             return d;
           }}

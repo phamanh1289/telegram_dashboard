@@ -4,7 +4,7 @@ import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t, useT } from "@/lib/i18n";
 import { getPref, setPref } from "@/lib/prefs";
-import { checkLoopBack, deskNotify, type Ticket } from "@/lib/yt";
+import { deskNotify, type Ticket } from "@/lib/yt";
 import { ago } from "@/lib/time";
 import { Popover } from "./bits";
 import { selfEdits, useYt } from "./state";
@@ -36,7 +36,6 @@ export function useWatch() {
   const key = `${y.project}:${y.filters.assignee.join()}`;
   useEffect(() => {
     if (!data || !y.me || y.issues.isPlaceholderData) return;
-    checkLoopBack(y.project, y.me, data, note); // Fixed / Done → "Báo lại", shared with the Telegram shell's watch
     const mine = (i: Ticket) => !i.resolved && (i.assignee === y.me || i.qc === y.me);
     const m = new Map(data.filter(mine).map((i) => [i.id, { state: i.state, assignee: i.assignee, updated: i.updated }]));
     const p = prev.current;
@@ -84,9 +83,9 @@ export function WatchBell() {
               <label className="ml-auto flex items-center gap-1.5 text-ink-3"><input type="checkbox" checked={desk} onChange={(e) => void toggle(e.target.checked)} />{t("Thông báo trên máy")}</label>
             </div>
             {list.length ? (
-              <ul className="grid max-h-80 overflow-y-auto p-1">
+              <ul className="zebra grid max-h-80 overflow-y-auto p-1">
                 {list.map((e, k) => (
-                  <li key={k}><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
+                  <li key={k} className="rounded"><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
                     <span className="flex gap-2 text-xs"><b className="font-mono">{e.id}</b><span className="ml-auto text-ink-3">{ago(e.at)}</span></span>
                     <span className="truncate text-sm">{e.text}</span>
                   </button></li>

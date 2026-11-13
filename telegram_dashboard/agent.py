@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from . import providers
-from .ai import cli_reason
+from .ai import LANG_TURN, cli_reason
 from .claude import note_run
 from .config import child_env, kill_tree, on_path
 from .errors import ApiError
@@ -29,6 +29,11 @@ STREAM_LIMIT = 32 * 1024 * 1024  # one stream-json line can carry a whole file r
 EXIT_GRACE = 10  # seconds after the CLI exits before what it left holding its pipes is killed
 # After a result the CLI can linger (background agents, hooks): quiet this long = the turn is over.
 AFTER_RESULT_IDLE = 20.0
+
+
+def session_ref(task_id: str) -> str:
+    """The session code the page shows (web/src/lib/inbox.ts `sessionId`)."""
+    return f"REF-{task_id[-6:]}"
 
 
 def tasks_dir(settings) -> Path:
@@ -89,6 +94,7 @@ class AgentRunner:
         self._cancel: set[str] = set()  # stopped while starting: never registered
         self._why: dict[str, str] = {}  # stopped on purpose: what the log says instead of the exit code
         self.side: dict[str, asyncio.Task] = {}  # turns run in this process (Trợ lý AI), not by a CLI
+        self.on_idle: Callable[[str], None] | None = None  # a CLI turn ended (autobe sends what waited for it)
 
     @property
     def available(self) -> bool:
@@ -167,7 +173,7 @@ class AgentRunner:
                 raise ApiError(502, "task_launch_failed", detail=type(e).__name__) from None
             self._starting[task_id] = proc
             try:
-                proc.stdin.write(providers.stdin(provider, text))
+                proc.stdin.write(providers.stdin(provider, text + (LANG_TURN if resume else "")))
                 await proc.stdin.drain()
                 proc.stdin.close()
             except OSError:  # the CLI quit at once (bad flag, unknown session): stderr says why
@@ -195,7 +201,7 @@ class AgentRunner:
         if not resume:
             task_result_path(self.settings, task_id).unlink(missing_ok=True)
             self.log_path(task_id).unlink(missing_ok=True)
-        self._append(task_id, {"kind": "user", "text": text})
+        self._append(task_id, {"kind": "user", "text": text, "mode": mode})  # mode: autobe reads whether edits were let
         return session_id
 
     def side_start(self, task_id: str, prompt: dict, run: Callable[[], Awaitable], text_of: Callable[..., str]):
@@ -261,7 +267,7 @@ class AgentRunner:
 
     async def _pump(self, task_id: str, proc: asyncio.subprocess.Process, choice=("", "", False),
                     provider="claude") -> None:  # fmt: skip
-        got_result, t0, st = False, time.monotonic(), {}
+        got_result, t0, st, ref = False, time.monotonic(), {}, session_ref(task_id)
         err = asyncio.create_task(proc.stderr.read())
         reap = asyncio.create_task(self._reap_after_exit(proc))
         try:
@@ -275,7 +281,7 @@ class AgentRunner:
                         if got_result:
                             run = (providers.run_model(provider, st.get("model"), choice[0]), *choice[1:])
                             final = item.pop("final")
-                            note_run(self.settings, "agent", run, final, time.monotonic() - t0, None)
+                            note_run(self.settings, "agent", run, final, time.monotonic() - t0, None, ref=ref)
                             cost = final.get("total_cost_usd") if isinstance(final, dict) else None
                             if isinstance(cost, int | float):  # the CLI's own estimate: the session sums its turns
                                 item["cost"] = round(float(cost), 4)
@@ -288,7 +294,7 @@ class AgentRunner:
             code = await proc.wait()
             if not got_result:
                 note_run(self.settings, "agent", choice, None, time.monotonic() - t0,
-                         "ai_cancelled" if task_id in self._why else f"exit_{code}")  # fmt: skip
+                         "ai_cancelled" if task_id in self._why else f"exit_{code}", ref=ref)  # fmt: skip
                 tail = (await err).decode(errors="replace").strip()[-400:]
                 text = self._why.get(task_id) or tail or f"Tiến trình dừng (mã {code})."
                 self._append(task_id, {"kind": "result", "error": True, "text": text})
@@ -307,6 +313,8 @@ class AgentRunner:
                 del self.procs[task_id]
             if self.pumps.get(task_id) is asyncio.current_task():
                 del self.pumps[task_id]
+            if self.on_idle:
+                self.on_idle(task_id)
 
     @staticmethod
     async def _reap_after_exit(proc) -> None:

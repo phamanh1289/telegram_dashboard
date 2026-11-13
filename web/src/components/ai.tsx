@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { BASE, card, type Effort, effortLabel, KEYS, meterTone, planName, planTier, type Provider, PROVIDERS, resetIn, ringTone, type RunKind, sectionHead, useAccounts, useAiPrefs, useClaudeAccount, useRecheck, windowName } from "@/components/ai/prefs";
 import { AgentIcon } from "@/components/ai/agent-icon";
 import { AiBot } from "@/components/ai/chat";
-import { AIS, HistoryTab, Quota, secs, UsageTab } from "@/components/ai/usage";
+import { AIS, HistoryTab, Quota, ResetTicket, secs, UsageTab } from "@/components/ai/usage";
 
 // The AI CLIs (Claude, Codex, Antigravity) in one place: one model list over every CLI's models per kind of run (the
 // pick's CLI runs it), what each offers (the backend's catalog), each CLI's own model/effort, every CLI's login in one shape, the top-bar pill, the account page.
@@ -29,24 +29,23 @@ import { AIS, HistoryTab, Quota, secs, UsageTab } from "@/components/ai/usage";
 
 export { type AccountView, type Provider, type RunKind, useAccounts, useAiPrefs } from "@/components/ai/prefs";
 
-/** A quota window's share left as a ring that empties (amber from 70% used, red from 90%), its short name and the % left. */
+/** A quota window's share used as a ring that fills up (amber from 70% used, red from 90%), its short name and the % used. */
 function QuotaRing({ label, percent }: { label: string; percent: number }) {
   const used = Math.round(Math.min(100, Math.max(0, percent)));
-  const left = 100 - used;
   return (
     <span className="flex items-center gap-1 whitespace-nowrap">
       <svg viewBox="0 0 20 20" aria-hidden className={cn("size-4 shrink-0 -rotate-90", ringTone(used))}>
         <circle cx="10" cy="10" r="7.5" fill="none" strokeWidth="3" className="stroke-rule-2/60" />
-        {left > 0 && <circle cx="10" cy="10" r="7.5" fill="none" strokeWidth="3" stroke="currentColor" strokeLinecap="round" pathLength={100}
-          strokeDasharray={`${left} 100`} className="transition-[stroke-dasharray] duration-500 ease-(--ease-out)" />}
+        {used > 0 && <circle cx="10" cy="10" r="7.5" fill="none" strokeWidth="3" stroke="currentColor" strokeLinecap="round" pathLength={100}
+          strokeDasharray={`${used} 100`} className="transition-[stroke-dasharray] duration-500 ease-(--ease-out)" />}
       </svg>
       <span className="text-ink-3">{label.split(" · ")[0]}</span>
-      <span className={cn("font-mono font-bold tabular-nums", left <= 10 ? "text-error" : "text-ink")}>{left}%</span>
+      <span className={cn("font-mono font-bold tabular-nums", used >= 90 ? "text-error" : "text-ink")}>{used}%</span>
     </span>
   );
 }
 
-/** Top-bar pill: the quota left of the AI picked to show here (Cài đặt › AI, or the switch in its popover; "Tự động" = the
+/** Top-bar pill: the quota used of the AI picked to show here (Cài đặt › AI, or the switch in its popover; "Tự động" = the
  *  one the module's everyday runs use: Telegram drafts, YouTrack light runs). Antigravity: the model group that kind picks.
  *  Opens a popover with every window, the switch and the way to the account page. */
 export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
@@ -67,7 +66,7 @@ export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
   const peak = Math.max(0, ...usage.map((u) => u.percent));
   const bad = !acc.installed || !acc.loggedIn;
   const summary = !acc.installed ? t("{name} chưa cài", { name }) : !acc.loggedIn ? t("{name} chưa đăng nhập", { name })
-    : usage.map((u) => `${windowName(u.label)}: ${t("còn {n}%", { n: 100 - Math.round(Math.min(100, u.percent)) })}${u.resets_at ? t(", đặt lại sau {span} ({time})", { span: resetIn(u.resets_at, now), time: timeLabel(u.resets_at, true) }) : ""}`).join("; ")
+    : usage.map((u) => `${windowName(u.label)}: ${t("đã dùng {n}%", { n: Math.round(Math.min(100, Math.max(0, u.percent))) })}${u.resets_at ? t(", đặt lại sau {span} ({time})", { span: resetIn(u.resets_at, now), time: timeLabel(u.resets_at, true) }) : ""}`).join("; ")
       || `${name}: ${acc.email ?? t("đã đăng nhập")}`;
   const openPage = () => { setPop(false); setPage(true); };
   return (
@@ -144,6 +143,7 @@ export function AiAccounts() {
                 <span className="flex items-center gap-2 text-sm font-medium text-ink">
                   {name} CLI
                   {inUse.includes(id) && <span className="rounded-full bg-ok-wash px-1.5 text-2xs leading-5 font-medium text-ok">{t("Đang dùng")}</span>}
+                  <ResetTicket provider={id} />
                 </span>
                 <span className="flex min-w-0 items-center gap-1.5 text-xs">
                   <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot)} />
@@ -406,12 +406,14 @@ const KINDS = {
   task: ["Task và AI Agent", "Đọc code, lập kế hoạch: cần model mạnh."],
   yt: ["Hỏi AI, báo cáo, soạn ticket", "AI YouTrack hằng ngày: hỏi, báo cáo, lọc và soạn ticket."],
   yt_task: ["Đọc code, nhiều ticket", "AI YouTrack đọc code dự án hoặc trên 10 ticket một lần: cần model mạnh."],
+  guide: ["Trợ lý biết tuốt", "Bot nổi trả lời cách dùng app. “Như tóm tắt”: dùng lựa chọn của tóm tắt, soạn nháp."],
 } as const satisfies Record<RunKind, readonly [Key, Key]>;
 /** What "" means for a kind when it is not the CLI default: [label, hint] (Briefing and YouTrack fall back to a Telegram row). */
 const INHERITS: Partial<Record<RunKind, readonly [Key, Key]>> = {
   brief: ["Như tóm tắt", "Dùng lựa chọn của tóm tắt, soạn nháp"],
   yt: ["Như Telegram", "Dùng lựa chọn của tóm tắt, soạn nháp"],
   yt_task: ["Như Telegram", "Dùng lựa chọn của Task và AI Agent"],
+  guide: ["Như tóm tắt", "Dùng lựa chọn của tóm tắt, soạn nháp"],
 };
 /** The module whose runs a picks list sets: Telegram's or YouTrack's AI features. */
 export type AiScope = "telegram" | "youtrack";
@@ -629,7 +631,7 @@ function TestRun({ kind }: { kind: RunKind }) {
   const t = useT();
   const qc = useQueryClient();
   const run = useMutation({
-    mutationFn: () => api<{ text: string; ms: number }>("/ai/test", { method: "POST", json: { task: kind === "task" || kind === "yt_task", brief: kind === "brief", yt: kind.startsWith("yt") } }),
+    mutationFn: () => api<{ text: string; ms: number }>("/ai/test", { method: "POST", json: { task: kind === "task" || kind === "yt_task", brief: kind === "brief", yt: kind.startsWith("yt"), guide: kind === "guide" } }),
     onSettled: () => void qc.invalidateQueries({ queryKey: ["ai-runs"] }),
   });
   return (

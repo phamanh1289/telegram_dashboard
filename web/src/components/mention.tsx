@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 // "@" in a box that posts somewhere people get tagged: pick a member. A @username / @login goes as typed text (Telegram
 // and YouTrack link it themselves); a Telegram member without a username shows as "@Name" in the box and is sent as
-// [Name](tg://user?id=N), which the server turns into a mention entity (telegram.split_mentions). ponytail: the
+// [Name](tg://user?id=N), which the server turns into a mention entity (telegram.split_format). ponytail: the
 // "@Name" → id map lives in this component only: a reopened draft sends the name as plain text; persist it if that bites.
 
 const QUERY = /(?:^|\s)@([^\s@]{0,32}(?: [^\s@]{0,32}){0,3})$/; // "@Lan Q" right before the caret: a full name has spaces

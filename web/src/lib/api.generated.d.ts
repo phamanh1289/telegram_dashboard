@@ -1030,7 +1030,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/snooze/tickets": {
+    "/api/loopback": {
         parameters: {
             query?: never;
             header?: never;
@@ -1038,10 +1038,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Snooze Tickets
-         * @description Tickets that snoozed tags wait on: the YouTrack watch wakes them once done.
+         * Loop Back
+         * @description "Báo lại" items the background YouTrack watch queued, and its last failure.
          */
-        get: operations["snooze_tickets_api_snooze_tickets_get"];
+        get: operations["loop_back_api_loopback_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1050,7 +1050,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/snooze/wake": {
+    "/api/loopback/done": {
         parameters: {
             query?: never;
             header?: never;
@@ -1060,10 +1060,30 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Snooze Wake
-         * @description The ticket is done: tags snoozed until then come back.
+         * Loop Done
+         * @description Dismissed ("Bỏ qua"); a reply sent to the message closes its items on its own.
          */
-        post: operations["snooze_wake_api_snooze_wake_post"];
+        post: operations["loop_done_api_loopback_done_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/loopback/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Loop Import
+         * @description ponytail: one-time move of a browser's old localStorage queue; drop after a few releases.
+         */
+        post: operations["loop_import_api_loopback_import_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1081,7 +1101,8 @@ export interface paths {
         /**
          * Remind
          * @description "Nhắc lại sau": reopen a tag (e.g. just answered "để mình check") and hide it until `until`; it comes
-         *     back to Việc cần xử lý then. No reaction change on Telegram.
+         *     back to Việc cần xử lý then. No reaction change on Telegram. `restore` (Undo) puts back how it was done,
+         *     without closing its Q&A or sessions as Xong would.
          */
         put: operations["remind_api_chats__chat_id__messages__message_id__remind_put"];
         post?: never;
@@ -1397,6 +1418,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/ai/mascot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Mascots
+         * @description The mascot drawings since the server started, oldest first (running ones included).
+         */
+        get: operations["ai_mascots_api_ai_mascot_get"];
+        put?: never;
+        /**
+         * Ai Mascot
+         * @description Start drawing an SVG mascot from the member's description (Cài đặt › Linh vật AI) on the CLI's quickest
+         *     model, in the background like an AI session: the page may close; GET shows it running, then its drawing.
+         */
+        post: operations["ai_mascot_api_ai_mascot_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/mascot/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Ai Mascot Drop
+         * @description Stop a running drawing, or forget a finished one.
+         */
+        delete: operations["ai_mascot_drop_api_ai_mascot__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ai/accounts": {
         parameters: {
             query?: never;
@@ -1412,6 +1478,27 @@ export interface paths {
         get: operations["ai_accounts_api_ai_accounts_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/{provider}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ai Reset
+         * @description Use one of the plan's free limit resets now: Claude's or Codex's (504 ai_reset_unknown: no answer,
+         *     it may have gone through).
+         */
+        post: operations["ai_reset_api_ai__provider__reset_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1627,6 +1714,16 @@ export interface components {
             usage: components["schemas"]["ClaudeUsage"][];
             /** Usage At */
             usage_at?: string | null;
+            /**
+             * Resets
+             * @default []
+             */
+            resets: components["schemas"]["AiResetCredit"][];
+            /**
+             * Resets Left
+             * @default 0
+             */
+            resets_left: number;
         };
         /**
          * AiCatalogEntry
@@ -1758,18 +1855,81 @@ export interface components {
         };
         /**
          * AiGuideRequest
-         * @description A question about how to use the app, answered from the in-app guide (sent by the page).
+         * @description A question about how to use the app, answered from the in-app guide (sent by the page) and the app's own code.
          */
         AiGuideRequest: {
             /** Question */
             question: string;
             /** Guide */
             guide: string;
+            /** History */
+            history?: components["schemas"]["GuideTurn"][];
+            /**
+             * Page
+             * @default
+             */
+            page: string;
+            /**
+             * Code
+             * @default true
+             */
+            code: boolean;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
         };
         /** AiLoginStarted */
         AiLoginStarted: {
             /** Url */
             url?: string | null;
+        };
+        /**
+         * AiMascotJob
+         * @description One AI mascot drawing, run in the background: `svg` once done, `error` (an ApiError code) if it failed.
+         */
+        AiMascotJob: {
+            /** Id */
+            id: string;
+            /** Description */
+            description: string;
+            /** Style */
+            style: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "done" | "error";
+            /**
+             * Svg
+             * @default
+             */
+            svg: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * Detail
+             * @default
+             */
+            detail: string;
+        };
+        /**
+         * AiMascotRequest
+         * @description What the member wants their AI mascot to look like (Cài đặt › Linh vật AI).
+         */
+        AiMascotRequest: {
+            /** Description */
+            description: string;
+            /**
+             * Style
+             * @default cute
+             * @enum {string}
+             */
+            style: "cute" | "pixel" | "line";
         };
         /** AiOption */
         AiOption: {
@@ -1852,6 +2012,17 @@ export interface components {
              * @enum {string}
              */
             yt_task_effort: "" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+            /**
+             * Guide Model
+             * @default
+             */
+            guide_model: string;
+            /**
+             * Guide Effort
+             * @default
+             * @enum {string}
+             */
+            guide_effort: "" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
         };
         /**
          * AiPrefs
@@ -1864,7 +2035,8 @@ export interface components {
              *       "brief": "",
              *       "task": "claude",
              *       "yt": "",
-             *       "yt_task": ""
+             *       "yt_task": "",
+             *       "guide": ""
              *     }
              */
             use: components["schemas"]["AiUse"];
@@ -1885,6 +2057,45 @@ export interface components {
              * @default 90
              */
             fallback_at: number;
+        };
+        /**
+         * AiResetCredit
+         * @description A free "reset my limits now" the plan granted (Claude, Codex).
+         */
+        AiResetCredit: {
+            /** Id */
+            id: string;
+            /** Title */
+            title?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /**
+             * Left
+             * @default 1
+             */
+            left: number;
+            /**
+             * Usable
+             * @default true
+             */
+            usable: boolean;
+        };
+        /** AiResetRequest */
+        AiResetRequest: {
+            /** Credit Id */
+            credit_id?: string | null;
+            /** Request Id */
+            request_id?: string | null;
+        };
+        /** AiResetResult */
+        AiResetResult: {
+            /**
+             * Outcome
+             * @enum {string}
+             */
+            outcome: "reset" | "nothingToReset" | "noCredit" | "alreadyRedeemed" | "cooldown" | "unknown";
         };
         /** AiResult */
         AiResult: {
@@ -1980,6 +2191,10 @@ export interface components {
              * @default claude
              */
             provider: string;
+            /** Ref */
+            ref?: string | null;
+            /** Sid */
+            sid?: string | null;
             /**
              * External
              * @default false
@@ -2008,6 +2223,11 @@ export interface components {
              * @default false
              */
             yt: boolean;
+            /**
+             * Guide
+             * @default false
+             */
+            guide: boolean;
         };
         /** AiTestResult */
         AiTestResult: {
@@ -2118,6 +2338,11 @@ export interface components {
              * @default
              */
             yt_task: ("claude" | "codex" | "antigravity") | "";
+            /**
+             * Guide
+             * @default
+             */
+            guide: ("claude" | "codex" | "antigravity") | "";
         };
         /**
          * AskTo
@@ -2307,6 +2532,18 @@ export interface components {
             usage_at?: string | null;
             /** Usage Error */
             usage_error?: string | null;
+            /**
+             * Resets
+             * @default []
+             */
+            resets: components["schemas"]["AiResetCredit"][];
+            /**
+             * Resets Left
+             * @default 0
+             */
+            resets_left: number;
+            /** Resets Blocked */
+            resets_blocked?: string | null;
             /**
              * Login Pending
              * @default false
@@ -2557,6 +2794,16 @@ export interface components {
              */
             migrated: boolean;
         };
+        /**
+         * GuideTurn
+         * @description An earlier question to the guide bot and its answer, for follow-ups.
+         */
+        GuideTurn: {
+            /** Q */
+            q: string;
+            /** A */
+            a: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2603,6 +2850,44 @@ export interface components {
              * @enum {string}
              */
             kind: "link" | "mention" | "code" | "pre" | "bold" | "italic" | "underline" | "strike" | "spoiler" | "blockquote";
+        };
+        /** LoopBack */
+        LoopBack: {
+            /** Items */
+            items: components["schemas"]["LoopItem"][];
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+        };
+        /** LoopDoneRequest */
+        LoopDoneRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: string;
+            /** Ticket */
+            ticket?: string | null;
+        };
+        /** LoopImportRequest */
+        LoopImportRequest: {
+            /** Items */
+            items: components["schemas"]["LoopItem"][];
+        };
+        /**
+         * LoopItem
+         * @description "Báo lại": my ticket reached `state`; the stored message to answer about it.
+         */
+        LoopItem: {
+            /** Ticket */
+            ticket: string;
+            /** State */
+            state: string;
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: string;
         };
         /**
          * Member
@@ -2836,6 +3121,23 @@ export interface components {
              */
             intro: string;
         };
+        /** RemindRequest */
+        RemindRequest: {
+            /** Until */
+            until: string | null;
+            /** On */
+            on?: string | null;
+            /** Restore */
+            restore?: ("" | "me" | "quiet" | "reply" | "dashboard" | "all" | "rule") | null;
+        };
+        /** RemindResult */
+        RemindResult: {
+            /**
+             * Was
+             * @enum {string}
+             */
+            was: "" | "me" | "quiet" | "reply" | "dashboard" | "all" | "rule";
+        };
         /** ReplyRequest */
         ReplyRequest: {
             /**
@@ -2864,6 +3166,8 @@ export interface components {
              * @default false
              */
             qa: boolean;
+            /** Qa Role */
+            qa_role?: ("BE" | "PO" | "QC") | null;
         };
         /** RuleAdded */
         RuleAdded: {
@@ -2881,19 +3185,37 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender" | "priority";
+            kind: "keyword" | "sender" | "priority" | "relay" | "agent";
             /** Value */
             value: string;
             /** Label */
             label: string;
+            /**
+             * Project
+             * @default
+             */
+            project: string;
         };
         /** RuleRequest */
         RuleRequest: {
+            /** Role */
+            role?: ("dev" | "qa" | "po") | null;
+            /**
+             * Platform
+             * @default android
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "mobile" | "any";
+            /**
+             * Intro
+             * @default
+             */
+            intro: string;
             /**
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender" | "priority";
+            kind: "keyword" | "sender" | "priority" | "relay" | "agent";
             /** Value */
             value: string;
             /**
@@ -2901,6 +3223,11 @@ export interface components {
              * @default
              */
             label: string;
+            /**
+             * Project
+             * @default
+             */
+            project: string;
         };
         /** SavedDigest */
         SavedDigest: {
@@ -2964,6 +3291,8 @@ export interface components {
             telegram_api_id?: number | null;
             /** Telegram Me */
             telegram_me?: string | null;
+            /** Telegram Name */
+            telegram_name?: string | null;
             /** Db Epoch */
             db_epoch: string;
             /** Cursor */
@@ -3051,6 +3380,8 @@ export interface components {
             /** Effort */
             effort?: string | null;
             ask_to?: components["schemas"]["AskTo"] | null;
+            /** State */
+            state?: ("done" | "waiting" | "you") | null;
         };
         /** TaskMessage */
         TaskMessage: {
@@ -3140,11 +3471,6 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
-        };
-        /** WakeTicketRequest */
-        WakeTicketRequest: {
-            /** Ticket */
-            ticket: string;
         };
         /** WeekNumbers */
         WeekNumbers: {
@@ -5105,7 +5431,7 @@ export interface operations {
             };
         };
     };
-    snooze_tickets_api_snooze_tickets_get: {
+    loop_back_api_loopback_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -5120,12 +5446,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string[];
+                    "application/json": components["schemas"]["LoopBack"];
                 };
             };
         };
     };
-    snooze_wake_api_snooze_wake_post: {
+    loop_done_api_loopback_done_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5134,7 +5460,38 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["WakeTicketRequest"];
+                "application/json": components["schemas"]["LoopDoneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    loop_import_api_loopback_import_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoopImportRequest"];
             };
         };
         responses: {
@@ -5172,16 +5529,18 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SnoozeRequest"];
+                "application/json": components["schemas"]["RemindRequest"];
             };
         };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RemindResult"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -5704,6 +6063,88 @@ export interface operations {
             };
         };
     };
+    ai_mascots_api_ai_mascot_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiMascotJob"][];
+                };
+            };
+        };
+    };
+    ai_mascot_api_ai_mascot_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiMascotRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiMascotJob"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_mascot_drop_api_ai_mascot__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_accounts_api_ai_accounts_get: {
         parameters: {
             query?: {
@@ -5722,6 +6163,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiAccount"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_reset_api_ai__provider__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider: "claude" | "codex" | "antigravity";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiResetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiResetResult"];
                 };
             };
             /** @description Validation Error */

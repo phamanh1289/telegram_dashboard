@@ -186,8 +186,9 @@ async def test_ai_answer_streams_pieces_then_result():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post("/api/yt/ai/data", json={"kind": "weekly", "data": {}})
     lines = [json.loads(x) for x in r.text.splitlines()]
-    assert lines == [{"delta": "Đọc file…"}, {"step": {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}}, {"reset": True}, {"delta": "**Tổng"},
-                     {"delta": " quan:**"}, {"done": {"text": "**Tổng quan:**"}}]  # fmt: skip
+    assert lines == [{"delta": "Đọc file…"}, {"step": {"kind": "tool", "text": "Read  /a.kt", "at": 1.0}},
+                     {"reset": True}, {"delta": "**Tổng"}, {"delta": " quan:**"},
+                     {"done": {"text": "**Tổng quan:**"}}]  # fmt: skip
 
 
 async def test_qc_query_failure_other_than_400_is_not_hidden():
@@ -342,16 +343,22 @@ async def test_transitions_keep_state_changes_across_pages():
         seen.append(q.get("cursor", [None])[0])
         assert "project: {VA}" in q["issueQuery"][0]
         if "cursor" not in q:
-            page = {"activities": [act(1), act(2, "Priority")], "hasAfter": True}
-            page["afterCursor"] = "c1"
+            page = {"activities": [act(1), act(2, "Priority")], "hasAfter": True, "afterCursor": "c1"}
             return httpx.Response(200, json=page)
         return httpx.Response(200, json={"activities": [act(3, to="Done")], "hasAfter": False})
 
-    out = await make(handler).transitions("VA", 14)
+    svc = make(handler)
+    out = await svc.transitions("VA", 14)
     assert seen == [None, "c1"]  # the second page follows the cursor
     assert [(t["id"], t["from"], t["to"], t["by"]) for t in out] == [
         ("VA-1", "Ready for test", "In Progress", "Q"), ("VA-3", "Ready for test", "Done", "Q"),
-    ]  # only State changes  # fmt: skip
+    ]  # only State changes, oldest first  # fmt: skip
+    assert svc._trans_until["VA:14"] > 0  # read to the end: not cut
+
+    n = iter(range(100))  # a project busier than TRANS_PAGES: cut, flagged
+    svc = make(lambda req: httpx.Response(200, json={"activities": [], "hasAfter": True, "afterCursor": f"c{next(n)}"}))
+    await svc.transitions("VA", 14)
+    assert svc._trans_until["VA:14"] == 0
 
 
 async def test_team_instructions_follow_the_role_header_but_not_the_filter(tmp_path):
@@ -413,11 +420,13 @@ async def test_ai_reads_only_a_registered_code_folder():
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent, settings=None)
     app.state.db, app.state.store = types.SimpleNamespace(read=read), store
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
-        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief", "folder": "/code/ios"})
+        await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "brief", "folder": "/code/ios"},
+                     headers={"X-Ai-Session": "YT-abc123"})  # fmt: skip
         assert agent.projects == ["/code/ios"] and "chỉ đọc, không sửa" in agent.calls[0]
         follow = {"path": "/ai/ticket", "body": {"id": "VA-1", "kind": "brief", "folder": "/code/ios"},
                   "history": [{"q": "", "a": "ok"}], "question": "thêm"}  # fmt: skip
-        await c.post("/api/yt/ai/followup", json=follow)
+        await c.post("/api/yt/ai/followup", json=follow, headers={"X-Ai-Session": "YT-abc123\nx"})
+        assert agent.refs == ["YT-abc123", ""]  # the run log keeps the session code; anything else is dropped
         assert agent.projects[-1] == "/code/ios"  # the follow-up reads the same folder
         assert agent.shells == [False, False]  # commands only when asked
         follow["body"]["shell"] = True
@@ -613,3 +622,64 @@ async def test_watch_once_banners_only_tickets_newly_mine(tmp_path, monkeypatch)
     svc.watch_path.write_text(json.dumps({"login": "other", "ids": []}))
     rows[:] = [mine(20)]
     assert await svc.watch_once(notify) == []  # another account: record only
+
+
+async def test_watch_queues_bao_lai_and_wakes_ticket_snoozes(tmp_path):
+    from datetime import UTC, datetime, timedelta
+
+    from telegram_dashboard.events import Hub
+    from telegram_dashboard.models import StoredMessage
+    from telegram_dashboard.storage import Db, Store
+
+    st = Store(tmp_path / "d.sqlite3")
+    db = Db(st, Hub())
+    st.set_tracking("c1", True, "G", "group")
+
+    def msg(mid, text, reply=None, out=False):
+        return StoredMessage(chat_id="c1", message_id=mid, sender_id="9", sender_name="A", text=text,
+                             date=datetime(2026, 11, 1, tzinfo=UTC), edit_date=None, reply_to_id=reply, topic_id=None,
+                             outgoing=out, media_kind=None, deleted=False)  # fmt: skip
+
+    for m in (msg(1, "VA-2 lỗi?"), msg(2, "hỏi"), msg(3, "đã tạo VA-3", reply=2, out=True), msg(4, "chờ VA-9")):
+        st.apply_message(m)
+    st.set_snooze("c1", 4, datetime.now(UTC) + timedelta(days=7), "ticket:VA-9")
+    rows, one = [], {}
+
+    def mine(n, state="Open", resolved=None):
+        i = issue(n, state)
+        i["customFields"][1]["value"] = {"login": "me", "fullName": "Me"}
+        return {**i, "resolved": resolved}
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "me", "fullName": "Me"})
+        if req.url.path.startswith("/api/issues/"):
+            return httpx.Response(200, json=one[req.url.path.rsplit("/", 1)[1]])
+        return httpx.Response(200, json=rows)
+
+    svc = make(handler)
+    svc.watch_path = tmp_path / "yt_watch.json"
+    rows[:] = [mine(2), mine(3), mine(5)]
+    await svc.watch_once(None, db)  # first look: record only
+    assert st.loop_items() == []
+    rows[:] = [mine(3, "Fixed"), mine(5, "In Progress")]  # VA-2 left the open list: read again
+    one["VA-2"] = mine(2, "Done", resolved=5)
+    rev = st.loop_rev
+    await svc.watch_once(None, db)
+    # my own "đã tạo VA-3" is answered on the tag it replied to; VA-5 moved, but not to a finished state
+    assert {(i["ticket"], i["message_id"]) for i in st.loop_items()} == {("VA-2", 1), ("VA-3", 2)}
+    assert st.loop_rev > rev
+    await svc.watch_once(None, db)
+    assert len(st.loop_items()) == 2  # queued once
+    st.set_handled("c1", 2, True, "reply")  # my reply (any device) answers it
+    assert [i["ticket"] for i in st.loop_items()] == ["VA-2"]
+    st.done_loop("c1", 1, "VA-2")  # Bỏ qua
+    assert st.loop_items() == [] and st.add_loop_items([("VA-2", "Done", "c1", 1)]) == 0  # never queued again
+
+    one["VA-9"] = mine(9, "In Progress")
+    await svc.wake_snoozes(db)
+    assert st.get_message("c1", 4).snoozed_until is not None
+    one["VA-9"] = mine(9, "Done")
+    await svc.wake_snoozes(db)
+    assert st.get_message("c1", 4).snoozed_until is None
+    await svc.aclose()

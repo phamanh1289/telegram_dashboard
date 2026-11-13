@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Hint } from "@/components/ui/hint";
 import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/lib/api";
-import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeWantEdit, useRefs, useWantEdit, withAttachments } from "@/lib/attach";
+import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeWantEdit, useConfirm, useRefs, useWantEdit, withAttachments } from "@/lib/attach";
 import { readIntro, readPlatform, useRole } from "@/lib/prefs";
 import { toast } from "@/lib/inbox";
 import { timeLabel } from "@/lib/time";
@@ -29,6 +29,7 @@ function SessionAi({ t: task, disabled }: { t: Task; disabled: boolean }) {
   const save = useMutation({
     mutationFn: (ai: { model: string; effort: Effort }) => api<void>(`/tasks/${task.id}/ai`, { method: "PUT", json: ai }),
     onMutate: (ai) => qc.setQueryData<Task[]>(["tasks"], (l) => l?.map((x) => (x.id === task.id ? { ...x, ...ai } : x))),
+    onError: (e) => toast({ text: errorText(e, {}, t("Không lưu được, thử lại")) }),
     onSettled: () => qc.invalidateQueries({ queryKey: ["tasks"] }),
   });
   const c = info(task.provider ?? "claude");
@@ -92,6 +93,14 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   const setEdit = (v: boolean) => { takeWantEdit(id); setPicked(v); }; // unticked, or sent: the user's own from now
   // Messages pasted (ID / t.me link) or sent here from a message row: quoted under the typed text on send.
   const refs = useRefs(id);
+  // An answer attached from a "#QA_PO_…" thread: "PO đã confirm. Hãy trace…" added to the prompt once, the user's text after that.
+  const confirmed = useConfirm(id);
+  useEffect(() => {
+    if (!confirmed.length) return;
+    const line = t("{role} đã confirm. Hãy trace code base, fix hoặc refactor.", { role: confirmed.join(", ") });
+    if (!assist) setText((cur) => (cur.includes(line) ? cur : [cur.trim(), line].filter(Boolean).join("\n"))); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from a row, once
+    takeConfirm(id); // Trợ lý AI: dropped, it has no code to trace
+  }, [confirmed, id, t, assist]);
   const looked = useQueries({ queries: refs.map(messageQuery) });
   const resolving = looked.some((r) => r.isPending);
   const failed = looked.some((r) => r.isError); // a dangling "[#id]" mark: the AI would get no quote for it

@@ -1,26 +1,27 @@
 "use client";
 
-import { type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlarmClock, Bot, Check, CheckCheck, SquareCheck, Square, ClipboardList, CornerDownRight, ExternalLink, FolderGit2, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, RotateCcw, Star, UserX, Users } from "lucide-react";
+import { type InfiniteData, type QueryClient, queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlarmClock, BrainCircuit, Check, CheckCheck, SquareCheck, Square, CornerDownRight, ExternalLink, Globe, Hash, Loader2, MessageCircleQuestion, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, PenLine, Pin, Repeat, RotateCcw, Star, UserX, Users } from "lucide-react";
+import { AiBotIcon } from "@/components/ai/chat";
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Menu } from "@base-ui/react/menu";
 import { Avatar, hueOf } from "@/components/chat-list";
 import { CommentDialog } from "@/components/composer-dialogs";
 import { DeepBadge, DeepPick, useDeepTask } from "@/components/deep-think";
-import { Markdown } from "@/components/markdown";
+import { Feat, FEATS } from "@/components/ui/feat";
 import { RemindSubmenu } from "@/components/remind";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { Kbd } from "@/components/ui/kbd";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP, MENU_SEP } from "@/components/ui/menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, errorText, type Message, statusQuery, type Task } from "@/lib/api";
-import { attach, MAX_REFS, messageQuery, sameRef, wantEdit } from "@/lib/attach";
-import { answerQa, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, sentQuery, sessionId, SESSION_CODE, setHandled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, toast, useHasDraft, waitLabel } from "@/lib/inbox";
+import { api, errorText, type Message, type MessagesPage, statusQuery, type Task } from "@/lib/api";
+import { attach, MAX_REFS, messageQuery, sameRef, wantConfirm, wantEdit } from "@/lib/attach";
+import { answerQa, autoSender, QaCodes, copyText, dbId, ignoreSender, msgKey, prioritizeSender, openInTelegram, openQa, openTask, PartialError, pin, QA_CODE, qaRole, sentQuery, sessionId, SESSION_CODE, setHandled, settled, smooth, snooze, EVENT_SNOOZE_MS, taskListQuery, telegramLink, ticketsIn, toast, useHasDraft, waitLabel } from "@/lib/inbox";
 import { ago, clockLabel, fromVnInput, snoozeChoices, timeLabel, vnInput } from "@/lib/time";
-import { readOverdueHours, useRole } from "@/lib/prefs";
+import { readOverdueHours, useRole, usesCode } from "@/lib/prefs";
 import { useRetest, yt, ytDetailQuery, ytProjectsQuery } from "@/lib/yt";
-import { cn } from "@/lib/utils";
+import { cn, groupBy } from "@/lib/utils";
 import { type Key, t, useT } from "@/lib/i18n";
 
 const MEDIA: Record<string, Key> = {
@@ -39,7 +40,6 @@ const SAFE_URL = /^(https?|tg|mailto):/i;
 const WEB_URL = /^(https?|mailto):/i; // a hidden link (label ≠ url) from anyone: no tg:// (proxy, join, login)
 
 // Bare URLs, @username mentions (not inside e-mails), `code` the sender typed literally and YouTrack IDs (VA-123).
-const TICKET_IDS = /(?<![\w-])[A-Z][A-Z0-9]{1,9}-\d{1,6}(?!\w)/g;
 const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`|(?<![\w-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)/g;
 
 export function inline(text: string, key: number) {
@@ -157,7 +157,6 @@ export type MessageItemProps = {
   isReplyTarget: boolean;
   tasks?: Task[];
   onReply: (m: Message) => void;
-  onUseText: (m: Message, text: string) => void; // put a task result into the composer
   live?: boolean; // read live from Telegram, not stored: no tag actions, no reply panel
   liveReply?: boolean; // live, yet a click still picks it to reply to (Q&A threads)
   fresh?: boolean; // arrived since you last looked (Q&A threads): a "Mới" pill
@@ -182,12 +181,13 @@ export const MessageItem = memo(function MessageItem(props: MessageItemProps) {
 });
 
 function MessageRow({
-  m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, onUseText, live, liveReply, fresh, bare, extra, picked, onPick,
+  m, head, clock, now, focused, groupTitle, isReplyTarget, tasks, onReply, live, liveReply, fresh, bare, extra, picked, onPick,
 }: MessageItemProps) {
   const t = useT();
   const hasDraft = useHasDraft(m);
   const [showContext, setShowContext] = useState(false);
   const [photoFailed, setPhotoFailed] = useState(false);
+  const agent = tasks?.filter((tk) => tk.kind !== "deep") ?? []; // Đối chiếu BE: DeepFeat (rows without `tasks` too)
   const name = m.outgoing ? t("Bạn") : (m.sender_name ?? t("Không rõ"));
   const done = m.handled;
   const snoozed = !done && m.snoozed_until && new Date(m.snoozed_until).getTime() > now;
@@ -249,7 +249,7 @@ function MessageRow({
       <div className="min-w-0">
         {/* Header, beside the avatar. Line 1: who, in which group, the tag's state. Line 2: when, and the message it
             answers. How long it has waited sits right after the group; the right strip holds the hover actions. Badges
-            (retest, draft, sessions, #QA) sit in one quiet row under the text; the ID lives in the ⋯ menu. */}
+            (retest, draft, sessions, #QA) sit right after the time; the strip's # button copies the ID. */}
         {/* Wraps: on a narrow row (phone, Q&A card, the split list) the strip drops below the header instead of squeezing the name. */}
         <div className="mb-1 flex flex-wrap items-start gap-x-3 gap-y-1.5">
           <div className="grid min-w-0 flex-1 basis-44 gap-0.5">
@@ -284,14 +284,17 @@ function MessageRow({
                 <span className={cn(PILL, "bg-ok-wash text-ok")}><CheckCheck className="size-3" aria-hidden />{t("Đã xử lý")}</span>
               </Hint>
             ) : snoozed && (
-              <Hint side="bottom" text={t("Đang hoãn: nhắc lại lúc {time}", { time: timeLabel(m.snoozed_until!, true) })}>
+              // an event snooze (a reply, a ticket done): what it waits for, not its backstop time
+              <Hint side="bottom" text={m.snooze_on ? snoozeHint(m) : t("Đang hoãn: nhắc lại lúc {time}", { time: timeLabel(m.snoozed_until!, true) })}>
                 <span className={cn(PILL, "bg-info-wash text-info")}>
-                  <AlarmClock className="size-3" aria-hidden />{t("Nhắc")} <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span>
+                  <AlarmClock className="size-3" aria-hidden />
+                  {m.snooze_on === "reply" ? t("Tới khi có người trả lời") : m.snooze_on ? t("Tới khi {id} xong", { id: m.snooze_on.slice(7) })
+                    : <>{t("Nhắc")} <span className="font-mono tabular-nums">{timeLabel(m.snoozed_until!)}</span></>}
                 </span>
               </Hint>
             ))}
           </div>
-            <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs leading-5 text-ink-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-ink-3">
               <time dateTime={m.date} title={timeLabel(m.date, true)} className="whitespace-nowrap font-mono tabular-nums">
                 {clock ? clockLabel(m.date) : timeLabel(m.date)}
               </time>
@@ -304,11 +307,24 @@ function MessageRow({
                   </button>
                 </Hint>
               )}
-            </span>
+              {/* What has happened to this message (sessions, Đối chiếu BE, sent, Q&A, draft, retest), right after its time;
+                  most pressing first (your turn > AI working > links), each spelled out; AI Agent sessions one mark per state. */}
+              <span className={FEATS}>
+                {byState(agent.filter(settled)).map((g) => <TaskFeat key={g[0].id} tk={g[0]} more={g.length - 1} />)}
+                <DeepFeat m={m} settled />
+                {retest.length > 0 && <Feat icon={<RotateCcw />} label={t("Cần retest")} tone="bg-warn-wash text-warn"
+                  hint={t("Bạn là QC của {ids} và tin này báo đã fix / có build: cần test lại", { ids: retest.join(", ") })} />}
+                {byState(agent.filter((tk) => !settled(tk))).map((g) => <TaskFeat key={g[0].id} tk={g[0]} more={g.length - 1} />)}
+                <DeepFeat m={m} settled={false} />
+                <SentBadge m={m} shown={tasks} />
+                <AnswersFor m={m} qa={!bare} />
+                {hasDraft && !live && <Feat icon={<PenLine />} label={t("Nháp")} tone="bg-hl-wash text-hl-2" hint={t("Có nháp trả lời chưa gửi (lưu trên máy này)")} />}
+              </span>
+            </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 text-xs leading-5">
             {extra}
-            <RowActions m={m} tag={!m.outgoing && !live} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
+            <RowActions m={m} tag={!m.outgoing && !live} liveSnooze={!!live && !liveReply && !m.outgoing} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         </div>
         {m.media_kind === "photo" && !photoFailed ? (
@@ -321,52 +337,7 @@ function MessageRow({
           m.media_kind && <p className="text-xs text-ink-3">{t("[{kind}, chưa tải]", { kind: t(MEDIA[m.media_kind] ?? "Tệp đính kèm") })}</p>
         )}
         {m.text && <MessageText m={m} dim={quiet || m.outgoing} />}
-        <div className="mt-1.5 flex flex-wrap items-center gap-1.5 empty:hidden">
-          {retest.length > 0 && (
-            <Hint side="bottom" text={t("Bạn là QC của {ids} và tin này báo đã fix / có build: cần test lại", { ids: retest.join(", ") })}>
-              <span className={cn(PILL, "bg-warn-wash text-warn")}><RotateCcw className="size-3" aria-hidden />{t("Cần retest")}</span>
-            </Hint>
-          )}
-          {hasDraft && !live && (
-            <Hint side="bottom" text={t("Có nháp trả lời chưa gửi (lưu trên máy này)")}>
-              <span className={cn(PILL, "bg-hl-wash text-hl-2")}><PenLine className="size-3" aria-hidden />{t("Nháp")}</span>
-            </Hint>
-          )}
-          <SentBadge m={m} shown={tasks} />
-          <DeepBadge m={m} />
-          <AnswersFor m={m} qa={!bare} />
-        </div>
-        {tasks?.map((tk) => (
-          <div key={tk.id} className="mt-2 rounded-md bg-paper-3/60 px-3 py-2 text-xs">
-            <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 font-medium text-ink-2">
-              <span className="inline-flex items-center gap-1">
-                {tk.result ? <ClipboardList className="size-3.5" aria-hidden /> : <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-                {tk.result ? t("Task đã có kết quả") : t("Task đang làm…")}
-              </span>
-              <span className="inline-flex items-center gap-1 font-normal text-ink-3"><FolderGit2 className="size-3" aria-hidden /> {tk.project.split("/").pop()}</span>
-              <Hint side="bottom" text={t("Mã phiên AI Agent. Bấm để chép, dán vào tin nhóm để tin sau tự đính kèm đúng phiên.")}>
-                <button type="button" onClick={() => void copyText(`#${sessionId(tk)}`, t("Đã chép mã phiên {id}", { id: `#${sessionId(tk)}` }))}
-                  className="inline-flex items-center gap-1 rounded-sm font-mono font-normal text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
-                  <Hash className="size-3" aria-hidden />{sessionId(tk)}
-                </button>
-              </Hint>
-              <Hint side="bottom" text={t("Mở lại phiên AI này ở trang AI Agent")}>
-                <button type="button" onClick={() => openTask(tk.id)}
-                  className="ml-auto inline-flex items-center gap-1 rounded-sm font-normal text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
-                  <Bot className="size-3.5" aria-hidden /> {t("Mở phiên")}
-                </button>
-              </Hint>
-            </p>
-            {tk.result && (
-              <>
-                <Markdown text={tk.result} className="mt-1 line-clamp-4 text-[length:inherit] text-ink-2" />
-                <Button size="xs" variant="link" className="mt-0.5 h-auto px-0" onClick={() => onUseText(m, tk.result!)}>
-                  {t("Dùng kết quả làm nháp trả lời")}
-                </Button>
-              </>
-            )}
-          </div>
-        ))}
+        {/* portalled, but React events still bubble to the row: a click in the dialog must not open the reply panel */}
         {showContext && <ContextPanel m={m} reveal />}
       </div>
     </li>
@@ -394,7 +365,7 @@ const Sep = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-rule-2"
  *  edge and the rest tuck behind it until the row is hovered or selected (globals.css; always shown per Settings and on
  *  touch screens); always in the tab order. Groups: Xong | Hoãn, Ngữ cảnh | AI | ⋯ (rarer actions, spelled out with
  *  their keys). Replying is a click on the row (or Enter / r). Negative margin so the 30px targets don't make the line taller. */
-function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag: boolean; showContext: boolean; onToggleContext: () => void }) {
+function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }: { m: Message; tag: boolean; liveSnooze: boolean; showContext: boolean; onToggleContext: () => void }) {
   const t = useT();
   const { done, pinned, mark, togglePin } = useTagMark(m);
   const [comment, setComment] = useState(false);
@@ -425,7 +396,15 @@ function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag:
         </>
       )}
       <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />
+      {/* Cả nhóm: hoãn keeps the message (backend), so it comes back as a tag. */}
+      {liveSnooze && <SnoozeMenu ms={[m]} />}
       <AttachPick m={m} />
+      <Hint side="bottom" title={t("Chép ID tin")} text={t("Chép ID {id}: dán vào ô nhắn của phiên AI (kể cả phiên đã Done) để đính kèm tin, hoặc dùng khi báo lỗi.", { id: dbId(m) })}>
+        <Button type="button" size="icon-xs" variant="ghost" aria-label={t("Chép ID tin")}
+          onClick={() => void copyText(dbId(m), t("Đã chép ID {id}, dán vào phiên AI để đính kèm", { id: dbId(m) }))}>
+          <Hash />
+        </Button>
+      </Hint>
       <Sep />
       <Menu.Root>
         {/* Opens on hover (no Hint: the menu itself spells every action out); click / Enter still work. */}
@@ -453,7 +432,6 @@ function RowActions({ m, tag, showContext, onToggleContext }: { m: Message; tag:
               {(tag || answers) && <Menu.Separator className={MENU_SEP} />}
               <MoreItem icon={<ExternalLink />} keys="O" onClick={() => openInTelegram(m)}>{link.exact ? t("Mở trong Telegram") : t("Mở nhóm trên Telegram Web")}</MoreItem>
               {link.exact && <MoreItem icon={<Globe />} onClick={() => window.open(link.web, "_blank", "noreferrer")}>{t("Mở bằng Telegram Web")}</MoreItem>}
-              <MoreItem icon={<Hash />} onClick={() => void copyText(dbId(m), t("Đã chép ID {id}, dán vào phiên AI để đính kèm", { id: dbId(m) }))}>{t("Chép ID tin")}</MoreItem>
             </Menu.Popup>
           </Menu.Positioner>
         </Menu.Portal>
@@ -480,7 +458,7 @@ function MoreItem({ icon, keys, children, ...rest }: { icon: React.ReactNode; ke
  *  list lives in the popup, so rows don't each watch the task list. */
 /** Session id tails named in a text ("#REF-97c501", or the old "#AI-…"), lowercase. */
 const sessionTails = (text?: string | null) => [...(text ?? "").matchAll(SESSION_CODE)].map((x) => x[1].toLowerCase());
-const qaIds = (text?: string | null) => [...(text ?? "").matchAll(QA_CODE)].map((x) => x[1]);
+const qaIds = (text?: string | null) => [...(text ?? "").matchAll(QA_CODE)].map((x) => x[1].toUpperCase());
 
 const CHAIN_MAX = 12; // ponytail: ancestors read one by one (cached per message); a deeper thread stops here
 
@@ -524,12 +502,8 @@ function AnswersFor({ m, qa }: { m: Message; qa: boolean }) {
   return <>
     {own.length > 0 && <SessionBadge m={m} tails={own} />}
     {qas.map((id) => (
-      <Hint key={id} side="bottom" text={t("Tin này thuộc Q&A {code}. Bấm để mở cả chuỗi ở trang Q&A.", { code: `#QA${id}` })}>
-        <button type="button" onClick={() => openQa(m.chat_id, `#QA${id}`)}
-          className={cn(PILL, "bg-info-wash text-info transition-colors duration-(--dur-micro) hover:bg-info hover:text-cotton")}>
-          <MessageCircleQuestion className="size-3" aria-hidden /><span className="font-mono">#QA{id}</span>
-        </button>
-      </Hint>
+      <Feat key={id} icon={<MessageCircleQuestion />} label={`#QA${id}`} mono tone="bg-info-wash text-info" onClick={() => openQa(m.chat_id, `#QA${id}`)}
+        hint={t("Tin này thuộc Q&A {code}. Bấm để mở cả chuỗi ở trang Q&A.", { code: `#QA${id}` })} />
     ))}
   </>;
 }
@@ -542,47 +516,73 @@ function SentBadge({ m, shown }: { m: Message; shown?: Task[] }) {
   if (!ids.length) return null;
   const names = ids.map((id) => sessionId({ id }));
   return (
-    <Hint side="bottom" text={t("Đã gửi kèm vào phiên {names}. Bấm để mở phiên mới nhất.", { names: names.join(", ") })}>
-      <button type="button" onClick={(e) => { e.stopPropagation(); openTask(ids[0]); }}
-        className={cn(PILL, "bg-hl-wash text-hl-2 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink")}>
-        <Bot className="size-3" aria-hidden />{t("Đã gửi")}
-        <span className="hidden font-mono @md:inline">{names[0]}{ids.length > 1 && ` +${ids.length - 1}`}</span>
-      </button>
-    </Hint>
+    <Feat icon={<Paperclip />} label={<>{t("Đã gửi")} <span className="font-mono">{names[0]}{ids.length > 1 && ` +${ids.length - 1}`}</span></>}
+      tone="bg-hl-wash text-hl-2" onClick={() => openTask(ids[0])}
+      hint={t("Đã gửi kèm vào phiên {names}. Bấm để mở phiên mới nhất.", { names: names.join(", ") })} />
   );
 }
 
 function SessionBadge({ m, tails }: { m: Message; tails: string[] }) {
   const t = useT();
+  const qc = useQueryClient();
   const tk = findSession(useQuery(taskListQuery).data, tails);
   if (!tk) return null;
   const name = sessionId(tk);
   return (
-    <span className={cn(PILL, "gap-0 overflow-hidden bg-hl-wash p-0 text-hl-2 ring-1 ring-inset ring-hl/30")}>
-      <Hint side="bottom" title={name} text={t("Tin này có mã phiên AI Agent {name}. Bấm để mở phiên.", { name: `${name}${tk.title ? ` (${tk.title})` : ""}` })}>
-        <button type="button" onClick={() => openTask(tk.id)} className="inline-flex items-center gap-1 py-px pr-1.5 pl-2 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink">
-          <Bot className="size-3" aria-hidden /><span className="font-mono">{name}</span>
-        </button>
-      </Hint>
-      <Hint side="bottom" text={t("Đính kèm tin này vào lượt nhắn tiếp của phiên {name}", { name })}>
-        <button type="button" aria-label={t("Đính kèm vào phiên {name}", { name })} onClick={() => attachTo(tk, [m])}
-          className="grid place-items-center self-stretch border-l border-hl/30 px-1.5 transition-colors duration-(--dur-micro) hover:bg-hl hover:text-hl-ink">
-          <Paperclip className="size-3" aria-hidden />
-        </button>
-      </Hint>
-    </span>
+    <Feat icon={<Hash />} label={name} mono tone="bg-hl-wash text-hl-2" onClick={() => openTask(tk.id)} title={name}
+      hint={t("Tin này có mã phiên AI Agent {name}. Bấm để mở phiên.", { name: `${name}${tk.title ? ` (${tk.title})` : ""}` })}
+      actions={[{ icon: <Paperclip />, label: t("Đính kèm vào phiên {name}", { name }), hint: t("Đính kèm tin này vào lượt nhắn tiếp của phiên {name}", { name }), onClick: () => attachTo(qc, tk, [m]) }]} />
   );
 }
+
+/** AI Agent sessions of a row (newest first) by state: one mark each, the newest standing for the rest ("+N"). */
+const byState = (ts: Task[]) => [...groupBy(ts, (tk) => `${tk.running}${!!tk.result}`).values()];
+
+/** An AI Agent / Đối chiếu BE session on this message: opens its detail; hover adds copy the code (#REF-…, paste it in
+ *  the group so later messages attach there). Delete lives with the session (AI Agent). `more`: older sessions in the same state. */
+function TaskFeat({ tk, more = 0 }: { tk: Task; more?: number }) {
+  const t = useT();
+  const name = sessionId(tk);
+  const deep = tk.kind === "deep";
+  const label = deep ? t(tk.running ? "Đang đối chiếu BE" : "Đã đối chiếu BE") : tk.running ? t("AI đang làm…") : tk.result ? t("AI đã trả lời") : t("Phiên AI");
+  const hint = deep ? t("Bấm để xem kết quả ở AI Agent › Đối chiếu BE.") : tk.title || t("Mở lại phiên AI này ở trang AI Agent");
+  return (
+    <Feat icon={tk.running ? <Loader2 className="animate-spin" /> : deep ? <BrainCircuit /> : <AiBotIcon />}
+      tone={tk.running ? "bg-info-wash text-info" : deep ? "bg-ok-wash text-ok" : "bg-hl-wash text-hl-2"}
+      label={more ? <>{label} <span className="font-mono tabular-nums">+{more}</span></> : label}
+      onClick={() => openTask(tk.id)} title={`${name} · ${tk.project.split("/").pop()}`}
+      hint={more ? `${t("{n} phiên, bấm để mở phiên mới nhất.", { n: more + 1 })} ${hint}` : hint}
+      actions={[
+        { icon: <Hash />, label: t("Chép mã phiên {id}", { id: `#${name}` }), hint: t("Mã phiên AI Agent. Bấm để chép, dán vào tin nhóm để tin sau tự đính kèm đúng phiên."),
+          onClick: () => void copyText(`#${name}`, t("Đã chép mã phiên {id}", { id: `#${name}` })) },
+      ]} />
+  );
+}
+
+/** Đối chiếu BE on this message (from the task list, so rows without a `tasks` map show it too), placed by `settled`. */
+function DeepFeat({ m, settled: done }: { m: Message; settled: boolean }) {
+  const tk = useDeepTask(m);
+  return tk && settled(tk) === done ? <TaskFeat tk={tk} /> : null;
+}
+
+/** What a snooze waits for: a reply, a ticket done ("ticket:ABC-1"), or a time (the row's pill, the Hoãn button). */
+const snoozeHint = (m: Message) => m.snooze_on === "reply" ? t("Đang hoãn tới khi có người trả lời.")
+  : m.snooze_on ? t("Đang hoãn tới khi {id} xong.", { id: m.snooze_on.slice(7) }) : t("Đang hoãn tới {time}.", { time: timeLabel(m.snoozed_until!, true) });
 
 /** The replies of the Q&A thread a row sits in (Q&A page, not the question): the clip's menu can attach them all at once. */
 export const AttachThread = createContext<readonly Message[] | null>(null);
 
 /** Every attach from a message row (session chip, clip, its menu) lands here: a message is attached to be built on,
- *  so a read-only (plan) session's next turn gets "Cho sửa code" ticked. */
-function attachTo(tk: Task, ms: readonly Message[]) {
+ *  so a read-only (plan) session's next turn gets "Cho sửa code" ticked. An answer (not yours) in a Q&A thread whose
+ *  code names a role ("#QA_PO_…") adds "PO đã confirm" to the prompt (the chain read is cached from the clip's hover). */
+function attachTo(qc: QueryClient, tk: Task, ms: readonly Message[]) {
   const name = sessionId(tk);
   const draft = attach(tk.id, ms.map((m) => ({ chat_id: m.chat_id, message_id: m.message_id })));
   const n = ms.filter((m) => draft.some((r) => sameRef(r, m))).length;
+  if (n > 0 && tk.kind !== "assist") { // Trợ lý AI drafts replies: no code to trace
+    void Promise.all(ms.filter((m) => !m.outgoing).map((m) => qc.fetchQuery(chainQuery(qc, m)).then((c) => c.qas, () => qaIds(m.text))))
+      .then((qas) => wantConfirm(tk.id, qas.flat().flatMap((id) => qaRole(id) ?? [])));
+  }
   const edit = n > 0 && tk.mode === "plan" && tk.kind !== "assist"; // Trợ lý AI never edits code
   if (edit) wantEdit(tk.id);
   const more = edit ? ` · ${t("đã bật Cho sửa code")}` : "";
@@ -611,25 +611,27 @@ function AttachPick({ m }: { m: Message }) {
     : parent.data?.at === m.reply_to_id ? t("tin gốc nó trả lời") : t("tin #{id} trong chuỗi trả lời", { id: parent.data?.at ?? "" });
   const toggle = (next: boolean) => {
     if (!next) return setOpen(false);
-    const go = (t: Task | undefined) => (t && !many ? attachTo(t, [m]) : (setPin(t), setOpen(true)));
+    const go = (t: Task | undefined) => (t && !many ? attachTo(qc, t, [m]) : (setPin(t), setOpen(true)));
     if (named) return go(named);
     void Promise.all([qc.fetchQuery(chainQuery(qc, m)), qc.ensureQueryData(taskListQuery)]).catch(() => undefined)
       .then((r) => go(r ? findSession(r[1], r[0].tails) : undefined));
   };
   return (
     <Menu.Root open={open} onOpenChange={toggle}>
-      <Hint side="bottom" title={name || undefined} text={named
+      <Hint side="bottom" title={name || undefined} text={named && many
+        ? t("Chọn tin trong chuỗi Q&A (mặc định tick hết) rồi đính kèm vào phiên {name}: {where} có mã phiên đó.", { name: `${name}${named.title ? ` (${named.title})` : ""}`, where })
+        : named
         ? t("Bấm để đính kèm tin này vào phiên {name}: {where} có mã phiên đó.", { name: `${name}${named.title ? ` (${named.title})` : ""}`, where })
         : parent.isFetching ? t("Đang đọc chuỗi trả lời tìm mã phiên #REF-… / #QA…")
         : parent.isError ? errorText(parent.error, { not_connected: t("Chưa kết nối Telegram"), message_not_found: t("Không tìm thấy tin gốc") }, t("Không đọc được chuỗi trả lời")).trim()
-        : many ? t("Đính kèm tin này, hoặc mọi tin trả lời của chuỗi Q&A (không kèm câu hỏi), vào lượt nhắn tiếp của một phiên AI Agent.")
+        : many ? t("Chọn các tin trả lời của chuỗi Q&A (mặc định tick hết) rồi chọn phiên AI Agent để đính kèm vào lượt nhắn tiếp.")
         : t("Đính kèm tin này vào lượt nhắn tiếp của một phiên AI Agent. Tin (hoặc tin nào trong chuỗi trả lời) có mã #REF-… thì tự vào đúng phiên đó.")}>
         <Menu.Trigger aria-label={name ? t("Đính kèm vào phiên {name}", { name }) : t("Đính kèm vào phiên AI")} aria-busy={parent.isFetching}
           onClick={(e) => e.stopPropagation()} onPointerEnter={() => setPeek(true)} onFocus={() => setPeek(true)}
           className={cn("relative inline-flex h-[30px] min-w-[30px] items-center justify-center gap-1 rounded-md text-ink-2 transition-colors duration-(--dur-micro) pointer-coarse:after:absolute pointer-coarse:after:-inset-1.5 hover:bg-hl-wash hover:text-hl-2 data-popup-open:bg-hl-wash data-popup-open:text-hl-2",
             named && "bg-hl-wash px-2 text-hl-2")}>
           {parent.isFetching ? <Loader2 className="size-3.5 animate-spin" aria-hidden />
-            : named ? <><Bot className="size-3.5" aria-hidden /><span className="font-mono text-2xs">{name}</span></>
+            : named ? <><AiBotIcon className="size-3.5" aria-hidden /><span className="font-mono text-2xs">{name}</span></>
             : <Paperclip className="size-3.5" aria-hidden />}
         </Menu.Trigger>
       </Hint>
@@ -646,31 +648,55 @@ function AttachPick({ m }: { m: Message }) {
 }
 
 
-/** `pin`: the session the reply chain names (even Done), first. `chain`: the Q&A thread's replies, offered together. */
+/** `pin`: the session the reply chain names (even Done), first. `chain`: the Q&A thread's replies, each with a tick
+ *  (all ticked at first; the clicked message too when it is the question). */
 function AttachList({ m, pin, chain }: { m: Message; pin?: Task; chain: readonly Message[] | null }) {
   const t = useT();
-  const [whole, setWhole] = useState(false);
-  const ms = whole && chain ? chain.filter((x) => !x.deleted) : [m];
+  const qc = useQueryClient();
+  const items = useMemo(() => chain ? [...(chain.some((x) => x.message_id === m.message_id) ? [] : [m]), ...chain].filter((x) => !x.deleted) : [m], [chain, m]);
+  const [off, setOff] = useState<ReadonlySet<string>>(() => new Set()); // unticked message IDs
+  const ms = items.filter((x) => !off.has(x.message_id));
   const sentTo = useQuery(sentQuery).data?.[msgKey(m)] ?? []; // sessions a turn carrying this message already went to
-  const open = [...(pin ? [pin] : []), ...(useQuery(taskListQuery).data ?? []).filter((tk) => tk.mode !== "terminal" && !tk.handled && tk.id !== pin?.id)
+  const tasks = useQuery({ ...taskListQuery, enabled: !(pin && chain) }).data ?? [];
+  // The chain names its session: the picked messages go there, no other session to choose from.
+  const open = pin && chain ? [pin] : [...(pin ? [pin] : []), ...tasks.filter((tk) => tk.mode !== "terminal" && !tk.handled && tk.id !== pin?.id)
     .sort((a, b) => Number(b.chat_id === m.chat_id) - Number(a.chat_id === m.chat_id))] // stable: newest first within
     .slice(0, 8);
+  const tick = (on: boolean) => on ? <SquareCheck className="size-4 shrink-0 text-hl-2" aria-hidden /> : <Square className="size-4 shrink-0" aria-hidden />;
   return (
-    <div className="grid w-72 gap-0.5">
-            <p className="px-2.5 pt-1 pb-0.5 text-xs text-ink-3">{ms.length > 1 ? t("Đính kèm {n} tin vào phiên", { n: ms.length }) : t("Đính kèm {id} vào phiên", { id: `#${m.message_id}` })}</p>
+    <div className="grid w-80 grid-cols-1 gap-0.5">
+            <p className="px-2.5 pt-1 pb-0.5 text-xs text-ink-3">{ms.length === 1 ? t("Đính kèm {id} vào phiên", { id: `#${ms[0].message_id}` }) : t("Đính kèm {n} tin vào phiên", { n: ms.length })}</p>
             {chain && (
-              <Menu.CheckboxItem checked={whole} onCheckedChange={setWhole} className={cn("flex items-center gap-2 text-sm text-ink-2", MENU_ITEM)}>
-                {whole ? <SquareCheck className="size-4 shrink-0 text-hl-2" aria-hidden /> : <Square className="size-4 shrink-0" aria-hidden />}
-                <span className="min-w-0 flex-1">{chain.length > MAX_REFS ? t("Mọi tin trả lời trong chuỗi ({n} tin, tối đa {max})", { n: chain.filter((x) => !x.deleted).length, max: MAX_REFS }) : t("Mọi tin trả lời trong chuỗi ({n} tin)", { n: chain.filter((x) => !x.deleted).length })}</span>
-              </Menu.CheckboxItem>
+              <>
+                <Menu.CheckboxItem checked={!off.size} onCheckedChange={(on) => setOff(new Set(on ? [] : items.map((x) => x.message_id)))} className={cn("flex items-center gap-2 text-sm text-ink-2", MENU_ITEM)}>
+                  {tick(!off.size)}
+                  <span className="min-w-0 flex-1">{items.length > MAX_REFS ? t("Mọi tin trả lời trong chuỗi ({n} tin, tối đa {max})", { n: items.length, max: MAX_REFS }) : t("Mọi tin trả lời trong chuỗi ({n} tin)", { n: items.length })}</span>
+                </Menu.CheckboxItem>
+                <div className="grid max-h-60 grid-cols-1 overflow-y-auto">
+                  {items.map((x) => {
+                    const on = !off.has(x.message_id);
+                    return (
+                      <Menu.CheckboxItem key={x.message_id} checked={on} className={cn("flex items-center gap-2 pl-6 text-sm", MENU_ITEM)}
+                        onCheckedChange={(v) => setOff((o) => { const n = new Set(o); if (v) n.delete(x.message_id); else n.add(x.message_id); return n; })}>
+                        {tick(on)}
+                        <span className="min-w-0 flex-1 truncate text-ink">
+                          <span className="font-medium">{x.outgoing ? t("Bạn") : x.sender_name ?? "?"}</span>
+                          <span className="text-ink-2">: {x.text.replace(QA_CODE, "").trim() || t("[Tệp đính kèm]")}</span>
+                        </span>
+                      </Menu.CheckboxItem>
+                    );
+                  })}
+                </div>
+                <Menu.Separator className={MENU_SEP} />
+              </>
             )}
             {!open.length && (
               <p className="px-2.5 pb-1.5 text-xs leading-relaxed text-ink-2">
-                {t("Chưa có phiên nào đang làm (Doing). Với phiên đã Done: chép ID tin (menu ⋯ › Chép ID tin) rồi dán vào ô nhắn của phiên đó.")}
+                {t("Chưa có phiên nào đang làm (Doing). Với phiên đã Done: chép ID tin (nút # trên dòng tin) rồi dán vào ô nhắn của phiên đó.")}
               </p>
             )}
             {open.map((tk) => (
-              <Menu.Item key={tk.id} onClick={() => attachTo(tk, ms)} className={cn("grid gap-0.5", MENU_ITEM)}>
+              <Menu.Item key={tk.id} disabled={!ms.length} onClick={() => attachTo(qc, tk, ms)} className={cn("grid gap-0.5 data-disabled:opacity-50", MENU_ITEM)}>
                 <span className="truncate text-sm font-medium text-ink">{tk.title || tk.message_text || tk.prompt}</span>
                 <span className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                   {tk.running && <Loader2 className="-mr-1 size-3 shrink-0 animate-spin text-hl-2" aria-label={t("Đang chạy")} />}
@@ -785,17 +811,24 @@ export function MessageActions({
  *  Vietnam time, a picked time, and (one tag) "Luôn bỏ qua {sender}". Also the multi-selection's Hoãn. */
 export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boolean; onDone?: (failed: Message[]) => void }) {
   const t = useT();
+  const qc = useQueryClient();
   const [now, setNow] = useState(() => Date.now()); // read when the menu opens: no per-row clock on long lists
   const one = ms.length === 1 ? ms[0] : null;
+  const code = usesCode(useRole()); // QA / PO: no rules that run AI Agent sessions
   const snoozed = !!one?.snoozed_until && new Date(one.snoozed_until).getTime() > now;
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState("");
   // Tickets the tag names (known projects only), each a "until it is done" choice.
   const known = useQuery({ ...ytProjectsQuery, enabled: open }).data;
-  const tickets = one && known ? [...new Set(one.text.match(TICKET_IDS) ?? [])].filter((id) => known.some((p) => p.shortName === id.split("-")[0])).slice(0, 3) : [];
+  const tickets = one ? ticketsIn(one.text, known) : [];
   const run = useMutation({
     mutationFn: (v: Date | null | { on: string }) => v instanceof Date || v === null ? snooze(ms, v) : snooze(ms, new Date(Date.now() + EVENT_SNOOZE_MS), v.on),
-    onSuccess: () => { setOpen(false); onDone?.([]); },
+    onSuccess: () => {
+      setOpen(false); onDone?.([]);
+      // Cả nhóm hides kept messages: one snoozed from there is kept now, so it leaves that list at once.
+      for (const m of ms) qc.setQueryData<InfiniteData<MessagesPage>>(["live", m.chat_id], (d) => d && { ...d,
+        pages: d.pages.map((p) => ({ ...p, items: p.items.map((x) => x.message_id === m.message_id ? { ...x, kept: true } : x) })) });
+    },
     onError: (e) => {
       if (e instanceof PartialError) { setOpen(false); onDone?.(e.failed); return; } // its toast said x/y
       toast({ text: errorText(e, {}, t("Không hoãn được, thử lại")) });
@@ -803,6 +836,8 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
   });
   const rule = useMutation({ mutationFn: (m: Message) => ignoreSender(m), onError: (e) => toast({ text: errorText(e, {}, t("Không thêm được quy tắc, thử lại")) }) });
   const prio = useMutation({ mutationFn: (m: Message) => prioritizeSender(m), onError: (e) => toast({ text: errorText(e, {}, t("Không thêm được quy tắc, thử lại")) }) });
+  const auto = useMutation({ mutationFn: ([m, kind]: [Message, "relay" | "agent"]) => autoSender(m, kind),
+    onError: (e) => toast({ text: errorText(e, { project_not_found: t("Dự án AI Agent không còn: chọn lại ở Giao AI Agent") }, t("Không thêm được quy tắc, thử lại")) }) });
   const pickCustom = () => {
     const at = custom && fromVnInput(custom);
     if (!at || at.getTime() <= Date.now()) return toast({ text: t("Chọn một lúc trong tương lai") });
@@ -810,7 +845,7 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
   };
   return (
     <Menu.Root open={open} onOpenChange={(o) => { setOpen(o); if (o) setNow(Date.now()); }}>
-      <Hint side="bottom" title={t("Hoãn (s: 1 giờ)")} text={snoozed ? (one!.snooze_on === "reply" ? t("Đang hoãn tới khi có người trả lời.") : one!.snooze_on ? t("Đang hoãn tới khi {id} xong.", { id: one!.snooze_on.slice(7) }) : t("Đang hoãn tới {time}.", { time: timeLabel(one!.snoozed_until!, true) })) : t("Ẩn khỏi Việc cần xử lý, tự hiện lại sau; hoặc luôn bỏ qua người gửi.")}>
+      <Hint side="bottom" title={t("Hoãn (s: 1 giờ)")} text={snoozed ? snoozeHint(one!) : t("Ẩn khỏi Việc cần xử lý, tự hiện lại sau; hoặc luôn bỏ qua người gửi.")}>
         <Menu.Trigger aria-label={t("Hoãn")} onClick={(e) => e.stopPropagation()}
           render={<Button type="button" size={label ? "xs" : "icon-xs"} variant="ghost" className={cn(snoozed && "text-info", "hover:bg-info-wash hover:text-info data-popup-open:bg-info-wash data-popup-open:text-info")} />}>
           <AlarmClock />{label && t("Hoãn")}
@@ -860,6 +895,18 @@ export function SnoozeMenu({ ms, label, onDone }: { ms: Message[]; label?: boole
                 <Star className="size-3.5 shrink-0" aria-hidden /> <span className="truncate">{t("Luôn ưu tiên {name}", { name: one.sender_name ?? t("người này") })}</span>
               </Menu.Item>
             )}
+            {code && one?.sender_id && !one.outgoing && (<>
+              <Hint side="right" text={t("Khi người này trả lời câu hỏi mà một phiên AI Agent đã gửi, phiên đó tự chạy tiếp với câu trả lời (được sửa code nếu phiên đã từng được cho sửa)")}>
+                <Menu.Item disabled={auto.isPending} onClick={() => auto.mutate([one, "relay"])} className={cn("flex items-center gap-1.5 text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
+                  <Repeat className="size-3.5 shrink-0" aria-hidden /> <span className="truncate">{t("Tự chuyển trả lời của {name} vào phiên AI", { name: one.sender_name ?? t("người này") })}</span>
+                </Menu.Item>
+              </Hint>
+              <Hint side="right" text={t("Mỗi tin mới của người này tự mở một phiên AI Agent chỉ đọc (phân tích, soạn câu hỏi) ở dự án bạn chọn gần nhất")}>
+                <Menu.Item disabled={auto.isPending} onClick={() => auto.mutate([one, "agent"])} className={cn("flex items-center gap-1.5 text-ink-2 data-highlighted:text-ink", MENU_ITEM)}>
+                  <AiBotIcon className="size-3.5 shrink-0" aria-hidden /> <span className="truncate">{t("Luôn giao AI Agent cho tin của {name}", { name: one.sender_name ?? t("người này") })}</span>
+                </Menu.Item>
+              </Hint>
+            </>)}
           </Menu.Popup>
         </Menu.Positioner>
       </Menu.Portal>

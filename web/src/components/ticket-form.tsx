@@ -101,15 +101,15 @@ function Pick({ label, value, onChange, empty, items }: {
  * Open tickets that may be related (close titles): a highlighted button beside Hủy / Tạo ticket, the list in a popover
  * above it, so the form keeps its room. Each: its ID opens it on YouTrack; if it is the same work, add this report to it.
  */
-function Similar({ items, searching, onAdd, adding, error }: {
+function Similar({ items, searching, onAdd, adding, error, failed }: {
   items?: YouTrackIssue[]; searching: boolean;
-  onAdd?: (t: YouTrackIssue) => void; adding?: string; error?: string;
+  onAdd?: (t: YouTrackIssue) => void; adding?: string; error?: string; failed?: string; // failed: the lookup itself
 }) {
   const t = useT();
   if (!items?.length) {
     return searching
       ? <span role="status" className="flex items-center gap-1.5 text-xs text-ink-3"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t("Đang tìm ticket liên quan…")}</span>
-      : null;
+      : failed ? <span role="alert" className="text-xs text-error">{failed}</span> : null;
   }
   return (
     <Popover.Root>
@@ -408,7 +408,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
       ) : (
         <footer className="flex flex-col-reverse gap-2 border-t border-rule bg-paper-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-end">
           <span aria-hidden className="mr-auto hidden font-mono text-2xs text-ink-3 sm:inline">⌘↵ {t("tạo ticket")}</span>
-          <Similar items={similar.data} searching={similar.isFetching}
+          <Similar items={similar.data} searching={similar.isFetching} failed={similar.isError ? errorText(similar.error, {}, t("Không kiểm được ticket trùng")) : undefined}
             onAdd={addTo && !demo ? (t) => dup.mutate(t) : undefined} adding={dup.isPending ? dup.variables?.id : undefined}
             error={dup.isError ? dup.error.message || t("Không ghi được bình luận.") : undefined} />
           <DialogClose render={<Button type="button" variant="outline" />}>{t("Hủy")}</DialogClose>

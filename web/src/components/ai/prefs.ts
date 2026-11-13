@@ -7,19 +7,19 @@ import { byUnit } from "@/lib/time";
 
 export type Provider = AiPrefs["use"]["chat"];
 export type Effort = AiPicks["effort"];
-/** Which saved picks a run uses (providers.run_choice): drafts, Briefing / Digest, tasks / AI Agent, YouTrack light / heavy. */
+/** Which saved picks a run uses (providers.run_choice): drafts, Briefing / Digest, tasks / AI Agent, YouTrack light / heavy, the know-it-all bot. */
 export type RunKind = keyof AiPrefs["use"];
 /** The kind whose picks a "" pick falls back to (Briefing, YouTrack light: drafts; YouTrack heavy: tasks). */
-export const BASE: Record<RunKind, "chat" | "task"> = { chat: "chat", brief: "chat", task: "task", yt: "chat", yt_task: "task" };
+export const BASE: Record<RunKind, "chat" | "task"> = { chat: "chat", brief: "chat", task: "task", yt: "chat", yt_task: "task", guide: "chat" };
 /** A kind's model / effort keys in a CLI's picks. */
 export const KEYS = {
   chat: ["model", "effort"], brief: ["brief_model", "brief_effort"], task: ["task_model", "task_effort"],
-  yt: ["yt_model", "yt_effort"], yt_task: ["yt_task_model", "yt_task_effort"],
+  yt: ["yt_model", "yt_effort"], yt_task: ["yt_task_model", "yt_task_effort"], guide: ["guide_model", "guide_effort"],
 } as const satisfies Record<RunKind, readonly [keyof AiPicks, keyof AiPicks]>;
 export const PROVIDERS: Provider[] = ["claude", "codex", "antigravity"];
 const NO_PICKS: AiPicks = {
   model: "", effort: "", task_model: "", task_effort: "", brief_model: "", brief_effort: "",
-  yt_model: "", yt_effort: "", yt_task_model: "", yt_task_effort: "",
+  yt_model: "", yt_effort: "", yt_task_model: "", yt_task_effort: "", guide_model: "", guide_effort: "",
 };
 const EFFORT_LABELS: Record<Exclude<Effort, "">, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max", ultra: "Ultra" };
 /** An effort's name ("" = the CLI's default), in the current language: call from a component that uses `useT`. */
@@ -83,7 +83,7 @@ export function planLabel(a: ClaudeAccount) {
 /** "5h" / "1w", optionally "· <models>" ("1w · Opus", "5h · Gemini"), as a row title. */
 export const windowName = (label: string) => label.replace(/^5h/, t("Phiên 5 giờ")).replace(/^1w/, t("7 ngày")).replace(" · ", ", ");
 
-export const sectionHead = "text-[0.8125rem] font-bold text-ink";
+export const sectionHead = "text-xs font-bold text-ink";
 /** A raised card on the AI page. */
 export const card = "grid gap-4 rounded-lg bg-cotton p-4 shadow-stock";
 
@@ -111,6 +111,10 @@ export type AccountView = {
   pending: boolean; url?: string | null; install: string; usage: ClaudeAccount["usage"]; usage_at?: string | null;
   /** "no_token": not live, `usage` is the last reading (Claude only). */
   usage_error?: string | null;
+  /** Free "reset my limits now" credits (Codex): the listed ones (maybe capped) and how many in all. */
+  resets: AiAccount["resets"]; resets_left: number;
+  /** Why no resets are listed: "cli_version" = the CLI is too old to be offered them (Claude only). */
+  resets_blocked?: string | null;
 };
 
 /** Every CLI's login, keyed by CLI. */
@@ -124,7 +128,7 @@ export function useAccounts(every: number | false = false): Record<Provider, Acc
     return {
       checking: !a && !o.isError, installed: !!a?.installed, loggedIn: !!a?.loggedIn, email: a?.email,
       plan: a && (OTHER_PLANS[a.plan ?? ""] ?? a.plan ?? a.method), pending: !!a?.login_pending, url: a?.login_url, install: a?.install ?? info(id)?.install ?? "",
-      usage: a?.usage ?? [], usage_at: a?.usage_at,
+      usage: a?.usage ?? [], usage_at: a?.usage_at, resets: a?.resets ?? [], resets_left: a?.resets_left ?? 0,
     };
   };
   return {
@@ -132,6 +136,7 @@ export function useAccounts(every: number | false = false): Record<Provider, Acc
       checking: !c.data && !c.isError, installed: !c.isError, loggedIn: !!c.data?.loggedIn, email: c.data?.email,
       plan: c.data && planLabel(c.data), pending: !!c.data?.login_pending, url: c.data?.login_url, install: info("claude")?.install ?? "",
       usage: c.data?.usage ?? [], usage_at: c.data?.usage_at, usage_error: c.data?.usage_error,
+      resets: c.data?.resets ?? [], resets_left: c.data?.resets_left ?? 0, resets_blocked: c.data?.resets_blocked,
     },
     codex: other("codex"),
     antigravity: other("antigravity"),

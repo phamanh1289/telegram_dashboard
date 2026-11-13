@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, LibraryBig, SquareTerminal, MessageSquareText, Plus, RotateCcw, Sparkles } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { AiPromptBox, AiSend, UserBubble, useFollow } from "@/components/ai/chat";
+import { AiPromptBox, AiSend, SessionCode, UserBubble, useFollow } from "@/components/ai/chat";
 import { Button } from "@/components/ui/button";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { Hint } from "@/components/ui/hint";
@@ -31,8 +31,8 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   // every turn is kept in the history as it starts (pending), then with its answer; a new conversation (run, Cuộc mới,
   // other tickets) gets a new entry
   const [ids, setIds] = useState(initial);
-  const { onTurn, againRef } = useHistory(title, ids, resume?.id);
-  const ai = useAi(onTurn);
+  const { onTurn, session, againRef, code } = useHistory(title, ids, resume?.id);
+  const ai = useAi(onTurn, session);
   const [retry, setRetry] = useState(resume?.pending); // a saved turn that never got its answer
   const attached = useRef(false);
   const viewOnly = !!resume && !resume.req && !initial.length; // a saved AI filter / ticket draft: nothing to ask on
@@ -177,6 +177,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               )}
             </AnimatePresence>
           </div>
+          {chatting && code && <SessionCode code={code} />}
           <form className="relative shrink-0" onSubmit={(e) => { e.preventDefault(); void addIds(add); }}>
             {/* Enter adds; a suggestion picked (not typed) adds at once; a paste with several numbers / IDs adds them all */}
             <Plus className="pointer-events-none absolute top-1/2 left-1.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
@@ -192,7 +193,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
           {unfolded && !!rows.length && (
             <motion.div key="list" id="work-tickets" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               transition={{ duration: calm ? 0 : 0.22, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
-              <ul aria-label={t("Ticket của phiên")} className="grid max-h-[min(14rem,30dvh)] gap-px overflow-y-auto border-t border-rule/70 p-1">
+              <ul aria-label={t("Ticket của phiên")} className="zebra grid max-h-[min(14rem,30dvh)] gap-px overflow-y-auto border-t border-rule/70 p-1">
                 {rows.map((r) => (
                   <li key={r.id} className="rounded-md hover:bg-cotton">
                     <button type="button" onClick={() => openOne(r.id)} className="grid w-full grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-2 px-1.5 py-1 text-left text-sm">

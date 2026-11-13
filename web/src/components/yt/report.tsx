@@ -53,7 +53,8 @@ export function ReportCard() {
   const saved = useMemo(() => { try { return JSON.parse(getPref(key) ?? "null") as Saved | null; } catch { return null; } }, [key, ver]); // eslint-disable-line react-hooks/exhaustive-deps -- ver re-reads
   const name = YT_ROLES.find(([r]) => r === y.mode)?.[1], role = name ? t(name) : y.mode;
   const title = t("Báo cáo {p} · {r} · {d}", { p: y.project, r: role, d: ymd(saved?.at ?? now) });
-  const ai = useAi(useHistory(`AI · ${title}`, []).onTurn); // the scheduled run is in the history too, to follow up
+  const hist = useHistory(`AI · ${title}`, []);
+  const ai = useAi(hist.onTurn, hist.session); // the scheduled run is in the history too, to follow up
   const busy = ai.s.status === "busy";
 
   // the tickets the report names, also the CSV
@@ -61,8 +62,8 @@ export function ReportCard() {
     const open = y.rows.filter((i) => !i.resolved);
     const q = (k: string) => open.filter((i) => QUICK[k].fn(i, now));
     if (by === "day") {
-      // passed QC: built / waiting release now, or closed after a QC pass (verdicts cover the picked range)
-      const done = new Map([...open.filter(isBuilt), ...qc.tickets(qc.pass).filter((i) => i.resolved)].map((i) => [i.id, i]));
+      // passed QC: built / waiting release now, or closed after a QC pass today (verdicts cover the whole chart range)
+      const done = new Map([...open.filter(isBuilt), ...qc.tickets(qc.pass.filter((x) => x.at >= day0(ymd(now)))).filter((i) => i.resolved)].map((i) => [i.id, i]));
       return [
         ["Đã test xong", [...done.values()]],
         ["Đang test", open.filter(inTest)],

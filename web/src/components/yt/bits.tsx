@@ -13,7 +13,7 @@ import { Hint } from "@/components/ui/hint";
 import type { AiStep } from "@/lib/api";
 import { fmtNum, t as tNow, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { aiJobs, aiParts, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, newJobId, yt } from "@/lib/yt";
+import { aiJobs, aiParts, aiSessions, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, newJobId, yt } from "@/lib/yt";
 import { ModelEffortPicker } from "@/components/ai";
 import { copyText, fold } from "@/lib/inbox";
 import { useYt } from "./state";
@@ -232,7 +232,8 @@ type AiState = { status: "idle" } | { status: "busy"; label: string; text?: stri
  *  `onTurn`: each turn for the history (`first`: a new conversation): once as it starts (`pending`: its question and
  *  label, not answered yet, kept if it never is; `stop` aborts it) and again with the answer. What the start call
  *  returns is called when the run ends, however it ends. */
-export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => void | (() => void)) {
+export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => void | (() => void),
+  session?: (first: boolean) => string) { // `session`: the history session code of the turn about to run, sent with it
   const [s, setS] = useState<AiState>({ status: "idle" });
   const [thread, setThread] = useState<AiTurn[]>([]); // finished turns; when done, the last one is `s.text`
   const [q, setQ] = useState(""); // the follow-up being answered (busy / error)
@@ -249,6 +250,8 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
     aiParts.set(c.signal, { text: (t) => { live = t; show(); }, step: (e) => { steps = [...steps, e]; show(); } });
     const job = at?.job ?? newJobId();
     aiJobs.set(c.signal, job); // the server runs it on if this page goes (a reload: read again by `job`)
+    const ses = session?.(first);
+    if (ses) aiSessions.set(c.signal, ses); // logged with the run on the server: a bug report's YT-xxxxxx finds it
     let settle: void | (() => void) = undefined;
     try {
       const p = run(c.signal); // ytApi notes the request (aiReqs) before its first await
@@ -307,7 +310,7 @@ export function heavyReq(req: AiReq | null) {
 export function YtPicks({ heavy, className }: { heavy: boolean; className?: string }) {
   const t = useT();
   return (
-    <Hint side="bottom" text={t(heavy ? "Model và effort cho lượt này: Đọc code, nhiều ticket. Đổi ở đây hoặc Cài đặt › YouTrack › AI và prompt." : "Model và effort cho lượt này: Hỏi AI, báo cáo, soạn ticket. Đổi ở đây hoặc Cài đặt › YouTrack › AI và prompt.")}>
+    <Hint side="bottom" text={t(heavy ? "Model và effort cho lượt này: Đọc code, nhiều ticket. Đổi ở đây hoặc Cài đặt › AI." : "Model và effort cho lượt này: Hỏi AI, báo cáo, soạn ticket. Đổi ở đây hoặc Cài đặt › AI.")}>
       <span className={cn("flex", className)}><ModelEffortPicker kind={heavy ? "yt_task" : "yt"} compact className="gap-x-1.5" /></span>
     </Hint>
   );
@@ -433,6 +436,6 @@ export function Menu({ label, items, align = "left", title, className }: {
 }
 
 /** Waiting on YouTrack: the feature's AI scene (tickets: first load / a scope not warmed yet, release, people), with this project's ticket IDs. */
-export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people"; className?: string }) {
+export function YtFetching({ kind = "tickets", className }: { kind?: "tickets" | "release" | "people" | "sessions"; className?: string }) {
   return <AiFetching kind={kind} project={useYt().project} className={className} />;
 }

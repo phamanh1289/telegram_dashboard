@@ -10,11 +10,13 @@ import { getPref, put, readJson } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { AI_MAX, type AiReq, type AiTurn, DAY, when, yt } from "@/lib/yt";
 import { useQuery } from "@tanstack/react-query";
-import type { AiPending } from "./bits";
-import { fold, toast } from "@/lib/inbox";
+import { type AiPending, YtFetching } from "./bits";
+import { fold, sessionId, toast } from "@/lib/inbox";
 import { WorkView } from "./work";
-import { AiSpin } from "@/components/ai/chat";
-import { DayGroups } from "@/components/ai/day-groups";
+import { AiBot, AiSpin } from "@/components/ai/chat";
+import { DayGroups, DayTrash } from "@/components/ai/day-groups";
+import { AI_WAIT_MS, useAiWait } from "@/components/ai/fetching";
+import { BotStage, Empty } from "@/components/ui/empty";
 
 // The YouTrack tab's AI history, per browser (Telegram's AI conversations live in AI Agent: tasks, Đối chiếu BE, Briefing). A small index lists the sessions,
 // each session is its own key: the list never parses an answer, a turn rewrites one session + the index.
@@ -72,24 +74,31 @@ export function saveSession(s: AiSession) {
   }
 }
 
-/** A useAi `onTurn` that keeps the conversation in the history: a new entry per conversation, each turn saved as it
- *  starts (pending) and again with its answer. `againRef.current = true` before re-running a saved first turn: the same
- *  entry goes on. `resumeId`: the entry being continued. */
+/** A useAi `onTurn` + `session` that keep the conversation in the history: a new entry per conversation, each turn saved
+ *  as it starts (pending) and again with its answer. `againRef.current = true` before re-running a saved first turn: the
+ *  same entry goes on. `resumeId`: the entry being continued. `session(first)` (called as a turn starts, before its
+ *  request) picks the entry and returns its code ("YT-xxxxxx"), also `code` for the view. */
 export function useHistory(title: string, ids: string[], resumeId = "") {
   const sid = useRef(resumeId);
   const again = useRef(false);
+  const [code, setCode] = useState(resumeId);
+  const session = (first: boolean) => {
+    if ((first && !again.current) || !sid.current) setCode((sid.current = newSessionId()));
+    again.current = false;
+    return sessionId({ id: sid.current }, "YT");
+  };
   const alive = useRef(true); // the view that started the run is still open
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const onTurn = (req: AiReq | null, thread: AiTurn[], first: boolean, pending?: AiPending, stop?: () => void) => {
-    if ((first && pending && !again.current) || !sid.current) sid.current = newSessionId();
+    if (!sid.current) setCode((sid.current = newSessionId())); // `session` picked it as the turn started
     const id = sid.current;
     if (!pending && !readIdx().some((m) => m.id === id)) return; // deleted while it ran: stays deleted
-    if (pending) again.current = false;
     saveSession({ id, title, ids: ids.slice(0, AI_MAX), req, thread, pending });
     if (!pending) return;
     if (stop) running.set(id, stop);
     changed();
     return () => {
+      if (running.get(id) !== stop) return; // a newer stream of the same session (reopened run) owns it now
       running.delete(id);
       if (!alive.current) { // its view was closed: tell where the answer is
         dispatchEvent(new CustomEvent(DONE, { detail: id }));
@@ -99,14 +108,15 @@ export function useHistory(title: string, ids: string[], resumeId = "") {
       changed();
     };
   };
-  return { onTurn, againRef: again };
+  return { onTurn, session, againRef: again, code: code ? sessionId({ id: code }, "YT") : "" };
 }
 
-/** A one-shot AI use with no follow-up (AI filter, ticket draft): kept as it starts, then with its result as text. */
+/** A one-shot AI use with no follow-up (AI filter, ticket draft): kept as it starts, then with its result as text.
+ *  `session`: its code ("YT-xxxxxx") for the request's X-Ai-Session, so the server logs the run with it. */
 export function saveOneShot(title: string, q: string, label: string) {
   const id = newSessionId();
   saveSession({ id, title, ids: [], req: null, thread: [], pending: { q, label } });
-  return (a: string) => saveSession({ id, title, ids: [], req: null, thread: [{ q, a }] });
+  return { session: sessionId({ id }, "YT"), done: (a: string) => saveSession({ id, title, ids: [], req: null, thread: [{ q, a }] }) };
 }
 
 function loadSession(id: string): AiSession | null {
@@ -152,11 +162,11 @@ export function HistoryPage() {
   const [tab, setTab] = useState<Tab>("all");
   const [sel, setSel] = useState("");
   const [sure, setSure] = useState(false);
-  const [sureDay, setSureDay] = useState(""); // the day whose delete waits for a second click
   const [editing, setEditing] = useState<string | null>(null); // the open session's name being edited
   const [ver, setVer] = useState<Record<string, number>>({}); // a background run ended: its session is read again
   // the server's background runs (after a reload: which "Chưa xong" sessions still run, or wait with their answer)
-  const jobs = useQuery({ queryKey: ["yt", "ai-jobs", idx.filter((m) => m.pending).length], queryFn: () => yt.aiJobStatus(), enabled: idx.some((m) => m.job) });
+  const jobs = useQuery({ queryKey: ["yt", "ai-jobs", idx.filter((m) => m.pending).length], queryFn: () => yt.aiJobStatus(), enabled: idx.some((m) => m.job),
+    refetchInterval: (q) => (Object.values(q.state.data ?? {}).includes("running") ? 10_000 : false) }); // one query: a run that ends shows "Đã xong"
   useEffect(() => {
     const f = (e: Event) => { const id = (e as CustomEvent<string>).detail; setVer((v) => ({ ...v, [id]: (v[id] ?? 0) + 1 })); };
     addEventListener(DONE, f); return () => removeEventListener(DONE, f);
@@ -165,7 +175,7 @@ export function HistoryPage() {
   const inTab = useMemo(() => (tab === "all" ? idx : idx.filter((m) => tabOf(m) === tab)), [idx, tab]);
   const shown = useMemo(() => {
     const k = fold(q.trim());
-    return k ? inTab.filter((m) => fold(`${m.name ?? ""} ${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
+    return k ? inTab.filter((m) => fold(`${sessionId(m, "YT")} ${m.name ?? ""} ${m.title} ${m.q} ${m.ids.join(" ")}`).includes(k)) : inTab;
   }, [inTab, q]);
   const cur = idx.find((m) => m.id === sel) ?? shown[0];
   const v = cur ? ver[cur.id] ?? 0 : 0;
@@ -173,9 +183,15 @@ export function HistoryPage() {
   const n = (x: Tab) => (x === "all" ? idx.length : idx.filter((m) => tabOf(m) === x).length);
   const remove = (ids: string[]) => { drop(ids); setIdx(readIdx()); };
 
+  // opening the tab: the sessions + their tickets are gathered (held AI_WAIT_MS), and the background runs' state when some session has one
+  const [opening, setOpening] = useState(true);
+  useEffect(() => { const h = setTimeout(() => setOpening(false), AI_WAIT_MS); return () => clearTimeout(h); }, []);
+  if (useAiWait(opening || jobs.isLoading)) return <YtFetching kind="sessions" className="max-lg:min-h-[calc(100dvh-8rem)]" />;
   if (!idx.length) return (
-    <p className="mx-auto mt-16 max-w-sm text-center text-sm text-ink-3"><History className="mx-auto mb-2 size-6" />
-      {t("Chưa có phiên AI nào. Mỗi lần hỏi AI trong tab YouTrack (ticket, dashboard, thành viên) sẽ được lưu ở đây, trên trình duyệt này, để đọc lại và hỏi tiếp.")}</p>
+    <Empty className="h-full min-h-[50vh] content-center max-lg:min-h-[calc(100dvh-8rem)]" title={t("Chưa có phiên AI nào")}
+      art={<BotStage className="mb-2"><AiBot className="ai-float relative size-20 drop-shadow-lg" />
+        <span className="absolute right-9 bottom-12 grid size-8 place-items-center rounded-full border border-rule bg-cotton shadow-stock"><History className="ai-hop size-4 text-hl-2" /></span></BotStage>}>
+      {t("Mỗi lần hỏi AI trong tab YouTrack (ticket, dashboard, thành viên) sẽ được lưu ở đây, trên trình duyệt này, để đọc lại và hỏi tiếp.")}</Empty>
   );
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:h-full lg:grid-cols-[19rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
@@ -192,17 +208,14 @@ export function HistoryPage() {
           <DayGroups items={shown} at={(m) => m.at} open={!!q.trim()}
             actions={(day, ms) => (
               // delete this day's sessions (those shown: tab + search); two clicks like "Xóa tất cả"
-              <Button size="xs" variant={sureDay === day ? "destructive" : "ghost"} onBlur={() => setSureDay("")}
-                className={cn(sureDay !== day && "text-ink-3 opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100")}
-                aria-label={t("Xóa {n} phiên {day}", { n: ms.length, day: t(day).toLowerCase() })}
-                onClick={() => { if (sureDay !== day) { setSureDay(day); return; } remove(ms.map((m) => m.id)); setSureDay(""); }}>
-                <Trash2 />{sureDay === day && t("Xóa {n}?", { n: ms.length })}</Button>
+              <DayTrash label={t("Xóa {n} phiên {day}", { n: ms.length, day: t(day).toLowerCase() })} ask={t("Xóa {n}?", { n: ms.length })}
+                onRemove={() => remove(ms.map((m) => m.id))} />
             )}
             row={(m) => {
               const on = m.id === cur?.id, Icon = m.ids.length ? ListChecks : LayoutDashboard;
               const live = m.pending && (isRunning(m.id) || (!!m.job && jobs.data?.[m.job] === "running"));
               return (
-                <li key={m.id} className="group relative">
+                <li key={m.id} className="group relative rounded-md">
                   <button type="button" aria-current={on} onClick={() => setSel(m.id)}
                     className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-2 rounded-md px-2 py-1.5 pr-8 text-left", on ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
                     {live ? <AiSpin className="mt-0.5" /> : <Icon className="mt-0.5 size-4 shrink-0 text-ink-3" aria-hidden />}

@@ -126,7 +126,7 @@ export function BeTopics({ chatId, title, r, open, onToggle, onJump, lit }: {
         {checked.length > 0 && <><span aria-hidden>·</span><span>Code:</span><VerdictTally vs={checked.map((x) => x.v)} /></>}
         <DeepBulkAction chatId={chatId} title={title} items={topics.map((t) => checkOf(t, hits)).filter((x) => !x.waiting)} className="ml-auto" />
       </div>
-      <ul className="grid gap-2">
+      <ul className="zebra grid gap-2">
         {topics.map((t) => <Card key={t.id} chatId={chatId} t={t} tv={verdictOf(verdicts, t)} hits={hits} onToggle={onToggle} onJump={onJump} lit={lit} />)}
       </ul>
     </div>

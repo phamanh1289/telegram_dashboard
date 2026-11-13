@@ -15,6 +15,7 @@ import { cn, downloadText } from "@/lib/utils";
 import { AI_MAX, bucket, DAY, isBlocked, isBug, isBuilt, needsPo, rank, shortName, shortSp, tagsOf, type Ticket, titleOf, when, ytApi } from "@/lib/yt";
 import { useAiWait } from "@/components/ai/fetching";
 import { AiAsk, Card, Menu, MultiSelect, Person, Tag, YtFetching } from "./bits";
+import { period } from "@/lib/yt-stats";
 import { HBars, Stack } from "./dashboard";
 import { PAGE, Pager } from "./home";
 import { workDays } from "./report";
@@ -84,11 +85,13 @@ export function ReleasePage() {
   // scope: the picked sprints (default: the ones running now, else the latest), or a day range ending on go-live
   const sprintList = useMemo(() => [...y.sprints.values()].sort((a, b) => b.start - a.start), [y.sprints]);
   const picked = useMemo(() => { try { const a = JSON.parse(spPref || "null"); return Array.isArray(a) ? a.filter((x): x is string => typeof x === "string") : null; } catch { return null; } }, [spPref]);
-  const running = sprintList.filter((s) => s.start <= now && now <= s.finish);
-  const sprints = picked ?? (running.length ? running : sprintList.slice(0, 1)).map((s) => s.name);
+  // the same default sprint(s) as the dashboard KPIs
+  const auto = [...period({ sprints: y.sprints, f: { ...y.filters, sprint: [] }, latestSprint: y.sprintOptions[0] ?? null, now }).set];
+  const starts = auto.flatMap((n) => y.sprints.get(n)?.start ?? []);
+  const sprints = picked ?? auto;
   const sprintEnd = Math.max(0, ...sprints.map((n) => y.sprints.get(n)?.finish ?? 0));
   const day = relPref || ymd(sprintEnd || now + 7 * DAY);
-  const from = fromPref || ymd(running.length ? Math.min(...running.map((s) => s.start)) : day0(day) - 14 * DAY);
+  const from = fromPref || ymd(starts.length ? Math.min(...starts) : day0(day) - 14 * DAY);
   const rel = day0(day) + DAY - 1; // the end of go-live day
 
   const rows = useMemo(() => {
@@ -328,7 +331,7 @@ export function ReleasePage() {
             </p>
           ) : !rows.length ? <p className="text-sm text-ink-2">{t(by === "sprint" ? "Sprint đã chọn chưa có ticket. Chọn sprint phát hành ở trên." : "Không có ticket nào thay đổi hay tới hạn trong khoảng ngày này. Lùi ngày bắt đầu ở trên.")}</p>
           : (
-            <ul className="grid grid-cols-1">
+            <ul className="zebra grid grid-cols-1">
               {shown.map(({ i, s, why, out }, k) => {
                 const c = tr[i.id]?.last, tag = tagsOf(i)[0], desc = brief(tr[i.id]?.desc);
                 // other pages stay in the DOM, hidden on screen: In / PDF prints the whole list

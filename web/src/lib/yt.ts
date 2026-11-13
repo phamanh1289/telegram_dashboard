@@ -4,13 +4,13 @@
 // The dashboard numbers live in yt-stats.ts.
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
-import { type AiStep, api, ApiError, LANG, readAnswer } from "@/lib/api";
+import { useEffect, useRef, useSyncExternalStore } from "react";
+import { type AiStep, ApiError, readAnswer } from "@/lib/api";
 import { fmtDate, fmtDay, fmtNum, type Key, t, tMaybe } from "@/lib/i18n";
-import { getPref, put, readYtRole } from "@/lib/prefs";
-import { addLoopItems } from "@/lib/report-back";
+import { getPref, onPrefs, put, readYtRole, setPref } from "@/lib/prefs";
+import { loopKey, useLoopBack } from "@/lib/report-back";
 import { fold } from "@/lib/inbox";
-import { downloadCsv } from "@/lib/utils";
+import { downloadCsv, groupBy } from "@/lib/utils";
 
 export type Ticket = {
   id: string;
@@ -56,20 +56,23 @@ export type AiTurn = { q: string; a: string };
 export const aiReqs = new WeakMap<AbortSignal, AiReq>();
 /** The background-run id of an AI call (header X-Ai-Job): the server runs it on when the page goes; aborting stops it. */
 export const aiJobs = new WeakMap<AbortSignal, string>();
+/** The AI history session of an AI call, as shown ("YT-xxxxxx", header X-Ai-Session): the server logs it with the run. */
+export const aiSessions = new WeakMap<AbortSignal, string>();
 export const newJobId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /** /api/yt/* call; the YouTrack router answers errors as {error: "text"}, the shared API as {error: {code, detail}}. */
-export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal; session?: string } = {}): Promise<T> {
   if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
   const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
   // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, the run goes on)
   if (job) init.signal!.addEventListener("abort", () => void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}), { once: true });
+  const ses = init.session || (job && aiSessions.get(init.signal!)); // `session`: a one-shot run with no job (AI filter / draft)
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
     signal: init.signal,
-    headers: { ...LANG(), ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}) },
+    headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}), ...(ses && init.json !== undefined ? { "X-Ai-Session": ses } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
   });
   if (res.ok && res.headers.get("content-type")?.includes("ndjson")) { // an AI answer, streamed as Claude writes it
@@ -135,9 +138,9 @@ export const yt = {
   aiAgain: (req: AiReq, signal?: AbortSignal) => ytApi<AiText>(req.path, { json: req.json, signal }),
   aiFollow: (req: AiReq, history: AiTurn[], question: string, signal?: AbortSignal) =>
     ytApi<AiText>("/ai/followup", { json: { path: req.path, body: req.json, history: history.slice(-12), question }, signal }),
-  aiDraft: (text: string, types: string[], priorities: string[], signal?: AbortSignal) =>
-    ytApi<{ summary: string; type: string; priority: string; description: string }>("/ai/draft", { json: { text, types, priorities }, signal }),
-  aiFilter: (text: string, options: unknown) => ytApi<Record<string, unknown>>("/ai/filter", { json: { text, options } }),
+  aiDraft: (text: string, types: string[], priorities: string[], signal?: AbortSignal, session?: string) =>
+    ytApi<{ summary: string; type: string; priority: string; description: string }>("/ai/draft", { json: { text, types, priorities }, signal, session }),
+  aiFilter: (text: string, options: unknown, session?: string) => ytApi<Record<string, unknown>>("/ai/filter", { json: { text, options }, session }),
 };
 export const AI_MAX = 40; // the server's cap on tickets in one review
 /** Shared query options: one per cache key, so every reader has the same staleTime / retry whichever mounts first. */
@@ -452,6 +455,16 @@ export function deskNotify(title: string, body: string, onClick?: () => void) {
   } catch {} // no Notification API
 }
 
+const FRESH = "ytFresh"; // "VA-1,VA-2": tickets checkNew found for me, not yet seen on the YouTrack page (red count on its switch)
+const readFresh = () => (getPref(FRESH) ?? "").split(",").filter(Boolean);
+
+/** Tickets newly given to me since I was last on the YouTrack page; `seen` (that page is open) clears them. */
+export function useFreshTickets(seen: boolean) {
+  const raw = useSyncExternalStore(onPrefs, () => getPref(FRESH) ?? "", () => "");
+  useEffect(() => { if (seen && raw) setPref(FRESH, null); }, [seen, raw]);
+  return seen ? [] : raw.split(",").filter(Boolean);
+}
+
 const NEW_SEEN = "ytNewSeen"; // {project: ids}: my open tickets (assignee or QC) at the last look, from the full "me" list
 
 /** Open tickets newly given to me (assignee or QC) since the last look, in this session or an earlier one.
@@ -466,76 +479,30 @@ export function checkNew(project: string, me: string, rows: Ticket[], say: (id: 
   const now = Date.now();
   const fresh = mine.filter((i) => !seen.has(i.id) && i.reporter !== me && (selfEdits.get(i.id) ?? 0) < now - 3 * 60_000);
   for (const i of fresh) say(i.id, `${t(i.assignee === me ? "Mới giao cho bạn" : "Mới nhờ bạn test")}: ${i.summary ?? ""}`);
-  // on a Mac the server shows the banner (yt_dashboard.watch_new), even with no page open: not twice
+  if (fresh.length) setPref(FRESH, [...new Set([...readFresh(), ...fresh.map((i) => i.id)])].join(","));
+  // on a Mac the server shows the banner (yt_dashboard.watch), even with no page open: not twice
   if (fresh.length && !navigator.userAgent.includes("Mac")) deskNotify(fresh.length === 1 ? t("Ticket mới: {id}", { id: fresh[0].id }) : t("{n} ticket mới cho bạn", { n: fresh.length }),
     fresh.slice(0, 4).map((i) => `${i.id}: ${i.summary ?? ""}`).join("\n"));
 }
 
-const FINISHED = /^(fixed|done|resolved|verified|closed)$/i; // whole state names: not "Unresolved" / "Not fixed"
-const SEEN = "ytWatchSeen"; // {project: {id: state, null once resolved}}: my tickets as last seen by either watch
-
-/** A ticket of mine reached Fixed / Done: queue "Báo lại" for the Telegram messages that mention it (to-do list). */
-function loopBack(i: Ticket, say: (id: string, text: string) => void) {
-  yt.mentions(i.id).then((ms) => {
-    // My own "đã tạo VA-1" answers the tag it replied to; one not sent as a reply is answered in its own thread.
-    const n = addLoopItems(ms.map((m) => ({ ticket: i.id, state: i.state ?? "Done", chat_id: m.chat_id, message_id: (m.outgoing && m.reply_to_id) || m.message_id })));
-    if (n) say(i.id, t("Báo lại trên Telegram: {n} tin nhắc ticket này (xem Việc cần xử lý)", { n }));
-  }, (e) => {
-    console.warn("Báo lại: mentions", i.id, e); // runs once per state change: say so instead of missing it silently
-    say(i.id, t("Không đọc được tin Telegram nhắc ticket này: chưa tạo được mục Báo lại"));
-  });
-}
-
-/**
- * "Báo lại": my open tickets (assignee or QC) that reached Fixed / Done since they were last seen, in this session or an
- * earlier one, by the YouTrack page or the Telegram shell. One snapshot in localStorage shared by both, so each change
- * is queued once and a ticket fixed overnight is still caught. The first look at a project only records.
- */
-export function checkLoopBack(project: string, me: string, rows: Ticket[], say: (id: string, text: string) => void) {
-  let all: Record<string, Record<string, string | null>> = {};
-  try { all = JSON.parse(getPref(SEEN) ?? "{}") ?? {}; } catch {}
-  const seen = all[project];
-  const cur = Object.fromEntries(rows.filter((i) => i.assignee === me || i.qc === me).map((i) => [i.id, i.resolved ? null : i.state ?? ""]));
-  if (seen) {
-    for (const i of rows) {
-      const was = seen[i.id];
-      if (typeof was === "string" && was !== (i.state ?? "") && (i.resolved || FINISHED.test(i.state ?? "")) && i.id in cur) loopBack(i, say);
-    }
-  }
-  // merged: a YouTrack page scope without some of my tickets must not forget them. ponytail: reset past 500 ids
-  const next = { ...seen, ...cur };
-  put(SEEN, JSON.stringify({ ...all, [project]: Object.keys(next).length > 500 ? cur : next }));
-}
-
-/** Mounted in the shell of both modules: tickets newly given to me, and "Báo lại" (`loop`: off on the YouTrack page, whose
- *  own watch does it) from the shared 5-minute my-tickets poll. */
-export function useWatchGlobal(loop: boolean, say: (id: string, text: string) => void) {
-  useTicketWake();
+/** Mounted in the shell of both modules: tickets newly given to me (the shared 5-minute my-tickets poll), and "Báo lại"
+ *  items the server's watch just queued (yt_dashboard.watch: it also wakes tags snoozed until a ticket is done). */
+export function useWatchGlobal(say: (id: string, text: string) => void) {
   const { me, rows, ready, project } = useMyTickets(true);
+  const loops = useLoopBack().data?.items;
   const said = useRef(say);
+  const known = useRef<Set<string> | null>(null); // Báo lại items already shown: the first read is not news
   useEffect(() => { said.current = say; });
   useEffect(() => {
     if (!me || !ready) return;
-    const s = (id: string, text: string) => said.current(id, text);
-    checkNew(project, me, rows, s);
-    if (loop && rows.length) checkLoopBack(project, me, rows, s);
-  }, [project, me, rows, ready, loop]);
-}
-
-/** Tags snoozed "until VA-1 is done": every 5 minutes (one poll, in the shell) check those tickets and wake the tags
- *  of the ones resolved / Fixed / Done. ponytail: at most 10 tickets a round; the snooze's 7-day time is the backstop. */
-function useTicketWake() {
-  useQuery({
-    queryKey: ["snooze-tickets"],
-    queryFn: async ({ signal }) => {
-      const ids = (await api<string[]>("/snooze/tickets", { signal })).slice(0, 10);
-      const done = await Promise.all(ids.map((id) => yt.detail(id).then((d) => !!d.resolved || FINISHED.test(d.state ?? ""), () => false)));
-      await Promise.all(ids.filter((_, i) => done[i]).map((ticket) => api("/snooze/wake", { method: "POST", json: { ticket } })));
-      return ids.length;
-    },
-    refetchInterval: 5 * 60_000,
-    retry: false,
-  });
+    checkNew(project, me, rows, (id, text) => said.current(id, text));
+  }, [project, me, rows, ready]);
+  useEffect(() => {
+    if (!loops) return;
+    const fresh = known.current ? loops.filter((l) => !known.current!.has(loopKey(l))) : [];
+    known.current = new Set(loops.map(loopKey));
+    for (const [ticket, ls] of groupBy(fresh, (l) => l.ticket)) said.current(ticket, t("Báo lại trên Telegram: {n} tin nhắc ticket này (xem Việc cần xử lý)", { n: ls.length }));
+  }, [loops]);
 }
 
 const FIXED = /(đã|da)\s*(fix|sửa|xong|deploy|merge|lên)|\b(fixed|deployed|resolved|build|retest)\b|test lại|lên (dev|test|stg|staging|uat)/i;

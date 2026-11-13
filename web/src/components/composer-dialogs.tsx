@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowLeft, Bot, Check, ChevronRight, Eye, FilePen, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, Eye, FilePen, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/components/ai";
-import { AiPromptBox } from "@/components/ai/chat";
+import { AiBotIcon, AiPromptBox } from "@/components/ai/chat";
 import { AiFetching, useAiWait } from "@/components/ai/fetching";
 import { ProjectPicker, useProjects } from "@/components/project-picker";
 import { createTicket, TicketForm, useOpenSimilar, useYtProject } from "@/components/ticket-form";
@@ -74,7 +74,7 @@ export function IntroNotice({ compact = false }: { compact?: boolean }) {
     <p role="note" className="flex items-start gap-1.5 text-xs text-ink-2">
       <TriangleAlert className="mt-px size-3.5 shrink-0 text-warn" aria-hidden />
       <span>{t("AI chưa biết vai trò của bạn nên có thể ôm cả phần team khác.")}{" "}
-        <Link href="/settings/#telegram" className="font-medium text-ink underline underline-offset-4">{t("Viết giới thiệu (1 phút)")}</Link></span>
+        <Link href="/settings/#general" className="font-medium text-ink underline underline-offset-4">{t("Viết giới thiệu (1 phút)")}</Link></span>
     </p>
   );
   return (
@@ -86,7 +86,7 @@ export function IntroNotice({ compact = false }: { compact?: boolean }) {
         <li>{t("giải thích lại thứ bạn đã biết, hoặc bỏ qua chi tiết bạn cần")}</li>
         <li>{t("đặt câu hỏi chung chung thay vì theo field, theo chuyên môn")}</li>
       </ul>
-      <Link href="/settings/#telegram" className="w-fit font-medium text-ink underline underline-offset-4">{t("Viết giới thiệu (khoảng 1 phút)")}</Link>
+      <Link href="/settings/#general" className="w-fit font-medium text-ink underline underline-offset-4">{t("Viết giới thiệu (khoảng 1 phút)")}</Link>
     </div>
   );
 }
@@ -206,7 +206,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
         <Hint side="bottom" text={t("Quay lại trả lời (Esc)")}>
           <Button type="button" size="icon-sm" variant="ghost" onClick={onBack} disabled={task.isPending} aria-label={t("Quay lại trả lời (Esc)")}><ArrowLeft /></Button>
         </Hint>
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><Bot className="size-[18px]" aria-hidden /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><AiBotIcon className="size-[18px]" aria-hidden /></span>
         <div className="grid min-w-0 flex-1 leading-tight">
           <DialogTitle id="task-page-title" className="truncate pr-0">{t("Giao việc cho AI Agent")}</DialogTitle>
           <span className="truncate text-xs text-ink-3">{t("Cho tin là việc cần làm trong code (sửa bug, thêm tính năng…), không chỉ cần trả lời.")}</span>
@@ -287,7 +287,7 @@ export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
                   <Button type="button" size="sm" variant="outline" onClick={onBack} disabled={task.isPending}>{t("Hủy")}</Button>
                   <Button type="button" size="sm" aria-busy={task.isPending} disabled={!picked || task.isPending} onClick={start}
                     className={cn(edit && "bg-warn text-cotton hover:bg-warn hover:brightness-110")}>
-                    {edit ? <FilePen /> : <Bot />}{edit ? t("Giao việc, cho sửa file") : t("Giao việc")}
+                    {edit ? <FilePen /> : <AiBotIcon />}{edit ? t("Giao việc, cho sửa file") : t("Giao việc")}
                     <span aria-hidden className="ml-0.5 font-mono text-2xs font-normal opacity-70">↵</span>
                   </Button>
                 </>} />

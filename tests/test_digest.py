@@ -299,6 +299,16 @@ async def test_prompt_keeps_data_block_closed_and_vn_time(dg):
     assert '"at": "30/10 16:00"' in sent  # 09:00 UTC shown in Vietnam time
 
 
+async def test_ignored_senders_left_out(dg):
+    env, svc, provider = dg
+    consent(env)
+    env.store.add_rule("sender", "8", "U8")  # "Luôn bỏ qua U8"
+    await svc.run(req())
+    assert "API đổi field id" in provider.calls[0] and "chốt dùng uuid" not in provider.calls[0]
+    env.fake.history[A] = [at(A, 2, "chốt dùng uuid", 5, "8")]  # only theirs: nothing to summarize
+    await expect("digest_empty", svc.run(req()))
+
+
 async def test_too_large_detail_says_why(dg):
     env, svc, provider = dg
     consent(env)
@@ -371,6 +381,7 @@ async def test_briefing_ask_reads_only_consented_digests(dg):
     await svc.ask("Tôi cần làm gì?")
     prompt = provider.calls[-1]
     assert "fix login" in prompt and "secret B" not in prompt and "Tôi cần làm gì?" in prompt
+    assert f'"id": "{A}"' in prompt  # the group id the answer cites (⟦id:msg⟧) for its buttons
 
 
 async def test_briefing_answered_finds_my_replies(dg):
@@ -502,7 +513,7 @@ def test_qa_threads_and_post(settings):
     with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         app.state.store.set_tracking(A, True, title="Orders", kind="supergroup")
         app.state.bridge.state = "degraded"
-        assert c.get("/api/qa", params={"chat_id": A}).json() == []  # offline: nothing to read
+        assert c.get("/api/qa", params={"chat_id": A}).status_code == 503  # offline is an error, not "no Q&A"
         app.state.bridge.state = "connected"
         app.state.store.apply_message(fake.history[A][1])  # a kept tag keeps its tag actions
         items = c.get("/api/qa", params={"chat_id": A}).json()

@@ -5,6 +5,7 @@ import { MotionConfig } from "motion/react";
 import { useEffect, useState } from "react";
 import { AuthGate } from "@/components/auth-gate";
 import { readLang, useLang } from "@/lib/i18n";
+import { useMascotWatch } from "@/lib/mascot";
 import { makeQueryClient } from "@/lib/query-client";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -23,7 +24,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }, [lang]);
   return (
     <QueryClientProvider client={client}>
-      <MotionConfig reducedMotion="user">{children}{locked && <AuthGate />}</MotionConfig>
+      <MotionConfig reducedMotion="user">{children}{locked && <AuthGate />}<MascotWatch /></MotionConfig>
     </QueryClientProvider>
   );
+}
+
+/** A mascot drawing started on any page says when it is done (lib/mascot); inside the query client. */
+function MascotWatch() {
+  useMascotWatch();
+  return null;
 }

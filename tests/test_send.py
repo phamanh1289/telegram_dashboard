@@ -211,10 +211,14 @@ async def test_send_code_retries_once_after_phone_migrate(tmp_path):
     assert t._code_hash == "h" and len(calls) == 2
 
 
-def test_split_mentions_utf16_offsets():
-    from telegram_dashboard.telegram import split_mentions
+def test_split_format_utf16_offsets():
+    from telegram_dashboard.telegram import split_format
 
-    text, ents = split_mentions("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
+    text, ents = split_format("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
     assert text == "😀 hỏi Lan QA và Minh nhé"
     assert ents == [(7, 6, 43), (17, 4, 42)]  # 😀 is 2 UTF-16 units, as Telegram and JS count
-    assert split_mentions("không tag [x](https://a.b)") == ("không tag [x](https://a.b)", [])
+    assert split_format("không tag [x](https://a.b)") == ("không tag [x](https://a.b)", [])
+    # code spans: backticks dropped, a tag inside backticks stays code, a lone ` stays text
+    text, ents = split_format("1. Q171: `data` và `[a](tg://user?id=1)` lẻ ` nhé\n```json\n{}\n```")
+    assert text == "1. Q171: data và [a](tg://user?id=1) lẻ ` nhé\n{}"
+    assert ents == [(9, 4, "code"), (17, 19, "code"), (46, 2, "pre")]

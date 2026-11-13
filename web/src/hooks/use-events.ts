@@ -4,7 +4,7 @@ import { type InfiniteData, type QueryClient, useQuery, useQueryClient } from "@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/lib/api";
 import { t } from "@/lib/i18n";
-import { msgKey, sentQuery } from "@/lib/inbox";
+import { msgKey, sentQuery, toast } from "@/lib/inbox";
 import { readNotify } from "@/lib/prefs";
 
 type Listener = (items: ChangeItem[]) => void;
@@ -46,7 +46,7 @@ function notifyNew(items: ChangeItem[], preview: boolean) {
 
 type Pages = InfiniteData<MessagesPage, string | null>;
 /** What decides which views a row is in: a change to any of these can move it, so those views refetch. */
-const viewState = (m: Message) => `${m.handled}|${m.deleted}|${m.pinned}|${m.snoozed_until ?? ""}|${m.outgoing}`;
+const viewState = (m: Message) => `${m.handled}|${m.deleted}|${m.pinned}|${m.snoozed_until ?? ""}|${m.outgoing}|${m.priority}`;
 
 /**
  * An edit that leaves the row in every view it is in (text, reactions…): put the server's copy into the cached lists
@@ -206,9 +206,18 @@ export function useSync(baseline: string) {
       };
       src.addEventListener("change", () => void drain());
       src.addEventListener("reset", (e) => reset(JSON.parse((e as MessageEvent).data).cursor));
+      let loop: number | undefined; // the server's Báo lại revision: read the list again when it moves (and on (re)connect)
+      let auto: [number, string] | undefined; // Vòng BE tự chạy (autobe.py): [revision, last failure]
       src.addEventListener("status", (e) => {
-        const { state } = JSON.parse((e as MessageEvent).data);
+        const { state, loop: rev, auto: a } = JSON.parse((e as MessageEvent).data) as { state: Status["state"]; loop?: number; auto?: [number, string] };
         qc.setQueryData<Status>(["status"], (s) => (s ? { ...s, state } : s));
+        if (rev !== loop) void qc.invalidateQueries({ queryKey: ["loopback"] });
+        loop = rev;
+        if (a && a[0] !== auto?.[0]) {
+          void qc.invalidateQueries({ queryKey: ["tasks"] }); // a session it started / went on
+          if (auto && a[1] && a[1] !== auto[1]) toast({ text: t("Vòng BE tự chạy lỗi: {e}", { e: a[1] }) });
+        }
+        auto = a;
       });
     };
     const close = () => {

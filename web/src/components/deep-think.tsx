@@ -1,10 +1,10 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, Bot, BrainCircuit, Check, CheckCheck, CircleCheckBig, CircleHelp, CircleX, Copy, CornerDownRight, History, Hourglass, ListChecks, Loader2, type LucideIcon, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowLeft, BrainCircuit, Check, CheckCheck, CircleCheckBig, CircleHelp, CircleX, Copy, CornerDownRight, History, Hourglass, ListChecks, Loader2, type LucideIcon, TriangleAlert } from "lucide-react";
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/components/ai";
-import { AiPromptBox, AiResultCard } from "@/components/ai/chat";
+import { AiBotIcon, AiPromptBox, AiResultCard } from "@/components/ai/chat";
 import { AiFetching, deepLines, useAiWait } from "@/components/ai/fetching";
 import { type Block, groupEvents, type TaskEvent, toolMeta } from "@/components/ai/steps";
 import { EventItem, SessionAsks, useTaskLog } from "@/components/tasks-feed";
@@ -16,7 +16,7 @@ import { IntroNotice } from "@/components/composer-dialogs";
 import { api, errorText, type Message, type Task } from "@/lib/api";
 import { type Key, t as tNow, useT } from "@/lib/i18n";
 import { copyText, getMessage, openTask, taskListQuery, toast, useSessionOn } from "@/lib/inbox";
-import { aboutMe, readAgentProject, readNotify, setPref } from "@/lib/prefs";
+import { aboutMe, readAgentProject, readNotify, setPref, useRole, usesCode } from "@/lib/prefs";
 import { timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { isBatch, type Verdict, VERDICT_EMOJI, VERDICT_ORDER, verdictsOf } from "@/lib/verdicts";
@@ -41,6 +41,8 @@ const HINT: Key = "AI đọc câu hỏi và câu trả lời của BE, rồi soi
 export function DeepPick({ m, className }: { m: Message; className?: string }) {
   const tt = useT();
   const done = !!useDeepTask(m);
+  const code = usesCode(useRole()); // QA / PO have no code folder: a past check still shows as DeepBadge
+  if (!code) return null;
   const label = done ? tt("Đối chiếu BE lại") : tt("Đối chiếu BE");
   return (
     <Hint side="bottom" title={label} text={tt(HINT)}>
@@ -84,8 +86,10 @@ export function DeepItemAction({ chatId, ids, className }: { chatId: string; ids
     onSuccess: (m) => open({ m, q: sorted.length > 1 ? sorted[0] : undefined }),
     onError: (e) => toast({ text: errorText(e, {}, tNow("Không mở được tin gốc, thử lại sau")) }),
   });
+  const code = usesCode(useRole());
   if (!answer) return null;
   if (t) return <TaskChip t={t} className={cn("ml-1", className)} />;
+  if (!code) return null;
   return (
     <Hint side="bottom" title={tt("Đối chiếu BE")} text={tt(HINT)}>
       <Button type="button" size="xs" variant="ghost" disabled={load.isPending} onClick={() => load.mutate()}
@@ -100,7 +104,9 @@ export function DeepItemAction({ chatId, ids, className }: { chatId: string; ids
 export function DeepAnswerAction({ m, q, className }: { m: Message; q: string; className?: string }) {
   const tt = useT();
   const t = useDeepTask(m);
+  const code = usesCode(useRole());
   if (t) return <TaskChip t={t} className={className} />;
+  if (!code) return null;
   return (
     <Hint side="bottom" title={tt("Đối chiếu BE")} text={tt(HINT)}>
       <Button type="button" size="xs" variant="ghost" className={className} onClick={() => open({ m, q })}>
@@ -167,7 +173,8 @@ const cap = (ids: string[]) => {
 export function DeepBulkAction({ chatId, title, items, className }: { chatId: string; title: string; items: BulkItem[]; className?: string }) {
   const tt = useT();
   const list = items.filter((it) => it.message_ids.length);
-  if (!list.length) return null;
+  const code = usesCode(useRole());
+  if (!list.length || !code) return null;
   return (
     <Hint side="bottom" title={tt("Đối chiếu code các chủ đề BE đã trả lời")}
       text={tt("AI soi code dự án với từng chủ đề BE đã trả lời / chốt của nhóm này và trả về một bảng: đã adapt, lệch, chưa làm. Chủ đề còn chờ BE: dùng nút Đối chiếu code trên thẻ của nó.")}>
@@ -184,8 +191,10 @@ export function DeepTopicAction({ chatId, item }: { chatId: string; item: BulkIt
   const tt = useT();
   const ids = cap(item.message_ids);
   const t = useDeepTaskAt(chatId, ids.at(-1));
+  const code = usesCode(useRole());
   if (!ids.length) return null;
   if (t) return <TaskChip t={t} />;
+  if (!code) return null;
   return (
     <Hint side="bottom" title={tt("Đối chiếu code")} text={tt("AI soi code dự án với chủ đề này: đã làm đúng chưa, hoặc nếu BE chưa trả lời thì code hiện đang làm gì.")}>
       <Button type="button" size="xs" variant="ghost" className="h-5 px-1 text-ink-3 hover:bg-hl-wash hover:text-hl-2 [&_svg]:size-3"
@@ -319,12 +328,12 @@ function DeepProgress({ dr, project, lines, children }: { dr: DeepRun; project?:
       </ul>
       <div className="-mt-3 flex flex-wrap justify-end gap-1">
         {task.result && <Button size="xs" variant="ghost" onClick={() => void copyText(task.result!, tt("Đã copy kết quả đối chiếu"))}><Copy aria-hidden /> Copy</Button>}
-        <Button size="xs" variant="outline" onClick={() => openTask(task.id)}><Bot aria-hidden /> {tt("Hỏi tiếp ở AI Agent")}</Button>
+        <Button size="xs" variant="outline" onClick={() => openTask(task.id)}><AiBotIcon aria-hidden /> {tt("Hỏi tiếp ở AI Agent")}</Button>
       </div>
     </SessionAsks>
   ) : (
     <AiResultCard error title={tt("Phiên dừng mà chưa có kết quả")}
-      actions={<Button size="xs" variant="outline" onClick={() => openTask(task.id)}><Bot aria-hidden /> {tt("Xem phiên")}</Button>}>
+      actions={<Button size="xs" variant="outline" onClick={() => openTask(task.id)}><AiBotIcon aria-hidden /> {tt("Xem phiên")}</Button>}>
       {tt("Phiên bị dừng hoặc lỗi giữa chừng. Mở phiên để xem bước cuối, hoặc bấm Đối chiếu lại.")}
     </AiResultCard>
   );
@@ -386,7 +395,7 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
         {taskId && (
           <Hint side="bottom" text={tt("Mở phiên ở AI Agent để xem từng bước hoặc hỏi tiếp")}>
             <Button size="sm" variant="outline" className="ml-auto shrink-0" onClick={() => openTask(taskId)}>
-              <Bot aria-hidden /> <span className="max-sm:hidden">{tt("Mở ở AI Agent")}</span>
+              <AiBotIcon aria-hidden /> <span className="max-sm:hidden">{tt("Mở ở AI Agent")}</span>
             </Button>
           </Hint>
         )}

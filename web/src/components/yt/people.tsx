@@ -11,7 +11,8 @@ import { fold, useNow } from "@/lib/inbox";
 import { t as tNow, useT } from "@/lib/i18n";
 import { getPref, setPref } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
-import { AI_MAX, bucket, DAY, isBlocked, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
+import { AI_MAX, bucket, DAY, isBlocked, isBug, shortName, type Ticket, UNASSIGNED, when, yt } from "@/lib/yt";
+import { bulkDays, median, notBulk } from "@/lib/yt-stats";
 import { useAiWait } from "@/components/ai/fetching";
 import { Avatar, Card, Prio, StatePill, YtFetching, YtPicks } from "./bits";
 import { useYt } from "./state";
@@ -30,18 +31,19 @@ const SCOPES = [{ value: "open", label: "Đang mở" }, { value: "done", label: 
 type Scope = (typeof SCOPES)[number]["value"];
 
 type Stats = ReturnType<typeof statsOf>;
-/** One person's tickets cut every way the views need; `risk` = blocked or overdue, `attn` = anything that needs a look. */
-function statsOf(mine: Ticket[], days: number, now: number) {
+/** One person's tickets cut every way the views need; `risk` = blocked or overdue, `attn` = anything that needs a look.
+ *  `real`: not closed in a bulk clean-up (kept out of lead time, as on the dashboard). */
+function statsOf(mine: Ticket[], days: number, now: number, real: (i: Ticket) => boolean) {
   const from = now - days * DAY;
   const open = mine.filter((i) => !i.resolved), done = mine.filter((i) => i.resolved && i.resolved >= from);
-  const lead = done.map((i) => (i.resolved! - i.created) / DAY).sort((a, b) => a - b);
+  const lead = median(done.filter(real).map((i) => (i.resolved! - i.created) / DAY).sort((a, b) => a - b));
   const blocked = open.filter(isBlocked), overdue = open.filter((i) => i.due && i.due < now), stale = open.filter((i) => now - i.updated > 7 * DAY);
   return {
     open, done, blocked, overdue, stale,
     doing: open.filter((i) => bucket(i) === 1), qc: open.filter((i) => bucket(i) === 2), moved: open.filter((i) => i.sprints.length >= 2),
     risk: open.filter((i) => isBlocked(i) || (i.due && i.due < now)), attn: open.filter((i) => reasons(i, now).length),
-    bugs: open.filter((i) => i.type === "Bug"), fixed: done.filter((i) => i.type === "Bug"),
-    lead: lead.length ? +lead[Math.floor(lead.length / 2)].toFixed(1) : null,
+    bugs: open.filter(isBug), fixed: done.filter(isBug),
+    lead: lead == null ? null : +lead.toFixed(1),
   };
 }
 
@@ -117,7 +119,8 @@ export function PeoplePage() {
   const stats = useMemo(() => {
     const by = new Map<string, Ticket[]>();
     for (const i of data.data ?? []) if (i.assignee) by.set(i.assignee, [...(by.get(i.assignee) ?? []), i]);
-    return new Map(names.map((n) => [n, statsOf(by.get(n) ?? [], days, now)]));
+    const real = notBulk(bulkDays(data.data ?? []));
+    return new Map(names.map((n) => [n, statsOf(by.get(n) ?? [], days, now, real)]));
   }, [data.data, names, days, now]);
   const max = Math.max(1, ...[...stats.values()].map((s) => s.open.length));
   const shown = names.filter((n) => !q || fold(n).includes(fold(q)));
@@ -133,11 +136,11 @@ export function PeoplePage() {
           className={cn("flex items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium", person === TEAM ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
           <span className="grid size-6 place-items-center rounded-full bg-paper-3"><Users className="size-3.5" /></span>{t("Cả team")}
         </button>
-        <ul className="grid gap-0.5 border-t border-rule pt-2">
+        <ul className="zebra grid gap-0.5 border-t border-rule pt-2">
           {shown.map((n) => {
             const s = stats.get(n)!;
             return (
-              <li key={n}>
+              <li key={n} className="rounded-md">
                 <button type="button" aria-current={n === person} onClick={() => pick(n)}
                   className={cn("grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 rounded-md px-2 py-1.5 text-left text-sm", n === person ? "bg-hl-wash text-hl-2" : "hover:bg-paper-2")}>
                   <span className="relative row-span-2"><Avatar name={n} className="size-7" />{s.risk.length > 0 && <i aria-label={t("{n} ticket blocked hoặc quá hạn", { n: s.risk.length })} className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-error ring-2 ring-cotton" />}</span>
@@ -201,7 +204,7 @@ function TeamView({ stats, max, days, setDays, onPick }: { stats: Map<string, St
           <div className="max-w-full overflow-x-auto"><Segmented id="people-sort" label={t("Sắp xếp")} value={sort} onChange={(v) => { setSort(v); setPref("ytPeopleSort", v); }} items={SORTS.map(({ value, label }) => ({ value, label: t(label) }))} /></div>
           <span className="ml-auto"><Legend /></span>
         </div>
-        <ul className="grid divide-y divide-rule">
+        <ul className="zebra grid divide-y divide-rule">
           {rows.map(([n, s]) => {
             const over = y.wip > 0 && s.doing.length > y.wip;
             return (
@@ -242,6 +245,13 @@ function PersonView({ name, s, days, setDays }: { name: string; s: Stats; days: 
   const [list, setList] = useState<(typeof LISTS)[number][0]>("open");
   const [scope, setScope] = useState<Scope>("both");
   const [prompt, setPrompt] = useState(() => PRESETS[0][2](name, days));
+  // the default prompt names the period: follow a period change unless the user wrote their own
+  const [lastDays, setLastDays] = useState(days);
+  if (lastDays !== days) {
+    setLastDays(days);
+    const preset = PRESETS.find((p) => p[2](name, lastDays) === prompt);
+    if (preset) setPrompt(preset[2](name, days));
+  }
   const ids = (scope === "open" ? s.open : scope === "done" ? s.done : [...s.open, ...s.done]).toSorted((a, b) => b.updated - a.updated).map((i) => i.id);
   const figures = {
     "Đang mở": s.open.length, "Đang làm": s.doing.length, "Chờ QC": s.qc.length, Blocked: s.blocked.length, "Quá hạn": s.overdue.length,
@@ -320,7 +330,7 @@ function Rows({ rows, now, empty }: { rows: Ticket[]; now: number; empty: string
   if (!rows.length) return <p className="py-6 text-center text-sm text-ink-3">{empty}</p>;
   const sorted = rows.toSorted((a, b) => b.updated - a.updated);
   return (
-    <ul className="divide-y divide-rule">
+    <ul className="zebra divide-y divide-rule">
       {sorted.slice(0, 80).map((i) => (
         <li key={i.id}>
           <button type="button" onClick={() => y.openTicket(i.id, sorted)} className="grid w-full gap-1 rounded-md px-2 py-2 text-left hover:bg-paper-2">

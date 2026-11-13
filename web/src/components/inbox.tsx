@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, WifiOff, X } from "lucide-react";
+import { ChevronRight, History, House as Home, Inbox as InboxIcon, LayoutDashboard, ListChecks, type LucideIcon, Menu, MessageCircleQuestion, MessageSquare, Pin, Rocket, RotateCw, Search, Send, Sparkles, Sun, UserSearch, WifiOff, X } from "lucide-react";
+import { AiBotIcon } from "@/components/ai/chat";
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ChatList, useChats } from "@/components/chat-list";
 import { Composer, type DraftInjection } from "@/components/composer";
@@ -15,17 +16,17 @@ import { QA_MINE, qaGroupsQuery, QaGroups, QaPage, type QaDays, useQaNews, useQa
 import { InboxPalette } from "@/components/inbox-palette";
 import { MessageList } from "@/components/message-list";
 import { TasksPage } from "@/components/tasks-page";
-import { PendingInbox } from "@/components/pending-inbox";
+import { PendingInbox, type PendingTab } from "@/components/pending-inbox";
 import { Kbd } from "@/components/ui/kbd";
 import { ShortcutsDialog } from "@/components/shortcuts";
 import { Toaster, TopBar } from "@/components/shell";
-import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/components/date-range";
+import { DateRangePicker, type DayRange, lastWeek, rangeLabel, rangeQuery } from "@/components/date-range";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { type StreamState, useSync } from "@/hooks/use-events";
 import { api, type Message, type Status, statusQuery } from "@/lib/api";
 import type { View } from "@/hooks/use-chat-messages";
-import { ALL, BRIEFING, TODAY, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
+import { ALL, askInQa, BRIEFING, TODAY, goKey, msgKey, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, toast, typing, useTaskList } from "@/lib/inbox";
 import { useBriefs } from "@/lib/briefs";
 import { getPref, setPref, useRole, usesCode } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
@@ -152,7 +153,7 @@ function Inbox({ status }: { status: Status }) {
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
-  const [days, setDays] = useState<DayRange>({ from: "", to: "" });
+  const [days, setDays] = useState<DayRange>(lastWeek);
   const range = rangeQuery(days);
   const [qaDays, setQaDays] = useState<QaDays>(7);
   // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges; tag
@@ -232,12 +233,6 @@ function Inbox({ status }: { status: Status }) {
     });
   }
 
-  // Stable (setters only): the memoised list rows keep their props.
-  const useText = useCallback((m: Message, text: string) => {
-    setReply({ m, external: false, at: place(m) });
-    setDraft({ result: { text, options: [], analysis: "", source_message_ids: [m.message_id], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() });
-  }, [place]);
-
   // Esc: leave reply mode and clear every selection (dialogs close themselves first).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -272,6 +267,7 @@ function Inbox({ status }: { status: Status }) {
     else setMenuOpen((v) => !v);
   }
   const [jump, setJump] = useState(0);
+  const [pendingTab, setPendingTab] = useState<Exclude<PendingTab, "pinned">>("todo"); // Việc cần xử lý: Đang chờ / Đang xử lý, kept across Đã ghim
   const [focusView, setFocusView] = useState<View>();
   function go(id: string | null, focusId?: string, view?: View) {
     closeBulk();
@@ -286,14 +282,14 @@ function Inbox({ status }: { status: Status }) {
   // A reply opened from Digest / Briefing / Báo lại (lib/inbox `openReply`), optionally with a first line.
   const onOpenReply = useEffectEvent((e: Event) => {
     const { m, text } = (e as CustomEvent<{ m: Message; text?: string }>).detail;
-    setReply({ m, external: true });
+    setReply((r) => (r && msgKey(r.m) === msgKey(m) ? r : { m, external: true })); // already answering it (Luồng việc): keep its place
     setDraft(text ? { result: { text, options: [], analysis: "", source_message_ids: [], context_revision: "" }, chatId: m.chat_id, nonce: Date.now() } : null);
   });
   // A "#QA…" badge on a message (lib/inbox `openQa`): that thread in its group's Q&A.
   const onOpenQa = useEffectEvent((e: Event) => {
     const { chatId: id, code } = (e as CustomEvent<{ chatId: string; code: string }>).detail;
     setQaGroup(id);
-    go(QA, code);
+    go(QA, code || undefined); // no code (askInQa): the group's new question
   });
   // "Trả lời bằng Q&A" on a message (lib/inbox `answerQa`): its group's Q&A, replying to it.
   const onQaAnswer = useEffectEvent((e: Event) => {
@@ -325,14 +321,12 @@ function Inbox({ status }: { status: Status }) {
   useEffect(() => { // ?qa=<chat>&ask=<text> (YouTrack sheet "Hỏi lại trong nhóm"): that group's Q&A, the box pre-filled, once
     const q = new URLSearchParams(location.search), group = q.get("qa");
     if (!group) return;
-    try { sessionStorage.setItem("qa-prefill", JSON.stringify({ chatId: group, text: q.get("ask") ?? "" })); } catch { /* private mode: no pre-fill */ }
+    const ask = q.get("ask") ?? "";
     q.delete("qa");
     q.delete("ask");
     history.replaceState(history.state, "", `${location.pathname}${q.size ? `?${q}` : ""}`);
-    setQaGroup(group);
-    go(QA);
-    dispatchEvent(new Event("qa-prefill")); // the group's Q&A may already be open: it takes the text now
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- once, from the URL the page was opened with
+    askInQa(group, ask);
+  }, []); // once, from the URL the page was opened with
 
   const hints: Record<string, string> = {
     [TODAY]: t("Mọi thứ đang chờ bạn ở cả Telegram và YouTrack, gấp nhất lên trước; và những gì bạn đang chờ người khác. (g h)"),
@@ -361,7 +355,7 @@ function Inbox({ status }: { status: Status }) {
     ] },
     { label: t("Trợ lý AI"), items: [
       ...(aiOn ? [[BRIEFING, "Briefing", briefNews, Sparkles] as NavItem] : []),
-      ...(codeRole || taskList.length || (aiOn && briefs) ? [[TASKS, "AI Agent", runningTasks, Bot] as NavItem] : []),
+      ...(codeRole || taskList.length || (aiOn && briefs) ? [[TASKS, "AI Agent", runningTasks, AiBotIcon] as NavItem] : []),
     ] },
     { label: "YouTrack", items: [
       ["/youtrack/", t("Trang chủ YouTrack"), 0, Home],
@@ -555,7 +549,7 @@ function Inbox({ status }: { status: Status }) {
             <div className={cn("view-back grid min-h-0 grid-cols-[minmax(0,1fr)]", (replyTo || bulk) && "hidden")}>
             {/* No exit wait: the next page mounts at once and rises in (globals.css .page-in); pages the AI made get the .ai-in beam. */}
             {chatId ? (
-              <div key={`${chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || chatId === TODAY || digest) && "ai-in")}>
+              <div key={`${chatId === PINNED ? ALL : chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || chatId === TODAY || digest) && "ai-in")}>
                 {chatId === TODAY ? (
                   <TodayPage onReply={(m) => setReply({ m, external: true })} onGo={() => go(ALL)} onBriefGroup={(id) => { setBriefGroup(id); go(BRIEFING); }} />
                 ) : chatId === QA ? (
@@ -567,19 +561,19 @@ function Inbox({ status }: { status: Status }) {
                   <TasksPage key={focus ?? ""} focus={focus} headSlot={headSlot} onOpenGroup={go} />
                 ) : chatId === ALL || chatId === PINNED ? (
                   <PendingInbox pinned={chatId === PINNED} range={range} search={search} onClearSearch={() => setSearch("")} replyTo={replyTo && msgKey(replyTo)} onReply={pickReply}
-                    onBack={() => setMenuOpen(true)} onUseText={useText} itemsRef={listItems} jump={jump} onPinned={(p) => go(p ? PINNED : ALL)} />
+                    onBack={() => setMenuOpen(true)} itemsRef={listItems} jump={jump} tab={pendingTab} onTab={(v) => { if (v !== "pinned") setPendingTab(v); go(v === "pinned" ? PINNED : ALL); }} />
                 ) : digest ? (
                   <DigestPage chatId={chatId} title={title} onBack={() => (chatsData.some((c) => c.chat_id === chatId) ? setDigest(false) : go(BRIEFING))} />
                 ) : (
                 <MessageList
                   onDigest={openDigest}
-                  onUseText={useText}
                   chatId={chatId}
                   title={title}
                   search={search}
                   focus={focus}
                   view={focusView}
                   range={range}
+                  rangeName={rangeLabel(days)}
                   onBack={() => go(ALL)}
                   replyTo={replyTo && msgKey(replyTo)}
                   onReply={pickReply}

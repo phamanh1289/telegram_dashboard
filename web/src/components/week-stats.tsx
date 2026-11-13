@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Gauge } from "lucide-react";
 import { Hint } from "@/components/ui/hint";
-import { api } from "@/lib/api";
+import { Skeleton } from "@/components/ui/skeleton";
+import { api, errorText } from "@/lib/api";
 import type { components } from "@/lib/api.generated";
 import { useT } from "@/lib/i18n";
 import { byUnit } from "@/lib/time";
@@ -44,7 +45,9 @@ export function WeekStatsCard({ className, empty = null }: { className?: string;
     staleTime: 5 * 60_000,
   });
   const s = q.data;
-  if (!s || (!s.cur.received && !s.prev.received)) return empty;
+  if (q.isError) return <p role="alert" className={cn(className ?? "shrink-0 border-b px-3 py-2 md:px-5", "text-xs text-error")}>{errorText(q.error, {}, t("Không đọc được số liệu tuần."))}</p>;
+  if (!s) return <Skeleton className="h-10" />;
+  if (!s.cur.received && !s.prev.received) return empty;
   const { cur, prev } = s;
   const stat = (label: string, value: React.ReactNode, hint?: string) => {
     const body = (
@@ -69,7 +72,7 @@ export function WeekStatsCard({ className, empty = null }: { className?: string;
           <div className="grid min-w-0 gap-0.5">
             <dt className="text-xs text-ink-3">{t("Nhóm chậm nhất")}</dt>
             <dd className="flex min-w-0 flex-wrap gap-x-3 text-sm text-ink-2">
-              {s.slow.slice(0, 3).map((g) => (
+              {s.slow.map((g) => (
                 <span key={g.chat_id} className="max-w-48 truncate">{g.title} <b className="font-mono font-bold text-ink tabular-nums">{dur(g.median_min)}</b></span>
               ))}
             </dd>

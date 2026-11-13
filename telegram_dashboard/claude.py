@@ -14,6 +14,7 @@ import shlex
 import shutil
 import sys
 import time
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -68,17 +69,30 @@ async def _wake_cli(settings) -> None:
     await run_cli([_claude_exe(settings), "-p", "Reply with exactly: OK", "--model", "haiku"], timeout=60)
 
 
-async def _oauth_get(client: httpx.AsyncClient, token: str, path: str) -> dict:
+def _headers(token: str, ua: str) -> dict:
+    # Without a Claude Code user agent the usage API answers 429 to every call.
+    return {"Authorization": f"Bearer {token}", "anthropic-beta": "oauth-2025-04-20", "User-Agent": ua}
+
+
+_ua: dict = {"ua": None}
+
+
+async def _user_agent(settings) -> str:
+    """The installed CLI's own user agent (claude-cli/2.1.322): Anthropic lists the plan's free limit resets
+    only to a recent enough CLI, so its real version is sent, never a made-up one. Read again after an account
+    change or a refresh (e.g. after `claude update`)."""
+    if _ua["ua"] is None:
+        got = await run_cli([_claude_exe(settings), "--version"], timeout=15)
+        m = re.match(rb"\s*(\d+\.\d+\.\d+)", got[1]) if got else None
+        if not m:  # not cached: one slow / failed --version must not pass for an old CLI ("cli_version") until relogin
+            return "claude-code/1.0.0"
+        _ua["ua"] = f"claude-cli/{m.group(1).decode()} (external, cli)"
+    return _ua["ua"]
+
+
+async def _oauth_get(client: httpx.AsyncClient, token: str, path: str, ua: str) -> dict:
     try:
-        r = await client.get(
-            f"{OAUTH_API}/{path}",
-            # Without a Claude Code user agent the usage API answers 429 to every call.
-            headers={
-                "Authorization": f"Bearer {token}",
-                "anthropic-beta": "oauth-2025-04-20",
-                "User-Agent": "claude-code/1.0.0",
-            },
-        )
+        r = await client.get(f"{OAUTH_API}/{path}", headers=_headers(token, ua))
         data = r.json() if r.is_success else {}
     except (httpx.HTTPError, ValueError):
         return {}
@@ -141,13 +155,15 @@ async def _claude_details(settings) -> dict:
     cache = settings.data_dir / "claude_usage.json"
     _usage_data(settings)
     if token:
+        ua = await _user_agent(settings)
         async with httpx.AsyncClient(timeout=10) as c:
             if time.monotonic() - _profile["at"] >= USAGE_EVERY:
                 _profile["at"] = time.monotonic()
-                _profile["data"] = await _oauth_get(c, token, "profile") or _profile["data"]
+                _profile["data"] = await _oauth_get(c, token, "profile", ua) or _profile["data"]
             if time.monotonic() - _usage["at"] >= USAGE_EVERY:
                 _usage["at"] = time.monotonic()
-                if fresh := await _oauth_get(c, token, "usage"):
+                # cedar_ember: the plan's free limit resets (skip_spend: the credits block, unused here)
+                if fresh := await _oauth_get(c, token, "usage?cedar_ember=1&skip_spend=1", ua):
                     _usage["data"] = fresh | {"fetched_at": datetime.now(UTC).isoformat(timespec="seconds")}
                     settings.ensure_data_dir()
                     write_private_json(cache, _usage["data"])
@@ -172,7 +188,82 @@ async def _claude_details(settings) -> dict:
         "usage": windows,
         "usage_at": usage.get("fetched_at"),
         "usage_error": None if token else "no_token",
+        **_grants(usage, now),
     }
+
+
+def _grants(usage: dict, now: datetime) -> dict:
+    """The plan's free limit resets (Anthropic's `cedar_ember`): each one left, whether it can be used now, and
+    why none are listed when the account isn't eligible ("cli_version": the CLI is too old to be offered them)."""
+    ce = usage.get("cedar_ember")
+    if not isinstance(ce, dict):
+        return {}
+    if ce.get("eligible") is not True:
+        why = ce.get("ineligible_reason")
+        return {"resets_blocked": why if isinstance(why, str) else None}
+    try:
+        cooling = bool(ce.get("cooldown_until")) and datetime.fromisoformat(ce["cooldown_until"]) > now
+    except (TypeError, ValueError):
+        cooling = True
+    grants = [
+        g for g in ce.get("grants") or []
+        if isinstance(g, dict) and isinstance(g.get("id"), str) and _GRANT_ID.fullmatch(g["id"])
+        and isinstance(g.get("resets_left"), int)
+        and g["resets_left"] > 0
+    ]  # fmt: skip
+    # missing flags count as "not usable", as the CLI does: a reset is spent only when it says it can be
+    usable = lambda g: (g.get("usable_now") is True and g.get("paused") is not True and not cooling  # noqa: E731
+                        and not (g.get("use_requires_limit") is not False and not ce.get("at_limit")))  # fmt: skip
+    resets = [{"id": g["id"], "title": g.get("label"), "expires_at": g.get("ends_at"),
+               "left": g["resets_left"], "usable": usable(g)}
+              for g in grants]  # fmt: skip
+    return {"resets": resets, "resets_left": sum(g["resets_left"] for g in grants)}
+
+
+RESET_OUTCOMES = {"reset": "reset", "already_used": "alreadyRedeemed", "not_limited": "nothingToReset",
+                  "cooldown": "cooldown", "ineligible": "noCredit", "unavailable": "noCredit"}  # fmt: skip
+_GRANT_ID = re.compile(r"[a-z0-9_-]{1,40}")
+_ORG_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+async def claude_reset(settings, grant_id: str | None, *, request_id: str | None = None) -> str:
+    """Use one free limit reset (the one Anthropic offers next without `grant_id`), as the CLI does, then read
+    the quota again. No answer = it may have gone through (504 ai_reset_unknown): never retried here; the page
+    resends the same `request_id` when the user retries, so the claim is the same one."""
+    token = await _oauth_token()
+    if not token:
+        raise ApiError(502, "ai_reset_auth")
+    ua = await _user_agent(settings)
+    grant_id = grant_id or (_usage_data(settings).get("cedar_ember") or {}).get("next_grant_id")
+    if not isinstance(grant_id, str) or not _GRANT_ID.fullmatch(grant_id):
+        raise ApiError(422, "validation")
+    r = None
+    async with httpx.AsyncClient(timeout=25) as c:
+        org = (_profile["data"].get("organization") or {}).get("uuid")
+        if not isinstance(org, str):
+            org = ((await _oauth_get(c, token, "profile", ua)).get("organization") or {}).get("uuid")
+        if not isinstance(org, str) or not _ORG_ID.fullmatch(org.lower()):
+            raise ApiError(502, "ai_provider_error", detail="no organization")
+        claim = {"program": "cedar_ember", "grant_id": grant_id, "request_id": request_id or uuid.uuid4().hex}
+        with contextlib.suppress(httpx.HTTPError):
+            r = await c.post(f"https://api.anthropic.com/api/organizations/{org.lower()}/reset_rate_limits",
+                             headers=_headers(token, ua), json=claim)  # fmt: skip
+    _usage["at"] = 0.0  # the quota after it, not the cached one
+    with contextlib.suppress(Exception):
+        await _claude_details(settings)
+    if r is not None and r.status_code == 429:  # refused before running: nothing spent
+        raise ApiError(429, "ai_reset_rate_limited")
+    if r is not None and r.status_code in (401, 403):
+        raise ApiError(502, "ai_reset_auth")
+    if r is not None and 400 <= r.status_code < 500:  # refused (bad / expired grant): nothing spent
+        raise ApiError(502, "ai_provider_error", detail=r.text[:300])
+    if r is None or not r.is_success:  # no answer, or 5xx: it may have gone through
+        raise ApiError(504, "ai_reset_unknown")
+    try:
+        res = r.json().get("result")
+    except (ValueError, AttributeError):
+        res = None
+    return RESET_OUTCOMES.get(res, "unknown")  # answered, but unlike any known result: as Codex, "look at the quota"
 
 
 _LOGIN_URL = re.compile(r"https://\S+/oauth/authorize\S+")
@@ -192,6 +283,8 @@ def _login_pending() -> bool:
 
 def _account_changed() -> None:
     _profile["at"] = _usage["at"] = 0.0
+    _profile["data"] = {}  # a reset must never claim against the previous account's organization
+    _ua["ua"] = None  # a `claude update` shows on the next read
 
 
 async def claude_account(settings) -> dict:
@@ -298,12 +391,15 @@ def spawn(coro) -> None:
     t.add_done_callback(_bg.discard)
 
 
-def note_run(settings, feature: str, choice, final: dict | None, seconds: float, error: str | None) -> None:
-    """Log one AI run (`final`: its Claude-shaped result event) without holding up the caller."""
-    spawn(_note_run(settings, feature, choice, final, seconds, error))
+def note_run(
+    settings, feature: str, choice, final: dict | None, seconds: float, error: str | None, *, ref: str = ""
+) -> None:
+    """Log one AI run (`final`: its Claude-shaped result event) without holding up the caller.
+    `ref`: the session code the user sees (YT-xxxxxx, REF-xxxxxx), to find the run from a bug report."""
+    spawn(_note_run(settings, feature, choice, final, seconds, error, ref))
 
 
-async def _note_run(settings, feature, choice, final, seconds, error) -> None:
+async def _note_run(settings, feature, choice, final, seconds, error, ref="") -> None:
     with contextlib.suppress(Exception):  # the quota after the run is best effort
         if time.monotonic() - _usage["at"] >= USAGE_EVERY:
             await _claude_details(settings)
@@ -325,6 +421,8 @@ async def _note_run(settings, feature, choice, final, seconds, error) -> None:
         "input_tokens": n("input_tokens"), "output_tokens": n("output_tokens"),
         "cache_read": n("cache_read_input_tokens"), "cache_write": n("cache_creation_input_tokens"),
         "turns": f.get("num_turns") if isinstance(f.get("num_turns"), int) else 0,
+        # the session code, and Claude's own session id: its transcript (~/.claude/projects/*/<sid>.jsonl)
+        "ref": ref or None, "sid": f.get("session_id") if isinstance(f.get("session_id"), str) else None,
         # Claude's windows only
         "quota": {} if str(model).startswith(("codex", "antigravity")) else quota_now(settings),
     }  # fmt: skip

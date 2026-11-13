@@ -1,8 +1,8 @@
 "use client";
 
-import { Bot, ChevronDown, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
+import { ChevronDown, FilePlus, FileText, FolderSearch, Globe, ListChecks, Loader2, type LucideIcon, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
 import { useMemo, useState } from "react";
-import { dur } from "@/components/ai/chat";
+import { AiBotIcon, dur } from "@/components/ai/chat";
 import { type Key, t, useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -15,8 +15,8 @@ export type TaskEvent = { kind: string; text: string; error?: boolean; at?: numb
 const TOOLS: Record<string, [LucideIcon, Key, Key]> = {
   Read: [FileText, "Đọc", "Đang đọc"], Edit: [Pencil, "Sửa", "Đang sửa"], MultiEdit: [Pencil, "Sửa", "Đang sửa"], Write: [FilePlus, "Tạo", "Đang tạo"],
   Bash: [SquareTerminal, "Chạy", "Đang chạy"], Grep: [Search, "Tìm", "Đang tìm"], Glob: [FolderSearch, "Tìm file", "Đang tìm file"],
-  WebFetch: [Globe, "Mở web", "Đang mở web"], WebSearch: [Globe, "Tìm web", "Đang tìm web"], Task: [Bot, "Gọi agent", "Đang gọi agent"],
-  Agent: [Bot, "Gọi agent", "Đang gọi agent"], TodoWrite: [ListChecks, "Lập kế hoạch", "Đang lập kế hoạch"],
+  WebFetch: [Globe, "Mở web", "Đang mở web"], WebSearch: [Globe, "Tìm web", "Đang tìm web"], Task: [AiBotIcon, "Gọi agent", "Đang gọi agent"],
+  Agent: [AiBotIcon, "Gọi agent", "Đang gọi agent"], TodoWrite: [ListChecks, "Lập kế hoạch", "Đang lập kế hoạch"],
 };
 /** Icon, verb, "doing" line, in the current language (call from a component that uses `useT`, so it follows a switch). */
 export const toolMeta = (name: string): [LucideIcon, string, string] => {

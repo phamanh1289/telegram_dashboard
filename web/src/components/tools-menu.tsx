@@ -8,9 +8,13 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorText, type Rule, type RuleAdded } from "@/lib/api";
-import { t as tPlain, useT } from "@/lib/i18n";
+import { type Key, t as tPlain, useT } from "@/lib/i18n";
 import { pendingQuery, toast } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
+
+const KIND_LABEL: Record<Rule["kind"], Key> = {
+  keyword: "Từ khóa", sender: "Bỏ qua người", priority: "Ưu tiên", relay: "Tự chuyển vào phiên", agent: "Tự giao AI Agent",
+};
 
 /** Rules that mark matching tags handled automatically (bots, announcements…), and the senders whose tags always go first
  *  ("Luôn ưu tiên", added from a tag's Hoãn menu). Lives in Settings. */
@@ -79,10 +83,13 @@ export function RulesSection() {
         {rules.data?.length === 0 && <li className="py-2.5 text-ink-3">{t("Chưa có quy tắc nào.")}</li>}
         {rules.data?.map((r) => (
           <li key={r.id} className="flex h-10 items-center gap-3 animate-in fade-in-0 duration-(--dur-short)">
-            <span className={cn("w-20 shrink-0 text-xs", r.kind === "priority" ? "font-medium text-ink-2" : "text-ink-3")}>
-              {r.kind === "priority" ? t("Ưu tiên") : r.kind === "sender" ? t("Bỏ qua người") : t("Từ khóa")}
+            <span className={cn("w-24 shrink-0 text-xs", r.kind === "keyword" || r.kind === "sender" ? "text-ink-3" : "font-medium text-ink-2")}>
+              {t(KIND_LABEL[r.kind])}
             </span>
-            <span className="min-w-0 flex-1 truncate text-ink">{r.kind === "keyword" ? r.value : r.label || `#${r.value}`}</span>
+            <span className="min-w-0 flex-1 truncate text-ink">
+              {r.kind === "keyword" ? r.value : r.label || `#${r.value}`}
+              {r.project && <span className="text-ink-3"> · {r.project.split("/").pop()}</span>}
+            </span>
             <Button size="icon-xs" variant="ghost" className="hover:bg-error-wash hover:text-error" aria-label={t("Xóa quy tắc")} disabled={remove.isPending}
               onClick={() => remove.mutate(r.id)}>
               <Trash2 />

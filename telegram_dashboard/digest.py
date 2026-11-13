@@ -71,7 +71,15 @@ ASK = """<briefing> holds the latest AI digests of the user's work groups (JSON 
 decisions, changes, impacts, confirmations = open questions, actions = to-dos, topics). Answer \
 the user's question from them only; say so when they do not cover it, never invent. Write in \
 Vietnamese markdown, short and scannable: bullets, the group name in bold before each point, \
-the most urgent first (what waits on the user, deadlines, blockers)."""
+the most urgent first (what waits on the user, deadlines, blockers).
+Sources (the dashboard turns them into buttons: open the message, reply, ticket, check the code): end every \
+point that comes from an item with ⟦<group id>:<first id of that item's message_ids>⟧, copied exactly from the \
+data, one per point, never invented; a point about a whole group without one item: ⟦<group id>⟧.
+Questions to ask someone (only when the user asks for them or they are the answer): a bold label line per group \
+and person, "**Hỏi <BE|PO|QC> · <group name>:** ⟦<group id>⟧", then each message ready to post as a quote \
+(`> `), numbered points, no ⟦⟧ inside the quote.
+Last, a line "**Hỏi tiếp:**" and 2-3 bullets: short follow-up questions the user may ask you next about this \
+data (next steps on your answer: what to settle first, what to ask whom, what to check), no ⟦⟧ in them."""
 
 
 def _names(who: str, sender: str | None) -> bool:
@@ -210,7 +218,8 @@ class DigestService:
         else:
             msgs = []
         too_many = len(msgs) > MAX_RUN  # before filtering: the range itself is too long
-        msgs = [m for m in msgs if m.chat_id == req.chat_id and not m.deleted and _text(m)]
+        skip = await self._ignored()
+        msgs = [m for m in msgs if m.chat_id == req.chat_id and not m.deleted and _text(m) and m.sender_id not in skip]
         if not msgs:
             raise ApiError(422, "digest_empty")
         chars = sum(len(_text(m)) for m in msgs)
@@ -309,12 +318,17 @@ class DigestService:
             res = DigestResult.model_validate_json(r["digest"]["result"])
             keep = res.model_dump(mode="json", include=set(KEYS), exclude_defaults=True)
             at = _dt(r["digest"]["created_at"]).astimezone(VN).strftime("%d/%m %H:%M")
-            data.append({"group": r["title"], "summarized_at": at, **keep})
+            data.append({"group": r["title"], "id": r["chat_id"], "summarized_at": at, **keep})
         if not data:
             raise ApiError(422, "briefing_empty")
         prompt = ASK + about_user(intro)
         prompt += f"\n<briefing>\n{data_json(data)}\n</briefing>\n\nCâu hỏi: {question}"
         return await self.ai.ask(prompt, on_text=on_text, feature="briefing", brief=True)
+
+    async def _ignored(self) -> set[str]:
+        """Senders under "Luôn bỏ qua" (sender rules): their messages are left out of digests and BE replies, as
+        out of the tag list."""
+        return {r["value"] for r in await self.db.read(self.store.list_rules) if r["kind"] == "sender"}
 
     async def answered(self) -> dict[str, list[str]]:
         """Per consented group: the ids its latest digest cites under "Cần confirm" / "Việc cần làm"
@@ -341,6 +355,7 @@ class DigestService:
     async def _read_all(self) -> dict[str, tuple[list[str], list[BeReply]]]:
         live = asyncio.Semaphore(4)
         now = datetime.now(UTC)
+        skip = await self._ignored()
 
         async def one(r: dict) -> tuple[str, tuple[list[str], list[BeReply]]]:
             res = DigestResult.model_validate_json(r["digest"]["result"])
@@ -358,7 +373,8 @@ class DigestService:
                 return r["chat_id"], ([], [])
             mine = {str(m.reply_to_id) for m in msgs if m.outgoing and m.reply_to_id}
             # since the digest, not part of the discussion it read
-            new = sorted((m for m in msgs if not m.outgoing and not m.deleted and str(m.message_id) not in cited),
+            new = sorted((m for m in msgs if not m.outgoing and not m.deleted and str(m.message_id) not in cited
+                          and m.sender_id not in skip),
                          key=lambda m: m.message_id)  # fmt: skip
             hits: list[BeReply] = []
             for it in (it for it in res.confirmations if it.be and it.message_ids):  # questions still open with BE

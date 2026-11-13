@@ -37,6 +37,7 @@
     --color-warn-wash: var(--color-warn-wash);
     --color-error: var(--color-error);
     --color-error-wash: var(--color-error-wash);
+    --color-badge: var(--color-badge);
     --color-info: var(--color-info);
     --color-info-wash: var(--color-info-wash);
     --color-code: var(--color-code);
@@ -133,6 +134,17 @@
     --sidebar-ring: var(--color-focus);
 }
 
+/* Zebra list: `zebra` on a list's container gives every other row a faint ink wash so neighbours separate (light and dark);
+   `zebra-in` washes the row's first child instead (a card inside a padded <li>, e.g. the ticket board). The wash is a
+   background-image, so it sits on top of a card's own background colour (bg-cotton) and of hover / picked states.
+   Separators / headings / drag ghosts ([role=separator], data-zebra-off, aria-hidden) are skipped and do not shift the count. */
+@layer components {
+  .zebra > :nth-child(even of :not([role="separator"], [data-zebra-off], [aria-hidden])),
+  .zebra-in > :nth-child(even of :not([role="separator"], [data-zebra-off], [aria-hidden])) > :first-child {
+    background-image: linear-gradient(color-mix(in oklch, var(--color-ink) 4%, transparent), color-mix(in oklch, var(--color-ink) 4%, transparent));
+  }
+}
+
 @layer base {
   * { @apply border-border; }
   kbd { font-family: var(--font-figure); font-size: var(--text-xs); }
@@ -214,19 +226,28 @@
 /* Page body entering (Settings): a short delay (held hidden by `both`) lets the mount's first busy frames pass, so the fade starts from 0 instead of popping in midway; a soft deceleration, not the expo --ease-out that spends itself in the first frames. */
 .page-in { animation: page-in var(--dur-long) var(--ease-emph) 40ms both; }
 @keyframes page-in { from { opacity: 0; translate: 0 8px; } }
+/* Children rising one after another (Settings: header then each card; the colour preview's rows), on mount and on every remount (key). */
+.rise-in > * { animation: rise-in var(--dur-long) var(--ease-emph) both; animation-delay: calc(40ms + var(--i, 0) * 70ms); }
+.rise-in > :nth-child(2) { --i: 1; } .rise-in > :nth-child(3) { --i: 2; } .rise-in > :nth-child(4) { --i: 3; }
+.rise-in > :nth-child(5) { --i: 4; } .rise-in > :nth-child(6) { --i: 5; } .rise-in > :nth-child(n+7) { --i: 6; }
+@keyframes rise-in { from { opacity: 0; translate: 0 14px; scale: 0.985; } }
 /* A detail page (reply composer) pushes in from the right; the list it covers comes back from the left when shown again
    (@starting-style also fires on display: none -> shown, so the kept-mounted list needs no remount). */
 .detail-in { animation: detail-in var(--dur-long) var(--ease-emph) 30ms both; }
 @keyframes detail-in { from { opacity: 0; translate: 1.5rem 0; } }
 .view-back { transition: opacity var(--dur-long) var(--ease-emph), translate var(--dur-long) var(--ease-emph); }
 @starting-style { .view-back { opacity: 0; translate: -1rem 0; } }
-@media (prefers-reduced-motion: reduce) { .page-in, .detail-in { animation: none; } .view-back { transition: none; } }
-/* Fold (Thay đổi file cards): rows 0fr -> 1fr, no height measuring; hidden once shut so nothing inside takes focus. */
+@media (prefers-reduced-motion: reduce) { .page-in, .detail-in, .rise-in > * { animation: none; } .view-back { transition: none; } }
+/* Fold (Thay đổi tree folders, file cards): rows 0fr -> 1fr, no height measuring; hidden once shut so nothing inside takes
+   focus. Opens slow on --ease-emph with the content settling down a few px; shuts quicker so a click feels answered. */
 .fold { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden;
-  transition: grid-template-rows var(--dur-long) var(--ease-emph), opacity var(--dur-short) var(--ease-out), visibility 0s linear var(--dur-long); }
-.fold[data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+  transition: grid-template-rows var(--dur-short) var(--ease-in-out), opacity var(--dur-short) var(--ease-in-out), visibility 0s linear var(--dur-short); }
+.fold[data-open] { grid-template-rows: 1fr; opacity: 1; visibility: visible;
+  transition: grid-template-rows var(--dur-long) var(--ease-emph), opacity var(--dur-long) var(--ease-emph), visibility 0s; }
 .fold > * { min-height: 0; overflow: hidden; }
-@media (prefers-reduced-motion: reduce) { .fold { transition: none; } }
+.fold > * > * { translate: 0 -0.375rem; transition: translate var(--dur-short) var(--ease-in-out); }
+.fold[data-open] > * > * { translate: 0 0; transition: translate var(--dur-long) var(--ease-emph); }
+@media (prefers-reduced-motion: reduce) { .fold, .fold > * > * { transition: none; } }
 
 /* Popups (ui/dialog, ui/palette). base-ui marks the first frame [data-starting-style] and closing [data-ending-style], so these are
    interruptible transitions, not keyframes: open on --ease-emph over --dur-long, close quicker on --ease-in.
@@ -315,6 +336,10 @@
 @keyframes sk-pop { from { scale: 0; opacity: 0; } }
 .sk-caret { animation: sk-caret 1s steps(1) infinite; }
 @keyframes sk-caret { 50% { opacity: 0; } }
+/* AI vẽ linh vật (MascotDraw in settings.tsx): the sketch draws itself stroke by stroke, holds, fades, starts over */
+.mascot-sketch { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mascot-sketch 2.6s ease-in-out infinite; }
+@keyframes mascot-sketch { 45%, 80% { stroke-dashoffset: 0; opacity: 1; } to { stroke-dashoffset: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mascot-sketch { animation: none; stroke-dashoffset: 0; } }
 /* the robot's orbiting sparkle (Bot ring in ai/fetching.tsx) */
 .ai-spin { animation: ai-spin 3s linear infinite; }
 @keyframes ai-spin { to { rotate: 360deg; } }
@@ -351,6 +376,50 @@
   -webkit-background-clip: text; background-clip: text; animation: ai-text 1.8s linear infinite; }
 @keyframes ai-text { from { background-position: 100% 0; } to { background-position: 0 0; } }
 @media (prefers-reduced-motion: reduce) { .ai-ring::before, .ai-text { animation: none; } }
+
+/* Trợ lý biết tuốt (components/guide.tsx). gb-orb: the bot's glassy bubble — a gradient ring orbiting (::before), a glossy
+   face (::after), a glow; it pops in with a bounce, bobs, and the bot wiggles now and then (hops when hovered). gb-ping: a
+   soft ring calling out. gb-hero: the chat's header wash with drifting blobs. */
+.gb-orb { isolation: isolate; /* positioned by its markup: fixed (launcher) or relative (header) */ border-radius: 9999px;
+  box-shadow: 0 10px 28px -8px color-mix(in oklch, var(--color-hl) 60%, transparent), 0 2px 6px -2px color-mix(in oklch, var(--color-ink) 25%, transparent);
+  animation: gb-pop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 0.18s backwards, gb-bob 3.4s ease-in-out 0.9s infinite; }
+.gb-orb::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  background: conic-gradient(from var(--ai-a), var(--color-hl), var(--color-info), var(--color-hl-2), color-mix(in oklch, var(--color-hl) 30%, var(--color-cotton)), var(--color-hl));
+  animation: ai-orbit 4s linear infinite; }
+.gb-orb::after { content: ""; position: absolute; inset: 2.5px; z-index: -1; border-radius: inherit;
+  background: radial-gradient(circle at 32% 24%, color-mix(in oklch, white 70%, transparent) 0 14%, transparent 42%),
+    radial-gradient(circle at 50% 115%, color-mix(in oklch, var(--color-hl) 28%, var(--color-cotton)), var(--color-cotton) 72%); }
+.gb-orb .gb-bot { transform-box: fill-box; transform-origin: 50% 90%; animation: gb-wiggle 7s ease-in-out 2s infinite; }
+.gb-orb:hover .gb-bot, .gb-orb:focus-visible .gb-bot { animation: gb-excite 0.7s ease-in-out; }
+/* let go: glides onto its edge with a little overshoot, then lands (a squash, guide.tsx LAND); while dragged: lifted, follows the
+   pointer with no lag (gb-drag) */
+button.gb-orb { transition: left 0.55s cubic-bezier(0.34, 1.45, 0.64, 1), top 0.55s cubic-bezier(0.34, 1.45, 0.64, 1),
+  scale var(--dur-short) var(--ease-out), translate var(--dur-long) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
+button.gb-orb:active { scale: 0.9; }
+button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); scale: 1.12; cursor: grabbing;
+  box-shadow: 0 18px 36px -10px color-mix(in oklch, var(--color-hl) 70%, transparent), 0 4px 10px -4px color-mix(in oklch, var(--color-ink) 30%, transparent); }
+/* gb-still: no bob (top bar button, the right-edge bot). gb-peek: half tucked behind the right edge, slides out on hover. */
+.gb-orb.gb-still { animation: gb-pop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) 0.18s backwards; }
+.gb-peek { translate: 45% 0; }
+.gb-peek:hover, .gb-peek:focus-visible { translate: 0 0; }
+@keyframes gb-pop { 0% { scale: 0; rotate: -30deg; opacity: 0; } 60% { scale: 1.15; rotate: 8deg; opacity: 1; } 80% { scale: 0.95; rotate: -3deg; } }
+@keyframes gb-bob { 50% { translate: 0 -5px; } }
+@keyframes gb-wiggle { 0%, 84%, 100% { transform: none; } 87% { transform: translateY(-3px) rotate(-12deg); } 90% { transform: translateY(0) rotate(10deg); }
+  93% { transform: translateY(-1.5px) rotate(-6deg); } 96% { transform: rotate(3deg); } }
+@keyframes gb-excite { 25% { transform: translateY(-18%) rotate(-10deg) scale(1.08); } 50% { transform: translateY(0) rotate(8deg) scale(0.96); }
+  75% { transform: translateY(-6%) rotate(-4deg); } }
+.gb-ping { position: absolute; inset: 0; z-index: -2; border-radius: inherit; box-shadow: 0 0 0 2px var(--color-hl); opacity: 0;
+  animation: gb-ping 3.6s cubic-bezier(0.2, 0.6, 0.3, 1) 1.2s infinite; }
+@keyframes gb-ping { 0% { scale: 1; opacity: 0.55; } 55%, 100% { scale: 1.7; opacity: 0; } }
+.gb-spark { position: absolute; pointer-events: none; fill: currentColor; animation: ai-twinkle 1.6s ease-in-out infinite; }
+.gb-hero { background: linear-gradient(135deg, color-mix(in oklch, var(--color-hl) 18%, var(--color-paper)), color-mix(in oklch, var(--color-info) 14%, var(--color-paper)) 70%, var(--color-paper)); }
+.gb-blob { position: absolute; z-index: 0; border-radius: 9999px; filter: blur(18px); opacity: 0.55; pointer-events: none; animation: gb-drift 9s ease-in-out infinite alternate; }
+@keyframes gb-drift { to { translate: var(--gx, 30px) var(--gy, 12px); scale: 1.25; } }
+.gb-online { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-ok) 60%, transparent); animation: gb-online 2s ease-out infinite; }
+@keyframes gb-online { 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+.gb-in { animation: gb-in 0.45s cubic-bezier(0.3, 1.4, 0.5, 1) backwards; }
+@keyframes gb-in { from { opacity: 0; translate: 0 10px; scale: 0.9; } }
+@media (prefers-reduced-motion: reduce) { button.gb-orb { transition: none; } .gb-orb::before, .gb-orb .gb-bot, .gb-orb:hover .gb-bot, .gb-ping, .gb-spark, .gb-blob, .gb-online, .gb-in { animation: none; } }
 
 /* Sidebar AI plug (components/ai-plug.tsx). --back = how far the plug sits back from the socket: it slides the jack and trims
    the wire's end by the same amount (dash 116 = the wire's length), so cable and plug always meet. */

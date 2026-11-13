@@ -16,7 +16,8 @@ import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug
 import { Card, Label, Markdown, Prio, StatePill, Tag } from "./bits";
 import { Segmented } from "@/components/ui/segmented";
 import { Hint } from "@/components/ui/hint";
-import { Aging, Attention, Kpis, Progress, useQc, useStats, Wip } from "./dashboard";
+import { day0 } from "@/lib/yt-stats";
+import { Aging, Attention, Kpis, Progress, QcState, useQc, useStats, Wip } from "./dashboard";
 import { ReportCard } from "./report";
 import { setPerson } from "./sheet";
 import { useYt } from "./state";
@@ -40,7 +41,7 @@ function weekData(rows: Ticket[], now: number) {
   const n = (f: (i: Ticket) => boolean) => rows.filter(f).length;
   return {
     days: 7, done: n((i) => !!i.resolved && i.resolved >= from), created: n((i) => i.created >= from),
-    bugsFixed: n((i) => i.type === "Bug" && !!i.resolved && i.resolved >= from), bugsNew: n((i) => i.type === "Bug" && i.created >= from), people,
+    bugsFixed: n((i) => isBug(i) && !!i.resolved && i.resolved >= from), bugsNew: n((i) => isBug(i) && i.created >= from), people,
   };
 }
 
@@ -167,10 +168,10 @@ export function DevHome() {
       <div className="grid content-start gap-4">
         {/* the figures are the list's lens: one card, a click narrows "Hôm nay làm gì" below */}
         <LensBar label={t("Lọc danh sách hôm nay")} value={lens} onChange={setLens} lenses={(Object.keys(LENS) as Lens[]).map((l) => [l, LENS[l][0],
-          l === "all" ? mine.length : l === "test" ? y.rows.filter((i) => !i.resolved && LENS.test[1](i)).length : mine.filter(LENS[l][1]).length,
+          l === "all" ? list.length : l === "test" ? y.rows.filter((i) => !i.resolved && LENS.test[1](i)).length : mine.filter(LENS[l][1]).length,
           l === "block" ? "text-error" : l === "test" || l === "risk" ? "text-signal-2" : ""])} />
         <Card title={t("Hôm nay làm gì")} meta={lens === "all" ? t("{n} ticket, xếp theo mức gấp", { n: list.length }) : <button type="button" onClick={() => setLens("all")} className="hover:text-ink">{t("{x}: {n}, bỏ lọc", { x: LENS[lens][0], n: shown.length })}</button>}>
-          <FocusList key={lens} list={shown} top={lens === "all" ? t("Làm ngay") : ""} empty={lens === "all" ? t(own ? "Không có ticket nào đang mở của bạn." : "Không có ticket nào đang mở trong phạm vi.") : t("Không có ticket nào ở mục này.")} />
+          <FocusList key={lens} list={shown} now={now} top={lens === "all" ? t("Làm ngay") : ""} empty={lens === "all" ? t(own ? "Không có ticket nào đang mở của bạn." : "Không có ticket nào đang mở trong phạm vi.") : t("Không có ticket nào ở mục này.")} />
         </Card>
       </div>
       <div className="grid content-start gap-4">
@@ -184,9 +185,9 @@ export function DevHome() {
         )}
         <Card title={t("Mới cập nhật")} meta={t(own ? "ticket của bạn" : "ticket trong phạm vi")}>
           {recent.length ? (
-            <ul className="grid gap-0.5">
+            <ul className="zebra grid gap-0.5">
               {recent.map((i) => (
-                <li key={i.id}><button type="button" onClick={() => y.openTicket(i.id, recent)} className="grid w-full gap-1 rounded-md px-2 py-1.5 text-left hover:bg-paper-2">
+                <li key={i.id} className="rounded-md"><button type="button" onClick={() => y.openTicket(i.id, recent)} className="grid w-full gap-1 rounded-md px-2 py-1.5 text-left hover:bg-paper-2">
                   <Title i={i} clamp="truncate" />
                   <span className="flex items-center gap-2 text-xs"><span className="font-mono text-ink-3">{i.id}</span><StatePill state={i.state} /><span className="ml-auto text-ink-3">{when(i.updated)}</span></span>
                 </button></li>
@@ -201,7 +202,7 @@ export function DevHome() {
 }
 
 /** Figures that are also the list's lens: a click narrows the list below, a second click (or "all") clears it. */
-function LensBar<L extends string>({ label, lenses, value, onChange }: { label: string; lenses: [L, string, number, string][]; value: L; onChange: (l: L) => void }) {
+function LensBar<L extends string>({ label, lenses, value, onChange }: { label: string; lenses: [L, string, number | null, string][]; value: L; onChange: (l: L) => void }) {
   const all = lenses[0][0];
   return (
     <div role="radiogroup" aria-label={label} className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] divide-x divide-rule overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock max-sm:grid-cols-3 max-sm:divide-x-0">
@@ -210,7 +211,7 @@ function LensBar<L extends string>({ label, lenses, value, onChange }: { label: 
           className={cn("relative grid justify-items-start gap-0.5 px-3 py-2.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2", value === l && l !== all && "bg-hl-wash")}>
           {value === l && l !== all && <i aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-hl" />}
           <span className="max-w-full truncate text-xs text-ink-3">{name}</span>
-          <b className={cn("font-mono text-2xl font-medium tabular-nums", n > 0 && tone)}>{n}</b>
+          <b className={cn("font-mono text-2xl font-medium tabular-nums", n == null ? "text-error" : n > 0 && tone)}>{n ?? "—"}</b>
         </button>
       ))}
     </div>
@@ -221,7 +222,7 @@ function LensBar<L extends string>({ label, lenses, value, onChange }: { label: 
 export const PAGE = 20;
 
 /** The ranked list, 20 a page: page 1 opens with the "top" few; numbers stay global. Pages slide in the direction moved. */
-function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: string }) {
+function FocusList({ list, top, empty, now }: { list: Focus[]; top: string; empty: string; now: number }) {
   const t = useT();
   const [[page, dir], setPage] = useState([0, 0]);
   const calm = useReducedMotion();
@@ -247,11 +248,11 @@ function FocusList({ list, top, empty }: { list: Focus[]; top: string; empty: st
           {parts.map(([h, part, base]) => part.length > 0 && (
             <div key={h} className="grid gap-1.5">
               {h && <Label>{h}<span className="font-normal tabular-nums">{part.length}</span></Label>}
-              <ol className={cn("grid", top && p === 0 && base === 0 ? "gap-0.5 rounded-lg bg-hl-wash/50 p-1 ring-1 ring-hl/20" : "divide-y divide-rule/60")}>
+              <ol className={cn("grid", top && p === 0 && base === 0 ? "gap-0.5 rounded-lg bg-hl-wash/50 p-1 ring-1 ring-hl/20" : "zebra divide-y divide-rule/60")}>
                 {part.map(({ i, why }, k) => (
                   <motion.li key={i.id} layout="position" initial={{ opacity: 0, y: calm ? 0 : 4 }} animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(base - from + k, 12) * 0.02, duration: 0.2, layout: { duration: 0.25 } }}>
-                    <FocusRow i={i} why={why} n={base + k + 1} all={all} top={!!top && p === 0 && base === 0} />
+                    <FocusRow i={i} why={why} n={base + k + 1} all={all} top={!!top && p === 0 && base === 0} now={now} />
                   </motion.li>
                 ))}
               </ol>
@@ -336,10 +337,10 @@ export function QaHome() {
           </button>
         )}
         <LensBar label={t("Lọc hàng đợi kiểm thử")} value={lens} onChange={setLens}
-          lenses={(Object.keys(LENS) as QaLens[]).map((l) => [l, LENS[l][0], ranked.filter((x) => LENS[l][1](x.i)).length, LENS[l][2]])} />
+          lenses={(Object.keys(LENS) as QaLens[]).map((l) => [l, LENS[l][0], l === "retest" && qc.q.isError ? null : ranked.filter((x) => LENS[l][1](x.i)).length, LENS[l][2]])} />
         <Card title={t(lens === "mybugs" ? "Bug tôi đã log, còn mở" : lens === "bugs" || lens === "critical" ? "Bug cần xử lý" : "Hàng đợi test")}
           meta={lens === "queue" ? t("{n} ticket, xếp theo mức gấp", { n: shown.length }) : <button type="button" onClick={() => setLens("queue")} className="hover:text-ink">{t("{x}: {n}, bỏ lọc", { x: LENS[lens][0], n: shown.length })}</button>}>
-          <FocusList key={lens} list={shown} top={lens === "queue" ? t("Test ngay") : ""} empty={t("Không có ticket nào ở mục này.")} />
+          <FocusList key={lens} list={shown} now={now} top={lens === "queue" ? t("Test ngay") : ""} empty={t("Không có ticket nào ở mục này.")} />
         </Card>
       </div>
       <div className="grid content-start gap-4">
@@ -387,9 +388,8 @@ function Title({ i, clamp }: { i: Ticket; clamp: string }) {
   );
 }
 
-function FocusRow({ i, why, n, all, top }: { i: Ticket; why: string[]; n: number; all: Ticket[]; top: boolean }) {
+function FocusRow({ i, why, n, all, top, now }: { i: Ticket; why: string[]; n: number; all: Ticket[]; top: boolean; now: number }) {
   const y = useYt();
-  const now = useNow();
   const hot = isBlocked(i) || (!!i.due && i.due < now) || rank(i) <= 1;
   return (
     <button type="button" onClick={() => y.openTicket(i.id, all)}
@@ -446,9 +446,9 @@ export function PoHome() {
         <div className="grid content-start gap-4">
           <Card title={t("Chờ PO chốt")} meta="define / confirm">
             {waitPo.length ? (
-              <ul className="grid gap-0.5">
+              <ul className="zebra grid gap-0.5">
                 {waitPo.slice(0, 8).map((i) => (
-                  <li key={i.id}><button type="button" onClick={() => y.openTicket(i.id, waitPo)} className="grid w-full gap-1 rounded-md px-2 py-1.5 text-left hover:bg-paper-2">
+                  <li key={i.id} className="rounded-md"><button type="button" onClick={() => y.openTicket(i.id, waitPo)} className="grid w-full gap-1 rounded-md px-2 py-1.5 text-left hover:bg-paper-2">
                     <Title i={i} clamp="truncate" />
                     <span className="flex items-center gap-2 text-xs"><span className="font-mono text-ink-3">{i.id}</span><StatePill state={i.state} /><Prio p={i.priority} /><span className="ml-auto text-ink-3">{when(i.updated)}</span></span>
                   </button></li>
@@ -471,10 +471,11 @@ function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting
   const y = useYt();
   const t = useT();
   const now = useNow();
-  if (!y.me || !qc.q.data) return null;
-  const today = new Date(now).setHours(0, 0, 0, 0);
+  if (!y.me) return null;
+  if (!qc.q.data) return <Card title={t("Kết quả test của tôi")}><QcState q={qc.q} /></Card>;
+  const today = day0(now);
   const of = (from: number) => {
-    const v = [...qc.pass, ...qc.fail].filter((x) => x.by === y.me && x.at >= from);
+    const v = qc.mine.filter((x) => x.at >= from);
     const ids = (k: "pass" | "fail") => [...new Set(v.filter((x) => x.kind === k).map((x) => x.id))];
     return { n: new Set(v.map((x) => x.id)).size, pass: ids("pass"), fail: ids("fail") };
   };
@@ -494,9 +495,9 @@ function QcMine({ qc, waiting, retest }: { qc: ReturnType<typeof useQc>; waiting
             <dt className="text-xs text-ink-3">{t(l)}</dt>
             <dd className="font-mono text-2xl tabular-nums">{r.n}</dd>
             <dd className="text-xs text-ink-3"><button type="button" disabled={!r.pass.length} className="text-ok enabled:hover:underline"
-              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã pass: {x}", { x: t(l) }), rows: r.pass.map((id) => qc.byId.get(id)!) })}>{r.pass.length} pass</button>
+              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã pass: {x}", { x: t(l) }), rows: r.pass.map((id) => qc.rowOf.get(id)!) })}>{r.pass.length} pass</button>
               {", "}<button type="button" disabled={!r.fail.length} className={cn(r.fail.length && "text-error", "enabled:hover:underline")}
-              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã trả lại: {x}", { x: t(l) }), rows: r.fail.map((id) => qc.byId.get(id)!) })}>{t("{n} trả", { n: r.fail.length })}</button></dd>
+              onClick={() => y.setSheet({ kind: "list", title: t("Tôi đã trả lại: {x}", { x: t(l) }), rows: r.fail.map((id) => qc.rowOf.get(id)!) })}>{t("{n} trả", { n: r.fail.length })}</button></dd>
           </div>
         ))}
       </dl>
@@ -547,7 +548,7 @@ function QcSplit({ open }: { open: Ticket[] }) {
       <Button size="xs" variant="ghost" onClick={() => void copyText(text, t("Đã chép phân công"))}><Copy /> Copy</Button>
     </span>}>
       <p className="text-xs text-ink-3">{t("{n} ticket chờ test chưa có QC, giao cho người đang giữ ít ticket test nhất. Bấm “Gán” để đặt QC trên YouTrack.", { n: plan.length })}</p>
-      <ol className="grid grid-cols-1 divide-y divide-rule/60">
+      <ol className="zebra grid grid-cols-1 divide-y divide-rule/60">
         {plan.slice(0, 12).map((x) => (
           <li key={x.i.id} className="flex items-center gap-2">
             <button type="button" onClick={() => y.openTicket(x.i.id, plan.map((p) => p.i))} className="flex min-w-0 flex-1 items-baseline gap-2 py-1.5 text-left text-sm hover:text-hl-2">

@@ -66,6 +66,21 @@ export function takeWantEdit(taskId: string) {
   if (editWanted.delete(taskId)) subs.forEach((f) => f());
 }
 
+// Who confirmed: roles of the Q&A threads ("#QA_PO_…") an attached answer sits in. The composer adds "PO đã confirm"
+// to its prompt once, then it is the user's text.
+const confirmed = new Map<string, string[]>();
+const NO_ROLES: string[] = [];
+export function wantConfirm(taskId: string, roles: string[]) {
+  if (!roles.length) return;
+  confirmed.set(taskId, [...new Set([...(confirmed.get(taskId) ?? NO_ROLES), ...roles])]);
+  subs.forEach((f) => f());
+}
+export const useConfirm = (taskId: string) =>
+  useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => confirmed.get(taskId) ?? NO_ROLES, () => NO_ROLES);
+export function takeConfirm(taskId: string) {
+  if (confirmed.delete(taskId)) subs.forEach((f) => f());
+}
+
 export const useRefs = (taskId: string) =>
   useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => drafts.get(taskId) ?? NONE, () => NONE);
 

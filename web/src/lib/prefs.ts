@@ -29,8 +29,9 @@ export function put(key: string, value: string | null) {
 
 /** Save one preference (null removes it) and tell open views (wait labels re-render with a new threshold). */
 export function setPref(key: string, value: string | null) {
-  put(key, value);
+  const ok = put(key, value);
   dispatchEvent(new Event("prefs"));
+  return ok;
 }
 
 /** A stored JSON value, else `fallback` (missing, unreadable or not JSON). */
@@ -71,15 +72,40 @@ export function applyTheme(pref: ThemePref, save = true) {
 
 /** Each member's look (Cài đặt chung), saved per browser; the boot script in app/layout.tsx (window.applyLook) applies it before first paint and in every open tab. */
 export type UiStyle = "simple" | "default" | "vivid";
-export type Look = { style: UiStyle; hue: number; hue2: number; gradient: boolean; font: FontId; size: FontSizeId };
+/** `chroma`: the member's strength multiplier on the highlight (--hl-k, on top of the style's --hl-c). */
+export type Look = { style: UiStyle; hue: number; hue2: number; chroma: number; gradient: boolean; font: FontId; size: FontSizeId };
 /** Preset highlight hues; the slider reaches the rest. */
 export const ACCENTS = [[40, "Đất nung"], [355, "Hồng"], [305, "Tím"], [255, "Xanh dương"], [195, "Xanh ngọc"], [145, "Xanh lá"]] as const;
+/** Preset gradient pairs (hue, hue2): one click turns Gradient on with both. Kept off the amber 60–100 band. */
+export const MIXES = [[40, 355, "Hoàng hôn"], [255, 195, "Đại dương"], [305, 355, "Hoa cà"], [145, 195, "Bạc hà"], [255, 305, "Thiên hà"], [20, 305, "Mận chín"]] as const;
+export const CHROMA_MIN = 0.3, CHROMA_MAX = 1.8;
 const hue = (v: unknown, d: number) => { const n = parseFloat(String(v)); return n >= 0 && n < 360 ? n : d; };
+const clampChroma = (n: number) => Math.min(CHROMA_MAX, Math.max(CHROMA_MIN, n));
+
+// sRGB hex <-> OKLCH (Björn Ottosson's OKLab), so the native colour picker can set the hue and strength.
+const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const gam = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+/** A picked colour as the accent: its hue, and its chroma against the light token's 0.135 (clamped). */
+export function hexToAccent(hex: string): { hue: number; chroma: number } {
+  const [r, g, b] = [1, 3, 5].map((i) => lin(parseInt(hex.slice(i, i + 2), 16) / 255));
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  const A = 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, B = 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s;
+  return { hue: Math.round(((Math.atan2(B, A) * 180) / Math.PI + 360) % 360) % 360, chroma: clampChroma(Math.round((Math.hypot(A, B) / 0.135) * 20) / 20) };
+}
+/** oklch(L c h) as #rrggbb (gamut clipped), for the colour input's value. */
+export function oklchHex(L: number, C: number, H: number): string {
+  const h = (H * Math.PI) / 180, A = C * Math.cos(h), B = C * Math.sin(h);
+  const l = (L + 0.3963377774 * A + 0.2158037573 * B) ** 3, m = (L - 0.1055613458 * A - 0.0638541728 * B) ** 3, s = (L - 0.0894841775 * A - 1.291485548 * B) ** 3;
+  const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+  return "#" + rgb.map((c) => Math.round(Math.min(1, Math.max(0, gam(c))) * 255).toString(16).padStart(2, "0")).join("");
+}
 export function readLook(): Look {
   const s = getPref("uiStyle");
   const f = FONTS.find((x) => x.id === getPref("font"))?.id ?? DEFAULT_FONT;
   const z = FONT_SIZES.find((x) => x.id === getPref("fontSize"))?.id ?? DEFAULT_FONT_SIZE;
-  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), gradient: getPref("gradient") === "1", font: f, size: z };
+  return { style: s === "simple" || s === "vivid" ? s : "default", hue: hue(getPref("accent"), 40), hue2: hue(getPref("accent2"), 355), chroma: clampChroma(parseFloat(getPref("accentC") ?? "") || 1), gradient: getPref("gradient") === "1", font: f, size: z };
 }
 export function saveLook(l: Look) {
   put("uiStyle", l.style === "default" ? null : l.style);
@@ -87,6 +113,7 @@ export function saveLook(l: Look) {
   put("fontSize", l.size === DEFAULT_FONT_SIZE ? null : l.size);
   put("accent", String(l.hue));
   put("accent2", String(l.hue2));
+  put("accentC", l.chroma === 1 ? null : String(l.chroma));
   put("gradient", l.gradient ? "1" : "0");
   window.applyLook?.();
 }
@@ -148,6 +175,25 @@ export const readQuotaAgent = () => getPref("quotaAgent") ?? "";
 export const useQuotaAgent = () => useSyncExternalStore(onPrefs, readQuotaAgent, () => "");
 export const saveQuotaAgent = (v: string) => setPref("quotaAgent", v || null);
 
+// The know-it-all bot (components/guide; Cài đặt › Chung › Trợ lý biết tuốt): shown or F1 only, how it shows (floating,
+// fixed at the right, in the top bar), size, where it docks (a corner, or any point along an edge: dragging docks it to the
+// nearest edge), and whether the AI may read the app's code (slower, knows the rules).
+export const BOT_SIZES = { s: 40, m: 48, l: 60 } as const;
+export type BotSize = keyof typeof BOT_SIZES;
+export type BotCorner = "tl" | "tr" | "bl" | "br";
+export type BotMode = "float" | "side" | "bar";
+export const readBotShow = () => getPref("botShow") !== "0";
+export const readBotMode = (): BotMode => { const v = getPref("botMode"); return v === "side" || v === "bar" ? v : "float"; };
+export const readBotSize = (): BotSize => { const v = getPref("botSize"); return v === "s" || v === "l" ? v : "m"; };
+/** A corner ("tl"…), or "x,y": the bot's centre as fractions of the viewport, 0 / 1 on the edge it hugs (guide.tsx parses it). */
+export const readBotDock = () => getPref("botCorner") ?? "br";
+export const readBotCode = () => getPref("botCode") !== "0";
+export const useBotShow = () => useSyncExternalStore(onPrefs, readBotShow, () => false);
+export const useBotMode = () => useSyncExternalStore(onPrefs, readBotMode, () => "float" as const);
+export const useBotSize = () => useSyncExternalStore(onPrefs, readBotSize, () => "m" as const);
+export const useBotDock = () => useSyncExternalStore(onPrefs, readBotDock, () => "br");
+export const useBotCode = () => useSyncExternalStore(onPrefs, readBotCode, () => true);
+
 /** Angle the assistant analyses tags from; sent with every /ai/draft. */
 export const PLATFORMS = [["android", "Android"], ["ios", "iOS"], ["mobile", "Mobile chung"], ["any", "Không giới hạn"]] as const;
 export type Platform = (typeof PLATFORMS)[number][0];
@@ -183,6 +229,12 @@ export const aboutMe = () => ({ role: readYtRole(), platform: readPlatform(), in
 export const saveYtRole = (r: YtRole | null) => setPref("ytMode", r);
 /** Re-render on a saved preference, here or in another tab. */
 export const onPrefs = (f: () => void) => { addEventListener("prefs", f); addEventListener("storage", f); return () => { removeEventListener("prefs", f); removeEventListener("storage", f); }; };
+/** The AI mascot wherever the robot shows (Cài đặt chung › Linh vật AI): "" = the robot, else an emoji or an uploaded image (data: URL). */
+export const MASCOTS = ["🐱", "🦊", "🐼", "🦉", "🐙", "👾", "🧠", "✨"] as const;
+/** Bytes an uploaded mascot may have: it lives in localStorage (~5 MB for every pref). */
+export const MASCOT_MAX = 300_000;
+export const readMascot = () => getPref("mascot") ?? "";
+export const useMascot = () => useSyncExternalStore(onPrefs, readMascot, () => "");
 /** The role, live; null = not chosen (Telegram then acts as Dev). */
 export const useRole = () => useSyncExternalStore(onPrefs, readYtRole, () => null);
 /** QA and PO never work in a code folder: no AI Agent, no project picker. */

@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { createContext, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api, errorText, type HandledAllResponse, type Message, type PendingItem, type RuleAdded, type Task } from "@/lib/api";
 import { type Key, t } from "@/lib/i18n";
-import { getPref, put, readOverdueHours } from "@/lib/prefs";
+import { aboutMe, getPref, put, readAgentProject, readOverdueHours } from "@/lib/prefs";
 import { byUnit, timeLabel } from "@/lib/time";
 
 /** Pending tags across groups (or the pinned archive); one cache shared by the inbox and the sidebar. */
@@ -81,6 +81,12 @@ export function telegramLink(m: Message) {
 export const dbId = (m: Message) => `${m.chat_id}/${m.message_id}`;
 /** Row identity across groups ("chat:message"): message ids only count up per chat. Also a row's `data-key`. */
 export const msgKey = (m: { chat_id: string | null; message_id: string | null }) => `${m.chat_id}:${m.message_id}`;
+
+/** YouTrack IDs (VA-123) in a text, not inside a word. */
+export const TICKET_IDS = /(?<![\w-])[A-Z][A-Z0-9]{1,9}-\d{1,6}(?!\w)/g;
+/** The first few ticket IDs a text names, of projects YouTrack knows (`known`: its projects; none while they load). */
+export const ticketsIn = (text: string, known: readonly { shortName: string }[] | undefined, max = 3) =>
+  known ? [...new Set(text.match(TICKET_IDS) ?? [])].filter((id) => known.some((p) => p.shortName === id.split("-")[0])).slice(0, max) : [];
 
 /** Scroll behaviour that respects reduced motion. */
 export const smooth = (): ScrollBehavior => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
@@ -217,6 +223,23 @@ export async function ignoreSender(m: Message) {
 
 /** "Luôn ưu tiên {tên}": their tags sort first in Việc cần xử lý and turn overdue at half the time (replaces a "Luôn bỏ
  *  qua" on the same sender); Undo deletes the rule. */
+/** Where a session stands, from its last answer's Trạng thái (ai.task_state): AI Agent list and Hôm nay. */
+export const TASK_STATE: Record<NonNullable<Task["state"]>, Key> = { waiting: "Chờ trả lời", done: "Có thể Done", you: "Cần bạn xem" };
+
+/** Vòng BE tự chạy (autobe.py): "relay" takes the sender's answers to a session's asks into that session; "agent" opens a
+ *  read-only session on each new tag of theirs, in the project last picked for Giao AI Agent. */
+export async function autoSender(m: Message, kind: "relay" | "agent") {
+  const name = m.sender_name ?? t("người này");
+  const project = readAgentProject();
+  if (kind === "agent" && !project) return toast({ text: t("Mở Giao AI Agent một lần để chọn dự án trước") });
+  const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind, value: m.sender_id, label: name, project, ...aboutMe() } });
+  toast({
+    text: kind === "relay" ? t("Trả lời của {name} cho câu hỏi của phiên AI sẽ tự chạy tiếp trong phiên đó", { name })
+      : t("Tin mới của {name} sẽ tự mở phiên AI Agent (chỉ đọc) ở {project}", { name, project: project.split("/").pop() ?? project }),
+    undo: () => api<void>(`/rules/${r.rule.id}`, { method: "DELETE" }),
+  });
+}
+
 export async function prioritizeSender(m: Message) {
   const name = m.sender_name ?? t("người này");
   const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "priority", value: m.sender_id, label: name } });
@@ -224,10 +247,15 @@ export async function prioritizeSender(m: Message) {
 }
 
 /** "Nhắc lại sau": reopen a tag (answered or done) and keep it hidden until `until`, when it comes back to Việc cần xử
- *  lý ("để mình check rồi báo" stays on your list). Undo marks it done again, quietly. */
+ *  lý ("để mình check rồi báo" stays on your list). Undo puts back how it was (done as before, or open), without
+ *  closing its Q&A or sessions as Xong would. */
 export async function remind(m: Pick<Message, "chat_id" | "message_id">, until: Date) {
-  await api<void>(`/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/remind`, { method: "PUT", json: { until: until.toISOString() } });
-  toast({ text: t("Sẽ nhắc lại tin này lúc {time}", { time: timeLabel(until.toISOString()) }), undo: () => markHandled(m, true, false) });
+  const url = `/chats/${encodeURIComponent(m.chat_id)}/messages/${m.message_id}/remind`;
+  const { was } = await api<{ was: Message["handled_by"] }>(url, { method: "PUT", json: { until: until.toISOString() } });
+  toast({
+    text: t("Sẽ nhắc lại tin này lúc {time}", { time: timeLabel(until.toISOString()) }),
+    undo: () => api<unknown>(url, { method: "PUT", json: was ? { until: null, restore: was } : { until: null } }),
+  });
 }
 
 // Reply drafts, per tag, in this browser only (never sent to the server). A tag marked done here drops its draft;
@@ -283,18 +311,22 @@ export function useTaskList() {
   });
 }
 
-/** Short ID of an AI Agent session ("REF-e03a28"): the random tail of its id, shown and searched. A neutral prefix, so
- *  asks posted to groups don't read as AI-made; asks posted before carry the old "AI-". */
-/** Telegram's tag by name (someone without a @username): the send turns it into a mention entity (telegram.split_mentions). */
+/** Telegram's tag by name (someone without a @username): the send turns it into a mention entity (telegram.split_format). */
 export const nameTag = (name: string, id: string) => `[${name.replace(/[[\]]/g, "")}](tg://user?id=${id})`;
 /** How a message to this sender tags them (the AI copies it into its asks; ai.who on the server): null for me / unknown. */
 export const tagOf = (m: Pick<Message, "outgoing" | "sender_id" | "sender_name" | "sender_username">) =>
   m.outgoing ? null : m.sender_username ? `@${m.sender_username}` : m.sender_name && /^\d+$/.test(m.sender_id ?? "") ? nameTag(m.sender_name, m.sender_id!) : null;
-export const sessionId = (t: { id: string }) => `REF-${t.id.slice(-6)}`;
+/** Short ID of an AI session ("REF-e03a28"): the random tail of its id, shown, copied and searched (also in Cài đặt › AI ›
+ *  Lịch sử chạy). AI Agent: a neutral "REF", so asks posted to groups don't read as AI-made (old ones carry "AI-");
+ *  YouTrack AI history: "YT". The server logs the same code (agent.session_ref, yt_dashboard.SESSION_REF). */
+export const sessionId = (t: { id: string }, prefix: "REF" | "YT" = "REF") => `${prefix}-${t.id.slice(-6)}`;
 /** "#REF-97c501" (or the old "#AI-97c501") in a message; group 1 is the session id's tail. */
 export const SESSION_CODE = /#(?:REF|AI)-(\w{6})\b/gi;
-/** "#QA128734" in a message: the Q&A question with that id in the message's own group. */
-export const QA_CODE = /#QA(\d+)\b/gi;
+/** "#QA128734" (or "#QA_BE_128734": asked to BE / PO / QC) in a message: the Q&A question with that id in the
+ *  message's own group; group 1: the part after "#QA" (qa.py `_CODE`). */
+export const QA_CODE = /#QA((?:_(?:BE|PO|QC)_)?\d+)\b/gi;
+/** Who a Q&A id ("_PO_123", QA_CODE group 1) asks: "PO"; undefined for an old "#QA123". */
+export const qaRole = (id: string) => /^_(BE|PO|QC)_/i.exec(id)?.[1].toUpperCase();
 /** Answer someone's message with Q&A: the Q&A page of its group opens replying to it (the reply gets a code line and
  *  the message leads the new thread). Held until that group's page takes it, so it works whether or not it is open. */
 let qaAnswer: Message | null = null;
@@ -307,11 +339,24 @@ export function takeQaAnswer(chatId: string) {
 /** `msgKey` → "#QA…" of every message in a Q&A thread of the groups asked lately (Q&A page `useQaNews`): a tag that
  *  answers one shows its badge even without the code in its text. Empty on the Q&A page itself (the card says it). */
 export const QaCodes = createContext<ReadonlyMap<string, string>>(new Map());
+/** QaCodes key of a tag a Q&A question replied to (an ask posted from a session replies to the attached tag): the
+ *  tag is not in that thread, so inQaPage ignores it; its Luồng việc / Hôm nay still link to the thread. */
+export const qaAskKey = (m: { chat_id: string; message_id: string }) => `ask:${msgKey(m)}`;
 /** A tag the Q&A page shows (it names a #QA code, or sits in a thread of `codes`): tag lists and their counts leave it
  *  to Q&A, so it is not listed twice. */
-export const inQaPage = (codes: ReadonlyMap<string, string>, m: Message) => codes.has(msgKey(m)) || /#QA\d+\b/i.test(m.text ?? "");
+export const inQaPage = (codes: ReadonlyMap<string, string>, m: Message) => codes.has(msgKey(m)) || HAS_QA_CODE.test(m.text ?? "");
+const HAS_QA_CODE = new RegExp(QA_CODE.source, "i"); // QA_CODE without "g": .test keeps no lastIndex between calls
 /** Open the Q&A page on one thread: its group and "#QA…" code (the inbox shell listens). */
 export const openQa = (chatId: string, code: string) => dispatchEvent(new CustomEvent<{ chatId: string; code: string }>("open-qa", { detail: { chatId, code } }));
+/** sessionStorage key + window event: {chatId, text}, a new question for that group's Q&A box (qa-page takes it). */
+export const QA_PREFILL = "qa-prefill";
+/** Open a group's Q&A with a new question pre-filled (under whatever was typed there): YouTrack's "Hỏi lại trong
+ *  nhóm" (?qa=&ask=) and a Briefing answer's "Hỏi trong Q&A". */
+export function askInQa(chatId: string, text: string) {
+  try { sessionStorage.setItem(QA_PREFILL, JSON.stringify({ chatId, text })); } catch { /* private mode: no pre-fill */ }
+  openQa(chatId, "");
+  dispatchEvent(new Event(QA_PREFILL)); // the group's Q&A may already be open: it takes the text now
+}
 
 /** Search the sessions: by ID (with or without "REF-" / "AI-"), title, tagged text, request or group. */
 export function sessionMatches(t: Task, q: string) {
@@ -320,6 +365,21 @@ export function sessionMatches(t: Task, q: string) {
 }
 
 /** Tasks created from tags, keyed "chat:message". One Map per task list, so memoised rows keep their props. */
+/** A session that has answered (not running, has a result): the tag is your turn again. */
+export const settled = (t: Task) => !t.running && !!t.result;
+
+/** A tag is "in progress" once it has any AI session (AI Agent, Đối chiếu BE, Trợ lý AI); pinned ones stay in to-do. */
+export const acted = (p: PendingItem, tasks: Map<string, Task[]>) => !p.message.pinned && !!tasks.get(msgKey(p.message))?.length;
+
+/** Tags on the "Đang chờ" tab (open, not left to Q&A, no AI session yet) over every day range: the Telegram switch's red count.
+ *  ponytail: off the inbox there is no Q&A thread map (QaCodes), so a Q&A tag with no Q&A code in its text may count here too. */
+export function useWaitingCount() {
+  const codes = use(QaCodes);
+  const tasks = useTasks();
+  const rows = useQuery({ ...pendingQuery(""), refetchInterval: 60_000 }).data;
+  return useMemo(() => (rows ?? []).filter((p) => !inQaPage(codes, p.message) && !acted(p, tasks)).length, [rows, codes, tasks]);
+}
+
 export function useTasks() {
   const data = useQuery(taskListQuery).data;
   return useMemo(() => {

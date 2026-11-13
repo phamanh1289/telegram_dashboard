@@ -124,9 +124,9 @@ export function ChatList({
         {chats.isSuccess && items.length === 0 && (
           <p className="px-3 py-2 text-sm leading-relaxed text-ink-3">{t("Chưa có tin nào tag bạn. Tin mới sẽ hiện ở đây ngay khi có người tag.")}</p>
         )}
-        <ul className="grid grid-cols-[minmax(0,1fr)] gap-1">
+        <ul className="zebra grid grid-cols-[minmax(0,1fr)] gap-1">
           {items.map((c) => (
-            <li key={c.chat_id} className="group relative">
+            <li key={c.chat_id} className="group relative rounded-md">
               <button
                 type="button"
                 onClick={() => onSelect(c.chat_id)}

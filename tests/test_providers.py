@@ -63,7 +63,7 @@ def test_sessions_resume_in_the_cli_that_started_them(tmp_path, monkeypatch):
     assert g[g.index("--mode") + 1] == "accept-edits" and g[g.index("--agent") + 1] == "telegram-dashboard-edit"
     gp = g[g.index("--settings") + 1]
     assert '"write_file(*)"' not in gp and '"command(*)"' in gp and '"allow"' not in gp  # agy: no sandbox, no shell
-    assert f'read_file({s.data_dir.resolve()})' in gp
+    assert f"read_file({s.data_dir.resolve()})" in gp
     r = task_cmd(s, "antigravity", "plan", "c1", True, "", "")
     assert r[-2:] == ["--conversation", "c1"] and "--model" not in r and "--mode" not in r
     perms = r[r.index("--settings") + 1]
@@ -81,7 +81,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
     assert "--tools" not in e and "Gradle" in e[e.index("--append-system-prompt") + 1]
     p = task_cmd(s, "claude", "plan", "sid", False, "", "")
-    assert p[p.index("--tools") + 1] == "Read,Grep,Glob" and "--settings" not in p
+    assert p[p.index("--tools") + 1] == "Read,Grep,Glob,Skill" and "--settings" not in p
     deny = p[p.index("--disallowedTools") + 2]
     assert f"Read(/{s.data_dir.resolve().as_posix()}/**)" in deny and "Read(~/.ssh/**)" in deny
     assert "--mcp-config" not in p  # no index: no MCP server at all
@@ -89,8 +89,8 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
     server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
     assert server["args"] == ["serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
-    assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,mcp__codegraph__codegraph_explore"
-    assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob"
+    assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
+    assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
 
 
 def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):
@@ -101,7 +101,7 @@ def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, m
     monkeypatch.setenv("HOME", str(tmp_path))
     s = Settings(root=tmp_path)
     c = ask_cmd(s, "claude", tools=True, read_dir=None, model="", effort="", shell=True)
-    assert c[c.index("--tools") + 1] == "Read,Grep,Glob,Bash" and "Edit" not in c[c.index("--allowedTools") + 1]
+    assert c[c.index("--tools") + 1] == "Read,Grep,Glob,Skill,Bash" and "Edit" not in c[c.index("--allowedTools") + 1]
     box = json.loads(c[c.index("--settings") + 1])["sandbox"]
     assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
     assert "Bash(curl:*)" in c[c.index("--disallowedTools") + 1] and "--strict-mcp-config" in c
@@ -144,6 +144,6 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
         return 0, json.dumps({"command": {"name": "usage", "data": data}}).encode(), b""
 
     monkeypatch.setattr(providers, "run_cli", out)
-    got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))
+    got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))["usage"]
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip

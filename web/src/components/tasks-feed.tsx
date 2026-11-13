@@ -6,12 +6,13 @@ import { createContext, memo, type ReactNode, use, useMemo } from "react";
 import { AiResultCard, dur, UserBubble } from "@/components/ai/chat";
 import type { TaskEvent } from "@/components/ai/steps";
 import { SEND_ERRORS } from "@/components/composer";
-import { ASK_BTN, AskPost, AskTag, Markdown } from "@/components/markdown";
+import { ASK_BTN, AskPost, type AskRole, AskTag, Markdown } from "@/components/markdown";
 import { Hint } from "@/components/ui/hint";
 import { api, ApiError, errorText, type Outbox, type Task } from "@/lib/api";
 import { type Attached, chatByTitle, chatTitle, parseAttachments, splitAttachments } from "@/lib/attach";
 import { t as tNow, useT } from "@/lib/i18n";
 import { sessionId, toast } from "@/lib/inbox";
+import { rememberQaGroup } from "@/lib/qa-recent";
 import { cn } from "@/lib/utils";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results (steps: ai/steps.tsx).
@@ -154,7 +155,7 @@ async function askRequestId(taskId: string, text: string) {
 }
 
 /** Send button of one ask: posts it to the group; remembers (via the outbox) that it was sent. */
-function PostAsk({ text }: { text: string }) {
+function PostAsk({ text, role }: { text: string; role: AskRole | null }) {
   const t = useT();
   const at = use(AskTarget)!;
   const qc = useQueryClient();
@@ -172,10 +173,14 @@ function PostAsk({ text }: { text: string }) {
       retry_unknown: status === "unknown", // the user saw "không rõ" and chose to send again
       quote: at.reply,
       qa: at.qa, // tags someone: a #QA line, so the Q&A tab follows the answer
+      qa_role: role, // asked to BE / PO / QC (its label in the answer): "#QA_BE_…"
     } }),
     onSuccess: (r) => {
       qc.setQueryData(key, r);
-      toast({ text: r.status === "sent" ? tNow("Đã gửi vào nhóm") : tNow("Đang gửi vào nhóm…") });
+      if (r.status === "failed") return void toast({ text: SEND_ERRORS[r.error_code ?? ""] ?? tNow("Gửi thất bại.") });
+      if (at.qa) rememberQaGroup(at.chatId); // the Q&A tab follows this group's answers
+      toast({ text: r.status === "sent" ? tNow("Đã gửi vào nhóm") : r.status === "unknown"
+        ? tNow("Chưa rõ Telegram đã nhận tin hay chưa: xem nhóm trước khi gửi lại.") : tNow("Đang gửi vào nhóm…") });
     },
     onError: (e) => {
       void qc.invalidateQueries({ queryKey: key });
@@ -197,7 +202,7 @@ function PostAsk({ text }: { text: string }) {
   );
 }
 
-const postAsk = (text: string) => <PostAsk text={text} />;
+const postAsk = (text: string, role: AskRole | null) => <PostAsk text={text} role={role} />;
 
 /** A session's answers: asks copy with its ID ("#REF-…") and, when it has a group message, post there. Every place
  *  that shows a session's result wraps it in this, so they behave the same. */

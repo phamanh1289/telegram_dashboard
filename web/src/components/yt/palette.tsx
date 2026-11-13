@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight, Bookmark, Bot, Eye, Filter, Inbox, MessageCircleQuestion, Plus, Search, Sparkles, Sun } from "lucide-react";
+import { ArrowRight, Bookmark, Eye, Filter, Inbox, MessageCircleQuestion, Plus, Search, Sparkles, Sun } from "lucide-react";
+import { AiBotIcon } from "@/components/ai/chat";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { matches, PaletteDialog, type PaletteItem, PaletteList } from "@/components/ui/palette";
@@ -21,7 +22,7 @@ export const PAGE_LABEL: Record<Page, Key> = { home: "Trang chủ", tickets: "Ti
 
 /** The Telegram module's pages, in this sidebar and ⌘K too: one nav for both modules. */
 export const TG_PAGES = [["/?chat=__today__", "Hôm nay", Sun], ["/?chat=__all__", "Việc cần xử lý", Inbox], ["/?chat=__qa__", "Q&A", MessageCircleQuestion],
-  ["/?chat=__briefing__", "Briefing", Sparkles], ["/?chat=__tasks__", "AI Agent", Bot]] as const;
+  ["/?chat=__briefing__", "Briefing", Sparkles], ["/?chat=__tasks__", "AI Agent", AiBotIcon]] as const;
 
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
   return <PaletteDialog open={open} onClose={onClose}><Body onClose={onClose} /></PaletteDialog>;

@@ -1,18 +1,32 @@
 // Dashboard numbers for the YouTrack module (pure, no DOM); ported from public/yt/js/stats.js.
 import { fmtDay, type Key, t, tMaybe } from "@/lib/i18n";
-import { bucket, byAs, bySp, DAY, type Filters, QUICK, shortSp, type Sprint, tagsOf, type Ticket } from "@/lib/yt";
+import type { YtRole } from "@/lib/prefs";
+import { bucket, byAs, bySp, DAY, type Filters, isBug, QUICK, shortSp, type Sprint, tagsOf, type Ticket } from "@/lib/yt";
 
 export const AGE = { warn: 2, bad: 3 }; // days a ticket may sit in a watched state: > warn amber, > bad red
-const ATTN = [["blocked", "bad"], ["critical", "bad"], ["overdue", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]] as const;
+const SEV = { bad: 0, warn: 1 };
+/** "Cần chú ý" per role: QUICK keys with how bad a non-zero count is (the card and the AI report read the same list). */
+const ATTN: Record<YtRole, [string, keyof typeof SEV][]> = {
+  dev: [["blocked", "bad"], ["overdue", "bad"], ["critical", "bad"], ["noest", "warn"]],
+  qa: [["bugcrit", "bad"], ["noqc", "warn"], ["blocked", "bad"], ["bugnew", "warn"], ["stale", "warn"]],
+  po: [["waitpo", "bad"], ["critical", "bad"], ["overdue", "bad"], ["blocked", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]],
+};
 const up = (s: string | null | undefined) => String(s || "—").toUpperCase();
 const inSet = (set: Set<string>) => (i: Ticket) => i.sprints.some((s) => set.has(s));
-const isBug = (i: Ticket) => i.type === "Bug";
 export const kindOf = (i: Ticket) => (isBug(i) ? "bug" : ["Story", "Improvement", "Feature"].includes(i.type ?? "") ? "feat" : "task");
-const day0 = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };
+export const day0 = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };
 const lastDays = (n: number, now: number) => Array.from({ length: n }, (_, k) => day0(now) - (n - 1 - k) * DAY);
 const perDay = (days: number[], rows: Ticket[], key: "resolved" | "created") => days.map((d) => rows.filter((i) => (i[key] ?? 0) >= d && (i[key] ?? 0) < d + DAY).length);
 const pct = (a: number[], p: number) => (a.length ? a[Math.min(a.length - 1, Math.floor(a.length * p))] : null);
+export const median = (a: number[]) => pct(a, 0.5); // a sorted ascending
 const BULK = 150; // ponytail: fixed threshold (team's normal max ≈ 50/day); make it relative to the median day if real days get close
+/** Days on which a bulk clean-up closed hundreds of old tickets (day start -> count): they would swamp lead time and velocity. */
+export function bulkDays(rows: Ticket[]) {
+  const perDay = new Map<number, number>();
+  for (const i of rows) if (i.resolved) perDay.set(day0(i.resolved), (perDay.get(day0(i.resolved)) || 0) + 1);
+  return new Map([...perDay].filter(([, n]) => n >= BULK));
+}
+export const notBulk = (bulk: Map<number, number>) => (i: Ticket) => !i.resolved || !bulk.has(day0(i.resolved));
 
 export type StatsInput = {
   rows: Ticket[];
@@ -24,6 +38,7 @@ export type StatsInput = {
   aging: Set<string>; // watched states, upper-case
   since: (i: Ticket) => number | null;
   now: number;
+  mode: YtRole;
 };
 
 /** Sprints the KPIs are measured on: the selected ones, else the running one (else the latest started); prev = the one before. */
@@ -57,10 +72,10 @@ export function dashStats(x: StatsInput) {
   const days = lastDays(x.range, now);
 
   // bulk clean-ups (hundreds of old tickets closed on one day) would swamp lead time, velocity and the per-day chart
-  const perDayDone = new Map<number, number>();
-  for (const i of rows) if (i.resolved) perDayDone.set(day0(i.resolved), (perDayDone.get(day0(i.resolved)) || 0) + 1);
-  const bulk = new Map([...perDayDone].filter(([, n]) => n >= BULK));
-  const real = (i: Ticket) => !i.resolved || !bulk.has(day0(i.resolved));
+  const bulk = bulkDays(rows);
+  const real = notBulk(bulk);
+  // done in that sprint: resolved before it ended, so a ticket carried over and closed later counts only where it closed
+  const doneIn = (i: Ticket, name: string) => { const d = sprints.get(name); return !!i.resolved && i.sprints.includes(name) && (!d || i.resolved < d.finish + DAY); };
   const recent = rows.filter((i) => i.resolved && i.resolved >= days[0] && as(i) && real(i));
 
   // tickets sitting in a watched state for too long; need = watched ones whose state-entry time is not loaded yet
@@ -76,7 +91,7 @@ export function dashStats(x: StatsInput) {
   agingRows.sort((a, b) => b.d - a.d);
 
   const carry = open.filter((i) => i.sprints.length >= 2).sort((a, b) => b.sprints.length - a.sprints.length || a.updated - b.updated);
-  const finished = (set: Set<string>) => rows.filter((i) => i.resolved && inSet(set)(i) && as(i));
+  const finished = (set: Set<string>) => rows.filter((i) => [...set].some((n) => doneIn(i, n)) && as(i));
   const mixOf = (set: Set<string>) => { const m = { bug: 0, feat: 0, task: 0 }, r = finished(set); for (const i of r) m[kindOf(i)]++; return { m, n: r.length }; };
 
   // sprint progress, each measured sprint split by workflow bucket next to how much of its time has passed
@@ -106,15 +121,15 @@ export function dashStats(x: StatsInput) {
   const vel = (() => {
     const from = x.hist ? now - x.hist * DAY : -Infinity;
     const sps = [...sprints.values()].filter((d) => d.start <= now && d.start >= from).sort((a, b) => a.start - b.start).slice(-6);
-    const vr = sps.map((d) => ({ name: d.name, n: rows.filter((i) => i.resolved && real(i) && i.sprints.includes(d.name) && as(i)).length, running: now < d.finish + DAY }));
+    const vr = sps.map((d) => ({ name: d.name, n: rows.filter((i) => real(i) && doneIn(i, d.name) && as(i)).length, running: now < d.finish + DAY }));
     const closed = vr.filter((r) => !r.running);
     return { rows: vr, avg: closed.length ? Math.round(closed.reduce((s, r) => s + r.n, 0) / closed.length) : null };
   })();
 
   const lead = (() => {
     const d = (i: Ticket) => (i.resolved! - i.created) / DAY, all = recent.map(d).sort((a, b) => a - b);
-    const kinds = (["bug", "feat", "task"] as const).map((k) => { const a = recent.filter((i) => kindOf(i) === k).map(d).sort((p, q) => p - q); return [k, pct(a, 0.5), a.length] as const; });
-    return { n: all.length, med: pct(all, 0.5), p85: pct(all, 0.85), kinds };
+    const kinds = (["bug", "feat", "task"] as const).map((k) => { const a = recent.filter((i) => kindOf(i) === k).map(d).sort((p, q) => p - q); return [k, median(a), a.length] as const; });
+    return { n: all.length, med: median(all), p85: pct(all, 0.85), kinds };
   })();
 
   const wip = Object.entries(openL.reduce<Record<string, [number, number]>>((acc, i) => {
@@ -154,7 +169,7 @@ export function dashStats(x: StatsInput) {
       bugnew: () => [t("Bug mới ngày {d}", { d: dl(days[+arg]) }), inDay(bugs, "created", days[+arg])],
       bugfix: () => [t("Bug đã sửa ngày {d}", { d: dl(days[+arg]) }), inDay(bugs, "resolved", days[+arg])],
       aging: () => [t("Ticket ở state quá ngưỡng"), agingRows.map((r) => r.i)],
-      vel: () => [t("Xong trong sprint {x}", { x: arg }), rows.filter((i) => i.resolved && real(i) && i.sprints.includes(arg) && as(i))],
+      vel: () => [t("Xong trong sprint {x}", { x: arg }), rows.filter((i) => real(i) && doneIn(i, arg) && as(i))],
       lead: () => [t("Lead time: xong trong {n} ngày qua (lâu nhất trước)", { n: days.length }), recent.slice().sort((a, b) => b.resolved! - b.created - (a.resolved! - a.created))],
       carry: () => [t("Ticket chuyển sprint nhiều lần"), carry],
       bugp: () => [t("Bug đang mở: {x}", { x: arg }), openBugs.filter((i) => (i.priority || "—") === arg)],
@@ -175,7 +190,9 @@ export function dashStats(x: StatsInput) {
     sprintRows: cohort,
     sprintOpen: cohort.filter((i) => !i.resolved),
     prog,
-    attn: ATTN.filter(([q]) => q !== "noest" || rows.some((i) => i.estimate != null)).map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length })),
+    // a team that never estimates: "chưa estimate" is noise
+    attn: ATTN[x.mode].filter(([q]) => q !== "noest" || rows.some((i) => i.estimate != null)).map(([q, sev]) => ({ q, sev, n: open.filter((i) => QUICK[q].fn(i, now)).length }))
+      .sort((a, b) => +!a.n - +!b.n || SEV[a.sev] - SEV[b.sev] || b.n - a.n),
     wip,
     aging: { rows: agingRows, need, states: Object.entries(stCount).sort((a, b) => b[1] - a[1]) },
     bug: { sp: spBugs.length, spOpen: spBugs.filter((i) => !i.resolved).length, open: bugs.filter((i) => !i.resolved).length, spUser: bugUser },

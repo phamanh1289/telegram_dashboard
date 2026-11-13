@@ -144,6 +144,7 @@ class StatusDTO(BaseModel):
     youtrack_configured: bool = False
     telegram_api_id: int | None = None
     telegram_me: str | None = None
+    telegram_name: str | None = None  # the account's display name (telegram_me may be its @username)
     db_epoch: str
     cursor: str
 
@@ -156,6 +157,7 @@ class ReplyRequest(BaseModel):
     retry_unknown: bool = False
     quote: bool = True  # False: a new message in the group (and topic) of reply_to, not a reply to it
     qa: bool = False  # a "#QA…" line under the text when it tags someone (@username): Q&A follows it
+    qa_role: Literal["BE", "PO", "QC"] | None = None  # who the ask goes to: "#QA_BE_…", Q&A shows who confirmed
 
     @field_validator("text")
     @classmethod
@@ -262,8 +264,36 @@ class SnoozeRequest(BaseModel):
     on: Annotated[str, Field(pattern=r"^(reply|ticket:[A-Za-z][A-Za-z0-9_]*-\d{1,9})$")] | None = None
 
 
-class WakeTicketRequest(BaseModel):
+class RemindRequest(SnoozeRequest):
+    restore: HandledBy | None = None  # Undo: done again exactly as before (how), nothing else follows
+
+
+class RemindResult(BaseModel):
+    was: HandledBy  # how it was handled before the reminder, for Undo
+
+
+class LoopItem(BaseModel):
+    """"Báo lại": my ticket reached `state`; the stored message to answer about it."""
+
     ticket: Annotated[str, Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*-\d{1,9}$")]
+    state: Annotated[str, Field(max_length=100)]
+    chat_id: Annotated[str, Field(max_length=40)]
+    message_id: Annotated[str, Field(pattern=r"^\d{1,12}$")]
+
+
+class LoopBack(BaseModel):
+    items: list[LoopItem]
+    error: str = ""  # the background YouTrack watch's last failure ("" = fine): the list may be missing items
+
+
+class LoopDoneRequest(BaseModel):
+    chat_id: Annotated[str, Field(max_length=40)]
+    message_id: Annotated[str, Field(pattern=r"^\d{1,12}$")]
+    ticket: Annotated[str | None, Field(max_length=40)] = None  # None: every item for the message
+
+
+class LoopImportRequest(BaseModel):
+    items: Annotated[list[LoopItem], Field(max_length=30)]
 
 
 class PendingItem(BaseModel):
@@ -296,20 +326,24 @@ class WeekStats(BaseModel):
     slow: list[SlowGroup]
 
 
-RuleKind = Literal["keyword", "sender", "priority"]  # priority: a sender whose tags sort first (nothing is cleared)
+# priority: a sender whose tags sort first; relay: a sender's answers to an AI Agent session's asks go on in that
+# session; agent: a sender's new tags open an AI Agent session (plan) on the rule's project. Those three clear nothing.
+RuleKind = Literal["keyword", "sender", "priority", "relay", "agent"]
 
 
 class RuleDTO(BaseModel):
     id: int
     kind: RuleKind
     value: str  # keyword: lowercase text; sender / priority: the sender's id
-    label: str  # sender / priority: the sender's name
+    label: str  # sender / priority / relay / agent: the sender's name
+    project: str = ""  # agent: the project folder its sessions run in
 
 
-class RuleRequest(BaseModel):
+class RuleRequest(AboutMe):  # agent: who the user is, for the sessions it opens (the page keeps it, the server doesn't)
     kind: RuleKind
     value: str = Field(min_length=1, max_length=200, pattern=r"\S")  # never blank: "" matches every tag
     label: str = Field(default="", max_length=200)
+    project: str = Field(default="", max_length=1000)  # agent: a registered project folder
 
 
 class MessageRef(BaseModel):
@@ -363,6 +397,7 @@ class TaskDTO(BaseModel):
     model: str | None = None  # picked for this session; None: the task picks in AI settings
     effort: str | None = None
     ask_to: AskTo | None = None  # None: asks go out as a new message in the tag's group
+    state: Literal["done", "waiting", "you"] | None = None  # the last answer's Trạng thái (ai.task_state)
 
 
 class YouTrackRequest(BaseModel):
@@ -414,6 +449,17 @@ class ClaudeUsage(BaseModel):
     resets_at: str | None = None
 
 
+class AiResetCredit(BaseModel):
+    """A free "reset my limits now" the plan granted (Claude, Codex)."""
+
+    id: str
+    title: str | None = None
+    description: str | None = None
+    expires_at: str | None = None
+    left: int = 1  # resets in this one (a Claude grant may hold several)
+    usable: bool = True  # Claude: false while paused, cooling down, or until a limit is hit (when it requires one)
+
+
 class ClaudeAccount(BaseModel):
     """`claude auth status --json`, as the CLI reports it."""
 
@@ -432,6 +478,9 @@ class ClaudeAccount(BaseModel):
     usage: list[ClaudeUsage] = []
     usage_at: str | None = None  # when the quota was last read from Anthropic
     usage_error: str | None = None  # "no_token": the CLI login has no live token, usage is the last reading
+    resets: list[AiResetCredit] = []  # the plan's free limit resets
+    resets_left: int = 0
+    resets_blocked: str | None = None  # why none are offered: "cli_version" (update the CLI), "tier"…
     login_pending: bool = False
     login_url: str | None = None
 
@@ -453,6 +502,8 @@ class AiPicks(BaseModel):
     yt_effort: AiEffort = ""
     yt_task_model: AiModel = ""
     yt_task_effort: AiEffort = ""
+    guide_model: AiModel = ""  # the know-it-all bot ("" = same as model / effort)
+    guide_effort: AiEffort = ""
 
 
 class AiUse(BaseModel):
@@ -464,6 +515,7 @@ class AiUse(BaseModel):
     task: AiProvider = "claude"
     yt: AiProvider | Literal[""] = ""
     yt_task: AiProvider | Literal[""] = ""
+    guide: AiProvider | Literal[""] = ""  # the know-it-all bot
 
 
 class AiPrefs(BaseModel):
@@ -508,6 +560,18 @@ class AiAccount(BaseModel):
     login_url: str | None = None
     usage: list[ClaudeUsage] = []  # the plan's windows, as for Claude
     usage_at: str | None = None
+    resets: list[AiResetCredit] = []  # Codex: free rate-limit resets still to use (the list may be capped)
+    resets_left: int = 0  # how many there are in all
+
+
+class AiResetRequest(BaseModel):
+    credit_id: str | None = Field(default=None, max_length=200)  # None: the next available one
+    # one per "Reset ngay" confirm, the same on a retry after no answer: the provider spends the reset at most once
+    request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{8,64}$")
+
+
+class AiResetResult(BaseModel):
+    outcome: Literal["reset", "nothingToReset", "noCredit", "alreadyRedeemed", "cooldown", "unknown"]
 
 
 class AiLoginStarted(BaseModel):
@@ -535,6 +599,8 @@ class AiRun(BaseModel):
     quota: dict[str, float] = {}
     imported: bool = False  # read back from the CLI's transcripts, not logged live
     provider: str = "claude"  # which AI CLI ran it: claude / codex / antigravity
+    ref: str | None = None  # the session code the user sees: YT-xxxxxx (YouTrack AI), REF-xxxxxx (AI Agent)
+    sid: str | None = None  # Claude's session id: its transcript, ~/.claude/projects/*/<sid>.jsonl
     external: bool = False  # run outside this app (feature: Claude Desktop, Codex CLI…; project: its folder)
     project: str = ""
 
@@ -543,6 +609,26 @@ class AiTestRequest(BaseModel):
     task: bool = False
     brief: bool = False  # Briefing / Digest picks
     yt: bool = False  # YouTrack picks
+    guide: bool = False  # the know-it-all bot's picks
+
+
+class AiMascotRequest(BaseModel):
+    """What the member wants their AI mascot to look like (Cài đặt › Linh vật AI)."""
+
+    description: str = Field(min_length=1, max_length=200)
+    style: Literal["cute", "pixel", "line"] = "cute"
+
+
+class AiMascotJob(BaseModel):
+    """One AI mascot drawing, run in the background: `svg` once done, `error` (an ApiError code) if it failed."""
+
+    id: str
+    description: str
+    style: str
+    state: Literal["running", "done", "error"]
+    svg: str = ""
+    error: str = ""
+    detail: str = ""
 
 
 class AiTestResult(BaseModel):
@@ -605,11 +691,22 @@ class TaskAi(BaseModel):
     effort: AiEffort = ""
 
 
+class GuideTurn(BaseModel):
+    """An earlier question to the guide bot and its answer, for follow-ups."""
+
+    q: str = Field(max_length=500)
+    a: str = Field(max_length=8000)
+
+
 class AiGuideRequest(BaseModel):
-    """A question about how to use the app, answered from the in-app guide (sent by the page)."""
+    """A question about how to use the app, answered from the in-app guide (sent by the page) and the app's own code."""
 
     question: str = Field(min_length=1, max_length=500)
     guide: str = Field(max_length=200_000)
+    history: list[GuideTurn] = Field(default_factory=list, max_length=6)
+    page: str = Field("", max_length=200)  # the page the user is on (path), so "here" / "this button" make sense
+    code: bool = True  # may read the app's own code (rules, show / hide conditions); off: the guide only, faster
+    name: str = Field("", max_length=80)  # how the bot calls the user (YouTrack, else Telegram name); "": anh/chị
 
 
 class AiResult(BaseModel):
@@ -727,7 +824,7 @@ class QaItem(BaseModel):
 
 class QaMarkRequest(BaseModel):
     chat_id: str
-    code: str = Field(pattern=r"^#QA\d+$")
+    code: str = Field(pattern=r"^#QA(?:_(?:BE|PO|QC)_)?\d+$")
     state: Literal["done", "deleted"] | None  # None: back to normal
 
 

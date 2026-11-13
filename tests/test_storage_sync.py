@@ -107,6 +107,8 @@ def test_outbox_qa_mints_one_code_for_a_tagged_ask(env):
     env.store.outbox_create("r1", A, 1, "@nam_be API trả field gì?", 1, quote=False, qa=True)  # retry: no 409
     env.store.outbox_create("r2", A, 1, "hỏi chung", 2, quote=False, qa=True)
     assert env.store.outbox_claim("r2")["text"] == "hỏi chung"  # tags nobody: plain message
+    env.store.outbox_create("r3", A, 1, "@nam_be chốt status?", 3, quote=False, qa=True, qa_role="BE")
+    assert "\n#QA_BE_" in env.store.outbox_claim("r3")["text"]  # who it asks, in the code
 
 
 def test_purge_clears_outbox_content_and_blocks_late_callback(env):

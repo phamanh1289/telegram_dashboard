@@ -2,20 +2,20 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Menu } from "@base-ui/react/menu";
-import { ArrowDown, ArrowLeft, CheckCheck, Ellipsis, RotateCw, Sparkles, Trash2 } from "lucide-react";
-import { Fragment, use, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowDown, ArrowLeft, CheckCheck, Ellipsis, MessageSquare, RotateCw, Search, Sparkles, Trash2 } from "lucide-react";
+import { use, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChats } from "@/components/chat-list";
 import { MessageItem, revealMessage } from "@/components/message-item";
-import { AiFetching, useAiWait } from "@/components/ai/fetching";
+import { AiFetching, AllDone, useAiWait } from "@/components/ai/fetching";
 import { Button } from "@/components/ui/button";
 import { MENU_POPUP } from "@/components/ui/menu";
 import { Dropdown } from "@/components/ui/dropdown";
+import { Empty } from "@/components/ui/empty";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
 import { useChatMessages, type View } from "@/hooks/use-chat-messages";
 import { api, ApiError, errorText, type Message } from "@/lib/api";
 import { clearDrafts, inQaPage, markAllHandled, msgKey, QaCodes, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
-import { clearLoopItems } from "@/lib/report-back";
 import { dayLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/components/ui/segmented";
@@ -29,7 +29,7 @@ export function MessageList({
   replyTo,
   onReply,
   range,
-  onUseText,
+  rangeName,
   itemsRef,
   onDigest,
   focus,
@@ -39,9 +39,9 @@ export function MessageList({
   focus?: string | null; // message id to scroll to and flash once loaded (e.g. "Mở nhóm" from an AI task)
   title: string; // the group's name, for the delete-data confirmation
   search: string; // the top bar's search box: in a group it searches this group's stored tags
-  onUseText: (m: Message, text: string) => void;
   onDigest?: () => void; // open the AI summary of the whole conversation
   range: string;
+  rangeName: string; // label of the day range picked in the top bar
   chatId: string;
   onBack: () => void;
   replyTo: string | null; // msgKey of the message being answered
@@ -80,7 +80,17 @@ export function MessageList({
   const senders = useMemo(() => [...new Map(all.filter((m) => !m.deleted).map((m) => [who(m), m.outgoing ? you : (m.sender_name ?? unknown)])).entries()]
     .sort((a, b) => a[1].localeCompare(b[1], "vi")), [all, you, unknown]);
   const items = useMemo(() => (sender ? all.filter((m) => !m.deleted && who(m) === sender) : all), [all, sender]);
-  const days = useMemo(() => items.map((m) => dayLabel(m.date)), [items]); // day pills: Intl is too slow to run per row per render
+  // Runs of one day (indexes into items), each its own block so its sticky pill only rides within that day.
+  // Intl is too slow to run per row per render.
+  const days = useMemo(() => {
+    const out: { day: string; idx: number[] }[] = [];
+    items.forEach((m, i) => {
+      const day = dayLabel(m.date);
+      if (out.at(-1)?.day === day) out.at(-1)!.idx.push(i);
+      else out.push({ day, idx: [i] });
+    });
+    return out;
+  }, [items]);
   const now = useNow();
   const tasks = useTasks();
   const focused = useListShortcuts(items, onReply, !live, { initial: focus ? msgKey({ chat_id: chatId, message_id: focus }) : null });
@@ -153,7 +163,7 @@ export function MessageList({
           <Dropdown label={t("Lọc theo người gửi")} value={sender} onChange={setSender} className={cn("h-[30px] w-auto max-w-40", sender && "border-hl text-hl-2")}
             options={[{ value: "", label: t("Mọi người gửi") }, ...senders.map(([k, name]) => ({ value: k, label: name }))]} />
         )}
-        {!q && pendingOnly && items.length > 0 && (
+        {!q && !sender && pendingOnly && items.length > 0 && ( // it marks the whole group: not offered under a sender filter
           <Hint side="bottom" text={t("Đánh dấu mọi tin chưa xử lý trong nhóm này là đã xử lý (có Hoàn tác).")}>
             <Button size="xs" variant="outline" onClick={() => setConfirmAll(true)}>
               <CheckCheck /> {t("Xong tất cả")}
@@ -197,7 +207,8 @@ export function MessageList({
         )}
         {!q && !query.hasNextPage && query.isSuccess && (
           <p className="border-b border-rule px-5 py-2 text-center text-xs text-ink-3">
-            {live ? t("Đầu cuộc trò chuyện.") : t("Chỉ lưu tin tag/reply bạn (nạp lại 14 ngày gần nhất mỗi lần kết nối).")}
+            {live ? t("Đầu cuộc trò chuyện.") : range ? t("Đã hết tin tag/reply bạn trong “{range}”. Đổi khoảng ngày ở thanh trên để xem tin cũ hơn.", { range: rangeName })
+              : t("Đã hết tin tag/reply bạn đã lưu (mỗi lần kết nối nạp lại 14 ngày gần nhất).")}
           </p>
         )}
         {error === "not_tracking" && <p className="px-5 py-6 text-sm text-ink-2">{t("Nhóm không còn được theo dõi.")}</p>}
@@ -209,28 +220,33 @@ export function MessageList({
             </Button>
           </div>
         )}
-        {query.isSuccess && items.length === 0 && (
-          <div className="grid justify-items-center gap-3 px-6 py-20 text-center text-sm text-ink-2">
-            {!q && pendingOnly && <CheckCheck className="size-5 text-ok" aria-hidden />}
-            <p>{sender ? t("Không có tin của người gửi này trong các tin đã tải.") : q ? t("Không có kết quả.") : pendingOnly ? t("Đã xử lý hết tin tag trong nhóm này.") : view === "done" ? t("Chưa có tin tag nào đã xử lý.") : t("Chưa có tin nào.")}</p>
-            {sender && <Button size="sm" variant="outline" onClick={() => setSender("")}>{t("Bỏ lọc người gửi")}</Button>}
-            {!sender && !q && pendingOnly && <Button size="sm" variant="outline" onClick={() => setView("live")}>{t("Xem mọi tin trong nhóm")}</Button>}
-          </div>
-        )}
-        <ol ref={list} className="@container divide-y divide-rule">
-          {items.map((m, i) => {
-            const day = days[i];
-            const newDay = i === 0 || days[i - 1] !== day;
+        {query.isSuccess && items.length === 0 && (sender ? (
+          <Empty icon={<Search />} title={t("Không có tin của người gửi này trong các tin đã tải.")} className="py-20"
+            action={<Button size="sm" variant="outline" onClick={() => setSender("")}>{t("Bỏ lọc người gửi")}</Button>} />
+        ) : q ? (
+          <Empty icon={<Search />} title={t("Không có kết quả.")} className="py-20" />
+        ) : pendingOnly ? ( // same "all done" as Việc cần xử lý
+          <Empty art={<AllDone className="mb-1" />} title={t("Xong hết rồi!")} className="py-20"
+            action={<Button size="sm" variant="outline" onClick={() => setView("live")}>{t("Xem mọi tin trong nhóm")}</Button>}>
+            {t("Đã xử lý hết tin tag trong nhóm này.")}
+          </Empty>
+        ) : (
+          <Empty icon={view === "done" ? <CheckCheck /> : <MessageSquare />} title={view === "done" ? t("Chưa có tin tag nào đã xử lý.") : t("Chưa có tin nào.")} className="py-20" />
+        ))}
+        <ol ref={list} className="@container">
+          {days.map(({ day, idx }) => (
+          <li key={items[idx[0]].message_id} aria-label={day}>
+            {/* Telegram's day pill: rides at the top while you scroll through that day, then leaves with it. */}
+            <div role="separator" aria-label={day} className="pointer-events-none sticky top-0 z-10 flex justify-center py-1.5">
+              <span className="rounded-full bg-paper-2 px-2.5 text-xs leading-6 font-medium text-ink-2 shadow-pop">{day}</span>
+            </div>
+            <ol className="zebra divide-y divide-rule border-t border-rule">
+          {idx.map((i, k) => {
+            const m = items[i];
             return (
-            <Fragment key={m.message_id}>
-            {/* Telegram's day pill: rides at the top while you scroll through that day. */}
-            {newDay && (
-              <li role="separator" aria-label={day} className="pointer-events-none sticky top-0 z-10 flex justify-center border-none! py-1.5">
-                <span className="rounded-full bg-paper-2 px-2.5 text-xs leading-6 font-medium text-ink-2 shadow-pop">{day}</span>
-              </li>
-            )}
             <MessageItem
-              head={newDay || items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
+              key={m.message_id}
+              head={k === 0 || items[i - 1]?.deleted || items[i - 1]?.sender_id !== m.sender_id || items[i - 1]?.outgoing !== m.outgoing}
               clock
               m={m}
               isReplyTarget={replyTo === msgKey(m)}
@@ -238,12 +254,13 @@ export function MessageList({
               focused={focused === msgKey(m)}
               tasks={tasks.get(msgKey(m))}
               onReply={onReply}
-              onUseText={onUseText}
               live={live}
             />
-            </Fragment>
             );
           })}
+            </ol>
+          </li>
+          ))}
         </ol>
       </div>
       {far && (
@@ -261,9 +278,9 @@ export function MessageList({
         description={query.hasNextPage
           ? (range ? t("Mọi tin chưa xử lý trong nhóm này (trong khoảng ngày đang lọc) sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.")
             : t("Mọi tin chưa xử lý trong nhóm này sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý."))
-          : (range ? t("{n} tin chưa xử lý trong nhóm này (trong khoảng ngày đang lọc) sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.", { n: items.length })
-            : t("{n} tin chưa xử lý trong nhóm này sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.", { n: items.length }))}
-        busy={markAll.isPending} error={markAll.isError && t("Không cập nhật được.")} onConfirm={() => markAll.mutate()} />
+          : (range ? t("{n} tin chưa xử lý trong nhóm này (trong khoảng ngày đang lọc) sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.", { n: all.length })
+            : t("{n} tin chưa xử lý trong nhóm này sẽ chuyển sang “Đã xử lý”, không thả reaction. Hoàn tác ngay trên thông báo, hoặc mở lại từng tin ở tab Đã xử lý.", { n: all.length }))}
+        busy={markAll.isPending} error={markAll.isError && errorText(markAll.error, {}, t("Không cập nhật được."))} onConfirm={() => markAll.mutate()} />
     </section>
   );
 }
@@ -277,8 +294,7 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
     mutationFn: () => api<void>(`/chats/${encodeURIComponent(chatId)}/data`, { method: "DELETE" }),
     onSuccess: () => {
       qc.removeQueries({ queryKey: ["messages", chatId] });
-      clearDrafts(chatId); // this browser's copies go with the group's data
-      clearLoopItems(chatId);
+      clearDrafts(chatId); // this browser's copies go with the group's data (the server drops its Báo lại items)
       setConfirm(false);
       onPurged();
     },

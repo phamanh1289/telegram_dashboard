@@ -2,7 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Bot, Bug, CheckCheck, Search, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Bug, CheckCheck, Search, Sparkles, Users } from "lucide-react";
+import { AiBotIcon } from "@/components/ai/chat";
 import { useState } from "react";
 import { useChats } from "@/components/chat-list";
 import { matches, PaletteDialog, type PaletteItem, PaletteList } from "@/components/ui/palette";
@@ -44,7 +45,7 @@ function Body({ onClose, chats, views, group, range, onGo, onDigest, onSearch }:
   }
   if (/^#?(?:ref|ai)-?\w/i.test(qt)) {
     for (const s of (tasks ?? []).filter((x) => sessionMatches(x, qt)).slice(0, 6)) {
-      out.push({ key: `ai:${s.id}`, group: t("Phiên AI Agent"), icon: <Bot />, hint: s.chat_title ?? undefined,
+      out.push({ key: `ai:${s.id}`, group: t("Phiên AI Agent"), icon: <AiBotIcon />, hint: s.chat_title ?? undefined,
         label: <><b className="font-mono">{sessionId(s)}</b> {s.title || s.message_text || s.prompt}</>, run: go(() => onGo(TASKS, s.id)) });
     }
   }

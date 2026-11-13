@@ -1,32 +1,49 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, CheckCheck, Clock, Flame, type LucideIcon, Megaphone, Pin, Reply, RotateCw, X } from "lucide-react";
+import { ArrowLeft, CheckCheck, CirclePause, Clock, Flame, Loader, type LucideIcon, Megaphone, Pin, Reply, RotateCw, Search, X } from "lucide-react";
+import { AiBotIcon, AiBot } from "@/components/ai/chat";
 import { use, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AiFetching, useAiWait } from "@/components/ai/fetching";
+import { GROUP_NEST, GroupBar } from "@/components/ai/day-groups";
+import { AiFetching, AllDone, useAiWait, useReload } from "@/components/ai/fetching";
 import { useChats } from "@/components/chat-list";
 import { MessageItem, SnoozeMenu } from "@/components/message-item";
 import { Button } from "@/components/ui/button";
 import { Dropdown } from "@/components/ui/dropdown";
+import { Empty } from "@/components/ui/empty";
 import { Hint } from "@/components/ui/hint";
 import { Kbd } from "@/components/ui/kbd";
 import { Segmented } from "@/components/ui/segmented";
-import type { Message, PendingItem } from "@/lib/api";
-import { COMPOSER, fold, getMessage, inQaPage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, QaCodes, setHandled, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
-import { doneLoopItem, type LoopItem, loopKey, useLoopItems } from "@/lib/report-back";
+import { errorText, type Message, type PendingItem, type Task } from "@/lib/api";
+import { acted, COMPOSER, fold, getMessage, inQaPage, msgKey, openReplyById, PartialError, pendingQuery, pinAll, QaCodes, setHandled, settled, taskListQuery, useListShortcuts, useNow, useTasks, waitLabel } from "@/lib/inbox";
+import { type LoopItem, loopKey, useDoneLoop, useLoopBack } from "@/lib/report-back";
 import { readOverdueHours } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { type Key, useT } from "@/lib/i18n";
 
 type Section = { id: string; title: Key; note?: Key; icon: LucideIcon; tone: string; rows: PendingItem[] };
 
-/** To-do: pinned, overdue, waiting. Pinned archive: still open, done. Each keeps the server order (oldest first). */
-function sectionsOf(rows: PendingItem[], pinned: boolean, now: number): Section[] {
+export type PendingTab = "todo" | "working" | "pinned";
+type View = PendingTab;
+
+/** To-do: pinned, overdue, waiting (no AI session yet). In progress: AI done (your turn), AI running, stopped.
+ *  Pinned archive: still open, done. Each keeps the server order (oldest first). */
+function sectionsOf(rows: PendingItem[], view: View, now: number, tasks: Map<string, Task[]>): Section[] {
   const by = (f: (p: PendingItem) => boolean) => rows.filter(f);
-  if (pinned) {
+  if (view === "pinned") {
     return [
       { id: "open", title: "Chưa xử lý", icon: Clock, tone: "text-ink-2", rows: by((p) => !p.message.handled) },
       { id: "done", title: "Đã xử lý", icon: CheckCheck, tone: "text-ok", rows: by((p) => !!p.message.handled) },
+    ];
+  }
+  const ts = (p: PendingItem) => tasks.get(msgKey(p.message)) ?? [];
+  if (view === "working") {
+    const ready = (p: PendingItem) => ts(p).some(settled);
+    const running = (p: PendingItem) => !ready(p) && ts(p).some((x) => x.running);
+    return [
+      { id: "ready", title: "AI xong, chờ bạn", note: "đọc kết quả rồi trả lời", icon: AiBotIcon, tone: "text-hl-2", rows: by(ready) },
+      { id: "running", title: "AI đang làm", icon: Loader, tone: "text-ink-2", rows: by(running) },
+      { id: "stopped", title: "Phiên dừng mà chưa có kết quả", note: "mở phiên để chạy tiếp", icon: CirclePause, tone: "text-ink-3", rows: by((p) => !ready(p) && !running(p)) },
     ];
   }
   const late = (p: PendingItem) => !p.message.pinned && waitLabel(p.message.date, now, !!p.message.priority).overdue; // priority: half the wait
@@ -46,20 +63,20 @@ export function PendingInbox({
   replyTo,
   onReply,
   onBack,
-  onUseText,
   itemsRef,
   jump,
-  onPinned,
+  tab = "todo",
+  onTab,
 }: {
   pinned?: boolean;
-  onPinned?: (pinned: boolean) => void; // the "Đang chờ / Đã ghim" tabs
+  tab?: Exclude<PendingTab, "pinned">; // held by the parent: the page remounts on Đã ghim, the tab must survive it
+  onTab?: (v: PendingTab) => void; // the "Đang chờ / Đang xử lý / Đã ghim" tabs
   range: string;
   search: string;
   onClearSearch: () => void;
   replyTo: string | null; // msgKey of the message being answered
   onReply: (m: Message) => void;
   onBack: () => void;
-  onUseText: (m: Message, text: string) => void;
   itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
   jump?: number; // bumps on every sidebar click, to scroll back to the top
 }) {
@@ -68,11 +85,13 @@ export function PendingInbox({
     ...pendingQuery(range, pinned),
     refetchInterval: 60_000, // snoozed tags come back on their own
   });
-  const wait = useAiWait(q.isPending);
+  const [reloading, reload] = useReload([["pending"], ["tasks"], ["chats"]]); // tags, the AI cards under them, the sidebar counts
+  const wait = useAiWait(q.isPending || reloading);
   const now = useNow();
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => { box.current?.scrollTo({ top: 0 }); }, [jump]);
   const tasks = useTasks();
+  const tasksQ = useQuery(taskListQuery); // the same cache useTasks reads: here only for its error
   // Search tag text only, ignoring case and Vietnamese accents. Deferred: typing stays responsive over 300 rows.
   const needle = fold(useDeferredValue(search).trim());
   // To-do leaves the tags Q&A shows to it (pinned ones stay: you kept them on purpose).
@@ -92,9 +111,16 @@ export function PendingInbox({
   }, [found]);
   const [picked, setGroup] = useState("");
   const group = groups.some(([id]) => id === picked) ? picked : "";
+  const view: View = pinned ? "pinned" : tab;
+  const inGroup = useMemo(() => (group ? found.filter((p) => p.message.chat_id === group) : found), [found, group]);
+  // The "Đang xử lý" badge counts the to-do list (not the pinned one), the same on every tab: no group / search filter.
+  // Both lists stay loaded (same query keys as `q`, no extra request for the shown one): switching tabs is instant.
+  const todo = useQuery({ ...pendingQuery(range), enabled: !!onTab }).data;
+  useQuery({ ...pendingQuery(range, true), enabled: !!onTab });
+  const working = useMemo(() => (todo ?? []).filter((p) => !inQaPage(codes, p.message) && acted(p, tasks)).length, [todo, codes, tasks]);
   const sections = useMemo(
-    () => sectionsOf(group ? found.filter((p) => p.message.chat_id === group) : found, pinned, now),
-    [found, group, pinned, now],
+    () => sectionsOf(view === "pinned" ? inGroup : inGroup.filter((p) => acted(p, tasks) === (view === "working")), view, now, tasks),
+    [inGroup, view, now, tasks],
   );
   const items = useMemo(() => sections.flatMap((s) => s.rows.map((p) => p.message)), [sections]);
   // Multi-select (to-do only): Space / Shift+click; a bar acts on all of them; Esc clears.
@@ -104,7 +130,7 @@ export function PendingInbox({
     if (!next.delete(msgKey(m))) next.add(msgKey(m));
     return next;
   }), []);
-  const chosen = useMemo(() => items.filter((m) => sel.has(msgKey(m))), [items, sel]);
+  const chosen = useMemo(() => (pinned ? [] : items.filter((m) => sel.has(msgKey(m)))), [items, sel, pinned]); // the page stays mounted on Đã ghim
   useEffect(() => {
     if (!chosen.length) return;
     const onKey = (e: KeyboardEvent) => {
@@ -123,15 +149,20 @@ export function PendingInbox({
 
   return (
     <section aria-label={pinned ? t("Tag đã ghim") : t("Việc cần xử lý")} className="relative flex min-h-0 flex-col">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
+      <div className="@container flex h-11 shrink-0 items-center gap-2 border-b px-3 md:px-5">
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label={t("Quay lại")}><ArrowLeft /></Button>
-        {onPinned && <Segmented id="pending-tab" label={t("Đang chờ hoặc đã ghim")} value={pinned ? "pinned" : "todo"} onChange={(v) => onPinned(v === "pinned")}
-          items={[{ value: "todo", label: t("Đang chờ"), title: t("Tin tag bạn chưa xử lý") }, { value: "pinned", label: t("Đã ghim"), title: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)") }]} />}
+        {onTab && <Segmented id="pending-tab" label={t("Đang chờ, đang xử lý hoặc đã ghim")} value={view} onChange={onTab}
+          items={[
+            { value: "todo", label: t("Đang chờ"), title: t("Tin tag bạn chưa xử lý, chưa có phiên AI nào") },
+            { value: "working", label: <>{t("Đang xử lý")}{working > 0 && <span className="ml-1 font-mono tabular-nums">{working}</span>}</>, title: t("Tin tag đã có phiên AI: AI Agent, Đối chiếu BE, Trợ lý AI") },
+            { value: "pinned", label: t("Đã ghim"), title: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)") },
+          ]} />}
         <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
-          {!q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : t("Không còn việc nào")) : (
+          {!q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : view === "working" ? t("Không có tin đang xử lý") : t("Không còn việc nào")) : (
             <>
-              {t.n(pinned ? "{n} tin đã ghim" : "{n} tin đang chờ bạn", { n: <span className="font-mono text-base font-bold text-ink tabular-nums">{items.length}</span> })}
+              {t.n(pinned ? "{n} tin đã ghim" : view === "working" ? "{n} tin đang xử lý" : "{n} tin đang chờ bạn", { n: <span className="font-mono text-base font-bold text-ink tabular-nums">{items.length}</span> })}
               {late > 0 && <span className="ml-2 font-medium text-signal-2">{t.n("({n} quá hạn)", { n: <span className="font-mono tabular-nums">{late}</span> })}</span>}
+              {!pinned && q.data.length >= PENDING_CAP && <span className="ml-2 text-ink-3">{t("· chỉ hiện {n} tag cũ nhất", { n: PENDING_CAP })}</span>}
             </>
           )}
         </p>
@@ -140,17 +171,22 @@ export function PendingInbox({
           <Dropdown label={t("Lọc theo nhóm")} value={group} onChange={setGroup} className={cn("h-7 w-auto max-w-48", group && "border-hl text-hl-2")}
             options={[{ value: "", label: t("Mọi nhóm ({n})", { n: found.length }) }, ...groups.map(([id, g]) => ({ value: id, label: `${g.title} (${g.n})` }))]} />
         )}
-        <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 lg:flex">
+        <p className="ml-auto hidden shrink-0 items-center gap-3 text-xs text-ink-3 @5xl:flex">
           <span className="flex items-center gap-1"><Kbd>j</Kbd><Kbd>k</Kbd> {t("chọn tin")}</span>
           <span className="flex items-center gap-1"><Kbd>Enter</Kbd> {t("trả lời")}</span>
           <span className="flex items-center gap-1"><Kbd>x</Kbd> {t("xong")}</span>
           {!pinned && <span className="flex items-center gap-1"><Kbd>Space</Kbd> {t("chọn nhiều")}</span>}
           <span className="flex items-center gap-1"><Kbd>?</Kbd> {t("mọi phím tắt")}</span>
         </p>
+        <Hint side="bottom" text={t("Tải lại danh sách: đọc lại tin tag và phiên AI của chúng")}>
+          <Button size="icon-xs" variant="ghost" className="ml-auto shrink-0 @5xl:ml-0" aria-label={t("Tải lại danh sách")} onClick={reload}><RotateCw aria-hidden /></Button>
+        </Hint>
       </div>
 
+      {/* the loading scene covers the visible box from outside the scroll, so it stays centred however far the list scrolled */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      {wait && <AiFetching kind="inbox" cover />}
       <div ref={box} className="relative min-h-0 flex-1 overflow-y-auto bg-cotton">
-        {wait && <AiFetching kind="inbox" cover />}
         {q.isError && (
           <div role="alert" className="grid justify-items-start gap-2 px-5 py-6 text-sm">
             <p className="text-error">{t("Không tải được danh sách.")}</p>
@@ -159,35 +195,34 @@ export function PendingInbox({
             </Button>
           </div>
         )}
-        <div className="@container grid gap-1 pb-4">
+        {!pinned && tasksQ.isError && ( // without the sessions every tag looks untouched: say so, not "nothing in progress"
+          <p role="alert" className="px-5 pt-3 text-xs text-error">
+            {t("Không đọc được phiên AI nên tab Đang xử lý có thể thiếu tin: {e}", { e: errorText(tasksQ.error, {}, t("lỗi kết nối.")) })}
+          </p>
+        )}
+        <div key={view} className="@container grid gap-1 pb-4 animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
           {!pinned && !search.trim() && <LoopBack range={range} />}
-          {q.isSuccess && items.length === 0 && (
-            <div className="grid justify-items-center gap-2 px-6 py-20 text-center text-sm text-ink-2 animate-in fade-in-0 zoom-in-95 duration-(--dur-short)">
-              {search.trim() ? (
-                <>
-                  <p>{t("Không có tin nào khớp “{q}”.", { q: search.trim() })}</p>
-                  <Button size="sm" variant="outline" onClick={onClearSearch}>{t("Xóa tìm kiếm")}</Button>
-                </>
-              ) : pinned ? (
-                <>
-                  <span className="mb-1 grid size-14 place-items-center rounded-full bg-paper-3 text-ink-3"><Pin className="size-6" aria-hidden /></span>
-                  <p className="text-base font-bold text-ink">{t("Chưa ghim tin nào")}</p>
-                  <p className="max-w-xs">{t("Bấm “Ghim” trên một tin để giữ nó ở đây, kể cả khi đã xử lý.")}</p>
-                </>
-              ) : (
-                <>
-                  <span className="mb-1 grid size-14 place-items-center rounded-full bg-ok-wash text-ok"><CheckCheck className="size-7" aria-hidden /></span>
-                  <p className="text-base font-bold text-ink">{t("Xong hết rồi!")}</p>
-                  <p className="max-w-xs">{t("Không còn tin tag nào chờ bạn. Tin mới và tin hết hạn hoãn sẽ tự hiện ở đây.")}</p>
-                </>
-              )}
-            </div>
-          )}
+          {q.isSuccess && items.length === 0 && (search.trim() ? (
+            <Empty icon={<Search />} title={t("Không có tin nào khớp “{q}”.", { q: search.trim() })} className="py-20"
+              action={<Button size="sm" variant="outline" onClick={onClearSearch}>{t("Xóa tìm kiếm")}</Button>} />
+          ) : view === "working" ? (
+            <Empty icon={<AiBot />} title={t("Chưa có tin nào đang xử lý")} className="py-20">
+              {t("Tin tag có phiên AI Agent, Đối chiếu BE hoặc Trợ lý AI sẽ chuyển sang đây.")}
+            </Empty>
+          ) : pinned ? (
+            <Empty icon={<Pin />} title={t("Chưa ghim tin nào")} className="py-20">
+              {t("Chọn “Ghim lên đầu” trong menu ⋯ của một tin để giữ nó ở đây, kể cả khi đã xử lý.")}
+            </Empty>
+          ) : (
+            <Empty art={<AllDone className="mb-1" />} title={t("Xong hết rồi!")} className="py-20">
+              {t("Không còn tin tag nào chờ bạn. Tin mới và tin hết hạn hoãn sẽ tự hiện ở đây.")}
+            </Empty>
+          ))}
           {sections.map((s) => s.rows.length > 0 && (
             <section key={s.id} aria-labelledby={`pending-${s.id}`}>
-              <SectionHead id={`pending-${s.id}`} icon={s.icon} tone={s.tone} title={t(s.title)} n={s.rows.length} note={s.note && t(s.note, { n: readOverdueHours() })}
-                className="sticky top-0 z-10 bg-cotton px-4 @xl:px-5" />
-              <ol className="grid divide-y divide-rule border-y border-rule">
+              <GroupBar id={`pending-${s.id}`} icon={<s.icon aria-hidden />} tone={s.tone} late={s.id === "late"} label={t(s.title)} count={s.rows.length}
+                note={s.note && t(s.note, { n: readOverdueHours() })} className="bg-cotton/85 px-4 @xl:px-5" />
+              <ol className={cn("zebra grid divide-y divide-rule border-b border-rule", GROUP_NEST)}>
                 {s.rows.map(({ chat_title, message: m }) => (
                   <MessageItem
                     key={msgKey(m)}
@@ -199,7 +234,6 @@ export function PendingInbox({
                     isReplyTarget={replyTo === msgKey(m)}
                     tasks={tasks.get(msgKey(m))}
                     onReply={onReply}
-                    onUseText={onUseText}
                     picked={sel.has(msgKey(m))}
                     onPick={pinned ? undefined : pick}
                   />
@@ -208,6 +242,7 @@ export function PendingInbox({
             </section>
           ))}
         </div>
+      </div>
       </div>
       {chosen.length > 0 && <BulkBar ms={chosen} onSelect={(ms) => setSel(new Set(ms.map(msgKey)))} />}
     </section>
@@ -238,42 +273,38 @@ function BulkBar({ ms, onSelect }: { ms: Message[]; onSelect: (ms: Message[]) =>
 }
 
 /** A section's title row: icon, title, count, a note. */
-function SectionHead({ id, icon: Icon, tone, title, n, note, className }: { id: string; icon: LucideIcon; tone: string; title: string; n: number; note?: string; className?: string }) {
-  return (
-    <h3 id={id} className={cn("mb-1 flex items-baseline gap-2 py-2 text-sm", className)}>
-      <Icon className={cn("size-4 shrink-0 self-center", tone)} aria-hidden />
-      <span className={cn("font-bold", tone === "text-ink-2" ? "text-ink" : tone)}>{title}</span>
-      <span className="rounded-full bg-paper-3 px-1.5 font-mono text-xs leading-5 text-ink-2 tabular-nums">{n}</span>
-      {note && <span className="truncate text-xs text-ink-3">{note}</span>}
-    </h3>
-  );
-}
-
 /** "Báo lại": a ticket I own reached Fixed / Done (seen by the YouTrack watch); answer whoever asked about it.
  *  "Trả lời" opens the reply with a line; the item goes once that reply is sent (or on X). */
 function LoopBack({ range }: { range: string }) {
   const t = useT();
-  const items = useLoopItems();
+  const q = useLoopBack();
+  const items = q.data?.items ?? [];
+  const error = q.isError ? errorText(q.error, {}, t("Không đọc được danh sách Báo lại.")) : q.data?.error;
+  const done = useDoneLoop();
   const chats = useChats(range).data?.items;
-  if (!items.length) return null;
+  if (!items.length && !error) return null;
   return (
     <section aria-labelledby="pending-loop">
-      <SectionHead id="pending-loop" icon={Megaphone} tone="text-hl-2" title={t("Báo lại")} n={items.length} note={t("ticket của bạn đã xong, người hỏi chưa biết")} className="px-4 @xl:px-5" />
-      <ul className="grid divide-y divide-rule border-y border-rule">
-        {items.map((l) => <LoopRow key={loopKey(l)} l={l} chat={chats?.find((c) => c.chat_id === l.chat_id)?.title} />)}
+      <GroupBar id="pending-loop" icon={<Megaphone aria-hidden />} tone="text-hl-2" label={t("Báo lại")} count={items.length} note={t("ticket của bạn đã xong, người hỏi chưa biết")} className="bg-cotton/85 px-4 @xl:px-5" />
+      <ul className={cn("zebra grid divide-y divide-rule border-b border-rule", GROUP_NEST)}>
+        {error && <li className="px-4 py-2.5 text-sm text-error @xl:px-5">{t("Báo lại có thể thiếu mục: {e}", { e: error })}</li>}
+        {items.map((l) => <LoopRow key={loopKey(l)} l={l} chat={chats?.find((c) => c.chat_id === l.chat_id)?.title} onDone={() => done(l)} />)}
       </ul>
     </section>
   );
 }
 
-function LoopRow({ l, chat }: { l: LoopItem; chat?: string }) {
+const PENDING_CAP = 300; // storage.list_pending's limit: the newer tags past it are not listed (the sidebar counts all)
+
+function LoopRow({ l, chat, onDone }: { l: LoopItem; chat?: string; onDone: () => void }) {
   const t = useT();
   // The text is read when shown (never stored in the browser); the user reads it here, so no AI consent check.
-  const m = useQuery({
+  const msg = useQuery({
     queryKey: ["message", l.chat_id, l.message_id, "read"],
     queryFn: ({ signal }) => getMessage(l.chat_id, l.message_id, { signal }),
     staleTime: 5 * 60_000,
-  }).data;
+  });
+  const m = msg.data;
   return (
     <li className="flex items-center gap-3 px-4 py-2.5 text-sm @xl:px-5">
       <span className="grid min-w-0 flex-1 gap-0.5">
@@ -281,14 +312,16 @@ function LoopRow({ l, chat }: { l: LoopItem; chat?: string }) {
           <b className="font-mono font-bold text-ink">{l.ticket}</b><span className="shrink-0">{l.state}</span>{chat && <span className="truncate">{chat}</span>}
         </span>
         <span className="truncate text-ink-2">
-          {m ? <>{!m.outgoing && m.sender_name && <b className="font-medium text-ink">{m.sender_name}: </b>}{m.text}</> : <span className="text-ink-3">{t("Đang tải tin…")}</span>}
+          {m ? <>{!m.outgoing && m.sender_name && <b className="font-medium text-ink">{m.sender_name}: </b>}{m.text}</>
+            : msg.isError ? <span className="text-error">{errorText(msg.error, {}, t("Không đọc được tin."))}</span>
+            : <span className="text-ink-3">{t("Đang tải tin…")}</span>}
         </span>
       </span>
       <Button size="xs" variant="outline" onClick={() => void openReplyById(l.chat_id, l.message_id, `${l.ticket} đã chuyển ${l.state}, bạn kiểm tra lại giúp mình nhé.`)}>
         <Reply /> {t("Trả lời")}
       </Button>
       <Hint side="bottom" text={t("Bỏ qua, không báo lại tin này")}>
-        <Button size="icon-xs" variant="ghost" aria-label={t("Bỏ qua")} onClick={() => doneLoopItem(l)}><X /></Button>
+        <Button size="icon-xs" variant="ghost" aria-label={t("Bỏ qua")} onClick={onDone}><X /></Button>
       </Hint>
     </li>
   );
