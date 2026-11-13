@@ -290,6 +290,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Data */
+        get: operations["get_data_api_data_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/data/{item}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Clear */
+        delete: operations["clear_api_data__item__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2571,6 +2605,65 @@ export interface components {
             /** Resets At */
             resets_at?: string | null;
         };
+        /** DataChat */
+        DataChat: {
+            /** Chat Id */
+            chat_id: string;
+            /** Title */
+            title: string;
+            /** Rows */
+            rows: number;
+            /** Bytes */
+            bytes: number;
+        };
+        /** DataItem */
+        DataItem: {
+            /** Id */
+            id: string;
+            /** Bytes */
+            bytes: number;
+            /** Count */
+            count: number;
+            /** Oldest */
+            oldest?: string | null;
+        };
+        /** DataPart */
+        DataPart: {
+            /** Id */
+            id: string;
+            /** Bytes */
+            bytes: number;
+        };
+        /** DataStats */
+        DataStats: {
+            /** Dir */
+            dir: string;
+            /** Total */
+            total: number;
+            /** Parts */
+            parts: components["schemas"]["DataPart"][];
+            /** Db */
+            db: number;
+            /** Db Free */
+            db_free: number;
+            /** Keep Days */
+            keep_days: number;
+            /** Items */
+            items: components["schemas"]["DataItem"][];
+            /** Tables */
+            tables: components["schemas"]["DataTable"][];
+            /** Chats */
+            chats: components["schemas"]["DataChat"][];
+        };
+        /** DataTable */
+        DataTable: {
+            /** Name */
+            name: string;
+            /** Rows */
+            rows: number;
+            /** Bytes */
+            bytes: number;
+        };
         /**
          * DeepItem
          * @description One topic of Q&A with BE: its title / summary and the messages behind it.
@@ -4085,6 +4178,55 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Privacy"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_data_api_data_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataStats"];
+                };
+            };
+        };
+    };
+    clear_api_data__item__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item: "messages" | "sessions" | "digests" | "outbox" | "media" | "runs" | "logs";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

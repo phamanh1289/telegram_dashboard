@@ -395,6 +395,34 @@ async def test_ask_streams_pieces_and_returns_the_final_answer(tmp_path):
     assert run["ref"] == "YT-abc123" and run["sid"] == "s-123"
 
 
+def test_startup_prunes_old_runs_and_photos(tmp_path):
+    import os
+
+    from telegram_dashboard import claude
+    from telegram_dashboard.app import MEDIA_DAYS, prune_media
+
+    s = Settings(root=tmp_path)
+    s.ensure_data_dir()
+    old = (datetime.now(UTC) - timedelta(days=claude.RUNS_DAYS + 1)).isoformat(timespec="seconds")
+    new = datetime.now(UTC).isoformat(timespec="seconds")
+    runs = s.data_dir / "claude_runs.jsonl"
+    runs.write_text(f'{{"at": "{old}"}}\nnot json\n{{"at": "{new}", "feature": "ai"}}\n')
+    claude.prune_runs(s)
+    assert claude.claude_runs(s, claude.RUNS_DAYS) == [{"at": new, "feature": "ai"}]
+    assert len(runs.read_text().splitlines()) == 1 and runs.stat().st_mode & 0o777 == 0o600
+
+    media = s.data_dir / "media"
+    media.mkdir()
+    for name in ("100123_1.jpg", "100123_2.jpg", "1001234_3.jpg", "555_4.jpg"):
+        (media / name).write_bytes(b"x")
+    stale = time.time() - (MEDIA_DAYS + 1) * 86_400
+    os.utime(media / "555_4.jpg", (stale, stale))
+    prune_media(s)  # startup: only the stale one
+    assert sorted(p.name for p in media.iterdir()) == ["1001234_3.jpg", "100123_1.jpg", "100123_2.jpg"]
+    prune_media(s, "-100123")  # Xóa dữ liệu nhóm: that group's photos, not a longer id sharing its prefix
+    assert [p.name for p in media.iterdir()] == ["1001234_3.jpg"]
+
+
 def test_data_json_cannot_close_its_block():
     from telegram_dashboard.ai import data_json
 

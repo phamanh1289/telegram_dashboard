@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -97,6 +98,13 @@ def _claim(settings: Settings) -> Settings | None:
     return settings
 
 
+class _QuietShutdown(logging.Filter):
+    """An open page's SSE stream cut by the bounded graceful shutdown is expected: no ~50-line traceback per tab."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not (record.exc_info and isinstance(record.exc_info[1], asyncio.CancelledError))
+
+
 def _serve(settings: Settings) -> int:
     import dataclasses
 
@@ -124,6 +132,7 @@ def _serve(settings: Settings) -> int:
     if sys.platform == "win32":
         _no_quickedit()
     app = create_app(settings)
+    logging.getLogger("uvicorn.error").addFilter(_QuietShutdown())
     # SSE streams never finish on their own; bound the graceful wait so Ctrl+C cannot hang.
     uvicorn.run(
         app, host=settings.host, port=settings.port, workers=1, access_log=False,

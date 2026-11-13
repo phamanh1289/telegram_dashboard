@@ -13,6 +13,7 @@ export type Outbox = S["OutboxDTO"];
 export type AiResult = S["AiResult"];
 export type Project = S["ProjectDTO"];
 export type Task = S["TaskDTO"];
+export type DataStats = S["DataStats"];
 export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];

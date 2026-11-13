@@ -338,7 +338,7 @@
 "tab": "telegram",
 "area": "Trang nhóm › ⋯ › Xóa dữ liệu nhóm",
 "title": "Xóa dữ liệu nhóm",
-"what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.",
+"what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn. Cũng xóa được từ Cài đặt › Dữ liệu › Tin theo nhóm (kèm dung lượng từng nhóm).",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
@@ -1654,7 +1654,7 @@
 "tab": "settings",
 "area": "Cài đặt › Tìm cài đặt",
 "title": "Tìm một cài đặt",
-"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Dữ liệu trên trình duyệt, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
 "how": [
 {
 "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -1664,6 +1664,29 @@
 "Dùng ↑ ↓ chọn rồi Enter, hoặc bấm một kết quả"
 ],
 "keys": "tim cai dat search settings nhay toi"
+},
+{
+"id": "settings-data",
+"tab": "settings",
+"area": "Cài đặt › Dữ liệu",
+"title": "Xem dung lượng và dọn dữ liệu trên máy",
+"what": "Cho biết app đang chiếm bao nhiêu trên máy (thanh chia theo phần: Database, Phiên AI, Ảnh tag đã tải, Lịch sử chạy AI, Log server, Đăng nhập Telegram, Cấu hình), database theo từng bảng và theo từng nhóm. Xóa từng phần: tin đã xử lý cũ hơn 30 ngày, bản tóm tắt Briefing, lịch sử gửi cũ, phiên AI đã xong, ảnh đã tải, lịch sử chạy AI, log server, dữ liệu của một nhóm, nháp trả lời trên trình duyệt. Mỗi lần xóa hỏi lại và nói rõ mất gì, giữ gì; database tự thu gọn sau khi xóa. Khi khởi động app tự dọn ảnh quá 30 ngày, lịch sử chạy AI quá 90 ngày và cắt log quá 5 MB.",
+"how": [
+{
+"t": "Mở Cài đặt › Dữ liệu",
+"at": "css:a[href=\"#data\"]"
+},
+"Xem thẻ \"Dung lượng\" để biết phần nào lớn nhất",
+{
+"t": "Bấm \"Xóa…\" ở dòng muốn dọn",
+"at": "Xóa…"
+},
+{
+"t": "Đọc hộp xác nhận; bấm \"Hủy\" để thoát (chỉ bấm \"Xóa\" nếu thật sự muốn xóa)",
+"at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+}
+],
+"keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean"
 },
 {
 "id": "settings-role",

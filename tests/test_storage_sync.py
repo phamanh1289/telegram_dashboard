@@ -364,3 +364,34 @@ def test_backfill_neither_resurrects_a_purge_nor_recloses_a_reopened_tag(env):
     env.store.set_handled(A, 2, False)  # reopened after a reply: a later backfill must not close it
     env.store.store_mentions([("Team", "supergroup", new, True)])
     assert not env.store.get_message(A, 2).handled
+
+
+def test_clearing_old_messages_keeps_what_is_still_used_and_never_brings_them_back(env, client):
+    env.track(A)
+    for i in range(1, 6):
+        env.store.apply_message(msg(A, i, "x" * 500))
+    for i in (1, 2, 3, 4):  # 1 and 4: cleared
+        env.store.set_handled(A, i, True)
+    env.store.set_pinned(A, 2, True)  # pinned: kept
+    env.store.add_task("t1", A, 3, "/p", "do")  # an AI session's tag: kept
+    # 5 is still pending: kept
+    before = 2_000_000_000
+    st = env.store.data_stats(before)
+    assert st["messages"]["count"] == 2 and st["messages"]["bytes"] > 1000
+    assert {t["name"] for t in st["tables"]} >= {"messages", "tasks", "outbox"}
+    assert [c["rows"] for c in st["chats"]] == [5]
+    assert env.store.prune_messages(before) == 2
+    assert env.store.get_message(A, 1) is None and env.store.get_message(A, 2) is not None
+    env.store.compact()
+    # an edit or a backfill of the cleared tag does not store it again as a new one
+    assert env.store.apply_message(msg(A, 1, "edited", edit=5)) is False
+    assert env.store.store_mentions([("A", "supergroup", msg(A, 1), False)]) == []
+    assert env.store.get_message(A, 1) is None
+
+    # the Settings › Dữ liệu endpoints (their own app and database)
+    r = client.get("/api/data")
+    assert r.status_code == 200 and {i["id"] for i in r.json()["items"]} >= {"messages", "media", "logs", "login"}
+    o = {"Origin": "http://127.0.0.1:8765"}
+    assert client.delete("/api/data/logs", headers=o).status_code == 204
+    assert client.delete("/api/data/messages", headers=o).status_code == 204
+    assert client.delete("/api/data/nope", headers=o).status_code == 422

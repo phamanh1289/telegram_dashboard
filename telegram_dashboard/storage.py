@@ -42,6 +42,17 @@ _TASK_DONE = (
     "(CASE WHEN m.deleted=0 THEN m.handled AND m.handled_by NOT IN ('reply', 'dashboard') ELSE t.done END)"
 )
 
+# Old enough to clear (Settings › Dữ liệu): handled tags and our replies, not pinned, not used by an AI session
+# (its turns or its tag) or by an open Báo lại item. Alias `m`, one parameter: the cutoff.
+_OLD_MSG = (
+    "m.deleted=0 AND m.pinned=0 AND (m.handled=1 OR m.outgoing=1) AND m.date<? "
+    "AND NOT EXISTS (SELECT 1 FROM task_refs r WHERE r.chat_id=m.chat_id AND r.message_id=m.message_id) "
+    "AND NOT EXISTS (SELECT 1 FROM tasks t WHERE t.chat_id=m.chat_id AND t.message_id=m.message_id) "
+    "AND NOT EXISTS (SELECT 1 FROM loop_back l WHERE l.chat_id=m.chat_id AND l.message_id=m.message_id AND l.done=0)"
+)
+# ponytail: a stored message's size, estimated from its text columns plus a fixed row overhead
+_ROW_BYTES = "COALESCE(SUM(LENGTH(m.text) + LENGTH(m.links) + LENGTH(COALESCE(m.sender_name, '')) + 64), 0)"
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS chats (
@@ -747,6 +758,8 @@ class Store:
             m.topic_id, int(m.outgoing), m.media_kind, json.dumps([x.model_dump() for x in m.links]),
         )  # fmt: skip
         if existing is None:
+            if (_ts(m.date) or 0) < self._pruned_before(c):
+                return False  # cleared in Settings › Dữ liệu: an old message edited or backfilled is not a new tag
             c.execute(
                 "INSERT INTO messages (sender_id,sender_name,text,date,edit_date,reply_to_id,"
                 "topic_id,outgoing,media_kind,links,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -803,7 +816,8 @@ class Store:
                 except ApiError:
                     continue  # migrated chat
                 new = self._msg(c, m.chat_id, m.message_id) is None
-                self._upsert_message(c, m, self._chat(c, m.chat_id))
+                if not self._upsert_message(c, m, self._chat(c, m.chat_id)) and new:
+                    continue  # older than a clear (pruned_before)
                 if not new:
                     continue
                 if replied or _rule_matches(rules, m):
@@ -1644,6 +1658,71 @@ class Store:
         with self._conn() as c:
             r = c.execute("SELECT * FROM digests WHERE chat_id=?", (chat_id,)).fetchone()
             return None if r is None else dict(r)
+
+    # ---- local data (Settings › Dữ liệu) ---------------------------------
+    def data_stats(self, before: int) -> dict:
+        """Bytes and rows per table (indexes counted in their table), per group, and what each clear would drop."""
+        with self._conn() as c:
+            try:  # dbstat: compiled into the bundled SQLite; elsewhere sizes fall back to row counts only
+                size = dict(c.execute(
+                    "SELECT COALESCE(s.tbl_name, d.name), SUM(d.pgsize) FROM dbstat d "
+                    "LEFT JOIN sqlite_schema s ON s.name=d.name GROUP BY 1"
+                ).fetchall())  # fmt: skip
+            except sqlite3.Error:
+                size = {}
+            names = c.execute("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            count = lambda n: c.execute(f'SELECT COUNT(*) FROM "{n}"').fetchone()[0]  # noqa: E731
+            tables = [{"name": n, "rows": count(n), "bytes": size.get(n, 0)} for (n,) in names.fetchall()]
+            chats = [dict(r) for r in c.execute(
+                f"SELECT m.chat_id, COALESCE(c.title, m.chat_id) AS title, COUNT(*) AS rows, {_ROW_BYTES} AS bytes "
+                "FROM messages m LEFT JOIN chats c USING (chat_id) WHERE m.deleted=0 "
+                "GROUP BY m.chat_id ORDER BY bytes DESC"
+            )]  # fmt: skip
+            old = c.execute(
+                f"SELECT COUNT(*), {_ROW_BYTES}, MIN(date) FROM messages m WHERE {_OLD_MSG}", (before,)
+            ).fetchone()
+            dig = c.execute("SELECT COUNT(*), SUM(LENGTH(result)), MIN(created_at) FROM digests").fetchone()
+            sent = c.execute(  # ponytail: ~120 bytes a row (the text is dropped once sent)
+                "SELECT COUNT(*), COUNT(*) * 120, MIN(created_at) FROM outbox WHERE status='sent' AND created_at<?",
+                (before,),
+            ).fetchone()
+            page = c.execute("PRAGMA page_size").fetchone()[0]
+            free = c.execute("PRAGMA freelist_count").fetchone()[0] * page
+        item = lambda r: {"count": r[0], "bytes": r[1] or 0, "oldest": r[2]}  # noqa: E731
+        return {"tables": tables, "chats": chats, "free": free,
+                "messages": item(old), "digests": item(dig), "outbox": item(sent)}  # fmt: skip
+
+    def prune_messages(self, before: int) -> int:
+        """Handled tags and our replies older than `before`, unless an AI session, a Báo lại item or a pin still
+        uses them. Tombstones stay (they keep a deleted message from coming back); `pruned_before` keeps a later
+        edit or backfill from storing them again as new tags."""
+        with self._conn(write=True) as c:
+            n = c.execute(f"DELETE FROM messages AS m WHERE {_OLD_MSG}", (before,)).rowcount
+            c.execute("INSERT OR REPLACE INTO metadata VALUES ('pruned_before', ?)",
+                      (str(max(before, self._pruned_before(c))),))  # fmt: skip
+        return n
+
+    def clear_digests(self) -> int:
+        with self._conn(write=True) as c:
+            return c.execute("DELETE FROM digests").rowcount
+
+    def clear_sent(self, before: int) -> int:
+        with self._conn(write=True) as c:
+            return c.execute("DELETE FROM outbox WHERE status='sent' AND created_at<?", (before,)).rowcount
+
+    @staticmethod
+    def _pruned_before(c: sqlite3.Connection) -> int:
+        r = c.execute("SELECT value FROM metadata WHERE key='pruned_before'").fetchone()
+        return int(r[0]) if r else 0
+
+    def compact(self) -> None:
+        """Give the space of deleted rows back to the disk (SQLite keeps it as free pages otherwise)."""
+        c = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+        try:
+            c.execute("VACUUM")
+            c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        finally:
+            c.close()
 
 
 class Db:

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, GitBranch, Grid2x2, ImagePlus, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, Palette, PencilLine, PenLine, Pipette, RotateCcw, RotateCw, Search, Send, SlidersHorizontal, Smile, Sparkles, Sun, TriangleAlert, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Database, Download, ExternalLink, GitBranch, Grid2x2, ImagePlus, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, Palette, PencilLine, PenLine, Pipette, RotateCcw, RotateCw, Search, Send, SlidersHorizontal, Smile, Sparkles, Sun, TriangleAlert, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AiAccounts, ModelEffortPicker, PrefsSection, useAiPrefs } from "@/components/ai";
@@ -16,24 +16,26 @@ import { AiBot, AiBotIcon, AiPromptBox, AiThinking, Mascot } from "@/components/
 import { BotStage } from "@/components/ui/empty";
 import { type MascotStyle, mascotUrl, useMascotActions, useMascotError, useMascotJobs } from "@/lib/mascot";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { PurgeChat } from "@/components/purge-chat";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
-import { type Key, type Lang, saveLang, t as tPlain, tMaybe, tr, useT } from "@/lib/i18n";
+import { fmtBytes, fmtDay, fmtNum, type Key, type Lang, saveLang, t as tPlain, tMaybe, tr, useT } from "@/lib/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import { type ShortcutGroup, ShortcutList, TG_KEYS, YT_KEYS } from "@/components/shortcuts";
 import { RulesSection } from "@/components/tools-menu";
 import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
-import { api, ApiError, errorText, statusQuery } from "@/lib/api";
+import { api, ApiError, type DataStats, errorText, statusQuery } from "@/lib/api";
 import { clearDrafts, fold, toast } from "@/lib/inbox";
 import { AUTO_BRIEF } from "@/components/briefing-page";
 import { ACCENTS, applyRowActions, CHROMA_MAX, CHROMA_MIN, hexToAccent, MIXES, oklchHex, applyTheme, INTRO_MAX, type Look, MASCOT_MAX, MASCOTS, onPrefs, readMascot, useMascot, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, getPref, type ReportAt, saveLook, saveQuotaAgent, useQuotaAgent, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, type BotCorner, type BotMode, type BotSize, useBotCode, useBotDock, useBotMode, useBotShow, useBotSize, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 
-type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "shortcuts" | "github";
+type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github";
 type Section = "me" | "services" | "system";
 const SECTIONS: [Section, Key][] = [["me", "Cá nhân"], ["services", "Dịch vụ"], ["system", "Hệ thống"]];
 /** id, name, icon, the nav's one-liner, the page's lead, the nav section. Chung holds only what every module reads. */
@@ -44,6 +46,7 @@ const GROUPS: [GroupId, Key, React.ComponentType<{ className?: string }>, Key, K
   ["telegram", "Telegram", Send, "Tài khoản, hàng chờ, Q&A", "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này.", "services"],
   ["youtrack", "YouTrack", YtLogo, "Kết nối, prompt, workflow", "Kết nối, hướng dẫn cho AI, kho prompt, workflow và báo cáo release.", "services"],
   ["ai", "AI", Sparkles, "Model, tài khoản CLI", "CLI nào chạy các tính năng AI, model/effort cho từng loại việc và tài khoản của từng CLI.", "services"],
+  ["data", "Dữ liệu", Database, "Dung lượng, dọn dẹp", "Những gì app lưu trên máy này và trình duyệt này: mỗi phần chiếm bao nhiêu, xóa từng phần khi cần.", "system"],
   ["shortcuts", "Phím tắt", Keyboard, "Inbox và YouTrack", "Phím một chữ không chạy khi đang gõ trong ô nhập. Bấm ? trong Inbox để mở nhanh.", "system"],
   ["github", "Cập nhật", GitBranch, "Bản mới từ GitHub", "Lấy bản mới từ GitHub rồi khởi động lại server.", "system"],
 ];
@@ -146,6 +149,7 @@ export function SettingsPage() {
           {tab === "youtrack" && <YouTrackGroup view={ytView} setView={setYtView} />}
           {tab === "ai" && <AiGroup />}
           {tab === "github" && <Card title="Cập nhật app" info="Bản cài: tải gói mới từ GitHub Releases. Bản git: git pull, build lại giao diện (cần quyền đọc repo)."><UpdateSection /></Card>}
+          {tab === "data" && <DataGroup />}
           {tab === "shortcuts" && <ShortcutsGroup />}
         </main>
       </div>
@@ -177,7 +181,7 @@ const ENTRIES: Entry[] = [
   { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Q&A", k: "qa tag nguoi duoc hoi tra loi" },
   { t: "Tự tóm tắt Briefing", g: "telegram", card: "Briefing", k: "tu dong nen briefing auto" },
   { t: "Luôn bỏ qua người gửi / từ khóa", g: "telegram", card: "Luôn bỏ qua", k: "tat bat lai thong bao mute quy tac rule tu danh dau da xu ly" },
-  { t: "Xóa nháp và danh sách Báo lại", g: "telegram", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
+  { t: "Xóa nháp và danh sách Báo lại", g: "data", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
   { t: "Tài khoản YouTrack, URL và token", g: "youtrack", card: "Tài khoản YouTrack", view: "connect", k: "ket noi" },
   { t: "Báo cáo release tự động", g: "youtrack", card: "Báo cáo release", view: "connect", k: "report lich hang ngay" },
   { t: "Instructions cho AI (YouTrack)", g: "youtrack", card: "Instructions cho AI", view: "ai", k: "huong dan notes team" },
@@ -191,6 +195,9 @@ const ENTRIES: Entry[] = [
   { t: "Ẩn SĐT / email khi gửi AI", g: "ai", card: "Quyền riêng tư", k: "privacy redact so dien thoai email" },
   { t: "Cập nhật app từ GitHub", g: "github", card: "Cập nhật app", k: "update phien ban moi" },
   { t: "Tự động cập nhật", g: "github", card: "Cập nhật app", k: "auto update" },
+  { t: "Dung lượng dữ liệu trên máy", g: "data", card: "Dung lượng", k: "database db sqlite mb dung luong disk storage o dia" },
+  { t: "Xóa tin cũ, phiên AI đã xong, ảnh, log", g: "data", card: "Database", k: "don dep clear clean xoa tin cu anh log lich su phien" },
+  { t: "Dung lượng tin theo từng nhóm", g: "data", card: "Tin theo nhóm", k: "xoa du lieu nhom group purge" },
   { t: "Phím tắt Telegram Inbox và YouTrack", g: "shortcuts", k: "keyboard shortcut" },
 ];
 const GROUP_NAME = Object.fromEntries(GROUPS.map(([id, name]) => [id, name])) as Record<GroupId, Key>;
@@ -802,14 +809,6 @@ function TelegramGroup() {
       <RulesSection />
     </Card>
 
-    <Card advanced title="Dữ liệu trên trình duyệt này">
-      <Row label={t("Nháp trả lời")} desc={t("Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.")}>
-        <Button type="button" size="sm" variant="outline"
-          onClick={() => { clearDrafts(); toast({ text: t("Đã xóa nháp trên máy này") }); }}>
-          {t("Xóa nháp")}
-        </Button>
-      </Row>
-    </Card>
   </>;
 }
 
@@ -1352,6 +1351,239 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
 }
 
 // ---- Phím tắt -----------------------------------------------------------------------------------
+
+// ---- Dữ liệu ------------------------------------------------------------------------------------
+
+type DataItem = DataStats["items"][number];
+/** The parts of data/ on disk (local_data.DataPart ids): name and bar colour. What is left over is "Khác". */
+const PARTS: Record<string, [Key, string]> = {
+  db: ["Database", "bg-hl"],
+  sessions: ["Phiên AI", "bg-info"],
+  media: ["Ảnh tag đã tải", "bg-signal"],
+  runs: ["Lịch sử chạy AI", "bg-ok"],
+  logs: ["Log server", "bg-code"],
+  login: ["Đăng nhập Telegram", "bg-warn"],
+  config: ["Cấu hình", "bg-error"],
+};
+/** What each clear touches (local_data.Item): its row, its count unit, the question and what clearing does. */
+const CLEARS: Record<string, { name: Key; desc: Key; unit: Key; ask: Key; effect: Key }> = {
+  messages: {
+    name: "Tin đã xử lý cũ hơn {n} ngày", desc: "Tag đã xong và tin bạn đã trả lời.", unit: "{n} tin",
+    ask: "Xóa tin đã xử lý cũ?",
+    effect: "Các tin này biến khỏi Đã xử lý, tìm kiếm và thống kê; trên Telegram vẫn còn. Giữ lại: tin chưa xử lý, tin ghim, tin gắn với phiên AI hoặc Báo lại. Không hoàn tác được.",
+  },
+  digests: {
+    name: "Bản tóm tắt Briefing", desc: "Bản tóm tắt gần nhất của mỗi nhóm và mốc đã đọc tới.", unit: "{n} nhóm",
+    ask: "Xóa bản tóm tắt Briefing?",
+    effect: "Briefing trống cho tới lần tóm tắt sau, và lần đó đọc lại cả khoảng thời gian chứ không chỉ tin mới (tốn một lượt AI mỗi nhóm). Không hoàn tác được.",
+  },
+  outbox: {
+    name: "Lịch sử gửi cũ hơn {n} ngày", desc: "Mã truy vết R-… của tin đã gửi thành công.", unit: "{n} tin",
+    ask: "Xóa lịch sử gửi cũ?",
+    effect: "Không tra được mã R-… của các tin này nữa. Tin trên Telegram không bị ảnh hưởng; tin đang gửi hoặc gửi lỗi được giữ.",
+  },
+  sessions: {
+    name: "Phiên AI đã xong", desc: "AI Agent và Trợ lý AI: lịch sử chat, kết quả, tệp đính kèm.", unit: "{n} phiên",
+    ask: "Xóa các phiên AI đã xong?",
+    effect: "Các phiên đã xong biến khỏi danh sách AI Agent / Trợ lý AI, kèm lịch sử chat và kết quả. Phiên đang chạy hoặc chưa xong được giữ; code đã sửa trong dự án không bị đụng. Không hoàn tác được.",
+  },
+  media: {
+    name: "Ảnh tag đã tải", desc: "Ảnh trong tin tag, tải về khi bạn mở. Tự xóa ảnh quá 30 ngày khi khởi động.", unit: "{n} ảnh",
+    ask: "Xóa ảnh đã tải?",
+    effect: "Không mất gì: ảnh được tải lại từ Telegram khi bạn mở tin (cần Telegram đang kết nối).",
+  },
+  runs: {
+    name: "Lịch sử chạy AI", desc: "Từng lần chạy AI trong app: model, token, chi phí. Tự cắt lần chạy quá 90 ngày khi khởi động.", unit: "{n} lần chạy",
+    ask: "Xóa lịch sử chạy AI?",
+    effect: "Lịch sử và thống kê chi phí ở Cài đặt › AI › Tài khoản đếm lại từ đầu. Lần chạy ngoài app (Claude Code, Codex) vẫn hiện vì được đọc từ máy. Không hoàn tác được.",
+  },
+  logs: {
+    name: "Log server", desc: "Nhật ký để dò lỗi (bản chạy từ git). Quá 5 MB tự chuyển thành server.log.1 khi khởi động.", unit: "{n} tệp",
+    ask: "Xóa log server?",
+    effect: "Mất nhật ký để dò lỗi đã xảy ra. App không bị ảnh hưởng; log mới tiếp tục được ghi.",
+  },
+};
+/** What each table of dashboard.sqlite3 holds. */
+const TABLES: Record<string, Key> = {
+  messages: "Tin tag và tin bạn trả lời", chats: "Nhóm đã theo dõi", outbox: "Tin gửi đi", rules: "Luôn bỏ qua, quy tắc Vòng BE",
+  tasks: "Phiên AI", task_refs: "Tin gắn với phiên AI", projects: "Dự án", changes: "Nhật ký thay đổi (tự giữ 50.000 dòng)",
+  digest_consents: "Đồng ý gửi nhóm cho Digest", digests: "Bản tóm tắt Briefing", qa_marks: "Q&A đã đóng / gỡ", loop_back: "Báo lại",
+  metadata: "Thông tin nội bộ",
+};
+
+const dataQuery = { queryKey: ["data"], queryFn: () => api<DataStats>("/data") };
+
+/** Cài đặt › Dữ liệu: how big each part of data/ is, the database by table and by group, and clearing one part at a time. */
+function DataGroup() {
+  const t = useT();
+  const q = useQuery(dataQuery);
+  const [asking, setAsking] = useState<DataItem | null>(null);
+  const [purging, setPurging] = useState<{ chat_id: string; title: string } | null>(null);
+  const [allChats, setAllChats] = useState(false);
+  const d = q.data;
+  const item = (id: string) => d?.items.find((i) => i.id === id);
+  const clearRow = (id: string) => {
+    const it = item(id), c = CLEARS[id];
+    if (!it || !d) return null;
+    return (
+      <Row key={id} label={t(c.name, { n: d.keep_days })} desc={<>{t(c.desc)}<br /><DataMeta it={it} unit={c.unit} /></>}>
+        <span className="flex items-center gap-3">
+          <span className="font-mono text-sm text-ink tabular-nums">{it.count ? fmtBytes(it.bytes) : "—"}</span>
+          <Button type="button" size="sm" variant="outline" disabled={!it.count} onClick={() => setAsking(it)}>{t("Xóa…")}</Button>
+        </span>
+      </Row>
+    );
+  };
+  const drafts = (
+    <Card title="Dữ liệu trên trình duyệt này">
+      <Row label={t("Nháp trả lời")} desc={t("Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.")}>
+        <Button type="button" size="sm" variant="outline"
+          onClick={() => { clearDrafts(); toast({ text: t("Đã xóa nháp trên máy này") }); }}>
+          {t("Xóa nháp")}
+        </Button>
+      </Row>
+    </Card>
+  );
+  if (q.isError) return <>
+    <Card title="Dung lượng">
+      <Row label={<StatusLine tone="error">{errorText(q.error, {}, t("Không đọc được dung lượng dữ liệu."))}</StatusLine>}>
+        <Button type="button" size="sm" variant="outline" onClick={() => q.refetch()}>{t("Thử lại")}</Button>
+      </Row>
+    </Card>
+    {drafts}
+  </>;
+  if (!d) return <>
+    {[0, 1, 2].map((i) => <Skeleton key={i} className="h-36 rounded-[var(--radius-card)]" />)}
+  </>;
+  const known = d.parts.reduce((a, p) => a + p.bytes, 0);
+  const parts = [...d.parts.map((p) => ({ id: p.id, bytes: p.bytes, name: PARTS[p.id]?.[0] ?? (p.id as Key), color: PARTS[p.id]?.[1] ?? "bg-ink-3" })),
+    { id: "other", bytes: Math.max(0, d.total - known), name: "Khác" as Key, color: "bg-rule-2" }].filter((p) => p.bytes > 0);
+  const chats = allChats ? d.chats : d.chats.slice(0, 8);
+  const top = Math.max(1, ...d.chats.map((c) => c.bytes));
+  const login = item("login"), config = item("config");
+  return <>
+    <Card title="Dung lượng" info="Tự dọn khi khởi động: ảnh tag quá 30 ngày, lịch sử chạy AI quá 90 ngày; log server quá 5 MB chuyển thành server.log.1. Database tự thu gọn sau mỗi lần xóa.">
+      <div className="grid gap-3 py-3 first:pt-1">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="text-2xl font-bold text-ink tabular-nums">{fmtBytes(d.total)}</span>
+          <span className="text-xs text-ink-3">{t("trên máy này")}</span>
+        </div>
+        <div role="img" aria-label={parts.map((p) => `${t(p.name)} ${fmtBytes(p.bytes)}`).join(", ")} className="flex h-3 gap-px overflow-hidden rounded-full bg-paper-3">
+          {parts.map((p) => <span key={p.id} className={cn("h-full min-w-1", p.color)} style={{ flexGrow: p.bytes }} />)}
+        </div>
+        <ul className="grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2">
+          {parts.map((p) => (
+            <li key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
+              <span aria-hidden className={cn("size-2.5 shrink-0 rounded-sm", p.color)} />
+              <span className="min-w-0 flex-1 truncate text-ink-2">{t(p.name)}</span>
+              <span className="font-mono text-xs text-ink tabular-nums">{fmtBytes(p.bytes)}</span>
+              <span className="w-10 text-right font-mono text-xs text-ink-3 tabular-nums">{fmtNum(Math.round((p.bytes / Math.max(1, d.total)) * 100))}%</span>
+            </li>
+          ))}
+        </ul>
+        <p className="font-mono text-xs break-all text-ink-3">{d.dir}</p>
+      </div>
+    </Card>
+
+    <Card title="Database" info="dashboard.sqlite3: tin tag, nhóm, phiên AI, hàng gửi, Briefing. Xóa xong file được thu gọn ngay.">
+      <Row label="dashboard.sqlite3" desc={d.db_free > 0 ? t("{size} trống chờ thu gọn", { size: fmtBytes(d.db_free) }) : t("Đã gọn, không có chỗ trống thừa.")}>
+        <span className="font-mono text-sm text-ink tabular-nums">{fmtBytes(d.db)}</span>
+      </Row>
+      {["messages", "digests", "outbox"].map(clearRow)}
+    </Card>
+
+    <Card title="Tin theo nhóm" info="Dung lượng ước tính từ nội dung tin. Xóa dữ liệu nhóm giống ⋯ › Xóa dữ liệu nhóm trên trang nhóm.">
+      {d.chats.length === 0 ? <Row label={t("Chưa lưu tin nào.")} /> : <>
+        {chats.map((c) => (
+          <div key={c.chat_id} className="grid gap-1.5 py-2.5 first:pt-1 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
+            <span className="grid min-w-0 gap-1">
+              <span className="flex min-w-0 items-baseline gap-2">
+                <span className="min-w-0 truncate text-sm font-medium text-ink">{c.title}</span>
+                <span className="shrink-0 text-xs text-ink-3 tabular-nums">{t("{n} tin", { n: fmtNum(c.rows) })}</span>
+              </span>
+              <span aria-hidden className="h-1.5 overflow-hidden rounded-full bg-paper-3"><span className="block h-full rounded-full bg-hl" style={{ width: `${Math.max(2, (c.bytes / top) * 100)}%` }} /></span>
+            </span>
+            <span className="flex items-center gap-3 sm:justify-self-end">
+              <span className="font-mono text-sm text-ink tabular-nums">≈ {fmtBytes(c.bytes)}</span>
+              <Button type="button" size="sm" variant="outline" onClick={() => setPurging(c)}>{t("Xóa…")}</Button>
+            </span>
+          </div>
+        ))}
+        {d.chats.length > 8 && (
+          <div className="pt-2.5">
+            <button type="button" className={quietBtn} onClick={() => setAllChats(!allChats)}>
+              {allChats ? t("Thu gọn") : t("Hiện tất cả {n} nhóm", { n: d.chats.length })}
+            </button>
+          </div>
+        )}
+      </>}
+    </Card>
+
+    <Card title="Tệp trên máy">
+      {["sessions", "media", "runs", "logs"].map(clearRow)}
+      {!!login?.count && <Row label={t("Đăng nhập Telegram")} desc={<>{t("Phiên đăng nhập của tài khoản. Muốn xóa thì đăng xuất ở")} <a href="#telegram" className={linkCls}>{t("Cài đặt › Telegram")}</a></>}>
+        <span className="font-mono text-sm text-ink tabular-nums">{fmtBytes(login.bytes)}</span>
+      </Row>}
+      {!!config?.count && <Row label={t("Cấu hình")} desc={t("Kết nối YouTrack, Telegram API, model AI, workflow… ({n} tệp). Sửa ở từng mục Cài đặt.", { n: config.count })}>
+        <span className="font-mono text-sm text-ink tabular-nums">{fmtBytes(config.bytes)}</span>
+      </Row>}
+    </Card>
+
+    <Card advanced title="Chi tiết từng bảng" info="Dung lượng từng bảng trong dashboard.sqlite3, đã tính cả chỉ mục.">
+      <div className="overflow-x-auto py-1">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-xs text-ink-3">
+            <th className="py-1.5 pr-3 font-medium">{t("Bảng")}</th>
+            <th className="py-1.5 pr-3 text-right font-medium">{t("Dòng")}</th>
+            <th className="py-1.5 text-right font-medium">{t("Dung lượng")}</th>
+          </tr></thead>
+          <tbody className="divide-y divide-rule">
+            {[...d.tables].sort((a, b) => b.bytes - a.bytes || b.rows - a.rows).map((tb) => (
+              <tr key={tb.name}>
+                <td className="py-1.5 pr-3"><span className="font-mono text-xs text-ink">{tb.name}</span><span className="block text-xs text-ink-3">{TABLES[tb.name] ? t(TABLES[tb.name]) : ""}</span></td>
+                <td className="py-1.5 pr-3 text-right font-mono text-xs text-ink tabular-nums">{fmtNum(tb.rows)}</td>
+                <td className="py-1.5 text-right font-mono text-xs text-ink tabular-nums">{tb.bytes ? fmtBytes(tb.bytes) : "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+
+    {drafts}
+
+    {asking && <ClearData it={asking} keep={d.keep_days} onClose={() => setAsking(null)} />}
+    {purging && <PurgeChat chatId={purging.chat_id} title={purging.title} onClose={() => setPurging(null)} />}
+  </>;
+}
+
+/** "48 tin · cũ nhất 01/10/2026" */
+function DataMeta({ it, unit }: { it: DataItem; unit: Key }) {
+  const t = useT();
+  if (!it.count) return <span>{t("Không có gì để xóa.")}</span>;
+  return <span className="tabular-nums">{t(unit, { n: fmtNum(it.count) })}{it.oldest && ` · ${t("cũ nhất {day}", { day: fmtDay(it.oldest) })}`}</span>;
+}
+
+/** The question before a clear: what it does, what it touches. Mounted only while asking; stays open on failure. */
+function ClearData({ it, keep, onClose }: { it: DataItem; keep: number; onClose: () => void }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const c = CLEARS[it.id];
+  const clear = useMutation({
+    mutationFn: () => api<void>(`/data/${it.id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      onClose();
+      toast({ text: t("Đã xóa: {name}", { name: t(c.name, { n: keep }) }) });
+    },
+    onSettled: () => qc.invalidateQueries(), // messages, sessions, Briefing, AI history: every view may have shown them
+  });
+  return (
+    <ConfirmDialog open onOpenChange={(o) => { if (!o) onClose(); }} title={t(c.ask)} confirmLabel={t("Xóa")}
+      description={t(c.effect)} busy={clear.isPending} error={clear.isError && errorText(clear.error, {}, t("Xóa thất bại, thử lại."))}
+      onConfirm={() => clear.mutate()}
+      items={[{ id: it.id, tag: fmtBytes(it.bytes), label: <DataMeta it={it} unit={c.unit} /> }]} />
+  );
+}
 
 function ShortcutsGroup() {
   const t = useT();

@@ -17,18 +17,20 @@ from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from telethon import errors as tg_errors
 
-from . import privacy, providers, updater
+from . import local_data, privacy, providers, updater
 from .agent import AgentRunner, session_ref
 from .ai import AiService, clean_svg, client_gone, parse_ticket, pick_folder, stream_answer
 from .auth import LocalGuardMiddleware
 from .autobe import AutoBe
 from .claude import (
+    RUNS_DAYS,
     claude_account,
     claude_login,
     claude_login_code,
     claude_logout,
     claude_reset,
     claude_runs,
+    prune_runs,
     refresh_usage,
 )
 from .config import Settings, write_private_json
@@ -122,6 +124,7 @@ log = logging.getLogger("telegram_dashboard.app")
 FAILED_STATUS = {"retry_after": 429, "forbidden": 403, "reply_not_found": 404, "not_connected": 503}
 LIVE_READS = 4  # parallel Telegram calls in /api/briefing and /api/qa
 QA_TTL = 30.0  # seconds a group's live Q&A read is reused: every page polls each followed group
+MEDIA_DAYS = 30  # cached tag photos kept; an older one is downloaded again when opened
 QA_SCAN = 600  # newest messages read per group for Q&A
 MEMBERS_TTL = 300.0  # seconds a group's member list (reply box @ popup) is reused
 
@@ -182,6 +185,15 @@ MASCOT_STYLES = {
 }
 
 
+def prune_media(settings: Settings, chat_id: str | None = None) -> None:
+    """Startup: drop cached photos older than MEDIA_DAYS; with `chat_id` (Xóa dữ liệu nhóm): all of that group's."""
+    cut = time.time() - MEDIA_DAYS * 86_400
+    for p in (settings.data_dir / "media").glob(f"{chat_id.lstrip('-')}_*.jpg" if chat_id else "*.jpg"):
+        with contextlib.suppress(OSError):
+            if chat_id or p.stat().st_mtime < cut:
+                p.unlink()
+
+
 def create_app(
     settings: Settings,
     *,
@@ -193,6 +205,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         settings.ensure_data_dir()
+        await asyncio.to_thread(prune_media, settings)
+        await asyncio.to_thread(prune_runs, settings)
         st = store or Store(settings.db_path)
         hub = Hub()
         db = Db(st, hub)
@@ -264,6 +278,7 @@ def create_app(
     app.include_router(build_task_router(settings))
     app.include_router(updater.build_router(settings))
     app.include_router(privacy.build_router(settings))
+    app.include_router(local_data.build_router(settings))
 
     def S(request: Request):
         return request.app.state
@@ -301,6 +316,8 @@ def create_app(
     async def purge(chat_id: str, request: Request) -> None:
         s = S(request)
         await s.db.write(s.store.purge_chat, chat_id)
+        await asyncio.to_thread(prune_media, settings, chat_id)
+        await local_data.compact(s)
 
     @app.get("/api/chats/{chat_id}/messages")
     async def messages(
@@ -971,7 +988,7 @@ def create_app(
         m = await s.db.read(s.store.get_message, chat_id, mid)
         if m is None or m.media_kind != "photo":
             return None
-        media = settings.data_dir / "media"
+        media = settings.data_dir / "media"  # pruned by prune_media
         media.mkdir(mode=0o700, exist_ok=True)
         dest = media / f"{chat_id.lstrip('-')}_{mid}.jpg"
         if not dest.is_file():
@@ -1053,7 +1070,7 @@ def create_app(
         return [AiCatalogEntry(**c) for c in providers.catalog(settings)]
 
     @app.get("/api/ai/runs")
-    async def get_ai_runs(days: Annotated[int, Query(ge=1, le=90)] = 30) -> list[AiRun]:
+    async def get_ai_runs(days: Annotated[int, Query(ge=1, le=RUNS_DAYS)] = 30) -> list[AiRun]:
         """This app's runs plus the ones made outside it (Claude Code / Codex transcripts), newest first."""
         own, outside = await asyncio.gather(
             asyncio.to_thread(claude_runs, settings, days), asyncio.to_thread(external_runs, days)

@@ -338,7 +338,7 @@
 "tab": "telegram",
 "area": "Group page › ⋯ › Delete group data",
 "title": "Delete group data",
-"what": "Deletes the group's saved messages and unsent drafts on this machine. The group comes back when someone tags you.",
+"what": "Deletes the group's saved messages and unsent drafts on this machine. The group comes back when someone tags you. Also from Settings › Data › Messages by group (with each group's size).",
 "how": [
 {
 "t": "Click a group in the sidebar",
@@ -1654,7 +1654,7 @@
 "tab": "settings",
 "area": "Settings › Search settings",
 "title": "Find a setting",
-"what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Browser data, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
+"what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
 "how": [
 {
 "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
@@ -1664,6 +1664,29 @@
 "Use ↑ ↓ to choose then Enter, or click a result"
 ],
 "keys": "search settings find setting jump to"
+},
+{
+"id": "settings-data",
+"tab": "settings",
+"area": "Settings › Data",
+"title": "See disk usage and clean up data on this machine",
+"what": "Shows how much the app takes on this machine (a bar split by part: Database, AI sessions, Downloaded tag photos, AI run history, Server log, Telegram sign-in, Configuration), the database by table and by group. Clear one part at a time: handled messages older than 30 days, Briefing summaries, the old send log, finished AI sessions, downloaded photos, AI run history, the server log, one group's data, reply drafts in this browser. Each clear asks first and says what is lost and what is kept; the database is compacted afterwards. On startup the app removes photos older than 30 days, AI runs older than 90 days and trims a log over 5 MB.",
+"how": [
+{
+"t": "Open Settings › Data",
+"at": "css:a[href=\"#data\"]"
+},
+"Look at the \"Disk usage\" card to see which part is biggest",
+{
+"t": "Click \"Clear…\" on the row to clean up",
+"at": "Xóa…"
+},
+{
+"t": "Read the confirmation; click \"Cancel\" to leave (only click \"Clear\" if you really want to)",
+"at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+}
+],
+"keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean"
 },
 {
 "id": "settings-role",
