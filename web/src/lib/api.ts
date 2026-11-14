@@ -87,7 +87,7 @@ export type AiStep = { kind: "tool" | "tool_result"; text: string; error?: boole
 
 /** NDJSON lines of an AI answer as Claude writes it: `onPart` gets the text so far, `onStep` each working step, the
  *  result comes last. */
-export async function readAnswer<T>(res: Response, onPart?: (text: string) => void, onStep?: (step: AiStep) => void): Promise<T> {
+export async function readAnswer<T>(res: Response, onPart?: (text: string) => void, onStep?: (step: AiStep) => void, onCursor?: (cursor: number) => void): Promise<T> {
   const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
   let buf = "", text = "";
   for (;;) {
@@ -98,6 +98,7 @@ export async function readAnswer<T>(res: Response, onPart?: (text: string) => vo
     buf = lines.pop()!;
     for (const line of lines.filter(Boolean)) {
       const m = JSON.parse(line);
+      if (typeof m.cursor === "number") onCursor?.(m.cursor);
       if ("done" in m) return m.done as T;
       if ("error" in m) throw new ApiError(m.error.status, m.error.code, null, m.error.detail);
       if ("step" in m) { onStep?.(m.step); continue; }

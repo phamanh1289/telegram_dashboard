@@ -915,3 +915,55 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         links=m.links,
         sender_username=m.sender_username,
     )
+
+
+class FlowRetryRequest(BaseModel):
+    note: str = Field("", max_length=2000)
+    deep: bool = False
+
+
+class FlowOmittedDTO(BaseModel):
+    source: str
+    kind: str
+    count: int
+
+
+class FlowManifestDTO(BaseModel):
+    measurement: Literal["estimated"] = "estimated"
+    estimated_input_tokens: int
+    estimated_payload_tokens: int = 0
+    context_floor_assumed: int = 32768
+    budget: int
+    sources: list[str]
+    omitted: list[FlowOmittedDTO]
+    warnings: list[str] = Field(default_factory=list)
+    ambiguous_lines: int = 0
+    output_reserve: int = 6144
+    envelope_reserve: int = 2048
+    kept: dict[str, int] = Field(default_factory=dict)  # a re-render: what the person's edits it carried over
+
+
+class FlowResultDTO(BaseModel):
+    flow: dict
+    manifest: FlowManifestDTO | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class FlowJobDTO(BaseModel):
+    id: str
+    issue: str
+    status: Literal["queued", "running", "succeeded", "failed", "cancel_requested", "cancelled", "interrupted"]
+    stage: str
+    base: str | None
+    request: FlowRetryRequest | None
+    result: FlowResultDTO | None
+    error: dict | None
+    processed: bool
+    cursor: int
+    created_at: float
+    updated_at: float
+    needs_ai_retry: bool
+
+
+class FlowScopeDTO(BaseModel):
+    scope: str

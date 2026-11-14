@@ -1,7 +1,7 @@
 # UI Flow — Deep review và kế hoạch cải thiện
 
 Ngày: 14/11/2026  
-Trạng thái: đã khảo sát source và chốt hướng sản phẩm; chưa triển khai.
+Trạng thái: đã triển khai phase 0–8 và backlog mục 12 trên `features/refactor-ui-diagram`. Bàn giao: [phase 8](docs/UI-FLOW-PHASE-8-HANDOFF.md), [backlog](docs/UI-FLOW-BACKLOG-VERIFICATION.md). Bằng chứng và giới hạn kiểm chứng: [phase 0–2](docs/UI-FLOW-PHASE-0-2-VERIFICATION.md), [phase 3–4](docs/UI-FLOW-PHASE-3-4-VERIFICATION.md), [phase 5](docs/UI-FLOW-PHASE-5-VERIFICATION.md), [phase 6–7](docs/UI-FLOW-PHASE-6-7-VERIFICATION.md).
 
 ## 1. Mục tiêu và giới hạn bằng chứng
 
@@ -314,7 +314,7 @@ Backend đã dùng một lượt AI, REST Zeplin, cache 1 giờ; validate/layout
 | 5 | Cập nhật nguồn có chọn lọc | Báo ticket/Zeplin đổi, giữ chỉnh tay |
 | 6 | Checklist test từ graph | Code liệt kê nhánh/đường đi; AI diễn giải khi được yêu cầu |
 
-Backlog chưa bao gồm realtime collaboration, threaded comments, wireframe tổng quát hoặc renderer mới.
+Đã triển khai cả 6 mục (xem [kiểm chứng backlog](docs/UI-FLOW-BACKLOG-VERIFICATION.md)). Backlog chưa bao gồm realtime collaboration, threaded comments, wireframe tổng quát hoặc renderer mới.
 
 ## 13. Mốc bàn giao và phân công song song
 
@@ -337,14 +337,15 @@ Mỗi file chung có một chủ sở hữu trong từng đợt. Chốt hợp đ
 
 ## 14. Checklist thực thi
 
-- [ ] Phase 0: baseline và regression coverage.
-- [ ] Phase 1: data-loss/race/cancel/renderer integrity.
-- [ ] Phase 2: persistent jobs và drafts, restart recovery.
-- [ ] Phase 3: bounded prompt và deterministic skeleton.
-- [ ] Phase 4: caching/concurrency/image/render performance.
-- [ ] Phase 5: schema v2 và migration.
-- [ ] Phase 6: search và Zeplin import.
-- [ ] Phase 7: hotspot/note/drag/layout.
-- [ ] Phase 8: verification, guide, context, CodeGraph sync.
+- [x] Phase 0: baseline và regression coverage.
+- [x] Phase 1: data-loss/race/cancel/renderer integrity.
+- [x] Phase 2: persistent jobs và drafts, restart recovery.
+- [x] Phase 3: bounded prompt và deterministic skeleton.
+- [x] Phase 4: caching/concurrency/image/render performance.
+- [x] Phase 5: schema v2 và migration.
+- [x] Phase 6: search và Zeplin import.
+- [x] Phase 7: hotspot/note/drag/layout.
+- [x] Phase 8: verification, guide, context, CodeGraph sync.
+- [x] Backlog: Cần rà soát, màn bắt đầu, redo, so sánh phiên bản, giữ chỉnh tay khi render lại, checklist test.
 
 File này ghi kế hoạch; các checkbox chỉ đánh dấu khi có bằng chứng triển khai và kiểm chứng.

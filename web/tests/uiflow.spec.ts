@@ -1,3 +1,4 @@
+import { flowDataset, legacyDataset, malformedDataset } from "./uiflow-datasets";
 import { expect, test, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -5,19 +6,19 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 // The UI flow engine (web/public/uiflow.js) on a static fixture page, opened via file:// like an exported file.
-type Item = { id: string; label: string };
+type Item = { id: string; label: string; rect?: { x: number; y: number; w: number; h: number } | null };
 type Screen = { id: string; title: string; kind: string; parent: string | null; x?: number | null; y?: number | null;
-  zeplin: string; ac: string; items: Item[] };
+  zeplin: string; ac: string; note?: string; items: Item[] };
 type Link = { src: string; to: string; act: string; when: string; ac: string };
-type Flow = { v: 1; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[] };
+type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[] };
 type Issue = { kind: string; screen?: string; item?: string; text: string };
-type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; destroy(): void;
+type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void;
   mode(m: "map" | "play"): void };
 const SCHEMA = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
-  "zeplin", "ac", "items", "label", "src", "to", "act", "when"]);
+  "zeplin", "ac", "note", "items", "label", "rect", "w", "h", "src", "to", "act", "when", "start"]);
 declare global {
   interface Window {
-    UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; mount(el: Element, f: Flow, o: object): Api };
+    UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; paths(f: Flow, lang?: string): string; mount(el: Element, f: Flow, o: object): Api };
     SAMPLE: Flow;
     __api: Api;
     __dirty: boolean;
@@ -67,7 +68,9 @@ test("check reports orphan, dead button, missing back and missing AC; a row goes
     f.screens.push({ id: "lost", title: "Màn lạc", kind: "screen", parent: null, zeplin: "", ac: "AC-9", items: [] });
     return window.UIFlow.check(f);
   });
-  expect(rows.map((r) => r.kind).sort()).toEqual(["dead", "noac", "noback", "orphan"]);
+  // nosrc: every screen of the sample but "login" has no Zeplin link
+  expect(rows.map((r) => r.kind).filter((k) => k !== "nosrc").sort()).toEqual(["dead", "noac", "noback", "orphan"]);
+  expect(rows.filter((r) => r.kind === "nosrc").map((r) => r.screen).sort()).toEqual(["code", "home", "lost"]);
   const by = Object.fromEntries(rows.map((r) => [r.kind, r]));
   expect(by.orphan.screen).toBe("lost");
   expect([by.dead.screen, by.dead.item]).toEqual(["home", "out"]);
@@ -75,7 +78,7 @@ test("check reports orphan, dead button, missing back and missing AC; a row goes
   expect(by.noac.screen).toBe("code");
   expect(rows.every((r) => r.text.length > 0)).toBe(true);
 
-  await page.getByRole("button", { name: "Soát luồng (3)" }).click();
+  await page.getByRole("button", { name: "Soát luồng (5)" }).click(); // 3 gaps + 2 screens with no source
   await page.locator(".uf-issue", { hasText: "Đăng xuất" }).click();
   await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-on/);
   await expect(page.locator('.uf-screen[data-id="login"]')).not.toHaveClass(/uf-on/);
@@ -927,15 +930,15 @@ test("a flow change during a drag is refused, and the drag still finishes", asyn
 test("values the backend model would reject are clamped on the way in", async ({ page }) => {
   await open(page);
   const f = await page.evaluate(() => {
-    const g = structuredClone(window.SAMPLE) as Omit<Flow, "v"> & { v: number };
-    g.v = 2;
+    const g = structuredClone(window.SAMPLE) as Omit<Flow, "v"> & { v: unknown };
+    g.v = "9";
     g.device = "web";
     g.rev = 1.5;
     g.screens[0].title = "";
     window.__api.set(g as unknown as Flow);
     return window.__api.get();
   });
-  expect([f.v, f.device, f.rev]).toEqual([1, "mobile", 1]);
+  expect([f.v, f.device, f.rev]).toEqual([2, "mobile", 1]);
   expect(f.screens[0].title).toBe("login"); // an empty title would fail the model's min_length
 });
 
@@ -1247,4 +1250,580 @@ test("a label never ends up empty when the shared title prefix is stripped", asy
   });
   const t = await page.locator(".uf-ltitle").allInnerTexts();
   expect(t.every((x) => x.trim() !== "")).toBe(true);
+});
+
+for (const interruption of ["pointercancel", "mode", "shots", "escape"] as const) {
+  test(`interrupted screen drag rolls back without dirty/undo: ${interruption}`, async ({ page }) => {
+    await open(page);
+    await edit(page);
+    const before = await page.evaluate(() => window.__api.get());
+    const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+    await page.mouse.move(head.x + 20, head.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(head.x + 100, head.y + 70, { steps: 4 });
+    await page.waitForTimeout(40);
+    await page.evaluate((kind) => {
+      if (kind === "pointercancel") document.querySelector(".uf-layer")!.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+      else if (kind === "mode") window.__api.mode("play");
+      else if (kind === "shots") (window.__api as unknown as { shots(s: object): void }).shots({});
+      else document.querySelector(".uf-view")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    }, interruption);
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__api.get())).toEqual(before);
+    expect(await dirty(page)).toBe(false);
+    await page.evaluate(() => window.__api.undo());
+    expect(await page.evaluate(() => window.__api.get())).toEqual(before);
+  });
+}
+
+test("successful screen gesture commits once and one undo restores family", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    window.__api.destroy();
+    (window as unknown as { __changes: number }).__changes = 0;
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, window.SAMPLE, { edit: true,
+      onChange: () => { (window as unknown as { __changes: number }).__changes++; } });
+  });
+  await edit(page);
+  const before = await page.evaluate(() => window.__api.get());
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 100, head.y + 70, { steps: 6 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => (window as unknown as { __changes: number }).__changes)).toBe(1);
+  await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get())).toEqual(before);
+});
+
+for (const count of [5, 20, 60] as const) {
+  test(`baseline shaped dataset ${count} mounts with images, loops and missing labels`, async ({ page }) => {
+    await open(page);
+    const dataset = flowDataset(count);
+    const actual = await page.evaluate(({ flow, shots }) => {
+      window.__api.destroy();
+      window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, flow, { edit: true, shots });
+      return window.__api.get();
+    }, dataset);
+    expect(actual.screens).toHaveLength(count);
+    expect(actual.links.length).toBeLessThanOrEqual(300);
+    await expect(page.locator(".uf-screen")).toHaveCount(count);
+    await expect(page.locator(".uf-img").first()).toBeVisible();
+  });
+}
+
+for (const [name, fixture] of [["legacy", legacyDataset], ["malformed", malformedDataset]] as const) {
+  test(`baseline ${name} fixture remains recoverable`, async ({ page }) => {
+    await open(page);
+    const count = await page.evaluate((fixture) => {
+      window.__api.set(fixture as unknown as Flow);
+      return window.__api.get().screens.length;
+    }, fixture);
+    expect(count).toBeGreaterThan(0);
+    await expect(page.locator(".uf-root")).toHaveCount(1);
+  });
+}
+
+test("partial mount failure disposes camera and player observers", async ({ page }) => {
+  await open(page);
+  const result = await page.evaluate(() => {
+    window.__api.destroy();
+    const Original = window.ResizeObserver;
+    let live = 0;
+    window.ResizeObserver = class extends Original {
+      constructor(callback: ResizeObserverCallback) { super(callback); live++; }
+      disconnect() { live--; super.disconnect(); }
+    };
+    const original = Element.prototype.addEventListener;
+    Element.prototype.addEventListener = function (...args: Parameters<typeof original>) {
+      if (args[0] === "keydown" && this.classList.contains("uf-root")) throw new Error("mount regression");
+      return original.apply(this, args);
+    };
+    let error = "";
+    try { window.UIFlow.mount(document.getElementById("uiflow")!, window.SAMPLE, { edit: true }); }
+    catch (e) { error = (e as Error).message; }
+    finally { Element.prototype.addEventListener = original; window.ResizeObserver = Original; }
+    return { error, live, children: document.getElementById("uiflow")!.childElementCount };
+  });
+  expect(result).toEqual({ error: "mount regression", live: 0, children: 0 });
+});
+
+test("property commit preserves unaffected screen and link nodes", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.evaluate(() => {
+    for (const node of document.querySelectorAll('.uf-screen[data-id="home"], .uf-handle[data-link="code.later>home"]')) {
+      (node as Element & { __preserved?: boolean }).__preserved = true;
+    }
+  });
+  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
+  await page.keyboard.type("Màn mở đầu");
+  await page.keyboard.press("Enter");
+  expect(await page.evaluate(() => [...document.querySelectorAll('.uf-screen[data-id="home"], .uf-handle[data-link="code.later>home"]')]
+    .every((node) => (node as Element & { __preserved?: boolean }).__preserved))).toBe(true);
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-title')).toHaveText("Màn mở đầu");
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-title')).toHaveText("Đăng nhập");
+});
+
+test("arriving images preserve camera, selected screen and flow positions", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  const before = await page.evaluate(() => ({ flow: window.__api.get(), transform: (document.querySelector(".uf-layer") as HTMLElement).style.transform }));
+  await page.evaluate(() => {
+    (window.__api as unknown as { shots(s: object): void }).shots({
+      "https://zpl.io/abc123": { src: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="390" height="4000"/>'), w: 390, h: 4000, hits: [] },
+    });
+  });
+  await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-sel/);
+  expect(await page.evaluate(() => window.__api.get())).toEqual(before.flow);
+  expect(await layerTransform(page)).toBe(before.transform);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("schema v2: a v1 flow reads as v2, rect / note survive get() and a bad rect is dropped", async ({ page }) => {
+  await open(page);
+  const f = await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE) as Flow & { screens: { note?: string; items: { rect?: unknown }[] }[] };
+    f.screens[0].note = "x".repeat(4100);
+    f.screens[0].items[0].rect = { x: 0.1, y: 0.2, w: 0.3, h: 0.1 };
+    f.screens[1].items[0].rect = { x: 0.9, y: 0, w: 0.2, h: 0.1 }; // past the right edge
+    f.screens[1].items[1].rect = { x: 0, y: 0, w: 0, h: 0.1 };
+    window.__api.set(f as Flow);
+    return window.__api.get();
+  });
+  expect(f.v).toBe(2);
+  expect(f.screens[0].note).toHaveLength(4000);
+  expect(f.screens[0].items[0].rect).toEqual({ x: 0.1, y: 0.2, w: 0.3, h: 0.1 });
+  expect(f.screens[1].items.map((i) => "rect" in i)).toEqual([false, false]);
+});
+
+test("schema v2: a hand-drawn rect places the button over the text match", async ({ page }) => {
+  await open(page);
+  const box = await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE) as Flow;
+    f.screens[0].items[0].rect = { x: 0.5, y: 0.25, w: 0.25, h: 0.05 };
+    window.__api.destroy();
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, { edit: true, shots: {
+      "https://zpl.io/abc123": { src: "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688"/>'),
+        w: 780, h: 1688, hits: [["Gửi OTP", 0, 0, 200, 50]] },
+    } });
+    const el = document.querySelector('.uf-screen[data-id="login"] .uf-item[data-item="otp"]') as HTMLElement;
+    return { hot: el.classList.contains("uf-hot"), left: el.style.left, top: el.style.top, width: el.style.width };
+  });
+  expect(box).toEqual({ hot: true, left: "195px", top: "211px", width: "97.5px" });
+});
+
+test("schema v2: a newer file is refused, not edited", async ({ page }) => {
+  await open(page);
+  const err = await page.evaluate(() => {
+    try { window.__api.set({ ...structuredClone(window.SAMPLE), v: 3 }); return null; } catch (e) { return String(e); }
+  });
+  expect(err).toContain("v3");
+});
+
+// ------------------------------------------------------------------ phase 6: search, + Từ Zeplin
+type Win = Window & { __lookup: string; __calls: number };
+const PIC = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688"><rect width="780" height="1688" fill="#ddd"/></svg>');
+/** Remount the sample with an image on "login" and a fake lookup (`mode`: ok | missing | fail). */
+async function remount(page: Page, mode = "ok") {
+  await page.evaluate(({ pic, mode }) => {
+    const w = window as unknown as Win;
+    w.__lookup = mode;
+    w.__calls = 0;
+    window.__api.destroy();
+    window.__dirty = false;
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, window.SAMPLE, {
+      edit: true, lang: "vi",
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 1688, hits: [["Gửi OTP", 0, 0, 200, 50]] } },
+      onChange: (_: Flow, d: boolean) => { window.__dirty = d; },
+      lookup: async () => {
+        w.__calls++;
+        if (w.__lookup === "fail") throw new Error("Token Zeplin bị từ chối");
+        return w.__lookup === "missing" ? null : { src: pic, w: 780, h: 1688, hits: [], title: "Thanh toán" };
+      },
+    } as object);
+  }, { pic: PIC, mode });
+}
+const find = (page: Page) => page.getByRole("combobox", { name: /Tìm màn/ });
+
+test("search: accents / case ignored, keyboard picks a result and focuses it, nothing becomes dirty", async ({ page }) => {
+  await open(page);
+  const before = await page.evaluate(() => JSON.stringify(window.__api.get()));
+  await find(page).fill("NHAP");
+  await expect(page.locator(".uf-count")).toHaveText("2 màn");
+  await expect(page.locator(".uf-screen.uf-match")).toHaveCount(2);
+  await find(page).press("ArrowDown");
+  await find(page).press("ArrowDown");
+  await expect(page.getByRole("option", { name: "Nhập OTP" })).toHaveAttribute("aria-selected", "true");
+  await find(page).press("Enter");
+  await expect(page.locator('.uf-screen[data-id="code"]')).toHaveClass(/uf-on/);
+  await expect(page.locator(".uf-results")).toBeHidden();
+  await find(page).fill("https://zpl.io/abc123");
+  await expect(page.locator(".uf-screen.uf-match")).toHaveAttribute("data-id", "login");
+  await find(page).fill("home");
+  await expect(page.locator(".uf-screen.uf-match")).toHaveAttribute("data-id", "home");
+  await find(page).fill("dang xuat"); // a button's words find its screen
+  await expect(page.locator(".uf-screen.uf-match")).toHaveAttribute("data-id", "home");
+  await find(page).fill("không có");
+  await expect(page.locator(".uf-count")).toHaveText("Không thấy màn nào");
+  await find(page).fill("sai");
+  await find(page).press("Escape");
+  await expect(page.locator(".uf-screen.uf-match")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.stringify(window.__api.get()))).toBe(before);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("+ Từ Zeplin: reads the screen once, adds it with its name and image, one undo removes it", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await edit(page);
+  await page.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  const url = "https://app.zeplin.io/project/aaaaaaaaaaaaaaaaaaaaaaaa/screen/bbbbbbbbbbbbbbbbbbbbbbbb";
+  await page.keyboard.type(url); // keyboard only: the box has focus
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".uf-screen", { hasText: "Thanh toán" })).toHaveCount(1);
+  await expect(page.locator(".uf-screen", { hasText: "Thanh toán" }).locator(".uf-img")).toHaveCount(1);
+  const added = await page.evaluate(() => window.__api.get().screens.at(-1)!);
+  expect([added.title, added.zeplin]).toEqual(["Thanh toán", url]);
+  expect(await page.evaluate(() => (window as unknown as Win).__calls)).toBe(1);
+  await expect(page.locator(".uf-zform")).toBeHidden();
+  await page.evaluate(() => window.__api.undo());
+  await expect(page.locator(".uf-screen")).toHaveCount(4);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("+ Từ Zeplin: a bad link, a duplicate, a missing screen and an auth error each say so", async ({ page }) => {
+  await open(page);
+  await remount(page, "fail");
+  await edit(page);
+  await page.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  const box = page.getByLabel("Link màn Zeplin"), msg = page.locator(".uf-zmsg");
+  await box.fill("https://example.com/x");
+  await box.press("Enter");
+  await expect(msg).toHaveText(/Link Zeplin không đúng/);
+  await box.fill("https://zpl.io/abc123"); // already the login screen
+  await box.press("Enter");
+  await expect(msg).toHaveText(/Đã có màn này: “Đăng nhập”/);
+  await expect(page.locator('.uf-screen[data-id="login"]')).toHaveClass(/uf-on/);
+  expect(await page.evaluate(() => (window as unknown as Win).__calls)).toBe(0);
+  await box.fill("https://zpl.io/new1");
+  await box.press("Enter");
+  await expect(msg).toHaveText("Không đọc được Zeplin: Token Zeplin bị từ chối"); // an error, not "not found"
+  await page.evaluate(() => { (window as unknown as Win).__lookup = "missing"; });
+  await page.getByRole("button", { name: "Thử lại" }).click();
+  await expect(msg).toHaveText(/chưa chia sẻ với tài khoản hoặc đã bị xoá/);
+  await page.getByRole("button", { name: "Thêm màn chờ ảnh" }).click();
+  await expect(page.locator(".uf-screen")).toHaveCount(5);
+  const added = await page.evaluate(() => window.__api.get().screens.at(-1)!);
+  expect([added.title, added.zeplin]).toEqual(["Màn mới", "https://zpl.io/new1"]);
+  await page.evaluate(() => { (window as unknown as Win).__lookup = "ok"; });
+  await page.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  await page.getByLabel("Link màn Zeplin").fill("https://zpl.io/abc123");
+  await page.getByLabel("Link màn Zeplin").press("Enter");
+  await page.getByRole("button", { name: "Vẫn thêm bản sao" }).click();
+  await expect(page.locator(".uf-screen")).toHaveCount(6);
+});
+
+// ------------------------------------------------------------------ phase 7: tap areas, note, keys, re-arrange
+const selectScreen = async (page: Page, id: string) => {
+  await page.locator(`.uf-screen[data-id="${id}"] .uf-title`).click();
+  await expect(page.locator(".uf-insp")).toBeVisible();
+};
+
+test("tap area: drawn on the image as a new button, resized, typed, matched by text again; each one undo", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await edit(page);
+  await selectScreen(page, "login");
+  await page.getByRole("button", { name: "+ Vùng bấm" }).click();
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-drawing/);
+  const f = await box(page, '.uf-screen[data-id="login"]'), k = f.width / 390;
+  const at = (x: number, y: number): [number, number] => [f.x + x * 390 * k, f.y + y * 844 * k];
+  await page.mouse.move(...at(0.2, 0.4));
+  await page.mouse.down();
+  await page.mouse.move(...at(0.5, 0.45), { steps: 6 });
+  await page.mouse.up();
+  const item = await page.evaluate(() => window.__api.get().screens[0].items.at(-1)!);
+  expect(item.label).toBe("Nút mới");
+  for (const [got, want] of [[item.rect!.x, 0.2], [item.rect!.y, 0.4], [item.rect!.w, 0.3], [item.rect!.h, 0.05]]) expect(got).toBeCloseTo(want, 2);
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-drawing/);
+  const hot = page.locator(`.uf-screen[data-id="login"] .uf-item[data-item="${item.id}"]`);
+  await expect(hot).toHaveClass(/uf-rect/);
+  await expect(hot).toHaveClass(/uf-sel/);
+  // resize by its corner
+  const r = await box(page, `.uf-screen[data-id="login"] .uf-item[data-item="${item.id}"] .uf-rsz`);
+  await page.mouse.move(r.x + r.width / 2, r.y + r.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(r.x + r.width / 2 + 39 * k, r.y + r.height / 2, { steps: 4 });
+  await page.mouse.up();
+  expect(await page.evaluate((id) => window.__api.get().screens[0].items.find((i) => i.id === id)!.rect!.w, item.id)).toBeCloseTo(0.4, 2);
+  // numbers in design px (780 × 1688 image)
+  const x = page.getByRole("spinbutton", { name: "Vùng (px) X" });
+  await x.fill("78");
+  await x.press("Enter");
+  expect(await page.evaluate((id) => window.__api.get().screens[0].items.find((i) => i.id === id)!.rect!.x, item.id)).toBeCloseTo(0.1, 3);
+  await page.getByRole("button", { name: "Khớp theo chữ" }).click();
+  expect(await page.evaluate((id) => "rect" in window.__api.get().screens[0].items.find((i) => i.id === id)!, item.id)).toBe(false);
+  for (let i = 0; i < 4; i++) await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get().screens[0].items.length)).toBe(1);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("tap area: Esc leaves draw mode, a click without a drag draws nothing", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await edit(page);
+  await selectScreen(page, "login");
+  await page.getByRole("button", { name: "+ Vùng bấm" }).click();
+  const f = await box(page, '.uf-screen[data-id="login"]');
+  await page.mouse.click(f.x + f.width * 0.7, f.y + f.height * 0.3); // clear of the properties panel
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-drawing/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-drawing/);
+  expect(await dirty(page)).toBe(false);
+});
+
+test("note: plain text kept on blur with a badge, Esc puts the old text back", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await selectScreen(page, "home");
+  const area = page.getByLabel("Ghi chú", { exact: true });
+  await area.fill("<b>không</b> phải HTML\nhai dòng");
+  await area.blur();
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.note)).toBe("<b>không</b> phải HTML\nhai dòng");
+  await expect(page.locator('.uf-screen[data-id="home"] .uf-memo')).toHaveCount(1);
+  await expect(page.locator('.uf-screen[data-id="home"] b')).toHaveCount(0);
+  await page.getByLabel("Ghi chú", { exact: true }).fill("bỏ");
+  await page.getByLabel("Ghi chú", { exact: true }).press("Escape");
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.note)).toBe("<b>không</b> phải HTML\nhai dòng");
+  await page.evaluate(() => window.__api.undo());
+  await expect(page.locator('.uf-screen[data-id="home"] .uf-memo')).toHaveCount(0);
+});
+
+test("arrow keys and the position boxes move a screen with its popup; Sắp xếp lại is one undo", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const pos = () => page.evaluate(() => Object.fromEntries(window.__api.get().screens.map((s) => [s.id, [s.x, s.y]])));
+  const start = await pos();
+  await selectScreen(page, "code");
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Shift+ArrowDown");
+  let now = await pos();
+  expect(now.code).toEqual([start.code[0]! + 10, start.code[1]! + 100]);
+  expect(now.err).toEqual([start.err[0]! + 10, start.err[1]! + 100]); // its popup comes along
+  const x = page.getByRole("spinbutton", { name: "Vị trí X" });
+  await x.fill(String(start.code[0]! - 500));
+  await x.press("Enter");
+  now = await pos();
+  expect(now.code[0]).toBe(start.code[0]! - 500);
+  expect(now.err[0]).toBe(start.err[0]! - 500);
+  const moved = now;
+  await page.getByRole("button", { name: "Sắp xếp lại" }).click();
+  expect(await pos()).toEqual(start);
+  await page.evaluate(() => window.__api.undo());
+  expect(await pos()).toEqual(moved);
+});
+
+test("rect / note survive Lưu file of a standalone file without images", async ({ page }) => {
+  await standalone(page, "", `
+    f.screens[0].items[0].rect = { x: 0.1, y: 0.4, w: 0.3, h: 0.05 };
+    f.screens[3].note = "ghi chú giữ lại";`);
+  await edit(page);
+  // no image in this file: the rect is kept, the button is a plain row (only an image places it)
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-rect')).toHaveCount(0);
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Lưu file" }).click()]);
+  const saved = JSON.parse(/id="uiflow-data">([\s\S]*?)<\/script>/.exec(fs.readFileSync((await dl.path())!, "utf8"))![1]) as Flow;
+  expect(saved.v).toBe(2);
+  expect(saved.screens[0].items[0].rect).toEqual({ x: 0.1, y: 0.4, w: 0.3, h: 0.05 });
+  expect(saved.screens[3].note).toBe("ghi chú giữ lại");
+});
+
+test("a tap area drags inside its image and nudges with the arrow keys", async ({ page }) => {
+  await open(page);
+  await page.evaluate((pic) => {
+    const f = structuredClone(window.SAMPLE);
+    (f.screens[0].items[0] as Item).rect = { x: 0.1, y: 0.4, w: 0.3, h: 0.05 };
+    window.__api.destroy();
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, { edit: true, lang: "vi",
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 1688, hits: [] } } } as object);
+  }, PIC);
+  await edit(page);
+  const rect = () => page.evaluate(() => window.__api.get().screens[0].items[0].rect!);
+  const b = await box(page, '.uf-screen[data-id="login"] .uf-rect');
+  const k = (await box(page, '.uf-screen[data-id="login"]')).width / 390;
+  await page.mouse.move(b.x + 10, b.y + 5);
+  await page.mouse.down();
+  await page.mouse.move(b.x + 10 + 39 * k, b.y + 5 + 1000 * k, { steps: 6 }); // far below: stays on the image
+  await page.mouse.up();
+  let r = await rect();
+  expect(r.x).toBeCloseTo(0.2, 2);
+  expect(r.y + r.h).toBeLessThanOrEqual(1);
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-rect')).toHaveClass(/uf-sel/);
+  await page.keyboard.press("Shift+ArrowLeft"); // 10 frame px = 10/390 of the image width
+  r = await rect();
+  expect(r.x).toBeCloseTo(0.2 - 10 / 390, 3);
+});
+
+// ------------------------------------------------------------------ phase 8: keyboard only, narrow container
+test("keyboard only: find a screen, edit it, place a tap area and move it without a pointer", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await edit(page);
+  await find(page).fill("dang nhap");
+  await find(page).press("Enter");
+  await expect(page.locator(".uf-insp h2")).toHaveText("Đăng nhập");
+  await page.getByRole("button", { name: "+ Vùng bấm" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-drawing/);
+  await page.keyboard.press("Enter");
+  const item = await page.evaluate(() => window.__api.get().screens[0].items.at(-1)!);
+  expect(item.rect).toBeTruthy();
+  await expect(page.locator(".uf-insp h2")).toHaveText("Nút: Nút mới");
+  const x0 = item.rect!.x;
+  await page.keyboard.press("ArrowRight");
+  expect(await page.evaluate(() => window.__api.get().screens[0].items.at(-1)!.rect!.x)).toBeCloseTo(x0 + 2 / 390, 3);
+  await page.locator(".uf-view").focus();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-insp")).toBeHidden();
+});
+
+test("390px container: toolbar wraps, finder and inspector stay inside, no horizontal scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 700 });
+  await open(page);
+  await edit(page);
+  await selectScreen(page, "home");
+  const over = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const out = [...document.querySelectorAll(".uf-bar > *, .uf-insp, .uf-find")].filter((e) => {
+      const r = e.getBoundingClientRect();
+      return r.left < -0.5 || r.right > vw + 0.5;
+    });
+    return { scroll: document.documentElement.scrollWidth > vw, out: out.length };
+  });
+  expect(over).toEqual({ scroll: false, out: 0 });
+  const insp = await box(page, ".uf-insp"), main = await box(page, ".uf-main");
+  expect(insp.y + insp.height).toBeLessThanOrEqual(main.y + main.height + 0.5);
+});
+
+test("60 screens: a search keystroke and its highlight stay under one 100 ms task", async ({ page }) => {
+  await open(page);
+  const { flow, shots } = flowDataset(60);
+  const ms = await page.evaluate(({ flow, shots }) => {
+    window.__api.destroy();
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, flow, { edit: true, shots });
+    const box = document.querySelector<HTMLInputElement>(".uf-find input")!;
+    let worst = 0;
+    for (const q of ["m", "ma", "man", "màn 1", "https://", "s5"]) {
+      box.value = q;
+      const t0 = performance.now();
+      box.dispatchEvent(new Event("input"));
+      worst = Math.max(worst, performance.now() - t0);
+    }
+    return worst;
+  }, { flow, shots });
+  expect(ms).toBeLessThan(100);
+});
+
+
+// ------------------------------------------------------------------ backlog: start screen, review filter, redo, checklist
+test("start screen: chosen in the panel, marked, used by Prototype and the flow check; unknown ids are dropped", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await selectScreen(page, "code");
+  await page.getByRole("button", { name: "▶ Màn bắt đầu" }).click();
+  expect(await page.evaluate(() => window.__api.get().start)).toBe("code");
+  await expect(page.locator('.uf-screen[data-id="code"] .uf-startb')).toHaveCount(1);
+  await expect(page.locator(".uf-startb")).toHaveCount(1);
+  const orphans = (start: string | null) => page.evaluate((start) => {
+    const f = { ...window.SAMPLE, start, links: window.SAMPLE.links.filter((l) => l.act !== "back") };
+    return window.UIFlow.check(f).filter((i) => i.kind === "orphan").map((i) => i.screen);
+  }, start);
+  expect(await orphans(null)).toEqual([]);
+  expect(await orphans("code")).toEqual(["login"]); // nothing leads back to the old first screen
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get().start)).toBeNull();
+  await page.evaluate(() => window.__api.set({ ...window.SAMPLE, start: "ghost" }));
+  expect(await page.evaluate(() => window.__api.get().start)).toBeNull();
+});
+
+test("Cần rà soát: buttons not on the design and screens with no source, filtered by kind", async ({ page }) => {
+  await open(page);
+  await remount(page); // login has an image whose only text is "Gửi OTP"
+  await page.evaluate(() => {
+    const f = window.__api.get();
+    f.screens[0].items.push({ id: "ghost", label: "Không có trên ảnh" });
+    window.__api.set(f);
+  });
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await expect(page.locator(".uf-issue", { hasText: "“Không có trên ảnh” chưa thấy trên ảnh màn “Đăng nhập”" })).toHaveCount(1);
+  await expect(page.locator(".uf-issue", { hasText: "“Nhập OTP” chưa có link Zeplin" })).toHaveCount(1);
+  await page.getByRole("button", { name: "Chưa khớp ảnh (1)", exact: true }).click();
+  await expect(page.locator(".uf-issue")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Chưa khớp ảnh (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Tất cả/ }).click();
+  expect(await page.locator(".uf-issue").count()).toBeGreaterThan(3);
+  await edit(page); // editing: a row opens the button it is about, ready to draw its area (the panel stays open)
+  await page.locator(".uf-issue", { hasText: "Không có trên ảnh" }).first().click();
+  await expect(page.locator(".uf-insp h2")).toHaveText("Nút: Không có trên ảnh");
+  await expect(page.getByRole("button", { name: "Vùng bấm", exact: true })).toBeVisible();
+});
+
+test("redo: steps forward after undo, from the toolbar and the keyboard; a new edit clears it", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const undo = page.getByRole("button", { name: "↶ Hoàn tác" }), redo = page.getByRole("button", { name: "↷ Làm lại" });
+  await expect(undo).toBeDisabled();
+  await page.getByRole("button", { name: "+ Màn" }).click();
+  await expect(page.locator(".uf-screen")).toHaveCount(5);
+  await undo.click();
+  await expect(page.locator(".uf-screen")).toHaveCount(4);
+  await redo.click();
+  await expect(page.locator(".uf-screen")).toHaveCount(5);
+  await page.locator(".uf-view").focus();
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(page.locator(".uf-screen")).toHaveCount(4);
+  await page.keyboard.press("ControlOrMeta+Shift+z");
+  await expect(page.locator(".uf-screen")).toHaveCount(5);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect(redo).toBeEnabled();
+  await page.getByRole("button", { name: "+ Màn" }).click(); // a new edit: what undo took back is gone
+  await expect(redo).toBeDisabled();
+  await undo.click();
+  expect(await dirty(page)).toBe(false);
+});
+
+test("a run of arrow-key moves is one undo step", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const x = () => page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.x!);
+  const x0 = await x();
+  await selectScreen(page, "home");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowRight");
+  expect(await x()).toBe(x0 + 50);
+  await page.evaluate(() => window.__api.undo());
+  expect(await x()).toBe(x0);
+});
+
+test("test checklist: paths from the start screen cover every reachable link; copy puts the text on the clipboard", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await open(page);
+  const text = await page.evaluate(() => window.UIFlow.paths(window.SAMPLE, "vi"));
+  const lines = text.split("\n");
+  expect(lines[0]).toBe("Checklist test UI flow VA-1: 3 đường, phủ 4/4 liên kết");
+  expect(lines).toContain("1. Đăng nhập → bấm “Gửi OTP” → Nhập OTP → bấm “Xác nhận” (khi Mã sai) → Sai mã");
+  expect(text).toContain("bấm “Để sau” → Trang chủ");
+  expect(text).toContain("quay lại → Đăng nhập");
+  // from another start, what cannot be reached is listed
+  expect(await page.evaluate(() => window.UIFlow.paths({ ...window.SAMPLE, start: "home" }, "vi"))).toContain("Chưa đi tới từ màn bắt đầu");
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await page.getByRole("button", { name: "Checklist test" }).click();
+  await expect(page.locator(".uf-paths li")).toHaveCount(3);
+  await page.getByRole("button", { name: "Sao chép" }).click();
+  await expect(page.locator(".uf-panel .uf-zmsg")).toHaveText("Đã sao chép");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(text);
 });

@@ -717,6 +717,7 @@ class FakeYt:
     def __init__(self, files: list[dict], fail: dict | None = None, stored: str = "uiflow-VA-1.html"):
         self.files, self.fail, self.writes, self.stored = files, fail or {}, [], stored
         self.upload = self.comment = None
+        self.updated = 0  # the ticket's own "updated" (ms)
 
     def __call__(self, req):
         m, p = req.method, req.url.path
@@ -729,7 +730,7 @@ class FakeYt:
         if p == "/api/issues/VA-1":
             keep = ("id", "name", "created", "removed")
             atts = [{k: f[k] for k in keep if k in f} | {"size": 9, "url": f"/files/{f['id']}"} for f in self.files]
-            return httpx.Response(200, json={"attachments": atts})
+            return httpx.Response(200, json={"updated": self.updated, "attachments": atts})
         if p.startswith("/files/"):
             return httpx.Response(200, text=next(f["body"] for f in self.files if f["id"] == p[7:]))
         if p == "/api/issues/VA-1/attachments":
@@ -830,7 +831,7 @@ async def test_flow_get_reads_only_our_file_and_flags_broken(tmp_path):
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
-        assert r.json() == {"att": "1-3", "flow": None, "broken": True}
+        assert r.json() == {"att": "1-3", "flow": None, "broken": True, "ticket_newer": False}
         yt.files = [yt.files[0]]
         r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
         assert r.json() == {"att": None, "flow": None, "broken": False}
@@ -1045,6 +1046,9 @@ async def test_ai_flow_renders_without_zeplin_texts_when_zeplin_fails(monkeypatc
     monkeypatch.setattr(zeplin.Shots, "get", get)
     agent, r = await _flow_post(FLOW_RAW, desc="Thiết kế https://zpl.io/abc")
     assert r.json()["flow"] and "<zeplin>{}</zeplin>" in agent.calls[0]
+    assert r.json()["warnings"] == r.json()["manifest"]["warnings"]
+    assert "Không đọc được thiết kế" in r.json()["warnings"][0]
+    assert {"source": "zeplin", "kind": "unavailable_design", "count": 1} in r.json()["manifest"]["omitted"]
 
 
 STORY_DESC = (  # > 8000 chars; the tree's tail and the Zeplin link past 8000
@@ -1142,7 +1146,7 @@ async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch)
     assert zep.items() <= steps[3].items()  # the fake reads no screen one by one
     assert [s["title"] for s in steps if s["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP"]
     assert not any(s.get("again") for s in steps)  # the opening reset is no restart
-    assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 2,
+    assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 3,
                                      "links": 2, "dropped": 1}
     assert "flow" in _items(r)[-1]["done"]
 
@@ -1170,3 +1174,24 @@ async def test_ai_flow_job_is_stopped_by_delete():
         assert svc.jobs.status() == {"flow-job-3": "error"}
 
     await _flow_post(agent, then=then)
+
+
+async def test_flow_diff_lists_what_update_would_write_and_writes_nothing(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow/diff", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+        assert r.status_code == 200 and r.json()["base_changed"] is False and r.json()["changes"]
+        r = await c.post("/api/yt/flow/diff", json={"id": "VA-1", "flow": moved(), "base": "1-0"})
+        assert r.json()["base_changed"] is True
+    assert yt.writes == []
+
+
+async def test_flow_get_says_when_the_ticket_changed_after_the_file(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 1_000_000, "body": flow_html(2)}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        yt.updated = 1_000_000 + 60_000  # the save's own comment
+        assert (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()["ticket_newer"] is False
+        yt.updated = 1_000_000 + 10 * 60_000
+        assert (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()["ticket_newer"] is True

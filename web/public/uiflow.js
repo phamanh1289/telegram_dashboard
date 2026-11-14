@@ -18,9 +18,11 @@
   const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
   const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, BEZEL = 11, GAP = 16; // prototype: motion, phone bezel, margin
   const NOTE_MS = 2600; // edit: how long a refusal note stays up
+  const MERGE_MS = 1000; // arrow-key steps closer than this make one undo step
   const CAP = 80, UNDO = 50, DRAG_PX = 4; // edit: schema cap for a title / label / condition, undo depth, tap slop
   const CAP_AC = 40, CAP_URL = 300; // the backend model's caps: it truncates silently, so never store more
   const MAX_SCREENS = 60, MAX_ITEMS = 20, MAX_LINKS = 300; // past these the backend refuses the whole file
+  const VERSION = 2, CAP_NOTE = 4000; // = uiflow.VERSION / MAX_NOTE: v1 is read as v2, a newer file is refused
   const KINDS = ["screen", "popup", "sheet", "toast"];
   const ACTS = ["navigate", "open", "back", "close"];
   const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/; // = providers.ZEPLIN
@@ -49,6 +51,20 @@
       badZeplin: "Link Zeplin không đúng (zpl.io, app.zeplin.io)",
       act_navigate: "Đi tới", act_open: "Mở", act_back: "Quay lại", act_close: "Đóng",
       kind_screen: "Màn", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
+      search: "Tìm màn: tên, nút, link Zeplin, id", found: "{n} màn", noFound: "Không thấy màn nào",
+      fromZeplin: "+ Từ Zeplin", zUrl: "Link màn Zeplin", zAdd: "Thêm", zReading: "Đang đọc màn từ Zeplin…",
+      zDup: "Đã có màn này: “{s}”", zCopy: "Vẫn thêm bản sao", zRetry: "Thử lại", zKeep: "Thêm màn chờ ảnh",
+      zMissing: "Không đọc được màn này trên Zeplin: chưa chia sẻ với tài khoản hoặc đã bị xoá",
+      zFail: "Không đọc được Zeplin", close: "Đóng",
+      drawHot: "+ Vùng bấm", redraw: "Vẽ lại vùng", byText: "Khớp theo chữ", drawHint: "Kéo trên ảnh màn để vẽ vùng bấm · Enter đặt vùng giữa màn · Esc để huỷ",
+      rectField: "Vùng (px)", itemsField: "Nút", noteField: "Ghi chú", noteBadge: "Có ghi chú", posField: "Vị trí", relayout: "Sắp xếp lại",
+      k_offshot: "Chưa khớp ảnh", k_nosrc: "Thiếu nguồn", offshot: "Nút “{i}” chưa thấy trên ảnh màn “{s}”",
+      nosrc: "Màn “{s}” chưa có link Zeplin", all: "Tất cả ({n})", gapsTab: "Cần rà soát ({n})", testsTab: "Checklist test",
+      copy: "Sao chép", copied: "Đã sao chép", copyFail: "Không sao chép được — chọn chữ rồi sao chép tay",
+      startBadge: "Màn bắt đầu", setStart: "Màn bắt đầu", undo: "↶ Hoàn tác", redo: "↷ Làm lại",
+      tap: "bấm “{i}”", goBack: "quay lại", goClose: "đóng", goOn: "tiếp", when: "khi {s}",
+      pathN: "Đường {n}", missed: "Chưa đi tới từ màn bắt đầu: {s}", noPaths: "Chưa có liên kết nào để đi.",
+      testsHead: "Checklist test UI flow {s}: {n} đường, phủ {c}/{l} liên kết",
     },
     en: {
       map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
@@ -71,6 +87,20 @@
       badZeplin: "Not a Zeplin link (zpl.io, app.zeplin.io)",
       act_navigate: "Navigate", act_open: "Open", act_back: "Back", act_close: "Close",
       kind_screen: "Screen", kind_popup: "Popup", kind_sheet: "Sheet", kind_toast: "Toast",
+      search: "Find a screen: name, button, Zeplin link, id", found: "{n} screens", noFound: "No screen found",
+      fromZeplin: "+ From Zeplin", zUrl: "Zeplin screen link", zAdd: "Add", zReading: "Reading the screen from Zeplin…",
+      zDup: "This screen is already here: “{s}”", zCopy: "Add a copy anyway", zRetry: "Retry", zKeep: "Add it without the image",
+      zMissing: "Could not read this screen on Zeplin: not shared with this account, or deleted",
+      zFail: "Could not read Zeplin", close: "Close",
+      drawHot: "+ Tap area", redraw: "Redraw area", byText: "Match by text", drawHint: "Drag on the screen image to draw a tap area · Enter puts one mid-screen · Esc to cancel",
+      rectField: "Area (px)", itemsField: "Buttons", noteField: "Note", noteBadge: "Has a note", posField: "Position", relayout: "Re-arrange",
+      k_offshot: "Not on design", k_nosrc: "No source", offshot: "“{i}” is not found on the image of “{s}”",
+      nosrc: "“{s}” has no Zeplin link", all: "All ({n})", gapsTab: "To review ({n})", testsTab: "Test checklist",
+      copy: "Copy", copied: "Copied", copyFail: "Could not copy — select the text and copy it by hand",
+      startBadge: "Start screen", setStart: "Start screen", undo: "↶ Undo", redo: "↷ Redo",
+      tap: "tap “{i}”", goBack: "go back", goClose: "close", goOn: "go on", when: "when {s}",
+      pathN: "Path {n}", missed: "Not reachable from the start screen: {s}", noPaths: "No links to follow yet.",
+      testsHead: "UI flow {s} test checklist: {n} paths, covering {c}/{l} links",
     },
   };
   /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
@@ -84,6 +114,19 @@
   const itm = (src) => (src.includes(".") ? src.slice(src.indexOf(".") + 1) : null);
   const str = (v, d = "") => (typeof v === "string" ? v : v == null ? d : String(v));
   const num = (v) => (Number.isFinite(v) ? v : null);
+  /** A hand-drawn tap area {x, y, w, h} as fractions of the screen's whole image; null when it is not one (= uiflow.Rect). */
+  const rectOf = (r) => {
+    if (!r || typeof r !== "object") return null;
+    const { x, y, w, h: hh } = r;
+    const ok = [x, y, w, hh].every(Number.isFinite) && x >= 0 && y >= 0 && w > 0 && hh > 0 && x + w <= 1 + 1e-9 && y + hh <= 1 + 1e-9;
+    return ok ? { x, y, w, h: hh } : null;
+  };
+  const ZSCREEN = /\/project\/([0-9a-f]{24})\/screen\/([0-9a-f]{24})/;
+  /** A Zeplin link's identity (= zeplin.canonical): project/screen ids, else the link without trailing punctuation.
+   *  A zpl.io short link only resolves on the server, so two spellings of one screen may still differ here. */
+  const canon = (u) => { const m = ZSCREEN.exec(str(u)); return m ? `${m[1]}/${m[2]}` : str(u).trim().replace(/[.,:;/]+$/, ""); };
+  /** The screen the prototype and the test paths start from: the chosen one, else the first. */
+  const startOf = (f) => (f.start && f.screens.some((s) => s.id === f.start) ? f.start : f.screens[0]?.id ?? null);
   /** Shown as a card over its parent. A popup / sheet / toast with a Zeplin image is a full frame instead (the
    *  design draws its own scrim), laid out like a screen; it still opens as an overlay in Prototype (`isPop`). */
   const isOverlay = (s) => s.kind !== "screen" && !shotOf(s);
@@ -95,6 +138,8 @@
    *  dropped here, so what "Lưu file" writes matches what the backend model accepts. */
   function sanitize(raw) {
     const f = raw && typeof raw === "object" ? raw : {};
+    // never edit a newer file: saving it would drop the fields this engine does not know
+    if (Number.isFinite(f.v) && f.v > VERSION) throw new Error(`UI flow v${f.v} > v${VERSION}`);
     const dropped = { screens: [], items: [], links: 0, bad: 0 };
     const seen = new Set(), screens = [];
     for (const s of Array.isArray(f.screens) ? f.screens : []) {
@@ -106,11 +151,12 @@
         if (!it || typeof it.id !== "string") { dropped.bad++; continue; }
         if (ids.has(it.id)) { dropped.items.push(`${s.id}.${it.id}`); continue; }
         ids.add(it.id);
-        items.push({ id: it.id, label: str(it.label, it.id) });
+        const r = rectOf(it.rect);
+        items.push(r ? { id: it.id, label: str(it.label, it.id), rect: r } : { id: it.id, label: str(it.label, it.id) });
       }
       screens.push({ id: s.id, title: str(s.title, s.id) || s.id, kind: KINDS.includes(s.kind) ? s.kind : "screen",
         parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
-        zeplin: str(s.zeplin), ac: str(s.ac), items });
+        zeplin: str(s.zeplin), ac: str(s.ac), note: str(s.note).slice(0, CAP_NOTE), items });
     }
     const by = new Map(screens.map((s) => [s.id, s]));
     const okSrc = (src) => {
@@ -123,7 +169,8 @@
     dropped.links = all.length - links.length;
     // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
     const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
-    return { flow: { v: 1, ticket: str(f.ticket), rev, device: "mobile", screens, links }, dropped };
+    const start = typeof f.start === "string" && by.has(f.start) ? f.start : null;
+    return { flow: { v: VERSION, ticket: str(f.ticket), rev, device: "mobile", start, screens, links }, dropped };
   }
   const normalize = (raw) => sanitize(raw).flow;
 
@@ -192,7 +239,7 @@
       }
     }
     const regions = [];
-    if (tops.length) regions.push(layers(owner(f.screens[0].id)));
+    if (tops.length) regions.push(layers(owner(startOf(f))));
     const rest = tops.filter((id) => !done.has(id)), led = new Set(); // led: something else left over leads to it
     for (const id of rest) for (const k of next.get(id) || []) if (!done.has(k)) led.add(k);
     const linkedTo = new Set([...next.keys(), ...[...next.values()].flat()]); // has a navigate edge, either way
@@ -254,9 +301,10 @@
       ...(d.bad ? [{ kind: "broken", text: t("badEntries", { n: d.bad }) }] : []),
     ];
   }
-  /** Gaps in a normalized flow: orphan, dead, noback, noac. */
+  /** Gaps in a normalized flow: orphan, dead, offshot (a button its design image does not show), noback, noac, nosrc
+   *  (a screen with no design link). offshot needs the images (SHOTS): without them it reports nothing. */
   function gaps(f, t) {
-    const out = [], first = f.screens[0]?.id;
+    const out = [], first = startOf(f);
     const by = new Map(f.screens.map((s) => [s.id, s]));
     const into = new Set(f.links.map((l) => l.to));
     const from = new Set(f.links.map((l) => l.src));
@@ -269,6 +317,10 @@
       if (s.kind === "screen" && s.id !== first && s.items.length && !back.has(s.id))
         out.push({ kind: "noback", screen: s.id, text: t("noback", { s: s.title }) });
       if (!s.ac) out.push({ kind: "noac", screen: s.id, text: t("noacScreen", { s: s.title }) });
+      if (shotOf(s)) rowsOf(s).forEach(({ hot }, i) => {
+        if (!hot) out.push({ kind: "offshot", screen: s.id, item: s.items[i].id, text: t("offshot", { s: s.title, i: s.items[i].label }) });
+      });
+      if (s.kind === "screen" && !s.zeplin) out.push({ kind: "nosrc", screen: s.id, text: t("nosrc", { s: s.title }) });
     }
     for (const l of f.links) {
       if (l.ac) continue;
@@ -277,7 +329,54 @@
     }
     return out;
   }
-  /** [{kind: "broken" | "orphan" | "dead" | "noback" | "noac", screen?, item?, text}] for a raw flow. */
+  const KIND_ORDER = ["broken", "orphan", "dead", "offshot", "noback", "noac", "nosrc"];
+
+  /** Test paths through the graph, by code: from the start screen, every link followed once at least where it can be
+   *  reached. A path ends at a screen with nothing new to go to, or on a link back to a screen it already crossed.
+   *  Only paths that cover a link no earlier path did are kept. {paths: [[link]], missed: [link]}. */
+  function testPaths(f, max = 60) {
+    const first = startOf(f), paths = [], covered = new Set();
+    if (!first) return { paths, missed: [] };
+    const idx = new Map(f.links.map((l, i) => [l, i]));
+    const outOf = (id) => f.links.filter((l) => scr(l.src) === id);
+    let budget = 20000; // ponytail: bounded DFS; a dense 300-link graph stops early and lists the rest as missed
+    const keep = (steps) => {
+      if (steps.some((l) => !covered.has(idx.get(l))) || !paths.length) {
+        for (const l of steps) covered.add(idx.get(l));
+        paths.push(steps.slice());
+      }
+    };
+    const dfs = (id, seen, steps) => {
+      if (paths.length >= max || --budget < 0) return;
+      const next = outOf(id);
+      if (!next.length) return keep(steps);
+      for (const l of next) {
+        steps.push(l);
+        if (seen.has(l.to)) keep(steps);
+        else { seen.add(l.to); dfs(l.to, seen, steps); seen.delete(l.to); }
+        steps.pop();
+      }
+    };
+    dfs(first, new Set([first]), []);
+    return { paths, missed: f.links.filter((l) => !covered.has(idx.get(l))) };
+  }
+  /** One step in words: tap "Gửi OTP" (when …) → Nhập OTP. */
+  function stepText(f, l, t) {
+    const by = (id) => f.screens.find((s) => s.id === id);
+    const i = itm(l.src), label = i ? by(scr(l.src)).items.find((it) => it.id === i)?.label : null;
+    const how = label ? t("tap", { i: label }) : t(l.act === "back" ? "goBack" : l.act === "close" ? "goClose" : "goOn");
+    return `${how}${l.when ? ` (${t("when", { s: l.when })})` : ""} → ${by(l.to).title}`;
+  }
+  /** The checklist as plain text (what "Sao chép" puts on the clipboard). */
+  function checklist(f, t) {
+    const { paths, missed } = testPaths(f), by = (id) => f.screens.find((s) => s.id === id);
+    const covered = f.links.length - missed.length, first = startOf(f);
+    const lines = [t("testsHead", { s: f.ticket, n: paths.length, c: covered, l: f.links.length })];
+    paths.forEach((p, n) => lines.push(`${n + 1}. ${by(first).title} → ${p.map((l) => stepText(f, l, t)).join(" → ")}`));
+    if (missed.length) lines.push(t("missed", { s: missed.map((l) => `${by(scr(l.src)).title} → ${by(l.to).title}`).join("; ") }));
+    return lines.join("\n");
+  }
+  /** [{kind: "broken" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "nosrc", screen?, item?, text}] for a raw flow. */
   function check(flow, lang) {
     const { flow: f, dropped } = sanitize(flow), t = tr(lang);
     return [...brokenRows(dropped, t), ...gaps(f, t)];
@@ -298,9 +397,9 @@
     hotCache.clear();
   }
   /** Where each button of `s` sits on its Zeplin image (frame units; null: label not found) and the back button:
-   *  same text first, then one containing the other; each hit used once, in reading order. */
+   *  its hand-drawn rect, else same text first, then one containing the other; each hit used once, in reading order. */
   function hotspots(s, sh) {
-    const key = s.zeplin + "\n" + s.items.map((i) => i.label).join("\n");
+    const key = s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
     let got = hotCache.get(key);
     if (got) return got;
     const k = W / sh.w, hits = Array.isArray(sh.hits) ? sh.hits : [], ns = hits.map((x) => norm(x[0])), used = new Set();
@@ -321,7 +420,9 @@
       }
       return -1;
     };
+    const kw = W, kh = (sh.h * W) / sh.w; // a rect is a fraction of the whole image; the frame is W wide
     const items = s.items.map((it) => {
+      if (it.rect) return { x: it.rect.x * kw, y: it.rect.y * kh, w: it.rect.w * kw, h: it.rect.h * kh, manual: true };
       const j = find(it.label);
       if (j < 0) return null;
       used.add(j);
@@ -358,9 +459,10 @@
     const c = cardOf(s), sh = shotOf(s);
     if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
     const { items } = hotspots(s, sh), fold = H - BOTTOM;
-    const off = items.filter((r) => !r || r.y + r.h > fold).length;
+    const off = items.filter((r) => !r || r.y + r.h > (r.manual ? H + 0.5 : fold)).length;
     let n = 0;
-    return items.map((r) => (r && r.y + r.h <= fold ? { r, hot: true }
+    // a hand-drawn area may sit over the home bar (the user put it there); a text match there is the next screenful
+    return items.map((r) => (r && r.y + r.h <= (r.manual ? H + 0.5 : fold) ? { r, hot: true }
       : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
   }
   /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
@@ -473,7 +575,7 @@
   /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
    *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
    *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
-  function buildFrame(s, t, linked, edit, lead = "") {
+  function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
     const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
     const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : ""));
     el.dataset.id = s.id;
@@ -486,7 +588,19 @@
     }
     const head = h("div", "uf-head");
     box(head, { x: 0, y: c.head, w: c.w, h: c.headH });
+    if (isStart) {
+      const b = h("span", "uf-startb", "▶");
+      b.title = t("startBadge");
+      b.setAttribute("aria-label", t("startBadge"));
+      head.append(b);
+    }
     head.append(h("div", "uf-title", s.title));
+    if (s.note) { // plain text: textContent / title never parse it
+      const m = h("span", "uf-memo", "✎");
+      m.title = s.note;
+      m.setAttribute("aria-label", t("noteBadge"));
+      head.append(m);
+    }
     if (s.ac) head.append(h("span", "uf-ac", s.ac));
     if (s.zeplin) head.append(zeplinLink(s.zeplin, t));
     // the name above the frame at a constant on-screen size (Figma style): readable when the map is zoomed out.
@@ -498,8 +612,11 @@
     card.append(label, head);
     s.items.forEach((it, i) => {
       const { r, hot } = rows[i];
-      const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
+      const rect = hot && it.rect; // hand-drawn and on the frame: edit mode moves / resizes it
+      const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (rect ? "uf-rect " : "") +
+        (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
       row.dataset.item = it.id;
+      if (rect && edit) row.append(h("span", "uf-rsz"));
       if (!hot && sh) row.title = t("offShot");
       box(row, r);
       row.style.lineHeight = r.h - 2 + "px";
@@ -541,12 +658,12 @@
   // ------------------------------------------------------------------ styles (injected once)
   const DARK = "--uf-bg:#0d0f14;--uf-screen:#181b22;--uf-ink:#e8eaee;--uf-ink2:#9aa1ad;--uf-line:#2c313b;" +
     "--uf-soft:#22262e;--uf-accent:#8b8cf8;--uf-on-accent:#0d0f14;--uf-accent-soft:rgba(139,140,248,.16);" +
-    "--uf-muted:#697282;--uf-bezel:#2e333c;--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
+    "--uf-muted:#697282;--uf-bezel:#2e333c;--uf-hit:#facc15;--uf-hit-soft:rgba(250,204,21,.2);--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
     "--uf-shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px -14px rgba(0,0,0,.7);color-scheme:dark";
   const CSS = `
 .uf-root{--uf-bg:#f3f4f7;--uf-screen:#fff;--uf-ink:#111827;--uf-ink2:#6b7280;--uf-line:#d9dce3;--uf-soft:#f1f3f6;
 --uf-accent:#4f46e5;--uf-on-accent:#fff;--uf-bezel:#1b1d22;--uf-accent-soft:rgba(79,70,229,.1);--uf-muted:#9aa1ad;--uf-warn:#c2410c;
---uf-warn-soft:rgba(234,88,12,.1);--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
+--uf-warn-soft:rgba(234,88,12,.1);--uf-hit:#eab308;--uf-hit-soft:rgba(234,179,8,.22);--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
 position:relative;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
 color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 -webkit-font-smoothing:antialiased}
@@ -624,6 +741,40 @@ color:transparent;font-size:13px}
 .uf-item.uf-hot::after{content:none}
 .uf-root .uf-hot.uf-dead{border-color:var(--uf-warn);background:transparent;color:transparent}
 .uf-hot.uf-edit-on{color:var(--uf-ink)}
+.uf-editing .uf-rect{cursor:move}
+.uf-rsz{display:none;position:absolute;right:0;bottom:0;width:14px;height:14px;border:2px solid var(--uf-screen);
+border-radius:4px;background:var(--uf-accent);cursor:nwse-resize;touch-action:none}
+.uf-editing .uf-rect.uf-sel .uf-rsz{display:block}
+.uf-drawing .uf-screen.uf-drawon{cursor:crosshair}
+.uf-drawing .uf-screen.uf-drawon .uf-imgbox{outline:3px dashed var(--uf-accent);outline-offset:-3px}
+.uf-startb{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-accent);
+color:var(--uf-on-accent);font-size:11px}
+.uf-ptabs{display:flex;gap:4px;padding:4px 4px 6px}
+.uf-pfilter{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 6px}
+.uf-pfilter .uf-btn,.uf-ptabs .uf-btn{height:26px;padding:0 10px;font-size:12px}
+.uf-paths{margin:0;padding:4px 10px 6px 28px;font-size:13px;line-height:1.45}
+.uf-paths li{margin:4px 0;overflow-wrap:anywhere}
+.uf-memo{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-hit-soft);
+color:var(--uf-ink);font-size:14px;cursor:help}
+.uf-screen.uf-match{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
+.uf-ov.uf-match .uf-card{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
+.uf-find{position:relative;flex:0 1 260px;min-width:140px}
+.uf-find .uf-input{width:100%;height:32px;border-radius:999px;padding:0 12px}
+.uf-results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:4;max-height:320px;overflow:auto;padding:4px;
+border-radius:12px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow)}
+.uf-res{display:block;width:100%;padding:7px 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;
+font-size:13px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.uf-res[aria-selected=true],.uf-res:hover{background:var(--uf-accent-soft)}
+.uf-count{padding:4px 10px;color:var(--uf-ink2);font-size:12px}
+.uf-zform{padding:10px}
+.uf-zform h2{margin:0 0 6px;font-size:13px;font-weight:700}
+.uf-zform .uf-field{margin-top:4px}
+.uf-zmsg{margin:8px 2px 0;font-size:13px;color:var(--uf-ink2)}
+.uf-zmsg.uf-err{color:var(--uf-warn)}
+.uf-area{flex:1;min-width:0;min-height:72px;padding:6px 9px;border:1px solid var(--uf-line);border-radius:9px;
+background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;resize:vertical}
+.uf-area:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
+.uf-num{flex:1 1 52px;min-width:52px}
 .uf-focus .uf-screen:not(.uf-on){opacity:.2}
 .uf-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
 .uf-link{fill:none;stroke:var(--uf-accent);stroke-width:3;stroke-linecap:round;transition:opacity .2s ease-out}
@@ -722,7 +873,7 @@ border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40
 .uf-link.uf-sel{stroke-width:5}
 .uf-edit-on{background:var(--uf-screen);box-shadow:0 0 0 2px var(--uf-accent);cursor:text;text-overflow:clip;
 user-select:text;-webkit-user-select:text}
-.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;width:min(320px,calc(100% - 16px));padding:10px;
+.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;width:min(320px,calc(100% - 16px));max-height:calc(100% - 16px);overflow:auto;padding:10px;
 border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);animation:uf-in .18s ease-out}
 .uf-insp h2{margin:0 0 8px;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .uf-chips{display:flex;flex-wrap:wrap;gap:4px}
@@ -989,7 +1140,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
   function player(host, { flow, t, reduced, onGo }) {
     let path = [], ovs = [], cur = null, flash = null; // ovs: [{id, kind, el, card, scrim, timer}]
     const ui = phoneShell(t);
-    const restart = btn(t("restart"), "uf-btn", () => go([flow().screens[0]?.id].filter(Boolean), "back"));
+    const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
     ui.back.addEventListener("click", goBack);
     ui.trail.append(ui.crumbs, restart);
     host.replaceChildren(ui.stage, ui.trail);
@@ -1172,7 +1323,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     return {
       /** Jump to a screen (an overlay: its parent with the overlay open), as a fresh path. */
       open(id) {
-        const s = by(id) || flow().screens[0];
+        const s = by(id) || by(startOf(flow()));
         if (!s) return;
         const p = isPop(s) && parents(flow()).get(s.id);
         go([p || s.id], null);
@@ -1257,6 +1408,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
    *  tempLink, drawAll, centre}. */
   function editor(ctx) {
     let sel = null; // {t: "screen" | "item" | "link", id?, item?, i?}
+    let drawFor = null; // {id, item?}: the next drag on that screen's image draws a tap area (for `item`, or a new one)
     let badVal = null; // text in a checked field that cannot be stored; kept so the panel can show it again
     let drag = null, raf = 0, at = null; // at: where the pointer is now, painted on the next frame
     const t = ctx.t, get = ctx.get;
@@ -1288,11 +1440,42 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       if (!sel) return null;
       if (sel.t === "link") return ctx.marks()[sel.i]?.path;
       const f = ctx.frames().get(sel.id);
-      return sel.t === "item" ? f?.querySelector(`[data-item="${CSS.escape(sel.item)}"]`) : f;
+      return sel.t === "item" ? f?.querySelector(`[data-item="${window.CSS.escape(sel.item)}"]`) : f;
     }
     function paint() {
-      for (const el of ctx.layer.querySelectorAll(".uf-sel")) el.classList.remove("uf-sel");
+      for (const el of ctx.layer.querySelectorAll(".uf-sel, .uf-drawon")) el.classList.remove("uf-sel", "uf-drawon");
       node()?.classList.add("uf-sel");
+      if (drawFor) ctx.frames().get(drawFor.id)?.classList.add("uf-drawon");
+    }
+    /** Frame units per image fraction for a screen drawn from its Zeplin image (the frame is W wide). */
+    const scale = (s) => { const sh = shotOf(s); return sh ? { kw: W, kh: (sh.h * W) / sh.w, sh } : null; };
+    const rnd = (v) => Math.round(v * 1e4) / 1e4;
+    const MIN_RECT = 12; // frame px: smaller is a slip, not a button
+    /** A rect moved / sized by (dx, dy) image fractions, kept on the image and at least MIN_RECT. */
+    function shift(r, k, dx, dy, size) {
+      const mw = MIN_RECT / k.kw, mh = MIN_RECT / k.kh;
+      if (size) {
+        const w = rnd(clamp(r.w + dx, mw, 1 - r.x)), hh = rnd(clamp(r.h + dy, mh, 1 - r.y));
+        return { x: r.x, y: r.y, w: Math.min(w, 1 - r.x), h: Math.min(hh, 1 - r.y) };
+      }
+      const x = rnd(clamp(r.x + dx, 0, 1 - r.w)), y = rnd(clamp(r.y + dy, 0, 1 - r.h));
+      return { x, y, w: Math.min(r.w, 1 - x), h: Math.min(r.h, 1 - y) };
+    }
+    const px = (r, k) => ({ x: r.x * k.kw, y: r.y * k.kh, w: r.w * k.kw, h: r.h * k.kh });
+    function startDraw(spec) {
+      if (blocked()) return;
+      drawFor = spec;
+      ctx.root.classList.add("uf-drawing");
+      paint();
+      ctx.view.focus({ preventScroll: true }); // Enter / Esc reach the engine, not the button that started it
+      ctx.note(t("drawHint"));
+    }
+    function stopDraw() {
+      if (!drawFor) return false;
+      drawFor = null;
+      ctx.root.classList.remove("uf-drawing");
+      paint();
+      return true;
     }
     function select(s) {
       sel = s;
@@ -1305,6 +1488,8 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     function sync() {
       badVal = null;
       if (!alive(get())) sel = null;
+      const ds = drawFor && get().screens.find((x) => x.id === drawFor.id);
+      if (drawFor && (!ds || !shotOf(ds) || (drawFor.item && !ds.items.some((i) => i.id === drawFor.item)))) stopDraw();
       paint();
       fill();
     }
@@ -1321,8 +1506,11 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     function down(e) {
       const el = e.target;
       if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
+      const frame = el.closest?.(".uf-screen");
+      const draw = drawFor && frame?.dataset.id === drawFor.id && !el.closest(".uf-head, .uf-dot");
       const knob = el.closest?.(".uf-handle"), dot = el.closest?.(".uf-dot"), head = el.closest?.(".uf-head");
-      if (!knob && !dot && !head) return;
+      const hot = !draw && !dot && el.closest?.(".uf-rect"), rsz = hot && el.closest(".uf-rsz");
+      if (!knob && !dot && !head && !hot && !draw) return;
       // A rename or a panel field commits on blur, and mousedown is about to blur it. Do it now, while there is
       // no drag yet, or `commit` would refuse it and the typed value would be lost. Everything read below is read
       // after it, so it comes from the flow that edit produced.
@@ -1332,7 +1520,19 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       at = null;
       drag = { rect, c0: { x: e.clientX, y: e.clientY }, before: JSON.stringify(f), moved: false,
         by: new Map(f.screens.map((x) => [x.id, x])) };
-      if (knob) Object.assign(drag, { kind: "link", m: ctx.marks()[+knob.dataset.i] });
+      if (draw || hot) {
+        const s = drag.by.get(frame.dataset.id), k = scale(s), p = world(e, rect);
+        if (!k) { drag = null; return; }
+        if (draw) {
+          const box0 = h("div", "uf-item uf-hot uf-rect uf-sel");
+          frame.querySelector(".uf-card").append(box0);
+          box0.hidden = true;
+          Object.assign(drag, { kind: "draw", s, k, el: box0, p0: { x: (p.x - s.x) / k.kw, y: (p.y - s.y) / k.kh }, r: null });
+        } else {
+          const it = s.items.find((i) => i.id === hot.dataset.item);
+          Object.assign(drag, { kind: rsz ? "size" : "rect", s, k, it, el: hot, at: p, r0: { ...it.rect } });
+        }
+      } else if (knob) Object.assign(drag, { kind: "link", m: ctx.marks()[+knob.dataset.i] });
       else if (dot) Object.assign(drag, { kind: "new", src: dot.dataset.src, from: { x: +dot.dataset.x, y: +dot.dataset.y } });
       else {
         const id = head.closest(".uf-screen").dataset.id, ids = [...family(f, id)];
@@ -1366,6 +1566,17 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
           s.y = Math.round(drag.start.get(s.id).y + dy);
         }
         ctx.moveScreens(drag.ids, drag.by);
+      } else if (drag.kind === "rect" || drag.kind === "size") {
+        const k = drag.k;
+        drag.it.rect = shift(drag.r0, k, (at.x - drag.at.x) / k.kw, (at.y - drag.at.y) / k.kh, drag.kind === "size");
+        box(drag.el, px(drag.it.rect, k));
+      } else if (drag.kind === "draw") {
+        const k = drag.k, a = drag.p0;
+        const b = { x: clamp((at.x - drag.s.x) / k.kw, 0, 1), y: clamp((at.y - drag.s.y) / k.kh, 0, 1) };
+        const x = rnd(Math.min(a.x, b.x)), y = rnd(Math.min(a.y, b.y));
+        drag.r = { x, y, w: Math.min(rnd(Math.abs(a.x - b.x)), 1 - x), h: Math.min(rnd(Math.abs(a.y - b.y)), 1 - y) };
+        drag.el.hidden = false;
+        box(drag.el, px(drag.r, k));
       } else if (drag.kind === "link") ctx.liveLink(drag.m, at, drag.by);
       else ctx.tempLink(drag.from, at);
     }
@@ -1381,13 +1592,18 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       drag = null;
       at = null;
       ctx.tempLink(null);
+      if (d.kind === "draw") d.el.remove();
       if (!d.moved) { // a plain click on a handle, a dot or a title bar selects
+        if (d.kind === "draw") return;
+        if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
         if (d.kind === "link") return select({ t: "link", i: d.m.i });
         if (d.kind === "move") return select({ t: "screen", id: d.id });
         return select(d.src.includes(".") ? { t: "item", id: scr(d.src), item: itm(d.src) } : { t: "screen", id: d.src });
       }
+      if (d.kind === "draw") return drawn(d);
       const f = get(), to = hit(world(e, d.rect));
-      if (d.kind === "move") return ctx.commit(f, d.before);
+      if (d.kind === "rect" || d.kind === "size") sel = { t: "item", id: d.s.id, item: d.it.id }; // keys nudge it next
+      if (d.kind === "move" || d.kind === "rect" || d.kind === "size") return ctx.commit(f, d.before);
       if (d.kind === "link") {
         if (to && to.id !== f.links[d.m.i].to) {
           f.links[d.m.i] = { ...f.links[d.m.i], to: to.id };
@@ -1401,6 +1617,57 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         return ctx.commit(f, d.before);
       }
       back();
+    }
+    /** A finished draw: the tap area of the item it was for, or a new button with it. One undo step. */
+    function drawn(d) {
+      const r = d.r, spec = drawFor;
+      if (!r || !spec || r.w * d.k.kw < MIN_RECT || r.h * d.k.kh < MIN_RECT) return; // a slip: still drawing
+      const f = structuredClone(get()), s = f.screens.find((x) => x.id === spec.id);
+      let item = spec.item && s.items.find((i) => i.id === spec.item);
+      if (!item) {
+        if (s.items.length >= MAX_ITEMS) return ctx.note(t("maxItems", { n: MAX_ITEMS }));
+        item = { id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: t("newItem") };
+        s.items.push(item);
+      }
+      item.rect = r;
+      drawFor = null;
+      ctx.root.classList.remove("uf-drawing");
+      sel = { t: "item", id: s.id, item: item.id };
+      ctx.commit(f);
+    }
+    /** Enter while drawing: a default area mid-screen (then the numbers / arrow keys place it), no pointer needed. */
+    function drawDefault() {
+      if (!drawFor || blocked()) return false;
+      const s = get().screens.find((x) => x.id === drawFor.id), k = s && scale(s);
+      if (!k) return false;
+      const w = 0.6, hh = rnd(Math.min(48 / k.kh, 1)), y = rnd(clamp((H / 2) / k.kh - hh / 2, 0, 1 - hh));
+      drawn({ r: { x: 0.2, y, w, h: hh }, k });
+      return true;
+    }
+    /** Arrow keys: the selected screen (with its overlays) or tap area moves by (dx, dy) frame px. */
+    function nudge(dx, dy) {
+      if (!sel || sel.t === "link" || blocked()) return false;
+      const f = structuredClone(get()), s = f.screens.find((x) => x.id === sel.id);
+      if (sel.t === "screen") {
+        for (const id of family(f, s.id)) {
+          const o = f.screens.find((x) => x.id === id);
+          o.x += dx;
+          o.y += dy;
+        }
+      } else {
+        const it = s.items.find((i) => i.id === sel.item), k = scale(s);
+        if (!it.rect || !k) return false;
+        it.rect = shift(it.rect, k, dx / k.kw, dy / k.kh, false);
+      }
+      ctx.commit(f, undefined, `nudge:${sel.t}:${sel.id}:${sel.item ?? ""}`);
+      return true;
+    }
+    /** Every screen laid out afresh by the code layout: one undo step. */
+    function relayout() {
+      if (blocked()) return;
+      const f = structuredClone(get());
+      for (const s of f.screens) s.x = s.y = null;
+      ctx.commit(f);
     }
     /** Redraw the arrows as the flow still has them, keeping what was selected selected. */
     function back() {
@@ -1477,6 +1744,39 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       }
       return w;
     }
+    /** Numbers in one row (`names` label each box); set(values) only once every box holds a finite number. */
+    function numbers(label, names, values, set) {
+      const w = h("div", "uf-field");
+      const boxes = names.map((n, j) => {
+        const i = h("input", "uf-input uf-num");
+        i.type = "number";
+        i.value = String(Math.round(values[j]));
+        i.setAttribute("aria-label", `${label} ${n}`);
+        i.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter") i.blur(); });
+        i.addEventListener("change", () => {
+          const v = boxes.map((b) => b.valueAsNumber);
+          if (v.every(Number.isFinite)) set(v);
+          else fill(); // a cleared box: show the stored values again
+        });
+        return i;
+      });
+      w.append(h("span", "uf-flab", label), ...boxes);
+      return w;
+    }
+    /** Plain-text note: kept on blur, Esc puts back what was stored. */
+    function memo(value, set) {
+      const w = h("label", "uf-field");
+      const a = h("textarea", "uf-area");
+      a.maxLength = CAP_NOTE;
+      a.value = value;
+      a.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") { e.preventDefault(); a.value = value; a.blur(); }
+      });
+      a.addEventListener("change", () => set(a.value.slice(0, CAP_NOTE)));
+      w.append(h("span", "uf-flab", t("noteField")), a);
+      return w;
+    }
     function fill() {
       ctx.insp.hidden = !sel;
       if (!sel) return ctx.insp.replaceChildren();
@@ -1487,23 +1787,65 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
             s.kind = k;
             if (k === "screen") s.parent = null; // a screen has no parent
           })),
+          (() => { // the prototype / test paths start here; pressed again: back to the first screen
+            const on = startOf(f) === o.id && f.start === o.id, b = btn(`▶ ${t("setStart")}`, "uf-btn", () => change((s, g) => { g.start = on ? null : s.id; }));
+            b.setAttribute("aria-pressed", String(on));
+            const w = h("div", "uf-chips");
+            w.style.marginTop = "6px";
+            w.append(b);
+            return w;
+          })(),
           field(t("acField"), o.ac, CAP_AC, (v) => change((s) => { s.ac = v; })),
           field(t("zeplinField"), o.zeplin, CAP_URL, (v) => change((s) => { s.zeplin = v; }),
-            { ok: (v) => ZEPLIN.test(v), text: t("badZeplin") }));
+            { ok: (v) => ZEPLIN.test(v), text: t("badZeplin") }),
+          numbers(t("posField"), ["X", "Y"], [o.x, o.y], ([x, y]) => change((s, g) => {
+            const dx = Math.round(x) - s.x, dy = Math.round(y) - s.y;
+            for (const id of family(g, s.id)) {
+              const m = g.screens.find((v) => v.id === id);
+              m.x += dx;
+              m.y += dy;
+            }
+          })),
+          memo(o.note || "", (v) => change((s) => { s.note = v; })));
+        if (o.items.length) { // keyboard way to a button (the map itself is pointer-only)
+          const w = h("div", "uf-field"), g = h("div", "uf-chips");
+          for (const it of o.items) g.append(btn(it.label, "uf-btn", () => select({ t: "item", id: o.id, item: it.id })));
+          w.append(h("span", "uf-flab", t("itemsField")), g);
+          rows.push(w);
+        }
       } else if (sel.t === "item") {
         rows.push(h("h2", null, `${t("button")}: ${o.label}`));
+        const k = scale(f.screens.find((x) => x.id === sel.id));
+        if (k && o.rect) {
+          const { sh } = k, r = o.rect;
+          rows.push(numbers(t("rectField"), ["X", "Y", "W", "H"], [r.x * sh.w, r.y * sh.h, r.w * sh.w, r.h * sh.h],
+            ([x, y, w, hh]) => change((it) => {
+              const nx = rnd(clamp(x / sh.w, 0, 1)), ny = rnd(clamp(y / sh.h, 0, 1));
+              const nw = Math.min(rnd(clamp(w / sh.w, 1 / sh.w, 1)), 1 - nx), nh = Math.min(rnd(clamp(hh / sh.h, 1 / sh.h, 1)), 1 - ny);
+              if (nw > 0 && nh > 0) it.rect = { x: nx, y: ny, w: nw, h: nh };
+            })));
+        }
       } else {
         rows.push(h("h2", null, `${t("arrow")}: ${f.screens.find((s) => s.id === scr(o.src)).title} → ${f.screens.find((s) => s.id === o.to).title}`),
           chips(ACTS, o.act, "act_", (a) => change((l) => { l.act = a; })),
           field(t("whenField"), o.when, CAP, (v) => change((l) => { l.when = v; })),
           field(t("acField"), o.ac, CAP_AC, (v) => change((l) => { l.ac = v; })));
       }
-      const acts = h("div", "uf-acts");
+      const acts = h("div", "uf-acts uf-chips");
       if (sel.t === "screen") {
         const add = btn(t("addItem"), "uf-btn", addItem);
         add.disabled = o.items.length >= MAX_ITEMS;
         if (add.disabled) add.title = t("maxItems", { n: MAX_ITEMS });
         acts.append(add);
+        if (shotOf(o)) {
+          const area = btn(t("drawHot"), "uf-btn", () => startDraw({ id: o.id }));
+          area.disabled = add.disabled;
+          acts.append(area);
+        }
+      } else if (sel.t === "item" && shotOf(f.screens.find((x) => x.id === sel.id))) {
+        const id = sel.id, item = sel.item;
+        acts.append(btn(o.rect ? t("redraw") : t("drawHot").replace(/^\+ /, ""), "uf-btn", () => startDraw({ id, item })));
+        if (o.rect) acts.append(btn(t("byText"), "uf-btn", () => change((it) => { delete it.rect; })));
       }
       acts.append(btn(t("del"), "uf-btn uf-danger", remove));
       rows.push(acts);
@@ -1517,15 +1859,17 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       ctx.note(t("dragging"));
       return true;
     }
-    function addScreen() {
-      if (blocked()) return;
+    /** A new screen at the centre of the view (`props`: title / zeplin); its id, or null when refused. */
+    function addScreen(props = {}) {
+      if (blocked()) return null;
       const f = structuredClone(get()), c = ctx.centre();
-      if (f.screens.length >= MAX_SCREENS) return ctx.note(t("maxScreens", { n: MAX_SCREENS }));
+      if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
       const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
       f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x: Math.round(c.x - W / 2),
-        y: Math.round(c.y - H / 2), zeplin: "", ac: "", items: [] });
+        y: Math.round(c.y - H / 2), zeplin: "", ac: "", note: "", items: [], ...props });
       sel = { t: "screen", id };
       ctx.commit(f);
+      return id;
     }
     function addItem() {
       if (sel?.t !== "screen" || blocked()) return;
@@ -1551,25 +1895,41 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       ctx.commit(f);
     }
 
+    function cancel() {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      const d = drag;
+      drag = null;
+      at = null;
+      ctx.tempLink(null);
+      if (!d) return;
+      if (d.kind === "move") {
+        for (const s of d.objs) Object.assign(s, d.start.get(s.id));
+        ctx.moveScreens(d.ids, d.by);
+      } else if (d.kind === "rect" || d.kind === "size") {
+        d.it.rect = d.r0;
+        box(d.el, px(d.r0, d.k));
+      } else if (d.kind === "draw") d.el.remove();
+      back();
+    }
     ctx.layer.addEventListener("pointerdown", down);
     ctx.layer.addEventListener("pointermove", move);
     ctx.layer.addEventListener("pointerup", up);
-    ctx.layer.addEventListener("pointercancel", up);
+    ctx.layer.addEventListener("pointercancel", cancel);
     ctx.layer.addEventListener("dblclick", dbl);
     return {
       tap,
       addScreen,
       remove,
+      nudge,
+      relayout,
+      stopDraw,
+      drawDefault,
+      pick: (x) => select(x),
       selected: () => sel,
       busy: () => !!drag, // a flow change mid-gesture would strand the objects and frames the drag holds
-      cancel() {
-        cancelAnimationFrame(raf);
-        raf = 0;
-        drag = null;
-        at = null;
-        ctx.tempLink(null);
-      },
-      clear: () => select(null),
+      cancel,
+      clear: () => { stopDraw(); select(null); },
       /** After a re-render: drop a selection whose shape is gone, then paint the new nodes. */
       sync,
       destroy() {
@@ -1583,6 +1943,8 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
 
   /** src: the page's own HTML when standalone (enables "Lưu file" and hash writing), else null. */
   function mount(host, flow, opts = {}, src = null) {
+    const cleanup = [];
+    try {
     injectStyle();
     const lang = opts.lang || (/^vi/i.test(navigator.language || "") ? "vi" : "en");
     const t = tr(lang), uid = "uf" + ++mounts;
@@ -1591,6 +1953,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     setShots(opts.shots);
     const first = sanitize(flow);
     let cur = layout(freeShots(first.flow)), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
+    let fut = [], merging = null; // fut: what undo took back (redo); merging: {key, at} of the last mergeable step
     let shown = "map", focusId = null, here = null, editing = false;
     let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
 
@@ -1598,7 +1961,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     const root = h("div", "uf-root");
     root.dataset.mode = shown;
     const bar = h("div", "uf-bar");
-    let bAdd = null;
+    let bAdd = null, bZep = null, bUndo = null, bRedo = null;
     const seg = h("div", "uf-seg");
     seg.setAttribute("role", "group");
     const bMap = btn(t("map"), "uf-btn", () => api.mode("map"));
@@ -1611,14 +1974,19 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         editing = !editing;
         bEdit.setAttribute("aria-pressed", String(editing));
         root.classList.toggle("uf-editing", editing);
-        if (!editing) ed.clear();
+        if (!editing) { ed.clear(); zeplinForm(false); }
         render(); // the dots and arrow handles only exist while editing
       });
       bEdit.setAttribute("aria-pressed", "false");
       bAdd = btn(t("addScreen"), "uf-btn uf-add", () => ed.addScreen());
-      bar.append(bEdit, bAdd);
+      bZep = btn(t("fromZeplin"), "uf-btn uf-add", () => zeplinForm(true));
+      bZep.setAttribute("aria-expanded", "false");
+      bUndo = btn(t("undo"), "uf-btn uf-add", () => api.undo());
+      bRedo = btn(t("redo"), "uf-btn uf-add", () => api.redo());
+      bar.append(bEdit, bAdd, bZep, btn(t("relayout"), "uf-btn uf-add", () => ed.relayout()), bUndo, bRedo);
     }
-    bar.append(h("span", "uf-sp"), btn(t("fit"), "uf-btn uf-fit", () => api.fit()));
+    const bFit = btn(t("fit"), "uf-btn uf-fit", () => api.fit());
+    bar.append(h("span", "uf-sp"), bFit);
     const bCheck = btn("", "uf-btn", togglePanel);
     bCheck.setAttribute("aria-expanded", "false");
     bar.append(bCheck);
@@ -1641,8 +2009,10 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     const note = h("div", "uf-note"); // why an edit was refused (a cap); clears itself
     note.setAttribute("role", "status");
     note.hidden = true;
+    const zform = h("div", "uf-panel uf-zform"); // + Từ Zeplin: link → read → one new screen
+    zform.hidden = true;
     main.append(view, play, panel);
-    if (opts.edit) main.append(insp, note);
+    if (opts.edit) main.append(insp, zform, note);
     let noteTimer = 0;
     function say(text) {
       note.textContent = text;
@@ -1653,19 +2023,190 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     root.append(bar, main);
     host.replaceChildren(root);
 
-    // render: whole map on data change; links alone when only geometry changes
+    // Keep unchanged nodes mounted: editing one property must not decode every screenshot again.
+    let rendered = new Map();
+    function syncNodes(parent, nodes) {
+      const keep = new Set(nodes);
+      for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+      nodes.forEach((node, i) => { if (parent.children[i] !== node) parent.insertBefore(node, parent.children[i] || null); });
+    }
+    // ---------------- find a screen: title (accents / case ignored), Zeplin link or id. No commit, no undo.
+    let matches = [], active = -1;
+    const findBox = h("input", "uf-input");
+    const results = h("div", "uf-results");
+    function finder() {
+      const w = h("div", "uf-find");
+      findBox.type = "search";
+      findBox.placeholder = t("search");
+      findBox.setAttribute("aria-label", t("search"));
+      findBox.setAttribute("role", "combobox");
+      findBox.setAttribute("aria-expanded", "false");
+      findBox.setAttribute("aria-controls", uid + "-res");
+      findBox.setAttribute("aria-autocomplete", "list");
+      results.id = uid + "-res";
+      results.setAttribute("role", "listbox");
+      results.hidden = true;
+      findBox.addEventListener("input", search);
+      findBox.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          if (matches.length) pick((active + (e.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length, false);
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (matches.length) choose(Math.max(active, 0));
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          endSearch();
+          view.focus({ preventScroll: true });
+        }
+      });
+      findBox.addEventListener("blur", () => setTimeout(() => { if (!w.contains(document.activeElement)) results.hidden = true; findBox.setAttribute("aria-expanded", String(!results.hidden)); }, 150));
+      w.append(findBox, results);
+      return w;
+    }
+    function found(q) {
+      const raw = q.trim();
+      if (!raw) return [];
+      const n = norm(raw), url = /^https?:\/\//i.test(raw), low = raw.toLowerCase();
+      return cur.screens.filter((s) => (url ? !!s.zeplin && (canon(s.zeplin) === canon(raw) || s.zeplin.includes(raw))
+        : (n && (norm(s.title).includes(n) || s.items.some((it) => norm(it.label).includes(n)))) // a button's words find its screen
+          || s.id.toLowerCase().includes(low) || (!!s.zeplin && s.zeplin.includes(raw))));
+    }
+    function search() {
+      matches = found(findBox.value).map((s) => s.id);
+      active = -1;
+      results.replaceChildren(h("div", "uf-count", matches.length ? t("found", { n: matches.length }) : t("noFound")),
+        ...matches.map((id, i) => {
+          const s = cur.screens.find((x) => x.id === id);
+          const b = btn(s.title, "uf-res", () => choose(i));
+          b.id = `${uid}-r${i}`;
+          b.tabIndex = -1;
+          b.setAttribute("role", "option");
+          b.setAttribute("aria-selected", "false");
+          b.addEventListener("mousedown", (e) => e.preventDefault()); // keep the box focused: blur would hide the list
+          return b;
+        }));
+      results.hidden = !findBox.value.trim();
+      findBox.setAttribute("aria-expanded", String(!results.hidden));
+      findBox.removeAttribute("aria-activedescendant");
+      applyMatch();
+    }
+    function pick(i, go) {
+      active = i;
+      for (const b of results.querySelectorAll(".uf-res")) b.setAttribute("aria-selected", String(b.id === `${uid}-r${i}`));
+      const b = results.querySelector(`#${uid}-r${i}`);
+      if (b) { findBox.setAttribute("aria-activedescendant", b.id); b.scrollIntoView({ block: "nearest" }); }
+      if (go !== false) goto(matches[i], !reduced.matches);
+    }
+    function choose(i) {
+      pick(i);
+      if (editing && shown === "map") ed.pick({ t: "screen", id: matches[i] }); // keyboard path to the inspector
+      results.hidden = true;
+      findBox.setAttribute("aria-expanded", "false");
+    }
+    function endSearch() {
+      findBox.value = "";
+      search();
+    }
+    function applyMatch() {
+      const on = new Set(matches);
+      frames.forEach((f, id) => f.classList.toggle("uf-match", on.has(id)));
+    }
+
+    bar.insertBefore(finder(), bFit);
+
+    // ---------------- + Từ Zeplin: a checked link, read once (opts.lookup, the dashboard's), one new screen
+    let zTry = 0;
+    function zeplinForm(open) {
+      zTry++; // a read still in flight answers a form that is gone
+      if (open && !panel.hidden) togglePanel();
+      zform.hidden = !open;
+      bZep?.setAttribute("aria-expanded", String(open));
+      if (!open) return;
+      const i = h("input", "uf-input");
+      i.type = "url";
+      i.placeholder = "https://app.zeplin.io/project/…/screen/…";
+      const lab = h("label", "uf-field");
+      lab.append(h("span", "uf-flab", t("zUrl")), i);
+      const msg = h("p", "uf-zmsg");
+      msg.setAttribute("role", "status");
+      const acts = h("div", "uf-acts uf-chips");
+      const say2 = (text, err, ...buttons) => {
+        msg.textContent = text;
+        msg.classList.toggle("uf-err", !!err);
+        acts.replaceChildren(add, ...buttons, btn(t("close"), "uf-btn", () => zeplinForm(false)));
+      };
+      const run = async (mode) => { // mode: undefined | "copy" (duplicate allowed) | "plain" (no image read)
+        const url = i.value.trim(), me = ++zTry;
+        if (!ZEPLIN.test(url) || url.length > CAP_URL) return say2(t("badZeplin"), true);
+        const dup = cur.screens.find((s) => s.zeplin && canon(s.zeplin) === canon(url));
+        if (dup && mode !== "copy") {
+          goto(dup.id, !reduced.matches);
+          return say2(t("zDup", { s: dup.title }), false, btn(t("zCopy"), "uf-btn", () => run("copy")));
+        }
+        if (cur.screens.length >= MAX_SCREENS) return say2(t("maxScreens", { n: MAX_SCREENS }), true);
+        let shot = null;
+        if (opts.lookup && mode !== "plain") {
+          say2(t("zReading"));
+          add.disabled = true;
+          const again = btn(t("zRetry"), "uf-btn", () => run(mode)), keep = btn(t("zKeep"), "uf-btn", () => run("plain"));
+          try {
+            shot = await opts.lookup(url);
+          } catch (e) {
+            if (me !== zTry) return;
+            add.disabled = false;
+            return say2(`${t("zFail")}: ${e instanceof Error ? e.message : String(e)}`, true, again, keep);
+          }
+          if (me !== zTry) return;
+          add.disabled = false;
+          if (!shot) return say2(t("zMissing"), true, again, keep);
+        }
+        if (shot) setShots({ ...SHOTS, [url]: shot }); // drawn at once; the host's own shots replace it later
+        const title = str(shot?.title).replace(/\s+/g, " ").trim().slice(0, CAP);
+        const id = ed.addScreen({ zeplin: url, ...(title ? { title } : {}) });
+        if (id === null) return say2(t("dragging"), true);
+        zeplinForm(false);
+        goto(id, !reduced.matches);
+      };
+      const add = btn(t("zAdd"), "uf-btn", () => run());
+      i.addEventListener("keydown", (e) => {
+        e.stopPropagation();
+        if (e.key === "Enter") { e.preventDefault(); run(); }
+        else if (e.key === "Escape") { e.preventDefault(); zeplinForm(false); view.focus({ preventScroll: true }); }
+      });
+      say2("", false);
+      zform.replaceChildren(h("h2", "uf-ztitle", t("fromZeplin").replace(/^\+ /, "")), lab, msg, acts);
+      i.focus();
+    }
+
     function render() {
       const had = root.contains(document.activeElement);
       const linked = new Set(cur.links.map((l) => l.src));
       const lead = sharedLead(cur);
-      frames = new Map(cur.screens.map((s) => [s.id, buildFrame(s, t, linked, editing, lead)]));
+      const previous = frames, next = new Map(), changed = new Set();
+      frames = new Map(cur.screens.map((s) => {
+        const isStart = s.id === startOf(cur);
+        const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, lead, isStart,
+          [s.id, ...s.items.map((it) => `${s.id}.${it.id}`)].map((id) => linked.has(id))]);
+        const shot = shotOf(s), old = rendered.get(s.id);
+        const frame = old?.key === key && old.shot === shot ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
+        placeFrame(frame, s);
+        if (!old || old.key !== key || old.shot !== shot || old.x !== s.x || old.y !== s.y) changed.add(s.id);
+        next.set(s.id, { key, shot, x: s.x, y: s.y });
+        return [s.id, frame];
+      }));
+      rendered = next;
       const nodes = [...frames.values()].sort((a, b) => a.classList.contains("uf-ov") - b.classList.contains("uf-ov"));
-      layer.replaceChildren(...nodes, links, labels);
-      drawLinks();
+      syncNodes(layer, [...nodes, links, labels]);
+      drawLinks(changed);
       if (focusId && !frames.has(focusId)) focusId = null;
       applyFocus();
+      matches = matches.filter((id) => frames.has(id));
+      applyMatch();
       refreshChecks();
       ed.sync();
+      if (bUndo) { bUndo.disabled = !hist.length; bRedo.disabled = !fut.length; }
       if (bAdd) {
         bAdd.disabled = cur.screens.length >= MAX_SCREENS;
         bAdd.title = bAdd.disabled ? t("maxScreens", { n: MAX_SCREENS }) : "";
@@ -1674,9 +2215,13 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       if (had && !root.contains(document.activeElement)) view.focus({ preventScroll: true }); // Delete / ⌘Z keep working // in Map the phone is hidden: no DOM to rebuild, no hash to write
     }
     const atMid = (el, mid) => { el.style.transform = `translate(${r1(mid.x)}px,${r1(mid.y)}px) translate(-50%,-50%)`; };
-    function drawLinks() {
+    function drawLinks(changed = cur.screens.map((s) => s.id)) {
       const by = new Map(cur.screens.map((s) => [s.id, s])), paths = [], labs = [], knobs = [];
+      const previous = marks;
       marks = cur.links.map((l, i) => {
+        const key = JSON.stringify([l, editing]);
+        const old = previous[i];
+        if (old?.key === key) { old.l = l; paths.push(old.path); if (old.lab) labs.push(old.lab); if (old.knob) knobs.push(old.knob); return old; }
         const ends = linkEnds(l, by), g = curve(ends), dashed = l.act === "back" || l.act === "close";
         const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back" : ""}`,
           "marker-end": `url(#${uid}-${dashed ? "b" : "a"})`, "data-i": i });
@@ -1695,10 +2240,11 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
             "data-link": `${l.src}>${l.to}` });
           knobs.push(knob);
         }
-        return { l, i, path, lab, knob, a: scr(l.src), b: l.to };
+        return { l, i, key, path, lab, knob, a: scr(l.src), b: l.to };
       });
-      links.replaceChildren(defs, tmp, ...paths, ...knobs);
-      labels.replaceChildren(...labs);
+      syncNodes(links, [defs, tmp, ...paths, ...knobs]);
+      syncNodes(labels, labs);
+      moveLinks(changed, by);
       tempLink(null);
     }
     /** Redraw just the arrows that touch `ids` (a Set / array of screen ids), in place. */
@@ -1754,15 +2300,64 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       bCheck.textContent = t("check", { n: issues.length });
       if (!panel.hidden) fillPanel();
     }
+    let panelTab = "gaps", panelKind = null; // what the panel shows: the review list (filtered by kind) or the checklist
+    const chip = (label, on, fn) => {
+      const b = btn(label, "uf-btn", fn);
+      b.setAttribute("aria-pressed", String(on));
+      return b;
+    };
     function fillPanel() {
-      if (!issues.length) return panel.replaceChildren(h("p", "uf-none", t("ok")));
-      panel.replaceChildren(...issues.map((it) => {
-        const b = btn(null, "uf-issue", () => { togglePanel(); if (it.screen) api.goto(it.screen); });
+      const tabs = h("div", "uf-ptabs");
+      tabs.setAttribute("role", "group");
+      tabs.append(chip(t("gapsTab", { n: issues.length }), panelTab === "gaps", () => { panelTab = "gaps"; fillPanel(); }),
+        chip(t("testsTab"), panelTab === "tests", () => { panelTab = "tests"; fillPanel(); }));
+      if (panelTab === "tests") return panel.replaceChildren(tabs, ...testsView());
+      if (!issues.length) return panel.replaceChildren(tabs, h("p", "uf-none", t("ok")));
+      const counts = new Map();
+      for (const it of issues) counts.set(it.kind, (counts.get(it.kind) || 0) + 1);
+      if (panelKind && !counts.has(panelKind)) panelKind = null;
+      const filter = h("div", "uf-pfilter");
+      filter.setAttribute("role", "group");
+      filter.append(chip(t("all", { n: issues.length }), !panelKind, () => { panelKind = null; fillPanel(); }),
+        ...KIND_ORDER.filter((k) => counts.has(k)).map((k) =>
+          chip(`${t("k_" + k)} (${counts.get(k)})`, panelKind === k, () => { panelKind = k; fillPanel(); })));
+      const rows = issues.filter((it) => !panelKind || it.kind === panelKind).map((it) => {
+        const b = btn(null, "uf-issue", () => {
+          togglePanel();
+          if (!it.screen) return;
+          api.goto(it.screen);
+          // editing: open what the row is about, so its fix (draw the area, link it, add the AC) is one click away
+          if (editing && shown === "map") ed.pick(it.item ? { t: "item", id: it.screen, item: it.item } : { t: "screen", id: it.screen });
+        });
         b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
         return b;
-      }));
+      });
+      panel.replaceChildren(tabs, filter, ...rows);
+    }
+    function testsView() {
+      const { paths, missed } = testPaths(cur), first = startOf(cur), title = (id) => cur.screens.find((s) => s.id === id)?.title;
+      if (!paths.length) return [h("p", "uf-none", t("noPaths"))];
+      const text = checklist(cur, t), msg = h("p", "uf-zmsg");
+      msg.setAttribute("role", "status");
+      const copy = btn(t("copy"), "uf-btn", async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          msg.textContent = t("copied");
+        } catch {
+          msg.textContent = t("copyFail");
+        }
+      });
+      const list = h("ol", "uf-paths");
+      for (const p of paths) list.append(h("li", null, `${title(first)} → ${p.map((l) => stepText(cur, l, t)).join(" → ")}`));
+      const out = [h("p", "uf-count", text.split("\n")[0]), list];
+      if (missed.length) out.push(h("p", "uf-none", t("missed", { s: missed.map((l) => `${title(scr(l.src))} → ${title(l.to)}`).join("; ") })));
+      const acts = h("div", "uf-acts");
+      acts.append(copy);
+      out.push(acts, msg);
+      return out;
     }
     function togglePanel() {
+      if (panel.hidden && !zform.hidden) zeplinForm(false);
       panel.hidden = !panel.hidden;
       bCheck.setAttribute("aria-expanded", String(!panel.hidden));
       if (!panel.hidden) fillPanel();
@@ -1781,23 +2376,28 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         setFocus(f && layer.contains(f) ? f.dataset.id : null);
       },
     });
+    cleanup.push(() => cam.destroy());
     const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
     /** The one way the flow changes. Refused while a drag is in flight: that gesture holds the screen objects
      *  and the frames of the current render, and a rebuild under it would strand them (and could commit half a
      *  link). A change that changes nothing costs no undo step. */
-    const commit = (next, before = JSON.stringify(cur)) => {
+    const commit = (next, before = JSON.stringify(cur), merge = null) => {
       if (ed.busy()) return;
       const laid = layout(next), now = JSON.stringify(laid);
       if (now === before) return;
       dropped = sanitize(next).dropped; // the "Dữ liệu hỏng" rows describe what is on screen now, as api.set does
-      hist.push(before);
+      const at = Date.now();
+      // a run of arrow-key steps on one thing is one undo step (the first one's "before" stays on the stack)
+      if (!(merge && merging?.key === merge && at - merging.at < MERGE_MS && hist.length)) hist.push(before);
+      merging = merge ? { key: merge, at } : null;
+      fut = [];
       if (hist.length > UNDO) hist.shift();
       cur = laid;
       render();
       opts.onChange?.(structuredClone(cur), now !== base);
     };
     const ed = editor({
-      t, insp, cam, view, layer,
+      t, insp, cam, view, layer, root,
       on: () => editing && shown === "map",
       get: () => cur,
       commit,
@@ -1813,23 +2413,39 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         return { x: (view.clientWidth / 2 - c.x) / c.k, y: (view.clientHeight / 2 - c.y) / c.k };
       },
     });
+    cleanup.push(() => ed.destroy());
     const proto = player(play, { flow: () => cur, t, reduced, onGo: (id) => { if (shown === "play") { here = id; writeHash(); } } });
+    cleanup.push(() => proto.destroy());
 
     const onKey = (e) => {
       const tag = e.target?.tagName;
       if (e.target?.isContentEditable || tag === "INPUT" || tag === "TEXTAREA") return;
-      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z")) {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "z" || e.key === "Z" || e.key === "y" || e.key === "Y")) {
         e.preventDefault();
-        return api.undo();
+        return e.shiftKey || e.key === "y" || e.key === "Y" ? api.redo() : api.undo();
       }
       if (editing && shown === "map" && (e.key === "Delete" || e.key === "Backspace")) {
         e.preventDefault();
         return ed.remove();
       }
+      const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+      if (e.key === "Enter" && editing && shown === "map" && e.target?.tagName !== "BUTTON" && ed.drawDefault()) {
+        e.preventDefault();
+        return;
+      }
+      if (dir && editing && shown === "map" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const sel = ed.selected(), step = sel?.t === "item" ? (e.shiftKey ? 10 : 2) : e.shiftKey ? 100 : 10;
+        if (ed.nudge(dir[0] * step, dir[1] * step)) e.preventDefault();
+        return;
+      }
       if (e.key !== "Escape") return;
+      if (ed.busy()) return ed.cancel();
+      if (ed.stopDraw()) return;
+      if (!zform.hidden) return zeplinForm(false);
       if (!panel.hidden) togglePanel();
       else if (shown === "play") proto.escape();
       else if (editing && ed.selected()) ed.clear();
+      else if (matches.length) endSearch();
       else setFocus(null);
     };
     root.addEventListener("keydown", onKey);
@@ -1862,6 +2478,8 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
         cur = layout(freeShots(cur));
         base = JSON.stringify(cur);
         hist = [];
+        fut = [];
+        merging = null;
         ed.clear();
         render();
         if (ids(cur) !== before) fitAll(false);
@@ -1890,7 +2508,18 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
       /** Steps back through `hist` (snapshots pushed by edits, Task 7). */
       undo() {
         if (!hist.length || ed.busy()) return;
+        fut.push(JSON.stringify(cur));
         cur = JSON.parse(hist.pop());
+        merging = null;
+        render();
+        opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
+      },
+      /** Steps forward again through what undo took back; any new edit clears it. */
+      redo() {
+        if (!fut.length || ed.busy()) return;
+        hist.push(JSON.stringify(cur));
+        cur = JSON.parse(fut.pop());
+        merging = null;
         render();
         opts.onChange?.(structuredClone(cur), JSON.stringify(cur) !== base);
       },
@@ -1907,6 +2536,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
 
     const onLeave = (e) => { if (JSON.stringify(cur) !== base) e.preventDefault(); };
     if (src !== null) window.addEventListener("beforeunload", onLeave);
+    cleanup.push(() => { clearTimeout(noteTimer); window.removeEventListener("beforeunload", onLeave); });
 
     render();
     const hs = readHash(); // before the first writeHash, which mode() runs
@@ -1915,6 +2545,11 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     else fitAll(false);
     if (hs.m === "play") api.mode("play");
     return api;
+    } catch (error) {
+      for (const dispose of cleanup.reverse()) dispose();
+      host.replaceChildren();
+      throw error;
+    }
   }
 
   // ------------------------------------------------------------------ standalone auto-run
@@ -1945,7 +2580,7 @@ env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-ins
     host.uiflow = mount(host, flow, { edit: true, shots }, src); // the only handle an exported file has on its engine
   }
 
-  window.UIFlow = Object.freeze({ SCREEN, layout, check, mount: (el, flow, opts) => mount(el, flow, opts, null) });
+  window.UIFlow = Object.freeze({ SCREEN, layout, check, paths: (f, lang) => checklist(normalize(f), tr(lang)), mount: (el, flow, opts) => mount(el, flow, opts, null) });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", auto, { once: true });
   else auto();
 })();

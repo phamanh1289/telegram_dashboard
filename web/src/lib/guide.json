@@ -3427,16 +3427,22 @@
 },
 "Chưa có file: chọn \"Nhanh\" (model nhẹ, ít token) hoặc \"Kỹ\" (model mạnh, cho story dài) trong ô dưới, ghi chú thêm cho AI nếu cần rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng render\"",
 "Đang render, khung hiện tiến trình: % đã xong, đã chạy bao lâu và ước tính còn bao lâu, từng bước (đọc ticket và story, đọc từng màn Zeplin, AI lên luồng, vẽ từng màn, nối từng nút với màn đích, kiểm tra) kèm số liệu và thời gian của bước đó, tên các màn vừa vẽ và liên kết vừa nối",
-"Đóng khung khi đang render không dừng AI: nút \"UI flow\" có chấm báo đang chạy, mở lại để xem tiếp tiến trình hoặc lấy kết quả. Render báo lỗi (kể cả mất kết nối) thì lượt AI đã dừng hẳn, dòng lỗi ghi bước bị hỏng: bấm \"Render bằng AI\" để chạy lại",
+"Đóng khung hoặc đóng tab không dừng AI. Mở lại để xem tiếp tiến trình hoặc lấy kết quả chưa cập nhật. Bấm “Dừng” chỉ xác nhận đã dừng khi máy chủ trả lời; mất kết nối giữ lượt vẽ để “Kết nối lại”. Sau khởi động lại, bước xử lý đã có dữ liệu đầy đủ được khôi phục tự động; nếu AI bị gián đoạn, bấm “Tiếp tục” để gọi AI lại.",
 "Render xong, thanh dưới ghi AI vừa vẽ bao nhiêu màn, liên kết, mất bao lâu; bấm \"Cập nhật\" thì thanh báo đang nhúng ảnh Zeplin (n/tổng) rồi đang tải file lên ticket",
-"Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, Vừa màn hình, Soát luồng)",
-"Sửa xong, thanh dưới hiện \"Có thay đổi chưa lưu\": bấm \"Cập nhật\" để ghi lên ticket, hoặc \"Không\" để giữ trên màn",
+"Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, ô tìm màn, Vừa màn hình, Soát luồng)",
+"\"Soát luồng\" có 2 thẻ. \"Cần rà soát\": lỗ hổng của luồng, nút chưa khớp ảnh thiết kế, màn chưa có link Zeplin, dữ liệu hỏng; lọc theo loại bằng các nút đếm; ở chế độ Sửa bấm một dòng mở luôn màn / nút đó để sửa. \"Checklist test\": code liệt kê các đường bấm từ màn bắt đầu sao cho đi qua mọi liên kết, kèm điều kiện, và liên kết không đi tới được; \"Sao chép\" để dán vào test case hoặc hỏi AI của ticket.",
+"Chọn một màn ở chế độ Sửa, bấm \"▶ Màn bắt đầu\" để Prototype, sơ đồ và checklist bắt đầu từ màn đó (bấm lại để về màn đầu tiên). \"↶ Hoàn tác\" / \"↷ Làm lại\" (⌘Z / ⌘⇧Z); một loạt phím mũi tên tính là một bước.",
+"Trước khi bấm \"Cập nhật\", bấm \"Xem thay đổi\" để xem đúng các dòng sẽ ghi vào bình luận ticket (không ghi gì). Ticket sửa sau lần cập nhật sơ đồ thì khung báo; \"Render lại bằng AI\" giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu (và vị trí khi không thêm màn mới) của các màn khớp.",
+"Ô \"Tìm màn\": gõ tên màn (không cần dấu), link Zeplin hoặc id; màn khớp được tô viền vàng, phím lên/xuống chọn, Enter tới màn đó, Esc xoá tìm. Tìm không đổi sơ đồ.",
+"Bấm \"Sửa\": \"+ Từ Zeplin\" dán link màn Zeplin để thêm màn kèm tên và ảnh thiết kế (link đã có thì nhảy tới màn đó; lỗi Zeplin có \"Thử lại\" hoặc \"Thêm màn chờ ảnh\"); \"Sắp xếp lại\" xếp lại toàn bộ màn, bấm ⌘Z để quay lại. Chọn một màn: sửa vị trí X/Y, \"Ghi chú\" (chữ thường, có biểu tượng ✎ trên màn, Esc huỷ, chỉ lưu trong sơ đồ, không đăng bình luận ticket), \"+ Vùng bấm\" rồi kéo trên ảnh để vẽ nút (hoặc Enter để đặt vùng giữa màn). Chỉ dùng bàn phím: tìm màn rồi Enter để chọn màn, các nút của màn nằm ở dòng \"Nút\" trong khung thuộc tính. Chọn một nút trên ảnh: kéo để dời, kéo góc để đổi cỡ, sửa số Vùng (px), \"Vẽ lại vùng\" hoặc \"Khớp theo chữ\". Phím mũi tên dời màn / vùng đang chọn (Shift: bước lớn).",
+"Sửa xong, bản nháp tự lưu trên trình duyệt sau 500 ms theo tài khoản và máy chủ; theo dõi “Đang lưu bản nháp…”, “Đã lưu bản nháp” hoặc lỗi và “Thử lại”. Đóng khung giữ bản nháp; “Bỏ bản nháp” yêu cầu xác nhận trước khi xóa. Autosave không cập nhật ticket: bấm “Cập nhật” để ghi lên YouTrack, hoặc “Không” để ẩn thanh nhắc. File trên ticket đã đổi thì bản nháp được giữ và báo xung đột; xem bản mới chỉ khi bạn quyết định bỏ nháp.",
 {
 "t": "Menu ⋯ : \"Render lại bằng AI\" hoặc \"Tải file HTML\"",
 "at": "Thao tác UI flow"
-}
+},
+"Sau render, “Nguồn dựng sơ đồ” cho biết nguồn đã dùng, đầu vào ước lượng và phần phụ đã lược bỏ; cảnh báo cần rà soát hiện khi thiếu nguồn. Nhanh giới hạn 12.000, Kỹ 24.000 token ước lượng; giới hạn này chỉ lược chữ thiết kế Zeplin; AC/rule luôn giữ nguyên, chỉ báo thu hẹp phạm vi khi vượt sức chứa của AI. Ảnh được nhúng tối đa 3 ảnh cùng lúc; ảnh lỗi có cảnh báo và vẫn giữ dữ liệu sơ đồ."
 ],
-"keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket anh zeplin thiet ke vung bam"
+"keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket anh zeplin thiet ke vung bam tim man tìm màn ghi chu ghi chú them man tu zeplin sap xep lai sắp xếp lại ve vung bam can ra soat cần rà soát checklist test man bat dau màn bắt đầu lam lai làm lại redo xem thay doi xem thay đổi"
 },
 {
 "id": "yt-hoi-lai-trong-nhom",

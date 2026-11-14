@@ -252,3 +252,73 @@ def test_progress_tells_every_screen_and_link_a_big_delta_closes():
     out = u.Progress().feed(text)  # the whole answer in one delta
     assert [e["title"] for e in out if e["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP", "Sai mã"]
     assert [e["n"] for e in out if e["stage"] == "link"] == [1, 2, 3]
+
+
+def test_v1_reads_as_v2_with_rect_and_note_round_trip():
+    raw = {"v": 1, **RAW}
+    f = u.clean(raw, "VA-1")
+    assert f.v == 2 and f.screens[0].note == "" and f.screens[0].items[0].rect is None
+    raw2 = f.model_dump()
+    raw2["screens"][0]["note"] = "n" * 5000
+    raw2["screens"][0]["items"][0]["rect"] = {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.1}
+    raw2["screens"][1]["items"][0]["rect"] = {"x": 0.9, "y": 0, "w": 0.2, "h": 0.1}  # ngoài ảnh: bỏ rect
+    f2 = u.clean(raw2, "VA-1")
+    assert len(f2.screens[0].note) == u.MAX_NOTE
+    assert f2.screens[0].items[0].rect == u.Rect(x=0.1, y=0.2, w=0.3, h=0.1)
+    assert f2.screens[1].items[0].rect is None
+    assert u.extract(u.build_html(f2, "")) == f2
+    assert u.changes(f, f2) == ['Thêm ghi chú màn "Đăng nhập"', 'Vẽ vùng bấm "Gửi OTP" (Đăng nhập)']
+
+
+def test_newer_version_is_refused_not_broken():
+    with pytest.raises(u.TooNew):
+        u.clean({"v": 3, **RAW}, "VA-1")
+    with pytest.raises(u.TooNew):
+        u.extract('<script type="application/json" id="uiflow-data">{"v": 9, "ticket": "VA-1"}</script>')
+    with pytest.raises(ValueError):
+        u.clean({"v": "2", **RAW}, "VA-1")
+
+
+def test_merge_ai_never_takes_rect_or_note_from_the_model():
+    skel = {"screens": [{"id": "a", "title": "A", "items": [{"id": "x", "label": "X"}]}], "links": []}
+    raw = {"adapter": 1, "screens": [
+        {"id": "a", "items": [{"id": "y", "label": "Y", "rect": {"x": 0, "y": 0, "w": 0.1, "h": 0.1}}]},
+        {"id": "b", "title": "B", "note": "bịa",
+         "items": [{"id": "z", "label": "Z", "rect": {"x": 0, "y": 0, "w": 0.1, "h": 0.1}}]},
+    ], "links": []}
+    f = u.merge_ai(raw, skel, "VA-1")
+    assert all(i.rect is None for s in f.screens for i in s.items) and all(s.note == "" for s in f.screens)
+
+
+def test_start_screen_is_kept_only_when_it_exists_and_listed_as_a_change():
+    f = u.clean({**RAW, "start": "code"}, "VA-1")
+    assert f.start == "code"
+    assert u.clean({**RAW, "start": "ghost"}, "VA-1").start is None
+    g = f.model_copy(deep=True)
+    g.start = "home" if any(s.id == "home" for s in g.screens) else "err"
+    assert any(c.startswith("Đặt màn bắt đầu") for c in u.changes(f, g))
+
+
+def test_keep_manual_carries_notes_rects_start_and_positions_across_a_render():
+    old = u.clean(RAW, "VA-1")
+    old.screens[0].note = "giữ"
+    old.screens[0].items[0].rect = u.Rect(x=0.1, y=0.1, w=0.2, h=0.1)
+    old.start = "code"
+    for n, s in enumerate(old.screens):
+        s.x, s.y = n * 700.0, 0.0
+    # the AI renamed every id: matched back by title / label
+    new = u.clean({"screens": [
+        {"id": "a", "title": "Đăng nhập", "items": [{"id": "x", "label": "Gửi OTP"}]},
+        {"id": "b", "title": "Nhập OTP", "items": [{"id": "y", "label": "Xác nhận"}]},
+        {"id": "c", "title": "Sai mã", "kind": "popup", "parent": "b", "items": []},
+    ], "links": [{"src": "a.x", "to": "b"}]}, "VA-1")
+    got, kept = u.keep_manual(old, new)
+    login = next(s for s in got.screens if s.id == "login")
+    assert login.note == "giữ" and login.items[0].rect == old.screens[0].items[0].rect
+    assert got.start == "code" and (login.x, login.y) == (0.0, 0.0)
+    assert kept == {"positions": 3, "notes": 1, "rects": 1, "start": 1}
+    # a new screen the old flow did not have: positions start over (no overlap), the rest is still kept
+    more = u.clean({**new.model_dump(), "screens": [*new.model_dump()["screens"],
+                                                    {"id": "d", "title": "Mới", "items": []}]}, "VA-1")
+    got, kept = u.keep_manual(old, more)
+    assert kept["positions"] == 0 and kept["notes"] == 1 and all(s.x is None for s in got.screens)

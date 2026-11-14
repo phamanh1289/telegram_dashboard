@@ -617,9 +617,9 @@ export default {
   "Đóng UI flow sẽ mất các thay đổi chưa cập nhật lên ticket.": "Closing the UI flow loses every change not yet updated on the ticket.",
   "Bỏ thay đổi": "Discard changes",
   "Render lại bằng AI?": "Render again with AI?",
-  "Render lại sẽ bỏ các thay đổi chưa lưu. AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem.":
-    "Rendering again discards the unsaved changes. The AI builds the flow from the ticket again, replacing the one on screen.",
-  "AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem. File trên ticket chỉ đổi khi bạn bấm Cập nhật.":
-    "The AI builds the flow from the ticket again, replacing the one on screen. The file on the ticket only changes when you press Update.",
+  "AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem; ghi chú, vùng bấm vẽ tay và màn bắt đầu của các màn khớp được giữ, sửa khác chưa lưu sẽ mất.":
+    "The AI builds the flow from the ticket again, replacing the one on screen; notes, hand-drawn tap areas and the start screen of matching screens are kept, other unsaved edits are lost.",
+  "AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem; ghi chú, vùng bấm vẽ tay và màn bắt đầu của các màn khớp được giữ. File trên ticket chỉ đổi khi bạn bấm Cập nhật.":
+    "The AI builds the flow from the ticket again, replacing the one on screen; notes, hand-drawn tap areas and the start screen of matching screens are kept. The file on the ticket only changes when you press Update.",
   "Render lại": "Render again",
 } satisfies Dict;

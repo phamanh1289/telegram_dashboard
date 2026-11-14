@@ -5,6 +5,7 @@ import asyncio
 import re
 import time
 import unicodedata
+from collections import OrderedDict
 from urllib.parse import urlsplit
 
 import httpx
@@ -101,8 +102,11 @@ def shot(version: dict) -> dict:
     w = float(version.get("width") or 0)
     thumbs = version.get("thumbnails") or {}
     layers = version.get("layers") or []
-    return {"src": thumbs.get("medium") or version.get("image_url") or "", "w": w,
-            "h": float(version.get("height") or 0), "hits": hits(layers, w), "texts": texts(layers)}  # fmt: skip
+    return {
+        "title": str(version.get("name") or "")[:200],
+        "src": thumbs.get("medium") or version.get("image_url") or "", "w": w,
+        "h": float(version.get("height") or 0), "hits": hits(layers, w), "texts": texts(layers),
+    }
 
 
 def canonical(url: str) -> str:
@@ -114,50 +118,96 @@ def canonical(url: str) -> str:
 
 
 class Shots:
-    def __init__(self) -> None:
-        self._cache: dict[str, tuple[float, dict | None]] = {}  # url -> (when, shot | None: no such screen)
+    def __init__(self, *, scope=lambda: "") -> None:
+        self._scope = scope
+        self._identity = None
+        self._cache: OrderedDict[str, tuple[float, dict | None]] = OrderedDict()
+        self._inflight: dict[tuple, asyncio.Task] = {}
+        self._sem = asyncio.Semaphore(PARALLEL)
+
+    async def aclose(self) -> None:
+        tasks = list(self._inflight.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._inflight.clear()
+        self._cache.clear()
 
     async def get(self, urls: list[str], *, done=None) -> tuple[dict[str, dict], list[str]]:
-        """({url: shot}, urls with no screen behind them). ZeplinError when nothing can be read at all.
-        `done(k)` as screens are ready: the cached ones at once, then each one read from Zeplin."""
+        """Read canonical screens once across callers; cancelling a reader leaves other readers intact."""
         tok = token()
+        identity = (self._scope(), repr(providers.zeplin_server()), tok)
+        if identity != self._identity:
+            self._identity = identity
+            self._cache.clear()
         if not tok:
             raise ZeplinError("Chưa cấu hình Zeplin MCP (cần ZEPLIN_ACCESS_TOKEN) — UI flow vẽ khung đơn giản")
+        wanted = list(dict.fromkeys(canonical(u) for u in urls))
         now = time.monotonic()
-        wanted = list(dict.fromkeys(urls))
-        todo = [u for u in wanted if not (c := self._cache.get(u)) or now - c[0] > TTL]
-        if done and len(wanted) > len(todo):
-            done(len(wanted) - len(todo))
-        if todo:
-            sem = asyncio.Semaphore(PARALLEL)
-            headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
-            async with httpx.AsyncClient(base_url=API, headers=headers, timeout=20.0) as c:
+        warm = {u: c[1] for u in wanted if (c := self._cache.get(u)) and now - c[0] <= TTL}
+        from .ai import flow_metrics
+        metrics = flow_metrics.get()
+        if metrics is not None:
+            metrics["cache_hits"] = len(warm)
+            metrics["cache_misses"] = len(wanted) - len(warm)
 
-                async def one(url: str) -> None:
-                    async with sem:
-                        self._cache[url] = (time.monotonic(), await self._read(c, url))
-                    if done:
-                        done(1)
+        async def read(url: str):
+            async with self._sem:
+                headers = {"Authorization": f"Bearer {tok}", "Accept": "application/json"}
+                async with httpx.AsyncClient(base_url=API, headers=headers, timeout=20.0) as c:
+                    value = await self._read(c, url)
+            if self._identity == identity:
+                self._cache[url] = (time.monotonic(), value)
+                self._cache.move_to_end(url)
+                while len(self._cache) > 512:
+                    self._cache.popitem(last=False)
+            return value
 
-                try:  # the first error stops the other reads before the client closes under them
-                    async with asyncio.TaskGroup() as g:
-                        for u in todo:
-                            g.create_task(one(u))
-                except ExceptionGroup as eg:
-                    raise eg.exceptions[0] from None
-        got = {u: self._cache[u][1] for u in urls if u in self._cache}
-        return {u: s for u, s in got.items() if s}, [u for u in wanted if not got.get(u)]
+        async def one(url: str):
+            if url in warm:
+                value = warm[url]
+                if identity == self._identity and url in self._cache:
+                    self._cache.move_to_end(url)
+            else:
+                key = (identity, url)
+                task = self._inflight.get(key)
+                if task is None:
+                    task = asyncio.create_task(read(url))
+                    self._inflight[key] = task
+
+                    def finished(task):
+                        self._inflight.pop(key, None)
+                        if not task.cancelled():
+                            task.exception()  # consume errors even if every subscriber left
+
+                    task.add_done_callback(finished)
+                value = await asyncio.shield(task)
+            if done:
+                done(1)
+            return url, value
+
+        got = dict(await asyncio.gather(*(one(u) for u in wanted)))
+        return {u: got[canonical(u)] for u in urls if got[canonical(u)]}, [u for u in urls if not got[canonical(u)]]
 
     @staticmethod
     async def _read(c: httpx.AsyncClient, url: str) -> dict | None:
+        from .ai import flow_metrics
+        metrics = flow_metrics.get()
+
+        def measured(response):
+            if metrics is not None:
+                metrics["requests"] = metrics.get("requests", 0) + 1
+                metrics["response_bytes"] = metrics.get("response_bytes", 0) + len(response.content)
+            return response
+
         try:
             m = SCREEN.search(url)
             if not m and "zpl.io/" in url:  # a short link: where it points
-                loc = (await c.get(url, follow_redirects=False)).headers.get("location") or ""
+                loc = measured(await c.get(url, follow_redirects=False)).headers.get("location") or ""
                 m = SCREEN.search(loc)
             if not m:
                 return None  # a component / styleguide link: no screen to draw
-            r = await c.get(f"/projects/{m[1]}/screens/{m[2]}/versions/latest")
+            r = measured(await c.get(f"/projects/{m[1]}/screens/{m[2]}/versions/latest"))
         except httpx.HTTPError as e:
             raise ZeplinError("Không kết nối được Zeplin") from e
         if r.status_code == 401:
@@ -182,13 +232,22 @@ async def image(url: str) -> tuple[bytes, str]:
     try:
         async with httpx.AsyncClient(timeout=30.0) as c:
             for _ in range(3):
-                r = await c.get(url)
-                if r.is_redirect and _image_host(url := str(r.next_request.url if r.next_request else "")):
-                    continue
-                break
+                async with c.stream("GET", url) as r:
+                    if r.is_redirect:
+                        target = str(r.next_request.url if r.next_request else "")
+                        if not _image_host(target):
+                            raise ZeplinError("Không phải ảnh Zeplin")
+                        url = target
+                        continue
+                    kind = r.headers.get("content-type", "")
+                    if r.status_code != 200 or not kind.startswith("image/"):
+                        raise ZeplinError(f"Ảnh Zeplin không tải được ({r.status_code})")
+                    data = bytearray()
+                    async for chunk in r.aiter_bytes(chunk_size=64 << 10):
+                        if len(data) + len(chunk) > MAX_IMAGE:
+                            raise ZeplinError("Ảnh Zeplin quá lớn")
+                        data.extend(chunk)
+                    return bytes(data), kind
+            raise ZeplinError("Ảnh Zeplin chuyển hướng quá nhiều")
     except httpx.HTTPError as e:
         raise ZeplinError("Không tải được ảnh Zeplin") from e
-    kind = r.headers.get("content-type", "")
-    if r.status_code != 200 or not kind.startswith("image/") or len(r.content) > MAX_IMAGE:
-        raise ZeplinError(f"Ảnh Zeplin không tải được ({r.status_code})")
-    return r.content, kind

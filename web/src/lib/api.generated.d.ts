@@ -4,6 +4,92 @@
  */
 
 export interface paths {
+    "/api/yt/flow/scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flow Scope */
+        get: operations["flow_scope_api_yt_flow_scope_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/yt/flow/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flow Jobs */
+        get: operations["flow_jobs_api_yt_flow_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/yt/flow/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flow Job Status */
+        get: operations["flow_job_status_api_yt_flow_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        /** Flow Job Cancel */
+        delete: operations["flow_job_cancel_api_yt_flow_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/yt/flow/jobs/{job_id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Flow Job Events */
+        get: operations["flow_job_events_api_yt_flow_jobs__job_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/yt/flow/jobs/{job_id}/processed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Flow Job Processed */
+        post: operations["flow_job_processed_api_yt_flow_jobs__job_id__processed_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -2988,6 +3074,123 @@ export interface components {
              */
             status: "decided" | "open" | "dropped";
         };
+        /** FlowJobDTO */
+        FlowJobDTO: {
+            /** Id */
+            id: string;
+            /** Issue */
+            issue: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "succeeded" | "failed" | "cancel_requested" | "cancelled" | "interrupted";
+            /** Stage */
+            stage: string;
+            /** Base */
+            base: string | null;
+            request: components["schemas"]["FlowRetryRequest"] | null;
+            result: components["schemas"]["FlowResultDTO"] | null;
+            /** Error */
+            error: {
+                [key: string]: unknown;
+            } | null;
+            /** Processed */
+            processed: boolean;
+            /** Cursor */
+            cursor: number;
+            /** Created At */
+            created_at: number;
+            /** Updated At */
+            updated_at: number;
+            /** Needs Ai Retry */
+            needs_ai_retry: boolean;
+        };
+        /** FlowManifestDTO */
+        FlowManifestDTO: {
+            /**
+             * Measurement
+             * @default estimated
+             * @constant
+             */
+            measurement: "estimated";
+            /** Estimated Input Tokens */
+            estimated_input_tokens: number;
+            /**
+             * Estimated Payload Tokens
+             * @default 0
+             */
+            estimated_payload_tokens: number;
+            /**
+             * Context Floor Assumed
+             * @default 32768
+             */
+            context_floor_assumed: number;
+            /** Budget */
+            budget: number;
+            /** Sources */
+            sources: string[];
+            /** Omitted */
+            omitted: components["schemas"]["FlowOmittedDTO"][];
+            /** Warnings */
+            warnings?: string[];
+            /**
+             * Ambiguous Lines
+             * @default 0
+             */
+            ambiguous_lines: number;
+            /**
+             * Output Reserve
+             * @default 6144
+             */
+            output_reserve: number;
+            /**
+             * Envelope Reserve
+             * @default 2048
+             */
+            envelope_reserve: number;
+            /** Kept */
+            kept?: {
+                [key: string]: number;
+            };
+        };
+        /** FlowOmittedDTO */
+        FlowOmittedDTO: {
+            /** Source */
+            source: string;
+            /** Kind */
+            kind: string;
+            /** Count */
+            count: number;
+        };
+        /** FlowResultDTO */
+        FlowResultDTO: {
+            /** Flow */
+            flow: {
+                [key: string]: unknown;
+            };
+            manifest?: components["schemas"]["FlowManifestDTO"] | null;
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** FlowRetryRequest */
+        FlowRetryRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /**
+             * Deep
+             * @default false
+             */
+            deep: boolean;
+        };
+        /** FlowScopeDTO */
+        FlowScopeDTO: {
+            /** Scope */
+            scope: string;
+        };
         /** GroupInfo */
         GroupInfo: {
             /** Chat Id */
@@ -3802,6 +4005,183 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    flow_scope_api_yt_flow_scope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowScopeDTO"];
+                };
+            };
+        };
+    };
+    flow_jobs_api_yt_flow_jobs_get: {
+        parameters: {
+            query?: {
+                issue?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowJobDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flow_job_status_api_yt_flow_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowJobDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flow_job_cancel_api_yt_flow_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowJobDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flow_job_events_api_yt_flow_jobs__job_id__events_get: {
+        parameters: {
+            query?: {
+                after?: number;
+            };
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    flow_job_processed_api_yt_flow_jobs__job_id__processed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FlowJobDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     tasks_api_tasks_get: {
         parameters: {
             query?: {

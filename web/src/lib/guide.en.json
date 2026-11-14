@@ -3429,14 +3429,20 @@
 "While it renders, the view shows its progress: % done, how long it has run and roughly how long is left, each stage (reading the ticket and story, each Zeplin screen, the AI planning the flow, each screen drawn, each button linked to its screen, the check) with its numbers and time, the screens just drawn and the links just made",
 "Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow its progress or get the result. When a render shows an error (a lost connection too), the AI run has stopped and the line names the stage it failed at: click \"Render with AI\" to run it again",
 "Once rendered, the bar below says how many screens and links the AI drew and how long it took; on \"Update\" it shows the Zeplin images being embedded (n/total), then the file being uploaded to the ticket",
-"With a flow: use the toolbar inside the frame (Map / Prototype, Edit, Fit, Check)",
+"With a flow: use the toolbar inside the frame (Map / Prototype, Edit, the screen finder, Fit, Check)",
+"\"Check\" has two tabs. \"To review\": gaps in the flow, buttons not found on the design image, screens with no Zeplin link, bad data; filter by kind with the count buttons; while editing, a row opens that screen / button to fix. \"Test checklist\": the code lists tap paths from the start screen that cross every link, with their conditions, and the links it cannot reach; \"Copy\" to paste into test cases or the ticket's AI.",
+"Select a screen while editing and press \"▶ Start screen\" so the prototype, the map and the checklist start there (press again to go back to the first screen). \"↶ Undo\" / \"↷ Redo\" (⌘Z / ⌘⇧Z); a run of arrow-key moves counts as one step.",
+"Before \"Update\", press \"Review changes\" to see the exact lines the ticket comment will get (nothing is written). If the ticket changed after the flow was last updated, the view says so; \"Render again with AI\" keeps the notes, hand-drawn tap areas, start screen (and positions, when no screen is new) of matching screens.",
+"The \"Find a screen\" box: type a screen name (accents optional), a Zeplin link or an id; matches get a yellow outline, Up/Down picks one, Enter goes to it, Esc clears. Finding never changes the flow.",
+"Click \"Edit\": \"+ From Zeplin\" takes a Zeplin screen link and adds the screen with its name and design image (a link already in the flow jumps to that screen; a Zeplin error offers \"Retry\" or \"Add it without the image\"); \"Re-arrange\" lays every screen out again, ⌘Z takes it back. Select a screen: edit its X/Y position, its \"Note\" (plain text, a ✎ mark on the screen, Esc cancels, kept in the flow only, never posted as a ticket comment), or \"+ Tap area\" and drag on the image to draw a button (or press Enter for one mid-screen). Keyboard only: find a screen and press Enter to select it; its buttons are in the \"Buttons\" row of the properties panel. Select a button on the image: drag to move it, drag its corner to resize, edit the Area (px) numbers, \"Redraw area\" or \"Match by text\". Arrow keys move the selected screen or area (Shift: bigger steps).",
 "After an edit the bar below says there are unsaved changes: click \"Update\" to write them to the ticket, or \"No\" to keep them on screen only",
 {
 "t": "The ⋯ menu: \"Render again with AI\" or \"Download the HTML file\"",
 "at": "Thao tác UI flow"
-}
+},
+"After a render, \u201cRender source\u201d shows the sources used, the estimated input and the optional parts left out; a review warning appears when a source is missing. Fast is limited to 12,000 and Thorough to 24,000 estimated tokens; the limit only trims Zeplin design text, AC/rules are always kept whole, and the render asks you to narrow the scope only when they exceed what the AI can hold. At most 3 images are embedded at once; a failed image gets a warning and the flow data is kept."
 ],
-"keys": "ui flow uiflow screens tap flow prototype zeplin render ai update file on ticket"
+"keys": "ui flow uiflow screens tap flow prototype zeplin render ai update file on ticket find screen note from zeplin re-arrange tap area to review test checklist start screen redo review changes"
 },
 {
 "id": "yt-hoi-lai-trong-nhom",

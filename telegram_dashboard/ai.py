@@ -788,7 +788,7 @@ class AiService:
         try:
             return await self._run(cmd, cwd, prompt, long, on_text, feature, choice, provider, ref, env)
         except ApiError as e:  # a provider hiccup (overloaded, dropped connection): one more try, same prompt
-            if session or e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
+            if no_retry.get() or session or e.code != "ai_provider_error" or not _TRANSIENT.search(e.detail or ""):
                 raise
             log.info("AI run for %s retried after: %s", feature, e.detail)
             if on_text:
@@ -836,6 +836,9 @@ class AiService:
                 tail = err.decode(errors="replace").strip()[-300:]
                 log.warning("AI agent exit code %s: %s", proc.returncode, tail)
                 raise ApiError(502, "ai_provider_error", detail=cli_reason(final, err))
+            metrics = flow_metrics.get()
+            if metrics is not None and isinstance(final, dict):
+                metrics["usage"] = final.get("usage")
             error = None
             return text
         except ApiError as e:
@@ -934,6 +937,10 @@ async def _answer_items(work, put) -> None:
             log.warning("AI stream failed: %r", e)
         put({"error": {"status": getattr(e, "status", 500), "code": "ai_failed",
                        "detail": message or "Lỗi máy chủ khi chạy AI"}})  # fmt: skip
+
+
+no_retry = contextvars.ContextVar("ai_no_retry", default=False)
+flow_metrics = contextvars.ContextVar("flow_metrics", default=None)
 
 
 JOB_ID = re.compile(r"^[a-z0-9-]{8,64}$")

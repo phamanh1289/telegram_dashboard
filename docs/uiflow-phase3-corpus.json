@@ -1,0 +1,36 @@
+{
+  "measurement": "synthetic UTF8/3 estimates; no real AI call",
+  "corpus": "tests/test_flow_prompt.py golden explicit trees",
+  "samples": [
+    {
+      "screens": 5,
+      "expected_edges": 4,
+      "merged_screens": 5,
+      "merged_edges": 4,
+      "before_estimated_payload_tokens": 26929,
+      "after_estimated_input_tokens": 11997,
+      "budget": 12000,
+      "omitted_labels": 654
+    },
+    {
+      "screens": 20,
+      "expected_edges": 19,
+      "merged_screens": 20,
+      "merged_edges": 19,
+      "before_estimated_payload_tokens": 105125,
+      "after_estimated_input_tokens": 11983,
+      "budget": 12000,
+      "omitted_labels": 3718
+    },
+    {
+      "screens": 60,
+      "expected_edges": 59,
+      "merged_screens": 60,
+      "merged_edges": 59,
+      "before_estimated_payload_tokens": 313672,
+      "after_estimated_input_tokens": 11992,
+      "budget": 12000,
+      "omitted_labels": 11888
+    }
+  ]
+}

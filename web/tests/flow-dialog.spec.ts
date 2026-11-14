@@ -36,7 +36,7 @@ async function render(page: Page) {
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { yt: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0 });
+  await ctl("/set", { yt: true, reset_jobs: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0, ticket_newer: false, ai_keep: null });
 });
 test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
@@ -90,11 +90,10 @@ test("re-render over a saved file posts with its base; Không hides the bar and 
   await d.getByRole("button", { name: "Cập nhật lên ticket" }).click();
   await expect(d.getByText(BAR)).toBeVisible();
   await d.getByRole("button", { name: "Không", exact: true }).click();
-  // closing with an unsaved change asks first
+  // Closing keeps the draft; reopening restores it without uploading.
   await d.getByRole("button", { name: "Đóng" }).click();
-  const ask = page.getByRole("alertdialog");
-  await expect(ask).toContainText("Bỏ thay đổi chưa lưu?");
-  await ask.getByRole("button", { name: "Hủy" }).click();
+  await expect(dialog(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "UI flow", exact: true }).click();
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   // the same change, saved over the opened file
   await d.getByRole("button", { name: "Thao tác UI flow" }).click();
@@ -121,7 +120,7 @@ test("Render lại with unsaved changes warns first; Hủy changes nothing", asy
   await d.getByRole("button", { name: "Thao tác UI flow" }).click();
   await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
   const ask = page.getByRole("alertdialog");
-  await expect(ask).toContainText("Render lại sẽ bỏ các thay đổi chưa lưu");
+  await expect(ask).toContainText("sửa khác chưa lưu sẽ mất");
   await ask.getByRole("button", { name: "Hủy" }).click();
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toBeVisible(); // my unsaved flow is still there
@@ -227,108 +226,289 @@ test("an edit made while the save is in flight survives it, unsaved, with the ba
   expect(second.flow.screens).toHaveLength(5);
 });
 
-// A render outlives its dialog: it runs on the server under a job id kept per ticket (localStorage), read again on open.
-const JOB_KEY = "uiflow-job:VA-1";
-const stored = (page: Page) => page.evaluate((k) => localStorage.getItem(k), JOB_KEY);
-const job = async (id: string) => ((await ctl("/state")).jobs as Record<string, string>)[id];
+// Recovery uses account-scoped server metadata and IndexedDB, never an unscoped browser job pointer.
 const flowButton = (page: Page) => page.getByRole("button", { name: "UI flow", exact: true });
 
-test("closing the dialog mid-render keeps it going; reopening shows the result, unsaved, with the bar", async ({ page }) => {
+test("closing mid-render keeps it going and reopening restores the unsaved result", async ({ page }) => {
   await ctl("/set", { flow: "none", ai_ms: 1500 });
   await openFlow(page);
-  const d = dialog(page);
-  await d.getByRole("button", { name: "Render bằng AI" }).click();
-  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
-  await d.getByRole("button", { name: "Đóng" }).click();
+  await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
+  await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Đóng" }).click();
   await expect(dialog(page)).toHaveCount(0);
-  expect(await stored(page)).toContain('"id"');
-  await expect(flowButton(page).locator("[data-flow-running]")).toBeVisible(); // the button says a render is going
-  const id = JSON.parse((await stored(page))!).id as string;
-  await expect.poll(() => job(id)).toBe("done"); // not stopped by the close
   await flowButton(page).click();
   await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
   await expect(dialog(page).getByText(BAR)).toBeVisible();
-  expect(await stored(page)).toBeNull(); // shown: nothing left to read
   expect(await aiCalls()).toBe(1);
   expect(await posts()).toEqual([]);
 });
 
-test("reopened while it still runs: the running box, and Dừng stops the server run and forgets it", async ({ page }) => {
+test("reload restores the draft without another AI call or upload", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  await render(page);
+  await expect(dialog(page).getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  page.once("dialog", (guard) => guard.accept());
+  await page.reload();
+  // The ticket sheet URL is consumed by the page; reopen that ticket after a real reload.
+  await page.goto("/youtrack?ticket=VA-1");
+  await flowButton(page).click();
+  await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
+  await expect(dialog(page).getByText("Đã khôi phục bản nháp", { exact: false })).toBeVisible();
+  expect(await aiCalls()).toBe(1);
+  expect(await posts()).toEqual([]);
+});
+
+test("save locks render replacement until upload completes", async ({ page }) => {
+  await ctl("/set", { flow: "none", save_ms: 1500 });
+  await openFlow(page); await render(page);
+  await dialog(page).getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Thao tác UI flow" }).click();
+  await expect(page.getByRole("menuitem", { name: "Render lại bằng AI" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog(page).getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
+  expect(await aiCalls()).toBe(1);
+});
+
+test("cancel network failure keeps the job recoverable", async ({ page }) => {
   await ctl("/set", { flow: "none", ai_ms: 8000 });
   await openFlow(page);
-  const d = dialog(page);
-  await d.getByRole("button", { name: "Render bằng AI" }).click();
-  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
-  await d.getByRole("button", { name: "Đóng" }).click();
-  await expect(dialog(page)).toHaveCount(0);
-  const id = JSON.parse((await stored(page))!).id as string;
-  await flowButton(page).hover(); // the indicator explains itself
-  await expect(page.getByText("Đang render UI flow — mở để xem")).toBeVisible();
-  await flowButton(page).click();
+  await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
   await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
-  await expect(dialog(page).getByText(BAR)).toHaveCount(0);
-  expect(await job(id)).toBe("running");
+  await page.route("**/api/yt/flow/jobs/*", async (route) => {
+    if (route.request().method() === "DELETE") await route.abort(); else await route.continue();
+  });
   await dialog(page).getByRole("button", { name: "Dừng" }).click();
-  await expect.poll(() => job(id)).toBe("error"); // DELETE: the server run stopped
-  expect(await stored(page)).toBeNull();
-  await expect(dialog(page).getByText("Ticket này chưa có UI flow")).toBeVisible();
-  await expect(dialog(page).getByRole("alert")).toHaveCount(0);
+  await expect(dialog(page).getByText(/Chưa xác nhận dừng render:/)).toBeVisible();
+  await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
+  expect(await aiCalls()).toBe(1);
 });
 
-test("a stored run the server no longer has: the normal view, the key cleared, no error", async ({ page }) => {
-  await page.addInitScript((k) => { // once: the page's own reads decide after that
-    if (sessionStorage.getItem("seeded")) return;
-    sessionStorage.setItem("seeded", "1");
-    localStorage.setItem(k, JSON.stringify({ id: "gone-12345678", at: Date.now() }));
-  }, JOB_KEY);
-  await page.addInitScript(() => localStorage.setItem("ytMode", "dev"));
-  await page.goto("/youtrack?ticket=VA-1");
-  await expect(flowButton(page).locator("[data-flow-running]")).toBeVisible();
-  await flowButton(page).click();
-  const d = dialog(page);
-  await expect(d.locator(".uf-screen")).toHaveCount(4); // the ticket's own file
-  await expect(d.getByRole("alert")).toHaveCount(0);
-  await expect(d.getByText(BAR)).toHaveCount(0);
-  expect(await stored(page)).toBeNull();
-  expect(await aiCalls()).toBe(0);
-  await d.getByRole("button", { name: "Đóng" }).click();
-  await expect(flowButton(page).locator("[data-flow-running]")).toHaveCount(0);
-});
-
-test("a save made while a closed render ran is not overwritten: its result saves over the old file and gets the 409", async ({ page }) => {
-  await ctl("/set", { ai_ms: 1500 });
+test("draft read failure blocks replacement and offers retry", async ({ page }) => {
+  await page.addInitScript(() => {
+    const original = indexedDB.open.bind(indexedDB);
+    let fail = true;
+    indexedDB.open = (...args: Parameters<IDBFactory["open"]>) => {
+      if (fail) { fail = false; throw new DOMException("storage unavailable", "QuotaExceededError"); }
+      return original(...args);
+    };
+  });
   await openFlow(page);
   const d = dialog(page);
+  await expect(d.getByText(/Không khôi phục được bản nháp:/)).toBeVisible();
+  await d.getByRole("button", { name: "Thử lại", exact: true }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  expect(await aiCalls()).toBe(0);
+});
+
+test("job metadata failure still restores an existing draft", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page); await render(page);
+  await expect(dialog(page).getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Đóng" }).click();
+  await page.route("**/api/yt/flow/jobs?issue=*", (route) => route.fulfill({ status: 503, json: { error: "jobs unavailable" } }));
+  await flowButton(page).click();
+  await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
+  await expect(dialog(page).getByText("Đã khôi phục bản nháp", { exact: false })).toBeVisible();
+  await expect(dialog(page).getByText(/jobs unavailable/)).toBeVisible();
+});
+
+test("scope lookup failure never displays a cached flow", async ({ page }) => {
+  await page.route("**/api/yt/flow/scope", (route) => route.fulfill({ status: 503, json: { error: "scope unavailable" } }));
+  await openFlow(page);
+  await expect(dialog(page).getByRole("alert")).toContainText("scope unavailable");
+  await expect(dialog(page).locator(".uf-screen")).toHaveCount(0);
+});
+
+test("interrupted AI waits for explicit Continue and preserves its request", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await page.route("**/api/yt/flow/jobs?issue=*", (route) => route.fulfill({ json: [{
+    id: "interrupted-1234", issue: "VA-1", status: "interrupted", stage: "ai", base: null, result: null,
+    error: null, cursor: 1, processed: false, needs_ai_retry: true, request: { note: "giữ luồng lỗi", deep: true },
+  }] }));
+  await openFlow(page);
+  await expect(dialog(page).getByText("Render bị gián đoạn. Tiếp tục sẽ gọi AI lại.")).toBeVisible();
+  expect(await aiCalls()).toBe(0);
+  const request = page.waitForRequest((request) => request.url().endsWith("/api/yt/ai/flow") && request.method() === "POST");
+  await dialog(page).getByRole("button", { name: "Tiếp tục", exact: true }).click();
+  expect((await request).postDataJSON()).toMatchObject({ note: "giữ luồng lỗi", deep: true, base: null });
+  await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
+  expect(await aiCalls()).toBe(1);
+});
+
+test("rerender over an edited draft recovers the replacement job after close", async ({ page }) => {
+  await ctl("/set", { ai_ms: 1800 });
+  await openFlow(page);
+  let d = dialog(page);
+  await d.getByRole("button", { name: "Sửa", exact: true }).click();
+  await d.getByRole("button", { name: "+ Màn", exact: true }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(5);
   await d.getByRole("button", { name: "Thao tác UI flow" }).click();
   await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
   await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
   await d.getByRole("button", { name: "Đóng" }).click();
-  await expect(dialog(page)).toHaveCount(0);
-  expect(JSON.parse((await stored(page))!).base).toBe("1-1"); // the file the run started over
-  // meanwhile a teammate saves: the ticket's file is now 1-2
-  const theirs = await (await page.request.get("/api/yt/flow?issue=VA-1")).json();
-  expect((await page.request.post("/api/yt/flow", { data: { id: "VA-1", flow: theirs.flow, base: "1-1" } })).ok()).toBe(true);
-  await expect.poll(async () => job(JSON.parse((await stored(page))!).id)).toBe("done");
+  await expect(d).toHaveCount(0);
   await flowButton(page).click();
-  await expect(dialog(page).getByText(BAR)).toBeVisible();
-  await dialog(page).getByRole("button", { name: "Cập nhật", exact: true }).click();
-  await expect(dialog(page).getByText("UI flow vừa được người khác cập nhật")).toBeVisible();
-  await expect(dialog(page).getByRole("button", { name: "Xem bản mới" })).toBeVisible();
-  const all = await posts();
-  expect(all).toHaveLength(2);
-  expect(all[1].base).toBe("1-1"); // not the newer file: nothing overwritten
+  d = dialog(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await expect(d.getByText(BAR)).toBeVisible();
+  expect(await aiCalls()).toBe(1);
+  expect(await posts()).toEqual([]);
 });
 
-test("a stored run whose id is not one the server could give is dropped", async ({ page }) => {
-  await page.addInitScript((k) => {
-    if (sessionStorage.getItem("seeded")) return;
-    sessionStorage.setItem("seeded", "1");
-    localStorage.setItem(k, JSON.stringify({ id: "../flow?x", at: Date.now(), base: null }));
-  }, JOB_KEY);
-  await page.addInitScript(() => localStorage.setItem("ytMode", "dev"));
-  await page.goto("/youtrack?ticket=VA-1");
-  await expect(flowButton(page)).toBeVisible();
-  await expect(flowButton(page).locator("[data-flow-running]")).toHaveCount(0);
-  expect(await stored(page)).toBeNull();
+test("stop during the pre-start scope check prevents the AI request", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  await expect(dialog(page).getByRole("button", { name: "Render bằng AI" })).toBeVisible();
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/yt/flow/scope", async (route) => {
+    await delayed;
+    await route.fulfill({ json: { scope: "fixture-account-server" } });
+  });
+  const scopeRequest = page.waitForRequest("**/api/yt/flow/scope");
+  await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
+  await scopeRequest;
+  await dialog(page).getByRole("button", { name: "Dừng", exact: true }).click();
+  await expect(dialog(page).getByRole("button", { name: "Dừng", exact: true })).toHaveCount(0);
+  const scopeResponse = page.waitForResponse("**/api/yt/flow/scope");
+  release();
+  await scopeResponse;
+  await page.waitForTimeout(100); // Let the suspended mutation continue after its scope response.
+  await expect(dialog(page).getByRole("button", { name: "Render bằng AI" })).toBeVisible();
+  expect(await aiCalls()).toBe(0);
+  expect(await posts()).toEqual([]);
+});
+
+test("focus and reconnect preserve the in-flight save lock", async ({ page }) => {
+  await ctl("/set", { flow: "none", save_ms: 1800 });
+  await openFlow(page); await render(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await expect(page.getByRole("menuitem", { name: "Render lại bằng AI" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
+  await expect(d.getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
+  expect(await posts()).toHaveLength(1);
+  expect(await aiCalls()).toBe(1);
+});
+
+test("focus does not replace an edited saved flow with a newer attachment", async ({ page }) => {
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Sửa", exact: true }).click();
+  await d.getByRole("button", { name: "+ Màn", exact: true }).click();
+  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await expect(d.getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  let reads = 0;
+  await page.route("**/api/yt/flow?issue=*", async (route) => {
+    reads++;
+    const response = await route.fetch();
+    const latest = await response.json();
+    await route.fulfill({ json: { ...latest, att: "newer-attachment", flow: { ...latest.flow, rev: latest.flow.rev + 1 } } });
+  });
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event("blur"));
+    window.dispatchEvent(new Event("offline"));
+    window.dispatchEvent(new Event("focus"));
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.waitForTimeout(150); // Allow automatic query refetches to run if reintroduced.
+  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await expect(d.getByText(BAR)).toBeVisible();
+  expect(reads).toBe(0);
+  expect(await posts()).toEqual([]);
+  expect(await aiCalls()).toBe(0);
+});
+
+test("draft quota failure keeps the flow and retries without AI or upload", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await page.addInitScript(() => {
+    const original = IDBObjectStore.prototype.put;
+    let fail = true;
+    IDBObjectStore.prototype.put = function (...args: Parameters<typeof original>) {
+      if (this.name === "drafts" && fail) {
+        fail = false;
+        throw new DOMException("Synthetic draft quota exceeded", "QuotaExceededError");
+      }
+      return original.apply(this, args);
+    };
+  });
+  await openFlow(page); await render(page);
+  const d = dialog(page);
+  await expect(d.getByText(/Không lưu được bản nháp:/)).toBeVisible();
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await d.getByRole("button", { name: "Thử lại", exact: true }).click();
+  await expect(d.getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  expect(await aiCalls()).toBe(1);
+  expect(await posts()).toEqual([]);
+});
+
+test("+ Từ Zeplin in the dialog reads the screen through /flow/shots; a Zeplin error is shown, not 'not found'", async ({ page }) => {
+  const pic = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844"/>');
+  let fail = true;
+  await page.route("**/api/yt/flow/shots", async (r) => {
+    const { urls } = r.request().postDataJSON() as { urls: string[] };
+    if (fail && urls.includes("https://zpl.io/pay")) return r.fulfill({ status: 502, json: { error: "Token Zeplin bị từ chối" } });
+    await r.fulfill({ json: { shots: Object.fromEntries(urls.map((u) => [u, { src: pic, w: 390, h: 844, hits: [], title: "Thanh toán" }])), missing: [] } });
+  });
+  await openFlow(page);
+  const d = dialog(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await d.getByRole("button", { name: "Sửa" }).click();
+  await d.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  await d.getByLabel("Link màn Zeplin").fill("https://zpl.io/pay");
+  await d.getByLabel("Link màn Zeplin").press("Enter");
+  await expect(d.locator(".uf-zmsg")).toHaveText(/Không đọc được Zeplin: .*Token Zeplin bị từ chối/);
+  fail = false;
+  await d.getByRole("button", { name: "Thử lại" }).click();
+  await expect(d.locator(".uf-screen", { hasText: "Thanh toán" })).toHaveCount(1);
+  await expect(d.getByText(BAR)).toBeVisible(); // an unsaved edit: Cập nhật writes it, nothing was posted yet
+  expect(await posts()).toEqual([]);
+  expect(await aiCalls()).toBe(0);
+});
+
+
+test("Xem thay đổi lists what Cập nhật would write, posts nothing, and goes stale on the next edit", async ({ page }) => {
+  let asked = 0;
+  await page.route("**/api/yt/flow/diff", async (r) => {
+    asked++;
+    await r.fulfill({ json: { changes: ['Thêm ghi chú màn "Trang chủ"', 'Đặt màn bắt đầu "Nhập OTP"'], base_changed: false } });
+  });
+  await openFlow(page);
+  const d = dialog(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  await d.getByRole("button", { name: "Sửa" }).click();
+  await d.getByRole("button", { name: "+ Màn" }).click();
+  await d.getByRole("button", { name: "Xem thay đổi" }).click();
+  await expect(d.getByText("Cập nhật sẽ ghi 2 thay đổi:")).toBeVisible();
+  await expect(d.getByText('Đặt màn bắt đầu "Nhập OTP"')).toBeVisible();
+  expect(asked).toBe(1);
+  expect(await posts()).toEqual([]);
+  await d.getByRole("button", { name: "+ Màn" }).click();
+  await expect(d.getByText("Cập nhật sẽ ghi 2 thay đổi:")).toHaveCount(0);
+});
+
+test("a ticket edited after the file says how to pick it up; a render sends the flow on screen to keep its edits", async ({ page }) => {
+  await ctl("/set", { ticket_newer: true });
+  await openFlow(page);
+  const d = dialog(page);
+  await expect(d.getByText(/Ticket đã sửa sau lần cập nhật UI flow/)).toBeVisible();
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await page.getByRole("button", { name: "Render lại", exact: true }).click();
+  await expect(d.getByText(BAR)).toBeVisible();
+  const keep = (await ctl("/state")).ai_keep as { screens: { id: string }[] } | null;
+  expect(keep?.screens.length).toBe(4);
 });

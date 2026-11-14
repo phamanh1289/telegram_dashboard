@@ -252,6 +252,7 @@ def create_app(
             t = TelethonTransport(settings)
         bridge = TelegramBridge(st, db, t, notify=settings.notify, reaction=settings.done_reaction)
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
+        await yt_dashboard.start_flow_jobs(st)
         app.state.ai = AiService(settings, st, db)
         app.state.ai.me = lambda: bridge.me
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
@@ -309,7 +310,11 @@ def create_app(
     async def yt_error(_: Request, e: YtError):
         return JSONResponse({"error": e.message}, status_code=e.status)  # the YouTrack UI reads a string
 
-    app.include_router(build_router(yt_dashboard), include_in_schema=False)
+    yt_router = build_router(yt_dashboard)
+    for route in yt_router.routes:
+        # Legacy YouTrack endpoints remain private; durable flow DTOs are generated for the client.
+        route.include_in_schema = route.path == "/api/yt/flow/scope" or route.path.startswith("/api/yt/flow/jobs")
+    app.include_router(yt_router)
     app.include_router(build_task_router(settings))
     app.include_router(updater.build_router(settings))
     app.include_router(privacy.build_router(settings))

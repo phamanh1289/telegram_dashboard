@@ -1,0 +1,111 @@
+{
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "memoryGB": 24
+  },
+  "browser": "156.0.8078.4",
+  "engine": "phase 0-2 before phase 4",
+  "viewport": "1440x900",
+  "samples": [
+    {
+      "screens": 5,
+      "edges": 25,
+      "cache": "cold",
+      "mount": 11,
+      "pack": 41.60000000009313,
+      "propertyCommit": 1.1999999997206032,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 12858,
+      "dragFrameP95": 16.800000000279397,
+      "panFrameP95": 16.899999999906868,
+      "commit": 0.7000000001862645,
+      "requests": 4,
+      "imageBytes": 621
+    },
+    {
+      "screens": 5,
+      "edges": 25,
+      "cache": "warm",
+      "mount": 1.7000000001862645,
+      "pack": 0,
+      "propertyCommit": 0.599999999627471,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 12858,
+      "dragFrameP95": 17.200000000186265,
+      "panFrameP95": 17.09999999962747,
+      "commit": 0.7999999998137355,
+      "requests": 0,
+      "imageBytes": 0
+    },
+    {
+      "screens": 20,
+      "edges": 100,
+      "cache": "cold",
+      "mount": 12.5,
+      "pack": 54,
+      "propertyCommit": 1.6999999997206032,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 50372,
+      "dragFrameP95": 16.700000000186265,
+      "panFrameP95": 17.399999999906868,
+      "commit": 3.8999999999068677,
+      "requests": 19,
+      "imageBytes": 2955
+    },
+    {
+      "screens": 20,
+      "edges": 100,
+      "cache": "warm",
+      "mount": 6.2999999998137355,
+      "pack": 0.10000000009313226,
+      "propertyCommit": 2.2999999998137355,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 50372,
+      "dragFrameP95": 17,
+      "panFrameP95": 16.90000000037253,
+      "commit": 3.2000000001862645,
+      "requests": 0,
+      "imageBytes": 0
+    },
+    {
+      "screens": 60,
+      "edges": 300,
+      "cache": "cold",
+      "mount": 17.299999999813735,
+      "pack": 120.5,
+      "propertyCommit": 4.399999999906868,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 152572,
+      "dragFrameP95": 16.799999999813735,
+      "panFrameP95": 16.800000000279397,
+      "commit": 5.899999999906868,
+      "requests": 59,
+      "imageBytes": 9195
+    },
+    {
+      "screens": 60,
+      "edges": 300,
+      "cache": "warm",
+      "mount": 9.100000000093132,
+      "pack": 0.20000000018626451,
+      "propertyCommit": 5.600000000093132,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 152572,
+      "dragFrameP95": 16.899999999906868,
+      "panFrameP95": 16.799999999813735,
+      "commit": 4.300000000279397,
+      "requests": 0,
+      "imageBytes": 0
+    }
+  ],
+  "unavailable": [
+    "ticket/story",
+    "Zeplin network/cache",
+    "AI latency/tokens",
+    "upload"
+  ],
+  "units": "milliseconds",
+  "notes": "Synthetic inline SVGs, headless Chromium; timings include no real network. Pack cold counts synthetic proxy requests; warm reuses pack cache. One cold/warm run per dataset; no statistical speedup claim. Cache bound is encoded data URI size, not measured browser heap."
+}

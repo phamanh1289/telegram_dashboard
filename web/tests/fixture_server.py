@@ -11,6 +11,7 @@ import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -22,10 +23,11 @@ sys.path.insert(0, str(ROOT))
 from conftest import FakeTransport, msg  # noqa: E402
 
 from telegram_dashboard import uiflow  # noqa: E402
-from telegram_dashboard.ai import AiJobs  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
+from telegram_dashboard.flow_jobs import FlowJobs  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
+from telegram_dashboard.storage import Store  # noqa: E402
 from telegram_dashboard.telegram import SendRejected  # noqa: E402
 
 A, B = "-1001", "-1002"
@@ -94,7 +96,8 @@ ISSUE: dict = {
 
 
 ISSUE0 = json.loads(json.dumps(ISSUE))
-JOBS = AiJobs()  # the AI flow run with X-Ai-Job: a background run, as yt_dashboard's `background` starts it
+JOBS = FlowJobs(Store(tmp / "flow-fixture.sqlite3"))
+FLOW_SCOPE = "fixture-account-server"
 
 
 async def answer(send, status: int, body) -> None:
@@ -121,6 +124,30 @@ async def fake_yt(scope, receive, send) -> bool:
     path, post, q = scope["path"], scope["method"] == "POST", scope["query_string"].decode()
     if path == "/api/yt/config":
         await answer(send, 200, CONFIG)
+    elif path == "/api/yt/flow/scope":
+        await answer(send, 200, {"scope": control.get("flow_scope", FLOW_SCOPE)})
+    elif path == "/api/yt/flow/jobs":
+        issue = dict(parse_qsl(q)).get("issue")
+        await answer(send, 200, await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE), issue=issue))
+    elif path.startswith("/api/yt/flow/jobs/"):
+        account = control.get("flow_scope", FLOW_SCOPE)
+        suffix = path.removeprefix("/api/yt/flow/jobs/")
+        job, _, action = suffix.partition("/")
+        current = await JOBS.get(account, job)
+        if scope["method"] == "DELETE":
+            if control.get("cancel_fail"):
+                await answer(send, 503, {"error": "Không xác nhận được yêu cầu dừng"})
+            else:
+                await answer(send, 200, await JOBS.cancel(account, job))
+        elif not current:
+            await answer(send, 404, {"error": "Không tìm thấy lượt vẽ trong tài khoản này"})
+        elif action == "events":
+            await JOBS.stream(account, job, int(dict(parse_qsl(q)).get("after", 0)))(scope, receive, send)
+        elif action == "processed":
+            await JOBS.update(account, job, processed=True)
+            await answer(send, 200, await JOBS.get(account, job))
+        else:
+            await answer(send, 200, current)
     elif path == "/api/yt/issue" and q == "id=VA-1":
         await answer(send, 200, ISSUE)
     elif path == "/api/yt/flow" and not post:
@@ -129,7 +156,7 @@ async def fake_yt(scope, receive, send) -> bool:
             await answer(send, 502, {"error": "YouTrack 502 khi tải tệp"})
         else:
             got = {"file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True)}[mode]
-            await answer(send, 200, dict(zip(("att", "flow", "broken"), got)))
+            await answer(send, 200, {**dict(zip(("att", "flow", "broken"), got)), "ticket_newer": control.get("ticket_newer", False)})
     elif path == "/api/yt/flow":
         b = await body_of(receive)
         control["flow_posts"].append(b)
@@ -153,8 +180,9 @@ async def fake_yt(scope, receive, send) -> bool:
             }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
     elif path == "/api/yt/ai/flow":
-        await body_of(receive)
+        request_body = await body_of(receive)
         control["ai_calls"] += 1
+        control["ai_keep"] = request_body.get("keep")  # the flow on screen the render carries edits over from
 
         async def work(on_text=None):
             # the stages the real route tells (ai_flow), spread over ai_ms: the dialog's progress view has data
@@ -171,22 +199,18 @@ async def fake_yt(scope, receive, send) -> bool:
             for e in steps:
                 say(**e)
                 await asyncio.sleep(control["ai_ms"] / 1000 / len(steps))
-            return {"flow": {**FLOW, "rev": 0}}
+            return {"flow": {**FLOW, "rev": 0}, "manifest": control.get("manifest")}
 
         job = dict(scope["headers"]).get(b"x-ai-job", b"").decode()
         if job:
-            await JOBS.start(job, work)(scope, receive, send)
+            stream = await JOBS.start(
+                control.get("flow_scope", FLOW_SCOPE), job, request_body["id"], request_body.get("base"), work)
+            if stream:
+                await stream(scope, receive, send)
+            else:
+                await answer(send, 409, {"error": "Mã lượt AI đã dùng"})
         else:
             await answer(send, 200, await work())
-    elif path.startswith("/api/yt/ai/job/"):  # the real routes, on the fixture's runs
-        job = path.rsplit("/", 1)[1]
-        if scope["method"] == "DELETE":
-            JOBS.stop(job)
-            await answer(send, 200, {})
-        elif got := JOBS.attach(job):
-            await got(scope, receive, send)
-        else:
-            await answer(send, 404, {"error": "Lượt AI này không còn trên máy chủ: chạy lại"})
     else:
         return False
     return True
@@ -237,6 +261,15 @@ ctl = FastAPI()
 @ctl.post("/set")
 async def set_(request: Request):
     b = await request.json()
+    if b.pop("reset_jobs", False):
+        for row in await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE)):
+            await JOBS.cancel(control.get("flow_scope", FLOW_SCOPE), row["id"])
+        with JOBS.store._conn(write=True) as connection:
+            connection.execute("DELETE FROM flow_job_events")
+            connection.execute("DELETE FROM flow_jobs")
+        control.pop("flow_scope", None)
+        control.pop("cancel_fail", None)
+        control.pop("manifest", None)
     if "flow" in b:  # a UI flow test: start from the pristine ticket and file
         FLOW.clear()
         FLOW.update(json.loads(json.dumps(FLOW0)))
@@ -249,7 +282,9 @@ async def set_(request: Request):
 
 @ctl.get("/state")
 async def state():
-    return {**control, "send_calls": len(fake.send_calls), "jobs": JOBS.status()}
+    rows = await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE))
+    return {**control, "send_calls": len(fake.send_calls),
+            "jobs": {j["id"]: j["status"] for j in rows}, "flow_jobs": rows}
 
 
 @ctl.post("/message")

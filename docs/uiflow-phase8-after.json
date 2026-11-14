@@ -1,0 +1,111 @@
+{
+  "machine": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M5",
+    "memoryGB": 24
+  },
+  "browser": "156.0.8078.4",
+  "engine": "/private/tmp/claude-501/-Users-anhpham--claude-spares-spare-19zTxu/ff100ec9-2b4c-4c4f-9493-f17bb6c58656/scratchpad/p5/web/public/uiflow.js",
+  "viewport": "1440x900",
+  "samples": [
+    {
+      "screens": 5,
+      "edges": 25,
+      "cache": "cold",
+      "mount": 9.5,
+      "pack": 38.90000000037253,
+      "propertyCommit": 1,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 12858,
+      "dragFrameP95": 16.700000000186265,
+      "panFrameP95": 17.59999999962747,
+      "commit": 0.900000000372529,
+      "requests": 4,
+      "imageBytes": 621
+    },
+    {
+      "screens": 5,
+      "edges": 25,
+      "cache": "warm",
+      "mount": 3.2999999998137355,
+      "pack": 0.10000000055879354,
+      "propertyCommit": 1.1000000005587935,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 12858,
+      "dragFrameP95": 17.5,
+      "panFrameP95": 17.09999999962747,
+      "commit": 0.599999999627471,
+      "requests": 0,
+      "imageBytes": 0
+    },
+    {
+      "screens": 20,
+      "edges": 100,
+      "cache": "cold",
+      "mount": 13.100000000558794,
+      "pack": 77.29999999981374,
+      "propertyCommit": 1.2999999998137355,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 50372,
+      "dragFrameP95": 17.100000000558794,
+      "panFrameP95": 18,
+      "commit": 3.099999999627471,
+      "requests": 19,
+      "imageBytes": 2955
+    },
+    {
+      "screens": 20,
+      "edges": 100,
+      "cache": "warm",
+      "mount": 6.5,
+      "pack": 0.09999999962747097,
+      "propertyCommit": 2.099999999627471,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 50372,
+      "dragFrameP95": 17.40000000037253,
+      "panFrameP95": 16.799999999813735,
+      "commit": 1,
+      "requests": 0,
+      "imageBytes": 0
+    },
+    {
+      "screens": 60,
+      "edges": 300,
+      "cache": "cold",
+      "mount": 18.199999999254942,
+      "pack": 197.79999999981374,
+      "propertyCommit": 3.3999999994412065,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 152572,
+      "dragFrameP95": 16.799999999813735,
+      "panFrameP95": 16.799999999813735,
+      "commit": 1.900000000372529,
+      "requests": 59,
+      "imageBytes": 9195
+    },
+    {
+      "screens": 60,
+      "edges": 300,
+      "cache": "warm",
+      "mount": 10.099999999627471,
+      "pack": 0.09999999962747097,
+      "propertyCommit": 4.900000000372529,
+      "packFailed": 0,
+      "packedJsonCodeUnits": 152572,
+      "dragFrameP95": 17.299999999813735,
+      "panFrameP95": 16.799999999813735,
+      "commit": 1.599999999627471,
+      "requests": 0,
+      "imageBytes": 0
+    }
+  ],
+  "unavailable": [
+    "ticket/story",
+    "Zeplin network/cache",
+    "AI latency/tokens",
+    "upload"
+  ],
+  "units": "milliseconds",
+  "notes": "Synthetic inline SVGs, headless Chromium; timings include no real network. Pack cold counts synthetic proxy requests; warm reuses pack cache."
+}
