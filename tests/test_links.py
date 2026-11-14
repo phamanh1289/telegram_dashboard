@@ -141,3 +141,27 @@ async def test_ticket_link_is_read_as_youtrack_ai_sees_it(tmp_path):
     assert seen == ["issue:VA-12"] and "Sửa màn login" in out and "Nút Đăng nhập bị mờ" in out and "đã có API" in out
     assert out.count("dashboard không đọc được") == 1  # the other YouTrack never gets our token
     delete_links(s.settings, "t2")
+
+
+async def test_session_reads_tickets_named_by_id_and_their_documents(tmp_path):
+    s = state(tmp_path, "nội dung tài liệu")
+    seen = []
+
+    async def cached(key, fn):
+        seen.append(key)
+        return [{"shortName": "VA"}] if key == "projects" else await fn()
+
+    async def detail(i):
+        return {"id": i, "summary": "Trả key", "links": [], "comments": [],
+                "description": "AC 1.8 xem https://works.citics.vn/articles/VA-A-134"}  # fmt: skip
+
+    s.yt.cached, s.yt.detail = cached, detail
+    text = "update AC trong VA-12 (UTF-8, #REF-109c20), VA-12 nữa, xem VA-A-134"
+    out = await expand(s, text, "t3")
+    assert seen == ["projects", "issue:VA-12"]  # once; not UTF-8 (no such project), not the session code
+    assert "## https://works.citics.vn/issue/VA-12" in out and "Trả key" in out
+    assert "# VA-A-134 Quy trình" in out and "nội dung tài liệu" in out  # named by ID, and linked from the ticket
+    assert out.count("## https://works.citics.vn/articles/VA-A-134") == 1
+    assert "dashboard không đọc được" not in out
+    assert await link_block(s, text, None) == ""  # YouTrack AI: links only
+    delete_links(s.settings, "t3")

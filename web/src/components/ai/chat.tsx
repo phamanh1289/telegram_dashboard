@@ -1,12 +1,13 @@
 "use client";
 
 import { ArrowUp, Bug, Check, CheckCircle2, CircleAlert, Code, FileSearch, ListChecks, Loader2, type LucideIcon, PenLine, ScrollText, Square } from "lucide-react";
-import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import type { Mention } from "@/components/mention";
 import { Button } from "@/components/ui/button";
 import { Hint } from "@/components/ui/hint";
 import { type Key, useT } from "@/lib/i18n";
 import { copyText } from "@/lib/inbox";
+import { mascotUrl, ROLE_MASCOTS } from "@/lib/mascot";
 import { useMascot } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,8 @@ import { cn } from "@/lib/utils";
 export function dur(s: number) {
   if (s < 10) return `${Math.max(0, s).toFixed(1)}s`;
   if (s < 60) return `${Math.round(s)}s`;
-  return `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, "0")}s`;
+  const r = Math.round(s); // round first: 119.6s is 2m 00s, not 1m 60s
+  return `${Math.floor(r / 60)}m ${String(r % 60).padStart(2, "0")}s`;
 }
 
 /** A little robot head: blinking eyes, a glowing antenna, an arm that waves while it is shown. */
@@ -36,14 +38,51 @@ const Robot = ({ className }: { className?: string }) => (
   </svg>
 );
 
-/** The mascot `m` ("" = the robot, an emoji, or an image data: URL) in the robot's 32 × 32 box, so every size and
- *  animation class callers put on it fits the same. */
+const SVG_NS = "http://www.w3.org/2000/svg";
+const SVG_TAGS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "defs", "stop", "linearGradient", "radialGradient"]);
+const SVG_PARTS = new Set(["m-blink", "m-wave", "m-glow"]);
+/** An AI drawing readied to move (app.py ai_mascot_rig): its parts carry the classes globals.css animates. */
+const RIGGED = /^data:image\/svg\+xml,.*m-(blink|wave|glow)/;
+
+/** `el` rebuilt from shapes and gradients only (the server's clean_svg list, again: the mascot pref may be any SVG
+ *  file the member uploaded): no script, link, style, event, foreign content; a class only on a moving part; every
+ *  id and url(#…) prefixed with `pre`, so two drawings on one page keep their own gradients. */
+function safeSvg(el: Element, pre: string): Element | null {
+  if (!SVG_TAGS.has(el.localName) || el.namespaceURI !== SVG_NS) return null;
+  const out = document.createElementNS(SVG_NS, el.localName);
+  for (const { name, value } of el.attributes) {
+    if (name.includes(":") || /^(on|href|style)/i.test(name)) continue;
+    if (name === "class" ? !(el.localName === "g" && SVG_PARTS.has(value)) : /url\((?!#)|javascript:|expression/i.test(value)) continue;
+    out.setAttribute(name, name === "id" ? pre + value : value.replace(/url\(#/g, `url(#${pre}`));
+  }
+  for (const c of el.children) { const k = safeSvg(c, pre); if (k) out.append(k); }
+  return out;
+}
+
+/** A rigged AI drawing drawn into the page (not as an <image>), so globals.css reaches its parts. */
+function LiveMascot({ m, className }: { m: string; className?: string }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const pre = `m${useId().replace(/:/g, "")}-`;
+  useEffect(() => {
+    const doc = new DOMParser().parseFromString(decodeURIComponent(m.slice(m.indexOf(",") + 1)), "image/svg+xml");
+    const svg = safeSvg(doc.documentElement, pre);
+    ref.current?.replaceChildren(...(svg ? [...svg.childNodes] : []));
+    if (svg?.getAttribute("viewBox")) ref.current?.setAttribute("viewBox", svg.getAttribute("viewBox")!);
+  }, [m, pre]);
+  return <svg ref={ref} viewBox="0 0 32 32" aria-hidden className={className} />;
+}
+
+/** The mascot `m` ("robot", a role's "role:dev", or an image data: URL; anything else: the robot) in the robot's 32 × 32 box, so every size and
+ *  animation class callers put on it fits the same. A rigged AI drawing moves its own parts too, like the robot; a
+ *  picture lives as a whole (.m-alive). */
 export function Mascot({ m, className }: { m: string; className?: string }) {
-  if (!m) return <Robot className={className} />;
+  const art = m.startsWith("role:") ? ROLE_MASCOTS[m.slice(5) as keyof typeof ROLE_MASCOTS] : undefined;
+  if (art) return <LiveMascot m={mascotUrl(art)} className={className} />;
+  if (RIGGED.test(m)) return <LiveMascot m={m} className={className} />;
+  if (!m.startsWith("data:image/")) return <Robot className={className} />;
   return (
     <svg viewBox="0 0 32 32" aria-hidden className={className}>
-      {m.startsWith("data:image/") ? <image href={m} width="32" height="32" preserveAspectRatio="xMidYMid meet" />
-        : <text x="16" y="17" fontSize="26" textAnchor="middle" dominantBaseline="central">{m}</text>}
+      <image href={m} width="32" height="32" preserveAspectRatio="xMidYMid meet" className="m-alive" />
     </svg>
   );
 }
@@ -225,6 +264,28 @@ export function UserBubble({ children, className }: { children: ReactNode; class
     <div className={cn("flex justify-end animate-in fade-in-0 slide-in-from-bottom-2 zoom-in-95 duration-(--dur-short)", className)}>
       <div className="max-w-[85%] origin-bottom-right whitespace-pre-wrap break-words rounded-2xl rounded-br-sm bg-hl-wash px-3.5 py-2 text-sm leading-[1.55] text-ink">
         {children}
+      </div>
+    </div>
+  );
+}
+
+/** The AI talking, left-aligned with its mascot: UserBubble's other side, for a chat-like assistant (the know-it-all bot)
+ *  rather than a result to act on (AiResultCard). `busy`: still writing (dots under it); `actions`: buttons under the
+ *  bubble; `className` replaces the entrance animation. */
+export function AiBubble({ children, error, busy, actions, className, style }: {
+  children: ReactNode; error?: boolean; busy?: boolean; actions?: ReactNode; className?: string; style?: CSSProperties;
+}) {
+  return (
+    <div role={error ? "alert" : undefined} style={style}
+      className={cn("flex items-start gap-2", className ?? "animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)")}>
+      <AiBot className="size-7 shrink-0" />
+      <div className="grid min-w-0 flex-1 justify-items-start gap-1.5">
+        <div className={cn("grid min-w-0 max-w-full grid-cols-[minmax(0,1fr)] gap-1.5 break-words rounded-2xl rounded-tl-sm border px-3.5 py-2 text-sm leading-[1.55]",
+          error ? "border-error/25 bg-error-wash text-error" : "border-rule bg-paper-2 text-ink")}>
+          {children}
+          {busy && <AiDots className="py-1" />}
+        </div>
+        {actions && <div className="flex flex-wrap gap-1.5">{actions}</div>}
       </div>
     </div>
   );

@@ -1,10 +1,15 @@
 "use client";
 
+import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import { DEFAULT_FONT, DEFAULT_FONT_SIZE, FONT_SIZES, FONTS, type FontId, type FontSizeId } from "./fonts";
 import { type Key, t } from "./i18n";
 
 // Per-browser preferences in localStorage. `theme` is shared with the YouTrack module (missing = follow the OS).
+
+/** Cài đặt › "hiện nội dung trong thông báo" (server /privacy, cached by useSync): off until it loads. One reader for
+ *  every desktop notification the app makes (new tags, late Q&A). */
+export const notifyPreview = (qc: QueryClient) => !!qc.getQueryData<{ notify_preview: boolean }>(["privacy"])?.notify_preview;
 
 /** One stored preference; null when missing or storage is blocked. */
 export function getPref(key: string) {
@@ -188,6 +193,9 @@ export const readBotSize = (): BotSize => { const v = getPref("botSize"); return
 /** A corner ("tl"…), or "x,y": the bot's centre as fractions of the viewport, 0 / 1 on the edge it hugs (guide.tsx parses it). */
 export const readBotDock = () => getPref("botCorner") ?? "br";
 export const readBotCode = () => getPref("botCode") !== "0";
+/** AI Agent edit turns (Claude) load the user's own MCP servers / plugins: on until unticked, remembered. */
+export const readAgentMcp = () => getPref("agentMcp") !== "0";
+export const useAgentMcp = () => useSyncExternalStore(onPrefs, readAgentMcp, () => true);
 export const useBotShow = () => useSyncExternalStore(onPrefs, readBotShow, () => false);
 export const useBotMode = () => useSyncExternalStore(onPrefs, readBotMode, () => "float" as const);
 export const useBotSize = () => useSyncExternalStore(onPrefs, readBotSize, () => "m" as const);
@@ -229,11 +237,16 @@ export const aboutMe = () => ({ role: readYtRole(), platform: readPlatform(), in
 export const saveYtRole = (r: YtRole | null) => setPref("ytMode", r);
 /** Re-render on a saved preference, here or in another tab. */
 export const onPrefs = (f: () => void) => { addEventListener("prefs", f); addEventListener("storage", f); return () => { removeEventListener("prefs", f); removeEventListener("storage", f); }; };
-/** The AI mascot wherever the robot shows (Cài đặt chung › Linh vật AI): "" = the robot, else an emoji or an uploaded image (data: URL). */
-export const MASCOTS = ["🐱", "🦊", "🐼", "🦉", "🐙", "👾", "🧠", "✨"] as const;
 /** Bytes an uploaded mascot may have: it lives in localStorage (~5 MB for every pref). */
 export const MASCOT_MAX = 300_000;
-export const readMascot = () => getPref("mascot") ?? "";
+/** The member's role's mascot ("role:dev"…, lib/mascot ROLE_MASCOTS), or the robot when no role is picked. */
+export const roleMascot = () => { const r = readYtRole(); return r ? `role:${r}` : "robot"; };
+/** The AI mascot wherever the robot shows (Cài đặt › Giao diện › Linh vật AI): "robot", a role's ("role:qa"), or an
+ *  image (data: URL: uploaded, an AI drawing). None picked (or an emoji from before): the role's. */
+export const readMascot = () => {
+  const m = getPref("mascot") ?? "";
+  return m === "robot" || m.startsWith("role:") || m.startsWith("data:image/") ? m : roleMascot();
+};
 export const useMascot = () => useSyncExternalStore(onPrefs, readMascot, () => "");
 /** The role, live; null = not chosen (Telegram then acts as Dev). */
 export const useRole = () => useSyncExternalStore(onPrefs, readYtRole, () => null);

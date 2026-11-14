@@ -52,7 +52,9 @@ export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ti
 
 const CAP = 150; // rows per step: the ticket table renders this many, then more as the end scrolls into view
 const json = <T,>(k: string, d: T) => readJson(k, d) as T;
+const asPage = (v: string | null): Page => (v === "dash" || v === "tickets" || v === "release" || v === "people" || v === "ai" ? v : "home");
 const qp = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+const TICKET_ID = /^[A-Za-z][A-Za-z0-9]*-\d+$/; // ?ticket= (URL or the bot's link): a ticket id, else ignored
 const FILTER_PARAMS = ["sprint", "assignee", "state", "group", "sort", "everyone", "tier", "quick", "priority", "type", "q"];
 
 type Stored = Omit<Filters, "assignee"> & { assignee: string[] | null }; // null = not chosen: the mode decides
@@ -87,7 +89,7 @@ function usePref<T>(key: string, read: (v: string | null) => T, write: (v: T) =>
 const bool = (on: boolean) => (v: string | null) => (v == null ? on : v === "1");
 const b2s = (b: boolean) => (b ? "1" : "0");
 
-function useYtState() {
+function useYtState(embed?: string) { // embed: one ticket's sheet over another page (Telegram's ticket chip): no list, URL or seen marks
   const qc = useQueryClient();
   const config = useQuery({ queryKey: ["yt", "config"], queryFn: yt.config, staleTime: Infinity });
   const projects = useQuery(ytProjectsQuery);
@@ -102,12 +104,21 @@ function useYtState() {
   // null: not chosen yet, the page asks first (and loads nothing); `mode` stands in as Dev for the code below
   const role = useRole();
   const mode: Mode = role ?? "dev";
-  const [page, setPage] = useState<Page>(() => { const v = qp().get("view"); return v === "dash" || v === "tickets" || v === "release" || v === "people" || v === "ai" ? v : "home"; });
+  const [page, setPage] = useState<Page>(() => asPage(qp().get("view")));
   const [stored, setStored] = useState<Stored>(initialFilters);
   const [cap, setCap] = useState(CAP);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   // ?ticket=VA-1 (a ticket chip in Telegram) opens that ticket's sheet
-  const [sheet, setSheet] = useState<Sheet | null>(() => { const t = qp().get("ticket"); return t && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(t) ? { kind: "ticket", id: t, nav: [] } : null; });
+  const [sheet, setSheet] = useState<Sheet | null>(() => { const t = embed ?? qp().get("ticket"); return t && TICKET_ID.test(t) ? { kind: "ticket", id: t, nav: [] } : null; });
+  useEffect(() => { // "Mở <trang>" in the know-it-all bot's answer (guide.tsx), already on YouTrack: that ticket or page, no reload
+    const on = (e: Event) => {
+      const q = (e as CustomEvent<URLSearchParams>).detail, id = q.get("ticket");
+      if (id && TICKET_ID.test(id)) setSheet({ kind: "ticket", id, nav: [] });
+      else setPage(asPage(q.get("view")));
+    };
+    addEventListener("guide-go", on);
+    return () => removeEventListener("guide-go", on);
+  }, []);
   const [newTicket, setNewTicket] = useState<string | null>(null); // the create dialog, open with this starting note
 
   const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000 });
@@ -142,7 +153,7 @@ function useYtState() {
   const waitMe = stored.assignee === null && mode === "dev" && meQ.isPending;
   const issues = useQuery({
     ...issuesQuery(who ?? null),
-    enabled: !!config.data && who !== undefined && !waitMe && !!role,
+    enabled: !embed && !!config.data && who !== undefined && !waitMe && !!role,
     placeholderData: keepPreviousData,
     refetchInterval: 60_000, // background tabs wait until visible again
     // not isFetching / dataUpdatedAt: each refetch would re-render every useYt() reader (the header reads those itself)
@@ -195,6 +206,7 @@ function useYtState() {
 
   // persist filters (localStorage, same keys as /yt/) and keep a shareable URL
   useEffect(() => {
+    if (embed) return;
     const f = stored;
     put("ytFilters", JSON.stringify({ v: 3, state: f.state, sprint: f.sprint, ...(f.assignee ? { assignee: f.assignee } : {}), group: f.group, sort: `${f.sort.k}:${f.sort.d}`, tier: null, q: "" }));
     put("ytFlt", JSON.stringify({ priority: f.priority, type: f.type }));
@@ -209,7 +221,7 @@ function useYtState() {
     if (f.group !== "sprint") p.set("group", f.group);
     if (f.sort.k !== "priority" || f.sort.d !== "asc") p.set("sort", `${f.sort.k}:${f.sort.d}`);
     try { history.replaceState(null, "", `?${p}`); } catch {}
-  }, [stored, project, mode, page]);
+  }, [stored, project, mode, page, embed]);
 
   // view prefs (same localStorage keys as /yt/)
   // columns per role: QA reads who tests and how fresh, PO reads due dates, Dev keeps the original default
@@ -235,11 +247,12 @@ function useYtState() {
   // "new since your last visit": tickets updated after the last time this project was looked at
   const seen = useMemo(() => Number(getPref(`ytSeen:${project}`)) || 0, [project]);
   useEffect(() => {
+    if (embed) return;
     const save = () => { if (document.visibilityState === "hidden") setPref(`ytSeen:${project}`, String(Date.now())); };
     document.addEventListener("visibilitychange", save);
     addEventListener("pagehide", save);
     return () => { document.removeEventListener("visibilitychange", save); removeEventListener("pagehide", save); setPref(`ytSeen:${project}`, String(Date.now())); };
-  }, [project]);
+  }, [project, embed]);
 
   // when each ticket entered its current state: fetched 100 at a time, one request at a time; keyed by id@updated
   const [sinceMap, setSinceMap] = useState<Map<string, number>>(new Map());
@@ -303,7 +316,7 @@ export const CAP_STEP = CAP;
 
 export type Yt = ReturnType<typeof useYtState>;
 const Ctx = createContext<Yt | null>(null);
-export function YtProvider({ children }: { children: React.ReactNode }) {
-  return <Ctx value={useYtState()}>{children}</Ctx>;
+export function YtProvider({ children, embed }: { children: React.ReactNode; embed?: string }) {
+  return <Ctx value={useYtState(embed)}>{children}</Ctx>;
 }
 export const useYt = () => use(Ctx)!;

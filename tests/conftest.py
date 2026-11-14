@@ -99,9 +99,12 @@ class FakeTransport:
         return SentMessage(message_id=1000 + len(self.send_calls))
 
     async def members(self, chat_id):
-        return [Member(user_id="42", name="Minh BE", username="minh_be"), Member(user_id="43", name="Lan QA"),
-                Member(user_id="44", name="Trần Lan Anh", username="lananh_po"),
-                Member(user_id="45", name="Đức Mobile")]
+        return [
+            Member(user_id="42", name="Minh BE", username="minh_be"),
+            Member(user_id="43", name="Lan QA"),
+            Member(user_id="44", name="Trần Lan Anh", username="lananh_po"),
+            Member(user_id="45", name="Đức Mobile"),
+        ]
 
     async def send_reaction(self, chat_id, message_id, emoji):
         self.reactions.append((chat_id, message_id, emoji))
@@ -170,10 +173,25 @@ class FakeAgent:
         self.projects: list[str | None] = []  # the folder each run could read
         self.shells: list[bool] = []  # each run could run commands there (sandboxed)
         self.refs: list[str] = []  # the session code each run is logged under
+        self.kwargs: dict = {}  # the last run's keyword arguments (zeplin: the MCP server it may read)
         self.reply, self.on_call, self.exc = reply, on_call, exc
 
-    async def __call__(self, prompt, project=None, read_dir=None, system=None, heavy=False, on_text=None, feature=None,
-                       brief=False, yt=False, shell=False, ref=""):
+    async def __call__(
+        self,
+        prompt,
+        project=None,
+        read_dir=None,
+        system=None,
+        heavy=False,
+        on_text=None,
+        feature=None,
+        brief=False,
+        yt=False,
+        shell=False,
+        ref="",
+        zeplin=None,
+    ):
+        self.kwargs = {"zeplin": zeplin, "system": system, "heavy": heavy}
         self.calls.append(prompt)
         self.projects.append(project)
         self.shells.append(shell)

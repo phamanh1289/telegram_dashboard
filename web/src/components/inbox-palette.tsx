@@ -9,7 +9,7 @@ import { useChats } from "@/components/chat-list";
 import { matches, PaletteDialog, type PaletteItem, PaletteList } from "@/components/ui/palette";
 import { type Chat, errorText } from "@/lib/api";
 import { t as tPlain, tMaybe, useT } from "@/lib/i18n";
-import { fold, markAllHandled, sessionId, sessionMatches, TASKS, taskListQuery, toast } from "@/lib/inbox";
+import { fold, markAllHandled, openTicketHere, sessionId, sessionMatches, TASKS, taskListQuery, toast } from "@/lib/inbox";
 import { ticketId } from "@/lib/yt";
 
 // ⌘K / Ctrl+K in the Telegram inbox: jump to a group or a page, act on the open group, open an AI Agent session or a
@@ -41,7 +41,7 @@ function Body({ onClose, chats, views, group, range, onGo, onDigest, onSearch }:
   const hit = (s: string) => matches(terms, s);
   const id = /^\d+$/.test(qt) ? null : ticketId(qt, ""); // the same rule as YouTrack's own ⌘K (a bare number needs a project)
   if (id) {
-    out.push({ key: `yt:${id}`, group: "YouTrack", icon: <Bug />, label: t.n("Mở ticket {id}", { id: <b className="font-mono">{id}</b> }), run: go(() => router.push(`/youtrack/?ticket=${id}`)) });
+    out.push({ key: `yt:${id}`, group: "YouTrack", icon: <Bug />, label: t.n("Mở ticket {id}", { id: <b className="font-mono">{id}</b> }), run: go(() => openTicketHere(id)) });
   }
   if (/^#?(?:ref|ai)-?\w/i.test(qt)) {
     for (const s of (tasks ?? []).filter((x) => sessionMatches(x, qt)).slice(0, 6)) {

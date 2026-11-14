@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI flow — fixture</title>
+<style>html, body { margin: 0; height: 100%; } #uiflow { position: fixed; inset: 0; }</style>
+</head>
+<body>
+<div id="uiflow"></div>
+<script>
+  // login -> code -> home; popup err opens over code. One of each check kind once "lost" is added (see uiflow.spec.ts).
+  window.SAMPLE = {
+    v: 1, ticket: "VA-1", rev: 0, device: "mobile",
+    screens: [
+      { id: "login", title: "Đăng nhập", kind: "screen", parent: null, zeplin: "https://zpl.io/abc123", ac: "AC-1",
+        items: [{ id: "otp", label: "Gửi OTP" }] },
+      { id: "code", title: "Nhập OTP", kind: "screen", parent: null, zeplin: "", ac: "AC-2",
+        items: [{ id: "ok", label: "Xác nhận" }, { id: "later", label: "Để sau" }] },
+      { id: "err", title: "Sai mã", kind: "popup", parent: "code", zeplin: "", ac: "AC-2", items: [] },
+      { id: "home", title: "Trang chủ", kind: "screen", parent: null, zeplin: "", ac: "AC-3",
+        items: [{ id: "out", label: "Đăng xuất" }] },
+    ],
+    links: [
+      { src: "login.otp", to: "code", act: "navigate", when: "", ac: "AC-1" },
+      { src: "code.ok", to: "err", act: "open", when: "Mã sai", ac: "AC-2" },
+      { src: "code.later", to: "home", act: "navigate", when: "", ac: "AC-3" },
+      { src: "code", to: "login", act: "back", when: "", ac: "" },
+    ],
+  };
+</script>
+<script src="../public/uiflow.js"></script>
+<script>
+  window.__dirty = false;
+  window.__api = UIFlow.mount(document.getElementById("uiflow"), window.SAMPLE, {
+    edit: true, lang: "vi", onChange: (flow, dirty) => { window.__dirty = dirty; },
+  });
+</script>
+</body>
+</html>

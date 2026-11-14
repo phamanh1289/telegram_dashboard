@@ -153,13 +153,17 @@ const ASK_PLUGINS = [remarkGfm, remarkAsks, remarkBreaks]; // breaks after asks:
 export const AskTag = createContext("");
 /** The send button next to each ask's copy button (AI Agent: post it to the session's group); null: none. */
 export const AskPost = createContext<((text: string, role: AskRole | null) => ReactNode) | null>(null);
+/** Ticket IDs drawn by the caller instead of `onTicket` buttons (AI Agent sessions: Telegram's ticket chip). */
+export const TicketRef = createContext<((id: string) => ReactNode) | null>(null);
+const TICKET_LINK = /\[([^\]]+)\]\(#ticket:[^)]*\)/g; // the links Markdown adds for ticket IDs: a copied ask keeps the bare ID
 export const ASK_BTN = "ml-1 inline-grid size-5 place-items-center rounded-sm align-[-0.2em] text-ink-3 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink";
 function CopyAsk({ text, role }: { text: unknown; role?: unknown }) {
   const tag = use(AskTag);
   const post = use(AskPost);
   const t = useT();
   if (typeof text !== "string") return null;
-  const full = tag ? `${text}\n\n#${tag}` : text;
+  const ask = text.replace(TICKET_LINK, "$1");
+  const full = tag ? `${ask}\n\n#${tag}` : ask;
   return <>
     <Hint text={t("Copy ý này để hỏi / confirm")}>
       <button type="button" aria-label={t("Copy ý này")} onClick={() => void copyText(full.replace(/\[([^\]]+)\]\(tg:\/\/user\?id=\d+\)/g, "@$1"))} className={ASK_BTN}><Copy className="size-3.5" aria-hidden /></button>
@@ -183,13 +187,15 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
   const t = useT(); // memo: re-renders on a language change through this subscription
   const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
   let src = asks ? splitAsks(text ?? "") : text ?? "";
-  if (onTicket) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
+  const chip = use(TicketRef);
+  if (onTicket || chip) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
   const components: Components = {
     // only this app's own files load inline: a remote image would fetch on sight (tracking pixel, or a
     // prompt-injected AI answer leaking data in its URL), so it stays a link the user chooses to open
     img: ({ src, alt }) => (typeof src !== "string" || !src ? null
       : src.startsWith("/api/") ? <ImageView src={src} alt={alt} /> : <Link href={src}>[{alt ? t("ảnh: {alt}", { alt }) : t("ảnh")}]</Link>),
     a: ({ href, children }) => onTicket && href?.startsWith("#ticket:") ? <button type="button" onClick={() => onTicket(href.slice(8))}>{children}</button>
+      : chip && href?.startsWith("#ticket:") ? chip(href.slice(8))
       : anchor && href?.startsWith("#") ? anchor(href.slice(1)) : <Link href={href}>{children}</Link>,
     ...(asks && {
       li: ({ node, children, ...p }) => <li {...p}>{children}<CopyAsk text={node?.properties.dataCopy} role={node?.properties.dataRole} /></li>,

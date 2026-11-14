@@ -45,18 +45,35 @@
 "keys": "han muc quota usage claude codex antigravity agy gioi han 5h 7 ngay hạn mức ai dang dung doi ai thanh tren cung chon agent"
 },
 {
+"id": "guide-book",
+"tab": "telegram",
+"area": "Thanh trên cùng › Hướng dẫn",
+"title": "Duyệt hướng dẫn mọi tính năng",
+"what": "Nút bóng đèn trên thanh trên cùng mở danh mục mọi tính năng Telegram / YouTrack / Cài đặt, không cần AI: gõ để lọc ngay, lọc theo khu vực, bấm một tính năng xem cách dùng từng bước rồi \"Chỉ cho tôi trên màn hình\" để app làm sáng từng nút cần bấm. Không tìm thấy thì chuyển câu đang gõ sang Trợ lý biết tuốt để hỏi bằng câu tự nhiên.",
+"how": [
+{
+"t": "Bấm bóng đèn \"Hướng dẫn sử dụng\" trên thanh trên cùng",
+"at": "Hướng dẫn sử dụng"
+},
+"Gõ vào ô tìm hoặc chọn khu vực Telegram / YouTrack / Cài đặt",
+"Bấm một tính năng để xem các bước, rồi bấm \"Chỉ cho tôi trên màn hình\"",
+"Không có tính năng khớp: bấm \"Hỏi trợ lý biết tuốt\" để hỏi AI"
+],
+"keys": "huong dan su dung bong den guide help danh muc tinh nang tim tour chi cho toi"
+},
+{
 "id": "guide-bot",
 "tab": "telegram",
 "area": "Góc màn hình › Trợ lý biết tuốt",
 "title": "Hỏi trợ lý biết tuốt về app",
-"what": "Con bot nổi ở góc màn hình mọi trang là hướng dẫn sử dụng kiêm trợ lý AI dạng chat. Hỏi bằng câu tự nhiên: bot tìm trong hướng dẫn (và đọc chính code của app, chỉ đọc, khi hỏi về rule, giới hạn, vì sao một nút / mục ẩn hay hiện, kèm nguồn), trả lời cách làm theo từng bước, rồi gắn nút dẫn tận nơi: \"Mở …\" mở đúng trang hoặc nhóm Cài đặt, nút tên tính năng chạy tour làm sáng từng nút cần bấm. Hỏi tiếp được nhiều lượt, bot biết bạn đang ở trang nào; cuộc hỏi giữ nguyên khi chuyển trang. Kéo bot rồi thả ở bất kỳ chỗ nào sát mép màn hình: nó tự bám vào mép gần nhất. Bot xưng \"em\", gọi bạn theo tên YouTrack (không có thì tên Telegram, không nữa thì \"anh/chị\"). Cài đặt › Trợ lý biết tuốt: ẩn / hiện bot, cách hiển thị (Nổi, Cố định bên phải, Trên thanh công cụ), kích thước, vị trí, có đọc code hay không, model / effort riêng cho bot.",
+"what": "Con bot nổi ở góc màn hình mọi trang là hướng dẫn sử dụng kiêm trợ lý AI dạng chat. Hỏi bằng câu tự nhiên: bot tìm trong hướng dẫn (và đọc chính code của app, chỉ đọc, khi hỏi về rule, giới hạn, vì sao một nút / mục ẩn hay hiện, kèm nguồn), trả lời cách làm theo từng bước, rồi gắn nút dẫn tận nơi: \"Mở …\" mở đúng trang hoặc nhóm Cài đặt, nút tên tính năng chạy tour làm sáng từng nút cần bấm. Hỏi cả việc của bạn (\"còn tin nào chờ?\", \"ticket nào gấp?\", \"đang chờ ai?\"): bot đọc danh sách trang Hôm nay, báo nhanh số việc, việc gấp trước, mỗi việc kèm nút \"Mở …\" mở thẳng tin, ticket, Q&A hay phiên AI đó. Hỏi tiếp được nhiều lượt, bot biết bạn đang ở trang nào; cuộc hỏi giữ nguyên khi chuyển trang. Kéo bot rồi thả ở bất kỳ chỗ nào sát mép màn hình: nó tự bám vào mép gần nhất. Bot xưng \"em\", gọi bạn theo tên YouTrack (không có thì tên Telegram, không nữa thì \"anh/chị\"). Cài đặt › Trợ lý biết tuốt: ẩn / hiện bot, cách hiển thị (Nổi, Cố định bên phải, Trên thanh công cụ), kích thước, vị trí, có đọc code hay không, model / effort riêng cho bot.",
 "how": [
 {
 "t": "Bấm con bot ở góc màn hình (hoặc F1); kéo nó sang góc khác nếu đang che nút",
 "at": "Hỏi trợ lý biết tuốt"
 },
 {
-"t": "Gõ câu hỏi (vd. \"vì sao không thấy nút Gửi?\") rồi Enter, hoặc bấm một câu gợi ý",
+"t": "Gõ câu hỏi (vd. \"vì sao không thấy nút Gửi?\") rồi Enter, hoặc bấm một câu gợi ý; đang gõ, các tính năng khớp hiện ngay trên ô hỏi: bấm một cái để app chỉ tận nơi, không cần chờ AI",
 "at": "Hỏi trợ lý biết tuốt"
 },
 "Dưới câu trả lời: bấm \"Mở …\" để tới đúng trang, hoặc bấm tên tính năng để app chỉ trực tiếp trên màn hình; bấm \"Cuộc hỏi mới\" để bắt đầu lại",
@@ -205,7 +222,7 @@
 "tab": "telegram",
 "area": "Thanh bên › Hôm nay",
 "title": "Hôm nay: mọi việc đang chờ bạn",
-"what": "Trang mở đầu của app. Gom việc từ cả Telegram và YouTrack thành một danh sách, gấp nhất lên trước: tag chờ (quá hạn tô đỏ), ticket của bạn đang rủi ro, câu hỏi Q&A cần nhắc hoặc có trả lời mới, phiên AI Agent xong chưa xem, Báo lại, việc còn mở trong Briefing. Các mục cùng một việc gom thành một chuỗi theo ID: tin tag đứng đầu, bên dưới là phiên AI (mã REF-…, kể cả Trợ lý AI và phiên đang chạy), chuỗi Q&A (mã #QA…, câu hỏi gửi từ phiên trả lời vào tin tag đó) và ticket (mã ticket nhắc trong tin, Báo lại); số đầu trang đếm theo chuỗi. Dưới tiêu đề là các ô tóm tắt theo loại (Gấp, Tag, AI Agent, Q&A…) kèm số. Mỗi chuỗi một dòng (khung hẹp: thời gian chờ xuống dưới tiêu đề); ô nhỏ có icon và số bên phải (vd. robot 2) cho biết có mục liên quan, bấm ô đó để mở / thu gọn chúng; rê lên icon đầu dòng để xem nguồn và nhóm. Trang chia khối Gấp / Đang chờ bạn / Bạn đang chờ, bấm thanh khối để thu gọn / mở; mỗi khối hiện 6 chuỗi đầu, bấm “Xem thêm” để hiện hết. Khối “Bạn đang chờ” (thu gọn sẵn, tự mở khi không còn việc chờ bạn) liệt kê tag đã hoãn (kể cả hoãn tới khi có người trả lời / ticket xong) và câu hỏi Q&A của bạn chưa ai trả lời. Nút ↻ cạnh tiêu đề đọc lại mọi nguồn (tag, phiên AI, Q&A, ticket, Briefing); trong lúc đọc, robot diễn cảnh gom các nguồn rồi viết thành danh sách việc. Không còn việc nào thì hiện cảnh “Hết việc rồi!”. Khối “Bạn đang chờ” có cảnh riêng (robot giữ đồng hồ cát, tag đã hoãn và câu hỏi Q&A bay vào) trong lúc còn đọc tag đã hoãn và các chuỗi Q&A. Bấm một dòng để tới đúng chỗ; phím g rồi h.",
+"what": "Trang mở đầu của app. Gom việc từ cả Telegram và YouTrack thành một danh sách, gấp nhất lên trước: tag chờ (quá hạn tô đỏ), ticket của bạn đang rủi ro, câu hỏi Q&A cần nhắc hoặc có trả lời mới, phiên AI Agent xong chưa xem, Báo lại, việc còn mở trong Briefing. Các mục cùng một việc gom thành một chuỗi theo ID: tin tag đứng đầu, bên dưới là phiên AI (mã REF-…, kể cả Trợ lý AI và phiên đang chạy), chuỗi Q&A (mã #QA…, câu hỏi gửi từ phiên trả lời vào tin tag đó) và ticket (mã ticket nhắc trong tin, Báo lại); số đầu trang đếm theo chuỗi. Dưới tiêu đề là các ô tóm tắt theo loại (Gấp, Tag, AI Agent, Q&A…) kèm số. Mỗi chuỗi một dòng (khung hẹp: thời gian chờ xuống dưới tiêu đề); ô nhỏ có icon và số bên phải (vd. robot 2) cho biết có mục liên quan, bấm ô đó để mở / thu gọn chúng; rê lên icon đầu dòng để xem nguồn và nhóm. Trang chia khối Gấp / Đang chờ bạn / Bạn đang chờ, bấm thanh khối để thu gọn / mở; mỗi khối hiện 6 chuỗi đầu, bấm “Xem thêm” để hiện hết. Khối “Bạn đang chờ” (thu gọn sẵn, tự mở khi không còn việc chờ bạn) liệt kê tag đã hoãn (kể cả hoãn tới khi có người trả lời / ticket xong) và câu hỏi Q&A của bạn chưa ai trả lời. Nút ↻ cạnh tiêu đề đọc lại mọi nguồn (tag, phiên AI, Q&A, ticket, Briefing); trong lúc đọc, robot diễn cảnh gom các nguồn rồi viết thành danh sách việc. Không còn việc nào thì hiện cảnh “Hết việc rồi!”; khối “Bạn đang chờ” trống cũng hiện cảnh đó bên trong khối; cả hai cùng trống thì ẩn khối, chỉ còn một cảnh. Khối “Bạn đang chờ” có cảnh riêng (robot giữ đồng hồ cát, tag đã hoãn và câu hỏi Q&A bay vào) trong lúc còn đọc tag đã hoãn và các chuỗi Q&A. Bấm một dòng để tới đúng chỗ; phím g rồi h.",
 "how": [
 {
 "t": "Bấm “Hôm nay” đầu thanh bên",
@@ -223,8 +240,12 @@
 "what": "Danh sách các tin bạn đã ghim để giữ lại, kể cả khi đã xử lý.",
 "how": [
 {
-"t": "Rê chuột vào một tin, bấm biểu tượng \"Ghim\" để ghim nó",
-"at": "Ghim"
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
+"t": "Rê chuột vào một tin, bấm nút ⋯ \"Thêm thao tác\" rồi \"Ghim lên đầu\" (phím P)",
+"at": "Thêm thao tác"
 },
 {
 "t": "Mở Việc cần xử lý, bấm \"Đã ghim\" ở đầu danh sách (hoặc g rồi p)",
@@ -311,6 +332,10 @@
 "what": "Nút đồng hồ \"Tuần của tôi\" trên đầu Briefing so tuần này với tuần trước: số tag nhận, đã xử lý (trả lời / Xong / tự xong), thời gian xử lý trung vị và mức 90% tag xong trong khoảng đó, cùng 5 nhóm xử lý chậm nhất. Đọc số liệu lỗi thì hiện dòng lỗi “Không đọc được số liệu tuần.”, không hiện “Chưa có số liệu tuần này.”.",
 "how": [
 {
+"t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\"",
+"at": "Briefing"
+},
+{
 "t": "Mở Briefing, bấm nút đồng hồ \"Tuần của tôi\" ở góc phải trên",
 "at": "Tuần của tôi"
 },
@@ -338,7 +363,7 @@
 "tab": "telegram",
 "area": "Trang nhóm › ⋯ › Xóa dữ liệu nhóm",
 "title": "Xóa dữ liệu nhóm",
-"what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn.",
+"what": "Xóa tin đã lưu của nhóm và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn. Cũng xóa được từ Cài đặt › Dữ liệu › Tin theo nhóm (kèm dung lượng từng nhóm). Mọi phiên AI có tin của nhóm này (phiên mở từ tin của nhóm hoặc có đính kèm tin của nhóm, kể cả phiên trích thêm nhóm khác) cũng bị xóa; phiên đang chạy bị dừng trước.",
 "how": [
 {
 "t": "Bấm một nhóm ở thanh bên",
@@ -380,6 +405,10 @@
 "what": "Lọc tin tag theo nội dung, không phân biệt hoa thường và dấu tiếng Việt. Ở Việc cần xử lý / Tag đã ghim ô này tìm ở mọi nhóm; khi đang mở một nhóm, nó tìm trong nhóm đó. Trên điện thoại bấm kính lúp để mở ô.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm ô tìm kiếm trên đầu trang (\"Tìm ở mọi nhóm…\", hoặc nhấn phím /) rồi gõ từ khóa",
 "at": "Tìm tin tag ở mọi nhóm"
 },
@@ -397,6 +426,10 @@
 "title": "Lọc theo khoảng ngày",
 "what": "Chỉ hiện tin tag trong khoảng ngày chọn (mặc định 7 ngày qua; chọn \"Tất cả\" để xem mọi tin đã lưu); áp dụng cho danh sách nhóm, số đếm và danh sách tin.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm nút lịch \"Chọn khoảng ngày của tin tag\"",
 "at": "Khoảng ngày"
@@ -814,6 +847,10 @@
 "what": "Bấm vào bất kỳ đâu trên dòng tin (trừ link/nút) để mở trang \"Trả lời\": hội thoại trong nhóm (tin tag nổi bật đúng vị trí, tự cuộn tới) và ô soạn bên trái, Trợ lý AI và công cụ bên phải.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm vào bất kỳ đâu trên một dòng tin (trừ link / nút) để mở khung trả lời",
 "at": "css:li[data-testid=\"message\"]"
 },
@@ -828,6 +865,10 @@
 "title": "Đánh dấu Xong / Mở lại",
 "what": "Đánh dấu tin tag đã xử lý (không cần trả lời / đã xử lý nơi khác), đồng thời thả reaction trên Telegram; tin đã xong có thể mở lại. Có thông báo kèm \"Hoàn tác\".",
 "how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
 {
 "t": "Bấm nút hai dấu tích \"Xong\" trên một tin (hoặc chọn tin rồi nhấn x).",
 "at": "Xong"
@@ -872,6 +913,10 @@
 "what": "Ẩn tin khỏi Việc cần xử lý và tự hiện lại sau 1 giờ, 3 giờ hoặc sáng mai 9:00; tin đang hoãn hiện \"nhắc <giờ>\". Có thêm “Tới khi có người trả lời” (tin hiện lại khi ai đó trả lời tin này hoặc trả lời câu bạn đã trả lời) và “Tới khi VA-123 xong” khi tin nhắc ticket (hiện lại khi ticket chuyển Fixed / Done); hai kiểu này vẫn tự hiện lại sau 7 ngày.",
 "how": [
 {
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
+{
 "t": "Bấm biểu tượng đồng hồ báo thức \"Hoãn\" (rê chuột vào nút Xong của tin để hiện)",
 "at": "Hoãn"
 },
@@ -900,11 +945,24 @@
 "keys": "nhac lai sau nhắc lại sau kiem tra lai kiểm tra lại mo lai mở lại remind follow up"
 },
 {
+"id": "msg-ignore-sender",
+"tab": "telegram",
+"area": "Tin tag › Hoãn › Luôn bỏ qua",
+"title": "Luôn bỏ qua một người hoặc từ khóa",
+"what": "Tag của người gửi / chứa từ khóa trong danh sách tự sang Đã xử lý, không báo; tin của người gửi bị bỏ qua cũng không vào Briefing / Digest. Xem, thêm và gỡ ở Cài đặt › Telegram › Luôn bỏ qua: mỗi quy tắc là một chip màu theo loại, bấm × để gỡ (tag đã dọn trước đó không tự mở lại).",
+"how": [
+"Từ một tin: mở menu Hoãn, chọn “Luôn bỏ qua {tên}” (thông báo có nút Hoàn tác)",
+"Trong Cài đặt › Telegram › Luôn bỏ qua: gõ tên vào ô “Tên người gửi…” rồi chọn người, hoặc gõ từ khóa vào ô “Từ khóa” rồi Enter",
+"Bấm × trên chip để nhận thông báo lại"
+],
+"keys": "luon bo qua luôn bỏ qua mute tat thong bao tắt thông báo chan chặn nguoi gui người gửi tu khoa từ khóa ignore block quy tac quy tắc"
+},
+{
 "id": "msg-priority-sender",
 "tab": "telegram",
 "area": "Tin tag › Hoãn › Luôn ưu tiên",
 "title": "Luôn ưu tiên một người",
-"what": "Ngược với “Luôn bỏ qua”: tin tag của người này luôn lên đầu Việc cần xử lý (sau tin ghim), có dấu “Ưu tiên” màu vàng và bị coi là quá hạn ở nửa ngưỡng thường. Gỡ quy tắc ở Cài đặt › Telegram › Quy tắc.",
+"what": "Ngược với “Luôn bỏ qua”: tin tag của người này luôn lên đầu Việc cần xử lý (sau tin ghim), có dấu “Ưu tiên” màu vàng và bị coi là quá hạn ở nửa ngưỡng thường. Gỡ ở Cài đặt › Telegram › Luôn bỏ qua (bấm × trên chip).",
 "how": [
 "Mở menu Hoãn của một tag, chọn “Luôn ưu tiên {tên}”",
 "Thông báo dưới màn hình có nút Hoàn tác"
@@ -916,7 +974,7 @@
 "tab": "telegram",
 "area": "Tin tag › Hoãn › Vòng BE tự chạy",
 "title": "Vòng BE tự chạy: phiên AI tự nhận câu trả lời của BE",
-"what": "Hai quy tắc theo người gửi để không phải chuyển tay. “Tự chuyển trả lời của {tên} vào phiên AI”: khi người đó trả lời câu hỏi mà một phiên AI Agent đã gửi (tìm theo chuỗi reply tới mã #REF-… hoặc #QA…), phiên đó tự chạy tiếp với câu trả lời đính kèm: phần đã rõ thì làm luôn, phần chưa rõ thì soạn câu hỏi tiếp; được sửa code chỉ khi phiên đã từng được cho sửa, phiên đang chạy thì chờ lượt xong, phiên đã Done thì thôi. “Luôn giao AI Agent cho tin của {tên}”: mỗi tin mới của người đó tự mở một phiên chỉ đọc ở dự án bạn chọn gần nhất trong Giao AI Agent. Mỗi câu trả lời của phiên kết thúc bằng Trạng thái (Chờ trả lời / Có thể Done / Cần bạn xem), hiện ở danh sách AI Agent và Hôm nay. Không có gì tự gửi lên Telegram. Gỡ quy tắc ở Cài đặt › Telegram › Luôn bỏ qua. Chỉ có với vai trò Dev.",
+"what": "Hai quy tắc theo người gửi để không phải chuyển tay. “Tự chuyển trả lời của {tên} vào phiên AI”: khi người đó trả lời câu hỏi mà một phiên AI Agent đã gửi (tìm theo chuỗi reply tới mã #REF-… hoặc #QA…), phiên đó tự chạy tiếp với câu trả lời đính kèm: phần đã rõ thì làm luôn, phần chưa rõ thì soạn câu hỏi tiếp; được sửa code chỉ khi phiên đã từng được cho sửa, phiên đang chạy thì chờ lượt xong, phiên đã Done thì thôi. Câu trả lời trong một thread Q&A chưa có phiên nào đang mở thì tự mở một phiên chỉ đọc (kèm câu hỏi của thread) ở dự án bạn chọn gần nhất trong Giao AI Agent lúc bật quy tắc; các câu trả lời sau trong thread đó chạy tiếp trong phiên này. “Luôn giao AI Agent cho tin của {tên}”: mỗi tin mới của người đó tự mở một phiên chỉ đọc ở dự án bạn chọn gần nhất trong Giao AI Agent. Mỗi câu trả lời của phiên kết thúc bằng Trạng thái (Chờ trả lời / Có thể Done / Cần bạn xem), hiện ở danh sách AI Agent và Hôm nay. Không có gì tự gửi lên Telegram. Gỡ quy tắc ở Cài đặt › Telegram › Luôn bỏ qua. Chỉ có với vai trò Dev. Lượt tự chạy dùng model của phiên với effort tối đa medium. Khi quota Claude (cửa sổ 5 giờ hoặc tuần) tới 80%, Vòng BE tạm dừng: câu trả lời nằm ở hàng chờ, phiên ghi lý do, và tự chạy khi quota hồi; lượt bạn tự gõ vẫn chạy. Hàng chờ được lưu, khởi động lại app không làm mất.",
 "how": [
 "Mở menu Hoãn của một tin từ bot BE, chọn “Tự chuyển trả lời của {tên} vào phiên AI” hoặc “Luôn giao AI Agent cho tin của {tên}”",
 "Thông báo dưới màn hình có nút Hoàn tác"
@@ -930,6 +988,10 @@
 "title": "Ghim / Bỏ ghim tin",
 "what": "Ghim tin lên đầu danh sách và giữ nó trong \"Đã ghim\" (đầu trang Việc cần xử lý), kể cả khi đã xử lý.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Rê chuột (hoặc bấm) nút ⋯ \"Thêm thao tác\" ở dòng tin tag để mở menu",
 "at": "Thêm thao tác"
@@ -957,6 +1019,10 @@
 "what": "Hiện các tin trước và sau tin tag trong nhóm, đọc trực tiếp từ Telegram (cần đang kết nối).",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm biểu tượng hai bong bóng \"Ngữ cảnh\" (rê chuột vào nút Xong của tin để hiện)",
 "at": "Ngữ cảnh"
 },
@@ -975,6 +1041,10 @@
 "title": "Mở tin trong Telegram",
 "what": "Mở đúng tin trong app Telegram (nhóm thường chỉ mở được nhóm trên Telegram Web).",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Rê chuột (hoặc bấm) nút ⋯ \"Thêm thao tác\" ở dòng tin để mở menu",
 "at": "Thêm thao tác"
@@ -1024,6 +1094,10 @@
 "what": "Nút # trên thanh thao tác của dòng tin chép ID tin (chat_id/message_id) chỉ bằng một click: dán vào ô nhắn của phiên AI (kể cả phiên đã Done) để đính kèm tin, hoặc dùng khi báo lỗi.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Rê chuột vào dòng tin, bấm nút # cạnh nút kẹp giấy ở thanh thao tác bên phải.",
 "at": "css:[data-testid=\"message\"] button[aria-label=\"Chép ID tin\"]"
 },
@@ -1038,6 +1112,10 @@
 "title": "Tới tin gốc được trả lời",
 "what": "Với tin trả lời một tin khác, bấm để cuộn tới tin gốc và làm nó sáng lên (nếu tin gốc có trong danh sách).",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm dòng \"trả lời #<số>\" phía trên nội dung tin để cuộn tới tin gốc (chỉ có ở tin trả lời tin khác).",
 "at": "css:[data-testid=\"message\"] button[aria-label^=\"Tới tin gốc\"]"
@@ -1074,8 +1152,12 @@
 "tab": "telegram",
 "area": "Nội dung tin › Mã ticket",
 "title": "Chip ticket YouTrack trong tin",
-"what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột hoặc Tab tới chip để xem nhanh ticket (Trạng thái, Ưu tiên, Người làm, QC, Cập nhật) với hai link “Mở ở trang YouTrack” và “Mở trong YouTrack”; Esc đóng. Link, @mention và `code` cũng được tô riêng.",
+"what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột hoặc Tab tới chip để xem nhanh ticket (Trạng thái, Ưu tiên, Người làm, QC, Cập nhật) với hai link “Mở ở trang YouTrack” và “Mở trong YouTrack”; Esc đóng. Kết quả phiên AI Agent (trang AI Agent, Đối chiếu BE, Trợ lý AI) cũng hiện mã ticket thành chip như vậy. Bấm chip (cả ở Hôm nay, ticket liên quan khi trả lời, ⌘K “Mở ticket”) mở chi tiết ticket ngay tại chỗ, không rời trang; Esc đóng; ⌘/Ctrl + bấm mở ở trang YouTrack. Link, @mention và `code` cũng được tô riêng.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Rê chuột lên mã ticket (vd. VA-123) trong tin để xem tiêu đề, trạng thái, người được giao; bấm để mở ticket.",
 "at": "css:[data-testid=\"message\"] a[href^=\"/youtrack/?ticket=\"]"
@@ -1106,6 +1188,10 @@
 "title": "Đối chiếu BE (soi câu trả lời của BE với code)",
 "what": "AI đọc câu hỏi gửi BE và câu BE trả lời, rồi soi code dự án: đã làm đúng chưa, còn thiếu gì, cần sửa gì. Gọi từ nút bộ não trên bất kỳ tin nào (tin đó là câu trả lời; câu hỏi tự chọn: tin được reply, không thì tin gần nhất của người khác), hoặc nút \"Đối chiếu code\" ở mục Đã chốt / Thay đổi trong Briefing và Tóm tắt, hoặc nút \"Đối chiếu BE\" trên thanh Đã chốt của một chuỗi Q&A (câu hỏi = tin hỏi, trả lời = tin đã chốt). Hộp thoại ở lại, hiện AI đang soi code (bước đang làm) rồi kết quả ngay tại chỗ; đóng lúc nào cũng được, phiên vẫn chạy ngầm ở AI Agent › Đối chiếu BE; tin có nhãn \"Đang đối chiếu BE\" rồi \"Xem đối chiếu BE\", bấm nhãn để mở kết quả. Kết quả cùng mẫu với phiên Giao AI Agent (Tóm tắt · Hiện trạng · Cần làm · Rủi ro · Cần hỏi lại; nhiều chủ đề thì mở đầu bằng bảng ✅ / ⚠️ / ❌ / ⏳), ý Cần hỏi lại có nút copy và gửi vào nhóm như ở AI Agent. Chỉ có với vai trò Dev.",
 "how": [
+{
+"t": "Bấm một nhóm ở thanh bên",
+"at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+},
 {
 "t": "Bấm biểu tượng bộ não \"Đối chiếu BE\" trên tin trả lời (rê chuột để hiện), hoặc \"Đối chiếu code\" ở mục Đã chốt trong Briefing, hoặc \"Đối chiếu BE\" trên thanh Đã chốt của chuỗi Q&A.",
 "at": "Đối chiếu BE"
@@ -1175,6 +1261,10 @@
 "title": "Soạn và gửi trả lời",
 "what": "Gửi trả lời trực tiếp vào tin tag trên Telegram (tối đa 4096 ký tự, có bộ đếm). Gửi xong tự mở tin chưa xử lý kế tiếp.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
@@ -1250,6 +1340,10 @@
 "what": "AI tóm tắt tin được tag (kèm ngữ cảnh nhóm) theo góc nhìn vai trò và nền tảng, đề xuất bước tiếp theo và các mẫu trả lời; hiện chữ trực tiếp khi AI đang viết.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
 },
@@ -1304,6 +1398,10 @@
 "what": "AI đưa ra mẫu trả lời theo quan hệ với người gửi (\"Tôi là cấp trên\", \"Ngang cấp\", \"Trả lời cấp trên\"); lựa chọn được nhớ cho người gửi đó.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
 },
@@ -1352,7 +1450,7 @@
 "tab": "telegram",
 "area": "Khung Trả lời › AI Agent",
 "title": "Giao AI Agent",
-"what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Chỉ có với vai trò Dev.",
+"what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Dashboard tải sẵn cho AI nội dung ticket YouTrack mà tin nhắc tới (link hoặc chỉ mã, vd. VA-123), tài liệu Knowledge Base ticket đó dẫn link và link tin Telegram; AI phải đọc hết trước khi soạn câu hỏi / ý cần confirm. Chỉ có với vai trò Dev.",
 "how": [
 "Chỉ có với vai trò Dev.",
 {
@@ -1369,7 +1467,7 @@
 },
 {
 "t": "Nhập \"Yêu cầu thêm\" nếu cần.",
-"at": "css:#task-note"
+"at": "Yêu cầu thêm cho AI"
 },
 {
 "t": "Chọn \"Chỉ đọc\" (khuyên dùng) hoặc \"Được sửa file\".",
@@ -1393,6 +1491,10 @@
 "what": "Tạo ticket từ tin tag (chọn Project, Type, Priority, Assignee; ảnh trong tin được đính kèm); link ticket được thêm vào trả lời. AI có thể soạn tiêu đề, Type/Priority và mô tả theo mẫu. Cảnh báo ticket có thể trùng.",
 "how": [
 {
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
+{
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
 },
@@ -1404,12 +1506,12 @@
 "t": "Bấm \"AI soạn\" để AI viết tiêu đề, Type/Priority, mô tả (nếu có AI).",
 "at": [
 "AI soạn",
-"Tiêu đề ticket"
+"Một dòng nêu vấn đề / yêu cầu"
 ]
 },
 {
 "t": "Sửa tiêu đề nếu cần.",
-"at": "Tiêu đề ticket"
+"at": "Một dòng nêu vấn đề / yêu cầu"
 },
 {
 "t": "Bấm \"Tạo ticket\".",
@@ -1426,6 +1528,10 @@
 "title": "Ticket có vẻ liên quan",
 "what": "Khi tin không nêu mã ticket, gợi ý tối đa 3 ticket đang mở có vẻ liên quan và cho chèn link vào trả lời.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
@@ -1445,6 +1551,10 @@
 "title": "Chọn model và effort tại chỗ",
 "what": "Chọn nhanh model và mức effort cho tóm tắt/soạn nháp hoặc cho Task và AI Agent; dùng chung lựa chọn với trang tài khoản AI.",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
 "at": "css:[data-testid=\"message\"]"
@@ -1534,7 +1644,7 @@
 "tab": "telegram",
 "area": "AI Agent › Phiên › Cho sửa code",
 "title": "Cho phép lượt sau sửa file (duyệt plan)",
-"what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm. Lượt sửa file chạy lệnh trong sandbox (chỉ ghi trong thư mục dự án, mạng chỉ tới kho package); nếu phiên có tin hay link của người khác, ô tick có cảnh báo trước khi bật.",
+"what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm. Lượt sửa file chạy lệnh trong sandbox (chỉ ghi trong thư mục dự án, mạng chỉ tới kho package); nếu phiên có tin hay link của người khác, cạnh ô tick hiện biểu tượng cảnh báo (rê chuột để đọc). Trên Windows (Claude không có sandbox) lượt sửa chỉ sửa file, không chạy lệnh: AI ghi lệnh build / test để bạn tự chạy. Lượt sửa file (kể cả phiên giao ở chế độ Được sửa file và lượt Vòng BE tự gửi) dùng cả MCP server và plugin bạn đã cài cho CLI của phiên (Claude, Codex, Antigravity: YouTrack, markitdown, Zeplin…), như tự chạy CLI đó; Antigravity vẫn không có lệnh shell; ô “Dùng MCP / plugin” hiện khi tick “Cho sửa code”, bật sẵn, bỏ tick để tắt, app nhớ lựa chọn. Chúng chạy ngoài sandbox bằng đăng nhập của bạn: phiên có tin / link người khác viết thì biểu tượng cảnh báo nói rõ. Lượt chỉ đọc không dùng MCP; nội dung ticket, bài Knowledge Base (link hoặc chỉ mã, vd. VA-123, VA-A-134) dashboard tải sẵn cho mọi lượt. Link Zeplin (zpl.io, app.zeplin.io) trong phiên: mọi lượt, kể cả chỉ đọc, trên cả Claude, Codex và Antigravity, đọc được thiết kế qua Zeplin MCP bạn đã cài (cho Claude hoặc Codex; Antigravity dùng của nó), chỉ các tool đọc màn / component / design token.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1561,7 +1671,7 @@
 "tab": "telegram",
 "area": "AI Agent › Phiên › Thao tác",
 "title": "Done, dừng, xóa phiên, mở nhóm, model riêng",
-"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên (mọi loại phiên, cả Đối chiếu BE khi bạn cho sửa file ở ô nhắn) mở trang Thay đổi, chỉ gồm file đổi kể từ lúc phiên bắt đầu (sửa của bạn hay của phiên khác có từ trước không tính; phiên tạo trước bản này vẫn so cả thư mục với commit cuối; file trong submodule cũng hiện, đường dẫn mở đầu bằng tên submodule, nhưng “Tạo nhánh + PR” chỉ commit file của repo chính): đầu trang ghi tổng số file thay đổi và tổng dòng +/−; cột trái là cây thư mục (thư mục chỉ chứa một thư mục con được gộp thành một dòng a/b/c, bấm thư mục để đóng / mở, chữ A / M / R / D cạnh file là mới / sửa / đổi tên / xóa, bấm file để nhảy tới), bên phải các file xếp theo cùng thư mục, mỗi file một thẻ bấm để thu gọn / mở rộng (nút mũi tên trên đầu thu / mở mọi file; file dài sẵn thu gọn); xem “Song song” (Trước khi sửa bên trái, Sau khi sửa bên phải) hoặc “Một cột” (− đỏ là trước, + xanh là sau), phần chữ đổi trong dòng được tô đậm; nút “Phiên” quay lại. “Tạo nhánh + PR” ở đáy trang (bấm hai lần để xác nhận) commit đúng các file đó (file khác bạn đang sửa hay đã stage để nguyên) trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này).",
+"what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên (mọi loại phiên, cả Đối chiếu BE khi bạn cho sửa file ở ô nhắn) mở trang Thay đổi, chỉ gồm file đổi kể từ lúc phiên bắt đầu (sửa của bạn hay của phiên khác có từ trước không tính; phiên tạo trước bản này vẫn so cả thư mục với commit cuối; file trong submodule cũng hiện, đường dẫn mở đầu bằng tên submodule, nhưng “Tạo nhánh + PR” chỉ commit file của repo chính): đầu trang ghi tổng số file thay đổi và tổng dòng +/−; cột trái là cây thư mục (thư mục chỉ chứa một thư mục con được gộp thành một dòng a/b/c, bấm thư mục để đóng / mở, chữ A / M / R / D cạnh file là mới / sửa / đổi tên / xóa, bấm file để nhảy tới), bên phải các file xếp theo cùng thư mục, mỗi file một thẻ bấm để thu gọn / mở rộng (nút mũi tên trên đầu thu / mở mọi file; file dài sẵn thu gọn); xem “Song song” (Trước khi sửa bên trái, Sau khi sửa bên phải) hoặc “Một cột” (− đỏ là trước, + xanh là sau), phần chữ đổi trong dòng được tô đậm; nút “Phiên” quay lại. “Tạo nhánh + PR” ở đáy trang (bấm hai lần để xác nhận) commit đúng các file đó (file khác bạn đang sửa hay đã stage để nguyên) trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này). Nếu file phiên sửa đã có sửa của bạn từ trước phiên (hoặc phiên không có mốc lúc bắt đầu), trang Thay đổi cảnh báo màu vàng và liệt kê file: PR sẽ chứa cả phần sửa đó, lần bấm xác nhận là đồng ý.",
 "how": [
 {
 "t": "Mở \"AI Agent\" ở thanh bên.",
@@ -1594,6 +1704,10 @@
 "title": "Hoàn tác thao tác vừa làm",
 "what": "Sau khi đánh dấu Xong, Hoãn hoặc giao việc, thông báo dưới màn hình có nút \"Hoàn tác\" (khoảng 6 giây).",
 "how": [
+{
+"t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+"at": "Việc cần xử lý"
+},
 {
 "t": "Bấm \"Xong\" trên một tin (rê chuột vào dòng tin để thấy nút)",
 "at": "Xong"
@@ -1631,7 +1745,7 @@
 "tab": "telegram",
 "area": "Thông báo trình duyệt",
 "title": "Thông báo khi có tag mới",
-"what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi kèm “Tag mới” (tối đa 3, kèm “Còn N tag mới khác”); bấm để quay lại app. Nội dung tin chỉ hiện khi bật “Hiện nội dung tin trong thông báo macOS” ở Cài đặt › Telegram › “Thông báo” (áp dụng cả thông báo của trình duyệt và macOS).",
+"what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi kèm “Tag mới” (tối đa 3, kèm “Còn N tag mới khác”); bấm để quay lại app. Nội dung tin chỉ hiện khi bật “Hiện nội dung tin trong thông báo macOS” ở Cài đặt › Telegram › “Thông báo” (áp dụng cả thông báo của trình duyệt và macOS). Thông báo “Chưa ai trả lời” của Q&A theo cùng công tắc: tắt thì chỉ hiện mã #QA, không hiện nội dung câu hỏi.",
 "how": [
 {
 "t": "Bấm bánh răng \"Cài đặt\"",
@@ -1654,7 +1768,7 @@
 "tab": "settings",
 "area": "Cài đặt › Tìm cài đặt",
 "title": "Tìm một cài đặt",
-"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Dữ liệu trên trình duyệt, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+"what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
 "how": [
 {
 "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -1664,6 +1778,29 @@
 "Dùng ↑ ↓ chọn rồi Enter, hoặc bấm một kết quả"
 ],
 "keys": "tim cai dat search settings nhay toi"
+},
+{
+"id": "settings-data",
+"tab": "settings",
+"area": "Cài đặt › Dữ liệu",
+"title": "Xem dung lượng và dọn dữ liệu trên máy",
+"what": "Cho biết app đang chiếm bao nhiêu trên máy (thanh chia theo phần: Database, Phiên AI, Ảnh tag đã tải, Lịch sử chạy AI, Log server, Đăng nhập Telegram, Cấu hình), database theo từng bảng và theo từng nhóm. Xóa từng phần: tin đã xử lý cũ hơn 30 ngày, bản tóm tắt Briefing, lịch sử gửi cũ, phiên AI đã xong, ảnh đã tải, lịch sử chạy AI, log server, dữ liệu của một nhóm, nháp trả lời trên trình duyệt. Mỗi lần xóa hỏi lại và nói rõ mất gì, giữ gì; database tự thu gọn sau khi xóa. Khi khởi động app tự dọn ảnh quá 30 ngày, lịch sử chạy AI quá 90 ngày và cắt log quá 5 MB. Nút \"Đổi thư mục\" (cuối thẻ Dung lượng, cạnh đường dẫn) chuyển toàn bộ dữ liệu sang thư mục khác: nhập đường dẫn tuyệt đối, app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ; lỗi thì vẫn dùng thư mục cũ. Nếu thư mục đó đã có dữ liệu Radar (ổ từng dùng với bản cài khác), hộp thoại hỏi \"Dùng dữ liệu ở đó\": app chuyển sang dữ liệu đó, dữ liệu đang dùng giữ nguyên chỗ cũ, không xóa. Không đổi được khi AI Agent đang chạy; thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database. Nếu thư mục mới nằm trên ổ ngoài, ổ phải gắn sẵn khi mở app.",
+"how": [
+{
+"t": "Mở Cài đặt › Dữ liệu",
+"at": "css:a[href=\"#data\"]"
+},
+"Xem thẻ \"Dung lượng\": tổng, phần dọn được ngay và thanh chia theo phần",
+{
+"t": "Bấm \"Xóa\" ở ô muốn dọn; ô ghi rõ dung lượng, số mục, từ ngày nào và có tải lại được không",
+"at": "css:main article footer button"
+},
+{
+"t": "Đọc hộp xác nhận; bấm \"Hủy\" để thoát (chỉ bấm \"Xóa\" nếu thật sự muốn xóa)",
+"at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+}
+],
+"keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean doi thu muc chuyen di doi noi luu duong dan o dia move folder location path"
 },
 {
 "id": "settings-role",
@@ -1730,7 +1867,7 @@
 "tab": "settings",
 "area": "Cài đặt › Giao diện",
 "title": "Giao diện, phong cách, font chữ, linh vật AI, màu chủ đạo, gradient",
-"what": "Chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; font chữ (Quicksand, Be Vietnam Pro, Inter, Nunito hoặc font của máy); cỡ chữ (Nhỏ / Vừa / Lớn / Rất lớn); linh vật AI thay robot ở mọi cảnh đang tải, trang trống, ô AI (robot, emoji, AI vẽ theo mô tả hoặc ảnh của bạn; cũng thay icon AI Agent trên nút, menu); màu chủ đạo (có sẵn, kéo chọn, hoặc nút ống hút chọn màu bất kỳ / mã hex) và Độ đậm; bật Gradient với màu thứ hai hoặc chọn một cặp Pha sẵn. Khung Xem trước bên cạnh (Tin nhóm / Ticket / Đang tải) đổi màu ngay khi kéo. Lưu trên trình duyệt.",
+"what": "Chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; font chữ (Quicksand, Be Vietnam Pro, Inter, Nunito hoặc font của máy); cỡ chữ (Nhỏ / Vừa / Lớn / Rất lớn); linh vật AI thay robot ở mọi cảnh đang tải, trang trống, ô AI (mặc định là linh thú theo vai trò: Dev rồng trắng lập trình viên, QA/QC cú cầm kính lúp, PO/PM cáo chỉ đường; hoặc robot, AI vẽ theo mô tả, ảnh của bạn; cũng thay icon AI Agent trên nút, menu); màu chủ đạo (có sẵn, kéo chọn, hoặc nút ống hút chọn màu bất kỳ / mã hex) và Độ đậm; bật Gradient với màu thứ hai hoặc chọn một cặp Pha sẵn. Khung Xem trước bên cạnh (Tin nhóm / Ticket / Đang tải) đổi màu ngay khi kéo. Lưu trên trình duyệt.",
 "how": [
 {
 "t": "Chọn mục \"Giao diện\"",
@@ -1753,7 +1890,7 @@
 "at": "css:[aria-label=\"Cỡ chữ\"]"
 },
 {
-"t": "Ở \"Linh vật AI\" chọn robot, một emoji, bấm ô lấp lánh để AI vẽ theo mô tả (bấm một gợi ý hoặc tự gõ, chọn phong cách Dễ thương / Pixel / Nét mảnh, xem trước trong app rồi bấm \"Dùng linh vật này\"; AI vẽ ở nền nên có thể đóng cửa sổ đi làm việc khác, xong sẽ có thông báo kèm nút \"Xem\"), hoặc bấm ô ảnh để tải ảnh của bạn",
+"t": "Ở \"Linh vật AI\" chọn robot hoặc một linh thú theo vai trò (chưa chọn thì dùng linh thú của vai trò bạn và đổi theo khi đổi vai trò; đã chọn thì giữ nguyên; chúng chớp mắt, vẫy tay như robot), bấm ô lấp lánh để AI vẽ theo mô tả (bấm một gợi ý hoặc tự gõ, chọn phong cách Dễ thương / Pixel / Nét mảnh, có thể thêm \"Ảnh tham khảo\" (chọn file hoặc dán ảnh) để AI vẽ theo, đổi model / effort vẽ ngay trong ô (mặc định theo \"Tóm tắt, soạn nháp\"), xem trước trong app rồi bấm \"Dùng linh vật này\" (AI tách mắt, tay của hình để linh vật chớp mắt, vẫy tay như robot; không tách được thì dùng bản đứng yên); AI vẽ ở nền nên có thể đóng cửa sổ đi làm việc khác, xong sẽ có thông báo kèm nút \"Xem\"), hoặc bấm ô ảnh để tải ảnh của bạn (PNG / JPG / WebP có nền một màu hay ô caro sẽ tự được xóa nền; ảnh tự lắc chào khi hiện, nhún như đang thở và thỉnh thoảng nghiêng đầu)",
 "at": "css:[aria-label=\"Linh vật AI\"]"
 },
 {
@@ -2248,11 +2385,11 @@
 "how": [
 {
 "t": "Bấm \"My team\" để chọn phạm vi này",
-"at": "My team"
+"at": "Team"
 },
 {
 "t": "Bấm lại \"My team\" (biểu tượng bánh răng) để mở \"Team của tôi\"",
-"at": "My team"
+"at": "Team"
 },
 {
 "t": "Gõ tên vào ô \"Tìm người để thêm vào team\"",
@@ -2329,7 +2466,7 @@
 "how": [
 {
 "t": "Bấm nút xoay có giờ cập nhật (vd. \"14:05\") ở cuối thanh trên",
-"at": "Cập nhật lúc"
+"at": "Làm mới"
 },
 "Hoặc ⌘K › \"Làm mới dữ liệu\"",
 "Khi lỗi tải, bấm \"Thử lại\" trong khung báo lỗi"
@@ -2620,13 +2757,13 @@
 {
 "id": "yt-trang-brief-po",
 "tab": "youtrack",
-"area": "Thanh bên › Brief (PO)",
+"area": "Thanh bên › Tổng quan (PO)",
 "title": "Tổng quan (trang chủ PO)",
 "what": "Trang chủ của PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
 "how": [
 {
-"t": "Bấm \"Brief\" trên thanh bên",
-"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Brief\"]"
+"t": "Bấm \"Tổng quan\" trên thanh bên",
+"at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Tổng quan\"]"
 },
 {
 "t": "Bấm một số KPI để xem danh sách ticket",
@@ -2707,7 +2844,11 @@
 "what": "Tải báo cáo release ra Markdown, PDF (bản in) hoặc CSV (số liệu và danh sách ticket theo mục).",
 "how": [
 {
-"t": "Trong thẻ \"Tạo báo cáo\" đã có báo cáo, bấm \"Xuất\" (chưa có thì tạo báo cáo trước)",
+"t": "Trong thẻ \"Tạo báo cáo\" ở trang chủ, bấm \"Tạo báo cáo\" (đã có báo cáo thì bỏ qua bước này)",
+"at": "Tạo báo cáo"
+},
+{
+"t": "Bấm \"Xuất\"",
 "at": "Xuất"
 },
 {
@@ -2771,17 +2912,14 @@
 "at": "Ticket"
 },
 {
-"t": "Bấm một chip giá trị (vd. \"Critical\", \"Bug\") để bật lọc",
-"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button[aria-pressed=\"false\"]"
+"t": "Trong nhóm \"Bộ lọc\", bấm ô \"Priority\", \"Type\" hoặc \"State\"",
+"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button"
 },
 {
-"t": "Bấm lại \"Tất cả\" của hàng đó để bỏ lọc",
-"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button[aria-pressed=\"false\"]"
+"t": "Tích các giá trị cần xem (vd. \"Critical\", \"Bug\"); số bên phải là số ticket",
+"at": "css:[role=\"menuitemcheckbox\"], [role=\"option\"]"
 },
-{
-"t": "Bấm \"+N khác\" để hiện thêm giá trị ít gặp (và \"Thu gọn\" để ẩn)",
-"at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button:not([aria-pressed])"
-}
+"Bấm \"Bỏ chọn tất cả\" trong ô đó để bỏ lọc; chip dưới thanh công cụ cũng gỡ được từng cái"
 ],
 "keys": "loc priority lọc priority loc type lọc type loc state lọc state chip dem đếm filter bug feature task"
 },
@@ -2797,12 +2935,12 @@
 "at": "Ticket"
 },
 {
-"t": "Bấm một nút góc nhìn dưới thanh công cụ (rê chuột xem mô tả)",
-"at": [
-"Board của tôi",
-"Board chờ test",
-"Backlog"
-]
+"t": "Bấm \"Góc nhìn\" ở bên phải thanh công cụ",
+"at": "Góc nhìn"
+},
+{
+"t": "Bấm một góc nhìn gợi ý cho vai trò của bạn (vd. \"Board của tôi\", \"Chờ QC\")",
+"at": ["Board của tôi", "Sprint này", "Chờ QC"]
 },
 "Thông báo \"Góc nhìn …\" xác nhận; bộ lọc, Bảng/Board và gom nhóm đã đổi theo"
 ],
@@ -2858,8 +2996,8 @@
 "at": "Ticket"
 },
 {
-"t": "Đặt bộ lọc (vd. bấm một góc nhìn hoặc chip), rồi bấm \"View\"",
-"at": "View"
+"t": "Đặt bộ lọc như ý, rồi bấm \"Góc nhìn\"",
+"at": "Góc nhìn"
 },
 {
 "t": "Gõ tên vào ô \"Tên view\"",
@@ -2869,10 +3007,7 @@
 "t": "Bấm \"Lưu\"",
 "at": "Lưu"
 },
-{
-"t": "Mở \"View\" lại, bấm ✕ cạnh tên view để xóa nếu muốn",
-"at": "Xóa view"
-}
+"Mở \"Góc nhìn\" lại: view đã lưu nằm dưới mục \"Đã lưu\", bấm ✕ cạnh tên để xóa"
 ],
 "keys": "view da luu view đã lưu saved view luu bo loc lưu bộ lọc bookmark"
 },
@@ -2937,6 +3072,10 @@
 {
 "t": "Bấm \"Bảng\" (gom nhóm chỉ có ở dạng bảng)",
 "at": "Bảng"
+},
+{
+"t": "Bấm \"Hiển thị\" ở bên phải thanh công cụ",
+"at": "Hiển thị"
 },
 {
 "t": "Chọn kiểu ở ô \"Gom nhóm\"",
@@ -3101,7 +3240,7 @@
 },
 {
 "t": "Bấm ô chọn ở cột Assignee của dòng rồi chọn người (hoặc \"Chưa assign\")",
-"at": "css:tbody tr[data-id] select[aria-label^=\"Đổi assignee\"]"
+"at": "css:tbody tr[data-id] button[aria-label^=\"Đổi Assignee\"]"
 },
 "Bấm hoàn tác trong thông báo nếu nhầm"
 ],
@@ -3266,6 +3405,38 @@
 }
 ],
 "keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
+},
+{
+"id": "yt-ui-flow",
+"tab": "youtrack",
+"area": "Bảng bên › Ticket › UI flow",
+"title": "UI flow: sơ đồ màn hình và luồng bấm của ticket",
+"what": "AI đọc AC, rule và link Zeplin của ticket (với sub-task, đọc trọn story cha, nơi có AC, cây \"Luồng màn\" và link Zeplin) rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Màn có link Zeplin được vẽ bằng ảnh thiết kế thật, nút thành vùng bấm đúng chỗ trên ảnh (khớp theo chữ trên nút; nút không thấy trên thiết kế hiện thành dòng ở dưới); cần Zeplin MCP đã cấu hình. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file uiflow-<ticket>.html lên ticket kèm bình luận ghi rõ đã đổi gì. Dòng uiflow-<ticket>.html trong Tệp đính kèm mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè.",
+"how": [
+{
+"t": "Bấm \"Ticket\"",
+"at": "Ticket"
+},
+{
+"t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+"at": "css:tbody tr[data-id]"
+},
+{
+"t": "Bấm \"UI flow\"",
+"at": "UI flow"
+},
+"Chưa có file: chọn \"Nhanh\" (model nhẹ, ít token) hoặc \"Kỹ\" (model mạnh, cho story dài) trong ô dưới, ghi chú thêm cho AI nếu cần rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng render\"",
+"Đang render, khung hiện tiến trình: % đã xong, đã chạy bao lâu và ước tính còn bao lâu, từng bước (đọc ticket và story, đọc từng màn Zeplin, AI lên luồng, vẽ từng màn, nối từng nút với màn đích, kiểm tra) kèm số liệu và thời gian của bước đó, tên các màn vừa vẽ và liên kết vừa nối",
+"Đóng khung khi đang render không dừng AI: nút \"UI flow\" có chấm báo đang chạy, mở lại để xem tiếp tiến trình hoặc lấy kết quả. Render báo lỗi (kể cả mất kết nối) thì lượt AI đã dừng hẳn, dòng lỗi ghi bước bị hỏng: bấm \"Render bằng AI\" để chạy lại",
+"Render xong, thanh dưới ghi AI vừa vẽ bao nhiêu màn, liên kết, mất bao lâu; bấm \"Cập nhật\" thì thanh báo đang nhúng ảnh Zeplin (n/tổng) rồi đang tải file lên ticket",
+"Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, Vừa màn hình, Soát luồng)",
+"Sửa xong, thanh dưới hiện \"Có thay đổi chưa lưu\": bấm \"Cập nhật\" để ghi lên ticket, hoặc \"Không\" để giữ trên màn",
+{
+"t": "Menu ⋯ : \"Render lại bằng AI\" hoặc \"Tải file HTML\"",
+"at": "Thao tác UI flow"
+}
+],
+"keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket anh zeplin thiet ke vung bam"
 },
 {
 "id": "yt-hoi-lai-trong-nhom",
@@ -3818,7 +3989,7 @@
 },
 {
 "t": "Ở thẻ \"Công việc đang làm\" chọn \"ngưỡng WIP\" 2-5",
-"at": "ngưỡng WIP"
+"at": "Ngưỡng WIP"
 },
 {
 "t": "Bấm một dòng người để xem ticket của họ",

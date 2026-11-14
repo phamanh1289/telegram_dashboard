@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { Menu } from "@base-ui/react/menu";
 import { ArrowDown, ArrowLeft, CheckCheck, Ellipsis, MessageSquare, RotateCw, Search, Sparkles, Trash2 } from "lucide-react";
 import { use, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -13,9 +13,10 @@ import { Dropdown } from "@/components/ui/dropdown";
 import { Empty } from "@/components/ui/empty";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { Hint } from "@/components/ui/hint";
+import { PurgeChat } from "@/components/purge-chat";
 import { useChatMessages, type View } from "@/hooks/use-chat-messages";
-import { api, ApiError, errorText, type Message } from "@/lib/api";
-import { clearDrafts, inQaPage, markAllHandled, msgKey, QaCodes, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
+import { ApiError, errorText, type Message } from "@/lib/api";
+import { inQaPage, markAllHandled, msgKey, QaCodes, smooth, toast, useListShortcuts, useNow, useTasks } from "@/lib/inbox";
 import { dayLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/components/ui/segmented";
@@ -288,18 +289,7 @@ export function MessageList({
 /** The group's "⋯" menu: actions on the whole group, away from the navigation (delete its stored data). */
 function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string; onPurged: () => void }) {
   const t = useT();
-  const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
-  const purge = useMutation({
-    mutationFn: () => api<void>(`/chats/${encodeURIComponent(chatId)}/data`, { method: "DELETE" }),
-    onSuccess: () => {
-      qc.removeQueries({ queryKey: ["messages", chatId] });
-      clearDrafts(chatId); // this browser's copies go with the group's data (the server drops its Báo lại items)
-      setConfirm(false);
-      onPurged();
-    },
-    onSettled: () => qc.invalidateQueries({ queryKey: ["chats"] }),
-  });
   return (
     <>
       <Menu.Root>
@@ -319,9 +309,7 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      <ConfirmDialog open={confirm} onOpenChange={setConfirm} title={t("Xóa dữ liệu nhóm?")} confirmLabel={t("Xóa dữ liệu")}
-        description={t("Xóa tin đã lưu của “{title}” và nội dung chưa gửi trên máy này. Nhóm sẽ hiện lại khi có người tag bạn. Tin đang gửi có thể đã tới Telegram và không thu hồi được.", { title })}
-        busy={purge.isPending} error={purge.isError && t("Không xóa được dữ liệu nhóm. Thử lại.")} onConfirm={() => purge.mutate()} />
+      {confirm && <PurgeChat chatId={chatId} title={title} onClose={() => setConfirm(false)} onPurged={onPurged} />}
     </>
   );
 }

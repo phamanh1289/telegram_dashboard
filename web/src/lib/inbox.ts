@@ -112,6 +112,15 @@ export async function copyText(text: string, done = t("Đã copy")) {
 }
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
+/** A YouTrack ticket's sheet over the current page (TicketSheetHost takes it): the ticket chip's click. */
+export const openTicketHere = (id: string) => dispatchEvent(new CustomEvent<string>("open-ticket", { detail: id }));
+type Click = { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; preventDefault(): void };
+/** onClick of a `/youtrack/?ticket=` link: the sheet here; ⌘ / Ctrl / Shift click still opens the YouTrack page. */
+export const ticketClick = (id: string) => (e: Click) => {
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  openTicketHere(id);
+};
 
 /** An error whose message is meant for the user (the toaster shows it as is). */
 export class Told extends Error {}
@@ -206,7 +215,7 @@ export async function markAllHandled(chatId: string, range: string, skip: readon
 }
 
 /** "Luôn bỏ qua {tên}": a sender rule clears their open tags now and later; Undo deletes it and reopens those. */
-export async function ignoreSender(m: Message) {
+export async function ignoreSender(m: Pick<Message, "sender_id" | "sender_name">) { // a tag, or Settings › Luôn bỏ qua's picker
   const name = m.sender_name ?? t("người này");
   const r = await api<RuleAdded>("/rules", { method: "POST", json: { kind: "sender", value: m.sender_id, label: name } });
   r.cleared.forEach(dropDraft);

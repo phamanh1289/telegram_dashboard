@@ -317,7 +317,24 @@
 @keyframes ai-glow { to { fill: var(--color-hl-2); } }
 .hint-rays { animation: hint-rays 0.9s ease-in-out infinite alternate; }
 @keyframes hint-rays { from { opacity: 0.35; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .ai-chip, .ai-blink, .ai-wave, .ai-glow, .hint-rays { animation: none; } }
+/* An AI-drawn mascot's parts (Mascot, ai/chat.tsx; grouped by app.py MASCOT_RIG_PROMPT) move like the robot's: blink,
+   wave a limb around its joint (the group's transform-origin attribute) when shown, glow. `rotate` / `scale`, not
+   `transform`, so a group's own transform attribute still holds. */
+.m-blink { transform-box: fill-box; transform-origin: center; animation: m-blink 2.6s infinite; }
+@keyframes m-blink { 0%, 88%, 100% { scale: 1 1; } 93% { scale: 1 0.1; } }
+.m-wave { transform-box: view-box; animation: m-wave 0.5s ease-in-out 3 alternate; }
+@keyframes m-wave { to { rotate: -25deg; } }
+.m-glow { animation: m-glow 1.2s ease-in-out infinite alternate; }
+@keyframes m-glow { to { opacity: 0.45; } }
+/* A picture mascot (an uploaded image, a still AI drawing) has no parts, so the whole picture lives like the robot does:
+   a hello wiggle when shown (the robot's wave), a breath (its glow), a head tilt now and then (its blink). Inside the
+   mascot's box, on `rotate` / `scale`, so the hop / float callers put on the box still add up. */
+.m-alive { transform-box: fill-box; transform-origin: 50% 90%;
+  animation: m-hello 0.7s ease-in-out 2, m-breathe 3.2s ease-in-out 1.6s infinite, m-tilt 7s ease-in-out 3s infinite; }
+@keyframes m-hello { 25% { rotate: -9deg; } 75% { rotate: 9deg; } }
+@keyframes m-breathe { 50% { scale: 1.04 0.96; } }
+@keyframes m-tilt { 0%, 84%, 100% { rotate: 0deg; } 88% { rotate: -9deg; } 94% { rotate: 5deg; } }
+@media (prefers-reduced-motion: reduce) { .ai-chip, .ai-blink, .ai-wave, .ai-glow, .m-blink, .m-wave, .m-glow, .m-alive, .hint-rays { animation: none; } }
 /* AiIdle (ai/chat.tsx): the robot bobs over a shadow that shrinks as it rises, the glow breathes, a dotted beam and a
    packet run from it to the skill in hand; that skill's card writes itself out (sk-*). */
 .ai-float { animation: ai-float 3s ease-in-out infinite; }
@@ -394,8 +411,10 @@
 /* let go: glides onto its edge with a little overshoot, then lands (a squash, guide.tsx LAND); while dragged: lifted, follows the
    pointer with no lag (gb-drag) */
 button.gb-orb { transition: left 0.55s cubic-bezier(0.34, 1.45, 0.64, 1), top 0.55s cubic-bezier(0.34, 1.45, 0.64, 1),
-  scale var(--dur-short) var(--ease-out), translate var(--dur-long) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
+  scale var(--dur-short) var(--ease-out), opacity var(--dur-short) var(--ease-out), translate var(--dur-long) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); }
 button.gb-orb:active { scale: 0.9; }
+/* gb-away: the chat is open — the bot shrinks into it and fades, and grows back as it closes (!important: over gb-pop's keyframes) */
+button.gb-orb.gb-away { scale: 0.4 !important; opacity: 0 !important; pointer-events: none; }
 button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-shadow var(--dur-short) var(--ease-out); scale: 1.12; cursor: grabbing;
   box-shadow: 0 18px 36px -10px color-mix(in oklch, var(--color-hl) 70%, transparent), 0 4px 10px -4px color-mix(in oklch, var(--color-ink) 30%, transparent); }
 /* gb-still: no bob (top bar button, the right-edge bot). gb-peek: half tucked behind the right edge, slides out on hover. */
@@ -481,7 +500,7 @@ button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-
 .md :is(ul, ol) { padding-left: 1.4em; } .md ul { list-style: disc; } .md ol { list-style: decimal; }
 .md li + li, .md li > :is(ul, ol) { margin-top: 0.25em; }
 .md li::marker { color: var(--color-ink-3); }
-.md a { color: var(--color-hl-2); text-decoration: underline; text-underline-offset: 2px; }
+.md a:not(.no-underline) { color: var(--color-hl-2); text-decoration: underline; text-underline-offset: 2px; } /* not the ticket chip (TicketRef) */
 .md strong { font-weight: 700; }
 .md code { font-family: var(--font-mono); font-size: 0.875em; }
 .md :not(pre) > code { border-radius: 4px; background: var(--color-code-wash); padding: 0.05em 0.3em; }

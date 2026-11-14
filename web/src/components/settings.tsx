@@ -1,39 +1,41 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, Check, ChevronDown, Download, ExternalLink, GitBranch, Grid2x2, ImagePlus, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, Palette, PencilLine, PenLine, Pipette, RotateCcw, RotateCw, Search, Send, SlidersHorizontal, Smile, Sparkles, Sun, TriangleAlert, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronDown, Database, Download, ExternalLink, FolderInput, GitBranch, Grid2x2, ImagePlus, Info, Keyboard, Lightbulb, Loader2, Monitor, Moon, Palette, PencilLine, PenLine, Pipette, RotateCcw, RotateCw, Search, Send, SlidersHorizontal, Smile, Sparkles, Sun, Trash2, TriangleAlert, X, type LucideIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { AiAccounts, ModelEffortPicker, PrefsSection, useAiPrefs } from "@/components/ai";
-import { PROVIDERS } from "@/components/ai/prefs";
+import { AiAccounts, ModelEffortPicker, Picks, PrefsSection, useAiPrefs } from "@/components/ai";
+import { type Effort, PROVIDERS } from "@/components/ai/prefs";
 import { CHIP, Dropdown } from "@/components/ui/dropdown";
 import { FONT_SIZES, FONTS, type FontId } from "@/lib/fonts";
-import { TopBar } from "@/components/shell";
+import { Toaster, TopBar } from "@/components/shell";
 import { YtLogo } from "@/components/yt-logo";
 import { LookPreview } from "@/components/look-preview";
 import { AiFetching, UpdateHero } from "@/components/ai/fetching";
 import { AiBot, AiBotIcon, AiPromptBox, AiThinking, Mascot } from "@/components/ai/chat";
 import { BotStage } from "@/components/ui/empty";
-import { type MascotStyle, mascotUrl, useMascotActions, useMascotError, useMascotJobs } from "@/lib/mascot";
+import { mascotImage, type MascotStyle, mascotUrl, referenceImage, useMascotActions, useMascotError, useMascotJobs } from "@/lib/mascot";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { ConfirmDialog, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
+import { PurgeChat } from "@/components/purge-chat";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Pill, Segmented } from "@/components/ui/segmented";
-import { type Key, type Lang, saveLang, t as tPlain, tMaybe, tr, useT } from "@/lib/i18n";
+import { fmtBytes, fmtDay, fmtNum, type Key, type Lang, saveLang, t as tPlain, tMaybe, tr, useT } from "@/lib/i18n";
 import { Textarea } from "@/components/ui/textarea";
 import { type ShortcutGroup, ShortcutList, TG_KEYS, YT_KEYS } from "@/components/shortcuts";
 import { RulesSection } from "@/components/tools-menu";
 import { PromptManager } from "@/components/yt/prompts";
 import { WorkflowSection } from "@/components/yt/workflow";
-import { api, ApiError, errorText, statusQuery } from "@/lib/api";
+import { api, ApiError, type DataStats, errorText, statusQuery } from "@/lib/api";
 import { clearDrafts, fold, toast } from "@/lib/inbox";
 import { AUTO_BRIEF } from "@/components/briefing-page";
-import { ACCENTS, applyRowActions, CHROMA_MAX, CHROMA_MIN, hexToAccent, MIXES, oklchHex, applyTheme, INTRO_MAX, type Look, MASCOT_MAX, MASCOTS, onPrefs, readMascot, useMascot, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, getPref, type ReportAt, saveLook, saveQuotaAgent, useQuotaAgent, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, type BotCorner, type BotMode, type BotSize, useBotCode, useBotDock, useBotMode, useBotShow, useBotSize, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
+import { ACCENTS, applyRowActions, CHROMA_MAX, CHROMA_MIN, hexToAccent, MIXES, oklchHex, applyTheme, INTRO_MAX, type Look, MASCOT_MAX, onPrefs, readMascot, roleMascot, useMascot, OVERDUE_CHOICES, PLATFORMS, readIntro, readLook, readNotify, readOverdueHours, readPlatform, readReportAt, readRowActions, readTheme, readYtRole, getPref, readJson, type ReportAt, saveLook, saveQuotaAgent, useQuotaAgent, saveReportAt, saveYtRole, setPref, QA_REMIND_CHOICES, type BotCorner, type BotMode, type BotSize, useBotCode, useBotDock, useBotMode, useBotShow, useBotSize, qaRemindLabel, readQaAnswerBy, useQaRemind, type ThemePref, type UiStyle, YT_ROLES, type YtRole } from "@/lib/prefs";
 import { cn } from "@/lib/utils";
 import { yt } from "@/lib/yt";
 
-type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "shortcuts" | "github";
+type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github";
 type Section = "me" | "services" | "system";
 const SECTIONS: [Section, Key][] = [["me", "Cá nhân"], ["services", "Dịch vụ"], ["system", "Hệ thống"]];
 /** id, name, icon, the nav's one-liner, the page's lead, the nav section. Chung holds only what every module reads. */
@@ -44,6 +46,7 @@ const GROUPS: [GroupId, Key, React.ComponentType<{ className?: string }>, Key, K
   ["telegram", "Telegram", Send, "Tài khoản, hàng chờ, Q&A", "Tài khoản lưu trên máy này (data/); các mục khác lưu trên trình duyệt này.", "services"],
   ["youtrack", "YouTrack", YtLogo, "Kết nối, prompt, workflow", "Kết nối, hướng dẫn cho AI, kho prompt, workflow và báo cáo release.", "services"],
   ["ai", "AI", Sparkles, "Model, tài khoản CLI", "CLI nào chạy các tính năng AI, model/effort cho từng loại việc và tài khoản của từng CLI.", "services"],
+  ["data", "Dữ liệu", Database, "Dung lượng, dọn dẹp", "Những gì app lưu trên máy này và trình duyệt này: mỗi phần chiếm bao nhiêu, xóa từng phần khi cần.", "system"],
   ["shortcuts", "Phím tắt", Keyboard, "Inbox và YouTrack", "Phím một chữ không chạy khi đang gõ trong ô nhập. Bấm ? trong Inbox để mở nhanh.", "system"],
   ["github", "Cập nhật", GitBranch, "Bản mới từ GitHub", "Lấy bản mới từ GitHub rồi khởi động lại server.", "system"],
 ];
@@ -146,9 +149,11 @@ export function SettingsPage() {
           {tab === "youtrack" && <YouTrackGroup view={ytView} setView={setYtView} />}
           {tab === "ai" && <AiGroup />}
           {tab === "github" && <Card title="Cập nhật app" info="Bản cài: tải gói mới từ GitHub Releases. Bản git: git pull, build lại giao diện (cần quyền đọc repo)."><UpdateSection /></Card>}
+          {tab === "data" && <DataGroup />}
           {tab === "shortcuts" && <ShortcutsGroup />}
         </main>
       </div>
+      <Toaster />
     </div>
   );
 }
@@ -165,7 +170,7 @@ const ENTRIES: Entry[] = [
   { t: "Chế độ màu sáng / tối", g: "look", card: "Chủ đề và chữ", k: "theme dark light he thong" },
   { t: "Phong cách giao diện", g: "look", card: "Chủ đề và chữ", k: "don gian mac dinh ruc ro style font chu co chu" },
   { t: "Màu chủ đạo và gradient", g: "look", card: "Màu sắc", k: "accent hue mau do dam pha san" },
-  { t: "Linh vật AI (icon robot)", g: "look", card: "Linh vật AI", k: "robot icon mascot loading emoji anh avatar" },
+  { t: "Linh vật AI (icon robot)", g: "look", card: "Linh vật AI", k: "robot icon mascot loading anh avatar rồng cú cáo dragon owl fox vai trò role" },
   { t: "Trợ lý biết tuốt (bot nổi)", g: "bot", card: "Hiển thị", k: "bot huong dan guide help f1 kich thuoc size goc canh mep neo vi tri an hien cach hien thi noi co dinh ben phai thanh cong cu" },
   { t: "Model cho trợ lý", g: "bot", card: "Cách trả lời", k: "bot doc code model effort" },
   { t: "Tài khoản Telegram, API ID/Hash", g: "telegram", card: "Tài khoản Telegram", k: "dang nhap login so dien thoai 2fa ma" },
@@ -177,7 +182,7 @@ const ENTRIES: Entry[] = [
   { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Q&A", k: "qa tag nguoi duoc hoi tra loi" },
   { t: "Tự tóm tắt Briefing", g: "telegram", card: "Briefing", k: "tu dong nen briefing auto" },
   { t: "Luôn bỏ qua người gửi / từ khóa", g: "telegram", card: "Luôn bỏ qua", k: "tat bat lai thong bao mute quy tac rule tu danh dau da xu ly" },
-  { t: "Xóa nháp và danh sách Báo lại", g: "telegram", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
+  { t: "Xóa nháp và danh sách Báo lại", g: "data", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
   { t: "Tài khoản YouTrack, URL và token", g: "youtrack", card: "Tài khoản YouTrack", view: "connect", k: "ket noi" },
   { t: "Báo cáo release tự động", g: "youtrack", card: "Báo cáo release", view: "connect", k: "report lich hang ngay" },
   { t: "Instructions cho AI (YouTrack)", g: "youtrack", card: "Instructions cho AI", view: "ai", k: "huong dan notes team" },
@@ -191,6 +196,9 @@ const ENTRIES: Entry[] = [
   { t: "Ẩn SĐT / email khi gửi AI", g: "ai", card: "Quyền riêng tư", k: "privacy redact so dien thoai email" },
   { t: "Cập nhật app từ GitHub", g: "github", card: "Cập nhật app", k: "update phien ban moi" },
   { t: "Tự động cập nhật", g: "github", card: "Cập nhật app", k: "auto update" },
+  { t: "Dung lượng dữ liệu trên máy", g: "data", card: "Dung lượng", k: "database db sqlite mb dung luong disk storage o dia" },
+  { t: "Xóa tin cũ, phiên AI đã xong, ảnh, log", g: "data", card: "Dọn trong database", k: "don dep clear clean xoa tin cu anh log lich su phien" },
+  { t: "Dung lượng tin theo từng nhóm", g: "data", card: "Tin theo nhóm", k: "xoa du lieu nhom group purge" },
   { t: "Phím tắt Telegram Inbox và YouTrack", g: "shortcuts", k: "keyboard shortcut" },
 ];
 const GROUP_NAME = Object.fromEntries(GROUPS.map(([id, name]) => [id, name])) as Record<GroupId, Key>;
@@ -433,7 +441,8 @@ const STYLES: { value: UiStyle; label: Key; hint: Key; pro?: boolean }[] = [
 const WHEEL = `linear-gradient(to right in oklch, ${Array.from({ length: 37 }, (_, i) => `oklch(66% 0.17 ${i * 10})`).join()})`;
 const swatch = (h: number, k = 1) => `oklch(58% ${0.13 * k} ${h})`;
 
-/** The AI mascot (every AI loading scene, empty page, AI box): the robot, an emoji, or an image of the member's own. */
+/** The AI mascot (every AI loading scene, empty page, AI box): the robot, a role's (the member's own by default), an
+ *  image of theirs or an AI drawing. */
 function MascotRow() {
   const t = useT();
   const m = useMascot();
@@ -445,24 +454,20 @@ function MascotRow() {
     history.replaceState(null, "", location.pathname + location.hash);
     setDraw(true); // eslint-disable-line react-hooks/set-state-in-effect -- a one-off read of the URL on arrival
   }, []);
-  const pick = (v: string) => setErr(setPref("mascot", v || null) ? "" : t("Không lưu được: bộ nhớ trình duyệt đã đầy."));
-  const upload = (f?: File) => {
-    if (!f) return;
-    if (!f.type.startsWith("image/")) return setErr(t("Chỉ nhận file ảnh."));
-    if (f.size > MASCOT_MAX) return setErr(t("Ảnh quá lớn, tối đa {n} KB.", { n: MASCOT_MAX / 1000 }));
-    const r = new FileReader();
-    r.onload = () => pick(String(r.result));
-    r.onerror = () => setErr(t("Không đọc được file ảnh."));
-    r.readAsDataURL(f);
-  };
+  // Rule: never picked, the mascot follows the role (readMascot); once picked, any pick (even the role's own) stays
+  // through a change of role.
+  const pick = (v: string) => setErr(setPref("mascot", v) ? "" : t("Không lưu được: bộ nhớ trình duyệt đã đầy."));
+  const upload = (f?: File) => { if (f) mascotImage(f).then(pick, setErr); };
   const img = m.startsWith("data:image/") ? m : "";
   const tile = (on: boolean) => cn("grid size-11 place-items-center rounded-xl border transition-[background-color,border-color] duration-(--dur-micro)",
     on ? "border-hl bg-hl-wash" : "border-rule hover:border-rule-2 hover:bg-paper-2");
-  const opts: [string, string][] = [["", t("Robot (mặc định)")], ...MASCOTS.map((e): [string, string] => [e, e]), ...(img ? [[img, t("Ảnh của bạn")] as [string, string]] : [])];
-  const upHint = t("Tải ảnh của bạn (PNG, JPG, GIF, SVG, tối đa {n} KB)", { n: MASCOT_MAX / 1000 });
+  const mine = roleMascot();
+  const opts: [string, string][] = [["robot", t("Robot")], ...ROLES.map(([v, k]): [string, string] => [v, v === mine ? t("{name} (mặc định của vai trò bạn)", { name: t(k) }) : t(k)]),
+    ...(img ? [[img, t("Ảnh của bạn")] as [string, string]] : [])];
+  const upHint = t("Tải ảnh của bạn: PNG, JPG, WebP tự xóa nền một màu / ô caro; GIF, SVG tối đa {n} KB", { n: MASCOT_MAX / 1000 });
   return (
     <div className="grid gap-2.5 pt-1">
-      <p className={cn("text-xs leading-relaxed", err ? "text-error" : "text-ink-3")}>{err || t("Thay robot ở mọi cảnh AI đang tải, trang trống và ô AI; lưu trên trình duyệt này.")}</p>
+      <p className={cn("text-xs leading-relaxed", err ? "text-error" : "text-ink-3")}>{err || t("Mặc định theo vai trò (Cài đặt chung › Vai trò); hiện ở mọi cảnh AI đang tải, trang trống và ô AI; lưu trên trình duyệt này.")}</p>
       <div role="radiogroup" aria-label={t("Linh vật AI")} className="flex flex-wrap gap-1.5">
         {opts.map(([v, name]) => (
           <Hint key={v === img && img ? "img" : v} side="bottom" text={name}>
@@ -484,11 +489,14 @@ function MascotRow() {
           </label>
         </Hint>
       </div>
-      {draw && <MascotDraw onClose={() => setDraw(false)} onUse={(v) => { pick(v); setDraw(false); }} />}
+      {draw && <MascotDraw onClose={() => setDraw(false)} />}
     </div>
   );
 }
 
+const ROLES: [string, Key][] = [
+  ["role:dev", "Rồng trắng lập trình viên (Dev)"], ["role:qa", "Cú tinh thông cầm kính lúp (QA/QC)"], ["role:po", "Cáo thông thái chỉ đường (PO/PM)"],
+];
 const MASCOT_STYLES: { value: MascotStyle; label: Key; hint: Key; icon: LucideIcon }[] = [
   { value: "cute", label: "Dễ thương", hint: "Mắt to, khối tròn, màu phẳng", icon: Smile },
   { value: "pixel", label: "Pixel", hint: "Ô vuông như game cổ điển", icon: Grid2x2 },
@@ -496,27 +504,48 @@ const MASCOT_STYLES: { value: MascotStyle; label: Key; hint: Key; icon: LucideIc
 ];
 const MASCOT_IDEAS: Key[] = ["Mèo cam đeo kính", "Cáo nhỏ cầm laptop", "Gấu trúc phi hành gia", "Cú mèo đọc sách", "Bạch tuộc lập trình viên", "Khủng long xanh dễ thương"];
 const MASCOT_DRAWING: Key[] = ["Đang phác dáng…", "Đang vẽ đôi mắt…", "Đang tô màu…", "Thêm chút lấp lánh…"];
+const MASCOT_RIGGING: Key[] = ["Đang tìm đôi mắt…", "Đang gắn khớp tay…", "Đang thử chớp mắt…"];
 /** Sketch strokes (80 × 80): a head, two ears, two eyes, a smile; each draws itself in turn (.mascot-sketch). */
 const SKETCH = ["M40 18c14 0 25 10 25 24s-11 24-25 24-25-10-25-24 11-24 25-24z", "M21 30 17 12l14 9", "M59 30l4-18-14 9", "M32 40v3", "M48 40v3", "M34 52q6 5 12 0"];
+
+type MascotAi = { p: string; model: string; effort: Effort };
+/** The model / effort AI vẽ draws with, on the drafts CLI: the last one picked in the dialog (this browser), else the
+ *  "Tóm tắt, soạn nháp" picks. `pick`: what to send, undefined until the picks have loaded (the server's own then). */
+function useMascotAi() {
+  const { on, info, picks, p } = useAiPrefs();
+  const id = on("chat"), k = picks(id), c = info(id);
+  const [mine, setMine] = useState(() => readJson("mascotAi") as MascotAi | null);
+  const cur: MascotAi = mine?.p === id && typeof mine.model === "string" ? mine : { p: id, model: k.model, effort: k.effort };
+  const set = (v: Partial<MascotAi>) => { const n = { ...cur, ...v }; setMine(n); setPref("mascotAi", JSON.stringify(n)); };
+  return { c, cur, set, pick: c && p ? { model: cur.model, effort: cur.effort } : undefined };
+}
 
 /** "AI vẽ linh vật": a description (and a style) in, an SVG mascot out. The server draws in the background (lib/mascot),
  *  so the dialog may close and a toast says when it is done. The mascot stands on the robot's stage; while the AI draws, a
  *  sketch draws itself there with the current mascot as the artist. Every drawing stays pickable, previewed where the
  *  mascot really shows (nav, button, AI thinking). */
-function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string) => void }) {
+function MascotDraw({ onClose }: { onClose: () => void }) {
   const t = useT();
   const [text, setText] = useState("");
   const [style, setStyle] = useState<MascotStyle>("cute");
   const [pick, setPick] = useState<string | null>(null); // the drawing picked; null = the newest
+  const [ref, setRef] = useState(""); // a reference picture to draw after (data: URL)
+  const [refErr, setRefErr] = useState("");
+  const attach = (f?: File) => { if (f) referenceImage(f).then((v) => { setRef(v); setRefErr(""); }, setRefErr); };
   const jobs = useMascotJobs().data ?? [];
-  const { start, stop } = useMascotActions();
+  const { start, stop, use } = useMascotActions();
+  const ai = useMascotAi();
   const why = useMascotError();
   const shots = jobs.filter((j) => j.state === "done");
   const running = jobs.find((j) => j.state === "running");
   const failed = jobs.at(-1)?.state === "error" ? jobs.at(-1) : undefined;
   const shot = shots.find((j) => j.id === pick) ?? shots.at(-1);
-  const busy = !!running || start.isPending;
-  const run = (v = text) => { if (v.trim() && !busy) { setPick(null); start.mutate({ description: v.trim(), style }); } };
+  const rigging = use.isPending; // Dùng linh vật này: the AI readies its parts to move
+  const busy = !!running || start.isPending || rigging;
+  const run = (v = text) => {
+    const description = v.trim() || (ref ? t("Theo ảnh tham khảo") : "");
+    if (description && !busy) { setPick(null); start.mutate({ description, style, image: ref, ...ai.pick }); }
+  };
   const verb = shots.length ? t("Vẽ lại") : t("Vẽ");
   const StyleIcon = MASCOT_STYLES.find((o) => o.value === style)!.icon;
   return (
@@ -524,7 +553,7 @@ function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string
       <DialogContent className="gap-4 sm:max-w-lg">
         <div className="-mx-(--dlg-p) -mt-(--dlg-p) grid justify-items-center gap-1 bg-radial-[at_50%_45%] from-hl-wash to-transparent to-70% px-(--dlg-p) pt-5">
           <BotStage>
-            {busy ? <>
+            {busy && !rigging ? <>
               <svg viewBox="0 0 80 80" className="relative size-24 overflow-visible" fill="none" stroke="var(--color-hl-2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 {SKETCH.map((d, k) => <path key={d} d={d} pathLength={1} className="mascot-sketch" style={{ animationDelay: `${k * 0.18}s` }} />)}
               </svg>
@@ -532,7 +561,7 @@ function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string
               <AiBot className="ai-hop absolute right-1 bottom-4 size-10 drop-shadow-sm" />
             </> : (
               <span key={shot?.id ?? "now"} className="sk-pop relative grid place-items-center">
-                <Mascot m={shot ? mascotUrl(shot.svg) : readMascot()} className="ai-float size-24 drop-shadow-lg" />
+                <Mascot m={shot ? mascotUrl(shot.svg) : readMascot()} className={cn("size-24 drop-shadow-lg", rigging ? "ai-hop" : "ai-float")} />
                 {shot && <>
                   <Sparkles className="ai-twinkle absolute -top-2 -right-3 size-4 text-hl-2" />
                   <Sparkles className="ai-twinkle absolute bottom-3 -left-4 size-3 text-hl-2/70 [animation-delay:0.3s]" />
@@ -543,9 +572,9 @@ function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string
           <DialogTitle className="text-center">{t("AI vẽ linh vật")}</DialogTitle>
           <div className="grid min-h-7 justify-items-center gap-0.5 text-center">
             {busy ? <>
-              <AiThinking lines={MASCOT_DRAWING.map((k) => t(k))} />
-              <p className="text-xs text-ink-3">{t("Có thể đóng cửa sổ này: AI vẽ tiếp ở nền, xong sẽ báo.")}</p>
-            </> : start.isError ? <p role="alert" className="text-sm text-error">{errorText(start.error, {}, t("Không bắt đầu vẽ được."))}</p>
+              <AiThinking lines={(rigging ? MASCOT_RIGGING : MASCOT_DRAWING).map((k) => t(k))} />
+              <p className="text-xs text-ink-3">{rigging ? t("Có thể đóng cửa sổ này: xong linh vật tự được dùng.") : t("Có thể đóng cửa sổ này: AI vẽ tiếp ở nền, xong sẽ báo.")}</p>
+            </> : start.isError ? <p role="alert" className="text-sm text-error">{errorText(start.error, { mascot_image_invalid: t("Ảnh tham khảo không đọc được, thử ảnh PNG / JPG khác."), ai_agent_missing: t("Không tìm thấy AI CLI để đọc ảnh, xem Cài đặt › AI.") }, t("Không bắt đầu vẽ được."))}</p>
               : failed ? <p role="alert" className="text-sm text-error">{why(failed)}</p>
               : shot ? <p className="max-w-sm truncate text-sm text-ink-2">“{shot.description}”</p>
               : <p className="text-sm text-ink-3">{t("Linh vật hiện tại. Mô tả con vật bạn muốn, AI vẽ thành biểu tượng.")}</p>}
@@ -577,12 +606,15 @@ function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string
               </div>
             </div>
           )}
-          <Button type="button" onClick={() => onUse(mascotUrl(shot.svg))}><Check aria-hidden />{t("Dùng linh vật này")}</Button>
+          <Hint text={t("AI tách mắt, tay của hình để linh vật chớp mắt, vẫy tay như robot rồi dùng nó")}>
+            <Button type="button" onClick={() => use.mutate({ job: shot, ...ai.pick }, { onSettled: onClose })}><Check aria-hidden />{t("Dùng linh vật này")}</Button>
+          </Hint>
         </>}
 
         <AiPromptBox aria-label={t("Mô tả linh vật")} autoFocus maxLength={200} value={text} onChange={setText} onSend={() => run()}
           placeholder={t("Ví dụ: chú mèo cam đeo kính, cầm laptop")}
-          running={busy} onStop={() => running && stop.mutate(running.id)} stopping={stop.isPending}
+          onPaste={(e) => { const f = [...e.clipboardData.files].find((x) => x.type.startsWith("image/")); if (f) { e.preventDefault(); attach(f); } }}
+          running={busy} onStop={running ? () => stop.mutate(running.id) : undefined} stopping={stop.isPending}
           top={!shots.length && !busy && (
             <div className="flex flex-wrap gap-1.5">
               {MASCOT_IDEAS.map((k) => (
@@ -593,17 +625,48 @@ function MascotDraw({ onClose, onUse }: { onClose: () => void; onUse: (v: string
               ))}
             </div>
           )}
-          tools={<Dropdown label={t("Phong cách vẽ")} value={style} onChange={(v) => setStyle(v as MascotStyle)} trigger={CHIP}
-            prefix={<StyleIcon aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
-            options={MASCOT_STYLES.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))} />}
+          tools={<>
+            <Dropdown label={t("Phong cách vẽ")} value={style} onChange={(v) => setStyle(v as MascotStyle)} trigger={CHIP}
+              prefix={<StyleIcon aria-hidden className="size-3.5 shrink-0 text-ink-3" />}
+              options={MASCOT_STYLES.map((o) => ({ value: o.value, label: t(o.label), hint: t(o.hint) }))} />
+            {ai.c && (
+              <Hint side="bottom" text={t("Model {name} vẽ linh vật; mặc định theo \"Tóm tắt, soạn nháp\" ở Cài đặt › AI", { name: ai.c.name })}>
+                <span role="group" aria-label={t("Model và effort vẽ linh vật")} className="flex min-w-0 items-center gap-1.5">
+                  <Picks c={ai.c} label={t("vẽ linh vật")} model={ai.cur.model} effort={ai.cur.effort} chip variant="short"
+                    modelClass="flex min-w-0 max-w-36" effortClass="w-20" onModel={(model) => ai.set({ model })} onEffort={(effort) => ai.set({ effort })} />
+                </span>
+              </Hint>
+            )}
+            {ref ? (
+              <span className={cn(CHIP, "pl-1")}>
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local data: URL */}
+                <img src={ref} alt="" className="size-5 rounded-full object-cover" />
+                {t("Ảnh tham khảo")}
+                <Hint text={t("Bỏ ảnh tham khảo")}>
+                  <button type="button" aria-label={t("Bỏ ảnh tham khảo")} onClick={() => setRef("")} className="grid size-5 place-items-center rounded-full hover:bg-paper">
+                    <X className="size-3" aria-hidden />
+                  </button>
+                </Hint>
+              </span>
+            ) : (
+              <Hint text={t("Thêm ảnh tham khảo để AI vẽ theo (PNG, JPG, WebP, GIF; có thể dán ảnh)")}>
+                <label className={cn(CHIP, "relative pr-2.5 has-focus-visible:ring-2 has-focus-visible:ring-hl")}>
+                  <ImagePlus className="size-3.5 text-ink-3" aria-hidden />{t("Ảnh tham khảo")}
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" aria-label={t("Thêm ảnh tham khảo")}
+                    className="absolute inset-0 size-full cursor-pointer opacity-0" onChange={(e) => { attach(e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+              </Hint>
+            )}
+          </>}
           actions={!busy && (
             <Hint text={verb}>
-              <Button type="button" size="sm" aria-label={verb} disabled={!text.trim()} onClick={() => run()} className="rounded-full bg-hl">
+              <Button type="button" size="sm" aria-label={verb} disabled={!text.trim() && !ref} onClick={() => run()} className="rounded-full bg-hl">
                 <Sparkles aria-hidden />{verb}
               </Button>
             </Hint>
           )} />
         {stop.isError && <p role="alert" className="text-xs text-error">{errorText(stop.error, {}, t("Không dừng được."))}</p>}
+        {refErr && <p role="alert" className="text-xs text-error">{refErr}</p>}
       </DialogContent>
     </Dialog>
   );
@@ -798,18 +861,10 @@ function TelegramGroup() {
       </Row>
     </Card>
 
-    <Card advanced title="Luôn bỏ qua" info="Người gửi (thêm bằng “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo; tin của người gửi trong danh sách không vào tóm tắt Briefing / Digest. Xóa một dòng để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
+    <Card advanced title="Luôn bỏ qua" info="Người gửi (thêm bằng ô Tên người gửi ở đây, hoặc “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo; tin của người gửi trong danh sách không vào tóm tắt Briefing / Digest. Bấm × trên chip để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
       <RulesSection />
     </Card>
 
-    <Card advanced title="Dữ liệu trên trình duyệt này">
-      <Row label={t("Nháp trả lời")} desc={t("Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.")}>
-        <Button type="button" size="sm" variant="outline"
-          onClick={() => { clearDrafts(); toast({ text: t("Đã xóa nháp trên máy này") }); }}>
-          {t("Xóa nháp")}
-        </Button>
-      </Row>
-    </Card>
   </>;
 }
 
@@ -1159,6 +1214,17 @@ function AiGroup() {
 
 type UpdateInfo = { branch: string; current: string; behind: number; dirty: boolean; auto: boolean; error?: string; updated?: boolean; commits: { sha: string; subject: string; when: string }[] };
 
+/** After the server was asked to restart (update, data move): reload the page once the new one answers.
+ *  False after a minute without it. */
+async function waitRestart() {
+  await new Promise((ok) => setTimeout(ok, 2000));
+  for (let i = 0; i < 60; i++) {
+    if (await fetch("/health", { cache: "no-store" }).then((x) => x.ok, () => false)) { location.reload(); return true; }
+    await new Promise((ok) => setTimeout(ok, 1000));
+  }
+  return false;
+}
+
 /** git fetch on open; "Cập nhật" pulls, rebuilds, restarts the server, then reloads this page. */
 function UpdateSection() {
   const t = useT();
@@ -1174,11 +1240,7 @@ function UpdateSection() {
       if (!r.updated) { setAsk(false); return void qc.invalidateQueries({ queryKey: ["update"] }); }
       setRestarting(true);
       setRestartFailed(false);
-      await new Promise((ok) => setTimeout(ok, 2000));
-      for (let i = 0; i < 60; i++) {
-        if (await fetch("/health", { cache: "no-store" }).then((x) => x.ok, () => false)) return location.reload();
-        await new Promise((ok) => setTimeout(ok, 1000));
-      }
+      if (await waitRestart()) return;
       setRestarting(false); // a minute without the server: say so instead of spinning forever
       setRestartFailed(true);
       setAsk(false);
@@ -1352,6 +1414,383 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
 }
 
 // ---- Phím tắt -----------------------------------------------------------------------------------
+
+// ---- Dữ liệu ------------------------------------------------------------------------------------
+
+type DataItem = DataStats["items"][number];
+/** The parts of data/ on disk (local_data.DataPart ids): name and categorical colour. The rest of data/ is "Khác". */
+const PARTS: Record<string, [Key, string]> = {
+  db: ["Database", "var(--cat-2)"],
+  sessions: ["Phiên AI", "var(--cat-4)"],
+  media: ["Ảnh tag đã tải", "var(--cat-6)"],
+  runs: ["Lịch sử chạy AI", "var(--cat-3)"],
+  logs: ["Log server", "var(--cat-5)"],
+  login: ["Đăng nhập Telegram", "var(--cat-1)"],
+  config: ["Cấu hình", "var(--color-ink-3)"],
+};
+/** One clear (local_data.Item): its tile, its count unit, and the question's "Sẽ mất" / "Giữ nguyên". `safe`: nothing
+ *  is really lost (it comes back on its own). {n} in name / lose: the age cut-off in days. */
+type Clear = { name: Key; desc: Key; unit: Key; ask: Key; lose: Key; keep: Key; safe?: boolean };
+const CLEARS: Record<string, Clear> = {
+  messages: {
+    name: "Tin đã xử lý cũ hơn {n} ngày", desc: "Tag đã xong và tin bạn đã trả lời.", unit: "{n} tin", ask: "Xóa tin đã xử lý cũ?",
+    lose: "Các tin này biến khỏi Đã xử lý, tìm kiếm và thống kê.",
+    keep: "Tin trên Telegram; tin chưa xử lý, tin ghim, tin gắn với phiên AI hoặc Báo lại.",
+  },
+  digests: {
+    name: "Bản tóm tắt Briefing", desc: "Bản tóm tắt gần nhất của mỗi nhóm và mốc đã đọc tới.", unit: "{n} nhóm", ask: "Xóa bản tóm tắt Briefing?",
+    lose: "Briefing trống tới lần tóm tắt sau; lần đó đọc lại cả khoảng thời gian, tốn một lượt AI mỗi nhóm.",
+    keep: "Quyền cho AI đọc nhóm và cài đặt Briefing.",
+  },
+  outbox: {
+    name: "Lịch sử gửi cũ hơn {n} ngày", desc: "Mã truy vết R-… của tin đã gửi thành công.", unit: "{n} tin", ask: "Xóa lịch sử gửi cũ?",
+    lose: "Không tra được mã R-… của các tin này nữa.",
+    keep: "Tin trên Telegram; tin đang gửi hoặc gửi lỗi.",
+  },
+  sessions: {
+    name: "Phiên AI đã xong", desc: "AI Agent và Trợ lý AI: lịch sử chat, kết quả, tệp đính kèm.", unit: "{n} phiên", ask: "Xóa các phiên AI đã xong?",
+    lose: "Phiên đã xong biến khỏi danh sách AI Agent / Trợ lý AI, kèm lịch sử chat và kết quả.",
+    keep: "Phiên đang chạy hoặc chưa xong; code đã sửa trong dự án.",
+  },
+  media: {
+    name: "Ảnh tag đã tải", desc: "Ảnh trong tin tag, tải về khi bạn mở. Ảnh quá 30 ngày tự xóa khi khởi động.", unit: "{n} ảnh", ask: "Xóa ảnh đã tải?",
+    lose: "Bản lưu trên máy này của ảnh.", keep: "Ảnh gốc trên Telegram: mở tin là tải lại (cần Telegram đang kết nối).", safe: true,
+  },
+  runs: {
+    name: "Lịch sử chạy AI", desc: "Từng lần chạy AI trong app: model, token, chi phí. Lần chạy quá 90 ngày tự cắt khi khởi động.", unit: "{n} lần chạy", ask: "Xóa lịch sử chạy AI?",
+    lose: "Lịch sử và thống kê chi phí ở Cài đặt › AI › Tài khoản đếm lại từ đầu.",
+    keep: "Lần chạy ngoài app (Claude Code, Codex): được đọc từ máy.",
+  },
+  logs: {
+    name: "Log server", desc: "Nhật ký dò lỗi của bản chạy từ git. Quá 5 MB tự chuyển thành server.log.1 khi khởi động.", unit: "{n} tệp", ask: "Xóa log server?",
+    lose: "Nhật ký các lỗi đã xảy ra.", keep: "App chạy bình thường; log mới vẫn ghi tiếp.",
+  },
+};
+/** What each table of dashboard.sqlite3 holds. */
+const TABLES: Record<string, Key> = {
+  messages: "Tin tag và tin bạn trả lời", chats: "Nhóm đã theo dõi", outbox: "Tin gửi đi", rules: "Luôn bỏ qua, quy tắc Vòng BE",
+  tasks: "Phiên AI", task_refs: "Tin gắn với phiên AI", projects: "Dự án", changes: "Nhật ký thay đổi (tự giữ 50.000 dòng)",
+  digest_consents: "Đồng ý gửi nhóm cho Digest", digests: "Bản tóm tắt Briefing", qa_marks: "Q&A đã đóng / gỡ", loop_back: "Báo lại",
+  metadata: "Thông tin nội bộ",
+};
+
+const dataQuery = { queryKey: ["data"], queryFn: ({ signal }: { signal: AbortSignal }) => api<DataStats>("/data", { signal }) };
+const pct = (n: number, of: number) => Math.round((n / Math.max(1, of)) * 100);
+
+/** Cài đặt › Dữ liệu: a dashboard of how big each part of data/ is, then one tile per thing you can clear (its size,
+ *  age and whether it comes back), the database by group and by table, and this browser's drafts. */
+function DataGroup() {
+  const t = useT();
+  const q = useQuery(dataQuery);
+  const [asking, setAsking] = useState<DataItem | null>(null);
+  const [purging, setPurging] = useState<{ chat_id: string; title: string } | null>(null);
+  const d = q.data;
+  const drafts = (
+    <Card title="Dữ liệu trên trình duyệt này">
+      <Row label={t("Nháp trả lời")} desc={t("Chỉ lưu trên máy này; tin đã xử lý tự xóa nháp của nó.")}>
+        <Button type="button" size="sm" variant="outline"
+          onClick={() => { clearDrafts(); toast({ text: t("Đã xóa nháp trên máy này") }); }}>
+          {t("Xóa nháp")}
+        </Button>
+      </Row>
+    </Card>
+  );
+  if (q.isError) return <>
+    <Card title="Dung lượng">
+      <Row label={<StatusLine tone="error">{errorText(q.error, {}, t("Không đọc được dung lượng dữ liệu."))}</StatusLine>}>
+        <Button type="button" size="sm" variant="outline" onClick={() => q.refetch()}>{t("Thử lại")}</Button>
+      </Row>
+    </Card>
+    {drafts}
+  </>;
+  if (!d) return <>
+    <Skeleton className="h-64 rounded-[var(--radius-card)]" />
+    <div className="grid gap-3 sm:grid-cols-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-44 rounded-[var(--radius-card)]" />)}</div>
+  </>;
+  const tiles = (ids: string[]) => ids.flatMap((id) => {
+    const it = d.items.find((i) => i.id === id);
+    return it ? [<ClearTile key={id} it={it} c={CLEARS[id]} total={d.total} keep={d.keep_days} onAsk={() => setAsking(it)} />] : [];
+  });
+  const clearable = d.items.filter((i) => CLEARS[i.id]).reduce((a, i) => a + i.bytes, 0);
+  return <>
+    <DataOverview d={d} clearable={clearable} />
+
+    <DataSection title="Dọn trong database" lead={d.db_free > 0
+      ? t("dashboard.sqlite3 {size}, {free} trống chờ thu gọn.", { size: fmtBytes(d.db), free: fmtBytes(d.db_free) })
+      : t("dashboard.sqlite3 {size}. Tự thu gọn ngay sau mỗi lần xóa.", { size: fmtBytes(d.db) })}>
+      {tiles(["messages", "digests", "outbox"])}
+    </DataSection>
+
+    <DataSection title="Dọn tệp trên máy" lead={t("Tệp trong thư mục dữ liệu, ngoài database.")}>
+      {tiles(["sessions", "media", "runs", "logs"])}
+    </DataSection>
+
+    <Card title="Tin theo nhóm" info="Dung lượng ước tính từ nội dung tin. Xóa ở đây giống ⋯ › Xóa dữ liệu nhóm trên trang nhóm.">
+      {d.chats.length === 0 ? <Row label={t("Chưa lưu tin nào.")} /> : <ChatSizes chats={d.chats} onPurge={setPurging} />}
+    </Card>
+
+    <Card advanced title="Chi tiết từng bảng" info="Dung lượng từng bảng trong dashboard.sqlite3, đã tính cả chỉ mục.">
+      <DataTables tables={d.tables} />
+    </Card>
+
+    {drafts}
+
+    {asking && <ClearData it={asking} keep={d.keep_days} onClose={() => setAsking(null)} />}
+    {purging && <PurgeChat chatId={purging.chat_id} title={purging.title} onClose={() => setPurging(null)} />}
+  </>;
+}
+
+/** The dashboard head: the figures that decide a clean-up, then the split of data/ by part. */
+function DataOverview({ d, clearable }: { d: DataStats; clearable: number }) {
+  const t = useT();
+  const [moving, setMoving] = useState(false);
+  const known = d.parts.reduce((a, p) => a + p.bytes, 0);
+  const parts = [...d.parts.map((p) => ({ id: p.id, bytes: p.bytes, name: PARTS[p.id]?.[0] ?? (p.id as Key), color: PARTS[p.id]?.[1] ?? "var(--color-ink-3)" })),
+    { id: "other", bytes: Math.max(0, d.total - known), name: "Khác" as Key, color: "var(--color-rule-2)" }]
+    .filter((p) => p.bytes > 0).sort((a, b) => b.bytes - a.bytes);
+  const sessions = d.parts.find((p) => p.id === "sessions")?.bytes ?? 0;
+  const figs: [Key, string, React.ReactNode, boolean?][] = [
+    ["Tổng trên máy", fmtBytes(d.total), t("{n} phần", { n: parts.length })],
+    ["Dọn được ngay", fmtBytes(clearable), t("{p}% tổng", { p: pct(clearable, d.total) }), true],
+    ["Database", fmtBytes(d.db), t("{n} bảng", { n: d.tables.length })],
+    ["Phiên AI", fmtBytes(sessions), t("{p}% tổng", { p: pct(sessions, d.total) })],
+  ];
+  return (
+    <Card title="Dung lượng" info="Tự dọn khi khởi động: ảnh tag quá 30 ngày, lịch sử chạy AI quá 90 ngày; log server quá 5 MB chuyển thành server.log.1.">
+      <div className="@container grid gap-5 py-3 first:pt-1">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-4 @2xl:grid-cols-4 @2xl:divide-x @2xl:divide-rule">
+          {figs.map(([label, value, sub, hl]) => (
+            <div key={label} className="grid content-start gap-0.5 @2xl:px-5 @2xl:first:pl-0">
+              <dt className="text-xs text-ink-3">{t(label)}</dt>
+              <dd className={cn("font-mono text-2xl font-medium tabular-nums", hl ? "text-hl-2" : "text-ink")}>{value}</dd>
+              <dd className="text-xs text-ink-3 tabular-nums">{sub}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="grid gap-3">
+          <div role="img" aria-label={parts.map((p) => `${t(p.name)} ${fmtBytes(p.bytes)}`).join(", ")} className="flex h-3.5 gap-0.5 overflow-hidden rounded-md bg-paper-3">
+            {parts.map((p) => <span key={p.id} className="h-full min-w-1" style={{ flexGrow: p.bytes, background: p.color }} />)}
+          </div>
+          <ul className="grid grid-cols-1 gap-x-8 gap-y-2 @lg:grid-cols-2">
+            {parts.map((p) => (
+              <li key={p.id} className="flex min-w-0 items-center gap-2 text-sm">
+                <span aria-hidden className="size-2.5 shrink-0 rounded-[3px]" style={{ background: p.color }} />
+                <span className="min-w-0 flex-1 truncate text-ink-2">{t(p.name)}</span>
+                <span className="font-mono text-sm text-ink tabular-nums">{fmtBytes(p.bytes)}</span>
+                <span className="w-11 text-right font-mono text-xs text-ink-3 tabular-nums">{pct(p.bytes, d.total)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="grid gap-1 border-t border-rule pt-3 text-xs leading-relaxed text-ink-3">
+          <span>{t("Đăng nhập Telegram và Cấu hình không xóa ở đây: đăng xuất ở Cài đặt › Telegram, sửa cấu hình ở từng mục.")}</span>
+          <span className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+            <span className="min-w-0 font-mono break-all">{d.dir}</span>
+            <Button type="button" size="sm" variant="outline" onClick={() => setMoving(true)}><FolderInput />{t("Đổi thư mục")}</Button>
+          </span>
+          {d.move_error === "failed" && <span role="alert" className="text-error">{t("Lần đổi thư mục vừa rồi không thành: dữ liệu vẫn ở thư mục cũ, chưa mất gì. Xem server.log rồi thử lại.")}</span>}
+          {d.move_error === "old_left" && <span role="alert" className="text-warn">{t("Đã chuyển, nhưng chưa xóa hết thư mục cũ (còn đăng nhập Telegram và token trong đó). App thử xóa lại mỗi lần mở; hoặc xóa tay: {dir}", { dir: d.move_old })}</span>}
+        </p>
+        {moving && <MoveData dir={d.dir} onClose={() => setMoving(false)} />}
+      </div>
+    </Card>
+  );
+}
+
+const MOVE_ERRORS: Record<string, Key> = {
+  agent_running: "Đang có task AI Agent chạy; đợi xong rồi đổi thư mục.",
+  data_move_relative: "Cần đường dẫn tuyệt đối (vd. /Volumes/Data/Radar hoặc D:\\Radar).",
+  data_move_same: "Dữ liệu đang ở đúng thư mục này.",
+  data_move_inside: "Không đặt trong thư mục dữ liệu hiện tại hay trong thư mục cài app.",
+  data_move_used: "Thư mục này đã có data/ chứa tệp: chọn thư mục khác hoặc dọn data/ ở đó trước.",
+  data_move_cloud: "Thư mục này được đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive): database sẽ hỏng. Chọn thư mục khác.",
+  data_move_bad_data: "Database ở thư mục đó hỏng hoặc do bản app mới hơn tạo: không dùng được.",
+  data_move_unwritable: "Không tạo hoặc ghi được vào thư mục này.",
+  data_move_full: "Ổ đích không đủ chỗ trống.",
+};
+
+/** "Đổi thư mục": where data/ goes. The server plans it, restarts, and moves before opening anything; mounted only while asking. */
+function MoveData({ dir, onClose }: { dir: string; onClose: () => void }) {
+  const t = useT();
+  const [path, setPath] = useState("");
+  const [lost, setLost] = useState(false);
+  const move = useMutation({
+    mutationFn: (adopt: boolean) => api<void>("/data/move", { method: "POST", json: { path, adopt } }),
+    retry: false,
+    onSuccess: async () => { if (!(await waitRestart())) setLost(true); },
+  });
+  const restarting = move.isSuccess && !lost;
+  // the folder already holds a Radar data/ (a disk another install used): asked, then sent again with adopt
+  const adopt = move.error instanceof ApiError && move.error.code === "data_move_has_data";
+  return (
+    <ConfirmDialog open onOpenChange={(o) => { if (!o) onClose(); }} tone="default" icon={FolderInput} title={t("Đổi thư mục dữ liệu")}
+      description={t("App khởi động lại để chuyển database, đăng nhập Telegram, phiên AI và cấu hình sang thư mục mới, rồi xóa bản ở thư mục cũ.")}
+      confirmLabel={restarting ? t("Đang khởi động lại…") : adopt ? t("Dùng dữ liệu ở đó") : t("Chuyển và khởi động lại")} busy={move.isPending || restarting}
+      error={adopt ? undefined : move.isError ? errorText(move.error, tMap(t, MOVE_ERRORS), t("Không đổi được thư mục, thử lại."))
+        : lost && t("Server chưa chạy lại sau 1 phút: mở lại app (Start Dashboard) rồi xem lại Cài đặt › Dữ liệu.")}
+      onConfirm={() => { if (path.trim()) move.mutate(adopt); }}>
+      <div className="grid gap-2">
+        <Input aria-label={t("Thư mục mới")} placeholder="/Volumes/Data/Radar" value={path} maxLength={1024} autoFocus spellCheck={false}
+          className="font-mono" onChange={(e) => { setPath(e.target.value); if (move.isError) move.reset(); }} />
+        {adopt && <p role="alert" className="rounded-lg bg-warn-wash px-3 py-2 text-sm leading-relaxed text-ink">{t("Thư mục này đã có dữ liệu Radar. Dùng nó thì app khởi động lại và chạy trên dữ liệu đó (đăng nhập Telegram, tin, phiên AI ở đó). Dữ liệu đang dùng không bị xóa, vẫn nằm ở thư mục hiện tại; không chép gì sang.")}</p>}
+        <p className="text-xs leading-relaxed text-ink-3">{t("Đường dẫn tuyệt đối; app tạo data/ bên trong. Tránh ổ mạng và thư mục Desktop / Documents đang bật đồng bộ iCloud (database dễ hỏng). Ổ ngoài phải gắn sẵn mỗi lần mở app.")}</p>
+        <p className="text-xs text-ink-3">{t("Đang ở:")} <span className="font-mono break-all">{dir}</span></p>
+      </div>
+    </ConfirmDialog>
+  );
+}
+
+/** A dashboard section: a head outside the cards, then its tiles two to a row when there is room. */
+function DataSection({ title, lead, children }: { title: Key; lead: React.ReactNode; children: React.ReactNode }) {
+  const t = useT();
+  return (
+    <section aria-label={t(title)} data-card={title} className="grid scroll-mt-24 gap-3 pt-3">
+      <header className="grid gap-0.5">
+        <h3 className="text-base font-bold text-ink">{t(title)}</h3>
+        <p className="text-xs text-ink-3">{lead}</p>
+      </header>
+      <div className="@container"><div className="grid grid-cols-1 gap-3 @xl:grid-cols-2">{children}</div></div>
+    </section>
+  );
+}
+
+/** One thing you can clear: how big, how many, since when, its share of the total, whether it comes back, and Xóa. */
+function ClearTile({ it, c, total, keep, onAsk }: { it: DataItem; c: Clear; total: number; keep: number; onAsk: () => void }) {
+  const t = useT();
+  const empty = !it.count;
+  const name = t(c.name, { n: keep });
+  return (
+    <article aria-label={name} className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-rule bg-cotton p-4 shadow-stock">
+      <header className="grid gap-0.5">
+        <h4 className="text-sm font-bold text-ink">{name}</h4>
+        <p className="text-xs leading-relaxed text-ink-3">{t(c.desc)}</p>
+      </header>
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <span className={cn("font-mono text-2xl font-medium tabular-nums", empty ? "text-ink-3" : "text-ink")}>{empty ? "—" : fmtBytes(it.bytes)}</span>
+          {empty ? <span className="text-xs text-ink-3">{t("Không có gì để xóa")}</span> : <>
+            <span className="text-xs text-ink-2 tabular-nums">{t(c.unit, { n: fmtNum(it.count) })}</span>
+            {it.oldest && <span className="text-xs text-ink-3 tabular-nums">{t("từ {day}", { day: fmtDay(it.oldest) })}</span>}
+          </>}
+        </div>
+        {!empty && <div className="flex items-center gap-2">
+          <span aria-hidden className="h-1.5 flex-1 overflow-hidden rounded-full bg-paper-3">
+            <span className="block h-full rounded-full bg-hl" style={{ width: `${Math.max(2, pct(it.bytes, total))}%` }} />
+          </span>
+          <span className="w-16 text-right text-xs text-ink-3 tabular-nums">{t("{p}% tổng", { p: pct(it.bytes, total) })}</span>
+        </div>}
+      </div>
+      <footer className="mt-auto flex items-center justify-between gap-3 border-t border-rule pt-3">
+        <span className="flex min-w-0 items-center gap-1.5 text-xs text-ink-2">
+          <span aria-hidden className={cn("size-2 shrink-0 rounded-[2px]", c.safe ? "bg-ok" : "bg-warn")} />
+          {t(c.safe ? "Tải lại được khi cần" : "Không hoàn tác được")}
+        </span>
+        <Button type="button" size="sm" variant="destructive" disabled={empty} onClick={onAsk} aria-label={t("Xóa: {name}", { name })}>
+          <Trash2 aria-hidden />{t("Xóa")}
+        </Button>
+      </footer>
+    </article>
+  );
+}
+
+/** Groups by stored size: a ranked bar each, and the group's own Xóa dữ liệu nhóm. */
+function ChatSizes({ chats, onPurge }: { chats: DataStats["chats"]; onPurge: (c: { chat_id: string; title: string }) => void }) {
+  const t = useT();
+  const [all, setAll] = useState(false);
+  const top = Math.max(1, ...chats.map((c) => c.bytes));
+  const sum = chats.reduce((a, c) => a + c.bytes, 0);
+  return <>
+    {(all ? chats : chats.slice(0, 8)).map((c, i) => (
+      <div key={c.chat_id} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 py-2.5 first:pt-1">
+        <span className="text-right font-mono text-xs text-ink-3 tabular-nums">{i + 1}</span>
+        <span className="grid min-w-0 gap-1.5">
+          <span className="flex min-w-0 items-baseline gap-2">
+            <span className="min-w-0 truncate text-sm font-medium text-ink">{c.title}</span>
+            <span className="shrink-0 text-xs text-ink-3 tabular-nums">{t("{n} tin", { n: fmtNum(c.rows) })}</span>
+          </span>
+          <span aria-hidden className="h-1.5 overflow-hidden rounded-full bg-paper-3">
+            <span className="block h-full rounded-full" style={{ width: `${Math.max(2, (c.bytes / top) * 100)}%`, background: "var(--cat-2)" }} />
+          </span>
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="grid justify-items-end">
+            <span className="font-mono text-sm text-ink tabular-nums">≈ {fmtBytes(c.bytes)}</span>
+            <span className="text-xs text-ink-3 tabular-nums">{pct(c.bytes, sum)}%</span>
+          </span>
+          <Hint side="bottom" text={t("Xóa dữ liệu nhóm")}>
+            <Button type="button" size="icon-sm" variant="destructive" aria-label={t("Xóa dữ liệu nhóm {title}", { title: c.title })} onClick={() => onPurge(c)}>
+              <Trash2 aria-hidden />
+            </Button>
+          </Hint>
+        </span>
+      </div>
+    ))}
+    {chats.length > 8 && (
+      <div className="pt-2.5">
+        <button type="button" className={quietBtn} onClick={() => setAll(!all)}>{all ? t("Thu gọn") : t("Hiện tất cả {n} nhóm", { n: chats.length })}</button>
+      </div>
+    )}
+  </>;
+}
+
+/** dashboard.sqlite3 table by table, biggest first. */
+function DataTables({ tables }: { tables: DataStats["tables"] }) {
+  const t = useT();
+  return (
+    <div className="overflow-x-auto py-1">
+      <table className="w-full text-sm">
+        <thead><tr className="text-left text-xs text-ink-3">
+          <th className="py-1.5 pr-3 font-medium">{t("Bảng")}</th>
+          <th className="py-1.5 pr-3 text-right font-medium">{t("Dòng")}</th>
+          <th className="py-1.5 text-right font-medium">{t("Dung lượng")}</th>
+        </tr></thead>
+        <tbody className="divide-y divide-rule">
+          {[...tables].sort((a, b) => b.bytes - a.bytes || b.rows - a.rows).map((tb) => (
+            <tr key={tb.name}>
+              <td className="py-1.5 pr-3"><span className="font-mono text-xs text-ink">{tb.name}</span><span className="block text-xs text-ink-3">{TABLES[tb.name] ? t(TABLES[tb.name]) : ""}</span></td>
+              <td className="py-1.5 pr-3 text-right font-mono text-xs text-ink tabular-nums">{fmtNum(tb.rows)}</td>
+              <td className="py-1.5 text-right font-mono text-xs text-ink tabular-nums">{tb.bytes ? fmtBytes(tb.bytes) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** The question before a clear: how much, then "Sẽ mất" / "Giữ nguyên". Mounted only while asking; stays open on failure. */
+function ClearData({ it, keep, onClose }: { it: DataItem; keep: number; onClose: () => void }) {
+  const t = useT();
+  const qc = useQueryClient();
+  const c = CLEARS[it.id];
+  const clear = useMutation({
+    mutationFn: () => api<void>(`/data/${it.id}`, { method: "DELETE" }),
+    retry: false,
+    onSuccess: () => {
+      onClose();
+      toast({ text: t("Đã giải phóng {size}", { size: fmtBytes(it.bytes) }) });
+    },
+    onSettled: () => qc.invalidateQueries(), // messages, sessions, Briefing, AI history: every view may have shown them
+  });
+  const meta = [t(c.unit, { n: fmtNum(it.count) }), it.oldest && t("từ {day}", { day: fmtDay(it.oldest) })].filter(Boolean).join(", ");
+  return (
+    <ConfirmDialog open onOpenChange={(o) => { if (!o) onClose(); }} title={t(c.ask)} confirmLabel={t("Xóa")}
+      description={t(c.safe ? "Không mất gì thật sự: phần này tự có lại khi cần." : "Không hoàn tác được.")}
+      busy={clear.isPending} error={clear.isError && errorText(clear.error, {}, t("Xóa thất bại, thử lại."))} onConfirm={() => clear.mutate()}
+      items={[{ id: it.id, tag: fmtBytes(it.bytes), label: meta }]}>
+      <dl className="grid gap-2 text-sm">
+        <div className="grid gap-0.5 rounded-lg bg-error-wash px-3 py-2">
+          <dt className="text-xs font-medium text-error">{t("Sẽ mất")}</dt>
+          <dd className="text-ink">{t(c.lose, { n: keep })}</dd>
+        </div>
+        <div className="grid gap-0.5 rounded-lg bg-ok-wash px-3 py-2">
+          <dt className="text-xs font-medium text-ok">{t("Giữ nguyên")}</dt>
+          <dd className="text-ink">{t(c.keep, { n: keep })}</dd>
+        </div>
+      </dl>
+    </ConfirmDialog>
+  );
+}
 
 function ShortcutsGroup() {
   const t = useT();

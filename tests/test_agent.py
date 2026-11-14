@@ -71,8 +71,11 @@ async def test_failed_spawn_and_corrupt_log(tmp_path):
 
 async def test_cli_lingering_after_its_result_ends_the_run(tmp_path, monkeypatch):
     monkeypatch.setattr("telegram_dashboard.agent.AFTER_RESULT_IDLE", 0.2)
-    r = runner(tmp_path, '#!/bin/sh\ncat >/dev/null\n'
-                         'echo \'{"type":"result","result":"ok","total_cost_usd":0.123456}\'\nexec sleep 30\n')
+    r = runner(
+        tmp_path,
+        "#!/bin/sh\ncat >/dev/null\n"
+        'echo \'{"type":"result","result":"ok","total_cost_usd":0.123456}\'\nexec sleep 30\n',
+    )
     await r.start("t1", str(tmp_path), "hi", "plan", "s1", False)
     await asyncio.wait_for(r.pumps["t1"], 5)
     items, _ = r.read("t1")
@@ -167,10 +170,14 @@ async def test_git_changes_and_pr_leave_secrets_out(tmp_path, monkeypatch):
     assert {f["path"]: f["secret"] for f in c["files"]} == {"a.txt": False, ".env": True, "new.py": False}
     assert "+2" in c["diff"] and "+++ b/new.py\n@@ -0,0 +1,1 @@\n+x = 1" in c["diff"] and "TOKEN" not in c["diff"]
     monkeypatch.setenv("PATH", "/usr/bin:/bin")  # no gh here: the branch is pushed, the PR left to the user
-    r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "")
+    with pytest.raises(ApiError) as e:  # no start tree: the commit would take everything, so it is asked first
+        await gitops.open_pr(str(repo), "ai/x", "Sửa a", "")
+    assert e.value.code == "no_baseline"
+    r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", mixed_ok=True)
     assert r["branch"] == "ai/x" and r["skipped"] == [".env"] and r["url"] is None
-    shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
-                           capture_output=True, text=True).stdout
+    shown = subprocess.run(
+        ["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"], capture_output=True, text=True
+    ).stdout
     assert shown.split() == ["a.txt", "new.py"]
 
 
@@ -207,11 +214,24 @@ async def test_git_changes_since_the_session_start_leave_earlier_edits_out(tmp_p
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
     r = await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", base)
     assert r["branch"] == "ai/x" and r["skipped"] == [".env"]
-    shown = subprocess.run(["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"],
-                           capture_output=True, text=True).stdout
+    shown = subprocess.run(
+        ["git", "-C", str(remote), "show", "--name-only", "--format=", "ai/x"], capture_output=True, text=True
+    ).stdout
     assert sorted(shown.split()) == ["a.txt", "c.txt", "new.py"]
     assert sorted(g("status", "--porcelain").stdout.splitlines()) == ["?? .env", "?? old.txt", "M  b.txt"]
     assert (await gitops.changes(str(repo), await gitops.snapshot(str(repo))))["files"] == []
+    # a file the user edited before the session and the AI edits too: its commit would carry both
+    g("switch", "-q", "main")
+    (repo / "a.txt").write_text("user\n1\n")
+    base = await gitops.snapshot(str(repo))
+    (repo / "a.txt").write_text("user\n1\nai\n")
+    c = await gitops.changes(str(repo), base)
+    assert [(f["path"], f["mixed"]) for f in c["files"]] == [("a.txt", True)] and "+user" not in c["diff"]
+    with pytest.raises(ApiError) as e:
+        await gitops.open_pr(str(repo), "ai/y", "Sửa a", "", base)
+    assert (e.value.code, e.value.detail) == ("mixed_changes", "a.txt")
+    assert g("branch", "--show-current").stdout.strip() == "main"  # refused before any branch or commit
+    assert (await gitops.open_pr(str(repo), "ai/y", "Sửa a", "", base, mixed_ok=True))["branch"] == "ai/y"
 
 
 def test_prime_codegraph_leaves_the_wal_files_a_read_only_sandbox_needs(tmp_path):
@@ -262,3 +282,12 @@ async def test_git_changes_see_edits_inside_a_submodule(tmp_path, monkeypatch):
     with pytest.raises(ApiError) as e:
         await gitops.open_pr(str(repo), "ai/x", "Sửa", "", base)
     assert e.value.code == "submodule_only"
+
+
+def test_task_state_survives_an_answer_in_english():
+    from telegram_dashboard.ai import task_state
+
+    assert task_state("**Tóm tắt**\n- x\n\n**Trạng thái**\n- `chờ trả lời`: còn 2 câu") == "waiting"
+    assert task_state("**Summary**\n- x\n\n**Status**\n- `cần bạn` (review the diff)") == "you"
+    assert task_state("**Status**\n\n- Done, nothing left") == "done"
+    assert task_state("**Summary**\n- status unknown") is None  # no section: not guessed

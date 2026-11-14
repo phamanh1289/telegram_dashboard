@@ -38,6 +38,8 @@ done
 set +e  # interactive loop below: a failed kill/curl must not close the window
 URL="http://127.0.0.1:8765"
 LOG="data/server.log"
+# Cài đặt › Dữ liệu › Đổi thư mục: the log goes with the data (an unplugged disk: back here, where serve says so)
+[ -s data_home ] && [ -d "$(cat data_home)/data" ] && LOG="$(cat data_home)/data/server.log"
 PID=""
 
 build_if_stale() {
@@ -62,8 +64,11 @@ open_app() { .venv/bin/python -m telegram_dashboard open >/dev/null 2>&1 || open
 
 start() {
   if running; then warn "Server đã chạy rồi — ${URL}"; return; fi
-  build_if_stale
   mkdir -p data
+  # Keep one old log: over 5 MB it becomes server.log.1 (replacing the previous one).
+  [ "$(wc -c <"$LOG" 2>/dev/null || echo 0)" -gt 5000000 ] && mv -f "$LOG" "$LOG.1"
+  touch "$LOG" && chmod 600 "$LOG" "$LOG.1" 2>/dev/null  # it holds the ?t= sign-in link
+  build_if_stale
   # Don't leak a gateway exported in an old shell into the claude CLI: all AI uses its claude.ai login.
   env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_MODEL \
     .venv/bin/python -m telegram_dashboard serve >>"$LOG" 2>&1 &

@@ -6,7 +6,8 @@ import { createContext, memo, type ReactNode, use, useMemo } from "react";
 import { AiResultCard, dur, UserBubble } from "@/components/ai/chat";
 import type { TaskEvent } from "@/components/ai/steps";
 import { SEND_ERRORS } from "@/components/composer";
-import { ASK_BTN, AskPost, type AskRole, AskTag, Markdown } from "@/components/markdown";
+import { ASK_BTN, AskPost, type AskRole, AskTag, Markdown, TicketRef } from "@/components/markdown";
+import { TicketChip } from "@/components/message-item";
 import { Hint } from "@/components/ui/hint";
 import { api, ApiError, errorText, type Outbox, type Task } from "@/lib/api";
 import { type Attached, chatByTitle, chatTitle, parseAttachments, splitAttachments } from "@/lib/attach";
@@ -203,8 +204,10 @@ function PostAsk({ text, role }: { text: string; role: AskRole | null }) {
 }
 
 const postAsk = (text: string, role: AskRole | null) => <PostAsk text={text} role={role} />;
+const ticketChip = (id: string) => <TicketChip id={id} />;
 
-/** A session's answers: asks copy with its ID ("#REF-…") and, when it has a group message, post there. Every place
+/** A session's answers: asks copy with its ID ("#REF-…") and, when it has a group message, post there; ticket IDs are
+ *  chips that open the YouTrack ticket. Every place
  *  that shows a session's result wraps it in this, so they behave the same. */
 export function SessionAsks({ t, children }: { t: Pick<Task, "id" | "chat_id" | "message_id" | "ask_to">; children: ReactNode }) {
   // Stable per session row, so the memoised answers don't re-render on every poll.
@@ -216,7 +219,7 @@ export function SessionAsks({ t, children }: { t: Pick<Task, "id" | "chat_id" | 
   return (
     <AskTag value={sessionId(t)}>
       <AskTarget value={target}>
-        <AskPost value={target && postAsk}>{children}</AskPost>
+        <AskPost value={target && postAsk}><TicketRef value={ticketChip}>{children}</TicketRef></AskPost>
       </AskTarget>
     </AskTag>
   );

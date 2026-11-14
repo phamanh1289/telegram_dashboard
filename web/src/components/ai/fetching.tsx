@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -33,6 +33,7 @@ const LINES: Record<FetchKind, Key[]> = {
   code: ["AI đang mở dự án", "Đang tìm và đọc code liên quan", "Đang so sánh các đoạn code", "Đang đọc tin nhắn và bình luận", "Đang so code với nội dung trao đổi", "Đang viết lại báo cáo"],
   runs: ["AI đang lắng nghe Claude, Codex", "Đang mở file của từng request", "Đang gom model, token, thời gian chạy", "Đang ghi chú lại thành lịch sử", "Sắp xong rồi"],
   sessions: ["AI đang mở lịch sử phiên AI", "Đang gom ticket của từng phiên", "Đang đọc lại câu hỏi và câu trả lời", "Đang xếp phiên theo ngày", "Sắp xong rồi"],
+  flow: ["AI đang đọc AC và rule của ticket", "Đang mở màn hình trên Zeplin", "Đang xếp các màn thành luồng", "Đang nối nút với màn đích", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -212,6 +213,29 @@ const tid = (p: string, n: number) => `${p || "YT"}-${n}`; // a ticket ID of the
 const ARCS = ["M44 70C110 -6 200 0 268 80", "M44 70C110 150 200 160 268 80"];
 
 const SCENES: Record<FetchKind, Scene> = {
+  // UI flow: the robot sets down three phone screens one by one, then draws the arrows from a button to the next screen
+  // (solid) and the way back (dashed grey), each with a dot running along it
+  flow: () => {
+    const go = ["M64 112C98 112 102 96 136 96", "M184 112C218 112 222 96 256 96"], back = "M136 138C112 158 88 158 64 138";
+    const step = (k: number) => v({ "--fx-d": "4.8s", animationDelay: `${k * 0.45}s` });
+    return <>
+      {[16, 136, 256].map((x, k) => (
+        <div key={x} className="fx-step absolute top-[64px] grid h-[88px] w-12 content-start gap-1.5 rounded-xl border border-rule bg-cotton px-1.5 pt-2 shadow-stock" style={{ ...step(k), left: x }}>
+          <span className="mx-auto block h-1 w-4 rounded-full bg-ink-3/30" />
+          <Line w="70%" className="h-1.5 bg-ink-3/40" />
+          {[0, 1, 2].map((r) => <span key={r} className={cn("block h-2.5 rounded-sm", r === 1 && k < 2 ? "bg-hl/50" : "bg-paper-3")} />)}
+        </div>
+      ))}
+      <svg viewBox="0 0 320 160" className="absolute inset-0 overflow-visible" fill="none" strokeLinecap="round">
+        <defs><marker id="fx-flow-head" viewBox="0 0 6 6" refX="5" refY="3" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L6 3L0 6Z" fill={C.hl2} /></marker></defs>
+        {go.map((d, k) => <path key={d} d={d} stroke={C.hl2} strokeWidth="2" markerEnd="url(#fx-flow-head)" className="fx-step" style={step(3 + k)} />)}
+        <path d={back} stroke="var(--color-ink-3)" strokeWidth="1.5" strokeDasharray="4 3" className="fx-step" style={step(5)} />
+      </svg>
+      {go.map((d, k) => <Fly key={d} k={k} gap={0.6} dur={2.4} path={d} className="size-1.5 rounded-full bg-hl shadow-stock" />)}
+      <Bot ring className="top-0 left-1/2 size-14 -translate-x-1/2" size="size-10" />
+    </>;
+  },
+
   // Hôm nay: the sources (Telegram tags, YouTrack tickets, Q&A) stream into the robot, which writes them up as a to-do list,
   // the urgent item first
   today: ({ p, t }) => {

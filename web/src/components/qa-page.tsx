@@ -20,10 +20,10 @@ import { Hint } from "@/components/ui/hint";
 import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api, apiStream, errorText, type GroupInfo, type Message, type QaItem, type QaPosted } from "@/lib/api";
+import { api, apiStream, errorText, type GroupInfo, type Member, type Message, type QaItem, type QaPosted } from "@/lib/api";
 import { type Key, t as tr, useT } from "@/lib/i18n";
 import { copyText, fold, msgKey, openQa, QA_CODE, QA_PREFILL, qaAskKey, sentQuery, takeQaAnswer, toast, typing, useNow, waitLabel } from "@/lib/inbox";
-import { getPref, onPrefs, put, QA_REMIND_CHOICES, qaRemindLabel, readIntro, readNotify, readQaAnswerBy, setPref, useQaRemind } from "@/lib/prefs";
+import { getPref, notifyPreview, onPrefs, put, QA_REMIND_CHOICES, qaRemindLabel, readIntro, readNotify, readQaAnswerBy, setPref, useQaRemind } from "@/lib/prefs";
 import { parsePref, QA_RECENT, rememberQaGroup } from "@/lib/qa-recent";
 import { clockLabel, timeLabel } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -157,21 +157,30 @@ const isLate = (i: QaItem, mins: number, now: number, muted: readonly string[]) 
   mins > 0 && i.question.outgoing && waiting(i) && !muted.includes(i.code) && now - new Date(lastOwn(i)).getTime() >= mins * 60_000;
 /** The nudge put in the box (polite, peer to peer, short): the people the question tagged, else everyone (a reply to
  *  the question, so it is quoted). Vietnamese whatever the UI language: it goes to the group. */
-function nudgeText(i: QaItem) {
-  const ats = [...new Set([...i.question.text.matchAll(TAG)].map((x) => `@${x[1]}`))].join(" ");
+function nudgeText(i: QaItem, members: readonly Member[] = []) { // members: a name tag goes as its @username when it has one
+  const q = i.question;
+  const named = Object.entries(nameTags(q)).map(([at, id]) => { const u = members.find((m) => m.user_id === id)?.username; return u ? `@${u}` : at; });
+  const ats = [...new Set([...[...q.text.matchAll(TAG)].map((x) => `@${x[1]}`), ...named])].join(" ");
   return `Nhờ ${ats || "mọi người"} xem giúp phần này nha.`;
+}
+/** The members a message tagged by name (no @username: a mention entity), "@Name" → user id: a box answering it
+ *  sends those "@Name" as tags again (useMention `known`). */
+function nameTags(m: Message | null): Record<string, string> {
+  return Object.fromEntries((m?.links ?? []).flatMap((l) => l.kind === "mention" && l.url.startsWith("tg://user?id=")
+    ? [[`@${m!.text.slice(l.offset, l.offset + l.length).replace(/^@|[[\]\n]/g, "").trim()}`, l.url.slice(13)] as const] : [])
+    .filter(([at]) => at.length > 1));
 }
 /** A desktop notification once per wait ("code@your last message") when one of your questions turns late while the
  *  tab is hidden (Cài đặt › Thông báo); a late one seen while the tab is visible is only marked, never notified later. */
 const notified = new Set<string>();
-function notifyLate(items: QaItem[]) {
+function notifyLate(items: QaItem[], preview: boolean) {
   for (const i of items) {
     const key = `${i.code}@${lastOwn(i)}`;
     if (notified.has(key)) continue;
     notified.add(key);
     if (!document.hidden || !readNotify()) continue;
     try {
-      const n = new Notification(tr("Chưa ai trả lời · {group}", { group: i.chat_title }), { body: gist(i.question).slice(0, 200), tag: `qa:${i.code}` });
+      const n = new Notification(tr("Chưa ai trả lời · {group}", { group: i.chat_title }), { body: preview ? gist(i.question).slice(0, 200) : i.code, tag: `qa:${i.code}` });
       n.onclick = () => { focus(); openQa(i.question.chat_id, i.code); n.close(); };
     } catch {} // no Notification constructor here (Android Chrome, webviews)
   }
@@ -207,7 +216,8 @@ export function useQaNews(days: number, onPage: boolean, poll = true) { // poll 
     late[id] = l.length;
     lateItems.push(...l);
   });
-  useEffect(() => notifyLate(lateItems)); // every render: the set keeps it to one notification per wait
+  const qc = useQueryClient();
+  useEffect(() => notifyLate(lateItems, notifyPreview(qc))); // every render: the set keeps it to one notification per wait
   const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
   // `lists`: each group's threads (the cross-group "Câu hỏi của tôi" view); `firstNew` / `firstLate`: where a link to
   // "new answers" / "due a nudge" opens (openQa).
@@ -559,7 +569,8 @@ function QaBox({ chatId, draft, onSend, busy, to, title, top }: {
 }) {
   const tx = useT();
   const typed = useSyncExternalStore(draft.sub, draft.get, draft.get);
-  const mention = useMention(groupMembers(chatId), typed, draft.set);
+  const known = useMemo(() => nameTags(to), [to]); // the nudge's "@Name" of the question's tags
+  const mention = useMention(groupMembers(chatId), typed, draft.set, known);
   const text = mention.wire(typed); // as sent: a member tagged by name counts as a tag
   const send = () => onSend(text);
   return (
@@ -620,8 +631,16 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     show(i.code);
     setTarget(i.question);
     if (!draft.get().trim() || draft.get() === autoText) {
-      edit(nudgeText(i));
-      setAutoText(nudgeText(i));
+      const first = nudgeText(i); // "@Name" now; "@username" once the group's members load (the "@" popup's cache)
+      edit(first);
+      setAutoText(first);
+      if (Object.keys(nameTags(i.question)).length) {
+        const src = groupMembers(i.question.chat_id);
+        qc.fetchQuery({ queryKey: src.queryKey, queryFn: src.queryFn, staleTime: 5 * 60_000 }).then((ms) => {
+          const text = nudgeText(i, ms);
+          if (text !== first && draft.get() === first) { edit(text); setAutoText(text); } // untouched since
+        }, () => {}); // members hidden / offline: the "@Name" tag stays, it still tags them
+      }
     }
     setAsk((n) => n + 1);
   };

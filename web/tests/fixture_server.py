@@ -4,9 +4,11 @@ Never part of the live app (which owns :8765). Data lives in a temp dir; nothing
 """
 
 import asyncio
+import json
 import os
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -19,6 +21,8 @@ sys.path.insert(0, str(ROOT))
 
 from conftest import FakeTransport, msg  # noqa: E402
 
+from telegram_dashboard import uiflow  # noqa: E402
+from telegram_dashboard.ai import AiJobs  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
@@ -55,7 +59,137 @@ XSS = '<img src=x onerror="window.__xss=1"><script>window.__xss=2</script>'
 fake.history[A][-1] = msg(A, 120, XSS)
 fake.history[B] = [msg(B, i, f"Tin B số {i}", sender="8") for i in range(1, 6)]
 
-control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_changes": 0}
+control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_changes": 0,
+           "yt": False, "flow": "file", "flow_save": "ok", "flow_posts": [], "ai_ms": 0, "ai_calls": 0, "att": "1-1",
+           "save_ms": 0}
+
+# UI flow (ticket VA-1, YouTrack in mock mode): the ticket, its uiflow file and the AI run, faked here.
+# `yt`: off until a spec asks for it, so the other specs keep the real (token-less) YouTrack routes.
+# `flow`: what GET /api/yt/flow answers (file / none / broken / fail); `flow_save`: POST /api/yt/flow (ok / 409 / 502);
+# `flow_posts`: the bodies POST /api/yt/flow got; `ai_ms`: how long the AI run takes; `save_ms`: the save.
+FLOW = {
+    "v": 1, "ticket": "VA-1", "rev": 1, "device": "mobile",
+    "screens": [
+        {"id": "login", "title": "Đăng nhập", "kind": "screen", "parent": None, "items": [{"id": "otp", "label": "Gửi OTP"}]},
+        {"id": "code", "title": "Nhập OTP", "kind": "screen", "parent": None,
+         "items": [{"id": "ok", "label": "Xác nhận"}, {"id": "later", "label": "Để sau"}]},
+        {"id": "err", "title": "Sai mã", "kind": "popup", "parent": "code", "items": []},
+        {"id": "home", "title": "Trang chủ", "kind": "screen", "parent": None, "items": [{"id": "out", "label": "Đăng xuất"}]},
+    ],
+    "links": [
+        {"src": "login.otp", "to": "code", "act": "navigate", "when": "", "ac": "AC-1"},
+        {"src": "code.ok", "to": "err", "act": "open", "when": "Mã sai", "ac": "AC-2"},
+        {"src": "code.later", "to": "home", "act": "navigate", "when": "", "ac": "AC-3"},
+        {"src": "code", "to": "login", "act": "back", "when": "", "ac": ""},
+    ],
+}
+FLOW0 = json.loads(json.dumps(FLOW))  # what /set puts back: a save rewrites FLOW and ISSUE, tests share one backend
+ISSUE: dict = {
+    "id": "VA-1", "summary": "Đăng nhập bằng OTP", "created": 1_700_000_000_000, "updated": 1_700_000_000_000,
+    "resolved": None, "type": "Feature", "state": "Open", "priority": "Normal", "assignee": None, "assigneeLogin": None,
+    "qc": None, "reporter": "PO", "due": None, "estimate": None, "sprints": [],
+    "description": "AC-1: gửi OTP. AC-2: sai mã báo lỗi. AC-3: để sau về trang chủ.", "comments": [], "links": [],
+    "attachments": [{"id": "1-1", "name": "uiflow-VA-1.html", "mime": "text/html", "size": 2048, "comment": None}],
+}
+
+
+ISSUE0 = json.loads(json.dumps(ISSUE))
+JOBS = AiJobs()  # the AI flow run with X-Ai-Job: a background run, as yt_dashboard's `background` starts it
+
+
+async def answer(send, status: int, body) -> None:
+    await send({"type": "http.response.start", "status": status, "headers": [(b"content-type", b"application/json")]})
+    await send({"type": "http.response.body", "body": json.dumps(body).encode()})
+
+
+async def body_of(receive) -> dict:
+    data = b""
+    while True:
+        m = await receive()
+        data += m.get("body", b"")
+        if not m.get("more_body"):
+            return json.loads(data or b"{}")
+
+
+# A YouTrack connection, so the YouTrack tab opens instead of sending the user to Cài đặt (no token here, so the real
+# routes answer empty lists; the ones the UI flow dialog reads are faked below).
+CONFIG = {"base": "https://youtrack.example.test", "mock": False, "t": {"wip": 3, "stale": 7, "dead": 14}, "hist": 0, "ai": True}
+
+
+async def fake_yt(scope, receive, send) -> bool:
+    """The YouTrack routes the UI flow dialog reads, in place of the real (mock-mode) ones. True when answered."""
+    path, post, q = scope["path"], scope["method"] == "POST", scope["query_string"].decode()
+    if path == "/api/yt/config":
+        await answer(send, 200, CONFIG)
+    elif path == "/api/yt/issue" and q == "id=VA-1":
+        await answer(send, 200, ISSUE)
+    elif path == "/api/yt/flow" and not post:
+        mode = control["flow"]
+        if mode == "fail":
+            await answer(send, 502, {"error": "YouTrack 502 khi tải tệp"})
+        else:
+            got = {"file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True)}[mode]
+            await answer(send, 200, dict(zip(("att", "flow", "broken"), got)))
+    elif path == "/api/yt/flow":
+        b = await body_of(receive)
+        control["flow_posts"].append(b)
+        await asyncio.sleep(control["save_ms"] / 1000)
+        mode = control["flow_save"]
+        now = control["att"] if control["flow"] in ("file", "broken") else None  # the file a save must be based on
+        if mode == "409" or b.get("base") != now:  # as yt_dashboard checks it: someone saved since
+            await answer(send, 409, {"error": "UI flow vừa được người khác cập nhật — mở lại để xem bản mới"})
+        elif mode == "502":
+            await answer(send, 502, {"error": "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại"})
+        else:  # stored: a later GET serves what was saved, as YouTrack would
+            rev = (b["flow"].get("rev") or 0) + 1
+            FLOW.clear()
+            FLOW.update({**b["flow"], "rev": rev})
+            control["flow"], control["att"] = "file", "1-2"
+            changes = ["thêm màn Trang chủ", "Để sau: Nhập OTP → Trang chủ"]
+            ISSUE["attachments"] = [{**ISSUE["attachments"][0], "id": "1-2"}]
+            ISSUE["comments"] = [*ISSUE["comments"], {  # as yt_dashboard writes it: the file named in plain text
+                "id": f"c{rev}", "author": "Tôi", "created": 1_700_000_100_000,
+                "text": f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n" + "\n".join(f"- {c}" for c in changes),
+            }]
+            await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
+    elif path == "/api/yt/ai/flow":
+        await body_of(receive)
+        control["ai_calls"] += 1
+
+        async def work(on_text=None):
+            # the stages the real route tells (ai_flow), spread over ai_ms: the dialog's progress view has data
+            say = (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e})) if on_text else (lambda **e: None)
+            body = json.dumps({"screens": FLOW["screens"], "links": FLOW["links"]}, ensure_ascii=False)
+            steps = [{"stage": "ticket", "id": "VA-1"}, {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
+                     {"stage": "zeplin", "n": 0, "of": 2}, {"stage": "zeplin", "n": 1, "of": 2},
+                     {"stage": "zeplin", "n": 2, "of": 2, "done": True, "texts": 2, "missing": 0},
+                     {"stage": "ai", "deep": False, "chars": 12800, "screens": 2}]
+            seen = uiflow.Progress()
+            steps += [e for i in range(0, len(body), 40) for e in seen.feed(body[i : i + 40])]
+            steps += [{"stage": "check", "chars": len(body)},
+                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]), "links": len(FLOW["links"]), "dropped": 0}]
+            for e in steps:
+                say(**e)
+                await asyncio.sleep(control["ai_ms"] / 1000 / len(steps))
+            return {"flow": {**FLOW, "rev": 0}}
+
+        job = dict(scope["headers"]).get(b"x-ai-job", b"").decode()
+        if job:
+            await JOBS.start(job, work)(scope, receive, send)
+        else:
+            await answer(send, 200, await work())
+    elif path.startswith("/api/yt/ai/job/"):  # the real routes, on the fixture's runs
+        job = path.rsplit("/", 1)[1]
+        if scope["method"] == "DELETE":
+            JOBS.stop(job)
+            await answer(send, 200, {})
+        elif got := JOBS.attach(job):
+            await got(scope, receive, send)
+        else:
+            await answer(send, 404, {"error": "Lượt AI này không còn trên máy chủ: chạy lại"})
+    else:
+        return False
+    return True
 
 
 async def send_impl(call):
@@ -85,6 +219,8 @@ class Faults:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             path = scope["path"]
+            if control["yt"] and path.startswith("/api/yt/") and await fake_yt(scope, receive, send):
+                return
             if control["slow_chat"] and path == f"/api/chats/{control['slow_chat']}/messages":
                 await asyncio.sleep(control["slow_ms"] / 1000)
             if path == "/api/changes" and control["fail_changes"] > 0:
@@ -100,13 +236,20 @@ ctl = FastAPI()
 
 @ctl.post("/set")
 async def set_(request: Request):
-    control.update(await request.json())
+    b = await request.json()
+    if "flow" in b:  # a UI flow test: start from the pristine ticket and file
+        FLOW.clear()
+        FLOW.update(json.loads(json.dumps(FLOW0)))
+        ISSUE.clear()
+        ISSUE.update(json.loads(json.dumps(ISSUE0)))
+        control["att"] = "1-1"
+    control.update(b)
     return control
 
 
 @ctl.get("/state")
 async def state():
-    return {**control, "send_calls": len(fake.send_calls)}
+    return {**control, "send_calls": len(fake.send_calls), "jobs": JOBS.status()}
 
 
 @ctl.post("/message")

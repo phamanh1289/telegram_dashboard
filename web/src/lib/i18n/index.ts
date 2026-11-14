@@ -79,6 +79,11 @@ export type T = ReturnType<typeof useT>;
 export const locale = (lang: Lang = readLang()) => (lang === "vi" ? "vi-VN" : "en-GB");
 /** Number in the current language: 80.000 / 80,000. */
 export const fmtNum = (n: number, lang?: Lang) => n.toLocaleString(locale(lang));
+/** File size in the current language, decimal units like Finder: 1,2 MB / 812 kB. */
+export const fmtBytes = (b: number, lang?: Lang) => {
+  const [v, unit] = b >= 1e9 ? [b / 1e9, "gigabyte"] : b >= 1e6 ? [b / 1e6, "megabyte"] : [b / 1e3, "kilobyte"];
+  return v.toLocaleString(locale(lang), { style: "unit", unit, maximumFractionDigits: v < 10 ? 1 : 0 });
+};
 /** Date / time in Vietnam time, formatted for the current language (`opts` as Intl.DateTimeFormat). */
 export const fmtDate = (t: number | string | Date, opts: Intl.DateTimeFormatOptions = {}, lang?: Lang) =>
   new Date(t).toLocaleString(locale(lang), { timeZone: "Asia/Ho_Chi_Minh", ...opts });

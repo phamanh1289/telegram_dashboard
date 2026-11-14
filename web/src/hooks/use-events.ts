@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/lib/api";
 import { t } from "@/lib/i18n";
 import { msgKey, sentQuery, toast } from "@/lib/inbox";
-import { readNotify } from "@/lib/prefs";
+import { notifyPreview, readNotify } from "@/lib/prefs";
 
 type Listener = (items: ChangeItem[]) => void;
 const listeners = new Set<Listener>();
@@ -109,7 +109,7 @@ export function applyChanges(qc: QueryClient, items: ChangeItem[]) {
   // not at its next poll. Only groups with a cached thread holding it (Q&A reads Telegram live).
   for (const chat of new Set(items.filter((it) => inQa(qc, it)).map((it) => it.chat_id))) void qc.invalidateQueries({ queryKey: ["qa", chat] });
   listeners.forEach((cb) => cb(items));
-  notifyNew(items, !!qc.getQueryData<{ notify_preview: boolean }>(["privacy"])?.notify_preview);
+  notifyNew(items, notifyPreview(qc));
 }
 
 /**
@@ -215,7 +215,7 @@ export function useSync(baseline: string) {
         loop = rev;
         if (a && a[0] !== auto?.[0]) {
           void qc.invalidateQueries({ queryKey: ["tasks"] }); // a session it started / went on
-          if (auto && a[1] && a[1] !== auto[1]) toast({ text: t("Vòng BE tự chạy lỗi: {e}", { e: a[1] }) });
+          if (auto && a[1] && a[1] !== auto[1]) toast({ text: t("Vòng BE tự chạy: {e}", { e: a[1] }) });
         }
         auto = a;
       });

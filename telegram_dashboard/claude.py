@@ -435,9 +435,11 @@ async def _note_run(settings, feature, choice, final, seconds, error, ref="") ->
         log.warning("run log not written: %s", type(e).__name__)
 
 
+RUNS_DAYS = 90  # longest window Settings › AI shows; older runs are dropped on startup
+
+
 def claude_runs(settings, days: int) -> list[dict]:
     """Runs logged in the last `days` days, newest first."""
-    # ponytail: reads the whole file each time; rotate it if it ever grows past ~100k runs.
     since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
     rows = []
     with contextlib.suppress(OSError), open(_runs_path(settings)) as fh:
@@ -449,3 +451,18 @@ def claude_runs(settings, days: int) -> list[dict]:
             if isinstance(r, dict) and str(r.get("at", "")) >= since:
                 rows.append(r)
     return sorted(rows, key=lambda r: str(r["at"]), reverse=True)
+
+
+def prune_runs(settings) -> None:
+    """Startup: drop runs older than RUNS_DAYS (the file only grows otherwise)."""
+    p = _runs_path(settings)
+    keep = claude_runs(settings, RUNS_DAYS)
+    with contextlib.suppress(OSError):
+        with open(p) as fh:
+            if sum(1 for _ in fh) <= len(keep):
+                return
+        tmp = p.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in reversed(keep))
+        tmp.replace(p)

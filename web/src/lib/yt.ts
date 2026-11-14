@@ -34,7 +34,7 @@ export type Comment = { id?: string; text: string | null; created: number; autho
 /** A file on the ticket; `comment`: the comment it was added with (its text names it), null for the description. */
 export type Attachment = { id: string; name: string; mime: string; size: number; comment: string | null };
 /** The file through our server: YouTrack wants the token, the browser has none. */
-export const fileUrl = (issue: string, a: Attachment) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
+export const fileUrl = (issue: string, a: Pick<Attachment, "id">) => `/api/yt/attachment?issue=${encodeURIComponent(issue)}&id=${encodeURIComponent(a.id)}`;
 export type Link = { rel: string; issues: { id: string; summary: string | null; resolved: number | null }[] };
 export type Detail = Ticket & { description: string; comments: Comment[]; links: Link[]; attachments?: Attachment[] };
 export type Config = { base: string; mock: boolean; t: { wip: number; stale: number; dead: number }; hist: number; ai: boolean };
@@ -59,33 +59,41 @@ export const aiJobs = new WeakMap<AbortSignal, string>();
 /** The AI history session of an AI call, as shown ("YT-xxxxxx", header X-Ai-Session): the server logs it with the run. */
 export const aiSessions = new WeakMap<AbortSignal, string>();
 export const newJobId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+/** Abort reason of a page that leaves a background run (the UI flow dialog closing): its read stops, the run goes on. */
+export const AI_LEAVE = new DOMException("left", "AbortError");
 
 /** /api/yt/* call; the YouTrack router answers errors as {error: "text"}, the shared API as {error: {code, detail}}. */
 export async function ytApi<T>(path: string, init: { json?: unknown; signal?: AbortSignal; session?: string } = {}): Promise<T> {
   if (init.signal && /^\/ai\/(ticket|data|tickets)$/.test(path)) aiReqs.set(init.signal, { path, json: init.json });
-  const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
-  // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, the run goes on)
-  if (job) init.signal!.addEventListener("abort", () => void fetch(`/api/yt/ai/job/${job}`, { method: "DELETE" }).catch(() => {}), { once: true });
+  const job = init.signal && /^\/ai\/(ticket|data|tickets|followup|flow|job\/)/.test(path) ? aiJobs.get(init.signal) : undefined;
+  // Hủy / a new run: stop the server's run too (leaving the page doesn't abort, or aborts with AI_LEAVE: the run goes on)
+  if (job) init.signal!.addEventListener("abort", () => { if (init.signal!.reason !== AI_LEAVE) void fetch(`/api/yt/ai/job/${encodeURIComponent(job)}`, { method: "DELETE" }).catch(() => {}); }, { once: true });
   const ses = init.session || (job && aiSessions.get(init.signal!)); // `session`: a one-shot run with no job (AI filter / draft)
   const role = readYtRole(); // the server adds that role's team instructions to every AI prompt
+  // an AI run cut mid-way (sleep, Wi-Fi, server restart) in words, not "ai_provider_error"; other calls keep the
+  // browser's TypeError (loadError words it)
+  const lost = (e: unknown) => job && (e instanceof TypeError || (e as { cut?: boolean } | null)?.cut)
+    ? new Error(t("Mất kết nối với dashboard giữa chừng, thử lại")) : e;
   const res = await fetch(`/api/yt${path}`, {
     method: init.json === undefined ? "GET" : "POST",
     cache: "no-store",
     signal: init.signal,
     headers: { ...(init.json === undefined ? {} : { "Content-Type": "application/json" }), ...(role ? { "X-Yt-Role": role } : {}), ...(job && init.json !== undefined ? { "X-Ai-Job": job } : {}), ...(ses && init.json !== undefined ? { "X-Ai-Session": ses } : {}) },
     body: init.json === undefined ? undefined : JSON.stringify(init.json),
-  });
+  }).catch((e) => { throw lost(e); });
   if (res.ok && res.headers.get("content-type")?.includes("ndjson")) { // an AI answer, streamed as Claude writes it
     const on = init.signal && aiParts.get(init.signal);
     return readAnswer<T>(res, on?.text, on?.step)
-      .catch((e) => { throw e instanceof ApiError ? new Error(e.detail || e.code) : e; });
+      // no status: a run's own 404 (ticket gone) must not read as the job's 404 (FlowDialog: "gone, show nothing")
+      .catch((e) => { const l = lost(e); throw l !== e ? l : e instanceof ApiError ? new Error(e.detail ? tMaybe(e.detail) : e.code) : e; });
   }
   const body = await res.json().catch(() => null);
   if (!res.ok) {
     const e = body?.error;
     // an older backend: no route (the catch-all answers {code: "not_found"}), wrong method or body shape
     if (([404, 405, 422].includes(res.status) && !e) || (typeof e === "object" && e?.code === "not_found")) throw new Error(t("Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại."));
-    throw new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`);
+    // status: a caller may act on one (the UI flow's 409); the text is what the user reads
+    throw Object.assign(new Error(typeof e === "string" ? tMaybe(e) : e?.detail || e?.code || `HTTP ${res.status}`), { status: res.status });
   }
   return body as T;
 }
@@ -101,6 +109,15 @@ export type PromptCtx = `${"dev" | "qa" | "po"}:${"one" | "many"}`;
 export type PromptLib = { prompts: SavedPrompt[]; shown: Partial<Record<PromptCtx, string[]>>; hidden: string[] }; // hidden: built-ins the team deleted
 /** The team's State flow for a project (Settings › YouTrack › Workflow); `on`: the app only moves tickets along an arrow. */
 export type Workflow = { on: boolean; pos: Record<string, [number, number]>; edges: [string, string][]; hidden: string[] }; // hidden: states taken off the canvas (no arrow can reach them)
+/** The ticket's UI flow (web/public/uiflow.js reads and draws it; the server checks its schema). Typed only as far as the
+ *  dashboard reads it. */
+export type UiFlow = { v: number; ticket: string; rev: number; screens: { id: string }[]; links: unknown[] };
+/** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
+export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean };
+export type FlowSaved = { att: string; rev: number; changes: string[]; warn: string };
+/** A Zeplin screen for the UI flow: image (a URL here, a data URI in the file), design size, where texts / buttons sit. */
+export type FlowShot = { src: string; w: number; h: number; hits: [string, number, number, number, number][] };
+export type FlowShots = { shots: Record<string, FlowShot>; missing: string[] };
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),
@@ -131,7 +148,7 @@ export const yt = {
   aiTickets: (ids: string[], scope: string, kind: "review" | "today" | "summary" | "ask" | "standup" | "plan" | "testcases" | "triage" | "regression" | "groom" | "quality", signal?: AbortSignal, ask = "", stats?: unknown, since = 0, changes: string[] = [], folder = "", shell = false) =>
     ytApi<AiText>("/ai/tickets", { json: { ids, scope, kind, ask, stats, since, changes, folder, shell }, signal }),
   /** A background run read again from its start, live if it still runs (after a reload). */
-  aiJob: (id: string, signal?: AbortSignal) => ytApi<AiText>(`/ai/job/${encodeURIComponent(id)}`, { signal }),
+  aiJob: <T = AiText>(id: string, signal?: AbortSignal) => ytApi<T>(`/ai/job/${encodeURIComponent(id)}`, { signal }),
   /** running / done / error of each background run the server keeps. */
   aiJobStatus: () => ytApi<Record<string, "running" | "done" | "error">>("/ai/jobs"),
   /** A saved first request sent again (a history session whose answer never came). */
@@ -141,7 +158,40 @@ export const yt = {
   aiDraft: (text: string, types: string[], priorities: string[], signal?: AbortSignal, session?: string) =>
     ytApi<{ summary: string; type: string; priority: string; description: string }>("/ai/draft", { json: { text, types, priorities }, signal, session }),
   aiFilter: (text: string, options: unknown, session?: string) => ytApi<Record<string, unknown>>("/ai/filter", { json: { text, options }, session }),
+  flow: (issue: string, signal?: AbortSignal) => ytApi<FlowFile>(`/flow?issue=${enc(issue)}`, { signal }),
+  /** Uploads it over `base` (the attachment opened; null = none). 409: someone else saved since; 502: outcome unknown. */
+  saveFlow: (id: string, flow: UiFlow, base: string | null, shots: Record<string, FlowShot> = {}) =>
+    ytApi<FlowSaved>("/flow", { json: { id, flow, base, shots } }),
+  /** The Zeplin screens the flow links (read with the user's Zeplin MCP token, no AI). */
+  flowShots: (urls: string[], signal?: AbortSignal) => ytApi<FlowShots>("/flow/shots", { json: { urls }, signal }),
+  /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
+  aiFlow: (id: string, note: string, deep: boolean, signal?: AbortSignal) => ytApi<{ flow: UiFlow }>("/ai/flow", { json: { id, note, deep }, signal }),
 };
+/** The UI flow render still going on the server for a ticket (its dialog closed mid-run): `at` when it started, `base`
+ *  the ticket's file it was started over (its result saves over that one, so a save made since gets the 409).
+ *  Per browser; past the server's keep (1 h after it ends) it is surely gone, so read as none. */
+export type FlowJob = { id: string; at: number; base: string | null };
+const flowJobKey = (issue: string) => `uiflow-job:${issue}`;
+const FLOW_JOB_KEEP = 3 * 3600_000;
+const JOB_ID = /^[a-z0-9-]{8,64}$/; // = ai.JOB_ID: anything else the server refuses
+export function flowJob(issue: string): FlowJob | null {
+  try { // storage may be off (private window): no indicator, no re-read
+    const j = JSON.parse(localStorage.getItem(flowJobKey(issue)) ?? "null") as Partial<FlowJob> | null;
+    if (j && typeof j.id === "string" && JOB_ID.test(j.id) && typeof j.at === "number") {
+      return Date.now() - j.at < FLOW_JOB_KEEP ? { id: j.id, at: j.at, base: typeof j.base === "string" ? j.base : null } : null;
+    }
+    if (j) localStorage.removeItem(flowJobKey(issue)); // not one of ours: drop it
+    return null;
+  } catch { return null; }
+}
+/** Save the run (`null`: forget it; `only`: only if it is still that run, not a newer one). */
+export function setFlowJob(issue: string, job: { id: string; base: string | null } | null, only?: string) {
+  try {
+    if (job) localStorage.setItem(flowJobKey(issue), JSON.stringify({ ...job, at: Date.now() }));
+    else if (!only || flowJob(issue)?.id === only) localStorage.removeItem(flowJobKey(issue));
+  } catch { /* storage off: the run is only read while the dialog stays open */ }
+}
+export const ytFlowQuery = (issue: string) => ({ queryKey: ["yt", "flow", issue], queryFn: ({ signal }: { signal: AbortSignal }) => yt.flow(issue, signal), retry: false });
 export const AI_MAX = 40; // the server's cap on tickets in one review
 /** Shared query options: one per cache key, so every reader has the same staleTime / retry whichever mounts first. */
 export const ytProjectsQuery = { queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false } as const;

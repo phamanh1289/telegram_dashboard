@@ -214,6 +214,7 @@ def test_entity_spans_keep_links_mentions_and_code():
     assert _span(NS(offset=0, length=3, url="https://x.y")).kind == "link"
     assert _span(NS(offset=4, length=4, user_id=42)).url == "tg://user?id=42"
     assert _span(MessageEntityCode(offset=9, length=3)).kind == "code"
+
     class MessageEntityBlockquote(NS): ...
 
     assert _span(MessageEntityBlockquote(offset=0, length=9)).kind == "blockquote"
@@ -364,3 +365,53 @@ def test_backfill_neither_resurrects_a_purge_nor_recloses_a_reopened_tag(env):
     env.store.set_handled(A, 2, False)  # reopened after a reply: a later backfill must not close it
     env.store.store_mentions([("Team", "supergroup", new, True)])
     assert not env.store.get_message(A, 2).handled
+
+
+def test_clearing_old_messages_keeps_what_is_still_used_and_never_brings_them_back(env, client):
+    env.track(A)
+    for i in range(1, 6):
+        env.store.apply_message(msg(A, i, "x" * 500))
+    for i in (1, 2, 3, 4):  # 1 and 4: cleared
+        env.store.set_handled(A, i, True)
+    env.store.set_pinned(A, 2, True)  # pinned: kept
+    env.store.add_task("t1", A, 3, "/p", "do")  # an AI session's tag: kept
+    # 5 is still pending: kept
+    before = 2_000_000_000
+    st = env.store.data_stats(before)
+    assert st["messages"]["count"] == 2 and st["messages"]["bytes"] > 1000
+    assert {t["name"] for t in st["tables"]} >= {"messages", "tasks", "outbox"}
+    assert [c["rows"] for c in st["chats"]] == [5]
+    assert env.store.prune_messages(before) == 2
+    assert env.store.get_message(A, 1) is None and env.store.get_message(A, 2) is not None
+    env.store.compact()
+    # an edit or a backfill of the cleared tag does not store it again as a new one
+    assert env.store.apply_message(msg(A, 1, "edited", edit=5)) is False
+    assert env.store.store_mentions([("A", "supergroup", msg(A, 1), False)]) == []
+    assert env.store.get_message(A, 1) is None
+
+    # the Settings › Dữ liệu endpoints (their own app and database), with finished sessions to list
+    st = client.app.state.store
+    for tid in ("d1", "d2"):
+        st.add_task(tid, None, None, "/p", "x")
+        st.set_task_done(tid, True)
+    r = client.get("/api/data")
+    assert next(i for i in r.json()["items"] if i["id"] == "sessions")["count"] == 2
+    assert r.status_code == 200 and {i["id"] for i in r.json()["items"]} >= {"messages", "media", "logs", "login"}
+    o = {"Origin": "http://127.0.0.1:8765"}
+    assert client.delete("/api/data/logs", headers=o).status_code == 204
+    assert client.delete("/api/data/messages", headers=o).status_code == 204
+    assert client.delete("/api/data/sessions", headers=o).status_code == 204
+    assert st.list_tasks() == []
+    assert client.delete("/api/data/nope", headers=o).status_code == 422
+
+
+def test_search_ignores_accents_through_edits_and_forgets_deleted_text(env):
+    env.track(A)
+    env.store.apply_message(msg(A, 1, "Luận ơi xem ĐƠN hàng"))
+    find = lambda q: [m.message_id for m in env.store.query_messages(A, q=q)[0]]  # noqa: E731
+    assert find("luan") == find("Đơn") == find("don hang") == ["1"] and find("zzz") == []
+    env.store.apply_message(msg(A, 1, "đã chốt", edit=5))  # an edit replaces the searchable copy too
+    assert find("luan") == [] and find("da chot") == ["1"]
+    env.store.apply_deletion(A, ["1"])
+    with env.store._conn() as c:
+        assert c.execute("SELECT text, text_fold FROM messages").fetchone()[:] == ("", "")

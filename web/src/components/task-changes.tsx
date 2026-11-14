@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 // grouped by the same folders on the right, each file a card that folds (CSS grid-rows, body mounted on hover / first open),
 // before / after side by side or in one column, then branch + PR.
 
-type Changes = { root: string; branch: string; files: { path: string; status: string; secret: boolean }[]; diff: string; truncated: boolean };
+type Changes = { root: string; branch: string; baseline: boolean; files: { path: string; status: string; secret: boolean; mixed: boolean }[]; diff: string; truncated: boolean };
 type Pr = { url: string | null; branch: string; skipped: string[]; note: string | null };
 
 const ERR_KEYS: Record<string, Key> = {
@@ -26,6 +26,7 @@ const ERR_KEYS: Record<string, Key> = {
   submodule_only: "File đổi đều nằm trong submodule: commit và mở PR trong repo submodule đó.",
   git_push_failed: "Không đẩy được nhánh lên remote (quyền hoặc mạng).", git_failed: "Git báo lỗi.", git_timeout: "Git chạy quá lâu, thử lại.",
   task_busy: "AI đang chạy: đợi xong lượt này.",
+  mixed_changes: "Có file đã sửa từ trước phiên: tải lại Thay đổi rồi xác nhận lại.", no_baseline: "Phiên không có mốc lúc bắt đầu: tải lại Thay đổi rồi xác nhận lại.",
 };
 /** The error texts in the current language (render-time: the caller uses `useT`). */
 const errs = () => Object.fromEntries(Object.entries(ERR_KEYS).map(([k, v]) => [k, tNow(v)]));
@@ -152,6 +153,7 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
     const groups = groupsOf(tree);
     return { tree, groups, files: groups.flatMap((g) => g.files) };
   }, [q.data]);
+  const mixed = useMemo(() => (q.data?.files ?? []).filter((f) => f.mixed && !f.secret).map((f) => f.path), [q.data]);
   const [shut, setShut] = useState<Record<string, boolean>>({}); // tree folders the user closed
   const [cur, setCur] = useState<string | null>(null); // the file last picked in the tree
   const isOpen = (f: File) => fold[f.path] ?? f.size <= OPEN_MAX;
@@ -229,6 +231,13 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
                     {tt("File trông như chứa bí mật (.env, khóa, chứng chỉ) sẽ không được commit: {files}", { files: files.filter((f) => f.secret).map((f) => f.path).join(", ") })}
                   </p>
                 )}
+                {(mixed.length > 0 || !q.data.baseline) && (
+                  <p className="flex items-start gap-2 rounded-md bg-warn-wash px-3 py-2 text-xs text-warn">
+                    <ShieldAlert className="size-4 shrink-0" aria-hidden />
+                    {q.data.baseline ? tt("File đã có sửa từ trước phiên, PR sẽ chứa cả phần đó (không hiện ở dưới): {files}", { files: mixed.join(", ") })
+                      : tt("Phiên này không có mốc lúc bắt đầu: PR sẽ chứa mọi thay đổi đang có trong thư mục dự án.")}
+                  </p>
+                )}
                 {groups.map((g) => (
                   <section key={g.path} aria-label={g.path || tt("Thư mục gốc")} className="grid grid-cols-[minmax(0,1fr)] gap-2">
                     <DirLabel path={g.path} n={g.files.length} />
@@ -241,7 +250,7 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
               </div>
             </div>
           </div>
-          <PrBar t={t} count={files.filter((f) => !f.secret).length} onDone={() => void q.refetch()} />
+          <PrBar t={t} count={files.filter((f) => !f.secret).length} mixedOk={mixed.length > 0 || !q.data.baseline} onDone={() => void q.refetch()} />
         </>}
     </div>
   );
@@ -406,14 +415,15 @@ function Half({ l, side }: { l?: Line; side: "o" | "n" }) {
 
 const SplitRow = ({ l, r }: { l?: Line; r?: Line }) => <div className="grid grid-cols-2"><Half l={l} side="o" /><Half l={r} side="n" /></div>;
 
-/** Commit title + "Tạo nhánh + PR", asked twice before anything is pushed. */
-function PrBar({ t, count, onDone }: { t: Task; count: number; onDone: () => void }) {
+/** Commit title + "Tạo nhánh + PR", asked twice before anything is pushed. `mixedOk`: the page shows the "carries
+ *  earlier edits" warning, so the second click is the user's yes to it (the backend refuses without). */
+function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk: boolean; onDone: () => void }) {
   const tt = useT();
   const qc = useQueryClient();
   const [title, setTitle] = useState(() => (t.title || t.message_text || t.prompt || "").split("\n")[0].slice(0, 120));
   const [sure, setSure] = useState(false);
   const pr = useMutation({
-    mutationFn: () => api<Pr>(`/tasks/${t.id}/pr`, { method: "POST", json: { title: title.trim(), body: tNow("Từ phiên AI Agent {id}.", { id: t.id }) } }),
+    mutationFn: () => api<Pr>(`/tasks/${t.id}/pr`, { method: "POST", json: { title: title.trim(), body: tNow("Từ phiên AI Agent {id}.", { id: t.id }), mixed_ok: mixedOk } }),
     onSuccess: (r) => {
       toast({ text: r.url ? tNow("Đã mở PR") : tNow("Đã đẩy nhánh {branch}", { branch: r.branch }) });
       void qc.invalidateQueries({ queryKey: ["task-events", t.id] });

@@ -1,8 +1,9 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, Workflow, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ImageView } from "@/components/markdown";
 import { useEffect, useRef, useState } from "react";
@@ -14,14 +15,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { fmtNum, type Key, t as tNow, useT } from "@/lib/i18n";
 import { toast, useNow } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
-import { AI_MAX, type Detail, type Field, fileUrl, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
+import { AI_MAX, type Detail, type Field, fileUrl, flowJob, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
-import { saveTicket, selfEdits, useYt, type Yt } from "./state";
+import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
 import { useFlow } from "./workflow";
 
+// The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
+const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
+/** The ticket's UI flow file, as the dashboard names it: its row in the attachments opens the same dialog. */
+const flowName = (issue: string) => `uiflow-${issue}.html`; // = uiflow.NAME (telegram_dashboard/uiflow.py)
+
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
+
+/** One ticket's sheet over another page (Telegram's ticket chip: AI sessions, messages, Briefing): the YouTrack tab's
+ *  own sheet, on a provider that loads no list and leaves the URL alone. Mounted on open; `onClose` once it slid out. */
+export function TicketSheet({ id, onClose }: { id: string; onClose: () => void }) {
+  return <YtProvider embed={id}><Sheet /><Closed onClose={onClose} /></YtProvider>;
+}
+function Closed({ onClose }: { onClose: () => void }) {
+  const open = !!useYt().sheet;
+  useEffect(() => { if (!open) { const t = setTimeout(onClose, 300); return () => clearTimeout(t); } }, [open, onClose]); // after the exit slide
+  return null;
+}
 
 export function Sheet() {
   const t = useT();
@@ -144,6 +161,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const acts: AssigneeActs = other ? { ...y, people: team.data ?? [], loginOf: new Map([...y.loginOf, ...(team.data ?? []).map((p) => [p.name, p.login] as const)]) } : y;
   const i: Ticket | Detail | undefined = d.data ?? row;
   const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
+  const [flowOpen, setFlowOpen] = useState(false); // the UI flow dialog (one entry: this ticket's "UI flow")
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
   const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
@@ -183,6 +201,8 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
     ...(i.estimate ? [["Estimate", `${+(i.estimate / 60).toFixed(1)}h`] as [Key, string]] : []),
     ["Ngày tạo", when(i.created)], ["Cập nhật lúc", when(i.updated)], ["Reporter", d.data?.reporter || (d.isPending ? "…" : "—")],
   ];
+  // a UI flow render left going when its dialog closed (read again on open); this re-renders as the dialog closes
+  const flowRun = !flowOpen && !!flowJob(id);
   return (
     <motion.div className="grid gap-5" initial="h" animate="v" variants={{ v: { transition: { staggerChildren: 0.03 } } }}>
       {!row && <p className="text-xs text-ink-3">{t("Ticket ngoài dữ liệu đã tải.")}</p>}
@@ -192,6 +212,18 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         {meta.map(([k, v]) => <div key={k} className="grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2"><dt className="text-xs text-ink-3">{t(k)}</dt><dd className="min-w-0 truncate">{v}</dd></div>)}
       </motion.dl>
 
+
+      {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
+        <motion.div variants={fade} className="flex flex-wrap gap-2">
+          <Hint text={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")}>
+            <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}>
+              <Workflow aria-hidden /> {t("UI flow")}
+              {flowRun && <span data-flow-running aria-hidden className="size-2 animate-pulse rounded-full bg-hl" />}
+            </Button>
+          </Hint>
+        </motion.div>
+      )}
+      {flowOpen && <FlowDialog issue={id} open onClose={() => setFlowOpen(false)} />}
 
       <motion.section variants={fade} className="grid gap-2">
         <Label>{t("Mô tả")}</Label>
@@ -208,7 +240,13 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
           <Label>{t("Tệp đính kèm ({n})", { n: loose.length })}</Label>
           <div className="flex flex-wrap gap-2">
             {loose.map((a) => (
-              /^image\/(?!svg)/.test(a.mime) ? (
+              a.name === flowName(id) ? ( // the same dialog as the "UI flow" button: this is that file
+                <button key={a.id} type="button" onClick={() => setFlowOpen(true)}
+                  className="grid w-32 gap-1 rounded-lg bg-cotton p-1.5 text-left text-xs shadow-edge hover:bg-paper-2">
+                  <span className="grid h-20 place-items-center rounded bg-hl-wash text-hl-2"><Workflow className="size-6" aria-hidden /></span>
+                  <span className="truncate text-ink-2">{a.name}</span>
+                </button>
+              ) : /^image\/(?!svg)/.test(a.mime) ? (
                 <span key={a.id} title={a.name} className="grid w-32 gap-1 rounded-lg bg-cotton p-1.5 text-xs shadow-edge">
                   <ImageView src={fileUrl(id, a)} alt={a.name} boxClass="my-0 block w-full" className="h-20 w-full rounded object-cover" />
                   <span className="truncate text-ink-2">{a.name}</span>

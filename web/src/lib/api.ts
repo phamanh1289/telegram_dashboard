@@ -13,6 +13,7 @@ export type Outbox = S["OutboxDTO"];
 export type AiResult = S["AiResult"];
 export type Project = S["ProjectDTO"];
 export type Task = S["TaskDTO"];
+export type DataStats = S["DataStats"];
 export type PendingItem = S["PendingItem"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
@@ -91,7 +92,7 @@ export async function readAnswer<T>(res: Response, onPart?: (text: string) => vo
   let buf = "", text = "";
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) throw new ApiError(502, "ai_provider_error");
+    if (done) throw Object.assign(new ApiError(502, "ai_provider_error"), { cut: true }); // the server always ends with done / error: the connection was cut
     buf += value;
     const lines = buf.split("\n");
     buf = lines.pop()!;

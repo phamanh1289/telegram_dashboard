@@ -72,9 +72,10 @@ def test_sessions_resume_in_the_cli_that_started_them(tmp_path, monkeypatch):
     assert "run_command" not in agent and "write_to_file" in agent
 
 
-def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tools_only(tmp_path):
+def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tools_only(tmp_path, monkeypatch):
     import json
 
+    monkeypatch.setenv("HOME", str(tmp_path))  # agy's agent files and saved grants, Codex's config
     s = Settings(root=tmp_path)
     e = task_cmd(s, "claude", "edit", "sid", False, "", "")
     box = json.loads(e[e.index("--settings") + 1])["sandbox"]
@@ -91,6 +92,43 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert server["args"] == ["serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
     assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
     assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
+    # the user's own MCP servers / plugins: only an edit turn they ticked it for; Bash stays sandboxed
+    m = task_cmd(s, "claude", "edit", "sid", True, "", "", mcp=True)
+    assert "--strict-mcp-config" not in m and m[m.index("--allowedTools") + 1].endswith(",mcp__*") and "--settings" in m
+    assert "--strict-mcp-config" in task_cmd(s, "claude", "plan", "sid", True, "", "", mcp=True)
+    # a Zeplin link: the user's zeplin server only, its read-only tools, read-only turns too
+    zs = {"type": "stdio", "command": "npx", "args": ["-y", "@zeplin/mcp-server"], "env": {"ZEPLIN_ACCESS_TOKEN": "x"}}
+    z = task_cmd(s, "claude", "plan", "sid", True, "", "", index=True, zeplin=zs)
+    assert set(json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]) == {"codegraph", "zeplin"}
+    assert z[z.index("--allowedTools") + 1].endswith(",mcp__zeplin__get_design_tokens") and "--strict-mcp-config" in z
+    assert "download_layer_asset" not in z[z.index("--allowedTools") + 1]
+    assert "mcp__zeplin__download_layer_asset" in z[z.index("--disallowedTools") :]  # past a user's allow rule
+    assert z[z.index("--permission-mode") + 1] == "default" and z[z.index("--tools") + 1] == "Read,Grep,Glob,Skill"
+    assert "ZEPLIN_ACCESS_TOKEN" in z[z.index("--mcp-config") + 1] and '"x"' not in " ".join(z)  # by ${NAME} only
+    # Codex: read-only zeplin tools approved ahead, token from the env; with MCP on, the user's config
+    c = task_cmd(s, "codex", "plan", "codex:", False, "", "", zeplin=zs)
+    assert "--ignore-user-config" in c and 'mcp_servers.zeplin.env_vars=["ZEPLIN_ACCESS_TOKEN"]' in c
+    assert 'mcp_servers.zeplin.default_tools_approval_mode="approve"' in c and '"x"' not in " ".join(c)
+    assert "--ignore-user-config" not in task_cmd(s, "codex", "edit", "codex:", False, "", "", mcp=True)
+    assert "--ignore-user-config" in task_cmd(s, "codex", "plan", "codex:", False, "", "", mcp=True)
+    # Antigravity: an agent with the user's MCP servers, only the allowed tools; never a shell
+    (tmp_path / ".gemini" / "config").mkdir(parents=True)
+    grants = '{"allow": ["mcp(context_mode/ctx_execute)", "mcp(zeplin/get_screen)"]}'
+    (tmp_path / ".gemini" / "config" / "config.json").write_text(grants)
+    a = task_cmd(s, "antigravity", "plan", "agy:", False, "", "", zeplin=zs)
+    perms = json.loads(a[a.index("--settings") + 1])["permissions"]
+    assert perms["allow"] == ["mcp(zeplin/get_screen)", "mcp(zeplin/get_component)", "mcp(zeplin/get_design_tokens)"]
+    assert (
+        "mcp(*)" not in perms["deny"] and "command(*)" in perms["deny"] and a[a.index("--agent") + 1].endswith("-mcp")
+    )
+    # the user's saved "always allow" grants would run too (a deny wins): denied, all but the read tools
+    assert "mcp(context_mode/ctx_execute)" in perms["deny"] and "mcp(zeplin/download_layer_asset)" in perms["deny"]
+    assert "mcp(zeplin/get_screen)" not in perms["deny"]
+    e = task_cmd(s, "antigravity", "edit", "agy:", False, "", "", mcp=True)
+    perms = json.loads(e[e.index("--settings") + 1])["permissions"]
+    assert perms["allow"] == ["mcp(*)"] and "command(*)" in perms["deny"]
+    n = task_cmd(s, "antigravity", "plan", "agy:", False, "", "")  # no link, no MCP: none at all
+    assert "mcp(*)" in json.loads(n[n.index("--settings") + 1])["permissions"]["deny"]
 
 
 def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):
@@ -106,8 +144,37 @@ def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, m
     assert box["enabled"] and box["allowUnsandboxedCommands"] is False and box["network"]["strictAllowlist"]
     assert "Bash(curl:*)" in c[c.index("--disallowedTools") + 1] and "--strict-mcp-config" in c
     assert "Bash" not in " ".join(ask_cmd(s, "claude", tools=False, read_dir=None, model="", effort="", shell=True))
-    assert "workspace-write" in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="", shell=True)
-    assert "read-only" in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="")
+    new = ask_cmd(s, "claude", tools=False, read_dir=None, model="", effort="", session=("sid", False))
+    more = ask_cmd(s, "claude", tools=False, read_dir=None, model="", effort="", session=("sid", True))
+    assert new[-2:] == ["--session-id", "sid"] and more[-2:] == ["--resume", "sid"]  # the bot's follow-ups
+    assert 'sandbox_mode="workspace-write"' in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="",
+                                                       shell=True)  # fmt: skip
+    c = ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="")
+    assert 'sandbox_mode="read-only"' in c and "-s" not in c  # the flag would win over the secrets profile
+
+
+def test_codex_reads_no_secrets_and_windows_claude_gets_no_shell(tmp_path, monkeypatch):
+    from telegram_dashboard import providers
+    from telegram_dashboard.providers import ask_cmd, task_cmd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    s = Settings(root=tmp_path)
+    # Codex: a profile over the legacy mode hides the data dir, the app's .env and ~/.ssh; writes only when it may
+    for c, write in ((ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort=""), False),
+                     (task_cmd(s, "codex", "plan", "", False, "", ""), False),
+                     (task_cmd(s, "codex", "edit", "", False, "", ""), True)):  # fmt: skip
+        fs = next(a for a in c if a.startswith("permissions.td.filesystem="))
+        assert 'default_permissions="td"' in c and '":root"="read"' in fs
+        for hidden in (s.data_dir.resolve(), tmp_path.resolve() / ".env", tmp_path / ".ssh"):
+            assert f'"{hidden}"="none"' in fs
+        assert ('":workspace_roots"={"."="write"}' in fs) is write
+    # Claude where it has no sandbox (Windows): an edit turn edits files but gets no Bash, sandboxed or not
+    monkeypatch.setattr(providers, "SHELL_OK", False)
+    c = task_cmd(s, "claude", "edit", "sid", False, "", "")
+    assert "Bash" not in c[c.index("--allowedTools") + 1] and c[c.index("--disallowedTools") + 1].endswith(",Bash")
+    assert "--settings" not in c and c[c.index("--permission-mode") + 1] == "acceptEdits"
+    c = ask_cmd(s, "claude", tools=True, read_dir=None, model="", effort="", shell=True)
+    assert "--settings" not in c and "Bash" not in c[c.index("--allowedTools") + 1]
 
 
 def test_antigravity_no_tool_answers_get_no_tools(tmp_path, monkeypatch):
@@ -147,3 +214,43 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
     got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))["usage"]
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip
+
+
+ZEP = {"command": "npx", "args": ["zeplin-mcp"], "env": {"ZEPLIN_TOKEN": "s3cret"}}
+
+
+def test_ask_cmd_with_zeplin_allows_only_its_read_tools(settings):
+    from telegram_dashboard import providers
+
+    cmd = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert "--strict-mcp-config" in cmd and "--mcp-config" in cmd
+    assert cmd[cmd.index("--allowedTools") + 1] == providers.ZEPLIN_TOOLS
+    assert cmd[cmd.index("--tools") + 1] == "" and cmd[cmd.index("--permission-mode") + 1] == "default"
+    assert "s3cret" not in " ".join(cmd)  # token only in the env
+    assert cmd[cmd.index("--disallowedTools") + 1] == providers.ZEPLIN_DENY  # denied, never allowed
+    assert "download_layer_asset" not in cmd[cmd.index("--allowedTools") + 1]
+    # the project read command keeps its own tools, Zeplin's are added to them
+    p = providers.ask_cmd(settings, "claude", tools=True, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert p[p.index("--allowedTools") + 1] == f"Read,Grep,Glob,Skill,{providers.ZEPLIN_TOOLS}"
+    assert p.count("--disallowedTools") == 1 and providers.ZEPLIN_DENY in " ".join(p)
+
+
+def test_ask_cmd_without_zeplin_is_unchanged(settings):
+    from telegram_dashboard import providers
+
+    a = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low")
+    b = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=None)
+    assert a == b and "--mcp-config" not in a
+
+
+def test_ask_cmd_zeplin_for_codex_and_antigravity(settings, tmp_path, monkeypatch):
+    from telegram_dashboard import providers
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    c = providers.ask_cmd(settings, "codex", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert any("mcp_servers.zeplin.command" in x for x in c) and "s3cret" not in " ".join(c)
+    assert "shell_tool" in c  # still no shell
+    g = providers.ask_cmd(settings, "antigravity", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert "mcp(zeplin/get_screen)" in " ".join(g)
+    deny = json.loads(g[g.index("--settings") + 1])["permissions"]["deny"]
+    assert "read_file(*)" in deny and "command(*)" in deny and "mcp(zeplin/download_layer_asset)" in deny
