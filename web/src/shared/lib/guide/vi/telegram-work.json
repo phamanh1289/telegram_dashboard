@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ai-dock",
+    "tab": "telegram",
+    "area": "Toàn trang › ⌘J",
+    "title": "Trợ lý AI ở mọi trang (⌘J)",
+    "what": "Bên Telegram, ⌘J (Ctrl+J) mở Trợ lý Briefing ở khung bên phải từ bất kỳ trang nào: hỏi về bản tóm tắt mới nhất của mọi nhóm mà không phải sang Briefing. Bên YouTrack, ⌘J mở phiên AI về các ticket đang mở trong phạm vi đang xem (ticket rủi ro, priority cao trước).",
+    "how": [
+      "Nhấn ⌘J (Ctrl+J trên Windows)",
+      "Gõ câu hỏi hoặc bấm một gợi ý"
+    ],
+    "keys": "cmd j ctrl j tro ly ai trợ lý ai hoi ai hỏi ai khung ai"
+  },
+  {
+    "id": "work-trail",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Luồng việc",
+    "title": "Luồng việc của một tin",
+    "what": "Dưới tin đang trả lời có dòng “Luồng việc”: ticket nhắc trong tin kèm trạng thái, phiên AI Agent / Đối chiếu BE trên tin này, chuỗi Q&A, đã trả lời hay chưa. Bấm từng bước để tới đúng chỗ; bước phiên đã có kết quả thì mở kết quả ngay dưới, có nút “Dùng làm nháp trả lời” (đưa vào ô trả lời đang mở) và “Mở phiên”. Không hiện khi tin chưa đi tới bước nào.",
+    "how": [
+      "Mở trả lời một tin tag",
+      "Bấm một bước trong dòng “Luồng việc”"
+    ],
+    "keys": "luong viec luồng việc timeline ticket agent qa"
+  }
+]

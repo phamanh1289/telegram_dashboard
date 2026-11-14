@@ -1,0 +1,392 @@
+[
+  {
+    "id": "yt-dashboard",
+    "tab": "youtrack",
+    "area": "Sidebar › Dashboard",
+    "title": "Role-based Dashboard",
+    "what": "The project's numbers and charts, laid out differently per role (Dev: Needs action, Sprint, Work pace, Testing, Bugs; QA: QC queue, Test results, Quality, Sprint; PO: Needs a decision, Sprint, Speed & forecast, Workload, Quality). Every number is clickable to see its ticket list.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+      },
+      {
+        "t": "Click a number or a chart bar to open the ticket list",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "Narrow the numbers with the \"Sprint\" filter",
+        "at": "Sprint"
+      }
+    ],
+    "keys": "dashboard charts numbers chart kpi stats statistics"
+  },
+  {
+    "id": "yt-dashboard-muc-nhay",
+    "tab": "youtrack",
+    "area": "Dashboard › Section bar",
+    "title": "Dashboard section bar (quick jump)",
+    "what": "A row of buttons stuck to the top of the dashboard, with the section in view highlighted; click to scroll to that section.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click the second section name in the section bar (e.g. Sprint): the page scrolls to that section",
+        "at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(2)"
+      },
+      {
+        "t": "Click the fourth section name: the section in view is highlighted",
+        "at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(4)"
+      }
+    ],
+    "keys": "dashboard sections jump nav scroll section"
+  },
+  {
+    "id": "yt-dashboard-hoi-ai",
+    "tab": "youtrack",
+    "area": "Dashboard › AI button",
+    "title": "Ask the AI about the dashboard numbers",
+    "what": "The AI button on each card opens a chat about that report; the big button in the section bar asks about the whole dashboard. The AI gets the dashboard numbers (and QC results if any).",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click the \"AI\" chip on the \"Needs attention\" card (the \"Ask AI about the whole dashboard\" button in the section bar covers the whole dashboard)",
+        "at": [
+          "Hỏi AI về Cần chú ý",
+          "Hỏi AI về"
+        ]
+      },
+      {
+        "t": "Type a question about the numbers in the request box",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Click \"Send\" (or Enter)",
+        "at": "Gửi"
+      },
+      "Wait for the AI's answer, then press Esc to close the panel",
+      {
+        "t": "Click \"AI history\" in the sidebar",
+        "at": "Lịch sử AI"
+      },
+      {
+        "t": "Choose the \"Dashboard\" tab to see the chat you just had",
+        "at": "css:[aria-label=\"Loại phiên AI\"] button:nth-child(2)"
+      }
+    ],
+    "keys": "ask ai dashboard ai numbers analysis anomalies"
+  },
+  {
+    "id": "yt-can-chu-y",
+    "tab": "youtrack",
+    "area": "Dashboard › Needs attention",
+    "title": "Needs attention",
+    "what": "The role's key quick filters with counts, red (critical) or yellow (warning), items with a count first.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "In the \"Needs attention\" card click a row (e.g. \"Blocked\", \"Overdue\") to see the ticket list",
+        "at": [
+          "Blocked",
+          "Quá hạn"
+        ]
+      },
+      "Press Esc to close the side panel"
+    ],
+    "keys": "needs attention alerts warning blocked overdue critical"
+  },
+  {
+    "id": "yt-ticket-keo-dai",
+    "tab": "youtrack",
+    "area": "Dashboard › Long-running tickets",
+    "title": "Long-running tickets / Waiting for test too long",
+    "what": "Tickets sitting in the same state too long: yellow from the warning threshold, red past the bad threshold. You can choose which states to watch (QA watches the waiting-for-test states by default).",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "On the \"Long-running tickets\" card (QA: \"Waiting for test too long\") click the \"State\" button to choose the states to watch",
+        "at": "State"
+      },
+      {
+        "t": "Click the \"… red / … yellow\" chip to see the ticket list",
+        "at": "css:button:has(> span.bg-error-wash)"
+      },
+      "Press Esc to close the side panel",
+      {
+        "t": "Click a row in the card to open the ticket",
+        "at": "css:ul.divide-y > li > button"
+      }
+    ],
+    "keys": "long running aging stale waiting for test too long stuck red yellow"
+  },
+  {
+    "id": "yt-kpi-sprint",
+    "tab": "youtrack",
+    "area": "Dashboard › Sprint",
+    "title": "Sprint KPIs, Sprint progress, Burndown",
+    "what": "KPIs: Tickets in sprint (compared with the previous sprint), In progress, Awaiting QC, Sprint completion rate. Progress: a Done/QC/In progress/Todo bar with a time-elapsed marker and an On track/Slightly behind/Behind label. Burndown: actual, ideal and the forecast finish date.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click the \"Tickets in sprint\" KPI box (Sprint section) to see the tickets",
+        "at": "Ticket trong sprint"
+      },
+      "Press Esc to close the side panel",
+      {
+        "t": "Click the sprint's progress bar to see that sprint's tickets",
+        "at": "css:button[data-drill=\"sprint\"]"
+      },
+      "See the Burndown card next to it: actual line, ideal line, forecast finish date"
+    ],
+    "keys": "kpi sprint progress burndown forecast completion rate on track behind"
+  },
+  {
+    "id": "yt-nhip-lam-viec",
+    "tab": "youtrack",
+    "area": "Dashboard › Work pace (Dev) / Speed & forecast (PO)",
+    "title": "Tickets done per day, Lead time, Velocity, Moved across sprints",
+    "what": "Tickets done per day (pick 7/14/30 days), Lead time (median, 85%, by Bug/Feature/Task), Velocity per sprint (PO; a carried-over ticket counts only in the sprint it closed), tickets moved across sprints several times.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "On the \"Tickets done per day\" card pick the range \"7 days / 14 days / 30 days\"",
+        "at": "Khoảng thời gian biểu đồ"
+      },
+      {
+        "t": "Click a bar in the chart to see the tickets done that day",
+        "at": "css:svg g.cursor-pointer"
+      }
+    ],
+    "keys": "tickets done per day throughput lead time velocity moved sprint carry over time range"
+  },
+  {
+    "id": "yt-tai-viec-wip",
+    "tab": "youtrack",
+    "area": "Dashboard › Workload (PO)",
+    "title": "Work in progress (WIP limit), Awaiting QC by person, Open tickets by state",
+    "what": "A table of each person's in-progress and Blocked tickets, with an \"over limit\" WIP warning; tickets waiting for QC by person; open tickets by state.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "On the \"Work in progress\" card choose a \"WIP limit\" of 2-5",
+        "at": "Ngưỡng WIP"
+      },
+      {
+        "t": "Click a person's row to see their tickets",
+        "at": "css:tbody tr[tabindex=\"0\"]"
+      }
+    ],
+    "keys": "wip limit workload over limit waiting for qc by person qa load"
+  },
+  {
+    "id": "yt-ket-qua-kiem-thu",
+    "tab": "youtrack",
+    "area": "Dashboard › Test results",
+    "title": "QC numbers: Test runs, First-pass, Returned, Reopened",
+    "what": "Read from the state history: test runs, % passed on the first try, runs returned by QC, reopens; test results per day; by tester; returns by dev; tickets returned several times / reopened.",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click the \"Test runs\" box (Testing / Test results section) to see the tested tickets",
+        "at": "Lượt test"
+      },
+      "Press Esc to close the side panel",
+      {
+        "t": "Click the \"Returned\" box to see the tickets QC sent back to dev",
+        "at": "Bị trả lại"
+      }
+    ],
+    "keys": "qc pass returned reopen first pass test runs testing ping pong by tester"
+  },
+  {
+    "id": "yt-chat-luong-bug",
+    "tab": "youtrack",
+    "area": "Dashboard › Bugs / Quality",
+    "title": "Bug numbers",
+    "what": "Bugs in sprint, New and fixed bugs per day, User bugs, Open bugs by priority and by module, Bugs vs Features, Not ready for sprint (PO).",
+    "how": [
+      {
+        "t": "Click \"Dashboard\" in the sidebar",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click the \"bugs in sprint\" number (the \"Bugs in sprint\" card) to open the ticket list",
+        "at": "css:button.justify-items-start:not(.yt-card)"
+      },
+      "Scroll down: click a bar in the other bug cards (per day, priority, module, Bugs vs Features) to see the tickets"
+    ],
+    "keys": "bugs quality bugs by module bugs by priority bugs vs features not ready for sprint"
+  },
+  {
+    "id": "yt-thanh-vien",
+    "tab": "youtrack",
+    "area": "Sidebar › Members",
+    "title": "Members page (one person at a time)",
+    "what": "Pick a person to see their numbers for a period (Open, In progress, Awaiting QC, Blocked, Overdue, No update >7 days, Moved sprint ≥2 times, Done, Bugs, Lead time) and the Open / Needs attention / Done lists. Lead time leaves out bulk-closure days, like the Dashboard.",
+    "how": [
+      {
+        "t": "Click \"Members\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+      },
+      {
+        "t": "Search with the \"Search people\" box",
+        "at": "Tìm người"
+      },
+      {
+        "t": "Click a person's name",
+        "at": "css:li > button[aria-current]"
+      },
+      {
+        "t": "Choose a \"Period\" of 7/14/30/60/90 days",
+        "at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
+      },
+      {
+        "t": "Pick \"Open\" / \"Needs attention\" / \"Done\", then click a ticket to open it",
+        "at": "css:main ul.divide-y > li > button"
+      }
+    ],
+    "keys": "members people member person individual period"
+  },
+  {
+    "id": "yt-ai-phan-tich-nguoi",
+    "tab": "youtrack",
+    "area": "Members › AI analysis",
+    "title": "AI analysis of one person",
+    "what": "The AI reads that person's tickets and numbers: Work summary, Review, Assessment, 1-1 prep, or your own request.",
+    "how": [
+      {
+        "t": "Click \"Members\" in the sidebar",
+        "at": "Thành viên"
+      },
+      {
+        "t": "Click a person's name in the list (or yourself)",
+        "at": "css:main li > button[aria-current]"
+      },
+      {
+        "t": "On the \"Ask AI about {name}\" card click a button, e.g. \"Work summary\" (also \"Review\", \"Assessment\", \"Prep 1:1\")",
+        "at": "Tóm tắt công việc"
+      },
+      "Wait for the AI to finish, then press Esc to close the panel",
+      {
+        "t": "Or edit the prompt in the request box (the default prompt follows the \"Period\" unless you edited it)",
+        "at": "Yêu cầu cho AI"
+      },
+      {
+        "t": "Choose \"Tickets sent to AI\": Open / Done / Both",
+        "at": "css:[role=\"group\"][aria-label=\"Ticket gửi cho AI\"]"
+      },
+      {
+        "t": "Click \"Analyze\"",
+        "at": "Phân tích"
+      }
+    ],
+    "keys": "ai analysis assessment review 1-1 one on one work summary performance"
+  },
+  {
+    "id": "yt-so-sanh-team",
+    "tab": "youtrack",
+    "area": "Members › Whole team",
+    "title": "Compare the whole team + AI work split",
+    "what": "Everyone side by side for a period (load bar, blocked / overdue / quiet >7 days, done count, lead time), sorted by Load / In progress / Risk / Done / Lead time; the AI analyzes the load and suggests how to rebalance work. Lead time leaves out bulk-closure days, like the Dashboard.",
+    "how": [
+      {
+        "t": "Click \"Members\" in the sidebar",
+        "at": "Thành viên"
+      },
+      {
+        "t": "Click \"Whole team\" at the top of the list",
+        "at": "Cả team"
+      },
+      {
+        "t": "Choose a period of 7-90 days under \"Period\"",
+        "at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
+      },
+      {
+        "t": "Pick the sort: Load / In progress / Risk / Done / Lead time",
+        "at": "css:[role=\"group\"][aria-label=\"Sắp xếp\"]"
+      },
+      {
+        "t": "Click \"AI work split\"; the AI runs in the side panel",
+        "at": "AI chia việc"
+      },
+      {
+        "t": "Press Esc to close the panel, then click a person to see their details",
+        "at": "css:main ul.divide-y > li > button"
+      }
+    ],
+    "keys": "compare whole team team compare team load split work rebalance workload"
+  },
+  {
+    "id": "yt-link-ticket-telegram",
+    "tab": "youtrack",
+    "area": "URL › ?ticket=",
+    "title": "Open a ticket from a link (ticket chips on Telegram)",
+    "what": "A link with ?ticket=VA-1 (e.g. clicking a ticket chip in Telegram) opens that ticket straight in the side panel; filters, page and project are in the URL too, for sharing.",
+    "how": [
+      {
+        "t": "Click \"Tickets\" in the sidebar: the page and filters show in the URL",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+      },
+      "Copy the current page URL to share the exact filters and page",
+      "Click a ticket chip in Telegram or open a link like /youtrack/?ticket=VA-123 to go straight to the ticket"
+    ],
+    "keys": "link ticket url share deep link telegram ticket chip"
+  },
+  {
+    "id": "yt-du-lieu-mock",
+    "tab": "youtrack",
+    "area": "YouTrack › No token yet",
+    "title": "No token yet: opens Settings › YouTrack",
+    "what": "Until a YouTrack token is pasted, opening the YouTrack tab switches to Settings › YouTrack to connect; there is no sample data.",
+    "how": [
+      {
+        "t": "Click \"YouTrack\" in the top bar: without a token the page switches to Settings › YouTrack by itself",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Click the \"Settings\" icon at the right of the top bar",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Choose the \"YouTrack\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Enter the \"YouTrack URL\"",
+        "at": "URL YouTrack"
+      },
+      {
+        "t": "Paste the \"YouTrack token\" (Profile → Account Security → New token)",
+        "at": "Token YouTrack"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+      }
+    ],
+    "keys": "no token not connected token youtrack connect settings mock"
+  }
+]

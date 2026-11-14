@@ -5,7 +5,6 @@ import shutil
 import sqlite3
 
 import pytest
-
 from telegram_dashboard import config, local_data
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError

@@ -75,7 +75,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: Sign every zip (the app installs an update only if its .sig matches telegram_dashboard/release_key.pem)
+      - name: Sign every zip (the app installs an update only if its .sig matches backend/telegram_dashboard/release_key.pem)
         env:
           KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
@@ -89,7 +89,7 @@ jobs:
           openssl rsa -check -noout -in "$RUNNER_TEMP/key.pem" -passin pass: >/dev/null 2>&1 || {
             echo "::error::RELEASE_SIGNING_KEY is not an unencrypted RSA private key ($(wc -l < "$RUNNER_TEMP/key.pem") lines, PUBLIC markers: $(grep -c PUBLIC "$RUNNER_TEMP/key.pem" || true), ENCRYPTED markers: $(grep -c ENCRYPTED "$RUNNER_TEMP/key.pem" || true)). Set it to: base64 -i ~/.config/telegram-dashboard/release_signing_key.pem"
             exit 1; }
-          openssl rsa -RSAPublicKey_in -in telegram_dashboard/release_key.pem -pubout -out "$RUNNER_TEMP/pub.pem"
+          openssl rsa -RSAPublicKey_in -in backend/telegram_dashboard/release_key.pem -pubout -out "$RUNNER_TEMP/pub.pem"
           for z in dist/*.zip; do
             openssl dgst -sha256 -sign "$RUNNER_TEMP/key.pem" -out "$z.sig" "$z"
             openssl dgst -sha256 -verify "$RUNNER_TEMP/pub.pem" -signature "$z.sig" "$z"  # secret matches the app's key

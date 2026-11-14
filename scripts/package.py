@@ -57,7 +57,7 @@ def main() -> None:
     run("uv", "pip", "install", "--python", str(py), "--break-system-packages", "--no-cache", "-r", str(req))
 
     app = vdir / "app"
-    shutil.copytree(ROOT / "telegram_dashboard", app / "telegram_dashboard",
+    shutil.copytree(ROOT / "backend/telegram_dashboard", app / "telegram_dashboard",
                     ignore=shutil.ignore_patterns("__pycache__"))  # fmt: skip
     shutil.copytree(ROOT / "web/out", app / "web/out")
     (app / "VERSION").write_text(ver)

@@ -372,17 +372,17 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = "==0.162.0" },
-    { name = "httpx", specifier = "==0.*" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "pydantic", specifier = "==2.14.1" },
     { name = "telethon", specifier = "==1.45.0" },
-    { name = "uvicorn", specifier = "==0.*" },
+    { name = "uvicorn", specifier = "==0.54.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
+    { name = "pytest", specifier = "==9.2.0" },
+    { name = "pytest-asyncio", specifier = "==1.4.1" },
+    { name = "ruff", specifier = "==0.17.3" },
 ]
 
 [[package]]

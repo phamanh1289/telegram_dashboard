@@ -1,0 +1,319 @@
+[
+  {
+    "id": "composer-reply",
+    "tab": "telegram",
+    "area": "Reply panel",
+    "title": "Write and send a reply",
+    "what": "Sends a reply straight to the tag on Telegram (up to 4096 characters, with a counter). After sending, the next unhandled message opens.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Type in the \"Write a reply…\" box.",
+        "at": "Nội dung trả lời"
+      },
+      {
+        "t": "Click \"Send\" (or press ⌘/Ctrl+Enter).",
+        "at": "css:form[data-composer] button[type=submit]"
+      },
+      "After sending, the next unhandled message opens. Press Esc or click the X \"Close (Esc)\" to close the panel."
+    ],
+    "keys": "send reply compose ctrl enter cmd enter 4096 characters close esc"
+  },
+  {
+    "id": "composer-snippets",
+    "tab": "telegram",
+    "area": "Reply box › Templates",
+    "title": "Quick reply templates",
+    "what": "The \"Templates\" button in the reply box (or typing / in an empty box) opens a list of canned replies; {name} and {ticket} are filled in for you. Save what you are typing as a new template and delete ones you don't use. Templates are saved in this browser.",
+    "how": [
+      "Click \"Templates\" in the reply box, or type / in an empty box",
+      "Pick a template to insert it; \"Save the current text as a template\" adds a new one"
+    ],
+    "keys": "templates reply templates canned replies quick reply"
+  },
+  {
+    "id": "composer-mention",
+    "tab": "telegram",
+    "area": "Reply box, Q&A › @",
+    "title": "Tag group members with @",
+    "what": "Type @ in the reply box (To do) or the Q&A question / answer box to open the group's member list, keep typing to filter by name or username. People with a username are inserted as @username; people without one show \"tag by name\" and Telegram still notifies them as a tag. In Q&A, a tag by name also opens a #QA thread like an @username tag. When a group hides its member list, type the @username yourself.",
+    "how": [
+      "Type @ and a few letters of the name in the reply box or the Q&A box",
+      "↑ ↓ to choose, Enter or Tab to insert, Esc to close the list"
+    ],
+    "keys": "tag tag name @ members username suggestions"
+  },
+  {
+    "id": "composer-split-view",
+    "tab": "telegram",
+    "area": "Reply box › Wide screen",
+    "title": "Reply side by side with the list (screens ≥ 1280px)",
+    "what": "On wide screens, replying from To do, Pinned tags or a group keeps the list on the left. The \"Tag n/N waiting\" strip above the reply box has ‹ › buttons to go to the next tag; j/k too. When the box is narrow, the \"Reply / AI assistant\" button switches between the composer and the AI panel.",
+    "how": [
+      "Open a tag on a screen ≥ 1280px",
+      "Use ‹ › or j/k to go to the next / previous waiting tag",
+      "Narrow box: click \"AI assistant\" to open the AI panel; once the AI writes a draft it switches back to \"Reply\""
+    ],
+    "keys": "split view side by side list next tag wide screen ai assistant"
+  },
+  {
+    "id": "composer-send-recovery",
+    "tab": "telegram",
+    "area": "Reply panel › Send status",
+    "title": "When it is unclear whether a message was sent",
+    "what": "If it is unclear whether Telegram received the message, you can check, retry the same request (no duplicate send) or stop tracking it. When Telegram asks you to wait, the seconds left are shown.",
+    "how": [
+      "Shown only when Telegram has not confirmed receiving the message (network loss, timeout).",
+      "Click \"Check\" to see the status.",
+      "Click \"Retry the same request\" to resend safely without a duplicate.",
+      "Click \"Stop tracking the request\" to write it again."
+    ],
+    "keys": "check retry same request stop tracking send failed unknown"
+  },
+  {
+    "id": "composer-ai-summary",
+    "tab": "telegram",
+    "area": "Reply panel › Summary",
+    "title": "AI summary and reply suggestions",
+    "what": "The AI summarizes the tag (with the group context) from your role and platform's point of view, suggests next steps and reply drafts; text streams in live while the AI writes.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Add extra instructions in the prompt box (optional); press a to jump to it.",
+        "at": "Prompt cho AI"
+      },
+      {
+        "t": "Click \"Summarize & suggest\" (or Enter in the prompt box).",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      "Text appears as the AI writes; click \"Cancel\" to stop, \"Summarize again\" to rerun.",
+      "Every ask is saved in the message's AI assistant session (one session per message, with a REF-… ID): open the message again to see the earlier turns, and the AI remembers them. Questions the AI writes ready to send (quotes opening with @name) have a copy button and a button that posts them to the group with a #QA code, so Q&A follows the answers. Ask on, mark Done or delete the session in AI Agent › AI assistant."
+    ],
+    "keys": "summarize suggest ai summary draft prompt key a summarize again cancel session ai assistant saved post question qa"
+  },
+  {
+    "id": "composer-ai-code",
+    "tab": "telegram",
+    "area": "Reply panel › Answer from code",
+    "title": "Answer a question from the project's code",
+    "what": "Someone asks you about logic, a business rule or progress: pick a project in the prompt box, the AI reads the code (read-only) and answers with the files / functions it rests on, how sure it is and what needs confirming, plus 2 drafts \"Short\" / \"Complete\" written for the asker's role (PO / QA: no file or API names). Progress questions: the AI also reads the last 14 days of commits and related YouTrack tickets. The code read runs in the background: closing the reply panel leaves it running, opening that message again shows its progress / result; only \"Cancel\" stops it. Dev role only; the project is remembered.",
+    "how": [
+      "Dev role only.",
+      {
+        "t": "Click the message with the question to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "In the prompt box, click the project field and pick the code folder (or \"Add folder…\").",
+        "at": "Dự án tham chiếu cho AI"
+      },
+      {
+        "t": "Click \"Answer from code\" and wait while the AI reads the code.",
+        "at": [
+          "Trả lời từ code",
+          "Hỏi code lại"
+        ]
+      },
+      "On a draft, click the copy icon to copy it, or the send icon to reply to that message right away."
+    ],
+    "keys": "answer from code read project code logic business rule progress evidence tra loi tu code"
+  },
+  {
+    "id": "composer-ai-options",
+    "tab": "telegram",
+    "area": "Reply panel › AI drafts",
+    "title": "Pick an AI reply draft by relationship",
+    "what": "The AI offers reply drafts by your relationship to the sender (\"I'm their senior\", \"Peer\", \"Replying to a senior\"); the choice is remembered for that sender.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Click \"Summarize & suggest\" and wait for the AI to finish.",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      {
+        "t": "Under \"AI drafts\" click a draft to put it in the reply box, edit it, then Send; or use the copy / send icon on a draft to copy it or send it right away.",
+        "at": "css:label:has(input[name=\"ai-option\"])"
+      }
+    ],
+    "keys": "ai drafts manager peer reply to manager options draft relationship"
+  },
+  {
+    "id": "composer-ask-missing",
+    "tab": "telegram",
+    "area": "Reply panel › Summary (QA)",
+    "title": "Ask for missing information",
+    "what": "With the QA role, when the summary flags [needs more info], it inserts a question asking for it (build, device, repro steps…).",
+    "how": [
+      "Needs the QA/QC role (change in Settings › General).",
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Click \"Summarize & suggest\" and wait for the AI to finish.",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      {
+        "t": "If the summary has [needs more info], click \"Ask for missing info\".",
+        "at": "Hỏi thông tin còn thiếu"
+      }
+    ],
+    "keys": "ask for missing info qa needs more info repro steps build device"
+  },
+  {
+    "id": "composer-ai-agent",
+    "tab": "telegram",
+    "area": "Reply panel › AI Agent",
+    "title": "Give to AI Agent",
+    "what": "Hands the tag to the AI to work on in a code project (fix a bug, add a feature); choose Read only (recommended) or Can edit files. The dashboard loads for the AI the YouTrack tickets the message names (a link or just the ID, e.g. VA-123), the Knowledge Base articles those tickets link to, and Telegram message links; the AI must read them all before writing questions / points to confirm. Dev role only.",
+    "how": [
+      "Dev role only.",
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Click \"AI Agent\" next to the AI assistant title in the right column.",
+        "at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
+      },
+      {
+        "t": "Choose a \"Project\".",
+        "at": "css:button[aria-label=\"Dự án tham chiếu cho AI\"]"
+      },
+      {
+        "t": "Enter \"Extra request\" if needed.",
+        "at": "Yêu cầu thêm cho AI"
+      },
+      {
+        "t": "Choose \"Read only\" (recommended) or \"Can edit files\".",
+        "at": [
+          "Chỉ đọc",
+          "Được sửa file"
+        ]
+      },
+      {
+        "t": "Click \"Start\"; you can adjust the model/effort first.",
+        "at": "Bắt đầu"
+      }
+    ],
+    "keys": "assign ai agent task project code fix bug read-only can edit files start"
+  },
+  {
+    "id": "composer-youtrack-ticket",
+    "tab": "telegram",
+    "area": "Reply panel › YouTrack",
+    "title": "Create a YouTrack ticket from a message",
+    "what": "Creates a ticket from the tag (choose Project, Type, Priority, Assignee; images in the message are attached); the ticket link is added to your reply. The AI can draft the title, Type/Priority and a templated description. Warns about possible duplicates.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Click \"Create ticket\" next to the AI assistant title in the right column.",
+        "at": "css:form[data-composer] button[aria-label=\"YouTrack\"]"
+      },
+      {
+        "t": "Click \"AI draft\" for the AI to write the title, Type/Priority and description (if an AI is set up).",
+        "at": [
+          "AI soạn",
+          "Một dòng nêu vấn đề / yêu cầu"
+        ]
+      },
+      {
+        "t": "Edit the title if needed.",
+        "at": "Một dòng nêu vấn đề / yêu cầu"
+      },
+      {
+        "t": "Click \"Create ticket\".",
+        "at": "Tạo ticket"
+      },
+      "If there is a similar ticket, click \"Add to this one\" to comment there instead of creating a new one."
+    ],
+    "keys": "create ticket youtrack issue bug ai draft duplicate ticket add to this one project type priority assignee"
+  },
+  {
+    "id": "composer-related-tickets",
+    "tab": "telegram",
+    "area": "Reply panel › Looks related",
+    "title": "Tickets that look related",
+    "what": "When a message names no ticket ID, it suggests up to 3 open tickets that look related and lets you insert their link into the reply.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      "See the \"Possibly related tickets\" section under the tool buttons (only when the message names no ticket ID).",
+      {
+        "t": "Click \"+\" on a ticket row to insert the ticket link into the reply.",
+        "at": "css:[aria-label=\"Ticket có vẻ liên quan\"] button"
+      }
+    ],
+    "keys": "related tickets insert link youtrack suggestions"
+  },
+  {
+    "id": "composer-model-effort",
+    "tab": "telegram",
+    "area": "Reply panel / AI Agent › Model and effort",
+    "title": "Choose the model and effort in place",
+    "what": "Quickly pick the model and effort for summaries/drafts or for Task and AI Agent; shares the choice with the AI accounts page.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message in the list to open the reply page.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Pick a model in the dropdown.",
+        "at": "css:[role=group][aria-label*=\"model và effort\"] [aria-label^=\"Model\"]"
+      },
+      {
+        "t": "Drag the effort slider.",
+        "at": "css:[role=group][aria-label*=\"model và effort\"] input[type=range]"
+      },
+      "Also in the AI Agent dialog, Check vs BE and the top of the AI Agent page; shares the choice with the AI accounts page."
+    ],
+    "keys": "model effort choose model ai fast strong low medium high"
+  }
+]

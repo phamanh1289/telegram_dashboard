@@ -1,0 +1,319 @@
+[
+  {
+    "id": "composer-reply",
+    "tab": "telegram",
+    "area": "Khung Trả lời",
+    "title": "Soạn và gửi trả lời",
+    "what": "Gửi trả lời trực tiếp vào tin tag trên Telegram (tối đa 4096 ký tự, có bộ đếm). Gửi xong tự mở tin chưa xử lý kế tiếp.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Gõ vào ô \"Viết trả lời…\".",
+        "at": "Nội dung trả lời"
+      },
+      {
+        "t": "Bấm \"Gửi\" (hoặc nhấn ⌘/Ctrl+Enter).",
+        "at": "css:form[data-composer] button[type=submit]"
+      },
+      "Gửi xong tự mở tin chưa xử lý kế tiếp. Nhấn Esc hoặc bấm X \"Đóng (Esc)\" để đóng khung."
+    ],
+    "keys": "gui tra loi send reply soan ctrl enter cmd enter 4096 ky tu dong esc"
+  },
+  {
+    "id": "composer-snippets",
+    "tab": "telegram",
+    "area": "Ô trả lời › Mẫu",
+    "title": "Mẫu trả lời nhanh",
+    "what": "Nút “Mẫu” trong ô trả lời (hoặc gõ / khi ô đang trống) mở danh sách câu trả lời soạn sẵn; {tên} và {ticket} được điền tự động. Lưu nội dung đang gõ thành mẫu mới, xóa mẫu không dùng. Mẫu lưu trên trình duyệt này.",
+    "how": [
+      "Bấm “Mẫu” trong ô trả lời, hoặc gõ / ở ô trống",
+      "Chọn một mẫu để chèn; “Lưu nội dung đang soạn làm mẫu” để thêm mẫu mới"
+    ],
+    "keys": "mau tra loi mẫu trả lời snippet template cau soan san câu soạn sẵn tra loi nhanh trả lời nhanh"
+  },
+  {
+    "id": "composer-mention",
+    "tab": "telegram",
+    "area": "Ô trả lời, Q&A › @",
+    "title": "Tag thành viên nhóm bằng @",
+    "what": "Gõ @ trong ô trả lời (Việc cần xử lý) hoặc ô hỏi / trả lời của Q&A để mở danh sách thành viên của nhóm, gõ tiếp để lọc theo tên hoặc username. Người có username được chèn @username; người không có username hiện “tag theo tên” và vẫn được Telegram báo như một tag. Ở Q&A, tag theo tên cũng mở chuỗi #QA như tag @username. Nhóm ẩn danh sách thành viên thì gõ @username bằng tay.",
+    "how": [
+      "Gõ @ rồi vài chữ của tên trong ô trả lời hoặc ô Q&A",
+      "↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
+    ],
+    "keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên username goi y gợi ý"
+  },
+  {
+    "id": "composer-split-view",
+    "tab": "telegram",
+    "area": "Ô trả lời › Màn rộng",
+    "title": "Trả lời song song với danh sách (màn ≥ 1280px)",
+    "what": "Trên màn rộng, mở trả lời từ Việc cần xử lý, Tag đã ghim hay một nhóm thì danh sách vẫn nằm bên trái. Dải “Tag n/N đang chờ” trên ô trả lời có nút ‹ › để sang tag kế; j/k cũng vậy. Khi ô hẹp, nút “Trả lời / Trợ lý AI” chuyển giữa ô gõ và khung AI.",
+    "how": [
+      "Mở một tag trên màn ≥ 1280px",
+      "Dùng ‹ › hoặc j/k để sang tag đang chờ kế / trước",
+      "Ô hẹp: bấm “Trợ lý AI” để mở khung AI, AI soạn xong một nháp thì tự quay lại “Trả lời”"
+    ],
+    "keys": "chia doi chia đôi song song split view danh sach danh sách tag ke tag kế man rong màn rộng tro ly ai trợ lý ai"
+  },
+  {
+    "id": "composer-send-recovery",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Trạng thái gửi",
+    "title": "Xử lý khi chưa rõ đã gửi",
+    "what": "Nếu không rõ Telegram đã nhận tin chưa, có thể kiểm tra, thử lại cùng yêu cầu (không gửi trùng) hoặc bỏ theo dõi. Khi Telegram yêu cầu chờ, hiện số giây còn lại.",
+    "how": [
+      "Chỉ hiện khi Telegram chưa xác nhận đã nhận tin (mất mạng, hết thời gian).",
+      "Bấm \"Kiểm tra\" để xem trạng thái.",
+      "Bấm \"Thử lại cùng yêu cầu\" để gửi lại an toàn, không gửi trùng.",
+      "Bấm \"Bỏ theo dõi yêu cầu\" để soạn lại."
+    ],
+    "keys": "kiem tra thu lai cung yeu cau bo theo doi gui that bai retry unknown"
+  },
+  {
+    "id": "composer-ai-summary",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Tóm tắt",
+    "title": "AI tóm tắt và gợi ý trả lời",
+    "what": "AI tóm tắt tin được tag (kèm ngữ cảnh nhóm) theo góc nhìn vai trò và nền tảng, đề xuất bước tiếp theo và các mẫu trả lời; hiện chữ trực tiếp khi AI đang viết.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Nhập yêu cầu thêm vào ô prompt (không bắt buộc); nhấn a để nhảy vào ô này.",
+        "at": "Prompt cho AI"
+      },
+      {
+        "t": "Bấm \"Tóm tắt & gợi ý\" (hoặc Enter trong ô prompt).",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      "Chữ hiện dần khi AI viết; bấm \"Hủy\" để dừng, \"Tóm tắt lại\" để chạy lại.",
+      "Mỗi lần hỏi được lưu vào phiên Trợ lý AI của tin đó (một tin một phiên, có mã REF-…): mở lại tin là thấy các lượt cũ, AI nhớ các lượt trước. Câu hỏi AI soạn sẵn (khối trích dẫn mở bằng @tên) có nút chép và nút gửi thẳng vào nhóm kèm mã #QA để Q&A theo dõi trả lời. Hỏi tiếp, Done hay xóa phiên ở AI Agent › Trợ lý AI."
+    ],
+    "keys": "tom tat goi y ai summary draft prompt phim a tom tat lai huy phien tro ly ai luu gui cau hoi qa"
+  },
+  {
+    "id": "composer-ai-code",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Trả lời từ code",
+    "title": "Trả lời câu hỏi từ code dự án",
+    "what": "Ai đó hỏi bạn về logic, nghiệp vụ hay tiến độ: chọn dự án ở ô prompt, AI đọc code (chỉ đọc) và trả lời kèm căn cứ file / hàm, độ chắc chắn, điều cần xác nhận, cùng 2 bản nháp \"Ngắn gọn\" / \"Đầy đủ\" viết theo vai trò người hỏi (PO / QA: không nêu tên file, API). Câu hỏi tiến độ: AI đọc thêm commit 14 ngày gần nhất và ticket YouTrack liên quan. Lượt đọc code chạy nền: đóng khung trả lời vẫn chạy tiếp, mở lại tin đó sẽ thấy tiến độ / kết quả; \"Hủy\" mới dừng hẳn. Chỉ có với vai trò Dev; dự án được nhớ cho lần sau.",
+    "how": [
+      "Chỉ có với vai trò Dev.",
+      {
+        "t": "Bấm vào tin có câu hỏi để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Trong ô prompt, bấm ô dự án và chọn thư mục code (hoặc \"Thêm thư mục…\").",
+        "at": "Dự án tham chiếu cho AI"
+      },
+      {
+        "t": "Bấm \"Trả lời từ code\" và chờ AI đọc code.",
+        "at": [
+          "Trả lời từ code",
+          "Hỏi code lại"
+        ]
+      },
+      "Ở bản nháp, bấm biểu tượng copy để copy, hoặc biểu tượng gửi để trả lời ngay tin đó."
+    ],
+    "keys": "tra loi tu code doc code du an hoi logic nghiep vu tien do can cu answer from code project"
+  },
+  {
+    "id": "composer-ai-options",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Mẫu AI",
+    "title": "Chọn mẫu trả lời AI theo quan hệ",
+    "what": "AI đưa ra mẫu trả lời theo quan hệ với người gửi (\"Tôi là cấp trên\", \"Ngang cấp\", \"Trả lời cấp trên\"); lựa chọn được nhớ cho người gửi đó.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Bấm \"Tóm tắt & gợi ý\" và chờ AI xong.",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      {
+        "t": "Ở \"Mẫu AI\" bấm một mẫu để đưa vào ô trả lời, sửa rồi Gửi; hoặc bấm biểu tượng copy / gửi ở góc mẫu để copy hay gửi ngay.",
+        "at": "css:label:has(input[name=\"ai-option\"])"
+      }
+    ],
+    "keys": "mau ai cap tren ngang cap tra loi cap tren options draft quan he"
+  },
+  {
+    "id": "composer-ask-missing",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Tóm tắt (QA)",
+    "title": "Hỏi thông tin còn thiếu",
+    "what": "Với vai trò QA, khi tóm tắt đánh dấu [cần bổ sung], chèn câu hỏi xin các thông tin đó (build, thiết bị, bước tái hiện…).",
+    "how": [
+      "Cần vai trò QA/QC (đổi ở Cài đặt › Chung).",
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Bấm \"Tóm tắt & gợi ý\" và chờ AI xong.",
+        "at": [
+          "Tóm tắt & gợi ý",
+          "Tóm tắt lại"
+        ]
+      },
+      {
+        "t": "Nếu tóm tắt có [cần bổ sung], bấm \"Hỏi thông tin còn thiếu\".",
+        "at": "Hỏi thông tin còn thiếu"
+      }
+    ],
+    "keys": "hoi thong tin con thieu qa can bo sung buoc tai hien build thiet bi"
+  },
+  {
+    "id": "composer-ai-agent",
+    "tab": "telegram",
+    "area": "Khung Trả lời › AI Agent",
+    "title": "Giao AI Agent",
+    "what": "Giao tin tag cho AI làm trong một dự án code (sửa bug, thêm tính năng); chọn chế độ Chỉ đọc (khuyên dùng) hoặc Được sửa file. Dashboard tải sẵn cho AI nội dung ticket YouTrack mà tin nhắc tới (link hoặc chỉ mã, vd. VA-123), tài liệu Knowledge Base ticket đó dẫn link và link tin Telegram; AI phải đọc hết trước khi soạn câu hỏi / ý cần confirm. Chỉ có với vai trò Dev.",
+    "how": [
+      "Chỉ có với vai trò Dev.",
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Bấm \"AI Agent\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
+        "at": "css:form[data-composer] button[aria-label=\"AI Agent\"]"
+      },
+      {
+        "t": "Chọn \"Dự án\".",
+        "at": "css:button[aria-label=\"Dự án tham chiếu cho AI\"]"
+      },
+      {
+        "t": "Nhập \"Yêu cầu thêm\" nếu cần.",
+        "at": "Yêu cầu thêm cho AI"
+      },
+      {
+        "t": "Chọn \"Chỉ đọc\" (khuyên dùng) hoặc \"Được sửa file\".",
+        "at": [
+          "Chỉ đọc",
+          "Được sửa file"
+        ]
+      },
+      {
+        "t": "Bấm \"Bắt đầu\"; có thể chỉnh model/effort trước.",
+        "at": "Bắt đầu"
+      }
+    ],
+    "keys": "giao viec ai agent task du an code sua bug chi doc duoc sua file bat dau"
+  },
+  {
+    "id": "composer-youtrack-ticket",
+    "tab": "telegram",
+    "area": "Khung Trả lời › YouTrack",
+    "title": "Tạo ticket YouTrack từ tin",
+    "what": "Tạo ticket từ tin tag (chọn Project, Type, Priority, Assignee; ảnh trong tin được đính kèm); link ticket được thêm vào trả lời. AI có thể soạn tiêu đề, Type/Priority và mô tả theo mẫu. Cảnh báo ticket có thể trùng.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Bấm \"Tạo ticket\" cạnh tiêu đề Trợ lý AI ở cột bên phải.",
+        "at": "css:form[data-composer] button[aria-label=\"YouTrack\"]"
+      },
+      {
+        "t": "Bấm \"AI soạn\" để AI viết tiêu đề, Type/Priority, mô tả (nếu có AI).",
+        "at": [
+          "AI soạn",
+          "Một dòng nêu vấn đề / yêu cầu"
+        ]
+      },
+      {
+        "t": "Sửa tiêu đề nếu cần.",
+        "at": "Một dòng nêu vấn đề / yêu cầu"
+      },
+      {
+        "t": "Bấm \"Tạo ticket\".",
+        "at": "Tạo ticket"
+      },
+      "Nếu có ticket tương tự, bấm \"Ghi thêm vào đây\" để thêm bình luận thay vì tạo mới."
+    ],
+    "keys": "tao ticket youtrack issue bug ai soan trung ticket ghi them vao day project type priority assignee"
+  },
+  {
+    "id": "composer-related-tickets",
+    "tab": "telegram",
+    "area": "Khung Trả lời › Có vẻ liên quan",
+    "title": "Ticket có vẻ liên quan",
+    "what": "Khi tin không nêu mã ticket, gợi ý tối đa 3 ticket đang mở có vẻ liên quan và cho chèn link vào trả lời.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      "Xem mục \"Ticket có vẻ liên quan\" dưới các nút công cụ (chỉ hiện khi tin không nêu mã ticket).",
+      {
+        "t": "Bấm \"+\" trên dòng ticket để chèn link ticket vào trả lời.",
+        "at": "css:[aria-label=\"Ticket có vẻ liên quan\"] button"
+      }
+    ],
+    "keys": "ticket lien quan related chen link youtrack goi y"
+  },
+  {
+    "id": "composer-model-effort",
+    "tab": "telegram",
+    "area": "Khung Trả lời / AI Agent › Model và effort",
+    "title": "Chọn model và effort tại chỗ",
+    "what": "Chọn nhanh model và mức effort cho tóm tắt/soạn nháp hoặc cho Task và AI Agent; dùng chung lựa chọn với trang tài khoản AI.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm vào một tin trong danh sách để mở trang trả lời.",
+        "at": "css:[data-testid=\"message\"]"
+      },
+      {
+        "t": "Chọn model trong ô thả xuống.",
+        "at": "css:[role=group][aria-label*=\"model và effort\"] [aria-label^=\"Model\"]"
+      },
+      {
+        "t": "Kéo thanh effort.",
+        "at": "css:[role=group][aria-label*=\"model và effort\"] input[type=range]"
+      },
+      "Cũng có trong hộp AI Agent, Đối chiếu BE và đầu trang AI Agent; dùng chung lựa chọn với trang tài khoản AI."
+    ],
+    "keys": "model effort chon model ai nhanh manh low medium high"
+  }
+]

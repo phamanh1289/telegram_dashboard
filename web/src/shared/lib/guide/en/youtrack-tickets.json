@@ -1,0 +1,527 @@
+[
+  {
+    "id": "yt-tim-ticket",
+    "tab": "youtrack",
+    "area": "Ticket › Search box",
+    "title": "Search tickets",
+    "what": "Search by ID, title, people (assignee/QC), state; accents optional.",
+    "how": [
+      {
+        "t": "Click \"Tickets\" in the side menu",
+        "at": "Ticket"
+      },
+      {
+        "t": "Type keywords in the \"Find a ticket\" box",
+        "at": "Tìm ticket"
+      },
+      "Press / to jump to the search box from anywhere; press Esc in the box to clear it"
+    ],
+    "keys": "search tickets find shortcut slash /"
+  },
+  {
+    "id": "yt-ai-loc",
+    "tab": "youtrack",
+    "area": "Ticket › Search box › AI filter",
+    "title": "AI filter (a sentence becomes a filter)",
+    "what": "Type a sentence (e.g. \"my critical bugs this sprint\") and the AI turns it into a State / Priority / Type / People / Sprint / keyword filter.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Type a sentence in the \"Find a ticket\" box",
+        "at": "Tìm ticket"
+      },
+      {
+        "t": "Click \"AI filter\" (or ⌘↵)",
+        "at": "AI lọc"
+      },
+      "The \"AI set the filter\" notice appears; see the filter chips below. Also works from ⌘K"
+    ],
+    "keys": "ai filter filter with ai natural language sentence"
+  },
+  {
+    "id": "yt-chip-priority-type-state",
+    "tab": "youtrack",
+    "area": "Ticket › Filters",
+    "title": "Filter by Priority / Type / State (with counts)",
+    "what": "Three rows of chips with counts for the current filter; pick several values per row. Rare values sit behind \"+N more\".",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "In the \"Filters\" group, click the \"Priority\", \"Type\" or \"State\" box",
+        "at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button"
+      },
+      {
+        "t": "Tick the values you want (e.g. \"Critical\", \"Bug\"); the number on the right is the ticket count",
+        "at": "css:[role=\"menuitemcheckbox\"], [role=\"option\"]"
+      },
+      "Click \"Clear all\" in that box to drop the filter; the chips under the toolbar remove them one by one too"
+    ],
+    "keys": "filter priority filter type filter state chips counts bug feature task"
+  },
+  {
+    "id": "yt-goc-nhin-vai-tro",
+    "tab": "youtrack",
+    "area": "Ticket › Role views",
+    "title": "Ready-made views per role",
+    "what": "One click sets the filters + Table/Board + grouping. Dev: My board, This sprint, Awaiting QC, My bugs, Overdue. QA/QC: Test board, No QC yet, Open bugs, New bugs in 7 days, Regression. PO/PM: Backlog, Waiting for PO sign-off, Sprint by person, Sprint board, Unassigned.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Views\" on the right of the toolbar",
+        "at": "Góc nhìn"
+      },
+      {
+        "t": "Click a view suggested for your role (e.g. \"My board\", \"Waiting for QC\")",
+        "at": [
+          "Board của tôi",
+          "Sprint này",
+          "Chờ QC"
+        ]
+      },
+      "The \"View …\" notice confirms; the filters, Table/Board and grouping have changed"
+    ],
+    "keys": "views preset my board this sprint backlog regression waiting for po decision sprint by person test board"
+  },
+  {
+    "id": "yt-loc-nhanh-quick",
+    "tab": "youtrack",
+    "area": "Ticket / Dashboard › Quick filters",
+    "title": "Quick filters",
+    "what": "Ready-made filters: Blocked; Critical / Highest; Overdue; Unassigned; In sprint, not estimated; Backlog not in a sprint; Waiting for PO sign-off; Waiting for test, no QC yet; Open bugs; Critical / Highest bugs; New bugs in 7 days; Built, waiting for release; Forgotten (>7 days without update).",
+    "how": [
+      {
+        "t": "Click \"Dashboard\"",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Click a row in the \"Needs attention\" card to see the ticket list",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "Click \"Close\" to close the list",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      },
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a view that uses a quick filter (e.g. \"Overdue\", \"Open bugs\", \"Backlog\")",
+        "at": [
+          "Quá hạn",
+          "Bug đang mở",
+          "Backlog"
+        ]
+      },
+      {
+        "t": "Click the \"Filter …\" chip above to remove the quick filter",
+        "at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+      }
+    ],
+    "keys": "quick filter blocked overdue unassigned not estimated backlog waiting for po decision open bugs forgotten stale"
+  },
+  {
+    "id": "yt-view-da-luu",
+    "tab": "youtrack",
+    "area": "Ticket › View",
+    "title": "Saved views",
+    "what": "Saves the current filters + view type (Table/Board) under a name to reopen quickly; also shown in ⌘K.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Set the filters you want, then click \"Views\"",
+        "at": "Góc nhìn"
+      },
+      {
+        "t": "Type a name in the \"View name\" box",
+        "at": "Tên view"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "Lưu"
+      },
+      "Open \"Views\" again: your saved view is under \"Saved\", click ✕ next to its name to delete it"
+    ],
+    "keys": "saved views save filters bookmark view"
+  },
+  {
+    "id": "yt-bang-board",
+    "tab": "youtrack",
+    "area": "Ticket › View type",
+    "title": "Switch Table / Board",
+    "what": "See tickets as a table or as a board with State columns.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Board\" to see State columns",
+        "at": "Board"
+      },
+      {
+        "t": "Click \"Table\" to go back to the table",
+        "at": "Bảng"
+      }
+    ],
+    "keys": "table board kanban view type"
+  },
+  {
+    "id": "yt-board-keo-tha",
+    "tab": "youtrack",
+    "area": "Ticket › Board",
+    "title": "Drag cards to change State",
+    "what": "On the Board, drag a card to another column to change its State on YouTrack; the notice has an undo button. Drag a column header to reorder the columns (remembered per project). Done columns are folded into one button.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Board\"",
+        "at": "Board"
+      },
+      "Drag a ticket card to another State column; the \"VA-1 → State\" notice has an undo button",
+      {
+        "t": "Click the vertical \"Done\" column to show the done columns (click again to hide them)",
+        "at": "css:button[aria-label=\"Hiện các cột đã xong\"], button[aria-label=\"Ẩn các cột đã xong\"]"
+      },
+      "Drag a column header (the State name) left / right to reorder the columns; the order is remembered for that project",
+      "Each column shows at most 60 cards; filter to see the rest"
+    ],
+    "keys": "drag drop change state reorder columns order board columns done undo"
+  },
+  {
+    "id": "yt-gom-nhom",
+    "tab": "youtrack",
+    "area": "Ticket › Table › Group by",
+    "title": "Group the ticket table",
+    "what": "Groups the table by Assignee, Sprint (default) or Module / App (the first tag in the title); each group can be collapsed/expanded.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Table\" (grouping is only in table view)",
+        "at": "Bảng"
+      },
+      {
+        "t": "Click \"Display\" on the right of the toolbar",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Choose a type in the \"Group by\" box",
+        "at": "Gom nhóm"
+      },
+      {
+        "t": "Click a group header to collapse / expand it",
+        "at": "css:tbody button[aria-expanded]"
+      }
+    ],
+    "keys": "group by assignee sprint module app collapse group"
+  },
+  {
+    "id": "yt-sap-xep-cot",
+    "tab": "youtrack",
+    "area": "Ticket › Table › Column headers",
+    "title": "Sort by column",
+    "what": "Sorts the table by ID, Type, Title, State, Priority, Assignee, QC, Sprint, Due, Updated.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Table\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Click a column name in the table header to sort ascending ▲",
+        "at": "css:thead th button"
+      },
+      {
+        "t": "Click that column again to reverse ▼",
+        "at": "css:thead th button"
+      }
+    ],
+    "keys": "sort columns ascending descending"
+  },
+  {
+    "id": "yt-hien-thi-che-do-gon",
+    "tab": "youtrack",
+    "area": "Ticket › Display",
+    "title": "Display: compact mode, resolved tickets, High+ highlight",
+    "what": "Display options: \"Compact: short rows, one-line titles\" (dense mode); \"Show resolved tickets\"; \"Highlight High and above\" (Critical/Highest/High get a colored background). Saved for next time.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Display\"",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Tick \"Compact: short rows, one-line titles\"",
+        "at": "Gọn: hàng thấp, tiêu đề 1 dòng"
+      },
+      {
+        "t": "Tick \"Show resolved tickets\"",
+        "at": "Hiện ticket đã resolved"
+      },
+      {
+        "t": "Tick \"Highlight High and above\"",
+        "at": "Tô nền ticket High trở lên"
+      }
+    ],
+    "keys": "compact mode dense mode short rows resolved done highlight high critical"
+  },
+  {
+    "id": "yt-chon-cot",
+    "tab": "youtrack",
+    "area": "Ticket › Display › Columns",
+    "title": "Show/hide table columns",
+    "what": "Choose which columns to show (Type, State, Priority, Assignee, QC, Sprint, Due, Updated); each role has its own default columns.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Table\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Click \"Display\"",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Under \"Columns\", tick/untick a column (e.g. the first one)",
+        "at": "css:div.top-full label:nth-of-type(4)"
+      }
+    ],
+    "keys": "columns hide columns show columns due updated qc sprint"
+  },
+  {
+    "id": "yt-xuat-csv",
+    "tab": "youtrack",
+    "area": "Ticket › Toolbar",
+    "title": "Export the ticket list as CSV",
+    "what": "Downloads the whole filtered list (not just what is shown) with the visible columns as a CSV file.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click the download button \"Export CSV\" at the end of the toolbar",
+        "at": "Xuất CSV"
+      }
+    ],
+    "keys": "export csv excel download"
+  },
+  {
+    "id": "yt-chon-nhieu-thao-tac-hang-loat",
+    "tab": "youtrack",
+    "area": "Ticket › Table › Bulk actions",
+    "title": "Select several tickets, bulk-change Assignee / State / Priority, ask the AI",
+    "what": "Tick several tickets to change their Assignee, State (following the workflow) or Priority at once: picking a value applies it right away, with undo; tickets that fail stay selected so you can retry. Or open an AI session about the selected tickets.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Table\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Tick the box at the start of a row",
+        "at": "css:tbody tr[data-id] input[type=\"checkbox\"]"
+      },
+      {
+        "t": "Click \"Assignee\" on the \"… tickets selected\" bar (or \"State\" / \"Priority\")",
+        "at": "css:[role=\"region\"][aria-label=\"Thao tác hàng loạt\"] button[aria-label^=\"Đổi assignee\"]"
+      },
+      {
+        "t": "Type a name in the \"Search people…\" box",
+        "at": "Tìm người…"
+      },
+      {
+        "t": "Pick a person: it applies to every selected ticket right away",
+        "at": "css:[role=\"listbox\"][aria-label^=\"Đổi assignee\"] [role=\"option\"]"
+      },
+      "If it was a mistake, click Undo in the notice"
+    ],
+    "keys": "select several bulk change assignee change state priority deselect select all"
+  },
+  {
+    "id": "yt-doi-assignee-trong-bang",
+    "tab": "youtrack",
+    "area": "Ticket › Table › Assignee column",
+    "title": "Change the assignee right in the table",
+    "what": "Change the assignee directly in the Assignee column; the notice has an undo button.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click \"Table\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Click the Assignee box of the row and pick a person (or \"Unassigned\")",
+        "at": "css:tbody tr[data-id] button[aria-label^=\"Đổi Assignee\"]"
+      },
+      "Click undo in the notice if it was a mistake"
+    ],
+    "keys": "change assignee assign who works on it"
+  },
+  {
+    "id": "yt-copy-id-link",
+    "tab": "youtrack",
+    "area": "Ticket › Table › ID column",
+    "title": "Copy ID / Copy link, open on YouTrack",
+    "what": "Hover a row to show the Copy ID and Copy link buttons; click the ID to open the ticket on YouTrack in a new tab.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Hover a row and click \"Copy ID\"",
+        "at": "Copy ID"
+      },
+      {
+        "t": "Click \"Copy link\"",
+        "at": "Copy link"
+      },
+      {
+        "t": "Click the ID itself to open it on YouTrack in a new tab",
+        "at": "css:tbody tr[data-id] a[href]"
+      }
+    ],
+    "keys": "copy id copy link open youtrack ticket link"
+  },
+  {
+    "id": "yt-nhan-moi",
+    "tab": "youtrack",
+    "area": "Ticket › Table",
+    "title": "The \"new\" label (updated since your last visit)",
+    "what": "Tickets updated since you last viewed this project get a \"new\" label next to the ID (shown only when there are such tickets).",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      "Look for the \"new\" label next to the ID of tickets updated since your last visit; hover for the explanation"
+    ],
+    "keys": "new recently updated unseen unread"
+  },
+  {
+    "id": "yt-xem-nhanh-mo-ta",
+    "tab": "youtrack",
+    "area": "Ticket › Table",
+    "title": "Preview the description on hover",
+    "what": "Hover a row for about half a second to show a preview card: title, State, Priority, Assignee and part of the description (not on touch screens).",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Hover a ticket row for about half a second (don't click) to show the preview card",
+        "at": "css:tbody tr[data-id]"
+      }
+    ],
+    "keys": "quick look preview hover description tooltip"
+  },
+  {
+    "id": "yt-phim-tat-bang",
+    "tab": "youtrack",
+    "area": "Ticket › Table",
+    "title": "Ticket page keyboard shortcuts",
+    "what": "Drive the table from the keyboard: / search, j/k move between rows, Space selects a row, Enter opens the ticket, Esc clears the search, then the selection. Press ? to see every YouTrack shortcut; g then h / t / d / r / p / a goes to Home / Ticket / Dashboard / Release / Members / AI history.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      "Press / to go to the search box; j (down) / k (up) to move between rows",
+      "Press x to tick/untick the current row; Enter to open the ticket",
+      "Press Esc: in the search box it clears the keywords, otherwise it clears the selected rows"
+    ],
+    "keys": "keyboard shortcuts j k x enter esc slash keyboard navigation"
+  },
+  {
+    "id": "yt-phim-tat-trang",
+    "tab": "youtrack",
+    "area": "Keyboard shortcuts",
+    "title": "YouTrack shortcuts (? and g + key)",
+    "what": "Press ? on any YouTrack page to open the shortcut sheet. g then h / t / d / r / p / a goes to Home / Ticket / Dashboard / Release / Members / AI history; ⌘/Ctrl+K opens quick commands. Space selects a row as in Telegram.",
+    "how": [
+      "Press ? to see the shortcut sheet",
+      "Press g then the letter of the page you want"
+    ],
+    "keys": "shortcuts youtrack g keys switch page space select"
+  },
+  {
+    "id": "yt-hien-them",
+    "tab": "youtrack",
+    "area": "Ticket › Bottom of the table",
+    "title": "More tickets as you scroll",
+    "what": "The table shows the first 150 rows; scrolling near its end shows 150 more by itself.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      "Scroll to the bottom of the table: the next rows appear by themselves"
+    ],
+    "keys": "show more load more pagination scroll infinite"
+  },
+  {
+    "id": "yt-tim-toan-cuc",
+    "tab": "youtrack",
+    "area": "Ticket › When nothing matches",
+    "title": "Global search by ID",
+    "what": "When no ticket matches, find any ticket on YouTrack by number or ID, even outside the loaded data.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Type a keyword with no results into the \"Find a ticket\" box",
+        "at": "Tìm ticket"
+      },
+      {
+        "t": "Type a number or ID (e.g. VA-123) into the \"Global search by ID\" box",
+        "at": "Tìm toàn cục theo ID"
+      },
+      {
+        "t": "Click \"Global search\" (or Enter)",
+        "at": "Tìm toàn cục"
+      },
+      {
+        "t": "Click \"Clear filters\" to drop every filter",
+        "at": "Xóa bộ lọc"
+      }
+    ],
+    "keys": "global search search by id not found clear filters"
+  }
+]

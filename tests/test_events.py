@@ -9,7 +9,6 @@ import httpx
 import pytest
 import uvicorn
 from conftest import A, FakeTransport, msg
-
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import event_stream

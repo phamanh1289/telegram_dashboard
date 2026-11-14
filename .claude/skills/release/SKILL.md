@@ -16,11 +16,11 @@ Tag `vX.Y.Z` được push → `.github/workflows/release.yml` build trên `wind
 - `install-macos.sh` — cách cài macOS cho người dùng (`curl -fsSL …/releases/latest/download/install-macos.sh | bash`);
   tải bằng curl nên không bị Gatekeeper chặn như zip tải bằng trình duyệt (app chưa notarize)
 
-App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`telegram_dashboard/updater.py`,
+App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`backend/telegram_dashboard/updater.py`,
 `REPO`): Cài đặt › Cập nhật hiện "Có N bản mới trên GitHub Releases" → bấm Cập nhật (hoặc bật tự động).
 **Tên file asset phải kết thúc `-<platform>.zip`** (`windows-x64`, `macos-arm64`), updater tìm theo đuôi này.
 Mỗi zip có thêm `<zip>.sig` (CI ký RSA bằng secret `RELEASE_SIGNING_KEY`); updater chỉ cài khi chữ ký khớp
-`telegram_dashboard/release_key.pem`. Thiếu secret → job `release` fail (không bao giờ phát hành bản không ký).
+`backend/telegram_dashboard/release_key.pem`. Thiếu secret → job `release` fail (không bao giờ phát hành bản không ký).
 
 ## Một lần duy nhất: secret ký gói
 

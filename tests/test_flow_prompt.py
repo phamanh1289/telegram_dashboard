@@ -1,10 +1,9 @@
 import json
 
 import pytest
-
-from telegram_dashboard import flow_prompt as p
-from telegram_dashboard import uiflow
 from telegram_dashboard.ai import data_json
+from telegram_dashboard.youtrack import flow as uiflow
+from telegram_dashboard.youtrack import flow_prompt as p
 
 URL = "https://app.zeplin.io/project/p/screen/"
 
@@ -97,10 +96,10 @@ def test_corpus_keeps_screen_edge_requirement_coverage_with_smaller_bounded_prom
 async def test_endpoint_full_source_renders_in_fast_and_only_context_overflow_blocks_ai(tmp_path):
     import httpx
     from fastapi import FastAPI
-
-    from telegram_dashboard import yt_dashboard as yt
     from telegram_dashboard.config import Settings
     from telegram_dashboard.storage import Store
+    from telegram_dashboard.youtrack import api, api_flow
+    from telegram_dashboard.youtrack import service as yt
 
     svc = yt.YouTrackDashboard(Settings(root=tmp_path, youtrack_url="http://yt", youtrack_token="secret"))
     await svc.start_flow_jobs(Store(tmp_path / "test.db"))
@@ -119,9 +118,9 @@ async def test_endpoint_full_source_renders_in_fast_and_only_context_overflow_bl
     from unittest.mock import patch
 
     app = FastAPI()
-    app.include_router(yt.build_router(svc))
+    app.include_router(api.build_router(svc))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        with patch.object(yt, "_ai", infer):
+        with patch.object(api_flow, "_ai", infer):
             fast = await client.post("/api/yt/ai/flow", json={"id": "VA-1"}, headers={"X-Ai-Job": "fast-job-1"})
             assert "done" in json.loads(fast.text.splitlines()[-1]) and "FULL-TAIL" in seen.pop()
             deep = await client.post("/api/yt/ai/flow", json={"id": "VA-1", "deep": True},

@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 from conftest import ORIGIN, A, B, msg
-
 from telegram_dashboard.ai import AiService
 from telegram_dashboard.config import Settings
 
@@ -123,7 +122,7 @@ def test_youtrack_not_configured(client):
 
 
 def test_youtrack_search_by_id_or_words(client, monkeypatch):
-    from telegram_dashboard import app as app_mod
+    from telegram_dashboard.youtrack import routes as app_mod
 
     async def whoami(url, token):
         return {"login": "me", "name": "Me"}
@@ -146,8 +145,8 @@ def test_youtrack_search_by_id_or_words(client, monkeypatch):
 
 
 def test_youtrack_auth_checks_then_saves(client, settings, monkeypatch):
-    from telegram_dashboard import app as app_mod
     from telegram_dashboard.errors import ApiError
+    from telegram_dashboard.youtrack import routes as app_mod
 
     async def whoami(url, token):
         if token != "perm-good":
@@ -322,9 +321,8 @@ def _reaction_flow(client):
 async def test_reaction_never_replaces_or_removes_the_users_own():
     from types import SimpleNamespace as NS
 
+    from telegram_dashboard.telegram.transport import TelethonTransport
     from telethon.tl import types
-
-    from telegram_dashboard.telegram import TelethonTransport
 
     def r(e, order=None):
         return types.ReactionCount(reaction=types.ReactionEmoji(emoticon=e), count=1,
@@ -371,7 +369,6 @@ def test_headless_task_runs_and_resumes(tmp_path):
     import time
 
     from conftest import ORIGIN, FakeTransport, TestClient, create_app
-
     from telegram_dashboard.config import Settings
 
     fake = tmp_path / "fake_claude.py"

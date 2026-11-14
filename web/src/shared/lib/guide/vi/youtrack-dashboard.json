@@ -1,0 +1,392 @@
+[
+  {
+    "id": "yt-dashboard",
+    "tab": "youtrack",
+    "area": "Thanh bên › Dashboard",
+    "title": "Dashboard theo vai trò",
+    "what": "Bảng số liệu và biểu đồ của project, bố cục khác nhau theo vai trò (Dev: Cần xử lý, Sprint, Nhịp làm việc, Kiểm thử, Bug; QA: Hàng đợi QC, Kết quả kiểm thử, Chất lượng, Sprint; PO: Cần quyết định, Sprint, Tốc độ & dự báo, Tải việc, Chất lượng). Mọi con số bấm được để xem danh sách ticket.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+      },
+      {
+        "t": "Bấm một số hoặc thanh biểu đồ để mở danh sách ticket",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "Thu hẹp số liệu bằng bộ lọc \"Sprint\"",
+        "at": "Sprint"
+      }
+    ],
+    "keys": "dashboard bieu do biểu đồ so lieu số liệu chart kpi thong ke thống kê"
+  },
+  {
+    "id": "yt-dashboard-muc-nhay",
+    "tab": "youtrack",
+    "area": "Dashboard › thanh mục",
+    "title": "Thanh mục dashboard (nhảy nhanh)",
+    "what": "Hàng nút dính trên đầu dashboard, mục đang xem được tô sáng; bấm để cuộn tới mục đó.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm tên mục thứ hai trên thanh mục (vd. Sprint): trang cuộn tới mục đó",
+        "at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(2)"
+      },
+      {
+        "t": "Bấm tên mục thứ tư: mục đang xem được tô sáng",
+        "at": "css:nav[aria-label=\"Mục dashboard\"] button:nth-child(4)"
+      }
+    ],
+    "keys": "muc dashboard mục dashboard jump nav nhay muc nhảy mục cuon cuộn section"
+  },
+  {
+    "id": "yt-dashboard-hoi-ai",
+    "tab": "youtrack",
+    "area": "Dashboard › nút AI",
+    "title": "Hỏi AI về số liệu dashboard",
+    "what": "Nút AI trên từng thẻ mở phiên hỏi về báo cáo đó; nút lớn ở thanh mục hỏi về toàn bộ dashboard. AI nhận số liệu dashboard (và kết quả QC nếu có).",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm chip \"AI\" trên thẻ \"Cần chú ý\" (nút \"Hỏi AI về toàn bộ dashboard\" ở thanh mục hỏi cả dashboard)",
+        "at": [
+          "Hỏi AI về Cần chú ý",
+          "Hỏi AI về"
+        ]
+      },
+      {
+        "t": "Gõ câu hỏi về số liệu vào ô yêu cầu",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Bấm \"Gửi\" (hoặc Enter)",
+        "at": "Gửi"
+      },
+      "Chờ AI trả lời, rồi nhấn Esc để đóng bảng",
+      {
+        "t": "Bấm \"Lịch sử AI\" ở thanh bên",
+        "at": "Lịch sử AI"
+      },
+      {
+        "t": "Chọn tab \"Dashboard\" để thấy phiên vừa hỏi",
+        "at": "css:[aria-label=\"Loại phiên AI\"] button:nth-child(2)"
+      }
+    ],
+    "keys": "hoi ai dashboard hỏi ai dashboard ai so lieu ai số liệu phan tich phân tích bat thuong bất thường"
+  },
+  {
+    "id": "yt-can-chu-y",
+    "tab": "youtrack",
+    "area": "Dashboard › Cần chú ý",
+    "title": "Cần chú ý",
+    "what": "Danh sách bộ lọc nhanh quan trọng theo vai trò kèm số lượng, đỏ (nghiêm trọng) hoặc vàng (cảnh báo), mục có số lên đầu.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Trong thẻ \"Cần chú ý\" bấm một dòng (vd. \"Blocked\", \"Quá hạn\") để xem danh sách ticket",
+        "at": [
+          "Blocked",
+          "Quá hạn"
+        ]
+      },
+      "Nhấn Esc để đóng bảng bên"
+    ],
+    "keys": "can chu y cần chú ý attention canh bao cảnh báo blocked qua han quá hạn critical"
+  },
+  {
+    "id": "yt-ticket-keo-dai",
+    "tab": "youtrack",
+    "area": "Dashboard › Cảnh báo ticket kéo dài",
+    "title": "Cảnh báo ticket kéo dài / Chờ test quá lâu",
+    "what": "Ticket nằm ở cùng state quá lâu: vàng từ ngưỡng cảnh báo, đỏ khi quá ngưỡng xấu. Chọn được các state cần theo dõi (QA mặc định theo dõi state chờ test).",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Ở thẻ \"Cảnh báo ticket kéo dài\" (QA: \"Chờ test quá lâu\") bấm nút \"State\" để chọn state theo dõi",
+        "at": "State"
+      },
+      {
+        "t": "Bấm chip \"… đỏ / … vàng\" để xem danh sách ticket",
+        "at": "css:button:has(> span.bg-error-wash)"
+      },
+      "Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Bấm một dòng trong thẻ để mở ticket",
+        "at": "css:ul.divide-y > li > button"
+      }
+    ],
+    "keys": "keo dai kéo dài aging dung lau đứng lâu cho test qua lau chờ test quá lâu stuck do vang đỏ vàng"
+  },
+  {
+    "id": "yt-kpi-sprint",
+    "tab": "youtrack",
+    "area": "Dashboard › Sprint",
+    "title": "KPI sprint, Tiến độ sprint, Burndown",
+    "what": "KPI: Ticket trong sprint (so với sprint trước), Đang làm, Chờ QC, Tỉ lệ xong sprint. Tiến độ: thanh Xong/QC/Đang làm/Todo với vạch thời gian đã qua và nhãn Đúng tiến độ/Hơi chậm/Chậm tiến độ. Burndown: thực tế, lý tưởng, dự báo ngày xong.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm ô KPI \"Ticket trong sprint\" (mục Sprint) để xem ticket",
+        "at": "Ticket trong sprint"
+      },
+      "Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Bấm thanh tiến độ của sprint để xem ticket của sprint đó",
+        "at": "css:button[data-drill=\"sprint\"]"
+      },
+      "Xem thẻ Burndown bên cạnh: đường thực tế, lý tưởng, dự báo ngày xong"
+    ],
+    "keys": "kpi sprint tien do sprint tiến độ sprint burndown du bao dự báo ti le xong tỉ lệ xong dung tien do đúng tiến độ cham tien do chậm tiến độ"
+  },
+  {
+    "id": "yt-nhip-lam-viec",
+    "tab": "youtrack",
+    "area": "Dashboard › Nhịp làm việc (Dev) / Tốc độ & dự báo (PO)",
+    "title": "Ticket xong mỗi ngày, Lead time, Velocity, Chuyển sprint nhiều lần",
+    "what": "Ticket xong mỗi ngày (chọn 7/14/30 ngày), Lead time (trung vị, 85%, theo Bug/Feature/Task), Velocity theo sprint (PO; ticket chuyển sprint chỉ tính ở sprint nó xong), ticket bị chuyển sprint nhiều lần.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Ở thẻ \"Ticket xong mỗi ngày\" chọn khoảng \"7 ngày / 14 ngày / 30 ngày\"",
+        "at": "Khoảng thời gian biểu đồ"
+      },
+      {
+        "t": "Bấm một cột trong biểu đồ để xem ticket xong ngày đó",
+        "at": "css:svg g.cursor-pointer"
+      }
+    ],
+    "keys": "ticket xong moi ngay ticket xong mỗi ngày throughput lead time velocity chuyen sprint chuyển sprint carry over khoang thoi gian khoảng thời gian"
+  },
+  {
+    "id": "yt-tai-viec-wip",
+    "tab": "youtrack",
+    "area": "Dashboard › Tải việc (PO)",
+    "title": "Công việc đang làm (ngưỡng WIP), Chờ QC theo người, Ticket mở theo state",
+    "what": "Bảng số ticket đang làm và Blocked của từng người, cảnh báo “vượt ngưỡng” WIP; số ticket chờ QC theo người; ticket mở theo state.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Ở thẻ \"Công việc đang làm\" chọn \"ngưỡng WIP\" 2-5",
+        "at": "Ngưỡng WIP"
+      },
+      {
+        "t": "Bấm một dòng người để xem ticket của họ",
+        "at": "css:tbody tr[tabindex=\"0\"]"
+      }
+    ],
+    "keys": "wip nguong wip ngưỡng wip tai viec tải việc vuot nguong vượt ngưỡng cho qc theo nguoi chờ qc theo người qa load"
+  },
+  {
+    "id": "yt-ket-qua-kiem-thu",
+    "tab": "youtrack",
+    "area": "Dashboard › Kết quả kiểm thử",
+    "title": "Số liệu QC: Lượt test, Pass lần đầu, Bị trả lại, Reopen",
+    "what": "Đọc từ lịch sử state: lượt test, % pass ngay lần đầu, lượt bị QC trả lại, reopen; kết quả test mỗi ngày; theo người test; bị trả lại theo dev; ticket trả lại nhiều lần / reopen.",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm ô \"Lượt test\" (mục Kiểm thử / Kết quả kiểm thử) để xem ticket đã test",
+        "at": "Lượt test"
+      },
+      "Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Bấm ô \"Bị trả lại\" để xem ticket bị QC trả về dev",
+        "at": "Bị trả lại"
+      }
+    ],
+    "keys": "qc pass tra lai trả lại reopen first pass luot test lượt test kiem thu kiểm thử ping pong theo nguoi test theo người test"
+  },
+  {
+    "id": "yt-chat-luong-bug",
+    "tab": "youtrack",
+    "area": "Dashboard › Bug / Chất lượng",
+    "title": "Số liệu bug",
+    "what": "Bug trong sprint, Bug mới và đã sửa theo ngày, Bug của user, Bug đang mở theo priority và theo module, Bug so với Feature, Chưa sẵn sàng vào sprint (PO).",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\" ở thanh bên",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm số \"bug trong sprint\" (thẻ \"Bug trong sprint\") để mở danh sách ticket",
+        "at": "css:button.justify-items-start:not(.yt-card)"
+      },
+      "Cuộn xuống: bấm cột hoặc thanh ở các thẻ bug khác (theo ngày, priority, module, Bug so với Feature) để xem ticket"
+    ],
+    "keys": "bug chat luong chất lượng bug theo module bug theo priority bug so voi feature bug so với feature chua san sang vao sprint chưa sẵn sàng vào sprint"
+  },
+  {
+    "id": "yt-thanh-vien",
+    "tab": "youtrack",
+    "area": "Thanh bên › Thành viên",
+    "title": "Trang Thành viên (từng người)",
+    "what": "Chọn một người để xem số liệu theo kỳ (Đang mở, Đang làm, Chờ QC, Blocked, Quá hạn, Không cập nhật >7 ngày, Chuyển sprint ≥2 lần, Xong, Bug, Lead time) và danh sách Đang mở / Cần chú ý / Đã xong. Lead time bỏ qua các ngày đóng ticket hàng loạt, giống Dashboard.",
+    "how": [
+      {
+        "t": "Bấm \"Thành viên\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+      },
+      {
+        "t": "Tìm bằng ô \"Tìm người\"",
+        "at": "Tìm người"
+      },
+      {
+        "t": "Bấm tên một người",
+        "at": "css:li > button[aria-current]"
+      },
+      {
+        "t": "Chọn \"Kỳ\" 7/14/30/60/90 ngày",
+        "at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
+      },
+      {
+        "t": "Chọn \"Đang mở\" / \"Cần chú ý\" / \"Đã xong\" rồi bấm một ticket để mở",
+        "at": "css:main ul.divide-y > li > button"
+      }
+    ],
+    "keys": "thanh vien thành viên nguoi người member person ca nhan cá nhân ky kỳ"
+  },
+  {
+    "id": "yt-ai-phan-tich-nguoi",
+    "tab": "youtrack",
+    "area": "Thành viên › AI phân tích",
+    "title": "AI phân tích một người",
+    "what": "AI đọc ticket và số liệu của người đó: Tóm tắt công việc, Review, Đánh giá, Chuẩn bị 1-1, hoặc yêu cầu riêng.",
+    "how": [
+      {
+        "t": "Bấm \"Thành viên\" ở thanh bên",
+        "at": "Thành viên"
+      },
+      {
+        "t": "Bấm tên một người trong danh sách (hoặc chính bạn)",
+        "at": "css:main li > button[aria-current]"
+      },
+      {
+        "t": "Ở thẻ \"Hỏi AI về {tên}\" bấm một nút, vd. \"Tóm tắt công việc\" (còn \"Review\", \"Đánh giá\", \"Chuẩn bị 1-1\")",
+        "at": "Tóm tắt công việc"
+      },
+      "Chờ AI xong rồi nhấn Esc đóng bảng",
+      {
+        "t": "Hoặc sửa câu lệnh trong ô yêu cầu (câu mặc định tự đổi theo \"Kỳ\", trừ khi bạn đã sửa)",
+        "at": "Yêu cầu cho AI"
+      },
+      {
+        "t": "Chọn \"Ticket gửi cho AI\": Đang mở / Đã xong / Cả hai",
+        "at": "css:[role=\"group\"][aria-label=\"Ticket gửi cho AI\"]"
+      },
+      {
+        "t": "Bấm \"Phân tích\"",
+        "at": "Phân tích"
+      }
+    ],
+    "keys": "ai phan tich ai phân tích danh gia đánh giá review 1-1 one on one tom tat cong viec tóm tắt công việc performance"
+  },
+  {
+    "id": "yt-so-sanh-team",
+    "tab": "youtrack",
+    "area": "Thành viên › Cả team",
+    "title": "So sánh cả team + AI chia việc",
+    "what": "Mọi người cạnh nhau theo kỳ (thanh tải, blocked / quá hạn / im >7 ngày, số xong, lead time), sắp xếp theo Tải / Đang làm / Rủi ro / Đã xong / Lead time; AI phân tích tải và gợi ý chia lại việc. Lead time bỏ qua các ngày đóng ticket hàng loạt, giống Dashboard.",
+    "how": [
+      {
+        "t": "Bấm \"Thành viên\" ở thanh bên",
+        "at": "Thành viên"
+      },
+      {
+        "t": "Bấm \"Cả team\" ở đầu danh sách",
+        "at": "Cả team"
+      },
+      {
+        "t": "Chọn kỳ 7-90 ngày ở \"Kỳ\"",
+        "at": "css:[role=\"group\"][aria-label=\"Kỳ\"]"
+      },
+      {
+        "t": "Chọn cách sắp xếp: Tải / Đang làm / Rủi ro / Đã xong / Lead time",
+        "at": "css:[role=\"group\"][aria-label=\"Sắp xếp\"]"
+      },
+      {
+        "t": "Bấm \"AI chia việc\"; AI chạy ở bảng bên",
+        "at": "AI chia việc"
+      },
+      {
+        "t": "Nhấn Esc đóng bảng, rồi bấm một người để xem chi tiết",
+        "at": "css:main ul.divide-y > li > button"
+      }
+    ],
+    "keys": "so sanh ca team so sánh cả team team compare tai team tải team chia viec chia việc rebalance workload"
+  },
+  {
+    "id": "yt-link-ticket-telegram",
+    "tab": "youtrack",
+    "area": "URL › ?ticket=",
+    "title": "Mở ticket từ link (chip ticket bên Telegram)",
+    "what": "Link có ?ticket=VA-1 (vd. bấm chip ticket trong Telegram) mở thẳng ticket đó ở bảng bên; bộ lọc, trang, project cũng nằm trên URL để chia sẻ.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\" trên thanh bên: trang và bộ lọc hiện lên URL",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+      },
+      "Sao chép URL trang hiện tại để chia sẻ đúng bộ lọc và trang",
+      "Bấm chip ticket trong Telegram hoặc mở link dạng /youtrack/?ticket=VA-123 để vào thẳng ticket"
+    ],
+    "keys": "link ticket url chia se chia sẻ share deep link telegram chip ticket"
+  },
+  {
+    "id": "yt-du-lieu-mock",
+    "tab": "youtrack",
+    "area": "YouTrack › Chưa có token",
+    "title": "Chưa có token: tự mở Cài đặt › YouTrack",
+    "what": "Chưa dán token YouTrack thì mở tab YouTrack sẽ tự chuyển sang Cài đặt › YouTrack để kết nối; không có dữ liệu mẫu.",
+    "how": [
+      {
+        "t": "Bấm \"YouTrack\" trên thanh trên cùng: chưa có token thì trang tự chuyển sang Cài đặt › YouTrack",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Chọn mục \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Nhập \"URL YouTrack\"",
+        "at": "URL YouTrack"
+      },
+      {
+        "t": "Dán \"Token YouTrack\" (Hồ sơ → Account Security → New token)",
+        "at": "Token YouTrack"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+      }
+    ],
+    "keys": "chua co token chưa có token chua ket noi chưa kết nối token youtrack ket noi kết nối cai dat cài đặt mock"
+  }
+]

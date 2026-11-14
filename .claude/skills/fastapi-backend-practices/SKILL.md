@@ -1,15 +1,19 @@
 ---
 name: fastapi-backend-practices
-description: Use when writing or reviewing Python code under telegram_dashboard/ or tests/ — FastAPI endpoints, Pydantic models/DTOs, error codes, async I/O with Telethon/httpx, SSE streaming, SQLite storage, local-only security (Host/Origin guard), or pytest tests.
+description: Use when writing or reviewing Python code under backend/telegram_dashboard/ or tests/ — FastAPI endpoints, Pydantic models/DTOs, error codes, async I/O with Telethon/httpx, SSE streaming, SQLite storage, local-only security (Host/Origin guard), or pytest tests.
 ---
 
-# FastAPI backend best practices (telegram_dashboard/)
+# FastAPI backend best practices (backend/telegram_dashboard/)
+
+## Ownership trước khi sửa
+- Đọc `backend/AGENTS.md` và `docs/ARCHITECTURE.md`; feature/fix/refactor đặt tại module sở hữu, không thêm bản sao nghiệp vụ trong `app.py`.
+- Telegram: `backend/telegram_dashboard/telegram/`; YouTrack: `backend/telegram_dashboard/youtrack/`; infrastructure/AI chung giữ ở module tương ứng của package gốc. Domain không import composition root.
 
 ## Hợp đồng API
 - **Lỗi đã gặp trong repo này** (cache cũ, nuốt lỗi, gửi trùng, prompt injection, poll theo dòng…): đọc skill `avoiding-dashboard-pitfalls` trước khi báo xong.
-- Endpoint khai báo trong `create_app()` (`app.py`), prefix `/api/…`, danh từ số nhiều, REST verb đúng nghĩa (`PUT` idempotent, `DELETE` trả 204).
+- Endpoint Telegram ở `telegram/routes.py`; `/api/youtrack/*` ở `youtrack/routes.py`, `/api/yt/*` ở `youtrack/api.py`. `create_app()` ghép router trước fallback/static mount và giữ API chung. Prefix `/api/…`, danh từ số nhiều, REST verb đúng nghĩa (`PUT` idempotent, `DELETE` trả 204).
 - Request/response là Pydantic model trong `models.py` (`…Request`, `…DTO`, `…Page`). ID trên wire là **string** (`StoredMessage` nội bộ dùng int).
-- Đổi model → frontend phải regen kiểu: `uv run python -m telegram_dashboard export-openapi` rồi `cd web && npm run api:types`. Quên bước này = lệch hợp đồng.
+- Đổi model → frontend phải regen kiểu: `npm run api:types` từ root (export OpenAPI rồi sinh `web/src/shared/lib/api.generated.d.ts`). Quên bước này = lệch hợp đồng.
 - Phân trang theo cursor (`before`, `limit`, `has_more`), không offset.
 
 ## Lỗi
@@ -20,7 +24,7 @@ description: Use when writing or reviewing Python code under telegram_dashboard/
 
 ## Async
 - Handler `async def`; mọi I/O dùng client async (`httpx.AsyncClient`, Telethon). Việc CPU / I/O chặn (subprocess, đọc file lớn) → `asyncio.to_thread`.
-- Đường gọi thường xuyên (YouTrack, Telegram): dùng client do service giữ (mẫu `yt_dashboard.py`). Gọi hiếm (updater, quota) thì `async with httpx.AsyncClient()` tại chỗ là đủ.
+- Đường gọi thường xuyên (YouTrack, Telegram): dùng client do service giữ (mẫu `youtrack/client.py`). Gọi hiếm (updater, quota) thì `async with httpx.AsyncClient()` tại chỗ là đủ.
 - Task nền: giữ tham chiếu và hủy trong lifespan; bắt `CancelledError` để dọn dẹp rồi re-raise.
 - SSE / stream: kiểm tra client ngắt (`client_gone`) để dừng sớm.
 
@@ -31,7 +35,7 @@ description: Use when writing or reviewing Python code under telegram_dashboard/
 - Subprocess: truyền list args, không `shell=True` với dữ liệu người dùng.
 
 ## Storage
-- Giá trị SQL luôn qua placeholder (`?` / `?1`); f-string chỉ cho tên cột từ whitelist trong code hoặc chuỗi `?,?,?` (mẫu ở `storage.py`). Ghi nhiều bước trong một transaction.
+- Giá trị SQL luôn qua placeholder (`?` / `?1`); f-string chỉ cho tên cột từ whitelist trong code hoặc chuỗi `?,?,?` (mẫu ở `storage/`). Ghi nhiều bước trong một transaction.
 
 ## Test (pytest, `asyncio_mode=auto`)
 - Dùng fixture trong `tests/conftest.py` (`create_app` + fake `TelegramBridge`, helper `msg()`); request phải kèm `Origin` = `ORIGIN`.
@@ -41,4 +45,4 @@ description: Use when writing or reviewing Python code under telegram_dashboard/
 App desktop 1 người dùng, chỉ loopback, đóng gói zip/Setup.exe. Vì vậy **không thêm**: Granian/uvloop (không cần throughput), Redis + ARQ/SAQ/Celery (không có Redis; việc nền là `asyncio` task), Docker (không deploy server), LangGraph (agent chạy qua `claude -p`, `agent.py`), loguru/structlog (stdlib `logging` ra `data/server.log` là đủ). Instructor/PydanticAI chỉ khi `parse_ticket`/`json_object` hỏng thường xuyên. Cần một trong số này → hỏi user trước.
 
 ## Xác minh
-`uv run ruff check . && uv run pytest` (hoặc `uv run pytest tests/test_<module>.py` cho phần đã đổi).
+`uv run ruff check .` + focused pytest và `uv run pytest -q tests/test_repo_guards.py`. Di chuyển module phải cập nhật import/caller, dynamic import, monkeypatch, fixture và đường dẫn packaging liên quan.

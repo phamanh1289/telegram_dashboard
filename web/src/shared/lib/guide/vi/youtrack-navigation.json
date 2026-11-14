@@ -1,0 +1,381 @@
+[
+  {
+    "id": "yt-chon-vai-tro",
+    "tab": "youtrack",
+    "area": "Màn hình đầu tiên",
+    "title": "Chọn vai trò Dev / QA/QC / PO/PM",
+    "what": "Lần đầu mở trang YouTrack (hoặc sau khi xóa vai trò), trang hỏi bạn làm vai trò nào. Trang chủ, góc nhìn Ticket, Dashboard và AI đều chạy theo vai trò này.",
+    "how": [
+      {
+        "t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Bấm \"Bỏ chọn vai trò\" (nếu đang có vai trò)",
+        "at": "Bỏ chọn vai trò"
+      },
+      {
+        "t": "Quay lại module \"YouTrack\" ở thanh trên",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Bấm một thẻ: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
+        "at": "css:[aria-label=\"Vai trò\"]"
+      }
+    ],
+    "keys": "vai tro vai trò role dev qa qc po pm chon vai tro chọn vai trò xoa vai tro xóa vai trò doi vai tro đổi vai trò"
+  },
+  {
+    "id": "yt-thanh-ben-dieu-huong",
+    "tab": "youtrack",
+    "area": "Thanh bên",
+    "title": "Điều hướng các trang theo vai trò",
+    "what": "Thanh bên liệt kê các trang của vai trò: Dev có Hôm nay / Ticket / Dashboard / Thành viên; QA có Kiểm thử / Ticket / Dashboard / Thành viên; PO có Tổng quan / Dashboard / Thành viên / Ticket. Rê chuột vào từng mục để xem gợi ý trang đó làm gì.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+      },
+      {
+        "t": "Bấm \"Dashboard\"",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+      },
+      {
+        "t": "Bấm \"Thành viên\"",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+      },
+      "Rê chuột vào mục để đọc gợi ý trang đó làm gì",
+      "Trên điện thoại: nút Menu ở thanh trên mở thanh bên, \"Đóng menu\" để đóng"
+    ],
+    "keys": "thanh ben thanh bên sidebar menu trang page dieu huong điều hướng navigation hom nay hôm nay kiem thu kiểm thử brief"
+  },
+  {
+    "id": "yt-thu-gon-thanh-ben",
+    "tab": "youtrack",
+    "area": "Thanh bên",
+    "title": "Thu gọn / mở rộng menu",
+    "what": "Thu thanh bên lại chỉ còn biểu tượng để có thêm chỗ cho bảng ticket; trạng thái được nhớ cho lần sau.",
+    "how": [
+      {
+        "t": "Bấm ô biểu tượng YouTrack đầu thanh bên (\"Thu gọn / mở rộng menu\")",
+        "at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+      },
+      {
+        "t": "Bấm lại lần nữa để mở rộng",
+        "at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+      }
+    ],
+    "keys": "thu gon thu gọn mo rong mở rộng collapse sidebar an menu ẩn menu"
+  },
+  {
+    "id": "yt-chon-project",
+    "tab": "youtrack",
+    "area": "Thanh bên",
+    "title": "Chọn project YouTrack",
+    "what": "Đổi project đang xem; toàn bộ ticket, sprint, thành viên được tải lại theo project mới. Lựa chọn được lưu.",
+    "how": [
+      {
+        "t": "Mở ô chọn \"Project\" ở thanh bên rồi chọn project khác (menu phải đang mở rộng)",
+        "at": "Project"
+      },
+      "Bộ lọc sprint / người được đặt lại và ticket tải lại theo project mới"
+    ],
+    "keys": "project du an dự án chon project chọn project doi project đổi project"
+  },
+  {
+    "id": "yt-vai-tro-thanh-ben",
+    "tab": "youtrack",
+    "area": "Thanh bên",
+    "title": "Xem / đổi vai trò hiện tại",
+    "what": "Ô \"Vai trò\" dưới ô Project cho biết bạn đang xem YouTrack với vai trò nào (Dev, QA/QC, PO/PM). Đổi ở đây thì trang chủ, Dashboard và AI chuyển theo ngay, giống đổi trong Cài đặt › Chung.",
+    "how": [
+      {
+        "t": "Mở ô chọn \"Vai trò\" ở thanh bên (menu phải đang mở rộng)",
+        "at": "css:[aria-label=\"Vai trò hiện tại\"]"
+      },
+      "Chọn \"Dev\", \"QA/QC\" hoặc \"PO/PM\"; dòng phụ cho biết trang chủ của vai trò đó"
+    ],
+    "keys": "vai tro vai trò role hien tai hiện tại doi vai tro đổi vai trò dev qa qc po pm"
+  },
+  {
+    "id": "yt-huy-hieu-rui-ro",
+    "tab": "youtrack",
+    "area": "Thanh bên › mục trang chủ",
+    "title": "Huy hiệu số ticket rủi ro",
+    "what": "Con số vàng cạnh mục trang chủ cho biết số ticket cần xử lý ngay (quá hạn, tới hạn trong 24 giờ, Blocked, đang làm mà 3+ ngày không cập nhật). Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team.",
+    "how": [
+      {
+        "t": "Nhìn số đỏ cạnh trang chủ, rê chuột để đọc giải thích, bấm để xem danh sách",
+        "at": [
+          "css:nav[aria-label=\"Trang\"] span[title*=\"cần xử lý ngay\"]",
+          "Hôm nay",
+          "Kiểm thử",
+          "Brief"
+        ]
+      },
+      "Dev: ticket của bạn; QA: ticket bạn làm QC; PO: cả team"
+    ],
+    "keys": "rui ro rủi ro risk badge huy hieu huy hiệu qua han quá hạn toi han tới hạn blocked dung lau đứng lâu"
+  },
+  {
+    "id": "yt-lich-su-ai",
+    "tab": "youtrack",
+    "area": "Thanh bên › Lịch sử AI",
+    "title": "Lịch sử AI",
+    "what": "Lưu tối đa 40 phiên hỏi AI gần nhất trên trình duyệt, chia tab Tất cả / Ticket / Số liệu; mở lại một phiên để xem toàn bộ trao đổi và hỏi tiếp. Mọi lần dùng AI có trả lời dạng chat (ticket, trang chính, dashboard, thành viên, release, báo cáo, cả báo cáo chạy theo lịch) đều vào đây ngay khi bắt đầu; lọc ticket bằng AI và AI soạn ticket mới cũng được lưu để xem lại (không hỏi tiếp): đóng bảng, tải lại trang hay đóng tab khi AI đang chạy thì AI vẫn chạy nền trên máy (hiện \"Đang chạy\", mở ra xem tiếp và có nút Dừng; xong thì tự chuyển \"Đã xong, mở để xem\", kể cả sau khi tải lại trang, kết quả giữ 1 giờ); bị dừng, lỗi hoặc máy chủ khởi động lại thì hiện \"Chưa xong\", mở lại bấm \"Chạy lại\". Xóa phiên đang chạy sẽ dừng nó. Đổi tên phiên bằng nút bút chì cạnh tên (để trống để về tên tự đặt). Phiên đọc code hiện từng bước AI làm (đọc file, tìm, chạy lệnh) giống AI Agent, cả khi mở lại một phiên đang chạy nền. Mỗi phiên (cả AI lọc ticket, AI soạn ticket) có mã YT-… ở thanh ticket phía trên: bấm để chép, gõ vào ô tìm phiên để mở lại; báo lỗi kèm mã này thì tìm được đúng lượt chạy ở Cài đặt › AI › History. Chỉ dành cho YouTrack: các cuộc hỏi Trợ lý Briefing nằm ở AI Agent › Briefing bên Telegram. Bên Telegram mở được từ icon Lịch sử AI ở thanh bên.",
+    "how": [
+      {
+        "t": "Bấm \"Lịch sử AI\" trên thanh bên (chỉ hiện khi AI bật)",
+        "at": "Lịch sử AI"
+      },
+      {
+        "t": "Chọn tab \"Tất cả\", \"Ticket\" hoặc \"Số liệu\"",
+        "at": "css:[role=\"group\"][aria-label=\"Loại phiên AI\"]"
+      },
+      {
+        "t": "Gõ vào ô \"Tìm phiên AI\" để tìm",
+        "at": "Tìm phiên AI"
+      },
+      {
+        "t": "Bấm một phiên để mở lại và hỏi tiếp",
+        "at": "css:nav[aria-label=\"Phiên AI\"] li.group > button"
+      },
+      {
+        "t": "Phiên \"Chưa xong\": mở ra, bấm \"Chạy lại\" để chạy lại lượt chưa có trả lời",
+        "at": "Chạy lại"
+      },
+      {
+        "t": "Đổi tên: rê vào tên phiên đang mở, bấm bút chì, gõ tên rồi Enter (Esc để hủy)",
+        "at": "Đổi tên phiên"
+      },
+      {
+        "t": "Xóa một phiên: bấm thùng rác khi rê vào phiên",
+        "at": "css:nav[aria-label=\"Phiên AI\"] button[aria-label^=\"Xóa phiên\"]"
+      },
+      {
+        "t": "Hoặc \"Xóa tất cả\" (ở tab khác là \"Xóa N phiên này\"), rồi bấm lần nữa ở \"Bấm lần nữa để xóa N phiên\"",
+        "at": "css:nav[aria-label=\"Phiên AI\"] > button:last-child"
+      }
+    ],
+    "keys": "lich su ai lịch sử ai history phien ai phiên ai mo lai mở lại hoi tiep hỏi tiếp xoa phien xóa phiên"
+  },
+  {
+    "id": "yt-tao-ticket",
+    "tab": "youtrack",
+    "area": "Thanh bên › Tạo ticket",
+    "title": "Tạo ticket mới (AI soạn từ ghi chú thô)",
+    "what": "Tạo ticket YouTrack ngay trong dashboard. AI có thể soạn tiêu đề, Type, Priority và mô tả theo mẫu từ ghi chú thô; trước khi tạo, các ticket đang mở giống thế này được cảnh báo; kiểm trùng lỗi thì form báo lỗi.",
+    "how": [
+      {
+        "t": "Bấm \"Tạo ticket\" trên thanh bên",
+        "at": "Tạo ticket"
+      },
+      {
+        "t": "Ở chế độ \"AI soạn\", kể vấn đề / dán ghi chú thô vào ô \"Vấn đề / yêu cầu cho AI\" ở đáy hộp thoại",
+        "at": "Vấn đề / yêu cầu cho AI"
+      },
+      {
+        "t": "Bấm \"AI soạn\" trong ô (hoặc Enter; khi AI bật)",
+        "at": "css:[data-slot=\"dialog-content\"] footer button.bg-hl"
+      },
+      {
+        "t": "Kiểm tra \"Tiêu đề\"; nếu có nút \"… ticket liên quan\" ở cuối hộp thoại thì bấm để xem (kiểm trùng lỗi thì hiện \"Không kiểm được ticket trùng\")",
+        "at": "Tiêu đề"
+      },
+      {
+        "t": "Chọn Project, Type, Priority, Assignee",
+        "at": "css:[data-slot=\"dialog-content\"] fieldset"
+      },
+      {
+        "t": "Bấm \"Tạo ticket\" ở cuối hộp thoại",
+        "at": "css:[data-slot=\"dialog-content\"] footer > button:last-child"
+      }
+    ],
+    "keys": "tao ticket tạo ticket create issue new ticket ai soan ai soạn ghi chu tho ghi chú thô ticket trung ticket trùng duplicate"
+  },
+  {
+    "id": "yt-pham-vi-my-task",
+    "tab": "youtrack",
+    "area": "Thanh trên trang › Phạm vi",
+    "title": "Phạm vi Của tôi / Team / Nhóm chọn",
+    "what": "Chọn nhanh tập ticket: Của tôi (ticket bạn được assign hoặc làm QC), Team (bạn + thành viên đã thêm), Nhóm chọn (những người bạn chọn; chưa chọn ai thì tất cả mọi người).",
+    "how": [
+      {
+        "t": "Bấm \"Của tôi\", \"Team\" hoặc \"Nhóm chọn\" trên thanh đầu trang",
+        "at": "css:[role=\"group\"][aria-label=\"Phạm vi\"]"
+      },
+      "Số cạnh \"Team\" là số người trong team"
+    ],
+    "keys": "pham vi phạm vi scope my task my team all cua toi của tôi team nhom chon nhóm chọn tat ca tất cả"
+  },
+  {
+    "id": "yt-sua-team",
+    "tab": "youtrack",
+    "area": "Thanh trên trang › My team",
+    "title": "Sửa thành viên team (Team của tôi)",
+    "what": "Thêm/bớt người trong nhóm “My team”; danh sách được lưu cho lần sau.",
+    "how": [
+      {
+        "t": "Bấm \"My team\" để chọn phạm vi này",
+        "at": "Team"
+      },
+      {
+        "t": "Bấm lại \"My team\" (biểu tượng bánh răng) để mở \"Team của tôi\"",
+        "at": "Team"
+      },
+      {
+        "t": "Gõ tên vào ô \"Tìm người để thêm vào team\"",
+        "at": "Tìm người để thêm vào team"
+      },
+      {
+        "t": "Bấm tên trong danh sách để thêm",
+        "at": "css:[role=\"dialog\"][aria-label=\"Team của tôi\"] button:not([aria-label])"
+      },
+      {
+        "t": "Bấm ✕ cạnh tên (\"Bỏ … khỏi team\") để bớt",
+        "at": "css:button[aria-label^=\"Bỏ \"]"
+      },
+      "Esc hoặc bấm ra ngoài để đóng"
+    ],
+    "keys": "team cua toi team của tôi my team them thanh vien thêm thành viên bo khoi team bỏ khỏi team members"
+  },
+  {
+    "id": "yt-loc-sprint-nguoi",
+    "tab": "youtrack",
+    "area": "Thanh trên trang",
+    "title": "Lọc theo Sprint và Người",
+    "what": "Chọn một hoặc nhiều sprint, một hoặc nhiều người (có cả “Unassigned”) để thu hẹp mọi trang: Ticket, Dashboard, trang chủ.",
+    "how": [
+      {
+        "t": "Bấm nút \"Sprint\" (mặc định \"Tất cả sprint\")",
+        "at": "Sprint"
+      },
+      {
+        "t": "Tích một hoặc nhiều sprint (gõ vào ô tìm nếu cần)",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      {
+        "t": "Bấm nút \"Người\" (mặc định \"Tất cả người\")",
+        "at": "Người"
+      },
+      {
+        "t": "Tích người cần xem (có cả \"Unassigned\")",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      "Bộ lọc được lưu và ghi lên URL để chia sẻ"
+    ],
+    "keys": "loc sprint lọc sprint loc nguoi lọc người filter assignee nguoi người unassigned chua assign chưa assign"
+  },
+  {
+    "id": "yt-chip-bo-loc",
+    "tab": "youtrack",
+    "area": "Dưới thanh trên trang",
+    "title": "Chip bộ lọc đang bật",
+    "what": "Mỗi bộ lọc đang áp dụng (Sprint, Người, Priority, Type, Tầng, Lọc nhanh) hiện thành một chip; bấm chip để gỡ.",
+    "how": [
+      {
+        "t": "Bấm nút \"Sprint\" để chọn bộ lọc",
+        "at": "Sprint"
+      },
+      {
+        "t": "Tích một sprint",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      {
+        "t": "Bấm chip vừa hiện (\"Gỡ bộ lọc\") để gỡ",
+        "at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+      },
+      "Khi có từ 2 chip, bấm \"Xóa tất cả\" để gỡ hết"
+    ],
+    "keys": "chip bo loc chip bộ lọc go bo loc gỡ bộ lọc xoa tat ca xóa tất cả clear filter"
+  },
+  {
+    "id": "yt-lam-moi",
+    "tab": "youtrack",
+    "area": "Thanh trên trang",
+    "title": "Làm mới dữ liệu",
+    "what": "Dữ liệu tự làm mới mỗi phút; nút hiện giờ cập nhật gần nhất và cho làm mới ngay.",
+    "how": [
+      {
+        "t": "Bấm nút xoay có giờ cập nhật (vd. \"14:05\") ở cuối thanh trên",
+        "at": "Làm mới"
+      },
+      "Hoặc ⌘K › \"Làm mới dữ liệu\"",
+      "Khi lỗi tải, bấm \"Thử lại\" trong khung báo lỗi"
+    ],
+    "keys": "lam moi làm mới refresh reload cap nhat cập nhật tu lam moi tự làm mới thu lai thử lại"
+  },
+  {
+    "id": "yt-chuong-thay-doi",
+    "tab": "youtrack",
+    "area": "Thanh trên trang › biểu tượng chuông",
+    "title": "Chuông thay đổi trên ticket của bạn",
+    "what": "Theo dõi ticket bạn được assign hoặc làm QC: báo khi đổi state, mới được giao cho bạn, hoặc có cập nhật (bình luận, sửa). Ticket mới giao / nhờ test hiện toast ở cả trang Telegram lẫn YouTrack (kiểm 5 phút một lần, ticket giao lúc đóng app vẫn được báo khi mở lại). Trên macOS, app tự hiện banner cho ticket mới ở mọi project kể cả khi không mở tab nào (kiểm 3 phút một lần; nội dung ticket chỉ hiện khi bật \"Hiện nội dung tin trong thông báo macOS\" trong Cài đặt). Có thể bật thông báo trên máy khi tab chạy nền.",
+    "how": [
+      {
+        "t": "Bấm biểu tượng chuông \"Thay đổi trên ticket của bạn\"",
+        "at": "Thay đổi trên ticket của bạn"
+      },
+      {
+        "t": "Tích \"Thông báo trên máy\" và cho phép quyền của trình duyệt",
+        "at": "Thông báo trên máy"
+      },
+      "Có thay đổi mới thì bấm một dòng để mở ticket"
+    ],
+    "keys": "chuong chuông thong bao thông báo notification watch theo doi theo dõi thay doi thay đổi bell"
+  },
+  {
+    "id": "yt-palette-cmdk",
+    "tab": "youtrack",
+    "area": "Toàn trang › ⌘K",
+    "title": "Lệnh nhanh ⌘K (Tìm, hỏi AI)",
+    "what": "Hộp lệnh nhanh: mở ticket theo ID hoặc tiêu đề, chuyển trang, áp view đã lưu, tạo ticket, làm mới, hỏi AI về phạm vi đang xem hoặc lọc ticket bằng AI.",
+    "how": [
+      {
+        "t": "Bấm nút \"Tìm, hỏi AI\" / \"Tìm\" trên thanh trên (hoặc nhấn ⌘K)",
+        "at": [
+          "Tìm, hỏi AI",
+          "Tìm",
+          "Mở ticket, chuyển trang"
+        ]
+      },
+      {
+        "t": "Gõ ID (vd. 123), tiêu đề, tên trang hoặc một câu hỏi",
+        "at": "Lệnh, ticket hoặc câu hỏi cho AI"
+      },
+      {
+        "t": "Chọn một dòng, vd. \"Đi tới …\"",
+        "at": "css:[role=\"listbox\"] [role=\"option\"]"
+      },
+      "Dùng ↑ ↓ để chọn, Enter để chạy, Esc để đóng"
+    ],
+    "keys": "cmd k ctrl k ⌘k palette lenh nhanh lệnh nhanh command tim kiem tìm kiếm search mo ticket mở ticket hoi ai hỏi ai"
+  },
+  {
+    "id": "yt-palette-hoi-ai",
+    "tab": "youtrack",
+    "area": "⌘K › nhóm AI",
+    "title": "Hỏi AI về phạm vi đang xem",
+    "what": "Gõ câu hỏi trong ⌘K để AI đọc tối đa 40 ticket đang mở của phạm vi (ưu tiên ticket rủi ro, priority cao) kèm số liệu dashboard rồi trả lời.",
+    "how": [
+      {
+        "t": "Bấm nút \"Tìm, hỏi AI\" trên thanh trên (hoặc nhấn ⌘K)",
+        "at": [
+          "Tìm, hỏi AI",
+          "Tìm",
+          "Mở ticket, chuyển trang"
+        ]
+      },
+      {
+        "t": "Gõ câu hỏi vào ô lệnh",
+        "at": "Lệnh, ticket hoặc câu hỏi cho AI"
+      },
+      {
+        "t": "Chọn dòng \"Hỏi AI: …\"",
+        "at": "Hỏi AI:"
+      },
+      "Phiên AI mở ở bảng bên, có thể hỏi tiếp"
+    ],
+    "keys": "hoi ai hỏi ai ask ai cau hoi câu hỏi pham vi phạm vi scope cmd k"
+  }
+]

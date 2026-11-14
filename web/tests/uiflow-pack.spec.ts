@@ -2,9 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import type { UiFlow, FlowShot } from "../src/lib/yt";
+import type { UiFlow, FlowShot } from "../src/features/youtrack/lib/yt";
 
-const source = fs.readFileSync(path.join(__dirname, "../src/lib/uiflow.ts"), "utf8").split("export const zeplinUrls")[1];
+const source = fs.readFileSync(path.join(__dirname, "../src/features/youtrack/lib/uiflow.ts"), "utf8").split("export const zeplinUrls")[1];
 const browserPack = ts.transpileModule(("const zeplinUrls" + source).replace(/export /g, ""), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None },
 }).outputText;

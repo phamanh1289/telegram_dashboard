@@ -1,0 +1,314 @@
+[
+  {
+    "id": "yt-trang-hom-nay-dev",
+    "tab": "youtrack",
+    "area": "Sidebar › Today (Dev)",
+    "title": "What to do today (Dev home page)",
+    "what": "Your open tickets sorted by urgency with the reason (Blocked, Overdue, Due soon, priority, Waiting for your test, In progress, Stale N days); tickets moved to QC / waiting for test show only when you click the \"In QC\" box; the top 3 tickets are under \"Do now\", the rest under \"Next\", 20 tickets per page.",
+    "how": [
+      {
+        "t": "Click \"Today\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Hôm nay\"]"
+      },
+      {
+        "t": "Click a row in \"What to do today\" to open the ticket",
+        "at": "css:ol > li > button"
+      },
+      "Over 20 tickets: use ‹ › or the page numbers; with the pager focused, ← → also change pages"
+    ],
+    "keys": "today dev do now next priority focus my work"
+  },
+  {
+    "id": "yt-lens-dev",
+    "tab": "youtrack",
+    "area": "Today (Dev) › Stats row",
+    "title": "Quick-filter today's list",
+    "what": "The stats row also filters the list: Open, In progress, Awaiting QC, Blocked, Waiting for your test.",
+    "how": [
+      {
+        "t": "Click the \"Blocked\" box in the stats row: the \"What to do today\" list keeps only Blocked tickets",
+        "at": "Blocked"
+      },
+      {
+        "t": "Click another box, e.g. \"In QC\", to change the filter",
+        "at": "Chờ QC"
+      },
+      {
+        "t": "Click \"clear filter\" in the card corner (or click the \"Open\" box again) to see everything",
+        "at": [
+          "css:section span.text-ink-3 > button[class~=\"hover:text-ink\"]",
+          "Đang mở"
+        ]
+      }
+    ],
+    "keys": "quick filter lens open in progress waiting for qc blocked waiting for your test"
+  },
+  {
+    "id": "yt-canh-bao-can-xu-ly",
+    "tab": "youtrack",
+    "area": "Today (Dev)",
+    "title": "The \"Urgent\" chip in the filter bar",
+    "what": "The number of your tickets at risk (Overdue, Due within 24 hours, Blocked, No update for N days) shows as a yellow \"Urgent\" chip in the filter bar. Turn the chip on to see only those tickets, each row starting with why it is urgent.",
+    "how": [
+      "Click the \"Urgent\" chip in the home page's filter bar",
+      "Click it again to clear the filter"
+    ],
+    "keys": "warning to do now at risk overdue blocked chip"
+  },
+  {
+    "id": "yt-moi-cap-nhat",
+    "tab": "youtrack",
+    "area": "Today (Dev)",
+    "title": "Recently updated",
+    "what": "Your 5 most recently updated tickets.",
+    "how": [
+      {
+        "t": "Click a row in the \"Recently updated\" card (right column) to open the ticket",
+        "at": "css:ul[class~=\"gap-0.5\"] > li > button.text-left"
+      },
+      "Press Esc to close the side panel and go back to the page"
+    ],
+    "keys": "recently updated recent latest"
+  },
+  {
+    "id": "yt-ai-studio",
+    "tab": "youtrack",
+    "area": "Home page (Dev/QA/PO) › AI Studio",
+    "title": "AI Studio on the home page",
+    "what": "A card that groups the role's AI jobs into tabs; answers are saved for the day (Weekly digest: for the week) so reopening them costs no run. Dev: Plan, Standup. QA: Test cases, Bug triage, Regression, Ticket quality. PO: Brief, Sprint planning, Grooming, Weekly digest, Release notes.",
+    "how": [
+      {
+        "t": "In the \"AI Studio\" card, click the second AI tab (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Sprint planning\")",
+        "at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+      },
+      {
+        "t": "Click the button named like the tab to run it; the AI session opens in the side panel",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      "Wait for the AI to finish; the result is saved for the day. Press Esc to close the side panel",
+      {
+        "t": "The card now has a result: click \"Open AI session\" to review it and keep asking",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      "Press Esc. \"Redo\" runs it again, \"Delete\" removes the saved content"
+    ],
+    "keys": "ai studio plan standup test case bug triage regression ticket quality brief sprint planning grooming weekly update release notes"
+  },
+  {
+    "id": "yt-ai-standup-dev",
+    "tab": "youtrack",
+    "area": "Today (Dev) › AI Studio",
+    "title": "Standup and Plan",
+    "what": "Standup: Yesterday / Today / Blockers from the tickets you updated since the previous workday and the messages you answered on Telegram. Plan: the AI picks what to do now, what to answer, and where you are stuck. Standup is available for both Dev and QA/QC (QA: from the tickets you QC) and also reads finished AI Agent sessions; the \"Saved Messages\" button sends the standup to your Telegram.",
+    "how": [
+      {
+        "t": "In the \"AI Studio\" card, click the \"Standup\" tab",
+        "at": "Standup"
+      },
+      {
+        "t": "Click the run button; the AI writes the standup in the side panel",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      {
+        "t": "When there is a result, click \"Copy\" to paste it into the Telegram group",
+        "at": "Copy"
+      },
+      {
+        "t": "Press Esc, then click the \"Plan\" tab for the AI to pick what to do now (works the same way)",
+        "at": "Kế hoạch"
+      }
+    ],
+    "keys": "standup plan yesterday today blockers telegram"
+  },
+  {
+    "id": "yt-trang-kiem-thu-qa",
+    "tab": "youtrack",
+    "area": "Sidebar › Testing (QA)",
+    "title": "Test queue (QA home page)",
+    "what": "Tickets waiting for test, sorted by urgency (Yours, No QC yet, Retest · returned N times, Blocked, Overdue, Waiting N days…); the top 3 tickets are under \"Test now\".",
+    "how": [
+      {
+        "t": "Click \"Testing\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Kiểm thử\"]"
+      },
+      {
+        "t": "Click a number box to filter (Waiting for test, Waiting for my test, Retest, Bugs…)",
+        "at": "css:[aria-label=\"Lọc hàng đợi kiểm thử\"]"
+      },
+      {
+        "t": "Click a row to open the ticket",
+        "at": "css:ol > li > button"
+      },
+      "Click the box again or \"… · clear filter\" to go back to \"To test\""
+    ],
+    "keys": "testing qa qc test queue test now waiting for my test retest bug bugs i logged"
+  },
+  {
+    "id": "yt-bug-dot-bien",
+    "tab": "youtrack",
+    "area": "Testing (QA)",
+    "title": "Bug spike alert",
+    "what": "When new bugs in the last 7 days reach 3 or more and exceed 1.5 times the average of the previous 4 weeks (project-wide or per module), a yellow \"Bug spike\" button appears with the hot modules.",
+    "how": [
+      {
+        "t": "Click the yellow \"Bug spike\" button (shown only when new bugs rise unusually) to see \"New bugs, 7 days\"",
+        "at": "Bug tăng đột biến"
+      },
+      "Press Esc to close the side panel"
+    ],
+    "keys": "bug spike new bugs module surge"
+  },
+  {
+    "id": "yt-ket-qua-test-cua-toi",
+    "tab": "youtrack",
+    "area": "Testing (QA)",
+    "title": "My test results + Copy standup",
+    "what": "How many tickets you tested Today / the last 24 hours / 7 days, split into passed and returned (read from the state history); a ready-made QC standup paragraph. Counts all your verdicts, regardless of the Sprint / People filter at the top.",
+    "how": [
+      {
+        "t": "Click \"… pass\" (e.g. \"2 pass\") in a column to see the list of passed tickets",
+        "at": "css:button.text-ok:enabled"
+      },
+      "Press Esc to close the side panel",
+      {
+        "t": "Click \"Copy standup\" to copy the standup paragraph to paste into Telegram",
+        "at": "Copy standup"
+      }
+    ],
+    "keys": "test results pass returned standup qc copy standup"
+  },
+  {
+    "id": "yt-goi-y-chia-qc",
+    "tab": "youtrack",
+    "area": "Testing (QA)",
+    "title": "QC assignment suggestions",
+    "what": "Tickets waiting for test without a QC are suggested for the person holding the fewest test tickets, urgent tickets first.",
+    "how": [
+      {
+        "t": "In the \"Suggested QC split\" card, click a row to open the ticket and set the QC",
+        "at": "css:ol li > button.items-baseline"
+      },
+      "Press Esc to close the side panel",
+      {
+        "t": "Click \"Copy\" to copy the assignment table",
+        "at": "Copy"
+      }
+    ],
+    "keys": "qc assignment suggestions assign qc balance load"
+  },
+  {
+    "id": "yt-bug-7-ngay",
+    "tab": "youtrack",
+    "area": "Testing (QA)",
+    "title": "Bugs in the last 7 days",
+    "what": "Three numbers: New bugs, Fixed within 7 days and Open bugs.",
+    "how": [
+      "See the \"Bugs, last 7 days\" card in the right column of the Testing page: three numbers New, Fixed, Open (view only, not clickable)"
+    ],
+    "keys": "bugs 7 days new bugs fixed open"
+  },
+  {
+    "id": "yt-trang-brief-po",
+    "tab": "youtrack",
+    "area": "Sidebar › Overview (PO)",
+    "title": "Overview (PO home page)",
+    "what": "The PO home page: sprint KPIs, Sprint progress, Long-running tickets, Waiting for PO sign-off (define / confirm), Needs attention, Work in progress (WIP limit).",
+    "how": [
+      {
+        "t": "Click \"Overview\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Tổng quan\"]"
+      },
+      {
+        "t": "Click a KPI number to see its ticket list",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "In the \"Waiting for PO\" card, click \"See all … tickets\"",
+        "at": "Xem cả"
+      }
+    ],
+    "keys": "brief po pm waiting for po decision sprint progress needs attention wip overview"
+  },
+  {
+    "id": "yt-ai-brief-po",
+    "tab": "youtrack",
+    "area": "Brief (PO) › AI Studio",
+    "title": "AI Brief, Sprint planning, Grooming, Weekly digest, Release notes",
+    "what": "Brief: the AI reads the sprint's open tickets and gives each person's next step, bottlenecks, decisions needed and what changed since the last brief. Sprint planning: suggests tickets to pull into the next sprint and who takes them. Grooming: reviews the backlog. Weekly digest: the last 7 days per person. Release notes: from finished tickets.",
+    "how": [
+      {
+        "t": "In the \"AI Studio\" card, click the \"Sprint planning\" tab (the \"Brief\", \"Grooming\", \"Weekly digest\" and \"Release notes\" tabs work the same way)",
+        "at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+      },
+      {
+        "t": "Click the run button; the result opens in the side panel",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      {
+        "t": "When there is a result, click \"Copy\" to copy it",
+        "at": "Copy"
+      },
+      "Press Esc to close the side panel; the card keeps the result, click \"Open AI session\" to keep asking"
+    ],
+    "keys": "brief sprint planning grooming backlog weekly update release notes po"
+  },
+  {
+    "id": "yt-bao-cao-release",
+    "tab": "youtrack",
+    "area": "Home page › Create report",
+    "title": "Create a report",
+    "what": "The AI writes a report from the dashboard numbers: By sprint (will it make the release date, not handed to QC, stuck, test results, late, overloaded, bugs) or By day (tested, in test, waiting for test). Each number opens its ticket list; it can be created on a schedule in Settings.",
+    "how": [
+      {
+        "t": "In the \"Create report\" card, click \"By day\" to see the test status so far",
+        "at": "Theo ngày"
+      },
+      {
+        "t": "Click \"By sprint\" for a report against the release date",
+        "at": "Theo sprint"
+      },
+      {
+        "t": "Adjust the \"Release date\" (default: end of sprint); the \"working days left\" number follows",
+        "at": "Ngày release"
+      },
+      {
+        "t": "Click \"Create report\" (\"Regenerate\" if there is already a report today)",
+        "at": [
+          "Tạo báo cáo",
+          "Tạo lại"
+        ]
+      },
+      "Wait for the AI to finish (close the panel with Esc so the report shows in the card); schedule automatic reports in Settings › YouTrack",
+      {
+        "t": "Click \"Show all\" (or \"Collapse\") to expand the content",
+        "at": [
+          "Xem đầy đủ",
+          "Thu gọn"
+        ]
+      }
+    ],
+    "keys": "create report release report release date by sprint by day auto create schedule"
+  },
+  {
+    "id": "yt-xuat-bao-cao",
+    "tab": "youtrack",
+    "area": "Home page › Create report › Export",
+    "title": "Export the report as MD / PDF / CSV",
+    "what": "Download the release report as Markdown, PDF (print version) or CSV (numbers and ticket lists per section).",
+    "how": [
+      {
+        "t": "In the \"Create report\" card on the home page, click \"Create report\" (skip this if a report is already there)",
+        "at": "Tạo báo cáo"
+      },
+      {
+        "t": "Click \"Export\"",
+        "at": "Xuất"
+      },
+      {
+        "t": "Choose \"Markdown (.md)\", \"PDF\" (opens the print version, choose Save as PDF; popups must be allowed) or \"CSV\"",
+        "at": "Markdown (.md)"
+      }
+    ],
+    "keys": "export report markdown md pdf csv download report"
+  }
+]

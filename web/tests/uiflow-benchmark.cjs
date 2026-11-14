@@ -10,7 +10,7 @@ const engine = path.resolve(process.argv[2] || 'web/public/uiflow.js');
 const datasetSource = fs.readFileSync(path.join(__dirname, 'uiflow-datasets.ts'), 'utf8');
 const datasetModule = { exports: {} };
 new Function('exports', ts.transpileModule(datasetSource, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText)(datasetModule.exports);
-const packSource = fs.readFileSync(path.resolve(path.dirname(engine), '../src/lib/uiflow.ts'), 'utf8').split('export const zeplinUrls')[1];
+const packSource = fs.readFileSync(path.resolve(path.dirname(engine), '../src/features/youtrack/lib/uiflow.ts'), 'utf8').split('export const zeplinUrls')[1];
 const browserPack = ts.transpileModule(('const zeplinUrls' + packSource).replace(/export /g, ''), { compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.None } }).outputText.replace(/export /g, '');
 (async () => {
   const browser = await chromium.launch();

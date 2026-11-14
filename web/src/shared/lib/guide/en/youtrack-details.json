@@ -1,0 +1,210 @@
+[
+  {
+    "id": "yt-chi-tiet-ticket",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "View ticket details",
+    "what": "The side panel shows the title, State, Assignee, Priority, QC, Sprint, Due, created/updated dates, Reporter, Description, Links, Mentioned on Telegram and Comments.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      "See State, Assignee, Priority, QC, Sprint, Due, Description, Links, Mentioned on Telegram, Comments; click a ticket under \"Links\" to switch to it",
+      {
+        "t": "Click the ID at the top of the side panel to open it on YouTrack",
+        "at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
+      },
+      {
+        "t": "Click ✕ \"Close\" (or Esc)",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      }
+    ],
+    "keys": "ticket details description comments links mentioned on telegram tags"
+  },
+  {
+    "id": "yt-ui-flow",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket › UI flow",
+    "title": "UI flow: the ticket's screens and the taps between them",
+    "what": "The AI reads the ticket's AC, rules and Zeplin links (for a sub-task, its parent story in full, where the ACs, the \"Luồng màn\" tree and the Zeplin links live) and builds the flow: which screens exist, which button leads where, which popups show, where Back goes. Screens with a Zeplin link are drawn from the real design image, each button a tap area in its place on it (matched by the text on the button; buttons not found on the design show as rows below); needs the Zeplin MCP set up. View it as a map or tap through it like a prototype, fix it up, then press Update to write uiflow-<ticket>.html onto the ticket with a comment listing what changed. The uiflow-<ticket>.html row under Attachments opens this same view. If someone else has just updated it, the app says so and offers the new version instead of overwriting it.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click \"UI flow\"",
+        "at": "UI flow"
+      },
+      "No file yet: pick \"Fast\" (light model, few tokens) or \"Thorough\" (stronger model, for long stories) in the box below, add a note for the AI if needed, then click \"Render with AI\"; while it runs you can click \"Stop rendering\"",
+      "While it renders, the view shows its progress: % done, how long it has run and roughly how long is left, each stage (reading the ticket and story, each Zeplin screen, the AI planning the flow, each screen drawn, each button linked to its screen, the check) with its numbers and time, the screens just drawn and the links just made",
+      "Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow its progress or get the result. When a render shows an error (a lost connection too), the AI run has stopped and the line names the stage it failed at: click \"Render with AI\" to run it again",
+      "Once rendered, the bar below says how many screens and links the AI drew and how long it took; on \"Update\" it shows the Zeplin images being embedded (n/total), then the file being uploaded to the ticket",
+      "With a flow: use the toolbar inside the frame (Map / Prototype, Edit, the screen finder, Fit, Check)",
+      "\"Check\" has two tabs. \"To review\": gaps in the flow, buttons not found on the design image, screens with no Zeplin link, bad data; filter by kind with the count buttons; while editing, a row opens that screen / button to fix. \"Test checklist\": the code lists tap paths from the start screen that cross every link, with their conditions, and the links it cannot reach; \"Copy\" to paste into test cases or the ticket's AI.",
+      "Select a screen while editing and press \"▶ Start screen\" so the prototype, the map and the checklist start there (press again to go back to the first screen). \"↶ Undo\" / \"↷ Redo\" (⌘Z / ⌘⇧Z); a run of arrow-key moves counts as one step.",
+      "Before \"Update\", press \"Review changes\" to see the exact lines the ticket comment will get (nothing is written). If the ticket changed after the flow was last updated, the view says so; \"Render again with AI\" keeps the notes, hand-drawn tap areas, start screen (and positions, when no screen is new) of matching screens.",
+      "The \"Find a screen\" box: type a screen name (accents optional), a Zeplin link or an id; matches get a yellow outline, Up/Down picks one, Enter goes to it, Esc clears. Finding never changes the flow.",
+      "Click \"Edit\": \"+ From Zeplin\" takes a Zeplin screen link and adds the screen with its name and design image (a link already in the flow jumps to that screen; a Zeplin error offers \"Retry\" or \"Add it without the image\"); \"Re-arrange\" lays every screen out again, ⌘Z takes it back. Select a screen: edit its X/Y position, its \"Note\" (plain text, a ✎ mark on the screen, Esc cancels, kept in the flow only, never posted as a ticket comment), or \"+ Tap area\" and drag on the image to draw a button (or press Enter for one mid-screen). Keyboard only: find a screen and press Enter to select it; its buttons are in the \"Buttons\" row of the properties panel. Select a button on the image: drag to move it, drag its corner to resize, edit the Area (px) numbers, \"Redraw area\" or \"Match by text\". Arrow keys move the selected screen or area (Shift: bigger steps).",
+      "After an edit the bar below says there are unsaved changes: click \"Update\" to write them to the ticket, or \"No\" to keep them on screen only",
+      {
+        "t": "The ⋯ menu: \"Render again with AI\" or \"Download the HTML file\"",
+        "at": "Thao tác UI flow"
+      },
+      "After a render, “Render source” shows the sources used, the estimated input and the optional parts left out; a review warning appears when a source is missing. Fast is limited to 12,000 and Thorough to 24,000 estimated tokens; the limit only trims Zeplin design text, AC/rules are always kept whole, and the render asks you to narrow the scope only when they exceed what the AI can hold. At most 3 images are embedded at once; a failed image gets a warning and the flow data is kept."
+    ],
+    "keys": "ui flow uiflow screens tap flow prototype zeplin render ai update file on ticket find screen note from zeplin re-arrange tap area to review test checklist start screen redo review changes"
+  },
+  {
+    "id": "yt-hoi-lai-trong-nhom",
+    "tab": "youtrack",
+    "area": "Ticket details › Mentioned on Telegram",
+    "title": "Ask again in the group from a ticket",
+    "what": "Under each Telegram message mentioning the ticket there is an \"Ask in the group\" link: it opens that group's Q&A with the new question box prefilled \"About <ID> <title>: \". Add the @name of the person to ask, then Post so the question gets a #QA code and is tracked.",
+    "how": [
+      "Open a ticket and look at the \"Mentioned on Telegram\" section",
+      "Click \"Ask in the group\", finish the question with an @name, then Post"
+    ],
+    "keys": "ask again in group qa telegram ticket tag ask someone"
+  },
+  {
+    "id": "yt-bao-lai-moi-noi",
+    "tab": "youtrack",
+    "area": "Report back",
+    "title": "Follow up when a ticket moves to Fixed / Done (even while on Telegram)",
+    "what": "When one of your tickets that someone asked about on Telegram moves to Fixed / Done, the app reminds you to get back to the person who asked. The server checks every 3 minutes even with no page open (the same round wakes tags snoozed until a ticket is done); the list is kept on this machine, so every browser sees the same one. Reply to that message (on the web or your phone) and the item is done; click X to skip it.",
+    "how": [
+      "A notice at the bottom of the screen shows \"<ID>: …\"",
+      "Open the message in To do to write your follow-up"
+    ],
+    "keys": "follow up fixed done notification asker telegram ticket"
+  },
+  {
+    "id": "yt-chuyen-ticket-jk",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Previous / next ticket",
+    "what": "Step through the tickets of the list you came from without closing the side panel.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click › \"Next ticket\" (key j)",
+        "at": "Ticket sau"
+      },
+      {
+        "t": "Click ‹ \"Previous ticket\" (key k)",
+        "at": "Ticket trước"
+      },
+      "The \"n/N\" number next to it shows the position in the list"
+    ],
+    "keys": "previous ticket next ticket next previous j k switch ticket"
+  },
+  {
+    "id": "yt-doi-state-priority-assignee",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Change State / Priority / Assignee",
+    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click State (with the ▾ arrow) and pick a new value",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(1) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Click Priority and pick a new value",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(3) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Under Assignee, pick a new person or \"Unassigned\"",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(2) dd button[aria-haspopup]"
+      },
+      "Click undo in the notice if it was a mistake"
+    ],
+    "keys": "change state change priority change assignee workflow undo"
+  },
+  {
+    "id": "yt-gui-binh-luan",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket › Comments",
+    "title": "Post a comment to YouTrack",
+    "what": "Write and post a comment on the ticket right from the dashboard. Type @ to mention a project member (inserts @login, YouTrack notifies them).",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Scroll down and type in the \"New comment\" box (type @ and a few letters of a name to mention someone)",
+        "at": "Bình luận mới"
+      },
+      {
+        "t": "Click \"Send comment\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "comment post comment reply"
+  },
+  {
+    "id": "yt-mention",
+    "tab": "youtrack",
+    "area": "Comments, Create ticket › Description › @",
+    "title": "Tag YouTrack members with @",
+    "what": "Type @ in a ticket's comment box or in the description box when creating a ticket to open the member list (the project's team), keep typing to filter by name or login. Picking a person inserts @login; YouTrack notifies the person mentioned.",
+    "how": [
+      "Type @ and a few letters of the name in the \"New comment\" box or the description box (Create ticket › Manual)",
+      "↑ ↓ to choose, Enter or Tab to insert, Esc to close the list"
+    ],
+    "keys": "tag tag name @ members login youtrack comment description create ticket"
+  },
+  {
+    "id": "yt-ticket-giong",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Similar / related tickets + AI duplicate check",
+    "what": "Lists tickets with similar titles (with a % match); the AI can judge which are duplicates and which are only related, and suggest merging/linking/keeping them apart.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Scroll to the \"Similar / related tickets\" section (only when there are similar titles); click a row to open that ticket",
+      {
+        "t": "Click \"AI duplicate check\"",
+        "at": "AI kiểm tra trùng"
+      }
+    ],
+    "keys": "similar tickets related duplicate ai duplicate check"
+  }
+]

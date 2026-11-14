@@ -18,17 +18,16 @@ from fastapi import FastAPI, Request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "backend"))
 
 from conftest import FakeTransport, msg  # noqa: E402
-
-from telegram_dashboard import uiflow  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
-from telegram_dashboard.flow_jobs import FlowJobs  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.storage import Store  # noqa: E402
-from telegram_dashboard.telegram import SendRejected  # noqa: E402
+from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
+from telegram_dashboard.youtrack import flow as uiflow  # noqa: E402
+from telegram_dashboard.youtrack.flow_jobs import FlowJobs  # noqa: E402
 
 A, B = "-1001", "-1002"
 PORT = int(os.environ.get("E2E_PORT", "8766"))
@@ -72,11 +71,13 @@ control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_chang
 FLOW = {
     "v": 1, "ticket": "VA-1", "rev": 1, "device": "mobile",
     "screens": [
-        {"id": "login", "title": "Đăng nhập", "kind": "screen", "parent": None, "items": [{"id": "otp", "label": "Gửi OTP"}]},
+        {"id": "login", "title": "Đăng nhập", "kind": "screen", "parent": None,
+         "items": [{"id": "otp", "label": "Gửi OTP"}]},
         {"id": "code", "title": "Nhập OTP", "kind": "screen", "parent": None,
          "items": [{"id": "ok", "label": "Xác nhận"}, {"id": "later", "label": "Để sau"}]},
         {"id": "err", "title": "Sai mã", "kind": "popup", "parent": "code", "items": []},
-        {"id": "home", "title": "Trang chủ", "kind": "screen", "parent": None, "items": [{"id": "out", "label": "Đăng xuất"}]},
+        {"id": "home", "title": "Trang chủ", "kind": "screen", "parent": None,
+         "items": [{"id": "out", "label": "Đăng xuất"}]},
     ],
     "links": [
         {"src": "login.otp", "to": "code", "act": "navigate", "when": "", "ac": "AC-1"},
@@ -116,7 +117,10 @@ async def body_of(receive) -> dict:
 
 # A YouTrack connection, so the YouTrack tab opens instead of sending the user to Cài đặt (no token here, so the real
 # routes answer empty lists; the ones the UI flow dialog reads are faked below).
-CONFIG = {"base": "https://youtrack.example.test", "mock": False, "t": {"wip": 3, "stale": 7, "dead": 14}, "hist": 0, "ai": True}
+CONFIG = {
+    "base": "https://youtrack.example.test", "mock": False,
+    "t": {"wip": 3, "stale": 7, "dead": 14}, "hist": 0, "ai": True,
+}
 
 
 async def fake_yt(scope, receive, send) -> bool:
@@ -155,8 +159,13 @@ async def fake_yt(scope, receive, send) -> bool:
         if mode == "fail":
             await answer(send, 502, {"error": "YouTrack 502 khi tải tệp"})
         else:
-            got = {"file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True)}[mode]
-            await answer(send, 200, {**dict(zip(("att", "flow", "broken"), got)), "ticket_newer": control.get("ticket_newer", False)})
+            got = {
+                "file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True),
+            }[mode]
+            await answer(send, 200, {
+                **dict(zip(("att", "flow", "broken"), got, strict=True)),
+                "ticket_newer": control.get("ticket_newer", False),
+            })
     elif path == "/api/yt/flow":
         b = await body_of(receive)
         control["flow_posts"].append(b)
@@ -176,7 +185,8 @@ async def fake_yt(scope, receive, send) -> bool:
             ISSUE["attachments"] = [{**ISSUE["attachments"][0], "id": "1-2"}]
             ISSUE["comments"] = [*ISSUE["comments"], {  # as yt_dashboard writes it: the file named in plain text
                 "id": f"c{rev}", "author": "Tôi", "created": 1_700_000_100_000,
-                "text": f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n" + "\n".join(f"- {c}" for c in changes),
+                "text": (f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n"
+                         + "\n".join(f"- {c}" for c in changes)),
             }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
     elif path == "/api/yt/ai/flow":
@@ -186,16 +196,21 @@ async def fake_yt(scope, receive, send) -> bool:
 
         async def work(on_text=None):
             # the stages the real route tells (ai_flow), spread over ai_ms: the dialog's progress view has data
-            say = (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e})) if on_text else (lambda **e: None)
+            say = (
+                (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e}))
+                if on_text else (lambda **e: None)
+            )
             body = json.dumps({"screens": FLOW["screens"], "links": FLOW["links"]}, ensure_ascii=False)
-            steps = [{"stage": "ticket", "id": "VA-1"}, {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
+            steps = [{"stage": "ticket", "id": "VA-1"},
+                     {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
                      {"stage": "zeplin", "n": 0, "of": 2}, {"stage": "zeplin", "n": 1, "of": 2},
                      {"stage": "zeplin", "n": 2, "of": 2, "done": True, "texts": 2, "missing": 0},
                      {"stage": "ai", "deep": False, "chars": 12800, "screens": 2}]
             seen = uiflow.Progress()
             steps += [e for i in range(0, len(body), 40) for e in seen.feed(body[i : i + 40])]
             steps += [{"stage": "check", "chars": len(body)},
-                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]), "links": len(FLOW["links"]), "dropped": 0}]
+                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]),
+                       "links": len(FLOW["links"]), "dropped": 0}]
             for e in steps:
                 say(**e)
                 await asyncio.sleep(control["ai_ms"] / 1000 / len(steps))

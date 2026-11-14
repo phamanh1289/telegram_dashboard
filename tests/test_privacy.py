@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
-from telegram_dashboard import ai, privacy, telegram
+from telegram_dashboard import ai, privacy
 from telegram_dashboard.config import Settings
+from telegram_dashboard.telegram import bridge as telegram
 
 
 def test_switches_persist_and_apply_live(tmp_path):

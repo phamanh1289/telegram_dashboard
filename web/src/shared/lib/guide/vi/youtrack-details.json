@@ -1,0 +1,210 @@
+[
+  {
+    "id": "yt-chi-tiet-ticket",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Xem chi tiết ticket",
+    "what": "Bảng bên hiện tiêu đề, State, Assignee, Priority, QC, Sprint, Hạn, ngày tạo/cập nhật, Reporter, Mô tả, Liên kết, Nhắc trên Telegram và Bình luận.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Xem State, Assignee, Priority, QC, Sprint, Hạn, Mô tả, Liên kết, Nhắc trên Telegram, Bình luận; bấm một ticket trong \"Liên kết\" để chuyển sang đó",
+      {
+        "t": "Bấm ID ở đầu bảng bên để mở trên YouTrack",
+        "at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
+      },
+      {
+        "t": "Bấm ✕ \"Đóng\" (hoặc Esc)",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      }
+    ],
+    "keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
+  },
+  {
+    "id": "yt-ui-flow",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket › UI flow",
+    "title": "UI flow: sơ đồ màn hình và luồng bấm của ticket",
+    "what": "AI đọc AC, rule và link Zeplin của ticket (với sub-task, đọc trọn story cha, nơi có AC, cây \"Luồng màn\" và link Zeplin) rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Màn có link Zeplin được vẽ bằng ảnh thiết kế thật, nút thành vùng bấm đúng chỗ trên ảnh (khớp theo chữ trên nút; nút không thấy trên thiết kế hiện thành dòng ở dưới); cần Zeplin MCP đã cấu hình. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file uiflow-<ticket>.html lên ticket kèm bình luận ghi rõ đã đổi gì. Dòng uiflow-<ticket>.html trong Tệp đính kèm mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm \"UI flow\"",
+        "at": "UI flow"
+      },
+      "Chưa có file: chọn \"Nhanh\" (model nhẹ, ít token) hoặc \"Kỹ\" (model mạnh, cho story dài) trong ô dưới, ghi chú thêm cho AI nếu cần rồi bấm \"Render bằng AI\"; đang chạy có thể bấm \"Dừng render\"",
+      "Đang render, khung hiện tiến trình: % đã xong, đã chạy bao lâu và ước tính còn bao lâu, từng bước (đọc ticket và story, đọc từng màn Zeplin, AI lên luồng, vẽ từng màn, nối từng nút với màn đích, kiểm tra) kèm số liệu và thời gian của bước đó, tên các màn vừa vẽ và liên kết vừa nối",
+      "Đóng khung hoặc đóng tab không dừng AI. Mở lại để xem tiếp tiến trình hoặc lấy kết quả chưa cập nhật. Bấm “Dừng” chỉ xác nhận đã dừng khi máy chủ trả lời; mất kết nối giữ lượt vẽ để “Kết nối lại”. Sau khởi động lại, bước xử lý đã có dữ liệu đầy đủ được khôi phục tự động; nếu AI bị gián đoạn, bấm “Tiếp tục” để gọi AI lại.",
+      "Render xong, thanh dưới ghi AI vừa vẽ bao nhiêu màn, liên kết, mất bao lâu; bấm \"Cập nhật\" thì thanh báo đang nhúng ảnh Zeplin (n/tổng) rồi đang tải file lên ticket",
+      "Có sơ đồ: dùng thanh công cụ trong khung (Toàn cục / Prototype, Sửa, ô tìm màn, Vừa màn hình, Soát luồng)",
+      "\"Soát luồng\" có 2 thẻ. \"Cần rà soát\": lỗ hổng của luồng, nút chưa khớp ảnh thiết kế, màn chưa có link Zeplin, dữ liệu hỏng; lọc theo loại bằng các nút đếm; ở chế độ Sửa bấm một dòng mở luôn màn / nút đó để sửa. \"Checklist test\": code liệt kê các đường bấm từ màn bắt đầu sao cho đi qua mọi liên kết, kèm điều kiện, và liên kết không đi tới được; \"Sao chép\" để dán vào test case hoặc hỏi AI của ticket.",
+      "Chọn một màn ở chế độ Sửa, bấm \"▶ Màn bắt đầu\" để Prototype, sơ đồ và checklist bắt đầu từ màn đó (bấm lại để về màn đầu tiên). \"↶ Hoàn tác\" / \"↷ Làm lại\" (⌘Z / ⌘⇧Z); một loạt phím mũi tên tính là một bước.",
+      "Trước khi bấm \"Cập nhật\", bấm \"Xem thay đổi\" để xem đúng các dòng sẽ ghi vào bình luận ticket (không ghi gì). Ticket sửa sau lần cập nhật sơ đồ thì khung báo; \"Render lại bằng AI\" giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu (và vị trí khi không thêm màn mới) của các màn khớp.",
+      "Ô \"Tìm màn\": gõ tên màn (không cần dấu), link Zeplin hoặc id; màn khớp được tô viền vàng, phím lên/xuống chọn, Enter tới màn đó, Esc xoá tìm. Tìm không đổi sơ đồ.",
+      "Bấm \"Sửa\": \"+ Từ Zeplin\" dán link màn Zeplin để thêm màn kèm tên và ảnh thiết kế (link đã có thì nhảy tới màn đó; lỗi Zeplin có \"Thử lại\" hoặc \"Thêm màn chờ ảnh\"); \"Sắp xếp lại\" xếp lại toàn bộ màn, bấm ⌘Z để quay lại. Chọn một màn: sửa vị trí X/Y, \"Ghi chú\" (chữ thường, có biểu tượng ✎ trên màn, Esc huỷ, chỉ lưu trong sơ đồ, không đăng bình luận ticket), \"+ Vùng bấm\" rồi kéo trên ảnh để vẽ nút (hoặc Enter để đặt vùng giữa màn). Chỉ dùng bàn phím: tìm màn rồi Enter để chọn màn, các nút của màn nằm ở dòng \"Nút\" trong khung thuộc tính. Chọn một nút trên ảnh: kéo để dời, kéo góc để đổi cỡ, sửa số Vùng (px), \"Vẽ lại vùng\" hoặc \"Khớp theo chữ\". Phím mũi tên dời màn / vùng đang chọn (Shift: bước lớn).",
+      "Sửa xong, bản nháp tự lưu trên trình duyệt sau 500 ms theo tài khoản và máy chủ; theo dõi “Đang lưu bản nháp…”, “Đã lưu bản nháp” hoặc lỗi và “Thử lại”. Đóng khung giữ bản nháp; “Bỏ bản nháp” yêu cầu xác nhận trước khi xóa. Autosave không cập nhật ticket: bấm “Cập nhật” để ghi lên YouTrack, hoặc “Không” để ẩn thanh nhắc. File trên ticket đã đổi thì bản nháp được giữ và báo xung đột; xem bản mới chỉ khi bạn quyết định bỏ nháp.",
+      {
+        "t": "Menu ⋯ : \"Render lại bằng AI\" hoặc \"Tải file HTML\"",
+        "at": "Thao tác UI flow"
+      },
+      "Sau render, “Nguồn dựng sơ đồ” cho biết nguồn đã dùng, đầu vào ước lượng và phần phụ đã lược bỏ; cảnh báo cần rà soát hiện khi thiếu nguồn. Nhanh giới hạn 12.000, Kỹ 24.000 token ước lượng; giới hạn này chỉ lược chữ thiết kế Zeplin; AC/rule luôn giữ nguyên, chỉ báo thu hẹp phạm vi khi vượt sức chứa của AI. Ảnh được nhúng tối đa 3 ảnh cùng lúc; ảnh lỗi có cảnh báo và vẫn giữ dữ liệu sơ đồ."
+    ],
+    "keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket anh zeplin thiet ke vung bam tim man tìm màn ghi chu ghi chú them man tu zeplin sap xep lai sắp xếp lại ve vung bam can ra soat cần rà soát checklist test man bat dau màn bắt đầu lam lai làm lại redo xem thay doi xem thay đổi"
+  },
+  {
+    "id": "yt-hoi-lai-trong-nhom",
+    "tab": "youtrack",
+    "area": "Chi tiết ticket › Nhắc trên Telegram",
+    "title": "Hỏi lại trong nhóm từ ticket",
+    "what": "Dưới mỗi tin Telegram nhắc tới ticket có link “Hỏi lại trong nhóm”: mở Q&A của đúng nhóm đó, ô câu hỏi mới điền sẵn “Về <ID> <tiêu đề>: ”. Thêm @tên người cần hỏi rồi Đăng để câu hỏi có mã #QA và được theo dõi.",
+    "how": [
+      "Mở một ticket, xem mục “Nhắc trên Telegram”",
+      "Bấm “Hỏi lại trong nhóm”, gõ tiếp câu hỏi kèm @tên, Đăng"
+    ],
+    "keys": "hoi lai trong nhom hỏi lại trong nhóm qa telegram ticket nhac nhắc hoi nguoi hỏi người"
+  },
+  {
+    "id": "yt-bao-lai-moi-noi",
+    "tab": "youtrack",
+    "area": "Báo lại",
+    "title": "Báo lại khi ticket chuyển Fixed / Done (cả khi đang ở Telegram)",
+    "what": "Khi một ticket của bạn có người hỏi trên Telegram chuyển sang Fixed / Done, app nhắc bạn báo lại cho người hỏi. Server tự kiểm tra mỗi 3 phút kể cả khi không mở trang nào (cùng vòng này đánh thức tag hoãn tới khi ticket xong); danh sách lưu trên máy nên trình duyệt nào cũng thấy như nhau. Bạn trả lời tin đó (trên web hay điện thoại) là mục tự xong; bấm X để bỏ qua.",
+    "how": [
+      "Thông báo dưới màn hình hiện “<ID>: …”",
+      "Mở tin trong Việc cần xử lý để soạn câu báo lại"
+    ],
+    "keys": "bao lai báo lại fixed done thong bao thông báo nguoi hoi người hỏi telegram ticket"
+  },
+  {
+    "id": "yt-chuyen-ticket-jk",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Chuyển ticket trước / sau",
+    "what": "Đi qua lần lượt các ticket của danh sách vừa mở mà không phải đóng bảng bên.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm › \"Ticket sau\" (phím j)",
+        "at": "Ticket sau"
+      },
+      {
+        "t": "Bấm ‹ \"Ticket trước\" (phím k)",
+        "at": "Ticket trước"
+      },
+      "Số \"n/N\" bên cạnh cho biết vị trí trong danh sách"
+    ],
+    "keys": "ticket truoc ticket trước ticket sau next previous j k chuyen ticket chuyển ticket"
+  },
+  {
+    "id": "yt-doi-state-priority-assignee",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Đổi State / Priority / Assignee",
+    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow); thông báo có nút hoàn tác. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm State (có mũi tên ▾), chọn giá trị mới",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(1) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Bấm Priority, chọn giá trị mới",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(3) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Ở Assignee, chọn người mới hoặc \"Chưa assign\"",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(2) dd button[aria-haspopup]"
+      },
+      "Bấm hoàn tác trong thông báo nếu nhầm"
+    ],
+    "keys": "doi state đổi state doi priority đổi priority doi assignee đổi assignee workflow hoan tac hoàn tác undo"
+  },
+  {
+    "id": "yt-gui-binh-luan",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket › Bình luận",
+    "title": "Gửi bình luận lên YouTrack",
+    "what": "Viết và gửi bình luận lên ticket ngay từ dashboard. Gõ @ để tag thành viên của project (chèn @login, YouTrack báo cho người đó).",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Cuộn xuống, gõ vào ô \"Bình luận mới\" (gõ @ rồi vài chữ của tên để tag người)",
+        "at": "Bình luận mới"
+      },
+      {
+        "t": "Bấm \"Gửi bình luận\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "binh luan bình luận comment gui binh luan gửi bình luận tra loi trả lời"
+  },
+  {
+    "id": "yt-mention",
+    "tab": "youtrack",
+    "area": "Bình luận, Tạo ticket › Mô tả › @",
+    "title": "Tag thành viên YouTrack bằng @",
+    "what": "Gõ @ trong ô bình luận của ticket hoặc ô mô tả khi tạo ticket để mở danh sách thành viên (team của project), gõ tiếp để lọc theo tên hoặc login. Chọn một người sẽ chèn @login; YouTrack báo cho người được tag.",
+    "how": [
+      "Gõ @ rồi vài chữ của tên trong ô \"Bình luận mới\" hoặc ô mô tả (Tạo ticket › Thủ công)",
+      "↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
+    ],
+    "keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên login youtrack binh luan bình luận mo ta mô tả tao ticket tạo ticket"
+  },
+  {
+    "id": "yt-ticket-giong",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Ticket giống / liên quan + AI kiểm tra trùng",
+    "what": "Liệt kê ticket có tiêu đề giống (kèm % giống); AI có thể xét cái nào trùng, cái nào chỉ liên quan, và đề xuất gộp/link/giữ riêng.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Cuộn tới mục \"Ticket giống / liên quan\" (chỉ có khi có ticket tiêu đề giống); bấm một dòng để mở ticket đó",
+      {
+        "t": "Bấm \"AI kiểm tra trùng\"",
+        "at": "AI kiểm tra trùng"
+      }
+    ],
+    "keys": "ticket giong ticket giống lien quan liên quan trung trùng duplicate similar ai kiem tra trung ai kiểm tra trùng"
+  }
+]

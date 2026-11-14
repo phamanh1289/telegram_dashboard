@@ -16,3 +16,14 @@ def test_ui_config_wins_over_env(tmp_path, monkeypatch):
     assert (tmp_path / "data" / "config.json").stat().st_mode & 0o777 == 0o600
     assert json.loads((tmp_path / "data" / "config.json").read_text())["telegram_api_id"] == 222
 
+
+
+def test_source_layout_keeps_runtime_paths_at_repo_root():
+    from pathlib import Path
+
+    from telegram_dashboard.config import ROOT
+
+    repo = Path(__file__).resolve().parents[1]
+    assert repo == ROOT
+    assert Settings().root == repo
+    assert Settings().static_dir == repo / "web" / "out"

@@ -1,9 +1,9 @@
 import asyncio
 import json
 
-from telegram_dashboard.flow_jobs import FlowJobs
 from telegram_dashboard.storage import Store
-from telegram_dashboard.uiflow import clean
+from telegram_dashboard.youtrack.flow import clean
+from telegram_dashboard.youtrack.flow_jobs import FlowJobs
 
 FLOW = clean({"screens": [{"id": "a", "title": "A", "items": []}], "links": []}, "VA-1").model_dump()
 
@@ -105,8 +105,8 @@ async def test_storage_event_failure_stops_producer_and_reports_error(tmp_path, 
 
 async def test_flow_context_disables_automatic_provider_retry(tmp_path, monkeypatch):
     import pytest
-
-    from telegram_dashboard.ai import AiService, no_retry
+    from telegram_dashboard.ai import AiService
+    from telegram_dashboard.ai_run import no_retry
     from telegram_dashboard.config import Settings
     from telegram_dashboard.errors import ApiError
 
@@ -130,9 +130,9 @@ async def test_flow_context_disables_automatic_provider_retry(tmp_path, monkeypa
 async def test_http_flow_job_checkpoint_cursor_and_scope_restart(tmp_path, monkeypatch):
     import httpx
     from fastapi import FastAPI
-
-    from telegram_dashboard import yt_dashboard as yt
     from telegram_dashboard.config import Settings
+    from telegram_dashboard.youtrack import api, api_flow
+    from telegram_dashboard.youtrack import service as yt
 
     async def ai(*args, **kwargs):
         return json.dumps(FLOW)
@@ -141,13 +141,13 @@ async def test_http_flow_job_checkpoint_cursor_and_scope_restart(tmp_path, monke
         return {"id": "VA-1", "description": "ticket data", "summary": "Ticket", "comments": [], "links": []}
 
     monkeypatch.setattr(yt.YouTrackDashboard, "detail", detail)
-    monkeypatch.setattr(yt, "_ai", ai)
+    monkeypatch.setattr(api_flow, "_ai", ai)
     settings = Settings(root=tmp_path, youtrack_url="http://yt", youtrack_token="secret")
     store = Store(tmp_path / "test.db")
     svc = yt.YouTrackDashboard(settings)
     await svc.start_flow_jobs(store)
     app = FastAPI()
-    app.include_router(yt.build_router(svc))
+    app.include_router(api.build_router(svc))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/yt/ai/flow", json={"id": "VA-1", "base": "file-1", "note": "keep this"},
                                      headers={"X-Ai-Job": "job-http-1"})
@@ -246,9 +246,9 @@ def test_old_processed_active_job_is_recovered_not_pruned(tmp_path):
 async def test_http_flow_render_keeps_the_notes_of_the_flow_on_screen(tmp_path, monkeypatch):
     import httpx
     from fastapi import FastAPI
-
-    from telegram_dashboard import yt_dashboard as yt
     from telegram_dashboard.config import Settings
+    from telegram_dashboard.youtrack import api, api_flow
+    from telegram_dashboard.youtrack import service as yt
 
     async def ai(*args, **kwargs):
         return json.dumps(FLOW)
@@ -257,10 +257,10 @@ async def test_http_flow_render_keeps_the_notes_of_the_flow_on_screen(tmp_path, 
         return {"id": "VA-1", "description": "ticket data", "summary": "Ticket", "comments": [], "links": []}
 
     monkeypatch.setattr(yt.YouTrackDashboard, "detail", detail)
-    monkeypatch.setattr(yt, "_ai", ai)
+    monkeypatch.setattr(api_flow, "_ai", ai)
     svc = yt.YouTrackDashboard(Settings(root=tmp_path, youtrack_url="http://yt", youtrack_token="secret"))
     app = FastAPI()
-    app.include_router(yt.build_router(svc))
+    app.include_router(api.build_router(svc))
     keep = {**FLOW, "start": "a", "screens": [{**FLOW["screens"][0], "note": "giữ lại"}]}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post("/api/yt/ai/flow", json={"id": "VA-1", "base": "file-1", "keep": keep})

@@ -1,0 +1,406 @@
+[
+  {
+    "id": "settings-search",
+    "tab": "settings",
+    "area": "Settings › Search settings",
+    "title": "Find a setting",
+    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
+    "how": [
+      {
+        "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
+        "at": "Tìm cài đặt"
+      },
+      "Type a few letters, e.g. \"overdue\", \"prompt\", \"model\"",
+      "Use ↑ ↓ to choose then Enter, or click a result"
+    ],
+    "keys": "search settings find setting jump to"
+  },
+  {
+    "id": "settings-data",
+    "tab": "settings",
+    "area": "Settings › Data",
+    "title": "See disk usage and clean up data on this machine",
+    "what": "Shows how much the app takes on this machine (a bar split by part: Database, AI sessions, Downloaded tag photos, AI run history, Server log, Telegram sign-in, Configuration), the database by table and by group. Clear one part at a time: handled messages older than 30 days, Briefing summaries, the old send log, finished AI sessions, downloaded photos, AI run history, the server log, one group's data, reply drafts in this browser. Each clear asks first and says what is lost and what is kept; the database is compacted afterwards. On startup the app removes photos older than 30 days, AI runs older than 90 days and trims a log over 5 MB. The \"Change folder\" button (bottom of the Disk usage card, next to the path) moves all the data to another folder: type an absolute path, the app restarts, switches to the new place only once the move is done, then deletes the old copy; on failure it keeps using the old folder. If that folder already holds Radar data (a disk used with another install), the dialog asks \"Use the data there\": the app switches to that data and the data in use stays where it was, not deleted. Not available while the AI Agent is running; cloud-synced folders (iCloud, Dropbox, OneDrive, Google Drive) are refused because they corrupt the database. If the new folder is on an external disk, the disk must be plugged in when the app opens.",
+    "how": [
+      {
+        "t": "Open Settings › Data",
+        "at": "css:a[href=\"#data\"]"
+      },
+      "Look at the \"Disk usage\" card: the total, what can be cleared now, and the split by part",
+      {
+        "t": "Click \"Clear\" on the tile to clean up; each tile shows its size, item count, since when, and whether it comes back",
+        "at": "css:main article footer button"
+      },
+      {
+        "t": "Read the confirmation; click \"Cancel\" to leave (only click \"Clear\" if you really want to)",
+        "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+      }
+    ],
+    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean change folder move data location path disk"
+  },
+  {
+    "id": "settings-role",
+    "tab": "settings",
+    "area": "Settings › General › Role",
+    "title": "Choose a role (Dev / QA/QC / PO/PM)",
+    "what": "The role decides the home page, the Dashboard and the AI's point of view when summarizing and creating tickets; QA and PO don't use the AI Agent. Without a role, Telegram acts as Dev.",
+    "how": [
+      {
+        "t": "Click a role: \"Dev\", \"QA/QC\" or \"PO/PM\"",
+        "at": "css:[aria-label=\"Vai trò\"]"
+      },
+      {
+        "t": "Click \"Clear role\" to unselect it",
+        "at": "Bỏ chọn vai trò"
+      }
+    ],
+    "keys": "role dev qa qc po pm clear role"
+  },
+  {
+    "id": "settings-privacy",
+    "tab": "settings",
+    "area": "Settings › AI › Privacy",
+    "title": "Privacy: hide phone numbers / emails sent to AI",
+    "what": "Other people's messages and ticket text are sent to the AI you choose. \"Hide phone / email sent to AI\" replaces phone numbers and emails with [phone] / [email] before sending (drafts, summaries, Briefing, Q&A, YouTrack AI). The \"Show message text in macOS notifications\" switch (off by default) is not here but in Settings › Telegram › \"Notifications\".",
+    "how": [
+      "Open Settings › AI and scroll down to \"Privacy\"",
+      "Turn the switch on / off; it takes effect right away"
+    ],
+    "keys": "privacy hide phone email notification text redact"
+  },
+  {
+    "id": "settings-access",
+    "tab": "settings",
+    "area": "Opening the app",
+    "title": "Open the app in a new browser (access code)",
+    "what": "The dashboard's API only accepts browsers that have been granted access, so other programs on the machine (the AI Agent included) cannot send messages for you. Opening the app with Start Dashboard or the myradar open command grants the browser access automatically for about a year. If you see the lock screen: reopen the app one of those two ways, or paste the code from the file ~/.telegram_dashboard/api_token and click \"Unlock\".",
+    "how": [
+      "Open the app with Start Dashboard / myradar open (or uv run python -m telegram_dashboard open)",
+      "On the \"This browser is not unlocked yet\" screen: paste the code and click \"Unlock\""
+    ],
+    "keys": "access code token sign in lock open app bookmark browser unlock"
+  },
+  {
+    "id": "settings-language",
+    "tab": "settings",
+    "area": "Settings › General › Language",
+    "title": "Language (Match device / Tiếng Việt / English)",
+    "what": "Choose the app's language; \"Match device\" uses Vietnamese when the device does, English otherwise. Also switchable with the VI / EN button on the top bar. Saved in the browser.",
+    "how": [
+      {
+        "t": "Choose the \"General\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Under \"Language\" choose \"Match device\", \"Tiếng Việt\" or \"English\"",
+        "at": "css:[aria-label=\"Ngôn ngữ\"]"
+      }
+    ],
+    "keys": "language english vietnamese match device ngon ngu"
+  },
+  {
+    "id": "settings-theme",
+    "tab": "settings",
+    "area": "Settings › Appearance",
+    "title": "Appearance, style, font, AI mascot, accent color, gradient",
+    "what": "Choose Light / Dark / System; the Simple / Default / Vivid style; the font (Quicksand, Be Vietnam Pro, Inter, Nunito or the system font); the text size (Small / Medium / Large / Extra large); the AI mascot that replaces the robot in every loading scene, empty page and AI box (by default your role's creature: a white coder dragon for Dev, an owl with a magnifier for QA/QC, a fox showing the way for PO/PM; or the robot, an AI drawing from your description, your own image; it also replaces the AI Agent icon on buttons and menus); the accent color (a preset, the slider, or the eyedropper button for any color / hex code) and Strength; turn on Gradient with a second color or pick a Blend. The Preview beside it (Group chat / Ticket / Loading) recolors as you drag. Saved in the browser.",
+    "how": [
+      {
+        "t": "Choose the \"Appearance\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#look\"]"
+      },
+      {
+        "t": "Choose \"Light\", \"Dark\" or \"System\"",
+        "at": "css:[aria-label=\"Giao diện\"]"
+      },
+      {
+        "t": "Choose the \"Simple\", \"Default\" or \"Vivid\" style",
+        "at": "css:[aria-label=\"Phong cách\"]"
+      },
+      {
+        "t": "Open \"Font\" and pick the font you like",
+        "at": "css:[aria-label=\"Font chữ\"]"
+      },
+      {
+        "t": "Under \"Text size\" pick \"Small\", \"Medium\", \"Large\" or \"Extra large\"",
+        "at": "css:[aria-label=\"Cỡ chữ\"]"
+      },
+      {
+        "t": "Under \"AI mascot\" pick the robot or a role's creature (none picked: your role's, following a change of role; once picked, it stays; they blink and wave like the robot), click the sparkle tile to have AI draw one from a description (tap an idea or type your own, pick the Cute / Pixel / Line art style, optionally add a \"Reference picture\" (pick a file or paste one) for the AI to draw after, change the drawing model / effort right in the box (by default the \"Summaries, drafts\" picks), preview it in the app, then click \"Use this mascot\" (the AI picks out the eyes and an arm so it blinks and waves like the robot; if it can't, the still one is used); the AI draws in the background, so you can close the window and carry on, and a notice with \"View\" tells you when it is done), or click the image tile to upload your own (a PNG / JPG / WebP on a one-colour or checkerboard background loses it; the picture wiggles hello when shown, breathes and tilts its head now and then)",
+        "at": "css:[aria-label=\"Linh vật AI\"]"
+      },
+      {
+        "t": "Click a preset color swatch",
+        "at": "css:[aria-label=\"Màu có sẵn\"]"
+      },
+      {
+        "t": "Turn on \"Gradient\" to add a second color",
+        "at": "Gradient"
+      }
+    ],
+    "keys": "appearance theme light dark system style simple default vivid font text size accent color gradient"
+  },
+  {
+    "id": "settings-telegram-account",
+    "tab": "settings",
+    "area": "Settings › Telegram › Telegram account",
+    "title": "Connect and sign in to Telegram",
+    "what": "Enter the API ID/Hash from my.telegram.org, then sign in with your phone number → code → 2FA password. Stored only on this machine.",
+    "how": [
+      {
+        "t": "Choose the \"Telegram\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Click the link \"Get the API ID/Hash at my.telegram.org\" (or \"Change API ID/Hash\" if you already have one)",
+        "at": [
+          "Lấy API ID/Hash tại my.telegram.org",
+          "Đổi API ID/Hash"
+        ]
+      },
+      {
+        "t": "Enter the \"API ID\" and \"API Hash\" from that page",
+        "at": "API ID"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "Lưu"
+      },
+      {
+        "t": "Enter your \"Phone number\" with the country code",
+        "at": "Số điện thoại"
+      },
+      {
+        "t": "Click \"Send code\"",
+        "at": "Gửi mã"
+      },
+      {
+        "t": "Enter the Telegram code (and the 2FA password if you have one), click \"Sign in\"",
+        "at": "Đăng nhập"
+      }
+    ],
+    "keys": "sign in telegram api id api hash phone number code 2fa my.telegram.org login"
+  },
+  {
+    "id": "settings-overdue",
+    "tab": "settings",
+    "area": "Settings › Telegram › Queue",
+    "title": "Overdue threshold",
+    "what": "Tags waiting longer than the threshold (1, 2, 4, 8 or 24 hours) turn amber as overdue.",
+    "how": [
+      {
+        "t": "Choose the \"Telegram\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Pick the hours under \"Overdue threshold\"",
+        "at": "css:[aria-label=\"Ngưỡng quá hạn\"]"
+      }
+    ],
+    "keys": "overdue threshold hours waiting amber queue"
+  },
+  {
+    "id": "settings-notify",
+    "tab": "settings",
+    "area": "Settings › Telegram › Notifications",
+    "title": "Turn on new tag notifications",
+    "what": "Turns on browser notifications for new tags while the tab is hidden.",
+    "how": [
+      {
+        "t": "Choose the \"Telegram\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Turn on the \"Notify on new tags\" switch, then allow it in the browser",
+        "at": "Thông báo khi có tag mới"
+      }
+    ],
+    "keys": "notification new tag turn on off switch"
+  },
+  {
+    "id": "settings-row-actions",
+    "tab": "settings",
+    "area": "Settings › Telegram › Queue",
+    "title": "Message action buttons",
+    "what": "Choose to show the Pin, Context and Open Telegram buttons \"On hover over Done\" or \"Always\".",
+    "how": [
+      {
+        "t": "Choose the \"Telegram\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Choose \"On hover over Done\" or \"Always\"",
+        "at": "css:[aria-label=\"Nút thao tác trên tin\"]"
+      }
+    ],
+    "keys": "message action buttons always show hover row actions"
+  },
+  {
+    "id": "settings-reply",
+    "tab": "settings",
+    "area": "Settings › General › About you, for the AI",
+    "title": "Summary platform",
+    "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Mobile in general, No limit).",
+    "how": [
+      {
+        "t": "Choose the \"General\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Pick the platform under \"Summarize for platform\"",
+        "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
+      }
+    ],
+    "keys": "summary platform android ios mobile reply default"
+  },
+  {
+    "id": "settings-briefing-model",
+    "tab": "settings",
+    "area": "Settings › AI › Model and effort",
+    "title": "A separate model and effort for Briefing / Digest",
+    "what": "Briefing and Digest (whole-group summaries) run their own model/effort; leave \"Like summaries\" to use the choice for summaries and drafts. Also adjustable right on the Briefing page.",
+    "how": [
+      {
+        "t": "Choose the \"AI\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "On the \"Briefing and Digest\" row, pick a model and drag the effort",
+        "at": "css:[aria-label=\"Model cho Briefing và Digest\"]"
+      }
+    ],
+    "keys": "briefing digest model effort separate group summary same as summary"
+  },
+  {
+    "id": "settings-ai-accounts",
+    "tab": "settings",
+    "area": "Settings › AI › Accounts",
+    "title": "AI CLI accounts",
+    "what": "See whether the Claude, Codex and Antigravity CLIs are installed / signed in; sign in, see details, or copy the install command.",
+    "how": [
+      {
+        "t": "Choose the \"AI\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "Click \"Sign in\" or \"Details\" next to a CLI (\"Installed, check again\" if you just installed it)",
+        "at": [
+          "Đăng nhập",
+          "Chi tiết",
+          "Đã cài, kiểm tra lại"
+        ]
+      },
+      {
+        "t": "CLI not installed: click the copy install command button and run it in Terminal",
+        "at": "css:button[aria-label=\"Copy lệnh cài\"]"
+      }
+    ],
+    "keys": "ai accounts cli claude codex antigravity sign in install command"
+  },
+  {
+    "id": "settings-ai-provider",
+    "tab": "settings",
+    "area": "Settings › AI › Model and effort",
+    "title": "Choose any AI's model from one list",
+    "what": "The Model box of each job (summaries, drafts, Briefing, Task and AI Agent, YouTrack AI) lists the models of Claude, Codex and Antigravity in groups: pick a model of an AI and that job runs on that AI, no need to switch AI first; effort follows the levels that model accepts. When Codex runs through opencodex (a local proxy), the routed opencodex models (AgentAPI, anthropic, combo…) are added, grouped \"Codex · <provider>\" like the opencodex Models page. Each AI keeps its own choice. An unfinished Task continues on the AI that started it.",
+    "how": [
+      {
+        "t": "Choose the \"AI\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "Open the Model box of the job to change and pick a model in the Claude / Codex / Antigravity group",
+        "at": "css:[aria-label=\"Model cho Tóm tắt, soạn nháp\"]"
+      }
+    ],
+    "keys": "which ai provider claude codex antigravity choose ai model combined opencodex combo agentapi proxy"
+  },
+  {
+    "id": "settings-github-update",
+    "tab": "settings",
+    "area": "Settings › Updates",
+    "title": "Update the app and auto-update",
+    "what": "Checks for and installs new versions from GitHub: \"Update\" opens a confirm box (current / latest version, list of changes, the commands to run); clicking \"Update\" in the box has the AI pull the new version, restart the server and reload the page; you can turn on auto-update every hour (skipped while an AI Agent task runs).",
+    "how": [
+      {
+        "t": "Choose the \"Updates\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+      },
+      {
+        "t": "Click the circular \"Check\" icon to check again",
+        "at": "Kiểm tra"
+      },
+      {
+        "t": "If there is a new version, click \"Update\"",
+        "at": "Cập nhật"
+      },
+      {
+        "t": "Review the new version and the commands in the confirm box, click \"Update\" to install",
+        "at": "css:[role=\"dialog\"]"
+      },
+      {
+        "t": "Turn on \"Auto-update\" if you like",
+        "at": "Tự động cập nhật"
+      }
+    ],
+    "keys": "update github auto update new version"
+  },
+  {
+    "id": "settings-youtrack",
+    "tab": "settings",
+    "area": "Settings › YouTrack",
+    "title": "Connect YouTrack and configure its AI",
+    "what": "Three groups: Connection and reports (URL, YouTrack token, Release report schedule), AI and prompts (AI instructions per role, Prompt library), Workflow.",
+    "how": [
+      {
+        "t": "Choose the \"YouTrack\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Choose \"Connection and reports\"",
+        "at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+      },
+      "If already connected, click \"Change URL / token\" to show the fields",
+      {
+        "t": "Enter the \"YouTrack URL\"",
+        "at": "URL YouTrack"
+      },
+      {
+        "t": "Enter the \"YouTrack token\"",
+        "at": "Token YouTrack"
+      },
+      {
+        "t": "Click \"Save\" (or \"Update\")",
+        "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+      },
+      {
+        "t": "No token yet: click the link \"Create a token on YouTrack\"",
+        "at": "Tạo token trên YouTrack"
+      }
+    ],
+    "keys": "youtrack token url connect instructions prompt library release report"
+  },
+  {
+    "id": "settings-shortcuts",
+    "tab": "settings",
+    "area": "Settings › Keyboard shortcuts",
+    "title": "Keyboard shortcut sheet",
+    "what": "Shortcuts for Telegram Inbox and YouTrack, grouped (Navigation, Handling messages, Replying…), with a search box. In the Inbox press ? to open it quickly.",
+    "how": [
+      {
+        "t": "Choose the \"Shortcuts\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#shortcuts\"]"
+      },
+      {
+        "t": "Choose \"Telegram Inbox\" or \"YouTrack\"",
+        "at": "css:[aria-label=\"Phím tắt của\"]"
+      },
+      {
+        "t": "Type in the \"Search shortcuts\" box to filter",
+        "at": "Tìm phím tắt"
+      },
+      "Or press ? while in the Inbox"
+    ],
+    "keys": "shortcuts keyboard shortcut sheet search shortcuts youtrack"
+  }
+]

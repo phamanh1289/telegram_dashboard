@@ -1,0 +1,527 @@
+[
+  {
+    "id": "yt-tim-ticket",
+    "tab": "youtrack",
+    "area": "Ticket › ô tìm",
+    "title": "Tìm ticket",
+    "what": "Tìm theo ID, tiêu đề, người (assignee/QC), state; không phân biệt dấu.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\" ở menu bên",
+        "at": "Ticket"
+      },
+      {
+        "t": "Gõ từ khóa vào ô \"Tìm ticket\"",
+        "at": "Tìm ticket"
+      },
+      "Nhấn / để nhảy vào ô tìm từ bất kỳ đâu; nhấn Esc trong ô để xóa từ khóa"
+    ],
+    "keys": "tim ticket tìm ticket search tim kiem tìm kiếm phim tat phím tắt slash /"
+  },
+  {
+    "id": "yt-ai-loc",
+    "tab": "youtrack",
+    "area": "Ticket › ô tìm › AI lọc",
+    "title": "AI lọc (câu tiếng Việt thành bộ lọc)",
+    "what": "Gõ một câu (vd. “bug critical của tôi sprint này”), AI đổi thành bộ lọc State / Priority / Type / Người / Sprint / từ khóa.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Gõ một câu tiếng Việt vào ô \"Tìm ticket\"",
+        "at": "Tìm ticket"
+      },
+      {
+        "t": "Bấm \"AI lọc\" (hoặc ⌘↵)",
+        "at": "AI lọc"
+      },
+      "Thông báo \"AI đã đặt bộ lọc\" hiện ra; xem các chip lọc bên dưới. Cũng chạy được từ ⌘K"
+    ],
+    "keys": "ai loc ai lọc ai filter loc bang ai lọc bằng ai cau tu nhien câu tự nhiên natural language"
+  },
+  {
+    "id": "yt-chip-priority-type-state",
+    "tab": "youtrack",
+    "area": "Ticket › Bộ lọc",
+    "title": "Lọc theo Priority / Type / State (có đếm)",
+    "what": "Ba hàng chip có số đếm theo bộ lọc hiện tại; chọn nhiều giá trị mỗi hàng. Giá trị ít gặp nằm sau “+N khác”.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Trong nhóm \"Bộ lọc\", bấm ô \"Priority\", \"Type\" hoặc \"State\"",
+        "at": "css:div[role=\"group\"][aria-label=\"Bộ lọc\"] button"
+      },
+      {
+        "t": "Tích các giá trị cần xem (vd. \"Critical\", \"Bug\"); số bên phải là số ticket",
+        "at": "css:[role=\"menuitemcheckbox\"], [role=\"option\"]"
+      },
+      "Bấm \"Bỏ chọn tất cả\" trong ô đó để bỏ lọc; chip dưới thanh công cụ cũng gỡ được từng cái"
+    ],
+    "keys": "loc priority lọc priority loc type lọc type loc state lọc state chip dem đếm filter bug feature task"
+  },
+  {
+    "id": "yt-goc-nhin-vai-tro",
+    "tab": "youtrack",
+    "area": "Ticket › Góc nhìn theo vai trò",
+    "title": "Góc nhìn có sẵn theo vai trò",
+    "what": "Một cú bấm đặt cả bộ lọc + Bảng/Board + cách gom nhóm. Dev: Board của tôi, Sprint này, Chờ QC, Bug của tôi, Quá hạn. QA/QC: Board chờ test, Chưa có QC, Bug đang mở, Bug mới 7 ngày, Regression. PO/PM: Backlog, Chờ PO chốt, Sprint theo người, Board sprint, Chưa assign.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Góc nhìn\" ở bên phải thanh công cụ",
+        "at": "Góc nhìn"
+      },
+      {
+        "t": "Bấm một góc nhìn gợi ý cho vai trò của bạn (vd. \"Board của tôi\", \"Chờ QC\")",
+        "at": [
+          "Board của tôi",
+          "Sprint này",
+          "Chờ QC"
+        ]
+      },
+      "Thông báo \"Góc nhìn …\" xác nhận; bộ lọc, Bảng/Board và gom nhóm đã đổi theo"
+    ],
+    "keys": "goc nhin góc nhìn view preset board cua toi board của tôi sprint nay sprint này backlog regression cho po chot chờ po chốt sprint theo nguoi sprint theo người"
+  },
+  {
+    "id": "yt-loc-nhanh-quick",
+    "tab": "youtrack",
+    "area": "Ticket / Dashboard › Lọc nhanh",
+    "title": "Bộ lọc nhanh (Quick filters)",
+    "what": "Các bộ lọc dựng sẵn: Blocked; Critical / Highest; Quá hạn; Chưa assign; Trong sprint, chưa estimate; Backlog chưa vào sprint; Chờ PO chốt; Chờ test, chưa có QC; Bug đang mở; Bug Critical / Highest; Bug mới 7 ngày; Đã build, chờ release; Bị bỏ quên (>7 ngày không cập nhật).",
+    "how": [
+      {
+        "t": "Bấm \"Dashboard\"",
+        "at": "Dashboard"
+      },
+      {
+        "t": "Bấm một dòng trong thẻ \"Cần chú ý\" để xem danh sách ticket",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "Bấm \"Đóng\" để đóng danh sách",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      },
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một góc nhìn dùng bộ lọc nhanh (vd. \"Quá hạn\", \"Bug đang mở\", \"Backlog\")",
+        "at": [
+          "Quá hạn",
+          "Bug đang mở",
+          "Backlog"
+        ]
+      },
+      {
+        "t": "Bấm chip \"Lọc …\" phía trên để gỡ bộ lọc nhanh",
+        "at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+      }
+    ],
+    "keys": "loc nhanh lọc nhanh quick filter blocked qua han quá hạn chua assign chưa assign chua estimate chưa estimate backlog cho po chot chờ po chốt bug dang mo bug đang mở bi bo quen bị bỏ quên stale"
+  },
+  {
+    "id": "yt-view-da-luu",
+    "tab": "youtrack",
+    "area": "Ticket › View",
+    "title": "View đã lưu",
+    "what": "Lưu bộ lọc hiện tại + kiểu xem (Bảng/Board) dưới một tên để mở lại nhanh; cũng hiện trong ⌘K.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Đặt bộ lọc như ý, rồi bấm \"Góc nhìn\"",
+        "at": "Góc nhìn"
+      },
+      {
+        "t": "Gõ tên vào ô \"Tên view\"",
+        "at": "Tên view"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "Lưu"
+      },
+      "Mở \"Góc nhìn\" lại: view đã lưu nằm dưới mục \"Đã lưu\", bấm ✕ cạnh tên để xóa"
+    ],
+    "keys": "view da luu view đã lưu saved view luu bo loc lưu bộ lọc bookmark"
+  },
+  {
+    "id": "yt-bang-board",
+    "tab": "youtrack",
+    "area": "Ticket › Kiểu xem",
+    "title": "Chuyển Bảng / Board",
+    "what": "Xem ticket dạng bảng hoặc dạng board theo cột State.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Board\" để xem theo cột State",
+        "at": "Board"
+      },
+      {
+        "t": "Bấm \"Bảng\" để quay lại bảng",
+        "at": "Bảng"
+      }
+    ],
+    "keys": "bang bảng board kanban kieu xem kiểu xem table view"
+  },
+  {
+    "id": "yt-board-keo-tha",
+    "tab": "youtrack",
+    "area": "Ticket › Board",
+    "title": "Kéo thả thẻ để đổi State",
+    "what": "Trên Board, kéo thẻ sang cột khác để đổi State trên YouTrack; có nút hoàn tác trong thông báo. Kéo tiêu đề cột để đổi thứ tự cột (nhớ theo từng project). Cột đã xong được gộp thành một nút.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Board\"",
+        "at": "Board"
+      },
+      "Kéo một thẻ ticket sang cột State khác; thông báo \"VA-1 → State\" có nút hoàn tác",
+      {
+        "t": "Bấm cột dọc \"Đã xong\" để hiện các cột đã xong (bấm lại để ẩn)",
+        "at": "css:button[aria-label=\"Hiện các cột đã xong\"], button[aria-label=\"Ẩn các cột đã xong\"]"
+      },
+      "Kéo tiêu đề một cột (tên State) sang trái / phải để đổi thứ tự cột; thứ tự được nhớ cho project đó",
+      "Mỗi cột hiện tối đa 60 thẻ; lọc bớt để xem phần còn lại"
+    ],
+    "keys": "keo tha kéo thả drag drop doi state đổi state doi thu tu cot đổi thứ tự cột reorder board cot cột da xong đã xong hoan tac hoàn tác undo"
+  },
+  {
+    "id": "yt-gom-nhom",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng › Gom nhóm",
+    "title": "Gom nhóm bảng ticket",
+    "what": "Gom bảng theo Assignee, Sprint (mặc định) hoặc Module / App (tag đầu trong tiêu đề); mỗi nhóm thu/mở được.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Bảng\" (gom nhóm chỉ có ở dạng bảng)",
+        "at": "Bảng"
+      },
+      {
+        "t": "Bấm \"Hiển thị\" ở bên phải thanh công cụ",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Chọn kiểu ở ô \"Gom nhóm\"",
+        "at": "Gom nhóm"
+      },
+      {
+        "t": "Bấm tiêu đề nhóm để thu gọn / mở",
+        "at": "css:tbody button[aria-expanded]"
+      }
+    ],
+    "keys": "gom nhom gom nhóm group by assignee sprint module app thu gon nhom thu gọn nhóm"
+  },
+  {
+    "id": "yt-sap-xep-cot",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng › tiêu đề cột",
+    "title": "Sắp xếp theo cột",
+    "what": "Sắp xếp bảng theo ID, Type, Tiêu đề, State, Priority, Assignee, QC, Sprint, Hạn, Cập nhật.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Bảng\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Bấm tên một cột ở tiêu đề bảng để sắp tăng dần ▲",
+        "at": "css:thead th button"
+      },
+      {
+        "t": "Bấm lại cột đó để đảo chiều ▼",
+        "at": "css:thead th button"
+      }
+    ],
+    "keys": "sap xep sắp xếp sort cot cột tang dan tăng dần giam dan giảm dần"
+  },
+  {
+    "id": "yt-hien-thi-che-do-gon",
+    "tab": "youtrack",
+    "area": "Ticket › Hiển thị",
+    "title": "Hiển thị: chế độ gọn, ticket resolved, tô nền High+",
+    "what": "Tùy chọn hiển thị: “Gọn: hàng thấp, tiêu đề 1 dòng” (dense mode); “Hiện ticket đã resolved”; “Tô nền ticket High trở lên” (Critical/Highest/High có nền màu). Lưu cho lần sau.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Hiển thị\"",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Tích \"Gọn: hàng thấp, tiêu đề 1 dòng\"",
+        "at": "Gọn: hàng thấp, tiêu đề 1 dòng"
+      },
+      {
+        "t": "Tích \"Hiện ticket đã resolved\"",
+        "at": "Hiện ticket đã resolved"
+      },
+      {
+        "t": "Tích \"Tô nền ticket High trở lên\"",
+        "at": "Tô nền ticket High trở lên"
+      }
+    ],
+    "keys": "che do gon chế độ gọn dense mode compact hang thap hàng thấp resolved da xong đã xong to nen tô nền highlight high critical"
+  },
+  {
+    "id": "yt-chon-cot",
+    "tab": "youtrack",
+    "area": "Ticket › Hiển thị › Cột",
+    "title": "Ẩn/hiện cột bảng",
+    "what": "Chọn cột hiển thị (Type, State, Priority, Assignee, QC, Sprint, Hạn, Cập nhật); mỗi vai trò có bộ cột mặc định riêng.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Bảng\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Bấm \"Hiển thị\"",
+        "at": "Hiển thị"
+      },
+      {
+        "t": "Ở mục \"Cột\", tích/bỏ tích một cột (vd. đầu tiên)",
+        "at": "css:div.top-full label:nth-of-type(4)"
+      }
+    ],
+    "keys": "cot cột column an cot ẩn cột hien cot hiện cột han hạn cap nhat cập nhật qc sprint"
+  },
+  {
+    "id": "yt-xuat-csv",
+    "tab": "youtrack",
+    "area": "Ticket › thanh công cụ",
+    "title": "Xuất CSV danh sách ticket",
+    "what": "Tải toàn bộ danh sách đang lọc (không chỉ phần đang hiện) với các cột đang hiện ra file CSV.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm nút tải xuống \"Xuất CSV\" ở cuối thanh công cụ",
+        "at": "Xuất CSV"
+      }
+    ],
+    "keys": "xuat csv xuất csv export excel tai xuong tải xuống download"
+  },
+  {
+    "id": "yt-chon-nhieu-thao-tac-hang-loat",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng › Thao tác hàng loạt",
+    "title": "Chọn nhiều ticket, đổi Assignee / State / Priority hàng loạt, hỏi AI",
+    "what": "Tích nhiều ticket để đổi Assignee, State (theo workflow) hoặc Priority cùng lúc: chọn giá trị là áp dụng ngay, có hoàn tác; ticket đổi lỗi vẫn được chọn để thử lại. Hoặc mở phiên AI về các ticket đã chọn.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Bảng\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Tích ô đầu một dòng",
+        "at": "css:tbody tr[data-id] input[type=\"checkbox\"]"
+      },
+      {
+        "t": "Bấm \"Assignee\" trên thanh \"… ticket đã chọn\" (hoặc \"State\" / \"Priority\")",
+        "at": "css:[role=\"region\"][aria-label=\"Thao tác hàng loạt\"] button[aria-label^=\"Đổi assignee\"]"
+      },
+      {
+        "t": "Gõ tên người vào ô \"Tìm người…\"",
+        "at": "Tìm người…"
+      },
+      {
+        "t": "Chọn một người: đổi ngay cho mọi ticket đã chọn",
+        "at": "css:[role=\"listbox\"][aria-label^=\"Đổi assignee\"] [role=\"option\"]"
+      },
+      "Nhầm thì bấm Hoàn tác trong thông báo"
+    ],
+    "keys": "chon nhieu chọn nhiều bulk hang loat hàng loạt doi assignee đổi assignee doi state đổi state priority bo chon bỏ chọn select all"
+  },
+  {
+    "id": "yt-doi-assignee-trong-bang",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng › cột Assignee",
+    "title": "Đổi assignee ngay trong bảng",
+    "what": "Đổi người làm trực tiếp ở cột Assignee; thông báo có nút hoàn tác.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm \"Bảng\"",
+        "at": "Bảng"
+      },
+      {
+        "t": "Bấm ô chọn ở cột Assignee của dòng rồi chọn người (hoặc \"Chưa assign\")",
+        "at": "css:tbody tr[data-id] button[aria-label^=\"Đổi Assignee\"]"
+      },
+      "Bấm hoàn tác trong thông báo nếu nhầm"
+    ],
+    "keys": "doi assignee đổi assignee giao viec giao việc assign nguoi lam người làm"
+  },
+  {
+    "id": "yt-copy-id-link",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng › cột ID",
+    "title": "Copy ID / Copy link, mở trên YouTrack",
+    "what": "Rê chuột vào dòng để hiện nút Copy ID và Copy link; bấm ID để mở ticket trên YouTrack ở tab mới.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Rê chuột vào dòng, bấm \"Copy ID\"",
+        "at": "Copy ID"
+      },
+      {
+        "t": "Bấm \"Copy link\"",
+        "at": "Copy link"
+      },
+      {
+        "t": "Bấm chính ID để mở trên YouTrack ở tab mới",
+        "at": "css:tbody tr[data-id] a[href]"
+      }
+    ],
+    "keys": "copy id copy link sao chep sao chép mo youtrack mở youtrack link ticket"
+  },
+  {
+    "id": "yt-nhan-moi",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng",
+    "title": "Nhãn “mới” (cập nhật sau lần xem trước)",
+    "what": "Ticket được cập nhật sau lần cuối bạn xem project này có nhãn “mới” cạnh ID (chỉ hiện khi có ticket như vậy).",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      "Nhìn nhãn \"mới\" cạnh ID của ticket cập nhật sau lần bạn xem trước; rê chuột để xem giải thích"
+    ],
+    "keys": "moi mới new cap nhat moi cập nhật mới chua xem chưa xem unread"
+  },
+  {
+    "id": "yt-xem-nhanh-mo-ta",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng",
+    "title": "Xem nhanh mô tả khi rê chuột",
+    "what": "Rê chuột lên một dòng chừng nửa giây để hiện thẻ xem trước: tiêu đề, State, Priority, Assignee và đoạn mô tả (không có trên màn hình cảm ứng).",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Rê chuột lên một dòng ticket chừng nửa giây (đừng bấm) để hiện thẻ xem trước",
+        "at": "css:tbody tr[data-id]"
+      }
+    ],
+    "keys": "xem nhanh xem trước preview hover mo ta mô tả tooltip"
+  },
+  {
+    "id": "yt-phim-tat-bang",
+    "tab": "youtrack",
+    "area": "Ticket › Bảng",
+    "title": "Phím tắt trang Ticket",
+    "what": "Điều khiển bảng bằng bàn phím: / tìm, j/k di chuyển dòng, Space chọn dòng, Enter mở ticket, Esc xóa tìm kiếm rồi bỏ chọn. Nhấn ? để xem mọi phím tắt YouTrack; g rồi h / t / d / r / p / a để sang Trang chính / Ticket / Dashboard / Release / Thành viên / Lịch sử AI.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      "Nhấn / để vào ô tìm; j (xuống) / k (lên) để chuyển dòng",
+      "Nhấn x để tích/bỏ tích dòng đang chọn; Enter để mở ticket",
+      "Nhấn Esc: trong ô tìm thì xóa từ khóa, ngoài ra bỏ các dòng đã chọn"
+    ],
+    "keys": "phim tat phím tắt keyboard shortcut j k x enter esc slash dieu huong ban phim điều hướng bàn phím"
+  },
+  {
+    "id": "yt-phim-tat-trang",
+    "tab": "youtrack",
+    "area": "Phím tắt",
+    "title": "Phím tắt YouTrack (? và g + phím)",
+    "what": "Nhấn ? ở bất kỳ trang YouTrack nào để mở bảng phím tắt. g rồi h / t / d / r / p / a chuyển tới Trang chính / Ticket / Dashboard / Release / Thành viên / Lịch sử AI; ⌘/Ctrl+K mở lệnh nhanh. Space chọn dòng như ở Telegram.",
+    "how": [
+      "Nhấn ? để xem bảng phím tắt",
+      "Nhấn g rồi chữ của trang muốn tới"
+    ],
+    "keys": "phim tat phím tắt youtrack g keys chuyen trang chuyển trang space chon chọn"
+  },
+  {
+    "id": "yt-hien-them",
+    "tab": "youtrack",
+    "area": "Ticket › cuối bảng",
+    "title": "Tải thêm ticket khi cuộn",
+    "what": "Bảng hiện 150 dòng đầu; cuộn gần cuối bảng thì tự hiện thêm 150 dòng.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      "Cuộn xuống cuối bảng: các dòng tiếp theo tự hiện"
+    ],
+    "keys": "hien them hiện thêm load more xem them xem thêm phan trang phân trang cuon cuộn tu tai tự tải"
+  },
+  {
+    "id": "yt-tim-toan-cuc",
+    "tab": "youtrack",
+    "area": "Ticket › khi không có kết quả",
+    "title": "Tìm toàn cục theo ID",
+    "what": "Khi không có ticket nào khớp, tìm một ticket bất kỳ trên YouTrack theo số hoặc ID, kể cả ngoài dữ liệu đã tải.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Gõ một từ khóa không có kết quả vào ô \"Tìm ticket\"",
+        "at": "Tìm ticket"
+      },
+      {
+        "t": "Gõ số hoặc ID (vd. VA-123) vào ô \"Tìm toàn cục theo ID\"",
+        "at": "Tìm toàn cục theo ID"
+      },
+      {
+        "t": "Bấm \"Tìm toàn cục\" (hoặc Enter)",
+        "at": "Tìm toàn cục"
+      },
+      {
+        "t": "Bấm \"Xóa bộ lọc\" nếu muốn bỏ hết bộ lọc",
+        "at": "Xóa bộ lọc"
+      }
+    ],
+    "keys": "tim toan cuc tìm toàn cục global search tim theo id tìm theo id khong tim thay không tìm thấy xoa bo loc xóa bộ lọc"
+  }
+]

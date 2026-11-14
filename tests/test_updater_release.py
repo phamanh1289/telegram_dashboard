@@ -45,7 +45,6 @@ def test_only_a_zip_signed_with_the_release_key_installs(tmp_path, monkeypatch):
 
 def test_the_shipped_release_key_loads():
     import rsa
-
     from telegram_dashboard.updater import RELEASE_KEY
 
     assert rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()).n.bit_length() >= 3072

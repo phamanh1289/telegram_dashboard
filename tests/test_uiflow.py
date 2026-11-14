@@ -1,6 +1,5 @@
 import pytest
-
-from telegram_dashboard import uiflow as u
+from telegram_dashboard.youtrack import flow as u
 
 RAW = {"screens": [
     {"id": "login", "title": "Đăng nhập", "items": [{"id": "otp", "label": "Gửi OTP"}]},

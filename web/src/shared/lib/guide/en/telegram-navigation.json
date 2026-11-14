@@ -1,0 +1,200 @@
+[
+  {
+    "id": "view-pending",
+    "tab": "telegram",
+    "area": "Sidebar › To do",
+    "title": "To do (one inbox for every group)",
+    "what": "Collects every tag you have not handled from all groups as cards, split into 3 tabs at the top: Waiting / In progress / Pinned. Waiting holds tags with no AI session yet, split into Pinned / Overdue / Waiting, the longest-waiting on top. In progress (with a count) gathers tags that have at least one AI Agent, Check vs BE or AI assistant session, split into AI done, your turn (read the result, then reply) / AI working / Session stopped without a result; pinned tags stay in Waiting. The first line sums up how many are waiting and how many are overdue; filter by group with the buttons right below. Each card has the same buttons as a message row: Done, Snooze, Context, Check vs BE, the paperclip, # and the ⋯ menu (Pin to top, Open in Telegram…); click the card to reply. The number on the item is the total unhandled; the browser tab title shows it too. The ↻ button at the end of the top bar reads the tags and their AI sessions again; while it reads, the robot gathers messages from Telegram and writes them up as a to-do list. With no tags left it shows \"All done!\".",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar; click it again to scroll back to the top",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click a message card (or press Enter / r) to open the reply panel",
+        "at": "css:li[data-testid=\"message\"]"
+      }
+    ],
+    "keys": "to do to do inbox tags unhandled pending todo all groups overdue waiting"
+  },
+  {
+    "id": "today-strip",
+    "tab": "telegram",
+    "area": "Sidebar › Today",
+    "title": "Today: everything waiting on you",
+    "what": "The app's start page. It gathers work from both Telegram and YouTrack into one list, most urgent first: waiting tags (overdue in red), your tickets at risk, Q&A questions to nudge or with new answers, finished AI Agent sessions you have not seen, Report back, and open items in Briefing. Items about the same work are grouped into one thread by ID: the tag leads, with its AI sessions (REF-… IDs, including the AI assistant and running sessions), Q&A threads (#QA… codes; questions posted from a session reply to that tag) and tickets (ticket IDs named in the tag, Report back) under it; the count at the top counts threads. Under the title, chips sum up by kind (Urgent, Tag, AI Agent, Q&A…) with counts. Each thread is one row (narrow: the wait goes under the title); the small chip on the right with icons and a number (e.g. robot 2) says it has linked items: click it to show / hide them; hover the icon at the start of a row to see its source and group. The page is split into Urgent / Waiting on you / You are waiting on blocks: click a block's bar to fold / unfold it; each block shows its first 6 threads, click \"Show more\" for the rest. The \"You are waiting on\" block (folded at first; it opens by itself when nothing waits on you) lists snoozed tags (including those snoozed until someone replies / a ticket is done) and your Q&A questions nobody has answered. The ↻ button by the title reads every source again (tags, AI sessions, Q&A, tickets, Briefing); while it reads, the robot gathers the sources and writes them up as a to-do list. With nothing left it shows \"All done!\"; an empty \"You are waiting on\" block shows the same scene inside it; when both are empty the blocks hide and one scene remains. The \"You are waiting on\" block has its own scene (the robot holding an hourglass, snoozed tags and Q&A questions drifting in) while your snoozed tags and Q&A threads are still being read. Click a row to go straight there; keys g then h.",
+    "how": [
+      {
+        "t": "Click \"Today\" at the top of the sidebar",
+        "at": "Hôm nay"
+      },
+      "Click a row (the tag or an item in its thread) to reply to a tag, open a ticket, open a Q&A thread or an AI Agent session"
+    ],
+    "keys": "today home start page waiting on you my work overview"
+  },
+  {
+    "id": "view-pinned",
+    "tab": "telegram",
+    "area": "To do › Pinned",
+    "title": "Pinned tags",
+    "what": "The messages you pinned to keep, even after they are handled.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover a message, click the ⋯ \"More actions\" button, then \"Pin to top\" (key P)",
+        "at": "Thêm thao tác"
+      },
+      {
+        "t": "Open To do and click \"Pinned\" at the top of the list (or g then p)",
+        "at": "Đã ghim"
+      }
+    ],
+    "keys": "pinned pin keep messages saved"
+  },
+  {
+    "id": "view-qa",
+    "tab": "telegram",
+    "area": "Sidebar › Q&A",
+    "title": "Q&A: ask in a group and track the answers",
+    "what": "Post a question in any group (tag the person asked with @name); the dashboard adds a #QA… code line so every answer joins one thread. \"To ask / To ping / To settle\" points sent to a group from a Give to AI Agent or Check vs BE session (the send button next to the point) with an @name get this code too, naming who is asked from the AI's label above the message (#QA_BE_… / #QA_PO_… / #QA_QC_…) so you can tell who confirmed; attaching an answer (not your own message) from such a thread to a session adds \"PO confirmed\" / \"BE confirmed\" / \"QC confirmed\" plus \"Trace the codebase, then fix or refactor.\" to the session's prompt box: the AI tags the recipient by @username, or by name for someone without one (the copy button turns it into @Name). When the session was sent a message (attached in its prompt box, or Check vs BE on one answer), the send button posts the point as a reply to the latest attached message, in that message's group; if that message is already in a Q&A thread the reply joins it, no new code (Check vs BE on many topics at once still posts a new message). Each question message holds at most 3 points, one line each; more than 3 are split into messages of 3, each with its own send button; a single point left over joins the message before it (7 points: 3 + 4). Questions with a #QA code posted from an AI Agent / Check vs BE session also put that group on the Q&A follow list (My questions, unanswered reminders). The Q&A page lists threads by group, filters Awaiting answer / Answered / You asked, counts a thread as Answered only when the tagged person replies (Settings › Telegram can change this to anyone), reminds you when your question has gone unanswered past the threshold, and the AI sums up a thread's conclusion. A tag with a #QA… code, or sitting in a Q&A thread, shows only on the Q&A page, not again in To do / Today / the group's tags (and is not counted as unhandled); pinned ones stay in Pinned tags.",
+    "how": [
+      "Click Q&A in the sidebar (or g then q) and pick a group",
+      "Click \"New question\", type the question with @name of the person asked, then Post",
+      "Click a question on the left to read the whole thread and reply right in it; click the open question again to deselect it",
+      "Days start collapsed except today (or the nearest day with questions); click a date header to collapse / expand it",
+      "Mark a thread done: click the check button on it. Its tagged messages (someone else's question, the replies) become handled too (no reaction), and AI Agent sessions on them follow; Reopen undoes them",
+      "Remove from Q&A: hover a question and click the trash can (undo in the notice); remove a whole day: the trash can on the date header, click twice. The messages stay on Telegram",
+      "Send every answer to the AI Agent: click the paperclip on a message in the thread: with several messages, the popup lists each reply, all ticked; untick the ones you don't need (or \"Every reply in the thread\") then pick a session (up to 10 messages per turn). Attaching a message (from Q&A or a tag) to a read-only (plan) session ticks its \"Allow code edits\" for the next turn; untick it if you only want to ask",
+      "See what went to AI (the label also shows on tags outside Q&A): a thread message sent with an AI Agent session's turn or a Check vs BE session shows \"Sent\" (click to open the session). It counts only once that turn was really sent (Enter, or the queue ran it), not when attached then removed; several messages in one turn are each marked. The question row says \"Sent to AI\" (or \"Sent to AI 1/3\" when only some replies went); the \"Not sent to AI\" filter gathers threads with messages not sent yet. The paperclip menu says \"already sent this\" next to a session that got that message"
+    ],
+    "keys": "qa q&a questions answers #qa code thread remind nudge reply attach ai agent session sent to ai not sent"
+  },
+  {
+    "id": "qa-my-questions",
+    "tab": "telegram",
+    "area": "Q&A › My questions",
+    "title": "My questions (all groups)",
+    "what": "The first item in the Q&A group list collects every question you asked that nobody has answered in recent groups, those due for a reminder first, grouped by chat. Click to open the right thread.",
+    "how": [
+      "Open Q&A and click \"My questions\" at the top of the group list",
+      "Click a question to open its thread and send a reminder"
+    ],
+    "keys": "my questions unanswered all groups qa reminder"
+  },
+  {
+    "id": "view-ai-agent",
+    "tab": "telegram",
+    "area": "Sidebar › AI Agent",
+    "title": "AI Agent page",
+    "what": "The list of AI sessions: Give to AI Agent from a tag, Check vs BE, AI assistant (the AI assistant asks in the reply panel, one session per message, no project needed; ask on, post questions to the group, Done like any session), and Briefing assistant chats (reopened like a session: ask on in the question box pinned at the bottom, Saved Messages / Copy on each answer). Sessions are ordered by their latest activity and grouped into Today / Yesterday / Last 7 days / Older; the day label sticks to the top while scrolling; only Today starts open (or the nearest group with sessions), click a label to fold / unfold. The time on each session is its latest activity. The number on the item is how many sessions are running. Shown only for the Dev role (or once there are sessions, Briefing chats included). Links in the task or a follow-up are read for the AI by the dashboard: Knowledge Base articles and YouTrack tickets (of the connected YouTrack), messages of tracked groups; other links (Zeplin, web) the AI can't open, so paste what it needs into the message.",
+    "how": [
+      {
+        "t": "Click \"AI Agent\" in the sidebar",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Pick a session on the left to see its details on the right; click the open session again to deselect it",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      }
+    ],
+    "keys": "ai agent sessions ai task assign deep thinking code session agent"
+  },
+  {
+    "id": "view-briefing",
+    "tab": "telegram",
+    "area": "Sidebar › AI assistant › Briefing",
+    "title": "Briefing (a quick summary of every group)",
+    "what": "The AI quickly sums up your groups: what is new and what needs you. Shown only once an AI is set up.",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "The \"Groups · Briefing\" section below: each group with its count of open items; opening Briefing goes to the first group in the list, click another group to see its items; click \"All\" next to the group name at the top of the page to see the items of every group",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
+      },
+      {
+        "t": "Click \"Summarize new messages · N groups\" at the top right to summarize the groups with new messages (when viewing one group: \"Summarize new\"); with no new messages the button is hidden",
+        "at": "css:#briefing-run"
+      }
+    ],
+    "keys": "briefing summarize groups overview quick summary new messages"
+  },
+  {
+    "id": "briefing-week-stats",
+    "tab": "telegram",
+    "area": "Briefing › My week",
+    "title": "My week (tag handling time)",
+    "what": "The \"My week\" clock button at the top of Briefing compares this week with last week: tags received, handled (replied / Done / auto-done), the median handling time and the time 90% of tags were done within, plus the 5 slowest groups. If the numbers fail to load, an error line \"Couldn't read this week's numbers.\" shows instead of \"No numbers for this week yet.\".",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\"",
+        "at": "Briefing"
+      },
+      {
+        "t": "Open Briefing and click the \"My week\" clock button at the top right",
+        "at": "Tuần của tôi"
+      },
+      "Hover each number for an explanation"
+    ],
+    "keys": "my week stats statistics response time handling time median p90 slow groups"
+  },
+  {
+    "id": "group-list",
+    "tab": "telegram",
+    "area": "Sidebar › Groups with tags",
+    "title": "Groups with tags",
+    "what": "Lists the groups that tag you within the filtered date range, with each group's unhandled count and the total \"unhandled\".",
+    "how": [
+      "See the \"Groups with tags\" section in the sidebar: each group shows its unhandled count, the total sits next to the section title (on Briefing / Q&A this section switches to that page's groups)",
+      {
+        "t": "Click a group name to open its message list",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      }
+    ],
+    "keys": "groups with tags group list chat list unhandled count"
+  },
+  {
+    "id": "group-purge",
+    "tab": "telegram",
+    "area": "Group page › ⋯ › Delete group data",
+    "title": "Delete group data",
+    "what": "Deletes the group's saved messages and unsent drafts on this machine. The group comes back when someone tags you. Also from Settings › Data › Messages by group (with each group's size). Every AI session holding this group's messages (opened on one of them or with one attached, also a session that quotes other groups) is deleted too; a running one is stopped first.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click the \"⋯\" button (Group actions) at the top of the message list",
+        "at": "Thao tác với nhóm"
+      },
+      {
+        "t": "Choose \"Delete group data…\"",
+        "at": "Xóa dữ liệu nhóm"
+      },
+      {
+        "t": "Read the \"Delete group data?\" box; click \"Cancel\" to leave (only click \"Delete data\" if you really want to delete)",
+        "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+      }
+    ],
+    "keys": "delete group data purge chat data trash remove group"
+  },
+  {
+    "id": "connection-status",
+    "tab": "telegram",
+    "area": "Sidebar › Footer",
+    "title": "Telegram connection status",
+    "what": "Shows whether Telegram is connected (Connected / Disconnected, retrying / Sign-in needed…) and whether the live update stream is running.",
+    "how": [
+      "Look at the bottom of the sidebar: a line with a green dot \"Telegram connected · Live updates\" means all is well; when something is wrong it becomes an AI robot plugging in a cable (cable out, grey = disconnected; robot reaching = connecting)",
+      "If it says \"AI is waiting for you to sign in\" or \"No Telegram cable yet\", click that card to open Telegram settings",
+      "Follow the \"Telegram account\" section: enter the API ID/Hash, then sign in"
+    ],
+    "keys": "connection status connected robot cable wifi disconnected live updates stream status"
+  }
+]

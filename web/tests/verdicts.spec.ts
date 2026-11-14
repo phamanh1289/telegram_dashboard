@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { verdictsOf } from "../src/lib/verdicts";
+import { verdictsOf } from "../src/features/telegram/lib/verdicts";
 
 // Đối chiếu code's table, as a real agent answered it (rows by "#"), read back per topic title for the Với BE cards.
 const items = [

@@ -1,0 +1,158 @@
+[
+  {
+    "id": "briefing-run-all",
+    "tab": "telegram",
+    "area": "Briefing › Summarize new messages",
+    "title": "Summarize every group with new messages",
+    "what": "Summarizes, one by one, each group allowed for the AI that has new messages since the last summary (the first time it takes the last 24 hours). While the app is open, groups with new messages are summarized in the background at most once every 2 hours (turn off in Settings › Telegram › Auto-summarize Briefing). A group whose AI access is about to expire or has expired shows a \"Renew for 30 days\" line in Briefing.",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Click \"Summarize new messages · N groups\" to summarize the groups with new messages one by one (the button only shows when there are unsummarized messages); the middle of the page shows which group the AI is reading",
+        "at": "css:#briefing-run"
+      },
+      "While summarizing: the \"Summary\" button at the top right becomes a round red stop button (with an n/N group count for several groups); click it to cancel midway",
+      {
+        "t": "To summarize one group: hover the group in the sidebar's \"Groups · Briefing\" section and click ✦",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Tóm tắt \"]"
+      },
+      {
+        "t": "Change the model / effort just for Briefing under the Briefing assistant's question box",
+        "at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
+      },
+      {
+        "t": "Click the circular \"Check again\" icon to look for new messages",
+        "at": "Kiểm tra lại"
+      }
+    ],
+    "keys": "briefing summarize all groups run all stop check again new messages summarize one group model effort"
+  },
+  {
+    "id": "briefing-ask",
+    "tab": "telegram",
+    "area": "Briefing › Briefing assistant",
+    "title": "Briefing assistant: ask the AI about every group",
+    "what": "The right column (on phones: the \"AI assistant\" tab; on desktop hidden by default so the list is wider: click \"Ask AI\" at the top right to open it, X in the panel to hide it, the chat is kept and the app remembers your choice; available once at least one group is summarized) is a chat about the latest summary of every group: what to do first today, who is waiting on you, blockers, writing a standup… The AI reads only the summaries, no further Telegram messages. Answers can be copied or sent to Saved Messages. Each sourced point carries a group · #message chip (hover to see the item) and the same buttons as Briefing's rows: \"Reply\", \"Create ticket\", \"Check code\" (BE questions, decisions / changes; Dev role). Questions to ask come ready per group, each message with a copy button and \"Ask in Q&A\": that group's Q&A opens with the question filled in, tag who you ask, then send. Under the latest answer a few \"Ask next\" questions fill the box when clicked. Each chat is saved under AI Agent › Briefing in this browser.",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "On desktop, click the \"Ask AI\" button (robot) at the top right",
+        "at": "css:button[aria-label=\"Trợ lý AI\"]"
+      },
+      {
+        "t": "Click a suggestion card, or type a question in the \"Ask about every group…\" box and press Enter",
+        "at": "Hỏi AI về các nhóm"
+      },
+      "Click the stop button while the AI is answering to cancel; the trash icon at the top of the panel clears the chat"
+    ],
+    "keys": "ask ai briefing what to do today standup blockers risks who is waiting on me all groups chat ai"
+  },
+  {
+    "id": "briefing-confirmations",
+    "tab": "telegram",
+    "area": "Briefing › To do",
+    "title": "To do across all groups (For you, To confirm, To-dos…)",
+    "what": "Gathers questions needing confirmation, to-dos, decisions and changes from the latest summary of every group into one list with filter tabs. The \"Needs you\" tab shows only items asked of / assigned to you (by your YouTrack name; PO/PM for the PO role). Tick the circle to mark an item handled (saved on this machine). Items where you replied to the original message on Telegram (sent from the app or from Telegram) move to handled by themselves, marked \"You replied\". To-dos without a ticket are checked against YouTrack: a similar ticket shows \"may already exist …\", otherwise a prominent \"No ticket · Create\" button appears. Items nobody resolved in the last summary stay, labeled \"open since …\".",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Pick a tab: For you, To confirm, To-dos, Settled, Changes (the number next to it = unhandled items)",
+        "at": "css:[aria-label=\"Lọc việc\"]"
+      },
+      {
+        "t": "Click \"Reply\" / \"Create ticket\" right under an item, or click the group name to open the group's summary",
+        "at": "css:ul[aria-label=\"Việc cần xử lý\"]"
+      },
+      {
+        "t": "Click the circle at the start of a line to mark it handled; \"Handled N\" at the bottom to review / unmark",
+        "at": "Đánh dấu đã xử lý"
+      }
+    ],
+    "keys": "for you decided needs confirmation questions awaiting confirmation briefing pending decisions to-dos handled tick mark todo replied auto reply youtrack no ticket suggest create ticket duplicate"
+  },
+  {
+    "id": "briefing-group-cards",
+    "tab": "telegram",
+    "area": "Briefing › Group chips",
+    "title": "Groups in the sidebar: filter, summarize, open, remove",
+    "what": "The sidebar's \"Groups · Briefing\" section lists the groups: yellow dot = new messages, green = up to date, number = open items (it drops as you mark them handled). Click a group to see only its items; hover a group for ✦ summarize the group, ↗ open the Summary page, 🗑 remove from Briefing (confirm box \"Remove group from Briefing?\"; the AI stops reading the group and its summary is deleted; add it back with \"Add group\"). The Copy button at the top right copies every summary as one Markdown.",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Click a group in the \"Groups · Briefing\" section to see only its items; click \"Briefing\" to see everything again",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
+      },
+      {
+        "t": "Hover a group and click ↗ to open the group's Summary page",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Mở \"]"
+      },
+      {
+        "t": "Hover a group, click the trash can, then click \"Remove group\" in the confirm box",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label$=\"khỏi Briefing\"]"
+      },
+      {
+        "t": "Click \"Copy all\" to copy the Markdown of every group",
+        "at": "Copy tất cả"
+      }
+    ],
+    "keys": "copy all briefing markdown new messages group chips filter by group status remove group delete from briefing revoke sidebar groups briefing open items"
+  },
+  {
+    "id": "briefing-saved",
+    "tab": "telegram",
+    "area": "Briefing › Send to Saved Messages",
+    "title": "Send the briefing to Saved Messages",
+    "what": "Sends the unhandled items of every group (needs confirmation, to-dos, decided, changes) as one message to your Saved Messages on Telegram, to read on your phone. Ask AI answers can be sent too.",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Click the paper plane icon \"Send to Saved Messages\" at the top right",
+        "at": "Gửi vào Saved Messages"
+      },
+      "Or in an Ask AI answer, click \"Send to Saved Messages\""
+    ],
+    "keys": "saved messages send telegram phone briefing send to myself"
+  },
+  {
+    "id": "briefing-add-group",
+    "tab": "telegram",
+    "area": "Briefing › Group chips › Add",
+    "title": "Add a group that never tagged you to Briefing",
+    "what": "Pick any Telegram group (even one that never tagged you) to open its Summary; click Allow there and the group joins Briefing. Groups not yet allowed for the AI come first in \"Add group\" (at the end of the sidebar's \"Groups · Briefing\" section).",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Click \"Add group\" at the end of the sidebar's \"Groups · Briefing\" section",
+        "at": "Thêm nhóm"
+      },
+      {
+        "t": "Type in the \"Search Telegram groups…\" box",
+        "at": "Tìm nhóm"
+      },
+      "Click a group name (\"AI not allowed yet\" groups are on top)",
+      {
+        "t": "On the Summary page, click \"Allow\" so the group shows up in Briefing",
+        "at": "Cho phép"
+      }
+    ],
+    "keys": "add group no tags search group not allowed ai briefing"
+  }
+]

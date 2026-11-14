@@ -3,11 +3,10 @@ import dataclasses
 import json
 
 import pytest
-
 from telegram_dashboard.agent import AgentRunner, read_task_result
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
-from telegram_dashboard.providers import ALLOW, DENY
+from telegram_dashboard.provider_cmds import ALLOW, DENY
 
 # Stand-ins for `claude -p`: one answers with a single >64 KiB stream-json line that echoes its
 # CLI args; the other keeps the turn running.
@@ -96,7 +95,7 @@ async def test_empty_zero_turn_result_on_resume_does_not_end_the_turn(tmp_path, 
 async def test_resumed_turn_reminds_the_prompt_language(tmp_path):
     """A follow-up tells the AI to answer in the turn's language (old sessions carried "write in English");
     the page's log keeps the user's own text."""
-    from telegram_dashboard.ai import LANG_TURN
+    from telegram_dashboard.ai_prompts import LANG_TURN
 
     sent = tmp_path / "stdin.txt"
     done = '{"type":"result","result":"ok","num_turns":1}'
@@ -285,7 +284,7 @@ async def test_git_changes_see_edits_inside_a_submodule(tmp_path, monkeypatch):
 
 
 def test_task_state_survives_an_answer_in_english():
-    from telegram_dashboard.ai import task_state
+    from telegram_dashboard.ai_prompts import task_state
 
     assert task_state("**Tóm tắt**\n- x\n\n**Trạng thái**\n- `chờ trả lời`: còn 2 câu") == "waiting"
     assert task_state("**Summary**\n- x\n\n**Status**\n- `cần bạn` (review the diff)") == "you"

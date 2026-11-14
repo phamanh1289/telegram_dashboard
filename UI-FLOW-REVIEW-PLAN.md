@@ -296,7 +296,7 @@ Backend đã dùng một lượt AI, REST Zeplin, cache 1 giờ; validate/layout
 
 ## 11. Phase 8 — Hoàn thiện và bàn giao
 
-- Focused tests: `tests/test_uiflow.py`, `web/tests/uiflow.spec.ts`, `web/tests/flow-dialog.spec.ts`; thêm persistence/concurrency test đúng rủi ro.
+- Focused tests: `tests/test_uiflow.py`, `web/tests/uiflow-*.spec.ts`, `web/tests/flow-dialog.spec.ts`; thêm persistence/concurrency test đúng rủi ro.
 - Typecheck, repo guards, browser scratch; baseline cold/warm cho latency/request/token/memory/frame time.
 - Keyboard/focus/reduced-motion/container hẹp.
 - Dashboard dùng Hint/Segmented; standalone hành vi tương đương, không kéo React chỉ vì tooltip.

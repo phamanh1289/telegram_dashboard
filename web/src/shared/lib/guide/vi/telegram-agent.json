@@ -1,0 +1,194 @@
+[
+  {
+    "id": "agent-filters",
+    "tab": "telegram",
+    "area": "AI Agent › Bộ lọc",
+    "title": "Lọc phiên AI Agent",
+    "what": "Chuyển giữa loại phiên \"Giao AI Agent\", \"Đối chiếu BE\" và \"Briefing\" (trên thanh tiêu đề; Briefing: các cuộc hỏi Trợ lý Briefing lưu trên trình duyệt 14 ngày, đọc lại / xóa / hỏi tiếp ngay ở đây, ô hỏi ghim dưới như phiên khác), lọc \"Tất cả\" / \"Doing\" / \"Done\" (Done = tin tag đã đánh dấu xử lý; chỉ trả lời tin tag (kể cả gửi câu hỏi của phiên) thì phiên vẫn ở Doing; Done một phiên, hay Done tin tag của nó từ danh sách, cũng đánh dấu xong tin đính kèm (phiên Đối chiếu BE: cả các tin của chủ đề đã đối chiếu), các tin tag trả lời câu hỏi phiên đã gửi (có #REF-…) hay nằm trong Q&A của phiên, và Q&A có mã #QA… trong tin tag / tin đính kèm / tin được đối chiếu / câu hỏi phiên đã gửi, mở lại thì bỏ theo); hiện số phiên đang chạy. Vai trò QA / PO chỉ thấy Trợ lý AI và Briefing (Giao AI Agent / Đối chiếu BE chỉ hiện khi đã có phiên loại đó).",
+    "how": [
+      {
+        "t": "Mở \"AI Agent\" ở thanh bên.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Bấm \"Đối chiếu BE\" để xem phiên đối chiếu BE confirm.",
+        "at": "Đối chiếu BE"
+      },
+      {
+        "t": "Bấm \"Giao AI Agent\" để quay lại phiên Giao AI Agent.",
+        "at": "Giao AI Agent"
+      },
+      {
+        "t": "Bấm \"Done\" (hoặc \"Doing\", \"Tất cả\") để lọc theo trạng thái.",
+        "at": [
+          "Done",
+          "Doing",
+          "Tất cả"
+        ]
+      }
+    ],
+    "keys": "loc phien giao viec deep thinking doing done tat ca filter agent"
+  },
+  {
+    "id": "agent-session-chat",
+    "tab": "telegram",
+    "area": "AI Agent › Phiên › Nhắn tiếp",
+    "title": "Nhắn tiếp cho AI và hàng đợi",
+    "what": "Xem nhật ký phiên (các bước Đọc/Sửa/Tìm… gom nhóm, bấm để xem đầu ra) và nhắn tiếp cho AI; khi AI đang làm có thể xếp lời nhắn vào hàng đợi, chạy lần lượt.",
+    "how": [
+      {
+        "t": "Mở \"AI Agent\" ở thanh bên.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Chọn một phiên trong danh sách.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Gõ vào ô \"Nhắn tiếp cho AI\"; Enter gửi, Shift+Enter xuống dòng.",
+        "at": "Nhắn tiếp cho AI"
+      },
+      {
+        "t": "Bấm \"Gửi\", hoặc \"Vào hàng đợi\" (⌘/Ctrl+Enter) khi AI đang làm.",
+        "at": [
+          "Vào hàng đợi",
+          "Gửi"
+        ]
+      },
+      {
+        "t": "Bấm \"Yêu cầu đã giao\" để xem prompt ban đầu.",
+        "at": "Yêu cầu đã giao"
+      },
+      "Bấm X \"Bỏ khỏi hàng đợi\" để xóa một mục đang xếp hàng."
+    ],
+    "keys": "nhan tiep ai hang doi queue follow up enter ctrl enter nhat ky buoc tool log"
+  },
+  {
+    "id": "agent-accept-edit",
+    "tab": "telegram",
+    "area": "AI Agent › Phiên › Cho sửa code",
+    "title": "Cho phép lượt sau sửa file (duyệt plan)",
+    "what": "Với phiên Chỉ đọc, bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm. Lượt sửa file chạy lệnh trong sandbox (chỉ ghi trong thư mục dự án, mạng chỉ tới kho package); nếu phiên có tin hay link của người khác, cạnh ô tick hiện biểu tượng cảnh báo (rê chuột để đọc). Trên Windows (Claude không có sandbox) lượt sửa chỉ sửa file, không chạy lệnh: AI ghi lệnh build / test để bạn tự chạy. Lượt sửa file (kể cả phiên giao ở chế độ Được sửa file và lượt Vòng BE tự gửi) dùng cả MCP server và plugin bạn đã cài cho CLI của phiên (Claude, Codex, Antigravity: YouTrack, markitdown, Zeplin…), như tự chạy CLI đó; Antigravity vẫn không có lệnh shell; ô “Dùng MCP / plugin” hiện khi tick “Cho sửa code”, bật sẵn, bỏ tick để tắt, app nhớ lựa chọn. Chúng chạy ngoài sandbox bằng đăng nhập của bạn: phiên có tin / link người khác viết thì biểu tượng cảnh báo nói rõ. Lượt chỉ đọc không dùng MCP; nội dung ticket, bài Knowledge Base (link hoặc chỉ mã, vd. VA-123, VA-A-134) dashboard tải sẵn cho mọi lượt. Link Zeplin (zpl.io, app.zeplin.io) trong phiên: mọi lượt, kể cả chỉ đọc, trên cả Claude, Codex và Antigravity, đọc được thiết kế qua Zeplin MCP bạn đã cài (cho Claude hoặc Codex; Antigravity dùng của nó), chỉ các tool đọc màn / component / design token.",
+    "how": [
+      {
+        "t": "Mở \"AI Agent\" ở thanh bên.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Chọn một phiên chế độ Chỉ đọc.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Tích \"Cho sửa code\" trong ô nhắn.",
+        "at": "Cho sửa code"
+      },
+      "Rồi nhắn tiếp cho AI (vd. duyệt plan và bảo AI làm)."
+    ],
+    "keys": "accept edit cho sua code duyet plan cho sua file chi doc plan mode"
+  },
+  {
+    "id": "agent-session-actions",
+    "tab": "telegram",
+    "area": "AI Agent › Phiên › Thao tác",
+    "title": "Done, dừng, xóa phiên, mở nhóm, model riêng",
+    "what": "Quản lý phiên: Done tin tag (có / không reaction), dừng AI đang chạy (giữ hội thoại), xóa phiên, mở nhóm và cuộn tới tin đã giao, dùng kết quả làm nháp trả lời; chọn model và effort riêng cho phiên ngay trong ô nhắn. Nút “Thay đổi” trên đầu phiên (mọi loại phiên, cả Đối chiếu BE khi bạn cho sửa file ở ô nhắn) mở trang Thay đổi, chỉ gồm file đổi kể từ lúc phiên bắt đầu (sửa của bạn hay của phiên khác có từ trước không tính; phiên tạo trước bản này vẫn so cả thư mục với commit cuối; file trong submodule cũng hiện, đường dẫn mở đầu bằng tên submodule, nhưng “Tạo nhánh + PR” chỉ commit file của repo chính): đầu trang ghi tổng số file thay đổi và tổng dòng +/−; cột trái là cây thư mục (thư mục chỉ chứa một thư mục con được gộp thành một dòng a/b/c, bấm thư mục để đóng / mở, chữ A / M / R / D cạnh file là mới / sửa / đổi tên / xóa, bấm file để nhảy tới), bên phải các file xếp theo cùng thư mục, mỗi file một thẻ bấm để thu gọn / mở rộng (nút mũi tên trên đầu thu / mở mọi file; file dài sẵn thu gọn); xem “Song song” (Trước khi sửa bên trái, Sau khi sửa bên phải) hoặc “Một cột” (− đỏ là trước, + xanh là sau), phần chữ đổi trong dòng được tô đậm; nút “Phiên” quay lại. “Tạo nhánh + PR” ở đáy trang (bấm hai lần để xác nhận) commit đúng các file đó (file khác bạn đang sửa hay đã stage để nguyên) trên nhánh ai/<phiên>, đẩy lên remote và mở PR bằng gh. File trông như bí mật (.env, khóa, chứng chỉ) không bao giờ được commit. Lượt bị ngắt (server khởi động lại, dừng) có nút “Chạy tiếp”. Đầu hội thoại ghi số lượt và chi phí ước tính cả phiên; mỗi lượt ghi chi phí của nó (theo giá API do CLI báo, gói thuê bao không trừ tiền theo số này). Nếu file phiên sửa đã có sửa của bạn từ trước phiên (hoặc phiên không có mốc lúc bắt đầu), trang Thay đổi cảnh báo màu vàng và liệt kê file: PR sẽ chứa cả phần sửa đó, lần bấm xác nhận là đồng ý.",
+    "how": [
+      {
+        "t": "Mở \"AI Agent\" ở thanh bên.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Bấm \"Tất cả\" để thấy mọi phiên.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Chọn một phiên trong danh sách. Rê chuột lên một phiên để hiện icon thùng rác: xóa nhanh phiên đó (hỏi xác nhận) mà không cần mở. Thùng rác trên tiêu đề ngày (Hôm nay, Hôm qua…) xóa mọi phiên của ngày đó, cũng hỏi xác nhận.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Rê chuột hoặc bấm nút ⋯ ở góc phải thanh đầu phiên để mở menu: Done, Done không reaction (hoặc Mở lại), Dùng làm nháp trả lời, Mở nhóm, Xóa phiên (hỏi xác nhận).",
+        "at": "css:[aria-label=\"Thao tác phiên\"]"
+      },
+      "Trong ô nhắn: model và effort riêng cho phiên (áp dụng từ lượt nhắn tiếp), nút Dừng khi AI đang chạy.",
+      {
+        "t": "Bấm \"Mở nhóm\" để tới tin gốc đã giao việc.",
+        "at": "Mở nhóm"
+      }
+    ],
+    "keys": "dung chay lai xoa phien mo nhom stop rerun delete session dung ket qua"
+  },
+  {
+    "id": "toast-undo",
+    "tab": "telegram",
+    "area": "Thông báo nổi",
+    "title": "Hoàn tác thao tác vừa làm",
+    "what": "Sau khi đánh dấu Xong, Hoãn hoặc giao việc, thông báo dưới màn hình có nút \"Hoàn tác\" (khoảng 6 giây).",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm \"Xong\" trên một tin (rê chuột vào dòng tin để thấy nút)",
+        "at": "Xong"
+      },
+      {
+        "t": "Bấm \"Hoàn tác\" trên thông báo ở dưới màn hình (khoảng 6 giây)",
+        "at": "Hoàn tác"
+      },
+      "Hoặc nhấn phím z khi thông báo còn hiện"
+    ],
+    "keys": "hoan tac undo z thong bao toast"
+  },
+  {
+    "id": "keyboard-shortcuts",
+    "tab": "telegram",
+    "area": "Phím tắt",
+    "title": "Phím tắt Inbox",
+    "what": "Thao tác nhanh bằng bàn phím (không áp dụng khi đang gõ trong ô nhập): j/k chọn tin dưới/trên (khi đang trả lời trên màn rộng: sang tag đang chờ kế / trước), Tab đi qua từng tin rồi Enter để trả lời, g rồi q mở Q&A, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, ⌘/Ctrl+Enter gửi, Esc đóng trả lời, ? mở bảng phím tắt.",
+    "how": [
+      "Nhấn ? để mở bảng \"Phím tắt\"; Esc để đóng",
+      {
+        "t": "Hoặc bấm bánh răng \"Cài đặt\" để xem bảng phím tắt ở trang Cài đặt",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Bấm mục \"Phím tắt\"",
+        "at": "Phím tắt"
+      },
+      "Ngoài ô nhập: j/k chọn tin, r trả lời, x Xong/mở lại, z hoàn tác, a nhập yêu cầu cho AI, / tìm kiếm, Esc đóng trả lời"
+    ],
+    "keys": "phim tat shortcuts keyboard j k r x z a / esc ? ctrl enter ban phim"
+  },
+  {
+    "id": "new-tag-notification",
+    "tab": "telegram",
+    "area": "Thông báo trình duyệt",
+    "title": "Thông báo khi có tag mới",
+    "what": "Khi tab đang ẩn, trình duyệt hiện thông báo tên người gửi kèm “Tag mới” (tối đa 3, kèm “Còn N tag mới khác”); bấm để quay lại app. Nội dung tin chỉ hiện khi bật “Hiện nội dung tin trong thông báo macOS” ở Cài đặt › Telegram › “Thông báo” (áp dụng cả thông báo của trình duyệt và macOS). Thông báo “Chưa ai trả lời” của Q&A theo cùng công tắc: tắt thì chỉ hiện mã #QA, không hiện nội dung câu hỏi.",
+    "how": [
+      {
+        "t": "Bấm bánh răng \"Cài đặt\"",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Bấm mục \"Telegram\" ở danh sách bên trái",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Ở mục \"Thông báo\", bật công tắc \"Thông báo khi có tag mới\"",
+        "at": "Thông báo khi có tag mới"
+      },
+      "Cho phép thông báo khi trình duyệt hỏi"
+    ],
+    "keys": "thong bao notification tag moi desktop push trinh duyet"
+  }
+]

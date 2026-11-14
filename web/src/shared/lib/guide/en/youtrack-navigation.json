@@ -1,0 +1,381 @@
+[
+  {
+    "id": "yt-chon-vai-tro",
+    "tab": "youtrack",
+    "area": "First screen",
+    "title": "Choose the Dev / QA/QC / PO/PM role",
+    "what": "The first time you open the YouTrack page (or after clearing your role), it asks which role you work in. The home page, the Ticket view, the Dashboard and the AI all follow this role.",
+    "how": [
+      {
+        "t": "Click the \"Settings\" icon at the right of the top bar",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Click \"Clear role\" (if you have one)",
+        "at": "Bỏ chọn vai trò"
+      },
+      {
+        "t": "Go back to the \"YouTrack\" module in the top bar",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Click a card: \"Dev\", \"QA/QC\" or \"PO/PM\"",
+        "at": "css:[aria-label=\"Vai trò\"]"
+      }
+    ],
+    "keys": "role dev qa qc po pm choose role clear role change role"
+  },
+  {
+    "id": "yt-thanh-ben-dieu-huong",
+    "tab": "youtrack",
+    "area": "Sidebar",
+    "title": "Navigate the pages of your role",
+    "what": "The sidebar lists your role's pages: Dev has Today / Ticket / Dashboard / Members; QA has Testing / Ticket / Dashboard / Members; PO has Overview / Dashboard / Members / Ticket. Hover each item for a hint about what that page does.",
+    "how": [
+      {
+        "t": "Click \"Tickets\" in the sidebar",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Ticket\"]"
+      },
+      {
+        "t": "Click \"Dashboard\"",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Dashboard\"]"
+      },
+      {
+        "t": "Click \"Members\"",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Thành viên\"]"
+      },
+      "Hover an item to read what that page does",
+      "On phones: the Menu button in the top bar opens the sidebar, \"Close menu\" closes it"
+    ],
+    "keys": "sidebar menu pages navigation today testing brief overview members"
+  },
+  {
+    "id": "yt-thu-gon-thanh-ben",
+    "tab": "youtrack",
+    "area": "Sidebar",
+    "title": "Collapse / expand the menu",
+    "what": "Shrinks the sidebar to icons only to make room for the ticket table; the state is remembered for next time.",
+    "how": [
+      {
+        "t": "Click the YouTrack icon box at the top of the sidebar (\"Collapse / expand menu\")",
+        "at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+      },
+      {
+        "t": "Click it again to expand",
+        "at": "css:button[aria-label=\"Thu gọn / mở rộng menu\"]"
+      }
+    ],
+    "keys": "collapse expand sidebar hide menu"
+  },
+  {
+    "id": "yt-chon-project",
+    "tab": "youtrack",
+    "area": "Sidebar",
+    "title": "Choose the YouTrack project",
+    "what": "Changes the project you are viewing; all tickets, sprints and members reload for the new project. The choice is saved.",
+    "how": [
+      {
+        "t": "Open the \"Project\" box in the sidebar and pick another project (the menu must be expanded)",
+        "at": "Project"
+      },
+      "The sprint / people filters reset and tickets reload for the new project"
+    ],
+    "keys": "project choose project change project"
+  },
+  {
+    "id": "yt-vai-tro-thanh-ben",
+    "tab": "youtrack",
+    "area": "Sidebar",
+    "title": "See / change your current role",
+    "what": "The \"Role\" box under the Project box shows which role you are viewing YouTrack as (Dev, QA/QC, PO/PM). Changing it here switches the home page, Dashboard and AI right away, just like in Settings › General.",
+    "how": [
+      {
+        "t": "Open the \"Role\" box in the sidebar (the menu must be expanded)",
+        "at": "css:[aria-label=\"Vai trò hiện tại\"]"
+      },
+      "Choose \"Dev\", \"QA/QC\" or \"PO/PM\"; the hint line tells you that role's home page"
+    ],
+    "keys": "role current change role dev qa qc po pm"
+  },
+  {
+    "id": "yt-huy-hieu-rui-ro",
+    "tab": "youtrack",
+    "area": "Sidebar › Home item",
+    "title": "At-risk ticket badge",
+    "what": "The yellow number next to the home item is the count of tickets that need action now (overdue, due within 24 hours, Blocked, in progress with no update for 3+ days). Dev: your tickets; QA: tickets you QC; PO: the whole team.",
+    "how": [
+      {
+        "t": "Look at the red number next to the home page, hover to read the explanation, click to see the list",
+        "at": [
+          "css:nav[aria-label=\"Trang\"] span[title*=\"cần xử lý ngay\"]",
+          "Hôm nay",
+          "Kiểm thử",
+          "Brief"
+        ]
+      },
+      "Dev: your tickets; QA: tickets you QC; PO: the whole team"
+    ],
+    "keys": "risk at risk badge overdue due soon blocked stale"
+  },
+  {
+    "id": "yt-lich-su-ai",
+    "tab": "youtrack",
+    "area": "Sidebar › AI history",
+    "title": "AI history",
+    "what": "Keeps up to 40 recent AI chats in the browser, split into All / Ticket / Metrics tabs; reopen one to see the whole exchange and keep asking. Every AI use with a chat answer (tickets, home page, dashboard, members, release, reports, scheduled reports too) lands here as soon as it starts; AI ticket filtering and AI ticket drafts are saved too for review (no follow-up): closing the panel, reloading the page or closing the tab while the AI runs leaves it running in the background on your machine (shows \"Running\", open it to keep watching, with a Stop button; once it finishes it switches to \"Done, open to view\" by itself, even after a reload, results kept for 1 hour); if it was stopped, failed or the server restarted it shows \"Not finished\", reopen it and click \"Run again\". Deleting a running session stops it. Rename a session with the pencil next to its name (leave it empty to go back to the automatic name). Code-reading sessions show each step the AI takes (reading files, searching, running commands) like the AI Agent, even when you reopen one running in the background. Each session (AI ticket filtering and AI ticket drafts too) has a YT-… code in the ticket bar at the top: click to copy it, type it in the session search to reopen it; a bug report with this code leads to the exact runs in Settings › AI › History. YouTrack only: Briefing assistant chats live under AI Agent › Briefing on the Telegram side. On the Telegram side, open it from the AI history icon in the sidebar.",
+    "how": [
+      {
+        "t": "Click \"AI history\" in the sidebar (shown only when AI is on)",
+        "at": "Lịch sử AI"
+      },
+      {
+        "t": "Pick the \"All\", \"Ticket\" or \"Metrics\" tab",
+        "at": "css:[role=\"group\"][aria-label=\"Loại phiên AI\"]"
+      },
+      {
+        "t": "Type in the \"Search AI sessions\" box to search",
+        "at": "Tìm phiên AI"
+      },
+      {
+        "t": "Click a session to reopen it and keep asking",
+        "at": "css:nav[aria-label=\"Phiên AI\"] li.group > button"
+      },
+      {
+        "t": "A \"Not finished\" session: open it and click \"Run again\" to rerun the unanswered turn",
+        "at": "Chạy lại"
+      },
+      {
+        "t": "Rename: hover the name of the open session, click the pencil, type a name and press Enter (Esc to cancel)",
+        "at": "Đổi tên phiên"
+      },
+      {
+        "t": "Delete one session: click the trash can while hovering the session",
+        "at": "css:nav[aria-label=\"Phiên AI\"] button[aria-label^=\"Xóa phiên\"]"
+      },
+      {
+        "t": "Or \"Clear all\" (on the other tabs \"Delete N sessions\"), then click again at \"Click again to delete N sessions\"",
+        "at": "css:nav[aria-label=\"Phiên AI\"] > button:last-child"
+      }
+    ],
+    "keys": "ai history sessions reopen keep asking delete session rename run again"
+  },
+  {
+    "id": "yt-tao-ticket",
+    "tab": "youtrack",
+    "area": "Sidebar › Create ticket",
+    "title": "Create a new ticket (AI drafts it from rough notes)",
+    "what": "Create a YouTrack ticket right in the dashboard. The AI can draft the title, Type, Priority and a templated description from rough notes; before creating, similar open tickets are flagged; if that check fails, the form shows an error.",
+    "how": [
+      {
+        "t": "Click \"Create ticket\" in the sidebar",
+        "at": "Tạo ticket"
+      },
+      {
+        "t": "In \"AI draft\" mode, describe the problem / paste rough notes into the \"Problem / request for the AI\" box at the bottom of the dialog",
+        "at": "Vấn đề / yêu cầu cho AI"
+      },
+      {
+        "t": "Click \"AI draft\" in the box (or Enter; when AI is on)",
+        "at": "css:[data-slot=\"dialog-content\"] footer button.bg-hl"
+      },
+      {
+        "t": "Check the \"Title\"; if a \"… related tickets\" button shows at the bottom of the dialog, click it to review them (if the check fails it says \"Could not check for duplicate tickets\")",
+        "at": "Tiêu đề"
+      },
+      {
+        "t": "Choose Project, Type, Priority, Assignee",
+        "at": "css:[data-slot=\"dialog-content\"] fieldset"
+      },
+      {
+        "t": "Click \"Create ticket\" at the bottom of the dialog",
+        "at": "css:[data-slot=\"dialog-content\"] footer > button:last-child"
+      }
+    ],
+    "keys": "create ticket create issue new ticket ai draft rough notes duplicate ticket"
+  },
+  {
+    "id": "yt-pham-vi-my-task",
+    "tab": "youtrack",
+    "area": "Page bar › Scope",
+    "title": "Scope: Mine / Team / Picked",
+    "what": "Quickly pick a set of tickets: Mine (tickets assigned to you or that you QC), Team (you + the members you added), Picked (the people you choose; nobody chosen = everyone).",
+    "how": [
+      {
+        "t": "Click \"Mine\", \"Team\" or \"Group\" in the page bar",
+        "at": "css:[role=\"group\"][aria-label=\"Phạm vi\"]"
+      },
+      "The number next to \"Team\" is how many people are in the team"
+    ],
+    "keys": "scope my task my team all mine team picked everyone"
+  },
+  {
+    "id": "yt-sua-team",
+    "tab": "youtrack",
+    "area": "Page bar › My team",
+    "title": "Edit your team (My team)",
+    "what": "Add/remove people in \"My team\"; the list is saved for next time.",
+    "how": [
+      {
+        "t": "Click \"My team\" to pick this scope",
+        "at": "Team"
+      },
+      {
+        "t": "Click \"My team\" again (gear icon) to open \"My team\"",
+        "at": "Team"
+      },
+      {
+        "t": "Type a name into the \"Find people to add to the team\" box",
+        "at": "Tìm người để thêm vào team"
+      },
+      {
+        "t": "Click a name in the list to add it",
+        "at": "css:[role=\"dialog\"][aria-label=\"Team của tôi\"] button:not([aria-label])"
+      },
+      {
+        "t": "Click ✕ next to a name (\"Remove … from team\") to remove it",
+        "at": "css:button[aria-label^=\"Bỏ \"]"
+      },
+      "Esc or click outside to close"
+    ],
+    "keys": "my team add members remove from team members"
+  },
+  {
+    "id": "yt-loc-sprint-nguoi",
+    "tab": "youtrack",
+    "area": "Page bar",
+    "title": "Filter by Sprint and People",
+    "what": "Pick one or more sprints and one or more people (\"Unassigned\" included) to narrow every page: Ticket, Dashboard, the home page.",
+    "how": [
+      {
+        "t": "Click the \"Sprint\" button (default \"All sprints\")",
+        "at": "Sprint"
+      },
+      {
+        "t": "Tick one or more sprints (type in the search box if needed)",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      {
+        "t": "Click the \"Person\" button (default \"Everyone\")",
+        "at": "Người"
+      },
+      {
+        "t": "Tick the people to show (\"Unassigned\" included)",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      "The filters are saved and written to the URL for sharing"
+    ],
+    "keys": "filter sprint filter people assignee people unassigned not assigned"
+  },
+  {
+    "id": "yt-chip-bo-loc",
+    "tab": "youtrack",
+    "area": "Below the page bar",
+    "title": "Active filter chips",
+    "what": "Each active filter (Sprint, People, Priority, Type, Layer, Quick filters) shows as a chip; click a chip to remove it.",
+    "how": [
+      {
+        "t": "Click the \"Sprint\" button to pick a filter",
+        "at": "Sprint"
+      },
+      {
+        "t": "Tick a sprint",
+        "at": "css:[role=\"menuitemcheckbox\"]"
+      },
+      {
+        "t": "Click the chip that appears (\"Remove filter\") to remove it",
+        "at": "css:button[aria-label^=\"Gỡ bộ lọc\"]"
+      },
+      "With 2 or more chips, click \"Clear all\" to remove them all"
+    ],
+    "keys": "filter chips remove filter clear all clear filter"
+  },
+  {
+    "id": "yt-lam-moi",
+    "tab": "youtrack",
+    "area": "Page bar",
+    "title": "Refresh the data",
+    "what": "Data refreshes by itself every minute; the button shows the last update time and refreshes right away.",
+    "how": [
+      {
+        "t": "Click the refresh button with the update time (e.g. \"14:05\") at the end of the top bar",
+        "at": "Làm mới"
+      },
+      "Or ⌘K › \"Refresh data\"",
+      "When loading fails, click \"Retry\" in the error box"
+    ],
+    "keys": "refresh reload update auto refresh try again"
+  },
+  {
+    "id": "yt-chuong-thay-doi",
+    "tab": "youtrack",
+    "area": "Page bar › Bell icon",
+    "title": "Bell for changes on your tickets",
+    "what": "Watches the tickets assigned to you or that you QC: tells you when the state changes, one is newly assigned to you, or it is updated (comment, edit). Newly assigned / to-test tickets show a toast on both the Telegram and YouTrack pages (checked every 5 minutes; tickets assigned while the app was closed are still reported when you reopen it). On macOS, the app shows a banner for new tickets in every project even with no tab open (checked every 3 minutes; ticket text shows only when \"Show message text in macOS notifications\" is on in Settings). You can turn on desktop notifications while the tab is in the background.",
+    "how": [
+      {
+        "t": "Click the bell icon \"Changes on your tickets\"",
+        "at": "Thay đổi trên ticket của bạn"
+      },
+      {
+        "t": "Tick \"Desktop notifications\" and allow the browser permission",
+        "at": "Thông báo trên máy"
+      },
+      "When there are new changes, click a row to open the ticket"
+    ],
+    "keys": "bell notification watch changes alerts"
+  },
+  {
+    "id": "yt-palette-cmdk",
+    "tab": "youtrack",
+    "area": "Whole page › ⌘K",
+    "title": "⌘K quick commands (Search, ask AI)",
+    "what": "The quick command box: open a ticket by ID or title, switch pages, apply a saved view, create a ticket, refresh, ask the AI about the current scope or filter tickets with AI.",
+    "how": [
+      {
+        "t": "Click the \"Search, ask AI\" / \"Search\" button in the top bar (or press ⌘K)",
+        "at": [
+          "Tìm, hỏi AI",
+          "Tìm",
+          "Mở ticket, chuyển trang"
+        ]
+      },
+      {
+        "t": "Type an ID (e.g. 123), a title, a page name or a question",
+        "at": "Lệnh, ticket hoặc câu hỏi cho AI"
+      },
+      {
+        "t": "Pick a row, e.g. \"Go to …\"",
+        "at": "css:[role=\"listbox\"] [role=\"option\"]"
+      },
+      "Use ↑ ↓ to choose, Enter to run, Esc to close"
+    ],
+    "keys": "cmd k ctrl k ⌘k palette quick command search open ticket ask ai"
+  },
+  {
+    "id": "yt-palette-hoi-ai",
+    "tab": "youtrack",
+    "area": "⌘K › AI group",
+    "title": "Ask the AI about the current scope",
+    "what": "Type a question in ⌘K and the AI reads up to 40 open tickets in the scope (at-risk and high-priority first) plus the dashboard numbers, then answers.",
+    "how": [
+      {
+        "t": "Click the \"Search, ask AI\" button in the top bar (or press ⌘K)",
+        "at": [
+          "Tìm, hỏi AI",
+          "Tìm",
+          "Mở ticket, chuyển trang"
+        ]
+      },
+      {
+        "t": "Type a question in the command box",
+        "at": "Lệnh, ticket hoặc câu hỏi cho AI"
+      },
+      {
+        "t": "Pick the \"Ask AI: …\" row",
+        "at": "Hỏi AI:"
+      },
+      "The AI session opens in the side panel, where you can keep asking"
+    ],
+    "keys": "ask ai question scope cmd k"
+  }
+]

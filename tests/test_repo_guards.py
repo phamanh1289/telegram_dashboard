@@ -12,7 +12,7 @@ WEB = ROOT / "web" / "src"
 
 
 def _web_files():
-    return [p for p in WEB.rglob("*") if p.suffix in (".ts", ".tsx", ".css") and "generated" not in p.name]
+    return [p for p in WEB.rglob("*") if p.suffix in (".ts", ".tsx", ".js", ".css") and "generated" not in p.name]
 
 
 def _hits(files, pattern: re.Pattern) -> list[str]:
@@ -39,7 +39,7 @@ def test_no_native_select_outside_ui():
 
 def test_no_zoneinfo():
     """The bundled Windows Python has no tz database: ZoneInfo("Asia/...") crashed 0.1.7 at startup. Use digest.VN."""
-    assert _hits((ROOT / "telegram_dashboard").rglob("*.py"), re.compile(r"\bZoneInfo\(")) == []
+    assert _hits((ROOT / "backend" / "telegram_dashboard").rglob("*.py"), re.compile(r"\bZoneInfo\(")) == []
 
 
 @pytest.mark.skipif(not shutil.which("git"), reason="git not installed")
@@ -60,7 +60,7 @@ def test_actions_pinned_to_commit_sha():
 
 
 def test_guide_targets_exist_in_ui():
-    """The live guide lights a step's control by its label or CSS (guide.json `at`). A label renamed in the UI
+    """The live guide lights a step's control by its label or CSS (guide chapters’ `at`). A label renamed in the UI
     ("My team" → "Team") left the walk-through dark with no error; every label / aria-label / id it names must
     still be in the web code, written out or as the head of a template ("Đổi {field} {id}" → "Đổi Assignee")."""
     import json
@@ -79,10 +79,61 @@ def test_guide_targets_exist_in_ui():
         return [label] if len(label) >= 2 else []
 
     missing = []
-    for f in json.loads((WEB / "lib" / "guide.json").read_text()):
+    chapters = (WEB / "shared" / "lib" / "guide" / "vi").glob("*.json")
+    features = [f for chapter in chapters for f in json.loads(chapter.read_text())]
+    assert features, "guide chapters must be checked"
+    for f in features:
         for k, step in enumerate(f["how"]):
             at = step.get("at") if isinstance(step, dict) else None
             for a in at if isinstance(at, list) else [at] if at else []:
                 missing += [f"{f['id']} step {k + 1}: {n}" for n in needles(a)
                             if n not in src and not any(n.startswith(h) for h in heads)]  # fmt: skip
     assert missing == []
+
+
+def test_shared_frontend_does_not_import_features_or_app():
+    """Reusable components stay independent; app composition and business adapters live outside shared."""
+    shared = WEB / "shared"
+    assert shared.is_dir()
+    imports = re.compile(r"(?:\bfrom\s*|\bimport\s*\()\s*['\"]([^'\"]+)['\"]")
+    bad = []
+    for p in shared.rglob("*"):
+        if p.suffix not in (".ts", ".tsx"):
+            continue
+        for source in imports.findall(p.read_text()):
+            if source.startswith("@/"):
+                target = WEB / source[2:]
+            elif source.startswith("."):
+                target = p.parent / source
+            else:
+                continue
+            target = target.resolve()
+            if any(target.is_relative_to(WEB / name) for name in ("features", "app")):
+                bad.append(f"{p.relative_to(ROOT)}: {source}")
+    assert bad == []
+
+
+MAX_LINES = 1000  # target ≤ 600; a file past this is split along its seams, not grown (service.py hit 2149)
+
+
+def test_source_files_stay_small():
+    """One file per concern: 2000-line modules hid duplicates (6 copies of one SELECT) and blocked parallel edits."""
+    files = [
+        *(ROOT / "backend" / "telegram_dashboard").rglob("*.py"),
+        *(ROOT / "tests").rglob("*.py"),
+        *(p for p in _web_files() if p.suffix != ".css"),
+        *(p for p in (ROOT / "web" / "tests").rglob("*") if p.suffix in {".ts", ".js", ".py"}),
+        *(p for p in (ROOT / "scripts").rglob("*") if p.suffix in {".py", ".js", ".mjs", ".cjs"}),
+    ]
+    sizes = {p: len(p.read_text(errors="ignore").splitlines()) for p in files}
+    assert [f"{p.relative_to(ROOT)}: {n}" for p, n in sizes.items() if n > MAX_LINES] == []
+
+
+def test_python_deps_pinned():
+    """`uvicorn==0.*` let a fresh lock pull any 0.x; every runtime and dev dependency is pinned to X.Y.Z."""
+    import tomllib
+
+    py = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    deps = py["project"]["dependencies"] + [d for g in py.get("dependency-groups", {}).values() for d in g]
+    assert [d for d in deps if not re.fullmatch(r"[\w.-]+==\d+\.\d+\.\d+", d)] == []
+

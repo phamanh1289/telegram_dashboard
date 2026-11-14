@@ -1,0 +1,220 @@
+[
+  {
+    "id": "yt-phien-ai",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI",
+    "title": "Phiên AI về ticket",
+    "what": "Hỏi AI về một hoặc nhiều ticket (tối đa 40): AI đọc mô tả, bình luận và trả lời; câu trả lời chảy dần, hỏi tiếp được, ticket ID trong câu trả lời bấm được.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ \"AI cho ticket này\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Gõ yêu cầu vào ô dưới, Enter để gửi (Shift+Enter xuống dòng)",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Thêm ticket: gõ số hoặc ID vào ô \"Thêm 123, 456\" (nhiều cái cách dấu phẩy) rồi Enter",
+        "at": "Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
+      },
+      {
+        "t": "Bấm \"Cuộc mới\" để bắt đầu lại (hoặc \"Hủy\" để dừng, \"Copy\" để chép)",
+        "at": "Cuộc mới"
+      }
+    ],
+    "keys": "phien ai phiên ai ai session hoi ai hỏi ai chat ai hoi tiep hỏi tiếp cuoc moi cuộc mới them ticket thêm ticket"
+  },
+  {
+    "id": "yt-nut-goi-y-ai",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI › nút gợi ý",
+    "title": "Prompt có sẵn trong phiên AI",
+    "what": "Các nút việc AI dựng sẵn: Tóm tắt thread, Kiểm tra đủ AC, Chia task & estimate, Chuẩn hoá mô tả, Test case, Soạn trả lời (1 ticket); Tóm tắt & việc cần làm, Rà soát cho lead, Release notes (nhiều ticket). Mỗi vai trò có 4 nút mặc định.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ \"AI cho ticket này\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Bấm một nút gợi ý (rê chuột xem mô tả), vd. \"Tóm tắt thread\"",
+        "at": [
+          "Tóm tắt thread",
+          "Test case",
+          "Tóm tắt & việc cần làm"
+        ]
+      },
+      "Nút cần đúng 1 ticket hoặc từ 2 ticket thì thông báo sẽ nhắc"
+    ],
+    "keys": "prompt co san prompt có sẵn tom tat thread tóm tắt thread kiem tra du ac kiểm tra đủ ac chia task estimate chuan hoa mo ta chuẩn hoá mô tả test case soan tra loi soạn trả lời ra soat cho lead rà soát cho lead release notes"
+  },
+  {
+    "id": "yt-dua-vao-binh-luan",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI",
+    "title": "Đưa câu trả lời AI vào bình luận",
+    "what": "Với phiên AI về 1 ticket, đặt câu trả lời (hoặc bản nháp, vd. Soạn trả lời) vào ô bình luận của ticket để sửa rồi gửi lên YouTrack.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ \"AI cho ticket này\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Hỏi AI (vd. bấm \"Soạn trả lời\") và đợi trả lời xong",
+        "at": [
+          "Soạn trả lời",
+          "Tóm tắt thread",
+          "Test case"
+        ]
+      },
+      {
+        "t": "Bấm \"Đưa vào bình luận\"",
+        "at": "Đưa vào bình luận"
+      },
+      {
+        "t": "Sửa rồi bấm \"Gửi bình luận\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "dua vao binh luan đưa vào bình luận ai tra loi ai trả lời draft nhap nháp comment"
+  },
+  {
+    "id": "yt-trace-code",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI › Thư mục code",
+    "title": "Trace code trong thư mục dự án (Dev)",
+    "what": "Chỉ ở vai trò Dev (QA / PO: AI chỉ đọc ticket). Chọn thư mục dự án để AI đọc code khi trả lời. Bật \"Chạy lệnh\" để AI được build / test / chạy gradle trong sandbox (chỉ ghi trong thư mục đó, mạng chỉ tới kho thư viện, không sửa code). Vai trò Dev có thể giao câu hỏi tự do cho AI Agent trace code, chọn “Chỉ phân tích” hoặc “Cho phép sửa code”.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ \"AI cho ticket này\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Chọn thư mục ở ô dự án (giống tab Telegram; \"Thêm thư mục…\" để thêm mới, \"Không đọc code\" để bỏ)",
+        "at": "Dự án tham chiếu cho AI"
+      },
+      {
+        "t": "Muốn AI build / test / chạy gradle: bấm \"Chạy lệnh\"",
+        "at": "Cho AI chạy lệnh"
+      },
+      {
+        "t": "Dev: chọn \"Chế độ\" (Chỉ phân tích / Cho phép sửa code)",
+        "at": "Chế độ"
+      },
+      {
+        "t": "Gõ yêu cầu vào ô",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Bấm \"Giao … trace code\"",
+        "at": "Giao"
+      }
+    ],
+    "keys": "chay lenh chạy lệnh build gradle shell test sandbox trace code doc code đọc code thu muc du an thư mục dự án ai agent sua code sửa code chi phan tich chỉ phân tích codebase"
+  },
+  {
+    "id": "yt-kho-prompt",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI › Kho prompt",
+    "title": "Kho prompt (thêm, sửa, ghim, xóa)",
+    "what": "Thư viện prompt dùng chung cả team: chạy, thêm prompt mới, sửa, xóa, ghim tối đa 5 prompt làm nút cho từng vai trò và số ticket; khôi phục prompt có sẵn đã xóa. Cũng có ở Cài đặt › YouTrack.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ \"AI cho ticket này\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Bấm \"Kho prompt\"",
+        "at": "Kho prompt"
+      },
+      {
+        "t": "Bấm \"Prompt mới\", nhập \"Tên prompt\" và \"Nội dung prompt\"",
+        "at": "Prompt mới"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "Lưu"
+      },
+      {
+        "t": "Bấm biểu tượng ghim để ghim/bỏ ghim (tối đa 5)",
+        "at": "css:button[aria-label^=\"Ghim\"]"
+      },
+      {
+        "t": "Bấm biểu tượng ▶ để chạy ngay",
+        "at": "css:button[aria-label^=\"Chạy\"]"
+      }
+    ],
+    "keys": "kho prompt prompt library prompt moi prompt mới ghim pin sua prompt sửa prompt xoa prompt xóa prompt khoi phuc khôi phục ve mac dinh về mặc định"
+  },
+  {
+    "id": "yt-instructions-ai",
+    "tab": "youtrack",
+    "area": "Cài đặt › YouTrack › Instructions cho AI",
+    "title": "Instructions cho AI theo vai trò",
+    "what": "Hướng dẫn riêng của team cho vai trò đang chọn, AI làm theo ở mọi tính năng YouTrack (trừ lọc ticket). Phiên AI hiện nhãn “Có instructions Dev/QC/PO” khi đang có.",
+    "how": [
+      {
+        "t": "Bấm biểu tượng \"Cài đặt\" ở góc phải thanh trên",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Chọn mục \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Chọn \"AI và prompt\"",
+        "at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+      },
+      {
+        "t": "Nhập hướng dẫn vào ô \"Instructions cho AI\"",
+        "at": "Instructions cho AI"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "css:form:has(textarea[aria-label^=\"Instructions cho AI\"]) button[type=\"submit\"]"
+      },
+      "Trong phiên AI, rê chuột lên nhãn \"Có instructions …\" để xem nội dung"
+    ],
+    "keys": "instructions huong dan ai hướng dẫn ai team notes chi dan chỉ dẫn"
+  }
+]

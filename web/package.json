@@ -6,8 +6,10 @@
     "build": "next build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "api:types": "openapi-typescript ../work/openapi.json -o src/lib/api.generated.d.ts",
-    "test:e2e": "playwright test"
+    "api:types": "openapi-typescript ../work/openapi.json -o src/shared/lib/api.generated.d.ts",
+    "test:e2e": "playwright test",
+    "prebuild": "node ../scripts/build-uiflow.mjs",
+    "predev": "node ../scripts/build-uiflow.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.9.0",

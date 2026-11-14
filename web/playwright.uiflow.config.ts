@@ -4,7 +4,7 @@ import { defineConfig, devices } from "@playwright/test";
 // Run: npx playwright test -c playwright.uiflow.config.ts
 export default defineConfig({
   testDir: "tests",
-  testMatch: "uiflow.spec.ts",
+  testMatch: "uiflow-{map,prototype,editor,lifecycle,zeplin,annotations}.spec.ts",
   reporter: "list",
   use: { trace: "retain-on-failure", locale: "vi-VN" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

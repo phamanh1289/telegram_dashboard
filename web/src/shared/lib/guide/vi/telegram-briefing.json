@@ -1,0 +1,158 @@
+[
+  {
+    "id": "briefing-run-all",
+    "tab": "telegram",
+    "area": "Briefing › Tóm tắt tin mới",
+    "title": "Tóm tắt mọi nhóm có tin mới",
+    "what": "Tóm tắt lần lượt từng nhóm đã cho phép AI có tin mới kể từ lần tóm tắt trước (lần đầu lấy 24 giờ gần nhất). Khi app đang mở, nhóm có tin mới tự được tóm tắt nền tối đa 2 giờ một lần (tắt ở Cài đặt › Telegram › Tự tóm tắt Briefing). Nhóm sắp hết hoặc đã hết quyền cho AI đọc hiện một dòng “Gia hạn 30 ngày” trên Briefing.",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Bấm \"Tóm tắt tin mới · N nhóm\" để tóm tắt lần lượt các nhóm có tin mới (nút chỉ hiện khi có tin chưa tóm tắt); giữa trang hiện AI đang đọc nhóm nào",
+        "at": "css:#briefing-run"
+      },
+      "Đang tóm tắt: nút \"Tóm tắt\" ở góc phải trên thành nút dừng tròn đỏ (kèm số nhóm n/N khi chạy nhiều nhóm), bấm để hủy giữa chừng",
+      {
+        "t": "Muốn tóm tắt một nhóm: rê chuột vào nhóm ở mục \"Nhóm · Briefing\" của thanh bên, bấm ✦",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Tóm tắt \"]"
+      },
+      {
+        "t": "Đổi model / effort riêng cho Briefing ở dưới ô hỏi của Trợ lý Briefing",
+        "at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
+      },
+      {
+        "t": "Bấm biểu tượng xoay \"Kiểm tra lại\" để kiểm tra tin mới",
+        "at": "Kiểm tra lại"
+      }
+    ],
+    "keys": "briefing tom tat tat ca nhom run all dung kiem tra lai tin moi tom tat mot nhom model effort rieng"
+  },
+  {
+    "id": "briefing-ask",
+    "tab": "telegram",
+    "area": "Briefing › Trợ lý Briefing",
+    "title": "Trợ lý Briefing: hỏi AI về mọi nhóm",
+    "what": "Cột bên phải (trên điện thoại: tab \"Trợ lý AI\"; trên máy tính mặc định ẩn để danh sách rộng hơn, bấm \"Hỏi AI\" ở góc phải trên để mở, X trong khung để ẩn, hội thoại vẫn giữ, app nhớ lựa chọn; chỉ có khi đã tóm tắt ít nhất một nhóm) là khung chat hỏi về bản tóm tắt mới nhất của mọi nhóm: hôm nay làm gì trước, ai đang chờ bạn, blocker, viết standup… AI chỉ đọc các bản tóm tắt, không đọc thêm tin Telegram. Câu trả lời copy được hoặc gửi vào Saved Messages. Mỗi ý có nguồn kèm chip tên nhóm · #tin (rê để xem mục gốc) và đúng các nút như dòng việc ở Briefing: \"Trả lời\", \"Tạo ticket\", \"Đối chiếu code\" (câu hỏi BE, việc đã chốt / thay đổi; vai trò Dev). Câu cần hỏi viết sẵn theo nhóm, mỗi tin có nút copy và nút \"Hỏi trong Q&A\": mở Q&A của nhóm đó với câu hỏi điền sẵn, tag người được hỏi rồi gửi. Dưới câu trả lời mới nhất có vài câu \"Hỏi tiếp\", bấm để điền vào ô hỏi. Mỗi cuộc hỏi được lưu vào AI Agent › Briefing trên trình duyệt này.",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Trên máy tính, bấm nút \"Hỏi AI\" (robot) ở góc phải trên",
+        "at": "css:button[aria-label=\"Trợ lý AI\"]"
+      },
+      {
+        "t": "Bấm một thẻ gợi ý, hoặc gõ câu hỏi vào ô \"Hỏi về mọi nhóm…\" rồi Enter",
+        "at": "Hỏi AI về các nhóm"
+      },
+      "Bấm nút dừng khi AI đang trả lời để hủy; biểu tượng thùng rác ở đầu khung để xóa hội thoại"
+    ],
+    "keys": "hoi ai briefing hom nay can lam gi standup blocker rui ro ai dang cho toi tong hop cac nhom chat ai"
+  },
+  {
+    "id": "briefing-confirmations",
+    "tab": "telegram",
+    "area": "Briefing › Việc cần xử lý",
+    "title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
+    "what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\".",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Chọn tab: Cần bạn, Cần confirm, Việc cần làm, Đã chốt, Thay đổi (số bên cạnh là mục chưa xử lý)",
+        "at": "css:[aria-label=\"Lọc việc\"]"
+      },
+      {
+        "t": "Bấm \"Trả lời\" / \"Tạo ticket\" ngay dưới mục, hoặc bấm tên nhóm để mở tóm tắt của nhóm",
+        "at": "css:ul[aria-label=\"Việc cần xử lý\"]"
+      },
+      {
+        "t": "Bấm vòng tròn đầu dòng để đánh dấu đã xử lý; \"Đã xử lý N\" ở cuối để xem lại / bỏ đánh dấu",
+        "at": "Đánh dấu đã xử lý"
+      }
+    ],
+    "keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung"
+  },
+  {
+    "id": "briefing-group-cards",
+    "tab": "telegram",
+    "area": "Briefing › Hàng chip nhóm",
+    "title": "Nhóm ở thanh bên: lọc, tóm tắt, mở, bỏ nhóm",
+    "what": "Mục \"Nhóm · Briefing\" của thanh bên liệt kê các nhóm: chấm vàng = có tin mới, xanh = đã cập nhật, số = việc còn chờ (tự giảm khi bạn đánh dấu xử lý). Bấm nhóm để chỉ xem việc của nhóm đó; rê chuột vào nhóm để hiện ✦ tóm tắt nhóm, ↗ mở trang Tóm tắt, 🗑 bỏ khỏi Briefing (hộp xác nhận \"Bỏ nhóm khỏi Briefing?\"; AI thôi đọc nhóm, bản tóm tắt bị xóa; thêm lại bằng \"Thêm nhóm\"). Nút Copy ở góc phải trên chép mọi bản tóm tắt thành một Markdown.",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Bấm một nhóm ở mục \"Nhóm · Briefing\" để chỉ xem việc của nhóm đó; bấm \"Briefing\" để xem lại tất cả",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] li > button"
+      },
+      {
+        "t": "Rê chuột vào nhóm, bấm ↗ để mở trang Tóm tắt của nhóm",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label^=\"Mở \"]"
+      },
+      {
+        "t": "Rê chuột vào nhóm, bấm thùng rác, rồi bấm \"Bỏ nhóm\" trong hộp xác nhận",
+        "at": "css:nav[aria-label=\"Nhóm Briefing\"] button[aria-label$=\"khỏi Briefing\"]"
+      },
+      {
+        "t": "Bấm \"Copy tất cả\" để chép Markdown của mọi nhóm",
+        "at": "Copy tất cả"
+      }
+    ],
+    "keys": "copy tat ca briefing markdown co tin moi nhom chip loc theo nhom trang thai bo nhom xoa nhom khoi briefing thu hoi go nhom thanh ben sidebar nhom briefing so viec con cho"
+  },
+  {
+    "id": "briefing-saved",
+    "tab": "telegram",
+    "area": "Briefing › Gửi vào Saved Messages",
+    "title": "Gửi briefing vào Saved Messages",
+    "what": "Gửi các mục chưa xử lý của mọi nhóm (cần confirm, việc cần làm, đã chốt, thay đổi) thành một tin vào Saved Messages trên Telegram của bạn, để đọc trên điện thoại. Câu trả lời của Hỏi AI cũng gửi được.",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Bấm biểu tượng máy bay giấy \"Gửi vào Saved Messages\" ở góc phải trên",
+        "at": "Gửi vào Saved Messages"
+      },
+      "Hoặc trong câu trả lời của Hỏi AI, bấm \"Gửi Saved Messages\""
+    ],
+    "keys": "saved messages gui telegram tin nhan da luu dien thoai briefing gui cho minh"
+  },
+  {
+    "id": "briefing-add-group",
+    "tab": "telegram",
+    "area": "Briefing › Hàng chip nhóm › Thêm",
+    "title": "Thêm nhóm chưa tag vào Briefing",
+    "what": "Chọn bất kỳ nhóm Telegram nào (kể cả chưa từng tag bạn) để mở Tóm tắt; bấm Cho phép ở đó thì nhóm sẽ có mặt trong Briefing. Nhóm chưa cho phép AI nằm đầu danh sách trong \"Thêm nhóm\" (cuối mục \"Nhóm · Briefing\" ở thanh bên).",
+    "how": [
+      {
+        "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
+        "at": "Briefing"
+      },
+      {
+        "t": "Bấm \"Thêm nhóm\" ở cuối mục \"Nhóm · Briefing\" của thanh bên",
+        "at": "Thêm nhóm"
+      },
+      {
+        "t": "Gõ vào ô \"Tìm nhóm Telegram…\"",
+        "at": "Tìm nhóm"
+      },
+      "Bấm tên một nhóm (nhóm \"Chưa cho phép AI\" ở trên cùng)",
+      {
+        "t": "Trong trang Tóm tắt, bấm \"Cho phép\" để nhóm có mặt ở Briefing",
+        "at": "Cho phép"
+      }
+    ],
+    "keys": "them nhom chua tag tim nhom chua cho phep ai add group briefing"
+  }
+]

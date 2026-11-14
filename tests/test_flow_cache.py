@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
-
-from telegram_dashboard import uiflow, zeplin
-from telegram_dashboard.yt_dashboard import YouTrackDashboard
+from telegram_dashboard import zeplin
+from telegram_dashboard.youtrack import flow as uiflow
+from telegram_dashboard.youtrack.service import YouTrackDashboard
 
 URL = "https://app.zeplin.io/project/" + "a" * 24 + "/screen/" + "b" * 24
 
@@ -13,7 +13,7 @@ URL = "https://app.zeplin.io/project/" + "a" * 24 + "/screen/" + "b" * 24
 @pytest.fixture
 def shots(monkeypatch):
     monkeypatch.setattr(zeplin, "token", lambda: "one")
-    monkeypatch.setattr(zeplin.providers, "zeplin_server", lambda: {"name": "zeplin"})
+    monkeypatch.setattr(zeplin.provider_cmds, "zeplin_server", lambda: {"name": "zeplin"})
     return zeplin.Shots()
 
 
@@ -213,7 +213,7 @@ async def test_cache_ttl_bound_scope_and_config(shots, monkeypatch):
 
     monkeypatch.setattr(shots, "_read", read)
     monkeypatch.setattr(shots, "_scope", lambda: account)
-    monkeypatch.setattr(zeplin.providers, "zeplin_server", lambda: config)
+    monkeypatch.setattr(zeplin.provider_cmds, "zeplin_server", lambda: config)
     monkeypatch.setattr(zeplin.time, "monotonic", lambda: clock)
     await shots.get([URL])
     await shots.get([URL])
@@ -249,8 +249,7 @@ async def test_image_redirect_cannot_read_another_host(monkeypatch):
 
 async def test_save_route_seeds_next_fresh_get_without_html(tmp_path, monkeypatch):
     from fastapi import FastAPI
-
-    from telegram_dashboard.yt_dashboard import build_router
+    from telegram_dashboard.youtrack.api import build_router
 
     svc = YouTrackDashboard(SimpleNamespace(data_dir=tmp_path, youtrack_url="https://yt.test", youtrack_token="a"))
     attachments = []

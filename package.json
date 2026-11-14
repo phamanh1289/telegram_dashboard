@@ -8,8 +8,10 @@
     "build": "npm run build -w web",
     "start": "uv run --no-sync python -m telegram_dashboard serve",
     "api:types": "uv run --no-sync python -m telegram_dashboard export-openapi --output work/openapi.json && npm run api:types -w web",
-    "typecheck": "npm run typecheck -w web",
+    "typecheck": "npm run check:uiflow && npm run typecheck -w web",
     "lint": "npm run lint -w web",
-    "test:e2e": "npm run test:e2e -w web"
+    "test:e2e": "npm run test:e2e -w web",
+    "build:uiflow": "node scripts/build-uiflow.mjs",
+    "check:uiflow": "node scripts/build-uiflow.mjs --check"
   }
 }
