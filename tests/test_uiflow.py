@@ -110,11 +110,11 @@ def test_changes_add_remove_link_remove_screen_and_back_link_format():
 
 def test_clean_truncates_long_strings_and_extra_items_instead_of_rejecting():
     raw = {"screens": [{"id": "a", "title": "t" * 100, "ac": "c" * 50, "parent": "a",
-                        "items": [{"id": f"i{n}", "label": "l" * 81} for n in range(21)]}],
+                        "items": [{"id": f"i{n}", "label": "l" * 81} for n in range(u.MAX_ITEMS + 1)]}],
            "links": [{"src": "a.i0", "to": "a", "when": "w" * 90}] * (u.MAX_LINKS + 5)}
     f = u.clean(raw, "VA-1")
     s = f.screens[0]
-    assert (len(s.title), len(s.ac), len(s.items), len(s.items[0].label), s.parent) == (80, 40, 20, 80, None)
+    assert (len(s.title), len(s.ac), len(s.items), len(s.items[0].label), s.parent) == (80, 40, u.MAX_ITEMS, 80, None)
     assert len(f.links) == u.MAX_LINKS and len(f.links[0].when) == 80
 
 
@@ -289,6 +289,16 @@ def test_merge_ai_never_takes_rect_or_note_from_the_model():
     assert all(i.rect is None for s in f.screens for i in s.items) and all(s.note == "" for s in f.screens)
 
 
+def test_merge_ai_accepts_ac_list_and_unknown_kind():  # VA-12584: patch answer gave ac=[...] and kind "web"/"map"
+    skel = {"screens": [{"id": "a", "title": "A", "items": []}], "links": []}
+    raw = {"adapter": 1, "screens": [{"id": "a", "kind": "web", "ac": ["AC1.2", "AC4.5"]},
+                                     {"id": "b", "title": "B", "kind": "map", "ac": []}],
+           "links": [{"src": "a", "to": "b", "ac": ["AC3.5"]}]}
+    f = u.merge_ai(raw, skel, "VA-1")
+    assert [(s.kind, s.ac) for s in f.screens] == [("screen", "AC1.2, AC4.5"), ("screen", "")]
+    assert f.links[0].ac == "AC3.5"
+
+
 def test_start_screen_is_kept_only_when_it_exists_and_listed_as_a_change():
     f = u.clean({**RAW, "start": "code"}, "VA-1")
     assert f.start == "code"
@@ -321,3 +331,15 @@ def test_keep_manual_carries_notes_rects_start_and_positions_across_a_render():
                                                     {"id": "d", "title": "Mới", "items": []}]}, "VA-1")
     got, kept = u.keep_manual(old, more)
     assert kept["positions"] == 0 and kept["notes"] == 1 and all(s.x is None for s in got.screens)
+
+
+def test_design_signature_ignores_text_order_and_a_redesign_alone_is_a_change():
+    a = {"https://zpl.io/a": {"w": 375, "h": 812, "hits": [["Gửi", 0, 0, 1, 1], ["OTP", 0, 0, 1, 1]]}}
+    b = {"https://zpl.io/a": {"w": 375, "h": 812, "hits": [["OTP", 0, 0, 1, 1], ["Gửi", 0, 0, 1, 1]]}}
+    assert u.design_of(a) == u.design_of(b) == {"https://zpl.io/a": ["375x812", "Gửi", "OTP"]}
+    old = u.clean(RAW, "VA-1")
+    old.design = {"https://zpl.io/a": ["375x812", "Gửi"]}
+    new = old.model_copy(deep=True)
+    assert u.changes(old, new) == []
+    new.design = u.design_of(a)
+    assert u.changes(old, new) == ["Cập nhật ảnh thiết kế Zeplin của 1 màn"]

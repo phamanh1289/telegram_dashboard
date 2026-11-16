@@ -11,7 +11,7 @@ from ..providers import ZEPLIN
 from ..zeplin import MAX_HITS
 
 NAME = "uiflow-{issue}.html"  # = flowName() in web/src/components/yt/sheet.tsx
-MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 60, 20, 300
+MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 200, 40, 1000
 VERSION, MAX_NOTE = 2, 4000  # = VERSION / CAP_NOTE in web/src/features/youtrack/flow-engine/constants.js
 ID = r"^[A-Za-z0-9_-]{1,40}$"
 SRC = r"^[A-Za-z0-9_-]{1,40}(\.[A-Za-z0-9_-]{1,40})?$"
@@ -85,6 +85,9 @@ class Flow(BaseModel):
     start: str | None = None  # the screen the prototype and the test paths start from; None: the first one
     screens: list[Screen] = Field(max_length=MAX_SCREENS)
     links: list[Link] = Field(max_length=MAX_LINKS)
+    # Zeplin URL -> "<w>x<h>" + the texts on the design, as it was at the last save: opening the flow later tells
+    # which screens were redesigned since (design_of on the live shots). Written by the save, never by the engine
+    design: dict[str, list[str]] = Field(default_factory=dict)
 
 
 Label = Annotated[str, Field(max_length=80)]
@@ -101,6 +104,15 @@ class Shot(BaseModel):
     hits: list[tuple[Label, float, float, float, float]] = Field(default_factory=list, max_length=MAX_HITS)
 
 
+def design_of(shots: dict) -> dict[str, list[str]]:
+    """Each screen's design signature: size and the set of texts on it (order-free). = designOf in flow.tsx"""
+    out = {}
+    for url, s in shots.items():
+        w, h, hits = (s.w, s.h, s.hits) if isinstance(s, Shot) else (s["w"], s["h"], s["hits"])
+        out[url] = [f"{round(w)}x{round(h)}", *sorted({str(x[0]) for x in hits})]
+    return out
+
+
 def _items_by_screen(flow: Flow) -> dict[str, dict[str, str]]:
     return {s.id: {i.id: i.label for i in s.items} for s in flow.screens}
 
@@ -109,14 +121,27 @@ def _cut(d: dict, **limits: int) -> dict:
     return {k: v[: limits[k]] if k in limits and isinstance(v, str) else v for k, v in d.items()}
 
 
+KINDS = ("screen", "popup", "sheet", "toast")
+
+
+def _loose(d: dict) -> dict:
+    """AI hay ghi "ac" thành mảng mã (["AC1.2"]) và "kind" ngoài danh sách ("web", "map"): sửa, không từ chối"""
+    d = dict(d)
+    if isinstance(d.get("ac"), list):
+        d["ac"] = ", ".join(str(a) for a in d["ac"])
+    if "kind" in d and d["kind"] not in KINDS:
+        d["kind"] = "screen"
+    return d
+
+
 def _trim(raw: dict) -> dict:
     """Cắt chuỗi / danh sách quá dài thay vì từ chối cả flow AI trả về."""
     screens = [
-        _cut(s, title=80, ac=40, note=MAX_NOTE)
+        _cut(_loose(s), title=80, ac=40, note=MAX_NOTE)
         | {"items": [_cut(i, label=80) for i in s.get("items") or []][:MAX_ITEMS]}
         for s in raw.get("screens") or []
     ]
-    links = [_cut(k, when=80, ac=40) for k in (raw.get("links") or [])[:MAX_LINKS]]
+    links = [_cut(_loose(k), when=80, ac=40) for k in (raw.get("links") or [])[:MAX_LINKS]]
     return {**raw, "screens": screens, "links": links}
 
 
@@ -272,7 +297,10 @@ def changes(old: Flow | None, new: Flow) -> list[str]:
     if _props(old) != _props(new):
         return ["Sửa thuộc tính màn / liên kết"]
     moved = [(s.x, s.y) for s in old.screens] != [(s.x, s.y) for s in new.screens]
-    return ["Sắp xếp lại vị trí màn"] if moved else []
+    if moved:
+        return ["Sắp xếp lại vị trí màn"]
+    redrawn = [u for u, d in raw.design.items() if old.design.get(u) not in (None, d)]
+    return [f"Cập nhật ảnh thiết kế Zeplin của {len(redrawn)} màn"] if redrawn else []
 
 
 def _manual_changes(old: Flow, new: Flow) -> list[str]:
@@ -327,7 +355,7 @@ def keep_manual(old: Flow, new: Flow) -> tuple[Flow, dict[str, int]]:
 
 
 def _props(flow: Flow) -> dict:
-    return flow.model_dump(exclude={"rev": True, "screens": {"__all__": {"x", "y"}}})
+    return flow.model_dump(exclude={"rev": True, "design": True, "screens": {"__all__": {"x", "y"}}})
 
 
 _STR = r'"((?:[^"\\]|\\.)*)"'  # a JSON string written to its closing quote
@@ -421,7 +449,8 @@ Màn:
 Link:
 - Mỗi hành động của người dùng là một item của màn + một link: src = "idMàn.idNút", to = id màn đích,
   act = "navigate" | "open" (mở popup / sheet) | "close".
-- Quay lại: act = "back", src = id màn (không có nút), to = màn đích khi back.
+- Quay lại: act = "back", src = id màn (không có nút), to = màn đích khi back. Màn mở được từ nhiều màn
+  (A → C, B → C): một link back về MỖI màn đó (C → A, C → B); bấm back về đúng màn đã mở nó.
 - Điều kiện rẽ nhánh ghi vào "when" (≤ 80 ký tự).
 Không có x / y, không có rev.
 """
@@ -435,6 +464,8 @@ Chỉ bổ sung màn chưa có nguồn thiết kế, nút tương tác chưa có
 các quan hệ/điều kiện còn thiếu. Không chép nhãn trang trí, không phát minh tên/URL/kích thước thiết kế.
 screens bổ sung: {id,title,kind,parent,zeplin,ac,items:[{id,label}]}; màn sẵn có chỉ cần {id,kind,parent,ac,items}.
 links bổ sung: {src,to,act:navigate|open|back|close,when,ac}. Mỗi thao tác nút phải có item tương ứng.
+Back: src = id màn (không nút). Màn mở được từ nhiều màn (A → C, B → C): một link back về MỖI màn đó (C → A, C → B).
+kind chỉ là "screen" | "popup" | "sheet" | "toast"; ac là MỘT chuỗi ≤ 40 ký tự (vd. "AC1.2, AC4.5"), không phải mảng.
 Chỉ vẽ phạm vi ticket yêu cầu; story cung cấp AC/quy tắc/cây Luồng màn. Giữ AC/BR vào ac.
 Ưu tiên bản sửa mới nhất trong mô tả/comment và ghi chú người dùng. Không suy diễn cạnh chỉ vì màn đứng cạnh nhau.
 Khối zeplin là nhãn thiết kế đã đọc; label nút khớp nguyên văn, không dùng tên layer.

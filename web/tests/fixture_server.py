@@ -189,6 +189,19 @@ async def fake_yt(scope, receive, send) -> bool:
                          + "\n".join(f"- {c}" for c in changes)),
             }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
+    elif path == "/api/yt/flow/precheck":  # `flow_check`: the counts a render would send (risks: the warning)
+        await body_of(receive)
+        await answer(send, 200, control.get("flow_check") or {
+            "tokens": 12400, "parts": {"ticket": 900, "story": 7000, "zeplin": 2500, "note": 0, "rules": 2000},
+            "screens": 2, "links": 1, "risks": [], "warnings": [], "model": "claude-haiku-5-5", "cost_usd": 0.007,
+            "cost_runs": 4, "chunks": 1})
+    elif path == "/api/yt/flow/delete":  # only the file seen, as the real route; `flow_deleted`: what it removed
+        b = await body_of(receive)
+        if control["flow"] not in ("file", "broken") or b.get("base") != control["att"]:
+            await answer(send, 409, {"error": "UI flow vừa được người khác cập nhật — mở lại để xem bản mới"})
+        else:
+            control["flow"], control["flow_deleted"] = "none", b["base"]
+            await answer(send, 200, {"warnings": []})
     elif path == "/api/yt/ai/flow":
         request_body = await body_of(receive)
         control["ai_calls"] += 1

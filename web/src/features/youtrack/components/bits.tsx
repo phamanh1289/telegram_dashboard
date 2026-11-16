@@ -369,22 +369,32 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
 export const CardAi = createContext<((title: string) => void) | null>(null);
 
 /** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. */
-export function AiAsk({ label, onClick, hint, big }: { label: string; onClick: () => void; hint?: string; big?: boolean }) {
+export function AiAsk({ label, onClick, hint, big, openRight }: { label: string; onClick: () => void; hint?: string; big?: boolean; openRight?: boolean }) {
   const t = useT();
   const [peek, setPeek] = useState(false);
+  // Near the left edge of what clips it (a dialog, the window), the bot pops out to the right so the bubble stays inside.
+  // openRight: the caller knows the room (a chip at a panel's left edge, with the panel's own clip) and forces it.
+  const [toRight, setToRight] = useState(false);
+  const show = (el: HTMLElement) => {
+    const clip = el.closest("[data-slot=dialog-content]")?.getBoundingClientRect().left ?? 0;
+    setToRight(!!openRight || el.getBoundingClientRect().right - clip < 280);
+    setPeek(true);
+  };
+  const side = big ? "top-full right-0 mt-1.5 origin-top-right flex-row-reverse items-start"
+    : toRight ? "bottom-full left-0 mb-1 origin-bottom-left items-end" : "bottom-full right-0 mb-1 origin-bottom-right flex-row-reverse items-end";
   return (
     <button type="button" onClick={onClick} aria-label={label}
-      onPointerEnter={() => setPeek(true)} onPointerLeave={() => setPeek(false)} onFocus={() => setPeek(true)} onBlur={() => setPeek(false)}
+      onPointerEnter={(e) => show(e.currentTarget)} onPointerLeave={() => setPeek(false)} onFocus={(e) => show(e.currentTarget)} onBlur={() => setPeek(false)}
       className={cn("ai-chip yt-noprint relative inline-flex shrink-0 items-center gap-1 rounded-full font-bold", big ? "h-7 px-3 text-xs" : "h-6 px-2 text-2xs")}>
       <AnimatePresence>
         {peek && (
           // big (sticky nav, under the header): drops below, right-aligned; on a card: pops up over the title
           <motion.span key="bot" initial={{ opacity: 0, y: big ? -10 : 10, scale: 0.5 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: big ? -8 : 8, scale: 0.6 }}
             transition={{ type: "spring", stiffness: 520, damping: 22 }}
-            className={cn("pointer-events-none absolute z-30 flex gap-1", big ? "top-full right-0 mt-1.5 origin-top-right flex-row-reverse items-start" : "bottom-full right-0 mb-1 origin-bottom-right flex-row-reverse items-end")}>
+            className={cn("pointer-events-none absolute z-30 flex gap-1", side)}>
             <AiBot className="size-8 drop-shadow-sm" />
             <motion.span initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.12 }}
-              className={cn("rounded-lg bg-cotton px-2 py-1 text-2xs font-medium whitespace-nowrap text-ink shadow-pop", big ? "mt-4 rounded-tr-none" : "mb-4 rounded-br-none")}>{hint ?? t("Hỏi mình về số liệu này nhé!")}</motion.span>
+              className={cn("w-max max-w-60 rounded-lg bg-cotton px-2 py-1 text-left text-2xs font-medium text-ink shadow-pop", big ? "mt-4 rounded-tr-none" : toRight ? "mb-4 rounded-bl-none" : "mb-4 rounded-br-none")}>{hint ?? t("Hỏi mình về số liệu này nhé!")}</motion.span>
           </motion.span>
         )}
       </AnimatePresence>

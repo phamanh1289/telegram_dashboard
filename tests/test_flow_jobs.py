@@ -155,7 +155,8 @@ async def test_http_flow_job_checkpoint_cursor_and_scope_restart(tmp_path, monke
         events = [json.loads(line) for line in response.text.splitlines() if line]
         assert events[-1]["done"]["flow"] == FLOW
         status = (await client.get("/api/yt/flow/jobs/job-http-1")).json()
-        assert status["status"] == "succeeded" and status["request"] == {"note": "keep this", "deep": False}
+        assert status["status"] == "succeeded"
+        assert status["request"] == {"note": "keep this", "mode": "flow", "split": False, "skip": []}
         assert status["base"] == "file-1"
         cursor = events[0]["cursor"]
         replay = await client.get(f"/api/yt/flow/jobs/job-http-1/events?after={cursor}")

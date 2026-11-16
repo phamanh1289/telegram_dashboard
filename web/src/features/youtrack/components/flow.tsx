@@ -2,23 +2,31 @@
 
 import { Menu } from "@base-ui/react/menu";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Ellipsis, RotateCw, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Download, Ellipsis, RefreshCw, RotateCw, Sparkles, Trash2, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AiBot, AiPromptBox } from "@/shared/components/ai/chat";
 import { useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from "@/shared/components/ui/dialog";
-import { Empty } from "@/shared/components/ui/empty";
 import { Hint } from "@/shared/components/ui/hint";
-import { Segmented } from "@/shared/components/ui/segmented";
 import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/shared/components/ui/menu";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
 import { packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
-import { AI_LEAVE, aiJobs, aiParts, fileUrl, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
+import { AI_LEAVE, aiJobs, aiParts, fileUrl, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
 import { flowDraft, type FlowDraft } from "@/features/youtrack/lib/flow-draft";
 import { cn } from "@/shared/lib/utils";
-import { YtFetching, YtPicks } from "./bits";
+import { YtFetching } from "./bits";
+import { FlowRisks, platformSkip, useFlowCheck } from "./flow-check";
+import { FlowStart, FlowTargetPicker } from "./flow-start";
+
+/** The head line of the dialog: what the file is now (one state, its colour, a hint on what to do next). */
+const STATUS = {
+  running: { label: "Đang render", hint: "Lượt AI đang chạy, xem tiến độ bên dưới", tone: "bg-hl-wash text-hl-2" },
+  interrupted: { label: "Bị gián đoạn", hint: "Bấm “Tiếp tục render” để chạy lại", tone: "bg-warn/15 text-warn" },
+  unsaved: { label: "Chưa lưu", hint: "Sơ đồ chỉ nằm trong bản nháp, chưa lên ticket", tone: "bg-warn/15 text-warn" },
+  flow: { label: "Đã có sơ đồ", hint: "Kéo thả để sửa; lưu lên ticket bằng Cập nhật", tone: "bg-paper-3 text-ink-2" },
+  empty: { label: "Chưa có", hint: "Chọn cách dựng ở giữa, rồi bấm nút bên dưới", tone: "bg-paper-3 text-ink-3" },
+} as const;
 import { type FlowEvent, FlowProgress, flowStage, flowSummary } from "./flow-progress";
 
 // The ticket's UI flow: the file on the ticket drawn by the engine (web/public/uiflow.js), one AI run to build it, and
@@ -64,11 +72,16 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const [dirty, setDirty] = useState(false); // the engine's edits since it was last given a flow
   const [hid, setHid] = useState(false); // "Không": the bar stays away until the next edit or "Cập nhật lên ticket"
   const [saved, setSaved] = useState<FlowSaved | null>(null);
-  const [ask, setAsk] = useState<"again" | "fresh" | null>(null);
-  const [note, setNote] = useState("");
-  // "Nhanh": the light YouTrack picks (Hỏi AI…), enough once the Zeplin texts come with the ticket; "Kỹ": the heavy
-  // picks, for a long or tangled story. Remembered per browser.
-  const [deep, setDeep] = useState(() => getPref("uiflowDeep") === "1");
+  const [ask, setAsk] = useState<"again" | "fresh" | "delete" | null>(null);
+  // "screens": the Zeplin screens built by code (no AI, no token); "flow": + the links an AI reads from the AC, on the
+  // model / effort the user picks in the box. Remembered per browser.
+  const [mode, setMode] = useState<FlowMode>(() => (getPref("uiflowMode") === "flow" ? "flow" : "screens")); // default: screens, 0 token
+  const [runMode, setRunMode] = useState<FlowMode>(mode); // the mode of the run on screen (a resumed one: as it started)
+  const [risky, setRisky] = useState(false);
+  // "Render lại": keep the flow's links and ask the AI only for what is new (default), or draw it all again
+  const [reuse, setReuse] = useState(true);
+  // what the next new run asks for beyond the box ("Chỉ dựng màn" / "Chia phần" / "Chỉ vẽ phần mới"), read once
+  const runOpts = useRef<{ mode?: FlowMode; split?: boolean; reuse?: boolean; note?: string; skip?: string[] }>({});
   const [shown, setShown] = useState(true); // false: sliding out; `onClose` comes when that animation ends
 
   // Background attachment refresh would replace engine-only edits; reopen, explicit refresh and save reconcile metadata.
@@ -84,6 +97,14 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     enabled: open && !!flow && urls.length > 0, staleTime: 30 * 60_000, retry: false, placeholderData: keepPreviousData,
   });
   const shotsReady = !urls.length || !!sq.data || sq.isError;
+  // the screens whose Zeplin design changed since the file was saved (its size or its texts): = design_of in flow.py
+  const was0 = q.data?.flow?.design, live = sq.data?.shots;
+  const redesigned = !was0 || !live || !q.data?.flow ? [] : q.data.flow.screens.filter((s) => {
+    const was = s.zeplin && was0[s.zeplin], now = s.zeplin && live[s.zeplin];
+    if (!was || !now) return false;
+    const sig = [`${Math.round(now.w)}x${Math.round(now.h)}`, ...new Set(now.hits.map((x) => x[0]))];
+    return sig.length !== was.length || sig.some((x) => !was.includes(x));
+  });
   const persist = (value: FlowDraft | null, immediate = false) => {
     const writeId = ++draftWrite.current;
     draft.current = value;
@@ -122,7 +143,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       ctl.current?.abort(AI_LEAVE);
       const c = (ctl.current = new AbortController());
       flowSignals.add(c.signal);
-      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now() };
+      const opts = again ? {} : runOpts.current; runOpts.current = {}; // once: the next run asks again
+      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, skip: opts.skip };
       pendingJob.current = current;
       stopRequested.current = null;
       if ((!again || again.retryAi) && draft.current) persist({ ...draft.current, pendingJob: current.id }, true);
@@ -131,7 +153,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       flowCursors.set(c.signal, (at) => { cursor.current.at = at; });
       const got: FlowEvent[] = again && cursor.current.at > 0 ? [...ev] : [];
       setEv(got); setJobError(""); setJob(null);
-      setStarted(current.at / 1000);
+      setStarted(current.at / 1000); setRunMode(current.mode ?? mode);
       aiParts.set(c.signal, { text: () => {}, step: (e) => { got.push(e); if (ctl.current === c) setEv([...got]); } });
       try {
         const currentScope = await yt.flowScope();
@@ -139,7 +161,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         if (currentScope.scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
         const result = again && !again.retryAi
           ? await yt.flowJobEvents(current.id, cursor.current.at, c.signal)
-          : await yt.aiFlow(issue, current.note ?? note.trim(), current.deep ?? deep, c.signal, current.base, again ? null : keep.current);
+          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.skip ?? []);
         const state = await yt.flowJobState(current.id);
         if (op !== operation.current) return null;
         setJob(state);
@@ -159,7 +181,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
 
     },
     retry: false,
-    onSuccess: (r) => { if (r) { if (r.previousJob && r.previousJob !== r.jobId) void yt.flowJobProcessed(r.previousJob).catch((e) => setJobError(say(e))); setMine(r); persist({ flow: r.flow, manifest: r.manifest, base: r.base, job: r.jobId, updated: Date.now() }, true); setHid(false); setNote(""); } },
+    onSuccess: (r) => { if (r) { if (r.previousJob && r.previousJob !== r.jobId) void yt.flowJobProcessed(r.previousJob).catch((e) => setJobError(say(e))); setMine(r); persist({ flow: r.flow, manifest: r.manifest, base: r.base, job: r.jobId, updated: Date.now() }, true); setHid(false); } },
   });
   const save = useMutation({
     mutationFn: async (f: UiFlow) => {
@@ -205,7 +227,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   useEffect(() => {
     if (!q.isSuccess || q.isFetching || reread.current) return;
     reread.current = true;
-    let active = true;
+    let active = true, read = false; // `read`: the draft is in (or its error shown); stopped before that: read again
     void (async () => {
       let restored = false;
       let pending: string | undefined;
@@ -214,8 +236,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         const savedDraft = await flowDraft(scope, issue);
         if (!active) return;
         if (savedDraft) { restored = true; pending = savedDraft.pendingJob; draft.current = savedDraft; setUnknownSave(!!savedDraft.outcomeUnknown); setMine(savedDraft); setDraftStatus(t("Đã khôi phục bản nháp")); }
-      } catch (e) { if (active) { setRestoreFailed(true); setDraftStatus(t("Không khôi phục được bản nháp: {msg}", { msg: say(e) })); } return; }
-      if (active) setDraftReady(true);
+      } catch (e) { if (active) { read = true; setRestoreFailed(true); setDraftStatus(t("Không khôi phục được bản nháp: {msg}", { msg: say(e) })); } return; }
+      if (active) { read = true; setDraftReady(true); }
       try {
         const jobs = await yt.flowJobs(issue);
         if (!active) return;
@@ -225,7 +247,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         else if ((!restored || pending === current?.id) && current && ["queued", "running", "cancel_requested"].includes(current.status)) ai.mutate({ id: current.id, base: current.base, at: Date.now() });
       } catch (e) { if (active) setJobError(say(e)); }
     })();
-    return () => { active = false; };
+    // stopped mid-read (StrictMode's mount → unmount → mount, a dep change): let the next run read it, or the dialog
+    // would wait on draftReady for good
+    return () => { active = false; if (!read) reread.current = false; };
   }, [q.isSuccess, q.isFetching, scope, restoreAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => { if (timer.current) { clearTimeout(timer.current); if (scope) void flowDraft(scope, issue, draft.current).catch((e) => setDraftStatus(say(e))); } }, [scope, issue]);
   useEffect(() => {
@@ -244,8 +268,16 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   }, [saved]);
 
   const unsaved = !!mine || dirty;
+  const locked = save.isPending || ai.isPending || !draftReady || !!jobError || !!(job && ["queued", "running", "cancel_requested"].includes(job.status));
+  const headStatus: keyof typeof STATUS = ai.isPending ? "running" : job?.needs_ai_retry ? "interrupted" : unsaved ? "unsaved" : flow ? "flow" : "empty";
   // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
-  const run = () => { if (busy.current || !draftReady || stopping || jobError || (job && ["queued", "running", "cancel_requested"].includes(job.status))) return; const current = engine.api?.get(); keep.current = current ?? flow; if (current && unsaved) { setMine({ flow: current, manifest: mine?.manifest, base }); persist({ flow: current, manifest: mine?.manifest, base, job: job?.id, updated: Date.now() }, true); } setSaved(null); setDirty(false); setEdited(null); save.reset(); ai.mutate(undefined); };
+  const start = (m: FlowMode = mode, split = false, extra = "", skip: string[] = []) => { if (busy.current || !draftReady || stopping || jobError || (job && ["queued", "running", "cancel_requested"].includes(job.status))) return; const current = engine.api?.get(); keep.current = current ?? flow; if (current && unsaved) { setMine({ flow: current, manifest: mine?.manifest, base }); persist({ flow: current, manifest: mine?.manifest, base, job: job?.id, updated: Date.now() }, true); } setSaved(null); setDirty(false); setEdited(null); save.reset(); runOpts.current = { ...runOpts.current, mode: m, split, skip, note: extra || undefined }; ai.mutate(undefined); };
+  // an AI render the pre-check flags asks once first; "screens" (no AI) and a clean check just start
+  const run = () => { if (mode === "flow") setRisky(true); else start(); }; // an AI render always asks first (cost, gaps, model)
+  const pickMode = (m: FlowMode) => { setMode(m); put("uiflowMode", m === "flow" ? m : null); };
+  // picked before the render (start panel, or the Render lại question), so the pre-check counts that platform from the start
+  const [target, setTarget] = useState<FlowTarget>(() => (getPref("uiflowTarget") === "web" ? "web" : "mobile"));
+  const pickTarget = (v: FlowTarget) => { setTarget(v); put("uiflowTarget", v === "web" ? v : null); };
   const stopAi = async () => {
     const id = pendingJob.current?.id ?? job?.id ?? (ctl.current && aiJobs.get(ctl.current.signal));
     if (!id || stopping) return;
@@ -275,16 +307,39 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     void qc.invalidateQueries({ queryKey: ytFlowQuery(issue, scope).queryKey });
   };
 
+  // "Xoá UI flow": the file on the ticket (only the one seen) and any unsaved render; nothing on the ticket: the render
+  const remove = useMutation({
+    mutationFn: async () => { const att = q.data?.att; return att ? yt.deleteFlow(issue, att) : { warnings: [] }; },
+    onSuccess: (r) => {
+      setAsk(null);
+      fresh();
+      if (q.data?.att) qc.setQueryData(ytFlowQuery(issue, scope).queryKey, { att: null, flow: null, broken: false });
+      void qc.invalidateQueries({ queryKey: ["yt", "detail", issue] }); // its attachments and the new comment
+      if (r.warnings.length) setJobError(r.warnings.join(" "));
+    },
+  });
+
   // the AI run has its own view (FlowProgress); this is the file and its Zeplin images being read
   const waiting = useAiWait(!draftReady || q.isPending || (!!flow && !shotsReady));
   const conflict = statusOf(save.error) === 409 || (!!mine && mine.base !== q.data?.att);
   // the ticket's file could not be read: never the empty state, and no Render here (what it would replace is unknown)
   const readErr = q.isError && !flow;
+  // an interrupted render: one warn button, under the run button (or in the footer over a flow on screen)
+  const resume = job?.needs_ai_retry && !ai.isPending ? (
+    <Hint side="bottom" title={t("Render bị gián đoạn")} text={t("Lượt render trước chưa xong. Bấm để gọi AI lại với đúng chế độ, model và phạm vi màn của lượt đó. Kết quả chỉ lên ticket khi bạn bấm Cập nhật.")}>
+      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, skip: job.request?.skip ?? [] }); }}>
+        <RotateCw aria-hidden />{t("Tiếp tục render")}
+      </Button>
+    </Hint>
+  ) : null;
+  // the empty flow counts what a render would read (no AI; the warning dialog opens on the same cached count)
+  const starting = !readErr && !ai.isPending && !waiting && !flow && !q.data?.broken;
+  const startCheck = useFlowCheck(issue, starting, []);
   const body = readErr ? <Center>
       <p role="alert" className="max-w-sm text-sm text-error">{t("Không đọc được UI flow của ticket: {msg}", { msg: say(q.error) })}</p>
       <Button size="sm" variant="outline" onClick={() => { void q.refetch(); }}><RotateCw aria-hidden />{t("Thử lại")}</Button>
     </Center>
-    : ai.isPending ? <FlowProgress events={ev} started={started} deep={deep} />
+    : ai.isPending ? <FlowProgress events={ev} started={started} mode={runMode} />
     : engine.error ? <Center><p role="alert" className="text-sm text-error">{say(engine.error)}</p><Button size="sm" variant="outline" onClick={engine.retry}><RotateCw aria-hidden />{t("Thử lại")}</Button></Center>
     : waiting ? <YtFetching kind="flow" />
     : flow ? <div ref={setEl} className="h-full" />
@@ -292,19 +347,35 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         <p className="max-w-sm text-sm text-ink-2">{t("File UI flow trên ticket không đọc được")}</p>
         <Button size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}><Sparkles aria-hidden />{t("Render lại bằng AI")}</Button>
       </Center>
-    : <Empty className="h-full content-center" art={<AiBot className="ai-float size-16 drop-shadow-lg" />} title={t("Ticket này chưa có UI flow")} />;
+    : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens", false, "", platformSkip(startCheck.data, target)) : run())} resume={resume} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
 
   return (
     <>
-      <Dialog open={open && shown} onOpenChange={(o) => { if (!o) close(); }} onOpenChangeComplete={(o) => { if (!o) onClose(); }}>
+      {/* only X closes it: Esc is the engine's (drop the selection, stop a draw, close a form), a stray click is nothing */}
+      {/* (cancel, not just ignore: base-ui would still run its close for a press in a ConfirmDialog over this one) */}
+      <Dialog open={open && shown} onOpenChange={(_, d) => d.cancel()} onOpenChangeComplete={(o) => { if (!o) onClose(); }}>
         <DialogContent showCloseButton={false} className={cn(DIALOG_SHEET, "left-0 w-full sm:max-w-none")}>
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b border-rule bg-paper-2 px-4">
-            <DialogTitle className="truncate pr-0 text-sm">{t("UI flow {id}", { id: issue })}</DialogTitle>
-            <FlowMenu issue={issue} att={q.data?.att ?? null} disabled={save.isPending || ai.isPending || !draftReady || !!jobError || !!(job && ["queued", "running", "cancel_requested"].includes(job.status))} onAgain={() => (flow ? setAsk("again") : run())} className="ml-auto" />
-            <Button data-autofocus size="icon-sm" variant="ghost" aria-label={t("Đóng")} onClick={close}><X /></Button>
+          <header className="flex shrink-0 items-center gap-3 border-b border-rule bg-paper-2 px-3 py-2.5">
+            <Hint side="bottom" text={t("Đóng UI flow. Sơ đồ chưa cập nhật được giữ làm bản nháp.")}>
+              <Button data-autofocus size="icon-sm" variant="ghost" aria-label={t("Đóng")} onClick={close}><ArrowLeft /></Button>
+            </Hint>
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><Workflow className="size-4" aria-hidden /></span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <DialogTitle className="truncate pr-0 text-sm font-bold text-ink">{t("UI flow {id}", { id: issue })}</DialogTitle>
+              <p className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
+                <span className={cn("shrink-0 rounded-full px-2 py-px text-2xs font-bold", STATUS[headStatus].tone)}>{t(STATUS[headStatus].label)}</span>
+                <span className="truncate">{t(STATUS[headStatus].hint)}</span>
+              </p>
+            </div>
+            {flow && ( // no render yet: the start panel has the run button, nothing to redo
+              <Hint side="bottom" title={t("Render lại bằng AI")} text={t("Đọc lại ticket và vẽ lại sơ đồ; giữ ghi chú, vùng bấm vẽ tay và màn bắt đầu. Có thể chọn chỉ vẽ phần mới để ít token. Hỏi lại trước khi chạy; file trên ticket chỉ đổi khi bấm Cập nhật.")}>
+                <Button size="icon-sm" variant="ghost" aria-label={t("Render lại bằng AI")} disabled={locked} onClick={() => setAsk("again")}><RefreshCw /></Button>
+              </Hint>
+            )}
+            {(flow || q.data?.att) && <FlowMenu issue={issue} att={q.data?.att ?? null} disabled={locked} onDelete={flow ? () => { remove.reset(); setAsk("delete"); } : undefined} />}
           </header>
           <div className="relative min-h-0 flex-1">{body}</div>
-          <footer className="shrink-0 border-t border-rule bg-paper-2 p-3">
+          <footer className="shrink-0 border-t border-rule bg-paper-2 p-3 empty:hidden">
             {readErr ? null : unsaved && !hid && !waiting && !ai.isPending && engine.api ? (
               <div className="flex flex-wrap items-center gap-2">
                 <p role="status" className="min-w-0 flex-1 text-sm text-ink">
@@ -324,26 +395,13 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 {t("Kéo thả để sửa; mọi thay đổi chỉ lên ticket khi bạn bấm Cập nhật.")}
                 {unsaved && hid && <Button size="xs" variant="outline" onClick={() => setHid(false)}>{t("Cập nhật lên ticket")}</Button>}
               </p>
-            ) : ( // a run, even over a flow already on screen, keeps the box: its ring and Dừng are the run's controls
-              <AiPromptBox aria-label={t("Ghi chú thêm cho AI")} placeholder={t("Ghi chú thêm cho AI (không bắt buộc)")} maxLength={2000}
-                value={note} onChange={setNote} onSend={run} running={ai.isPending} onStop={stopAi} stopHint={t("Dừng render")}
-                tools={!ai.isPending && <>
-                  <Segmented id="uiflow-depth" label={t("Cách render")} value={deep ? "deep" : "fast"}
-                    onChange={(v) => { setDeep(v === "deep"); put("uiflowDeep", v === "deep" ? "1" : null); }}
-                    items={[
-                      { value: "fast", label: t("Nhanh"), title: t("Model nhẹ: nhanh, ít token. Đủ cho hầu hết ticket có AC và màn Zeplin rõ.") },
-                      { value: "deep", label: t("Kỹ"), title: t("Model mạnh: chậm và tốn token hơn. Dùng khi story dài, nhiều nhánh hoặc bản Nhanh thiếu màn.") },
-                    ]} />
-                  <YtPicks heavy={deep} />
-                </>}
-                actions={!ai.isPending && (
-                  <Hint side="bottom" text={t("AI đọc ticket rồi dựng sơ đồ màn hình và luồng bấm (Enter)")}>
-                    <Button type="button" size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}>
-                      <Sparkles aria-hidden />{t("Render bằng AI")}
-                    </Button>
-                  </Hint>
-                )} />
-            )}
+            ) : ai.isPending ? (
+              <div className="flex items-center justify-end gap-3">
+                <Hint side="bottom" text={t("Dừng lượt AI đang chạy. Nếu đã có kết quả, sơ đồ đó được giữ làm bản nháp.")}>
+                  <Button size="sm" variant="outline" disabled={stopping} onClick={stopAi}>{t("Dừng render")}</Button>
+                </Hint>
+              </div>
+            ) : null}
             {unsaved && diff.data && (
               <div className="mt-2 grid gap-1 text-xs text-ink-2">
                 <p className="font-medium text-ink">{diff.data.changes.length ? t("Cập nhật sẽ ghi {n} thay đổi:", { n: diff.data.changes.length }) : t("Không có thay đổi so với file trên ticket.")}</p>
@@ -353,7 +411,15 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
               </div>
             )}
             {diff.isError && <p role="alert" className="mt-2 text-xs text-error">{t("Không xem được thay đổi: {msg}", { msg: say(diff.error) })}</p>}
-            {q.data?.ticket_newer && flow && !mine && !ai.isPending && <p className="mt-2 text-xs text-ink-3">{t("Ticket đã sửa sau lần cập nhật UI flow. Muốn lấy thay đổi: ⋯ › Render lại bằng AI (giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu).")}</p>}
+            {redesigned.length > 0 && !mine && !dirty && !ai.isPending && engine.api && (
+              <div role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-warn">
+                <span className="min-w-0 flex-1">
+                  {t("Thiết kế Zeplin của {n} màn đã đổi từ lần cập nhật: {s}. Bấm Cập nhật để nhúng ảnh mới vào file; màn / nút mới: ↻ Render lại bằng AI (Chỉ vẽ phần mới). Nút không còn khớp chữ hiện trong mục kiểm tra của sơ đồ.", { n: redesigned.length, s: redesigned.slice(0, 5).map((s) => s.title).join(", ") + (redesigned.length > 5 ? "…" : "") })}
+                </span>
+                <Button size="xs" variant="outline" aria-busy={save.isPending} disabled={save.isPending || conflict} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{t("Cập nhật")}</Button>
+              </div>
+            )}
+            {q.data?.ticket_newer && flow && !mine && !ai.isPending && <p className="mt-2 text-xs text-ink-3">{t("Ticket đã sửa sau lần cập nhật UI flow. Muốn lấy thay đổi: ↻ Render lại bằng AI (giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu).")}</p>}
             {mine?.manifest?.kept && Object.values(mine.manifest.kept).some(Boolean) && <p className="mt-2 text-xs text-ink-3">{t("Giữ từ sơ đồ trước: {p} vị trí màn, {n} ghi chú, {r} vùng bấm", { p: mine.manifest.kept.positions ?? 0, n: mine.manifest.kept.notes ?? 0, r: mine.manifest.kept.rects ?? 0 })}</p>}
             {(unsaved || draftStatus) && <p role="status" className="mt-2 text-xs text-ink-3">{draftStatus}{draftStatus.includes(":") && <Button size="xs" variant="ghost" onClick={() => { if (restoreFailed) { reread.current = false; setRestoreAttempt((n) => n + 1); } else persist(draft.current, true); }}>{t("Thử lại")}</Button>}{unsaved && <Button size="xs" variant="ghost" disabled={save.isPending || ai.isPending} onClick={() => setAsk("fresh")}>{t("Bỏ bản nháp")}</Button>}</p>}
             {conflict && <p role="alert" className="mt-2 text-xs text-warn">{t("File trên ticket đã đổi. Bản nháp được giữ lại.")}<Button size="xs" variant="outline" disabled={save.isPending} onClick={() => setAsk("fresh")}>{t("Xem bản mới")}</Button></p>}
@@ -361,9 +427,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
             {job?.status === "failed" && <p role="alert" className="mt-2 text-sm text-error">{t("Không render được: {msg}", { msg: String((job.error as { detail?: string; code?: string } | null)?.detail ?? (job.error as { code?: string } | null)?.code ?? job.status) })}</p>}
             {stopping && <p role="status">{t("Đang yêu cầu dừng…")}</p>}
             {jobError && <p role="alert" className="text-error">{jobError}<Button size="xs" onClick={() => { setJobError(""); void (pendingJob.current ? yt.flowJobState(pendingJob.current.id) : yt.flowJobs(issue).then((jobs) => jobs.find((j) => !j.processed))).then((current) => { setJob(current ?? null); if (current && ["queued", "running", "cancel_requested", "succeeded"].includes(current.status)) ai.mutate({ id: current.id, base: current.base, at: Date.now() }); }, (e) => setJobError(say(e))); }}>{t("Kết nối lại")}</Button></p>}
-            {job?.needs_ai_retry && !ai.isPending && <><p className="text-xs text-warn">{t("Render bị gián đoạn. Tiếp tục sẽ gọi AI lại.")}</p><Button size="sm" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? note, deep: job.request?.deep ?? deep }); }}>{t("Tiếp tục")}</Button></>}
+            {resume && flow && <div className="mt-2 flex justify-end">{resume}</div>}
             {ai.isError && job && !job.needs_ai_retry && <Button size="sm" onClick={() => ai.mutate({ id: job.id, base: job.base, at: Date.now() })}>{t("Kết nối lại")}</Button>}
-            {mine?.manifest && <details open={!!mine.manifest.warnings?.length} className="mt-2 text-xs text-ink-3"><summary>{t("Nguồn dựng sơ đồ")}</summary><p>{t("Đầu vào ước lượng: {n}/{budget} token", { n: mine.manifest.estimated_input_tokens, budget: mine.manifest.budget })}</p><p>{mine.manifest.sources.join(", ")}</p>{mine.manifest.omitted.length > 0 && <p>{t("Đã lược bỏ {n} mục phụ; giữ yêu cầu bắt buộc.", { n: mine.manifest.omitted.reduce((n, item) => n + item.count, 0) })}</p>}{mine.manifest.warnings?.map((warning, i) => <p role="alert" key={i} className="text-warn">{warning}</p>)}</details>}
+            {mine?.manifest && <details open={!!mine.manifest.warnings?.length} className="mt-2 text-xs text-ink-3"><summary>{t("Nguồn dựng sơ đồ")}</summary><p>{t("Đầu vào ước lượng: {n} token, gửi đủ 100% nguồn", { n: mine.manifest.estimated_input_tokens })}</p><p>{mine.manifest.sources.join(", ")}</p>{mine.manifest.omitted.length > 0 && <p>{t("Đã lược bỏ {n} mục phụ; giữ yêu cầu bắt buộc.", { n: mine.manifest.omitted.reduce((n, item) => n + item.count, 0) })}</p>}{mine.manifest.warnings?.map((warning, i) => <p role="alert" key={i} className="text-warn">{warning}</p>)}</details>}
             {sq.isError && flow && <p role="alert" className="mt-2 text-xs text-warn">{t("Không lấy được ảnh Zeplin: {msg}", { msg: say(sq.error) })}</p>}
             {!!sq.data?.missing.length && flow && <p className="mt-2 text-xs text-ink-3">{t("{n} màn Zeplin không đọc được (chưa chia sẻ với tài khoản này hoặc đã xoá)", { n: sq.data.missing.length })}</p>}
             {ai.isError && (ai.error as Error).name !== "AbortError" && <p role="alert" className="mt-2 text-sm text-error">
@@ -384,17 +450,31 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
           </footer>
         </DialogContent>
       </Dialog>
+      {risky && <FlowRisks issue={issue} target={target} open={risky} onOpenChange={setRisky} onRun={(extra, skip) => start("flow", false, extra, skip)} onScreens={(skip) => { pickMode("screens"); start("screens", false, "", skip); }} onSplit={(extra, skip) => start("flow", true, extra, skip)} />}
       {/* after a 409: the ticket's version replaces mine, and mine cannot be read back */}
       <ConfirmDialog open={ask === "fresh"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
         description={t("Xem bản mới trên ticket sẽ mất các thay đổi chưa lưu của bạn.")} confirmLabel={t("Xem bản mới")}
         onConfirm={() => { setAsk(null); fresh(); }} />
+      <ConfirmDialog open={ask === "delete"} onOpenChange={(o) => !o && setAsk(null)} busy={remove.isPending}
+        title={q.data?.att ? t("Xoá UI flow trên ticket?") : t("Bỏ bản render chưa lưu?")}
+        description={q.data?.att
+          ? t("Xoá file {name} khỏi ticket {id} và ghi một bình luận; không hoàn tác được. Thay đổi chưa lưu cũng mất.", { name: `uiflow-${issue}.html`, id: issue })
+          : t("Sơ đồ đang xem chưa lên ticket sẽ mất; không hoàn tác được.")}
+        error={remove.isError ? say(remove.error) : undefined}
+        confirmLabel={q.data?.att ? t("Xóa") : t("Bỏ bản render")} onConfirm={() => remove.mutate()} />
       {/* a render replaces the flow on screen, so say so — and name the loss when something is unsaved */}
       <ConfirmDialog open={ask === "again"} onOpenChange={(o) => !o && setAsk(null)} tone="default" icon={Sparkles}
         title={t("Render lại bằng AI?")}
         description={unsaved
           ? t("AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem; ghi chú, vùng bấm vẽ tay và màn bắt đầu của các màn khớp được giữ, sửa khác chưa lưu sẽ mất.")
           : t("AI dựng lại sơ đồ từ ticket, thay sơ đồ đang xem; ghi chú, vùng bấm vẽ tay và màn bắt đầu của các màn khớp được giữ. File trên ticket chỉ đổi khi bạn bấm Cập nhật.")}
-        confirmLabel={t("Render lại")} onConfirm={() => { setAsk(null); run(); }} />
+        confirmLabel={t("Render lại")} onConfirm={() => { setAsk(null); runOpts.current = { reuse }; setRisky(true); }}>
+        <label className="flex items-start gap-2 text-sm text-ink">
+          <input type="checkbox" className="mt-1 accent-hl" checked={reuse} onChange={(e) => setReuse(e.target.checked)} />
+          <span>{t("Chỉ vẽ phần mới")}<span className="block text-xs text-ink-3">{t("Giữ liên kết đang có, AI chỉ bổ sung màn / liên kết mới: ít token hơn nhiều. Bỏ chọn để AI vẽ lại toàn bộ.")}</span></span>
+        </label>
+        <FlowTargetPicker id="uiflow-target-again" value={target} onChange={pickTarget} />
+      </ConfirmDialog>
     </>
   );
 }
@@ -404,11 +484,11 @@ const Center = ({ children }: { children: React.ReactNode }) => (
 );
 
 /** The dialog's "⋯": render the flow again, or download the file the ticket holds. */
-function FlowMenu({ issue, att, onAgain, className, disabled }: { issue: string; att: string | null; onAgain: () => void; className?: string; disabled?: boolean }) {
+function FlowMenu({ issue, att, onDelete, className, disabled }: { issue: string; att: string | null; onDelete?: () => void; className?: string; disabled?: boolean }) {
   const t = useT();
   return (
     <Menu.Root>
-      <Hint side="bottom" text={t("Thao tác với UI flow của ticket này")}>
+      <Hint side="bottom" text={t("Tải file HTML hoặc xoá UI flow của ticket này")}>
         <Menu.Trigger aria-label={t("Thao tác UI flow")} className={className} render={<Button size="icon-sm" variant="ghost" className="data-popup-open:bg-paper-3" />}>
           <Ellipsis />
         </Menu.Trigger>
@@ -416,11 +496,15 @@ function FlowMenu({ issue, att, onAgain, className, disabled }: { issue: string;
       <Menu.Portal>
         <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
           <Menu.Popup className={cn(MENU_POPUP, "w-64 text-sm")}>
-            <Menu.Item disabled={disabled} onClick={onAgain} className={cn(MENU_ITEM, MENU_ACTION)}><Sparkles aria-hidden />{t("Render lại bằng AI")}</Menu.Item>
             {att && (
               <Menu.Item className={cn(MENU_ITEM, MENU_ACTION, "no-underline")}
                 render={<a href={fileUrl(issue, { id: att })} target="_blank" rel="noopener noreferrer" />}>
                 <Download aria-hidden />{t("Tải file HTML")}
+              </Menu.Item>
+            )}
+            {onDelete && (
+              <Menu.Item disabled={disabled} onClick={onDelete} className={cn(MENU_ITEM, MENU_ACTION, "text-error")}>
+                <Trash2 aria-hidden />{att ? t("Xoá UI flow") : t("Bỏ bản render")}
               </Menu.Item>
             )}
           </Menu.Popup>

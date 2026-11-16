@@ -217,3 +217,16 @@ async def test_flow_get_says_when_the_ticket_changed_after_the_file(tmp_path):
         assert (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()["ticket_newer"] is False
         yt.updated = 1_000_000 + 10 * 60_000
         assert (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()["ticket_newer"] is True
+
+
+async def test_flow_delete_removes_only_the_file_seen_then_comments(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+    c, svc = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow/delete", json={"id": "VA-1", "base": "1-2"})  # someone saved since
+        assert r.status_code == 409 and yt.writes == []
+        svc._cache["issue:VA-1"] = (time.monotonic(), {})
+        r = await c.post("/api/yt/flow/delete", json={"id": "VA-1", "base": "1-1"})
+    assert r.status_code == 200 and r.json() == {"warnings": []}
+    assert yt.writes == [("DELETE", "/api/issues/VA-1/attachments/1-1"), ("POST", "/api/issues/VA-1/comments")]
+    assert yt.comment.startswith("Đã xoá UI flow") and "issue:VA-1" not in svc._cache

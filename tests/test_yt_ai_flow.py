@@ -21,7 +21,7 @@ FLOW_RAW = """```json
 
 
 async def _flow_post(
-    reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None, job="", then=None, deep=False
+    reply, desc="Đăng nhập bằng OTP", note="Ghi chú thêm", links=(), others=None, job="", then=None
 ):
     """`others`: other tickets by id, a detail dict or an error status. `job`: sent as X-Ai-Job (a background run);
     `then(client, svc)`: more calls on the same app."""
@@ -44,7 +44,7 @@ async def _flow_post(
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         if then:
             return await then(c, svc)
-        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note, "deep": deep},
+        return agent, await c.post("/api/yt/ai/flow", json={"id": "VA-1", "note": note},
                                    headers={"X-Ai-Job": job} if job else None)  # fmt: skip
 
 
@@ -102,7 +102,7 @@ async def test_ai_flow_gives_the_ai_the_zeplin_texts_not_the_mcp(monkeypatch):
     assert agent.kwargs["zeplin"] is None and agent.kwargs["system"] == AI_SYSTEM  # a no-tools run, MCP or not
 
 
-async def test_ai_flow_reads_no_links_and_runs_light_unless_deep(monkeypatch):
+async def test_ai_flow_reads_no_links_and_runs_on_the_users_heavy_picks(monkeypatch):
     async def never(*_, **__):
         raise AssertionError("the links block is not read for a UI flow")
 
@@ -110,9 +110,7 @@ async def test_ai_flow_reads_no_links_and_runs_light_unless_deep(monkeypatch):
     agent, r = await _flow_post(
         FLOW_RAW, desc="Màn đăng nhập, xem thêm VA-9 và https://works.citics.vn/articles/VA-A-1"
     )
-    assert r.json()["flow"] and agent.kwargs["heavy"] is False  # "Nhanh": the light picks
-    agent, _ = await _flow_post(FLOW_RAW, deep=True)
-    assert agent.kwargs["heavy"] is True  # "Kỹ"
+    assert r.json()["flow"] and agent.kwargs["heavy"] is True  # the model / effort the user picked in the box
 
 
 async def test_ai_flow_on_a_story_reads_no_other_stories():
@@ -203,8 +201,11 @@ async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch)
         return FLOW_RAW
 
     _, r = await _flow_post(agent, desc="Thiết kế https://zpl.io/abc", job="flow-job-4")
-    steps = [x["step"] for x in _items(r) if "step" in x]
-    assert all(s["kind"] == "stage" and s["at"] for s in steps)
+    every = [x["step"] for x in _items(r) if "step" in x]
+    assert all(s["kind"] == "stage" and s["at"] for s in every)
+    # metrics reach the page too (the dialog shows the prompt's tokens); the user-facing stages are checked below
+    assert [s["phase"] for s in every if s["stage"] == "metrics"] == ["ticket", "zeplin", "prompt", "ai", "validate"]
+    steps = [s for s in every if s["stage"] != "metrics"]
     stages = [s["stage"] for s in steps]
     assert stages[:2] == ["ticket", "ticket"] and steps[1]["done"] and stages[-1] == "check"
     zep = {"stage": "zeplin", "n": 1, "of": 1, "done": True, "texts": 1, "missing": 0}
@@ -218,7 +219,8 @@ async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch)
 
 async def test_ai_flow_job_with_an_unreadable_answer_ends_with_an_error_item():
     _, r = await _flow_post("xin lỗi", job="flow-job-2")
-    err = {"status": 502, "code": "ai_failed", "detail": "AI trả về không đọc được, thử lại"}
+    err = {"status": 502, "code": "ai_failed",
+           "detail": "AI trả về không đọc được; thử lại hoặc chọn model / effort mạnh hơn"}
     assert _items(r)[-1] == {"error": err}
 
 

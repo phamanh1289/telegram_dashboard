@@ -20,23 +20,28 @@ const aiCalls = async () => (await ctl("/state")).ai_calls as number;
 const BAR = /cập nhật file trên ticket\?$/;
 const dialog = (page: Page) => page.getByRole("dialog", { name: "UI flow VA-1" });
 
+/** Every AI render now asks first: the pre-render dialog's confirm (it counts tokens when it opens). */
+async function confirmRender(page: Page) {
+  await page.getByRole("alertdialog").getByRole("button", { name: /^Render (bằng AI|kèm phần đã làm rõ)$/ }).click();
+}
+
 async function openFlow(page: Page) {
-  await page.addInitScript(() => localStorage.setItem("ytMode", "dev")); // the role is asked for once, per browser
+  await page.addInitScript(() => { localStorage.setItem("ytMode", "dev"); localStorage.setItem("uiflowMode", "flow"); }); // role asked once; AI mode (default: screens)
   await page.goto("/youtrack?ticket=VA-1");
   await page.getByRole("button", { name: "UI flow", exact: true }).click();
   await expect(dialog(page)).toBeVisible();
 }
 
-/** No file yet: write a note, run the AI, wait for its flow on the map. */
+/** No file yet: run the AI from the start panel, wait for its flow on the map. */
 async function render(page: Page) {
   const d = dialog(page);
-  await d.getByLabel("Ghi chú thêm cho AI").fill("chỉ luồng đăng nhập");
-  await d.getByRole("button", { name: "Render bằng AI" }).click();
+  await d.getByRole("button", { name: "Render bằng AI", exact: true }).click();
+  await confirmRender(page);
   await expect(d.locator(".uf-screen")).toHaveCount(4);
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { yt: true, reset_jobs: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0, ticket_newer: false, ai_keep: null });
+  await ctl("/set", { yt: true, reset_jobs: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0, ticket_newer: false, ai_keep: null, flow_check: null });
 });
 test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
@@ -45,24 +50,26 @@ test("ticket detail opens the saved UI flow, from the button and from its file r
   const d = dialog(page);
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toHaveCount(0);
-  await expect(d.getByLabel("Ghi chú thêm cho AI")).toHaveCount(0);
-  await page.keyboard.press("Escape"); // closes the dialog only, the ticket stays open
+  await expect(d.getByRole("button", { name: "Render bằng AI", exact: true })).toHaveCount(0); // a saved flow: no start panel
+  await d.locator(".uf-screen").first().click();
+  await page.keyboard.press("Escape"); // the engine's: drops the selection, never closes the dialog
+  await expect(dialog(page)).toBeVisible();
+  await d.getByRole("button", { name: "Đóng" }).click(); // only ✕ closes it; the ticket stays open
   await expect(dialog(page)).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Đăng nhập bằng OTP" })).toBeVisible();
   await page.getByRole("button", { name: /uiflow-VA-1\.html/ }).click();
   await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
 });
 
-test("no file yet: prompt box at the bottom, AI result is unsaved until Cập nhật, which posts it", async ({ page }) => {
+test("no file yet: start panel with the run button, AI result is unsaved until Cập nhật, which posts it", async ({ page }) => {
   await ctl("/set", { flow: "none", ai_ms: 600 });
   await openFlow(page);
   const d = dialog(page);
-  const box = await d.getByLabel("Ghi chú thêm cho AI").boundingBox();
-  const dlg = await d.boundingBox();
-  expect(dlg!.y + dlg!.height - (box!.y + box!.height)).toBeLessThan(80); // pinned to the bottom
-  await d.getByLabel("Ghi chú thêm cho AI").fill("chỉ luồng đăng nhập");
-  await d.getByRole("button", { name: "Render bằng AI" }).click();
-  await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible(); // running: the stop button in the box
+  await expect(d.getByText("Ticket này chưa có UI flow")).toBeVisible();
+  await expect(d.getByRole("radio", { name: /Màn \+ liên kết/ })).toHaveAttribute("aria-checked", "true");
+  await d.getByRole("button", { name: "Render bằng AI", exact: true }).click();
+  await confirmRender(page);
+  await expect(d.getByRole("button", { name: "Dừng render" })).toBeVisible(); // running: one stop button in the footer
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toBeVisible();
   expect(await posts()).toEqual([]);
@@ -79,9 +86,9 @@ test("no file yet: prompt box at the bottom, AI result is unsaved until Cập nh
 test("re-render over a saved file posts with its base; Không hides the bar and sends nothing", async ({ page }) => {
   await openFlow(page);
   const d = dialog(page);
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  await confirmRender(page);
   await expect(d.getByText(BAR)).toBeVisible();
   await d.getByRole("button", { name: "Không", exact: true }).click();
   await expect(d.getByText(BAR)).toHaveCount(0);
@@ -96,9 +103,9 @@ test("re-render over a saved file posts with its base; Không hides the bar and 
   await page.getByRole("button", { name: "UI flow", exact: true }).click();
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   // the same change, saved over the opened file
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  await confirmRender(page);
   await expect(d.getByText(BAR)).toBeVisible();
   await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
   await expect(d.getByText(BAR)).toHaveCount(0);
@@ -117,8 +124,7 @@ test("Render lại with unsaved changes warns first; Hủy changes nothing", asy
   const d = dialog(page);
   await render(page); // the AI flow on screen is unsaved
   expect(await aiCalls()).toBe(1);
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   const ask = page.getByRole("alertdialog");
   await expect(ask).toContainText("sửa khác chưa lưu sẽ mất");
   await ask.getByRole("button", { name: "Hủy" }).click();
@@ -135,9 +141,9 @@ test("a render hides the bar while it runs; Dừng leaves the flow and posts not
   await render(page);
   await expect(d.getByText(BAR)).toBeVisible();
   await ctl("/set", { ai_ms: 5000 }); // long enough to catch it running
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  await confirmRender(page);
   // while it runs nothing can be saved: the engine (and the edits it held) is gone with the old flow
   await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toHaveCount(0);
   await expect(d.getByText(BAR)).toHaveCount(0);
@@ -188,7 +194,7 @@ test("GET /flow failing shows the error, not the empty state", async ({ page }) 
   await openFlow(page);
   const d = dialog(page);
   await expect(d.getByRole("alert")).toContainText("YouTrack 502 khi tải tệp");
-  await expect(d.getByLabel("Ghi chú thêm cho AI")).toHaveCount(0); // no render here: what it would replace is unknown
+  await expect(d.getByRole("button", { name: "Render bằng AI", exact: true })).toHaveCount(0); // no render here: what it would replace is unknown
   await expect(d.getByText("Ticket này chưa có UI flow")).toHaveCount(0);
   await ctl("/set", { flow: "file" });
   await d.getByRole("button", { name: "Thử lại" }).click();
@@ -201,6 +207,7 @@ test("a broken file says so and offers to render again", async ({ page }) => {
   const d = dialog(page);
   await expect(d.getByText("File UI flow trên ticket không đọc được")).toBeVisible();
   await d.getByRole("button", { name: "Render lại bằng AI" }).click();
+  await confirmRender(page); // every AI render asks first
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toBeVisible();
 });
@@ -233,6 +240,7 @@ test("closing mid-render keeps it going and reopening restores the unsaved resul
   await ctl("/set", { flow: "none", ai_ms: 1500 });
   await openFlow(page);
   await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
+  await confirmRender(page);
   await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
   await dialog(page).getByRole("button", { name: "Đóng" }).click();
   await expect(dialog(page)).toHaveCount(0);
@@ -263,9 +271,7 @@ test("save locks render replacement until upload completes", async ({ page }) =>
   await ctl("/set", { flow: "none", save_ms: 1500 });
   await openFlow(page); await render(page);
   await dialog(page).getByRole("button", { name: "Cập nhật", exact: true }).click();
-  await dialog(page).getByRole("button", { name: "Thao tác UI flow" }).click();
-  await expect(page.getByRole("menuitem", { name: "Render lại bằng AI" })).toBeDisabled();
-  await page.keyboard.press("Escape");
+  await expect(dialog(page).getByRole("button", { name: "Render lại bằng AI" })).toBeDisabled();
   await expect(dialog(page).getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
   expect(await aiCalls()).toBe(1);
 });
@@ -274,6 +280,7 @@ test("cancel network failure keeps the job recoverable", async ({ page }) => {
   await ctl("/set", { flow: "none", ai_ms: 8000 });
   await openFlow(page);
   await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
+  await confirmRender(page);
   await expect(dialog(page).getByRole("button", { name: "Dừng" })).toBeVisible();
   await page.route("**/api/yt/flow/jobs/*", async (route) => {
     if (route.request().method() === "DELETE") await route.abort(); else await route.continue();
@@ -324,14 +331,14 @@ test("interrupted AI waits for explicit Continue and preserves its request", asy
   await ctl("/set", { flow: "none" });
   await page.route("**/api/yt/flow/jobs?issue=*", (route) => route.fulfill({ json: [{
     id: "interrupted-1234", issue: "VA-1", status: "interrupted", stage: "ai", base: null, result: null,
-    error: null, cursor: 1, processed: false, needs_ai_retry: true, request: { note: "giữ luồng lỗi", deep: true },
+    error: null, cursor: 1, processed: false, needs_ai_retry: true, request: { note: "giữ luồng lỗi", mode: "flow", split: false },
   }] }));
   await openFlow(page);
-  await expect(dialog(page).getByText("Render bị gián đoạn. Tiếp tục sẽ gọi AI lại.")).toBeVisible();
+  await expect(dialog(page).getByRole("button", { name: "Tiếp tục render" })).toBeVisible(); // one warn button, under the run button
   expect(await aiCalls()).toBe(0);
   const request = page.waitForRequest((request) => request.url().endsWith("/api/yt/ai/flow") && request.method() === "POST");
-  await dialog(page).getByRole("button", { name: "Tiếp tục", exact: true }).click();
-  expect((await request).postDataJSON()).toMatchObject({ note: "giữ luồng lỗi", deep: true, base: null });
+  await dialog(page).getByRole("button", { name: "Tiếp tục render" }).click();
+  expect((await request).postDataJSON()).toMatchObject({ note: "giữ luồng lỗi", mode: "flow", split: false, base: null });
   await expect(dialog(page).locator(".uf-screen")).toHaveCount(4);
   expect(await aiCalls()).toBe(1);
 });
@@ -343,9 +350,9 @@ test("rerender over an edited draft recovers the replacement job after close", a
   await d.getByRole("button", { name: "Sửa", exact: true }).click();
   await d.getByRole("button", { name: "+ Màn", exact: true }).click();
   await expect(d.locator(".uf-screen")).toHaveCount(5);
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
+  await confirmRender(page);
   await expect(d.getByRole("button", { name: "Dừng" })).toBeVisible();
   await d.getByRole("button", { name: "Đóng" }).click();
   await expect(d).toHaveCount(0);
@@ -369,9 +376,10 @@ test("stop during the pre-start scope check prevents the AI request", async ({ p
   });
   const scopeRequest = page.waitForRequest("**/api/yt/flow/scope");
   await dialog(page).getByRole("button", { name: "Render bằng AI" }).click();
+  await confirmRender(page);
   await scopeRequest;
-  await dialog(page).getByRole("button", { name: "Dừng", exact: true }).click();
-  await expect(dialog(page).getByRole("button", { name: "Dừng", exact: true })).toHaveCount(0);
+  await dialog(page).getByRole("button", { name: "Dừng render" }).click();
+  await expect(dialog(page).getByRole("button", { name: "Dừng render" })).toHaveCount(0);
   const scopeResponse = page.waitForResponse("**/api/yt/flow/scope");
   release();
   await scopeResponse;
@@ -394,9 +402,7 @@ test("focus and reconnect preserve the in-flight save lock", async ({ page }) =>
     window.dispatchEvent(new Event("online"));
     document.dispatchEvent(new Event("visibilitychange"));
   });
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await expect(page.getByRole("menuitem", { name: "Render lại bằng AI" })).toBeDisabled();
-  await page.keyboard.press("Escape");
+  await expect(d.getByRole("button", { name: "Render lại bằng AI" })).toBeDisabled();
   await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
   await expect(d.getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
   expect(await posts()).toHaveLength(1);
@@ -505,10 +511,26 @@ test("a ticket edited after the file says how to pick it up; a render sends the 
   await openFlow(page);
   const d = dialog(page);
   await expect(d.getByText(/Ticket đã sửa sau lần cập nhật UI flow/)).toBeVisible();
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Render lại bằng AI" }).click();
+  await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("button", { name: "Render lại", exact: true }).click();
+  await confirmRender(page);
   await expect(d.getByText(BAR)).toBeVisible();
   const keep = (await ctl("/state")).ai_keep as { screens: { id: string }[] } | null;
   expect(keep?.screens.length).toBe(4);
+});
+
+test("Xoá UI flow asks first, Hủy keeps the dialog, Xóa removes only the file seen", async ({ page }) => {
+  await ctl("/set", { att: "1-1", flow_deleted: null });
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Xoá UI flow" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Hủy" }).click();
+  await expect(d).toBeVisible(); // a press in the confirm never closes the flow under it
+  expect((await ctl("/state")).flow_deleted ?? null).toBeNull();
+  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
+  await page.getByRole("menuitem", { name: "Xoá UI flow" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Xóa" }).click();
+  await expect(d.getByText("Ticket này chưa có UI flow")).toBeVisible();
+  expect((await ctl("/state")).flow_deleted).toBe("1-1");
 });

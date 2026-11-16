@@ -234,27 +234,27 @@ test("a field never stores more than the backend keeps, and a bad Zeplin link is
   expect((await flowOf(page)).links.find((l) => l.src === "login.otp")!.when).toHaveLength(80);
 });
 
-test("the editor refuses to pass the file's limits: 60 screens, 20 buttons, 300 links", async ({ page }) => {
+test("the editor refuses to pass the file's limits: 200 screens, 40 buttons, 1000 links", async ({ page }) => {
   await open(page);
   await edit(page);
   const add = page.getByRole("button", { name: "+ Màn" });
-  await page.evaluate((f) => window.__api.set(f), sized(59, 1));
+  await page.evaluate((f) => window.__api.set(f), sized(199, 1));
   await expect(add).toBeEnabled();
   await add.click();
-  expect((await flowOf(page)).screens).toHaveLength(60);
+  expect((await flowOf(page)).screens).toHaveLength(200);
   await expect(add).toBeDisabled();
-  await expect(add).toHaveAttribute("title", "Tối đa 60 màn");
+  await expect(add).toHaveAttribute("title", "Tối đa 200 màn");
 
-  await page.evaluate((f) => window.__api.set(f), sized(2, 20));
+  await page.evaluate((f) => window.__api.set(f), sized(2, 40));
   await page.locator('.uf-screen[data-id="s0"] .uf-title').click();
   const addItem = insp(page).getByRole("button", { name: "+ Nút" });
   await expect(addItem).toBeDisabled();
-  await expect(addItem).toHaveAttribute("title", "Tối đa 20 nút mỗi màn");
+  await expect(addItem).toHaveAttribute("title", "Tối đa 40 nút mỗi màn");
 
-  await page.evaluate((f) => window.__api.set(f), sized(3, 1, 300));
+  await page.evaluate((f) => window.__api.set(f), sized(3, 1, 1000));
   await drag(page, '.uf-dot[data-src="s2.i0"]', await centreOf(page, '.uf-screen[data-id="s1"]'));
-  expect((await flowOf(page)).links).toHaveLength(300);
-  await expect(page.locator(".uf-note")).toHaveText("Tối đa 300 liên kết");
+  expect((await flowOf(page)).links).toHaveLength(1000);
+  await expect(page.locator(".uf-note")).toHaveText("Tối đa 1000 liên kết");
   await expect(page.locator(".uf-note")).toBeHidden({ timeout: 4000 });
 });
 

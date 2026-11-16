@@ -12,17 +12,20 @@ from .. import providers, zeplin
 from ..ai import data_json, json_object
 from ..ai_jobs import JOB_ID
 from ..ai_run import flow_metrics
+from ..claude import claude_runs
 from ..links import ISSUE, _ours
-from ..models import FlowJobDTO, FlowScopeDTO
 from . import flow as uiflow
 from . import flow_prompt
 from .api_ai import _ai, background
 from .client import YtError, YtUnreachable
-from .schemas import AiFlow, FlowSave, FlowShots, _issue_id
+from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
+from .schemas import AiFlow, FlowAsk, FlowDelete, FlowPrecheck, FlowSave, FlowShots, _issue_id
 from .service import YouTrackDashboard
 
 log = logging.getLogger(__name__)
 
+PART_RUNS = 3  # parts of a split render run at once: faster, without flooding the CLI / quota
+COST_DAYS = 30  # the run log read for a render's $ estimate
 OWN_FLOW = 4000  # a description this long (or with a "Luồng màn" tree) is the story itself, not a pointer to one
 
 
@@ -84,6 +87,11 @@ def register(r, svc: YouTrackDashboard) -> None:
             old_id, old = cur[:2] if cur else (None, None)
             if old_id != body.base:
                 raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
+            # the design as saved now: the shots sent (read live), the old signature for a screen not read this time
+            urls = {s.zeplin for s in new.screens if s.zeplin}
+            new.design = {
+                u: d for u, d in {**(old.design if old else {}), **uiflow.design_of(body.shots)}.items() if u in urls
+            }
             ch = uiflow.changes(old, new)
             if not ch:
                 raise YtError(400, "Không có thay đổi")
@@ -125,6 +133,29 @@ def register(r, svc: YouTrackDashboard) -> None:
             finally:
                 svc.stale(i)
         return {"att": att, "rev": new.rev, "changes": ch, "warn": ". ".join(warn)}
+
+    @r.post("/flow/delete")
+    async def delete_flow(body: FlowDelete):
+        """Remove the ticket's UI flow file, only the version the user saw (409 otherwise), then say so in a comment
+        (the comment failing only warns: the file is gone)."""
+        i = _issue_id(body.id)
+        svc.need_token()
+        async with flow_lock:
+            cur = await svc.flow_file(i)
+            if (cur[0] if cur else None) != body.base:
+                raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
+            try:
+                await svc.detach(i, body.base)
+            except YtUnreachable:  # YouTrack may have removed it: look before trying again
+                raise YtError(502, "Không rõ đã xoá chưa — mở lại UI flow để kiểm tra") from None
+            finally:
+                svc.stale(i)
+            warn = []
+            try:
+                await svc.comment(i, f"Đã xoá UI flow — tệp đính kèm {uiflow.NAME.format(issue=i)}")
+            except YtError as e:
+                warn.append(f"Đã xoá file nhưng chưa ghi được bình luận: {e.message}")
+        return {"warnings": warn}
 
     @r.post("/flow/diff")
     async def flow_diff(body: FlowSave):
@@ -170,134 +201,189 @@ def register(r, svc: YouTrackDashboard) -> None:
         await svc.flow_jobs.update(svc.flow_scope(), job_id, processed=True)
         return await flow_job_required(job_id)
 
+    async def gather(i: str, note: str, say=lambda **e: None, previous: dict | None = None, skip=()):
+        """Ticket + stories + linked Zeplin texts -> the prompt (whole, with its risks). Shared by the render, the
+        pre-check and the advice: the reads are cached, so a pre-check makes the render that follows faster."""
+        metrics = {}
+        flow_metrics.set(metrics)
+        mark = time.perf_counter()
+        say(stage="ticket", id=i)
+        svc.need_token()
+        detail = await svc.issue_detail(i)
+        ticket = data_json(flow_prompt.source(detail))
+        own = detail.get("description") or ""
+        ids = []
+        if "Luồng màn" not in own and len(own) <= OWN_FLOW:
+            ids = [
+                t["id"]
+                for relation in detail.get("links", [])
+                if relation["rel"].lower() == "subtask of"
+                for t in relation["issues"]
+            ]
+            ids += [m[2].upper() for m in ISSUE.finditer(own) if _ours(svc, m[1])]
+        ids = [sid for sid in dict.fromkeys(ids) if sid != i]
+
+        async def read(sid):
+            try:
+                return "<story>\n" + data_json(flow_prompt.source(await svc.issue_detail(sid))) + "\n</story>"
+            except YtError as error:
+                if error.status not in (403, 404):
+                    raise
+                return f"<story>{sid}: dashboard không đọc được ticket này ({error.status})</story>"
+
+        story = "".join("\n" + part for part in await asyncio.gather(*map(read, ids)))  # stories at once, in order
+        say(stage="ticket", id=i, done=True, chars=len(ticket) + len(story),
+            stories=re.findall(r'<story>\s*\{"id":\s*"([^"]+)"', story),  # "id" is _ticket_json's first key
+            lost=re.findall(r"<story>(\S+): dashboard không đọc được", story))  # fmt: skip
+        # the texts of each linked Zeplin screen, read here (REST, cached). No token / Zeplin down: AC only, as before
+        urls = list(dict.fromkeys(zeplin.canonical(u) for u in providers.ZEPLIN.findall(f"{ticket}{story}")))
+        if len(urls) > uiflow.MAX_SCREENS:
+            raise YtError(413, f"Nguồn có hơn {uiflow.MAX_SCREENS} màn; tách ticket trước khi vẽ")
+        say(
+            stage="metrics",
+            phase="ticket",
+            elapsed_ms=round((time.perf_counter() - mark) * 1000),
+            bytes=len((ticket + story).encode()),
+        )
+        mark = time.perf_counter()
+        read_n = 0
+
+        def ready(k: int):
+            nonlocal read_n
+            read_n += k
+            say(stage="zeplin", n=read_n, of=len(urls))
+
+        say(stage="zeplin", n=0, of=len(urls))
+        try:
+            got, missing = await shots.get(urls, done=ready) if urls else ({}, [])
+        except zeplin.ZeplinError as e:
+            log.info("UI flow render without Zeplin texts: %s", e)
+            got, missing = {}, urls
+            say(stage="zeplin", n=read_n, of=len(urls), done=True, error=str(e))
+        else:
+            texts = sum(1 for x in got.values() if x.get("texts"))
+            say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
+        try:
+            payload = flow_prompt.build(ticket, story, note, got, previous=previous, skip=skip)
+        except flow_prompt.BudgetExceeded as error:
+            raise YtError(413, str(error)) from None
+        if missing:
+            payload.warnings.append(
+                f"Không đọc được thiết kế của {len(missing)} màn; kiểm tra tên màn và nút trước khi cập nhật."
+            )
+            payload.manifest["omitted"].append(
+                {"source": "zeplin", "kind": "unavailable_design", "count": len(missing)}
+            )
+        say(
+            stage="metrics",
+            phase="zeplin",
+            elapsed_ms=round((time.perf_counter() - mark) * 1000),
+            screens=len(urls),
+            cache_hits=metrics.get("cache_hits", 0),
+            cache_misses=metrics.get("cache_misses", 0),
+            requests=metrics.get("requests", 0),
+            response_bytes=metrics.get("response_bytes", 0),
+        )
+        say(
+            stage="metrics",
+            phase="prompt",
+            parts=payload.manifest["parts"],
+            bytes=len(payload.prompt.encode()),
+            estimated_input_tokens=payload.manifest["estimated_input_tokens"],
+            estimated_payload_tokens=payload.manifest["estimated_payload_tokens"],
+            token_measurement="estimated",
+        )
+        return payload, metrics, len(urls)
+
+    async def _check(payload, request: Request) -> FlowCheckDTO:
+        m = payload.manifest
+        ai = getattr(request.app.state, "ai", None)  # an app without the AI service: the counts, no $ estimate
+        model, usd, runs = "", None, 0
+        if ai is not None:
+            model = providers.run_choice(ai.settings, task=True, yt=True)[0]  # the render's model: heavy YouTrack pick
+            rows = await asyncio.to_thread(claude_runs, ai.settings, COST_DAYS)
+            usd, runs = flow_prompt.cost(rows, model, m["estimated_input_tokens"], m["screens"])
+        return FlowCheckDTO(
+            tokens=m["estimated_input_tokens"],
+            parts=m["parts"],
+            screens=m["screens"],
+            links=m["links"],
+            risks=[FlowRiskDTO(**x) for x in m["risks"]],
+            warnings=payload.warnings,
+            model=model,
+            cost_usd=usd,
+            cost_runs=runs,
+            chunks=m["chunks"],
+            split_tokens=flow_prompt.split_tokens(payload) if m["chunks"] > 1 else 0,
+        )
+
+    @r.post("/flow/precheck")
+    async def flow_precheck(body: FlowPrecheck, request: Request) -> FlowCheckDTO:
+        """What a render will send, counted by code (no AI, no token): the dialog warns before a costly run."""
+        payload, _, _ = await gather(_issue_id(body.id), body.note, skip=body.skip)
+        return await _check(payload, request)
+
+    @r.post("/ai/flow/advice")
+    async def flow_advice(body: FlowPrecheck, request: Request):
+        """A light model reads the pre-check's numbers (never the ticket's text): why it is costly, what to do."""
+        check = await _check((await gather(_issue_id(body.id), body.note, skip=body.skip))[0], request)
+        prompt = f"{flow_prompt.ADVICE}\n<check>{check.model_dump_json()}</check>"
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+
+    @r.post("/ai/flow/ask")
+    async def flow_ask(body: FlowAsk, request: Request):
+        """The pre-check's Q&A: a light model reads the unclear lines (numbered as shown) and the screen names, then
+        the thread and the question; it explains and rewrites lines. Its answers go into the render's note."""
+        payload = (await gather(_issue_id(body.id), body.note, skip=body.skip))[0]
+        lines = next((x["lines"] for x in payload.manifest["risks"] if x["code"] == "ambiguous"), [])
+        flow = {"lines": lines, "screens": [s["title"] for s in payload.skeleton["screens"]]}
+        turns = data_json([t.model_dump() for t in body.history])
+        prompt = (
+            f"{flow_prompt.FLOW_ASK}\n<flow>{data_json(flow)}</flow>\n<history>{turns}</history>"
+            f"\n<ask>{body.question}</ask>"
+        )
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+
     @r.post("/ai/flow")
     async def ai_flow(body: AiFlow, request: Request):
-        """One AI run turns the ticket (AC, rules, Zeplin links) into UI flow data: cleaned, rev 0, not saved."""
+        """Ticket (AC, rules, Zeplin links) -> UI flow data: cleaned, rev 0, not saved. "screens" mode: the design
+        skeleton only, built by code (no AI, no token); "flow": one AI run adds the links, on the user's model."""
         i = _issue_id(body.id)
         job_id = request.headers.get("x-ai-job", "")
         scope = svc.flow_scope()
+
+        async def by_parts(prompts, detached):
+            """Each part one AI run, PART_RUNS at a time; a part's screens show as it lands. Any part failing
+            fails the render (a flow with a hole is worse than a retry)."""
+            gate, n, got = asyncio.Semaphore(PART_RUNS), len(prompts), []
+
+            async def one(k, text):
+                async with gate:
+                    out = await _ai(svc, request, text, heavy=True, notes=False, detached=detached, retry=False)
+                raw = json_object(out)
+                if not isinstance(raw, dict) or not isinstance(raw.get("screens"), list):
+                    raise YtError(502, f"Phần {k + 1}/{n}: AI trả về không đọc được; thử lại hoặc chọn model mạnh hơn")
+                got.append(raw)
+                items = sum(len(x.get("items") or []) for x in raw["screens"] if isinstance(x, dict))
+                say_part(stage="draw", n=len(got), title=f"Phần {k + 1}/{n}", items=items)
+                return raw
+
+            return flow_prompt.combine(await asyncio.gather(*(one(k, t) for k, t in enumerate(prompts))))
+
+        say_part = lambda **e: None  # noqa: E731  set by work: the stage line of the run being drawn
 
         async def work(on_text=None, detached=False):
             # each stage as a {"kind": "stage"} step: the dialog shows what is read, drawn and checked, and how far
             def say(**e):
                 if e.get("stage") == "metrics":
                     log.info("UI flow metrics %s", json.dumps(e))
-                    return
                 if on_text:
                     on_text({"kind": "stage", "at": round(time.time(), 1), **e})
 
-            metrics = {}
-            flow_metrics.set(metrics)
+            nonlocal say_part
+            say_part = say
             began = time.perf_counter()
-            mark = began
-            say(stage="ticket", id=i)
-            svc.need_token()
-            detail = await svc.issue_detail(i)
-            ticket = data_json(flow_prompt.source(detail))
-            own = detail.get("description") or ""
-            ids = []
-            if "Luồng màn" not in own and len(own) <= OWN_FLOW:
-                ids = [t["id"] for relation in detail.get("links", [])
-                       if relation["rel"].lower() == "subtask of" for t in relation["issues"]]
-                ids += [m[2].upper() for m in ISSUE.finditer(own) if _ours(svc, m[1])]
-            ids = [sid for sid in dict.fromkeys(ids) if sid != i]
-            parts = []
-            for sid in ids:
-                try:
-                    parent = await svc.issue_detail(sid)
-                except YtError as error:
-                    if error.status not in (403, 404):
-                        raise
-                    parts.append(f"<story>{sid}: dashboard không đọc được ticket này ({error.status})</story>")
-                else:
-                    parts.append("<story>\n" + data_json(flow_prompt.source(parent)) + "\n</story>")
-            story = "".join("\n" + part for part in parts)
-            say(stage="ticket", id=i, done=True, chars=len(ticket) + len(story),
-                stories=re.findall(r'<story>\s*\{"id":\s*"([^"]+)"', story),  # "id" is _ticket_json's first key
-                lost=re.findall(r"<story>(\S+): dashboard không đọc được", story))  # fmt: skip
-            # the texts of each linked Zeplin screen, read here (REST, cached): the AI used to open every screen through
-            # the Zeplin MCP, 100-200 KB of layers each, minutes per render. No token / Zeplin down: AC only, as before
-            urls = list(dict.fromkeys(zeplin.canonical(u) for u in providers.ZEPLIN.findall(f"{ticket}{story}")))
-            if len(urls) > uiflow.MAX_SCREENS:
-                raise YtError(413, "Nguồn có hơn 60 màn; thu hẹp phạm vi trước khi vẽ")
-            say(stage="metrics", phase="ticket", elapsed_ms=round((time.perf_counter()-mark)*1000),
-                bytes=len((ticket + story).encode()))
-            mark = time.perf_counter()
-            read = 0
-
-            def ready(k: int):
-                nonlocal read
-                read += k
-                say(stage="zeplin", n=read, of=len(urls))
-
-            say(stage="zeplin", n=0, of=len(urls))
-            try:
-                got, missing = await shots.get(urls, done=ready) if urls else ({}, [])
-            except zeplin.ZeplinError as e:
-                log.info("UI flow render without Zeplin texts: %s", e)
-                got, missing = {}, urls
-                say(stage="zeplin", n=read, of=len(urls), done=True, error=str(e))
-            else:
-                texts = sum(1 for x in got.values() if x.get("texts"))
-                say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
-            design = {u: x["texts"] for u, x in got.items() if x.get("texts")}
-            try:
-                payload = flow_prompt.build(ticket, story, body.note, got, deep=body.deep)
-            except flow_prompt.BudgetExceeded as error:
-                raise YtError(413, str(error)) from None
-            if missing:
-                payload.warnings.append(f"Không đọc được thiết kế của {len(missing)} màn; "
-                                        "kiểm tra tên màn và nút trước khi cập nhật.")
-                payload.manifest["omitted"].append({"source": "zeplin", "kind": "unavailable_design",
-                                                    "count": len(missing)})
-            prompt = payload.prompt
-            say(stage="metrics", phase="zeplin", elapsed_ms=round((time.perf_counter()-mark)*1000),
-                screens=len(urls), bytes=len(data_json(design).encode()),
-                cache_hits=metrics.get("cache_hits", 0), cache_misses=metrics.get("cache_misses", 0),
-                requests=metrics.get("requests", 0), response_bytes=metrics.get("response_bytes", 0))
-            say(stage="metrics", phase="prompt", parts={"ticket": len(ticket), "story": len(story),
-                "labels": len(data_json(design)), "note": len(body.note)}, bytes=len(prompt.encode()),
-                estimated_input_tokens=payload.manifest["estimated_input_tokens"],
-                estimated_payload_tokens=payload.manifest["estimated_payload_tokens"], token_measurement="estimated")
-            mark = time.perf_counter()
-            start = {"stage": "ai", "deep": body.deep, "chars": len(prompt), "screens": len(urls)}
-            say(**start)
-            seen = uiflow.Progress()
-
-            # the JSON as it is written: told as the screens / links it holds so far. Only stage steps reach the page:
-            # raw deltas would make each replay (a reopened dialog) thousands of items
-            def on_ai(t):
-                nonlocal seen
-                if isinstance(t, dict):  # a tool step (the Zeplin MCP): shown as it is
-                    on_text(t)
-                elif t is None:  # every message starts with one (Claude): a restart only once text was written
-                    if seen.text:
-                        seen = uiflow.Progress()
-                        say(**start, again=True)
-                else:
-                    for e in seen.feed(t):
-                        say(**e)
-
-            if svc.flow_scope() != scope:
-                raise YtError(409, "Tài khoản đã đổi; mở lại lượt vẽ trong tài khoản ban đầu")
-            out = await _ai(svc, request, prompt, heavy=body.deep, on_text=on_ai if on_text else None, notes=False,
-                            detached=detached, retry=False)  # fmt: skip
-            usage = metrics.get("usage")
-            usage = {k: v for k, v in usage.items() if isinstance(v, (int, float))} if isinstance(usage, dict) else None
-            say(stage="metrics", phase="ai", elapsed_ms=round((time.perf_counter()-mark)*1000),
-                bytes=len(out.encode()), actual_usage=usage)
-            mark = time.perf_counter()
-            say(stage="check", chars=len(out))
-            raw = json_object(out)
-            try:
-                flow = uiflow.merge_ai(raw, payload.skeleton, i)
-            except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
-                raise YtError(502, "AI trả về không đọc được, thử lại") from None
-            flow.rev = 0  # whatever the AI wrote: the dialog saves over the version it opened
-            for s in flow.screens:
-                s.x = s.y = None  # the layout is the dialog's job
-            kept = {}
-            old = None
+            old, lost = None, ""
             if body.keep:  # the flow on screen, unsaved edits included
                 try:
                     old = uiflow.clean(body.keep, i)
@@ -308,29 +394,109 @@ def register(r, svc: YouTrackDashboard) -> None:
                     cur = await svc.flow_file(i)
                     old = cur[1] if cur and cur[0] == body.base else None
                 except YtError as e:  # the render itself is fine: say what was not carried over, do not fail it
-                    payload.warnings.append(f"Không đọc được file trên ticket để giữ chỉnh tay: {e.message}")
+                    lost = f"Không đọc được file trên ticket để giữ chỉnh tay: {e.message}"
+            # "Chỉ vẽ phần mới": the AI starts from the flow on screen and writes only what is new
+            previous = old.model_dump() if old is not None and body.reuse and body.mode == "flow" else None
+            payload, metrics, screens = await gather(i, body.note, say, previous, skip=body.skip)
+            mark = time.perf_counter()
+            if body.mode == "screens":
+                say(stage="check", chars=0)
+                try:
+                    flow = uiflow.clean({**payload.skeleton, "links": []}, i)
+                except ValueError:
+                    raise YtError(
+                        422, 'Ticket chưa có màn Zeplin hay cây Luồng màn để dựng; chọn "Màn + liên kết" để AI đọc AC'
+                    ) from None
+                raw = {"links": []}
+            else:
+                prompt = payload.prompt
+                start = {
+                    "stage": "ai",
+                    "chars": len(prompt),
+                    "screens": screens,
+                    "estimated_input_tokens": payload.manifest["estimated_input_tokens"],
+                }
+                say(**start)
+                seen = uiflow.Progress()
+
+                # the JSON as it is written: told as the screens / links it holds so far. Only stage steps reach the
+                # page: raw deltas would make each replay (a reopened dialog) thousands of items
+                def on_ai(t):
+                    nonlocal seen
+                    if isinstance(t, dict):  # a tool step (the Zeplin MCP): shown as it is
+                        on_text(t)
+                    elif t is None:  # every message starts with one (Claude): a restart only once text was written
+                        if seen.text:
+                            seen = uiflow.Progress()
+                            say(**start, again=True)
+                    else:
+                        for e in seen.feed(t):
+                            say(**e)
+
+                if svc.flow_scope() != scope:
+                    raise YtError(409, "Tài khoản đã đổi; mở lại lượt vẽ trong tài khoản ban đầu")
+                prompts = flow_prompt.split(payload) if body.split else [prompt]
+                if len(prompts) > 1:  # "Chia phần": the parts at once (PART_RUNS), joined into one answer
+                    out = json.dumps(await by_parts(prompts, detached))
+                else:  # the user's own model / effort (the heavy picks: a long read), whatever the size: warned
+                    out = await _ai(svc, request, prompt, heavy=True, on_text=on_ai if on_text else None,
+                                    notes=False, detached=detached, retry=False)  # fmt: skip
+                usage = metrics.get("usage")
+                usage = (
+                    {k: v for k, v in usage.items() if isinstance(v, (int, float))} if isinstance(usage, dict) else None
+                )
+                say(
+                    stage="metrics",
+                    phase="ai",
+                    elapsed_ms=round((time.perf_counter() - mark) * 1000),
+                    bytes=len(out.encode()),
+                    actual_usage=usage,
+                )
+                mark = time.perf_counter()
+                say(stage="check", chars=len(out))
+                raw = json_object(out)
+                try:
+                    flow = uiflow.merge_ai(raw, payload.skeleton, i)
+                except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
+                    raise YtError(502, "AI trả về không đọc được; thử lại hoặc chọn model / effort mạnh hơn") from None
+            flow.rev = 0  # whatever was drawn: the dialog saves over the version it opened
+            for s in flow.screens:
+                s.x = s.y = None  # the layout is the dialog's job
+            kept = {}
+            if lost:
+                payload.warnings.append(lost)
             if old is not None:
                 flow, kept = uiflow.keep_manual(old, flow)
             dropped = len(raw.get("links") or []) - len(flow.links)  # raw: a dict, clean took it
             say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped))
             if svc.flow_scope() != scope:
                 raise YtError(409, "Tài khoản đã đổi; mở lại lượt vẽ trong tài khoản ban đầu")
-            manifest = {**payload.manifest, "kept": kept}
+            manifest = {**payload.manifest, "kept": kept, "mode": body.mode}
             result = {"flow": flow.model_dump(), "manifest": manifest, "warnings": payload.warnings}
             if job_id and svc.flow_jobs:
-                await svc.flow_jobs.update(scope, job_id, checkpoint=flow.model_dump(),
-                                           result=result, stage="validated")
-            say(stage="metrics", phase="validate", elapsed_ms=round((time.perf_counter()-mark)*1000),
-                total_ms=round((time.perf_counter()-began)*1000))
+                await svc.flow_jobs.update(
+                    scope, job_id, checkpoint=flow.model_dump(), result=result, stage="validated"
+                )
+            say(
+                stage="metrics",
+                phase="validate",
+                elapsed_ms=round((time.perf_counter() - mark) * 1000),
+                total_ms=round((time.perf_counter() - began) * 1000),
+            )
             return result
 
         # with X-Ai-Job the render goes on when the dialog closes; the page reads it again by its id
         # one render per ticket: a new one stops the older (a reload / reopen that started over), not two CLIs
         if job_id and svc.flow_jobs:
             _job_id(job_id)
-            got = await svc.flow_jobs.start(scope, job_id, i, body.base,
-                                           lambda on_text: work(on_text, detached=True),
-                                           request={"note": body.note, "deep": body.deep})
+            got = await svc.flow_jobs.start(
+                scope,
+                job_id,
+                i,
+                body.base,
+                lambda on_text: work(on_text, detached=True),
+                request={"note": body.note, "mode": body.mode, "split": body.split, "skip": body.skip},
+            )
             if got is None:
                 raise YtError(409, "Mã lượt AI đã dùng; nối lại lượt hiện có")
             return got

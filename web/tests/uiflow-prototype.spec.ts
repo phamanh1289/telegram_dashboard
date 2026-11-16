@@ -220,3 +220,22 @@ for (const [w, hh] of [[390, 844], [1440, 900]]) {
     await expect(title(page)).toHaveText("Nhập OTP");
   });
 }
+
+test("a screen opened from two places goes back to the one walked", async ({ page }) => {
+  await open(page);
+  await withFlow(page, `
+    const s = (id, title, items) => ({ id, title, kind: "screen", parent: null, zeplin: "", ac: "", items });
+    f.start = "a";
+    f.screens = [s("a", "Màn A", [{ id: "b", label: "Sang B" }, { id: "c", label: "Mở C" }]),
+      s("b", "Màn B", [{ id: "c", label: "Từ B mở C" }]), s("c", "Màn C", [])];
+    const l = (src, to, act = "navigate") => ({ src, to, act, when: "", ac: "" });
+    f.links = [l("a.b", "b"), l("a.c", "c"), l("b.c", "c"), l("c", "a", "back"), l("c", "b", "back")];`);
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Mở C");
+  await page.getByRole("button", { name: "Quay lại" }).click();
+  await expect(title(page)).toHaveText("Màn A");
+  await tapIn(page, "Sang B");
+  await tapIn(page, "Từ B mở C");
+  await page.getByRole("button", { name: "Quay lại" }).click();
+  await expect(title(page)).toHaveText("Màn B"); // not A, though C's first back link names A
+});

@@ -31,6 +31,11 @@ class Comment(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
 
 
+class FlowDelete(BaseModel):
+    id: str
+    base: str = Field(min_length=1, max_length=500)  # attachment id of the file the user saw: removed only if current
+
+
 class FlowSave(BaseModel):
     id: str
     flow: dict
@@ -86,12 +91,21 @@ class AiTickets(BaseModel):
     shell: bool = False  # with a folder: may also run commands there (build, test) in the sandbox
 
 
+class FlowPrecheck(BaseModel):
+    id: str
+    note: str = Field("", max_length=2000)
+    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # Zeplin URLs the dialog left out: not sent, not counted
+
+
 class AiFlow(BaseModel):
     base: str | None = Field(None, max_length=500)
     id: str
-    note: str = Field("", max_length=2000)  # what the user adds to the ticket's own text
-    deep: bool = False  # "Kỹ": the heavy picks (a larger model); "Nhanh": the light ones, enough for most tickets
+    note: str = Field("", max_length=8000)  # the user's text + the pre-check's Q&A / skipped lines
+    mode: Literal["screens", "flow"] = "flow"  # "screens": the design skeleton by code, no AI; "flow": + AI links
+    split: bool = False  # "Chia phần": the screens in parts of 12, run 3 at a time, joined (big tickets)
+    reuse: bool = False  # a re-render that keeps the flow's links and asks the AI only for what is new (fewer tokens)
     keep: dict | None = None  # the flow on screen: notes / tap areas / positions survive the render (never prompted)
+    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # Zeplin URLs left out in the dialog: not drawn
 
 
 class AiDraft(BaseModel):
@@ -103,6 +117,16 @@ class AiDraft(BaseModel):
 class AiTurn(BaseModel):
     q: str = Field("", max_length=2000)  # "" on the first answer: the request itself is in the prompt
     a: str = Field("", max_length=30_000)
+
+
+class FlowAsk(BaseModel):
+    """A question before a render on the unclear flow lines (the dialog's Q&A); stateless: the page sends the thread."""
+
+    id: str
+    note: str = Field("", max_length=2000)
+    history: list[AiTurn] = Field(default_factory=list, max_length=12)
+    question: str = Field(min_length=1, max_length=2000)
+    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # as the dialog shows it: same lines, same #n
 
 
 class AiFollowup(BaseModel):

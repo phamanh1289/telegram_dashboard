@@ -24,7 +24,7 @@ const CAP = 80, UNDO = 50, DRAG_PX = 4;
 // edit: schema cap for a title / label / condition, undo depth, tap slop
 const CAP_AC = 40, CAP_URL = 300;
 // the backend model's caps: it truncates silently, so never store more
-const MAX_SCREENS = 60, MAX_ITEMS = 20, MAX_LINKS = 300;
+const MAX_SCREENS = 200, MAX_ITEMS = 40, MAX_LINKS = 1000;
 // past these the backend refuses the whole file
 const VERSION = 2, CAP_NOTE = 4000;
 // = uiflow.VERSION / MAX_NOTE: v1 is read as v2, a newer file is refused

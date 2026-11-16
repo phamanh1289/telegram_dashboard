@@ -111,10 +111,15 @@ function player(host, { flow, t, reduced, onGo }) {
     const i = path.lastIndexOf(to.id);
     go(i >= 0 ? path.slice(0, i + 1) : [...path, to.id], "back");
   }
+  /** Back (the nav bar / the design's back button): to the screen this one was opened from. C opened from A or B
+   *  has a back link to each: the one in the path walked wins (A → C → back: A; B → C → back: B). None of them
+   *  walked: the screen before in the path. At the first screen: the back link's own target. */
   function goBack() {
-    const l = backLink();
-    if (l) follow(l);
+    const links = from(here()).filter((l) => l.act === "back" && !isPop(by(l.to)));
+    const i = Math.max(-1, ...links.map((l) => path.lastIndexOf(l.to)).filter((k) => k < path.length - 1));
+    if (i >= 0) go(path.slice(0, i + 1), "back");
     else if (path.length > 1) go(path.slice(0, -1), "back");
+    else if (links.length) follow(links[0]);
   }
   function tap(b, links) {
     if (links.length === 1) follow(links[0]);

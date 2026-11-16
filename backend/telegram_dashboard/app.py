@@ -258,7 +258,8 @@ def create_app(
     yt_router = build_router(yt_dashboard)
     for route in yt_router.routes:
         # Legacy YouTrack endpoints remain private; durable flow DTOs are generated for the client.
-        route.include_in_schema = route.path == "/api/yt/flow/scope" or route.path.startswith("/api/yt/flow/jobs")
+        route.include_in_schema = (route.path in ("/api/yt/flow/scope", "/api/yt/flow/precheck")
+                                   or route.path.startswith("/api/yt/flow/jobs"))
     app.include_router(yt_router)
     app.include_router(build_task_router(settings))
     app.include_router(updater.build_router(settings))

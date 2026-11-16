@@ -1,11 +1,13 @@
 "use client";
 
-import { Check, Circle, FileText, Info, Layers, Loader2, TriangleAlert, Workflow } from "lucide-react";
+import { Check, Circle, Code, FileText, Info, Layers, Loader2, Sparkles, TriangleAlert, Workflow } from "lucide-react";
 import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { AiBot, dur } from "@/shared/components/ai/chat";
 import { AiSteps, type TaskEvent } from "@/shared/components/ai/steps";
+import { Hint } from "@/shared/components/ui/hint";
 import { fmtNum, type Key, type T, useT } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
+import type { FlowMode } from "@/features/youtrack/lib/yt";
 
 // A UI flow render as it goes (POST /ai/flow streams {"kind": "stage"} steps): how far (%), what is read, drawn and
 // checked right now, each stage with its own numbers and time — enough to decide whether to wait or close and come back.
@@ -15,35 +17,42 @@ type Stage = "ticket" | "zeplin" | "ai" | "draw" | "link" | "check";
 export type FlowStage = {
   kind: "stage"; stage: Stage; at: number; done?: boolean; error?: string; again?: boolean;
   id?: string; chars?: number; stories?: string[]; lost?: string[]; n?: number; of?: number; texts?: number; missing?: number;
-  deep?: boolean; screens?: number; title?: string; items?: number; from?: string; item?: string; to?: string; links?: number; dropped?: number;
+  screens?: number; title?: string; items?: number; from?: string; item?: string; to?: string; links?: number; dropped?: number;
+  phase?: string; estimated_input_tokens?: number;
 };
 export type FlowEvent = FlowStage | TaskEvent;
 
 const ORDER: Stage[] = ["ticket", "zeplin", "ai", "draw", "link", "check"];
 /** The % each stage spans: the AI's reading and writing take most of a run. */
 const SPAN: Record<Stage, [number, number]> = { ticket: [0, 6], zeplin: [6, 16], ai: [16, 32], draw: [32, 80], link: [80, 96], check: [96, 100] };
+/** The stages the AI itself reads / writes (they spend tokens); the rest is the dashboard's own code. */
+const AI_STAGES = new Set<Stage>(["ai", "draw", "link"]);
 const isStage = (e: FlowEvent): e is FlowStage => e.kind === "stage";
 const DRAW = ORDER.indexOf("draw");
 const CHIPS_MAX = 12;
 
 /** The run so far: the last step of each stage and when it started; an AI that started over drops what it drew. */
 function fold(events: FlowEvent[]) {
-  const last: Partial<Record<Stage, FlowStage>> = {};
-  const since: Partial<Record<Stage, number>> = {};
+  const last: Partial<Record<string, FlowStage>> = {};
+  const since: Partial<Record<string, number>> = {};
   const titles: string[] = [];
   const links: FlowStage[] = [];
   let start: number | undefined;
+  let promptTokens: number | undefined;
   for (const e of events) {
     if (!isStage(e)) continue;
     start ??= e.at;
-    if (e.stage === "ai" && e.again) { titles.length = links.length = 0; delete last.draw; delete last.link; delete since.draw; delete since.link; }
+    if (e.stage === "ai" && e.again) { titles.length = links.length = 0; delete last.draw; delete last.link; delete since.draw; delete since.link; promptTokens = undefined; }
     since[e.stage] ??= e.at;
     last[e.stage] = e;
+    if ((e.stage as string) === "metrics" && e.phase === "prompt" && e.estimated_input_tokens != null) {
+      promptTokens = e.estimated_input_tokens;
+    }
     if (e.stage === "draw" && e.title) titles.push(e.title);
     if (e.stage === "link") links.push(e);
   }
   const idx = ORDER.findLastIndex((s) => last[s]);
-  return { last, since, titles, links, start, idx, cur: idx < 0 ? undefined : ORDER[idx] };
+  return { last, since, titles, links, start, idx, cur: idx < 0 ? undefined : ORDER[idx], promptTokens };
 }
 type Run = ReturnType<typeof fold>;
 
@@ -90,8 +99,11 @@ function detail(t: T, r: Run, s: Stage): string {
       if (!e.done) return t("{n}/{of} màn", { n, of: e.of ?? 0 });
       if (!e.of) return t("Ticket không có link Zeplin");
       return dot(t("{n} màn", { n: e.of }), t("{n} có chữ", { n: e.texts ?? 0 }), !!e.missing && t("{n} không đọc được", { n: e.missing }));
-    case "ai":
-      return dot(e.deep ? t("Model mạnh (Kỹ)") : t("Model nhẹ (Nhanh)"), t("{n} ký tự đầu vào", { n: k(e.chars) }), e.again && t("chạy lại từ đầu"));
+    case "ai": {
+      const tokNum = e.estimated_input_tokens ?? r.promptTokens ?? 0;
+      const tokens = k(tokNum);
+      return dot(tokNum > 0 && t("Dùng {n} token AI", { n: tokens }), t("{n} ký tự đầu vào", { n: k(e.chars) }), e.again && t("chạy lại từ đầu"));
+    }
     case "draw": {
       const of = r.last.ai?.screens;
       return dot(of && !r.last.link ? t("{n}/~{of} màn", { n, of: Math.max(of, n) }) : t("{n} màn", { n }), t("{n} nút", { n: r.last.link?.items ?? e.items ?? 0 }));
@@ -102,6 +114,7 @@ function detail(t: T, r: Run, s: Stage): string {
       if (!e.done) return t("Đang đọc {n} ký tự AI viết", { n: k(e.chars) });
       return dot(t("{n} màn", { n: e.screens ?? 0 }), t("{n} liên kết", { n: e.links ?? 0 }), !!e.dropped && t("bỏ {n} liên kết hỏng", { n: e.dropped }));
   }
+  return "";
 }
 
 /** The one line under the robot: what is happening this second. */
@@ -119,14 +132,14 @@ function headline(t: T, r: Run): string {
 }
 
 /** The render's progress, filling the dialog's body while it runs (the prompt box under it keeps Dừng). */
-export function FlowProgress({ events, started, deep }: { events: FlowEvent[]; started: number; deep: boolean }) {
+export function FlowProgress({ events, started, mode }: { events: FlowEvent[]; started: number; mode: FlowMode }) {
   const t = useT();
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => { const i = setInterval(() => setNow(Date.now() / 1000), 1000); return () => clearInterval(i); }, []);
   // once per event, not per tick (the tick only moves the clock and the AI's creep)
   const r = useMemo(() => fold(events), [events]);
   const tools = useMemo(() => events.filter((e): e is TaskEvent => e.kind === "tool" || e.kind === "tool_result"), [events]);
-  const isDeep = r.last.ai?.deep ?? deep; // a run read again: the mode it started with
+  const screensOnly = mode === "screens" && !r.last.ai; // no AI: its stages are not part of this run
   // only goes up within a run: each stage stops short of the next one's start, its counts only grow (an AI restart drops back)
   const p = pct(r, now);
   const took = Math.max(0, now - (r.start ?? started));
@@ -151,13 +164,14 @@ export function FlowProgress({ events, started, deep }: { events: FlowEvent[]; s
             <span className="w-11 text-right font-mono text-sm tabular-nums text-ink">{p}%</span>
           </div>
           <p className="flex flex-wrap justify-center gap-x-2 text-xs text-ink-3">
-            <span>{isDeep ? t("Kỹ") : t("Nhanh")}</span>·<span className="tabular-nums">{t("đã chạy {t}", { t: dur(took) })}</span>
+            <span>{screensOnly ? t("Chỉ màn hình") : t("Màn + liên kết")}</span>·<span className="tabular-nums">{t("đã chạy {t}", { t: dur(took) })}</span>
             {left !== null && <>·<span className="tabular-nums">{t("còn khoảng {t}", { t: dur(left) })}</span></>}
           </p>
         </div>
 
         <ol className="grid grid-cols-1 rounded-xl border border-rule bg-cotton p-1.5">
           {ORDER.map((s, i) => {
+            if (screensOnly && AI_STAGES.has(s)) return null;
             const text = detail(t, r, s);
             const state = i < r.idx || r.last[s]?.done ? "done" : i === r.idx ? "live" : "todo";
             const from = r.since[s], next = ORDER.slice(i + 1).find((n) => r.since[n]);
@@ -170,6 +184,7 @@ export function FlowProgress({ events, started, deep }: { events: FlowEvent[]; s
                     : state === "live" ? <Loader2 className="size-4 shrink-0 animate-spin text-hl-2" aria-hidden />
                     : <Circle className="size-4 shrink-0 text-ink-3/50" aria-hidden />}
                   <span className={cn("shrink-0 text-sm", state === "todo" ? "text-ink-3" : "text-ink")}>{t(NAME[s])}</span>
+                  <Who ai={AI_STAGES.has(s)} todo={state === "todo"} t={t} />
                   <span className={cn("min-w-0 flex-1 truncate text-xs", warn ? "text-warn" : "text-ink-2")} title={text}>{text}</span>
                   {secs !== undefined && <span className="shrink-0 font-mono text-2xs tabular-nums text-ink-3">{dur(secs)}</span>}
                 </div>
@@ -207,6 +222,19 @@ export function FlowProgress({ events, started, deep }: { events: FlowEvent[]; s
       <Graph r={r} t={t} />
       </div>
     </div>
+  );
+}
+
+/** Who does a step: AI (spends tokens, highlighted) or the dashboard's code (free). */
+function Who({ ai, todo, t }: { ai: boolean; todo: boolean; t: T }) {
+  const text = ai ? t("AI đọc / viết ở bước này: tốn token AI") : t("Code của dashboard xử lý bước này: không tốn token AI");
+  return (
+    <Hint side="bottom" text={text}>
+      <span aria-label={text} className={cn("inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-2xs font-medium",
+        ai ? "bg-hl text-hl-ink" : "border border-rule text-ink-3", todo && "opacity-60")}>
+        {ai ? <Sparkles className="size-3" aria-hidden /> : <Code className="size-3" aria-hidden />}{ai ? "AI" : t("Code")}
+      </span>
+    </Hint>
   );
 }
 

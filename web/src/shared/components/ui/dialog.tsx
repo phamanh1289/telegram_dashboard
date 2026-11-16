@@ -170,7 +170,7 @@ const TONES = {
  *  Stays open while `busy` (Esc / Hủy blocked); the caller closes it on success and passes `error` on failure.
  *  `children` goes under the list for anything else the question needs (a checkbox, a note). */
 function ConfirmDialog({ open, onOpenChange, title, description, items, unit, confirmLabel, tone = "danger", icon,
-  busy, error, onConfirm, children }: {
+  busy, error, onConfirm, children, className, footerStart }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: React.ReactNode
@@ -184,13 +184,15 @@ function ConfirmDialog({ open, onOpenChange, title, description, items, unit, co
   error?: React.ReactNode
   onConfirm: () => void
   children?: React.ReactNode
+  className?: string // width override (default sm:max-w-md)
+  footerStart?: React.ReactNode // controls beside the buttons, on the left (they wrap on their own row when narrow)
 }) {
   const t = useT()
   const look = TONES[tone], Icon = icon ?? look.icon
   const more = (items?.length ?? 0) - SHOWN
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!busy) onOpenChange(o) }}>
-      <DialogContent showCloseButton={false} role="alertdialog" className="sm:max-w-md">
+      <DialogContent showCloseButton={false} role="alertdialog" className={cn("sm:max-w-md", className)}>
         <div className="flex gap-3.5">
           <span aria-hidden className={cn("grid size-10 shrink-0 place-items-center rounded-lg [&_svg]:size-5", look.badge)}><Icon /></span>
           <DialogHeader className="min-w-0 flex-1 pt-0.5">
@@ -213,6 +215,7 @@ function ConfirmDialog({ open, onOpenChange, title, description, items, unit, co
         {children}
         {error && <p role="alert" className="text-sm text-error">{error}</p>}
         <DialogFooter>
+          {footerStart && <div className="flex min-w-0 flex-wrap items-center gap-2 sm:mr-auto">{footerStart}</div>}
           <DialogPrimitive.Close disabled={busy} render={<Button variant="outline" />}>{t("Hủy")}</DialogPrimitive.Close>
           <Button className={look.button} aria-busy={busy} disabled={busy} onClick={onConfirm}>
             {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Icon aria-hidden />}{confirmLabel}
