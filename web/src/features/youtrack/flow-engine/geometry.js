@@ -1,5 +1,5 @@
 import { hotspots, shotOf } from './shots.js';
-import { BOTTOM, CARD_HEAD, CARD_PAD, H, HEAD, PAD, STATUS, STEP, TOP, W, ZMAX, ZMIN } from './constants.js';
+import { BOTTOM, CARD_HEAD, CARD_PAD, FOLD_SLACK, H, HEAD, PAD, STATUS, STEP, TOP, W, ZMAX, ZMIN } from './constants.js';
 import { isOverlay } from './model.js';
 import { clamp, itm, scr } from './values.js';
 
@@ -28,10 +28,12 @@ function rowsOf(s) {
   const c = cardOf(s), sh = shotOf(s);
   if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
   const { items } = hotspots(s, sh), fold = H - BOTTOM;
-  const off = items.filter((r) => !r || r.y + r.h > (r.manual ? H + 0.5 : fold)).length;
+  // on the frame: the area ends inside it. A design 814 high scales to 846, its bottom button a few px past H:
+  // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
+  const on = (r) => r && r.y + r.h <= H + (r.manual ? 0.5 : FOLD_SLACK);
+  const off = items.filter((r) => !on(r)).length;
   let n = 0;
-  // a hand-drawn area may sit over the home bar (the user put it there); a text match there is the next screenful
-  return items.map((r) => (r && r.y + r.h <= (r.manual ? H + 0.5 : fold) ? { r, hot: true }
+  return items.map((r) => (on(r) ? { r, hot: true }
     : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
 }
 /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */

@@ -281,3 +281,19 @@ def test_platform_group_lists_every_screen_past_the_line_cap():
     shots = {s["zeplin"]: {"w": 1440, "h": 900} for s in screens}
     web = next(r for r in fp.risks(0, {"screens": screens, "links": []}, {}, shots) if r["code"] == "web")
     assert len(web["lines"]) == n  # the dialog's skip names them all
+
+
+def test_tree_with_short_names_root_on_the_branch_line_and_chains():  # VA-11840: 0 of 12 flow lines were drawn
+    text = (f"[Ban 44]({URL}a) [Ban 44 B]({URL}b) [Ban 47 A]({URL}c) [Ban 47 C]({URL}d) [Ban 56]({URL}e)\n"
+            "44 ├─ “Thông tin tài sản” → 44 B\n"
+            "   │  └─ chọn nhóm → Vị trí dự án 44 C\n"
+            "   └─ “Pháp lý” → 47 A ─ “Giấy tờ” → 47 C ─ “Pháp lý khác”: tệp đã lưu\n"
+            "56 ├─ “Vị trí” → 44 B: xem vị trí\n"
+            "4 ├─ “Mơ hồ” → 44 B")
+    result = build(detail(description=text))
+    by = {s["id"]: s["title"] for s in result.skeleton["screens"]}
+    label = {f'{s["id"]}.{i["id"]}': i["label"] for s in result.skeleton["screens"] for i in s["items"]}
+    got = [(by[x["src"].partition(".")[0]], label[x["src"]], by[x["to"]]) for x in result.skeleton["links"]]
+    assert got == [("Ban 44", "Thông tin tài sản", "Ban 44 B"), ("Ban 44", "Pháp lý", "Ban 47 A"),
+                   ("Ban 47 A", "Giấy tờ", "Ban 47 C"), ("Ban 56", "Vị trí", "Ban 44 B")]
+    assert result.manifest["ambiguous_lines"] == 2  # "chọn nhóm" (no quoted button) and the unknown root "4"

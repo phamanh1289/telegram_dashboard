@@ -9,12 +9,12 @@ const GROUP_GAP = 200;
 // extra space between the main flow, each separate group and the loose screens
 const LABEL_HIDE = 0.6;
 // from this zoom up the in-frame title (17px) reads at 10px+: the frame labels step aside
-const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40;
+const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40, FOLD_SLACK = 4;
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
 const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
-const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, BEZEL = 11, GAP = 16;
+const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
 // prototype: motion, phone bezel, margin
 const NOTE_MS = 2600;
 // edit: how long a refusal note stays up
@@ -34,4 +34,4 @@ const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/
 // = providers.ZEPLIN
 const SVGNS = "http://www.w3.org/2000/svg";
 
-export { SCREEN, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, SLIDE_MS, TOAST_MS, FLASH_MS, BEZEL, GAP, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, VERSION, CAP_NOTE, KINDS, ACTS, ZEPLIN, SVGNS };
+export { SCREEN, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, FOLD_SLACK, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, SLIDE_MS, TOAST_MS, FLASH_MS, HINT_MS, BEZEL, GAP, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, VERSION, CAP_NOTE, KINDS, ACTS, ZEPLIN, SVGNS };

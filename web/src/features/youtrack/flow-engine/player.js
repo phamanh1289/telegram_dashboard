@@ -1,4 +1,4 @@
-import { BEZEL, FLASH_MS, GAP, H, SLIDE_MS, TOAST_MS, W } from './constants.js';
+import { BEZEL, FLASH_MS, GAP, H, HINT_MS, SLIDE_MS, TOAST_MS, W } from './constants.js';
 import { box, btn, h, shotImg, svg } from './dom.js';
 import { isPop, scr, startOf } from './values.js';
 import { hotspots, shotOf } from './shots.js';
@@ -77,7 +77,7 @@ function phoneShell(t) {
  *  overlays, timers) and renders only the current screen + its overlays. flow(): the current flow (read on every
  *  tap, so edits apply); onGo(id): the shown screen changed. */
 function player(host, { flow, t, reduced, onGo }) {
-  let path = [], ovs = [], cur = null, flash = null; // ovs: [{id, kind, el, card, scrim, timer}]
+  let path = [], ovs = [], cur = null, flash = null, hint = null; // ovs: [{id, kind, el, card, scrim, timer}]
   const ui = phoneShell(t);
   const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
   ui.back.addEventListener("click", goBack);
@@ -146,6 +146,7 @@ function player(host, { flow, t, reduced, onGo }) {
   function shotNodes(s, sh) {
     const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot");
     pic.append(shotImg(sh, s.title, false));
+    pic.addEventListener("click", (e) => { if (!e.target.closest("button")) hints(pic); }); // a tap on no button
     s.items.forEach((it, i) => {
       if (!items[i]) return;
       const links = from(`${s.id}.${it.id}`);
@@ -264,6 +265,16 @@ function player(host, { flow, t, reduced, onGo }) {
     flash = { b, a, timer: setTimeout(() => { b.classList.remove("uf-flash"); flash = null; }, FLASH_MS) };
   }
 
+  /** A tap on the image outside every button: all its tap areas light up for a moment. Again mid-way: over. */
+  function hints(pic) {
+    if (hint) {
+      clearTimeout(hint.timer);
+      hint.pic.classList.remove("uf-hints");
+    }
+    pic.classList.add("uf-hints");
+    hint = { pic, timer: setTimeout(() => { pic.classList.remove("uf-hints"); hint = null; }, HINT_MS) };
+  }
+
   return {
     /** Jump to a screen (an overlay: its parent with the overlay open), as a fresh path. */
     open(id) {
@@ -291,6 +302,7 @@ function player(host, { flow, t, reduced, onGo }) {
       ro.disconnect();
       closeAll();
       if (flash) clearTimeout(flash.timer);
+      if (hint) clearTimeout(hint.timer);
     },
   };
 }

@@ -343,3 +343,42 @@ def test_design_signature_ignores_text_order_and_a_redesign_alone_is_a_change():
     assert u.changes(old, new) == []
     new.design = u.design_of(a)
     assert u.changes(old, new) == ["Cập nhật ảnh thiết kế Zeplin của 1 màn"]
+
+
+def test_merge_ai_repairs_a_link_whose_src_is_a_bare_button_id():  # VA-12584: 18 of 41 links lost, every button tap
+    skel = {"screens": [{"id": "a", "title": "A", "items": []}, {"id": "b", "title": "B", "items": []}], "links": []}
+    raw = {"adapter": 1, "screens": [{"id": "a", "items": [{"id": "go", "label": "Go"}, {"id": "dup", "label": "D"}]},
+                                     {"id": "b", "items": [{"id": "dup", "label": "D"}]}],
+           "links": [{"src": "go", "to": "b"}, {"src": "dup", "to": "a"}, {"src": "b", "to": "a", "act": "back"}]}
+    f = u.merge_ai(raw, skel, "VA-1")
+    assert [(x.src, x.to) for x in f.links] == [("a.go", "b"), ("b", "a")]  # "dup": two owners, not guessed
+
+
+def test_zeplin_hits_ignore_a_group_frame_that_does_not_hold_its_text():  # VA-12584 44 B: five rows, one frame
+    from telegram_dashboard import zeplin
+    rows = [_layer("group", "Row", 19, 721, 336, 60, layers=[_layer("text", "t", 79, y, 249, 60, label)])
+            for y, label in ((112, "Vị trí dự án"), (172, "Vị trí thửa đất"))]
+    got = zeplin.hits([_layer("group", "Screen", 0, 0, 375, 814, layers=rows)], 375)
+    assert got[:2] == [["Vị trí dự án", 79, 112, 249, 60], ["Vị trí thửa đất", 79, 172, 249, 60]]
+
+
+def test_buttons_with_no_zeplin_layer_are_the_ones_the_ai_locates():  # VA-12584 screen 44: a flattened list
+    from telegram_dashboard.youtrack import flow_locate
+
+    sentence = "Bạn có muốn quét để tự động lấy thông tin tài sản, giảm thời gian"
+    hits = [["Khảo sát tài sản", 20, 52, 335, 40], [sentence, 60, 556, 245, 60]]
+    flow = u.clean({"screens": [{"id": "a", "title": "44", "zeplin": "https://zpl.io/a", "items": [
+        {"id": "b1", "label": "Khảo sát tài sản"}, {"id": "b2", "label": "Thông tin tài sản"},
+        {"id": "b3", "label": "Pháp lý", "rect": {"x": 0, "y": 0, "w": 0.5, "h": 0.1}},
+        {"id": "b4", "label": "Hình ảnh"},
+    ]}], "links": []}, "VA-1")
+    todo = flow_locate.missing(flow, {"https://zpl.io/a": {"src": "https://img.zeplin.io/a.png", "hits": hits}})
+    assert [[i.id for i in items] for _, items in todo] == [["b2", "b4"]]  # a sentence naming the label is no match
+    files = {"screen-1.png": todo[0][1]}
+    answer = {"/tmp/x/screen-1.png": {"b2": [29, 227, 941, 74], "b4": [900, 950, 300, 100], "b1": [0, 0, 10, 10]}}
+    assert flow_locate.apply(answer, files) == 2
+    b2, b4 = todo[0][1]
+    assert (b2.rect.x, b2.rect.y, b2.rect.w, b2.rect.h) == (0.029, 0.227, 0.941, 0.074)
+    assert b4.rect.x + b4.rect.w <= 1 and b4.rect.y + b4.rect.h <= 1  # clipped to the image
+    assert flow.screens[0].items[0].rect is None  # not asked for: not touched
+    assert flow_locate.apply({"screen-1.png": {"b2": "x"}}, files) == 0 and flow_locate.apply(None, files) == 0

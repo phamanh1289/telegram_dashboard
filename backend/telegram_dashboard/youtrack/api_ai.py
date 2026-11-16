@@ -100,6 +100,8 @@ async def _ai(
     shell: bool = False,
     detached: bool = False,
     retry: bool = True,
+    *,
+    read_dir: str | None = None,
 ) -> str:
     """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report."""
     ai = request.app.state.ai
@@ -115,7 +117,7 @@ async def _ai(
         prompt, heavy = prompt + AI_CODE + (AI_SHELL if shell else ""), True
     token = no_retry.set(not retry)
     try:
-        return await ai.ask(f"{head}{prompt}", project=code, system=AI_SYSTEM, heavy=heavy,
+        return await ai.ask(f"{head}{prompt}", project=code, read_dir=read_dir, system=AI_SYSTEM, heavy=heavy,
                             on_text=on_text, feature="youtrack", yt=True, shell=shell and bool(code),
                             ref=_session_ref(request))  # fmt: skip
     except ApiError as e:

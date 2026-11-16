@@ -28,8 +28,10 @@ function hotspots(s, sh) {
     return { x: x * k, y: y * k, w: Math.max(w * k, 24), h: Math.max(hh * k, 24) };
   };
   // best tier wins: same text, the text starts with the label ("Tìm căn hộ" + its subtitle), contains it, is
-  // contained in it; within a tier, the order the server sent (buttons before titles, reading order)
-  const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " "), (x, n) => x.includes(n), (x, n) => x.length >= 3 && n.includes(x)];
+  // contained in it; within a tier, the order the server sent (buttons before titles, reading order). A text much
+  // longer than the label is a sentence that mentions it, not the button: no area beats a wrong one
+  const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " ") && x.length <= 3 * n.length,
+    (x, n) => x.includes(n) && x.length <= 2 * n.length, (x, n) => x.length >= 3 && n.includes(x)];
   const find = (label) => {
     const n = norm(label);
     if (!n) return -1;

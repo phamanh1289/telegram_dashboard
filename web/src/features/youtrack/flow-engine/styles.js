@@ -169,12 +169,13 @@ border-top:2px solid var(--uf-ink2);border-right:2px solid var(--uf-ink2);transf
 pointer-events:none}
 .uf-flash::before{opacity:1}
 .uf-row:focus-visible,.uf-pback:focus-visible,.uf-crumb:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
-/* prototype on a Zeplin image: the phone's own bars step aside; tap areas show on hover / focus */
+/* prototype on a Zeplin image: the phone's own bars step aside; tap areas show on hover / focus, all of them after a tap on none */
 .uf-full .uf-status,.uf-full .uf-nav,.uf-phone.uf-full::before,.uf-phone.uf-full::after{display:none}
 .uf-pshot{position:relative}
 .uf-phot{position:absolute;padding:0;border:0;border-radius:10px;background:transparent;cursor:pointer;
 -webkit-tap-highlight-color:transparent}
-.uf-phot:hover{background:var(--uf-accent-soft);box-shadow:inset 0 0 0 2px var(--uf-accent)}
+.uf-phot{transition:background .15s ease-out,box-shadow .15s ease-out}
+.uf-phot:hover,.uf-hints .uf-phot{background:var(--uf-accent-soft);box-shadow:inset 0 0 0 2px var(--uf-accent)}
 .uf-phot:active{opacity:.6}
 .uf-phot:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
 .uf-phot::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--uf-warn);opacity:0;

@@ -61,7 +61,11 @@ def hits(layers: list, width: float) -> list[list]:
                 for a in reversed(chain):
                     if a[3] > TAP_H or a[2] >= width:
                         break
-                    tap = a
+                    # Sketch exports leave stale group frames (a row's group far below its own text): only a
+                    # group that really holds the text is its tap area
+                    if a[0] <= r[0] + 1 and a[1] <= r[1] + 1 and a[0] + a[2] >= r[0] + r[2] - 1 \
+                            and a[1] + a[3] >= r[1] + r[3] - 1:
+                        tap = a
                 texts.append([label, *tap, tap is r])
             elif layer.get("type") == "group" and 0 < r[3] <= TAP_H and (label := _text(layer.get("name") or "")):
                 groups.append([label, *r])
@@ -77,6 +81,33 @@ def hits(layers: list, width: float) -> list[list]:
             seen.add(k)
             out.append(h)
     return out[:MAX_HITS]
+
+
+def _norm(s: str) -> str:
+    s = unicodedata.normalize("NFD", s.lower())
+    s = "".join(c for c in s if not unicodedata.combining(c)).replace("đ", "d")
+    return " ".join(re.sub(r"[\W_]+", " ", s).split())
+
+
+def unplaced(labels: list[str], hits: list[list]) -> list[int]:
+    """Indexes of the labels the page finds no hit for. The same tiers as hotspots() in
+    web/src/features/youtrack/flow-engine/shots.js (each hit used once): change both together."""
+    ns, used, out = [_norm(str(h[0])) for h in hits], set(), []
+    tiers = (
+        lambda x, n: x == n,
+        lambda x, n: x.startswith(n + " ") and len(x) <= 3 * len(n),
+        lambda x, n: n in x and len(x) <= 2 * len(n),
+        lambda x, n: len(x) >= 3 and x in n,
+    )
+    for i, label in enumerate(labels):
+        n = _norm(label)
+        j = next((j for t, ok in enumerate(tiers) if n and (t == 0 or len(n) >= 3)
+                  for j, x in enumerate(ns) if j not in used and ok(x, n)), None)  # fmt: skip
+        if j is None:
+            out.append(i)
+        else:
+            used.add(j)
+    return out
 
 
 def texts(layers: list) -> list[str]:

@@ -18,7 +18,7 @@ export type FlowStage = {
   kind: "stage"; stage: Stage; at: number; done?: boolean; error?: string; again?: boolean;
   id?: string; chars?: number; stories?: string[]; lost?: string[]; n?: number; of?: number; texts?: number; missing?: number;
   screens?: number; title?: string; items?: number; from?: string; item?: string; to?: string; links?: number; dropped?: number;
-  phase?: string; estimated_input_tokens?: number;
+  phase?: string; estimated_input_tokens?: number; locate?: number;
 };
 export type FlowEvent = FlowStage | TaskEvent;
 
@@ -111,7 +111,7 @@ function detail(t: T, r: Run, s: Stage): string {
     case "link":
       return r.last.check ? t("{n} liên kết", { n }) : t("{n}/~{of} liên kết", { n, of: Math.max(e.items ?? 0, n) });
     case "check":
-      if (!e.done) return t("Đang đọc {n} ký tự AI viết", { n: k(e.chars) });
+      if (!e.done) return e.locate ? t("AI tìm {n} nút không có layer Zeplin trên ảnh", { n: e.locate }) : t("Đang đọc {n} ký tự AI viết", { n: k(e.chars) });
       return dot(t("{n} màn", { n: e.screens ?? 0 }), t("{n} liên kết", { n: e.links ?? 0 }), !!e.dropped && t("bỏ {n} liên kết hỏng", { n: e.dropped }));
   }
   return "";
@@ -127,7 +127,7 @@ function headline(t: T, r: Run): string {
     case "ai": return e.again ? t("AI chạy lại từ đầu") : t("AI đang đọc ticket và lên luồng màn");
     case "draw": return t("Đang vẽ màn “{title}”", { title: e.title ?? "" });
     case "link": return e.item ? t("Đang nối “{item}” ({from}) → {to}", { item: e.item, from: e.from ?? "", to: e.to ?? "" }) : t("Đang nối {from} → {to}", { from: e.from ?? "", to: e.to ?? "" });
-    case "check": return t("Đang kiểm tra và dựng sơ đồ");
+    case "check": return e.locate && !e.done ? t("AI đang nhìn ảnh thiết kế để tìm nút") : t("Đang kiểm tra và dựng sơ đồ");
   }
 }
 
@@ -248,6 +248,7 @@ function Sources({ r, t }: { r: Run; t: T }) {
   const tk = r.last.ticket, z = r.last.zeplin;
   const live = r.idx <= 2; // ticket, Zeplin and the AI's reading: still taking things in
   const of = z?.of ?? 0, n = z?.done ? of : (z?.n ?? 0);
+  const depth = of ? Math.min(of - 1, 2) : 2; // cards behind the phone: as many screens as there are, up to a stack
   const files = [tk?.id ?? t("Ticket"), ...(tk?.stories ?? []).map((s) => t("story {ids}", { ids: s }))].slice(0, 3);
   return (
     <div aria-hidden className={cn(SIDE, "justify-self-end", !live && "opacity-60")}>
@@ -263,8 +264,8 @@ function Sources({ r, t }: { r: Run; t: T }) {
         {[52, 104, 156].map((x) => <path key={x} d={`M${x} 0C${x} 16 104 12 104 28`} stroke="var(--color-hl-2)" strokeWidth="1.5" className={cn(live && "ai-beam")} opacity={live ? 1 : 0.4} />)}
       </svg>
       <div className="relative mx-auto h-44 w-28">
-        <span className="absolute inset-0 -translate-x-3 -rotate-6 rounded-2xl border border-rule bg-paper-2" />
-        <span className="absolute inset-0 translate-x-3 rotate-6 rounded-2xl border border-rule bg-paper-2" />
+        {depth >= 1 && <span className="absolute inset-0 -translate-x-3 -rotate-6 rounded-2xl border border-rule bg-paper-2" />}
+        {depth >= 2 && <span className="absolute inset-0 translate-x-3 rotate-6 rounded-2xl border border-rule bg-paper-2" />}
         <div className="absolute inset-0 grid content-start gap-2 overflow-hidden rounded-2xl border border-rule bg-cotton p-2.5 shadow-stock">
           <span className="mx-auto block h-1 w-6 rounded-full bg-ink-3/30" />
           <span className="block h-2 w-3/4 rounded-full bg-ink-3/40" />
@@ -272,25 +273,16 @@ function Sources({ r, t }: { r: Run; t: T }) {
           <span className="mt-1 block h-5 rounded-full bg-hl/60" />
           {live && <span className="fx-scan absolute inset-x-0 top-2 h-6 border-b-2 border-hl-2 bg-linear-to-b from-transparent to-hl/25" style={{ "--fx-y": "140px" } as CSSProperties} />}
         </div>
-        <span className="absolute -top-2 -left-2 flex h-5 items-center gap-1 rounded-full bg-ink px-1.5 font-mono text-2xs text-cotton shadow-stock">
+        <span className="absolute -top-2 -left-2 flex h-5 items-center gap-1 rounded-full bg-ink px-1.5 font-mono text-2xs whitespace-nowrap text-cotton shadow-stock">
           <Layers className="size-3" />Zeplin
+          {of > 0 && <span className="tabular-nums opacity-75">· {z?.done ? t("{n} màn", { n: of }) : t("{n}/{of} màn", { n, of })}</span>}
+          {z?.done && of > 0 && <Check className="size-3 text-ok" />}
         </span>
         {live && ["Aa", ...CHIPS.map((c) => t(c))].map((c, k) => (
           <span key={c} className="ai-sample absolute top-0 left-0 inline-flex h-5 items-center rounded-full border border-rule bg-cotton px-1.5 font-mono text-2xs whitespace-nowrap text-ink-2 shadow-stock"
             style={{ offsetPath: `path("M96 ${40 + k * 30}C126 ${40 + k * 30} 136 88 156 88")`, animationDelay: `${k * 0.8}s` }}>{c}</span>
         ))}
       </div>
-      {of > 0 && (
-        <div className="grid gap-1.5">
-          <div className="flex items-baseline justify-between gap-2 text-2xs tabular-nums">
-            <span className="text-ink-2">{t("{n}/{of} màn", { n, of })}</span>
-            <span className="text-ink-3">{Math.round((n / of) * 100)}%</span>
-          </div>
-          <div className="h-1 overflow-hidden rounded-full bg-paper-3">
-            <div className={cn("h-full rounded-full bg-hl transition-[width] duration-500", live && n < of && "animate-pulse")} style={{ width: `${(n / of) * 100}%` }} />
-          </div>
-        </div>
-      )}
     </div>
   );
 }

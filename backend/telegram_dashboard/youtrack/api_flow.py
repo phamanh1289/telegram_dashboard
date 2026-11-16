@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import re
+import tempfile
 import time
 
 from fastapi import Query, Request, Response
@@ -15,7 +16,7 @@ from ..ai_run import flow_metrics
 from ..claude import claude_runs
 from ..links import ISSUE, _ours
 from . import flow as uiflow
-from . import flow_prompt
+from . import flow_locate, flow_prompt
 from .api_ai import _ai, background
 from .client import YtError, YtUnreachable
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
@@ -267,6 +268,7 @@ def register(r, svc: YouTrackDashboard) -> None:
             payload = flow_prompt.build(ticket, story, note, got, previous=previous, skip=skip)
         except flow_prompt.BudgetExceeded as error:
             raise YtError(413, str(error)) from None
+        payload.shots = got
         if missing:
             payload.warnings.append(
                 f"Không đọc được thiết kế của {len(missing)} màn; kiểm tra tên màn và nút trước khi cập nhật."
@@ -372,6 +374,31 @@ def register(r, svc: YouTrackDashboard) -> None:
 
         say_part = lambda **e: None  # noqa: E731  set by work: the stage line of the run being drawn
 
+        async def locate(flow, got, warnings, detached):
+            """Buttons with no Zeplin layer: one AI run looks at the screen images and places them. It never fails
+            the render: what it could not place is said in `warnings` and drawn by hand."""
+            todo = flow_locate.missing(flow, got or {})
+            if not todo:
+                return
+            n = sum(len(items) for _, items in todo)
+            say_part(stage="check", locate=n)
+            placed, why = 0, ""
+            try:
+                with tempfile.TemporaryDirectory(prefix="tgd-flow-") as tmp:  # a folder holding only these images
+                    prompt, files = await flow_locate.save(todo[: flow_locate.MAX_SCREENS], tmp)
+                    if files:
+                        out = await _ai(svc, request, prompt, notes=False, detached=detached, retry=False, read_dir=tmp)
+                        placed = flow_locate.apply(json_object(out), files)
+            except YtError as e:
+                if e.status == 499:  # Hủy: the render stops, not just this step
+                    raise
+                why = f" ({e.message})"
+            if placed < n:
+                warnings.append(
+                    f"{n - placed} nút không có layer trên Zeplin và AI chưa tìm được vị trí trên ảnh{why}: "
+                    "vẽ vùng bấm bằng tay."
+                )
+
         async def work(on_text=None, detached=False):
             # each stage as a {"kind": "stage"} step: the dialog shows what is read, drawn and checked, and how far
             def say(**e):
@@ -467,6 +494,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                 payload.warnings.append(lost)
             if old is not None:
                 flow, kept = uiflow.keep_manual(old, flow)
+            if body.mode == "flow":  # "screens" promises no AI, no token
+                await locate(flow, payload.shots, payload.warnings, detached)
             dropped = len(raw.get("links") or []) - len(flow.links)  # raw: a dict, clean took it
             say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped))
             if svc.flow_scope() != scope:

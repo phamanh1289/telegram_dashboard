@@ -72,6 +72,25 @@ def skeleton(sources, shots):
             screens[url] = {"id": stable_id(url),
                             "title": str(shots.get(original, {}).get("title") or "Màn Zeplin")[:80],
                             "zeplin": url, "items": []}
+    def one(name):
+        """The one screen a flow line names: its title, a markdown link to it, or the title's last words
+        ("44 B" for "Ban-TSCNY 44 B"), with or without a trailing ": remark"; None when none or several match."""
+        name = re.sub(r"^\[([^]]+)\]\(https?://[^)]+\)$", r"\1", name.strip())
+        for key in (name, name.partition(":")[0].strip()):
+            ids = by_title.get(key) or {i for t, found in by_title.items() if t.endswith(" " + key) for i in found}
+            if len(ids) == 1:
+                return next(iter(ids))
+        return None
+
+    def edge(src, label, to):
+        item_id = stable_id(label, "b")
+        screen = next(s for s in screens.values() if s["id"] == src)
+        if not any(i["id"] == item_id for i in screen["items"]):
+            screen["items"].append({"id": item_id, "label": label})
+        link = {"src": f"{src}.{item_id}", "to": to}
+        if link not in links:
+            links.append(link)
+
     # line -> why the code could not draw it (shown in the pre-check so the writer can fix the source)
     ambiguous = {}
     for line in text.splitlines():
@@ -82,45 +101,43 @@ def skeleton(sources, shots):
                 ambiguous[line] = unclear(line, by_title)
             continue
         start, label, end = match.groups()
-        if len(by_title.get(start, ())) != 1 or len(by_title.get(end, ())) != 1 or len(label) > 80:
+        src, to = one(start), one(end)
+        if not src or not to or len(label) > 80:
             ambiguous[line] = unclear(line, by_title, start, label, end)
             continue
-        src, to = next(iter(by_title[start])), next(iter(by_title[end]))
-        item_id = stable_id(label, "b")
-        screen = next(s for s in screens.values() if s["id"] == src)
-        if not any(i["id"] == item_id for i in screen["items"]):
-            screen["items"].append({"id": item_id, "label": label})
-        edge = {"src": f"{src}.{item_id}", "to": to}
-        if edge not in links:
-            links.append(edge)
-    # Root screen followed by explicit quoted-button tree edges. Conditions/unknown names stay for AI.
+        edge(src, label, to)
+    # A tree of quoted buttons under its root screen: the root on a line of its own or before the first branch
+    # ('44 ├─ "Thông tin tài sản" → 44 B'), a branch may chain ('"Pháp lý" → 47 A ─ "Giấy tờ" → 47 C').
+    # Conditions / unknown names stay for the AI.
     stack = []
     for line in text.splitlines():
         header = re.fullmatch(r"\s*\[([^]\n]+)\]\(https?://[^)]+\)\s*", line)
         if header and len(by_title.get(header[1], ())) == 1:
             stack = [(-1, next(iter(by_title[header[1]])))]
             continue
-        tree = re.fullmatch(r'([ │]*)(?:├|└)─+\s*["“](.+?)["”]\s*→\s*(.+?)\s*', line)
-        if not tree or not stack:
+        tree = re.fullmatch(r"(.*?)(?:├|└)─+\s*(.+?)\s*", line)
+        if not tree:
             continue
-        indent, label, target = tree.groups()
-        target_match = re.fullmatch(r"\[([^]]+)\]\(https?://[^)]+\)", target)
-        title = target_match[1] if target_match else target
-        if len(by_title.get(title, ())) != 1 or len(label) > 80:
+        lead, depth = tree[1].strip(" │"), len(tree[1])
+        if lead:
+            if not (root := one(lead)):
+                continue
+            stack = [(-1, root)]
+        if not stack:
             continue
-        depth = len(indent)
         while len(stack) > 1 and stack[-1][0] >= depth:
             stack.pop()
-        src, to = stack[-1][1], next(iter(by_title[title]))
-        item_id = stable_id(label, "b")
-        screen = next(s for s in screens.values() if s["id"] == src)
-        if not any(item["id"] == item_id for item in screen["items"]):
-            screen["items"].append({"id": item_id, "label": label})
-        edge = {"src": f"{src}.{item_id}", "to": to}
-        if edge not in links:
-            links.append(edge)
-        stack.append((depth, to))
-        ambiguous.pop(line, None)
+        src, drawn, rest = stack[-1][1], 0, re.split(r"\s+─+\s+", tree[2])
+        for part in rest:
+            step = re.fullmatch(r'["“](.+?)["”]\s*→\s*(.+)', part)
+            if not step or len(step[1]) > 80 or not (to := one(step[2])):
+                break
+            edge(src, step[1], to)
+            if not drawn:
+                stack.append((depth, to))
+            src, drawn = to, drawn + 1
+        if drawn and not any("→" in part for part in rest[drawn:]):
+            ambiguous.pop(line, None)
     if len(screens) > uiflow.MAX_SCREENS:
         raise BudgetExceeded(f"Nguồn có hơn {uiflow.MAX_SCREENS} màn; tách ticket trước khi vẽ")
     if len(links) > uiflow.MAX_LINKS or any(len(s["items"]) > uiflow.MAX_ITEMS for s in screens.values()):
@@ -137,6 +154,7 @@ class Payload:
     head: str = ""  # rules + ticket + stories: what every part of a split render repeats
     design: dict | None = None  # Zeplin URL -> its texts
     note: str = ""
+    shots: dict | None = None  # Zeplin URL -> its shot as read for this render (api_flow.gather sets it)
 
 
 def _render(head, design, base, note):

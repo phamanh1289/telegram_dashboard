@@ -19,12 +19,12 @@ const GROUP_GAP = 200;
 // extra space between the main flow, each separate group and the loose screens
 const LABEL_HIDE = 0.6;
 // from this zoom up the in-frame title (17px) reads at 10px+: the frame labels step aside
-const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40;
+const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40, FOLD_SLACK = 4;
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
 const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
-const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, BEZEL = 11, GAP = 16;
+const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
 // prototype: motion, phone bezel, margin
 const NOTE_MS = 2600;
 // edit: how long a refusal note stays up
@@ -103,8 +103,10 @@ function hotspots(s, sh) {
     return { x: x * k, y: y * k, w: Math.max(w * k, 24), h: Math.max(hh * k, 24) };
   };
   // best tier wins: same text, the text starts with the label ("Tìm căn hộ" + its subtitle), contains it, is
-  // contained in it; within a tier, the order the server sent (buttons before titles, reading order)
-  const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " "), (x, n) => x.includes(n), (x, n) => x.length >= 3 && n.includes(x)];
+  // contained in it; within a tier, the order the server sent (buttons before titles, reading order). A text much
+  // longer than the label is a sentence that mentions it, not the button: no area beats a wrong one
+  const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " ") && x.length <= 3 * n.length,
+    (x, n) => x.includes(n) && x.length <= 2 * n.length, (x, n) => x.length >= 3 && n.includes(x)];
   const find = (label) => {
     const n = norm(label);
     if (!n) return -1;
@@ -347,10 +349,12 @@ function rowsOf(s) {
   const c = cardOf(s), sh = shotOf(s);
   if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
   const { items } = hotspots(s, sh), fold = H - BOTTOM;
-  const off = items.filter((r) => !r || r.y + r.h > (r.manual ? H + 0.5 : fold)).length;
+  // on the frame: the area ends inside it. A design 814 high scales to 846, its bottom button a few px past H:
+  // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
+  const on = (r) => r && r.y + r.h <= H + (r.manual ? 0.5 : FOLD_SLACK);
+  const off = items.filter((r) => !on(r)).length;
   let n = 0;
-  // a hand-drawn area may sit over the home bar (the user put it there); a text match there is the next screenful
-  return items.map((r) => (r && r.y + r.h <= (r.manual ? H + 0.5 : fold) ? { r, hot: true }
+  return items.map((r) => (on(r) ? { r, hot: true }
     : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
 }
 /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
@@ -920,12 +924,13 @@ border-top:2px solid var(--uf-ink2);border-right:2px solid var(--uf-ink2);transf
 pointer-events:none}
 .uf-flash::before{opacity:1}
 .uf-row:focus-visible,.uf-pback:focus-visible,.uf-crumb:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
-/* prototype on a Zeplin image: the phone's own bars step aside; tap areas show on hover / focus */
+/* prototype on a Zeplin image: the phone's own bars step aside; tap areas show on hover / focus, all of them after a tap on none */
 .uf-full .uf-status,.uf-full .uf-nav,.uf-phone.uf-full::before,.uf-phone.uf-full::after{display:none}
 .uf-pshot{position:relative}
 .uf-phot{position:absolute;padding:0;border:0;border-radius:10px;background:transparent;cursor:pointer;
 -webkit-tap-highlight-color:transparent}
-.uf-phot:hover{background:var(--uf-accent-soft);box-shadow:inset 0 0 0 2px var(--uf-accent)}
+.uf-phot{transition:background .15s ease-out,box-shadow .15s ease-out}
+.uf-phot:hover,.uf-hints .uf-phot{background:var(--uf-accent-soft);box-shadow:inset 0 0 0 2px var(--uf-accent)}
 .uf-phot:active{opacity:.6}
 .uf-phot:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
 .uf-phot::before{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 2px var(--uf-warn);opacity:0;
@@ -1951,7 +1956,7 @@ function phoneShell(t) {
  *  overlays, timers) and renders only the current screen + its overlays. flow(): the current flow (read on every
  *  tap, so edits apply); onGo(id): the shown screen changed. */
 function player(host, { flow, t, reduced, onGo }) {
-  let path = [], ovs = [], cur = null, flash = null; // ovs: [{id, kind, el, card, scrim, timer}]
+  let path = [], ovs = [], cur = null, flash = null, hint = null; // ovs: [{id, kind, el, card, scrim, timer}]
   const ui = phoneShell(t);
   const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
   ui.back.addEventListener("click", goBack);
@@ -2020,6 +2025,7 @@ function player(host, { flow, t, reduced, onGo }) {
   function shotNodes(s, sh) {
     const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot");
     pic.append(shotImg(sh, s.title, false));
+    pic.addEventListener("click", (e) => { if (!e.target.closest("button")) hints(pic); }); // a tap on no button
     s.items.forEach((it, i) => {
       if (!items[i]) return;
       const links = from(`${s.id}.${it.id}`);
@@ -2138,6 +2144,16 @@ function player(host, { flow, t, reduced, onGo }) {
     flash = { b, a, timer: setTimeout(() => { b.classList.remove("uf-flash"); flash = null; }, FLASH_MS) };
   }
 
+  /** A tap on the image outside every button: all its tap areas light up for a moment. Again mid-way: over. */
+  function hints(pic) {
+    if (hint) {
+      clearTimeout(hint.timer);
+      hint.pic.classList.remove("uf-hints");
+    }
+    pic.classList.add("uf-hints");
+    hint = { pic, timer: setTimeout(() => { pic.classList.remove("uf-hints"); hint = null; }, HINT_MS) };
+  }
+
   return {
     /** Jump to a screen (an overlay: its parent with the overlay open), as a fresh path. */
     open(id) {
@@ -2165,6 +2181,7 @@ function player(host, { flow, t, reduced, onGo }) {
       ro.disconnect();
       closeAll();
       if (flash) clearTimeout(flash.timer);
+      if (hint) clearTimeout(hint.timer);
     },
   };
 }

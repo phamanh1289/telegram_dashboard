@@ -464,6 +464,7 @@ Chỉ bổ sung màn chưa có nguồn thiết kế, nút tương tác chưa có
 các quan hệ/điều kiện còn thiếu. Không chép nhãn trang trí, không phát minh tên/URL/kích thước thiết kế.
 screens bổ sung: {id,title,kind,parent,zeplin,ac,items:[{id,label}]}; màn sẵn có chỉ cần {id,kind,parent,ac,items}.
 links bổ sung: {src,to,act:navigate|open|back|close,when,ac}. Mỗi thao tác nút phải có item tương ứng.
+Bấm nút: src = "<id màn>.<id nút>" (vd. "s12ab.b34cd"), không ghi id nút một mình; to = id màn.
 Back: src = id màn (không nút). Màn mở được từ nhiều màn (A → C, B → C): một link back về MỖI màn đó (C → A, C → B).
 kind chỉ là "screen" | "popup" | "sheet" | "toast"; ac là MỘT chuỗi ≤ 40 ký tự (vd. "AC1.2, AC4.5"), không phải mảng.
 Chỉ vẽ phạm vi ticket yêu cầu; story cung cấp AC/quy tắc/cây Luồng màn. Giữ AC/BR vào ac.
@@ -516,9 +517,16 @@ def merge_ai(raw: dict, skeleton: dict, ticket: str) -> Flow:
         if screen.get("parent"):
             screen["parent"] = remap.get(screen["parent"], screen["parent"])
     links = list(skeleton["links"])
+    ids, owners = {s.get("id") for s in screens}, {}
+    for screen in screens:
+        for i in screen.get("items") or []:
+            if isinstance(i, dict):
+                owners.setdefault(i.get("id"), []).append(screen.get("id"))
     for link in raw.get("links", []):
         item = dict(link)
         root, dot, button = item.get("src", "").partition(".")
+        if not dot and root not in ids and len(owners.get(root, ())) == 1:
+            root, dot, button = owners[root][0], ".", root  # the model wrote the button id alone: its one screen
         item["src"] = str(remap.get(root, root)) + (dot + button if dot else "")
         item["to"] = remap.get(item.get("to"), item.get("to"))
         if item not in links:

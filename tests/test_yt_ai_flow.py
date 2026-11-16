@@ -1,6 +1,8 @@
 import asyncio
 import json
+import re
 import types
+from pathlib import Path
 
 import httpx
 from conftest import FakeAgent
@@ -241,3 +243,37 @@ async def test_ai_flow_job_is_stopped_by_delete():
         assert svc.jobs.status() == {"flow-job-3": "error"}
 
     await _flow_post(agent, then=then)
+
+
+async def test_ai_flow_asks_the_ai_to_place_a_button_zeplin_has_no_layer_for(monkeypatch):  # VA-12584 screen 44
+    url = "https://app.zeplin.io/project/" + "a" * 24 + "/screen/" + "b" * 24
+
+    async def get(_self, urls, **_):
+        shot = {"title": "Đăng nhập", "src": "https://img.zeplin.io/a.png", "w": 375, "h": 812, "hits": [], "texts": []}
+        return {u: shot for u in urls}, []
+
+    async def image(_src):
+        return b"png", "image/png"
+
+    monkeypatch.setattr(zeplin.Shots, "get", get)
+    monkeypatch.setattr(zeplin, "image", image)
+    calls = []
+
+    async def agent(prompt, *a, read_dir=None, **k):
+        calls.append((prompt, read_dir))
+        if read_dir is None:
+            return json.dumps({"screens": [{"id": "login", "title": "Đăng nhập", "zeplin": url,
+                                            "items": [{"id": "otp", "label": "Gửi OTP"}]}], "links": []})
+        assert (Path(read_dir) / "screen-1.png").read_bytes() == b"png" and '"label": "Gửi OTP"' in prompt
+        return json.dumps({"screen-1.png": {i: [100, 500, 800, 60] for i in re.findall(r'"id": "([^"]+)"', prompt)}})
+
+    _, r = await _flow_post(agent, desc=f"Đăng nhập bằng OTP [Đăng nhập]({url})")
+    items = [i for s in r.json()["flow"]["screens"] for i in s["items"]]
+    assert len(calls) == 2 and [i["rect"] for i in items] == [{"x": 0.1, "y": 0.5, "w": 0.8, "h": 0.06}]
+    assert not any("vẽ vùng bấm" in w for w in r.json()["warnings"])
+
+    async def lost(prompt, *a, read_dir=None, **k):
+        return await agent(prompt) if read_dir is None else "không thấy"
+
+    _, r = await _flow_post(lost, desc=f"Đăng nhập bằng OTP [Đăng nhập]({url})")
+    assert r.json()["flow"]["screens"] and any("1 nút không có layer" in w for w in r.json()["warnings"])

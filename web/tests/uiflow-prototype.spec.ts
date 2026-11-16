@@ -239,3 +239,27 @@ test("a screen opened from two places goes back to the one walked", async ({ pag
   await page.getByRole("button", { name: "Quay lại" }).click();
   await expect(title(page)).toHaveText("Màn B"); // not A, though C's first back link names A
 });
+
+test("a tap on the image outside every button lights up all its tap areas, then they fade", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    window.__api.destroy();
+    const pic = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688"/>');
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, structuredClone(window.SAMPLE), { lang: "vi",
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 1688, hits: [["Gửi OTP", 100, 400, 200, 50]] } } } as object);
+  });
+  await page.getByRole("button", { name: "Prototype" }).click();
+  const shot = page.locator(".uf-pshot");
+  await expect(page.locator(".uf-phot")).not.toHaveCount(0);
+  // the image itself, not a button; read in the same task: the hint lasts under a second
+  const lit = await page.evaluate(() => {
+    const pic = document.querySelector(".uf-pshot")!;
+    (pic.firstElementChild as HTMLElement).click();
+    return pic.classList.contains("uf-hints");
+  });
+  expect(lit).toBe(true);
+  await expect(page.locator(".uf-pscreen")).toHaveCount(1); // still on the same screen
+  await expect(shot).not.toHaveClass(/uf-hints/, { timeout: 2000 });
+  await page.locator(".uf-phot").first().click(); // a tap on a button is a tap, not a hint
+  await expect(page.locator(".uf-pshot.uf-hints")).toHaveCount(0);
+});

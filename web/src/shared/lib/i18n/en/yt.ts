@@ -596,6 +596,8 @@ export default {
   "Đang nối “{item}” ({from}) → {to}": "Linking “{item}” ({from}) → {to}",
   "Đang nối {from} → {to}": "Linking {from} → {to}",
   "Đang kiểm tra và dựng sơ đồ": "Checking and laying out the map",
+  "AI tìm {n} nút không có layer Zeplin trên ảnh": "AI is finding {n} buttons with no Zeplin layer on the image",
+  "AI đang nhìn ảnh thiết kế để tìm nút": "AI is looking at the design image to find buttons",
   "Không đọc được Zeplin: AI chỉ dựa vào ticket, màn vẽ khung đơn giản.": "Couldn't read Zeplin: the AI goes by the ticket alone, screens are drawn plain.",
   "Có thể đóng cửa sổ: AI vẫn chạy nền, nút \"UI flow\" có chấm báo đang chạy; mở lại để xem tiếp hoặc lấy kết quả. Muốn huỷ: bấm Dừng ở ô dưới.": "You can close this: the AI keeps going in the background and the \"UI flow\" button shows a dot while it runs; open it again to follow or get the result. To cancel, press Stop below.",
   "AI vừa vẽ {s} màn, {l} liên kết": (v) => `The AI drew ${v.s} ${s(Number(v.s), "screen", "screens")}, ${v.l} ${s(Number(v.l), "link", "links")}`,
