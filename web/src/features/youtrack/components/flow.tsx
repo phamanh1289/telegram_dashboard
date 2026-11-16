@@ -1,14 +1,12 @@
 "use client";
 
-import { Menu } from "@base-ui/react/menu";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Ellipsis, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow } from "lucide-react";
+import { ArrowLeft, Download, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
-import { MENU_ACTION, MENU_ITEM, MENU_POPUP } from "@/shared/components/ui/menu";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
 import { packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
@@ -404,7 +402,17 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 <Button size="icon-sm" variant="ghost" aria-label={t("Render lại bằng AI")} disabled={locked} onClick={() => setAsk("again")}><RefreshCw /></Button>
               </Hint>
             )}
-            {(flow || q.data?.att) && <FlowMenu issue={issue} att={q.data?.att ?? null} disabled={locked} onDelete={flow ? () => { remove.reset(); setAsk("delete"); } : undefined} />}
+            {q.data?.att && (
+              <Hint side="bottom" text={t("Tải file HTML của UI flow trên ticket: mở được offline, không cần app")}>
+                <Button size="icon-sm" variant="ghost" aria-label={t("Tải file HTML")} nativeButton={false}
+                  render={<a href={fileUrl(issue, { id: q.data.att })} target="_blank" rel="noopener noreferrer" />}><Download /></Button>
+              </Hint>
+            )}
+            {flow && (
+              <Hint side="bottom" text={q.data?.att ? t("Xoá UI flow: gỡ file trên ticket (có hỏi lại trước)") : t("Bỏ bản render: bỏ sơ đồ AI vừa vẽ, chưa lên ticket (có hỏi lại trước)")}>
+                <Button size="icon-sm" variant="ghost" className="hover:text-error" aria-label={q.data?.att ? t("Xoá UI flow") : t("Bỏ bản render")} disabled={locked} onClick={() => { remove.reset(); setAsk("delete"); }}><Trash2 /></Button>
+              </Hint>
+            )}
           </header>
           <div className="relative min-h-0 flex-1">{body}</div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3 empty:hidden">
@@ -510,34 +518,3 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
 const Center = ({ children }: { children: React.ReactNode }) => (
   <div className="grid h-full w-full place-content-center justify-items-center gap-3 p-6 text-center">{children}</div>
 );
-
-/** The dialog's "⋯": render the flow again, or download the file the ticket holds. */
-function FlowMenu({ issue, att, onDelete, className, disabled }: { issue: string; att: string | null; onDelete?: () => void; className?: string; disabled?: boolean }) {
-  const t = useT();
-  return (
-    <Menu.Root>
-      <Hint side="bottom" text={t("Tải file HTML hoặc xoá UI flow của ticket này")}>
-        <Menu.Trigger aria-label={t("Thao tác UI flow")} className={className} render={<Button size="icon-sm" variant="ghost" className="data-popup-open:bg-paper-3" />}>
-          <Ellipsis />
-        </Menu.Trigger>
-      </Hint>
-      <Menu.Portal>
-        <Menu.Positioner sideOffset={6} align="end" className="z-50 outline-none">
-          <Menu.Popup className={cn(MENU_POPUP, "w-64 text-sm")}>
-            {att && (
-              <Menu.Item className={cn(MENU_ITEM, MENU_ACTION, "no-underline")}
-                render={<a href={fileUrl(issue, { id: att })} target="_blank" rel="noopener noreferrer" />}>
-                <Download aria-hidden />{t("Tải file HTML")}
-              </Menu.Item>
-            )}
-            {onDelete && (
-              <Menu.Item disabled={disabled} onClick={onDelete} className={cn(MENU_ITEM, MENU_ACTION, "text-error")}>
-                <Trash2 aria-hidden />{att ? t("Xoá UI flow") : t("Bỏ bản render")}
-              </Menu.Item>
-            )}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
-  );
-}

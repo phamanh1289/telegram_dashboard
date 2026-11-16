@@ -523,13 +523,11 @@ test("Xoá UI flow asks first, Hủy keeps the dialog, Xóa removes only the fil
   await ctl("/set", { att: "1-1", flow_deleted: null });
   await openFlow(page);
   const d = dialog(page);
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Xoá UI flow" }).click();
+  await d.getByRole("button", { name: "Xoá UI flow" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Hủy" }).click();
   await expect(d).toBeVisible(); // a press in the confirm never closes the flow under it
   expect((await ctl("/state")).flow_deleted ?? null).toBeNull();
-  await d.getByRole("button", { name: "Thao tác UI flow" }).click();
-  await page.getByRole("menuitem", { name: "Xoá UI flow" }).click();
+  await d.getByRole("button", { name: "Xoá UI flow" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Xóa" }).click();
   await expect(d.getByText("Ticket này chưa có UI flow")).toBeVisible();
   expect((await ctl("/state")).flow_deleted).toBe("1-1");

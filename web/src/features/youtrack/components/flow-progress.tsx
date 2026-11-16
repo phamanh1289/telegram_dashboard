@@ -282,12 +282,13 @@ function Sources({ r, t }: { r: Run; t: T }) {
       </div>
       {of > 0 && (
         <div className="grid gap-1.5">
-          <div className="flex flex-wrap justify-center gap-1">
-            {Array.from({ length: Math.min(of, 24) }, (_, i) => (
-              <span key={i} className={cn("h-3 w-2 rounded-sm", i < n ? "bg-hl" : i === n && live ? "animate-pulse bg-hl/50" : "bg-paper-3")} />
-            ))}
+          <div className="flex items-baseline justify-between gap-2 text-2xs tabular-nums">
+            <span className="text-ink-2">{t("{n}/{of} màn", { n, of })}</span>
+            <span className="text-ink-3">{Math.round((n / of) * 100)}%</span>
           </div>
-          <span className="text-center text-2xs text-ink-3 tabular-nums">{t("{n}/{of} màn", { n, of })}</span>
+          <div className="h-1 overflow-hidden rounded-full bg-paper-3">
+            <div className={cn("h-full rounded-full bg-hl transition-[width] duration-500", live && n < of && "animate-pulse")} style={{ width: `${(n / of) * 100}%` }} />
+          </div>
         </div>
       )}
     </div>
