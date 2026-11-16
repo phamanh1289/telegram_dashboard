@@ -14,6 +14,8 @@ type FlowApi = {
   set(f: UiFlow): void;
   /** New Zeplin images: the frames redraw, positions stay. */
   shots(s: Shots): void;
+  /** What the render could not make sure of: rows in the engine's flow check ("Soát luồng"); [] clears them. */
+  notes(list: string[]): void;
   destroy(): void;
 };
 type Shots = Record<string, FlowShot>;
@@ -44,7 +46,7 @@ function loadEngine(): Promise<Engine> {
  * Mounts the engine on `el` once both `el` and `flow` exist (editable, in `lang` at that time: a switch mid-edit would
  * cost the edits); a new `flow` afterwards is `set` into it, clean. `onChange(flow, dirty)` on every edit. Unmounts with `el`.
  */
-export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, onChange, shots }: { lang: Lang; onChange: (f: UiFlow, dirty: boolean) => void; shots?: Shots }) {
+export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, onChange, shots, notes }: { lang: Lang; onChange: (f: UiFlow, dirty: boolean) => void; shots?: Shots; notes?: string[] }) {
   const [api, setApi] = useState<FlowApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [tries, setTries] = useState(0);
@@ -99,6 +101,8 @@ export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, o
       try { api.shots(shots); } catch (e) { fail(e); }
     }
   }, [api, shots]);
+  const noted = (notes ?? []).join("\n");
+  useEffect(() => { api?.notes(noted ? noted.split("\n") : []); }, [api, noted]);
   return { api, error, retry: () => { setError(null); setTries((n) => n + 1); } };
 }
 

@@ -116,3 +116,32 @@ test("60 screens: a search keystroke and its highlight stay under one 100 ms tas
   }, { flow, shots });
   expect(ms).toBeLessThan(100);
 });
+
+test("a screen added from Zeplin never lands on another: the others stay clickable, and ▶ goes to the one picked", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await edit(page);
+  await page.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  await page.getByLabel("Link màn Zeplin").fill("https://zpl.io/pay");
+  await page.getByLabel("Link màn Zeplin").press("Enter");
+  await expect(page.locator(".uf-screen", { hasText: "Thanh toán" })).toHaveCount(1);
+  const f = await page.evaluate(() => window.__api.get());
+  const added = f.screens.at(-1)!;
+  for (const s of f.screens.slice(0, -1)) // 390 × 844 frames: no two rectangles meet
+    expect(Math.abs(s.x! - added.x!) >= 390 || Math.abs(s.y! - added.y!) >= 844, `${s.id} is under the new screen`).toBe(true);
+  await page.getByRole("button", { name: "Vừa màn hình" }).click();
+  // the middle of the map, where the new screen used to be dropped: "Nhập OTP" is still the one a click selects
+  await page.locator('.uf-screen[data-id="code"] .uf-title').click();
+  await expect(page.locator(".uf-insp h2")).toHaveText("Nhập OTP");
+  await page.locator(".uf-insp").getByRole("button", { name: "▶ Màn bắt đầu" }).click();
+  expect((await page.evaluate(() => window.__api.get())).start).toBe("code");
+  // Prototype begins at the start screen just chosen, not at the screen that was added last
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(page.locator(".uf-trail .uf-crumb")).toHaveText(["Nhập OTP"]);
+  // and a start screen changed on the map later moves it again, over the walk it had kept
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  await page.locator(".uf-insp").getByRole("button", { name: "▶ Màn bắt đầu" }).click();
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(page.locator(".uf-trail .uf-crumb")).toHaveText(["Trang chủ"]);
+});

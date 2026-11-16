@@ -38,6 +38,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   // Pure CSS from the camera's --zk; no per-label work on a pan, none in JS on a zoom.
   const label = h("div", "uf-flabel");
   label.setAttribute("aria-hidden", "true"); // the in-frame title is the accessible name; this one only repeats it
+  if (isStart) label.append(h("span", "uf-lstart", "▶")); // the in-frame badge is hidden with its title bar when zoomed out
   label.append(h("span", "uf-ltitle", (lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title) || s.title));
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);

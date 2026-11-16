@@ -1,18 +1,19 @@
 import { createFinder } from './finder.js';
 import { injectStyle } from './styles.js';
 import { tr } from './i18n.js';
-import { SHOTS, setShots, shotOf } from './shots.js';
+import { setShots, shotOf } from './shots.js';
 import { parents, sanitize } from './model.js';
 import { layout, sharedLead } from './layout.js';
 import { bounds, curve, freeShots, linkEnds, linkText, r1 } from './geometry.js';
-import { btn, h, placeFrame, svg } from './dom.js';
+import { btn, h, ibtn, icon, placeFrame, svg } from './dom.js';
 import { readHash, saveFile } from './standalone.js';
 import { buildFrame, markers } from './frames.js';
-import { CAP, CAP_URL, H, LABEL_HIDE, MAX_SCREENS, MERGE_MS, NOTE_MS, UNDO, W, ZEPLIN } from './constants.js';
-import { canon, scr, startOf, str } from './values.js';
+import { H, LABEL_HIDE, MERGE_MS, NOTE_MS, UNDO, W } from './constants.js';
+import { scr, startOf } from './values.js';
 import { KIND_ORDER, brokenRows, checklist, gaps, stepText, testPaths } from './checks.js';
 import { camera } from './camera.js';
 import { editor } from './editor.js';
+import { zeplinForm as zeplinFormOf } from './zeplin-form.js';
 import { player } from './player.js';
 
 // ------------------------------------------------------------------ mount
@@ -30,14 +31,14 @@ function mount(host, flow, opts = {}, src = null) {
   const first = sanitize(flow);
   let cur = layout(freeShots(first.flow)), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
   let fut = [], merging = null; // fut: what undo took back (redo); merging: {key, at} of the last mergeable step
-  let shown = "map", focusId = null, here = null, editing = false;
+  let shown = "map", focusId = null, focusLink = null, focusSrc = null, focusAc = null, here = null, editing = false; // focusLink: index of the arrow in hand (edit)
   let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
 
   // shell
   const root = h("div", "uf-root");
   root.dataset.mode = shown;
   const bar = h("div", "uf-bar");
-  let bAdd = null, bZep = null, bUndo = null, bRedo = null;
+  let bZep = null, bUndo = null, bRedo = null;
   const seg = h("div", "uf-seg");
   seg.setAttribute("role", "group");
   const bMap = btn(t("map"), "uf-btn", () => api.mode("map"));
@@ -45,26 +46,29 @@ function mount(host, flow, opts = {}, src = null) {
   seg.append(bMap, bPlay);
   bar.append(seg);
   if (opts.edit) {
-    const bEdit = btn(t("edit"), "uf-btn uf-editbtn", () => {
+    const bEdit = ibtn("edit", t("edit"), "uf-btn uf-editbtn", () => {
       ed.cancel(); // the handles this render draws are about to be replaced
       editing = !editing;
       bEdit.setAttribute("aria-pressed", String(editing));
       root.classList.toggle("uf-editing", editing);
-      if (!editing) { ed.clear(); zeplinForm(false); }
+      if (!editing) { ed.clear(); zeplinForm(false); setFocus(null); }
       render(); // the dots and arrow handles only exist while editing
-    });
+    }, t("edit"));
     bEdit.setAttribute("aria-pressed", "false");
-    bAdd = btn(t("addScreen"), "uf-btn uf-add", () => ed.addScreen());
-    bZep = btn(t("fromZeplin"), "uf-btn uf-add", () => zeplinForm(true));
+    bZep = btn(t("fromZeplin"), "uf-btn", () => zeplinForm(true));
     bZep.setAttribute("aria-expanded", "false");
-    bUndo = btn(t("undo"), "uf-btn uf-add", () => api.undo());
-    bRedo = btn(t("redo"), "uf-btn uf-add", () => api.redo());
-    bar.append(bEdit, bAdd, bZep, btn(t("relayout"), "uf-btn uf-add", () => ed.relayout()), bUndo, bRedo);
+    bUndo = ibtn("undo", t("undo"), "uf-btn", () => api.undo());
+    bRedo = ibtn("redo", t("redo"), "uf-btn", () => api.redo());
+    const tools = h("div", "uf-tools uf-add"); // one group, there only while editing
+    tools.setAttribute("role", "group");
+    tools.append(bZep, h("span", "uf-div"), ibtn("grid", t("relayout"), "uf-btn", () => ed.relayout()), bUndo, bRedo);
+    bar.append(bEdit, tools);
   }
-  const bFit = btn(t("fit"), "uf-btn uf-fit", () => api.fit());
+  const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
   bar.append(h("span", "uf-sp"), bFit);
-  const bCheck = btn("", "uf-btn", togglePanel);
+  const bCheck = btn(null, "uf-btn uf-check", togglePanel), nCheck = h("span", "uf-badge");
   bCheck.setAttribute("aria-expanded", "false");
+  bCheck.append(icon("check"), h("span", null, t("check", { n: "" }).replace(/\s*\(.*$/, "")), nCheck);
   bar.append(bCheck);
   if (src !== null) bar.append(btn(t("save"), "uf-btn", () => saveFile(src, cur)));
 
@@ -112,69 +116,11 @@ function mount(host, flow, opts = {}, src = null) {
   });
   bar.insertBefore(finder.element, bFit);
 
-  // ---------------- + Từ Zeplin: a checked link, read once (opts.lookup, the dashboard's), one new screen
-  let zTry = 0;
-  function zeplinForm(open) {
-    zTry++; // a read still in flight answers a form that is gone
-    if (open && !panel.hidden) togglePanel();
-    zform.hidden = !open;
-    bZep?.setAttribute("aria-expanded", String(open));
-    if (!open) return;
-    const i = h("input", "uf-input");
-    i.type = "url";
-    i.placeholder = "https://app.zeplin.io/project/…/screen/…";
-    const lab = h("label", "uf-field");
-    lab.append(h("span", "uf-flab", t("zUrl")), i);
-    const msg = h("p", "uf-zmsg");
-    msg.setAttribute("role", "status");
-    const acts = h("div", "uf-acts uf-chips");
-    const say2 = (text, err, ...buttons) => {
-      msg.textContent = text;
-      msg.classList.toggle("uf-err", !!err);
-      acts.replaceChildren(add, ...buttons, btn(t("close"), "uf-btn", () => zeplinForm(false)));
-    };
-    const run = async (mode) => { // mode: undefined | "copy" (duplicate allowed) | "plain" (no image read)
-      const url = i.value.trim(), me = ++zTry;
-      if (!ZEPLIN.test(url) || url.length > CAP_URL) return say2(t("badZeplin"), true);
-      const dup = cur.screens.find((s) => s.zeplin && canon(s.zeplin) === canon(url));
-      if (dup && mode !== "copy") {
-        goto(dup.id, !reduced.matches);
-        return say2(t("zDup", { s: dup.title }), false, btn(t("zCopy"), "uf-btn", () => run("copy")));
-      }
-      if (cur.screens.length >= MAX_SCREENS) return say2(t("maxScreens", { n: MAX_SCREENS }), true);
-      let shot = null;
-      if (opts.lookup && mode !== "plain") {
-        say2(t("zReading"));
-        add.disabled = true;
-        const again = btn(t("zRetry"), "uf-btn", () => run(mode)), keep = btn(t("zKeep"), "uf-btn", () => run("plain"));
-        try {
-          shot = await opts.lookup(url);
-        } catch (e) {
-          if (me !== zTry) return;
-          add.disabled = false;
-          return say2(`${t("zFail")}: ${e instanceof Error ? e.message : String(e)}`, true, again, keep);
-        }
-        if (me !== zTry) return;
-        add.disabled = false;
-        if (!shot) return say2(t("zMissing"), true, again, keep);
-      }
-      if (shot) setShots({ ...SHOTS, [url]: shot }); // drawn at once; the host's own shots replace it later
-      const title = str(shot?.title).replace(/\s+/g, " ").trim().slice(0, CAP);
-      const id = ed.addScreen({ zeplin: url, ...(title ? { title } : {}) });
-      if (id === null) return say2(t("dragging"), true);
-      zeplinForm(false);
-      goto(id, !reduced.matches);
-    };
-    const add = btn(t("zAdd"), "uf-btn", () => run());
-    i.addEventListener("keydown", (e) => {
-      e.stopPropagation();
-      if (e.key === "Enter") { e.preventDefault(); run(); }
-      else if (e.key === "Escape") { e.preventDefault(); zeplinForm(false); view.focus({ preventScroll: true }); }
-    });
-    say2("", false);
-    zform.replaceChildren(h("h2", "uf-ztitle", t("fromZeplin").replace(/^\+ /, "")), lab, msg, acts);
-    i.focus();
-  }
+  // ---------------- + Từ Zeplin (zeplin-form.js): a checked link, read once, one new screen
+  const zeplinForm = zeplinFormOf({ t, zform, view, lookup: opts.lookup, get: () => cur,
+    addScreen: (props, also) => ed.addScreen(props, also),
+    show: (id) => show(id, !reduced.matches), goto: (id) => goto(id, !reduced.matches),
+    opened: (open) => { if (open && !panel.hidden) togglePanel(); bZep?.setAttribute("aria-expanded", String(open)); } });
 
   function render() {
     const had = root.contains(document.activeElement);
@@ -187,9 +133,10 @@ function mount(host, flow, opts = {}, src = null) {
         [s.id, ...s.items.map((it) => `${s.id}.${it.id}`)].map((id) => linked.has(id))]);
       const shot = shotOf(s), old = rendered.get(s.id);
       const frame = old?.key === key && old.shot === shot ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
+      if (old && old.kind !== s.kind) frame.classList.add("uf-morph"); // screen ↔ popup / sheet / toast: the new shape eases in
       placeFrame(frame, s);
       if (!old || old.key !== key || old.shot !== shot || old.x !== s.x || old.y !== s.y) changed.add(s.id);
-      next.set(s.id, { key, shot, x: s.x, y: s.y });
+      next.set(s.id, { key, shot, x: s.x, y: s.y, kind: s.kind });
       return [s.id, frame];
     }));
     rendered = next;
@@ -202,10 +149,6 @@ function mount(host, flow, opts = {}, src = null) {
     refreshChecks();
     ed.sync();
     if (bUndo) { bUndo.disabled = !hist.length; bRedo.disabled = !fut.length; }
-    if (bAdd) {
-      bAdd.disabled = cur.screens.length >= MAX_SCREENS;
-      bAdd.title = bAdd.disabled ? t("maxScreens", { n: MAX_SCREENS }) : "";
-    }
     if (shown === "play") proto.refresh();
     if (had && !root.contains(document.activeElement)) view.focus({ preventScroll: true }); // Delete / ⌘Z keep working // in Map the phone is hidden: no DOM to rebuild, no hash to write
   }
@@ -270,29 +213,44 @@ function mount(host, flow, opts = {}, src = null) {
     tmp.setAttribute("d", curve({ p: from, dir: { x: 1, y: 0 }, q: to, n: { x: -1, y: 0 } }).d);
   }
   function applyFocus() {
-    root.classList.toggle("uf-focus", focusId !== null);
+    if (focusLink !== null && !marks[focusLink]) focusLink = null;
+    const any = focusId !== null || focusLink !== null || focusAc !== null;
+    const hasAc = (ac) => acs(ac).some((x) => focusAc.includes(x)); // an AC chip was pressed: what carries one of its codes
+    root.classList.toggle("uf-focus", any);
     const near = new Set([focusId]);
     for (const [id, p] of parents(cur)) {
       if (p === focusId) near.add(id); // its popups
       if (id === focusId && p) near.add(p); // the screen under it
     }
     for (const m of marks) {
-      const on = focusId !== null && (m.a === focusId || m.b === focusId);
-      if (on) { near.add(m.a); near.add(m.b); }
+      const on = focusAc ? hasAc(m.l.ac) : focusLink !== null ? m.i === focusLink : focusSrc !== null ? m.l.src === focusSrc
+        : focusId !== null && (m.a === focusId || m.b === focusId);
+      if (on && !focusAc) { near.add(m.a); near.add(m.b); }
       m.path.classList.toggle("uf-on", on);
       m.lab?.classList.toggle("uf-on", on);
+      m.knob?.classList.toggle("uf-on", on);
     }
-    frames.forEach((f, id) => f.classList.toggle("uf-on", focusId !== null && near.has(id)));
+    const acOn = focusAc && new Set(cur.screens.filter((s) => hasAc(s.ac)).map((s) => s.id));
+    frames.forEach((f, id) => f.classList.toggle("uf-on", any && (acOn ? acOn.has(id) : near.has(id))));
   }
-  function setFocus(id) {
+  const acs = (text) => String(text).split(/[,;]/).map((x) => x.trim()).filter(Boolean); // "AC1.2, AC4.5" -> its codes
+  let picked = false; // the focus is the editor's selection, not a screen the user went to: Prototype ignores it
+  function setFocus(id, link = null, byEdit = false, src = null, ac = null) { // src: "screen.item", the button in hand (edit)
+    focusAc = ac;
     focusId = id;
+    focusLink = link;
+    focusSrc = src;
+    picked = byEdit;
     applyFocus();
   }
 
   // flow check panel
+  let notes = []; // the host's warnings about how this flow was built (api.notes): rows of their own, no screen to go to
   function refreshChecks() {
-    issues = [...brokenRows(dropped, t), ...gaps(cur, t)];
-    bCheck.textContent = t("check", { n: issues.length });
+    issues = [...brokenRows(dropped, t), ...notes.map((text) => ({ kind: "unclear", text })), ...gaps(cur, t)];
+    bCheck.setAttribute("aria-label", t("check", { n: issues.length }));
+    nCheck.textContent = String(issues.length);
+    bCheck.classList.toggle("uf-clean", !issues.length);
     if (!panel.hidden) fillPanel();
   }
   let panelTab = "gaps", panelKind = null; // what the panel shows: the review list (filtered by kind) or the checklist
@@ -325,7 +283,18 @@ function mount(host, flow, opts = {}, src = null) {
         if (editing && shown === "map") ed.pick(it.item ? { t: "item", id: it.screen, item: it.item } : { t: "screen", id: it.screen });
       });
       b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
-      return b;
+      if (it.kind !== "pending" || !editing || shown !== "map") return b;
+      // editing: the row asks for the step's Zeplin link (the screen comes linked from where the step was reached);
+      // ✕ takes a step that will never get a screen off the list
+      b.addEventListener("click", () => zeplinForm(true, it.pending));
+      b.title = t("pendingAdd", { s: it.pending });
+      const row = h("div", "uf-prow");
+      row.append(b, ibtn("x", t("pendingSkip"), "uf-btn", () => {
+        const f = structuredClone(cur);
+        f.pending = (f.pending || []).filter((x) => x.title !== it.pending);
+        commit(f);
+      }));
+      return row;
     });
     panel.replaceChildren(tabs, filter, ...rows);
   }
@@ -367,6 +336,11 @@ function mount(host, flow, opts = {}, src = null) {
     },
     onTap: (target) => {
       if (editing) return ed.tap(target && layer.contains(target) ? target : null);
+      const chip = target?.closest?.(".uf-ac, .uf-lac"); // an AC chip: light what carries its codes; again: clear
+      if (chip && layer.contains(chip)) {
+        const want = acs(chip.textContent);
+        return setFocus(null, null, false, null, focusAc && want.join() === focusAc.join() ? null : want);
+      }
       const f = target?.closest?.(".uf-screen");
       setFocus(f && layer.contains(f) ? f.dataset.id : null);
     },
@@ -402,6 +376,8 @@ function mount(host, flow, opts = {}, src = null) {
     liveLink,
     tempLink,
     drawAll: drawLinks,
+    focus: (sel) => (sel?.t === "link" ? setFocus(null, sel.i, true)
+      : setFocus(sel ? sel.id : null, null, true, sel?.t === "item" ? `${sel.id}.${sel.item}` : null)),
     note: say,
     centre: () => {
       const c = cam.get();
@@ -409,7 +385,9 @@ function mount(host, flow, opts = {}, src = null) {
     },
   });
   cleanup.push(() => ed.destroy());
-  const proto = player(play, { flow: () => cur, t, reduced, onGo: (id) => { if (shown === "play") { here = id; writeHash(); } } });
+  const setStart = (id) => { const f = structuredClone(cur); f.start = id; commit(f); seenStart = startOf(cur); };
+  let seenStart = startOf(cur); // the start screen Prototype last knew: changed on the map since, it begins there
+  const proto = player(play, { flow: () => cur, t, reduced, setStart: opts.edit ? setStart : null, onGo: (id) => { if (shown === "play") { here = id; setFocus(id); writeHash(); } } });
   cleanup.push(() => proto.destroy());
 
   const onKey = (e) => {
@@ -453,12 +431,16 @@ function mount(host, flow, opts = {}, src = null) {
     if (shown === "play") q.set("m", "play");
     history.replaceState(history.state, "", "#" + q);
   }
-  function goto(id, animate) {
+  /** Bring a screen into view; false when it is not in the flow. */
+  function show(id, animate) {
     const s = cur.screens.find((x) => x.id === id);
-    if (!s) return;
+    if (s) cam.fit({ x: s.x, y: s.y, w: W, h: H }, animate);
+    return !!s;
+  }
+  function goto(id, animate) {
+    if (!show(id, animate)) return;
     here = id;
     setFocus(id);
-    cam.fit({ x: s.x, y: s.y, w: W, h: H }, animate);
     if (shown === "play") proto.open(id);
     writeHash();
   }
@@ -487,12 +469,22 @@ function mount(host, flow, opts = {}, src = null) {
       bMap.setAttribute("aria-pressed", String(m === "map"));
       bPlay.setAttribute("aria-pressed", String(m === "play"));
       if (m === "play") {
-        proto.start(here);
+        // a screen picked on the map: Prototype goes on from it; none picked since: where the user was
+        const first = startOf(cur);
+        if (focusId && focusId !== here && !picked) proto.open(focusId);
+        else if (first !== seenStart) proto.open(first);
+        else proto.start(here);
+        seenStart = first;
         proto.refresh(); // a path kept from an earlier visit may name screens an edit has since removed
       }
       writeHash();
     },
     goto: (id) => goto(id, true),
+    /** What the render could not make sure of (plain text lines), listed in the flow check; [] clears them. */
+    notes(list) {
+      notes = (Array.isArray(list) ? list : []).filter((x) => typeof x === "string" && x).slice(0, 20);
+      refreshChecks();
+    },
     /** New Zeplin images ({url: shot}): frames redraw, positions stay. */
     shots(map) {
       ed.cancel();

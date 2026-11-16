@@ -12,11 +12,12 @@ export type Screen = { id: string; title: string; kind: string; parent: string |
 
 export type Link = { src: string; to: string; act: string; when: string; ac: string };
 
-export type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[] };
+export type Pending = { title: string; kind?: string; ac?: string; src?: string; when?: string };
+export type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[]; pending?: Pending[] };
 
 export type Issue = { kind: string; screen?: string; item?: string; text: string };
 
-export type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void;
+export type Api = { get(): Flow; set(f: Flow): void; notes(list: string[]): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void;
   mode(m: "map" | "play"): void };
 
 export const SCHEMA = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
@@ -86,6 +87,27 @@ export async function standalone(page: Page, hash = "", tweak = "") {
 }
 
 export const edit = async (page: Page) => page.getByRole("button", { name: "Sửa" }).click();
+
+let zep = 0;
+/** The one way to add a screen by hand: "+ Từ Zeplin" with a link not in the flow yet. The camera goes to the new
+ *  screen, so the map is fitted again for the steps that follow. */
+export async function addScreen(page: Page) {
+  await page.getByRole("button", { name: "+ Từ Zeplin" }).click();
+  const link = page.getByLabel("Link màn Zeplin");
+  await link.fill(`https://zpl.io/new${++zep}`);
+  await link.press("Enter");
+  await page.getByRole("button", { name: "Vừa màn hình" }).click();
+}
+/** The same inside the page, `n` times in one task (in-page loops; the fixture has no lookup, so each add is synchronous). */
+export const addScreensInPage = (page: Page, n: number) => page.evaluate((n) => {
+  for (let i = 0; i < n; i++) {
+    document.querySelector<HTMLButtonElement>(".uf-tools .uf-btn")!.click();
+    const link = document.querySelector<HTMLInputElement>(".uf-zform input")!;
+    link.value = `https://zpl.io/loop${i}`;
+    link.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  }
+  return window.__api.get().screens.length;
+}, n);
 
 export const dirty = (page: Page) => page.evaluate(() => window.__dirty);
 

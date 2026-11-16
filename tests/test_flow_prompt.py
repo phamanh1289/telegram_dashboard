@@ -3,6 +3,7 @@ import json
 import pytest
 from telegram_dashboard.ai import data_json
 from telegram_dashboard.youtrack import flow as uiflow
+from telegram_dashboard.youtrack import flow_merge
 from telegram_dashboard.youtrack import flow_prompt as p
 
 URL = "https://app.zeplin.io/project/p/screen/"
@@ -53,7 +54,7 @@ def test_explicit_tree_builds_ids_buttons_and_links_code_keeps_metadata_over_ai(
     a, b = result.skeleton["screens"]
     assert a["id"] == p.stable_id(URL+"a") and a["title"] == "Đăng nhập"
     assert len(result.skeleton["links"]) == 2
-    flow = uiflow.merge_ai({"adapter": 1, "screens": [{"id": a["id"], "title": "AI invented", "zeplin": "fake"}],
+    flow = flow_merge.merge_ai({"adapter": 1, "screens": [{"id": a["id"], "title": "AI invented", "zeplin": "fake"}],
                            "links": []}, result.skeleton, "VA-1")
     assert flow.screens[0].title == "Đăng nhập" and flow.screens[0].zeplin == URL+"a"
     assert len(flow.links) == 2 and flow.links[0].to == b["id"]
@@ -76,7 +77,7 @@ def test_ambiguous_tree_is_not_guessed_and_legacy_ids_remap_by_url():
     assert result.warnings
     raw = {"screens": [{"id": "old", "title": "wrong", "zeplin": URL+"a", "items": []}],
            "links": [{"src": "old", "to": "old", "act": "back"}]}
-    flow = uiflow.merge_ai(raw, result.skeleton, "VA-1")
+    flow = flow_merge.merge_ai(raw, result.skeleton, "VA-1")
     assert len(flow.screens) == 1 and flow.links[0].to == result.skeleton["screens"][0]["id"]
 
 
@@ -91,7 +92,7 @@ def test_corpus_keeps_screen_edge_requirement_coverage_and_warns_on_many_screens
     assert len(result.skeleton["screens"]) == count and len(result.skeleton["links"]) == count-1
     assert "AC1 BR1: full mandatory condition" in result.prompt
     assert ("screens" in [r["code"] for r in result.manifest["risks"]]) == (count > p.RISK_SCREENS)
-    merged = uiflow.merge_ai({"adapter": 1, "screens": [], "links": []}, result.skeleton, "VA-1")
+    merged = flow_merge.merge_ai({"adapter": 1, "screens": [], "links": []}, result.skeleton, "VA-1")
     assert len(merged.screens) == count and len(merged.links) == count-1
 
 
@@ -163,9 +164,9 @@ def test_validated_checkpoint_recovery_keeps_manifest_and_warnings(tmp_path):
 def test_invalid_adapter_and_malformed_items_fail_without_an_automatic_repair_call():
     base = {"screens": [{"id": "a", "title": "A", "items": []}], "links": []}
     with pytest.raises(ValueError):
-        uiflow.merge_ai({"adapter": 2, "screens": [], "links": []}, base, "VA-1")
+        flow_merge.merge_ai({"adapter": 2, "screens": [], "links": []}, base, "VA-1")
     with pytest.raises(ValueError):
-        uiflow.merge_ai({"adapter": 1, "screens": [{"id": "a", "items": [{}]}], "links": []}, base, "VA-1")
+        flow_merge.merge_ai({"adapter": 1, "screens": [{"id": "a", "items": [{}]}], "links": []}, base, "VA-1")
 
 
 def test_cost_comes_from_past_runs_on_the_same_model_only():
@@ -243,7 +244,8 @@ async def test_endpoint_split_runs_each_part_and_joins_one_flow(tmp_path):
                                   headers={"X-Ai-Job": "split-job-1"})
             lines = [json.loads(x) for x in r.text.splitlines()]
             flow = lines[-1]["done"]["flow"]
-            assert len(prompts) == 3 and len(flow["screens"]) == 26  # 25 skeleton + one popup written by every part
+            assert len(prompts) == 3 and len(flow["screens"]) == 25  # a screen with no design is not drawn
+            assert [p["title"] for p in flow["pending"]] == ["Lỗi"]  # the popup every part wrote: pending, once
             draws = [x["step"]["title"] for x in lines if x.get("step", {}).get("stage") == "draw"]
             assert sorted(draws) == ["Phần 1/3", "Phần 2/3", "Phần 3/3"]
     await svc.aclose()

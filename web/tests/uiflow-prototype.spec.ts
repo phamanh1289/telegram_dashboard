@@ -263,3 +263,49 @@ test("a tap on the image outside every button lights up all its tap areas, then 
   await page.locator(".uf-phot").first().click(); // a tap on a button is a tap, not a hint
   await expect(page.locator(".uf-pshot.uf-hints")).toHaveCount(0);
 });
+
+test("two links to the same screen are one tap, not a choice", async ({ page }) => {
+  await open(page);
+  await withFlow(page, 'f.links.push({ src: "login.otp", to: "code", act: "navigate", when: "Bấm Gửi OTP", ac: "AC-1" });');
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await tapIn(page, "Gửi OTP");
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await expect(page.locator(".uf-overlay")).toHaveCount(0);
+});
+
+test("Prototype goes on from the screen picked on the map, and keeps the walk when none is picked", async ({ page }) => {
+  await open(page);
+  await page.locator('.uf-screen[data-id="home"]').click();
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Trang chủ");
+  await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+  await tapIn(page, "Gửi OTP");
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  await page.getByRole("button", { name: "Prototype" }).click(); // nothing picked since: where the user was, with its trail
+  await expect(page.locator(".uf-trail")).toContainText("Đăng nhập›Nhập OTP");
+  await page.getByRole("button", { name: "Toàn cục" }).click();
+  await page.locator('.uf-screen[data-id="home"]').click();
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(title(page)).toHaveText("Trang chủ");
+});
+
+test("no start screen: the review list and Prototype say so; Prototype sets the screen shown as the start", async ({ page }) => {
+  await open(page);
+  const nostart = () => page.evaluate(() => window.UIFlow.check(window.__api.get()).filter((i) => i.kind === "nostart").map((i) => i.screen));
+  expect(await nostart()).toEqual(["login"]); // where it starts meanwhile
+  await page.getByRole("button", { name: "Prototype" }).click();
+  await expect(page.locator(".uf-nostart")).toBeVisible();
+  await tapIn(page, "Gửi OTP");
+  const pin = page.locator(".uf-trail").getByRole("button", { name: "▶ Màn bắt đầu" });
+  await pin.click();
+  await expect(pin).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".uf-nostart")).toBeHidden();
+  expect(await page.evaluate(() => window.__api.get().start)).toBe("code");
+  expect(await nostart()).toEqual([]);
+  expect(await page.evaluate(() => window.__dirty)).toBe(true); // an edit like any other: saved, undoable
+  await page.getByRole("button", { name: "Bắt đầu lại" }).click();
+  await expect(title(page)).toHaveText("Nhập OTP");
+  await pin.click(); // pressed again: unset
+  expect(await page.evaluate(() => window.__api.get().start ?? null)).toBeNull();
+  await expect(page.locator(".uf-nostart")).toBeVisible();
+});

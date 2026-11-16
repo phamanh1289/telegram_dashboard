@@ -1,5 +1,6 @@
 import pytest
 from telegram_dashboard.youtrack import flow as u
+from telegram_dashboard.youtrack import flow_merge
 
 RAW = {"screens": [
     {"id": "login", "title": "Đăng nhập", "items": [{"id": "otp", "label": "Gửi OTP"}]},
@@ -285,7 +286,7 @@ def test_merge_ai_never_takes_rect_or_note_from_the_model():
         {"id": "b", "title": "B", "note": "bịa",
          "items": [{"id": "z", "label": "Z", "rect": {"x": 0, "y": 0, "w": 0.1, "h": 0.1}}]},
     ], "links": []}
-    f = u.merge_ai(raw, skel, "VA-1")
+    f = flow_merge.merge_ai(raw, skel, "VA-1")
     assert all(i.rect is None for s in f.screens for i in s.items) and all(s.note == "" for s in f.screens)
 
 
@@ -294,9 +295,36 @@ def test_merge_ai_accepts_ac_list_and_unknown_kind():  # VA-12584: patch answer 
     raw = {"adapter": 1, "screens": [{"id": "a", "kind": "web", "ac": ["AC1.2", "AC4.5"]},
                                      {"id": "b", "title": "B", "kind": "map", "ac": []}],
            "links": [{"src": "a", "to": "b", "ac": ["AC3.5"]}]}
-    f = u.merge_ai(raw, skel, "VA-1")
-    assert [(s.kind, s.ac) for s in f.screens] == [("screen", "AC1.2, AC4.5"), ("screen", "")]
-    assert f.links[0].ac == "AC3.5"
+    f = flow_merge.merge_ai(raw, skel, "VA-1")
+    assert [(s.kind, s.ac) for s in f.screens] == [("screen", "AC1.2, AC4.5")]
+    # "b" has no design behind it: not drawn, listed as a step to add later, reached from "a" as its link said
+    assert [(p.title, p.kind, p.src, p.ac) for p in f.pending] == [("B", "screen", "a", "AC3.5")]
+    assert f.links == []
+    # a ticket with no design at all: the model's screens are the map, as before
+    drawn = {"adapter": 1, "screens": [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}], "links": raw["links"]}
+    text_only = flow_merge.merge_ai(drawn, {"screens": [], "links": []}, "VA-1")
+    assert [s.id for s in text_only.screens] == ["a", "b"] and text_only.pending == [] and len(text_only.links) == 1
+
+
+def test_merge_ai_never_draws_a_screen_without_a_design_and_keeps_it_pending():
+    a = {"id": "a", "title": "A", "zeplin": "https://zpl.io/a", "items": [{"id": "go", "label": "Đi"}]}
+    # "a" in the old pending list: it is drawn now, so no longer pending
+    skel = {"screens": [a], "links": [], "pending": [{"title": "Cũ còn chờ"}, {"title": "a"}]}
+    err = {"id": "err", "title": "Lỗi mạng", "kind": "popup"}
+    raw = {"adapter": 1, "screens": [{"id": "a", "kind": "screen"}, err],
+           "links": [{"src": "a.go", "to": "err", "act": "open", "when": "mất mạng"}],
+           "pending": [{"title": "Xác nhận xoá", "kind": "sheet", "src": "a.go", "ac": ["AC2"]},
+                       {"title": "lỗi  MẠNG"}, {"title": ""}, "rác"]}
+    f = flow_merge.merge_ai(raw, skel, "VA-1")
+    assert [s.id for s in f.screens] == ["a"] and f.links == []
+    assert [(p.title, p.kind, p.src, p.when, p.ac) for p in f.pending] == [
+        ("Cũ còn chờ", "screen", "", "", ""), ("Xác nhận xoá", "sheet", "a.go", "", "AC2"),
+        ("lỗi  MẠNG", "screen", "", "", "")]  # one per title: the model's own entry wins over the screen it also added
+    # a saved file keeps them; a dismissed / added one shows in the change list
+    again = u.clean(f.model_dump(), "VA-1")
+    assert again.pending == f.pending
+    less = again.model_copy(update={"pending": again.pending[:1]})
+    assert u.changes(again, less) == ['Chờ bổ sung: bỏ "Xác nhận xoá"', 'Chờ bổ sung: bỏ "lỗi  MẠNG"']
 
 
 def test_start_screen_is_kept_only_when_it_exists_and_listed_as_a_change():
@@ -350,7 +378,7 @@ def test_merge_ai_repairs_a_link_whose_src_is_a_bare_button_id():  # VA-12584: 1
     raw = {"adapter": 1, "screens": [{"id": "a", "items": [{"id": "go", "label": "Go"}, {"id": "dup", "label": "D"}]},
                                      {"id": "b", "items": [{"id": "dup", "label": "D"}]}],
            "links": [{"src": "go", "to": "b"}, {"src": "dup", "to": "a"}, {"src": "b", "to": "a", "act": "back"}]}
-    f = u.merge_ai(raw, skel, "VA-1")
+    f = flow_merge.merge_ai(raw, skel, "VA-1")
     assert [(x.src, x.to) for x in f.links] == [("a.go", "b"), ("b", "a")]  # "dup": two owners, not guessed
 
 
@@ -382,3 +410,16 @@ def test_buttons_with_no_zeplin_layer_are_the_ones_the_ai_locates():  # VA-12584
     assert b4.rect.x + b4.rect.w <= 1 and b4.rect.y + b4.rect.h <= 1  # clipped to the image
     assert flow.screens[0].items[0].rect is None  # not asked for: not touched
     assert flow_locate.apply({"screen-1.png": {"b2": "x"}}, files) == 0 and flow_locate.apply(None, files) == 0
+
+
+def test_merge_ai_joins_the_skeletons_link_with_the_models_copy_of_it():  # VA-12584: Prototype asked "which case?"
+    skel = {"screens": [{"id": "a", "title": "A", "items": [{"id": "x", "label": "X"}]}, {"id": "b", "title": "B"}],
+            "links": [{"src": "a.x", "to": "b", "act": "navigate", "when": "", "ac": ""}]}
+    raw = {"adapter": 1, "screens": [], "links": [
+        {"src": "a.x", "to": "b", "when": "Bấm X", "ac": "AC1"},  # the same link, with its condition
+        {"src": "a.x", "to": "b", "when": "Bấm X", "ac": "AC1"},
+        {"src": "a.x", "to": "b", "when": "Giữ X", "ac": "AC2"},  # another case to the same screen: its own link
+    ]}
+    f = flow_merge.merge_ai(raw, skel, "VA-1")
+    got = [(k.src, k.to, k.when, k.ac) for k in f.links]
+    assert got == [("a.x", "b", "Bấm X", "AC1"), ("a.x", "b", "Giữ X", "AC2")]

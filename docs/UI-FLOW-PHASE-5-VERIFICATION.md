@@ -11,7 +11,7 @@ Ngày: 14/11/2026 · nhánh `features/refactor-ui-diagram`
 | `v: 2`; file v1 đọc và chuyển v2 trong bộ nhớ, ghi v2 khi save | `uiflow.clean`, `sanitize` |
 | File v > 2: backend `TooNew` → 422 có thông điệp (không coi là "hỏng", không mở nút Render lại đè lên); engine ném lỗi thay vì sửa | `uiflow.extract`, `YtService.flow_file`, `sanitize` |
 | Manual rect ưu tiên hơn text matching khi đặt vùng bấm (map + prototype dùng chung `hotspots`) | `uiflow.js` `hotspots` |
-| AI adapter không nhận rect/note từ model | `uiflow.merge_ai` |
+| AI adapter không nhận rect/note từ model | `flow_merge.merge_ai` |
 | Type TS đầy đủ (`FlowScreen`, `FlowItem`, `FlowRect`, `FlowLink`) thay type rút gọn | `web/src/lib/yt.ts` |
 | HTML standalone nhúng `uiflow.js` mới nên hiểu v2; history/undo vẫn chỉ chứa flow JSON, ảnh ở `SHOTS` riêng | không đổi cơ chế |
 

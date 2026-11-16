@@ -198,14 +198,13 @@ async def test_flow_save_replaces_a_broken_file(tmp_path):
     assert ("DELETE", "/api/issues/VA-1/attachments/1-1") in yt.writes and r.json()["rev"] == 1
 
 
-async def test_flow_diff_lists_what_update_would_write_and_writes_nothing(tmp_path):
-    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}])
+async def test_flow_html_exports_the_flow_on_screen_and_writes_nothing(tmp_path):
+    yt = FakeYt([])  # a draft: no file on the ticket yet
     c, _ = flow_app(yt, tmp_path)
     async with c:
-        r = await c.post("/api/yt/flow/diff", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-        assert r.status_code == 200 and r.json()["base_changed"] is False and r.json()["changes"]
-        r = await c.post("/api/yt/flow/diff", json={"id": "VA-1", "flow": moved(), "base": "1-0"})
-        assert r.json()["base_changed"] is True
+        r = await c.post("/api/yt/flow/html", json={"id": "VA-1", "flow": moved(), "base": None})
+    assert r.status_code == 200 and r.json()["name"] == "uiflow-VA-1.html"
+    assert uiflow.extract(r.json()["html"]).screens[0].id == moved()["screens"][0]["id"]
     assert yt.writes == []
 
 

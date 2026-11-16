@@ -16,7 +16,7 @@ from ..ai_run import flow_metrics
 from ..claude import claude_runs
 from ..links import ISSUE, _ours
 from . import flow as uiflow
-from . import flow_locate, flow_prompt
+from . import flow_locate, flow_merge, flow_prompt
 from .api_ai import _ai, background
 from .client import YtError, YtUnreachable
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
@@ -36,6 +36,13 @@ def _clean(body: FlowSave) -> tuple[str, uiflow.Flow]:
         return i, uiflow.clean(body.flow, i)
     except ValueError:
         raise YtError(400, "UI flow không hợp lệ") from None
+
+
+def _engine(request: Request) -> str:
+    try:
+        return (request.app.state.settings.static_dir / "uiflow.js").read_text(encoding="utf-8")
+    except OSError:
+        raise YtError(503, "Thiếu uiflow.js — build lại web") from None
 
 
 def _job_id(job_id: str) -> None:
@@ -97,10 +104,7 @@ def register(r, svc: YouTrackDashboard) -> None:
             if not ch:
                 raise YtError(400, "Không có thay đổi")
             new.rev = (old.rev if old else 0) + 1
-            try:
-                engine = (request.app.state.settings.static_dir / "uiflow.js").read_text(encoding="utf-8")
-            except OSError:
-                raise YtError(503, "Thiếu uiflow.js — build lại web") from None
+            engine = _engine(request)
             name = uiflow.NAME.format(issue=i)
             try:
                 html = uiflow.build_html(new, engine, body.shots).encode()
@@ -158,14 +162,14 @@ def register(r, svc: YouTrackDashboard) -> None:
                 warn.append(f"Đã xoá file nhưng chưa ghi được bình luận: {e.message}")
         return {"warnings": warn}
 
-    @r.post("/flow/diff")
-    async def flow_diff(body: FlowSave):
-        """What "Cập nhật" would write in its comment, against the file on the ticket now; nothing is written."""
+    @r.post("/flow/html")
+    async def flow_html(body: FlowSave, request: Request):
+        """The flow on screen (draft included) as the standalone file, to open locally; nothing is written."""
         i, new = _clean(body)
-        svc.need_token()
-        cur = await svc.flow_file(i)
-        att, old = cur[:2] if cur else (None, None)
-        return {"changes": uiflow.changes(old, new), "base_changed": att != body.base}
+        try:
+            return {"name": uiflow.NAME.format(issue=i), "html": uiflow.build_html(new, _engine(request), body.shots)}
+        except ValueError as e:
+            raise YtError(400, str(e)) from None
 
     @r.get("/flow/scope")
     async def flow_scope() -> FlowScopeDTO:
@@ -483,7 +487,7 @@ def register(r, svc: YouTrackDashboard) -> None:
                 say(stage="check", chars=len(out))
                 raw = json_object(out)
                 try:
-                    flow = uiflow.merge_ai(raw, payload.skeleton, i)
+                    flow = flow_merge.merge_ai(raw, payload.skeleton, i)
                 except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
                     raise YtError(502, "AI trả về không đọc được; thử lại hoặc chọn model / effort mạnh hơn") from None
             flow.rev = 0  # whatever was drawn: the dialog saves over the version it opened
@@ -496,8 +500,16 @@ def register(r, svc: YouTrackDashboard) -> None:
                 flow, kept = uiflow.keep_manual(old, flow)
             if body.mode == "flow":  # "screens" promises no AI, no token
                 await locate(flow, payload.shots, payload.warnings, detached)
-            dropped = len(raw.get("links") or []) - len(flow.links)  # raw: a dict, clean took it
-            say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped))
+            # raw: a dict, clean took it. A link to a screen the model wrote but that has no design is not a broken
+            # one: that screen waits in `pending`.
+            # ponytail: by the model's own ids; a remapped legacy id counts as waiting
+            ids = {x.id for x in flow.screens}
+            own = {x.get("id") for x in raw.get("screens") or [] if isinstance(x, dict)} - ids
+            asked = [x for x in raw.get("links") or [] if isinstance(x, dict)]
+            waiting = sum(1 for x in asked if x.get("to") in own or str(x.get("src", "")).partition(".")[0] in own)
+            dropped = len(asked) - waiting - len(flow.links)
+            say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped),
+                pending=len(flow.pending))  # fmt: skip
             if svc.flow_scope() != scope:
                 raise YtError(409, "Tài khoản đã đổi; mở lại lượt vẽ trong tài khoản ban đầu")
             manifest = {**payload.manifest, "kept": kept, "mode": body.mode}

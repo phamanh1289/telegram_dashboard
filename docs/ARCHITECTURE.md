@@ -24,6 +24,7 @@ backend/
       routes.py          # auth, tạo issue và tìm issue /api/youtrack/*
       flow.py            # schema và xử lý file UI flow
       flow_prompt.py     # prompt dựng flow
+      flow_merge.py      # luật cho AI và ghép câu trả lời của AI vào skeleton (màn thiếu thiết kế → pending)
       flow_jobs.py       # vòng đời job dựng flow
     app.py               # composition root/lifespan, lỗi, API AI/projects/status/events
     config.py            # cấu hình, secret env và đường dẫn dữ liệu

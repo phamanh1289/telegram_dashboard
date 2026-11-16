@@ -11,6 +11,7 @@ from .. import zeplin
 from ..ai import data_json
 from ..providers import ZEPLIN
 from . import flow as uiflow
+from . import flow_merge
 
 ENVELOPE_RESERVE = 2048
 # No budget: the source goes whole. Past RISK_* the dialog warns before the run; only HARD_CONTEXT refuses, a prompt
@@ -189,7 +190,7 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
     own = data_json(used[0]) if used else data_json({})
     other = "".join("\n<story>\n" + data_json(s) + "\n</story>" for s in used[1:])
     other += "".join("\n<story>" + data_json(s) + "</story>" for s in unavailable)
-    head = f"{uiflow.AI_FLOW_PATCH}\n<ticket>\n{own}\n</ticket>{other}"
+    head = f"{flow_merge.AI_FLOW_PATCH}\n<ticket>\n{own}\n</ticket>{other}"
     sent = without(base, gone)
     prompt = _render(head, design, sent, note)
     tokens = estimate(prompt) + ENVELOPE_RESERVE
@@ -197,7 +198,7 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
         raise BudgetExceeded(f"Đầu vào ~{tokens:,} token vượt context của mọi model (~{HARD_CONTEXT:,}); "
                              "tách ticket theo sub-ticket trước khi vẽ")
     parts = {"ticket": estimate(own), "story": estimate(other), "zeplin": estimate(data_json(design)),
-             "note": estimate(note), "rules": estimate(uiflow.AI_FLOW_PATCH) + ENVELOPE_RESERVE}
+             "note": estimate(note), "rules": estimate(flow_merge.AI_FLOW_PATCH) + ENVELOPE_RESERVE}
     warnings = []
     if ambiguous:
         warnings.append("Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ.")
@@ -239,6 +240,7 @@ def reuse(base, previous):
             known[old["id"]] = {"id": old["id"], "title": old["title"], "kind": old.get("kind", "screen"),
                                 "parent": old.get("parent"), "zeplin": "", "ac": old.get("ac", ""), "items": items}
             base["screens"].append(known[old["id"]])
+    base["pending"] = list(previous.get("pending") or [])  # still waiting for a design: stays listed
     carried = 0
     for link in previous.get("links", []):
         screen, _, item = link["src"].partition(".")
@@ -390,11 +392,12 @@ def split(payload, size=PART_SCREENS):
 
 def combine(raws):
     """The parts' answers as one: a screen two parts both wrote (a shared popup) is kept once, links once."""
-    screens, seen, links = [], set(), []
+    screens, seen, links, pending = [], set(), [], []
     for raw in raws:
+        pending += [p for p in raw.get("pending") or [] if p not in pending]
         for x in raw.get("screens") or []:
             if isinstance(x, dict) and x.get("id") not in seen:
                 seen.add(x.get("id"))
                 screens.append(x)
         links += [e for e in raw.get("links") or [] if e not in links]
-    return {"adapter": 1, "screens": screens, "links": links}
+    return {"adapter": 1, "screens": screens, "links": links, "pending": pending}

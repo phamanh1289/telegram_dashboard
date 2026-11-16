@@ -214,8 +214,10 @@ async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch)
     assert zep.items() <= steps[3].items()  # the fake reads no screen one by one
     assert [s["title"] for s in steps if s["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP"]
     assert not any(s.get("again") for s in steps)  # the opening reset is no restart
-    assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 3,
-                                     "links": 2, "dropped": 1}
+    # next to the one designed screen (zpl.io/abc) the model's own two are not drawn: they wait in `pending`,
+    # and only the link to a screen nobody wrote ("ghost") counts as broken
+    assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 1,
+                                     "links": 0, "dropped": 1, "pending": 2}
     assert "flow" in _items(r)[-1]["done"]
 
 

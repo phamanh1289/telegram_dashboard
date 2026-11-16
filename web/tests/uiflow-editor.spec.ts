@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { type Flow, type Api, SCHEMA, open, box, title, standalone, edit, dirty, links, drag, centreOf, insp, flowOf, sized } from "./uiflow.helpers";
+import { type Flow, type Api, SCHEMA, open, box, title, standalone, edit, addScreen, addScreensInPage, dirty, links, drag, centreOf, insp, flowOf, sized } from "./uiflow.helpers";
 
 test("dragging an arrow head onto another screen retargets the link", async ({ page }) => {
   await open(page);
@@ -98,7 +98,7 @@ test("undo back to the opened state clears dirty", async ({ page }) => {
 test("the toolbar adds a screen; the panel changes a link's act and a screen's kind", async ({ page }) => {
   await open(page);
   await edit(page);
-  await page.getByRole("button", { name: "+ Màn" }).click();
+  await addScreen(page);
   const added = await page.evaluate(() => window.__api.get().screens.at(-1)!);
   expect([added.kind, added.items.length]).toEqual(["screen", 0]);
   await expect(page.locator(`.uf-screen[data-id="${added.id}"]`)).toHaveClass(/uf-sel/);
@@ -106,6 +106,9 @@ test("the toolbar adds a screen; the panel changes a link's act and a screen's k
   expect(await page.evaluate(() => window.__api.get().screens.at(-1)!.items.length)).toBe(1);
   await page.locator(".uf-insp").getByRole("button", { name: "Popup" }).click();
   expect(await page.evaluate(() => window.__api.get().screens.at(-1)!.kind)).toBe("popup");
+  // the fill slides to the picked segment (2nd of 4) and the frame eases into its new shape
+  await expect(page.locator(".uf-insp .uf-pill")).toHaveAttribute("style", /translateX\(100%\)/);
+  await expect(page.locator(`.uf-screen[data-id="${added.id}"]`)).toHaveClass(/uf-morph/);
 
   await page.locator('.uf-handle[data-link="login.otp>code"]').click();
   await page.locator(".uf-insp").getByRole("button", { name: "Quay lại", exact: true }).click();
@@ -129,7 +132,7 @@ test("edit controls are absent when edit is off", async ({ page }) => {
   });
   const ro = page.locator("#ro");
   await expect(ro.getByRole("button", { name: "Sửa" })).toHaveCount(0);
-  await expect(ro.getByRole("button", { name: "+ Màn" })).toHaveCount(0);
+  await expect(ro.getByRole("button", { name: "+ Từ Zeplin" })).toHaveCount(0);
   await expect(ro.locator(".uf-dot, .uf-handle, .uf-insp")).toHaveCount(0);
   await ro.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
   await expect(ro.locator("[contenteditable]")).toHaveCount(0);
@@ -214,9 +217,8 @@ test("a field never stores more than the backend keeps, and a bad Zeplin link is
   await open(page);
   await edit(page);
   await page.locator('.uf-screen[data-id="code"] .uf-title').click();
-  await insp(page).getByLabel("AC").fill("A".repeat(60));
-  await insp(page).getByLabel("AC").press("Enter");
-  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.ac).toHaveLength(40);
+  await expect(insp(page).getByLabel("AC")).toHaveCount(0); // a screen's panel: kind, Zeplin, note, its buttons
+  await expect(insp(page).getByText("Vị trí")).toHaveCount(0);
 
   const zep = insp(page).getByLabel("Zeplin");
   await zep.fill("https://example.com/not-zeplin");
@@ -232,18 +234,20 @@ test("a field never stores more than the backend keeps, and a bad Zeplin link is
   await insp(page).getByLabel("Điều kiện").fill("Đ".repeat(100));
   await insp(page).getByLabel("Điều kiện").press("Enter");
   expect((await flowOf(page)).links.find((l) => l.src === "login.otp")!.when).toHaveLength(80);
+  await insp(page).getByLabel("AC").fill("A".repeat(60));
+  await insp(page).getByLabel("AC").press("Enter");
+  expect((await flowOf(page)).links.find((l) => l.src === "login.otp")!.ac).toHaveLength(40);
 });
 
 test("the editor refuses to pass the file's limits: 200 screens, 40 buttons, 1000 links", async ({ page }) => {
   await open(page);
   await edit(page);
-  const add = page.getByRole("button", { name: "+ Màn" });
   await page.evaluate((f) => window.__api.set(f), sized(199, 1));
-  await expect(add).toBeEnabled();
-  await add.click();
+  await addScreen(page);
   expect((await flowOf(page)).screens).toHaveLength(200);
-  await expect(add).toBeDisabled();
-  await expect(add).toHaveAttribute("title", "Tối đa 200 màn");
+  await addScreen(page); // one more: refused, and the form says why
+  await expect(page.locator(".uf-zmsg")).toHaveText("Tối đa 200 màn");
+  expect((await flowOf(page)).screens).toHaveLength(200);
 
   await page.evaluate((f) => window.__api.set(f), sized(2, 40));
   await page.locator('.uf-screen[data-id="s0"] .uf-title').click();
@@ -305,10 +309,7 @@ test("undo is ignored while a drag is in flight", async ({ page }) => {
 test("undo remembers 50 steps, no more", async ({ page }) => {
   await open(page);
   await edit(page);
-  const adds = await page.evaluate(() => {
-    for (let i = 0; i < 51; i++) document.querySelector<HTMLButtonElement>(".uf-add")!.click();
-    return window.__api.get().screens.length;
-  });
+  const adds = await addScreensInPage(page, 51);
   expect(adds).toBe(55); // 4 + 51, under the 60 cap
   await page.evaluate(() => { for (let i = 0; i < 60; i++) window.__api.undo(); });
   expect((await flowOf(page)).screens).toHaveLength(5); // 50 steps back, the 51st is gone for good
@@ -344,10 +345,12 @@ test("a flow change during a drag is refused, and the drag still finishes", asyn
   await page.mouse.move(head.x + 120, head.y + head.height / 2 + 40, { steps: 5 });
   await page.keyboard.press("Delete"); // would rebuild the frames the drag is holding
   await expect(page.locator(".uf-note")).toHaveText("Thả chuột xong rồi hãy sửa");
-  await page.evaluate(() => document.querySelector<HTMLButtonElement>(".uf-add")!.click());
+  await addScreensInPage(page, 1);
+  await expect(page.locator(".uf-zmsg")).toHaveText("Thả chuột xong rồi hãy sửa"); // the form says why and stays open
   expect((await flowOf(page)).screens).toHaveLength(4);
   await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-sel/); // a refusal keeps the selection
   await page.mouse.up();
+  await page.locator(".uf-zform").getByRole("button", { name: "Đóng" }).click();
   const f = await flowOf(page);
   expect(f.screens).toHaveLength(4);
   expect(f.screens.find((s) => s.id === "code")!.x).toBeGreaterThan(610); // the move landed
@@ -417,13 +420,13 @@ test("an edit still in the box is kept when the next gesture starts", async ({ p
 
   // the same for a panel field left unconfirmed
   await page.locator('.uf-screen[data-id="code"] .uf-title').click();
-  await insp(page).getByLabel("AC").fill("AC-99");
+  await insp(page).getByLabel("Zeplin").fill("https://zpl.io/kept99");
   const dot = await box(page, '.uf-dot[data-src="home.out"]');
   await page.mouse.move(dot.x + dot.width / 2, dot.y + dot.height / 2);
   await page.mouse.down();
   await page.mouse.move(dot.x + 60, dot.y + 60, { steps: 4 });
   await page.mouse.up();
-  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.ac).toBe("AC-99");
+  expect((await flowOf(page)).screens.find((s) => s.id === "code")!.zeplin).toBe("https://zpl.io/kept99");
 });
 
 test("switching to Prototype mid-drag ends the gesture instead of stranding it", async ({ page }) => {
@@ -470,6 +473,74 @@ test("an edit clears the dropped-data rows of the loaded file", async ({ page })
   const dup = page.locator(".uf-issue", { hasText: "Bỏ màn trùng id “login”" });
   await expect(dup).toHaveCount(1);
   await edit(page);
-  await page.getByRole("button", { name: "+ Màn" }).click();
+  await addScreen(page); // the form takes the panel's place: open the list again to read it
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await expect(page.locator(".uf-issue").first()).toBeVisible();
   await expect(dup).toHaveCount(0);
+});
+
+test("selecting in edit mode dims the map around what is selected; Esc clears it", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const b = await box(page, '.uf-screen[data-id="home"] .uf-head');
+  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-focus/);
+  await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-on/);
+  expect(await page.locator(".uf-link.uf-on").count()).toBeGreaterThan(0);
+  expect(await page.locator(".uf-link:not(.uf-on)").count()).toBeGreaterThan(0);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
+});
+
+test("a button picked from its screen's panel is highlighted, lights only its own arrows, and has a way back", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="code"] .uf-title').click();
+  await expect(insp(page).locator("h2")).toHaveText("Nhập OTP");
+  await insp(page).getByRole("button", { name: "Xác nhận", exact: true }).click();
+  await expect(insp(page).locator("h2")).toHaveText("Nút: Xác nhận");
+  const item = page.locator('.uf-screen[data-id="code"] .uf-item.uf-sel');
+  await expect(item).toHaveCount(1);
+  expect(await item.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("2px");
+  const lit = await page.evaluate(() => [...document.querySelectorAll(".uf-link.uf-on")].map((p) => window.__api.get().links[Number((p as SVGElement).dataset.i)].src));
+  expect(lit.length).toBeGreaterThan(0);
+  expect(new Set(lit).size).toBe(1); // only this button's arrows
+  await insp(page).getByRole("button", { name: "Về màn “Nhập OTP”" }).click();
+  await expect(insp(page).locator("h2")).toHaveText("Nhập OTP");
+  await expect(page.locator('.uf-screen[data-id="code"]')).toHaveClass(/uf-sel/);
+});
+
+test("pending steps: listed in Soát luồng, added from Zeplin with their link, or dropped; one undo each", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => {
+    const f = structuredClone(window.SAMPLE);
+    f.pending = [{ title: "Hết phiên", kind: "popup", ac: "AC-9", src: "code", when: "token hết hạn" }, { title: "Trợ giúp" },
+      { title: " hết  PHIÊN " }, { title: "" }, { title: "Lạc", src: "nowhere.x" }];
+    window.__api.set(f);
+  });
+  expect((await flowOf(page)).pending).toEqual([ // one per title, a source that is not on the map forgotten
+    { title: "Hết phiên", kind: "popup", ac: "AC-9", src: "code", when: "token hết hạn" },
+    { title: "Trợ giúp", kind: "screen", ac: "", src: "", when: "" }, { title: "Lạc", kind: "screen", ac: "", src: "", when: "" }]);
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  const rows = page.locator(".uf-issue", { hasText: "chưa có thiết kế" });
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText("“Hết phiên” chưa có thiết kế (sau “Nhập OTP”) · token hết hạn · AC-9");
+  await expect(page.getByRole("button", { name: "Bỏ khỏi danh sách chờ" })).toHaveCount(0); // reading only
+  await page.keyboard.press("Escape");
+
+  await edit(page);
+  await page.getByRole("button", { name: /Soát luồng/ }).click();
+  await page.getByRole("button", { name: "Bỏ khỏi danh sách chờ" }).last().click(); // "Lạc" will never get a screen
+  expect((await flowOf(page)).pending).toHaveLength(2);
+  await rows.first().click();
+  await expect(page.locator(".uf-ztitle")).toHaveText("Bổ sung “Hết phiên”");
+  await page.getByLabel("Link màn Zeplin").fill("https://zpl.io/expired");
+  await page.getByLabel("Link màn Zeplin").press("Enter");
+  const f = await flowOf(page), added = f.screens.at(-1)!;
+  expect([added.title, added.kind, added.ac, added.zeplin]).toEqual(["Hết phiên", "popup", "AC-9", "https://zpl.io/expired"]);
+  expect(f.links.at(-1)).toEqual({ src: "code", to: added.id, act: "open", when: "token hết hạn", ac: "AC-9" });
+  expect(f.pending!.map((p) => p.title)).toEqual(["Trợ giúp"]);
+  await page.evaluate(() => window.__api.undo()); // the screen, its link and the list entry: one step
+  const back = await flowOf(page);
+  expect([back.screens.length, back.pending!.length]).toEqual([4, 2]);
 });

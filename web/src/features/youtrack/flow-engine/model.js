@@ -42,7 +42,18 @@ function sanitize(raw) {
   // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
   const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
   const start = typeof f.start === "string" && by.has(f.start) ? f.start : null;
-  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device: "mobile", start, screens, links }, dropped };
+  // steps the ticket describes that have no design yet (= Pending in the backend model): listed, never drawn.
+  // The key is only written when there are some, so a flow without them keeps its old shape.
+  const titles = new Set(), pending = [];
+  for (const p of Array.isArray(f.pending) ? f.pending : []) {
+    const title = p && typeof p === "object" ? str(p.title).trim() : "", key = title.toLowerCase().replace(/\s+/g, " ");
+    if (!title || titles.has(key)) continue;
+    titles.add(key);
+    pending.push({ title, kind: KINDS.includes(p.kind) ? p.kind : "screen", ac: str(p.ac), src: okSrc(p.src) ? p.src : "",
+      when: str(p.when) });
+  }
+  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device: "mobile", start, screens, links,
+    ...(pending.length ? { pending } : {}) }, dropped };
 }
 const normalize = (raw) => sanitize(raw).flow;
 /** id -> the screen an overlay sits on: its declared parent, else the screen whose `open` link targets it; null

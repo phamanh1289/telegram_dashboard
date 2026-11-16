@@ -75,13 +75,17 @@ function phoneShell(t) {
 }
 /** Prototype: a phone you tap through as if running the app. Owns its state (path of screens walked, open
  *  overlays, timers) and renders only the current screen + its overlays. flow(): the current flow (read on every
- *  tap, so edits apply); onGo(id): the shown screen changed. */
-function player(host, { flow, t, reduced, onGo }) {
+ *  tap, so edits apply); onGo(id): the shown screen changed; setStart(id | null), where the flow may be edited:
+ *  the screen shown becomes the start screen without a trip to the map's edit mode. */
+function player(host, { flow, t, reduced, onGo, setStart }) {
   let path = [], ovs = [], cur = null, flash = null, hint = null; // ovs: [{id, kind, el, card, scrim, timer}]
   const ui = phoneShell(t);
   const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
   ui.back.addEventListener("click", goBack);
-  ui.trail.append(ui.crumbs, restart);
+  const note = h("span", "uf-nostart", t("noStartNote"));
+  const pin = btn(`▶ ${t("setStart")}`, "uf-btn", () => { setStart(flow().start === here() ? null : here()); fillTrail(); });
+  pin.title = t("startHere");
+  ui.trail.append(ui.crumbs, ...(setStart ? [note, pin] : []), restart);
   host.replaceChildren(ui.stage, ui.trail);
 
   const ro = new ResizeObserver(([e]) => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
@@ -122,8 +126,10 @@ function player(host, { flow, t, reduced, onGo }) {
     else if (links.length) follow(links[0]);
   }
   function tap(b, links) {
-    if (links.length === 1) follow(links[0]);
-    else if (links.length) choose(links);
+    // the same screen the same way is one outcome, however many links say it: nothing to choose between
+    const ways = links.filter((l, i) => links.findIndex((x) => x.to === l.to && x.act === l.act) === i);
+    if (ways.length === 1) follow(ways[0]);
+    else if (ways.length) choose(ways);
     else blink(b);
   }
 
@@ -189,6 +195,8 @@ function player(host, { flow, t, reduced, onGo }) {
       if (i === path.length - 1) { c.disabled = true; c.setAttribute("aria-current", "page"); }
       return i ? [h("span", "uf-sep", "›"), c] : [c];
     }));
+    note.hidden = !!by(flow().start); // a start that names no screen is no start
+    pin.setAttribute("aria-pressed", String(flow().start === here()));
     ui.crumbs.scrollLeft = ui.crumbs.scrollWidth; // keep the current screen in view (one read per step)
   }
 

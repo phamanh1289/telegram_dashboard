@@ -2,11 +2,12 @@ import { family, isOverlay } from './model.js';
 import { inspector } from './inspector.js';
 import { cardAbs } from './geometry.js';
 import { shotOf } from './shots.js';
-import { CAP, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
+import { CAP, COL, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
 import { clamp, isPop, itm, scr } from './values.js';
 import { box, h } from './dom.js';
 import { inlineEdit } from './inline-edit.js';
 
+const ROOM = 40; // clear space kept around a new screen
 const nextId = (used, p) => { let n = 1; while (used.has(p + n)) n++; return p + n; };
 /** Edit mode: drag an arrow head to retarget it, drag a dot to add a link, drag a title bar to move a screen,
  *  double-click to rename, click to select (Delete removes, the panel changes what the shape cannot show).
@@ -53,6 +54,7 @@ function editor(ctx) {
     for (const el of ctx.layer.querySelectorAll(".uf-sel, .uf-drawon")) el.classList.remove("uf-sel", "uf-drawon");
     node()?.classList.add("uf-sel");
     if (drawFor) ctx.frames().get(drawFor.id)?.classList.add("uf-drawon");
+    if (ctx.on()) ctx.focus(sel); // the map dims around what is in hand
   }
   /** Frame units per image fraction for a screen drawn from its Zeplin image (the frame is W wide). */
   const scale = (s) => { const sh = shotOf(s); return sh ? { kw: W, kh: (sh.h * W) / sh.w, sh } : null; };
@@ -312,14 +314,23 @@ function editor(ctx) {
     ctx.note(t("dragging"));
     return true;
   }
-  /** A new screen at the centre of the view (`props`: title / zeplin); its id, or null when refused. */
-  function addScreen(props = {}) {
+  /** A new screen (`props`: title / zeplin) at the centre of the view when that is free, else right of the last
+   *  screen on the top row: dropped on a screen it would hide it and take every click meant for it (a design
+   *  image covers the whole frame). Its id, or null when refused.
+   *  `also(flow, id)`: more to change in the same step (a pending entry it fulfils, the link into it). */
+  function addScreen(props = {}, also = null) {
     if (blocked()) return null;
     const f = structuredClone(get()), c = ctx.centre();
     if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
     const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
-    f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x: Math.round(c.x - W / 2),
-      y: Math.round(c.y - H / 2), zeplin: "", ac: "", note: "", items: [], ...props });
+    let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
+    if (f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && Math.abs(s.y - y) < H + ROOM)) {
+      x = Math.max(...f.screens.map((s) => s.x)) + COL;
+      y = Math.min(...f.screens.map((s) => s.y));
+    }
+    f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x, y, zeplin: "", ac: "", note: "",
+      items: [], ...props });
+    also?.(f, id);
     sel = { t: "screen", id };
     ctx.commit(f);
     return id;

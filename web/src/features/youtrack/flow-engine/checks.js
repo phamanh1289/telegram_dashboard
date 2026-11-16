@@ -13,7 +13,7 @@ function brokenRows(d, t) {
     ...(d.bad ? [{ kind: "broken", text: t("badEntries", { n: d.bad }) }] : []),
   ];
 }
-/** Gaps in a normalized flow: orphan, dead, offshot (a button its design image does not show), noback, noac, nosrc
+/** Gaps in a normalized flow: nostart (no start screen chosen), orphan, dead, offshot (a button its design image does not show), noback, noac, nosrc
  *  (a screen with no design link). offshot needs the images (SHOTS): without them it reports nothing. */
 function gaps(f, t) {
   const out = [], first = startOf(f);
@@ -21,6 +21,15 @@ function gaps(f, t) {
   const into = new Set(f.links.map((l) => l.to));
   const from = new Set(f.links.map((l) => l.src));
   const back = new Set(f.links.filter((l) => l.act === "back").map((l) => scr(l.src)));
+  // steps left out of the map for want of a design: where each is reached from, when the ticket said
+  for (const p of f.pending || []) {
+    const s = p.src ? by.get(scr(p.src)) : null, i = s && itm(p.src);
+    const at = !s ? "" : t(i ? "pendingFromBtn" : "pendingFrom", { s: s.title, i: i ? s.items.find((it) => it.id === i).label : "" });
+    out.push({ kind: "pending", pending: p.title, ...(s ? { screen: s.id } : {}), ...(i ? { item: i } : {}),
+      text: [t("pendingRow", { s: p.title }) + at, p.when, p.ac].filter(Boolean).join(" · ") });
+  }
+  // none chosen (or the chosen one is gone): Prototype and the test paths quietly start at the first screen
+  if (first && f.start !== first) out.push({ kind: "nostart", screen: first, text: t("nostart", { s: by.get(first).title }) });
   for (const s of f.screens) {
     if (s.id !== first && !into.has(s.id)) out.push({ kind: "orphan", screen: s.id, text: t("orphan", { s: s.title }) });
     for (const it of s.items)
@@ -41,7 +50,7 @@ function gaps(f, t) {
   }
   return out;
 }
-const KIND_ORDER = ["broken", "orphan", "dead", "offshot", "noback", "noac", "nosrc"];
+const KIND_ORDER = ["broken", "unclear", "pending", "nostart", "orphan", "dead", "offshot", "noback", "noac", "nosrc"];
 /** Test paths through the graph, by code: from the start screen, every link followed once at least where it can be
  *  reached. A path ends at a screen with nothing new to go to, or on a link back to a screen it already crossed.
  *  Only paths that cover a link no earlier path did are kept. {paths: [[link]], missed: [link]}. */
@@ -87,7 +96,7 @@ function checklist(f, t) {
   if (missed.length) lines.push(t("missed", { s: missed.map((l) => `${by(scr(l.src)).title} → ${by(l.to).title}`).join("; ") }));
   return lines.join("\n");
 }
-/** [{kind: "broken" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "nosrc", screen?, item?, text}] for a raw flow. */
+/** [{kind: "broken" | "pending" | "nostart" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "nosrc", screen?, item?, text}] for a raw flow. */
 function check(flow, lang) {
   const { flow: f, dropped } = sanitize(flow), t = tr(lang);
   return [...brokenRows(dropped, t), ...gaps(f, t)];

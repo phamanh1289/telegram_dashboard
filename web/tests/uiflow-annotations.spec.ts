@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import fs from "node:fs";
-import { type Item, type Flow, open, box, title, standalone, edit, dirty, PIC, remount, find, selectScreen } from "./uiflow.helpers";
+import { type Item, type Flow, open, box, title, standalone, edit, addScreen, dirty, PIC, remount, find, selectScreen } from "./uiflow.helpers";
 
 test("tap area: drawn on the image as a new button, resized, typed, matched by text again; each one undo", async ({ page }) => {
   await open(page);
@@ -72,7 +72,7 @@ test("note: plain text kept on blur with a badge, Esc puts the old text back", a
   await expect(page.locator('.uf-screen[data-id="home"] .uf-memo')).toHaveCount(0);
 });
 
-test("arrow keys and the position boxes move a screen with its popup; Sắp xếp lại is one undo", async ({ page }) => {
+test("arrow keys move a screen with its popup; Sắp xếp lại is one undo", async ({ page }) => {
   await open(page);
   await edit(page);
   const pos = () => page.evaluate(() => Object.fromEntries(window.__api.get().screens.map((s) => [s.id, [s.x, s.y]])));
@@ -80,15 +80,9 @@ test("arrow keys and the position boxes move a screen with its popup; Sắp xế
   await selectScreen(page, "code");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("Shift+ArrowDown");
-  let now = await pos();
+  const now = await pos();
   expect(now.code).toEqual([start.code[0]! + 10, start.code[1]! + 100]);
   expect(now.err).toEqual([start.err[0]! + 10, start.err[1]! + 100]); // its popup comes along
-  const x = page.getByRole("spinbutton", { name: "Vị trí X" });
-  await x.fill(String(start.code[0]! - 500));
-  await x.press("Enter");
-  now = await pos();
-  expect(now.code[0]).toBe(start.code[0]! - 500);
-  expect(now.err[0]).toBe(start.err[0]! - 500);
   const moved = now;
   await page.getByRole("button", { name: "Sắp xếp lại" }).click();
   expect(await pos()).toEqual(start);
@@ -200,7 +194,7 @@ test("Cần rà soát: buttons not on the design and screens with no source, fil
   await edit(page); // editing: a row opens the button it is about, ready to draw its area (the panel stays open)
   await page.locator(".uf-issue", { hasText: "Không có trên ảnh" }).first().click();
   await expect(page.locator(".uf-insp h2")).toHaveText("Nút: Không có trên ảnh");
-  await expect(page.getByRole("button", { name: "Vùng bấm", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Vẽ vùng bấm", exact: true })).toBeVisible();
 });
 
 test("redo: steps forward after undo, from the toolbar and the keyboard; a new edit clears it", async ({ page }) => {
@@ -208,7 +202,7 @@ test("redo: steps forward after undo, from the toolbar and the keyboard; a new e
   await edit(page);
   const undo = page.getByRole("button", { name: "↶ Hoàn tác" }), redo = page.getByRole("button", { name: "↷ Làm lại" });
   await expect(undo).toBeDisabled();
-  await page.getByRole("button", { name: "+ Màn" }).click();
+  await addScreen(page);
   await expect(page.locator(".uf-screen")).toHaveCount(5);
   await undo.click();
   await expect(page.locator(".uf-screen")).toHaveCount(4);
@@ -221,7 +215,7 @@ test("redo: steps forward after undo, from the toolbar and the keyboard; a new e
   await expect(page.locator(".uf-screen")).toHaveCount(5);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(redo).toBeEnabled();
-  await page.getByRole("button", { name: "+ Màn" }).click(); // a new edit: what undo took back is gone
+  await addScreen(page); // a new edit: what undo took back is gone
   await expect(redo).toBeDisabled();
   await undo.click();
   expect(await dirty(page)).toBe(false);

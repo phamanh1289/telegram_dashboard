@@ -1,7 +1,7 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow } from "lucide-react";
+import { ArrowLeft, Download, Loader2, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
@@ -10,7 +10,7 @@ import { Hint } from "@/shared/components/ui/hint";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
 import { packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
-import { AI_LEAVE, aiJobs, aiParts, fileUrl, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
+import { AI_LEAVE, aiJobs, aiParts, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
 import { flowDraft, type FlowDraft } from "@/features/youtrack/lib/flow-draft";
 import { cn } from "@/shared/lib/utils";
 import { YtFetching } from "./bits";
@@ -113,13 +113,10 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     const write = () => { timer.current = null; void flowDraft(scope, issue, draft.current).then(() => { if (writeId === draftWrite.current) setDraftStatus(t("Đã lưu bản nháp")); }, (e) => { if (writeId === draftWrite.current) setDraftStatus(t("Không lưu được bản nháp: {msg}", { msg: say(e) })); }); };
     if (immediate) write(); else timer.current = setTimeout(write, 500);
   };
-  // "Xem thay đổi": what Cập nhật would write, read before writing 
-  const diff = useMutation({ mutationFn: (f: UiFlow) => yt.flowDiff(issue, f, base) });
   const engine = useUiFlow(el, shotsReady ? flow : null, {
-    lang, shots: sq.data?.shots,
+    lang, shots: sq.data?.shots, notes: mine?.manifest?.warnings,
     onChange: (f, d) => {
       setDirty(d);
-      diff.reset(); // what it listed was the flow before this edit
       if (d) { setHid(false); persist({ flow: f, manifest: mine?.manifest, base, job: draft.current?.job ?? job?.id, pendingJob: draft.current?.pendingJob, outcomeUnknown: draft.current?.outcomeUnknown, updated: Date.now() }); }
       else if (draftReady && !busy.current && !ai.isPending) { if (mine) persist({ ...draft.current, flow: f, base, updated: Date.now() }); else if (draft.current) persist(null, true); }
       const k = zeplinUrls(f).join("\n");
@@ -181,6 +178,26 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     },
     retry: false,
     onSuccess: (r) => { if (r) { if (r.previousJob && r.previousJob !== r.jobId) void yt.flowJobProcessed(r.previousJob).catch((e) => setJobError(say(e))); setMine(r); persist({ flow: r.flow, manifest: r.manifest, base: r.base, job: r.jobId, updated: Date.now() }, true); setHid(false); } },
+  });
+  // "Tải file HTML": the flow on screen as the standalone file, built by the backend and saved by the browser
+  // Packing the images can outlast the click's activation, after which a browser may drop a script-started save
+  // without a word: so the step is told while it runs, and the finished file stays as a real link to press.
+  const [htmlStep, setHtmlStep] = useState("");
+  const [htmlFile, setHtmlFile] = useState<{ url: string; name: string } | null>(null);
+  useEffect(() => () => { if (htmlFile) URL.revokeObjectURL(htmlFile.url); }, [htmlFile]);
+  const html = useMutation({
+    mutationFn: async (f: UiFlow) => {
+      setHtmlFile(null);
+      setHtmlStep(t("Đang nhúng ảnh Zeplin vào file…"));
+      const p = await packShots(f, sq.data?.shots, (n, of) => setHtmlStep(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of })));
+      setHtmlStep(t("Đang tạo file HTML…"));
+      const r = await yt.flowHtml(issue, f, p.shots);
+      return { url: URL.createObjectURL(new Blob([r.html], { type: "text/html" })), name: r.name };
+    },
+    onSuccess: (file) => {
+      setHtmlFile(file);
+      Object.assign(document.createElement("a"), { href: file.url, download: file.name }).click();
+    },
   });
   const save = useMutation({
     mutationFn: async (f: UiFlow) => {
@@ -379,6 +396,15 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       </Center>
     : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens", false, "", startSkip) : run())} resume={resume} notice={<>{failed}{lost}</>} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
 
+  const bar = !readErr && unsaved && !hid && !waiting && !ai.isPending && !!engine.api; // the one row that asks to write to the ticket
+  // draft autosave state + its two ways out; rides in that row, or on its own line when the row is away
+  const noFile = base === null; // no file on the ticket yet: a draft to keep or drop; over a saved file there is only "Cập nhật"
+  const draftErr = draftStatus.includes(":");
+  const draftBits = (unsaved || draftStatus) && (noFile || draftErr) && <>
+    {draftStatus && <span role="status" className="text-xs text-ink-3">{draftStatus}</span>}
+    {draftErr && <Button size="xs" variant="ghost" onClick={() => { if (restoreFailed) { reread.current = false; setRestoreAttempt((n) => n + 1); } else persist(draft.current, true); }}>{t("Thử lại")}</Button>}
+    {unsaved && noFile && <Button size="xs" variant="ghost" disabled={save.isPending || ai.isPending} onClick={() => setAsk("fresh")}>{t("Bỏ bản nháp")}</Button>}
+  </>;
   return (
     <>
       {/* only X closes it: Esc is the engine's (drop the selection, stop a draw, close a form), a stray click is nothing */}
@@ -402,10 +428,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 <Button size="icon-sm" variant="ghost" aria-label={t("Render lại bằng AI")} disabled={locked} onClick={() => setAsk("again")}><RefreshCw /></Button>
               </Hint>
             )}
-            {q.data?.att && (
-              <Hint side="bottom" text={t("Tải file HTML của UI flow trên ticket: mở được offline, không cần app")}>
-                <Button size="icon-sm" variant="ghost" aria-label={t("Tải file HTML")} nativeButton={false}
-                  render={<a href={fileUrl(issue, { id: q.data.att })} target="_blank" rel="noopener noreferrer" />}><Download /></Button>
+            {flow && engine.api && (
+              <Hint side="bottom" text={t("Tải file HTML của sơ đồ đang xem (kể cả bản nháp chưa lưu): mở được offline, không cần app. Không ghi gì lên ticket.")}>
+                <Button size="icon-sm" variant="ghost" aria-label={t("Tải file HTML")} aria-busy={html.isPending} disabled={html.isPending || ai.isPending} onClick={() => engine.api && html.mutate(engine.api.get())}>{html.isPending ? <Loader2 className="animate-spin" /> : <Download />}</Button>
               </Hint>
             )}
             {flow && (
@@ -416,9 +441,10 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
           </header>
           <div className="relative min-h-0 flex-1">{body}</div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3 empty:hidden">
-            {readErr ? null : unsaved && !hid && !waiting && !ai.isPending && engine.api ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <p role="status" className="min-w-0 flex-1 text-sm text-ink">
+            {readErr ? null : bar ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hl/40 bg-hl-wash py-2 pr-2 pl-3">
+                <span aria-hidden className="size-2 shrink-0 rounded-full bg-warn" />
+                <p role="status" className="min-w-0 flex-1 text-sm font-medium text-ink">
                   {save.isPending && saving ? <span className="ai-text">{saving}</span>
                     : mine?.sum?.text && !dirty ? <>
                         {t("{s} — chưa lưu, cập nhật file trên ticket?", { s: mine.sum.text })}
@@ -426,14 +452,17 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                       </>
                     : t("Có thay đổi chưa lưu — cập nhật file trên ticket?")}
                 </p>
-                <Button size="sm" variant="outline" aria-busy={diff.isPending} disabled={save.isPending || diff.isPending} onClick={() => engine.api && diff.mutate(engine.api.get())}>{t("Xem thay đổi")}</Button>
-                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending || conflict} onClick={() => { diff.reset(); if (engine.api) save.mutate(engine.api.get()); }}>{t("Cập nhật")}</Button>
-                <Button size="sm" variant="outline" disabled={save.isPending} onClick={() => setHid(true)}>{t("Không")}</Button>
+                {draftBits}
+                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending || conflict} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{noFile ? t("Lưu lên ticket") : t("Cập nhật")}</Button>
+                <Hint text={t("Ẩn thanh này. Thay đổi vẫn được giữ làm bản nháp, chưa lên ticket.")}>
+                  <Button size="icon-sm" variant="ghost" aria-label={t("Không")} disabled={save.isPending} onClick={() => setHid(true)}><X /></Button>
+                </Hint>
               </div>
-            ) : flow && !ai.isPending ? (
+            ) : flow && unsaved && hid && !ai.isPending ? (
               <p className="flex flex-wrap items-center gap-2 text-xs text-ink-3">
+                <span aria-hidden className="size-2 shrink-0 rounded-full bg-warn" />
                 {t("Kéo thả để sửa; mọi thay đổi chỉ lên ticket khi bạn bấm Cập nhật.")}
-                {unsaved && hid && <Button size="xs" variant="outline" onClick={() => setHid(false)}>{t("Cập nhật lên ticket")}</Button>}
+                <Button size="xs" variant="outline" onClick={() => setHid(false)}>{t("Cập nhật lên ticket")}</Button>
               </p>
             ) : ai.isPending ? (
               <div className="flex items-center justify-end gap-3">
@@ -442,15 +471,15 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 </Hint>
               </div>
             ) : null}
-            {unsaved && diff.data && (
-              <div className="mt-2 grid gap-1 text-xs text-ink-2">
-                <p className="font-medium text-ink">{diff.data.changes.length ? t("Cập nhật sẽ ghi {n} thay đổi:", { n: diff.data.changes.length }) : t("Không có thay đổi so với file trên ticket.")}</p>
-                {diff.data.changes.slice(0, 20).map((c) => <p key={c} className="truncate">{c}</p>)}
-                {diff.data.changes.length > 20 && <p>{t("… và {n} thay đổi khác", { n: diff.data.changes.length - 20 })}</p>}
-                {diff.data.base_changed && <p role="alert" className="text-warn">{t("File trên ticket đã đổi từ khi mở: so với bản mới nhất.")}</p>}
-              </div>
+            {html.isPending && <p role="status" className="mt-2 text-xs text-ink-2"><span className="ai-text">{htmlStep}</span></p>}
+            {htmlFile && !html.isPending && (
+              <p role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-2">
+                <span className="min-w-0 flex-1">{t("Đã tạo file {name}. Trình duyệt chưa tự tải thì bấm Tải xuống.", { name: htmlFile.name })}</span>
+                <Button size="xs" variant="outline" nativeButton={false} render={<a href={htmlFile.url} download={htmlFile.name} />}><Download />{t("Tải xuống")}</Button>
+                <Button size="icon-sm" variant="ghost" aria-label={t("Đóng")} onClick={() => setHtmlFile(null)}><X /></Button>
+              </p>
             )}
-            {diff.isError && <p role="alert" className="mt-2 text-xs text-error">{t("Không xem được thay đổi: {msg}", { msg: say(diff.error) })}</p>}
+            {html.isError && <p role="alert" className="mt-2 text-xs text-error">{t("Không tải được file HTML: {msg}", { msg: say(html.error) })}</p>}
             {redesigned.length > 0 && !mine && !dirty && !ai.isPending && engine.api && (
               <div role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-warn">
                 <span className="min-w-0 flex-1">
@@ -461,13 +490,12 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
             )}
             {q.data?.ticket_newer && flow && !mine && !ai.isPending && <p className="mt-2 text-xs text-ink-3">{t("Ticket đã sửa sau lần cập nhật UI flow. Muốn lấy thay đổi: ↻ Render lại bằng AI (giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu).")}</p>}
             {mine?.manifest?.kept && Object.values(mine.manifest.kept).some(Boolean) && <p className="mt-2 text-xs text-ink-3">{t("Giữ từ sơ đồ trước: {p} vị trí màn, {n} ghi chú, {r} vùng bấm", { p: mine.manifest.kept.positions ?? 0, n: mine.manifest.kept.notes ?? 0, r: mine.manifest.kept.rects ?? 0 })}</p>}
-            {(unsaved || draftStatus) && <p role="status" className="mt-2 text-xs text-ink-3">{draftStatus}{draftStatus.includes(":") && <Button size="xs" variant="ghost" onClick={() => { if (restoreFailed) { reread.current = false; setRestoreAttempt((n) => n + 1); } else persist(draft.current, true); }}>{t("Thử lại")}</Button>}{unsaved && <Button size="xs" variant="ghost" disabled={save.isPending || ai.isPending} onClick={() => setAsk("fresh")}>{t("Bỏ bản nháp")}</Button>}</p>}
+            {!bar && draftBits && <p className="mt-2 flex flex-wrap items-center gap-1 text-xs text-ink-3">{draftBits}</p>}
             {conflict && <p role="alert" className="mt-2 text-xs text-warn">{t("File trên ticket đã đổi. Bản nháp được giữ lại.")}<Button size="xs" variant="outline" disabled={save.isPending} onClick={() => setAsk("fresh")}>{t("Xem bản mới")}</Button></p>}
             {unknownSave && <p role="alert" className="mt-2 text-xs text-warn">{t("Chưa rõ kết quả cập nhật. Lần cập nhật tiếp theo sẽ kiểm tra lại file trên ticket.")}</p>}
             {stopping && <p role="status">{t("Đang yêu cầu dừng…")}</p>}
             {lost && !starting && <div className="mt-2">{lost}</div>} {/* the start panel shows them itself */}
             {resume && flow && <div className="mt-2 flex justify-end">{resume}</div>}
-            {mine?.manifest && <details open={!!mine.manifest.warnings?.length} className="mt-2 text-xs text-ink-3"><summary>{t("Nguồn dựng sơ đồ")}</summary><p>{t("Đầu vào ước lượng: {n} token, gửi đủ 100% nguồn", { n: mine.manifest.estimated_input_tokens })}</p><p>{mine.manifest.sources.join(", ")}</p>{mine.manifest.omitted.length > 0 && <p>{t("Đã lược bỏ {n} mục phụ; giữ yêu cầu bắt buộc.", { n: mine.manifest.omitted.reduce((n, item) => n + item.count, 0) })}</p>}{mine.manifest.warnings?.map((warning, i) => <p role="alert" key={i} className="text-warn">{warning}</p>)}</details>}
             {sq.isError && flow && <p role="alert" className="mt-2 text-xs text-warn">{t("Không lấy được ảnh Zeplin: {msg}", { msg: say(sq.error) })}</p>}
             {!!sq.data?.missing.length && flow && <p className="mt-2 text-xs text-ink-3">{t("{n} màn Zeplin không đọc được (chưa chia sẻ với tài khoản này hoặc đã xoá)", { n: sq.data.missing.length })}</p>}
             {failed && !starting && <div className="mt-2">{failed}</div>}

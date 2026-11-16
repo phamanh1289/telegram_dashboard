@@ -32,6 +32,12 @@ async function openFlow(page: Page) {
   await expect(dialog(page)).toBeVisible();
 }
 
+/** An edit by hand that needs no Zeplin read: select the last screen and delete it (4 screens become 3). */
+async function dropScreen(page: Page) {
+  await dialog(page).locator('.uf-screen[data-id="home"] .uf-title').click();
+  await page.keyboard.press("Delete");
+}
+
 /** No file yet: run the AI from the start panel, wait for its flow on the map. */
 async function render(page: Page) {
   const d = dialog(page);
@@ -73,7 +79,7 @@ test("no file yet: start panel with the run button, AI result is unsaved until C
   await expect(d.locator(".uf-screen")).toHaveCount(4);
   await expect(d.getByText(BAR)).toBeVisible();
   expect(await posts()).toEqual([]);
-  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await d.getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await expect(d.getByText(BAR)).toHaveCount(0);
   await expect(d.getByText("Để sau: Nhập OTP → Trang chủ")).toBeVisible(); // what changed, from the server
   const [p] = await posts();
@@ -158,7 +164,7 @@ test("409 shows the conflict message and keeps my edit until Xem bản mới", a
   await openFlow(page);
   const d = dialog(page);
   await render(page);
-  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await d.getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await expect(d.getByText("UI flow vừa được người khác cập nhật")).toBeVisible();
   await expect(d.getByText(BAR)).toBeVisible(); // my change is still there to save
   await expect(d.locator(".uf-screen")).toHaveCount(4);
@@ -182,7 +188,7 @@ test("a save of unknown outcome shows the server's words, keeps the change and n
   await openFlow(page);
   const d = dialog(page);
   await render(page);
-  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await d.getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await expect(d.getByText("Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại")).toBeVisible();
   await expect(d.getByText(BAR)).toBeVisible();
   await page.waitForTimeout(500);
@@ -217,12 +223,12 @@ test("an edit made while the save is in flight survives it, unsaved, with the ba
   await openFlow(page);
   const d = dialog(page);
   await render(page);
-  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await d.getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await d.getByRole("button", { name: "Sửa" }).click(); // the canvas stays editable during the upload
-  await d.getByRole("button", { name: "+ Màn" }).click();
-  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await dropScreen(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(3);
   await expect(d.getByText("Đã cập nhật file trên ticket")).toBeVisible();
-  await expect(d.locator(".uf-screen")).toHaveCount(5); // not replaced by the saved version
+  await expect(d.locator(".uf-screen")).toHaveCount(3); // not replaced by the saved version
   await expect(d.getByText(BAR)).toBeVisible();
   const [first] = await posts();
   expect(first.flow.screens).toHaveLength(4);
@@ -230,7 +236,7 @@ test("an edit made while the save is in flight survives it, unsaved, with the ba
   await expect(d.getByText(BAR)).toHaveCount(0);
   const [, second] = await posts();
   expect(second).toMatchObject({ base: "1-2" }); // over the file just saved
-  expect(second.flow.screens).toHaveLength(5);
+  expect(second.flow.screens).toHaveLength(3);
 });
 
 // Recovery uses account-scoped server metadata and IndexedDB, never an unscoped browser job pointer.
@@ -270,7 +276,7 @@ test("reload restores the draft without another AI call or upload", async ({ pag
 test("save locks render replacement until upload completes", async ({ page }) => {
   await ctl("/set", { flow: "none", save_ms: 1500 });
   await openFlow(page); await render(page);
-  await dialog(page).getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await dialog(page).getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await expect(dialog(page).getByRole("button", { name: "Render lại bằng AI" })).toBeDisabled();
   await expect(dialog(page).getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
   expect(await aiCalls()).toBe(1);
@@ -348,8 +354,8 @@ test("rerender over an edited draft recovers the replacement job after close", a
   await openFlow(page);
   let d = dialog(page);
   await d.getByRole("button", { name: "Sửa", exact: true }).click();
-  await d.getByRole("button", { name: "+ Màn", exact: true }).click();
-  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await dropScreen(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(3);
   await d.getByRole("button", { name: "Render lại bằng AI" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Render lại", exact: true }).click();
   await confirmRender(page);
@@ -393,8 +399,8 @@ test("focus and reconnect preserve the in-flight save lock", async ({ page }) =>
   await ctl("/set", { flow: "none", save_ms: 1800 });
   await openFlow(page); await render(page);
   const d = dialog(page);
-  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
-  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
+  await d.getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
+  await expect(d.getByRole("button", { name: /^(Lưu lên ticket|Cập nhật)$/ })).toBeDisabled();
   await page.evaluate(() => {
     window.dispatchEvent(new Event("blur"));
     window.dispatchEvent(new Event("offline"));
@@ -403,7 +409,7 @@ test("focus and reconnect preserve the in-flight save lock", async ({ page }) =>
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await expect(d.getByRole("button", { name: "Render lại bằng AI" })).toBeDisabled();
-  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
+  await expect(d.getByRole("button", { name: /^(Lưu lên ticket|Cập nhật)$/ })).toBeDisabled();
   await expect(d.getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
   expect(await posts()).toHaveLength(1);
   expect(await aiCalls()).toBe(1);
@@ -413,9 +419,11 @@ test("focus does not replace an edited saved flow with a newer attachment", asyn
   await openFlow(page);
   const d = dialog(page);
   await d.getByRole("button", { name: "Sửa", exact: true }).click();
-  await d.getByRole("button", { name: "+ Màn", exact: true }).click();
-  await expect(d.locator(".uf-screen")).toHaveCount(5);
-  await expect(d.getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  await dropScreen(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(3);
+  await expect(d.getByText(BAR)).toBeVisible(); // over a saved file the draft line is not shown: only "Cập nhật"
+  await expect(d.getByRole("button", { name: "Bỏ bản nháp" })).toHaveCount(0);
+  await page.waitForTimeout(800); // the 500 ms draft autosave
   let reads = 0;
   await page.route("**/api/yt/flow?issue=*", async (route) => {
     reads++;
@@ -431,7 +439,7 @@ test("focus does not replace an edited saved flow with a newer attachment", asyn
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await page.waitForTimeout(150); // Allow automatic query refetches to run if reintroduced.
-  await expect(d.locator(".uf-screen")).toHaveCount(5);
+  await expect(d.locator(".uf-screen")).toHaveCount(3);
   await expect(d.getByText(BAR)).toBeVisible();
   expect(reads).toBe(0);
   expect(await posts()).toEqual([]);
@@ -486,26 +494,6 @@ test("+ Từ Zeplin in the dialog reads the screen through /flow/shots; a Zeplin
 });
 
 
-test("Xem thay đổi lists what Cập nhật would write, posts nothing, and goes stale on the next edit", async ({ page }) => {
-  let asked = 0;
-  await page.route("**/api/yt/flow/diff", async (r) => {
-    asked++;
-    await r.fulfill({ json: { changes: ['Thêm ghi chú màn "Trang chủ"', 'Đặt màn bắt đầu "Nhập OTP"'], base_changed: false } });
-  });
-  await openFlow(page);
-  const d = dialog(page);
-  await expect(d.locator(".uf-screen")).toHaveCount(4);
-  await d.getByRole("button", { name: "Sửa" }).click();
-  await d.getByRole("button", { name: "+ Màn" }).click();
-  await d.getByRole("button", { name: "Xem thay đổi" }).click();
-  await expect(d.getByText("Cập nhật sẽ ghi 2 thay đổi:")).toBeVisible();
-  await expect(d.getByText('Đặt màn bắt đầu "Nhập OTP"')).toBeVisible();
-  expect(asked).toBe(1);
-  expect(await posts()).toEqual([]);
-  await d.getByRole("button", { name: "+ Màn" }).click();
-  await expect(d.getByText("Cập nhật sẽ ghi 2 thay đổi:")).toHaveCount(0);
-});
-
 test("a ticket edited after the file says how to pick it up; a render sends the flow on screen to keep its edits", async ({ page }) => {
   await ctl("/set", { ticket_newer: true });
   await openFlow(page);
@@ -531,4 +519,19 @@ test("Xoá UI flow asks first, Hủy keeps the dialog, Xóa removes only the fil
   await page.getByRole("alertdialog").getByRole("button", { name: "Xóa" }).click();
   await expect(d.getByText("Ticket này chưa có UI flow")).toBeVisible();
   expect((await ctl("/state")).flow_deleted).toBe("1-1");
+});
+
+test("Tải file HTML saves the flow on screen, draft included, and posts nothing; a draft is saved by Lưu lên ticket", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  const d = dialog(page);
+  await render(page);
+  await expect(d.getByRole("button", { name: "Lưu lên ticket", exact: true })).toBeVisible();
+  await expect(d.getByRole("button", { name: "Bỏ bản nháp" })).toBeVisible();
+  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toHaveCount(0);
+  const [file] = await Promise.all([page.waitForEvent("download"), d.getByRole("button", { name: "Tải file HTML" }).click()]);
+  expect(file.suggestedFilename()).toBe("uiflow-VA-1.html");
+  // the file stays as a real link: a browser that dropped the script-started save still gets it on a press
+  await expect(d.locator("a[download]", { hasText: "Tải xuống" })).toHaveAttribute("download", "uiflow-VA-1.html");
+  expect(await posts()).toEqual([]);
 });

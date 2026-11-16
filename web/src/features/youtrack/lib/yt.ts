@@ -123,7 +123,9 @@ export type FlowScreen = {
 export type FlowLink = { src: string; to: string; act: "navigate" | "open" | "back" | "close"; when: string; ac: string };
 export type UiFlow = { v: 2; ticket: string; rev: number; device: "mobile"; start?: string | null; screens: FlowScreen[]; links: FlowLink[];
   /** Zeplin URL -> "<w>x<h>" + the texts on the design at the last save (written by the server): what was redesigned since. */
-  design?: Record<string, string[]> };
+  design?: Record<string, string[]>;
+  /** Steps the ticket describes that have no design yet: listed in the flow check, never drawn (see Pending in flow.py). */
+  pending?: { title: string; kind: FlowScreen["kind"]; ac: string; src: string; when: string }[] };
 /** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
 export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean; ticket_newer?: boolean }; // ticket_newer: edited after the file was written
 export type FlowManifest = components["schemas"]["FlowManifestDTO"];
@@ -202,8 +204,8 @@ export const yt = {
     ytApi<{ text: string }>("/ai/flow/ask", { json: { id, note, history, question, skip }, signal }),
   /** Removes the ticket's UI flow file `base` (the one seen; 409 if another was saved since) and comments it. */
   deleteFlow: (id: string, base: string) => ytApi<{ warnings: string[] }>("/flow/delete", { json: { id, base } }),
-  /** What "Cập nhật" would list in its comment, against the file on the ticket now. Writes nothing. */
-  flowDiff: (id: string, flow: UiFlow, base: string | null) => ytApi<{ changes: string[]; base_changed: boolean }>("/flow/diff", { json: { id, flow, base } }),
+  /** The flow on screen (draft included) as the standalone HTML file; writes nothing. */
+  flowHtml: (id: string, flow: UiFlow, shots: Record<string, FlowShot> = {}) => ytApi<{ name: string; html: string }>("/flow/html", { json: { id, flow, shots } }),
 };
 /** Durable UI flow jobs are scoped by the server; browser storage holds only the editor draft. */
 export type FlowJobState = Omit<components["schemas"]["FlowJobDTO"], "result"> & { result: FlowResult | null };

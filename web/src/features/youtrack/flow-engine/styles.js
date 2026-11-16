@@ -2,16 +2,29 @@ import { BEZEL, BOTTOM, H, HEAD, STATUS, W } from './constants.js';
 import { h } from './dom.js';
 
 // ------------------------------------------------------------------ styles (injected once)
-const DARK = "--uf-bg:#0d0f14;--uf-screen:#181b22;--uf-ink:#e8eaee;--uf-ink2:#9aa1ad;--uf-line:#2c313b;" +
-  "--uf-soft:#22262e;--uf-accent:#8b8cf8;--uf-on-accent:#0d0f14;--uf-accent-soft:rgba(139,140,248,.16);" +
-  "--uf-muted:#697282;--uf-bezel:#2e333c;--uf-hit:#facc15;--uf-hit-soft:rgba(250,204,21,.2);--uf-warn:#fb923c;--uf-warn-soft:rgba(251,146,60,.14);" +
-  "--uf-shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px -14px rgba(0,0,0,.7);color-scheme:dark";
+// Palette: inside the dashboard every colour follows the app's own tokens (the member's accent, paper, ink, signal…),
+// so the map reads as one more view of the app. An exported file has no such tokens: the fallbacks below apply.
+// [name, app token, light fallback, dark fallback]
+const TOKENS = [
+  ["bg", "color-paper", "#f3f4f7", "#0d0f14"], ["screen", "color-cotton", "#fff", "#181b22"],
+  ["ink", "color-ink", "#111827", "#e8eaee"], ["ink2", "color-ink-3", "#6b7280", "#9aa1ad"],
+  ["line", "color-rule", "#d9dce3", "#2c313b"], ["soft", "color-paper-2", "#f1f3f6", "#22262e"],
+  ["muted", "color-rule-2", "#9aa1ad", "#697282"], ["accent", "color-hl", "#4f46e5", "#8b8cf8"],
+  ["on-accent", "color-hl-ink", "#fff", "#0d0f14"], ["fill", "hl-fill", "#4f46e5", "#8b8cf8"],
+  ["warn", "color-signal-2", "#c2410c", "#fb923c"], ["bad", "color-error", "#b91c1c", "#f87171"],
+  ["ok", "color-ok", "#059669", "#34d399"], ["hit", "color-signal", "#eab308", "#facc15"],
+  ["c-popup", "color-signal-2", "#d97706", "#fbbf24"], ["c-sheet", "cat-4", "#0d9488", "#2dd4bf"],
+  ["c-toast", "cat-3", "#db2777", "#f472b6"], ["c-item", "color-info", "#0284c7", "#38bdf8"],
+];
+const vars = (k) => TOKENS.map(([n, app, ...v]) => `--uf-${n}:var(--${app},${v[k]})`).join(";");
+const DARK = vars(1) + ";--uf-bezel:#2e333c;--uf-shadow:0 1px 2px rgba(0,0,0,.4),0 18px 44px -14px rgba(0,0,0,.7);color-scheme:dark";
 const CSS = `
-.uf-root{--uf-bg:#f3f4f7;--uf-screen:#fff;--uf-ink:#111827;--uf-ink2:#6b7280;--uf-line:#d9dce3;--uf-soft:#f1f3f6;
---uf-accent:#4f46e5;--uf-on-accent:#fff;--uf-bezel:#1b1d22;--uf-accent-soft:rgba(79,70,229,.1);--uf-muted:#9aa1ad;--uf-warn:#c2410c;
---uf-warn-soft:rgba(234,88,12,.1);--uf-hit:#eab308;--uf-hit-soft:rgba(234,179,8,.22);--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
+.uf-root{${vars(0)};--uf-bezel:#1b1d22;--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
+--uf-accent-soft:color-mix(in srgb,var(--uf-accent) 14%,transparent);--uf-warn-soft:color-mix(in srgb,var(--uf-warn) 14%,transparent);
+--uf-hit-soft:color-mix(in srgb,var(--uf-hit) 22%,transparent);--uf-r:var(--radius-input,8px);
 position:relative;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
 color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+font-family:var(--font-body,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif);
 -webkit-font-smoothing:antialiased}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .uf-root{${DARK}}}
 [data-theme=dark] .uf-root{${DARK}}
@@ -19,14 +32,32 @@ color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",R
 .uf-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;background:var(--uf-screen);
 border-bottom:1px solid var(--uf-line)}
 .uf-sp{flex:1}
-.uf-btn{height:32px;padding:0 13px;border:1px solid var(--uf-line);border-radius:999px;background:var(--uf-screen);
+.uf-btn{height:30px;padding:0 11px;border:1px solid var(--uf-line);border-radius:var(--uf-r);background:var(--uf-screen);
 color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
+.uf-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s ease-out,border-color .15s ease-out}
+.uf-btn svg{flex:none}
 .uf-btn:hover{background:var(--uf-soft)}
 .uf-btn:active{transform:scale(.97)}
 .uf-btn[aria-pressed=true]{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
-.uf-seg{display:inline-flex;gap:2px;padding:2px;border:1px solid var(--uf-line);border-radius:999px;background:var(--uf-soft)}
-.uf-seg .uf-btn{height:26px;border:0;background:transparent;color:var(--uf-ink2)}
-.uf-seg .uf-btn[aria-pressed=true]{background:var(--uf-screen);color:var(--uf-ink);box-shadow:0 1px 3px rgba(16,24,40,.18)}
+.uf-icon{width:30px;padding:0}
+/* toolbar: Sửa is the one coloured switch; its tools are one group that only exists while it is on */
+.uf-editbtn{border-color:color-mix(in srgb,var(--uf-accent) 45%,var(--uf-line));color:var(--uf-accent)}
+.uf-editbtn[aria-pressed=true]{background:var(--uf-fill);border-color:transparent;color:var(--uf-on-accent)}
+.uf-tools{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px;padding:2px;border-radius:var(--uf-r);background:var(--uf-accent-soft);
+animation:uf-in .18s ease-out}
+.uf-tools .uf-btn{height:26px;border-radius:5px;border-color:transparent;background:transparent}
+.uf-tools .uf-btn:hover:not(:disabled){background:var(--uf-screen)}
+.uf-tools .uf-icon{width:26px}
+.uf-div{width:1px;height:16px;margin:0 3px;background:var(--uf-line)}
+.uf-check svg{color:var(--uf-warn)}
+.uf-clean svg{color:var(--uf-ok)}
+.uf-badge{min-width:20px;padding:1px 6px;border-radius:999px;background:var(--uf-warn-soft);color:var(--uf-warn);font-size:11px;
+font-weight:700;line-height:16px;text-align:center}
+.uf-clean .uf-badge{display:none}
+.uf-seg{display:inline-flex;gap:2px;padding:2px;border-radius:var(--uf-r);background:var(--uf-soft);box-shadow:inset 0 0 0 1px var(--uf-line)}
+.uf-seg .uf-btn{height:26px;border:0;border-radius:5px;background:transparent;color:var(--uf-ink2)}
+.uf-seg .uf-btn:hover{color:var(--uf-ink)}
+.uf-seg .uf-btn[aria-pressed=true]{background:var(--uf-fill);color:var(--uf-on-accent)}
 .uf-main{position:relative;flex:1;min-height:0}
 .uf-view{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;outline:none}
 .uf-btn:focus-visible,.uf-issue:focus-visible,.uf-zeplin:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
@@ -49,6 +80,12 @@ border-radius:3px;background:var(--uf-ink);opacity:.45}
 .uf-ov .uf-card{pointer-events:auto;border-radius:22px;background:var(--uf-screen);box-shadow:var(--uf-shadow);
 outline:1.5px dashed var(--uf-accent);outline-offset:0}
 .uf-sheet .uf-card{border-radius:28px 28px 14px 14px}
+.uf-popup,.uf-k-popup{--uf-kind:var(--uf-c-popup)}
+.uf-sheet,.uf-k-sheet{--uf-kind:var(--uf-c-sheet)}
+.uf-toast,.uf-k-toast{--uf-kind:var(--uf-c-toast)}
+.uf-k-item{--uf-kind:var(--uf-c-item)}
+.uf-k-link{--uf-kind:var(--uf-ink2)}
+.uf-ov:not(.uf-sel) .uf-card{outline-color:var(--uf-kind,var(--uf-accent))}
 .uf-popup .uf-empty::after,.uf-sheet .uf-empty::after{content:"";position:absolute;left:20px;right:72px;top:72px;height:10px;
 border-radius:5px;background:var(--uf-soft);box-shadow:0 22px 0 var(--uf-soft)}
 .uf-head{position:absolute;display:flex;align-items:center;gap:8px;padding:0 18px 0 20px}
@@ -69,6 +106,8 @@ font-weight:600;color:var(--uf-ink);white-space:nowrap;pointer-events:none;trans
 container-type:inline-size}
 .uf-ltitle{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .uf-lac{max-width:45%;padding:1px 7px;font-size:11px}
+.uf-root:not(.uf-editing) .uf-ac,.uf-root:not(.uf-editing) .uf-lac{pointer-events:auto;cursor:pointer}
+.uf-lstart{flex:none;color:var(--uf-accent);font-size:10px}
 @container (max-width:180px){.uf-lac{display:none}}
 .uf-near .uf-flabel{opacity:0}
 .uf-item{position:absolute;padding:0 30px 0 14px;border:1px solid var(--uf-line);border-radius:12px;background:var(--uf-soft);
@@ -82,8 +121,11 @@ font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-spac
 .uf-img{display:block;width:100%;max-width:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .uf-shot .uf-head{border-radius:54px 54px 0 0;padding-left:44px;background:color-mix(in srgb,var(--uf-screen) 88%,transparent);
 border-bottom:1px solid var(--uf-line)}
-.uf-item.uf-hot{padding:0 6px;border:2px solid var(--uf-accent);border-radius:10px;background:var(--uf-accent-soft);
-color:transparent;font-size:13px}
+.uf-shot .uf-head{transition:opacity .15s ease-out}
+.uf-view:not(.uf-near) .uf-shot:not(:hover):not(.uf-sel):not(.uf-on) .uf-head{opacity:0}
+.uf-item.uf-hot{padding:0 6px;border:1.5px solid color-mix(in srgb,var(--uf-accent) 55%,transparent);border-radius:10px;
+background:transparent;color:transparent;font-size:13px;transition:background .15s ease-out,border-color .15s ease-out}
+.uf-screen:hover .uf-hot,.uf-on .uf-hot,.uf-sel .uf-hot,.uf-hot.uf-sel{border-color:var(--uf-accent);background:var(--uf-accent-soft)}
 .uf-item.uf-hot::after{content:none}
 .uf-root .uf-hot.uf-dead{border-color:var(--uf-warn);background:transparent;color:transparent}
 .uf-hot.uf-edit-on{color:var(--uf-ink)}
@@ -105,7 +147,7 @@ color:var(--uf-ink);font-size:14px;cursor:help}
 .uf-screen.uf-match{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
 .uf-ov.uf-match .uf-card{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
 .uf-find{position:relative;flex:0 1 260px;min-width:140px}
-.uf-find .uf-input{width:100%;height:32px;border-radius:999px;padding:0 12px}
+.uf-find .uf-input{width:100%;height:30px;border-radius:var(--uf-r);padding:0 12px;background:var(--uf-soft)}
 .uf-results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:4;max-height:320px;overflow:auto;padding:4px;
 border-radius:12px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow)}
 .uf-res{display:block;width:100%;padding:7px 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;
@@ -117,23 +159,29 @@ font-size:13px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-spac
 .uf-zform .uf-field{margin-top:4px}
 .uf-zmsg{margin:8px 2px 0;font-size:13px;color:var(--uf-ink2)}
 .uf-zmsg.uf-err{color:var(--uf-warn)}
-.uf-area{flex:1;min-width:0;min-height:72px;padding:6px 9px;border:1px solid var(--uf-line);border-radius:9px;
+.uf-area{min-width:0;height:34px;min-height:34px;padding:6px 10px;border:1px solid var(--uf-line);border-radius:var(--uf-r);
 background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;resize:vertical}
+.uf-area:focus{height:72px}
 .uf-area:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
-.uf-num{flex:1 1 52px;min-width:52px}
+.uf-num{flex:1 1 0;width:0;min-width:44px}
 .uf-focus .uf-screen:not(.uf-on){opacity:.2}
+.uf-editing.uf-focus .uf-screen:not(.uf-on){opacity:.45}
 .uf-links{position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible;pointer-events:none}
-.uf-link{fill:none;stroke:var(--uf-accent);stroke-width:3;stroke-linecap:round;transition:opacity .2s ease-out}
-.uf-open{stroke-width:1.75}
+.uf-link{fill:none;stroke:var(--uf-accent);stroke-width:2;stroke-linecap:round;opacity:.55;transition:opacity .2s ease-out}
+.uf-open{stroke-width:1.5}
+.uf-link.uf-on{stroke-width:3;opacity:1}
 .uf-back{stroke:var(--uf-muted);stroke-width:2;stroke-dasharray:8 7}
 .uf-mk-a{fill:var(--uf-accent)}
 .uf-mk-b{fill:var(--uf-muted)}
 .uf-labels{position:absolute;left:0;top:0;width:1px;height:1px}
 .uf-label{position:absolute;left:0;top:0;padding:1px 7px;border-radius:8px;background:var(--uf-bg);color:var(--uf-ink2);
 font-size:14px;font-weight:650;white-space:nowrap;pointer-events:none;transition:opacity .2s ease-out}
-.uf-focus .uf-link:not(.uf-on),.uf-focus .uf-label:not(.uf-on){opacity:.08}
+/* arrow labels: read them zoomed in, or on the flow in hand; zoomed out with nothing picked they are only noise */
+.uf-view:not(.uf-near) .uf-label:not(.uf-on){visibility:hidden}
+.uf-label.uf-on{color:var(--uf-ink);box-shadow:0 0 0 1px var(--uf-line)}
+.uf-focus .uf-link:not(.uf-on),.uf-focus .uf-label:not(.uf-on),.uf-focus .uf-handle:not(.uf-on){opacity:.08}
 .uf-panel{position:absolute;top:8px;right:8px;z-index:2;width:min(380px,calc(100% - 16px));max-height:min(60%,520px);
-overflow:auto;padding:6px;border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);
+overflow:auto;padding:6px;border-radius:12px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);
 animation:uf-in .18s ease-out}
 @keyframes uf-in{from{opacity:0;transform:translateY(-6px)}}
 .uf-issue{display:flex;align-items:flex-start;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;background:none;
@@ -141,7 +189,12 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-issue:hover{background:var(--uf-soft)}
 .uf-txt{min-width:0;overflow-wrap:anywhere}
 .uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
-.uf-tag-orphan,.uf-tag-dead,.uf-tag-broken{background:var(--uf-warn-soft);color:var(--uf-warn)}
+.uf-tag-orphan,.uf-tag-dead,.uf-tag-broken,.uf-tag-nostart,.uf-tag-unclear{background:var(--uf-warn-soft);color:var(--uf-warn)}
+.uf-tag-pending{background:var(--uf-accent-soft);color:var(--uf-accent)}
+/* a pending step: the row, and (while editing) a way to drop it from the list */
+.uf-prow{display:flex;align-items:center;gap:2px}
+.uf-prow .uf-issue{flex:1;min-width:0}
+.uf-prow .uf-icon{flex:none;width:26px;height:26px;border-color:transparent;background:transparent;color:var(--uf-ink2)}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
 /* prototype: one phone, scaled to fit (--k), centred in the stage; the path walked below it */
 .uf-stage{position:relative;flex:1;min-height:0;overflow:hidden}
@@ -198,6 +251,7 @@ background:var(--uf-ink);color:var(--uf-screen)}
 .uf-toast .uf-pcard>.uf-title{padding:14px 18px;font-size:15px}
 .uf-trail{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--uf-line);
 background:var(--uf-screen)}
+.uf-nostart{flex:none;color:var(--uf-warn);font-size:12px}
 .uf-crumbs{flex:1;min-width:0;display:flex;align-items:center;overflow-x:auto;white-space:nowrap;scrollbar-width:none}
 .uf-crumb{flex:none;padding:4px 8px;border:0;border-radius:8px;background:none;color:var(--uf-ink2);font:inherit;font-size:13px;
 cursor:pointer}
@@ -210,35 +264,69 @@ cursor:pointer}
 .uf-dot{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
 border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40,.3);cursor:crosshair;touch-action:none}
 .uf-dot:hover{transform:scale(1.25)}
+/* link dots: on the frame under the pointer or in hand, not on all of them at once */
+.uf-dot{opacity:0;transition:opacity .15s ease-out}
+.uf-screen:hover .uf-dot,.uf-screen.uf-sel .uf-dot,.uf-screen.uf-on .uf-dot,.uf-dot:focus-visible{opacity:1}
 .uf-handle{fill:var(--uf-screen);stroke:var(--uf-accent);stroke-width:3;pointer-events:auto;cursor:grab;touch-action:none}
 .uf-handle:hover{fill:var(--uf-accent-soft)}
 .uf-editing .uf-label{pointer-events:auto;cursor:text}
 .uf-editing .uf-head{cursor:move}
 .uf-temp{fill:none;stroke:var(--uf-accent);stroke-width:2.5;stroke-dasharray:7 6;stroke-linecap:round;pointer-events:none}
 .uf-screen.uf-sel{box-shadow:0 0 0 3px var(--uf-accent),var(--uf-shadow)}
-.uf-item.uf-sel{border-color:var(--uf-accent);box-shadow:0 0 0 2px var(--uf-accent-soft)}
-.uf-link.uf-sel{stroke-width:5}
+/* an overlay's frame is the whole phone under it: the ring goes on its card */
+.uf-ov.uf-sel,.uf-ov.uf-match{box-shadow:none}
+.uf-ov.uf-sel .uf-card{outline:3px solid var(--uf-accent)}
+/* the button / tap area in hand (or pointed at in the panel's list): filled, ringed, above its neighbours */
+.uf-root .uf-item.uf-sel,.uf-root .uf-item.uf-peek{z-index:1;border:2px solid var(--uf-accent);background:color-mix(in srgb,var(--uf-accent) 26%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--uf-accent) 30%,transparent),0 6px 18px -6px var(--uf-accent)}
+.uf-screen:has(.uf-item.uf-sel) .uf-item:not(.uf-sel){opacity:.45}
+.uf-link.uf-sel{stroke-width:5;opacity:1}
 .uf-edit-on{background:var(--uf-screen);box-shadow:0 0 0 2px var(--uf-accent);cursor:text;text-overflow:clip;
 user-select:text;-webkit-user-select:text}
-.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;width:min(320px,calc(100% - 16px));max-height:calc(100% - 16px);overflow:auto;padding:10px;
-border-radius:16px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);animation:uf-in .18s ease-out}
-.uf-insp h2{margin:0 0 8px;font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;display:flex;flex-direction:column;width:min(300px,calc(100% - 16px));
+max-height:calc(100% - 16px);overflow:hidden;border-radius:12px;background:var(--uf-screen);
+box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);animation:uf-in .18s ease-out}
+.uf-insp[hidden]{display:none}
+.uf-ihead{flex:none;display:flex;align-items:center;gap:6px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--uf-line);
+background:linear-gradient(90deg,color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 14%,transparent),transparent 70%)}
+.uf-ihead h2{flex:1;min-width:0;margin:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-ihead .uf-btn{width:28px;height:28px;border-color:transparent;background:transparent}
+.uf-ihead .uf-btn:hover{background:var(--uf-soft)}
+.uf-ihead .uf-danger:hover{background:color-mix(in srgb,var(--uf-bad) 14%,transparent)}
+.uf-itag{flex:none;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 18%,transparent);
+color:var(--uf-kind,var(--uf-accent));font-size:11px;font-weight:700}
+.uf-ibody{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:10px 12px 12px}
+.uf-pick{position:relative;display:flex;gap:0}
+.uf-pick .uf-btn{position:relative;flex:1;min-width:0;padding:0 6px;font-size:12px;transition:color .2s ease-out}
+.uf-pick .uf-btn[aria-pressed=true]{background:transparent}
+/* the selected segment's fill: one pill that slides (and takes the new kind's colour) instead of jumping */
+.uf-pill{position:absolute;left:2px;top:2px;bottom:2px;border-radius:5px;background:var(--uf-kind,var(--uf-fill));
+pointer-events:none;transition:transform .32s cubic-bezier(.3,1.35,.5,1),background-color .32s ease-out}
+/* a frame whose kind was just changed settles into its new shape */
+.uf-morph .uf-card{animation:uf-morph .32s cubic-bezier(.3,1.35,.5,1)}
+@keyframes uf-morph{from{opacity:.25;transform:scale(.92)}}
+.uf-ihead .uf-start{font-size:11px;color:var(--uf-ink2)}
+.uf-ihead .uf-start[aria-pressed=true]{background:var(--uf-accent);color:var(--uf-on-accent)}
 .uf-chips{display:flex;flex-wrap:wrap;gap:4px}
-.uf-chips .uf-btn{height:26px;padding:0 10px;font-size:12px}
-.uf-field{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}
-.uf-flab{flex:none;width:62px;color:var(--uf-ink2);font-size:12px;font-weight:650}
-.uf-input{flex:1;min-width:0;height:28px;padding:0 9px;border:1px solid var(--uf-line);border-radius:9px;
-background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px}
+.uf-chips .uf-btn{height:26px;padding:0 10px;font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:block}
+.uf-field{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.uf-flab{flex:none;width:64px;color:var(--uf-ink2);font-size:12px;font-weight:650}
+.uf-nums{flex:1;min-width:0;display:flex;gap:6px}
+.uf-field>.uf-input,.uf-field>.uf-area,.uf-field>.uf-chips{flex:1}
+.uf-input{min-width:0;height:30px;padding:0 10px;border:1px solid var(--uf-line);border-radius:var(--uf-r);
+background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;transition:border-color .15s ease-out}
+.uf-input:hover,.uf-area:hover{border-color:var(--uf-muted)}
 .uf-input:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
-.uf-acts{display:flex;gap:6px;margin-top:10px}
-.uf-bad{display:none;flex-basis:100%;padding:4px 0 0 70px;color:var(--uf-warn);font-size:12px}
+.uf-acts{display:flex;gap:6px}
+.uf-ibody .uf-acts .uf-btn,.uf-chips .uf-addchip{border-style:dashed;color:var(--uf-accent)}
+.uf-zform .uf-acts{margin-top:10px}
+.uf-bad{display:none;flex-basis:100%;padding-left:72px;color:var(--uf-warn);font-size:12px}
 .uf-has-bad .uf-bad{display:block}
 .uf-has-bad .uf-input{border-color:var(--uf-warn)}
 .uf-note{position:absolute;left:50%;bottom:16px;z-index:3;max-width:calc(100% - 32px);padding:8px 14px;
 border-radius:999px;background:var(--uf-ink);color:var(--uf-screen);font-size:13px;font-weight:600;
 transform:translateX(-50%);animation:uf-in .18s ease-out}
 .uf-btn:disabled{opacity:.45;cursor:not-allowed}
-.uf-danger{border-color:var(--uf-warn);color:var(--uf-warn)}
+.uf-root .uf-danger{color:var(--uf-bad)}
 /* an exported file: the shell carries no CSS, so the engine makes its host fill the viewport (insets kept clear) */
 .uf-file,.uf-file body{height:100%;margin:0;overflow:hidden}
 .uf-file #uiflow{position:fixed;inset:0;box-sizing:border-box;padding:env(safe-area-inset-top,0px)

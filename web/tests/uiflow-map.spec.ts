@@ -19,7 +19,7 @@ test("check reports orphan, dead button, missing back and missing AC; a row goes
     return window.UIFlow.check(f);
   });
   // nosrc: every screen of the sample but "login" has no Zeplin link
-  expect(rows.map((r) => r.kind).filter((k) => k !== "nosrc").sort()).toEqual(["dead", "noac", "noback", "orphan"]);
+  expect(rows.map((r) => r.kind).filter((k) => k !== "nosrc").sort()).toEqual(["dead", "noac", "noback", "nostart", "orphan"]);
   expect(rows.filter((r) => r.kind === "nosrc").map((r) => r.screen).sort()).toEqual(["code", "home", "lost"]);
   const by = Object.fromEntries(rows.map((r) => [r.kind, r]));
   expect(by.orphan.screen).toBe("lost");
@@ -28,7 +28,7 @@ test("check reports orphan, dead button, missing back and missing AC; a row goes
   expect(by.noac.screen).toBe("code");
   expect(rows.every((r) => r.text.length > 0)).toBe(true);
 
-  await page.getByRole("button", { name: "Soát luồng (5)" }).click(); // 3 gaps + 2 screens with no source
+  await page.getByRole("button", { name: "Soát luồng (6)" }).click(); // 3 gaps + 2 screens with no source + no start screen
   await page.locator(".uf-issue", { hasText: "Đăng xuất" }).click();
   await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-on/);
   await expect(page.locator('.uf-screen[data-id="login"]')).not.toHaveClass(/uf-on/);
@@ -417,4 +417,40 @@ test("a label never ends up empty when the shared title prefix is stripped", asy
   });
   const t = await page.locator(".uf-ltitle").allInnerTexts();
   expect(t.every((x) => x.trim() !== "")).toBe(true);
+});
+
+test("an AC chip lights only the screens and arrows that carry its codes; pressed again, or Esc, clears", async ({ page }) => {
+  await open(page);
+  const on = () => page.evaluate(() => ({
+    screens: [...document.querySelectorAll<HTMLElement>(".uf-screen.uf-on")].map((e) => e.dataset.id).sort(),
+    links: [...document.querySelectorAll<SVGElement>(".uf-link.uf-on")].map((p) => window.__api.get().links[Number(p.dataset.i)].ac),
+  }));
+  const chip = page.locator('.uf-screen[data-id="code"] .uf-ac');
+  await chip.click();
+  await expect(page.locator(".uf-root")).toHaveClass(/uf-focus/);
+  const lit = await on();
+  const flow = await page.evaluate(() => window.__api.get());
+  expect(lit.screens).toEqual(flow.screens.filter((s) => s.ac === "AC-2").map((s) => s.id).sort());
+  expect(lit.links.length).toBe(flow.links.filter((l) => l.ac === "AC-2").length);
+  expect(lit.links.every((ac) => ac === "AC-2")).toBe(true);
+  await chip.click();
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
+  await chip.click();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
+});
+
+test("the render's warnings are rows of the flow check, counted on its button, and go when cleared", async ({ page }) => {
+  await open(page);
+  const check = page.getByRole("button", { name: /Soát luồng/ });
+  const before = Number((await check.getAttribute("aria-label"))!.match(/\d+/)![0]);
+  await page.evaluate(() => window.__api.notes(["Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ.", ""]));
+  await expect(check).toHaveAttribute("aria-label", `Soát luồng (${before + 1})`);
+  await check.click();
+  const row = page.locator(".uf-issue", { hasText: "Một số nhánh chưa đủ rõ" });
+  await expect(row).toHaveCount(1);
+  await expect(row.locator(".uf-tag")).toHaveText("Chưa rõ");
+  await page.evaluate(() => window.__api.notes([]));
+  await expect(row).toHaveCount(0);
+  await expect(check).toHaveAttribute("aria-label", `Soát luồng (${before})`);
 });

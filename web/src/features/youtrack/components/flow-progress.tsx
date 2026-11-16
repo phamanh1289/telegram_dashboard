@@ -17,7 +17,7 @@ type Stage = "ticket" | "zeplin" | "ai" | "draw" | "link" | "check";
 export type FlowStage = {
   kind: "stage"; stage: Stage; at: number; done?: boolean; error?: string; again?: boolean;
   id?: string; chars?: number; stories?: string[]; lost?: string[]; n?: number; of?: number; texts?: number; missing?: number;
-  screens?: number; title?: string; items?: number; from?: string; item?: string; to?: string; links?: number; dropped?: number;
+  screens?: number; title?: string; items?: number; from?: string; item?: string; to?: string; links?: number; dropped?: number; pending?: number;
   phase?: string; estimated_input_tokens?: number; locate?: number;
 };
 export type FlowEvent = FlowStage | TaskEvent;
@@ -112,7 +112,7 @@ function detail(t: T, r: Run, s: Stage): string {
       return r.last.check ? t("{n} liên kết", { n }) : t("{n}/~{of} liên kết", { n, of: Math.max(e.items ?? 0, n) });
     case "check":
       if (!e.done) return e.locate ? t("AI tìm {n} nút không có layer Zeplin trên ảnh", { n: e.locate }) : t("Đang đọc {n} ký tự AI viết", { n: k(e.chars) });
-      return dot(t("{n} màn", { n: e.screens ?? 0 }), t("{n} liên kết", { n: e.links ?? 0 }), !!e.dropped && t("bỏ {n} liên kết hỏng", { n: e.dropped }));
+      return dot(t("{n} màn", { n: e.screens ?? 0 }), t("{n} liên kết", { n: e.links ?? 0 }), !!e.dropped && t("bỏ {n} liên kết hỏng", { n: e.dropped }), !!e.pending && t("{n} bước chưa có thiết kế, chờ bổ sung", { n: e.pending }));
   }
   return "";
 }
@@ -338,7 +338,7 @@ export function flowSummary(t: T, events: FlowEvent[]): { text: string; warn: st
   if (!c?.done) return { text: "", warn: "" };
   const lost = r.last.ticket?.lost ?? [];
   return {
-    text: dot(t("AI vừa vẽ {s} màn, {l} liên kết", { s: c.screens ?? 0, l: c.links ?? 0 }), !!c.dropped && t("bỏ {n} liên kết hỏng", { n: c.dropped }), dur(c.at - (r.start ?? c.at))),
+    text: dot(t("AI vừa vẽ {s} màn, {l} liên kết", { s: c.screens ?? 0, l: c.links ?? 0 }), !!c.dropped && t("bỏ {n} liên kết hỏng", { n: c.dropped }), !!c.pending && t("{n} bước chưa có thiết kế, chờ bổ sung", { n: c.pending }), dur(c.at - (r.start ?? c.at))),
     warn: dot(r.last.zeplin?.error && t("Không đọc được Zeplin: AI chỉ dựa vào ticket, màn vẽ khung đơn giản."), !!lost.length && t("không đọc được story {ids}", { ids: lost.join(", ") })),
   };
 }
