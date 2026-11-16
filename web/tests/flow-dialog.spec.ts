@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import fs from "node:fs";
 
 // The UI flow dialog in the ticket sheet (fixture_server.py fakes ticket VA-1, its uiflow file, the AI run and the save).
 // Edits by dragging come with the editor (Task 7); here the unsaved change is an AI result, which needs Cập nhật too.
@@ -531,6 +532,7 @@ test("Tải file HTML saves the flow on screen, draft included, and posts nothin
   await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toHaveCount(0);
   const [file] = await Promise.all([page.waitForEvent("download"), d.getByRole("button", { name: "Tải file HTML" }).click()]);
   expect(file.suggestedFilename()).toBe("uiflow-VA-1.html");
+  expect(fs.readFileSync(await file.path(), "utf8")).toMatch(/<style>:root\{[^<]*--color-hl:[^;<]+;/); // the app's colours go along
   // the file stays as a real link: a browser that dropped the script-started save still gets it on a press
   await expect(d.locator("a[download]", { hasText: "Tải xuống" })).toHaveAttribute("download", "uiflow-VA-1.html");
   expect(await posts()).toEqual([]);

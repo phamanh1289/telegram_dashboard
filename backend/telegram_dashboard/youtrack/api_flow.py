@@ -20,7 +20,7 @@ from . import flow_locate, flow_merge, flow_prompt
 from .api_ai import _ai, background
 from .client import YtError, YtUnreachable
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
-from .schemas import AiFlow, FlowAsk, FlowDelete, FlowPrecheck, FlowSave, FlowShots, _issue_id
+from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowPrecheck, FlowSave, FlowShots, _issue_id
 from .service import YouTrackDashboard
 
 log = logging.getLogger(__name__)
@@ -163,11 +163,12 @@ def register(r, svc: YouTrackDashboard) -> None:
         return {"warnings": warn}
 
     @r.post("/flow/html")
-    async def flow_html(body: FlowSave, request: Request):
+    async def flow_html(body: FlowHtml, request: Request):
         """The flow on screen (draft included) as the standalone file, to open locally; nothing is written."""
         i, new = _clean(body)
         try:
-            return {"name": uiflow.NAME.format(issue=i), "html": uiflow.build_html(new, _engine(request), body.shots)}
+            html = uiflow.build_html(new, _engine(request), body.shots, theme=body.theme)
+            return {"name": uiflow.NAME.format(issue=i), "html": html}
         except ValueError as e:
             raise YtError(400, str(e)) from None
 

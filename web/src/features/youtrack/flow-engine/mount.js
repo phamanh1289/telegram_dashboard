@@ -65,7 +65,18 @@ function mount(host, flow, opts = {}, src = null) {
     bar.append(bEdit, tools);
   }
   const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
-  bar.append(h("span", "uf-sp"), bFit);
+  // "back" / "close" arrows mirror the ones that lead in: about half the lines of a map. Off until asked for
+  // (remembered on this browser); the ones of what is selected or focused always show.
+  const bBacks = ibtn("ret", t("backs"), "uf-btn uf-fit", () => setBacks(!root.classList.contains("uf-backs")));
+  function setBacks(on) {
+    root.classList.toggle("uf-backs", on);
+    bBacks.setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem("uf-backs", on ? "1" : ""); } catch { /* private mode: not remembered */ }
+  }
+  let backs = false;
+  try { backs = localStorage.getItem("uf-backs") === "1"; } catch { /* no storage: off */ }
+  setBacks(backs);
+  bar.append(h("span", "uf-sp"), bBacks, bFit);
   const bCheck = btn(null, "uf-btn uf-check", togglePanel), nCheck = h("span", "uf-badge");
   bCheck.setAttribute("aria-expanded", "false");
   bCheck.append(icon("check"), h("span", null, t("check", { n: "" }).replace(/\s*\(.*$/, "")), nCheck);
@@ -161,20 +172,20 @@ function mount(host, flow, opts = {}, src = null) {
       const old = previous[i];
       if (old?.key === key) { old.l = l; paths.push(old.path); if (old.lab) labs.push(old.lab); if (old.knob) knobs.push(old.knob); return old; }
       const ends = linkEnds(l, by), g = curve(ends), dashed = l.act === "back" || l.act === "close";
-      const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back" : ""}`,
+      const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back uf-ret" : ""}`,
         "marker-end": `url(#${uid}-${dashed ? "b" : "a"})`, "data-i": i });
       paths.push(path);
       const text = linkText(l);
       let lab = null;
       if (text) {
-        lab = h("div", "uf-label", text);
+        lab = h("div", "uf-label" + (dashed ? " uf-ret" : ""), text);
         lab.dataset.i = i;
         atMid(lab, g.mid);
         labs.push(lab);
       }
       let knob = null;
       if (editing) {
-        knob = svg("circle", { class: "uf-handle", r: 9, cx: r1(ends.q.x), cy: r1(ends.q.y), "data-i": i,
+        knob = svg("circle", { class: "uf-handle" + (dashed ? " uf-ret" : ""), r: 9, cx: r1(ends.q.x), cy: r1(ends.q.y), "data-i": i,
           "data-link": `${l.src}>${l.to}` });
         knobs.push(knob);
       }

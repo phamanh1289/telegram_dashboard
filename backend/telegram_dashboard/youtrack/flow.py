@@ -225,7 +225,7 @@ def clean(raw: dict, ticket: str) -> Flow:
 SHELL = (
     '<!doctype html><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-    '<title>UI flow · {ticket}</title><div id="uiflow"></div>'
+    '<title>UI flow · {ticket}</title>{style}<div id="uiflow"></div>'
     '<script type="application/json" id="uiflow-data">{data}</script>'
     '<script type="application/json" id="uiflow-shots">{shots}</script><script>{engine}</script>'
 )
@@ -236,16 +236,27 @@ def _json(v: str) -> str:
     return v.replace("<", "\\u003c")
 
 
-def build_html(flow: Flow, engine: str, shots: dict[str, Shot] | None = None) -> str:
-    """The self-contained file: the flow, the images of the Zeplin screens it links (only those), the engine."""
+THEME_KEY, THEME_VALUE = re.compile(r"[a-z0-9-]{1,24}"), re.compile(r"[A-Za-z0-9#(),.%/ -]{1,80}")
+
+
+def build_html(
+    flow: Flow, engine: str, shots: dict[str, Shot] | None = None, *, theme: dict[str, str] | None = None
+) -> str:
+    """The self-contained file: the flow, the images of the Zeplin screens it links (only those), the engine.
+    `theme`: the exporter's colours, {app token: plain CSS value}, for a file to look as the app did (the engine
+    reads those tokens, else its own palette). Only plain values are written: nothing that could close the tag."""
     if "</script" in engine.lower():
         raise ValueError("engine chứa </script")
     used = {s.zeplin for s in flow.screens}
     pics = {u: s.model_dump() for u, s in (shots or {}).items() if u in used}
     if sum(len(p["src"]) for p in pics.values()) > MAX_SHOTS:
         raise ValueError("Ảnh Zeplin quá lớn")
+    css = "".join(
+        f"--{k}:{v};" for k, v in (theme or {}).items() if THEME_KEY.fullmatch(k) and THEME_VALUE.fullmatch(v)
+    )
     return SHELL.format(ticket=escape(flow.ticket), data=_json(flow.model_dump_json()),
-                        shots=_json(json.dumps(pics, ensure_ascii=False)), engine=engine)  # fmt: skip
+                        shots=_json(json.dumps(pics, ensure_ascii=False)), engine=engine,
+                        style=f"<style>:root{{{css}}}</style>" if css else "")  # fmt: skip
 
 
 def extract(html: str) -> Flow | None:

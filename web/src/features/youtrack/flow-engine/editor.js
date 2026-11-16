@@ -2,7 +2,7 @@ import { family, isOverlay } from './model.js';
 import { inspector } from './inspector.js';
 import { cardAbs } from './geometry.js';
 import { shotOf } from './shots.js';
-import { CAP, COL, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
+import { CAP, COL, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, ROW, W } from './constants.js';
 import { clamp, isPop, itm, scr } from './values.js';
 import { box, h } from './dom.js';
 import { inlineEdit } from './inline-edit.js';
@@ -314,7 +314,8 @@ function editor(ctx) {
     ctx.note(t("dragging"));
     return true;
   }
-  /** A new screen (`props`: title / zeplin) at the centre of the view when that is free, else right of the last
+  /** A new screen (`props`: title / zeplin; `near`: the id of the screen that leads to it, to sit beside) at
+   *  the centre of the view when that is free, else right of the last
    *  screen on the top row: dropped on a screen it would hide it and take every click meant for it (a design
    *  image covers the whole frame). Its id, or null when refused.
    *  `also(flow, id)`: more to change in the same step (a pending entry it fulfils, the link into it). */
@@ -324,12 +325,19 @@ function editor(ctx) {
     if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
     const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
     let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
-    if (f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && Math.abs(s.y - y) < H + ROOM)) {
+    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && Math.abs(s.y - y) < H + ROOM);
+    const { near, ...own } = props, by = near && f.screens.find((s) => s.id === near);
+    if (by) { // the screen that leads to it: the next column, the first free row (its arrow stays short)
+      x = by.x + COL;
+      y = by.y;
+      for (let n = 0; taken() && n < 20; n++) y += ROW;
+    }
+    if (taken()) {
       x = Math.max(...f.screens.map((s) => s.x)) + COL;
       y = Math.min(...f.screens.map((s) => s.y));
     }
     f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x, y, zeplin: "", ac: "", note: "",
-      items: [], ...props });
+      items: [], ...own });
     also?.(f, id);
     sel = { t: "screen", id };
     ctx.commit(f);

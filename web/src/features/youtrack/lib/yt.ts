@@ -205,7 +205,7 @@ export const yt = {
   /** Removes the ticket's UI flow file `base` (the one seen; 409 if another was saved since) and comments it. */
   deleteFlow: (id: string, base: string) => ytApi<{ warnings: string[] }>("/flow/delete", { json: { id, base } }),
   /** The flow on screen (draft included) as the standalone HTML file; writes nothing. */
-  flowHtml: (id: string, flow: UiFlow, shots: Record<string, FlowShot> = {}) => ytApi<{ name: string; html: string }>("/flow/html", { json: { id, flow, shots } }),
+  flowHtml: (id: string, flow: UiFlow, shots: Record<string, FlowShot> = {}, theme: Record<string, string> = {}) => ytApi<{ name: string; html: string }>("/flow/html", { json: { id, flow, shots, theme } }),
 };
 /** Durable UI flow jobs are scoped by the server; browser storage holds only the editor draft. */
 export type FlowJobState = Omit<components["schemas"]["FlowJobDTO"], "result"> & { result: FlowResult | null };

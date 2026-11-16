@@ -454,3 +454,23 @@ test("the render's warnings are rows of the flow check, counted on its button, a
   await expect(row).toHaveCount(0);
   await expect(check).toHaveAttribute("aria-label", `Soát luồng (${before})`);
 });
+
+test("back / close arrows stay off until the toolbar turns them on (remembered); a focused screen always shows its own", async ({ page }) => {
+  await open(page);
+  // a straight arrow has an empty box, which Playwright calls hidden: ask for the computed display instead
+  const drawn = () => page.locator(".uf-link.uf-ret").first().evaluate((e) => getComputedStyle(e).display !== "none");
+  const toggle = () => page.getByRole("button", { name: "Hiện mũi tên quay lại" });
+  expect(await drawn()).toBe(false);
+  await expect(toggle()).toHaveAttribute("aria-pressed", "false");
+  const src = await page.evaluate(() => window.__api.get().links.find((l) => l.act === "back" || l.act === "close")!.src.split(".")[0]);
+  await page.locator(`.uf-screen[data-id="${src}"]`).click({ position: { x: 30, y: 300 } }); // focused: its arrows, back ones too
+  await expect.poll(drawn).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect.poll(drawn).toBe(false);
+  await toggle().click();
+  await expect.poll(drawn).toBe(true);
+  await page.reload();
+  await expect.poll(drawn).toBe(true);
+  await toggle().click();
+  await expect.poll(drawn).toBe(false);
+});

@@ -1,7 +1,7 @@
 import { btn, h } from './dom.js';
 import { SHOTS, setShots } from './shots.js';
 import { CAP, CAP_URL, MAX_LINKS, MAX_SCREENS, ZEPLIN } from './constants.js';
-import { canon, str } from './values.js';
+import { canon, scr, str } from './values.js';
 
 /** "+ Từ Zeplin": a checked link, read once (ctx.lookup, the dashboard's), one new screen. Returns form(open, pend).
  *  `pend`: the title of the pending step this screen is for: it takes that step's kind / AC, is linked from
@@ -56,7 +56,8 @@ export function zeplinForm(ctx) {
       if (shot) setShots({ ...SHOTS, [url]: shot }); // drawn at once; the host's own shots replace it later
       const title = str(shot?.title).replace(/\s+/g, " ").trim().slice(0, CAP);
       const p = pend === null ? null : (ctx.get().pending || []).find((x) => x.title === pend); // read again: the flow may have changed while Zeplin answered
-      const id = ctx.addScreen({ zeplin: url, ...(p ? { title: p.title, kind: p.kind, ac: p.ac } : {}), ...(title ? { title } : {}) },
+      const id = ctx.addScreen({ zeplin: url, ...(p ? { title: p.title, kind: p.kind, ac: p.ac, ...(p.src ? { near: scr(p.src) } : {}) } : {}),
+        ...(title ? { title } : {}) },
         p && ((f, to) => {
           f.pending = f.pending.filter((x) => x.title !== p.title);
           if (p.src && f.links.length < MAX_LINKS)

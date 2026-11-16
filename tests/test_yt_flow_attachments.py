@@ -202,8 +202,12 @@ async def test_flow_html_exports_the_flow_on_screen_and_writes_nothing(tmp_path)
     yt = FakeYt([])  # a draft: no file on the ticket yet
     c, _ = flow_app(yt, tmp_path)
     async with c:
-        r = await c.post("/api/yt/flow/html", json={"id": "VA-1", "flow": moved(), "base": None})
+        theme = {"color-hl": "oklch(0.53 0.135 40)", "color-ink": "#221a14", "BAD key": "red",
+                 "bad": "red;}</style><script>"}
+        r = await c.post("/api/yt/flow/html", json={"id": "VA-1", "flow": moved(), "base": None, "theme": theme})
     assert r.status_code == 200 and r.json()["name"] == "uiflow-VA-1.html"
+    # the exporter's colours ride along as plain values; anything that is not one is left out
+    assert "<style>:root{--color-hl:oklch(0.53 0.135 40);--color-ink:#221a14;}</style>" in r.json()["html"]
     assert uiflow.extract(r.json()["html"]).screens[0].id == moved()["screens"][0]["id"]
     assert yt.writes == []
 

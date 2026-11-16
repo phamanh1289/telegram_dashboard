@@ -17,7 +17,7 @@ const ICONS = {
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z", undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
   redo: "M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3", grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   fit: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
-  x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", ret: "M9 10l-5 5 5 5M4 15h11a5 5 0 0 0 5-5V4", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
 };
 function icon(name, size = 16) {
   const i = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor",

@@ -133,6 +133,8 @@ export default {
   "Đang render": "Rendering",
   "Bị gián đoạn": "Interrupted",
   "Chưa lưu": "Not saved",
+  "Chưa cập nhật": "Not updated",
+  "Có thay đổi chưa lên ticket; bấm Cập nhật để ghi": "Changes not on the ticket yet; press Update to write them",
   "Đã có sơ đồ": "Has a flow",
   "Chưa có": "Empty",
   "Lượt AI đang chạy, xem tiến độ bên dưới": "An AI run is going, see the progress below",

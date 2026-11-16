@@ -43,6 +43,10 @@ class FlowSave(BaseModel):
     shots: dict[str, uiflow.Shot] = Field({}, max_length=uiflow.MAX_SCREENS)  # Zeplin URL -> image, for the file
 
 
+class FlowHtml(FlowSave):
+    theme: dict[str, str] = Field({}, max_length=32)  # app colour token -> plain CSS value, for the exported file
+
+
 class FlowShots(BaseModel):
     urls: list[Annotated[str, Field(max_length=300)]] = Field(max_length=uiflow.MAX_SCREENS)
 

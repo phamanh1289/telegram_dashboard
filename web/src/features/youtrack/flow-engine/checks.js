@@ -37,7 +37,6 @@ function gaps(f, t) {
         out.push({ kind: "dead", screen: s.id, item: it.id, text: t("dead", { s: s.title, i: it.label }) });
     if (s.kind === "screen" && s.id !== first && s.items.length && !back.has(s.id))
       out.push({ kind: "noback", screen: s.id, text: t("noback", { s: s.title }) });
-    if (!s.ac) out.push({ kind: "noac", screen: s.id, text: t("noacScreen", { s: s.title }) });
     if (shotOf(s)) rowsOf(s).forEach(({ hot }, i) => {
       if (!hot) out.push({ kind: "offshot", screen: s.id, item: s.items[i].id, text: t("offshot", { s: s.title, i: s.items[i].label }) });
     });

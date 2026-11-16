@@ -20,12 +20,27 @@ type FlowApi = {
 };
 type Shots = Record<string, FlowShot>;
 type Engine = {
+  /** The app colour tokens the engine's palette reads (without the leading "--"). */
+  tokens?: string[];
   mount(el: HTMLElement, f: UiFlow, o: { edit?: boolean; lang?: Lang; shots?: Shots; onChange?: (f: UiFlow, dirty: boolean) => void;
     /** "+ Từ Zeplin": one screen's image / size / name; null when Zeplin has no such screen, throws on 401 / network. */
     lookup?: (url: string) => Promise<FlowShot | null> }): FlowApi;
 };
 /** The engine's global. Not a `declare global`: the engine's own spec declares the same name with its own types. */
 const win = () => window as unknown as { UIFlow?: Engine };
+
+/** The colours the engine is drawn with here, as plain values ({token: "oklch(…)"}): an exported file has none of
+ *  the app's tokens, so it gets them written in. The highlight goes in solid (a gradient is not one value). */
+export function flowTheme(): Record<string, string> {
+  const probe = document.body.appendChild(document.createElement("i")), out: Record<string, string> = {};
+  for (const k of win().UIFlow?.tokens ?? []) {
+    probe.style.color = `var(--${k})`;
+    if (k.startsWith("color-") || k.startsWith("cat-")) out[k] = getComputedStyle(probe).color;
+  }
+  probe.remove();
+  if (out["color-hl"]) out["hl-fill"] = out["color-hl"];
+  return out;
+}
 
 let loading: Promise<Engine> | null = null;
 /** The engine, its script added once per page; a failed load is forgotten so the next call tries again. */

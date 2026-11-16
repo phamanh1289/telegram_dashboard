@@ -9,7 +9,7 @@ import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from 
 import { Hint } from "@/shared/components/ui/hint";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
-import { packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
+import { flowTheme, packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
 import { AI_LEAVE, aiJobs, aiParts, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
 import { flowDraft, type FlowDraft } from "@/features/youtrack/lib/flow-draft";
 import { cn } from "@/shared/lib/utils";
@@ -23,6 +23,7 @@ const STATUS = {
   interrupted: { label: "Bị gián đoạn", hint: "Bấm “Tiếp tục render” để chạy lại", tone: "bg-warn/15 text-warn" },
   failed: { label: "Lỗi render", hint: "Xem lý do ở thẻ lỗi, rồi bấm render để thử lại", tone: "bg-error/10 text-error" },
   unsaved: { label: "Chưa lưu", hint: "Sơ đồ chỉ nằm trong bản nháp, chưa lên ticket", tone: "bg-warn/15 text-warn" },
+  edited: { label: "Chưa cập nhật", hint: "Có thay đổi chưa lên ticket; bấm Cập nhật để ghi", tone: "bg-warn/15 text-warn" },
   flow: { label: "Đã có sơ đồ", hint: "Kéo thả để sửa; lưu lên ticket bằng Cập nhật", tone: "bg-paper-3 text-ink-2" },
   empty: { label: "Chưa có", hint: "Chọn cách dựng ở giữa, rồi bấm nút bên dưới", tone: "bg-paper-3 text-ink-3" },
 } as const;
@@ -191,7 +192,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       setHtmlStep(t("Đang nhúng ảnh Zeplin vào file…"));
       const p = await packShots(f, sq.data?.shots, (n, of) => setHtmlStep(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of })));
       setHtmlStep(t("Đang tạo file HTML…"));
-      const r = await yt.flowHtml(issue, f, p.shots);
+      const r = await yt.flowHtml(issue, f, p.shots, flowTheme());
       return { url: URL.createObjectURL(new Blob([r.html], { type: "text/html" })), name: r.name };
     },
     onSuccess: (file) => {
@@ -286,7 +287,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const unsaved = !!mine || dirty;
   const locked = save.isPending || ai.isPending || !draftReady || !!jobError || !!(job && ["queued", "running", "cancel_requested"].includes(job.status));
   const renderFailed = (ai.isError && (ai.error as Error).name !== "AbortError") || job?.status === "failed";
-  const headStatus: keyof typeof STATUS = ai.isPending ? "running" : job?.needs_ai_retry ? "interrupted" : renderFailed ? "failed" : unsaved ? "unsaved" : flow ? "flow" : "empty";
+  const headStatus: keyof typeof STATUS = ai.isPending ? "running" : job?.needs_ai_retry ? "interrupted" : renderFailed ? "failed" : unsaved ? (base === null ? "unsaved" : "edited") : flow ? "flow" : "empty";
   // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
   const start = (m: FlowMode = mode, split = false, extra = "", skip: string[] = []) => { if (busy.current || !draftReady || stopping || jobError || (job && ["queued", "running", "cancel_requested"].includes(job.status))) return; const current = engine.api?.get(); keep.current = current ?? flow; if (current && unsaved) { setMine({ flow: current, manifest: mine?.manifest, base }); persist({ flow: current, manifest: mine?.manifest, base, job: job?.id, updated: Date.now() }, true); } setSaved(null); setDirty(false); setEdited(null); save.reset(); runOpts.current = { ...runOpts.current, mode: m, split, skip, note: extra || undefined }; ai.mutate(undefined); };
   // an AI render the pre-check flags asks once first; "screens" (no AI) and a clean check just start

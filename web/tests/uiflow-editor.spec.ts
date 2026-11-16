@@ -539,6 +539,10 @@ test("pending steps: listed in Soát luồng, added from Zeplin with their link,
   const f = await flowOf(page), added = f.screens.at(-1)!;
   expect([added.title, added.kind, added.ac, added.zeplin]).toEqual(["Hết phiên", "popup", "AC-9", "https://zpl.io/expired"]);
   expect(f.links.at(-1)).toEqual({ src: "code", to: added.id, act: "open", when: "token hết hạn", ac: "AC-9" });
+  // beside the screen that leads to it (the next column, 610 on), in the first row nothing is in
+  const from = f.screens.find((s) => s.id === "code")!;
+  expect(added.x).toBe(from.x! + 610);
+  for (const s of f.screens.slice(0, -1)) expect(Math.abs(s.x! - added.x!) >= 390 || Math.abs(s.y! - added.y!) >= 844).toBe(true);
   expect(f.pending!.map((p) => p.title)).toEqual(["Trợ giúp"]);
   await page.evaluate(() => window.__api.undo()); // the screen, its link and the list entry: one step
   const back = await flowOf(page);

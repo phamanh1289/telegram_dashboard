@@ -171,6 +171,8 @@ background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;resize:v
 .uf-open{stroke-width:1.5}
 .uf-link.uf-on{stroke-width:3;opacity:1}
 .uf-back{stroke:var(--uf-muted);stroke-width:2;stroke-dasharray:8 7}
+/* back / close arrows (with their label and handle): hidden until the toolbar turns them on, or they are in hand */
+.uf-root:not(.uf-backs) .uf-ret:not(.uf-on):not(.uf-sel){display:none}
 .uf-mk-a{fill:var(--uf-accent)}
 .uf-mk-b{fill:var(--uf-muted)}
 .uf-labels{position:absolute;left:0;top:0;width:1px;height:1px}
@@ -340,4 +342,7 @@ function injectStyle() {
   document.head.append(s);
 }
 
-export { DARK, CSS, injectStyle };
+/** The app tokens the palette reads: what a host resolves and sends along for an exported file to look the same. */
+const APP_TOKENS = [...new Set(TOKENS.map((x) => x[1]))];
+
+export { APP_TOKENS, DARK, CSS, injectStyle };
