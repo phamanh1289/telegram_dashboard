@@ -334,7 +334,12 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   ) : null;
   // the empty flow counts what a render would read (no AI; the warning dialog opens on the same cached count)
   const starting = !readErr && !ai.isPending && !waiting && !flow && !q.data?.broken;
-  const startCheck = useFlowCheck(issue, starting, []);
+  // two counts: every screen (the sizes, for the platform picker), then without the other platform's (what is sent);
+  // the second is also the warning dialog's own key, so it opens on it at once
+  const startAll = useFlowCheck(issue, starting, []);
+  const startSkip = platformSkip(startAll.data, target);
+  const startSent = useFlowCheck(issue, starting && !!startAll.data, startSkip);
+  const startCheck = { data: startSent.data ?? startAll.data, error: startSent.error ?? startAll.error };
   const body = readErr ? <Center>
       <p role="alert" className="max-w-sm text-sm text-error">{t("Không đọc được UI flow của ticket: {msg}", { msg: say(q.error) })}</p>
       <Button size="sm" variant="outline" onClick={() => { void q.refetch(); }}><RotateCw aria-hidden />{t("Thử lại")}</Button>
@@ -347,7 +352,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         <p className="max-w-sm text-sm text-ink-2">{t("File UI flow trên ticket không đọc được")}</p>
         <Button size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}><Sparkles aria-hidden />{t("Render lại bằng AI")}</Button>
       </Center>
-    : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens", false, "", platformSkip(startCheck.data, target)) : run())} resume={resume} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
+    : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens", false, "", startSkip) : run())} resume={resume} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
 
   return (
     <>

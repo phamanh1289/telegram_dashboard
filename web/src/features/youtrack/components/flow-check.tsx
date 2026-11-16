@@ -57,8 +57,6 @@ function useWhy() {
         l.hint ? t("đổi thành “{hint}” nếu là cùng màn", { hint: l.hint }) : t("thêm link Zeplin cho màn này, dạng [{name}](link Zeplin), hoặc đổi cho trùng tên một màn đã có", { name: l.name })];
       case "duplicate": return [t("Có nhiều link Zeplin cùng tên “{name}”, không biết là màn nào", { name: l.name }), t("đặt tên các link Zeplin khác nhau")];
       case "label": return [t("Tên nút dài hơn 80 ký tự"), t("rút gọn tên nút trong ngoặc kép")];
-      case "mobile": return [t("Màn {size}: cỡ mobile, không phải màn web", { size: l.hint }), t("mặc định bỏ qua khi vẽ cho web; chọn lại nếu cần")];
-      case "web": return [t("Màn {size}: cỡ web / desktop, không phải màn mobile", { size: l.hint }), t("mặc định bỏ qua khi vẽ; chọn lại nếu đúng là màn mobile")];
       default: return [t("Có mũi tên nhưng sai cú pháp: không đọc được tên nút hoặc màn đích"), t("viết lại: Màn A -- \"Tên nút\" --> Màn B (tên nút trong ngoặc kép)")];
     }
   };
@@ -111,7 +109,7 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
             transition={{ duration: 0.22, ease: [0.2, 0, 0, 1] }} className="overflow-hidden">
             <ul className="grid grid-cols-1 gap-1.5 pt-0.5">
               {lines.map((l) => {
-                const off = isOff(l), [what, fix] = why(l), platform = l.why === "web" || l.why === "mobile";
+                const off = isOff(l), [what, fix] = why(l);
                 const label = l.why === "unknown" && l.hint ? l.hint : l.name;
                 return (
                   <li key={l.no} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,input")) onCite(l.no); }}
@@ -126,7 +124,7 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
                         </Hint>
                         <span className={cn("min-w-0 font-mono text-xs leading-5 break-words text-ink", off && "line-through")}><Linked text={l.line} /></span>
                       </div>
-                      {off ? <p className="text-xs text-ink-3">{platform ? `${what}. ${t("Đã bỏ qua khi vẽ")}` : t("Bỏ qua: AI không vẽ liên kết này")}</p> : <>
+                      {off ? <p className="text-xs text-ink-3">{t("Bỏ qua: AI không vẽ liên kết này")}</p> : <>
                         <p className="text-xs text-warn">{what}</p>
                         <p className="text-xs text-ink-2"><b className="font-medium text-ink">{t("Cách sửa:")}</b> {fix}</p>
                       </>}
@@ -158,7 +156,7 @@ const SHADE = ["bg-hl", "bg-hl/70", "bg-hl/45", "bg-hl/30", "bg-hl/15"];
 /** What the dialog adds to the render's note: the platform, the unclear lines left out, the Q&A on the flow. The
  *  screens left out are not in the note: they are not sent (`skip`). */
 function extraNote(lines: Line[], isOff: (l: Line) => boolean, turns: Turn[], target: Target) {
-  const flow = lines.filter((l) => isOff(l) && l.why !== "web" && l.why !== "mobile");
+  const flow = lines.filter(isOff);
   const done = turns.filter((x) => x.a);
   return [
     target === "web" ? "Sơ đồ này cho web (không phải app mobile): vẽ luồng trang web." : "",
@@ -192,18 +190,18 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
     onError: (e) => setTurns((all) => all.map((x, i) => (i === all.length - 1 ? { ...x, error: say(e) } : x))),
   });
   const send = () => { const q = ask.trim(); if (q && !qa.isPending) qa.mutate({ q }); };
-  // the other platform's screens are off by default; the target's own group is not a risk, so it is not shown
-  const offByDefault = (l: Line) => l.why === (target === "mobile" ? "web" : "mobile");
-  const isOff = (l: Line) => offByDefault(l) !== flip.has(lineKey(l));
+  // a line is drawn unless the user unticked it
+  const isOff = (l: Line) => flip.has(lineKey(l));
   const setOff = (ls: Line[], off: boolean) => setFlip((s) => {
     const n = new Set(s);
-    for (const l of ls) { if (offByDefault(l) !== off) n.add(lineKey(l)); else n.delete(lineKey(l)); }
+    for (const l of ls) { if (off) n.add(lineKey(l)); else n.delete(lineKey(l)); }
     return n;
   });
-  const risks = (data?.risks ?? []).filter((r) => r.code !== target);
+  // the platform was picked before: neither size group is a warning here (the other platform is simply not sent)
+  const risks = (data?.risks ?? []).filter((r) => r.code !== "web" && r.code !== "mobile");
   const lines = risks.flatMap((r) => r.lines ?? []);
-  // screens left out: their Zeplin links (a line's only link is its screen's). The count follows them.
-  const skip = lines.filter((l) => (l.why === "web" || l.why === "mobile") && isOff(l)).flatMap((l) => l.urls ?? []);
+  // the other platform's screens are not sent (their Zeplin links): the count, the warnings and the render follow
+  const skip = platformSkip(data, target);
   const skipKey = skip.join("\n");
   if (skipKey !== sent.key) setSent({ key: skipKey, list: skip }); // the count follows the screens left out (set while rendering)
   const extra = () => extraNote(lines, isOff, turns, target);
