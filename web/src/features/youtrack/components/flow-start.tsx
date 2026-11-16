@@ -28,8 +28,8 @@ export function FlowTargetPicker({ id, value, onChange, counts }: { id: string; 
   );
 }
 
-export function FlowStart({ mode, onPick, onRun, resume, target, onTarget, check, checkError }: {
-  mode: FlowMode; onPick: (m: FlowMode) => void; onRun: () => void; resume?: ReactNode; target: FlowTarget; onTarget: (v: FlowTarget) => void;
+export function FlowStart({ mode, onPick, onRun, resume, notice, target, onTarget, check, checkError }: {
+  mode: FlowMode; onPick: (m: FlowMode) => void; onRun: () => void; resume?: ReactNode; notice?: ReactNode; target: FlowTarget; onTarget: (v: FlowTarget) => void;
   check?: FlowCheck; checkError?: unknown;
 }) {
   const t = useT();
@@ -63,6 +63,7 @@ export function FlowStart({ mode, onPick, onRun, resume, target, onTarget, check
           when={t("AI đọc AC và vẽ mũi tên giữa các màn")} cost={aiCost}
           tip={t("Khi nào: cần sơ đồ luồng bấm đầy đủ. Đánh đổi: tốn token và chạy lâu hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} />
       </div>
+      {notice}
       <FlowTargetPicker id="uiflow-target-start" value={target} onChange={onTarget} counts={counts} />
       <Hint side="bottom" text={mode === "screens" ? t("Dựng các màn Zeplin bằng code, không dùng AI") : t("AI đọc ticket rồi dựng sơ đồ màn hình và luồng bấm")}>
         <Button size="lg" className="rounded-full bg-hl px-6 text-hl-ink hover:brightness-110" disabled={mode === "screens" && noZeplin} onClick={onRun}>

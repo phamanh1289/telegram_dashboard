@@ -1,7 +1,7 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { ChevronDown, Code, ExternalLink, Layers, Send, Sparkles, TriangleAlert } from "lucide-react";
+import { ChevronDown, Code, ExternalLink, Layers, Monitor, Send, Smartphone, Sparkles, TriangleAlert } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type ReactNode, useState } from "react";
 import { AiPromptBox, AiResultCard, AiThinking, UserBubble, useFollow } from "@/shared/components/ai/chat";
@@ -231,7 +231,12 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
       </>}
       footerStart={<>
         <YtPicks heavy />
-        <span className="text-xs text-ink-3">{t("Nền tảng: {p}", { p: target === "web" ? t("Web") : t("Mobile") })}</span>
+        <Hint side="bottom" text={t("Nền tảng đã chọn trước khi render, không đổi ở đây. Muốn đổi: đóng hộp này rồi đổi ở dưới hai thẻ chọn cách dựng, hoặc trong câu hỏi Render lại.")}>
+          <span tabIndex={0} className="inline-flex items-center gap-1.5 rounded-full bg-hl-wash px-2.5 py-1 text-xs font-medium text-hl-2">
+            {target === "web" ? <Monitor className="size-3.5" aria-hidden /> : <Smartphone className="size-3.5" aria-hidden />}
+            {t("Nền tảng: {p}", { p: target === "web" ? t("Web") : t("Mobile") })}
+          </span>
+        </Hint>
       </>}
       confirmLabel={confirm}
       onConfirm={run}>
