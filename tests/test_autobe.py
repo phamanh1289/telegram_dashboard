@@ -4,7 +4,6 @@ import time
 from datetime import UTC, datetime
 
 from conftest import ORIGIN, FakeTransport, TestClient, create_app
-
 from telegram_dashboard import autobe
 from telegram_dashboard.config import Settings
 from telegram_dashboard.models import StoredMessage

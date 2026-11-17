@@ -4,10 +4,9 @@ import uuid
 import pytest
 from conftest import A, B, msg
 from pydantic import ValidationError
-
 from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import ReplyRequest, SentMessage
-from telegram_dashboard.telegram import SendRejected
+from telegram_dashboard.telegram.bridge import SendRejected
 
 
 def req(chat=A, reply="5", text="ok", rid=None, retry=False):
@@ -127,7 +126,7 @@ async def test_flood_wait_does_not_auto_send(ready):
 
 def test_telethon_client_never_sleeps_or_retries(tmp_path):
     from telegram_dashboard.config import Settings
-    from telegram_dashboard.telegram import TelethonTransport
+    from telegram_dashboard.telegram.transport import TelethonTransport
 
     settings = Settings(root=tmp_path, telegram_api_id=1, telegram_api_hash="x")
     settings.ensure_data_dir()
@@ -182,11 +181,10 @@ async def test_sent_reply_gets_trace_code(ready):
 
 async def test_send_code_retries_once_after_phone_migrate(tmp_path):
     """request_retries=0 makes Telethon stop after switching DC on PHONE_MIGRATE_X (phones on another DC)."""
+    from telegram_dashboard.config import Settings
+    from telegram_dashboard.telegram.transport import TelethonTransport
     from telethon import errors
     from telethon.tl import types
-
-    from telegram_dashboard.config import Settings
-    from telegram_dashboard.telegram import TelethonTransport
 
     settings = Settings(root=tmp_path, telegram_api_id=1, telegram_api_hash="x")
     settings.ensure_data_dir()
@@ -212,7 +210,7 @@ async def test_send_code_retries_once_after_phone_migrate(tmp_path):
 
 
 def test_split_format_utf16_offsets():
-    from telegram_dashboard.telegram import split_format
+    from telegram_dashboard.telegram.bridge import split_format
 
     text, ents = split_format("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
     assert text == "😀 hỏi Lan QA và Minh nhé"

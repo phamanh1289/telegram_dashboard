@@ -128,7 +128,7 @@ Sau khi cài, app tự mở trình duyệt. Những lần sau:
 
 - **Phải dùng `127.0.0.1`**. Mở bằng `localhost` thì trang vẫn hiện nhưng mọi thao tác bị từ chối.
 - Port 8765 bị app khác chiếm thì server tự dùng port trống kế tiếp (8766…) và tự mở đúng địa chỉ. Mở app lần nữa khi đang chạy chỉ mở lại trang, không chạy thêm server.
-- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `myradar open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.telegram_dashboard/api_token`. Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
+- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `myradar open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.backend/telegram_dashboard/api_token`. Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
 - Tắt app: đóng cửa sổ Terminal / cửa sổ đen của server.
 
 ## Lần đầu sử dụng
@@ -307,7 +307,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 - Mọi dữ liệu nằm trong thư mục `data/` của bản cài trên máy bạn: phiên Telegram (`account.session`), database (`dashboard.sqlite3`), cấu hình (`config.json`), log (`server.log`). File quyền 0600, thư mục 0700. Muốn để chỗ khác (ổ khác, thư mục khác): **Cài đặt › Dữ liệu › Đổi thư mục**; app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ (`server.log` đi theo từ lần mở app kế tiếp). Thư mục đã có dữ liệu Radar thì app hỏi có dùng dữ liệu ở đó không (dữ liệu đang dùng giữ nguyên, không xóa). Thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database.
 - **`data/account.session` = quyền đăng nhập Telegram của bạn.** Không copy, không gửi ai.
 - Server chỉ nghe trên `127.0.0.1`, kiểm tra Host / Origin; máy khác trong mạng không truy cập được, Firewall không hỏi.
-- API chỉ nhận trình duyệt đã mở khóa bằng mã (`~/.telegram_dashboard/api_token`).
+- API chỉ nhận trình duyệt đã mở khóa bằng mã (`~/.backend/telegram_dashboard/api_token`).
 - Chỉ tin tag bạn (và tin bạn trả lời) được lưu; không nạp lịch sử.
 - Thu hồi: Telegram › Settings › Devices › kết thúc phiên, rồi xóa `data/account.session`; app sẽ báo `login_required`. Xóa sạch: xóa cả thư mục `data/`.
 
@@ -325,7 +325,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 |---|---|
 | Trình duyệt báo không kết nối được | Server chưa chạy hoặc đã tắt: mở lại **Radar** / `myradar start`. Xem log `data/server.log` |
 | Mọi nút bấm báo lỗi / bị từ chối | Đang mở `localhost` → đổi sang `http://127.0.0.1:8765` |
-| Hiện màn hình khóa | Chạy `myradar open`, hoặc dán mã trong `~/.telegram_dashboard/api_token` |
+| Hiện màn hình khóa | Chạy `myradar open`, hoặc dán mã trong `~/.backend/telegram_dashboard/api_token` |
 | `myradar: command not found` | Mở **cửa sổ terminal mới** sau khi cài (PATH mới có hiệu lực) |
 | Inbox trống sau khi cài | Bình thường: app không nạp lịch sử, chờ có người tag / reply bạn |
 | App báo `login_required` | Phiên Telegram hết hạn hoặc đã bị thu hồi → đăng nhập lại ở Cài đặt › Telegram |
@@ -364,45 +364,41 @@ Trình duyệt (React, TanStack Query) ──REST /api/*──▶ FastAPI ──
 | Runtime | Python **3.14** (`.python-version`, quản lý bằng [uv](https://docs.astral.sh/uv/)), Node **24 LTS** (`.node-version` 24.22.1, `engines >=24.14`, chỉ để build UI) |
 | Backend | **FastAPI** 0.162 (REST + SSE qua `fastapi.sse`), **Pydantic** 2.14 (DTO, sinh OpenAPI), **Uvicorn**, **Telethon** 1.45 (MTProto, tài khoản người dùng), **httpx** (YouTrack, GitHub), `sqlite3` stdlib (WAL, không ORM) |
 | Frontend | **Next.js** 16.4 (App Router, `output: "export"`, `trailingSlash`), **React** 19.3, **TypeScript** 5.9, **TanStack Query** 5 (cache + refetch theo SSE) |
-| UI | **Tailwind CSS** 4.3 (`@tailwindcss/postcss`, token ở `web/src/app/tokens.css`, container query), **shadcn** trên **Base UI** 1.9 (`web/src/components/ui/`), **Motion** 14 (animation, `Pill` / `Segmented`), **lucide-react** (icon), `class-variance-authority`, `tw-animate-css` |
+| UI | **Tailwind CSS** 4.3 (`@tailwindcss/postcss`, token ở `web/src/app/tokens.css`, container query), **shadcn** trên **Base UI** 1.9 (`web/src/shared/components/ui/`), **Motion** 14 (animation, `Pill` / `Segmented`), **lucide-react** (icon), `class-variance-authority`, `tw-animate-css` |
 | Nội dung | `react-markdown` + `remark-gfm` + `remark-breaks` (kết quả AI, tin nhắn); font Quicksand / Be Vietnam Pro / Inter / Nunito tải từ Google Fonts khi được chọn (hoặc font máy) |
-| Kiểu API | `openapi-typescript`: Python xuất OpenAPI → `web/src/lib/api.generated.d.ts` (`npm run api:types`) |
-| AI | Không gọi API trực tiếp: chạy **Claude Code** (`claude -p`), **Codex** (`codex exec`), **Antigravity** (`agy`) dưới dạng subprocess không tương tác, prompt qua stdin; sandbox / tool theo từng lượt (`providers.py`). Project có `.codegraph/` thì lượt đọc code dùng MCP codegraph (chỉ đọc) |
+| Kiểu API | `openapi-typescript`: Python xuất OpenAPI → `web/src/shared/lib/api.generated.d.ts` (`npm run api:types`) |
+| AI | Không gọi API trực tiếp: chạy **Claude Code** (`claude -p`), **Codex** (`codex exec`), **Antigravity** (`agy`) dưới dạng subprocess không tương tác, prompt qua stdin; sandbox / tool theo từng lượt (`provider_cmds.py`). Project có `.codegraph/` thì lượt đọc code dùng MCP codegraph (chỉ đọc) |
 | Kiểm tra | **pytest** + pytest-asyncio, **Ruff** (line 120, `E F I B UP SIM`), **ESLint** 10 + `eslint-config-next`, `tsc --noEmit`, **Playwright** 1.64 (e2e với backend fixture) |
 | Đóng gói | `scripts/package.py`: CPython standalone (python-build-standalone qua `uv python install`) + deps + app + `web/out` → zip; Windows thêm **Inno Setup** (`packaging/windows/setup.iss`); macOS tạo `Radar.app` từ `install.sh` |
-| Phát hành | GitHub Actions `.github/workflows/release.yml` (action pin theo SHA), ký từng gói bằng **RSA** (`.sig`, khóa công khai `telegram_dashboard/release_key.pem`), lệnh cài kiểm sha256 |
+| Phát hành | GitHub Actions `.github/workflows/release.yml` (action pin theo SHA), ký từng gói bằng **RSA** (`.sig`, khóa công khai `backend/telegram_dashboard/release_key.pem`), lệnh cài kiểm sha256 |
 
-**Backend** (`telegram_dashboard/`, ~12k dòng)
+**Cấu trúc source** — chi tiết và quy tắc phụ thuộc ở [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-| File | Vai trò |
-|---|---|
-| `__main__.py` | CLI: `serve`, `login`, `open`, `export-openapi`; tự đổi port nếu 8765 bận, re-exec khi cập nhật |
-| `app.py` | FastAPI app, route REST, `/api/events` (SSE), phục vụ `web/out` |
-| `auth.py` | `LocalGuardMiddleware`: kiểm Host / Origin / `Sec-Fetch-Site`, cookie `td_auth_<port>` cấp từ mã trong `~/.telegram_dashboard/api_token` |
-| `config.py` | Cấu hình: `data/config.json` (nhập trên UI) thắng `.env` |
-| `storage.py` | SQLite (WAL, sync, chạy ngoài event loop qua `Db`), revision cho SSE |
-| `telegram.py` | Cầu Telegram: ingest tin tag / reply, recovery, gửi trả lời (`_send_lock`, `delivery_unknown`, không tự gửi lại) |
-| `events.py` | SSE chỉ mang metadata; DB revision là nguồn sự thật |
-| `qa.py` | Q&A: câu hỏi `#QA…` và chuỗi trả lời |
-| `digest.py` | Digest / Briefing: tóm tắt nhóm đọc live từ Telegram, chia đợt, gom "Với BE" |
-| `ai.py` | Prompt nháp / tóm tắt / ticket / trả lời từ code; `ASK_STYLE` dùng chung; chỉ trả text |
-| `providers.py` · `claude.py` | AI CLI: chọn CLI, model / effort, đăng nhập, lệnh, sandbox, hạn mức; tài khoản Claude và run log |
-| `tasks.py` · `agent.py` | Phiên AI Agent / Đối chiếu BE / Trợ lý AI: chạy headless trong thư mục dự án, hàng đợi, nhắn tiếp |
-| `autobe.py` | Vòng BE tự chạy: chuyển câu trả lời vào phiên, tự giao phiên chỉ đọc |
-| `links.py` | Đọc sẵn link trong prompt (ticket YouTrack, Knowledge Base, tin nhóm) cho AI không có mạng |
-| `gitops.py` | Diff phiên AI Agent → branch + PR (`git`, `gh`) |
-| `external_runs.py` | Lần chạy AI ngoài app (Claude Code / Codex CLI, Desktop) cho trang tài khoản AI |
-| `privacy.py` | Ẩn SĐT / email khi gửi AI, nội dung trong thông báo |
-| `yt_dashboard.py` | API `/api/yt/*`: proxy YouTrack, cache TTL 50s, gộp request trùng, tải trang song song |
-| `updater.py` | Cập nhật: git checkout (pull, sync deps, build UI) hoặc bản cài (tải Release đã ký vào `versions/<ver>`, đổi `current`) |
+```text
+backend/telegram_dashboard/
+  telegram/       # transport, HTTP routes, Q&A, Digest, live reads
+  youtrack/       # service, HTTP routes, UI flow, flow jobs
+  app.py          # composition root, lifespan, API chung
+  config.py       # cấu hình và đường dẫn dữ liệu
+  storage/        # SQLite, transaction và revision SSE
+  ai*.py          # AI dùng chung (ai_prompts, ai_run, ai_jobs); provider*.py, agent.py, tasks.py
+web/src/
+  app/            # Next routes và _components điều phối toàn app
+  features/
+    telegram/     # components, hooks, lib riêng Telegram
+    youtrack/     # components và lib riêng YouTrack
+    settings/     # giao diện cấu hình
+  shared/
+    components/   # UI primitives, khung AI, markdown, avatar…
+    hooks/        # hook trung lập dùng chung
+    lib/          # HTTP client/types, i18n, prefs, time, notifications
+```
 
-**Frontend** (`web/src/`)
-
-- `app/`: 3 route tĩnh `/` (Telegram Inbox), `/youtrack/`, `/settings/` (nhóm cài đặt theo `#hash`: `#general` `#look` `#bot` `#telegram` `#youtrack` `#ai` `#shortcuts` `#github`); `tokens.css` (màu, cỡ chữ), `globals.css`.
-- `components/`: màn Telegram (`inbox`, `pending-inbox`, `today-page`, `qa-page`, `briefing-page`, `digest-page`, `tasks-page`, `composer`…), `yt/` (tab YouTrack), `ai/` (khung chat AI dùng chung: `chat.tsx`, cảnh chờ `fetching.tsx`), `ui/` (primitive: `Segmented` / `Pill`, `Dropdown`, `Hint`, `Dialog`…), `ticket-form.tsx` (form ticket duy nhất cho cả 2 tab).
-- `hooks/use-events.ts`: một kết nối SSE, áp thay đổi vào cache TanStack Query; `lib/api.ts` + `api.generated.d.ts`: client có kiểu.
-- `lib/i18n/`: tiếng Việt làm key, bản dịch `en/` (thiếu là typecheck lỗi); `lib/guide.json` + `guide.en.json`: hướng dẫn trong app, nguồn cho Trợ lý biết tuốt và tour.
-- Quy ước UI chi tiết: [DESIGN.md](DESIGN.md), luật cho AI agent: [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md).
+- `app/` giữ ba route `/`, `/youtrack/`, `/settings/`; URL và nhãn UI không đổi.
+- `shared/` không import ngược `features/` hoặc `app/`. Luồng tích hợp gọi trực tiếp module chuyên trách; không tạo bản sao component.
+- Backend giữ import package `telegram_dashboard` và CLI `uv run python -m telegram_dashboard …`; source nằm trong `backend/`, được Hatch/uv cấu hình qua `pyproject.toml`.
+- Source checkout tiếp tục dùng `.env`, `data/`, `web/out` ở gốc repo. Bản đóng gói vẫn đặt `telegram_dashboard/` cạnh `web/` dưới `app/`, giữ tương thích launcher/updater.
+- Quy ước UI: [DESIGN.md](DESIGN.md); luật agent: [CLAUDE.md](CLAUDE.md) / [AGENTS.md](AGENTS.md).
 
 **Dữ liệu chạy** (`data/`, quyền 0600 / 0700): `account.session` (Telethon), `dashboard.sqlite3` (+ WAL), `config.json`, `server.log` / `server.port` / `server.lock`, `tasks/` (log phiên AI Agent), `claude_runs.jsonl` / `claude_usage.json` (lịch sử chạy, hạn mức), `yt_*.json` (kho prompt, workflow, theo dõi ticket YouTrack), `media/`. Bản cài: `data/` nằm ngoài `versions/` nên cập nhật không đụng tới.
 
@@ -474,14 +470,16 @@ npx playwright install chromium
 npm run build && npm run test:e2e
 ```
 
-E2E chạy với backend fixture độc lập (`web/tests/fixture_server.py`, dữ liệu giả, Telegram / AI giả, port 8765 và 8799), không cần credentials. Sau khi đổi DTO Python, chạy lại `npm run api:types` để sinh `web/src/lib/api.generated.d.ts`.
+Engine UI flow có source module tại `web/src/features/youtrack/flow-engine/`; `npm run build` và `npm run dev` sinh lại `web/public/uiflow.js`. Khi sửa engine lúc dev đang chạy, dùng `npm run build:uiflow`; `npm run check:uiflow` kiểm bundle có khớp source. Kiểm riêng engine offline (không cần fixture server): chạy `npx playwright test -c playwright.uiflow.config.ts` trong `web/` của bản copy scratch. Build/E2E phải chạy trên scratch, không build đè `web/out` hoặc dùng port 8765 của app thật.
+
+E2E chạy với backend fixture độc lập (`web/tests/fixture_server.py`, dữ liệu giả, Telegram / AI giả, port 8766 và 8799), không cần credentials. Sau khi đổi DTO Python, chạy lại `npm run api:types` để sinh `web/src/shared/lib/api.generated.d.ts`.
 
 </details>
 
 <details>
 <summary><b>Phát hành</b></summary>
 
-Skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`) và ký từng gói bằng RSA (secret `RELEASE_SIGNING_KEY`; khóa công khai `telegram_dashboard/release_key.pem`). App chỉ tự cập nhật từ gói có chữ ký `.sig` hợp lệ; lệnh cài kiểm tra sha256 của gói.
+Skill `/release` (`.claude/skills/release/SKILL.md`) → tag `vX.Y.Z` → CI `.github/workflows/release.yml` đóng gói cả hai OS (`scripts/package.py`, `packaging/`) và ký từng gói bằng RSA (secret `RELEASE_SIGNING_KEY`; khóa công khai `backend/telegram_dashboard/release_key.pem`). App chỉ tự cập nhật từ gói có chữ ký `.sig` hợp lệ; lệnh cài kiểm tra sha256 của gói.
 
 </details>
 

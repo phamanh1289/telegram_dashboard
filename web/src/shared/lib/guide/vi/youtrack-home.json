@@ -1,0 +1,314 @@
+[
+  {
+    "id": "yt-trang-hom-nay-dev",
+    "tab": "youtrack",
+    "area": "Thanh bên › Hôm nay (Dev)",
+    "title": "Hôm nay làm gì (trang chủ Dev)",
+    "what": "Danh sách ticket đang mở của bạn xếp theo mức gấp kèm lý do (Blocked, Quá hạn, Sắp tới hạn, priority, Chờ bạn test, Đang làm, Đứng N ngày); ticket đã chuyển QC / chờ test chỉ hiện khi bấm ô \"Chờ QC\"; 3 ticket đầu ở mục “Làm ngay”, còn lại “Tiếp theo”, 20 ticket mỗi trang.",
+    "how": [
+      {
+        "t": "Bấm \"Hôm nay\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Hôm nay\"]"
+      },
+      {
+        "t": "Bấm một dòng trong \"Hôm nay làm gì\" để mở ticket",
+        "at": "css:ol > li > button"
+      },
+      "Quá 20 ticket: dùng ‹ › hoặc số trang; khi thanh trang đang focus, phím ← → cũng chuyển trang"
+    ],
+    "keys": "hom nay hôm nay today dev lam ngay làm ngay tiep theo tiếp theo uu tien ưu tiên focus viec cua toi việc của tôi"
+  },
+  {
+    "id": "yt-lens-dev",
+    "tab": "youtrack",
+    "area": "Hôm nay (Dev) › hàng số liệu",
+    "title": "Lọc nhanh danh sách hôm nay",
+    "what": "Hàng số liệu đồng thời là bộ lọc cho danh sách: Đang mở, Đang làm, Chờ QC, Blocked, Chờ bạn test.",
+    "how": [
+      {
+        "t": "Bấm ô \"Blocked\" trong hàng số liệu: danh sách \"Hôm nay làm gì\" chỉ còn ticket Blocked",
+        "at": "Blocked"
+      },
+      {
+        "t": "Bấm ô khác, vd. \"Chờ QC\", để đổi mục lọc",
+        "at": "Chờ QC"
+      },
+      {
+        "t": "Bấm \"bỏ lọc\" ở góc thẻ (hoặc bấm lại ô \"Đang mở\") để xem tất cả",
+        "at": [
+          "css:section span.text-ink-3 > button[class~=\"hover:text-ink\"]",
+          "Đang mở"
+        ]
+      }
+    ],
+    "keys": "loc nhanh lọc nhanh lens dang mo đang mở dang lam đang làm cho qc chờ qc blocked cho ban test chờ bạn test"
+  },
+  {
+    "id": "yt-canh-bao-can-xu-ly",
+    "tab": "youtrack",
+    "area": "Hôm nay (Dev)",
+    "title": "Chip “Cần xử lý ngay” trên thanh lọc",
+    "what": "Số ticket của bạn đang rủi ro (Quá hạn, Tới hạn trong 24 giờ, Blocked, Không cập nhật N ngày) hiện thành chip “Cần xử lý ngay” màu vàng trên thanh lọc. Bật chip để chỉ xem các ticket đó, mỗi dòng có lý do gấp ở đầu.",
+    "how": [
+      "Bấm chip “Cần xử lý ngay” trên thanh lọc của trang chủ",
+      "Bấm lần nữa để bỏ lọc"
+    ],
+    "keys": "canh bao cảnh báo can xu ly ngay cần xử lý ngay rui ro rủi ro qua han quá hạn blocked chip"
+  },
+  {
+    "id": "yt-moi-cap-nhat",
+    "tab": "youtrack",
+    "area": "Hôm nay (Dev)",
+    "title": "Mới cập nhật",
+    "what": "5 ticket của bạn được cập nhật gần nhất.",
+    "how": [
+      {
+        "t": "Bấm một dòng trong thẻ \"Mới cập nhật\" (cột phải) để mở ticket",
+        "at": "css:ul[class~=\"gap-0.5\"] > li > button.text-left"
+      },
+      "Nhấn Esc để đóng bảng bên để quay lại trang"
+    ],
+    "keys": "moi cap nhat mới cập nhật recent gan day gần đây"
+  },
+  {
+    "id": "yt-ai-studio",
+    "tab": "youtrack",
+    "area": "Trang chủ (Dev/QA/PO) › AI Studio",
+    "title": "AI Studio trên trang chủ",
+    "what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case, Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
+    "how": [
+      {
+        "t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",
+        "at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+      },
+      {
+        "t": "Bấm nút cùng tên tab để chạy; phiên AI mở ở bảng bên",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      "Chờ AI viết xong; kết quả được lưu trong ngày. Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Thẻ giờ có kết quả: bấm \"Mở phiên AI\" để xem lại và hỏi tiếp",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      "Nhấn Esc. \"Làm lại\" chạy lại, \"Xóa\" xóa nội dung đã lưu"
+    ],
+    "keys": "ai studio ke hoach kế hoạch standup test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes"
+  },
+  {
+    "id": "yt-ai-standup-dev",
+    "tab": "youtrack",
+    "area": "Hôm nay (Dev) › AI Studio",
+    "title": "Standup và Kế hoạch",
+    "what": "Standup: Hôm qua / Hôm nay / Vướng mắc từ ticket bạn cập nhật từ ngày làm việc trước và tin bạn đã trả lời trên Telegram. Kế hoạch: AI chọn việc làm ngay, việc cần trả lời, chỗ kẹt. Standup có cho cả Dev và QA/QC (QA: theo ticket bạn làm QC), đọc thêm phiên AI Agent đã xong; nút “Saved Messages” gửi standup vào Telegram của bạn.",
+    "how": [
+      {
+        "t": "Ở thẻ \"AI Studio\" bấm tab \"Standup\"",
+        "at": "Standup"
+      },
+      {
+        "t": "Bấm nút chạy, AI viết standup ở bảng bên",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      {
+        "t": "Khi có kết quả, bấm \"Copy\" để dán vào nhóm Telegram",
+        "at": "Copy"
+      },
+      {
+        "t": "Nhấn Esc, rồi bấm tab \"Kế hoạch\" để AI chọn việc làm ngay (dùng tương tự)",
+        "at": "Kế hoạch"
+      }
+    ],
+    "keys": "standup ke hoach kế hoạch plan hom qua hôm qua vuong mac vướng mắc telegram"
+  },
+  {
+    "id": "yt-trang-kiem-thu-qa",
+    "tab": "youtrack",
+    "area": "Thanh bên › Kiểm thử (QA)",
+    "title": "Hàng đợi test (trang chủ QA)",
+    "what": "Ticket chờ test xếp theo mức gấp (Của bạn, Chưa có QC, Test lại · trả N lần, Blocked, Quá hạn, Chờ N ngày…); 3 ticket đầu ở mục “Test ngay”.",
+    "how": [
+      {
+        "t": "Bấm \"Kiểm thử\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Kiểm thử\"]"
+      },
+      {
+        "t": "Bấm một ô số để lọc (Chờ test, Chờ tôi test, Test lại, Bug…)",
+        "at": "css:[aria-label=\"Lọc hàng đợi kiểm thử\"]"
+      },
+      {
+        "t": "Bấm một dòng để mở ticket",
+        "at": "css:ol > li > button"
+      },
+      "Bấm lại ô hoặc \"… · bỏ lọc\" để về \"Chờ test\""
+    ],
+    "keys": "kiem thu kiểm thử qa qc hang doi test hàng đợi test test ngay cho toi test chờ tôi test test lai test lại bug toi log bug tôi log"
+  },
+  {
+    "id": "yt-bug-dot-bien",
+    "tab": "youtrack",
+    "area": "Kiểm thử (QA)",
+    "title": "Cảnh báo bug tăng đột biến",
+    "what": "Khi bug mới 7 ngày qua từ 3 trở lên và vượt 1,5 lần trung bình 4 tuần trước (toàn project hoặc theo module), hiện nút vàng “Bug tăng đột biến” kèm các module nóng.",
+    "how": [
+      {
+        "t": "Bấm nút vàng \"Bug tăng đột biến\" (chỉ hiện khi bug mới tăng bất thường) để xem \"Bug mới 7 ngày\"",
+        "at": "Bug tăng đột biến"
+      },
+      "Nhấn Esc để đóng bảng bên"
+    ],
+    "keys": "bug tang dot bien bug tăng đột biến spike bug moi bug mới module"
+  },
+  {
+    "id": "yt-ket-qua-test-cua-toi",
+    "tab": "youtrack",
+    "area": "Kiểm thử (QA)",
+    "title": "Kết quả test của tôi + Copy standup",
+    "what": "Số ticket bạn đã test Hôm nay / 24 giờ qua / 7 ngày, tách pass và trả lại (đọc từ lịch sử state); tạo sẵn đoạn standup QC. Tính mọi kết quả của bạn, không theo bộ lọc Sprint / Người ở đầu trang.",
+    "how": [
+      {
+        "t": "Bấm \"… pass\" (vd. \"2 pass\") ở một cột để xem danh sách ticket đã pass",
+        "at": "css:button.text-ok:enabled"
+      },
+      "Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Bấm \"Copy standup\" để chép đoạn standup dán vào Telegram",
+        "at": "Copy standup"
+      }
+    ],
+    "keys": "ket qua test kết quả test pass tra lai trả lại standup qc copy standup"
+  },
+  {
+    "id": "yt-goi-y-chia-qc",
+    "tab": "youtrack",
+    "area": "Kiểm thử (QA)",
+    "title": "Gợi ý chia QC",
+    "what": "Ticket chờ test chưa có QC được đề xuất giao cho người đang giữ ít ticket test nhất, ưu tiên ticket gấp.",
+    "how": [
+      {
+        "t": "Trong thẻ \"Gợi ý chia QC\" bấm một dòng để mở ticket và gán QC",
+        "at": "css:ol li > button.items-baseline"
+      },
+      "Nhấn Esc để đóng bảng bên",
+      {
+        "t": "Bấm \"Copy\" để chép bảng phân công",
+        "at": "Copy"
+      }
+    ],
+    "keys": "chia qc goi y gợi ý phan cong phân công assign qc can bang tai cân bằng tải"
+  },
+  {
+    "id": "yt-bug-7-ngay",
+    "tab": "youtrack",
+    "area": "Kiểm thử (QA)",
+    "title": "Bug 7 ngày qua",
+    "what": "Ba con số: bug Mới, Đã fix trong 7 ngày và bug Đang mở.",
+    "how": [
+      "Xem thẻ \"Bug 7 ngày qua\" ở cột phải trang Kiểm thử: ba số Mới, Đã fix, Đang mở (chỉ để xem, không bấm được)"
+    ],
+    "keys": "bug 7 ngay bug 7 ngày bug moi bug mới da fix đã fix dang mo đang mở"
+  },
+  {
+    "id": "yt-trang-brief-po",
+    "tab": "youtrack",
+    "area": "Thanh bên › Tổng quan (PO)",
+    "title": "Tổng quan (trang chủ PO)",
+    "what": "Trang chủ của PO: KPI sprint, Tiến độ sprint, Cảnh báo ticket kéo dài, Chờ PO chốt (define / confirm), Cần chú ý, Công việc đang làm (ngưỡng WIP).",
+    "how": [
+      {
+        "t": "Bấm \"Tổng quan\" trên thanh bên",
+        "at": "css:nav[aria-label=\"Trang\"] button[aria-label=\"Tổng quan\"]"
+      },
+      {
+        "t": "Bấm một số KPI để xem danh sách ticket",
+        "at": "css:button[data-drill=\"list\"]"
+      },
+      {
+        "t": "Ở thẻ \"Chờ PO chốt\", bấm \"Xem cả … ticket\"",
+        "at": "Xem cả"
+      }
+    ],
+    "keys": "brief po pm cho po chot chờ po chốt tien do sprint tiến độ sprint can chu y cần chú ý wip"
+  },
+  {
+    "id": "yt-ai-brief-po",
+    "tab": "youtrack",
+    "area": "Brief (PO) › AI Studio",
+    "title": "AI Brief, Lên sprint, Grooming, Bản tin tuần, Release notes",
+    "what": "Brief: AI đọc ticket mở của sprint, nêu việc tiếp theo từng người, chỗ nghẽn, cần chốt và những gì đã đổi từ lần brief trước. Lên sprint: gợi ý ticket kéo vào sprint tới và giao ai. Grooming: rà backlog. Bản tin tuần: 7 ngày qua theo từng người. Release notes: từ ticket đã xong.",
+    "how": [
+      {
+        "t": "Ở thẻ \"AI Studio\" bấm tab \"Lên sprint\" (tab \"Brief\", \"Grooming\", \"Bản tin tuần\", \"Release notes\" dùng tương tự)",
+        "at": "css:[aria-label=\"Việc của AI\"] button:nth-child(2)"
+      },
+      {
+        "t": "Bấm nút chạy; kết quả mở ở bảng bên",
+        "at": "css:[aria-label=\"Việc của AI\"] ~ div.flex button"
+      },
+      {
+        "t": "Khi có kết quả, bấm \"Copy\" để chép",
+        "at": "Copy"
+      },
+      "Nhấn Esc để đóng bảng bên; thẻ lưu kết quả, bấm \"Mở phiên AI\" để hỏi tiếp"
+    ],
+    "keys": "brief len sprint lên sprint sprint planning grooming backlog ban tin tuan bản tin tuần weekly release notes po"
+  },
+  {
+    "id": "yt-bao-cao-release",
+    "tab": "youtrack",
+    "area": "Trang chủ › Tạo báo cáo",
+    "title": "Tạo báo cáo",
+    "what": "AI viết báo cáo từ số liệu dashboard: Theo sprint (kịp ngày release không, chưa bàn giao QC, stuck, kết quả test, trễ, quá tải, bug) hoặc Theo ngày (đã test xong, đang test, chờ test). Mỗi con số mở danh sách ticket; có thể tự tạo theo lịch trong Cài đặt.",
+    "how": [
+      {
+        "t": "Ở thẻ \"Tạo báo cáo\" bấm \"Theo ngày\" để xem tình trạng test tính tới giờ",
+        "at": "Theo ngày"
+      },
+      {
+        "t": "Bấm \"Theo sprint\" để báo cáo theo ngày release",
+        "at": "Theo sprint"
+      },
+      {
+        "t": "Chỉnh \"Ngày release\" (mặc định cuối sprint); số \"ngày làm việc còn lại\" đổi theo",
+        "at": "Ngày release"
+      },
+      {
+        "t": "Bấm \"Tạo báo cáo\" (đã có báo cáo hôm nay thì là \"Tạo lại\")",
+        "at": [
+          "Tạo báo cáo",
+          "Tạo lại"
+        ]
+      },
+      "Chờ AI viết xong (đóng bảng bằng Esc để báo cáo hiện trong thẻ); đặt lịch tự tạo ở Cài đặt › YouTrack",
+      {
+        "t": "Bấm \"Xem đầy đủ\" (hoặc \"Thu gọn\") để mở rộng nội dung",
+        "at": [
+          "Xem đầy đủ",
+          "Thu gọn"
+        ]
+      }
+    ],
+    "keys": "tao bao cao tạo báo cáo bao cao release báo cáo release report ngay release ngày release theo sprint theo ngay theo ngày tu tao tự tạo lich lịch"
+  },
+  {
+    "id": "yt-xuat-bao-cao",
+    "tab": "youtrack",
+    "area": "Trang chủ › Tạo báo cáo › Xuất",
+    "title": "Xuất báo cáo MD / PDF / CSV",
+    "what": "Tải báo cáo release ra Markdown, PDF (bản in) hoặc CSV (số liệu và danh sách ticket theo mục).",
+    "how": [
+      {
+        "t": "Trong thẻ \"Tạo báo cáo\" ở trang chủ, bấm \"Tạo báo cáo\" (đã có báo cáo thì bỏ qua bước này)",
+        "at": "Tạo báo cáo"
+      },
+      {
+        "t": "Bấm \"Xuất\"",
+        "at": "Xuất"
+      },
+      {
+        "t": "Chọn \"Markdown (.md)\", \"PDF\" (mở bản in, chọn Lưu dạng PDF; cần cho phép popup) hoặc \"CSV\"",
+        "at": "Markdown (.md)"
+      }
+    ],
+    "keys": "xuat bao cao xuất báo cáo export markdown md pdf csv tai bao cao tải báo cáo"
+  }
+]

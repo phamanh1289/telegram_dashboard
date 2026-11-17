@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { Providers } from "@/components/providers";
-import { DEFAULT_FONT, FONT_SIZES, FONTS } from "@/lib/fonts";
+import { Providers } from "@/shared/components/providers";
+import { DEFAULT_FONT, FONT_SIZES, FONTS } from "@/shared/lib/fonts";
 import "./globals.css";
 
 // Title per page (app/page.tsx, youtrack): Settings sets its own localized one, which a layout title would overwrite.

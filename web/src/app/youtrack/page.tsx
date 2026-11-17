@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { YouTrackApp } from "@/components/yt/app";
+import { YouTrackApp } from "@/features/youtrack/components/app";
 
 export const metadata: Metadata = { title: "Radar" };
 

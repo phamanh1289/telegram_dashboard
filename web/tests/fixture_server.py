@@ -11,22 +11,24 @@ import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import parse_qsl
 
 import uvicorn
 from fastapi import FastAPI, Request
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests"))
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "backend"))
 
 from conftest import FakeTransport, msg  # noqa: E402
-
-from telegram_dashboard import uiflow  # noqa: E402
-from telegram_dashboard.ai import AiJobs  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
-from telegram_dashboard.telegram import SendRejected  # noqa: E402
+from telegram_dashboard.storage import Store  # noqa: E402
+from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
+from telegram_dashboard.youtrack import flow as uiflow  # noqa: E402
+from telegram_dashboard.youtrack import flow_md, flow_prompt  # noqa: E402
+from telegram_dashboard.youtrack.flow_jobs import FlowJobs  # noqa: E402
 
 A, B = "-1001", "-1002"
 PORT = int(os.environ.get("E2E_PORT", "8766"))
@@ -70,11 +72,13 @@ control = {"send": "ok", "sent": 0, "slow_chat": None, "slow_ms": 0, "fail_chang
 FLOW = {
     "v": 1, "ticket": "VA-1", "rev": 1, "device": "mobile",
     "screens": [
-        {"id": "login", "title": "Đăng nhập", "kind": "screen", "parent": None, "items": [{"id": "otp", "label": "Gửi OTP"}]},
+        {"id": "login", "title": "Đăng nhập", "kind": "screen", "parent": None,
+         "items": [{"id": "otp", "label": "Gửi OTP"}]},
         {"id": "code", "title": "Nhập OTP", "kind": "screen", "parent": None,
          "items": [{"id": "ok", "label": "Xác nhận"}, {"id": "later", "label": "Để sau"}]},
         {"id": "err", "title": "Sai mã", "kind": "popup", "parent": "code", "items": []},
-        {"id": "home", "title": "Trang chủ", "kind": "screen", "parent": None, "items": [{"id": "out", "label": "Đăng xuất"}]},
+        {"id": "home", "title": "Trang chủ", "kind": "screen", "parent": None,
+         "items": [{"id": "out", "label": "Đăng xuất"}]},
     ],
     "links": [
         {"src": "login.otp", "to": "code", "act": "navigate", "when": "", "ac": "AC-1"},
@@ -94,7 +98,8 @@ ISSUE: dict = {
 
 
 ISSUE0 = json.loads(json.dumps(ISSUE))
-JOBS = AiJobs()  # the AI flow run with X-Ai-Job: a background run, as yt_dashboard's `background` starts it
+JOBS = FlowJobs(Store(tmp / "flow-fixture.sqlite3"))
+FLOW_SCOPE = "fixture-account-server"
 
 
 async def answer(send, status: int, body) -> None:
@@ -113,7 +118,10 @@ async def body_of(receive) -> dict:
 
 # A YouTrack connection, so the YouTrack tab opens instead of sending the user to Cài đặt (no token here, so the real
 # routes answer empty lists; the ones the UI flow dialog reads are faked below).
-CONFIG = {"base": "https://youtrack.example.test", "mock": False, "t": {"wip": 3, "stale": 7, "dead": 14}, "hist": 0, "ai": True}
+CONFIG = {
+    "base": "https://youtrack.example.test", "mock": False,
+    "t": {"wip": 3, "stale": 7, "dead": 14}, "hist": 0, "ai": True,
+}
 
 
 async def fake_yt(scope, receive, send) -> bool:
@@ -121,6 +129,30 @@ async def fake_yt(scope, receive, send) -> bool:
     path, post, q = scope["path"], scope["method"] == "POST", scope["query_string"].decode()
     if path == "/api/yt/config":
         await answer(send, 200, CONFIG)
+    elif path == "/api/yt/flow/scope":
+        await answer(send, 200, {"scope": control.get("flow_scope", FLOW_SCOPE)})
+    elif path == "/api/yt/flow/jobs":
+        issue = dict(parse_qsl(q)).get("issue")
+        await answer(send, 200, await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE), issue=issue))
+    elif path.startswith("/api/yt/flow/jobs/"):
+        account = control.get("flow_scope", FLOW_SCOPE)
+        suffix = path.removeprefix("/api/yt/flow/jobs/")
+        job, _, action = suffix.partition("/")
+        current = await JOBS.get(account, job)
+        if scope["method"] == "DELETE":
+            if control.get("cancel_fail"):
+                await answer(send, 503, {"error": "Không xác nhận được yêu cầu dừng"})
+            else:
+                await answer(send, 200, await JOBS.cancel(account, job))
+        elif not current:
+            await answer(send, 404, {"error": "Không tìm thấy lượt vẽ trong tài khoản này"})
+        elif action == "events":
+            await JOBS.stream(account, job, int(dict(parse_qsl(q)).get("after", 0)))(scope, receive, send)
+        elif action == "processed":
+            await JOBS.update(account, job, processed=True)
+            await answer(send, 200, await JOBS.get(account, job))
+        else:
+            await answer(send, 200, current)
     elif path == "/api/yt/issue" and q == "id=VA-1":
         await answer(send, 200, ISSUE)
     elif path == "/api/yt/flow" and not post:
@@ -128,8 +160,14 @@ async def fake_yt(scope, receive, send) -> bool:
         if mode == "fail":
             await answer(send, 502, {"error": "YouTrack 502 khi tải tệp"})
         else:
-            got = {"file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True)}[mode]
-            await answer(send, 200, dict(zip(("att", "flow", "broken"), got)))
+            got = {
+                "file": (control["att"], FLOW, False), "none": (None, None, False), "broken": ("1-1", None, True),
+            }[mode]
+            await answer(send, 200, {
+                **dict(zip(("att", "flow", "broken"), got, strict=True)),
+                "ticket_newer": control.get("ticket_newer", False),
+                "author": control.get("owner"), "yours": not control.get("owner"),  # owner: someone else's file
+            })
     elif path == "/api/yt/flow":
         b = await body_of(receive)
         control["flow_posts"].append(b)
@@ -149,44 +187,67 @@ async def fake_yt(scope, receive, send) -> bool:
             ISSUE["attachments"] = [{**ISSUE["attachments"][0], "id": "1-2"}]
             ISSUE["comments"] = [*ISSUE["comments"], {  # as yt_dashboard writes it: the file named in plain text
                 "id": f"c{rev}", "author": "Tôi", "created": 1_700_000_100_000,
-                "text": f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n" + "\n".join(f"- {c}" for c in changes),
+                "text": (f"UI flow cập nhật (rev {rev}) — tệp đính kèm uiflow-VA-1.html\n"
+                         + "\n".join(f"- {c}" for c in changes)),
             }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
-    elif path == "/api/yt/ai/flow":
+    elif path == "/api/yt/flow/md":  # the real builder over the fixture's ticket (no YouTrack / Zeplin read)
+        b = await body_of(receive)
+        md = flow_md.build(uiflow.clean(b["flow"], "VA-1"), [{"id": "VA-1", "summary": ISSUE.get("summary", ""),
+                           "description": ISSUE.get("description") or "", "comments": []}], {},
+                           flow_md.Options(note=b.get("note", ""), sources=b.get("sources", True),
+                                           paths=b.get("paths", True), data=b.get("data", False)))
+        await answer(send, 200, {"name": "uiflow-VA-1.md", "md": md, "tokens": flow_prompt.estimate(md)})
+    elif path == "/api/yt/flow/precheck":  # `flow_check`: the counts a render would send (risks: the warning)
         await body_of(receive)
+        await answer(send, 200, control.get("flow_check") or {
+            "tokens": 12400, "parts": {"ticket": 900, "story": 7000, "zeplin": 2500, "note": 0, "rules": 2000},
+            "screens": 2, "links": 1, "risks": [], "warnings": [], "model": "claude-haiku-5-5", "cost_usd": 0.007,
+            "cost_runs": 4, "chunks": 1})
+    elif path == "/api/yt/flow/delete":  # only the file seen, as the real route; `flow_deleted`: what it removed
+        b = await body_of(receive)
+        if control["flow"] not in ("file", "broken") or b.get("base") != control["att"]:
+            await answer(send, 409, {"error": "UI flow vừa được người khác cập nhật — mở lại để xem bản mới"})
+        else:
+            control["flow"], control["flow_deleted"] = "none", b["base"]
+            await answer(send, 200, {"warnings": []})
+    elif path == "/api/yt/ai/flow":
+        request_body = await body_of(receive)
         control["ai_calls"] += 1
+        control["ai_keep"] = request_body.get("keep")  # the flow on screen the render carries edits over from
 
         async def work(on_text=None):
             # the stages the real route tells (ai_flow), spread over ai_ms: the dialog's progress view has data
-            say = (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e})) if on_text else (lambda **e: None)
+            say = (
+                (lambda **e: on_text({"kind": "stage", "at": round(time.time(), 1), **e}))
+                if on_text else (lambda **e: None)
+            )
             body = json.dumps({"screens": FLOW["screens"], "links": FLOW["links"]}, ensure_ascii=False)
-            steps = [{"stage": "ticket", "id": "VA-1"}, {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
+            steps = [{"stage": "ticket", "id": "VA-1"},
+                     {"stage": "ticket", "id": "VA-1", "done": True, "chars": 5400, "stories": ["VA-2"]},
                      {"stage": "zeplin", "n": 0, "of": 2}, {"stage": "zeplin", "n": 1, "of": 2},
                      {"stage": "zeplin", "n": 2, "of": 2, "done": True, "texts": 2, "missing": 0},
                      {"stage": "ai", "deep": False, "chars": 12800, "screens": 2}]
             seen = uiflow.Progress()
             steps += [e for i in range(0, len(body), 40) for e in seen.feed(body[i : i + 40])]
             steps += [{"stage": "check", "chars": len(body)},
-                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]), "links": len(FLOW["links"]), "dropped": 0}]
+                      {"stage": "check", "done": True, "screens": len(FLOW["screens"]),
+                       "links": len(FLOW["links"]), "dropped": 0}]
             for e in steps:
                 say(**e)
                 await asyncio.sleep(control["ai_ms"] / 1000 / len(steps))
-            return {"flow": {**FLOW, "rev": 0}}
+            return {"flow": {**FLOW, "rev": 0}, "manifest": control.get("manifest")}
 
         job = dict(scope["headers"]).get(b"x-ai-job", b"").decode()
         if job:
-            await JOBS.start(job, work)(scope, receive, send)
+            stream = await JOBS.start(
+                control.get("flow_scope", FLOW_SCOPE), job, request_body["id"], request_body.get("base"), work)
+            if stream:
+                await stream(scope, receive, send)
+            else:
+                await answer(send, 409, {"error": "Mã lượt AI đã dùng"})
         else:
             await answer(send, 200, await work())
-    elif path.startswith("/api/yt/ai/job/"):  # the real routes, on the fixture's runs
-        job = path.rsplit("/", 1)[1]
-        if scope["method"] == "DELETE":
-            JOBS.stop(job)
-            await answer(send, 200, {})
-        elif got := JOBS.attach(job):
-            await got(scope, receive, send)
-        else:
-            await answer(send, 404, {"error": "Lượt AI này không còn trên máy chủ: chạy lại"})
     else:
         return False
     return True
@@ -237,6 +298,15 @@ ctl = FastAPI()
 @ctl.post("/set")
 async def set_(request: Request):
     b = await request.json()
+    if b.pop("reset_jobs", False):
+        for row in await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE)):
+            await JOBS.cancel(control.get("flow_scope", FLOW_SCOPE), row["id"])
+        with JOBS.store._conn(write=True) as connection:
+            connection.execute("DELETE FROM flow_job_events")
+            connection.execute("DELETE FROM flow_jobs")
+        control.pop("flow_scope", None)
+        control.pop("cancel_fail", None)
+        control.pop("manifest", None)
     if "flow" in b:  # a UI flow test: start from the pristine ticket and file
         FLOW.clear()
         FLOW.update(json.loads(json.dumps(FLOW0)))
@@ -249,7 +319,9 @@ async def set_(request: Request):
 
 @ctl.get("/state")
 async def state():
-    return {**control, "send_calls": len(fake.send_calls), "jobs": JOBS.status()}
+    rows = await JOBS.call("flow_job_get", control.get("flow_scope", FLOW_SCOPE))
+    return {**control, "send_calls": len(fake.send_calls),
+            "jobs": {j["id"]: j["status"] for j in rows}, "flow_jobs": rows}
 
 
 @ctl.post("/message")

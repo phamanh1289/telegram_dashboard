@@ -1,0 +1,215 @@
+[
+  {
+    "id": "yt-chi-tiet-ticket",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "View ticket details",
+    "what": "The side panel shows the title, State, Assignee, Priority, QC, Sprint, Due, created/updated dates, Reporter, Description, Links, Mentioned on Telegram and Comments.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      "See State, Assignee, Priority, QC, Sprint, Due, Description, Links, Mentioned on Telegram, Comments; click a ticket under \"Links\" to switch to it",
+      {
+        "t": "Click the ID at the top of the side panel to open it on YouTrack",
+        "at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
+      },
+      {
+        "t": "Click ✕ \"Close\" (or Esc)",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      }
+    ],
+    "keys": "ticket details description comments links mentioned on telegram tags"
+  },
+  {
+    "id": "yt-ui-flow",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket › UI flow",
+    "title": "UI flow: the ticket's screens and the taps between them",
+    "what": "The AI reads the ticket's AC, rules and Zeplin links (for a sub-task, its parent story in full, where the ACs, the \"Luồng màn\" tree and the Zeplin links live) and builds the flow: which screens exist, which button leads where, which popups show, where Back goes. Screens with a Zeplin link are drawn from the real design image, each button a tap area in its place on it (matched by the text on the button; buttons not found on the design show as rows below); needs the Zeplin MCP set up. View it as a map or tap through it like a prototype, fix it up, then press Update to write the HTML file onto the ticket with a comment listing what changed (while it saves, a small popup shows each step: embedding the Zeplin images, uploading the file, writing the comment; Stop works only until the upload starts); the file is named after the map (\"<name> - <ticket>.html\", uiflow-<ticket>.html when it has no name; \" - <saver's name>\" is added when another attachment on the ticket already has that name). The app tells the UI flow file by a mark inside it, not by its name: that file's row under Attachments (with the flow icon) opens this same view. If someone else has just updated it, the app says so and offers the new version instead of overwriting it. When the file on the ticket was saved by someone else (YouTrack records who uploaded it), the top of the frame shows a lock tag \"<name>'s\": you can still edit it (kept as a draft on your computer) and download the HTML file, but only that person can Update or remove the file on the ticket. The flow saved on the ticket is also given to the AI: an AI Agent session and the ticket's AI read a short form of it (screen → button → target screen, AC, Zeplin links) whenever they read that ticket.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click \"UI flow\"",
+        "at": "UI flow"
+      },
+      "No file yet: pick \"Screens only\" (code builds the Zeplin screens' UI, no buttons or links, 0 tokens, a few seconds) or \"Screens + links\" (the AI reads the AC to draw the taps), then press the button below the cards. Pick the platform (Mobile / Web, with how many screens each size has) right below the cards; it applies to both ways: the other platform's screens are not built; once there is a flow, pick it in the \"Render again\" question. Under the title the panel shows how many Zeplin screens the ticket has, how many flow lines are unclear (to fix in the ticket), and the most tokens and estimated cost of an AI render; with no Zeplin link, \"Screens only\" is locked. The estimated tokens show beside the button; add a note for the AI if needed, then press \"Render bằng AI\" (or \"Dựng màn\"); while it runs you can press \"Dừng render\" Pick Web and the flow draws each screen in a browser window (1280 wide, as high as the design, no phone bezel), tap areas in their place on the page; Prototype is a window too, a long page scrolls inside it. The frame is saved with the flow and goes into the downloaded HTML file. A web flow built before this version is still in phone frames: \"Render again with AI\" with Web to switch (the screens are laid out again, since the frame size changes).",
+      "While it renders, the view shows its progress: % done, how long it has run and roughly how long is left, each stage (reading the ticket and story, each Zeplin screen, the AI planning the flow, each screen drawn, each button linked to its screen, the check) with its numbers and time, the screens just drawn and the links just made",
+      "Closing the view mid-render does not stop the AI: the \"UI flow\" button shows a dot while it runs; open it again to follow its progress or get the result. When a render shows an error (a lost connection too), the AI run has stopped and the line names the stage it failed at: click \"Render with AI\" to run it again",
+      "A button Zeplin has no text layer for (a list flattened into the image): with \"Screens + links\" the AI looks at the design image to place its tap area (one more short AI run); that area can be edited like a hand-drawn one and is kept on a re-render. A button the AI cannot find gets a warning: draw its tap area by hand.",
+      "While it draws, each step has a tag: \"AI\" (highlighted) means the AI reads / writes and spends AI tokens; \"Code\" means the dashboard handles it itself (reading the ticket, reading Zeplin, checking the result), no tokens",
+      "Once rendered, the bar below says how many screens and links the AI drew and how long it took; on \"Update\" it shows the Zeplin images being embedded (n/total), then the file being uploaded to the ticket",
+      "With a flow: use the vertical toolbar on the frame's left edge, icons only (hover for the name): Map / Prototype, Edit (on, its editing tools slide out right below it), Fit; resting the pointer on the bar slides it open over the map with every name; moving off it (or picking a tool) slides it back; the screen finder sits at the map's top left. Press the name at the top of the dialog (\"UI flow <ticket>\", with a pencil beside it) to give the map its own name: Enter or a press outside keeps it, Esc drops it, blank goes back to the default; Undo takes it back like any edit, Update writes it to the ticket, it titles the downloaded HTML file, and AI re-renders keep it. The Download button (down arrow) at the top has two choices: \"HTML file (view offline)\" (the file is view only: Map, Prototype, find a screen; to change it, edit on the dashboard and Update; while it is packed, a small popup shows each step, such as embedding the Zeplin images n/m, with a Stop button that cancels it at any point) and \"Markdown for AI…\". Markdown for AI opens a box for extra instructions to the AI (stack, scope) and options to include the ticket / story text, test paths and the JSON data (off by default: it repeats the screen / button tables); Copy it to paste into an AI agent or Download the .md. If the map has no buttons / arrows yet (built with \"Dựng màn hình\"), the box says so first: the file holds only the screen list, the designs' texts and the ticket, and the agent has to guess the flow and which AC belongs to which screen; link them by hand in Edit or render with AI to fill it in. Opening the box builds the file at once (by code, no AI, no tokens) and the box tells about how many tokens it is once pasted into an AI agent, to know it fits the context; ticking an option or pausing while typing the instructions counts it again in place. Copy then Download use that build, nothing is built again. Each AC is quoted once, under its screen; AC no screen carries get their own section. The file holds: how to read it, a Mermaid map, each screen in the order users meet them (kind, Zeplin link, the design's texts, the AC quoted word for word, notes, a table of buttons → target screen with conditions), test paths, map notes, a \"Still missing / to ask\" list (screens without a design, unlinked buttons, unreachable screens, AC tied to no screen) and the requirement sources. Built only on export: the map, the ticket file and the draft stay as they are. Back / close arrows (dashed) always show on the map. Opening a saved flow again: the Zeplin images of the last read show at once; Zeplin is read again screen by screen behind them, each screen updates as soon as it is read, and only a screen whose design changed is drawn again (an unchanged one keeps its image, no flicker). A long design (a page that scrolls, taller than one phone screen) is drawn at its full length: a button at the bottom of the page sits in its place on the image; \"Fit to screen\" counts a long screen as at most 2 screens so the others stay readable, pan down for the rest; \"Re-arrange\" puts no screen under a long one.",
+      "Steps / screens / popups the ticket mentions that have no design yet: the AI does not draw them (the map only holds screens with a Zeplin image); add them with \"+ From Zeplin\" once they have one. A ticket with no Zeplin link at all is still drawn from its description, as before. Outside Edit mode, click an AC chip on a screen (e.g. \"AC3.5\") to light only the screens and arrows that carry that AC code; click the chip again or press Esc to clear.",
+      "Select a screen while editing: every press on a screen, the first and every one after, brings it to the middle of the view, with a margin round it so its neighbours and arrows stay in sight; on its name the camera waits a beat, so a double click on the name still renames it in place. The properties panel opens bottom-left; its header has the kind + name, a ▶ button (\"▶ Start screen\"), a bin (\"Delete\") and ✕ (\"Deselect\", or Esc). Press ▶ so the prototype and the map start there (press again to go back to the first screen). With Edit on, a tool group of icons appears right under the Edit button on the left rail: \"+ From Zeplin\" (the + sign, the one way to add a screen by hand), \"+ Ghi chú\" (+ Note: a note box on the map, on its own beside the screens, for cautions and ideas to improve the feature; press it and the cursor turns to a crosshair with a hint under the map: drag on the map to draw the box at the size you want, one click gives the default size, Esc or the button again cancels; type straight into it, drag its top bar to move it, drag its bottom-right corner to resize it at any time, the arrow button folds it to a one-line bar (its first line) or expands it again, ✕ deletes it, each one undo step; read-only outside editing, where the arrow still folds / expands it but for that view only, the file is not changed; saved with the file, kept on a re-render, and seen by the AI Agent when it reads the diagram), \"Re-arrange\", \"↶ Undo\", \"↷ Redo\"; hover an icon and its name shows to its right (⌘Z / ⌘⇧Z); a run of arrow-key moves counts as one step.",
+      "Click a screen on the map, then \"Prototype\": Prototype goes on from that screen. No screen picked: the first time it starts at the start screen, later it returns to where you were. Change the start screen on the map (the ▶ button while editing) and the next visit to Prototype begins again at the new start screen. A screen just added with \"+ From Zeplin\" is placed in free space (right of the last screen when the middle of the view is taken), never on top of another, and does not move where Prototype stands.",
+      "No start screen set: Prototype's bottom bar says \"No start screen set\" (meanwhile Prototype starts at the first screen). In Prototype, press \"▶ Start screen\" on the bottom bar to make the screen shown the start screen, press again to unset; no edit mode needed. Press \"Update\" to save it.",
+      "In Prototype, tap an empty spot on the screen image: every tap area of that screen lights up for a moment.",
+      "To view the flow you are editing outside the app (an unsaved draft included): press the \"Download the HTML file\" icon in the header; the file opens offline, carries the colours you are using, and nothing is written to the ticket. The bar below shows the image-embedding progress; when done a line says the file is ready, with a \"Download\" button in case the browser did not save it by itself. If the ticket changed after the flow was last updated, the view says so; \"Render again with AI\" keeps the notes, hand-drawn tap areas, start screen (and positions, when no screen is new) of matching screens.",
+      "The \"Find a screen\" box: type a screen name (accents optional), a Zeplin link or an id; matches get a yellow outline, Up/Down picks one, Enter goes to it, Esc clears. Finding never changes the flow.",
+      "Click \"Edit\": \"+ From Zeplin\" opens a box right under its button: paste one or more Zeplin screen links (zpl.io short links work too), separated by commas, spaces or new lines (Shift+Enter), then Enter or \"Add n screens\": each link becomes a screen with its Zeplin name and design image, all one undo step. If any link fails (wrong format, already in the flow, Zeplin could not read it), nothing is added yet: only the failed links are listed, with why; fix them in the box and \"Retry\", or \"Add n screens\" to add the n valid ones now, the failed ones staying in the box; \"Re-arrange\" lays every screen out again, ⌘Z takes it back. Select a screen: the properties panel has a \"Screen name\" box to rename it (double-clicking the name on the frame renames too), the screen kind (turning a Screen into a Popup / Sheet / Toast turns the arrows into it from \"Navigate\" to \"Open\" and its way back from \"Back\" to \"Close\", and the screen opening it becomes the one under it; the other way round, the reverse; conditions and AC stay), the Zeplin link, its \"Note\" (plain text, a ✎ mark on the screen, Esc cancels, kept in the flow only, never posted as a ticket comment), or \"+ Tap area\" and drag on the image to draw a button (or press Enter for one mid-screen). Tap areas can overlap (e.g. a large one holding 2-3 small ones, up to 4 layers): the smaller one is always on top and takes the press, the one under it does not, whatever order they were drawn in. Keyboard only: find a screen and press Enter to select it; its tap areas are in the \"Tap areas\" row of the properties panel (hover a name to see it on the map; a screen with no design image has a \"Buttons\" row with \"+ Button\" instead). Select a tap area / button: it is filled with a bright ring, the screen's other areas dim and only its own arrows stay lit; the ‹ button in the panel header goes back to its screen (an arrow has ‹ back to its source screen too). A tap area's panel has \"Ways out (n)\": one row per arrow leaving it (kind → target screen · condition); hover a row to see its arrow on the map, press it to open it: the arrow stays lit and its kind is picked right there (Navigate / Open / Back / Close), \"Condition, AC…\" opens the arrow's own panel, ✕ removes that way. Drag a dot to the screen that opened the current one and the arrow is \"Back\" by itself (from a popup to the screen under it: \"Close\"); to any other screen it is still \"Navigate\" / \"Open\". On the image: drag to move it, drag its corner to resize, \"Redraw area\", or \"Match by text\" (drops the drawn area and uses where the button's name is written on the design, following the button when the designer moves it; when the name is no text there, it says why and puts the cursor in \"Button name\"). A long Zeplin design (a list that scrolls) is drawn at full length, except a screen that is a list of repeated items (cards or rows built alike and evenly spaced, 3 or more): on a render or when added with \"+ Từ Zeplin\", a new screen folds by itself to the items that fit one screenful (at least one, cut between two items); the buttons below the cut become button rows at the foot of the frame. On an AI render the AI is told which screens are lists (and how many items), so it links the buttons that differ between items as actions by state, never one screen per item. A screen already in the diagram stays as you left it (folded or whole) on a re-render. While editing, a \"Thu gọn\" (Fold) button at the end of its first screenful shows only its top (up to the list's cut when there is one, else one phone high; faded at the bottom), and \"Mở rộng\" (Expand) shows it whole again. That screen's panel has \"Whole / Folded\" and a \"Height (px)\" box to pick exactly how much to show (design px). Drag the frame's bottom edge (a bar shows on hover) to pick the height with the mouse. Buttons in the hidden part become rows at the bottom of the frame (past 3, the third row stands for the rest as \"+n buttons in the hidden part\"; pick each one under \"Tap areas\" in the panel); Prototype still shows the whole screen; the fold is saved in the file and kept across re-renders. A tap area's panel has a \"Button name\" box to name / rename it (double-clicking the area on the map renames too). A newly dragged area is called \"Nút mới\" with the cursor already in \"Button name\": type a name and press Enter (the arrow keys move the area again); click a text on the image instead of dragging and the area takes that text as its name. Move a screen by dragging its title bar or with the arrow keys (Shift: bigger steps); arrow keys also move the selected area. Select a screen, button or arrow: only it and the screens / arrows linked to it stay bright, the rest dims; Esc clears the selection. Zoomed out, arrow labels and the title bar over a design image are hidden to keep the map clean (zoom in, hover the screen or select it to see them); link dots only show on the screen under the pointer or selected. While \"+ Tap area\" is on, the texts of the design have a dashed outline: click one to make it the button (its words, its place), with no box to draw and no name to type; dragging still draws by hand.",
+      "After an edit the bar below says there are unsaved changes. A draft (an AI render not saved yet included) lasts for the day only: from the next day it is removed by itself, and opening the flow shows the file on the ticket. No file on the ticket yet (the flow is only a draft): the bar has the draft status, \"Discard draft\" and \"Save to ticket\" for the first write. Editing a flow that already has a file: the bar only has \"Update\"; the draft line only shows when saving the draft failed, with \"Retry\". Press ✕ at the end of the bar to hide it (the draft is kept; the small line below has \"Update the ticket\" to bring it back).",
+      {
+        "t": "The ↻ button (only once there is a flow): \"Render again with AI\". The ← button on the left closes UI flow. The download icon: \"Download the HTML file\" (the flow on screen, an unsaved draft included). The bin icon: \"Delete UI flow\" (removes the file from the ticket after asking; unsaved: \"Discard render\")",
+        "at": "Đóng"
+      },
+      "There is no token limit and nothing is cut any more: a risky render (many tokens, many screens, unclear flow) shows a warning with the tokens per source; press \"Xem dòng\" on the unclear-flow warning to see each line the code could not draw and why (screen name not matching a Zeplin link title, matching several screens, wrong format); fix it in the ticket as `Màn A -- \"Nút\" --> Màn B` so the code draws it and the AI need not guess. Each line has a #number: unclear lines start unticked (the AI draws only what is clear), tick one to have the AI draw that link too, press #number or the whole row to put the line in the AI box; \"Tick all / Untick all\" at the top of each group switches the whole group; links in a line open in the browser. UI flow defaults to \"Chỉ màn hình\" (0 tokens). With \"Màn + liên kết\", render always opens the pre-check first: it counts tokens when it opens (with a waiting scene), and holds the model / effort at the bottom of the box, beside Cancel and Render; the platform picked before is named there. The \"Split into n parts\" card shows the tokens of all parts together (each part sends the ticket again). Zeplin screens of the other platform (web / desktop screens when drawing mobile, mobile screens when drawing web) are not sent and not shown in the box: the token and screen counts and the warnings (flow lines linking to those screens included) cover only the chosen platform. The same holds when you press render while the box is still counting: the render leaves out the other platform's screens itself, from the same Zeplin reads, without waiting for the count. A line naming a screen has a button to open it in Zeplin. The \"Hỏi AI\" panel on the right of the warning is for questions, links or more flow description; its answers and the unticked lines go with the render on \"Render kèm phần đã làm rõ\"; press \"Phân tích bằng AI\" for a light model to say why and what to do (it reads the numbers only, never the ticket), the \"Build screens\" card for a 0-token version, or \"Render bằng AI\" for the AI to read the whole ticket. It only refuses an input past every model's context. Beside the tokens is an estimated price (~$) from recent runs on that same model. \"Render lại bằng AI\" defaults to \"Chỉ vẽ phần mới\": the current links stay and the AI only adds what is new, for far fewer tokens; untick it to redraw everything. A ticket with more than 12 screens gets \"Chia {n} phần\" in the warning: parts of 12 screens, each with the full AC, run 3 at a time and joined into one diagram (faster, fewer errors on a light model, more input tokens in total); if one part fails the whole render fails so it can be retried. Esc only cancels what you are doing in the diagram (drops the selection, stops drawing a frame, closes an open form); a press outside the \"+ Từ Zeplin\" panel (the toolbar aside) closes it too; only the ✕ button closes UI flow. If the Zeplin design changed after the last Update (size, texts on a screen, or a new version pushed by the designer with the same texts), the bottom bar names those screens with an \"Cập nhật\" button to embed the new images in the file; for new screens / buttons use \"Render lại bằng AI\" with \"Chỉ vẽ phần mới\". Only files saved from this version on can be compared; the Zeplin version is compared only for files updated after this feature arrived. Prototype: a screen opened from several screens (A → C, B → C) has a back link to each; \"Quay lại\" returns to the one that opened it on the path walked. A phone-wide screen (375 dp, give or take 20%: 300 to 450) is always mobile, even when its Zeplin project is set to Web. Any other screen goes by the platform of its Zeplin project (Web / macOS is web, iOS / Android is mobile): a narrow dialog of a web page is still web, a tablet screen of an app is still mobile. Only when the project platform could not be read is it guessed from the size: a landscape screen 768 px wide or more, or any screen 1300 px wide or more, is web, and a long screen of a project that holds web / desktop sized screens counts as web too."
+    ],
+    "keys": "ui flow uiflow screens tap flow prototype zeplin render ai update file on ticket find screen note from zeplin re-arrange tap area start screen redo review changes long screen scrolling page click text ai agent reads flow web frame browser window"
+  },
+  {
+    "id": "yt-hoi-lai-trong-nhom",
+    "tab": "youtrack",
+    "area": "Ticket details › Mentioned on Telegram",
+    "title": "Ask again in the group from a ticket",
+    "what": "Under each Telegram message mentioning the ticket there is an \"Ask in the group\" link: it opens that group's Q&A with the new question box prefilled \"About <ID> <title>: \". Add the @name of the person to ask, then Post so the question gets a #QA code and is tracked.",
+    "how": [
+      "Open a ticket and look at the \"Mentioned on Telegram\" section",
+      "Click \"Ask in the group\", finish the question with an @name, then Post"
+    ],
+    "keys": "ask again in group qa telegram ticket tag ask someone"
+  },
+  {
+    "id": "yt-bao-lai-moi-noi",
+    "tab": "youtrack",
+    "area": "Report back",
+    "title": "Follow up when a ticket moves to Fixed / Done (even while on Telegram)",
+    "what": "When one of your tickets that someone asked about on Telegram moves to Fixed / Done, the app reminds you to get back to the person who asked. The server checks every 3 minutes even with no page open (the same round wakes tags snoozed until a ticket is done); the list is kept on this machine, so every browser sees the same one. Reply to that message (on the web or your phone) and the item is done; click X to skip it.",
+    "how": [
+      "A notice at the bottom of the screen shows \"<ID>: …\"",
+      "Open the message in To do to write your follow-up"
+    ],
+    "keys": "follow up fixed done notification asker telegram ticket"
+  },
+  {
+    "id": "yt-chuyen-ticket-jk",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Previous / next ticket",
+    "what": "Step through the tickets of the list you came from without closing the side panel.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click › \"Next ticket\" (key j)",
+        "at": "Ticket sau"
+      },
+      {
+        "t": "Click ‹ \"Previous ticket\" (key k)",
+        "at": "Ticket trước"
+      },
+      "The \"n/N\" number next to it shows the position in the list"
+    ],
+    "keys": "previous ticket next ticket next previous j k switch ticket"
+  },
+  {
+    "id": "yt-doi-state-priority-assignee",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Change State / Priority / Assignee",
+    "what": "Changes the ticket's State, Priority and Assignee directly on YouTrack (State follows the workflow); the notice has an undo button. For a ticket from another project, the Assignee / QC list is that project's team.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click State (with the ▾ arrow) and pick a new value",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(1) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Click Priority and pick a new value",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(3) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Under Assignee, pick a new person or \"Unassigned\"",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(2) dd button[aria-haspopup]"
+      },
+      "Click undo in the notice if it was a mistake"
+    ],
+    "keys": "change state change priority change assignee workflow undo"
+  },
+  {
+    "id": "yt-gui-binh-luan",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket › Comments",
+    "title": "Post a comment to YouTrack",
+    "what": "Write and post a comment on the ticket right from the dashboard. Type @ to mention a project member (inserts @login, YouTrack notifies them).",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Scroll down and type in the \"New comment\" box (type @ and a few letters of a name to mention someone)",
+        "at": "Bình luận mới"
+      },
+      {
+        "t": "Click \"Send comment\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "comment post comment reply"
+  },
+  {
+    "id": "yt-mention",
+    "tab": "youtrack",
+    "area": "Comments, Create ticket › Description › @",
+    "title": "Tag YouTrack members with @",
+    "what": "Type @ in a ticket's comment box or in the description box when creating a ticket to open the member list (the project's team), keep typing to filter by name or login. Picking a person inserts @login; YouTrack notifies the person mentioned.",
+    "how": [
+      "Type @ and a few letters of the name in the \"New comment\" box or the description box (Create ticket › Manual)",
+      "↑ ↓ to choose, Enter or Tab to insert, Esc to close the list"
+    ],
+    "keys": "tag tag name @ members login youtrack comment description create ticket"
+  },
+  {
+    "id": "yt-ticket-giong",
+    "tab": "youtrack",
+    "area": "Side panel › Ticket",
+    "title": "Similar / related tickets + AI duplicate check",
+    "what": "Lists tickets with similar titles (with a % match); the AI can judge which are duplicates and which are only related, and suggest merging/linking/keeping them apart.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Scroll to the \"Similar / related tickets\" section (only when there are similar titles); click a row to open that ticket",
+      {
+        "t": "Click \"AI duplicate check\"",
+        "at": "AI kiểm tra trùng"
+      }
+    ],
+    "keys": "similar tickets related duplicate ai duplicate check"
+  }
+]

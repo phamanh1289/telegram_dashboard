@@ -1,0 +1,202 @@
+[
+  {
+    "id": "module-switch",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › Telegram / YouTrack",
+    "title": "Chuyển module Telegram / YouTrack",
+    "what": "Hai tab Telegram / YouTrack ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa hai module; tab đang mở được tô sáng, tab bên kia có huy hiệu đỏ báo việc mới: trên tab Telegram = số tin tag ở Việc cần xử lý › Đang chờ (chưa có phiên AI), trên tab YouTrack = số ticket mới giao cho bạn từ lần cuối mở YouTrack (mở YouTrack là xoá); không có ticket mới thì tab YouTrack hiện huy hiệu vàng hổ phách = số ticket của bạn cần xử lý ngay. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
+    "how": [
+      {
+        "t": "Rê chuột vào \"YouTrack\" để xem ticket mới (huy hiệu đỏ) hoặc cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Bấm \"Telegram\" để quay lại Telegram Inbox",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]"
+      }
+    ],
+    "keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay huy hieu do huy hiệu đỏ ticket moi ticket mới tin moi tin mới"
+  },
+  {
+    "id": "ai-quota-pill",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › Hạn mức AI",
+    "title": "Xem hạn mức AI đang dùng",
+    "what": "Nút trên thanh trên cùng hiện linh vật AI và vòng % hạn mức đã dùng (Phiên 5 giờ, 7 ngày), thời gian đặt lại; báo nếu AI chưa cài hoặc chưa đăng nhập. Mặc định (Tự động) là AI đang chạy việc hằng ngày ở trang đang mở; chọn AI khác (Claude, Codex, Agy) ngay trong nút hoặc ở Cài đặt › AI › Tài khoản › \"Hạn mức trên thanh trên cùng\".",
+    "how": [
+      {
+        "t": "Nhìn vòng hạn mức: vòng đầy dần theo % đã dùng, vàng khi đã dùng 70%, đỏ từ 90%; rê chuột xem chi tiết, bấm để mở bảng hạn mức",
+        "at": "Hạn mức AI"
+      },
+      {
+        "t": "Trong bảng: chọn \"Tự động\" hoặc một AI để luôn hiện hạn mức của AI đó; bấm nút xoay để đọc lại hạn mức",
+        "at": "AI hiện hạn mức trên thanh trên cùng"
+      },
+      {
+        "t": "Bấm \"Tài khoản, usage và lịch sử\" để mở trang tài khoản AI",
+        "at": "Tài khoản, usage và lịch sử"
+      },
+      "Trang \"Tài khoản AI\" trượt ra từ bên phải",
+      {
+        "t": "Bấm \"Đóng\" để đóng trang",
+        "at": "Đóng"
+      }
+    ],
+    "keys": "han muc quota usage claude codex antigravity agy gioi han 5h 7 ngay hạn mức ai dang dung doi ai thanh tren cung chon agent"
+  },
+  {
+    "id": "guide-book",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › Hướng dẫn",
+    "title": "Duyệt hướng dẫn mọi tính năng",
+    "what": "Nút bóng đèn trên thanh trên cùng mở danh mục mọi tính năng Telegram / YouTrack / Cài đặt, không cần AI: gõ để lọc ngay, lọc theo khu vực, bấm một tính năng xem cách dùng từng bước rồi \"Chỉ cho tôi trên màn hình\" để app làm sáng từng nút cần bấm. Không tìm thấy thì chuyển câu đang gõ sang Trợ lý biết tuốt để hỏi bằng câu tự nhiên.",
+    "how": [
+      {
+        "t": "Bấm bóng đèn \"Hướng dẫn sử dụng\" trên thanh trên cùng",
+        "at": "Hướng dẫn sử dụng"
+      },
+      "Gõ vào ô tìm hoặc chọn khu vực Telegram / YouTrack / Cài đặt",
+      "Bấm một tính năng để xem các bước, rồi bấm \"Chỉ cho tôi trên màn hình\"",
+      "Không có tính năng khớp: bấm \"Hỏi trợ lý biết tuốt\" để hỏi AI"
+    ],
+    "keys": "huong dan su dung bong den guide help danh muc tinh nang tim tour chi cho toi"
+  },
+  {
+    "id": "guide-bot",
+    "tab": "telegram",
+    "area": "Góc màn hình › Trợ lý biết tuốt",
+    "title": "Hỏi trợ lý biết tuốt về app",
+    "what": "Con bot nổi ở góc màn hình mọi trang là hướng dẫn sử dụng kiêm trợ lý AI dạng chat. Hỏi bằng câu tự nhiên: bot tìm trong hướng dẫn (và đọc chính code của app, chỉ đọc, khi hỏi về rule, giới hạn, vì sao một nút / mục ẩn hay hiện, kèm nguồn), trả lời cách làm theo từng bước, rồi gắn nút dẫn tận nơi: \"Mở …\" mở đúng trang hoặc nhóm Cài đặt, nút tên tính năng chạy tour làm sáng từng nút cần bấm. Hỏi cả việc của bạn (\"còn tin nào chờ?\", \"ticket nào gấp?\", \"đang chờ ai?\"): bot đọc danh sách trang Hôm nay, báo nhanh số việc, việc gấp trước, mỗi việc kèm nút \"Mở …\" mở thẳng tin, ticket, Q&A hay phiên AI đó. Hỏi tiếp được nhiều lượt, bot biết bạn đang ở trang nào; cuộc hỏi giữ nguyên khi chuyển trang. Kéo bot rồi thả ở bất kỳ chỗ nào sát mép màn hình: nó tự bám vào mép gần nhất. Bot xưng \"em\", gọi bạn theo tên YouTrack (không có thì tên Telegram, không nữa thì \"anh/chị\"). Cài đặt › Trợ lý biết tuốt: ẩn / hiện bot, cách hiển thị (Nổi, Cố định bên phải, Trên thanh công cụ), kích thước, vị trí, có đọc code hay không, model / effort riêng cho bot.",
+    "how": [
+      {
+        "t": "Bấm con bot ở góc màn hình (hoặc F1); kéo nó sang góc khác nếu đang che nút",
+        "at": "Hỏi trợ lý biết tuốt"
+      },
+      {
+        "t": "Gõ câu hỏi (vd. \"vì sao không thấy nút Gửi?\") rồi Enter, hoặc bấm một câu gợi ý; đang gõ, các tính năng khớp hiện ngay trên ô hỏi: bấm một cái để app chỉ tận nơi, không cần chờ AI",
+        "at": "Hỏi trợ lý biết tuốt"
+      },
+      "Dưới câu trả lời: bấm \"Mở …\" để tới đúng trang, hoặc bấm tên tính năng để app chỉ trực tiếp trên màn hình; bấm \"Cuộc hỏi mới\" để bắt đầu lại",
+      {
+        "t": "Đổi cách hiển thị, kích thước, vị trí, ẩn bot, tắt đọc code hoặc chọn model / effort cho bot ở Cài đặt › \"Trợ lý biết tuốt\"",
+        "at": "css:a[href^=\"/settings\"]"
+      }
+    ],
+    "keys": "tro ly biet tuot bot huong dan su dung f1 hoi ai chat rule dieu kien an hien vi sao khong thay nut code guide help keo neo goc canh mep cach hien thi noi co dinh ben phai thanh cong cu kich thuoc model effort xung ho ten"
+  },
+  {
+    "id": "ai-account-dialog",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › Hạn mức AI › Tài khoản",
+    "title": "Trang tài khoản AI (Tổng quan / Model / Usage / History)",
+    "what": "Bảng trượt từ phải gom mọi AI (Claude, Codex, Antigravity), mỗi AI một thẻ có linh vật động riêng: đăng nhập, hạn mức đã dùng, tính năng đang dùng AI đó; thêm chọn model/effort, báo cáo chi phí và lịch sử từng lần chạy AI.",
+    "how": [
+      {
+        "t": "Bấm nút hạn mức AI trên thanh trên cùng, rồi \"Tài khoản, usage và lịch sử\"",
+        "at": "Hạn mức AI"
+      },
+      "Tab \"Tổng quan\": mỗi AI một thẻ với đăng nhập/đăng xuất, hạn mức đã dùng (rê vào thời gian để xem giờ đặt lại) và \"Dùng cho\" (tính năng nào chạy bằng AI đó, model/effort gì)",
+      {
+        "t": "Claude và Codex có lượt reset miễn phí của gói: icon vé kèm số lượt hiện cạnh \"Hạn mức đã dùng\" (và sau \"Đang dùng\" ở Cài đặt › AI); bấm vào để xem từng lượt (lượt gồm nhiều reset hiện “×N”), lượt sắp hết hạn lên đầu (còn bao lâu, rê để xem giờ hết hạn); bấm \"Reset ngay\" ở lượt muốn dùng rồi xác nhận để đưa hạn mức về 0%. Claude chỉ báo lượt reset cho Claude CLI bản mới: chạy claude update nếu được nhắc",
+        "at": "Reset ngay"
+      },
+      {
+        "t": "Mở tab \"Model\" để chọn model và effort cho từng tính năng",
+        "at": "Model"
+      },
+      {
+        "t": "Bấm \"Thử model\" để kiểm tra model có trả lời",
+        "at": "Thử model"
+      },
+      {
+        "t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí",
+        "at": "Usage"
+      },
+      {
+        "t": "Chọn \"30 ngày\" để đổi khoảng báo cáo (24 giờ / 7 ngày / 30 ngày)",
+        "at": "30 ngày"
+      },
+      {
+        "t": "Mở tab \"History\" (\"Lịch sử chạy\") xem lịch sử từng lần chạy AI theo ngày (mở sẵn ngày đầu của trang hiện tại), gồm cả request gõ trong Claude Code / Claude Desktop / Codex",
+        "at": "History"
+      },
+      {
+        "t": "Lọc theo AI (Claude / Codex / Agy), chọn số dòng mỗi trang (50 / 100 / 200 / 500) và chuyển trang ở cuối danh sách; nút tải xuống bên cạnh xuất CSV. Dán mã phiên (YT-… của Lịch sử AI YouTrack, REF-… của AI Agent) vào ô \"Tìm ID phiên\" để lọc đúng các lượt của phiên đó (mở sẵn mọi ngày); mở một dòng xem lỗi và session của Claude (transcript ở ~/.claude/projects/*/<session>.jsonl)",
+        "at": "Lọc theo AI"
+      }
+    ],
+    "keys": "tai khoan ai account usage history lich su chay chi phi cost csv model effort thu model đăng nhập claude reset luot reset codex"
+  },
+  {
+    "id": "theme-toggle",
+    "tab": "telegram",
+    "area": "Thanh trên cùng",
+    "title": "Đổi giao diện sáng / tối",
+    "what": "Chuyển nhanh giữa giao diện sáng và tối.",
+    "how": [
+      {
+        "t": "Bấm biểu tượng mặt trăng / mặt trời \"Đổi giao diện sáng / tối\"",
+        "at": "Đổi giao diện sáng / tối"
+      },
+      {
+        "t": "Bấm lần nữa để đổi lại",
+        "at": "Đổi giao diện sáng / tối"
+      }
+    ],
+    "keys": "giao dien sang toi dark mode light mode theme đổi giao diện"
+  },
+  {
+    "id": "lang-toggle",
+    "tab": "telegram",
+    "area": "Thanh trên cùng",
+    "title": "Đổi ngôn ngữ Tiếng Việt / English",
+    "what": "Chuyển nhanh giao diện giữa Tiếng Việt và English.",
+    "how": [
+      {
+        "t": "Bấm biểu tượng ngôn ngữ \"Đổi ngôn ngữ Tiếng Việt / English\"",
+        "at": "Đổi ngôn ngữ Tiếng Việt / English"
+      },
+      {
+        "t": "Muốn theo ngôn ngữ máy: Cài đặt › Chung › Ngôn ngữ › Theo máy"
+      }
+    ],
+    "keys": "ngon ngu language tieng viet english en vi doi ngon ngu"
+  },
+  {
+    "id": "settings-button",
+    "tab": "telegram",
+    "area": "Thanh trên cùng › Cài đặt",
+    "title": "Mở Cài đặt và báo có bản cập nhật",
+    "what": "Mở trang Cài đặt. Khi có bản mới trên GitHub, nút có chấm báo và mở thẳng mục Cập nhật. Bấm lần nữa khi đang ở Cài đặt để quay lại.",
+    "how": [
+      {
+        "t": "Bấm bánh răng \"Cài đặt\"; nếu có chấm nhỏ là có bản cập nhật và trang mở ở mục Cập nhật",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Bấm bánh răng lần nữa để quay lại",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      }
+    ],
+    "keys": "cai dat settings cap nhat update github cham bao bánh răng"
+  },
+  {
+    "id": "sidebar-toggle",
+    "tab": "telegram",
+    "area": "Thanh tiêu đề trang",
+    "title": "Thu gọn / mở rộng menu bên",
+    "what": "Trên máy tính thu menu bên thành thanh hẹp chỉ có biểu tượng (rê chuột để mở tạm); trên điện thoại mở/đóng menu dạng ngăn kéo. Lựa chọn được nhớ trên trình duyệt.",
+    "how": [
+      {
+        "t": "Bấm nút ba gạch \"Thu gọn / mở rộng menu\" ở góc trái thanh tiêu đề",
+        "at": "Thu gọn / mở rộng menu"
+      },
+      "Rê chuột vào thanh hẹp để xem tên nhóm và số tin chờ",
+      {
+        "t": "Bấm lần nữa để mở rộng lại",
+        "at": "Thu gọn / mở rộng menu"
+      }
+    ],
+    "keys": "thu gon menu sidebar mo rong rail an menu hamburger collapse"
+  }
+]

@@ -2,7 +2,6 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
 from telegram_dashboard.auth import LocalGuardMiddleware
 
 HOST, ORIGIN, TOKEN = "127.0.0.1:8765", "http://127.0.0.1:8765", "s3cret-token"

@@ -353,7 +353,7 @@
 @keyframes sk-pop { from { scale: 0; opacity: 0; } }
 .sk-caret { animation: sk-caret 1s steps(1) infinite; }
 @keyframes sk-caret { 50% { opacity: 0; } }
-/* AI vẽ linh vật (MascotDraw in settings.tsx): the sketch draws itself stroke by stroke, holds, fades, starts over */
+/* AI vẽ linh vật (MascotDraw in features/settings/components/mascot.tsx): the sketch draws itself stroke by stroke, holds, fades, starts over */
 .mascot-sketch { stroke-dasharray: 1; stroke-dashoffset: 1; animation: mascot-sketch 2.6s ease-in-out infinite; }
 @keyframes mascot-sketch { 45%, 80% { stroke-dashoffset: 0; opacity: 1; } to { stroke-dashoffset: 0; opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .mascot-sketch { animation: none; stroke-dashoffset: 0; } }

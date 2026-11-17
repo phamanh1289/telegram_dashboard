@@ -1,0 +1,417 @@
+[
+  {
+    "id": "msg-open-reply",
+    "tab": "telegram",
+    "area": "Message list › Message row",
+    "title": "Open the reply page",
+    "what": "Click anywhere on a message row (except links/buttons) to open the \"Reply\" page: the group conversation (the tag highlighted in place and scrolled to) with the composer on the left, the AI assistant and tools on the right.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click anywhere on a message row (except links / buttons) to open the reply panel",
+        "at": "css:li[data-testid=\"message\"]"
+      },
+      "Or select the message with j/k and press r"
+    ],
+    "keys": "reply open reply panel click message compose reply"
+  },
+  {
+    "id": "msg-done",
+    "tab": "telegram",
+    "area": "Message row › Done",
+    "title": "Mark Done / Reopen",
+    "what": "Marks a tag as handled (no reply needed / handled elsewhere) and drops a reaction on Telegram; done messages can be reopened. A notice offers \"Undo\".",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click the double-check \"Done\" button on a message (or select it and press x).",
+        "at": "Xong"
+      },
+      "The notice shows \"Undo\" in case you clicked by mistake.",
+      "The #QA… Q&A named in the message and the AI Agent sessions set on it follow. A message once sent to an AI Agent session (attached, Check vs BE) whose session is still Doing: that session turns Done too, with its other attached messages and its Q&A; reopening the message leaves the session Done.",
+      {
+        "t": "Pick a group in the sidebar to see its messages again.",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click the \"Done\" tab.",
+        "at": "Đã xử lý"
+      },
+      {
+        "t": "Click the circular arrow \"Reopen\" button to mark it unhandled.",
+        "at": "Mở lại"
+      }
+    ],
+    "keys": "done handled reopen mark x reaction"
+  },
+  {
+    "id": "msg-done-no-react",
+    "tab": "telegram",
+    "area": "Message row › Done (Shift+click)",
+    "title": "Done without a reaction",
+    "what": "Marks as handled without dropping a reaction on Telegram.",
+    "how": [
+      "Use it to mark something done without leaving a reaction on Telegram.",
+      {
+        "t": "Hold Shift and click the message's \"Done\" button (or select it with j/k and press Shift+x)",
+        "at": "Xong"
+      }
+    ],
+    "keys": "done no reaction silent mark done"
+  },
+  {
+    "id": "msg-snooze",
+    "tab": "telegram",
+    "area": "Message row › Snooze",
+    "title": "Snooze a message (remind me later)",
+    "what": "Hides the message from To do and brings it back after 1 hour, 3 hours or tomorrow at 9:00; a snoozed message shows \"remind <time>\". There is also \"Until someone replies\" (it comes back when someone replies to this message or to your reply) and \"Until VA-123 is done\" when the message mentions a ticket (it comes back when the ticket moves to Fixed / Done); both still come back on their own after 7 days.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click the alarm clock icon \"Snooze\" (hover the message's Done button to show it)",
+        "at": "Hoãn"
+      },
+      {
+        "t": "Pick \"1 hour\", \"3 hours\" or \"Tomorrow 9:00\".",
+        "at": [
+          "1 giờ",
+          "3 giờ",
+          "Sáng mai 9:00"
+        ]
+      },
+      "To cancel: open the Snooze menu again and click \"Unsnooze\", or click \"Undo\" in the notice."
+    ],
+    "keys": "snooze remind later unsnooze 1 hour 3 hours tomorrow morning"
+  },
+  {
+    "id": "msg-remind-later",
+    "tab": "telegram",
+    "area": "Tag › Remind me later",
+    "title": "Remind me later (reopen a handled tag)",
+    "what": "Replied but still need to check back: pick a time in \"Remind after sending\" in the reply box before Send, or on a done tag open ⋯ › \"Remind me later…\". The tag is hidden and returns to To do at the chosen time (1 hour, this afternoon, tomorrow 9am, next week). When the reply promises a follow-up (\"let me check and get back\", \"will send this afternoon\", \"I'll do it tomorrow\"…), \"Remind after sending\" picks a fitting time by itself; change it or pick No reminder if not needed.",
+    "how": [
+      "In the reply box: pick a time in \"Remind after sending\", then Send",
+      "Or on a done tag: ⋯ › Remind me later… › pick a time"
+    ],
+    "keys": "remind me later check again reopen remind follow up"
+  },
+  {
+    "id": "msg-ignore-sender",
+    "tab": "telegram",
+    "area": "Tin tag › Hoãn › Luôn bỏ qua",
+    "title": "Always ignore a person or keyword",
+    "what": "Tags from a listed sender or containing a listed keyword go straight to Handled, with no notification; an ignored sender's messages also stay out of Briefing / Digest. See, add and remove them in Settings › Telegram › Always ignore: each rule is a chip coloured by kind, × removes it (tags already cleared don't reopen).",
+    "how": [
+      "From a message: open its Snooze menu and pick “Always ignore {name}” (the notice has Undo)",
+      "In Settings › Telegram › Always ignore: type in “Sender name…” and pick the person, or type in “Keyword” and press Enter",
+      "Click × on a chip to get notified again"
+    ],
+    "keys": "luon bo qua always ignore mute silence block sender keyword rule notifications"
+  },
+  {
+    "id": "msg-priority-sender",
+    "tab": "telegram",
+    "area": "Tag › Snooze › Always prioritize",
+    "title": "Always prioritize a person",
+    "what": "The opposite of \"Always ignore\": this person's tags always go to the top of To do (after pinned ones), carry a yellow \"Priority\" mark and count as overdue at half the usual threshold. Remove it in Settings › Telegram › Always ignore (× on the chip).",
+    "how": [
+      "Open a tag's Snooze menu and choose \"Always prioritize {name}\"",
+      "The notice at the bottom of the screen has an Undo button"
+    ],
+    "keys": "priority always prioritize sender rules vip"
+  },
+  {
+    "id": "msg-auto-be",
+    "tab": "telegram",
+    "area": "Tag › Snooze › BE automation",
+    "title": "BE automation: AI sessions take BE's answers by themselves",
+    "what": "Two per-sender rules so you no longer pass answers on by hand. \"Pass {name}'s answers on to the AI session\": when that person answers a question an AI Agent session posted (found up the reply chain by its #REF-… or #QA… code), that session goes on with the answer attached: it does what is now clear and drafts the next questions for the rest; it edits code only if the session was ever allowed to, a running session waits for its turn to end, a Done one is left alone. An answer in a Q&A thread no open session holds opens a read-only session (with the thread's question attached) in the project you last picked in Assign AI Agent when the rule was set; the thread's later answers go on in that session. \"Always assign {name}'s messages to AI Agent\": each new message from that person opens a read-only session in the project you picked last in Assign AI Agent. Every session answer ends with a Status (Awaiting reply / Ready for Done / Needs you), shown in the AI Agent list and Today. Nothing is sent to Telegram by itself. Remove the rules in Settings › Telegram › Always ignore. Dev role only. An automatic turn uses the session's model at medium effort at most. When Claude's quota (5-hour or weekly window) reaches 80%, the BE loop pauses: answers wait in a queue, the session notes why, and they run once quota is back; turns you type still run. The queue is saved, so restarting the app does not lose it.",
+    "how": [
+      "Open the Snooze menu of a message from the BE bot and choose \"Pass {name}'s answers on to the AI session\" or \"Always assign {name}'s messages to AI Agent\"",
+      "The notice at the bottom of the screen has an Undo button"
+    ],
+    "keys": "be automation auto relay pass answers ai session agent bot be confirm status awaiting reply ready for done"
+  },
+  {
+    "id": "msg-pin",
+    "tab": "telegram",
+    "area": "Message row › Pin",
+    "title": "Pin / Unpin a message",
+    "what": "Pins a message to the top of the list and keeps it in \"Pinned\" (top of the To do page), even after it is handled.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover (or click) the ⋯ \"More actions\" button on a tag row to open the menu",
+        "at": "Thêm thao tác"
+      },
+      {
+        "t": "Click \"Pin to top\" (key P)",
+        "at": "Ghim lên đầu"
+      },
+      {
+        "t": "Click \"Pinned\" at the top of the To do page to see the message you just pinned.",
+        "at": "Đã ghim"
+      },
+      {
+        "t": "To unpin: open the ⋯ menu again and click \"Unpin\".",
+        "at": "Bỏ ghim"
+      }
+    ],
+    "keys": "pin unpin keep message on top"
+  },
+  {
+    "id": "msg-context",
+    "tab": "telegram",
+    "area": "Message row › Context",
+    "title": "See the context (messages before/after)",
+    "what": "Shows the messages before and after the tag in the group, read live from Telegram (must be connected).",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click the two-bubble icon \"Context\" (hover the message's Done button to show it)",
+        "at": "Ngữ cảnh"
+      },
+      "The messages before and after appear right under the message (Telegram must be connected).",
+      {
+        "t": "Click \"Context\" again to hide it.",
+        "at": "Ngữ cảnh"
+      }
+    ],
+    "keys": "context messages before after around conversation"
+  },
+  {
+    "id": "msg-open-telegram",
+    "tab": "telegram",
+    "area": "Message row › Open Telegram",
+    "title": "Open the message in Telegram",
+    "what": "Opens that exact message in the Telegram app (basic groups can only be opened as a group on Telegram Web).",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover (or click) the ⋯ \"More actions\" button on the message row to open the menu",
+        "at": "Thêm thao tác"
+      },
+      {
+        "t": "Click \"Open in Telegram\" (key O); for a basic group the item reads \"Open the group in Telegram Web\"",
+        "at": [
+          "Mở trong Telegram",
+          "Mở nhóm trên Telegram Web"
+        ]
+      },
+      {
+        "t": "For the web version: click \"Open with Telegram Web\" just below",
+        "at": "Mở bằng Telegram Web"
+      }
+    ],
+    "keys": "open telegram open in telegram app telegram web message link menu"
+  },
+  {
+    "id": "msg-row-actions-visibility",
+    "tab": "telegram",
+    "area": "Message row › Action buttons",
+    "title": "Show the action buttons on messages",
+    "what": "By default only the Done button is always shown; Snooze, Context, Check vs BE, the paperclip (attach to an AI session), # (copy message ID) and ⋯ (Pin to top, Open in Telegram…) sit behind it and appear on hover; you can make them always visible (touch screens always show them).",
+    "how": [
+      "By default only the Done button is always shown; hover it to reveal the rest.",
+      {
+        "t": "Open Settings in the top bar.",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Choose the \"Telegram\" section.",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Under \"Message action buttons\" click \"Always\" to keep the buttons visible.",
+        "at": "css:[aria-label=\"Nút thao tác trên tin\"] button:last-child"
+      }
+    ],
+    "keys": "action buttons show hide hover always show row actions"
+  },
+  {
+    "id": "msg-copy-id",
+    "tab": "telegram",
+    "area": "Message row › Message ID",
+    "title": "Copy a message ID",
+    "what": "The # button in the message row's action strip copies the message ID (chat_id/message_id) in one click: paste it into an AI session's message box (Done sessions too) to attach the message, or use it in a bug report.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover the message row and click the # button next to the paperclip in the action strip on the right.",
+        "at": "css:[data-testid=\"message\"] button[aria-label=\"Chép ID tin\"]"
+      },
+      "A \"Copied ID …\" notice appears; paste it into an AI session or a bug report."
+    ],
+    "keys": "copy id message id bug report"
+  },
+  {
+    "id": "msg-jump-reply",
+    "tab": "telegram",
+    "area": "Message row › reply #",
+    "title": "Jump to the message being replied to",
+    "what": "For a message that replies to another, click to scroll to the original and highlight it (if it is in the list).",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click the \"reply #<number>\" line above the message text to scroll to the original (only on messages replying to another).",
+        "at": "css:[data-testid=\"message\"] button[aria-label^=\"Tới tin gốc\"]"
+      }
+    ],
+    "keys": "jump to original reply to original message"
+  },
+  {
+    "id": "msg-indicators",
+    "tab": "telegram",
+    "area": "Message row › Status labels",
+    "title": "Message status labels (waiting, overdue, edited, needs retest)",
+    "what": "Each message shows how long it has waited \"(waiting N hours)\" (amber past the overdue threshold), \"Done\", \"remind <time>\" while snoozed, \"(edited)\"; with the QA role it shows \"Retest\" when a message says a ticket you QC is fixed. Images show inline, click to enlarge; long messages have \"Show more\" / \"Collapse\".",
+    "how": [
+      "See the first line of each message: \"(waiting N hours)\", \"remind <time>\", \"(edited)\", \"Retest\" (QA); click images to enlarge.",
+      "Long messages in To do have \"Show more\" / \"Collapse\".",
+      {
+        "t": "To change the overdue threshold, open Settings in the top bar.",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Choose the \"Telegram\" section.",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Under \"Queue\" pick an \"Overdue threshold\" (3/6/… hours).",
+        "at": "css:[aria-label=\"Ngưỡng quá hạn\"] button"
+      }
+    ],
+    "keys": "waiting overdue edited needs retest qc status labels show more show less images"
+  },
+  {
+    "id": "msg-ticket-chip",
+    "tab": "telegram",
+    "area": "Message text › Ticket ID",
+    "title": "YouTrack ticket chips in messages",
+    "what": "A ticket ID (e.g. VA-123) of a known YouTrack project becomes a chip; hover or Tab to the chip for a quick look at the ticket (State, Priority, Assignee, QC, Updated) with two links \"Open in the YouTrack page\" and \"Open in YouTrack\"; Esc closes it. AI Agent session results (AI Agent page, Đối chiếu BE, Trợ lý AI) show ticket IDs as the same chip. Clicking a chip (also in Today, related tickets when replying, ⌘K “Open ticket”) opens the ticket detail right there, without leaving the page; Esc closes it; ⌘/Ctrl + click opens it in the YouTrack page. Links, @mentions and `code` are styled too.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover a ticket ID (e.g. VA-123) in a message to see its title, state and assignee; click to open the ticket.",
+        "at": "css:[data-testid=\"message\"] a[href^=\"/youtrack/?ticket=\"]"
+      }
+    ],
+    "keys": "ticket chip youtrack ticket id va-123 state assignee link tag"
+  },
+  {
+    "id": "msg-task-result",
+    "tab": "telegram",
+    "area": "Message row › Task",
+    "title": "AI Agent results right on the message",
+    "what": "Right after the message time come labels for what has been done with it: the AI session (\"AI working…\" / \"AI answered\"), Check vs BE, Sent (attached to a session), the #REF session code, #QA, Draft, Retest. The most pressing label comes first (AI done > Check vs BE done > Retest > working > Sent > #REF / #QA > Draft) and every label spells itself out; several AI sessions in the same state share one label with \"+N\" (click opens the latest).",
+    "how": [
+      "Shown only on messages assigned to the AI.",
+      {
+        "t": "Click the AI session label to open the session detail on the AI Agent page (Use as reply draft is there); hover the label to reveal copy session code; delete the session on the AI Agent page.",
+        "at": "AI đã trả lời"
+      },
+      "The copy session code button copies #REF-…; paste it into a group message and the next message attaches to that session (a read-only session gets \"Allow code edits\" ticked). Hover the paperclip on a reply: the app reads the whole reply chain (the original of the original…) to find #REF-… and #QA…. A message carried by a session turn that was actually sent (attached then Enter, or the assigned tag) shows \"Sent\" in every message list (tags, Q&A); click it to open the session."
+    ],
+    "keys": "task result session code ref open session use result as draft reply ai agent"
+  },
+  {
+    "id": "deep-thinking",
+    "tab": "telegram",
+    "area": "Message row, Briefing › Check vs BE",
+    "title": "Check vs BE (check BE's answer against the code)",
+    "what": "The AI reads the question sent to BE and BE's answer, then inspects the project code: is it done right, what is missing, what needs fixing. Start it from the brain button on any message (that message is the answer; the question is picked for you: the message it replies to, otherwise the latest message from someone else), or the \"Check code\" button under Settled / Changes in Briefing and Summary, or the \"Check vs BE\" button on the Settled bar of a Q&A thread (question = the question message, answer = the decided message). The dialog stays open, showing the AI inspecting the code (the current step) and then the result in place; close it any time, the session keeps running in the background under AI Agent › Check vs BE; the message gets a \"Checking vs BE\" label, then \"View BE check\", click the label to open the result. The result uses the same template as Give to AI Agent sessions (Summary · Current state · To do · Risks · Questions to ask; several topics open with a ✅ / ⚠️ / ❌ / ⏳ table), and Questions to ask points have copy and send-to-group buttons as in AI Agent. Dev role only.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click the brain icon \"Check vs BE\" on a reply (hover to show it), or \"Check code\" under Settled in Briefing, or \"Check vs BE\" on the Settled bar of a Q&A thread.",
+        "at": "Đối chiếu BE"
+      },
+      {
+        "t": "Check the \"1 · Question\" card; if it is wrong, click \"Change question\" and pick again.",
+        "at": [
+          "Đổi tin hỏi",
+          "css:ul[aria-label=\"Chọn tin hỏi\"] button"
+        ]
+      },
+      {
+        "t": "Click the Project box and pick a folder (or \"Add folder…\" at the end of the menu).",
+        "at": "css:button[aria-label=\"Dự án tham chiếu cho AI\"]"
+      },
+      {
+        "t": "Click \"Extra request\" if you want to narrow it down.",
+        "at": "Yêu cầu thêm"
+      },
+      {
+        "t": "Click \"Analyze\"; watch the AI inspect the code and read the result right in the dialog (the Stop button is in the request box; when done there is \"Check again\"). If you close early, click \"View\" in the notice or the label on the message to open the result later.",
+        "at": "Phân tích"
+      }
+    ],
+    "keys": "deep thinking analyze be cross-check backend confirm trace code brain"
+  },
+  {
+    "id": "digest-be-filter",
+    "tab": "telegram",
+    "area": "Briefing › With BE · Group page › Summary",
+    "title": "With BE: Q&A with BE grouped by topic",
+    "what": "The AI marks the questions / answers / decisions with BE (API, fields, data) and groups them by topic: each card is a topic with a summary and a status \"Awaiting reply\" / \"Settled\" (waiting cards first); inside a card, each question (with who asked) is paired with BE's answer, or \"Awaiting BE's answer\" if there is none, with the background below: the issue and how it was settled. Each line names who raised it (if the AI left it blank, the sender of the first message; items carried over from an older summary may lack a name, click \"Re-read 7 days\" to get it). In Briefing, click \"Source · n\" under a line to read the messages the AI relied on (with sender and time; the asker's messages are highlighted \"asker\"); on a group's Summary page click the #id chip to jump to the message. An older summary without pairs: click Summarize again. When BE just replied to a question that was not summarized again yet, the card shows \"New reply\" with the reply (click Summarize again for the AI to settle it), and that question no longer counts as waiting; when the person who must answer writes after the question without using reply, the card shows \"Maybe answered\" (only a guess, still counted as waiting). The number on the tab counts only topics still waiting on BE. Items marked handled, or that you answered on Telegram, leave With BE by themselves. In Briefing it is the \"With BE\" tab across all groups; on a group's Summary page, choose \"With BE\". Summaries made before this feature have no BE items: the With BE tab shows a \"Re-read 7 days\" button for the AI to read again and group by topic. Dev role only (QA / PO see these items in the To confirm / Settled tabs).",
+    "how": [
+      {
+        "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\"",
+        "at": "Briefing"
+      },
+      "Pick the \"With BE\" tab: each group shows its topic cards",
+      "Click \"Source · n\" under a line to see the original messages",
+      "Click the circle at the end of a line to mark it handled (click \"Undo\" in the notice to bring it back)",
+      "Or on a group's Summary page, choose \"With BE\" above the result"
+    ],
+    "keys": "be backend filter be with be api field confirm be tab be discussion source messages asker nothing missed topics cards grouped questions awaiting answer decided hide handled items re-read 7 days no be tab"
+  },
+  {
+    "id": "deep-bulk",
+    "tab": "telegram",
+    "area": "Briefing › With BE · Group page › Summary",
+    "title": "Check the code per topic discussed with BE",
+    "what": "Inspects the project code against each topic discussed with BE (the button at the top of the tab sends the topics BE has answered / settled, up to 20 topics at a time; topics still waiting on BE are checked from their own card): settled topics are checked ✅ adapted / ⚠️ off / ❌ not done, topics still waiting on BE get ⏳ what the code does now and what to change depending on the answer; with path:line evidence. It runs in the background as a Read only session under AI Agent › Check vs BE. Each topic card has an ID #… (the message that opened the topic, click to jump to it in Summary): it stays the same when the AI re-summarizes or renames the topic, so the check result stays on the right topic. When done, each topic card in With BE shows a verdict label \"Code: adapted / off / not done / waiting on BE\" (click to open the session) and the top of the tab totals the verdicts; a topic with new messages since the check shows \"old\", so check it again. A topic that comes out ✅ adapted (with no new messages) has its items marked handled by themselves and leaves With BE; marking a Check vs BE session (AI Agent) Done also closes the topics it checked, along with their tags and Q&A; click \"Undo\" in the notice or untick to reopen. Leaving the page while it runs: a notice with the verdict totals appears when done (plus a system notification if enabled in Settings and the tab is hidden). Reopening the Check code page: if it is running you see the AI scene again; if there is a result there is a \"Last check\" line with a \"View table\" button, and a \"Skip N adapted topics\" button to recheck only the rest. Handled items are not sent. Dev role only.",
+    "how": [
+      "Open Briefing › the \"With BE\" tab (or a group's Summary page › \"With BE\")",
+      "Click \"Check code for N answered topics\" to run every topic BE answered / settled in the group, or \"Check code\" on one card (waiting cards too)",
+      "The Check code page opens: deselect topics you don't need, pick the project for the AI to read, add instructions if needed, then click \"Check N topics\"",
+      "While it runs, the page shows the AI going through the question / BE's answer and the code file it is reading; you can leave the page, the session keeps running in the background",
+      {
+        "t": "When done, the check table appears right on the page; click \"Follow up in AI Agent\" to ask more (also under AI Agent › Check vs BE)",
+        "at": "AI Agent"
+      }
+    ],
+    "keys": "check code bulk be cross-check many items batch check code be status table adapted off not done"
+  }
+]

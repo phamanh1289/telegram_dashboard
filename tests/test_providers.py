@@ -1,7 +1,8 @@
 import json
 
 from telegram_dashboard.config import Settings
-from telegram_dashboard.providers import items, split_session, task_cmd
+from telegram_dashboard.provider_cmds import task_cmd
+from telegram_dashboard.providers import items, split_session
 
 
 def run(p, events):
@@ -134,7 +135,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
 def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, monkeypatch):
     import json
 
-    from telegram_dashboard.providers import ask_cmd
+    from telegram_dashboard.provider_cmds import ask_cmd
 
     monkeypatch.setenv("HOME", str(tmp_path))
     s = Settings(root=tmp_path)
@@ -154,8 +155,8 @@ def test_an_answer_runs_commands_only_in_the_sandbox_and_never_edits(tmp_path, m
 
 
 def test_codex_reads_no_secrets_and_windows_claude_gets_no_shell(tmp_path, monkeypatch):
-    from telegram_dashboard import providers
-    from telegram_dashboard.providers import ask_cmd, task_cmd
+    from telegram_dashboard import provider_cmds
+    from telegram_dashboard.provider_cmds import ask_cmd, task_cmd
 
     monkeypatch.setenv("HOME", str(tmp_path))
     s = Settings(root=tmp_path)
@@ -169,7 +170,7 @@ def test_codex_reads_no_secrets_and_windows_claude_gets_no_shell(tmp_path, monke
             assert f'"{hidden}"="none"' in fs
         assert ('":workspace_roots"={"."="write"}' in fs) is write
     # Claude where it has no sandbox (Windows): an edit turn edits files but gets no Bash, sandboxed or not
-    monkeypatch.setattr(providers, "SHELL_OK", False)
+    monkeypatch.setattr(provider_cmds, "SHELL_OK", False)
     c = task_cmd(s, "claude", "edit", "sid", False, "", "")
     assert "Bash" not in c[c.index("--allowedTools") + 1] and c[c.index("--disallowedTools") + 1].endswith(",Bash")
     assert "--settings" not in c and c[c.index("--permission-mode") + 1] == "acceptEdits"
@@ -178,7 +179,7 @@ def test_codex_reads_no_secrets_and_windows_claude_gets_no_shell(tmp_path, monke
 
 
 def test_antigravity_no_tool_answers_get_no_tools(tmp_path, monkeypatch):
-    from telegram_dashboard.providers import ask_cmd
+    from telegram_dashboard.provider_cmds import ask_cmd
 
     monkeypatch.setenv("HOME", str(tmp_path))
     s = Settings(root=tmp_path)
@@ -188,7 +189,7 @@ def test_antigravity_no_tool_answers_get_no_tools(tmp_path, monkeypatch):
 
 
 def test_a_failed_run_says_why_in_the_clis_words():
-    from telegram_dashboard.ai import cli_reason
+    from telegram_dashboard.ai_run import cli_reason
 
     gemini = (b"Warning: 256-color support not detected.\n"
               b"An unexpected critical error occurred:IneligibleTierError: This client is no longer supported\n"
@@ -201,7 +202,7 @@ def test_a_failed_run_says_why_in_the_clis_words():
 def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, monkeypatch):
     import asyncio
 
-    from telegram_dashboard import providers
+    from telegram_dashboard import provider_accounts
 
     data = {"groups": [{"name": "Gemini Models", "buckets": [
         {"window": "weekly", "remaining_fraction": 0.98, "reset_time": "2026-11-05T02:19:33Z"},
@@ -210,8 +211,8 @@ def test_antigravity_quota_is_the_used_share_of_each_groups_windows(tmp_path, mo
     async def out(cmd, *a, **k):
         return 0, json.dumps({"command": {"name": "usage", "data": data}}).encode(), b""
 
-    monkeypatch.setattr(providers, "run_cli", out)
-    got = asyncio.run(providers._agy_quota(Settings(root=tmp_path)))["usage"]
+    monkeypatch.setattr(provider_accounts, "run_cli", out)
+    got = asyncio.run(provider_accounts._agy_quota(Settings(root=tmp_path)))["usage"]
     assert got == [{"label": "5h · Gemini", "percent": 25.0, "resets_at": "2026-11-03T10:19:36Z"},
                    {"label": "1w · Gemini", "percent": 2.0, "resets_at": "2026-11-05T02:19:33Z"}]  # fmt: skip
 
@@ -220,37 +221,37 @@ ZEP = {"command": "npx", "args": ["zeplin-mcp"], "env": {"ZEPLIN_TOKEN": "s3cret
 
 
 def test_ask_cmd_with_zeplin_allows_only_its_read_tools(settings):
-    from telegram_dashboard import providers
+    from telegram_dashboard import provider_cmds
 
-    cmd = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    cmd = provider_cmds.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
     assert "--strict-mcp-config" in cmd and "--mcp-config" in cmd
-    assert cmd[cmd.index("--allowedTools") + 1] == providers.ZEPLIN_TOOLS
+    assert cmd[cmd.index("--allowedTools") + 1] == provider_cmds.ZEPLIN_TOOLS
     assert cmd[cmd.index("--tools") + 1] == "" and cmd[cmd.index("--permission-mode") + 1] == "default"
     assert "s3cret" not in " ".join(cmd)  # token only in the env
-    assert cmd[cmd.index("--disallowedTools") + 1] == providers.ZEPLIN_DENY  # denied, never allowed
+    assert cmd[cmd.index("--disallowedTools") + 1] == provider_cmds.ZEPLIN_DENY  # denied, never allowed
     assert "download_layer_asset" not in cmd[cmd.index("--allowedTools") + 1]
     # the project read command keeps its own tools, Zeplin's are added to them
-    p = providers.ask_cmd(settings, "claude", tools=True, read_dir=None, model="m", effort="low", zeplin=ZEP)
-    assert p[p.index("--allowedTools") + 1] == f"Read,Grep,Glob,Skill,{providers.ZEPLIN_TOOLS}"
-    assert p.count("--disallowedTools") == 1 and providers.ZEPLIN_DENY in " ".join(p)
+    p = provider_cmds.ask_cmd(settings, "claude", tools=True, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    assert p[p.index("--allowedTools") + 1] == f"Read,Grep,Glob,Skill,{provider_cmds.ZEPLIN_TOOLS}"
+    assert p.count("--disallowedTools") == 1 and provider_cmds.ZEPLIN_DENY in " ".join(p)
 
 
 def test_ask_cmd_without_zeplin_is_unchanged(settings):
-    from telegram_dashboard import providers
+    from telegram_dashboard import provider_cmds
 
-    a = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low")
-    b = providers.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=None)
+    a = provider_cmds.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low")
+    b = provider_cmds.ask_cmd(settings, "claude", tools=False, read_dir=None, model="m", effort="low", zeplin=None)
     assert a == b and "--mcp-config" not in a
 
 
 def test_ask_cmd_zeplin_for_codex_and_antigravity(settings, tmp_path, monkeypatch):
-    from telegram_dashboard import providers
+    from telegram_dashboard import provider_cmds
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    c = providers.ask_cmd(settings, "codex", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    c = provider_cmds.ask_cmd(settings, "codex", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
     assert any("mcp_servers.zeplin.command" in x for x in c) and "s3cret" not in " ".join(c)
     assert "shell_tool" in c  # still no shell
-    g = providers.ask_cmd(settings, "antigravity", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
+    g = provider_cmds.ask_cmd(settings, "antigravity", tools=False, read_dir=None, model="m", effort="low", zeplin=ZEP)
     assert "mcp(zeplin/get_screen)" in " ".join(g)
     deny = json.loads(g[g.index("--settings") + 1])["permissions"]["deny"]
     assert "read_file(*)" in deny and "command(*)" in deny and "mcp(zeplin/download_layer_asset)" in deny

@@ -1,0 +1,202 @@
+[
+  {
+    "id": "module-switch",
+    "tab": "telegram",
+    "area": "Top bar › Telegram / YouTrack",
+    "title": "Switch between Telegram and YouTrack",
+    "what": "The Telegram / YouTrack tabs at the left of the top bar (also on the Settings page) switch between the two modules; the open tab is highlighted, and the other tab shows a red badge for what is new: on Telegram = the tags under Việc cần xử lý › Đang chờ (no AI session yet), on YouTrack = tickets newly given to you since you last opened YouTrack (opening it clears them); with nothing new, the YouTrack tab shows an amber badge = the number of your tickets that need action now. Each sidebar holds only its own module's pages; ⌘K on either side still finds pages of the other.",
+    "how": [
+      {
+        "t": "Hover \"YouTrack\" to see new tickets (red badge) or those that need action now (yellow badge), then click to go to YouTrack",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]"
+      },
+      {
+        "t": "Click \"Telegram\" to go back to the Telegram Inbox",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]"
+      }
+    ],
+    "keys": "switch module youtrack telegram badge tickets need action now tabs red badge new tickets new messages"
+  },
+  {
+    "id": "ai-quota-pill",
+    "tab": "telegram",
+    "area": "Top bar › AI quota",
+    "title": "See your current AI quota",
+    "what": "The top bar button shows the AI mascot and a ring with the quota used (5-hour session, 7 days) and when it resets; it warns if the AI is not installed or not signed in. By default (Auto) it follows the AI running the everyday work on the open page; pick another AI (Claude, Codex, Agy) right in the button or in Settings › AI › Accounts › \"Quota in the top bar\".",
+    "how": [
+      {
+        "t": "Watch the quota ring: it fills up with the % used, turns yellow at 70% used and red from 90%; hover for details, click to open the quota panel",
+        "at": "Hạn mức AI"
+      },
+      {
+        "t": "In the panel: pick \"Auto\" or one AI to always show that AI's quota; click the refresh button to read the quota again",
+        "at": "AI hiện hạn mức trên thanh trên cùng"
+      },
+      {
+        "t": "Click \"Account, usage and history\" to open the AI accounts page",
+        "at": "Tài khoản, usage và lịch sử"
+      },
+      "The \"AI accounts\" page slides in from the right",
+      {
+        "t": "Click \"Close\" to close the page",
+        "at": "Đóng"
+      }
+    ],
+    "keys": "quota usage limit claude codex antigravity agy 5h 7 days ai in use switch ai top bar pick agent"
+  },
+  {
+    "id": "guide-book",
+    "tab": "telegram",
+    "area": "Top bar › Guide",
+    "title": "Browse the guide to every feature",
+    "what": "The light bulb in the top bar opens a catalog of every Telegram / YouTrack / Settings feature, no AI needed: type to filter instantly, filter by area, click a feature to see its steps, then \"Show me on screen\" to have the app light each control to click. Nothing matches: the text you typed goes to the Know-it-all assistant to ask in plain words.",
+    "how": [
+      {
+        "t": "Click the \"User guide\" light bulb in the top bar",
+        "at": "User guide"
+      },
+      "Type in the search box or pick an area: Telegram / YouTrack / Settings",
+      "Click a feature to see its steps, then click \"Show me on screen\"",
+      "No matching feature: click \"Ask the know-it-all assistant\" to ask the AI"
+    ],
+    "keys": "guide help user guide light bulb catalog features search tour show me"
+  },
+  {
+    "id": "guide-bot",
+    "tab": "telegram",
+    "area": "Screen corner › Know-it-all assistant",
+    "title": "Ask the know-it-all assistant about the app",
+    "what": "The bot floating in a corner of every page is the user guide and a chat AI assistant in one. Ask in your own words: it searches the guide (and reads the app's own code, read-only, for rules, limits, why a button or item is shown or hidden, citing where), answers with the steps, then adds buttons that take you there: \"Open …\" opens the right page or Settings group, a feature's name runs a walk-through that lights each control to click. Ask about your own work too (\"any messages waiting?\", \"which tickets are urgent?\", \"who am I waiting on?\"): it reads the Today list, reports how many, the urgent ones first, each with an \"Open …\" button straight to that message, ticket, Q&A or AI session. Ask follow-ups, it knows which page you are on; the conversation stays as you move between pages. Drag the bot and let go anywhere along a screen edge: it sticks to the nearest edge. It calls you by your YouTrack name (else your Telegram name). Settings › Know-it-all assistant: show / hide the bot, how it shows (Floating, Fixed at the right, In the top bar), its size, position, whether it reads the code, and its own model / effort.",
+    "how": [
+      {
+        "t": "Click the bot in the screen corner (or F1); drag it to another corner if it covers a button",
+        "at": "Hỏi trợ lý biết tuốt"
+      },
+      {
+        "t": "Type a question (e.g. \"why don't I see the Send button?\") and press Enter, or click a suggested one; as you type, matching features show right above the box: click one and the app walks you through it, no waiting for the AI",
+        "at": "Hỏi trợ lý biết tuốt"
+      },
+      "Under the answer: click \"Open …\" to go to the right page, or a feature's name to have the app show you on screen; click \"New conversation\" to start over",
+      {
+        "t": "Change how it shows, its size, position, hide the bot, stop it reading the code or pick its model / effort in Settings › \"Know-it-all assistant\"",
+        "at": "css:a[href^=\"/settings\"]"
+      }
+    ],
+    "keys": "know it all assistant bot user guide help f1 ask ai chat rule condition shown hidden why don't i see button code drag dock corner edge display floating fixed right top bar size"
+  },
+  {
+    "id": "ai-account-dialog",
+    "tab": "telegram",
+    "area": "Top bar › AI quota › Accounts",
+    "title": "AI accounts page (Overview / Model / Usage / History)",
+    "what": "A panel sliding in from the right with every AI (Claude, Codex, Antigravity), one card each with its own animated mascot: sign-in, quota used, the features using that AI; plus model/effort choice, a cost report and the history of every AI run.",
+    "how": [
+      {
+        "t": "Click the AI quota button in the top bar, then \"Account, usage and history\"",
+        "at": "Hạn mức AI"
+      },
+      "\"Overview\" tab: one card per AI with sign in/out, quota used (hover the time to see when it resets) and \"Used for\" (which features run on that AI, with which model/effort)",
+      {
+        "t": "Claude and Codex have free resets from your plan: a ticket icon with the count sits next to \"Quota used\" (and after \"In use\" in Settings › AI); click it to see each one (a grant holding several resets shows “×N”), the soonest to expire first (time left; hover for the exact time); click \"Reset now\" on the one to use and confirm to bring the quota back to 0%. Claude lists its resets only to a recent Claude CLI: run claude update when asked",
+        "at": "Reset ngay"
+      },
+      {
+        "t": "Open the \"Model\" tab to choose the model and effort for each feature",
+        "at": "Model"
+      },
+      {
+        "t": "Click \"Model test\" to check the model answers",
+        "at": "Thử model"
+      },
+      {
+        "t": "Open the \"Usage\" tab for a report of requests, tokens and cost",
+        "at": "Usage"
+      },
+      {
+        "t": "Pick \"30 days\" to change the report period (24 hours / 7 days / 30 days)",
+        "at": "30 ngày"
+      },
+      {
+        "t": "Open the \"History\" tab (\"Run history\") for every AI run by day (the first day of the current page opens by itself), including requests typed in Claude Code / Claude Desktop / Codex",
+        "at": "History"
+      },
+      {
+        "t": "Filter by AI (Claude / Codex / Agy), choose rows per page (50 / 100 / 200 / 500) and page through at the bottom; the download button next to it exports CSV. Paste a session code (YT-… from the YouTrack AI history, REF-… from AI Agent) into the \"Find session ID\" box to list just that session's runs (every day opens); open a row to see its error and Claude's session (transcript at ~/.claude/projects/*/<session>.jsonl)",
+        "at": "Lọc theo AI"
+      }
+    ],
+    "keys": "ai account accounts usage history runs cost csv model effort test model sign in claude reset free resets codex"
+  },
+  {
+    "id": "theme-toggle",
+    "tab": "telegram",
+    "area": "Top bar",
+    "title": "Switch light / dark theme",
+    "what": "Quickly switch between the light and dark theme.",
+    "how": [
+      {
+        "t": "Click the moon / sun icon \"Switch light / dark mode\"",
+        "at": "Đổi giao diện sáng / tối"
+      },
+      {
+        "t": "Click again to switch back",
+        "at": "Đổi giao diện sáng / tối"
+      }
+    ],
+    "keys": "theme light dark mode appearance toggle"
+  },
+  {
+    "id": "lang-toggle",
+    "tab": "telegram",
+    "area": "Top bar",
+    "title": "Switch language Vietnamese / English",
+    "what": "Quickly switch the interface between Vietnamese and English.",
+    "how": [
+      {
+        "t": "Click the language icon \"Switch language: Vietnamese / English\"",
+        "at": "Đổi ngôn ngữ Tiếng Việt / English"
+      },
+      {
+        "t": "To follow the machine's language: Settings › General › Language › Follow machine"
+      }
+    ],
+    "keys": "language vietnamese english en vi switch language ngon ngu"
+  },
+  {
+    "id": "settings-button",
+    "tab": "telegram",
+    "area": "Top bar › Settings",
+    "title": "Open Settings and see when an update is out",
+    "what": "Opens the Settings page. When a new version is on GitHub, the button shows a dot and opens the Update section directly. Click it again while in Settings to go back.",
+    "how": [
+      {
+        "t": "Click the \"Settings\" gear; a small dot means an update is available and the page opens at the Update section",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Click the gear again to go back",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      }
+    ],
+    "keys": "settings update github dot gear new version"
+  },
+  {
+    "id": "sidebar-toggle",
+    "tab": "telegram",
+    "area": "Page header",
+    "title": "Collapse / expand the sidebar",
+    "what": "On desktop it shrinks the sidebar to a narrow icon-only rail (hover to open it for a moment); on phones it opens/closes the sidebar as a drawer. The choice is remembered in the browser.",
+    "how": [
+      {
+        "t": "Click the three-line button \"Collapse / expand menu\" at the left of the header",
+        "at": "Thu gọn / mở rộng menu"
+      },
+      "Hover the narrow rail to see group names and waiting counts",
+      {
+        "t": "Click again to expand it",
+        "at": "Thu gọn / mở rộng menu"
+      }
+    ],
+    "keys": "collapse sidebar expand rail hide menu hamburger drawer"
+  }
+]

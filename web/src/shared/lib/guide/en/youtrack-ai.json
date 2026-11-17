@@ -1,0 +1,220 @@
+[
+  {
+    "id": "yt-phien-ai",
+    "tab": "youtrack",
+    "area": "Side panel › AI session",
+    "title": "AI session about tickets",
+    "what": "Ask the AI about one or more tickets (up to 40): it reads descriptions and comments and answers; the answer streams in, you can keep asking, and ticket IDs in the answer are clickable.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ \"AI for this ticket\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Type a request in the box below, Enter to send (Shift+Enter for a new line)",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Add tickets: type numbers or IDs in the \"Add 123, 456\" box (several separated by commas), then Enter",
+        "at": "Thêm ticket: số hoặc ID, nhiều cái cách dấu phẩy, Enter"
+      },
+      {
+        "t": "Click \"New chat\" to start over (or \"Cancel\" to stop, \"Copy\" to copy)",
+        "at": "Cuộc mới"
+      }
+    ],
+    "keys": "ai session ask ai chat ai keep asking new chat add ticket"
+  },
+  {
+    "id": "yt-nut-goi-y-ai",
+    "tab": "youtrack",
+    "area": "Side panel › AI session › Suggestion buttons",
+    "title": "Ready-made prompts in the AI session",
+    "what": "Ready-made AI job buttons: Thread summary, Check AC coverage, Split tasks & estimate, Tidy up description, Test cases, Draft reply (1 ticket); Summary & to-dos, Review for lead, Release notes (several tickets). Each role has 4 default buttons.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ \"AI for this ticket\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Click a suggestion button (hover for a description), e.g. \"Thread summary\"",
+        "at": [
+          "Tóm tắt thread",
+          "Test case",
+          "Tóm tắt & việc cần làm"
+        ]
+      },
+      "Buttons that need exactly 1 ticket or 2+ tickets tell you in a notice"
+    ],
+    "keys": "ready-made prompts summarize thread check ac split tasks estimate tidy up description test cases draft reply review for lead release notes"
+  },
+  {
+    "id": "yt-dua-vao-binh-luan",
+    "tab": "youtrack",
+    "area": "Side panel › AI session",
+    "title": "Put the AI's answer into a comment",
+    "what": "In an AI session about 1 ticket, put the answer (or a draft, e.g. Draft reply) into the ticket's comment box to edit and post to YouTrack.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ \"AI for this ticket\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Ask the AI (e.g. click \"Compose reply\") and wait for it to finish",
+        "at": [
+          "Soạn trả lời",
+          "Tóm tắt thread",
+          "Test case"
+        ]
+      },
+      {
+        "t": "Click \"Use as comment\"",
+        "at": "Đưa vào bình luận"
+      },
+      {
+        "t": "Edit it, then click \"Send comment\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "put in comment ai answer draft comment"
+  },
+  {
+    "id": "yt-trace-code",
+    "tab": "youtrack",
+    "area": "Side panel › AI session › Code folder",
+    "title": "Trace code in the project folder (Dev)",
+    "what": "Dev role only (QA / PO: the AI reads tickets only). Choose a project folder so the AI reads the code when answering. Turn on \"Run commands\" to let the AI build / test / run gradle in a sandbox (writes only inside that folder, network only to package registries, no code edits). The Dev role can hand a free-form question to the AI Agent to trace the code, choosing \"Analyze only\" or \"Allow code edits\".",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ \"AI for this ticket\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Pick a folder in the project box (like the Telegram tab; \"Add folder…\" to add one, \"Don't read code\" to drop it)",
+        "at": "Dự án tham chiếu cho AI"
+      },
+      {
+        "t": "For the AI to build / test / run gradle: click \"Run commands\"",
+        "at": "Cho AI chạy lệnh"
+      },
+      {
+        "t": "Dev: choose the \"Mode\" (Analyze only / Allow code edits)",
+        "at": "Chế độ"
+      },
+      {
+        "t": "Type a request in the box",
+        "at": "Yêu cầu cho AI về các ticket đã chọn"
+      },
+      {
+        "t": "Click \"Assign … trace code\"",
+        "at": "Giao"
+      }
+    ],
+    "keys": "run commands build gradle shell test sandbox trace code read code project folder ai agent edit code analyze only codebase"
+  },
+  {
+    "id": "yt-kho-prompt",
+    "tab": "youtrack",
+    "area": "Side panel › AI session › Prompt library",
+    "title": "Prompt library (add, edit, pin, delete)",
+    "what": "A prompt library shared by the whole team: run, add new prompts, edit, delete, pin up to 5 prompts as buttons per role and ticket count; restore deleted built-in prompts. Also in Settings › YouTrack.",
+    "how": [
+      {
+        "t": "Click \"Tickets\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (click the title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ \"AI for this ticket\"",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Click \"Prompt library\"",
+        "at": "Kho prompt"
+      },
+      {
+        "t": "Click \"New prompt\", enter the \"Prompt name\" and \"Prompt text\"",
+        "at": "Prompt mới"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "Lưu"
+      },
+      {
+        "t": "Click the pin icon to pin/unpin (up to 5)",
+        "at": "css:button[aria-label^=\"Ghim\"]"
+      },
+      {
+        "t": "Click the ▶ icon to run it right away",
+        "at": "css:button[aria-label^=\"Chạy\"]"
+      }
+    ],
+    "keys": "prompt library new prompt pin edit prompt delete prompt restore defaults"
+  },
+  {
+    "id": "yt-instructions-ai",
+    "tab": "youtrack",
+    "area": "Settings › YouTrack › AI instructions",
+    "title": "AI instructions per role",
+    "what": "Your team's own instructions for the selected role, which the AI follows in every YouTrack feature (except ticket filtering). AI sessions show an \"Instructions Dev/QC/PO\" label when there are some.",
+    "how": [
+      {
+        "t": "Click the \"Settings\" icon at the right of the top bar",
+        "at": "Cài đặt"
+      },
+      {
+        "t": "Choose the \"YouTrack\" section",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Choose \"AI and prompts\"",
+        "at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+      },
+      {
+        "t": "Enter instructions in the \"AI instructions\" box",
+        "at": "Instructions cho AI"
+      },
+      {
+        "t": "Click \"Save\"",
+        "at": "css:form:has(textarea[aria-label^=\"Instructions cho AI\"]) button[type=\"submit\"]"
+      },
+      "In an AI session, hover the \"Instructions …\" label to see them"
+    ],
+    "keys": "instructions ai guidance team notes rules"
+  }
+]

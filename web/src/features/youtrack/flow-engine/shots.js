@@ -1,0 +1,82 @@
+import { str } from './values.js';
+import { W } from './constants.js';
+
+// ------------------------------------------------------------------ Zeplin images (shots)
+// {zeplin url: {src, w, h, hits: [[label, x, y, w, h]], lines: [same, a multi-line text's lines]}} in design units, from the dashboard (or the file's own
+// block). Kept out of the flow: undo / dirty compare the flow as JSON, and images would make that heavy.
+// ponytail: one set per page (the dashboard shows one flow at a time); a map per mount if two ever share a page
+let SHOTS = {};
+const hotCache = new Map();
+// "url \n labels" -> {items, back}; cleared with SHOTS
+const shotOf = (s) => (s.zeplin && SHOTS[s.zeplin]) || null;
+const norm = (v) => str(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
+  .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const BACK = /(^| )(back|quay lai|tro lai|tro ve)( |$)/;
+/** Two reads of one design are the same screen when all but the image's address agree (a new read signs a new URL
+ *  for the same picture): its size, texts and where they sit, its list cut, Zeplin's version. -> a frame drawn
+ *  from the old read is kept, not drawn again. */
+const sigs = new WeakMap();
+const sigOf = (sh) => {
+  if (!sh) return "";
+  let v = sigs.get(sh);
+  if (v === undefined) sigs.set(sh, (v = JSON.stringify([sh.w, sh.h, sh.hits, sh.lines, sh.cut, sh.ver])));
+  return v;
+};
+const sameShot = (a, b) => a === b || (!!a && !!b && sigOf(a) === sigOf(b));
+function setShots(map) {
+  SHOTS = map && typeof map === "object" ? map : {};
+  hotCache.clear();
+}
+/** Where each button of `s` sits on its Zeplin image (frame units; null: label not found) and the back button:
+ *  its hand-drawn rect, else same text first, then one containing the other; each hit used once, in reading order. */
+function hotspots(s, sh) {
+  const key = W + s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
+  let got = hotCache.get(key);
+  if (got) return got;
+  // the lines of a multi-line text after every hit ("Căn hộ" under "Căn hộ Xác minh nhanh…"): a whole text first
+  const hits = [...(Array.isArray(sh.hits) ? sh.hits : []), ...(Array.isArray(sh.lines) ? sh.lines : [])];
+  const k = W / sh.w, ns = hits.map((x) => norm(x[0])), used = new Set();
+  const at = (j) => {
+    const [, x, y, w, hh] = hits[j];
+    return { x: x * k, y: y * k, w: Math.max(w * k, 24), h: Math.max(hh * k, 24) };
+  };
+  // best tier wins: same text, the text starts with the label ("Tìm căn hộ" + its subtitle), contains it, is
+  // contained in it; within a tier, the order the server sent (buttons before titles, reading order). A text much
+  // longer than the label is a sentence that mentions it, not the button: no area beats a wrong one
+  const tiers = [(x, n) => x === n, (x, n) => x.startsWith(n + " ") && x.length <= 3 * n.length,
+    (x, n) => x.includes(n) && x.length <= 2 * n.length, (x, n) => x.length >= 3 && n.includes(x)];
+  const find = (label) => {
+    const n = norm(label);
+    if (!n) return -1;
+    for (const [i, ok] of tiers.entries()) {
+      if (i > 0 && n.length < 3) return -1;
+      const j = ns.findIndex((x, k) => !used.has(k) && ok(x, n));
+      if (j >= 0) return j;
+    }
+    return -1;
+  };
+  const kw = W, kh = (sh.h * W) / sh.w; // a rect is a fraction of the whole image; the frame is W wide
+  const items = s.items.map((it) => {
+    if (it.rect) return { x: it.rect.x * kw, y: it.rect.y * kh, w: it.rect.w * kw, h: it.rect.h * kh, manual: true };
+    const j = find(it.label);
+    if (j < 0) return null;
+    used.add(j);
+    return at(j);
+  });
+  const b = ns.findIndex((x, i) => !used.has(i) && BACK.test(x));
+  got = { items, back: b >= 0 ? at(b) : null };
+  hotCache.set(key, got);
+  return got;
+}
+
+/** How overlapping tap areas stack: a smaller one sits above every larger one, whatever order they were made in,
+ *  so an area drawn inside another (inside another…) takes the press and the one under it does not. Returns each
+ *  rect's layer, 1 = lowest (null: not on the image); equal sizes keep their order. */
+function layersOf(rects) {
+  const order = rects.map((r, i) => [r ? r.w * r.h : -1, i]).filter(([a]) => a >= 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const out = rects.map(() => null);
+  order.forEach(([, i], n) => { out[i] = n + 1; });
+  return out;
+}
+
+export { SHOTS, hotCache, shotOf, norm, BACK, setShots, hotspots, layersOf, sameShot };

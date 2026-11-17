@@ -1,0 +1,194 @@
+[
+  {
+    "id": "agent-filters",
+    "tab": "telegram",
+    "area": "AI Agent › Filters",
+    "title": "Filter AI Agent sessions",
+    "what": "Switch between the session types \"Give to AI Agent\", \"Check vs BE\" and \"Briefing\" (in the header; Briefing: Briefing assistant chats kept in the browser for 14 days, reread / delete / ask on right here, question box pinned at the bottom like other sessions), filter \"All\" / \"Doing\" / \"Done\" (Done = the tag marked handled; only replying to the tag (the session's asks included) keeps the session in Doing; marking a session Done, or its tag Done from the list, also marks its attached messages done (Check vs BE sessions: the messages of the checked topics too), the tags answering the asks the session posted (with #REF-…) or sitting in its Q&A threads, along with Q&A threads with a #QA… code in the tag / attached / checked messages / the session's posted asks; reopening undoes them too); shows how many sessions are running. The QA / PO roles only see AI assistant and Briefing (Give to AI Agent / Check vs BE show only when such a session already exists).",
+    "how": [
+      {
+        "t": "Open \"AI Agent\" in the sidebar.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Click \"Check vs BE\" to see the BE confirm cross-check sessions.",
+        "at": "Đối chiếu BE"
+      },
+      {
+        "t": "Click \"Give to AI Agent\" to go back to the Give to AI Agent sessions.",
+        "at": "Giao AI Agent"
+      },
+      {
+        "t": "Click \"Done\" (or \"Doing\", \"All\") to filter by status.",
+        "at": [
+          "Done",
+          "Doing",
+          "Tất cả"
+        ]
+      }
+    ],
+    "keys": "filter sessions assign deep thinking doing done all filter agent"
+  },
+  {
+    "id": "agent-session-chat",
+    "tab": "telegram",
+    "area": "AI Agent › Session › Follow-up",
+    "title": "Message the AI again, with a queue",
+    "what": "See the session log (Read/Edit/Search… steps grouped, click to see the output) and message the AI again; while the AI is working you can queue messages to run in turn.",
+    "how": [
+      {
+        "t": "Open \"AI Agent\" in the sidebar.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Click \"All\" to see every session.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Pick a session in the list.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Type in the \"Message the AI\" box; Enter sends, Shift+Enter adds a line.",
+        "at": "Nhắn tiếp cho AI"
+      },
+      {
+        "t": "Click \"Send\", or \"Queue it\" (⌘/Ctrl+Enter) while the AI is working.",
+        "at": [
+          "Vào hàng đợi",
+          "Gửi"
+        ]
+      },
+      {
+        "t": "Click \"Request sent\" to see the first prompt.",
+        "at": "Yêu cầu đã giao"
+      },
+      "Click the X \"Remove from queue\" to drop a queued item."
+    ],
+    "keys": "follow up message ai queue enter ctrl enter log steps tool log"
+  },
+  {
+    "id": "agent-accept-edit",
+    "tab": "telegram",
+    "area": "AI Agent › Session › Allow code edits",
+    "title": "Let the next turn edit files (approve a plan)",
+    "what": "For a Read only session, turn this on so the follow-up turn may edit files, e.g. approve a plan and tell the AI to go ahead. File-editing turns run commands in a sandbox (writes only inside the project folder, network only to package registries); if the session holds someone else's messages or links, a warning icon shows beside the checkbox (hover to read it). On Windows (Claude has no sandbox there) an edit turn only edits files and runs no commands: the AI lists the build / test commands for you to run. Edit turns (including sessions given in Can edit files mode and turns the BE loop sends on its own) also use the MCP servers and plugins you installed for the session's CLI (Claude, Codex, Antigravity: YouTrack, markitdown, Zeplin…), as when you run that CLI yourself; Antigravity still gets no shell commands; the \"Use MCP / plugins\" checkbox shows once \"Allow code edits\" is ticked, on by default, untick it to turn off and the app remembers it. They run outside the sandbox with your logins: for a session holding someone else's messages / links the warning icon says so. Read only turns use no MCP; ticket and Knowledge Base content (a link or just the ID, e.g. VA-123, VA-A-134) is loaded by the dashboard for every turn. A Zeplin link (zpl.io, app.zeplin.io) in the session: every turn, Read only ones too, on Claude, Codex and Antigravity, reads the design through the Zeplin MCP you set up (for Claude or Codex; Antigravity uses its own), with only the tools that read screens / components / design tokens.",
+    "how": [
+      {
+        "t": "Open \"AI Agent\" in the sidebar.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Click \"All\" to see every session.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Pick a Read only session.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Tick \"Allow code edits\" in the message box.",
+        "at": "Cho sửa code"
+      },
+      "Then message the AI (e.g. approve the plan and tell it to go ahead)."
+    ],
+    "keys": "accept edit allow code edits approve plan allow file edits read-only plan mode"
+  },
+  {
+    "id": "agent-session-actions",
+    "tab": "telegram",
+    "area": "AI Agent › Session › Actions",
+    "title": "Done, stop, delete a session, open the group, per-session model",
+    "what": "Manage a session: mark the tag Done (with / without a reaction), stop the running AI (the chat is kept), delete the session, open the group scrolled to the assigned message, use the result as a reply draft; pick a model and effort just for the session right in the message box. The \"Changes\" button at the top of a session (any session type, Check vs BE too once you allow file edits in the message box) opens the Changes page, only the files changed since the session started (your edits or another session's from before are left out; sessions from older versions still compare the whole folder with the last commit; files inside a submodule show too, their path starting with the submodule's name, but “Branch + PR” only commits the main repo's files): the top shows the number of changed files and total +/− lines; the left column is a folder tree (a folder holding just one folder merges into one row a/b/c, click a folder to fold / unfold it, the A / M / R / D by a file means new / edited / renamed / deleted, click a file to jump to it), on the right the files sit under the same folders, each file is a card you click to collapse / expand (the arrow button at the top collapses / expands all; long files start collapsed); view \"Side by side\" (Before on the left, After on the right) or \"One column\" (red − is before, green + is after), changed words within a line are bold; the \"Sessions\" button goes back. \"Branch + PR\" at the bottom (click twice to confirm) commits just those files (other files you are editing or staged stay as they are) on branch ai/<session>, pushes to the remote and opens a PR with gh. Files that look like secrets (.env, keys, certificates) are never committed. A turn that was cut off (server restart, stop) has a \"Continue\" button. The top of the chat shows the number of turns and the session's estimated cost; each turn shows its own cost (at the API price the CLI reports; subscription plans are not charged by this number). If a file the session edited already carried your edits from before it (or the session has no starting point), the Changes page shows a yellow warning listing the files: the PR will carry those edits too, and the confirming click accepts that.",
+    "how": [
+      {
+        "t": "Open \"AI Agent\" in the sidebar.",
+        "at": "AI Agent"
+      },
+      {
+        "t": "Click \"All\" to see every session.",
+        "at": "css:[aria-label=\"Lọc phiên\"] button:first-child"
+      },
+      {
+        "t": "Pick a session in the list. Hover a session to show the trash icon: delete it quickly (asks to confirm) without opening it. The trash on a day bar (Today, Yesterday…) deletes every session of that day, also after asking.",
+        "at": "css:[aria-label=\"Danh sách phiên\"] li > button"
+      },
+      {
+        "t": "Hover or click the ⋯ button at the right of the session header to open the menu: Done, Done without reaction (or Reopen), Use as reply draft, Open group, Delete session (asks to confirm).",
+        "at": "css:[aria-label=\"Thao tác phiên\"]"
+      },
+      "In the message box: model and effort just for the session (applies from the next turn), the Stop button while the AI runs.",
+      {
+        "t": "Click \"Open group\" to go to the original message that was assigned.",
+        "at": "Mở nhóm"
+      }
+    ],
+    "keys": "stop rerun delete session open group use result changes diff branch pr cost"
+  },
+  {
+    "id": "toast-undo",
+    "tab": "telegram",
+    "area": "Floating notice",
+    "title": "Undo what you just did",
+    "what": "After marking Done, snoozing or assigning work, the notice at the bottom of the screen has an \"Undo\" button (about 6 seconds).",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click \"Done\" on a message (hover the message row to see the button)",
+        "at": "Xong"
+      },
+      {
+        "t": "Click \"Undo\" in the notice at the bottom of the screen (about 6 seconds)",
+        "at": "Hoàn tác"
+      },
+      "Or press z while the notice is showing"
+    ],
+    "keys": "undo z notice toast"
+  },
+  {
+    "id": "keyboard-shortcuts",
+    "tab": "telegram",
+    "area": "Keyboard shortcuts",
+    "title": "Inbox keyboard shortcuts",
+    "what": "Work fast from the keyboard (not while typing in a field): j/k select the next/previous message (while replying on a wide screen: next / previous waiting tag), Tab through messages then Enter to reply, g then q opens Q&A, r reply, x Done/reopen, z undo, a type instructions for the AI, / search, ⌘/Ctrl+Enter send, Esc close the reply, ? opens the shortcut sheet.",
+    "how": [
+      "Press ? to open the \"Shortcuts\" sheet; Esc to close",
+      {
+        "t": "Or click the \"Settings\" gear to see the shortcut sheet on the Settings page",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Click the \"Shortcuts\" section",
+        "at": "Phím tắt"
+      },
+      "Outside a field: j/k select a message, r reply, x Done/reopen, z undo, a type instructions for the AI, / search, Esc close the reply"
+    ],
+    "keys": "shortcuts keyboard hotkeys j k r x z a / esc ? ctrl enter"
+  },
+  {
+    "id": "new-tag-notification",
+    "tab": "telegram",
+    "area": "Browser notifications",
+    "title": "Notify me of new tags",
+    "what": "When the tab is hidden, the browser shows a notification with the sender's name and \"New tag\" (up to 3, plus \"N more new tags\"); click it to get back to the app. Message text is shown only when \"Show message text in macOS notifications\" is on in Settings › Telegram › \"Notifications\" (applies to both browser and macOS notifications). Q&A's “Nobody answered” notification follows the same switch: when off it shows only the #QA code, not the question.",
+    "how": [
+      {
+        "t": "Click the \"Settings\" gear",
+        "at": "css:a[aria-label^=\"Cài đặt\"]"
+      },
+      {
+        "t": "Click the \"Telegram\" section in the list on the left",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Under \"Notifications\", turn on the \"Notify on new tags\" switch",
+        "at": "Thông báo khi có tag mới"
+      },
+      "Allow notifications when the browser asks"
+    ],
+    "keys": "notification new tag desktop push browser"
+  }
+]

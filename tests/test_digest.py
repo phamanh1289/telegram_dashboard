@@ -4,13 +4,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from conftest import ORIGIN, A, B, FakeAgent, FakeTransport
 from fastapi.testclient import TestClient
-
 from telegram_dashboard.ai import AiService
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
-from telegram_dashboard.digest import DigestService, _people, parse_result
 from telegram_dashboard.errors import ApiError
 from telegram_dashboard.models import DigestRequest, GroupInfo, StoredMessage
+from telegram_dashboard.telegram.digest import DigestService, _people, parse_result
 
 AI = dict(ai_agent_command="cat", ai_model="", ai_effort="")
 T0 = datetime(2026, 10, 30, 9, 0, tzinfo=UTC)
@@ -435,7 +434,7 @@ async def test_be_replies_guesses_a_plain_message_from_who_must_answer(dg):
 
 
 def test_chunks_split_at_lines():
-    from telegram_dashboard.telegram import chunks
+    from telegram_dashboard.telegram.transport import chunks
 
     assert chunks("a\nb\n", 4) == ["a\nb\n"]
     assert chunks("aaa\nbbb\n", 4) == ["aaa\n", "bbb\n"]

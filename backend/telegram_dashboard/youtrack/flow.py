@@ -1,0 +1,445 @@
+"""UI flow của ticket: schema, ghép / rút HTML tự chứa, danh sách thay đổi. Thuần, không I/O."""
+
+import json
+import re
+from html import escape
+from typing import Annotated, Literal
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from ..providers import ZEPLIN
+from ..zeplin import MAX_HITS
+
+# Every file the dashboard writes carries this: the ticket's flow is found by it (and a readable data block for the
+# ticket), never by the attachment's name, which follows the flow's title. A plain mark, not a secret: each install
+# would have its own key, so a teammate's file could not be told apart from a stranger's.
+MARK = '<meta name="generator" content="uiflow/telegram-dashboard">'
+MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 200, 40, 1000
+MAX_MEMOS = 50  # = MAX_MEMOS in web/src/features/youtrack/flow-engine/constants.js
+MAX_TITLE = 120  # the flow's own name; = CAP_TITLE there
+VERSION, MAX_NOTE = 2, 4000  # = VERSION / CAP_NOTE in web/src/features/youtrack/flow-engine/constants.js
+ID = r"^[A-Za-z0-9_-]{1,40}$"
+SRC = r"^[A-Za-z0-9_-]{1,40}(\.[A-Za-z0-9_-]{1,40})?$"
+
+
+class TooNew(ValueError):
+    """The file was written by a newer dashboard: never edited (nor re-rendered over) by this one."""
+
+
+class Rect(BaseModel):
+    """A hand-drawn tap area on the screen's whole image, each value a fraction of its width / height."""
+
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(gt=0, le=1)
+    h: float = Field(gt=0, le=1)
+
+    @model_validator(mode="after")
+    def _inside(self) -> Rect:
+        if self.x + self.w > 1 + 1e-9 or self.y + self.h > 1 + 1e-9:
+            raise ValueError("rect ngoài ảnh")
+        return self
+
+
+class Item(BaseModel):
+    id: str = Field(pattern=ID)
+    label: str = Field(min_length=1, max_length=80)
+    rect: Rect | None = None
+
+    @field_validator("rect", mode="before")
+    @classmethod
+    def _rect(cls, v: object) -> object:
+        """An invalid rect is dropped (the item falls back to text matching), as the JS sanitizer does."""
+        try:
+            return Rect.model_validate(v) if v is not None else None
+        except ValueError:
+            return None
+
+
+class Screen(BaseModel):
+    id: str = Field(pattern=ID)
+    title: str = Field(min_length=1, max_length=80)
+    kind: Literal["screen", "popup", "sheet", "toast"] = "screen"
+    parent: str | None = None
+    x: float | None = None
+    y: float | None = None
+    zeplin: str = ""
+    ac: str = Field("", max_length=40)
+    note: str = Field("", max_length=MAX_NOTE)
+    items: list[Item] = Field(default_factory=list, max_length=MAX_ITEMS)
+    fold: float | None = None  # a long design folded on the map: the part shown (0..1 of its height); None: whole
+
+    @field_validator("fold", mode="before")
+    @classmethod
+    def _fold(cls, v: object) -> object:
+        """Anything but a part of the design (0 < fold < 1) is the whole design, as the JS sanitizer reads it."""
+        ok = isinstance(v, int | float) and not isinstance(v, bool) and 0 < v < 1
+        return v if ok else None
+
+    @field_validator("zeplin")
+    @classmethod
+    def _zeplin(cls, v: str) -> str:
+        return v if ZEPLIN.fullmatch(v) else ""
+
+
+class Link(BaseModel):
+    src: str = Field(pattern=SRC)
+    to: str = Field(pattern=ID)
+    act: Literal["navigate", "open", "back", "close"] = "navigate"
+    when: str = Field("", max_length=80)
+    ac: str = Field("", max_length=40)
+
+
+class Memo(BaseModel):
+    """A note on the map, beside the screens (a caution, an idea to improve the feature): only a person writes one."""
+
+    id: str = Field(pattern=ID)
+    x: float
+    y: float
+    w: float = Field(320, ge=160, le=1600)  # the box drawn on the map (= memos.js); a longer text grows it
+    h: float = Field(160, ge=80, le=4000)
+    text: str = Field("", max_length=MAX_NOTE)
+    fold: bool = False  # folded to its bar
+
+
+class Flow(BaseModel):
+    v: Literal[2] = VERSION  # v1 files are read as v2 (same fields, without rect / note), see clean()
+    ticket: str
+    title: str = Field("", max_length=MAX_TITLE)  # its own name, a person's (never the AI's); "": UI flow <ticket>
+    rev: int = 0
+    # the frame every screen is drawn in: a phone, or a browser window (a web design is wide; in a phone frame its
+    # text is a third of its size). Set by the render from the platform picked; a file without it is a phone's
+    device: Literal["mobile", "web"] = "mobile"
+    start: str | None = None  # the screen the prototype and the test paths start from; None: the first one
+    screens: list[Screen] = Field(max_length=MAX_SCREENS)
+    links: list[Link] = Field(max_length=MAX_LINKS)
+    # Zeplin URL -> "<w>x<h>" + the texts on the design, as it was at the last save: opening the flow later tells
+    # which screens were redesigned since (design_of on the live shots). Written by the save, never by the engine
+    design: dict[str, list[str]] = Field(default_factory=dict)
+    memos: list[Memo] = Field(default_factory=list, max_length=MAX_MEMOS)  # notes on the map, see Memo
+
+
+
+Label = Annotated[str, Field(max_length=80)]
+MAX_SHOT = 1_500_000  # one screen image as a data URI (the page sends WebP ≤ 780 px wide: ~100-300 KB)
+MAX_SHOTS = 20_000_000  # every image of a file together, under the attachment size the dashboard proxies
+
+
+class Shot(BaseModel):
+    """A Zeplin screen as the exported file draws it: the image (compressed by the page), design size, hits."""
+
+    src: str = Field(pattern=r"^data:image/(webp|jpeg|png);base64,[A-Za-z0-9+/=]+$", max_length=MAX_SHOT)
+    w: float = Field(gt=0, le=5000)
+    h: float = Field(gt=0, le=50000)
+    hits: list[tuple[Label, float, float, float, float]] = Field(default_factory=list, max_length=MAX_HITS)
+    # each line of a multi-line text (zeplin.lines): matched after the hits, never part of the design's signature
+    lines: list[tuple[Label, float, float, float, float]] = Field(default_factory=list, max_length=MAX_HITS)
+    ver: str = Field("", pattern=r"^[0-9A-Za-z_-]*$", max_length=40)  # Zeplin's id of the version drawn; signature only
+    cut: float = Field(0, ge=0, lt=1)  # where a long list folds (zeplin.fold_at): the file's "Thu gọn" folds there too
+
+
+VER = "v:"  # a signature's version entry; a text on the design that starts like one is left out of the signature
+
+
+def design_of(shots: dict) -> dict[str, list[str]]:
+    """Each screen's design signature: size, the set of texts on it (order-free) and, when known, Zeplin's version
+    id ("v:<id>": a redesign that keeps every text and the size is still a new version). = `redesigned` in flow.tsx"""
+    out = {}
+    for url, s in shots.items():
+        w, h, hits = (s.w, s.h, s.hits) if isinstance(s, Shot) else (s["w"], s["h"], s["hits"])
+        ver = s.ver if isinstance(s, Shot) else s.get("ver")
+        texts = sorted({str(x[0]) for x in hits if not str(x[0]).startswith(VER)})
+        out[url] = [f"{round(w)}x{round(h)}", *texts, *([VER + str(ver)] if ver else [])]
+    return out
+
+
+def redesigned(was: list[str] | None, now: list[str]) -> bool:
+    """Did a screen's design change between two signatures? A file saved before versions were recorded has none:
+    then size and texts decide alone, as they always did (it never reads as changed just for gaining a version)."""
+    if was is None:
+        return False
+    plain, vers = ([sorted(x for x in sig if x.startswith(VER) == ver) for sig in (was, now)] for ver in (False, True))
+    return plain[0] != plain[1] or (all(vers) and vers[0] != vers[1])
+
+
+def _items_by_screen(flow: Flow) -> dict[str, dict[str, str]]:
+    return {s.id: {i.id: i.label for i in s.items} for s in flow.screens}
+
+
+def _cut(d: dict, **limits: int) -> dict:
+    return {k: v[: limits[k]] if k in limits and isinstance(v, str) else v for k, v in d.items()}
+
+
+KINDS = ("screen", "popup", "sheet", "toast")
+
+
+def _loose(d: dict) -> dict:
+    """AI hay ghi "ac" thành mảng mã (["AC1.2"]) và "kind" ngoài danh sách ("web", "map"): sửa, không từ chối"""
+    d = dict(d)
+    if isinstance(d.get("ac"), list):
+        d["ac"] = ", ".join(str(a) for a in d["ac"])
+    if "kind" in d and d["kind"] not in KINDS:
+        d["kind"] = "screen"
+    return d
+
+
+def _size(v: object, lo: float, hi: float, default: float) -> float:
+    """A note's drawn size kept in range (= memos.js); not a number: the default box."""
+    return min(hi, max(lo, v)) if isinstance(v, int | float) and not isinstance(v, bool) else default
+
+
+def _trim(raw: dict) -> dict:
+    """Cắt chuỗi / danh sách quá dài thay vì từ chối cả flow AI trả về."""
+    screens = [
+        _cut(_loose(s), title=80, ac=40, note=MAX_NOTE)
+        | {"items": [_cut(i, label=80) for i in s.get("items") or []][:MAX_ITEMS]}
+        for s in raw.get("screens") or []
+    ]
+    links = [_cut(_loose(k), when=80, ac=40) for k in (raw.get("links") or [])[:MAX_LINKS]]
+    # a note the engine could not have written (no place, no id, an id twice) goes; the flow stays
+    ids, memos = set(), []
+    placed = lambda m: all(isinstance(m.get(k), int | float) and not isinstance(m.get(k), bool) for k in "xy")  # noqa: E731
+    for m in raw.get("memos") or []:
+        if not (isinstance(m, dict) and placed(m) and re.fullmatch(ID, str(m.get("id"))) and m["id"] not in ids):
+            continue
+        ids.add(m["id"])
+        memos.append({"id": m["id"], "x": m["x"], "y": m["y"], "w": _size(m.get("w"), 160, 1600, 320),
+                      "h": _size(m.get("h"), 80, 4000, 160), "text": str(m.get("text") or "")[:MAX_NOTE],
+                      "fold": m.get("fold") is True})
+    return {**raw, "screens": screens, "links": links, "memos": memos[:MAX_MEMOS]}
+
+
+def clean(raw: dict, ticket: str) -> Flow:
+    """Kiểm schema, bỏ phần hỏng (nút trùng, link mất nguồn / đích, parent lạ); ValueError nếu không dùng được."""
+    v = raw.get("v", 1) if isinstance(raw, dict) else None
+    if isinstance(v, int) and not isinstance(v, bool) and v > VERSION:
+        raise TooNew(f"UI flow phiên bản {v} mới hơn bản dashboard này hỗ trợ ({VERSION}) — cập nhật app để mở")
+    if v not in (1, VERSION):
+        raise ValueError("UI flow sai phiên bản")
+    try:
+        trimmed = _trim(raw)
+    except (AttributeError, TypeError, KeyError) as e:  # hình dạng sai (màn không phải object, links không phải list…)
+        raise ValueError("UI flow sai định dạng") from e
+    device = raw.get("device") if raw.get("device") in ("mobile", "web") else "mobile"  # anything else: a phone
+    title = " ".join(str(raw.get("title") or "").split())[:MAX_TITLE]  # one line; a longer one is cut, not refused
+    flow = Flow.model_validate({**trimmed, "ticket": ticket, "v": VERSION, "device": device, "title": title})  # v1 → v2
+    ids = [s.id for s in flow.screens]
+    if not ids or len(set(ids)) != len(ids):
+        raise ValueError("UI flow cần ≥1 màn, id màn không trùng")
+    for s in flow.screens:
+        first: dict[str, Item] = {}
+        for i in s.items:
+            first.setdefault(i.id, i)  # trùng id: giữ cái đầu
+        s.items = list(first.values())
+        s.parent = s.parent if s.parent in ids and s.parent != s.id else None
+    flow.start = flow.start if flow.start in ids else None
+    items = _items_by_screen(flow)
+
+    def ok(link: Link) -> bool:
+        screen, _, item = link.src.partition(".")
+        return screen in items and (not item or item in items[screen]) and link.to in items
+
+    flow.links = [link for link in flow.links if ok(link)]
+    return flow
+
+
+SHELL = (
+    '<!doctype html><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+    + MARK
+    + '<title>{name}</title>{style}<div id="uiflow"></div>'
+    '<script type="application/json" id="uiflow-data">{data}</script>'
+    '<script type="application/json" id="uiflow-shots">{shots}</script><script>{engine}</script>'
+)
+DATA = re.compile(r"""<script\b[^>]*\bid=["']uiflow-data["'][^>]*>(.*?)</script>""", re.S | re.I)
+
+
+def _json(v: str) -> str:
+    return v.replace("<", "\\u003c")
+
+
+THEME_KEY, THEME_VALUE = re.compile(r"[a-z0-9-]{1,24}"), re.compile(r"[A-Za-z0-9#(),.%/ -]{1,80}")
+
+
+def build_html(
+    flow: Flow, engine: str, shots: dict[str, Shot] | None = None, *, theme: dict[str, str] | None = None
+) -> str:
+    """The self-contained file: the flow, the images of the Zeplin screens it links (only those), the engine.
+    `theme`: the exporter's colours, {app token: plain CSS value}, for a file to look as the app did (the engine
+    reads those tokens, else its own palette). Only plain values are written: nothing that could close the tag."""
+    if "</script" in engine.lower():
+        raise ValueError("engine chứa </script")
+    used = {s.zeplin for s in flow.screens}
+    pics = {u: s.model_dump(exclude={"ver"}) for u, s in (shots or {}).items() if u in used}
+    if sum(len(p["src"]) for p in pics.values()) > MAX_SHOTS:
+        raise ValueError("Ảnh Zeplin quá lớn")
+    css = "".join(
+        f"--{k}:{v};" for k, v in (theme or {}).items() if THEME_KEY.fullmatch(k) and THEME_VALUE.fullmatch(v)
+    )
+    return SHELL.format(name=escape(flow.title or f"UI flow · {flow.ticket}"), data=_json(flow.model_dump_json()),
+                        shots=_json(json.dumps(pics, ensure_ascii=False)), engine=engine,
+                        style=f"<style>:root{{{css}}}</style>" if css else "")  # fmt: skip
+
+
+def ours(html: str) -> bool:
+    """Written by the dashboard: the mark, or (a file saved before the mark) the flow's data block."""
+    return MARK in html or DATA.search(html) is not None
+
+
+def _plain(text: str) -> str:
+    """Safe in a file name: no path / reserved characters, one space between words."""
+    return " ".join(re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", text).split())
+
+
+def file_name(flow: Flow, by: str = "") -> str:
+    """The attachment's name, for people only (the file is found by MARK): the flow's title when it has one;
+    `by`: who saves it, added when the plain name is already another attachment's on the ticket."""
+    title = _plain(flow.title or "")[:MAX_TITLE]
+    stem = f"{title} - {flow.ticket}" if title else f"uiflow-{flow.ticket}"
+    return f"{stem} - {_plain(by)[:60]}.html" if _plain(by) else f"{stem}.html"
+
+
+def extract(html: str) -> Flow | None:
+    """The file's flow; None when it is not ours / broken. TooNew propagates: a newer file is not "broken"."""
+    m = DATA.search(html)
+    try:
+        raw = json.loads(m[1]) if m else None
+        return clean(raw, raw["ticket"]) if raw else None
+    except TooNew:
+        raise
+    except ValueError, KeyError, TypeError:
+        return None
+
+
+MAX_OUTLINE = 6000
+
+
+def outline(flow: Flow) -> str:
+    """The flow in a few lines for an AI that codes or answers on the ticket: each screen (kind, AC, design link,
+    note), what each button leads to. Other people's text: the caller frames it."""
+    by = {s.id: s for s in flow.screens}
+    out = [f"UI flow {file_name(flow)} (rev {flow.rev}, {flow.device}): màn → nút → màn đích"]
+    for s in flow.screens:
+        on = f" trên {by[s.parent].title}" if s.parent in by else ""
+        kind = "" if s.kind == "screen" else f" ({s.kind}{on})"
+        head = f"- {s.title}{kind}" + (f" [{s.ac}]" if s.ac else "") + (" ← màn bắt đầu" if s.id == flow.start else "")
+        out.append(head + (f" {s.zeplin}" if s.zeplin else ""))
+        if s.note:
+            out.append(f"  ghi chú: {' '.join(s.note.split())[:200]}")
+        labels = {i.id: i.label for i in s.items}
+        for link in flow.links:
+            screen, _, item = link.src.partition(".")
+            if screen != s.id:
+                continue
+            how = f'"{labels[item]}"' if item else link.act
+            more = (f" (khi: {link.when})" if link.when else "") + (f" [{link.ac}]" if link.ac else "")
+            out.append(f"  - {how} → {by[link.to].title}{more}")
+        linked = {link.src.partition(".")[2] for link in flow.links if link.src.partition(".")[0] == s.id}
+        if dead := [f'"{label}"' for i, label in labels.items() if i not in linked]:
+            out.append(f"  - chưa nối: {', '.join(dead)}")
+    out += [f"Ghi chú trên sơ đồ: {' '.join(m.text.split())[:300]}" for m in flow.memos if m.text.strip()]
+    text = "\n".join(out)
+    return text if len(text) <= MAX_OUTLINE else text[:MAX_OUTLINE] + "\n(… bị cắt)"
+
+
+_STR = r'"((?:[^"\\]|\\.)*)"'  # a JSON string written to its closing quote
+TITLE = re.compile(rf'"title"\s*:\s*{_STR}')
+LABEL = re.compile(r'"label"\s*:')
+LINK = re.compile(rf'"src"\s*:\s*{_STR}\s*,\s*"to"\s*:\s*{_STR}')
+LINKS = re.compile(r'"links"\s*:')  # the key, not a "links" id or label
+
+
+def _str(s: str) -> str:
+    try:
+        return json.loads(f'"{s}"')
+    except ValueError:
+        return s
+
+
+class Progress:
+    """The flow JSON as the AI writes it, told once per new screen / link: the dialog's live progress. Each delta is
+    scanned from where the last one stopped (a full-size flow is ~150 KB, written a few characters at a time)."""
+
+    def __init__(self, known: dict[str, tuple[str, dict[str, str]]] | None = None) -> None:
+        self.known = known or {}  # id -> (title, {button id: label}) of the screens the model was given
+        self.text, self.screens, self.links, self.items = "", 0, 0, 0
+        self.cut = -1  # where "links" starts: the screens part ends there
+        self._title = self._label = self._link = 0  # where each scan resumes
+        self.names: dict[str, tuple[str, dict[str, str]]] | None = None
+
+    def feed(self, delta: str) -> list[dict]:
+        self.text += delta
+        if self.cut < 0 and (m := LINKS.search(self.text, max(0, len(self.text) - len(delta) - 16))):
+            self.cut = m.start()
+        end = len(self.text) if self.cut < 0 else self.cut
+        for m in LABEL.finditer(self.text, self._label, end):
+            self.items, self._label = self.items + 1, m.end()
+        out = []  # one per screen / link, even when a delta closes several (the dialog lists each one)
+        for m in TITLE.finditer(self.text, self._title, end):
+            self.screens, self._title = self.screens + 1, m.end()
+            out.append({"stage": "draw", "n": self.screens, "title": _str(m[1]), "items": self.items})
+        if self.cut >= 0:
+            for m in LINK.finditer(self.text, max(self._link, self.cut)):
+                self.links, self._link = self.links + 1, m.end()
+                out.append({"stage": "link", "n": self.links, "items": self.items, **self._names(m[1], m[2])})
+        return out
+
+    def _names(self, src: str, to: str) -> dict:
+        """A link in the screens' own words: button "label" on screen "title" → screen "title"."""
+        if self.names is None:  # the screens part is complete once "links" starts: read it once
+            head = self.text[: self.cut]
+            try:
+                raw = json.loads(head[head.index("{") :].rstrip().rstrip(",") + "}")
+                self.names = {
+                    s["id"]: (
+                        s.get("title") or s["id"],
+                        {i["id"]: i.get("label") or i["id"] for i in s.get("items") or []},
+                    )
+                    for s in raw["screens"]
+                }
+            except ValueError, KeyError, TypeError, AttributeError:
+                self.names = {}
+        screen, _, item = _str(src).partition(".")
+        given = self.known.get(screen, (screen, {}))
+        title, labels = self.names.get(screen, given)
+        to = _str(to)
+        # a patch answer lists a given screen without its title, and only the buttons it adds: the rest is `known`
+        name = lambda i: (self.names.get(i) or self.known.get(i) or (i,))[0]  # noqa: E731
+        return {"from": given[0] if title == screen else title, "item": labels.get(item) or given[1].get(item, item),
+                "to": name(to)}
+
+
+AI_FLOW = """\
+Từ ticket và story (mô tả, AC, link / tên màn Zeplin) dựng UI flow của app mobile.
+CHỈ trả MỘT JSON, không chữ nào ngoài JSON: {"screens": [...], "links": [...]}.
+screens[]: {"id", "title", "kind", "parent", "zeplin", "ac", "items": [{"id", "label"}]}
+links[]: {"src", "to", "act", "when", "ac"}
+
+Nguồn:
+- `<story>`: story cha của ticket. Ticket thường là sub-task một nền tảng, chỉ nói phần cần vẽ (nền tảng,
+  khoảng AC); AC, cây "Luồng màn", link Zeplin nằm trong story. Chỉ vẽ phần ticket nói, lấy chi tiết từ story.
+- Ticket có khối chữ "Luồng màn" vẽ dạng cây (`├─ "nút" → Màn`) thì đó là nguồn chính cho màn / nút / link;
+  AC chỉ bổ sung.
+- Dòng có tiền tố như `[Update 13.11]` thì bản mới hơn thắng. Không bịa màn hay hành động không có trong ticket.
+- Mã AC dạng `AC2.3`, quy tắc nghiệp vụ dạng `BR1`: ghi vào "ac" (≤ 40 ký tự) của màn hoặc link do nó sinh ra.
+
+Màn:
+- id (màn và nút): chữ / số / "_" / "-", tối đa 40 ký tự, không trùng; title và label ≤ 80 ký tự.
+- Mỗi màn trong AC / Zeplin là một screen (kind "screen"). Popup / bottom sheet / toast:
+  kind = "popup" | "sheet" | "toast", parent = id màn chứa nó.
+- Link Zeplin màn viết inline `([màn](https://app.zeplin.io/project/<pid>/screen/<sid>))` cạnh AC:
+  ghi URL đó vào "zeplin" của màn tương ứng.
+  Chỉ có tên màn Zeplin thì dùng tên đó làm title.
+- `<zeplin>`: chữ hiện trên từng màn Zeplin đã link (đọc sẵn từ thiết kế, trên xuống dưới), theo URL màn.
+  label của nút = đúng chữ hiện trên nút trong đó (vd. "Tìm căn hộ"), không dùng tên lớp kiểu "Button/Primary":
+  app đặt vùng bấm lên ảnh màn Zeplin bằng cách khớp chữ này. Ticket chưa nêu nút của màn thì lấy nút từ đây
+  (bỏ chữ trang trí: giờ, nhãn trường, giá trị mẫu). Không có màn trong `<zeplin>` thì chỉ dựa vào ticket.
+
+Link:
+- Mỗi hành động của người dùng là một item của màn + một link: src = "idMàn.idNút", to = id màn đích,
+  act = "navigate" | "open" (mở popup / sheet) | "close".
+- Quay lại: act = "back", src = id màn (không có nút), to = màn đích khi back. Màn mở được từ nhiều màn
+  (A → C, B → C): một link back về MỖI màn đó (C → A, C → B); bấm back về đúng màn đã mở nó.
+- Điều kiện rẽ nhánh ghi vào "when" (≤ 80 ký tự).
+Không có x / y, không có rev.
+"""

@@ -4,13 +4,12 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-
 from telegram_dashboard.app import create_app
 from telegram_dashboard.config import Settings
 from telegram_dashboard.events import Hub
 from telegram_dashboard.models import GroupInfo, Member, SentMessage, StoredMessage
 from telegram_dashboard.storage import Db, Store
-from telegram_dashboard.telegram import TelegramBridge
+from telegram_dashboard.telegram.bridge import TelegramBridge
 
 A = "-1001"  # supergroup
 B = "-1002"  # supergroup

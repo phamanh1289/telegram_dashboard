@@ -5,19 +5,24 @@ description: Use when writing or reviewing code under web/ (Next.js 16 static ex
 
 # Web frontend best practices (web/)
 
+## Ownership trước khi sửa
+- Đọc `web/AGENTS.md` và `docs/ARCHITECTURE.md`; feature/fix/refactor đi vào `web/src/features/{telegram,youtrack,settings}` theo nghiệp vụ.
+- UI/hook/helper trung lập ở `web/src/shared`; shared không import feature/app, kể cả type/dynamic/relative import. Query/action/formatter đặc thù là adapter của feature; composition nhiều nghiệp vụ ở `web/src/app/_components`.
+- Tìm và sửa implementation/caller gốc. Reuse qua import trực tiếp module sở hữu; không tạo bản sao, barrel toàn feature hoặc source path cũ.
+
 ## Ràng buộc của dự án (đọc trước)
 - **Lỗi đã gặp trong repo này** (cache cũ, nuốt lỗi, gửi trùng, prompt injection, poll theo dòng…): đọc skill `avoiding-dashboard-pitfalls` trước khi báo xong.
 - **Next 16 khác dữ liệu huấn luyện:** đọc guide trong `web/node_modules/next/dist/docs/` trước khi dùng API Next (xem `web/AGENTS.md`).
 - **Static export** (`output: "export"`, FastAPI serve `out/`): không Server Actions, không route handler, không `cookies()/headers()`, không ISR, không `next/image` tối ưu. Mọi thứ là client component gọi `/api`.
 - **Design đã khóa:** màu / khoảng cách / radius / motion lấy từ token (`web/src/app/tokens.css`, `DESIGN.md`); không viết literal màu hay `px` lạ trong component.
-- **UI primitive có sẵn:** `components/ui/` (`Button`, `Dialog`, `Input`, `Segmented`/`Pill`, `Hint`, `Skeleton`…). Tab chọn-một → `Segmented`; giải thích khi hover → `Hint`, không dùng `title`.
+- **UI primitive có sẵn:** `web/src/shared/components/ui/` (`Button`, `Dialog`, `Input`, `Segmented`/`Pill`, `Hint`, `Skeleton`…). Tab chọn-một → `Segmented`; giải thích khi hover → `Hint`, không dùng `title`.
 
 ## Dữ liệu (TanStack Query)
-- Mọi gọi backend qua `api<T>()` (`web/src/lib/api.ts`); kiểu lấy từ `api.generated.d.ts` — **không tự khai báo lại DTO**. Backend đổi model → `uv run python -m telegram_dashboard export-openapi` rồi `npm run api:types`.
+- Mọi gọi backend qua `api<T>()` (`web/src/shared/lib/api.ts`); kiểu lấy từ `api.generated.d.ts` — **không tự khai báo lại DTO**. Backend đổi model → `npm run api:types` từ root.
 - Query key là mảng ổn định bắt đầu bằng tên tài nguyên (`["messages", chatId, …]`); truyền `signal` vào `api()` để hủy request.
 - Mutation: `retry: false` (gửi tin / AI không bao giờ tự gửi lại). Sau khi xong: `invalidateQueries` key liên quan, hoặc `setQueryData` khi server đã trả bản mới.
-- SSE (`hooks/use-events.ts`) là nguồn cập nhật; đừng thêm polling nếu có event (polling chỉ khi không có SSE, kèm comment `ponytail:`).
-- Không cache dữ liệu riêng tư vào `localStorage`; chỉ lưu preference UI (theme, look). Ngoại lệ có chủ đích: nháp trả lời theo tag (`saveDraft`, tự xóa khi tin xong / xóa dữ liệu nhóm / Cài đặt › "Xóa nháp"); hàng Báo lại chỉ lưu mã tham chiếu (`lib/report-back.ts`), nội dung tin đọc từ server khi hiển thị.
+- SSE (`web/src/features/telegram/hooks/use-events.ts`) là nguồn cập nhật; đừng thêm polling nếu có event (polling chỉ khi không có SSE, kèm comment `ponytail:`).
+- Không cache dữ liệu riêng tư vào `localStorage`; chỉ lưu preference UI (theme, look). Ngoại lệ có chủ đích: nháp trả lời theo tag (`saveDraft`, tự xóa khi tin xong / xóa dữ liệu nhóm / Cài đặt › "Xóa nháp"); hàng Báo lại chỉ lưu mã tham chiếu (`web/src/features/telegram/lib/report-back.ts`), nội dung tin đọc từ server khi hiển thị.
 
 ## React 19
 - State dẫn xuất → tính trong render, không `useEffect` + `setState`.
@@ -35,7 +40,7 @@ description: Use when writing or reviewing code under web/ (Next.js 16 static ex
 
 ## Bảo mật frontend
 - Không `dangerouslySetInnerHTML` với dữ liệu từ Telegram/AI. Markdown qua `react-markdown` (không bật `rehype-raw`).
-- Link ngoài: `target="_blank" rel="noopener noreferrer"` (mẫu `Link` trong `components/markdown.tsx`); URL lấy từ dữ liệu ngoài không được là `javascript:` (`react-markdown` lọc mặc định, `href` tự gán thì phải tự kiểm).
+- Link ngoài: `target="_blank" rel="noopener noreferrer"` (mẫu `Link` trong `web/src/shared/components/markdown.tsx`); URL lấy từ dữ liệu ngoài không được là `javascript:` (`react-markdown` lọc mặc định, `href` tự gán thì phải tự kiểm).
 - Không đưa nội dung tin nhắn hay token vào query string / log console.
 
 ## Hiệu năng
@@ -44,12 +49,12 @@ description: Use when writing or reviewing code under web/ (Next.js 16 static ex
 
 ## Quyết định stack (đừng tự đổi)
 - **Kiểu API:** `openapi-typescript` (chỉ type) + `api()` viết tay; không chuyển sang hey-api/kubb sinh hook.
-- **State:** server state = TanStack Query; UI state = `useState`/context sẵn có (`components/yt/state.tsx`). Không thêm Zustand/Redux.
-- **URL state:** chỉ khi cần link chia sẻ được; dùng `URLSearchParams` + `history.replaceState` (đã dùng ở `inbox.tsx`, `settings.tsx`, `yt/state.tsx`), không thêm `nuqs`.
+- **State:** server state = TanStack Query; UI state = `useState`/context sẵn có (`web/src/features/youtrack/components/state.tsx`). Không thêm Zustand/Redux.
+- **URL state:** chỉ khi cần link chia sẻ được; dùng `URLSearchParams` + `history.replaceState` (đã dùng ở `inbox.tsx`, `settings.tsx`, `web/src/features/youtrack/components/state.tsx`), không thêm `nuqs`.
 - **Form:** validate bằng thuộc tính HTML + lỗi `code` từ backend (Pydantic là nguồn sự thật); không thêm zod/react-hook-form cho vài form nhỏ.
 - **Tailwind 4:** đã CSS-first (`@theme` trong `globals.css`, không có `tailwind.config.js`); token mới thêm vào `tokens.css`.
 - **React 19 Actions / `useActionState`:** không trộn với `useMutation` cho cùng một luồng; giữ `useMutation`.
 - Cần một thư viện mới → hỏi user trước.
 
 ## Xác minh (trong `web/`)
-`npm run typecheck && npm run lint`; đổi luồng UI chính → `npm run build && npm run test:e2e`.
+`npm run typecheck && npm run lint` và `uv run pytest -q tests/test_repo_guards.py` từ root. Đổi luồng UI chính: build/e2e trên bản copy scratch; không build đè `web/out` trên checkout thật. Di chuyển module phải cập nhật import/caller, test, fixture, config và alias.

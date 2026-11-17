@@ -1,0 +1,406 @@
+[
+  {
+    "id": "settings-search",
+    "tab": "settings",
+    "area": "Cài đặt › Tìm cài đặt",
+    "title": "Tìm một cài đặt",
+    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+    "how": [
+      {
+        "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
+        "at": "Tìm cài đặt"
+      },
+      "Gõ vài chữ, ví dụ \"qua han\", \"prompt\", \"model\"",
+      "Dùng ↑ ↓ chọn rồi Enter, hoặc bấm một kết quả"
+    ],
+    "keys": "tim cai dat search settings nhay toi"
+  },
+  {
+    "id": "settings-data",
+    "tab": "settings",
+    "area": "Cài đặt › Dữ liệu",
+    "title": "Xem dung lượng và dọn dữ liệu trên máy",
+    "what": "Cho biết app đang chiếm bao nhiêu trên máy (thanh chia theo phần: Database, Phiên AI, Ảnh tag đã tải, Lịch sử chạy AI, Log server, Đăng nhập Telegram, Cấu hình), database theo từng bảng và theo từng nhóm. Xóa từng phần: tin đã xử lý cũ hơn 30 ngày, bản tóm tắt Briefing, lịch sử gửi cũ, phiên AI đã xong, ảnh đã tải, lịch sử chạy AI, log server, dữ liệu của một nhóm, nháp trả lời trên trình duyệt. Mỗi lần xóa hỏi lại và nói rõ mất gì, giữ gì; database tự thu gọn sau khi xóa. Khi khởi động app tự dọn ảnh quá 30 ngày, lịch sử chạy AI quá 90 ngày và cắt log quá 5 MB. Nút \"Đổi thư mục\" (cuối thẻ Dung lượng, cạnh đường dẫn) chuyển toàn bộ dữ liệu sang thư mục khác: nhập đường dẫn tuyệt đối, app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ; lỗi thì vẫn dùng thư mục cũ. Nếu thư mục đó đã có dữ liệu Radar (ổ từng dùng với bản cài khác), hộp thoại hỏi \"Dùng dữ liệu ở đó\": app chuyển sang dữ liệu đó, dữ liệu đang dùng giữ nguyên chỗ cũ, không xóa. Không đổi được khi AI Agent đang chạy; thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database. Nếu thư mục mới nằm trên ổ ngoài, ổ phải gắn sẵn khi mở app.",
+    "how": [
+      {
+        "t": "Mở Cài đặt › Dữ liệu",
+        "at": "css:a[href=\"#data\"]"
+      },
+      "Xem thẻ \"Dung lượng\": tổng, phần dọn được ngay và thanh chia theo phần",
+      {
+        "t": "Bấm \"Xóa\" ở ô muốn dọn; ô ghi rõ dung lượng, số mục, từ ngày nào và có tải lại được không",
+        "at": "css:main article footer button"
+      },
+      {
+        "t": "Đọc hộp xác nhận; bấm \"Hủy\" để thoát (chỉ bấm \"Xóa\" nếu thật sự muốn xóa)",
+        "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
+      }
+    ],
+    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean doi thu muc chuyen di doi noi luu duong dan o dia move folder location path"
+  },
+  {
+    "id": "settings-role",
+    "tab": "settings",
+    "area": "Cài đặt › Chung › Vai trò",
+    "title": "Chọn vai trò (Dev / QA/QC / PO/PM)",
+    "what": "Vai trò quyết định trang chủ, Dashboard và góc nhìn của AI khi tóm tắt và tạo ticket; QA, PO không dùng AI Agent. Chưa chọn thì Telegram coi như Dev.",
+    "how": [
+      {
+        "t": "Bấm một vai trò: \"Dev\", \"QA/QC\" hoặc \"PO/PM\"",
+        "at": "css:[aria-label=\"Vai trò\"]"
+      },
+      {
+        "t": "Bấm \"Bỏ chọn vai trò\" để bỏ chọn",
+        "at": "Bỏ chọn vai trò"
+      }
+    ],
+    "keys": "vai tro role dev qa qc po pm xoa vai tro"
+  },
+  {
+    "id": "settings-privacy",
+    "tab": "settings",
+    "area": "Cài đặt › AI › Quyền riêng tư",
+    "title": "Quyền riêng tư: ẩn SĐT / email khi gửi AI",
+    "what": "Tin nhắn của người khác và nội dung ticket được gửi tới AI bạn chọn. “Ẩn SĐT / email khi gửi AI” thay số điện thoại và email bằng [SĐT] / [email] trước khi gửi (nháp, tóm tắt, Briefing, Q&A, YouTrack AI). Công tắc “Hiện nội dung tin trong thông báo macOS” (mặc định tắt) không nằm ở đây mà ở Cài đặt › Telegram › “Thông báo”.",
+    "how": [
+      "Mở Cài đặt › AI, kéo xuống “Quyền riêng tư”",
+      "Bật / tắt công tắc; có hiệu lực ngay"
+    ],
+    "keys": "quyen rieng tu quyền riêng tư an sdt ẩn sđt email thong bao thông báo noi dung nội dung privacy redact"
+  },
+  {
+    "id": "settings-access",
+    "tab": "settings",
+    "area": "Mở app",
+    "title": "Mở app trên trình duyệt mới (mã truy cập)",
+    "what": "API của dashboard chỉ nhận trình duyệt đã được cấp quyền, để chương trình khác trên máy (kể cả AI Agent) không gửi tin thay bạn. Mở app bằng Start Dashboard hoặc lệnh myradar open thì trình duyệt được cấp quyền tự động và giữ khoảng một năm. Nếu thấy màn hình khóa: mở lại app bằng một trong hai cách trên, hoặc dán mã trong file ~/.telegram_dashboard/api_token rồi bấm “Mở khóa”.",
+    "how": [
+      "Mở app bằng Start Dashboard / myradar open (hoặc uv run python -m telegram_dashboard open)",
+      "Màn hình “Trình duyệt này chưa được mở khóa”: dán mã rồi bấm “Mở khóa”"
+    ],
+    "keys": "ma truy cap mã truy cập token dang nhap đăng nhập khoa khóa mo app mở app bookmark trinh duyet trình duyệt"
+  },
+  {
+    "id": "settings-language",
+    "tab": "settings",
+    "area": "Cài đặt › Chung › Ngôn ngữ",
+    "title": "Ngôn ngữ (Theo máy / Tiếng Việt / English)",
+    "what": "Chọn ngôn ngữ của app; \"Theo máy\" dùng Tiếng Việt khi máy dùng tiếng Việt, còn lại English. Đổi nhanh được ở nút VI / EN trên thanh trên cùng. Lưu trên trình duyệt.",
+    "how": [
+      {
+        "t": "Chọn mục \"Chung\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Ở \"Ngôn ngữ\" chọn \"Theo máy\", \"Tiếng Việt\" hoặc \"English\"",
+        "at": "css:[aria-label=\"Ngôn ngữ\"]"
+      }
+    ],
+    "keys": "ngon ngu language tieng viet english theo may"
+  },
+  {
+    "id": "settings-theme",
+    "tab": "settings",
+    "area": "Cài đặt › Giao diện",
+    "title": "Giao diện, phong cách, font chữ, linh vật AI, màu chủ đạo, gradient",
+    "what": "Chọn Sáng / Tối / Theo hệ thống; phong cách Đơn giản / Mặc định / Rực rỡ; font chữ (Quicksand, Be Vietnam Pro, Inter, Nunito hoặc font của máy); cỡ chữ (Nhỏ / Vừa / Lớn / Rất lớn); linh vật AI thay robot ở mọi cảnh đang tải, trang trống, ô AI (mặc định là linh thú theo vai trò: Dev rồng trắng lập trình viên, QA/QC cú cầm kính lúp, PO/PM cáo chỉ đường; hoặc robot, AI vẽ theo mô tả, ảnh của bạn; cũng thay icon AI Agent trên nút, menu); màu chủ đạo (có sẵn, kéo chọn, hoặc nút ống hút chọn màu bất kỳ / mã hex) và Độ đậm; bật Gradient với màu thứ hai hoặc chọn một cặp Pha sẵn. Khung Xem trước bên cạnh (Tin nhóm / Ticket / Đang tải) đổi màu ngay khi kéo. Lưu trên trình duyệt.",
+    "how": [
+      {
+        "t": "Chọn mục \"Giao diện\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#look\"]"
+      },
+      {
+        "t": "Chọn \"Sáng\", \"Tối\" hoặc \"Theo hệ thống\"",
+        "at": "css:[aria-label=\"Giao diện\"]"
+      },
+      {
+        "t": "Chọn phong cách \"Đơn giản\", \"Mặc định\" hoặc \"Rực rỡ\"",
+        "at": "css:[aria-label=\"Phong cách\"]"
+      },
+      {
+        "t": "Mở \"Font chữ\" và chọn font bạn thích",
+        "at": "css:[aria-label=\"Font chữ\"]"
+      },
+      {
+        "t": "Ở \"Cỡ chữ\" chọn \"Nhỏ\", \"Vừa\", \"Lớn\" hoặc \"Rất lớn\"",
+        "at": "css:[aria-label=\"Cỡ chữ\"]"
+      },
+      {
+        "t": "Ở \"Linh vật AI\" chọn robot hoặc một linh thú theo vai trò (chưa chọn thì dùng linh thú của vai trò bạn và đổi theo khi đổi vai trò; đã chọn thì giữ nguyên; chúng chớp mắt, vẫy tay như robot), bấm ô lấp lánh để AI vẽ theo mô tả (bấm một gợi ý hoặc tự gõ, chọn phong cách Dễ thương / Pixel / Nét mảnh, có thể thêm \"Ảnh tham khảo\" (chọn file hoặc dán ảnh) để AI vẽ theo, đổi model / effort vẽ ngay trong ô (mặc định theo \"Tóm tắt, soạn nháp\"), xem trước trong app rồi bấm \"Dùng linh vật này\" (AI tách mắt, tay của hình để linh vật chớp mắt, vẫy tay như robot; không tách được thì dùng bản đứng yên); AI vẽ ở nền nên có thể đóng cửa sổ đi làm việc khác, xong sẽ có thông báo kèm nút \"Xem\"), hoặc bấm ô ảnh để tải ảnh của bạn (PNG / JPG / WebP có nền một màu hay ô caro sẽ tự được xóa nền; ảnh tự lắc chào khi hiện, nhún như đang thở và thỉnh thoảng nghiêng đầu)",
+        "at": "css:[aria-label=\"Linh vật AI\"]"
+      },
+      {
+        "t": "Bấm một ô màu có sẵn",
+        "at": "css:[aria-label=\"Màu có sẵn\"]"
+      },
+      {
+        "t": "Bật \"Gradient\" để thêm màu thứ hai",
+        "at": "Gradient"
+      }
+    ],
+    "keys": "giao dien sang toi theo he thong phong cach don gian mac dinh ruc ro mau chu dao gradient theme accent ngôn ngữ language tieng viet tiếng việt english theo may co chu cỡ chữ font size phong to"
+  },
+  {
+    "id": "settings-telegram-account",
+    "tab": "settings",
+    "area": "Cài đặt › Telegram › Tài khoản Telegram",
+    "title": "Kết nối và đăng nhập Telegram",
+    "what": "Nhập API ID/Hash lấy tại my.telegram.org, rồi đăng nhập bằng số điện thoại → mã → mật khẩu 2FA. Chỉ lưu trên máy này.",
+    "how": [
+      {
+        "t": "Chọn mục \"Telegram\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Bấm link \"Lấy API ID/Hash tại my.telegram.org\" (hoặc \"Đổi API ID/Hash\" nếu đã có)",
+        "at": [
+          "Lấy API ID/Hash tại my.telegram.org",
+          "Đổi API ID/Hash"
+        ]
+      },
+      {
+        "t": "Nhập \"API ID\" và \"API Hash\" lấy từ trang đó",
+        "at": "API ID"
+      },
+      {
+        "t": "Bấm \"Lưu\"",
+        "at": "Lưu"
+      },
+      {
+        "t": "Nhập \"Số điện thoại\" kèm mã nước",
+        "at": "Số điện thoại"
+      },
+      {
+        "t": "Bấm \"Gửi mã\"",
+        "at": "Gửi mã"
+      },
+      {
+        "t": "Nhập mã Telegram (và mật khẩu 2FA nếu có), bấm \"Đăng nhập\"",
+        "at": "Đăng nhập"
+      }
+    ],
+    "keys": "dang nhap telegram api id api hash so dien thoai ma 2fa my.telegram.org login"
+  },
+  {
+    "id": "settings-overdue",
+    "tab": "settings",
+    "area": "Cài đặt › Telegram › Hàng chờ",
+    "title": "Ngưỡng quá hạn",
+    "what": "Tin tag chờ lâu hơn ngưỡng (1, 2, 4, 8 hoặc 24 giờ) hiện màu hổ phách là quá hạn.",
+    "how": [
+      {
+        "t": "Chọn mục \"Telegram\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Chọn số giờ ở \"Ngưỡng quá hạn\"",
+        "at": "css:[aria-label=\"Ngưỡng quá hạn\"]"
+      }
+    ],
+    "keys": "nguong qua han overdue gio cho mau ho phach hang cho"
+  },
+  {
+    "id": "settings-notify",
+    "tab": "settings",
+    "area": "Cài đặt › Telegram › Thông báo",
+    "title": "Bật thông báo khi có tag mới",
+    "what": "Bật thông báo trình duyệt khi có tag mới lúc tab đang ẩn.",
+    "how": [
+      {
+        "t": "Chọn mục \"Telegram\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Bật công tắc \"Thông báo khi có tag mới\", rồi cho phép trong trình duyệt",
+        "at": "Thông báo khi có tag mới"
+      }
+    ],
+    "keys": "thong bao tag moi notification bat tat cong tac"
+  },
+  {
+    "id": "settings-row-actions",
+    "tab": "settings",
+    "area": "Cài đặt › Telegram › Hàng chờ",
+    "title": "Nút thao tác trên tin",
+    "what": "Chọn hiện nút Ghim, Ngữ cảnh, Mở Telegram \"Khi rê vào nút Xong\" hay \"Luôn hiện\".",
+    "how": [
+      {
+        "t": "Chọn mục \"Telegram\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#telegram\"]"
+      },
+      {
+        "t": "Chọn \"Khi rê vào nút Xong\" hoặc \"Luôn hiện\"",
+        "at": "css:[aria-label=\"Nút thao tác trên tin\"]"
+      }
+    ],
+    "keys": "nut thao tac tren tin luon hien re vao row actions"
+  },
+  {
+    "id": "settings-reply",
+    "tab": "settings",
+    "area": "Cài đặt › Chung › Giới thiệu bản thân cho AI",
+    "title": "Nền tảng tóm tắt",
+    "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Mobile chung, Không giới hạn).",
+    "how": [
+      {
+        "t": "Chọn mục \"Chung\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#general\"]"
+      },
+      {
+        "t": "Chọn nền tảng ở \"Tóm tắt theo nền tảng\"",
+        "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
+      }
+    ],
+    "keys": "mo san tom tat nen tang android ios mobile platform tra loi"
+  },
+  {
+    "id": "settings-briefing-model",
+    "tab": "settings",
+    "area": "Cài đặt › AI › Model và effort",
+    "title": "Model và effort riêng cho Briefing / Digest",
+    "what": "Briefing và Digest (tóm tắt cả nhóm) chạy model/effort riêng; để \"Như tóm tắt\" thì dùng lựa chọn của tóm tắt, soạn nháp. Cũng chỉnh được ngay trên trang Briefing.",
+    "how": [
+      {
+        "t": "Chọn mục \"AI\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "Ở dòng \"Briefing và Digest\", chọn model và kéo effort",
+        "at": "css:[aria-label=\"Model cho Briefing và Digest\"]"
+      }
+    ],
+    "keys": "briefing digest model effort rieng tom tat nhom nhu tom tat"
+  },
+  {
+    "id": "settings-ai-accounts",
+    "tab": "settings",
+    "area": "Cài đặt › AI › Tài khoản",
+    "title": "Tài khoản các CLI AI",
+    "what": "Xem trạng thái cài đặt/đăng nhập của Claude, Codex, Antigravity CLI; đăng nhập, xem chi tiết, hoặc copy lệnh cài.",
+    "how": [
+      {
+        "t": "Chọn mục \"AI\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "Bấm \"Đăng nhập\" hoặc \"Chi tiết\" cạnh CLI (\"Đã cài, kiểm tra lại\" nếu vừa cài)",
+        "at": [
+          "Đăng nhập",
+          "Chi tiết",
+          "Đã cài, kiểm tra lại"
+        ]
+      },
+      {
+        "t": "CLI chưa cài: bấm nút copy lệnh cài, chạy trong Terminal",
+        "at": "css:button[aria-label=\"Copy lệnh cài\"]"
+      }
+    ],
+    "keys": "tai khoan ai cli claude codex antigravity dang nhap cai dat lenh cai"
+  },
+  {
+    "id": "settings-ai-provider",
+    "tab": "settings",
+    "area": "Cài đặt › AI › Model và effort",
+    "title": "Chọn model của mọi AI trong một danh sách",
+    "what": "Ô Model của từng việc (tóm tắt, soạn nháp, Briefing, Task và AI Agent, AI YouTrack) liệt kê model của Claude, Codex và Antigravity theo nhóm: chọn model của AI nào thì việc đó chạy bằng AI ấy, không cần đổi AI trước; effort theo đúng mức model đó nhận. Codex chạy qua opencodex (proxy trên máy) thì có thêm model opencodex định tuyến (AgentAPI, anthropic, combo…), xếp nhóm \"Codex · <provider>\" như trang Models của opencodex. Mỗi AI giữ lựa chọn riêng. Task đang dở tiếp tục bằng AI đã bắt đầu nó.",
+    "how": [
+      {
+        "t": "Chọn mục \"AI\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#ai\"]"
+      },
+      {
+        "t": "Mở ô Model của việc cần đổi, chọn model trong nhóm Claude / Codex / Antigravity",
+        "at": "css:[aria-label=\"Model cho Tóm tắt, soạn nháp\"]"
+      }
+    ],
+    "keys": "dung ai nao provider claude codex antigravity chon ai model gop chung opencodex combo agentapi proxy"
+  },
+  {
+    "id": "settings-github-update",
+    "tab": "settings",
+    "area": "Cài đặt › Cập nhật",
+    "title": "Cập nhật app và tự động cập nhật",
+    "what": "Kiểm tra và cài bản mới từ GitHub: bấm \"Cập nhật\" mở hộp xác nhận (bản đang dùng / mới nhất, danh sách thay đổi, lệnh sẽ chạy); bấm \"Cập nhật\" trong hộp thì AI kéo bản mới về, khởi động lại server và tải lại trang; có thể bật tự động cập nhật mỗi giờ (bỏ qua khi có task AI Agent).",
+    "how": [
+      {
+        "t": "Chọn mục \"Cập nhật\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#github\"]"
+      },
+      {
+        "t": "Bấm biểu tượng xoay \"Kiểm tra\" để kiểm tra lại",
+        "at": "Kiểm tra"
+      },
+      {
+        "t": "Có bản mới thì bấm \"Cập nhật\"",
+        "at": "Cập nhật"
+      },
+      {
+        "t": "Xem bản mới và lệnh sẽ chạy trong hộp xác nhận, bấm \"Cập nhật\" để cài",
+        "at": "css:[role=\"dialog\"]"
+      },
+      {
+        "t": "Bật \"Tự động cập nhật\" nếu muốn",
+        "at": "Tự động cập nhật"
+      }
+    ],
+    "keys": "cap nhat update github tu dong cap nhat auto update phien ban moi"
+  },
+  {
+    "id": "settings-youtrack",
+    "tab": "settings",
+    "area": "Cài đặt › YouTrack",
+    "title": "Kết nối YouTrack và cấu hình AI cho YouTrack",
+    "what": "Ba nhóm: Kết nối và báo cáo (URL, token YouTrack, lịch Báo cáo release), AI và prompt (Instructions cho AI theo vai trò, Kho prompt), Workflow.",
+    "how": [
+      {
+        "t": "Chọn mục \"YouTrack\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#youtrack\"]"
+      },
+      {
+        "t": "Chọn \"Kết nối và báo cáo\"",
+        "at": "css:[aria-label=\"Nhóm cài đặt YouTrack\"]"
+      },
+      "Đã kết nối thì bấm \"Đổi URL / token\" để hiện ô nhập",
+      {
+        "t": "Nhập \"URL YouTrack\"",
+        "at": "URL YouTrack"
+      },
+      {
+        "t": "Nhập \"Token YouTrack\"",
+        "at": "Token YouTrack"
+      },
+      {
+        "t": "Bấm \"Lưu\" (hoặc \"Cập nhật\")",
+        "at": "css:form:has(input[aria-label=\"Token YouTrack\"]) button[type=\"submit\"]"
+      },
+      {
+        "t": "Chưa có token: bấm link \"Tạo token trên YouTrack\"",
+        "at": "Tạo token trên YouTrack"
+      }
+    ],
+    "keys": "youtrack token url ket noi instructions kho prompt bao cao release"
+  },
+  {
+    "id": "settings-shortcuts",
+    "tab": "settings",
+    "area": "Cài đặt › Phím tắt",
+    "title": "Bảng phím tắt",
+    "what": "Phím tắt của Telegram Inbox và YouTrack, chia theo nhóm (Di chuyển, Xử lý tin, Trả lời…), có ô tìm. Trong Inbox nhấn ? để mở nhanh.",
+    "how": [
+      {
+        "t": "Chọn mục \"Phím tắt\"",
+        "at": "css:nav[aria-label=\"Mục cài đặt\"] a[href=\"#shortcuts\"]"
+      },
+      {
+        "t": "Chọn \"Telegram Inbox\" hoặc \"YouTrack\"",
+        "at": "css:[aria-label=\"Phím tắt của\"]"
+      },
+      {
+        "t": "Gõ vào ô \"Tìm phím tắt\" để lọc",
+        "at": "Tìm phím tắt"
+      },
+      "Hoặc nhấn ? khi đang ở Inbox"
+    ],
+    "keys": "phim tat shortcuts bang phim tat keyboard tim phim tat youtrack"
+  }
+]

@@ -1,0 +1,215 @@
+[
+  {
+    "id": "yt-chi-tiet-ticket",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Xem chi tiết ticket",
+    "what": "Bảng bên hiện tiêu đề, State, Assignee, Priority, QC, Sprint, Hạn, ngày tạo/cập nhật, Reporter, Mô tả, Liên kết, Nhắc trên Telegram và Bình luận.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Xem State, Assignee, Priority, QC, Sprint, Hạn, Mô tả, Liên kết, Nhắc trên Telegram, Bình luận; bấm một ticket trong \"Liên kết\" để chuyển sang đó",
+      {
+        "t": "Bấm ID ở đầu bảng bên để mở trên YouTrack",
+        "at": "css:aside[role=\"dialog\"] a[href*=\"/issue/\"]"
+      },
+      {
+        "t": "Bấm ✕ \"Đóng\" (hoặc Esc)",
+        "at": "css:aside[role=\"dialog\"] button[aria-label=\"Đóng\"]"
+      }
+    ],
+    "keys": "chi tiet ticket chi tiết ticket ticket detail mo ta mô tả binh luan bình luận lien ket liên kết nhac tren telegram nhắc trên telegram mentions"
+  },
+  {
+    "id": "yt-ui-flow",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket › UI flow",
+    "title": "UI flow: sơ đồ màn hình và luồng bấm của ticket",
+    "what": "AI đọc AC, rule và link Zeplin của ticket (với sub-task, đọc trọn story cha, nơi có AC, cây \"Luồng màn\" và link Zeplin) rồi dựng sơ đồ: màn nào, bấm nút nào sang màn nào, popup nào hiện, back về đâu. Màn có link Zeplin được vẽ bằng ảnh thiết kế thật, nút thành vùng bấm đúng chỗ trên ảnh (khớp theo chữ trên nút; nút không thấy trên thiết kế hiện thành dòng ở dưới); cần Zeplin MCP đã cấu hình. Xem toàn cục hoặc bấm thử như prototype, sửa lại, rồi bấm Cập nhật để ghi file HTML lên ticket kèm bình luận ghi rõ đã đổi gì (trong lúc lưu, một popup nhỏ cho xem từng bước: nhúng ảnh Zeplin, tải file lên, ghi bình luận; nút Dừng chỉ bấm được trước lúc bắt đầu tải lên); tên file theo tên sơ đồ (\"<tên> - <ticket>.html\", chưa đặt tên thì uiflow-<ticket>.html; trùng tên một đính kèm khác trên ticket thì thêm \" - <tên người lưu>\"). App nhận ra file UI flow theo dấu bên trong file, không theo tên: dòng file đó trong Tệp đính kèm (có icon sơ đồ) mở đúng màn này. Người khác vừa cập nhật thì app báo và cho xem bản mới, không ghi đè. File trên ticket do người khác lưu (YouTrack ghi ai tải file lên) thì đầu khung có nhãn khoá \"Của <tên>\": bạn vẫn sửa thử (giữ làm nháp trên máy) và tải file HTML được, nhưng chỉ người đó Cập nhật hoặc Xoá được file trên ticket. Sơ đồ đã lưu trên ticket cũng được đưa cho AI: phiên AI Agent và AI của ticket đọc bản rút gọn (màn → nút → màn đích, AC, link Zeplin) mỗi khi đọc ticket đó.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm \"UI flow\"",
+        "at": "UI flow"
+      },
+      "Chưa có file: chọn thẻ \"Chỉ màn hình\" (code dựng UI các màn Zeplin, không có nút và liên kết, 0 token, vài giây) hoặc \"Màn + liên kết\" (AI đọc AC để vẽ luồng bấm), rồi bấm nút bên dưới. Chọn nền tảng (Mobile / Web, kèm số màn mỗi cỡ) ngay dưới hai thẻ, áp dụng cho cả hai cách: màn khác nền tảng không được dựng; khi đã có sơ đồ thì chọn trong câu hỏi \"Render lại\". Dưới tiêu đề còn hiện số màn Zeplin, số dòng luồng chưa rõ (cần sửa trong ticket), token tối đa và chi phí ước tính nếu render bằng AI; ticket chưa có link Zeplin thì \"Chỉ màn hình\" bị khóa. Model / effort nằm ở đáy hộp cảnh báo. Cạnh nút hiện ước lượng token; ghi chú thêm cho AI nếu cần rồi bấm \"Render bằng AI\" (hoặc \"Dựng màn\"); đang chạy có thể bấm \"Dừng render\" Chọn Web thì sơ đồ vẽ mỗi màn trong khung cửa sổ trình duyệt (rộng 1280, cao theo đúng thiết kế, không viền điện thoại), vùng bấm nằm đúng chỗ trên trang; Prototype cũng là một cửa sổ, trang dài cuộn bên trong. Khung đi theo sơ đồ khi lưu và khi tải file HTML. Sơ đồ web dựng trước bản này vẫn ở khung điện thoại: \"Render lại bằng AI\" với Web để chuyển (các màn được xếp lại vì cỡ khung đổi).",
+      "Đang render, khung hiện tiến trình: % đã xong, đã chạy bao lâu và ước tính còn bao lâu, từng bước (đọc ticket và story, đọc từng màn Zeplin, AI lên luồng, vẽ từng màn, nối từng nút với màn đích, kiểm tra) kèm số liệu và thời gian của bước đó, tên các màn vừa vẽ và liên kết vừa nối",
+      "Đóng khung hoặc đóng tab không dừng AI. Mở lại để xem tiếp tiến trình hoặc lấy kết quả chưa cập nhật. Bấm “Dừng” chỉ xác nhận đã dừng khi máy chủ trả lời; mất kết nối giữ lượt vẽ để “Kết nối lại”. Sau khởi động lại, bước xử lý đã có dữ liệu đầy đủ được khôi phục tự động; nếu AI bị gián đoạn, bấm “Tiếp tục” để gọi AI lại.",
+      "Nút Zeplin không có layer chữ (danh sách bị gộp vào ảnh) thì ở cách \"Màn + liên kết\" AI nhìn ảnh thiết kế để đặt vùng bấm (tốn thêm một lượt AI ngắn); vùng đó sửa được như vùng vẽ tay và được giữ khi render lại. Nút AI không tìm thấy thì có cảnh báo, vẽ vùng bấm bằng tay.",
+      "Lúc đang vẽ, mỗi bước có nhãn: \"AI\" (tô sáng) là bước AI đọc / viết, tốn token AI; \"Code\" là bước dashboard tự xử lý (đọc ticket, đọc Zeplin, kiểm kết quả), không tốn token",
+      "Render xong, thanh dưới ghi AI vừa vẽ bao nhiêu màn, liên kết, mất bao lâu; bấm \"Cập nhật\" thì thanh báo đang nhúng ảnh Zeplin (n/tổng) rồi đang tải file lên ticket",
+      "Có sơ đồ: dùng thanh công cụ dọc ở mép trái khung, chỉ có icon (rê chuột để xem tên): Toàn cục / Prototype, Sửa (bật thì nhóm công cụ sửa trượt ra ngay dưới), Vừa màn hình; rê chuột vào thanh thì thanh trượt rộng ra đè lên sơ đồ, hiện tên mọi nút; đưa chuột ra (hoặc bấm một công cụ) thì thu lại; ô tìm màn nằm ở góc trên trái sơ đồ. Bấm tên ở đầu khung (\"UI flow <mã ticket>\", có biểu tượng bút chì bên cạnh) để đặt tên riêng cho sơ đồ: Enter hoặc bấm ra ngoài để giữ, Esc để bỏ, để trống thì về tên mặc định; tên được Hoàn tác như mọi sửa khác, lên ticket khi bấm Cập nhật, làm tiêu đề file HTML tải về và được giữ khi Render lại bằng AI. Nút Tải (mũi tên xuống) ở đầu khung có 2 lựa chọn: \"File HTML (xem offline)\" (file chỉ để xem: Toàn cục, Prototype, tìm màn; muốn sửa thì sửa trên dashboard rồi Cập nhật; lúc đóng gói, một popup nhỏ cho xem từng bước, như nhúng ảnh Zeplin n/m, có nút Dừng để hủy bất cứ lúc nào) và \"Markdown cho AI…\". Markdown cho AI mở hộp để ghi yêu cầu thêm cho AI (vd. công nghệ, phạm vi) và chọn kèm nguyên văn ticket / story, đường đi để kiểm thử, dữ liệu JSON (mặc định tắt vì trùng với bảng màn / nút); bấm Sao chép để dán vào AI agent hoặc Tải file .md. Sơ đồ chưa có nút / mũi tên (dựng bằng \"Dựng màn hình\") thì hộp báo trước: file chỉ có danh sách màn, chữ thiết kế và ticket, agent phải tự đoán luồng và AC thuộc màn nào; nối tay trong Sửa hoặc render bằng AI để file đủ. Mở hộp là file được tạo ngay (bằng code, không dùng AI, không tốn token) và hộp ghi khoảng bao nhiêu token khi dán vào AI agent, để biết có vừa context không; tick / bỏ tick lựa chọn hoặc ngừng gõ yêu cầu thì đếm lại tại chỗ. Sao chép rồi Tải dùng luôn bản đã đếm, không tạo lại. Mỗi AC chỉ trích nguyên văn một lần, dưới màn của nó; AC không gắn vào màn nào có mục riêng. File gồm: cách đọc tài liệu, sơ đồ Mermaid, từng màn theo thứ tự người dùng gặp (loại màn, link Zeplin, chữ trên thiết kế, nội dung AC trích nguyên văn, ghi chú, bảng nút → màn đích kèm điều kiện), đường đi kiểm thử, ghi chú trên sơ đồ, mục \"Còn thiếu / cần hỏi lại\" (màn chưa có thiết kế, nút chưa nối, màn không tới được, AC chưa gắn màn) và nguồn yêu cầu. Chỉ tạo lúc xuất: sơ đồ, file trên ticket và bản nháp không đổi. Mũi tên quay lại / đóng (nét đứt) luôn hiện trên sơ đồ. Mở lại sơ đồ đã lưu: ảnh Zeplin của lần đọc trước hiện ngay; app đọc lại Zeplin từng màn ở nền, màn nào đọc xong thì cập nhật ngay màn đó, và chỉ màn có thiết kế đổi mới được vẽ lại (màn không đổi giữ nguyên ảnh, không nháy). Thiết kế dài (trang cuộn, cao hơn một màn điện thoại) được vẽ đủ chiều dài: nút ở cuối trang nằm đúng chỗ trên ảnh; \"Vừa màn hình\" tính màn dài tối đa bằng 2 màn để các màn khác vẫn đọc được, kéo xuống để xem phần dưới; \"Sắp xếp lại\" không đặt màn nào dưới một màn dài.",
+      "Bước / màn / popup ticket có nhắc nhưng chưa có thiết kế: AI không vẽ (sơ đồ chỉ gồm màn có ảnh Zeplin); khi có thiết kế thì thêm bằng \"+ Từ Zeplin\". Ticket chưa có link Zeplin nào thì AI vẫn vẽ màn theo mô tả như trước. Ngoài chế độ Sửa, bấm một chip AC trên màn (vd. \"AC3.5\") để chỉ các màn và mũi tên mang mã AC đó sáng lên; bấm lại chip hoặc Esc để bỏ.",
+      "Chọn một màn ở chế độ Sửa: mỗi lần bấm vào màn nào (lần đầu hay các lần sau) camera đều đưa màn đó vào giữa khung, chừa lề quanh màn để vẫn thấy màn bên cạnh và mũi tên; bấm trên tên màn thì camera chờ một nhịp ngắn, nên nhấp đúp vào tên vẫn đổi được tên tại chỗ. Khung thuộc tính hiện ở góc trái dưới, đầu khung có loại + tên, nút ▶ (\"▶ Màn bắt đầu\"), thùng rác (\"Xoá\") và ✕ (\"Bỏ chọn\", hoặc Esc). Bấm ▶ để Prototype và sơ đồ bắt đầu từ màn đó (bấm lại để về màn đầu tiên). Khi bật Sửa, nhóm công cụ hiện ngay dưới nút Sửa trên thanh trái, chỉ gồm icon: \"+ Từ Zeplin\" (dấu +, cách duy nhất để thêm màn bằng tay), \"+ Ghi chú\" (khung ghi chú trên sơ đồ, đứng riêng cạnh các màn: ghi lưu ý, ý tưởng cải thiện tính năng; bấm nút thì con trỏ thành dấu thập và dưới sơ đồ hiện hướng dẫn: kéo trên sơ đồ để vẽ khung đúng cỡ muốn, bấm một lần thì được khung cỡ mặc định, Esc hoặc bấm lại nút để huỷ; gõ thẳng vào khung, kéo thanh trên cùng để di chuyển, kéo góc dưới bên phải để đổi cỡ bất cứ lúc nào, nút mũi tên để thu gọn còn một dòng tiêu đề (dòng đầu của ghi chú) hoặc mở rộng lại, nút ✕ để xoá, mỗi thao tác một bước hoàn tác; ngoài chế độ Sửa chỉ đọc, nút mũi tên vẫn thu gọn / mở rộng được nhưng chỉ trên màn đang xem, không đổi file; lưu cùng file, render lại vẫn giữ, AI Agent đọc sơ đồ cũng thấy các ghi chú này), \"Sắp xếp lại\", \"↶ Hoàn tác\", \"↷ Làm lại\"; rê chuột vào icon thì tên hiện bên phải icon (⌘Z / ⌘⇧Z); một loạt phím mũi tên tính là một bước.",
+      "Bấm một màn trên sơ đồ rồi bấm \"Prototype\": Prototype chạy tiếp từ màn đó. Không chọn màn nào: lần đầu chạy từ màn bắt đầu, các lần sau quay lại đúng chỗ đang đi dở. Đổi màn bắt đầu trên sơ đồ (nút ▶ ở chế độ Sửa) thì lần vào Prototype kế tiếp chạy lại từ màn bắt đầu mới. Màn vừa thêm bằng \"+ Từ Zeplin\" được đặt ở chỗ trống (bên phải màn ngoài cùng nếu giữa khung nhìn đã có màn), không đè lên màn khác, và không làm đổi chỗ Prototype đang đứng.",
+      "Chưa đặt màn bắt đầu: thanh dưới của Prototype ghi \"Chưa đặt màn bắt đầu\" (lúc đó Prototype chạy từ màn đầu tiên). Ở Prototype, bấm \"▶ Màn bắt đầu\" trên thanh dưới để đặt màn đang xem làm màn bắt đầu, bấm lại để bỏ; không cần vào chế độ Sửa. Nhớ bấm \"Cập nhật\" để lưu.",
+      "Ở Prototype, bấm vào chỗ trống trên ảnh màn: mọi vùng bấm được của màn đó sáng lên trong chốc lát.",
+      "Muốn xem sơ đồ đang sửa ngoài app (kể cả bản nháp chưa lưu): bấm icon \"Tải file HTML\" ở đầu khung, file mở được offline, mang theo màu giao diện bạn đang dùng, và không ghi gì lên ticket. Thanh dưới báo tiến độ nhúng ảnh; xong thì có dòng \"Đã tạo file…\" kèm nút \"Tải xuống\" nếu trình duyệt chưa tự tải. Ticket sửa sau lần cập nhật sơ đồ thì khung báo; \"Render lại bằng AI\" giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu (và vị trí khi không thêm màn mới) của các màn khớp.",
+      "Ô \"Tìm màn\": gõ tên màn (không cần dấu), link Zeplin hoặc id; màn khớp được tô viền vàng, phím lên/xuống chọn, Enter tới màn đó, Esc xoá tìm. Tìm không đổi sơ đồ.",
+      "Bấm \"Sửa\": \"+ Từ Zeplin\" mở khung ngay dưới nút: dán một hoặc nhiều link màn Zeplin (link rút gọn zpl.io cũng được), cách nhau bằng dấu phẩy, khoảng trắng hoặc xuống dòng (Shift+Enter), rồi Enter hoặc \"Thêm n màn\": mỗi link thành một màn kèm tên trên Zeplin và ảnh thiết kế, tất cả là một bước Hoàn tác. Có link lỗi (sai dạng, đã có trong sơ đồ, Zeplin không đọc được) thì chưa thêm màn nào: khung chỉ liệt kê các link lỗi kèm lý do; sửa trong ô rồi bấm \"Thử lại\", hoặc bấm \"Thêm n màn hình\" để thêm ngay n link hợp lệ, các link lỗi ở lại trong ô; \"Sắp xếp lại\" xếp lại toàn bộ màn, bấm ⌘Z để quay lại. Chọn một màn: khung thuộc tính có ô \"Tên màn\" để đổi tên (bấm đúp vào tên trên khung màn cũng đổi được), loại màn (đổi Màn sang Popup / Sheet / Toast thì mũi tên đi vào nó tự từ \"Đi tới\" thành \"Mở\", mũi tên quay về từ nó \"Quay lại\" thành \"Đóng\", màn mở nó thành màn bên dưới; đổi ngược lại thì ngược lại; điều kiện và AC giữ nguyên), link Zeplin, \"Ghi chú\" (chữ thường, có biểu tượng ✎ trên màn, Esc huỷ, chỉ lưu trong sơ đồ, không đăng bình luận ticket), \"+ Vùng bấm\" rồi kéo trên ảnh để vẽ nút (hoặc Enter để đặt vùng giữa màn). Vùng bấm vẽ chồng lên nhau được (vd. một vùng lớn chứa 2-3 vùng nhỏ, tới 4 lớp): vùng nhỏ hơn luôn nằm trên và nhận cú bấm, vùng bên dưới không bị bấm, vẽ theo thứ tự nào cũng vậy. Chỉ dùng bàn phím: tìm màn rồi Enter để chọn màn, các vùng bấm của màn nằm ở dòng \"Vùng bấm\" trong khung thuộc tính (rê chuột vào tên để thấy nó trên sơ đồ; màn chưa có ảnh thiết kế thì dòng này là \"Nút\" với \"+ Nút\"). Chọn một vùng bấm / nút: nó được tô đậm có viền sáng, các vùng khác của màn mờ đi, chỉ mũi tên của chính nó sáng; nút ‹ ở đầu khung đưa về màn chứa nó (mũi tên cũng có nút ‹ về màn nguồn). Khung của vùng bấm có mục \"Đường đi (n)\": mỗi mũi tên đi ra từ vùng bấm là một dòng (kiểu đi → màn đích · điều kiện); rê chuột vào dòng để thấy mũi tên trên sơ đồ, bấm dòng để mở: mũi tên sáng đậm và chọn kiểu ngay tại đó (Đi tới / Mở / Quay lại / Đóng), \"Điều kiện, AC…\" mở khung của mũi tên, ✕ bỏ đường đi đó. Kéo chấm tròn sang màn đã mở màn hiện tại thì mũi tên tự là \"Quay lại\" (từ popup về màn bên dưới nó: \"Đóng\"); sang màn khác vẫn là \"Đi tới\" / \"Mở\". Trên ảnh: kéo để dời, kéo góc để đổi cỡ, \"Vẽ lại vùng\", hoặc \"Khớp theo chữ\" (bỏ vùng vẽ tay, dùng chỗ có chữ trùng tên nút trên thiết kế, tự theo khi designer dời nút; tên chưa trùng chữ nào thì nút báo lý do và đưa con trỏ vào ô \"Tên nút\"). Màn Zeplin dài (danh sách cuộn) được vẽ đủ chiều dài, trừ màn là danh sách các item lặp lại (thẻ, dòng cùng kiểu xếp đều nhau, từ 3 item): khi render hoặc thêm bằng \"+ Từ Zeplin\", màn mới tự thu gọn, chỉ hiện các item vừa một màn hình (ít nhất một item, cắt ở giữa hai item); các nút nằm dưới chỗ cắt thành hàng nút ở đáy khung. Khi render bằng AI, AI được báo màn nào là danh sách (bao nhiêu item) để nối các nút khác nhau giữa các item như hành động theo trạng thái, không tạo màn riêng cho từng item. Màn đã có trong sơ đồ giữ nguyên như bạn để (thu gọn hay đầy đủ) khi render lại. Ở chế độ Sửa có nút \"Thu gọn\" ở cuối khung đầu tiên của màn để chỉ hiện phần đầu (tới chỗ cắt của danh sách nếu có, không thì cao bằng một màn điện thoại; có viền mờ ở đáy), bấm \"Mở rộng\" để hiện đủ lại. Khung thuộc tính của màn đó có \"Đầy đủ / Thu gọn\" và ô \"Cao (px)\" để chọn đúng chiều cao muốn hiện (px theo thiết kế). Kéo mép dưới khung (vạch ngang hiện khi rê chuột) để chọn chiều cao bằng chuột. Nút nằm ở phần bị ẩn thành dòng nút ở đáy khung (hơn 3 nút thì dòng thứ 3 gộp phần còn lại thành \"+n nút ở phần ẩn\", chọn từng nút ở mục \"Vùng bấm\" của khung thuộc tính); Prototype vẫn hiện cả màn; cách thu gọn được lưu trong file và giữ qua lần render lại. Khung vùng bấm có ô \"Tên nút\" để đặt / đổi tên (bấm đúp vào vùng trên sơ đồ cũng đổi được). Kéo để vẽ vùng mới thì vùng tạm tên \"Nút mới\" và con trỏ nằm sẵn trong ô \"Tên nút\": gõ tên rồi Enter (phím mũi tên lại dời vùng); bấm vào một chữ trên ảnh thay vì kéo thì vùng lấy luôn chữ đó làm tên. Dời màn bằng cách kéo thanh tiêu đề hoặc phím mũi tên (Shift: bước lớn); phím mũi tên cũng dời vùng đang chọn. Chọn một màn, nút hoặc mũi tên: chỉ nó và các màn / mũi tên nối với nó sáng lên, phần còn lại mờ đi; Esc để bỏ chọn. Khi thu nhỏ sơ đồ, nhãn mũi tên và thanh tiêu đề trên ảnh thiết kế ẩn đi cho gọn (phóng to, rê chuột vào màn hoặc chọn màn để thấy lại); chấm kéo liên kết chỉ hiện trên màn đang rê chuột / đang chọn. Lúc đang \"+ Vùng bấm\", các chữ trên thiết kế có viền nét đứt: bấm vào một chữ để lấy luôn nó làm nút (đúng chữ, đúng vùng), không cần kéo khung hay gõ tên; kéo thì vẫn vẽ tay như cũ.",
+      "Sửa xong, bản nháp tự lưu trên trình duyệt sau 500 ms theo tài khoản và máy chủ; đóng khung vẫn giữ bản nháp. Bản nháp (kể cả bản AI vừa vẽ mà chưa lưu) chỉ giữ trong ngày: sang ngày mới thì tự xoá, mở lại sẽ thấy bản trên ticket. Autosave không cập nhật ticket. Ticket chưa có file (sơ đồ mới chỉ là bản nháp): thanh dưới có “Đã lưu bản nháp”, “Bỏ bản nháp” (hỏi lại trước khi xóa) và “Lưu lên ticket” để ghi lần đầu. Đang sửa sơ đồ đã có file trên ticket: thanh chỉ có “Cập nhật”; dòng bản nháp chỉ hiện khi lưu nháp lỗi, kèm “Thử lại”. Bấm ✕ ở cuối thanh để ẩn thanh nhắc (bản nháp vẫn giữ; dòng nhỏ bên dưới có “Cập nhật lên ticket” để mở lại). File trên ticket đã đổi thì bản nháp được giữ và báo xung đột; xem bản mới chỉ khi bạn quyết định bỏ nháp.",
+      {
+        "t": "Nút ↻ (chỉ hiện khi đã có sơ đồ): \"Render lại bằng AI\". Nút ← bên trái đóng UI flow. Icon tải: \"Tải file HTML\" (tải sơ đồ đang xem, kể cả bản nháp chưa lưu). Icon thùng rác: \"Xoá UI flow\" (xoá file trên ticket, có hỏi lại; chưa lưu thì là \"Bỏ bản render\")",
+        "at": "Đóng"
+      },
+      "Không còn giới hạn token hay cắt bớt nguồn: lượt vẽ có rủi ro (nhiều token, nhiều màn, luồng chưa rõ) thì hiện hộp cảnh báo với số token theo từng nguồn; bấm \"Xem dòng\" ở cảnh báo luồng chưa rõ để thấy từng dòng code không tự vẽ được và lý do (tên màn không trùng tên link Zeplin, trùng nhiều màn, sai dạng); sửa trong ticket theo dạng `Màn A -- \"Nút\" --> Màn B` để code tự vẽ, AI không phải đoán. Mỗi dòng có số #: mặc định các dòng chưa rõ không được tick (AI chỉ vẽ phần đã rõ), tick ô nếu muốn AI vẽ thêm liên kết đó, bấm #số hoặc cả dòng để đưa dòng vào khung \"Hỏi AI\" bên phải; \"Chọn hết / Bỏ hết\" ở đầu mỗi nhóm đổi cả nhóm một lần; link trong dòng mở ra trình duyệt. Mặc định UI flow là \"Chỉ màn hình\" (0 token). Chọn \"Màn + liên kết\" rồi bấm render thì luôn mở hộp kiểm tra trước: hộp đếm token khi mở (có cảnh chờ), chọn model / effort ở đáy hộp, cạnh Hủy và Render; nền tảng đã chọn trước đó được ghi ở đó. Thẻ \"Chia n phần\" ghi tổng token của mọi phần (mỗi phần gửi lại ticket). Màn Zeplin khác nền tảng đã chọn (màn web / desktop khi vẽ mobile, màn mobile khi vẽ web) không được gửi và không hiện trong hộp: số token, số màn và cảnh báo (kể cả các dòng luồng nối tới các màn đó) chỉ tính nền tảng đã chọn. Bấm render khi hộp còn đang đếm cũng vậy: lượt render tự bỏ màn khác nền tảng từ chính lượt đọc Zeplin đang chạy, không cần chờ số đếm. Dòng nêu tên màn có nút mở màn đó trên Zeplin. Khung \"Hỏi AI\" bên phải hộp cảnh báo để hỏi, dán link hoặc mô tả thêm luồng; câu trả lời và các dòng bỏ chọn được gửi kèm khi bấm \"Render kèm phần đã làm rõ\"; bấm \"Phân tích bằng AI\" để model nhẹ nêu lý do và hướng xử lý (chỉ đọc số liệu, không đọc ticket), thẻ \"Dựng màn hình\" để làm bản 0 token, hoặc \"Render bằng AI\" để AI đọc đủ ticket. Chỉ chặn khi đầu vào vượt context của mọi model. Cạnh số token có giá ước tính (~$) theo các lượt gần đây trên đúng model đó. \"Render lại bằng AI\" mặc định \"Chỉ vẽ phần mới\": giữ liên kết đang có, AI chỉ bổ sung phần mới nên tốn ít token hơn nhiều; bỏ chọn để vẽ lại toàn bộ. Ticket hơn 12 màn: trong hộp cảnh báo có \"Chia {n} phần\": mỗi phần 12 màn kèm đủ AC, chạy song song 3 lượt rồi ghép thành một sơ đồ (nhanh hơn, model nhẹ ít lỗi hơn, tổng token đầu vào nhiều hơn); một phần lỗi thì cả lượt báo lỗi để thử lại. Esc chỉ huỷ thao tác đang làm trong sơ đồ (bỏ chọn màn, dừng vẽ khung, đóng ô đang mở); bấm ra ngoài khung \"+ Từ Zeplin\" (trừ thanh công cụ) cũng đóng khung đó; chỉ nút ✕ mới đóng UI flow. Thiết kế Zeplin đổi sau lần Cập nhật (kích thước, chữ trên màn, hoặc designer đẩy phiên bản mới dù chữ giữ nguyên) thì thanh dưới báo tên các màn đã đổi, kèm nút \"Cập nhật\" để nhúng ảnh mới vào file; màn / nút mới thì dùng \"Render lại bằng AI\" với \"Chỉ vẽ phần mới\". Chỉ so được với file lưu từ bản này trở đi; so theo phiên bản Zeplin chỉ áp dụng cho file đã bấm Cập nhật sau khi có tính năng này. Prototype: màn mở được từ nhiều màn (A → C, B → C) có một liên kết back về mỗi màn đó; bấm \"Quay lại\" về đúng màn đã mở nó theo đường đang đi. Màn rộng cỡ điện thoại (375 dp, xê dịch 20%: 300 đến 450) luôn là mobile, kể cả khi project Zeplin chứa nó ghi nền tảng Web. Các màn khác theo nền tảng của project Zeplin (Web / macOS là web, iOS / Android là mobile): hộp thoại hẹp của trang web vẫn là web, màn tablet của app vẫn là mobile. Chỉ khi chưa đọc được nền tảng của project mới đoán theo cỡ: màn ngang rộng từ 768 px hoặc rộng từ 1300 px là web, và màn dài của project có màn cỡ web / desktop cũng tính là web."
+    ],
+    "keys": "ui flow uiflow so do man hinh sơ đồ màn hình luong bam luồng bấm prototype zeplin render ai cap nhat file tren ticket anh zeplin thiet ke vung bam tim man tìm màn ghi chu ghi chú ghi chu tren so do ghi chú trên sơ đồ luu y lưu ý y tuong cai thien ý tưởng cải thiện note them man tu zeplin sap xep lai sắp xếp lại ve vung bam man bat dau màn bắt đầu lam lai làm lại redo xem thay doi xem thay đổi man dai màn dài trang cuon bam vao chu ai agent doc so do khung web cua so trinh duyet browser window frame"
+  },
+  {
+    "id": "yt-hoi-lai-trong-nhom",
+    "tab": "youtrack",
+    "area": "Chi tiết ticket › Nhắc trên Telegram",
+    "title": "Hỏi lại trong nhóm từ ticket",
+    "what": "Dưới mỗi tin Telegram nhắc tới ticket có link “Hỏi lại trong nhóm”: mở Q&A của đúng nhóm đó, ô câu hỏi mới điền sẵn “Về <ID> <tiêu đề>: ”. Thêm @tên người cần hỏi rồi Đăng để câu hỏi có mã #QA và được theo dõi.",
+    "how": [
+      "Mở một ticket, xem mục “Nhắc trên Telegram”",
+      "Bấm “Hỏi lại trong nhóm”, gõ tiếp câu hỏi kèm @tên, Đăng"
+    ],
+    "keys": "hoi lai trong nhom hỏi lại trong nhóm qa telegram ticket nhac nhắc hoi nguoi hỏi người"
+  },
+  {
+    "id": "yt-bao-lai-moi-noi",
+    "tab": "youtrack",
+    "area": "Báo lại",
+    "title": "Báo lại khi ticket chuyển Fixed / Done (cả khi đang ở Telegram)",
+    "what": "Khi một ticket của bạn có người hỏi trên Telegram chuyển sang Fixed / Done, app nhắc bạn báo lại cho người hỏi. Server tự kiểm tra mỗi 3 phút kể cả khi không mở trang nào (cùng vòng này đánh thức tag hoãn tới khi ticket xong); danh sách lưu trên máy nên trình duyệt nào cũng thấy như nhau. Bạn trả lời tin đó (trên web hay điện thoại) là mục tự xong; bấm X để bỏ qua.",
+    "how": [
+      "Thông báo dưới màn hình hiện “<ID>: …”",
+      "Mở tin trong Việc cần xử lý để soạn câu báo lại"
+    ],
+    "keys": "bao lai báo lại fixed done thong bao thông báo nguoi hoi người hỏi telegram ticket"
+  },
+  {
+    "id": "yt-chuyen-ticket-jk",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Chuyển ticket trước / sau",
+    "what": "Đi qua lần lượt các ticket của danh sách vừa mở mà không phải đóng bảng bên.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm › \"Ticket sau\" (phím j)",
+        "at": "Ticket sau"
+      },
+      {
+        "t": "Bấm ‹ \"Ticket trước\" (phím k)",
+        "at": "Ticket trước"
+      },
+      "Số \"n/N\" bên cạnh cho biết vị trí trong danh sách"
+    ],
+    "keys": "ticket truoc ticket trước ticket sau next previous j k chuyen ticket chuyển ticket"
+  },
+  {
+    "id": "yt-doi-state-priority-assignee",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Đổi State / Priority / Assignee",
+    "what": "Đổi trực tiếp State, Priority, Assignee của ticket trên YouTrack (State theo workflow); thông báo có nút hoàn tác. Ticket của project khác thì danh sách Assignee / QC là team của project đó.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm State (có mũi tên ▾), chọn giá trị mới",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(1) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Bấm Priority, chọn giá trị mới",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(3) dd button[aria-haspopup]"
+      },
+      {
+        "t": "Ở Assignee, chọn người mới hoặc \"Chưa assign\"",
+        "at": "css:aside[role=\"dialog\"] dl > div:nth-child(2) dd button[aria-haspopup]"
+      },
+      "Bấm hoàn tác trong thông báo nếu nhầm"
+    ],
+    "keys": "doi state đổi state doi priority đổi priority doi assignee đổi assignee workflow hoan tac hoàn tác undo"
+  },
+  {
+    "id": "yt-gui-binh-luan",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket › Bình luận",
+    "title": "Gửi bình luận lên YouTrack",
+    "what": "Viết và gửi bình luận lên ticket ngay từ dashboard. Gõ @ để tag thành viên của project (chèn @login, YouTrack báo cho người đó).",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Cuộn xuống, gõ vào ô \"Bình luận mới\" (gõ @ rồi vài chữ của tên để tag người)",
+        "at": "Bình luận mới"
+      },
+      {
+        "t": "Bấm \"Gửi bình luận\"",
+        "at": "Gửi bình luận"
+      }
+    ],
+    "keys": "binh luan bình luận comment gui binh luan gửi bình luận tra loi trả lời"
+  },
+  {
+    "id": "yt-mention",
+    "tab": "youtrack",
+    "area": "Bình luận, Tạo ticket › Mô tả › @",
+    "title": "Tag thành viên YouTrack bằng @",
+    "what": "Gõ @ trong ô bình luận của ticket hoặc ô mô tả khi tạo ticket để mở danh sách thành viên (team của project), gõ tiếp để lọc theo tên hoặc login. Chọn một người sẽ chèn @login; YouTrack báo cho người được tag.",
+    "how": [
+      "Gõ @ rồi vài chữ của tên trong ô \"Bình luận mới\" hoặc ô mô tả (Tạo ticket › Thủ công)",
+      "↑ ↓ để chọn, Enter hoặc Tab để chèn, Esc để đóng danh sách"
+    ],
+    "keys": "tag mention nhac ten nhắc tên @ thanh vien thành viên login youtrack binh luan bình luận mo ta mô tả tao ticket tạo ticket"
+  },
+  {
+    "id": "yt-ticket-giong",
+    "tab": "youtrack",
+    "area": "Bảng bên › Ticket",
+    "title": "Ticket giống / liên quan + AI kiểm tra trùng",
+    "what": "Liệt kê ticket có tiêu đề giống (kèm % giống); AI có thể xét cái nào trùng, cái nào chỉ liên quan, và đề xuất gộp/link/giữ riêng.",
+    "how": [
+      {
+        "t": "Bấm \"Ticket\"",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      "Cuộn tới mục \"Ticket giống / liên quan\" (chỉ có khi có ticket tiêu đề giống); bấm một dòng để mở ticket đó",
+      {
+        "t": "Bấm \"AI kiểm tra trùng\"",
+        "at": "AI kiểm tra trùng"
+      }
+    ],
+    "keys": "ticket giong ticket giống lien quan liên quan trung trùng duplicate similar ai kiem tra trung ai kiểm tra trùng"
+  }
+]

@@ -1,6 +1,6 @@
 # DESIGN.md — Citics work dashboards (locked system)
 
-Two modules, one product, one Next app (Tailwind 4 + shadcn / Base UI): **Telegram Inbox** (`/`) and **YouTrack** (`/youtrack/`, `web/src/components/yt/`), plus **Cài đặt** (`/settings/`). All read the same tokens: [`web/src/app/tokens.css`](web/src/app/tokens.css) and [`web/src/app/base.css`](web/src/app/base.css) (imported by `globals.css`; each member's look is applied before first paint by the boot script in `web/src/app/layout.tsx`). Change a value there, never a literal in a component.
+Two modules, one product, one Next app (Tailwind 4 + shadcn / Base UI): **Telegram Inbox** (`/`) and **YouTrack** (`/youtrack/`, `web/src/features/youtrack/components/`), plus **Cài đặt** (`/settings/`). All read the same tokens: [`web/src/app/tokens.css`](web/src/app/tokens.css) and [`web/src/app/base.css`](web/src/app/base.css) (imported by `globals.css`; each member's look is applied before first paint by the boot script in `web/src/app/layout.tsx`). Change a value there, never a literal in a component.
 
 Palette: custom, warm neutral. A cream ground with a faint top-to-bottom warm wash (`--ground-wash`) and near-white cards (light), or a low-chroma blue slate (dark, hue 255 in `tokens.css`: cool so the warm highlight and amber read clearly; ground < sidebar < card in clear steps, cards lit by a 1px top highlight); primary button is espresso ink. Two signals that never share a job: **terracotta highlight** (a deeper, redder copper in dark mode, where lifted terracotta read too close to the amber) for where you are and what you act on, **honey-amber signal** for what needs you. Chroma stays ≤ 0.15 so nothing glares. Every text pair ≥ 4.5:1, marks and borders ≥ 3:1, in both modes. Layout and components came from the Hallmark Coral build; only the colours changed.
 
@@ -77,7 +77,7 @@ In the Next app these map onto shadcn names in `globals.css` (`--background`, `-
 
 ## Language
 
-- The UI is Vietnamese + English (`web/src/lib/i18n`): the default follows the machine (`navigator.languages` starting with `vi` → Vietnamese, else English); Cài đặt chung › Ngôn ngữ overrides it per browser (`localStorage.lang`), and the boot script sets `<html lang>` before first paint.
+- The UI is Vietnamese + English (`web/src/shared/lib/i18n`): the default follows the machine (`navigator.languages` starting with `vi` → Vietnamese, else English); Cài đặt chung › Ngôn ngữ overrides it per browser (`localStorage.lang`), and the boot script sets `<html lang>` before first paint.
 - Every new UI string has both: write the Vietnamese as the key (`useT()` → `t("…")` in components, plain `t` in handlers) and add its English to the area's `lib/i18n/en/*.ts`; a missing English fails typecheck. Placeholders `{n}`; plurals as a function value.
 - Dates and numbers via `fmtDate` / `fmtDay` / `fmtClock` / `fmtNum` / `locale()` (Vietnam time, `en-GB` order for English); never a fixed `"vi-VN"`.
 - English runs longer: leave room in `truncate` rows and narrow buttons, prefer shorter wording over wider layouts.

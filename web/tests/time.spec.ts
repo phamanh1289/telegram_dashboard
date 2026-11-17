@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { snoozeChoices, vnAt } from "../src/lib/time";
+import { snoozeChoices, vnAt } from "../src/shared/lib/time";
 
 // Pure Vietnam-time math (UTC+7) behind the snooze presets; no page needed.
 const at = (iso: string) => new Date(iso).getTime();

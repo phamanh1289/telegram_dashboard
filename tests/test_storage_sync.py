@@ -1,9 +1,8 @@
 from datetime import timedelta
 
 from conftest import G1, G2, A, B, msg
-
 from telegram_dashboard.models import GroupInfo
-from telegram_dashboard.telegram import LoginRequired
+from telegram_dashboard.telegram.bridge import LoginRequired
 
 
 def kinds(store, cursor=None):
@@ -207,7 +206,7 @@ def test_handled_by_says_how_a_tag_was_done(env):
 def test_entity_spans_keep_links_mentions_and_code():
     from types import SimpleNamespace as NS
 
-    from telegram_dashboard.telegram import _span
+    from telegram_dashboard.telegram.transport import _span
 
     class MessageEntityCode(NS): ...
 
@@ -302,7 +301,8 @@ def test_database_from_the_previous_version_gets_new_columns(tmp_path):
     """A live database already ran the earlier steps: new columns need a new step, not an edit of an old one."""
     import sqlite3
 
-    from telegram_dashboard.storage import MIGRATIONS, Store, _priority
+    from telegram_dashboard.storage import MIGRATIONS, Store
+    from telegram_dashboard.storage.schema import _priority
 
     path = tmp_path / "prev.sqlite3"
     Store(path).set_tracking(A, True, "Team", "supergroup")
@@ -324,7 +324,8 @@ def test_old_deep_batch_session_gets_an_anchor(tmp_path):
     import sqlite3
 
     from telegram_dashboard.ai import data_json
-    from telegram_dashboard.storage import MIGRATIONS, Store, _deep_anchor
+    from telegram_dashboard.storage import MIGRATIONS, Store
+    from telegram_dashboard.storage.schema import _deep_anchor
 
     path = tmp_path / "prev.sqlite3"
     store = Store(path)

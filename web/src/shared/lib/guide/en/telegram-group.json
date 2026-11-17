@@ -1,0 +1,288 @@
+[
+  {
+    "id": "global-search",
+    "tab": "telegram",
+    "area": "Header › Search box",
+    "title": "Search tag text",
+    "what": "Filters tags by text, ignoring case and Vietnamese accents. On To do / Pinned tags this box searches every group; with a group open, it searches that group. On phones tap the magnifier to open the box.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click the search box at the top of the page (\"Search all groups…\", or press /) and type keywords",
+        "at": "Tìm tin tag ở mọi nhóm"
+      },
+      {
+        "t": "Click the X \"Clear search\" (or press Esc) to clear it",
+        "at": "Xóa tìm kiếm"
+      }
+    ],
+    "keys": "search find tags text shortcut / filter"
+  },
+  {
+    "id": "date-range",
+    "tab": "telegram",
+    "area": "Header › Date range",
+    "title": "Filter by date range",
+    "what": "Shows only tags within the chosen dates (the last 7 days by default; pick \"All\" to see every stored tag); applies to the group list, counts and message lists.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get a message list",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Click the calendar button \"Pick the date range of tagged messages\"",
+        "at": "Khoảng ngày"
+      },
+      {
+        "t": "Pick a preset, e.g. \"Last 7 days\" (or enter \"From\" / \"To\", then click \"Done\")",
+        "at": "7 ngày qua"
+      },
+      {
+        "t": "Click the X \"Clear date filter\" to remove the filter",
+        "at": "Bỏ lọc ngày"
+      }
+    ],
+    "keys": "date range filter dates calendar today yesterday 7 days 30 days this month from to"
+  },
+  {
+    "id": "group-view-filter",
+    "tab": "telegram",
+    "area": "Group page › Message filter",
+    "title": "Open / Handled / Whole group",
+    "what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Snoozing a message in Whole group saves it as a tag, back in the unhandled view when the time comes. \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Done\" to see handled tags",
+        "at": "Đã xử lý"
+      },
+      {
+        "t": "Click \"Whole group\" to read every message live from Telegram (when nothing is left unhandled there is a \"See every message in the group\" button)",
+        "at": "Cả nhóm"
+      }
+    ],
+    "keys": "unhandled handled whole group message filter view live all messages"
+  },
+  {
+    "id": "group-sender-filter",
+    "tab": "telegram",
+    "area": "Group page › Filter by sender",
+    "title": "Filter by sender",
+    "what": "Shows only one sender's messages among those loaded. The filter appears only when the group has 2 or more senders.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Whole group\" to get several senders (the filter appears only with 2 or more)",
+        "at": "Cả nhóm"
+      },
+      {
+        "t": "Pick a person in the \"All senders\" box; pick \"All senders\" again to clear the filter",
+        "at": "Lọc theo người gửi"
+      }
+    ],
+    "keys": "filter by sender sender filter all senders"
+  },
+  {
+    "id": "group-search",
+    "tab": "telegram",
+    "area": "Group page › Search",
+    "title": "Search within a group",
+    "what": "Searches the saved messages of the open group, using the search box at the top of the page.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Type in the search box at the top of the page (\"Search this group…\"; key /). On To do this box searches every group",
+        "at": "Tìm tin tag trong nhóm này"
+      },
+      {
+        "t": "Click the X \"Clear search\" (or Esc) to stop searching",
+        "at": "Xóa tìm kiếm"
+      }
+    ],
+    "keys": "search in group find saved messages magnifier"
+  },
+  {
+    "id": "group-mark-all",
+    "tab": "telegram",
+    "area": "Group page › All done",
+    "title": "Mark everything as handled",
+    "what": "Moves every unhandled message in the group (within the filtered dates) to Handled, like clicking Done on each one (no reaction): Q&A threads with a #QA… code in those messages and AI Agent sessions started on them (and their attached messages) are done too. Tags left to the Q&A page (not shown in the list) are skipped and stay open there.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Mark all done\" (on the \"Open\" tab)",
+        "at": "Xong tất cả"
+      },
+      {
+        "t": "Confirm \"Mark all done\" in the \"Mark all as done?\" box",
+        "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :last-child"
+      }
+    ],
+    "keys": "all done mark all handled mark everything done"
+  },
+  {
+    "id": "group-load-older",
+    "tab": "telegram",
+    "area": "Group page › Message list",
+    "title": "Load older messages and jump to the latest",
+    "what": "Loads another page of older messages at the top of the list; when you scroll far up, a round button takes you back down to the latest message. Messages are grouped by day with a sticky date label.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Scroll to the top of the list and click \"Load older messages\"",
+        "at": "Tải tin cũ hơn"
+      },
+      "Scroll up more than a screen away from the latest message: a round down-arrow button appears at the bottom right",
+      {
+        "t": "Click the down-arrow button \"Jump to the newest message\"",
+        "at": "Xuống tin mới nhất"
+      }
+    ],
+    "keys": "load older messages jump to latest scroll bottom date label"
+  },
+  {
+    "id": "group-digest",
+    "tab": "telegram",
+    "area": "Group page › Summary (Digest)",
+    "title": "Group summary (Digest)",
+    "what": "The AI sums up the group's conversation: To confirm, Settled, Changes, Team impact, To-dos and Topics; read live from Telegram, regardless of tags; messages from senders in Settings › Telegram › Always ignore are left out. Busy groups (up to 2,000 messages at a time) are read in several passes and merged. To confirm / To-dos nobody resolved carry over to the next summary (labeled \"open since …\") until a new message answers / completes them, so nothing slips. For a group already in Briefing, the \"Summary\" button opens that group's Briefing (the summary continues from the last one); to see details or summarize another range, use the \"Open\" button next to the group in Briefing. Summaries of a custom range or of selected messages are for viewing only and do not replace the one in Briefing.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Summary\" at the top of the group page (group already in Briefing: click \"Open\" next to the group in Briefing)",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Pick a range: \"Since last\", \"24h\", \"3 days\", \"7 days\" or \"Custom dates\"",
+        "at": "7 ngày"
+      },
+      {
+        "t": "Click \"Summarize N messages\"",
+        "at": "Tóm tắt N tin"
+      },
+      "Wait for the AI summary: To confirm, Settled, Changes, Team impact, To-dos, Topics",
+      {
+        "t": "Click the \"Back to group\" arrow to return",
+        "at": "Quay lại nhóm"
+      }
+    ],
+    "keys": "digest group summary needs confirmation decided changes team impact to-dos topics conversation open since last time many messages 2000 passes nothing missed"
+  },
+  {
+    "id": "digest-consent",
+    "tab": "telegram",
+    "area": "Group page › Summary › Allow",
+    "title": "Allow / revoke AI access to a group",
+    "what": "Before summarizing, you must allow the AI to read the group's messages for 7, 30 or 90 days; you can revoke it at any time (revoking deletes the saved summary).",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Summary\" at the top of the group page",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Pick 7 / 30 / 90 days in the \"Allow for\" box",
+        "at": "Thời hạn cho phép"
+      },
+      {
+        "t": "Click \"Allow\"",
+        "at": "Cho phép"
+      },
+      {
+        "t": "To revoke, click \"Revoke\" on the line \"AI may read this group until…\"",
+        "at": "Thu hồi"
+      }
+    ],
+    "keys": "allow ai read group consent permission revoke 30 days"
+  },
+  {
+    "id": "digest-pick-messages",
+    "tab": "telegram",
+    "area": "Group page › Summary › Conversation",
+    "title": "Summarize only some messages",
+    "what": "Summarizes only the selected messages instead of the whole time range; the \"Summarized up to here\" line shows which messages were in the last run.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Summary\" at the top of the group page",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "In the \"Conversation\" column, click a message or its checkbox to select / deselect it",
+        "at": "Chọn tin"
+      },
+      "Hold Shift and click another message to select the whole run between them; the \"Summarized up to here\" line marks the previous run",
+      {
+        "t": "Click \"Summarize N selected messages\"",
+        "at": "Tóm tắt N tin đã chọn"
+      },
+      {
+        "t": "Click \"Deselect\" to clear the selection",
+        "at": "Bỏ chọn"
+      }
+    ],
+    "keys": "select messages shift click range summarize part deselect"
+  },
+  {
+    "id": "digest-result-actions",
+    "tab": "telegram",
+    "area": "Group page › Summary › Result",
+    "title": "Use the summary",
+    "what": "Click a #message number to jump to the original message; YouTrack ticket chips show their state on hover; decisions about a ticket can be posted as a comment; changes to a ticket in the sprint get a scope-change warning; copy everything as Markdown.",
+    "how": [
+      {
+        "t": "Click a group in the sidebar",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Click \"Summary\" at the top of the group page",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Click \"Summarize N messages\" if there is no summary yet",
+        "at": "Tóm tắt N tin"
+      },
+      "Wait for the result; hover a YouTrack ticket chip to see its state (tickets in the sprint get a scope-change warning)",
+      {
+        "t": "Click \"#123\" next to an item to jump to the original message",
+        "at": "css:button[aria-label^=\"Xem tin gốc\"]"
+      },
+      {
+        "t": "Under Settled, click \"post to <ticket>\" to add a comment on YouTrack",
+        "at": "ghi vào <ticket>"
+      },
+      {
+        "t": "Click \"Copy markdown\" to copy the summary",
+        "at": "Copy markdown"
+      }
+    ],
+    "keys": "copy markdown post to ticket comment scope change sprint original message summary result"
+  }
+]

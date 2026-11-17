@@ -1,0 +1,288 @@
+[
+  {
+    "id": "global-search",
+    "tab": "telegram",
+    "area": "Thanh tiêu đề › Ô tìm kiếm",
+    "title": "Tìm nội dung tin tag",
+    "what": "Lọc tin tag theo nội dung, không phân biệt hoa thường và dấu tiếng Việt. Ở Việc cần xử lý / Tag đã ghim ô này tìm ở mọi nhóm; khi đang mở một nhóm, nó tìm trong nhóm đó. Trên điện thoại bấm kính lúp để mở ô.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm ô tìm kiếm trên đầu trang (\"Tìm ở mọi nhóm…\", hoặc nhấn phím /) rồi gõ từ khóa",
+        "at": "Tìm tin tag ở mọi nhóm"
+      },
+      {
+        "t": "Bấm X \"Xóa tìm kiếm\" (hoặc nhấn Esc) để xóa",
+        "at": "Xóa tìm kiếm"
+      }
+    ],
+    "keys": "tim kiem search tim tin tag tìm nội dung phim tat / loc"
+  },
+  {
+    "id": "date-range",
+    "tab": "telegram",
+    "area": "Thanh tiêu đề › Khoảng ngày",
+    "title": "Lọc theo khoảng ngày",
+    "what": "Chỉ hiện tin tag trong khoảng ngày chọn (mặc định 7 ngày qua; chọn \"Tất cả\" để xem mọi tin đã lưu); áp dụng cho danh sách nhóm, số đếm và danh sách tin.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Bấm nút lịch \"Chọn khoảng ngày của tin tag\"",
+        "at": "Khoảng ngày"
+      },
+      {
+        "t": "Chọn nhanh, vd \"7 ngày qua\" (hoặc nhập \"Từ ngày\" / \"Đến ngày\" rồi bấm \"Xong\")",
+        "at": "7 ngày qua"
+      },
+      {
+        "t": "Bấm X \"Bỏ lọc ngày\" để bỏ lọc",
+        "at": "Bỏ lọc ngày"
+      }
+    ],
+    "keys": "khoang ngay loc ngay date range lich hom nay hom qua 7 ngay 30 ngay thang nay tu ngay den ngay"
+  },
+  {
+    "id": "group-view-filter",
+    "tab": "telegram",
+    "area": "Trang nhóm › Lọc tin",
+    "title": "Chưa xử lý / Đã xử lý / Cả nhóm",
+    "what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và Cả nhóm: mọi tin khác trong nhóm đọc trực tiếp từ Telegram (không lưu; tin tag không lặp lại ở đây, chúng nằm ở Chưa / Đã xử lý). Hoãn một tin ở Cả nhóm thì tin được lưu thành tag, tới giờ hiện lại ở Chưa xử lý. Nút \"Xong tất cả\" ẩn khi đang lọc theo người gửi hoặc đang tìm, vì nó đánh dấu cả nhóm.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Đã xử lý\" để xem tin tag đã xử lý",
+        "at": "Đã xử lý"
+      },
+      {
+        "t": "Bấm \"Cả nhóm\" để đọc mọi tin trực tiếp từ Telegram (khi hết tin chưa xử lý có nút \"Xem mọi tin trong nhóm\")",
+        "at": "Cả nhóm"
+      }
+    ],
+    "keys": "chua xu ly da xu ly ca nhom loc tin view filter live tat ca tin nhom"
+  },
+  {
+    "id": "group-sender-filter",
+    "tab": "telegram",
+    "area": "Trang nhóm › Lọc theo người gửi",
+    "title": "Lọc theo người gửi",
+    "what": "Chỉ hiện tin của một người gửi trong các tin đã tải. Ô lọc chỉ hiện khi nhóm có từ 2 người gửi trở lên.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Cả nhóm\" để có nhiều người gửi (ô lọc chỉ hiện khi có từ 2 người)",
+        "at": "Cả nhóm"
+      },
+      {
+        "t": "Chọn một người trong ô \"Mọi người gửi\"; chọn lại \"Mọi người gửi\" để bỏ lọc",
+        "at": "Lọc theo người gửi"
+      }
+    ],
+    "keys": "loc nguoi gui sender filter moi nguoi gui lọc theo người gửi"
+  },
+  {
+    "id": "group-search",
+    "tab": "telegram",
+    "area": "Trang nhóm › Tìm kiếm",
+    "title": "Tìm trong nhóm",
+    "what": "Tìm trong các tin đã lưu của nhóm đang mở, bằng ô tìm kiếm trên đầu trang.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Gõ vào ô tìm kiếm trên đầu trang (\"Tìm trong nhóm này…\"; phím /). Ở Việc cần xử lý ô này tìm ở mọi nhóm",
+        "at": "Tìm tin tag trong nhóm này"
+      },
+      {
+        "t": "Bấm X \"Xóa tìm kiếm\" (hoặc Esc) để bỏ tìm",
+        "at": "Xóa tìm kiếm"
+      }
+    ],
+    "keys": "tim trong nhom search group tim tin da luu kính lúp"
+  },
+  {
+    "id": "group-mark-all",
+    "tab": "telegram",
+    "area": "Trang nhóm › Xong tất cả",
+    "title": "Đánh dấu tất cả là đã xử lý",
+    "what": "Chuyển mọi tin chưa xử lý trong nhóm (trong khoảng ngày đang lọc) sang Đã xử lý, như bấm Xong từng tin (không reaction): Q&A có mã #QA… trong các tin đó và phiên AI Agent đặt trên chúng (cùng tin đính kèm) cũng xong theo. Tin tag đang chuyển sang trang Q&A (không hiện trong danh sách) được bỏ qua, vẫn mở ở Q&A.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Xong tất cả\" (ở tab \"Chưa xử lý\")",
+        "at": "Xong tất cả"
+      },
+      {
+        "t": "Xác nhận \"Xong tất cả\" trong hộp \"Đánh dấu tất cả là đã xử lý?\"",
+        "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :last-child"
+      }
+    ],
+    "keys": "xong tat ca danh dau tat ca da xu ly mark all done handled all"
+  },
+  {
+    "id": "group-load-older",
+    "tab": "telegram",
+    "area": "Trang nhóm › Danh sách tin",
+    "title": "Tải tin cũ hơn và xuống tin mới nhất",
+    "what": "Tải thêm trang tin cũ hơn ở đầu danh sách; khi cuộn lên xa, có nút tròn để quay xuống tin mới nhất. Tin được nhóm theo ngày với nhãn ngày dính đầu.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Cuộn lên đầu danh sách, bấm \"Tải tin cũ hơn\"",
+        "at": "Tải tin cũ hơn"
+      },
+      "Cuộn lên xa khỏi tin mới nhất hơn một màn hình: nút tròn mũi tên xuống hiện ở góc dưới phải",
+      {
+        "t": "Bấm nút mũi tên xuống \"Xuống tin mới nhất\"",
+        "at": "Xuống tin mới nhất"
+      }
+    ],
+    "keys": "tai tin cu hon load older xuong tin moi nhat scroll bottom nhan ngay"
+  },
+  {
+    "id": "group-digest",
+    "tab": "telegram",
+    "area": "Trang nhóm › Tóm tắt (Digest)",
+    "title": "Tóm tắt nhóm (Digest)",
+    "what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag; bỏ tin của người gửi trong Cài đặt › Telegram › Luôn bỏ qua. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất. Nhóm đã có trong Briefing: nút \"Tóm tắt\" mở Briefing của nhóm đó (bản tóm tắt chạy nối tiếp); xem chi tiết hay tóm tắt khoảng khác bằng nút \"Mở\" cạnh nhóm ở Briefing. Tóm tắt theo khoảng tự chọn hoặc tin đã chọn chỉ để xem riêng, không thay bản trong Briefing.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Tóm tắt\" ở đầu trang nhóm (nhóm đã có trong Briefing: bấm \"Mở\" cạnh nhóm ở Briefing)",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Chọn khoảng: \"Từ lần trước\", \"24h\", \"3 ngày\", \"7 ngày\" hoặc \"Tuỳ chọn ngày\"",
+        "at": "7 ngày"
+      },
+      {
+        "t": "Bấm \"Tóm tắt N tin\"",
+        "at": "Tóm tắt N tin"
+      },
+      "Chờ AI tóm tắt: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm, Chủ đề",
+      {
+        "t": "Bấm mũi tên \"Quay lại nhóm\" để trở lại",
+        "at": "Quay lại nhóm"
+      }
+    ],
+    "keys": "digest tom tat nhom summary can confirm da chot thay doi anh huong team viec can lam chu de tóm tắt hội thoại con mo tu lan truoc còn mở nhieu tin 2000 chia dot khong sot"
+  },
+  {
+    "id": "digest-consent",
+    "tab": "telegram",
+    "area": "Trang nhóm › Tóm tắt › Cho phép",
+    "title": "Cho phép / thu hồi quyền AI đọc nhóm",
+    "what": "Trước khi tóm tắt, phải cho phép AI đọc tin của nhóm trong 7, 30 hoặc 90 ngày; có thể thu hồi bất cứ lúc nào (thu hồi sẽ xóa bản tóm tắt đã lưu).",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Chọn thời hạn 7 / 30 / 90 ngày ở ô \"Thời hạn cho phép\"",
+        "at": "Thời hạn cho phép"
+      },
+      {
+        "t": "Bấm \"Cho phép\"",
+        "at": "Cho phép"
+      },
+      {
+        "t": "Để thu hồi, bấm \"Thu hồi\" ở dòng \"AI được đọc nhóm này đến…\"",
+        "at": "Thu hồi"
+      }
+    ],
+    "keys": "cho phep ai doc nhom consent quyen thu hoi revoke permission 30 ngay"
+  },
+  {
+    "id": "digest-pick-messages",
+    "tab": "telegram",
+    "area": "Trang nhóm › Tóm tắt › Hội thoại",
+    "title": "Chọn một phần tin để tóm tắt",
+    "what": "Chỉ tóm tắt những tin được chọn thay vì cả khoảng thời gian; vạch \"Đã tóm tắt đến đây\" cho biết tin nào đã nằm trong lần trước.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Trong cột \"Hội thoại\", bấm một tin hoặc ô chọn để chọn / bỏ chọn",
+        "at": "Chọn tin"
+      },
+      "Giữ Shift rồi bấm tin khác để chọn cả đoạn liên tiếp; vạch \"Đã tóm tắt đến đây\" đánh dấu phần của lần trước",
+      {
+        "t": "Bấm \"Tóm tắt N tin đã chọn\"",
+        "at": "Tóm tắt N tin đã chọn"
+      },
+      {
+        "t": "Bấm \"Bỏ chọn\" để xóa lựa chọn",
+        "at": "Bỏ chọn"
+      }
+    ],
+    "keys": "chon tin shift click chon doan tom tat mot phan select messages bo chon"
+  },
+  {
+    "id": "digest-result-actions",
+    "tab": "telegram",
+    "area": "Trang nhóm › Tóm tắt › Kết quả",
+    "title": "Dùng kết quả tóm tắt",
+    "what": "Bấm số #tin để nhảy tới tin gốc; chip ticket YouTrack hiện trạng thái khi rê chuột; quyết định liên quan ticket có thể ghi thành bình luận; thay đổi trên ticket đang trong sprint được cảnh báo đổi scope; copy toàn bộ dạng Markdown.",
+    "how": [
+      {
+        "t": "Bấm một nhóm ở thanh bên",
+        "at": "css:nav[aria-label=\"Nhóm có tag\"] li > button"
+      },
+      {
+        "t": "Bấm \"Tóm tắt\" ở đầu trang nhóm",
+        "at": "Tóm tắt"
+      },
+      {
+        "t": "Bấm \"Tóm tắt N tin\" nếu chưa có bản tóm tắt",
+        "at": "Tóm tắt N tin"
+      },
+      "Chờ kết quả; rê chuột vào chip ticket YouTrack để xem trạng thái (ticket trong sprint có cảnh báo đổi scope)",
+      {
+        "t": "Bấm \"#123\" cạnh một mục để nhảy tới tin gốc",
+        "at": "css:button[aria-label^=\"Xem tin gốc\"]"
+      },
+      {
+        "t": "Ở mục Đã chốt, bấm \"ghi vào <ticket>\" để thêm bình luận lên YouTrack",
+        "at": "ghi vào <ticket>"
+      },
+      {
+        "t": "Bấm \"Copy markdown\" để chép bản tóm tắt",
+        "at": "Copy markdown"
+      }
+    ],
+    "keys": "copy markdown ghi vao ticket binh luan doi scope sprint xem tin goc ket qua tom tat"
+  }
+]

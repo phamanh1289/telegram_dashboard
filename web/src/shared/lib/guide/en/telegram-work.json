@@ -1,0 +1,26 @@
+[
+  {
+    "id": "ai-dock",
+    "tab": "telegram",
+    "area": "Whole page › ⌘J",
+    "title": "AI assistant on every page (⌘J)",
+    "what": "On the Telegram side, ⌘J (Ctrl+J) opens the Briefing assistant in the right panel from any page: ask about the latest summary of every group without going to Briefing. On the YouTrack side, ⌘J opens an AI session about the open tickets in the current scope (at-risk and high-priority tickets first).",
+    "how": [
+      "Press ⌘J (Ctrl+J on Windows)",
+      "Type a question or click a suggestion"
+    ],
+    "keys": "cmd j ctrl j ai assistant ask ai ai panel"
+  },
+  {
+    "id": "work-trail",
+    "tab": "telegram",
+    "area": "Reply panel › Work trail",
+    "title": "A message's work trail",
+    "what": "Under the message you are replying to there is a \"Work trail\" line: tickets mentioned in the message with their state, the AI Agent / Check vs BE sessions on this message, the Q&A thread, whether it has been answered. Click each step to go straight there; a session step with a result opens the result right below, with “Use as reply draft” (into the open reply box) and “Open session”. Hidden while the message has not reached any step.",
+    "how": [
+      "Open the reply to a tag",
+      "Click a step in the \"Work trail\" line"
+    ],
+    "keys": "work trail timeline ticket agent qa"
+  }
+]

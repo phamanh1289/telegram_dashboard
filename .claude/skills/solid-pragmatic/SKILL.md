@@ -19,10 +19,11 @@ SOLID là **lăng kính để phát hiện chỗ đau**, không phải checklist
 | **D** — Dependency inversion | Hàm tự tạo `httpx.AsyncClient()` / đọc `Settings()` bên trong → không test được | Nhận dependency qua tham số / `create_app(settings, …)` (đã có mẫu trong `tests/conftest.py`) | DI container, service locator |
 
 ## Áp dụng ở repo này
-- **Python:** wiring ở `create_app()` trong `telegram_dashboard/app.py`; service (`AiService`, `DigestService`, `Store`, `TelegramBridge`) nhận dependency qua constructor. Giữ kiểu đó, không thêm framework DI.
+- **Ownership bắt buộc cho feature/fix/refactor:** đọc `AGENTS.md` và `docs/ARCHITECTURE.md`; code nghiệp vụ thuộc domain Telegram/YouTrack hoặc feature Settings, không đổ vào shared để né phụ thuộc. Shared frontend chỉ chứa phần trung lập, không import feature/app; integration qua module sở hữu, composition ở `app/_components`.
+- **Python:** wiring ở `create_app()` trong `backend/telegram_dashboard/app.py`; service (`AiService`, `DigestService`, `Store`, `TelegramBridge`) nhận dependency qua constructor. Giữ kiểu đó, không thêm framework DI.
 - **Duck typing > ABC:** cần thay bản fake trong test thì dùng `typing.Protocol` khai báo ngay cạnh nơi dùng, chỉ khi có ≥ 2 implementation.
-- **React:** S = component lo hiển thị, hook (`web/src/hooks/`) lo dữ liệu; D = component nhận props/callback, không tự `fetch` (dùng `api()` + TanStack Query).
-- **Hàm quá dài** (vd `agent.py:_pump`, `ai.py:_run`, `providers.py:items` — cc > 50): tách theo **giai đoạn** (parse → quyết định → I/O), mỗi giai đoạn một hàm private cùng file. Đổi hành vi = không phải refactor; làm riêng.
+- **React:** S = component lo hiển thị, hook (`web/src/features/*/hooks/` hoặc `web/src/shared/hooks/`) lo dữ liệu; D = component nhận props/callback, không tự `fetch` (dùng `api()` + TanStack Query).
+- **Hàm quá dài** (vd `agent.py:_pump`, `ai_run.py:run`, `providers.py:items` — cc > 50): tách theo **giai đoạn** (parse → quyết định → I/O), mỗi giai đoạn một hàm private cùng file. Đổi hành vi = không phải refactor; làm riêng.
 
 ## Trước khi thêm abstraction, hỏi
 1. Hôm nay có ≥ 2 caller / implementation thật không? Không → đừng thêm.

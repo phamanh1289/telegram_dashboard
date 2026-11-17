@@ -28,7 +28,9 @@ test("a rigged AI mascot moves its parts like the robot, and nothing in the SVG 
   expect(await page.evaluate(() => (window as unknown as { pwn?: number }).pwn)).toBeUndefined();
 
   // each mascot on the page keeps its own gradient: ids prefixed per instance, url(#…) follows
-  const refs = await live.evaluateAll((els) => els.map((e) => [e.querySelector("linearGradient")?.id, e.querySelector("circle")?.getAttribute("fill")]));
+  // role mascots drawn without a gradient have nothing to collide
+  const refs = (await live.evaluateAll((els) => els.map((e) => [e.querySelector("linearGradient")?.id, e.querySelector("circle")?.getAttribute("fill")])))
+    .filter(([id]) => id);
   expect(refs.length).toBeGreaterThan(1);
   expect(new Set(refs.map(([id]) => id)).size).toBe(refs.length);
   for (const [id, fill] of refs) expect(fill).toBe(`url(#${id})`);
