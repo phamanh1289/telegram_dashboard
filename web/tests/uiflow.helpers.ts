@@ -13,7 +13,7 @@ export type Screen = { id: string; title: string; kind: string; parent: string |
 export type Link = { src: string; to: string; act: string; when: string; ac: string };
 
 export type Pending = { title: string; kind?: string; ac?: string; src?: string; when?: string };
-export type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[]; pending?: Pending[] };
+export type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[]; pending?: Pending[]; acs?: string[] };
 
 export type Issue = { kind: string; screen?: string; item?: string; text: string };
 

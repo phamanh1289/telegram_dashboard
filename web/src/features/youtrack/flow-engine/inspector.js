@@ -116,7 +116,10 @@ export function inspector({ ctx, t, get, target, blocked, scale, rnd, select, se
     }
     if (sel.t === "screen") {
       const shot = shotOf(o), full = o.items.length >= MAX_ITEMS;
-      rows.push(chips(KINDS, o.kind, "kind_", (k) => change((s) => {
+      // the name, as a field: the double-click on the frame's title renames too, but shows no sign of it and the
+      // title bar of a screen with an image is hidden until zoomed in. An emptied box puts the stored name back.
+      rows.push(field(t("nameField"), o.title, CAP, (v) => (v ? change((s) => { s.title = v; }) : fill())),
+        chips(KINDS, o.kind, "kind_", (k) => change((s) => {
           s.kind = k;
           if (k === "screen") s.parent = null; // a screen has no parent
         }, o.id)),

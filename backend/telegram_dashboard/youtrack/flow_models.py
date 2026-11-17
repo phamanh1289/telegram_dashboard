@@ -10,6 +10,7 @@ class FlowRetryRequest(BaseModel):
     mode: Literal["screens", "flow"] = "flow"  # a job saved before modes (it had "deep"): an AI render
     split: bool = False
     skip: list[str] = Field([], max_length=255)  # Zeplin URLs the dialog left out: their screens are not drawn
+    target: Literal["mobile", "web"] = "mobile"  # a job saved before platforms had frames: a phone's
 
 
 class FlowLineDTO(BaseModel):  # a source line the code could not turn into a link, and why
@@ -24,7 +25,7 @@ class FlowLineDTO(BaseModel):  # a source line the code could not turn into a li
 class FlowRiskDTO(BaseModel):
     code: str  # tokens | screens | ambiguous
     text: str
-    lines: list[FlowLineDTO] = Field(default_factory=list)  # ambiguous: the lines themselves (first 50)
+    lines: list[FlowLineDTO] = Field(default_factory=list)  # ambiguous: the lines themselves (all)
 
 
 class FlowCheckDTO(BaseModel):

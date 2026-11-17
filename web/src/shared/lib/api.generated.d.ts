@@ -3297,6 +3297,12 @@ export interface components {
              * @default []
              */
             skip: string[];
+            /**
+             * Target
+             * @default mobile
+             * @enum {string}
+             */
+            target: "mobile" | "web";
         };
         /** FlowRiskDTO */
         FlowRiskDTO: {

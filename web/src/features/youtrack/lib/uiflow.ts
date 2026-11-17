@@ -3,6 +3,7 @@
 // The UI flow engine (flow-engine/ source, bundled to public/uiflow.js and inlined in exports) in React: loaded once by a
 // <script> tag, mounted on an element. The engine owns its DOM; React only hands it a flow and hears its changes.
 
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { type Lang, t } from "@/shared/lib/i18n";
 import { type FlowShot, type UiFlow, yt } from "@/features/youtrack/lib/yt";
@@ -123,6 +124,23 @@ export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, o
 
 /** One Zeplin screen read through the backend (its cache serves the shots query that follows the new screen). */
 const lookup = (url: string) => yt.flowShots([url]).then((r) => r.shots[url] ?? null);
+
+/**
+ * The Zeplin screens a flow links (`urls`). The server's last read of them is drawn at once; when that was an older
+ * read (after a restart, or past its hour), the live one follows and replaces it, so an opened flow does not wait
+ * the 6-7 s Zeplin takes for twenty screens. A screen never read before is read live, as one answer.
+ */
+export function useFlowShots(scope: string, urls: string[], enabled: boolean) {
+  const first = useQuery({
+    queryKey: ["yt", "flow-shots", scope, "first", ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal, true),
+    enabled, staleTime: 30 * 60_000, retry: false, placeholderData: keepPreviousData,
+  });
+  const live = useQuery({
+    queryKey: ["yt", "flow-shots", scope, ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal),
+    enabled: enabled && !!first.data?.stale && !first.isPlaceholderData, staleTime: 30 * 60_000, retry: false,
+  });
+  return { data: live.data ?? first.data, isError: first.isError || live.isError, error: first.error ?? live.error };
+}
 
 /** The Zeplin links of a flow's screens, sorted: the key the images are fetched by. */
 export const zeplinUrls = (f: UiFlow | null) =>

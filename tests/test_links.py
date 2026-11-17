@@ -1,3 +1,4 @@
+import asyncio
 import re
 from datetime import datetime
 from types import SimpleNamespace as NS
@@ -27,9 +28,12 @@ def state(tmp_path, content: str, tracked: bool = True, summary=None):
         return [StoredMessage(chat_id=chat_id, message_id=39671, sender_name="An", text="cần hỗ trợ",
                               date=datetime(2026, 11, 5))]  # fmt: skip
 
+    async def flow_outline(detail):  # the ticket's saved UI flow, when it has one
+        return "UI flow: Đăng nhập → OTP" if detail.get("attachments") else None
+
     return NS(
         settings=NS(data_dir=tmp_path / "data"),
-        yt=NS(base="https://works.citics.vn", token="t", yt=yt),
+        yt=NS(base="https://works.citics.vn", token="t", yt=yt, flow_outline=flow_outline),
         ai=NS(require_read=lambda: None, ask=summary or _no_ai),
         db=NS(read=read),
         store=NS(get_messages_by_ids=lambda chat, ids: ([], ""), is_tracking=lambda chat: tracked),
@@ -140,6 +144,11 @@ async def test_ticket_link_is_read_as_youtrack_ai_sees_it(tmp_path):
     out = await expand(s, text, "t2")
     assert seen == ["issue:VA-12"] and "Sửa màn login" in out and "Nút Đăng nhập bị mờ" in out and "đã có API" in out
     assert out.count("dashboard không đọc được") == 1  # the other YouTrack never gets our token
+    assert "uiflow" not in out  # no UI flow file on the ticket: nothing added
+    with_flow = {**(await detail("VA-12")), "attachments": [{"name": "uiflow-VA-12.html"}]}
+    s.yt.detail = lambda i: asyncio.sleep(0, with_flow)
+    out = await expand(s, "làm https://works.citics.vn/issue/VA-12", "t2")
+    assert '"uiflow"' in out and "Đăng nhập → OTP" in out  # the session knows what leads where
     delete_links(s.settings, "t2")
 
 

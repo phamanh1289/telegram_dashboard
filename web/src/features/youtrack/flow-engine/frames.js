@@ -1,4 +1,5 @@
 import { cardOf, rowsOf } from './geometry.js';
+import { H } from './constants.js';
 import { shotOf } from './shots.js';
 import { box, btn, h, placeFrame, shotImg, svg, zeplinLink } from './dom.js';
 import { isOverlay } from './model.js';
@@ -10,6 +11,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
   const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : ""));
   el.dataset.id = s.id;
+  if (c.h !== H && sh) el.style.height = c.h + "px"; // a design that scrolls (or a web page): the frame is as long as it
   const card = h("div", "uf-card" + (s.items.length || sh ? "" : " uf-empty"));
   box(card, c);
   if (sh) {
@@ -43,7 +45,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);
   s.items.forEach((it, i) => {
-    const { r, hot } = rows[i];
+    const { r, hot, z } = rows[i];
     const rect = hot && it.rect; // hand-drawn and on the frame: edit mode moves / resizes it
     const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (rect ? "uf-rect " : "") +
       (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
@@ -51,6 +53,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
     if (rect && edit) row.append(h("span", "uf-rsz"));
     if (!hot && sh) row.title = t("offShot");
     box(row, r);
+    if (hot) row.style.zIndex = z; // a smaller area above a larger one: the press goes to the one on top
     row.style.lineHeight = r.h - 2 + "px";
     card.append(row);
   });

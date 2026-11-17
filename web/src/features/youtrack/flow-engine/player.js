@@ -1,7 +1,7 @@
-import { BEZEL, FLASH_MS, GAP, H, HINT_MS, SLIDE_MS, TOAST_MS, W } from './constants.js';
+import { BEZEL, FLASH_MS, GAP, H, HINT_MS, SLIDE_MS, TOAST_MS, W, WALK_MS } from './constants.js';
 import { box, btn, h, shotImg, svg } from './dom.js';
 import { isPop, scr, startOf } from './values.js';
-import { hotspots, shotOf } from './shots.js';
+import { hotspots, layersOf, shotOf } from './shots.js';
 import { parents } from './model.js';
 
 // ------------------------------------------------------------------ prototype (player)
@@ -79,6 +79,7 @@ function phoneShell(t) {
  *  the screen shown becomes the start screen without a trip to the map's edit mode. */
 function player(host, { flow, t, reduced, onGo, setStart }) {
   let path = [], ovs = [], cur = null, flash = null, hint = null; // ovs: [{id, kind, el, card, scrim, timer}]
+  let walking = 0; // the timer of a test path being walked by itself
   const ui = phoneShell(t);
   const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
   ui.back.addEventListener("click", goBack);
@@ -87,11 +88,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
   pin.title = t("startHere");
   ui.trail.append(ui.crumbs, ...(setStart ? [note, pin] : []), restart);
   host.replaceChildren(ui.stage, ui.trail);
+  const stopWalk = () => { clearTimeout(walking); walking = 0; ui.phone.classList.remove("uf-walking"); };
+  host.addEventListener("pointerdown", stopWalk, true); // any press of the user's takes the phone back
 
-  const ro = new ResizeObserver(([e]) => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
-    const { width: w, height: hh } = e.contentRect, m = 2 * (BEZEL + GAP);
+  const resize = () => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
+    const w = ui.stage.clientWidth, hh = ui.stage.clientHeight, m = 2 * (BEZEL + GAP);
     if (w && hh) ui.phone.style.setProperty("--k", String(Math.min(1, (hh - m) / H, (w - m) / W)));
-  });
+  };
+  const ro = new ResizeObserver(resize);
   ro.observe(ui.stage);
 
   const by = (id) => flow().screens.find((s) => s.id === id);
@@ -150,7 +154,7 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
   /** The Zeplin image with a tap area on each button found on it (and on its back button); the buttons not
    *  found stay as rows under it. */
   function shotNodes(s, sh) {
-    const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot");
+    const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot"), z = layersOf(items);
     pic.append(shotImg(sh, s.title, false));
     pic.addEventListener("click", (e) => { if (!e.target.closest("button")) hints(pic); }); // a tap on no button
     s.items.forEach((it, i) => {
@@ -159,12 +163,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
       const b = btn(null, "uf-phot " + (links.length ? "uf-linked" : "uf-dead"), () => tap(b, links));
       b.setAttribute("aria-label", it.label);
       box(b, items[i]);
+      b.style.zIndex = z[i]; // as on the map: the area on top takes the tap, the one under it does not
       pic.append(b);
     });
     if (back && !isPop(s)) {
       const b = btn(null, "uf-phot uf-linked", goBack);
       b.setAttribute("aria-label", t("back"));
       box(b, back);
+      b.style.zIndex = s.items.length + 1; // found by its text, small: never under a drawn area
       pic.append(b);
     }
     const off = s.items.filter((_, i) => !items[i]);
@@ -292,6 +298,23 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
       go([p || s.id], null);
       if (p) openOverlay(s);
     },
+    /** The frame changed size (a flow of the other device): fit it to the stage again. */
+    resize,
+    /** A test path walked by itself: from `start`, one link every WALK_MS (a button with several cases takes the
+     *  path's own, no question asked). A press anywhere on the phone, Esc or another walk stops it. */
+    walk(start, links) {
+      stopWalk();
+      this.open(start);
+      const todo = [...links];
+      ui.phone.classList.add("uf-walking");
+      const step = () => {
+        const l = todo.shift();
+        if (!l || !flow().links.includes(l)) return stopWalk(); // done, or the flow was edited under it
+        follow(l);
+        walking = setTimeout(step, WALK_MS);
+      };
+      walking = setTimeout(step, WALK_MS);
+    },
     /** First entry into Prototype: start at id (or the first screen); later entries keep where the user was. */
     start(id) { if (!path.length) this.open(id); },
     /** The flow changed: keep the walked screens that still exist, redraw without motion. */
@@ -302,12 +325,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
     },
     /** Esc: close the top overlay; false when there is none. */
     escape() {
+      if (walking) { stopWalk(); return true; }
       if (!ovs.length) return false;
       drop(ovs[ovs.length - 1]);
       return true;
     },
     destroy() {
       ro.disconnect();
+      stopWalk();
       closeAll();
       if (flash) clearTimeout(flash.timer);
       if (hint) clearTimeout(hint.timer);

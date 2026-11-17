@@ -537,3 +537,65 @@ test("Tải file HTML saves the flow on screen, draft included, and posts nothin
   await expect(d.locator("a[download]", { hasText: "Tải xuống" })).toHaveAttribute("download", "uiflow-VA-1.html");
   expect(await posts()).toEqual([]);
 });
+
+test("deleting a draft also settles the failed re-render over it: no old error card on the start panel", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  await render(page);
+  await expect(dialog(page).getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  // a re-render over that draft failed: the newest job on reopen, while the draft still names the one that drew it
+  const done: string[] = [];
+  const failed = { id: "failed-12345678", issue: "VA-1", status: "failed", stage: "ai", base: null, result: null, error: { detail: "vượt ngân sách" }, cursor: 1, processed: false, needs_ai_retry: false, request: null };
+  await page.route("**/api/yt/flow/jobs?issue=*", (route) => route.fulfill({ json: done.includes(failed.id) ? [] : [failed] }));
+  await page.route(`**/api/yt/flow/jobs/${failed.id}/processed`, (route) => { done.push(failed.id); return route.fulfill({ json: { ...failed, processed: true } }); });
+  page.once("dialog", (guard) => guard.accept());
+  await page.reload();
+  await page.goto("/youtrack?ticket=VA-1");
+  await flowButton(page).click();
+  const d = dialog(page);
+  await expect(d.getByText("Lượt render trước không thành công")).toBeVisible();
+  await d.getByRole("button", { name: "Bỏ bản render" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Bỏ bản render" }).click();
+  await expect(d.getByText("Ticket này chưa có UI flow")).toBeVisible();
+  await expect(d.getByText("Lượt render trước không thành công")).toHaveCount(0);
+  expect(done).toEqual([failed.id]);
+});
+
+test("unclear flow lines start unticked: the render leaves them out unless ticked", async ({ page }) => {
+  const line = (no: number, text: string) => ({ no, line: text, why: "unknown", name: "X", hint: "", urls: [] });
+  await ctl("/set", { flow: "none", flow_check: { tokens: 12400, parts: { ticket: 900 }, screens: 2, links: 1, warnings: [], model: "m", cost_usd: 0.007, cost_runs: 4, chunks: 1,
+    risks: [{ code: "ambiguous", text: "2 dòng luồng màn chưa rõ: không vẽ trừ khi bạn tick", lines: [line(1, "Màn A sang màn lạ"), line(2, "Màn B sang màn khác")] }] } });
+  await openFlow(page);
+  await dialog(page).getByRole("button", { name: "Render bằng AI", exact: true }).click();
+  const ask = page.getByRole("alertdialog");
+  await expect(ask.getByRole("checkbox", { name: "Vẽ dòng #1" })).not.toBeChecked();
+  await expect(ask.getByText("vẽ 0/2")).toBeVisible();
+  await ask.getByRole("checkbox", { name: "Vẽ dòng #2" }).check(); // opt in to one
+  const request = page.waitForRequest((r) => r.url().endsWith("/api/yt/ai/flow") && r.method() === "POST");
+  await confirmRender(page);
+  const note = (await request).postDataJSON().note as string;
+  expect(note).toContain("#1 Màn A sang màn lạ");
+  expect(note).not.toContain("Màn B sang màn khác");
+});
+
+test("a Zeplin redesign that keeps every text is told by its version; a file saved before versions is not flagged for it", async ({ page }) => {
+  const z = "https://app.zeplin.io/project/67b2d78bf0a65b348c2550f7/screen/69df58b7254a6ed20c9933f5";
+  const pic = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688"><rect width="780" height="1688" fill="#ddd"/></svg>');
+  let saved = ["780x1688", "Gửi OTP"]; // the signature in the file: first without a version
+  await page.route(/\/api\/yt\/flow\?/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const j = await (await route.fetch()).json();
+    j.flow.screens[0].zeplin = z;
+    j.flow.design = { [z]: saved };
+    await route.fulfill({ json: j });
+  });
+  await page.route(/\/api\/yt\/flow\/shots/, (route) => route.fulfill({ json: { missing: [], shots: {
+    [z]: { title: "Đăng nhập", ver: "bbb", src: pic, w: 780, h: 1688, hits: [["Gửi OTP", 60, 1400, 660, 120]] } } } }));
+  await openFlow(page);
+  await expect(dialog(page).locator(".uf-screen.uf-shot")).toHaveCount(1);
+  await expect(dialog(page).getByText(/Thiết kế Zeplin của/)).toHaveCount(0); // same size and texts, no version on file
+  saved = [...saved, "v:aaa"]; // saved with version aaa; Zeplin now serves bbb with the same texts
+  await page.goto("/youtrack?ticket=VA-1");
+  await flowButton(page).click();
+  await expect(dialog(page).getByText(/Thiết kế Zeplin của 1 màn đã đổi/)).toBeVisible();
+});

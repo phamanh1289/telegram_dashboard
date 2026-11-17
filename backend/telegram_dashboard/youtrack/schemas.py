@@ -49,6 +49,7 @@ class FlowHtml(FlowSave):
 
 class FlowShots(BaseModel):
     urls: list[Annotated[str, Field(max_length=300)]] = Field(max_length=uiflow.MAX_SCREENS)
+    stale: bool = False  # the last read first when there is one (answer "stale": true): the page then asks again
 
 
 class FieldSet(BaseModel):
@@ -110,6 +111,7 @@ class AiFlow(BaseModel):
     reuse: bool = False  # a re-render that keeps the flow's links and asks the AI only for what is new (fewer tokens)
     keep: dict | None = None  # the flow on screen: notes / tap areas / positions survive the render (never prompted)
     skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # Zeplin URLs left out in the dialog: not drawn
+    target: Literal["mobile", "web"] = "mobile"  # the platform picked: the frame the flow is drawn in (Flow.device)
 
 
 class AiDraft(BaseModel):

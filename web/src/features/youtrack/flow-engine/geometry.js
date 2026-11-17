@@ -1,19 +1,27 @@
-import { hotspots, shotOf } from './shots.js';
-import { BOTTOM, CARD_HEAD, CARD_PAD, FOLD_SLACK, H, HEAD, PAD, STATUS, STEP, TOP, W, ZMAX, ZMIN } from './constants.js';
-import { isOverlay } from './model.js';
+import { hotspots, layersOf, shotOf } from './shots.js';
+import { BOTTOM, CARD_HEAD, CARD_PAD, DEVICE, FOLD_SLACK, H, HEAD, PAD, ROW, STATUS, STEP, TALL, TOP, W, ZMAX, ZMIN } from './constants.js';
+import { family, isOverlay } from './model.js';
 import { clamp, itm, scr } from './values.js';
 
 // ------------------------------------------------------------------ geometry (pure, canvas units)
 /** The visible card inside a 390 × 844 frame: the whole phone for a screen, a dialog / sheet / toast otherwise.
  *  head / headH: the title bar; top / step: where item rows start and their pitch. */
+/** How high a screen's frame is: the phone, or the whole design when it is a page that scrolls (a 375 × 3714
+ *  list): its lower buttons are on the map where the design has them, not rows under a cut image. */
+function frameH(s) {
+  const sh = shotOf(s), hh = sh ? (sh.h * W) / sh.w : 0;
+  if (DEVICE === "web") return sh ? Math.max(200, Math.round(hh)) : H; // a window is as high as its page, whatever that is
+  return hh > H * TALL ? Math.round(hh) : H;
+}
 function cardOf(s) {
   const n = s.items.length;
-  if (shotOf(s)) return { x: 0, y: 0, w: W, h: H, head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
+  if (shotOf(s)) return { x: 0, y: 0, w: W, h: frameH(s), head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
   if (!isOverlay(s))
     return { x: 0, y: 0, w: W, h: H, head: STATUS, headH: HEAD, top: TOP, step: n ? Math.min(STEP, (H - TOP - BOTTOM) / n) : STEP };
   const step = n ? Math.min(STEP, (H * 0.8 - CARD_HEAD - CARD_PAD) / n) : STEP;
   const h = Math.max(s.kind === "toast" ? CARD_HEAD + CARD_PAD : 140, CARD_HEAD + n * step + CARD_PAD);
-  const w = s.kind === "sheet" ? W : s.kind === "popup" ? W - 70 : W - 48;
+  // a dialog / toast on a web page is a box of its own width, not the page's; a phone's are unchanged (320 / 342)
+  const w = s.kind === "sheet" ? W : s.kind === "popup" ? Math.min(W - 70, 480) : Math.min(W - 48, 360);
   const y = s.kind === "popup" ? (H - h) / 2 : s.kind === "sheet" ? H - h : H - h - 56;
   return { x: (W - w) / 2, y, w, h, head: 0, headH: CARD_HEAD, top: CARD_HEAD, step };
 }
@@ -27,13 +35,14 @@ const cardAbs = (s, c = cardOf(s)) => ({ x: s.x + c.x, y: s.y + c.y, w: c.w, h: 
 function rowsOf(s) {
   const c = cardOf(s), sh = shotOf(s);
   if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
-  const { items } = hotspots(s, sh), fold = H - BOTTOM;
+  const { items } = hotspots(s, sh), fh = frameH(s), fold = fh - BOTTOM;
   // on the frame: the area ends inside it. A design 814 high scales to 846, its bottom button a few px past H:
   // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
-  const on = (r) => r && r.y + r.h <= H + (r.manual ? 0.5 : FOLD_SLACK);
+  const on = (r) => r && r.y + r.h <= fh + (r.manual ? 0.5 : FOLD_SLACK);
   const off = items.filter((r) => !on(r)).length;
   let n = 0;
-  return items.map((r) => (on(r) ? { r, hot: true }
+  const z = layersOf(items.map((r) => (on(r) ? r : null)));
+  return items.map((r, i) => (on(r) ? { r, hot: true, z: z[i] }
     : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
 }
 /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
@@ -41,6 +50,20 @@ function freeShots(f) {
   for (const s of f.screens) {
     if (s.kind === "screen" || !shotOf(s) || s.x === null) continue;
     if (f.screens.some((o) => o !== s && o.x !== null && Math.abs(o.x - s.x) < W && Math.abs(o.y - s.y) < H)) s.x = s.y = null;
+  }
+  return f;
+}
+/** Positions saved when every frame was a phone high: what sits under a long design (same column, inside its
+ *  length) moves down with its overlays, top to bottom, so nothing is drawn over the design's lower part. */
+function clearTall(f) {
+  const tops = f.screens.filter((s) => !isOverlay(s) && s.x !== null && s.y !== null).sort((a, b) => a.y - b.y);
+  const by = new Map(f.screens.map((s) => [s.id, s]));
+  for (const s of tops) {
+    const end = s.y + frameH(s) + ROW - H;
+    if (frameH(s) <= H) continue;
+    const under = tops.filter((o) => o !== s && o.y > s.y && Math.abs(o.x - s.x) < W);
+    const push = Math.max(0, ...under.map((o) => end - o.y));
+    if (push) for (const o of under) for (const id of family(f, o.id)) { const m = by.get(id); if (m.y !== null) m.y += push; }
   }
   return f;
 }
@@ -78,11 +101,12 @@ const linkText = (l) => {
   const s = [l.when, l.ac].filter(Boolean).join(" · ");
   return s.length > 48 ? s.slice(0, 47) + "…" : s;
 };
-function bounds(screens) {
+/** The box around the screens; `tall`: count a long design as at most this many phones high. */
+function bounds(screens, tall = Infinity) {
   if (!screens.length) return { x: 0, y: 0, w: W, h: H };
   const xs = screens.map((s) => s.x), ys = screens.map((s) => s.y);
   const x = Math.min(...xs), y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) + W - x, h: Math.max(...ys) + H - y };
+  return { x, y, w: Math.max(...xs) + W - x, h: Math.max(...screens.map((s) => s.y + Math.min(frameH(s), tall * H))) - y };
 }
 /** Camera {x, y, k} (screen = world * k + x / y) that centres box b in a vw × vh view, never above 100%. Past the
  *  minimum zoom the box can't fit: that axis starts at its top / left edge, so the first screen stays in view. */
@@ -97,4 +121,4 @@ function zoomAt(c, k, px, py) {
   return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
 }
 
-export { cardOf, rowOf, cardAbs, rowsOf, freeShots, linkEnds, r1, curve, linkText, bounds, fitCam, zoomAt };
+export { frameH, cardOf, rowOf, cardAbs, rowsOf, freeShots, clearTall, linkEnds, r1, curve, linkText, bounds, fitCam, zoomAt };

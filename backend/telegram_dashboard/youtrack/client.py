@@ -6,6 +6,7 @@ explain what to configure. Also `whoami` (check a pasted token before it is save
 
 import asyncio
 import hashlib
+import logging
 import os
 import re
 import time
@@ -18,6 +19,8 @@ from fastapi import Response
 from .. import zeplin
 from ..errors import ApiError
 from . import flow as uiflow
+
+log = logging.getLogger(__name__)
 
 MAX_FILE = 25 << 20  # ponytail: proxied whole in memory; stream it if videos ever need to play here
 TTL = 50.0  # shorter than the UI refresh (60s) so each refresh sees fresh data
@@ -119,7 +122,9 @@ class YtClient:
         self._auth = 0  # bumped by set_auth: answers fetched with an older token are not cached
         self._cache: dict[str, tuple[float, object]] = {}
         self._inflight: dict[str, asyncio.Future] = {}
-        self.shots = zeplin.Shots(scope=self.flow_scope)
+        self.shots = zeplin.Shots(
+            scope=self.flow_scope, path=lambda: (d := getattr(settings, "data_dir", None)) and d / "zeplin_shots.json"
+        )
         self._flow_cache: OrderedDict[tuple, uiflow.Flow | None] = OrderedDict()
         self._flow_seed: dict[tuple, tuple[int, uiflow.Flow]] = {}
         self._since: dict[str, int] = {}
@@ -231,6 +236,20 @@ class YtClient:
                     self._flow_cache.popitem(last=False)
         newer = (d.get("updated") or 0) > (a.get("created") or 0) + FLOW_COMMENT_GRACE_MS
         return a["id"], flow.model_copy(deep=True) if flow else None, newer
+
+    async def flow_outline(self, detail: dict) -> str | None:
+        """The ticket's saved UI flow in a few lines (uiflow.outline), for an AI that reads the ticket: what leads
+        where is drawn there, not written in the description. None when the ticket has none; a file that cannot be
+        read is left out (the AI still has the ticket), never the reason an AI run fails."""
+        issue = detail.get("id") or ""
+        if not any(a.get("name") == uiflow.NAME.format(issue=issue) for a in detail.get("attachments") or []):
+            return None
+        try:
+            cur = await self.flow_file(issue)
+        except YtError as e:
+            log.info("UI flow of %s not read for the AI: %s", issue, e.status)
+            return None
+        return uiflow.outline(cur[1]) if cur and cur[1] else None
 
     def seed_flow(self, issue: str, att: str, size: int, flow: uiflow.Flow, *, auth: int) -> None:
         if auth == self._flow_auth:

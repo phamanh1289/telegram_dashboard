@@ -139,7 +139,9 @@ async def _issue(yt, host: str, iid: str) -> str | None:
 
     if not _ours(yt, host):
         return None
-    return _ticket_json(await yt.cached(f"issue:{iid}", lambda: yt.detail(iid)))
+    d = await yt.cached(f"issue:{iid}", lambda: yt.detail(iid))
+    flow = await yt.flow_outline(d)  # the screens and what each button leads to, when the ticket has a UI flow
+    return _ticket_json(d, **({"uiflow": flow} if flow else {}))
 
 
 async def _bare(yt, text: str, linked: set[str]) -> list:

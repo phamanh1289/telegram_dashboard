@@ -121,11 +121,13 @@ export type FlowScreen = {
   x: number | null; y: number | null; zeplin: string; ac: string; note?: string; items: FlowItem[];
 };
 export type FlowLink = { src: string; to: string; act: "navigate" | "open" | "back" | "close"; when: string; ac: string };
-export type UiFlow = { v: 2; ticket: string; rev: number; device: "mobile"; start?: string | null; screens: FlowScreen[]; links: FlowLink[];
+export type UiFlow = { v: 2; ticket: string; rev: number; device: "mobile" | "web"; start?: string | null; screens: FlowScreen[]; links: FlowLink[];
   /** Zeplin URL -> "<w>x<h>" + the texts on the design at the last save (written by the server): what was redesigned since. */
   design?: Record<string, string[]>;
   /** Steps the ticket describes that have no design yet: listed in the flow check, never drawn (see Pending in flow.py). */
-  pending?: { title: string; kind: FlowScreen["kind"]; ac: string; src: string; when: string }[] };
+  pending?: { title: string; kind: FlowScreen["kind"]; ac: string; src: string; when: string }[];
+  /** The AC codes the ticket writes, read by code at the last render: the flow check lists the ones the map lacks. */
+  acs?: string[] };
 /** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
 export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean; ticket_newer?: boolean }; // ticket_newer: edited after the file was written
 export type FlowManifest = components["schemas"]["FlowManifestDTO"];
@@ -137,8 +139,9 @@ export type FlowTarget = "mobile" | "web";
 export type FlowResult = { flow: UiFlow; manifest?: FlowManifest | null };
 export type FlowSaved = { att: string; rev: number; changes: string[]; warn: string };
 /** A Zeplin screen for the UI flow: image (a URL here, a data URI in the file), design size, where texts / buttons sit. */
-export type FlowShot = { src: string; w: number; h: number; hits: [string, number, number, number, number][]; title?: string };
-export type FlowShots = { shots: Record<string, FlowShot>; missing: string[] };
+export type FlowShot = { src: string; w: number; h: number; hits: [string, number, number, number, number][]; title?: string; ver?: string }; // ver: Zeplin's version id
+/** `stale`: an older read, answered without waiting for Zeplin (asked for with `stale`): the live one follows. */
+export type FlowShots = { shots: Record<string, FlowShot>; missing: string[]; stale?: boolean };
 export const yt = {
   config: () => ytApi<Config>("/config"),
   notes: () => ytApi<AiNotes>("/instructions"),
@@ -190,12 +193,13 @@ export const yt = {
   saveFlow: (id: string, flow: UiFlow, base: string | null, shots: Record<string, FlowShot> = {}) =>
     ytApi<FlowSaved>("/flow", { json: { id, flow, base, shots } }),
   /** The Zeplin screens the flow links (read with the user's Zeplin MCP token, no AI). */
-  flowShots: (urls: string[], signal?: AbortSignal) => ytApi<FlowShots>("/flow/shots", { json: { urls }, signal }),
+  /** `stale`: the server's last read of them all when it has an older one (kept across restarts), at once. */
+  flowShots: (urls: string[], signal?: AbortSignal, stale = false) => ytApi<FlowShots>("/flow/shots", { json: { urls, stale }, signal }),
   /** One AI run: the ticket as a flow, rev 0, not saved. With a job id (`aiJobs`) it runs on when the dialog closes. */
   /** `keep`: the flow on screen; its notes, tap areas, start screen (and positions) carry over to the result. */
   /** `reuse`: a re-render that starts from `keep` (its links stay) and asks the AI only for what is new: fewer tokens. */
-  aiFlow: (id: string, note: string, mode: FlowMode, signal?: AbortSignal, base: string | null = null, keep: UiFlow | null = null, reuse = false, split = false, skip: string[] = []) =>
-    ytApi<FlowResult>("/ai/flow", { json: { id, note, mode, base, keep, reuse, split, skip }, signal }),
+  aiFlow: (id: string, note: string, mode: FlowMode, signal?: AbortSignal, base: string | null = null, keep: UiFlow | null = null, reuse = false, split = false, skip: string[] = [], target: FlowTarget = "mobile") =>
+    ytApi<FlowResult>("/ai/flow", { json: { id, note, mode, base, keep, reuse, split, skip, target }, signal }),
   /** What a render would send, counted by code (no AI): tokens by source, screens, risks. Reads are cached server-side. */
   flowCheck: (id: string, note: string, skip: string[], signal?: AbortSignal) => ytApi<FlowCheck>("/flow/precheck", { json: { id, note, skip }, signal }),
   /** A light model reads the check's numbers (not the ticket) and says why it is costly and what to do. */
@@ -209,7 +213,8 @@ export const yt = {
 };
 /** Durable UI flow jobs are scoped by the server; browser storage holds only the editor draft. */
 export type FlowJobState = Omit<components["schemas"]["FlowJobDTO"], "result"> & { result: FlowResult | null };
-export type FlowJob = { id: string; at: number; base: string | null; retryAi?: boolean; note?: string; mode?: FlowMode; split?: boolean; skip?: string[] };
+/** `target`: the platform picked, the frame the flow is drawn in (a phone / a browser window). */
+export type FlowJob = { id: string; at: number; base: string | null; retryAi?: boolean; note?: string; mode?: FlowMode; split?: boolean; skip?: string[]; target?: FlowTarget };
 /** One ticket sheet observes scoped server metadata; no timer per ticket row. */
 export function useFlowRunning(issue: string, open: boolean) {
   // This shared scope query must not unmount an open editor and reset its save lock on focus/reconnect.

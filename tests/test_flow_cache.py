@@ -292,3 +292,71 @@ async def test_save_route_seeds_next_fresh_get_without_html(tmp_path, monkeypatc
         assert opened.json()["flow"]["rev"] == 1
     assert metadata_reads == 2  # conflict check and fresh open both inspect current attachments
     await svc.aclose()
+
+
+@pytest.mark.parametrize("answer", ["redirect", "json"])
+async def test_short_link_reads_its_screen_with_the_name_and_keeps_the_token_off_zpl(shots, monkeypatch, answer):
+    original, seen = httpx.AsyncClient, []
+
+    def handle(request):
+        seen.append((str(request.url), request.headers.get("authorization")))
+        if request.url.host == "zpl.io":  # a JSON-accepting client gets 200 {"url"}, a plain one the redirect
+            return (httpx.Response(302, headers={"location": URL}) if answer == "redirect"
+                    else httpx.Response(200, json={"url": URL}))
+        if request.url.path.endswith("/versions/latest"):
+            return httpx.Response(200, json={"id": "69f17a67", "width": 375, "height": 812, "layers": [],
+                                             "thumbnails": {"medium": "m"}})
+        return httpx.Response(200, json={"name": "San-Vay/2.5"})
+
+    monkeypatch.setattr(zeplin.httpx, "AsyncClient",
+                        lambda **kw: original(transport=httpx.MockTransport(handle), **kw))
+    got, missing = await shots.get(["https://zpl.io/ez1m85m"])
+    assert not missing and got["https://zpl.io/ez1m85m"]["title"] == "San-Vay/2.5"
+    assert (got["https://zpl.io/ez1m85m"]["src"], got["https://zpl.io/ez1m85m"]["ver"]) == ("m", "69f17a67")
+    assert [auth for url, auth in seen if "zpl.io" in url] == [None]
+    # a look-alike host is not a short link: never fetched (it would have been sent the token)
+    seen.clear()
+    assert await shots.get(["https://evil.test/zpl.io/x"]) == ({}, ["https://evil.test/zpl.io/x"]) and not seen
+    await shots.aclose()
+
+
+async def test_screen_name_read_failing_never_fails_the_screen(shots, monkeypatch):
+    original = httpx.AsyncClient
+
+    def handle(request):
+        if request.url.path.endswith("/versions/latest"):
+            return httpx.Response(200, json={"width": 375, "height": 812, "layers": []})
+        return httpx.Response(500)
+
+    monkeypatch.setattr(zeplin.httpx, "AsyncClient",
+                        lambda **kw: original(transport=httpx.MockTransport(handle), **kw))
+    got, missing = await shots.get([URL])
+    assert not missing and got[URL]["title"] == "" and got[URL]["w"] == 375
+    await shots.aclose()
+
+
+async def test_the_last_read_is_kept_in_a_file_and_shown_before_the_live_one(tmp_path, monkeypatch):
+    monkeypatch.setattr(zeplin, "token", lambda: "one")
+    monkeypatch.setattr(zeplin.provider_cmds, "zeplin_server", lambda: {"name": "zeplin"})
+    path, reads = tmp_path / "data" / "zeplin_shots.json", []
+
+    async def read(client, url):
+        reads.append(url)
+        return {"src": f"v{len(reads)}"}
+
+    first = zeplin.Shots(path=lambda: path)
+    monkeypatch.setattr(first, "_read", read)
+    assert await first.last([URL]) is None  # never read: nothing to show first
+    assert (await first.get([URL]))[0][URL]["src"] == "v1"
+    assert await first.last([URL]) is None  # fresh in memory: get() answers at once
+    assert "one" not in path.read_text() and oct(path.stat().st_mode)[-3:] == "600"  # never the token
+    await first.aclose()
+    again = zeplin.Shots(path=lambda: path)  # a restart: memory is empty, the file is not
+    monkeypatch.setattr(again, "_read", read)
+    assert (await again.last([URL + "?x=1"])) == {URL + "?x=1": {"src": "v1"}} and len(reads) == 1
+    assert await again.last([URL, URL[:-1] + "c"]) is None  # one of them never read: the caller reads them all
+    assert (await again.get([URL]))[0][URL]["src"] == "v2"  # the live read replaces it, in the file too
+    monkeypatch.setattr(zeplin, "token", lambda: "two")  # another account: its file is not this one's
+    other = zeplin.Shots(path=lambda: path)
+    assert await other.last([URL]) is None
+    await again.aclose()

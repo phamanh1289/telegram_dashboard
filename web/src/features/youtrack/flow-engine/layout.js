@@ -1,5 +1,6 @@
 import { normalize, parents } from './model.js';
-import { COL, GROUP_GAP, ROW, SHIFT } from './constants.js';
+import { COL, GROUP_GAP, H, ROW, SHIFT } from './constants.js';
+import { frameH } from './geometry.js';
 import { scr, startOf } from './values.js';
 
 /** Fills x / y of screens that have none; returns a new flow (the input is not touched; x / y already set stay).
@@ -7,7 +8,7 @@ import { scr, startOf } from './values.js';
  *    linked group (BFS from its own root: a screen nothing else in the group leads to), ordered by first
  *    appearance, then the screens with no links of their own as a grid.
  *  - In a region a BFS layer is a column, in order of appearance; a column longer than the row cap wraps into
- *    sub-columns beside it. Cap = max(3, ceil(√(0.4·n))) for n screens: a frame cell is 610 × 964, so this many
+ *    sub-columns beside it, and a design that scrolls (frameH > a phone) is the last of its sub-column. Cap = max(3, ceil(√(0.4·n))) for n screens: a frame cell is 610 × 964, so this many
  *    rows makes a full grid about 16 : 10, landscape like the screens it is read on.
  *  - The k-th popup / sheet / toast of a parent sits 60·k / 60·k right-down of it; the parent's row and its column
  *    grow by that much, so overlays never cover another screen. */
@@ -73,12 +74,18 @@ function layout(flow) {
   regions.forEach((cols, r) => {
     if (r) x += GROUP_GAP;
     for (const col of cols) {
-      for (let i = 0; i < col.length; i += cap) {
-        const part = col.slice(i, i + cap).map((id) => by.get(id));
+      // sub-columns of `cap` rows; a long design ends its own, so nothing is laid out under it (the map stays as
+      // high as a few phones, whatever one page's length)
+      const parts = [[]];
+      for (const s of col.map((id) => by.get(id))) {
+        parts[parts.length - 1].push(s);
+        if (parts[parts.length - 1].length === cap || frameH(s) > 1.5 * H) parts.push([]);
+      }
+      for (const part of parts.filter((p) => p.length)) {
         let y = 0;
         for (const s of part) {
           if (s.x === null || s.y === null) { s.x = x; s.y = y; }
-          y += ROW + (room.get(s.id) || 0);
+          y += Math.max(frameH(s), H) + ROW - H + (room.get(s.id) || 0); // a frame takes its own height of the column
         }
         x += COL + Math.max(...part.map((s) => room.get(s.id) || 0));
       }

@@ -371,7 +371,7 @@ test("values the backend model would reject are clamped on the way in", async ({
   const f = await page.evaluate(() => {
     const g = structuredClone(window.SAMPLE) as Omit<Flow, "v"> & { v: unknown };
     g.v = "9";
-    g.device = "web";
+    g.device = "tablet"; // not a frame the model knows ("web" is one now)
     g.rev = 1.5;
     g.screens[0].title = "";
     window.__api.set(g as unknown as Flow);

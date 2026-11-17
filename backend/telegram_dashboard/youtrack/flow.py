@@ -15,6 +15,7 @@ MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 200, 40, 1000
 VERSION, MAX_NOTE = 2, 4000  # = VERSION / CAP_NOTE in web/src/features/youtrack/flow-engine/constants.js
 ID = r"^[A-Za-z0-9_-]{1,40}$"
 SRC = r"^[A-Za-z0-9_-]{1,40}(\.[A-Za-z0-9_-]{1,40})?$"
+AC, MAX_ACS = re.compile(r"AC\d{1,3}(?:\.\d{1,3}){0,3}"), 300  # "AC3.5": as ac_codes() writes them
 
 
 class TooNew(ValueError):
@@ -97,7 +98,9 @@ class Flow(BaseModel):
     v: Literal[2] = VERSION  # v1 files are read as v2 (same fields, without rect / note), see clean()
     ticket: str
     rev: int = 0
-    device: Literal["mobile"] = "mobile"
+    # the frame every screen is drawn in: a phone, or a browser window (a web design is wide; in a phone frame its
+    # text is a third of its size). Set by the render from the platform picked; a file without it is a phone's
+    device: Literal["mobile", "web"] = "mobile"
     start: str | None = None  # the screen the prototype and the test paths start from; None: the first one
     screens: list[Screen] = Field(max_length=MAX_SCREENS)
     links: list[Link] = Field(max_length=MAX_LINKS)
@@ -105,6 +108,15 @@ class Flow(BaseModel):
     # which screens were redesigned since (design_of on the live shots). Written by the save, never by the engine
     design: dict[str, list[str]] = Field(default_factory=dict)
     pending: list[Pending] = Field(default_factory=list)  # steps left out for want of a design, see Pending
+    # the AC codes the ticket (else its story) writes, read by code at the last render: the flow check lists the ones
+    # no screen, arrow or pending step carries. Not the editor's to change
+    acs: list[str] = Field(default_factory=list)
+
+    @field_validator("acs", mode="before")
+    @classmethod
+    def _acs(cls, v: object) -> list:
+        ok = [x for x in v if isinstance(x, str) and AC.fullmatch(x)] if isinstance(v, list) else []
+        return list(dict.fromkeys(ok))[:MAX_ACS]
 
     @field_validator("pending", mode="before")
     @classmethod
@@ -136,15 +148,31 @@ class Shot(BaseModel):
     w: float = Field(gt=0, le=5000)
     h: float = Field(gt=0, le=50000)
     hits: list[tuple[Label, float, float, float, float]] = Field(default_factory=list, max_length=MAX_HITS)
+    ver: str = Field("", pattern=r"^[0-9A-Za-z_-]*$", max_length=40)  # Zeplin's id of the version drawn; signature only
+
+
+VER = "v:"  # a signature's version entry; a text on the design that starts like one is left out of the signature
 
 
 def design_of(shots: dict) -> dict[str, list[str]]:
-    """Each screen's design signature: size and the set of texts on it (order-free). = designOf in flow.tsx"""
+    """Each screen's design signature: size, the set of texts on it (order-free) and, when known, Zeplin's version
+    id ("v:<id>": a redesign that keeps every text and the size is still a new version). = `redesigned` in flow.tsx"""
     out = {}
     for url, s in shots.items():
         w, h, hits = (s.w, s.h, s.hits) if isinstance(s, Shot) else (s["w"], s["h"], s["hits"])
-        out[url] = [f"{round(w)}x{round(h)}", *sorted({str(x[0]) for x in hits})]
+        ver = s.ver if isinstance(s, Shot) else s.get("ver")
+        texts = sorted({str(x[0]) for x in hits if not str(x[0]).startswith(VER)})
+        out[url] = [f"{round(w)}x{round(h)}", *texts, *([VER + str(ver)] if ver else [])]
     return out
+
+
+def redesigned(was: list[str] | None, now: list[str]) -> bool:
+    """Did a screen's design change between two signatures? A file saved before versions were recorded has none:
+    then size and texts decide alone, as they always did (it never reads as changed just for gaining a version)."""
+    if was is None:
+        return False
+    plain, vers = ([sorted(x for x in sig if x.startswith(VER) == ver) for sig in (was, now)] for ver in (False, True))
+    return plain[0] != plain[1] or (all(vers) and vers[0] != vers[1])
 
 
 def _norm(title: str) -> str:
@@ -194,7 +222,8 @@ def clean(raw: dict, ticket: str) -> Flow:
         trimmed = _trim(raw)
     except (AttributeError, TypeError, KeyError) as e:  # hình dạng sai (màn không phải object, links không phải list…)
         raise ValueError("UI flow sai định dạng") from e
-    flow = Flow.model_validate({**trimmed, "ticket": ticket, "v": VERSION})  # v1 → v2 in memory
+    device = raw.get("device") if raw.get("device") in ("mobile", "web") else "mobile"  # anything else: a phone
+    flow = Flow.model_validate({**trimmed, "ticket": ticket, "v": VERSION, "device": device})  # v1 → v2 in memory
     ids = [s.id for s in flow.screens]
     if not ids or len(set(ids)) != len(ids):
         raise ValueError("UI flow cần ≥1 màn, id màn không trùng")
@@ -248,7 +277,7 @@ def build_html(
     if "</script" in engine.lower():
         raise ValueError("engine chứa </script")
     used = {s.zeplin for s in flow.screens}
-    pics = {u: s.model_dump() for u, s in (shots or {}).items() if u in used}
+    pics = {u: s.model_dump(exclude={"ver"}) for u, s in (shots or {}).items() if u in used}
     if sum(len(p["src"]) for p in pics.values()) > MAX_SHOTS:
         raise ValueError("Ảnh Zeplin quá lớn")
     css = "".join(
@@ -351,6 +380,8 @@ def changes(old: Flow | None, new: Flow) -> list[str]:
     was, now = {_norm(p.title): p.title for p in old.pending}, {_norm(p.title): p.title for p in raw.pending}
     out += [f'Chờ bổ sung: thêm "{t}"' for k, t in now.items() if k not in was]
     out += [f'Chờ bổ sung: bỏ "{t}"' for k, t in was.items() if k not in now]
+    if old.device != raw.device:
+        out.append("Đổi khung màn sang " + ("web" if raw.device == "web" else "điện thoại"))
     if out:
         return out
     if _props(old) != _props(new):
@@ -358,8 +389,10 @@ def changes(old: Flow | None, new: Flow) -> list[str]:
     moved = [(s.x, s.y) for s in old.screens] != [(s.x, s.y) for s in new.screens]
     if moved:
         return ["Sắp xếp lại vị trí màn"]
-    redrawn = [u for u, d in raw.design.items() if old.design.get(u) not in (None, d)]
-    return [f"Cập nhật ảnh thiết kế Zeplin của {len(redrawn)} màn"] if redrawn else []
+    redrawn = [u for u, d in raw.design.items() if redesigned(old.design.get(u), d)]
+    if redrawn:
+        return [f"Cập nhật ảnh thiết kế Zeplin của {len(redrawn)} màn"]
+    return ["Cập nhật danh sách AC của ticket"] if old.acs != raw.acs else []
 
 
 def _manual_changes(old: Flow, new: Flow) -> list[str]:
@@ -391,7 +424,7 @@ def keep_manual(old: Flow, new: Flow) -> tuple[Flow, dict[str, int]]:
     flow, _ = _align(old, new)
     olds = {s.id: s for s in old.screens}
     kept = {"positions": 0, "notes": 0, "rects": 0, "start": 0}
-    every = all(s.id in olds for s in flow.screens)
+    every = all(s.id in olds for s in flow.screens) and old.device == flow.device  # another frame size: laid out anew
     for s in flow.screens:
         o = olds.get(s.id)
         if o is None:
@@ -414,7 +447,46 @@ def keep_manual(old: Flow, new: Flow) -> tuple[Flow, dict[str, int]]:
 
 
 def _props(flow: Flow) -> dict:
-    return flow.model_dump(exclude={"rev": True, "design": True, "screens": {"__all__": {"x", "y"}}})
+    return flow.model_dump(exclude={"rev": True, "design": True, "acs": True, "screens": {"__all__": {"x", "y"}}})
+
+
+def ac_codes(text: str) -> list[str]:
+    """The AC codes a text writes ("AC 3.5", "AC-3.5", "ac3.5" -> "AC3.5"), each once, in order."""
+    found = re.finditer(r"\bAC[ -]?\d{1,3}(?:\.\d{1,3}){0,3}\b", text, re.I)
+    return list(dict.fromkeys(re.sub(r"[\s-]", "", m[0]).upper() for m in found))[:MAX_ACS]
+
+
+MAX_OUTLINE = 6000
+
+
+def outline(flow: Flow) -> str:
+    """The flow in a few lines for an AI that codes or answers on the ticket: each screen (kind, AC, design link,
+    note), what each button leads to, the steps still without a design. Other people's text: the caller frames it."""
+    by = {s.id: s for s in flow.screens}
+    out = [f"UI flow {NAME.format(issue=flow.ticket)} (rev {flow.rev}, {flow.device}): màn → nút → màn đích"]
+    for s in flow.screens:
+        on = f" trên {by[s.parent].title}" if s.parent in by else ""
+        kind = "" if s.kind == "screen" else f" ({s.kind}{on})"
+        head = f"- {s.title}{kind}" + (f" [{s.ac}]" if s.ac else "") + (" ← màn bắt đầu" if s.id == flow.start else "")
+        out.append(head + (f" {s.zeplin}" if s.zeplin else ""))
+        if s.note:
+            out.append(f"  ghi chú: {' '.join(s.note.split())[:200]}")
+        labels = {i.id: i.label for i in s.items}
+        for link in flow.links:
+            screen, _, item = link.src.partition(".")
+            if screen != s.id:
+                continue
+            how = f'"{labels[item]}"' if item else link.act
+            more = (f" (khi: {link.when})" if link.when else "") + (f" [{link.ac}]" if link.ac else "")
+            out.append(f"  - {how} → {by[link.to].title}{more}")
+        linked = {link.src.partition(".")[2] for link in flow.links if link.src.partition(".")[0] == s.id}
+        if dead := [f'"{label}"' for i, label in labels.items() if i not in linked]:
+            out.append(f"  - chưa nối: {', '.join(dead)}")
+    if flow.pending:
+        out.append("Bước ticket có nhắc nhưng chưa có thiết kế: "
+                   + "; ".join(p.title + (f" [{p.ac}]" if p.ac else "") for p in flow.pending))
+    text = "\n".join(out)
+    return text if len(text) <= MAX_OUTLINE else text[:MAX_OUTLINE] + "\n(… bị cắt)"
 
 
 _STR = r'"((?:[^"\\]|\\.)*)"'  # a JSON string written to its closing quote
@@ -435,7 +507,8 @@ class Progress:
     """The flow JSON as the AI writes it, told once per new screen / link: the dialog's live progress. Each delta is
     scanned from where the last one stopped (a full-size flow is ~150 KB, written a few characters at a time)."""
 
-    def __init__(self) -> None:
+    def __init__(self, known: dict[str, tuple[str, dict[str, str]]] | None = None) -> None:
+        self.known = known or {}  # id -> (title, {button id: label}) of the screens the model was given
         self.text, self.screens, self.links, self.items = "", 0, 0, 0
         self.cut = -1  # where "links" starts: the screens part ends there
         self._title = self._label = self._link = 0  # where each scan resumes
@@ -474,9 +547,13 @@ class Progress:
             except ValueError, KeyError, TypeError, AttributeError:
                 self.names = {}
         screen, _, item = _str(src).partition(".")
-        title, labels = self.names.get(screen, (screen, {}))
+        given = self.known.get(screen, (screen, {}))
+        title, labels = self.names.get(screen, given)
         to = _str(to)
-        return {"from": title, "item": labels.get(item, item), "to": self.names[to][0] if to in self.names else to}
+        # a patch answer lists a given screen without its title, and only the buttons it adds: the rest is `known`
+        name = lambda i: (self.names.get(i) or self.known.get(i) or (i,))[0]  # noqa: E731
+        return {"from": given[0] if title == screen else title, "item": labels.get(item) or given[1].get(item, item),
+                "to": name(to)}
 
 
 AI_FLOW = """\

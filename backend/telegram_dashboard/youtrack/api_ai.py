@@ -50,7 +50,9 @@ async def _ticket_block(
     """(ticket JSON, KB / ticket / Telegram links in it read for the AI; no web) of ticket `i`.
     `skip`: tickets the prompt already carries in full, not read (nor summarized) again as links."""
     svc.need_token()
-    ticket = _ticket_json(await svc.issue_detail(i), desc=desc)
+    d = await svc.issue_detail(i)
+    flow = await svc.flow_outline(d)  # as an AI Agent session reads the ticket (links._issue)
+    ticket = _ticket_json(d, desc=desc, **({"uiflow": flow} if flow else {}))
     if not links:
         return ticket, ""
     text = ISSUE.sub(lambda m: "" if m[2].upper() in skip else m[0], ticket)
@@ -102,8 +104,10 @@ async def _ai(
     retry: bool = True,
     *,
     read_dir: str | None = None,
+    feature: str = "youtrack",
 ) -> str:
-    """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report."""
+    """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report, and
+    `feature` (a UI flow render logs "flow": its cost and time are told apart from the other YouTrack runs)."""
     ai = request.app.state.ai
     name = lambda: providers.NAMES[providers.chosen(ai.settings, yt=True)]  # noqa: E731  only on errors
     if not ai.configured:
@@ -118,7 +122,7 @@ async def _ai(
     token = no_retry.set(not retry)
     try:
         return await ai.ask(f"{head}{prompt}", project=code, read_dir=read_dir, system=AI_SYSTEM, heavy=heavy,
-                            on_text=on_text, feature="youtrack", yt=True, shell=shell and bool(code),
+                            on_text=on_text, feature=feature, yt=True, shell=shell and bool(code),
                             ref=_session_ref(request))  # fmt: skip
     except ApiError as e:
         msg = AI_ERR.get(e.code, f"{{ai}} lỗi ({e.code})").format(ai=name())

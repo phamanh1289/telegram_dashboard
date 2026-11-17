@@ -1,6 +1,6 @@
 "use client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Loader2, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAiWait } from "@/shared/components/ai/fetching";
@@ -9,7 +9,7 @@ import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from 
 import { Hint } from "@/shared/components/ui/hint";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
-import { flowTheme, packShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
+import { flowTheme, packShots, useFlowShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
 import { AI_LEAVE, aiJobs, aiParts, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
 import { flowDraft, type FlowDraft } from "@/features/youtrack/lib/flow-draft";
 import { cn } from "@/shared/lib/utils";
@@ -92,18 +92,17 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // first answer is in (or failed), so it lays out with them and never shifts frames under the user
   const [edited, setEdited] = useState<string | null>(null); // the edited flow's links, "\n"-joined
   const urls = edited !== null ? edited.split("\n").filter(Boolean) : zeplinUrls(flow);
-  const sq = useQuery({
-    queryKey: ["yt", "flow-shots", scope, ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal),
-    enabled: open && !!flow && urls.length > 0, staleTime: 30 * 60_000, retry: false, placeholderData: keepPreviousData,
-  });
+  const sq = useFlowShots(scope, urls, open && !!flow && urls.length > 0);
   const shotsReady = !urls.length || !!sq.data || sq.isError;
-  // the screens whose Zeplin design changed since the file was saved (its size or its texts): = design_of in flow.py
+  // the screens whose Zeplin design changed since the file was saved: its size, its texts, or (a file saved with
+  // one) its Zeplin version, so a redesign that keeps every text is told too. = design_of / redesigned in flow.py
   const was0 = q.data?.flow?.design, live = sq.data?.shots;
   const redesigned = !was0 || !live || !q.data?.flow ? [] : q.data.flow.screens.filter((s) => {
     const was = s.zeplin && was0[s.zeplin], now = s.zeplin && live[s.zeplin];
     if (!was || !now) return false;
-    const sig = [`${Math.round(now.w)}x${Math.round(now.h)}`, ...new Set(now.hits.map((x) => x[0]))];
-    return sig.length !== was.length || sig.some((x) => !was.includes(x));
+    const sig = [`${Math.round(now.w)}x${Math.round(now.h)}`, ...new Set(now.hits.map((x) => x[0]))].filter((x) => !x.startsWith("v:"));
+    const old = was.filter((x) => !x.startsWith("v:")), ver = was.find((x) => x.startsWith("v:"));
+    return sig.length !== old.length || sig.some((x) => !old.includes(x)) || (!!ver && !!now.ver && ver !== `v:${now.ver}`);
   });
   const persist = (value: FlowDraft | null, immediate = false) => {
     const writeId = ++draftWrite.current;
@@ -125,6 +124,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     },
   });
 
+  const [target, setTarget] = useState<FlowTarget>(() => (getPref("uiflowTarget") === "web" ? "web" : "mobile"));
+  const pickTarget = (v: FlowTarget) => { setTarget(v); put("uiflowTarget", v === "web" ? v : null); };
   const ctl = useRef<AbortController | null>(null); // the AI run, so Dừng cancels the request
   const keep = useRef<UiFlow | null>(null); // the flow on screen when a render started: the person's edits carried over
   const [ev, setEv] = useState<FlowEvent[]>([]); // the run's stages as the server tells them (FlowProgress)
@@ -133,15 +134,19 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // a background run on the server (X-Ai-Job), its id kept per ticket: closing the dialog leaves it going, opening it
   // again reads it (`again`: that run) — still running, its result, or its error, the same as a run started here.
   // Its result saves over the file the run started from (`base`), so a save made meanwhile gets the 409, not overwritten.
+  // the runs a new result, a save or a discard leaves behind: the draft's own and the last one on screen (a failed
+  // re-render over a draft is both), so none comes back as "the last render failed" on reopen
+  const doneJobs = () => [...new Set([draft.current?.job, job && !["queued", "running", "cancel_requested"].includes(job.status) ? job.id : undefined])].filter((id): id is string => !!id);
+  const settle = (ids: string[], forget = false) => { for (const id of ids) void yt.flowJobProcessed(id).catch((e) => setJobError(say(e))); if (forget) setJob((j) => (j && ids.includes(j.id) ? null : j)); };
   const ai = useMutation({
     mutationFn: async (again?: FlowJob) => {
-      const previousJob = draft.current?.job ?? job?.id;
+      const previousJobs = doneJobs();
       const op = ++operation.current;
       ctl.current?.abort(AI_LEAVE);
       const c = (ctl.current = new AbortController());
       flowSignals.add(c.signal);
       const opts = again ? {} : runOpts.current; runOpts.current = {}; // once: the next run asks again
-      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, skip: opts.skip };
+      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, skip: opts.skip, target };
       pendingJob.current = current;
       stopRequested.current = null;
       if ((!again || again.retryAi) && draft.current) persist({ ...draft.current, pendingJob: current.id }, true);
@@ -158,18 +163,18 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         if (currentScope.scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
         const result = again && !again.retryAi
           ? await yt.flowJobEvents(current.id, cursor.current.at, c.signal)
-          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.skip ?? []);
+          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.skip ?? [], current.target ?? target);
         const state = await yt.flowJobState(current.id);
         if (op !== operation.current) return null;
         setJob(state);
-        return result?.flow?.ticket === issue ? { flow: result.flow, manifest: result.manifest, base: current.base, sum: flowSummary(t, got), jobId: current.id, previousJob } : null;
+        return result?.flow?.ticket === issue ? { flow: result.flow, manifest: result.manifest, base: current.base, sum: flowSummary(t, got), jobId: current.id, previousJobs } : null;
       } catch (e) {
         if (op !== operation.current || c.signal.aborted) return null;
         if (!c.signal.aborted) {
           try {
             const state = await yt.flowJobState(current.id);
             setJob(state);
-            if (state.result?.flow && op === operation.current) return { flow: state.result.flow, manifest: state.result.manifest, base: state.base, sum: flowSummary(t, got), jobId: state.id, previousJob };
+            if (state.result?.flow && op === operation.current) return { flow: state.result.flow, manifest: state.result.manifest, base: state.base, sum: flowSummary(t, got), jobId: state.id, previousJobs };
             if (["failed", "cancelled", "interrupted"].includes(state.status) && draft.current?.pendingJob === current.id) persist({ ...draft.current, pendingJob: undefined }, true);
           } catch { setJobError(t("Chưa xác nhận trạng thái render. Kết nối lại trước khi tạo lượt mới.")); }
         }
@@ -178,7 +183,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
 
     },
     retry: false,
-    onSuccess: (r) => { if (r) { if (r.previousJob && r.previousJob !== r.jobId) void yt.flowJobProcessed(r.previousJob).catch((e) => setJobError(say(e))); setMine(r); persist({ flow: r.flow, manifest: r.manifest, base: r.base, job: r.jobId, updated: Date.now() }, true); setHid(false); } },
+    onSuccess: (r) => { if (r) { settle(r.previousJobs.filter((id) => id !== r.jobId)); setMine(r); persist({ flow: r.flow, manifest: r.manifest, base: r.base, job: r.jobId, updated: Date.now() }, true); setHid(false); } },
   });
   // "Tải file HTML": the flow on screen as the standalone file, built by the backend and saved by the browser
   // Packing the images can outlast the click's activation, after which a browser may drop a script-started save
@@ -228,9 +233,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       const now = engine.api?.get();
       setMine(now && JSON.stringify(now) !== JSON.stringify(f) ? { flow: { ...now, rev: r.rev }, manifest: mine?.manifest, base: r.att } : null);
       setDirty(false);
-      const savedJob = draft.current?.job ?? job?.id;
+      const savedJobs = doneJobs();
       persist(now && JSON.stringify(now) !== JSON.stringify(f) ? { flow: { ...now, rev: r.rev }, manifest: mine?.manifest, base: r.att, updated: Date.now() } : null, true);
-      if (savedJob) void yt.flowJobProcessed(savedJob).catch((e) => setJobError(say(e)));
+      settle(savedJobs, true); ai.reset();
       setSaved(r);
       void qc.invalidateQueries({ queryKey: ["yt", "detail", issue] }); // its attachments and the new comment
       // no invalidate of the flow key: the answer above is the saved version, and a refetch would api.set over the view
@@ -294,8 +299,6 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const run = () => { if (mode === "flow") setRisky(true); else start(); }; // an AI render always asks first (cost, gaps, model)
   const pickMode = (m: FlowMode) => { setMode(m); put("uiflowMode", m === "flow" ? m : null); };
   // picked before the render (start panel, or the Render lại question), so the pre-check counts that platform from the start
-  const [target, setTarget] = useState<FlowTarget>(() => (getPref("uiflowTarget") === "web" ? "web" : "mobile"));
-  const pickTarget = (v: FlowTarget) => { setTarget(v); put("uiflowTarget", v === "web" ? v : null); };
   const stopAi = async () => {
     const id = pendingJob.current?.id ?? job?.id ?? (ctl.current && aiJobs.get(ctl.current.signal));
     if (!id || stopping) return;
@@ -315,9 +318,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const fresh = () => { // "Xem bản mới": drop my version, read the ticket's
     if (busy.current) return;
     ++operation.current;
-    const discardedJob = draft.current?.job ?? job?.id;
+    const discardedJobs = doneJobs();
     persist(null, true);
-    if (discardedJob) void yt.flowJobProcessed(discardedJob).catch((e) => setJobError(say(e)));
+    settle(discardedJobs, true); ai.reset();
     setMine(null);
     setDirty(false);
     setEdited(null);
@@ -345,7 +348,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // an interrupted render: one warn button, under the run button (or in the footer over a flow on screen)
   const resume = job?.needs_ai_retry && !ai.isPending ? (
     <Hint side="bottom" title={t("Render bị gián đoạn")} text={t("Lượt render trước chưa xong. Bấm để gọi AI lại với đúng chế độ, model và phạm vi màn của lượt đó. Kết quả chỉ lên ticket khi bạn bấm Cập nhật.")}>
-      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, skip: job.request?.skip ?? [] }); }}>
+      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, skip: job.request?.skip ?? [], target: job.request?.target }); }}>
         <RotateCw aria-hidden />{t("Tiếp tục render")}
       </Button>
     </Hint>

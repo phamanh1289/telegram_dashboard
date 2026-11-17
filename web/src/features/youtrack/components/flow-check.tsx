@@ -83,7 +83,6 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
   const why = useWhy();
   const [open, setOpen] = useState(true);
   const lines = risk.lines ?? [];
-  const more = Number.parseInt(risk.text) - lines.length; // the text opens with the full count
   const on = lines.filter((l) => !isOff(l)).length;
   return (
     <section className="grid grid-cols-1 gap-2">
@@ -124,10 +123,10 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
                         </Hint>
                         <span className={cn("min-w-0 font-mono text-xs leading-5 break-words text-ink", off && "line-through")}><Linked text={l.line} /></span>
                       </div>
-                      {off ? <p className="text-xs text-ink-3">{t("Bỏ qua: AI không vẽ liên kết này")}</p> : <>
-                        <p className="text-xs text-warn">{what}</p>
-                        <p className="text-xs text-ink-2"><b className="font-medium text-ink">{t("Cách sửa:")}</b> {fix}</p>
-                      </>}
+                      {/* the reason stays on a line left out (the default): it is why the line is not drawn */}
+                      <p className="text-xs text-warn">{what}</p>
+                      <p className="text-xs text-ink-2"><b className="font-medium text-ink">{t("Cách sửa:")}</b> {fix}</p>
+                      {off && <p className="text-xs text-ink-3">{t("Bỏ qua: AI không vẽ liên kết này")}</p>}
                       {!!l.urls?.length && (
                         <div className="flex flex-wrap gap-1.5 pt-0.5">
                           {l.urls.map((u, i) => (
@@ -142,7 +141,6 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
                 );
               })}
             </ul>
-            {more > 0 && <p className="pt-1.5 text-2xs text-ink-3">{t("+{n} dòng khác", { n: more })}</p>}
           </motion.div>
         )}
       </AnimatePresence>
@@ -160,8 +158,10 @@ function extraNote(lines: Line[], isOff: (l: Line) => boolean, turns: Turn[], ta
   const done = turns.filter((x) => x.a);
   return [
     target === "web" ? "Sơ đồ này cho web (không phải app mobile): vẽ luồng trang web." : "",
-    flow.length ? "Không vẽ liên kết cho các dòng luồng sau (người dùng bỏ chọn):\n" + flow.map((l) => `- #${l.no} ${l.line}`).join("\n") : "",
     done.length ? "Làm rõ luồng trước khi vẽ (hỏi đáp với AI):\n" + done.map((x) => `Hỏi: ${x.q}\nĐáp: ${x.a}`).join("\n\n") : "",
+    // ponytail: last, so the 5500 cut takes the tail of a very long list (those lines are then guessed), not the Q&A;
+    // send the ticked ones as a field of their own if tickets with ~60+ unclear lines turn up
+    flow.length ? "Không vẽ liên kết cho các dòng luồng sau (chưa rõ, người dùng không chọn vẽ):\n" + flow.map((l) => `- #${l.no} ${l.line}`).join("\n") : "",
   ].filter(Boolean).join("\n\n").slice(0, 5500);
 }
 
@@ -174,7 +174,7 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
   onRun: (extra: string, skip: string[]) => void; onScreens: (skip: string[]) => void; onSplit: (extra: string, skip: string[]) => void;
 }) {
   const t = useT();
-  const [flip, setFlip] = useState<Set<string>>(new Set()); // lines the user toggled away from their default, by lineKey
+  const [flip, setFlip] = useState<Set<string>>(new Set()); // unclear lines the user ticked to draw, by lineKey (default: left out)
   const [picked, setPicked] = useState<Mode | null>(null); // the way the user chose; null: the suggested one
   const [sent, setSent] = useState({ key: "", list: [] as string[] }); // the skip the shown count was made with
   const [ask, setAsk] = useState("");
@@ -190,11 +190,11 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
     onError: (e) => setTurns((all) => all.map((x, i) => (i === all.length - 1 ? { ...x, error: say(e) } : x))),
   });
   const send = () => { const q = ask.trim(); if (q && !qa.isPending) qa.mutate({ q }); };
-  // a line is drawn unless the user unticked it
-  const isOff = (l: Line) => flip.has(lineKey(l));
+  // an unclear line is left out unless the user ticked it: the render draws what is clear, the rest is opt-in
+  const isOff = (l: Line) => !flip.has(lineKey(l));
   const setOff = (ls: Line[], off: boolean) => setFlip((s) => {
     const n = new Set(s);
-    for (const l of ls) { if (off) n.add(lineKey(l)); else n.delete(lineKey(l)); }
+    for (const l of ls) { if (off) n.delete(lineKey(l)); else n.add(lineKey(l)); }
     return n;
   });
   // the platform was picked before: neither size group is a warning here (the other platform is simply not sent)
@@ -224,7 +224,7 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
     : changed ? t("Render kèm phần đã làm rõ") : t("Render bằng AI");
   return (
     <ConfirmDialog open={open} onOpenChange={close} tone="default" icon={data && !risks.length ? Sparkles : TriangleAlert} className="sm:max-w-5xl"
-      title={!data ? t("Kiểm tra trước khi render") : risks.length ? t("Lượt vẽ này có thể tốn nhiều token") : t("Sẵn sàng render bằng AI")}
+      title={!data ? t("Kiểm tra trước khi render") : risks.some((r) => r.code !== "ambiguous") ? t("Lượt vẽ này có thể tốn nhiều token") : risks.length ? t("Có dòng luồng chưa rõ: AI chỉ vẽ phần đã rõ") : t("Sẵn sàng render bằng AI")}
       description={!data ? (error ? t("Không đếm được token") : t("Đang đếm token và dò các điểm chưa rõ…")) : <>
         {t("~{n} token đầu vào · {s} màn", { n: fmtK(data.tokens), s: data.screens })}
         {data.cost_usd != null && <> · {t("~{c} trên {m}", { c: fmtUsd(data.cost_usd), m: data.model || "default" })}</>}

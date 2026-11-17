@@ -2,6 +2,10 @@
 user's own zeplin MCP server (provider_cmds.zeplin_server). No AI: one REST call per screen, cached."""
 
 import asyncio
+import contextlib
+import hashlib
+import json
+import logging
 import re
 import time
 import unicodedata
@@ -11,7 +15,9 @@ from urllib.parse import urlsplit
 import httpx
 
 from . import provider_cmds
+from .config import write_private_json
 
+log = logging.getLogger(__name__)
 API = "https://api.zeplin.dev/v1"
 SCREEN = re.compile(r"/project/([0-9a-f]{24})/screen/([0-9a-f]{24})")
 TTL = 3600.0  # the image URLs Zeplin signs stay valid for weeks; an hour keeps a redesign from lagging long
@@ -128,16 +134,34 @@ def texts(layers: list) -> list[str]:
     return list(dict.fromkeys(t for *_, t in sorted(found)))[:MAX_HITS]
 
 
-def shot(version: dict) -> dict:
-    """A screen version as the page draws it (image URL, design size, hits) and its texts for the AI."""
+def shot(version: dict, name: str = "") -> dict:
+    """A screen version as the page draws it (image URL, design size, hits) and its texts for the AI. `name`: the
+    screen's own (a version carries none), what "+ Từ Zeplin" names the new screen."""
     w = float(version.get("width") or 0)
     thumbs = version.get("thumbnails") or {}
     layers = version.get("layers") or []
     return {
-        "title": str(version.get("name") or "")[:200],
+        "title": str(name or "")[:200], "ver": str(version.get("id") or "")[:40],
         "src": thumbs.get("medium") or version.get("image_url") or "", "w": w,
         "h": float(version.get("height") or 0), "hits": hits(layers, w), "texts": texts(layers),
     }
+
+
+async def resolve(url: str) -> str:
+    """Where a zpl.io short link points ("" when it is not one, or points nowhere). Its own plain request: zpl.io
+    answers a JSON-accepting client with 200 {"url": ...} instead of the redirect, and it has no use for the token."""
+    u = urlsplit(url)
+    if u.scheme != "https" or u.hostname != "zpl.io":
+        return ""
+    async with httpx.AsyncClient(timeout=10.0) as c:
+        r = await c.get(url, follow_redirects=False)
+    loc = r.headers.get("location") or ""
+    if not loc and r.headers.get("content-type", "").startswith("application/json"):
+        try:
+            loc = str(r.json().get("url") or "")
+        except (ValueError, AttributeError):
+            loc = ""
+    return loc
 
 
 def canonical(url: str) -> str:
@@ -149,9 +173,12 @@ def canonical(url: str) -> str:
 
 
 class Shots:
-    def __init__(self, *, scope=lambda: "") -> None:
+    def __init__(self, *, scope=lambda: "", path=lambda: None) -> None:
         self._scope = scope
         self._identity = None
+        # every screen as last read, kept in a file (path(): None = not kept): an opened flow draws from it at once
+        # while the live read (6-7 s for 20 screens after a restart) goes on behind
+        self._path, self._kept, self._owner, self._write = path, None, "", asyncio.Lock()
         self._cache: OrderedDict[str, tuple[float, dict | None]] = OrderedDict()
         self._inflight: dict[tuple, asyncio.Task] = {}
         self._sem = asyncio.Semaphore(PARALLEL)
@@ -164,13 +191,62 @@ class Shots:
         self._inflight.clear()
         self._cache.clear()
 
-    async def get(self, urls: list[str], *, done=None) -> tuple[dict[str, dict], list[str]]:
-        """Read canonical screens once across callers; cancelling a reader leaves other readers intact."""
-        tok = token()
+    def _identify(self, tok: str) -> tuple:
         identity = (self._scope(), repr(provider_cmds.zeplin_server()), tok)
         if identity != self._identity:
             self._identity = identity
             self._cache.clear()
+        return identity
+
+    async def _last(self, identity: tuple) -> dict[str, dict]:
+        """The kept reads of this account (the file names its owner by a hash: never the token)."""
+        owner = hashlib.sha256(repr(identity).encode()).hexdigest()[:16]
+        if self._kept is None or owner != self._owner:
+            shots = None
+            if path := self._path():
+                try:
+                    data = json.loads(await asyncio.to_thread(path.read_text))
+                    shots = data["shots"] if data["owner"] == owner else None
+                except OSError, ValueError, KeyError, TypeError:  # no file yet, or not ours: nothing kept
+                    shots = None
+            self._owner, self._kept = owner, shots if isinstance(shots, dict) else {}
+        return self._kept
+
+    async def last(self, urls: list[str]) -> dict[str, dict] | None:
+        """Every one of `urls` as it was last read, with no call to Zeplin. None when there is nothing older to
+        show first: all of them are fresh in memory (get() answers at once), one was never read, or no token."""
+        tok = token()
+        if not tok:
+            return None
+        identity, now = self._identify(tok), time.monotonic()
+        wanted = {u: canonical(u) for u in urls}
+        if all((c := self._cache.get(k)) and now - c[0] <= TTL for k in wanted.values()):
+            return None
+        kept = await self._last(identity)
+        have = {u: (self._cache.get(k) or (0, None))[1] or kept.get(k) for u, k in wanted.items()}
+        return have if all(have.values()) else None
+
+    async def _keep(self, identity: tuple, read: dict[str, dict | None]) -> None:
+        path = self._path()
+        if not path or identity != self._identity:
+            return
+        kept = await self._last(identity)
+        for url, value in read.items():
+            kept.pop(url, None)  # read again: newest last; a screen that is gone leaves the file
+            if value:
+                kept[url] = value
+        while len(kept) > 512:
+            kept.pop(next(iter(kept)))
+        try:
+            async with self._write:
+                await asyncio.to_thread(write_private_json, path, {"owner": self._owner, "shots": kept})
+        except OSError as e:  # disk full, no permission: the read itself is fine, only the next cold open is slower
+            log.warning("Zeplin shots not kept: %s", type(e).__name__)
+
+    async def get(self, urls: list[str], *, done=None) -> tuple[dict[str, dict], list[str]]:
+        """Read canonical screens once across callers; cancelling a reader leaves other readers intact."""
+        tok = token()
+        identity = self._identify(tok)
         if not tok:
             raise ZeplinError("Chưa cấu hình Zeplin MCP (cần ZEPLIN_ACCESS_TOKEN) — UI flow vẽ khung đơn giản")
         wanted = list(dict.fromkeys(canonical(u) for u in urls))
@@ -218,6 +294,8 @@ class Shots:
             return url, value
 
         got = dict(await asyncio.gather(*(one(u) for u in wanted)))
+        if len(warm) < len(wanted):
+            await self._keep(identity, {u: v for u, v in got.items() if u not in warm})
         return {u: got[canonical(u)] for u in urls if got[canonical(u)]}, [u for u in urls if not got[canonical(u)]]
 
     @staticmethod
@@ -232,13 +310,14 @@ class Shots:
             return response
 
         try:
-            m = SCREEN.search(url)
-            if not m and "zpl.io/" in url:  # a short link: where it points
-                loc = measured(await c.get(url, follow_redirects=False)).headers.get("location") or ""
-                m = SCREEN.search(loc)
+            m = SCREEN.search(url) or SCREEN.search(await resolve(url))  # a short link: where it points
             if not m:
                 return None  # a component / styleguide link: no screen to draw
-            r = measured(await c.get(f"/projects/{m[1]}/screens/{m[2]}/versions/latest"))
+            path = f"/projects/{m[1]}/screens/{m[2]}"
+            r, named = await asyncio.gather(c.get(f"{path}/versions/latest"), c.get(path), return_exceptions=True)
+            if isinstance(r, BaseException):
+                raise r
+            measured(r)
         except httpx.HTTPError as e:
             raise ZeplinError("Không kết nối được Zeplin") from e
         if r.status_code == 401:
@@ -247,7 +326,12 @@ class Shots:
             return None  # not shared with this account, or deleted
         if r.status_code >= 400:
             raise ZeplinError(f"Zeplin trả lỗi {r.status_code}")
-        return shot(r.json())
+        # the name is a nicety (the new screen's title): its read failing never fails the screen
+        name = ""
+        if isinstance(named, httpx.Response) and measured(named).status_code == 200:
+            with contextlib.suppress(ValueError, AttributeError):
+                name = str(named.json().get("name") or "")
+        return shot(r.json(), name)
 
 
 def _image_host(url: str) -> bool:

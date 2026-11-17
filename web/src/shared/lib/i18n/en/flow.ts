@@ -64,7 +64,7 @@ export default {
   "Giữ từ sơ đồ trước: {p} vị trí màn, {n} ghi chú, {r} vùng bấm": "Kept from the previous flow: {p} screen positions, {n} notes, {r} tap areas",
   "~{n} token đầu vào · {s} màn": "~{n} input tokens · {s} screens",
   "~{c} trên {m}": "~{c} on {m}",
-  "+{n} dòng khác": "+{n} more lines",
+  "Có dòng luồng chưa rõ: AI chỉ vẽ phần đã rõ": "Some flow lines are unclear: the AI draws only what is clear",
   "Màn “{name}” không trùng tên link Zeplin nào trong ticket": "Screen “{name}” matches no Zeplin link title in the ticket",
   "đổi thành “{hint}” nếu là cùng màn": "change it to “{hint}” if it is the same screen",
   "thêm link Zeplin cho màn này, dạng [{name}](link Zeplin), hoặc đổi cho trùng tên một màn đã có": "add a Zeplin link for this screen as [{name}](Zeplin link), or rename it to match an existing screen",

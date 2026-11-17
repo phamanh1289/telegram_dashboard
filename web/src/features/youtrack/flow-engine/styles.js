@@ -1,4 +1,4 @@
-import { BEZEL, BOTTOM, H, HEAD, STATUS, W } from './constants.js';
+import { BEZEL, BOTTOM, HEAD, STATUS } from './constants.js';
 import { h } from './dom.js';
 
 // ------------------------------------------------------------------ styles (injected once)
@@ -40,6 +40,11 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 .uf-btn:active{transform:scale(.97)}
 .uf-btn[aria-pressed=true]{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
 .uf-icon{width:30px;padding:0}
+.uf-bar [data-tip]{position:relative}
+.uf-bar [data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;
+padding:5px 9px;border-radius:var(--uf-r);background:var(--uf-ink);color:var(--uf-screen);font-size:12px;font-weight:400;line-height:1.3;
+white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s ease-out}
+.uf-bar [data-tip]:hover::after,.uf-bar [data-tip]:focus-visible::after{opacity:1;transition-delay:.5s}
 /* toolbar: Sửa is the one coloured switch; its tools are one group that only exists while it is on */
 .uf-editbtn{border-color:color-mix(in srgb,var(--uf-accent) 45%,var(--uf-line));color:var(--uf-accent)}
 .uf-editbtn[aria-pressed=true]{background:var(--uf-fill);border-color:transparent;color:var(--uf-on-accent)}
@@ -47,7 +52,9 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 animation:uf-in .18s ease-out}
 .uf-tools .uf-btn{height:26px;border-radius:5px;border-color:transparent;background:transparent}
 .uf-tools .uf-btn:hover:not(:disabled){background:var(--uf-screen)}
-.uf-tools .uf-icon{width:26px}
+.uf-tools .uf-btn{min-width:26px;padding:0 5px;gap:0}
+.uf-tools .uf-btn span{max-width:0;overflow:hidden;opacity:0;transition:max-width .18s ease-out,margin .18s ease-out,opacity .12s ease-out}
+.uf-tools .uf-btn:hover span,.uf-tools .uf-btn:focus-visible span,.uf-tools .uf-btn[aria-expanded=true] span{max-width:160px;margin:0 3px 0 6px;opacity:1}
 .uf-div{width:1px;height:16px;margin:0 3px;background:var(--uf-line)}
 .uf-check svg{color:var(--uf-warn)}
 .uf-clean svg{color:var(--uf-ok)}
@@ -69,7 +76,7 @@ font-weight:700;line-height:16px;text-align:center}
 .uf-root[data-mode=play] .uf-view{display:none}
 .uf-root[data-mode=play] .uf-play{display:flex;flex-direction:column}
 .uf-root[data-mode=play] .uf-fit{display:none}
-.uf-screen{position:absolute;left:0;top:0;width:${W}px;height:${H}px;border-radius:54px;background:var(--uf-screen);
+.uf-screen{position:absolute;left:0;top:0;width:var(--uf-w);height:var(--uf-h);border-radius:54px;background:var(--uf-screen);
 box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);transition:opacity .2s ease-out}
 .uf-screen:not(.uf-ov)::before,.uf-phone::before{content:"";position:absolute;top:11px;left:50%;width:120px;height:33px;margin-left:-60px;
 border-radius:20px;background:#000;opacity:.88}
@@ -134,6 +141,8 @@ background:transparent;color:transparent;font-size:13px;transition:background .1
 border-radius:4px;background:var(--uf-accent);cursor:nwse-resize;touch-action:none}
 .uf-editing .uf-rect.uf-sel .uf-rsz{display:block}
 .uf-drawing .uf-screen.uf-drawon{cursor:crosshair}
+.uf-zl{position:absolute;inset:0;pointer-events:none}
+.uf-zl i{position:absolute;border:1px dashed color-mix(in srgb,var(--uf-accent) 70%,transparent);border-radius:6px}
 .uf-drawing .uf-screen.uf-drawon .uf-imgbox{outline:3px dashed var(--uf-accent);outline-offset:-3px}
 .uf-startb{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-accent);
 color:var(--uf-on-accent);font-size:11px}
@@ -142,6 +151,10 @@ color:var(--uf-on-accent);font-size:11px}
 .uf-pfilter .uf-btn,.uf-ptabs .uf-btn{height:26px;padding:0 10px;font-size:12px}
 .uf-paths{margin:0;padding:4px 10px 6px 28px;font-size:13px;line-height:1.45}
 .uf-paths li{margin:4px 0;overflow-wrap:anywhere}
+.uf-path{display:block;width:100%;padding:3px 6px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.uf-path:hover{background:var(--uf-soft)}
+.uf-path:focus-visible{outline:2px solid var(--uf-accent);outline-offset:1px}
+.uf-walking{box-shadow:0 0 0 3px var(--uf-accent)}
 .uf-memo{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-hit-soft);
 color:var(--uf-ink);font-size:14px;cursor:help}
 .uf-screen.uf-match{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
@@ -192,7 +205,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-txt{min-width:0;overflow-wrap:anywhere}
 .uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
 .uf-tag-orphan,.uf-tag-dead,.uf-tag-broken,.uf-tag-nostart,.uf-tag-unclear{background:var(--uf-warn-soft);color:var(--uf-warn)}
-.uf-tag-pending{background:var(--uf-accent-soft);color:var(--uf-accent)}
+.uf-tag-pending,.uf-tag-noflow{background:var(--uf-accent-soft);color:var(--uf-accent)}
 /* a pending step: the row, and (while editing) a way to drop it from the list */
 .uf-prow{display:flex;align-items:center;gap:2px}
 .uf-prow .uf-issue{flex:1;min-width:0}
@@ -200,10 +213,16 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
 /* prototype: one phone, scaled to fit (--k), centred in the stage; the path walked below it */
 .uf-stage{position:relative;flex:1;min-height:0;overflow:hidden}
-.uf-phone{position:absolute;left:50%;top:50%;width:${W}px;height:${H}px;margin:${-H / 2}px 0 0 ${-W / 2}px;
+.uf-phone{position:absolute;left:50%;top:50%;width:var(--uf-w);height:var(--uf-h);margin:calc(var(--uf-h) / -2) 0 0 calc(var(--uf-w) / -2);
 transform:scale(var(--k,1));display:flex;flex-direction:column;overflow:hidden;border-radius:54px;background:var(--uf-screen);
 box-shadow:0 0 0 ${BEZEL - 1}px var(--uf-bezel),0 0 0 ${BEZEL}px var(--uf-line),var(--uf-shadow);outline:none}
 .uf-phone::before,.uf-phone::after{z-index:3;pointer-events:none}
+/* a web flow (data-device=web): each frame is a browser window, not a phone: square corners, no notch, no home bar,
+ no clock; the same in Prototype, where a long page scrolls inside the window */
+.uf-root[data-device=web] .uf-screen,.uf-root[data-device=web] .uf-phone,.uf-root[data-device=web] .uf-shot .uf-card{border-radius:12px}
+.uf-root[data-device=web] .uf-shot .uf-head{border-radius:12px 12px 0 0;padding-left:20px}
+.uf-root[data-device=web] .uf-screen::before,.uf-root[data-device=web] .uf-screen::after,
+.uf-root[data-device=web] .uf-phone::before,.uf-root[data-device=web] .uf-phone::after,.uf-root[data-device=web] .uf-status{display:none}
 .uf-status{flex:none;height:${STATUS}px;padding:14px 0 0 40px;font-size:15px;font-weight:650}
 .uf-nav{flex:none;display:flex;align-items:center;gap:2px;height:${HEAD}px;padding:0 20px 0 6px;border-bottom:1px solid var(--uf-soft)}
 .uf-pback{flex:none;display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:none;
@@ -251,6 +270,8 @@ box-shadow:var(--uf-shadow);outline:none}
 .uf-toast .uf-pcard{position:absolute;left:24px;right:24px;bottom:56px;width:auto;border-radius:16px;pointer-events:auto;
 background:var(--uf-ink);color:var(--uf-screen)}
 .uf-toast .uf-pcard>.uf-title{padding:14px 18px;font-size:15px}
+.uf-root[data-device=web] .uf-popup .uf-pcard{max-width:480px}
+.uf-root[data-device=web] .uf-toast .uf-pcard{left:auto;right:24px;width:360px}
 .uf-trail{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--uf-line);
 background:var(--uf-screen)}
 .uf-nostart{flex:none;color:var(--uf-warn);font-size:12px}
@@ -263,7 +284,7 @@ cursor:pointer}
 /* edit mode (Sửa): drag handles, dots, selection, the properties panel */
 .uf-root:not(.uf-editing) .uf-add,.uf-root[data-mode=play] .uf-add,.uf-root[data-mode=play] .uf-editbtn,
 .uf-root[data-mode=play] .uf-insp{display:none}
-.uf-dot{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
+.uf-dot{position:absolute;z-index:60;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
 border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40,.3);cursor:crosshair;touch-action:none}
 .uf-dot:hover{transform:scale(1.25)}
 /* link dots: on the frame under the pointer or in hand, not on all of them at once */

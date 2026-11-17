@@ -1,6 +1,6 @@
 import { family, isOverlay } from './model.js';
 import { inspector } from './inspector.js';
-import { cardAbs } from './geometry.js';
+import { cardAbs, frameH } from './geometry.js';
 import { shotOf } from './shots.js';
 import { CAP, COL, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, ROW, W } from './constants.js';
 import { clamp, isPop, itm, scr } from './values.js';
@@ -52,8 +52,18 @@ function editor(ctx) {
   }
   function paint() {
     for (const el of ctx.layer.querySelectorAll(".uf-sel, .uf-drawon")) el.classList.remove("uf-sel", "uf-drawon");
+    for (const el of ctx.layer.querySelectorAll(".uf-zl")) el.remove();
     node()?.classList.add("uf-sel");
-    if (drawFor) ctx.frames().get(drawFor.id)?.classList.add("uf-drawon");
+    if (drawFor) {
+      const frame = ctx.frames().get(drawFor.id), s = get().screens.find((x) => x.id === drawFor.id), k = s && scale(s);
+      frame?.classList.add("uf-drawon");
+      // the design's own texts, outlined: a click on one makes it the button (its words, its place), no drawing
+      if (frame && k) {
+        const zl = h("div", "uf-zl");
+        for (const r of layerRects(k)) box(zl.appendChild(h("i")), px(r, k));
+        frame.querySelector(".uf-card").append(zl);
+      }
+    }
     if (ctx.on()) ctx.focus(sel); // the map dims around what is in hand
   }
   /** Frame units per image fraction for a screen drawn from its Zeplin image (the frame is W wide). */
@@ -71,6 +81,14 @@ function editor(ctx) {
     return { x, y, w: Math.min(r.w, 1 - x), h: Math.min(r.h, 1 - y) };
   }
   const px = (r, k) => ({ x: r.x * k.kw, y: r.y * k.kh, w: r.w * k.kw, h: r.h * k.kh });
+  /** The Zeplin texts of a screen as tap areas (image fractions, at least MIN_RECT), with their words. */
+  function layerRects(k) {
+    const { w: dw, h: dh, hits } = k.sh, mw = MIN_RECT / k.kw, mh = MIN_RECT / k.kh;
+    return (Array.isArray(hits) ? hits : []).map(([label, x, y, w, hh]) => {
+      const r = { x: clamp(x / dw, 0, 1), y: clamp(y / dh, 0, 1), w: Math.max(w / dw, mw), h: Math.max(hh / dh, mh) };
+      return { label, x: rnd(Math.min(r.x, 1 - r.w)), y: rnd(Math.min(r.y, 1 - r.h)), w: rnd(Math.min(r.w, 1)), h: rnd(Math.min(r.h, 1)) };
+    }).filter((r) => r.x >= 0 && r.y >= 0);
+  }
   function startDraw(spec) {
     if (blocked()) return;
     drawFor = spec;
@@ -136,6 +154,7 @@ function editor(ctx) {
         const box0 = h("div", "uf-item uf-hot uf-rect uf-sel");
         frame.querySelector(".uf-card").append(box0);
         box0.hidden = true;
+        box0.style.zIndex = 50; // seen while drawn inside another area, whatever layer it ends on
         Object.assign(drag, { kind: "draw", s, k, el: box0, p0: { x: (p.x - s.x) / k.kw, y: (p.y - s.y) / k.kh }, r: null });
       } else {
         const it = s.items.find((i) => i.id === hot.dataset.item);
@@ -203,7 +222,12 @@ function editor(ctx) {
     ctx.tempLink(null);
     if (d.kind === "draw") d.el.remove();
     if (!d.moved) { // a plain click on a handle, a dot or a title bar selects
-      if (d.kind === "draw") return;
+      if (d.kind === "draw") { // a click, not a drag: the design's text under it (the smallest one) is the button
+        const on = layerRects(d.k).filter((r) => d.p0.x >= r.x && d.p0.x <= r.x + r.w && d.p0.y >= r.y && d.p0.y <= r.y + r.h)
+          .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+        if (on) drawn({ r: { x: on.x, y: on.y, w: on.w, h: on.h }, k: d.k }, String(on.label).slice(0, CAP));
+        return;
+      }
       if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
       if (d.kind === "link") return select({ t: "link", i: d.m.i });
       if (d.kind === "move") return select({ t: "screen", id: d.id });
@@ -228,14 +252,14 @@ function editor(ctx) {
     back();
   }
   /** A finished draw: the tap area of the item it was for, or a new button with it. One undo step. */
-  function drawn(d) {
+  function drawn(d, label = "") {
     const r = d.r, spec = drawFor;
     if (!r || !spec || r.w * d.k.kw < MIN_RECT || r.h * d.k.kh < MIN_RECT) return; // a slip: still drawing
     const f = structuredClone(get()), s = f.screens.find((x) => x.id === spec.id);
     let item = spec.item && s.items.find((i) => i.id === spec.item);
     if (!item) {
       if (s.items.length >= MAX_ITEMS) return ctx.note(t("maxItems", { n: MAX_ITEMS }));
-      item = { id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: t("newItem") };
+      item = { id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: label.trim() || t("newItem") };
       s.items.push(item);
     }
     item.rect = r;
@@ -325,7 +349,7 @@ function editor(ctx) {
     if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
     const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
     let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
-    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && Math.abs(s.y - y) < H + ROOM);
+    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && y < s.y + frameH(s) + ROOM && s.y < y + H + ROOM);
     const { near, ...own } = props, by = near && f.screens.find((s) => s.id === near);
     if (by) { // the screen that leads to it: the next column, the first free row (its arrow stays short)
       x = by.x + COL;

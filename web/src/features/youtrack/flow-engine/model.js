@@ -1,5 +1,5 @@
 import { shotOf } from './shots.js';
-import { ACTS, CAP_NOTE, KINDS, VERSION } from './constants.js';
+import { ACTS, CAP_NOTE, KINDS, VERSION, setDevice } from './constants.js';
 import { itm, num, rectOf, scr, str } from './values.js';
 
 /** Shown as a card over its parent. A popup / sheet / toast with a Zeplin image is a full frame instead (the
@@ -12,6 +12,7 @@ function sanitize(raw) {
   const f = raw && typeof raw === "object" ? raw : {};
   // never edit a newer file: saving it would drop the fields this engine does not know
   if (Number.isFinite(f.v) && f.v > VERSION) throw new Error(`UI flow v${f.v} > v${VERSION}`);
+  const device = setDevice(f.device); // every read of a flow goes through here: the frame is the one of the flow in hand
   const dropped = { screens: [], items: [], links: 0, bad: 0 };
   const seen = new Set(), screens = [];
   for (const s of Array.isArray(f.screens) ? f.screens : []) {
@@ -40,6 +41,7 @@ function sanitize(raw) {
     .map((l) => ({ src: l.src, to: l.to, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
   dropped.links = all.length - links.length;
   // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
+  // (device: "mobile" | "web", anything else is a phone)
   const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
   const start = typeof f.start === "string" && by.has(f.start) ? f.start : null;
   // steps the ticket describes that have no design yet (= Pending in the backend model): listed, never drawn.
@@ -52,8 +54,10 @@ function sanitize(raw) {
     pending.push({ title, kind: KINDS.includes(p.kind) ? p.kind : "screen", ac: str(p.ac), src: okSrc(p.src) ? p.src : "",
       when: str(p.when) });
   }
-  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device: "mobile", start, screens, links,
-    ...(pending.length ? { pending } : {}) }, dropped };
+  // the ticket's AC codes, read at the last render (= Flow.acs): kept as they are, the editor never changes them
+  const acs = [...new Set((Array.isArray(f.acs) ? f.acs : []).filter((x) => typeof x === "string" && /^AC\d{1,3}(\.\d{1,3}){0,3}$/.test(x)))];
+  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device, start, screens, links,
+    ...(pending.length ? { pending } : {}), ...(acs.length ? { acs } : {}) }, dropped };
 }
 const normalize = (raw) => sanitize(raw).flow;
 /** id -> the screen an overlay sits on: its declared parent, else the screen whose `open` link targets it; null

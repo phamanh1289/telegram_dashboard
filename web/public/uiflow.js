@@ -12,19 +12,36 @@
 
 // ------------------------------------------------------------------ constants
 const SCREEN = Object.freeze({ w: 390, h: 844 });
-const W = SCREEN.w, H = SCREEN.h;
-const COL = W + 220, ROW = H + 120, SHIFT = 60;
-// column / row step; overlay offset from its parent
+// the frame of each device (= Flow.device): a phone, or a browser window a web design is drawn in at its own width
+const FRAMES = Object.freeze({ mobile: SCREEN, web: Object.freeze({ w: 1280, h: 800 }) });
+let DEVICE = "mobile", W = SCREEN.w, H = SCREEN.h;
+let COL = W + 220, ROW = H + 120;
+// column / row step
+const SHIFT = 60;
+// overlay offset from its parent
+/** The frame every screen of the flow in hand is drawn in. Importers read W / H / COL / ROW live, so geometry,
+ *  layout, the editor and Prototype all follow.
+ *  ponytail: one device per page, like the images (shots.js); a frame per mount if two flows ever share a page */
+function setDevice(device) {
+  DEVICE = device === "web" ? "web" : "mobile";
+  ({ w: W, h: H } = FRAMES[DEVICE]);
+  COL = W + 220;
+  ROW = H + 120;
+  return DEVICE;
+}
 const GROUP_GAP = 200;
 // extra space between the main flow, each separate group and the loose screens
 const LABEL_HIDE = 0.6;
 // from this zoom up the in-frame title (17px) reads at 10px+: the frame labels step aside
 const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40, FOLD_SLACK = 4;
+const TALL = 1.1, FIT_TALL = 2;
+// a design this many phones high (a page that scrolls) is drawn whole; "fit" counts at most FIT_TALL of them, so one
+// eight-screen page does not shrink every other frame to a dot
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
 const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
-const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
+const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16, WALK_MS = 1100;
 // prototype: motion, phone bezel, margin
 const NOTE_MS = 2600;
 // edit: how long a refusal note stays up
@@ -70,6 +87,9 @@ const startOf = (f) => (f.start && f.screens.some((s) => s.id === f.start) ? f.s
 const isPop = (s) => s.kind !== "screen";
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+/** "AC1.2, AC4.5" -> its codes. */
+const acCodes = (text) => String(text ?? "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+
 
 
 ;// ./web/src/features/youtrack/flow-engine/shots.js
@@ -94,7 +114,7 @@ function setShots(map) {
 /** Where each button of `s` sits on its Zeplin image (frame units; null: label not found) and the back button:
  *  its hand-drawn rect, else same text first, then one containing the other; each hit used once, in reading order. */
 function hotspots(s, sh) {
-  const key = s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
+  const key = W + s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
   let got = hotCache.get(key);
   if (got) return got;
   const k = W / sh.w, hits = Array.isArray(sh.hits) ? sh.hits : [], ns = hits.map((x) => norm(x[0])), used = new Set();
@@ -131,6 +151,16 @@ function hotspots(s, sh) {
   return got;
 }
 
+/** How overlapping tap areas stack: a smaller one sits above every larger one, whatever order they were made in,
+ *  so an area drawn inside another (inside another…) takes the press and the one under it does not. Returns each
+ *  rect's layer, 1 = lowest (null: not on the image); equal sizes keep their order. */
+function layersOf(rects) {
+  const order = rects.map((r, i) => [r ? r.w * r.h : -1, i]).filter(([a]) => a >= 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const out = rects.map(() => null);
+  order.forEach(([, i], n) => { out[i] = n + 1; });
+  return out;
+}
+
 
 
 ;// ./web/src/features/youtrack/flow-engine/model.js
@@ -148,6 +178,7 @@ function sanitize(raw) {
   const f = raw && typeof raw === "object" ? raw : {};
   // never edit a newer file: saving it would drop the fields this engine does not know
   if (Number.isFinite(f.v) && f.v > VERSION) throw new Error(`UI flow v${f.v} > v${VERSION}`);
+  const device = setDevice(f.device); // every read of a flow goes through here: the frame is the one of the flow in hand
   const dropped = { screens: [], items: [], links: 0, bad: 0 };
   const seen = new Set(), screens = [];
   for (const s of Array.isArray(f.screens) ? f.screens : []) {
@@ -176,6 +207,7 @@ function sanitize(raw) {
     .map((l) => ({ src: l.src, to: l.to, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
   dropped.links = all.length - links.length;
   // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
+  // (device: "mobile" | "web", anything else is a phone)
   const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
   const start = typeof f.start === "string" && by.has(f.start) ? f.start : null;
   // steps the ticket describes that have no design yet (= Pending in the backend model): listed, never drawn.
@@ -188,8 +220,10 @@ function sanitize(raw) {
     pending.push({ title, kind: KINDS.includes(p.kind) ? p.kind : "screen", ac: str(p.ac), src: okSrc(p.src) ? p.src : "",
       when: str(p.when) });
   }
-  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device: "mobile", start, screens, links,
-    ...(pending.length ? { pending } : {}) }, dropped };
+  // the ticket's AC codes, read at the last render (= Flow.acs): kept as they are, the editor never changes them
+  const acs = [...new Set((Array.isArray(f.acs) ? f.acs : []).filter((x) => typeof x === "string" && /^AC\d{1,3}(\.\d{1,3}){0,3}$/.test(x)))];
+  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device, start, screens, links,
+    ...(pending.length ? { pending } : {}), ...(acs.length ? { acs } : {}) }, dropped };
 }
 const normalize = (raw) => sanitize(raw).flow;
 /** id -> the screen an overlay sits on: its declared parent, else the screen whose `open` link targets it; null
@@ -218,7 +252,134 @@ function family(f, id) {
 
 
 
+;// ./web/src/features/youtrack/flow-engine/geometry.js
+
+
+
+
+
+// ------------------------------------------------------------------ geometry (pure, canvas units)
+/** The visible card inside a 390 × 844 frame: the whole phone for a screen, a dialog / sheet / toast otherwise.
+ *  head / headH: the title bar; top / step: where item rows start and their pitch. */
+/** How high a screen's frame is: the phone, or the whole design when it is a page that scrolls (a 375 × 3714
+ *  list): its lower buttons are on the map where the design has them, not rows under a cut image. */
+function frameH(s) {
+  const sh = shotOf(s), hh = sh ? (sh.h * W) / sh.w : 0;
+  if (DEVICE === "web") return sh ? Math.max(200, Math.round(hh)) : H; // a window is as high as its page, whatever that is
+  return hh > H * TALL ? Math.round(hh) : H;
+}
+function cardOf(s) {
+  const n = s.items.length;
+  if (shotOf(s)) return { x: 0, y: 0, w: W, h: frameH(s), head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
+  if (!isOverlay(s))
+    return { x: 0, y: 0, w: W, h: H, head: STATUS, headH: HEAD, top: TOP, step: n ? Math.min(STEP, (H - TOP - BOTTOM) / n) : STEP };
+  const step = n ? Math.min(STEP, (H * 0.8 - CARD_HEAD - CARD_PAD) / n) : STEP;
+  const h = Math.max(s.kind === "toast" ? CARD_HEAD + CARD_PAD : 140, CARD_HEAD + n * step + CARD_PAD);
+  // a dialog / toast on a web page is a box of its own width, not the page's; a phone's are unchanged (320 / 342)
+  const w = s.kind === "sheet" ? W : s.kind === "popup" ? Math.min(W - 70, 480) : Math.min(W - 48, 360);
+  const y = s.kind === "popup" ? (H - h) / 2 : s.kind === "sheet" ? H - h : H - h - 56;
+  return { x: (W - w) / 2, y, w, h, head: 0, headH: CARD_HEAD, top: CARD_HEAD, step };
+}
+/** Row i of a card, relative to the card. */
+function rowOf(card, i) {
+  return { x: 16, y: card.top + i * card.step, w: card.w - 32, h: card.step - Math.min(12, card.step * 0.22) };
+}
+const cardAbs = (s, c = cardOf(s)) => ({ x: s.x + c.x, y: s.y + c.y, w: c.w, h: c.h });
+/** Each button's box in its card: on the Zeplin image where its label is (`hot`) when that is inside the frame,
+ *  else a row stacked at the bottom; without an image, the plain rows. */
+function rowsOf(s) {
+  const c = cardOf(s), sh = shotOf(s);
+  if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
+  const { items } = hotspots(s, sh), fh = frameH(s), fold = fh - BOTTOM;
+  // on the frame: the area ends inside it. A design 814 high scales to 846, its bottom button a few px past H:
+  // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
+  const on = (r) => r && r.y + r.h <= fh + (r.manual ? 0.5 : FOLD_SLACK);
+  const off = items.filter((r) => !on(r)).length;
+  let n = 0;
+  const z = layersOf(items.map((r) => (on(r) ? r : null)));
+  return items.map((r, i) => (on(r) ? { r, hot: true, z: z[i] }
+    : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
+}
+/** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
+function freeShots(f) {
+  for (const s of f.screens) {
+    if (s.kind === "screen" || !shotOf(s) || s.x === null) continue;
+    if (f.screens.some((o) => o !== s && o.x !== null && Math.abs(o.x - s.x) < W && Math.abs(o.y - s.y) < H)) s.x = s.y = null;
+  }
+  return f;
+}
+/** Positions saved when every frame was a phone high: what sits under a long design (same column, inside its
+ *  length) moves down with its overlays, top to bottom, so nothing is drawn over the design's lower part. */
+function clearTall(f) {
+  const tops = f.screens.filter((s) => !isOverlay(s) && s.x !== null && s.y !== null).sort((a, b) => a.y - b.y);
+  const by = new Map(f.screens.map((s) => [s.id, s]));
+  for (const s of tops) {
+    const end = s.y + frameH(s) + ROW - H;
+    if (frameH(s) <= H) continue;
+    const under = tops.filter((o) => o !== s && o.y > s.y && Math.abs(o.x - s.x) < W);
+    const push = Math.max(0, ...under.map((o) => end - o.y));
+    if (push) for (const o of under) for (const id of family(f, o.id)) { const m = by.get(id); if (m.y !== null) m.y += push; }
+  }
+  return f;
+}
+/** Arrow ends: p (start) with its direction, q (end) on the nearest edge of the target card with that edge's normal. */
+function linkEnds(l, by) {
+  const a = by.get(scr(l.src)), ca = cardOf(a), A = cardAbs(a, ca), B = cardAbs(by.get(l.to));
+  const i = a.items.findIndex((it) => it.id === itm(l.src));
+  let p, dir;
+  if (i >= 0) {
+    const r = rowsOf(a)[i].r;
+    p = { x: A.x + r.x + r.w, y: A.y + r.y + r.h / 2 };
+    dir = { x: 1, y: 0 };
+  } else {
+    const left = B.x + B.w / 2 < A.x + A.w / 2;
+    p = { x: left ? A.x : A.x + A.w, y: A.y + ca.head + ca.headH / 2 };
+    dir = { x: left ? -1 : 1, y: 0 };
+  }
+  const m = 28, cy = clamp(p.y, B.y + m, B.y + B.h - m), cx = clamp(p.x, B.x + m, B.x + B.w - m);
+  if (p.x <= B.x) return { p, dir, q: { x: B.x, y: cy }, n: { x: -1, y: 0 } };
+  if (p.x >= B.x + B.w) return { p, dir, q: { x: B.x + B.w, y: cy }, n: { x: 1, y: 0 } };
+  if (p.y < B.y) return { p, dir, q: { x: cx, y: B.y }, n: { x: 0, y: -1 } };
+  return { p, dir, q: { x: cx, y: B.y + B.h }, n: { x: 0, y: 1 } };
+}
+const r1 = (v) => Math.round(v * 10) / 10;
+/** Cubic bezier path for the ends + its midpoint (label anchor). */
+function curve({ p, dir, q, n }) {
+  const d = clamp(Math.hypot(q.x - p.x, q.y - p.y) * 0.45, 40, 260);
+  const c1 = { x: p.x + dir.x * d, y: p.y + dir.y * d }, c2 = { x: q.x + n.x * d, y: q.y + n.y * d };
+  return {
+    d: `M${r1(p.x)} ${r1(p.y)}C${r1(c1.x)} ${r1(c1.y)} ${r1(c2.x)} ${r1(c2.y)} ${r1(q.x)} ${r1(q.y)}`,
+    mid: { x: (p.x + 3 * c1.x + 3 * c2.x + q.x) / 8, y: (p.y + 3 * c1.y + 3 * c2.y + q.y) / 8 },
+  };
+}
+const linkText = (l) => {
+  const s = [l.when, l.ac].filter(Boolean).join(" · ");
+  return s.length > 48 ? s.slice(0, 47) + "…" : s;
+};
+/** The box around the screens; `tall`: count a long design as at most this many phones high. */
+function bounds(screens, tall = Infinity) {
+  if (!screens.length) return { x: 0, y: 0, w: W, h: H };
+  const xs = screens.map((s) => s.x), ys = screens.map((s) => s.y);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) + W - x, h: Math.max(...screens.map((s) => s.y + Math.min(frameH(s), tall * H))) - y };
+}
+/** Camera {x, y, k} (screen = world * k + x / y) that centres box b in a vw × vh view, never above 100%. Past the
+ *  minimum zoom the box can't fit: that axis starts at its top / left edge, so the first screen stays in view. */
+function fitCam(b, vw, vh) {
+  const k = clamp(Math.min((vw - 2 * PAD) / b.w, (vh - 2 * PAD) / b.h), ZMIN, 1);
+  const at = (size, view, start) => (size * k <= view - 2 * PAD ? (view - size * k) / 2 : PAD) - start * k;
+  return { k, x: at(b.w, vw, b.x), y: at(b.h, vh, b.y) };
+}
+/** Zoom to k keeping view point (px, py) over the same world point. */
+function zoomAt(c, k, px, py) {
+  k = clamp(k, ZMIN, ZMAX);
+  return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
+}
+
+
+
 ;// ./web/src/features/youtrack/flow-engine/layout.js
+
 
 
 
@@ -228,7 +389,7 @@ function family(f, id) {
  *    linked group (BFS from its own root: a screen nothing else in the group leads to), ordered by first
  *    appearance, then the screens with no links of their own as a grid.
  *  - In a region a BFS layer is a column, in order of appearance; a column longer than the row cap wraps into
- *    sub-columns beside it. Cap = max(3, ceil(√(0.4·n))) for n screens: a frame cell is 610 × 964, so this many
+ *    sub-columns beside it, and a design that scrolls (frameH > a phone) is the last of its sub-column. Cap = max(3, ceil(√(0.4·n))) for n screens: a frame cell is 610 × 964, so this many
  *    rows makes a full grid about 16 : 10, landscape like the screens it is read on.
  *  - The k-th popup / sheet / toast of a parent sits 60·k / 60·k right-down of it; the parent's row and its column
  *    grow by that much, so overlays never cover another screen. */
@@ -294,12 +455,18 @@ function layout(flow) {
   regions.forEach((cols, r) => {
     if (r) x += GROUP_GAP;
     for (const col of cols) {
-      for (let i = 0; i < col.length; i += cap) {
-        const part = col.slice(i, i + cap).map((id) => by.get(id));
+      // sub-columns of `cap` rows; a long design ends its own, so nothing is laid out under it (the map stays as
+      // high as a few phones, whatever one page's length)
+      const parts = [[]];
+      for (const s of col.map((id) => by.get(id))) {
+        parts[parts.length - 1].push(s);
+        if (parts[parts.length - 1].length === cap || frameH(s) > 1.5 * H) parts.push([]);
+      }
+      for (const part of parts.filter((p) => p.length)) {
         let y = 0;
         for (const s of part) {
           if (s.x === null || s.y === null) { s.x = x; s.y = y; }
-          y += ROW + (room.get(s.id) || 0);
+          y += Math.max(frameH(s), H) + ROW - H + (room.get(s.id) || 0); // a frame takes its own height of the column
         }
         x += COL + Math.max(...part.map((s) => room.get(s.id) || 0));
       }
@@ -329,108 +496,6 @@ function sharedLead(f) {
 
 
 
-;// ./web/src/features/youtrack/flow-engine/geometry.js
-
-
-
-
-
-// ------------------------------------------------------------------ geometry (pure, canvas units)
-/** The visible card inside a 390 × 844 frame: the whole phone for a screen, a dialog / sheet / toast otherwise.
- *  head / headH: the title bar; top / step: where item rows start and their pitch. */
-function cardOf(s) {
-  const n = s.items.length;
-  if (shotOf(s)) return { x: 0, y: 0, w: W, h: H, head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
-  if (!isOverlay(s))
-    return { x: 0, y: 0, w: W, h: H, head: STATUS, headH: HEAD, top: TOP, step: n ? Math.min(STEP, (H - TOP - BOTTOM) / n) : STEP };
-  const step = n ? Math.min(STEP, (H * 0.8 - CARD_HEAD - CARD_PAD) / n) : STEP;
-  const h = Math.max(s.kind === "toast" ? CARD_HEAD + CARD_PAD : 140, CARD_HEAD + n * step + CARD_PAD);
-  const w = s.kind === "sheet" ? W : s.kind === "popup" ? W - 70 : W - 48;
-  const y = s.kind === "popup" ? (H - h) / 2 : s.kind === "sheet" ? H - h : H - h - 56;
-  return { x: (W - w) / 2, y, w, h, head: 0, headH: CARD_HEAD, top: CARD_HEAD, step };
-}
-/** Row i of a card, relative to the card. */
-function rowOf(card, i) {
-  return { x: 16, y: card.top + i * card.step, w: card.w - 32, h: card.step - Math.min(12, card.step * 0.22) };
-}
-const cardAbs = (s, c = cardOf(s)) => ({ x: s.x + c.x, y: s.y + c.y, w: c.w, h: c.h });
-/** Each button's box in its card: on the Zeplin image where its label is (`hot`) when that is inside the frame,
- *  else a row stacked at the bottom; without an image, the plain rows. */
-function rowsOf(s) {
-  const c = cardOf(s), sh = shotOf(s);
-  if (!sh) return s.items.map((_, i) => ({ r: rowOf(c, i), hot: false }));
-  const { items } = hotspots(s, sh), fold = H - BOTTOM;
-  // on the frame: the area ends inside it. A design 814 high scales to 846, its bottom button a few px past H:
-  // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
-  const on = (r) => r && r.y + r.h <= H + (r.manual ? 0.5 : FOLD_SLACK);
-  const off = items.filter((r) => !on(r)).length;
-  let n = 0;
-  return items.map((r) => (on(r) ? { r, hot: true }
-    : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
-}
-/** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
-function freeShots(f) {
-  for (const s of f.screens) {
-    if (s.kind === "screen" || !shotOf(s) || s.x === null) continue;
-    if (f.screens.some((o) => o !== s && o.x !== null && Math.abs(o.x - s.x) < W && Math.abs(o.y - s.y) < H)) s.x = s.y = null;
-  }
-  return f;
-}
-/** Arrow ends: p (start) with its direction, q (end) on the nearest edge of the target card with that edge's normal. */
-function linkEnds(l, by) {
-  const a = by.get(scr(l.src)), ca = cardOf(a), A = cardAbs(a, ca), B = cardAbs(by.get(l.to));
-  const i = a.items.findIndex((it) => it.id === itm(l.src));
-  let p, dir;
-  if (i >= 0) {
-    const r = rowsOf(a)[i].r;
-    p = { x: A.x + r.x + r.w, y: A.y + r.y + r.h / 2 };
-    dir = { x: 1, y: 0 };
-  } else {
-    const left = B.x + B.w / 2 < A.x + A.w / 2;
-    p = { x: left ? A.x : A.x + A.w, y: A.y + ca.head + ca.headH / 2 };
-    dir = { x: left ? -1 : 1, y: 0 };
-  }
-  const m = 28, cy = clamp(p.y, B.y + m, B.y + B.h - m), cx = clamp(p.x, B.x + m, B.x + B.w - m);
-  if (p.x <= B.x) return { p, dir, q: { x: B.x, y: cy }, n: { x: -1, y: 0 } };
-  if (p.x >= B.x + B.w) return { p, dir, q: { x: B.x + B.w, y: cy }, n: { x: 1, y: 0 } };
-  if (p.y < B.y) return { p, dir, q: { x: cx, y: B.y }, n: { x: 0, y: -1 } };
-  return { p, dir, q: { x: cx, y: B.y + B.h }, n: { x: 0, y: 1 } };
-}
-const r1 = (v) => Math.round(v * 10) / 10;
-/** Cubic bezier path for the ends + its midpoint (label anchor). */
-function curve({ p, dir, q, n }) {
-  const d = clamp(Math.hypot(q.x - p.x, q.y - p.y) * 0.45, 40, 260);
-  const c1 = { x: p.x + dir.x * d, y: p.y + dir.y * d }, c2 = { x: q.x + n.x * d, y: q.y + n.y * d };
-  return {
-    d: `M${r1(p.x)} ${r1(p.y)}C${r1(c1.x)} ${r1(c1.y)} ${r1(c2.x)} ${r1(c2.y)} ${r1(q.x)} ${r1(q.y)}`,
-    mid: { x: (p.x + 3 * c1.x + 3 * c2.x + q.x) / 8, y: (p.y + 3 * c1.y + 3 * c2.y + q.y) / 8 },
-  };
-}
-const linkText = (l) => {
-  const s = [l.when, l.ac].filter(Boolean).join(" · ");
-  return s.length > 48 ? s.slice(0, 47) + "…" : s;
-};
-function bounds(screens) {
-  if (!screens.length) return { x: 0, y: 0, w: W, h: H };
-  const xs = screens.map((s) => s.x), ys = screens.map((s) => s.y);
-  const x = Math.min(...xs), y = Math.min(...ys);
-  return { x, y, w: Math.max(...xs) + W - x, h: Math.max(...ys) + H - y };
-}
-/** Camera {x, y, k} (screen = world * k + x / y) that centres box b in a vw × vh view, never above 100%. Past the
- *  minimum zoom the box can't fit: that axis starts at its top / left edge, so the first screen stays in view. */
-function fitCam(b, vw, vh) {
-  const k = clamp(Math.min((vw - 2 * PAD) / b.w, (vh - 2 * PAD) / b.h), ZMIN, 1);
-  const at = (size, view, start) => (size * k <= view - 2 * PAD ? (view - size * k) / 2 : PAD) - start * k;
-  return { k, x: at(b.w, vw, b.x), y: at(b.h, vh, b.y) };
-}
-/** Zoom to k keeping view point (px, py) over the same world point. */
-function zoomAt(c, k, px, py) {
-  k = clamp(k, ZMIN, ZMAX);
-  return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
-}
-
-
-
 ;// ./web/src/features/youtrack/flow-engine/i18n.js
 
 
@@ -450,7 +515,7 @@ const T = {
     noItems: "Màn này chưa có nút",
     offShot: "Nút chưa thấy trên thiết kế",
     addItem: "+ Nút", del: "Xoá", newScreen: "Màn mới", newItem: "Nút mới",
-    acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", dotHint: "Kéo để nối",
+    acField: "AC", whenField: "Điều kiện", zeplinField: "Zeplin", nameField: "Tên màn", dotHint: "Kéo để nối",
     arrow: "Mũi tên", button: "Nút", lastScreen: "Sơ đồ cần ít nhất một màn",
     maxScreens: "Tối đa {n} màn", maxItems: "Tối đa {n} nút mỗi màn", maxLinks: "Tối đa {n} liên kết",
     dragging: "Thả chuột xong rồi hãy sửa",
@@ -462,7 +527,7 @@ const T = {
     zDup: "Đã có màn này: “{s}”", zCopy: "Vẫn thêm bản sao", zRetry: "Thử lại", zKeep: "Thêm màn chờ ảnh",
     zMissing: "Không đọc được màn này trên Zeplin: chưa chia sẻ với tài khoản hoặc đã bị xoá",
     zFail: "Không đọc được Zeplin", close: "Đóng",
-    drawHot: "+ Vùng bấm", redraw: "Vẽ lại vùng", byText: "Khớp theo chữ", drawHint: "Kéo trên ảnh màn để vẽ vùng bấm · Enter đặt vùng giữa màn · Esc để huỷ",
+    drawHot: "+ Vùng bấm", redraw: "Vẽ lại vùng", byText: "Khớp theo chữ", drawHint: "Bấm vào một chữ trên thiết kế để lấy làm nút, hoặc kéo để vẽ vùng bấm · Enter đặt vùng giữa màn · Esc để huỷ",
     rectField: "Vùng (px)", itemsField: "Nút", noteField: "Ghi chú", noteBadge: "Có ghi chú", relayout: "Sắp xếp lại",
     k_offshot: "Chưa khớp ảnh", k_nosrc: "Thiếu nguồn", offshot: "Nút “{i}” chưa thấy trên ảnh màn “{s}”",
     nosrc: "Màn “{s}” chưa có link Zeplin", all: "Tất cả ({n})", gapsTab: "Cần rà soát ({n})", testsTab: "Checklist test",
@@ -475,6 +540,9 @@ const T = {
     tap: "bấm “{i}”", goBack: "quay lại", goClose: "đóng", goOn: "tiếp", when: "khi {s}",
     pathN: "Đường {n}", missed: "Chưa đi tới từ màn bắt đầu: {s}", noPaths: "Chưa có liên kết nào để đi.",
     testsHead: "Checklist test UI flow {s}: {n} đường, phủ {c}/{l} liên kết",
+    walkPath: "Chạy đường này trong Prototype",
+    k_noflow: "AC chưa lên sơ đồ", noflow: "{n} AC của ticket chưa có trên màn, mũi tên hay bước chờ nào: {s}",
+    askHead: "{s}: các bước sau chưa có thiết kế trên Zeplin, nhờ bổ sung link màn:",
   },
   en: {
     map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen", check: "Flow check ({n})",
@@ -490,7 +558,7 @@ const T = {
     noItems: "No buttons on this screen yet",
     offShot: "Buttons not found on the design",
     addItem: "+ Button", del: "Delete", newScreen: "New screen", newItem: "New button",
-    acField: "AC", whenField: "Condition", zeplinField: "Zeplin", dotHint: "Drag to link",
+    acField: "AC", whenField: "Condition", zeplinField: "Zeplin", nameField: "Screen name", dotHint: "Drag to link",
     arrow: "Arrow", button: "Button", lastScreen: "The flow needs at least one screen",
     maxScreens: "At most {n} screens", maxItems: "At most {n} buttons per screen", maxLinks: "At most {n} links",
     dragging: "Drop what you are dragging first",
@@ -502,7 +570,7 @@ const T = {
     zDup: "This screen is already here: “{s}”", zCopy: "Add a copy anyway", zRetry: "Retry", zKeep: "Add it without the image",
     zMissing: "Could not read this screen on Zeplin: not shared with this account, or deleted",
     zFail: "Could not read Zeplin", close: "Close",
-    drawHot: "+ Tap area", redraw: "Redraw area", byText: "Match by text", drawHint: "Drag on the screen image to draw a tap area · Enter puts one mid-screen · Esc to cancel",
+    drawHot: "+ Tap area", redraw: "Redraw area", byText: "Match by text", drawHint: "Click a text on the design to make it the button, or drag to draw a tap area · Enter puts one mid-screen · Esc to cancel",
     rectField: "Area (px)", itemsField: "Buttons", noteField: "Note", noteBadge: "Has a note", relayout: "Re-arrange",
     k_offshot: "Not on design", k_nosrc: "No source", offshot: "“{i}” is not found on the image of “{s}”",
     nosrc: "“{s}” has no Zeplin link", all: "All ({n})", gapsTab: "To review ({n})", testsTab: "Test checklist",
@@ -515,6 +583,9 @@ const T = {
     tap: "tap “{i}”", goBack: "go back", goClose: "close", goOn: "go on", when: "when {s}",
     pathN: "Path {n}", missed: "Not reachable from the start screen: {s}", noPaths: "No links to follow yet.",
     testsHead: "UI flow {s} test checklist: {n} paths, covering {c}/{l} links",
+    walkPath: "Walk this path in Prototype",
+    k_noflow: "AC not on the map", noflow: "{n} of the ticket's AC are on no screen, arrow or waiting step: {s}",
+    askHead: "{s}: these steps have no Zeplin design yet, please add the screen links:",
   },
 };
 /** t(key, {n, s, i}) for one language; values are inserted as plain text by the caller. */
@@ -570,6 +641,11 @@ function gaps(f, t) {
     });
     if (s.kind === "screen" && !s.zeplin) out.push({ kind: "nosrc", screen: s.id, text: t("nosrc", { s: s.title }) });
   }
+  // the ticket's AC no screen, arrow or waiting step carries (f.acs: read from the ticket at the last render). A code
+  // stands for its sub-codes and the other way round ("AC1" on a screen covers AC1.2; "AC1.2" on an arrow, AC1).
+  const have = [...f.screens, ...f.links, ...(f.pending || [])].flatMap((x) => acCodes(x.ac).map((c) => c.replace(/[\s-]+/g, "").toUpperCase()));
+  const lost = (f.acs || []).filter((c) => !have.some((x) => x === c || x.startsWith(c + ".") || c.startsWith(x + ".")));
+  if (lost.length) out.push({ kind: "noflow", text: t("noflow", { n: lost.length, s: lost.join(", ") }) });
   for (const l of f.links) {
     if (l.ac) continue;
     const s = by.get(scr(l.src)), i = itm(l.src), name = i ? s.items.find((it) => it.id === i).label : s.title;
@@ -577,7 +653,21 @@ function gaps(f, t) {
   }
   return out;
 }
-const KIND_ORDER = ["broken", "unclear", "pending", "nostart", "orphan", "dead", "offshot", "noback", "noac", "nosrc"];
+const KIND_ORDER = ["broken", "unclear", "pending", "nostart", "orphan", "dead", "offshot", "noback", "noac", "noflow", "nosrc"];
+/** The steps without a design as messages for whoever owns it (PO / designer), in plain words: the ticket, then at
+ *  most three steps a message, one a line; a lone fourth joins the message before it (= ASK_MSG, splitAsks). */
+function pendingAsk(f, t) {
+  const by = new Map(f.screens.map((s) => [s.id, s]));
+  const rows = (f.pending || []).map((p) => {
+    const s = p.src ? by.get(scr(p.src)) : null, i = s && itm(p.src);
+    const at = !s ? "" : t(i ? "pendingFromBtn" : "pendingFrom", { s: s.title, i: i ? s.items.find((it) => it.id === i)?.label ?? "" : "" });
+    return [p.title + at, p.when, p.ac].filter(Boolean).join(" · ");
+  });
+  const msgs = [];
+  for (let k = 0; k < rows.length; k += 3) msgs.push(rows.slice(k, k + 3));
+  if (msgs.length > 1 && msgs[msgs.length - 1].length === 1) msgs[msgs.length - 2].push(...msgs.pop());
+  return msgs.map((m) => [t("askHead", { s: f.ticket }), ...m.map((r, n) => `${n + 1}. ${r}`)].join("\n")).join("\n\n");
+}
 /** Test paths through the graph, by code: from the start screen, every link followed once at least where it can be
  *  reached. A path ends at a screen with nothing new to go to, or on a link back to a screen it already crossed.
  *  Only paths that cover a link no earlier path did are kept. {paths: [[link]], missed: [link]}. */
@@ -623,7 +713,7 @@ function checklist(f, t) {
   if (missed.length) lines.push(t("missed", { s: missed.map((l) => `${by(scr(l.src)).title} → ${by(l.to).title}`).join("; ") }));
   return lines.join("\n");
 }
-/** [{kind: "broken" | "pending" | "nostart" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "nosrc", screen?, item?, text}] for a raw flow. */
+/** [{kind: "broken" | "pending" | "nostart" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "noflow" | "nosrc", screen?, item?, text}] for a raw flow. */
 function check(flow, lang) {
   const { flow: f, dropped } = sanitize(flow), t = tr(lang);
   return [...brokenRows(dropped, t), ...gaps(f, t)];
@@ -651,7 +741,7 @@ const ICONS = {
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z", undo: "M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3",
   redo: "M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3", grid: "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z",
   fit: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5", trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
-  x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", ret: "M9 10l-5 5 5 5M4 15h11a5 5 0 0 0 5-5V4", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+  plus: "M12 5v14M5 12h14", x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", ret: "M9 10l-5 5 5 5M4 15h11a5 5 0 0 0 5-5V4", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
 };
 function icon(name, size = 16) {
   const i = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor",
@@ -843,6 +933,11 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 .uf-btn:active{transform:scale(.97)}
 .uf-btn[aria-pressed=true]{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
 .uf-icon{width:30px;padding:0}
+.uf-bar [data-tip]{position:relative}
+.uf-bar [data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;
+padding:5px 9px;border-radius:var(--uf-r);background:var(--uf-ink);color:var(--uf-screen);font-size:12px;font-weight:400;line-height:1.3;
+white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s ease-out}
+.uf-bar [data-tip]:hover::after,.uf-bar [data-tip]:focus-visible::after{opacity:1;transition-delay:.5s}
 /* toolbar: Sửa is the one coloured switch; its tools are one group that only exists while it is on */
 .uf-editbtn{border-color:color-mix(in srgb,var(--uf-accent) 45%,var(--uf-line));color:var(--uf-accent)}
 .uf-editbtn[aria-pressed=true]{background:var(--uf-fill);border-color:transparent;color:var(--uf-on-accent)}
@@ -850,7 +945,9 @@ color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowr
 animation:uf-in .18s ease-out}
 .uf-tools .uf-btn{height:26px;border-radius:5px;border-color:transparent;background:transparent}
 .uf-tools .uf-btn:hover:not(:disabled){background:var(--uf-screen)}
-.uf-tools .uf-icon{width:26px}
+.uf-tools .uf-btn{min-width:26px;padding:0 5px;gap:0}
+.uf-tools .uf-btn span{max-width:0;overflow:hidden;opacity:0;transition:max-width .18s ease-out,margin .18s ease-out,opacity .12s ease-out}
+.uf-tools .uf-btn:hover span,.uf-tools .uf-btn:focus-visible span,.uf-tools .uf-btn[aria-expanded=true] span{max-width:160px;margin:0 3px 0 6px;opacity:1}
 .uf-div{width:1px;height:16px;margin:0 3px;background:var(--uf-line)}
 .uf-check svg{color:var(--uf-warn)}
 .uf-clean svg{color:var(--uf-ok)}
@@ -872,7 +969,7 @@ font-weight:700;line-height:16px;text-align:center}
 .uf-root[data-mode=play] .uf-view{display:none}
 .uf-root[data-mode=play] .uf-play{display:flex;flex-direction:column}
 .uf-root[data-mode=play] .uf-fit{display:none}
-.uf-screen{position:absolute;left:0;top:0;width:${W}px;height:${H}px;border-radius:54px;background:var(--uf-screen);
+.uf-screen{position:absolute;left:0;top:0;width:var(--uf-w);height:var(--uf-h);border-radius:54px;background:var(--uf-screen);
 box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);transition:opacity .2s ease-out}
 .uf-screen:not(.uf-ov)::before,.uf-phone::before{content:"";position:absolute;top:11px;left:50%;width:120px;height:33px;margin-left:-60px;
 border-radius:20px;background:#000;opacity:.88}
@@ -937,6 +1034,8 @@ background:transparent;color:transparent;font-size:13px;transition:background .1
 border-radius:4px;background:var(--uf-accent);cursor:nwse-resize;touch-action:none}
 .uf-editing .uf-rect.uf-sel .uf-rsz{display:block}
 .uf-drawing .uf-screen.uf-drawon{cursor:crosshair}
+.uf-zl{position:absolute;inset:0;pointer-events:none}
+.uf-zl i{position:absolute;border:1px dashed color-mix(in srgb,var(--uf-accent) 70%,transparent);border-radius:6px}
 .uf-drawing .uf-screen.uf-drawon .uf-imgbox{outline:3px dashed var(--uf-accent);outline-offset:-3px}
 .uf-startb{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-accent);
 color:var(--uf-on-accent);font-size:11px}
@@ -945,6 +1044,10 @@ color:var(--uf-on-accent);font-size:11px}
 .uf-pfilter .uf-btn,.uf-ptabs .uf-btn{height:26px;padding:0 10px;font-size:12px}
 .uf-paths{margin:0;padding:4px 10px 6px 28px;font-size:13px;line-height:1.45}
 .uf-paths li{margin:4px 0;overflow-wrap:anywhere}
+.uf-path{display:block;width:100%;padding:3px 6px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.uf-path:hover{background:var(--uf-soft)}
+.uf-path:focus-visible{outline:2px solid var(--uf-accent);outline-offset:1px}
+.uf-walking{box-shadow:0 0 0 3px var(--uf-accent)}
 .uf-memo{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-hit-soft);
 color:var(--uf-ink);font-size:14px;cursor:help}
 .uf-screen.uf-match{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
@@ -995,7 +1098,7 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-txt{min-width:0;overflow-wrap:anywhere}
 .uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
 .uf-tag-orphan,.uf-tag-dead,.uf-tag-broken,.uf-tag-nostart,.uf-tag-unclear{background:var(--uf-warn-soft);color:var(--uf-warn)}
-.uf-tag-pending{background:var(--uf-accent-soft);color:var(--uf-accent)}
+.uf-tag-pending,.uf-tag-noflow{background:var(--uf-accent-soft);color:var(--uf-accent)}
 /* a pending step: the row, and (while editing) a way to drop it from the list */
 .uf-prow{display:flex;align-items:center;gap:2px}
 .uf-prow .uf-issue{flex:1;min-width:0}
@@ -1003,10 +1106,16 @@ color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
 /* prototype: one phone, scaled to fit (--k), centred in the stage; the path walked below it */
 .uf-stage{position:relative;flex:1;min-height:0;overflow:hidden}
-.uf-phone{position:absolute;left:50%;top:50%;width:${W}px;height:${H}px;margin:${-H / 2}px 0 0 ${-W / 2}px;
+.uf-phone{position:absolute;left:50%;top:50%;width:var(--uf-w);height:var(--uf-h);margin:calc(var(--uf-h) / -2) 0 0 calc(var(--uf-w) / -2);
 transform:scale(var(--k,1));display:flex;flex-direction:column;overflow:hidden;border-radius:54px;background:var(--uf-screen);
 box-shadow:0 0 0 ${BEZEL - 1}px var(--uf-bezel),0 0 0 ${BEZEL}px var(--uf-line),var(--uf-shadow);outline:none}
 .uf-phone::before,.uf-phone::after{z-index:3;pointer-events:none}
+/* a web flow (data-device=web): each frame is a browser window, not a phone: square corners, no notch, no home bar,
+ no clock; the same in Prototype, where a long page scrolls inside the window */
+.uf-root[data-device=web] .uf-screen,.uf-root[data-device=web] .uf-phone,.uf-root[data-device=web] .uf-shot .uf-card{border-radius:12px}
+.uf-root[data-device=web] .uf-shot .uf-head{border-radius:12px 12px 0 0;padding-left:20px}
+.uf-root[data-device=web] .uf-screen::before,.uf-root[data-device=web] .uf-screen::after,
+.uf-root[data-device=web] .uf-phone::before,.uf-root[data-device=web] .uf-phone::after,.uf-root[data-device=web] .uf-status{display:none}
 .uf-status{flex:none;height:${STATUS}px;padding:14px 0 0 40px;font-size:15px;font-weight:650}
 .uf-nav{flex:none;display:flex;align-items:center;gap:2px;height:${HEAD}px;padding:0 20px 0 6px;border-bottom:1px solid var(--uf-soft)}
 .uf-pback{flex:none;display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:12px;background:none;
@@ -1054,6 +1163,8 @@ box-shadow:var(--uf-shadow);outline:none}
 .uf-toast .uf-pcard{position:absolute;left:24px;right:24px;bottom:56px;width:auto;border-radius:16px;pointer-events:auto;
 background:var(--uf-ink);color:var(--uf-screen)}
 .uf-toast .uf-pcard>.uf-title{padding:14px 18px;font-size:15px}
+.uf-root[data-device=web] .uf-popup .uf-pcard{max-width:480px}
+.uf-root[data-device=web] .uf-toast .uf-pcard{left:auto;right:24px;width:360px}
 .uf-trail{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--uf-line);
 background:var(--uf-screen)}
 .uf-nostart{flex:none;color:var(--uf-warn);font-size:12px}
@@ -1066,7 +1177,7 @@ cursor:pointer}
 /* edit mode (Sửa): drag handles, dots, selection, the properties panel */
 .uf-root:not(.uf-editing) .uf-add,.uf-root[data-mode=play] .uf-add,.uf-root[data-mode=play] .uf-editbtn,
 .uf-root[data-mode=play] .uf-insp{display:none}
-.uf-dot{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
+.uf-dot{position:absolute;z-index:60;width:14px;height:14px;margin:-7px 0 0 -7px;padding:0;border:2px solid var(--uf-screen);
 border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40,.3);cursor:crosshair;touch-action:none}
 .uf-dot:hover{transform:scale(1.25)}
 /* link dots: on the frame under the pointer or in hand, not on all of them at once */
@@ -1181,6 +1292,7 @@ function saveFile(src, flow) {
 
 
 
+
 /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
  *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
  *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
@@ -1188,6 +1300,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
   const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : ""));
   el.dataset.id = s.id;
+  if (c.h !== H && sh) el.style.height = c.h + "px"; // a design that scrolls (or a web page): the frame is as long as it
   const card = h("div", "uf-card" + (s.items.length || sh ? "" : " uf-empty"));
   box(card, c);
   if (sh) {
@@ -1221,7 +1334,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);
   s.items.forEach((it, i) => {
-    const { r, hot } = rows[i];
+    const { r, hot, z } = rows[i];
     const rect = hot && it.rect; // hand-drawn and on the frame: edit mode moves / resizes it
     const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (rect ? "uf-rect " : "") +
       (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
@@ -1229,6 +1342,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
     if (rect && edit) row.append(h("span", "uf-rsz"));
     if (!hot && sh) row.title = t("offShot");
     box(row, r);
+    if (hot) row.style.zIndex = z; // a smaller area above a larger one: the press goes to the one on top
     row.style.lineHeight = r.h - 2 + "px";
     card.append(row);
   });
@@ -1262,6 +1376,129 @@ function markers(uid) {
     defs.append(m);
   }
   return defs;
+}
+
+
+
+;// ./web/src/features/youtrack/flow-engine/check-panel.js
+
+
+
+
+// ------------------------------------------------------------------ flow check panel ("Soát luồng")
+/** The review list (gaps of the flow, filtered by kind) and the test checklist, in `panel`; `bCheck` opens it and
+ *  `nCheck` counts the rows. ctx: {t, panel, bCheck, nCheck, get(): flow, dropped(): what sanitize dropped,
+ *  editing(): the map is being edited, goto(id), pick(sel), zeplinForm(open, pending), zformOpen(), commit(flow),
+ *  walk(links): Prototype walks that test path}. */
+function checkPanel(ctx) {
+  const { t, panel, bCheck, nCheck } = ctx;
+  let notes = []; // the host's warnings about how this flow was built: rows of their own, no screen to go to
+  let issues = [], tab = "gaps", kind = null; // what the panel shows: the review list (filtered by kind) or the checklist
+
+  function refresh() {
+    issues = [...brokenRows(ctx.dropped(), t), ...notes.map((text) => ({ kind: "unclear", text })), ...gaps(ctx.get(), t)];
+    bCheck.setAttribute("aria-label", t("check", { n: issues.length }));
+    nCheck.textContent = String(issues.length);
+    bCheck.classList.toggle("uf-clean", !issues.length);
+    if (!panel.hidden) fill();
+  }
+  const chip = (label, on, fn) => {
+    const b = btn(label, "uf-btn", fn);
+    b.setAttribute("aria-pressed", String(on));
+    return b;
+  };
+  /** "Sao chép" + the line that says it worked (or that it did not: select and copy by hand). */
+  function copyRow(text) {
+    const msg = h("p", "uf-zmsg"), acts = h("div", "uf-acts");
+    msg.setAttribute("role", "status");
+    acts.append(btn(t("copy"), "uf-btn", async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        msg.textContent = t("copied");
+      } catch {
+        msg.textContent = t("copyFail");
+      }
+    }));
+    return [acts, msg];
+  }
+  function fill() {
+    const tabs = h("div", "uf-ptabs");
+    tabs.setAttribute("role", "group");
+    tabs.append(chip(t("gapsTab", { n: issues.length }), tab === "gaps", () => { tab = "gaps"; fill(); }),
+      chip(t("testsTab"), tab === "tests", () => { tab = "tests"; fill(); }));
+    if (tab === "tests") return panel.replaceChildren(tabs, ...testsView());
+    if (!issues.length) return panel.replaceChildren(tabs, h("p", "uf-none", t("ok")));
+    const counts = new Map();
+    for (const it of issues) counts.set(it.kind, (counts.get(it.kind) || 0) + 1);
+    if (kind && !counts.has(kind)) kind = null;
+    const filter = h("div", "uf-pfilter");
+    filter.setAttribute("role", "group");
+    filter.append(chip(t("all", { n: issues.length }), !kind, () => { kind = null; fill(); }),
+      ...KIND_ORDER.filter((k) => counts.has(k)).map((k) =>
+        chip(`${t("k_" + k)} (${counts.get(k)})`, kind === k, () => { kind = k; fill(); })));
+    const rows = issues.filter((it) => !kind || it.kind === kind).map((it) => {
+      const b = btn(null, "uf-issue", () => {
+        toggle();
+        if (!it.screen) return;
+        ctx.goto(it.screen);
+        // editing: open what the row is about, so its fix (draw the area, link it, add the AC) is one click away
+        if (ctx.editing()) ctx.pick(it.item ? { t: "item", id: it.screen, item: it.item } : { t: "screen", id: it.screen });
+      });
+      b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
+      if (it.kind !== "pending" || !ctx.editing()) return b;
+      // editing: the row asks for the step's Zeplin link (the screen comes linked from where the step was reached);
+      // ✕ takes a step that will never get a screen off the list
+      b.addEventListener("click", () => ctx.zeplinForm(true, it.pending));
+      b.title = t("pendingAdd", { s: it.pending });
+      const row = h("div", "uf-prow");
+      row.append(b, ibtn("x", t("pendingSkip"), "uf-btn", () => {
+        const f = structuredClone(ctx.get());
+        f.pending = (f.pending || []).filter((x) => x.title !== it.pending);
+        ctx.commit(f);
+      }));
+      return row;
+    });
+    // the steps without a design, as a message to whoever owns it: copied, pasted into the ticket or the group
+    const ask = kind === "pending" ? copyRow(pendingAsk(ctx.get(), t)) : [];
+    panel.replaceChildren(tabs, filter, ...rows, ...ask);
+  }
+  function testsView() {
+    const cur = ctx.get(), { paths, missed } = testPaths(cur), first = startOf(cur);
+    const title = (id) => cur.screens.find((s) => s.id === id)?.title;
+    if (!paths.length) return [h("p", "uf-none", t("noPaths"))];
+    const text = checklist(cur, t);
+    const list = h("ol", "uf-paths");
+    for (const p of paths) {
+      // a path is a button: Prototype walks it by itself, a step at a time, so each line can be watched as written
+      const li = h("li"), b = btn(`${title(first)} → ${p.map((l) => stepText(cur, l, t)).join(" → ")}`, "uf-path", () => {
+        toggle();
+        ctx.walk(p);
+      });
+      b.title = t("walkPath");
+      li.append(b);
+      list.append(li);
+    }
+    const out = [h("p", "uf-count", text.split("\n")[0]), list];
+    if (missed.length) out.push(h("p", "uf-none", t("missed", { s: missed.map((l) => `${title(scr(l.src))} → ${title(l.to)}`).join("; ") })));
+    out.push(...copyRow(text));
+    return out;
+  }
+  function toggle() {
+    if (panel.hidden && ctx.zformOpen()) ctx.zeplinForm(false);
+    panel.hidden = !panel.hidden;
+    bCheck.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) fill();
+  }
+  return {
+    refresh,
+    toggle,
+    isOpen: () => !panel.hidden,
+    /** What the render could not make sure of (plain text lines); [] clears them. */
+    notes(list) {
+      notes = (Array.isArray(list) ? list : []).filter((x) => typeof x === "string" && x).slice(0, 20);
+      refresh();
+    },
+  };
 }
 
 
@@ -1528,7 +1765,10 @@ function inspector({ ctx, t, get, target, blocked, scale, rnd, select, selected,
     }
     if (sel.t === "screen") {
       const shot = shotOf(o), full = o.items.length >= MAX_ITEMS;
-      rows.push(chips(KINDS, o.kind, "kind_", (k) => change((s) => {
+      // the name, as a field: the double-click on the frame's title renames too, but shows no sign of it and the
+      // title bar of a screen with an image is hidden until zoomed in. An emptied box puts the stored name back.
+      rows.push(field(t("nameField"), o.title, CAP, (v) => (v ? change((s) => { s.title = v; }) : fill())),
+        chips(KINDS, o.kind, "kind_", (k) => change((s) => {
           s.kind = k;
           if (k === "screen") s.parent = null; // a screen has no parent
         }, o.id)),
@@ -1692,8 +1932,18 @@ function editor(ctx) {
   }
   function paint() {
     for (const el of ctx.layer.querySelectorAll(".uf-sel, .uf-drawon")) el.classList.remove("uf-sel", "uf-drawon");
+    for (const el of ctx.layer.querySelectorAll(".uf-zl")) el.remove();
     node()?.classList.add("uf-sel");
-    if (drawFor) ctx.frames().get(drawFor.id)?.classList.add("uf-drawon");
+    if (drawFor) {
+      const frame = ctx.frames().get(drawFor.id), s = get().screens.find((x) => x.id === drawFor.id), k = s && scale(s);
+      frame?.classList.add("uf-drawon");
+      // the design's own texts, outlined: a click on one makes it the button (its words, its place), no drawing
+      if (frame && k) {
+        const zl = h("div", "uf-zl");
+        for (const r of layerRects(k)) box(zl.appendChild(h("i")), px(r, k));
+        frame.querySelector(".uf-card").append(zl);
+      }
+    }
     if (ctx.on()) ctx.focus(sel); // the map dims around what is in hand
   }
   /** Frame units per image fraction for a screen drawn from its Zeplin image (the frame is W wide). */
@@ -1711,6 +1961,14 @@ function editor(ctx) {
     return { x, y, w: Math.min(r.w, 1 - x), h: Math.min(r.h, 1 - y) };
   }
   const px = (r, k) => ({ x: r.x * k.kw, y: r.y * k.kh, w: r.w * k.kw, h: r.h * k.kh });
+  /** The Zeplin texts of a screen as tap areas (image fractions, at least MIN_RECT), with their words. */
+  function layerRects(k) {
+    const { w: dw, h: dh, hits } = k.sh, mw = MIN_RECT / k.kw, mh = MIN_RECT / k.kh;
+    return (Array.isArray(hits) ? hits : []).map(([label, x, y, w, hh]) => {
+      const r = { x: clamp(x / dw, 0, 1), y: clamp(y / dh, 0, 1), w: Math.max(w / dw, mw), h: Math.max(hh / dh, mh) };
+      return { label, x: rnd(Math.min(r.x, 1 - r.w)), y: rnd(Math.min(r.y, 1 - r.h)), w: rnd(Math.min(r.w, 1)), h: rnd(Math.min(r.h, 1)) };
+    }).filter((r) => r.x >= 0 && r.y >= 0);
+  }
   function startDraw(spec) {
     if (blocked()) return;
     drawFor = spec;
@@ -1776,6 +2034,7 @@ function editor(ctx) {
         const box0 = h("div", "uf-item uf-hot uf-rect uf-sel");
         frame.querySelector(".uf-card").append(box0);
         box0.hidden = true;
+        box0.style.zIndex = 50; // seen while drawn inside another area, whatever layer it ends on
         Object.assign(drag, { kind: "draw", s, k, el: box0, p0: { x: (p.x - s.x) / k.kw, y: (p.y - s.y) / k.kh }, r: null });
       } else {
         const it = s.items.find((i) => i.id === hot.dataset.item);
@@ -1843,7 +2102,12 @@ function editor(ctx) {
     ctx.tempLink(null);
     if (d.kind === "draw") d.el.remove();
     if (!d.moved) { // a plain click on a handle, a dot or a title bar selects
-      if (d.kind === "draw") return;
+      if (d.kind === "draw") { // a click, not a drag: the design's text under it (the smallest one) is the button
+        const on = layerRects(d.k).filter((r) => d.p0.x >= r.x && d.p0.x <= r.x + r.w && d.p0.y >= r.y && d.p0.y <= r.y + r.h)
+          .sort((a, b) => a.w * a.h - b.w * b.h)[0];
+        if (on) drawn({ r: { x: on.x, y: on.y, w: on.w, h: on.h }, k: d.k }, String(on.label).slice(0, CAP));
+        return;
+      }
       if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
       if (d.kind === "link") return select({ t: "link", i: d.m.i });
       if (d.kind === "move") return select({ t: "screen", id: d.id });
@@ -1868,14 +2132,14 @@ function editor(ctx) {
     back();
   }
   /** A finished draw: the tap area of the item it was for, or a new button with it. One undo step. */
-  function drawn(d) {
+  function drawn(d, label = "") {
     const r = d.r, spec = drawFor;
     if (!r || !spec || r.w * d.k.kw < MIN_RECT || r.h * d.k.kh < MIN_RECT) return; // a slip: still drawing
     const f = structuredClone(get()), s = f.screens.find((x) => x.id === spec.id);
     let item = spec.item && s.items.find((i) => i.id === spec.item);
     if (!item) {
       if (s.items.length >= MAX_ITEMS) return ctx.note(t("maxItems", { n: MAX_ITEMS }));
-      item = { id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: t("newItem") };
+      item = { id: nextId(new Set(s.items.map((i) => i.id)), "i"), label: label.trim() || t("newItem") };
       s.items.push(item);
     }
     item.rect = r;
@@ -1965,7 +2229,7 @@ function editor(ctx) {
     if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
     const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
     let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
-    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && Math.abs(s.y - y) < H + ROOM);
+    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && y < s.y + frameH(s) + ROOM && s.y < y + H + ROOM);
     const { near, ...own } = props, by = near && f.screens.find((s) => s.id === near);
     if (by) { // the screen that leads to it: the next column, the first free row (its arrow stays short)
       x = by.x + COL;
@@ -2217,6 +2481,7 @@ function phoneShell(t) {
  *  the screen shown becomes the start screen without a trip to the map's edit mode. */
 function player(host, { flow, t, reduced, onGo, setStart }) {
   let path = [], ovs = [], cur = null, flash = null, hint = null; // ovs: [{id, kind, el, card, scrim, timer}]
+  let walking = 0; // the timer of a test path being walked by itself
   const ui = phoneShell(t);
   const restart = btn(t("restart"), "uf-btn", () => go([startOf(flow())].filter(Boolean), "back"));
   ui.back.addEventListener("click", goBack);
@@ -2225,11 +2490,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
   pin.title = t("startHere");
   ui.trail.append(ui.crumbs, ...(setStart ? [note, pin] : []), restart);
   host.replaceChildren(ui.stage, ui.trail);
+  const stopWalk = () => { clearTimeout(walking); walking = 0; ui.phone.classList.remove("uf-walking"); };
+  host.addEventListener("pointerdown", stopWalk, true); // any press of the user's takes the phone back
 
-  const ro = new ResizeObserver(([e]) => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
-    const { width: w, height: hh } = e.contentRect, m = 2 * (BEZEL + GAP);
+  const resize = () => { // scale the frame to fit the stage; ignore 0 × 0 while hidden
+    const w = ui.stage.clientWidth, hh = ui.stage.clientHeight, m = 2 * (BEZEL + GAP);
     if (w && hh) ui.phone.style.setProperty("--k", String(Math.min(1, (hh - m) / H, (w - m) / W)));
-  });
+  };
+  const ro = new ResizeObserver(resize);
   ro.observe(ui.stage);
 
   const by = (id) => flow().screens.find((s) => s.id === id);
@@ -2288,7 +2556,7 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
   /** The Zeplin image with a tap area on each button found on it (and on its back button); the buttons not
    *  found stay as rows under it. */
   function shotNodes(s, sh) {
-    const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot");
+    const { items, back } = hotspots(s, sh), pic = h("div", "uf-pshot"), z = layersOf(items);
     pic.append(shotImg(sh, s.title, false));
     pic.addEventListener("click", (e) => { if (!e.target.closest("button")) hints(pic); }); // a tap on no button
     s.items.forEach((it, i) => {
@@ -2297,12 +2565,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
       const b = btn(null, "uf-phot " + (links.length ? "uf-linked" : "uf-dead"), () => tap(b, links));
       b.setAttribute("aria-label", it.label);
       box(b, items[i]);
+      b.style.zIndex = z[i]; // as on the map: the area on top takes the tap, the one under it does not
       pic.append(b);
     });
     if (back && !isPop(s)) {
       const b = btn(null, "uf-phot uf-linked", goBack);
       b.setAttribute("aria-label", t("back"));
       box(b, back);
+      b.style.zIndex = s.items.length + 1; // found by its text, small: never under a drawn area
       pic.append(b);
     }
     const off = s.items.filter((_, i) => !items[i]);
@@ -2430,6 +2700,23 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
       go([p || s.id], null);
       if (p) openOverlay(s);
     },
+    /** The frame changed size (a flow of the other device): fit it to the stage again. */
+    resize,
+    /** A test path walked by itself: from `start`, one link every WALK_MS (a button with several cases takes the
+     *  path's own, no question asked). A press anywhere on the phone, Esc or another walk stops it. */
+    walk(start, links) {
+      stopWalk();
+      this.open(start);
+      const todo = [...links];
+      ui.phone.classList.add("uf-walking");
+      const step = () => {
+        const l = todo.shift();
+        if (!l || !flow().links.includes(l)) return stopWalk(); // done, or the flow was edited under it
+        follow(l);
+        walking = setTimeout(step, WALK_MS);
+      };
+      walking = setTimeout(step, WALK_MS);
+    },
     /** First entry into Prototype: start at id (or the first screen); later entries keep where the user was. */
     start(id) { if (!path.length) this.open(id); },
     /** The flow changed: keep the walked screens that still exist, redraw without motion. */
@@ -2440,12 +2727,14 @@ function player(host, { flow, t, reduced, onGo, setStart }) {
     },
     /** Esc: close the top overlay; false when there is none. */
     escape() {
+      if (walking) { stopWalk(); return true; }
       if (!ovs.length) return false;
       drop(ovs[ovs.length - 1]);
       return true;
     },
     destroy() {
       ro.disconnect();
+      stopWalk();
       closeAll();
       if (flash) clearTimeout(flash.timer);
       if (hint) clearTimeout(hint.timer);
@@ -2487,7 +2776,7 @@ function mount(host, flow, opts = {}, src = null) {
   // state
   setShots(opts.shots);
   const first = sanitize(flow);
-  let cur = layout(freeShots(first.flow)), dropped = first.dropped, base = JSON.stringify(cur), hist = [], issues = [];
+  let cur = layout(clearTall(freeShots(first.flow))), dropped = first.dropped, base = JSON.stringify(cur), hist = [];
   let fut = [], merging = null; // fut: what undo took back (redo); merging: {key, at} of the last mergeable step
   let shown = "map", focusId = null, focusLink = null, focusSrc = null, focusAc = null, here = null, editing = false; // focusLink: index of the arrow in hand (edit)
   let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
@@ -2495,6 +2784,14 @@ function mount(host, flow, opts = {}, src = null) {
   // shell
   const root = h("div", "uf-root");
   root.dataset.mode = shown;
+  /** The frame of the flow's device (a phone, a browser window), for the CSS: set on mount and when a flow of the
+   *  other device replaces this one. */
+  const frameSize = () => {
+    root.dataset.device = DEVICE;
+    root.style.setProperty("--uf-w", W + "px");
+    root.style.setProperty("--uf-h", H + "px");
+  };
+  frameSize();
   const bar = h("div", "uf-bar");
   let bZep = null, bUndo = null, bRedo = null;
   const seg = h("div", "uf-seg");
@@ -2513,13 +2810,19 @@ function mount(host, flow, opts = {}, src = null) {
       render(); // the dots and arrow handles only exist while editing
     }, t("edit"));
     bEdit.setAttribute("aria-pressed", "false");
-    bZep = btn(t("fromZeplin"), "uf-btn", () => zeplinForm(true));
+    // the edit tools are icons; the words slide out beside the icon on hover / focus (styles: .uf-tools .uf-btn span)
+    const tool = (name, key, onClick) => {
+      const b = ibtn(name, t(key), "uf-btn", onClick, t(key).replace(/^[+↶↷]\s*/, ""));
+      b.removeAttribute("title"); // the words are shown: no second, slower tooltip
+      return b;
+    };
+    bZep = tool("plus", "fromZeplin", () => zeplinForm(true));
     bZep.setAttribute("aria-expanded", "false");
-    bUndo = ibtn("undo", t("undo"), "uf-btn", () => api.undo());
-    bRedo = ibtn("redo", t("redo"), "uf-btn", () => api.redo());
+    bUndo = tool("undo", "undo", () => api.undo());
+    bRedo = tool("redo", "redo", () => api.redo());
     const tools = h("div", "uf-tools uf-add"); // one group, there only while editing
     tools.setAttribute("role", "group");
-    tools.append(bZep, h("span", "uf-div"), ibtn("grid", t("relayout"), "uf-btn", () => ed.relayout()), bUndo, bRedo);
+    tools.append(bZep, h("span", "uf-div"), tool("grid", "relayout", () => ed.relayout()), bUndo, bRedo);
     bar.append(bEdit, tools);
   }
   const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
@@ -2535,7 +2838,10 @@ function mount(host, flow, opts = {}, src = null) {
   try { backs = localStorage.getItem("uf-backs") === "1"; } catch { /* no storage: off */ }
   setBacks(backs);
   bar.append(h("span", "uf-sp"), bBacks, bFit);
-  const bCheck = btn(null, "uf-btn uf-check", togglePanel), nCheck = h("span", "uf-badge");
+  // the bar's icon buttons say what they do on hover at once (styles: .uf-bar [data-tip]); the browser's own title
+  // tooltip is slow and easy to miss. aria-label keeps the name.
+  for (const b of bar.querySelectorAll(".uf-icon[title]")) { b.dataset.tip = b.title; b.removeAttribute("title"); }
+  const bCheck = btn(null, "uf-btn uf-check", () => checks.toggle()), nCheck = h("span", "uf-badge");
   bCheck.setAttribute("aria-expanded", "false");
   bCheck.append(icon("check"), h("span", null, t("check", { n: "" }).replace(/\s*\(.*$/, "")), nCheck);
   bar.append(bCheck);
@@ -2589,7 +2895,7 @@ function mount(host, flow, opts = {}, src = null) {
   const zeplinForm = zeplin_form_zeplinForm({ t, zform, view, lookup: opts.lookup, get: () => cur,
     addScreen: (props, also) => ed.addScreen(props, also),
     show: (id) => show(id, !reduced.matches), goto: (id) => goto(id, !reduced.matches),
-    opened: (open) => { if (open && !panel.hidden) togglePanel(); bZep?.setAttribute("aria-expanded", String(open)); } });
+    opened: (open) => { if (open && checks.isOpen()) checks.toggle(); bZep?.setAttribute("aria-expanded", String(open)); } });
 
   function render() {
     const had = root.contains(document.activeElement);
@@ -2615,7 +2921,7 @@ function mount(host, flow, opts = {}, src = null) {
     if (focusId && !frames.has(focusId)) focusId = null;
     applyFocus();
     finder.sync();
-    refreshChecks();
+    checks.refresh();
     ed.sync();
     if (bUndo) { bUndo.disabled = !hist.length; bRedo.disabled = !fut.length; }
     if (shown === "play") proto.refresh();
@@ -2684,7 +2990,7 @@ function mount(host, flow, opts = {}, src = null) {
   function applyFocus() {
     if (focusLink !== null && !marks[focusLink]) focusLink = null;
     const any = focusId !== null || focusLink !== null || focusAc !== null;
-    const hasAc = (ac) => acs(ac).some((x) => focusAc.includes(x)); // an AC chip was pressed: what carries one of its codes
+    const hasAc = (ac) => acCodes(ac).some((x) => focusAc.includes(x)); // an AC chip was pressed: what carries one of its codes
     root.classList.toggle("uf-focus", any);
     const near = new Set([focusId]);
     for (const [id, p] of parents(cur)) {
@@ -2702,7 +3008,6 @@ function mount(host, flow, opts = {}, src = null) {
     const acOn = focusAc && new Set(cur.screens.filter((s) => hasAc(s.ac)).map((s) => s.id));
     frames.forEach((f, id) => f.classList.toggle("uf-on", any && (acOn ? acOn.has(id) : near.has(id))));
   }
-  const acs = (text) => String(text).split(/[,;]/).map((x) => x.trim()).filter(Boolean); // "AC1.2, AC4.5" -> its codes
   let picked = false; // the focus is the editor's selection, not a screen the user went to: Prototype ignores it
   function setFocus(id, link = null, byEdit = false, src = null, ac = null) { // src: "screen.item", the button in hand (edit)
     focusAc = ac;
@@ -2711,89 +3016,6 @@ function mount(host, flow, opts = {}, src = null) {
     focusSrc = src;
     picked = byEdit;
     applyFocus();
-  }
-
-  // flow check panel
-  let notes = []; // the host's warnings about how this flow was built (api.notes): rows of their own, no screen to go to
-  function refreshChecks() {
-    issues = [...brokenRows(dropped, t), ...notes.map((text) => ({ kind: "unclear", text })), ...gaps(cur, t)];
-    bCheck.setAttribute("aria-label", t("check", { n: issues.length }));
-    nCheck.textContent = String(issues.length);
-    bCheck.classList.toggle("uf-clean", !issues.length);
-    if (!panel.hidden) fillPanel();
-  }
-  let panelTab = "gaps", panelKind = null; // what the panel shows: the review list (filtered by kind) or the checklist
-  const chip = (label, on, fn) => {
-    const b = btn(label, "uf-btn", fn);
-    b.setAttribute("aria-pressed", String(on));
-    return b;
-  };
-  function fillPanel() {
-    const tabs = h("div", "uf-ptabs");
-    tabs.setAttribute("role", "group");
-    tabs.append(chip(t("gapsTab", { n: issues.length }), panelTab === "gaps", () => { panelTab = "gaps"; fillPanel(); }),
-      chip(t("testsTab"), panelTab === "tests", () => { panelTab = "tests"; fillPanel(); }));
-    if (panelTab === "tests") return panel.replaceChildren(tabs, ...testsView());
-    if (!issues.length) return panel.replaceChildren(tabs, h("p", "uf-none", t("ok")));
-    const counts = new Map();
-    for (const it of issues) counts.set(it.kind, (counts.get(it.kind) || 0) + 1);
-    if (panelKind && !counts.has(panelKind)) panelKind = null;
-    const filter = h("div", "uf-pfilter");
-    filter.setAttribute("role", "group");
-    filter.append(chip(t("all", { n: issues.length }), !panelKind, () => { panelKind = null; fillPanel(); }),
-      ...KIND_ORDER.filter((k) => counts.has(k)).map((k) =>
-        chip(`${t("k_" + k)} (${counts.get(k)})`, panelKind === k, () => { panelKind = k; fillPanel(); })));
-    const rows = issues.filter((it) => !panelKind || it.kind === panelKind).map((it) => {
-      const b = btn(null, "uf-issue", () => {
-        togglePanel();
-        if (!it.screen) return;
-        api.goto(it.screen);
-        // editing: open what the row is about, so its fix (draw the area, link it, add the AC) is one click away
-        if (editing && shown === "map") ed.pick(it.item ? { t: "item", id: it.screen, item: it.item } : { t: "screen", id: it.screen });
-      });
-      b.append(h("span", "uf-tag uf-tag-" + it.kind, t("k_" + it.kind)), h("span", "uf-txt", it.text));
-      if (it.kind !== "pending" || !editing || shown !== "map") return b;
-      // editing: the row asks for the step's Zeplin link (the screen comes linked from where the step was reached);
-      // ✕ takes a step that will never get a screen off the list
-      b.addEventListener("click", () => zeplinForm(true, it.pending));
-      b.title = t("pendingAdd", { s: it.pending });
-      const row = h("div", "uf-prow");
-      row.append(b, ibtn("x", t("pendingSkip"), "uf-btn", () => {
-        const f = structuredClone(cur);
-        f.pending = (f.pending || []).filter((x) => x.title !== it.pending);
-        commit(f);
-      }));
-      return row;
-    });
-    panel.replaceChildren(tabs, filter, ...rows);
-  }
-  function testsView() {
-    const { paths, missed } = testPaths(cur), first = startOf(cur), title = (id) => cur.screens.find((s) => s.id === id)?.title;
-    if (!paths.length) return [h("p", "uf-none", t("noPaths"))];
-    const text = checklist(cur, t), msg = h("p", "uf-zmsg");
-    msg.setAttribute("role", "status");
-    const copy = btn(t("copy"), "uf-btn", async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-        msg.textContent = t("copied");
-      } catch {
-        msg.textContent = t("copyFail");
-      }
-    });
-    const list = h("ol", "uf-paths");
-    for (const p of paths) list.append(h("li", null, `${title(first)} → ${p.map((l) => stepText(cur, l, t)).join(" → ")}`));
-    const out = [h("p", "uf-count", text.split("\n")[0]), list];
-    if (missed.length) out.push(h("p", "uf-none", t("missed", { s: missed.map((l) => `${title(scr(l.src))} → ${title(l.to)}`).join("; ") })));
-    const acts = h("div", "uf-acts");
-    acts.append(copy);
-    out.push(acts, msg);
-    return out;
-  }
-  function togglePanel() {
-    if (panel.hidden && !zform.hidden) zeplinForm(false);
-    panel.hidden = !panel.hidden;
-    bCheck.setAttribute("aria-expanded", String(!panel.hidden));
-    if (!panel.hidden) fillPanel();
   }
 
   const reduced = matchMedia("(prefers-reduced-motion: reduce)");
@@ -2807,7 +3029,7 @@ function mount(host, flow, opts = {}, src = null) {
       if (editing) return ed.tap(target && layer.contains(target) ? target : null);
       const chip = target?.closest?.(".uf-ac, .uf-lac"); // an AC chip: light what carries its codes; again: clear
       if (chip && layer.contains(chip)) {
-        const want = acs(chip.textContent);
+        const want = acCodes(chip.textContent);
         return setFocus(null, null, false, null, focusAc && want.join() === focusAc.join() ? null : want);
       }
       const f = target?.closest?.(".uf-screen");
@@ -2815,7 +3037,7 @@ function mount(host, flow, opts = {}, src = null) {
     },
   });
   cleanup.push(() => cam.destroy());
-  const fitAll = (animate) => cam.fit(bounds(cur.screens), animate);
+  const fitAll = (animate) => cam.fit(bounds(cur.screens, FIT_TALL), animate);
   /** The one way the flow changes. Refused while a drag is in flight: that gesture holds the screen objects
    *  and the frames of the current render, and a rebuild under it would strand them (and could commit half a
    *  link). A change that changes nothing costs no undo step. */
@@ -2858,6 +3080,10 @@ function mount(host, flow, opts = {}, src = null) {
   let seenStart = startOf(cur); // the start screen Prototype last knew: changed on the map since, it begins there
   const proto = player(play, { flow: () => cur, t, reduced, setStart: opts.edit ? setStart : null, onGo: (id) => { if (shown === "play") { here = id; setFocus(id); writeHash(); } } });
   cleanup.push(() => proto.destroy());
+  const checks = checkPanel({ t, panel, bCheck, nCheck, get: () => cur, dropped: () => dropped, commit,
+    editing: () => editing && shown === "map", goto: (id) => api.goto(id), pick: (sel) => ed.pick(sel),
+    zeplinForm: (open, pending) => zeplinForm(open, pending), zformOpen: () => !zform.hidden,
+    walk: (links) => { api.mode("play"); proto.walk(startOf(cur), links); } });
 
   const onKey = (e) => {
     const tag = e.target?.tagName;
@@ -2884,7 +3110,7 @@ function mount(host, flow, opts = {}, src = null) {
     if (ed.busy()) return ed.cancel();
     if (ed.stopDraw()) return;
     if (!zform.hidden) return zeplinForm(false);
-    if (!panel.hidden) togglePanel();
+    if (checks.isOpen()) checks.toggle();
     else if (shown === "play") proto.escape();
     else if (editing && ed.selected()) ed.clear();
     else if (finder.hasMatches()) finder.clear();
@@ -2919,16 +3145,21 @@ function mount(host, flow, opts = {}, src = null) {
     /** Replace the flow and treat it as clean; refit only when the set of screens changed. */
     set(f) {
       ed.cancel(); // whatever the pointer was doing points at the flow that is being replaced
-      const before = ids(cur);
+      const before = ids(cur), was = DEVICE;
       ({ flow: cur, dropped } = sanitize(f));
-      cur = layout(freeShots(cur));
+      if (DEVICE !== was) { // a re-render for the other platform: every frame is another size, none is reused
+        rendered = new Map();
+        frameSize();
+        proto.resize();
+      }
+      cur = layout(clearTall(freeShots(cur)));
       base = JSON.stringify(cur);
       hist = [];
       fut = [];
       merging = null;
       ed.clear();
       render();
-      if (ids(cur) !== before) fitAll(false);
+      if (ids(cur) !== before || DEVICE !== was) fitAll(false);
     },
     mode(m) {
       if (m !== "map" && m !== "play") return;
@@ -2950,10 +3181,7 @@ function mount(host, flow, opts = {}, src = null) {
     },
     goto: (id) => goto(id, true),
     /** What the render could not make sure of (plain text lines), listed in the flow check; [] clears them. */
-    notes(list) {
-      notes = (Array.isArray(list) ? list : []).filter((x) => typeof x === "string" && x).slice(0, 20);
-      refreshChecks();
-    },
+    notes: (list) => checks.notes(list),
     /** New Zeplin images ({url: shot}): frames redraw, positions stay. */
     shots(map) {
       ed.cancel();

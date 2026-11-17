@@ -1,4 +1,4 @@
-import { itm, scr, startOf } from './values.js';
+import { acCodes, itm, scr, startOf } from './values.js';
 import { shotOf } from './shots.js';
 import { rowsOf } from './geometry.js';
 import { sanitize } from './model.js';
@@ -42,6 +42,11 @@ function gaps(f, t) {
     });
     if (s.kind === "screen" && !s.zeplin) out.push({ kind: "nosrc", screen: s.id, text: t("nosrc", { s: s.title }) });
   }
+  // the ticket's AC no screen, arrow or waiting step carries (f.acs: read from the ticket at the last render). A code
+  // stands for its sub-codes and the other way round ("AC1" on a screen covers AC1.2; "AC1.2" on an arrow, AC1).
+  const have = [...f.screens, ...f.links, ...(f.pending || [])].flatMap((x) => acCodes(x.ac).map((c) => c.replace(/[\s-]+/g, "").toUpperCase()));
+  const lost = (f.acs || []).filter((c) => !have.some((x) => x === c || x.startsWith(c + ".") || c.startsWith(x + ".")));
+  if (lost.length) out.push({ kind: "noflow", text: t("noflow", { n: lost.length, s: lost.join(", ") }) });
   for (const l of f.links) {
     if (l.ac) continue;
     const s = by.get(scr(l.src)), i = itm(l.src), name = i ? s.items.find((it) => it.id === i).label : s.title;
@@ -49,7 +54,21 @@ function gaps(f, t) {
   }
   return out;
 }
-const KIND_ORDER = ["broken", "unclear", "pending", "nostart", "orphan", "dead", "offshot", "noback", "noac", "nosrc"];
+const KIND_ORDER = ["broken", "unclear", "pending", "nostart", "orphan", "dead", "offshot", "noback", "noac", "noflow", "nosrc"];
+/** The steps without a design as messages for whoever owns it (PO / designer), in plain words: the ticket, then at
+ *  most three steps a message, one a line; a lone fourth joins the message before it (= ASK_MSG, splitAsks). */
+function pendingAsk(f, t) {
+  const by = new Map(f.screens.map((s) => [s.id, s]));
+  const rows = (f.pending || []).map((p) => {
+    const s = p.src ? by.get(scr(p.src)) : null, i = s && itm(p.src);
+    const at = !s ? "" : t(i ? "pendingFromBtn" : "pendingFrom", { s: s.title, i: i ? s.items.find((it) => it.id === i)?.label ?? "" : "" });
+    return [p.title + at, p.when, p.ac].filter(Boolean).join(" · ");
+  });
+  const msgs = [];
+  for (let k = 0; k < rows.length; k += 3) msgs.push(rows.slice(k, k + 3));
+  if (msgs.length > 1 && msgs[msgs.length - 1].length === 1) msgs[msgs.length - 2].push(...msgs.pop());
+  return msgs.map((m) => [t("askHead", { s: f.ticket }), ...m.map((r, n) => `${n + 1}. ${r}`)].join("\n")).join("\n\n");
+}
 /** Test paths through the graph, by code: from the start screen, every link followed once at least where it can be
  *  reached. A path ends at a screen with nothing new to go to, or on a link back to a screen it already crossed.
  *  Only paths that cover a link no earlier path did are kept. {paths: [[link]], missed: [link]}. */
@@ -95,10 +114,10 @@ function checklist(f, t) {
   if (missed.length) lines.push(t("missed", { s: missed.map((l) => `${by(scr(l.src)).title} → ${by(l.to).title}`).join("; ") }));
   return lines.join("\n");
 }
-/** [{kind: "broken" | "pending" | "nostart" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "nosrc", screen?, item?, text}] for a raw flow. */
+/** [{kind: "broken" | "pending" | "nostart" | "orphan" | "dead" | "offshot" | "noback" | "noac" | "noflow" | "nosrc", screen?, item?, text}] for a raw flow. */
 function check(flow, lang) {
   const { flow: f, dropped } = sanitize(flow), t = tr(lang);
   return [...brokenRows(dropped, t), ...gaps(f, t)];
 }
 
-export { brokenRows, gaps, KIND_ORDER, testPaths, stepText, checklist, check };
+export { brokenRows, gaps, KIND_ORDER, pendingAsk, testPaths, stepText, checklist, check };

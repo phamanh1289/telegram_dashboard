@@ -10,7 +10,7 @@ from . import flow as uiflow
 MAX_SCREENS = 8  # ponytail: one run reads at most this many images; the rest stay "not on the design" (draw by hand)
 GRID = 1000  # the AI answers on a 0-1000 grid: the CLI may resize the image, a fraction of it stays right
 
-PROMPT = """Mỗi mục trong <screens> là một ảnh thiết kế màn mobile (mở file bằng Read) và các nút cần tìm trên ảnh đó.
+PROMPT = """Mỗi mục trong <screens> là một ảnh thiết kế màn hình (mở file bằng Read) và các nút cần tìm trên ảnh đó.
 Với từng nút, tìm vùng bấm của nó: cả dòng / cả nút chứa nhãn, không chỉ phần chữ.
 Trả về DUY NHẤT một JSON, không giải thích: {"<file>": {"<id nút>": [x, y, w, h]}}
 x, y là góc trên trái, w, h là rộng / cao, tất cả theo thang 0-1000 của chiều rộng / chiều cao ảnh.

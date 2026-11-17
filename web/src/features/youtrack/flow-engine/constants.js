@@ -2,19 +2,36 @@
 
 // ------------------------------------------------------------------ constants
 const SCREEN = Object.freeze({ w: 390, h: 844 });
-const W = SCREEN.w, H = SCREEN.h;
-const COL = W + 220, ROW = H + 120, SHIFT = 60;
-// column / row step; overlay offset from its parent
+// the frame of each device (= Flow.device): a phone, or a browser window a web design is drawn in at its own width
+const FRAMES = Object.freeze({ mobile: SCREEN, web: Object.freeze({ w: 1280, h: 800 }) });
+let DEVICE = "mobile", W = SCREEN.w, H = SCREEN.h;
+let COL = W + 220, ROW = H + 120;
+// column / row step
+const SHIFT = 60;
+// overlay offset from its parent
+/** The frame every screen of the flow in hand is drawn in. Importers read W / H / COL / ROW live, so geometry,
+ *  layout, the editor and Prototype all follow.
+ *  ponytail: one device per page, like the images (shots.js); a frame per mount if two flows ever share a page */
+function setDevice(device) {
+  DEVICE = device === "web" ? "web" : "mobile";
+  ({ w: W, h: H } = FRAMES[DEVICE]);
+  COL = W + 220;
+  ROW = H + 120;
+  return DEVICE;
+}
 const GROUP_GAP = 200;
 // extra space between the main flow, each separate group and the loose screens
 const LABEL_HIDE = 0.6;
 // from this zoom up the in-frame title (17px) reads at 10px+: the frame labels step aside
 const STATUS = 44, HEAD = 56, TOP = 120, BOTTOM = 40, FOLD_SLACK = 4;
+const TALL = 1.1, FIT_TALL = 2;
+// a design this many phones high (a page that scrolls) is drawn whole; "fit" counts at most FIT_TALL of them, so one
+// eight-screen page does not shrink every other frame to a dot
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
 const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
-const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
+const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16, WALK_MS = 1100;
 // prototype: motion, phone bezel, margin
 const NOTE_MS = 2600;
 // edit: how long a refusal note stays up
@@ -34,4 +51,4 @@ const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/
 // = providers.ZEPLIN
 const SVGNS = "http://www.w3.org/2000/svg";
 
-export { SCREEN, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, FOLD_SLACK, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, SLIDE_MS, TOAST_MS, FLASH_MS, HINT_MS, BEZEL, GAP, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, VERSION, CAP_NOTE, KINDS, ACTS, ZEPLIN, SVGNS };
+export { SCREEN, FRAMES, DEVICE, setDevice, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, FOLD_SLACK, TALL, FIT_TALL, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, SLIDE_MS, TOAST_MS, FLASH_MS, HINT_MS, BEZEL, GAP, WALK_MS, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, VERSION, CAP_NOTE, KINDS, ACTS, ZEPLIN, SVGNS };

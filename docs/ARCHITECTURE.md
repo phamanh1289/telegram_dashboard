@@ -58,7 +58,7 @@ web/
       youtrack/
         components/      # tickets, dashboard, flow, release, ticket form…
         lib/             # YouTrack client/query, flow draft, stats, mention adapter
-        flow-engine/     # ES modules: model/layout, geometry, renderer, camera, player, editor/inspector, finder, styles
+        flow-engine/     # ES modules: model/layout, geometry, renderer, camera, player, editor/inspector, finder, check-panel, styles
       settings/
         components/      # cấu hình và preview giao diện
     shared/
@@ -119,7 +119,7 @@ Sau khi cập nhật rule, mở phiên mới hoặc dùng cơ chế refresh cont
 
 ## UI flow engine và dữ liệu hướng dẫn
 
-Source engine ở `web/src/features/youtrack/flow-engine/`: model và layout, geometry, DOM/frame renderer, camera, prototype player, editor, inspector, finder và styles có module riêng. `mount.js` giữ composition và lịch sử flow; `index.js` xuất duy nhất `window.UIFlow` và khởi động HTML standalone. API mount/get/set/undo/redo/destroy, schema và đường dẫn `/uiflow.js` giữ nguyên.
+Source engine ở `web/src/features/youtrack/flow-engine/`: model và layout, geometry, DOM/frame renderer, camera, prototype player, editor, inspector, finder, khung Soát luồng (`check-panel.js`) và styles có module riêng. `mount.js` giữ composition và lịch sử flow; `index.js` xuất duy nhất `window.UIFlow` và khởi động HTML standalone. API mount/get/set/undo/redo/destroy, schema và đường dẫn `/uiflow.js` giữ nguyên.
 
 `npm run build:uiflow` dùng webpack có sẵn trong phiên bản Next đã pin, tạo bundle IIFE `web/public/uiflow.js` không cần module loader hoặc request bổ sung. Backend nhúng bundle này vào HTML, nên file export tiếp tục mở offline qua `file://`. `prebuild` và `predev` sinh lại bundle; sau khi sửa engine trong phiên dev đang chạy, chạy `npm run build:uiflow`. `npm run check:uiflow` so bundle với source và được gọi bởi root `npm run typecheck`. Bundle được lưu trong repo để checkout chạy test/export trực tiếp; ESLint và giới hạn dòng áp dụng lên source, không áp dụng lên bundle sinh tự động.
 

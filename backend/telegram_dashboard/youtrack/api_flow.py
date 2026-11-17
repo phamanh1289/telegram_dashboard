@@ -66,11 +66,14 @@ def register(r, svc: YouTrackDashboard) -> None:
     @r.post("/flow/shots")
     async def flow_shots(body: FlowShots):
         """The Zeplin screens a flow links: image URL, design size, where its texts / buttons sit (no AI, cached)."""
-        try:
-            got, missing = await shots.get([u for u in body.urls if providers.ZEPLIN.fullmatch(u)])
+        urls = [u for u in body.urls if providers.ZEPLIN.fullmatch(u)]
+        try:  # `stale`: the last read of them all, when there is an older one, without waiting for Zeplin
+            old = await shots.last(urls) if body.stale else None
+            got, missing = (old, []) if old is not None else await shots.get(urls)
         except zeplin.ZeplinError as e:
             raise YtError(502, str(e)) from None
-        return {"shots": {u: {k: v for k, v in x.items() if k != "texts"} for u, x in got.items()}, "missing": missing}
+        return {"shots": {u: {k: v for k, v in x.items() if k != "texts"} for u, x in got.items()}, "missing": missing,
+                "stale": old is not None}  # fmt: skip
 
     @r.get("/flow/image")
     async def flow_image(u: str = Query(max_length=2000)):
@@ -366,7 +369,8 @@ def register(r, svc: YouTrackDashboard) -> None:
 
             async def one(k, text):
                 async with gate:
-                    out = await _ai(svc, request, text, heavy=True, notes=False, detached=detached, retry=False)
+                    out = await _ai(svc, request, text, heavy=True, notes=False, detached=detached, retry=False,
+                                    feature="flow")  # fmt: skip
                 raw = json_object(out)
                 if not isinstance(raw, dict) or not isinstance(raw.get("screens"), list):
                     raise YtError(502, f"Phần {k + 1}/{n}: AI trả về không đọc được; thử lại hoặc chọn model mạnh hơn")
@@ -392,7 +396,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                 with tempfile.TemporaryDirectory(prefix="tgd-flow-") as tmp:  # a folder holding only these images
                     prompt, files = await flow_locate.save(todo[: flow_locate.MAX_SCREENS], tmp)
                     if files:
-                        out = await _ai(svc, request, prompt, notes=False, detached=detached, retry=False, read_dir=tmp)
+                        out = await _ai(svc, request, prompt, notes=False, detached=detached, retry=False,
+                                        read_dir=tmp, feature="flow")  # fmt: skip
                         placed = flow_locate.apply(json_object(out), files)
             except YtError as e:
                 if e.status == 499:  # Hủy: the render stops, not just this step
@@ -449,7 +454,10 @@ def register(r, svc: YouTrackDashboard) -> None:
                     "estimated_input_tokens": payload.manifest["estimated_input_tokens"],
                 }
                 say(**start)
-                seen = uiflow.Progress()
+                # the screens as the prompt names them (short ids): a link is told in their titles and labels
+                known = {x["id"]: (x.get("title") or x["id"], {b["id"]: b.get("label") or b["id"] for b in x["items"]})
+                         for x in (payload.shown or payload.skeleton)["screens"]}  # fmt: skip
+                seen = uiflow.Progress(known)
 
                 # the JSON as it is written: told as the screens / links it holds so far. Only stage steps reach the
                 # page: raw deltas would make each replay (a reopened dialog) thousands of items
@@ -459,7 +467,7 @@ def register(r, svc: YouTrackDashboard) -> None:
                         on_text(t)
                     elif t is None:  # every message starts with one (Claude): a restart only once text was written
                         if seen.text:
-                            seen = uiflow.Progress()
+                            seen = uiflow.Progress(known)
                             say(**start, again=True)
                     else:
                         for e in seen.feed(t):
@@ -472,7 +480,7 @@ def register(r, svc: YouTrackDashboard) -> None:
                     out = json.dumps(await by_parts(prompts, detached))
                 else:  # the user's own model / effort (the heavy picks: a long read), whatever the size: warned
                     out = await _ai(svc, request, prompt, heavy=True, on_text=on_ai if on_text else None,
-                                    notes=False, detached=detached, retry=False)  # fmt: skip
+                                    notes=False, detached=detached, retry=False, feature="flow")  # fmt: skip
                 usage = metrics.get("usage")
                 usage = (
                     {k: v for k, v in usage.items() if isinstance(v, (int, float))} if isinstance(usage, dict) else None
@@ -488,10 +496,13 @@ def register(r, svc: YouTrackDashboard) -> None:
                 say(stage="check", chars=len(out))
                 raw = json_object(out)
                 try:
+                    raw = flow_merge.unalias(raw, payload.back)  # the prompt's short ids -> the skeleton's own
                     flow = flow_merge.merge_ai(raw, payload.skeleton, i)
                 except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
                     raise YtError(502, "AI trả về không đọc được; thử lại hoặc chọn model / effort mạnh hơn") from None
             flow.rev = 0  # whatever was drawn: the dialog saves over the version it opened
+            flow.acs = list(payload.acs)  # what the flow check holds the map against ("AC chưa lên sơ đồ")
+            flow.device = body.target  # the frame of the platform picked: a web design is not drawn in a phone
             for s in flow.screens:
                 s.x = s.y = None  # the layout is the dialog's job
             kept = {}
@@ -537,7 +548,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                 i,
                 body.base,
                 lambda on_text: work(on_text, detached=True),
-                request={"note": body.note, "mode": body.mode, "split": body.split, "skip": body.skip},
+                request={"note": body.note, "mode": body.mode, "split": body.split, "skip": body.skip,
+                         "target": body.target},  # fmt: skip
             )
             if got is None:
                 raise YtError(409, "Mã lượt AI đã dùng; nối lại lượt hiện có")

@@ -474,3 +474,13 @@ test("back / close arrows stay off until the toolbar turns them on (remembered);
   await toggle().click();
   await expect.poll(drawn).toBe(false);
 });
+
+test("a toolbar icon says what it does on hover, without the browser's slow title tooltip", async ({ page }) => {
+  await open(page);
+  const backs = page.getByRole("button", { name: "Hiện mũi tên quay lại" });
+  await expect(backs).not.toHaveAttribute("title", /.*/);
+  const tip = () => backs.evaluate((b) => { const s = getComputedStyle(b, "::after"); return [s.content, s.opacity]; });
+  expect(await tip()).toEqual(['"Hiện mũi tên quay lại"', "0"]);
+  await backs.hover();
+  await expect.poll(async () => (await tip())[1]).toBe("1");
+});

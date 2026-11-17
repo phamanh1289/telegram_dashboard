@@ -1,7 +1,6 @@
 """UI-flow input (whole, with its risks) and deterministic design skeleton; no AI or network I/O."""
 
 import difflib
-import hashlib
 import json
 import math
 import re
@@ -12,11 +11,12 @@ from ..ai import data_json
 from ..providers import ZEPLIN
 from . import flow as uiflow
 from . import flow_merge
+from .flow_merge import stable_id
 
 ENVELOPE_RESERVE = 2048
 # No budget: the source goes whole. Past RISK_* the dialog warns before the run; only HARD_CONTEXT refuses, a prompt
 # no CLI model reads. ponytail: one ceiling for every model, per-model context once the catalog carries it
-RISK_TOKENS, RISK_SCREENS, RISK_AMBIGUOUS, HARD_CONTEXT = 40_000, 30, 5, 180_000
+RISK_TOKENS, RISK_SCREENS, HARD_CONTEXT = 40_000, 30, 180_000
 
 
 class BudgetExceeded(ValueError):
@@ -46,10 +46,6 @@ def sources_from_blocks(ticket, story):
         if isinstance(item, dict):
             result.append(source(item))
     return result, unavailable
-
-
-def stable_id(value, prefix="s"):
-    return prefix + hashlib.sha256(value.encode()).hexdigest()[:16]
 
 
 def skeleton(sources, shots):
@@ -156,6 +152,9 @@ class Payload:
     design: dict | None = None  # Zeplin URL -> its texts
     note: str = ""
     shots: dict | None = None  # Zeplin URL -> its shot as read for this render (api_flow.gather sets it)
+    shown: dict | None = None  # the skeleton as the prompt writes it: short ids (flow_merge.alias)
+    acs: tuple = ()  # the AC codes the ticket writes (its story's when it writes none): Flow.acs
+    back: dict | None = None  # those short ids -> the skeleton's own, for the answer (flow_merge.unalias)
 
 
 def _render(head, design, base, note):
@@ -179,6 +178,9 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
             seen.add(identity)
             used.append(item)
     base, ambiguous = skeleton(used, shots)
+    # a sub-task's AC live in its story; a ticket that writes its own is checked against those only
+    texts = ["\n".join([x["description"], *(c["text"] for c in x["comments"])]) for x in used]
+    acs = next((got for got in map(uiflow.ac_codes, [texts[0], "\n".join(texts[1:])] if texts else []) if got), [])
     reused = reuse(base, previous) if previous else 0
     gone = {zeplin.canonical(u) for u in skip}
     left = [s["title"] for s in base["screens"] if s.get("zeplin") in gone]
@@ -192,7 +194,8 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
     other += "".join("\n<story>" + data_json(s) + "</story>" for s in unavailable)
     head = f"{flow_merge.AI_FLOW_PATCH}\n<ticket>\n{own}\n</ticket>{other}"
     sent = without(base, gone)
-    prompt = _render(head, design, sent, note)
+    shown, back = flow_merge.alias(sent)
+    prompt = _render(head, design, shown, note)
     tokens = estimate(prompt) + ENVELOPE_RESERVE
     if tokens > HARD_CONTEXT:
         raise BudgetExceeded(f"Đầu vào ~{tokens:,} token vượt context của mọi model (~{HARD_CONTEXT:,}); "
@@ -211,7 +214,7 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
                 "warnings": warnings, "ambiguous_lines": len(ambiguous),
                 "risks": risks(tokens, sent, ambiguous, shots, every=base["screens"], left=left), "reused": reused}
     manifest["chunks"] = -(-len(sent["screens"]) // PART_SCREENS)
-    return Payload(prompt, sent, manifest, warnings, head, design, note)
+    return Payload(prompt, sent, manifest, warnings, head, design, note, shown=shown, back=back, acs=tuple(acs))
 
 
 def without(base, gone):
@@ -270,12 +273,10 @@ def unclear(line, by_title, start=None, label="", end=None):
     return {"why": "label" if len(label) > 80 else "format", "name": "", "hint": ""}
 
 
-SHOW_LINES = 50  # unclear lines listed in the pre-check; the count says how many more
-
-
 def not_mobile(shot):
     """A Zeplin screen drawn at a web / desktop size, not a phone's: landscape and tablet-wide, or wider than any
-    phone at @3x (1290). ponytail: size only, the Zeplin project's platform once the client reads it."""
+    phone at @3x (1290). ponytail: size only (risks() adds the screen's Zeplin project: one with web-sized screens
+    is a web project); the project's own platform once the client reads it."""
     w, h = shot.get("w") or 0, shot.get("h") or 0
     return w >= 1300 or (w > h and w >= 768)
 
@@ -299,19 +300,24 @@ def risks(tokens, base, ambiguous, shots=None, every=None, left=()):
     # tick-boxes by the line itself, and the Q&A gets the same `skip`, so #n means the same line in both)
     kept = [(ln, why) for ln, why in ambiguous.items()
             if not any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", ln) for t in left)]
-    if len(kept) > RISK_AMBIGUOUS:
+    if kept:  # every one, however few or many: the dialog leaves each out of the render unless ticked
         lines = []
-        for ln, why in kept[:SHOW_LINES]:
+        for ln, why in kept:
             no += 1
             named = urls.get(why["hint"] or why["name"], [])[:3]
             lines.append({"no": no, "line": ln.strip()[:200], **why, "urls": named})
-        out.append({"code": "ambiguous", "text": f"{len(kept)} dòng luồng màn chưa rõ: AI phải tự suy luận",
+        out.append({"code": "ambiguous", "text": f"{len(kept)} dòng luồng màn chưa rõ: không vẽ trừ khi bạn tick",
                     "lines": lines})
     # Both platforms' screens, so the dialog leaves out whichever the user does not build (mobile app or web).
     sizes = {zeplin.canonical(u): x for u, x in (shots or {}).items()}
     sized = [(s, sizes[s["zeplin"]]) for s in every if (sizes.get(s.get("zeplin")) or {}).get("w")]
+    # A long web page is portrait and may be narrower than a phone at @3x: size alone calls it mobile. Its Zeplin
+    # project tells: one that holds web-sized screens is a web project, and nothing tablet-wide in it is a phone.
+    project = lambda s: (zeplin.SCREEN.search(s["zeplin"]) or ("", ""))[1]  # noqa: E731
+    webs = {project(s) for s, x in sized if not_mobile(x)} - {""}
+    web = lambda s, x: not_mobile(x) or (x["w"] >= 768 and project(s) in webs)  # noqa: E731
     for code, text in (("web", "màn Zeplin cỡ web / desktop"), ("mobile", "màn Zeplin cỡ mobile")):
-        group = [(s, x) for s, x in sized if not_mobile(x) == (code == "web")]
+        group = [(s, x) for s, x in sized if web(s, x) == (code == "web")]
         if not group:
             continue
         lines = []
@@ -351,11 +357,15 @@ OUTPUT_PER_SCREEN = 1000  # what an AI render writes per screen (VA-12584: 19 sc
 
 
 def cost(rows, model, tokens, screens):
-    """$ a render would cost on `model`, from what past YouTrack runs on it cost per token (the run log, newest
+    """$ a render would cost on `model`, from what past renders on it cost per token (the run log, newest
     first); None without history (only Claude logs a cost). ponytail: one blended rate (cache reads are cheaper
     than output), a per-kind price table once the catalog carries one."""
-    runs = [r for r in rows if r.get("feature") == "youtrack" and r.get("ok") and isinstance(r.get("cost"), int | float)
-            and (not model or model.lower() in str(r.get("model", "")).lower())][:50]
+    def of(feature):
+        return [r for r in rows
+                if r.get("feature") == feature and r.get("ok") and isinstance(r.get("cost"), int | float)
+                and (not model or model.lower() in str(r.get("model", "")).lower())][:50]  # fmt: skip
+
+    runs = of("flow") or of("youtrack")  # renders' own rate once there are some; before: every YouTrack run's
     used = sum(sum(r.get(k) or 0 for k in ("input_tokens", "cache_read", "cache_write", "output_tokens")) for r in runs)
     if not used:
         return None, 0
@@ -375,14 +385,15 @@ def split_tokens(payload):
 def split(payload, size=PART_SCREENS):
     """The render as parts of `size` screens, each with the whole ticket / story (AC is shared) but only its own
     screens' skeleton and Zeplin texts, plus the other screens' ids to link to. One part: the prompt as it is."""
-    screens = payload.skeleton["screens"]
+    shown = payload.shown or payload.skeleton  # the ids the prompt uses: one numbering over every part
+    screens = shown["screens"]
     if len(screens) <= size or payload.design is None:
         return [payload.prompt]
     out = []
     for k in range(0, len(screens), size):
         chunk = screens[k:k + size]
         ids = {x["id"] for x in chunk}
-        base = {"screens": chunk, "links": [e for e in payload.skeleton["links"] if e["src"].partition(".")[0] in ids]}
+        base = {"screens": chunk, "links": [e for e in shown["links"] if e["src"].partition(".")[0] in ids]}
         design = {u: v for u, v in payload.design.items() if any(x.get("zeplin") == u for x in chunk)}
         others = [{"id": x["id"], "title": x.get("title", "")} for x in screens if x["id"] not in ids]
         out.append(_render(payload.head, design, base, payload.note)

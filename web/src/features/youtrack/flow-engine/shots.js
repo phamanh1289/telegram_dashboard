@@ -19,7 +19,7 @@ function setShots(map) {
 /** Where each button of `s` sits on its Zeplin image (frame units; null: label not found) and the back button:
  *  its hand-drawn rect, else same text first, then one containing the other; each hit used once, in reading order. */
 function hotspots(s, sh) {
-  const key = s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
+  const key = W + s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
   let got = hotCache.get(key);
   if (got) return got;
   const k = W / sh.w, hits = Array.isArray(sh.hits) ? sh.hits : [], ns = hits.map((x) => norm(x[0])), used = new Set();
@@ -56,4 +56,14 @@ function hotspots(s, sh) {
   return got;
 }
 
-export { SHOTS, hotCache, shotOf, norm, BACK, setShots, hotspots };
+/** How overlapping tap areas stack: a smaller one sits above every larger one, whatever order they were made in,
+ *  so an area drawn inside another (inside another…) takes the press and the one under it does not. Returns each
+ *  rect's layer, 1 = lowest (null: not on the image); equal sizes keep their order. */
+function layersOf(rects) {
+  const order = rects.map((r, i) => [r ? r.w * r.h : -1, i]).filter(([a]) => a >= 0).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  const out = rects.map(() => null);
+  order.forEach(([, i], n) => { out[i] = n + 1; });
+  return out;
+}
+
+export { SHOTS, hotCache, shotOf, norm, BACK, setShots, hotspots, layersOf };

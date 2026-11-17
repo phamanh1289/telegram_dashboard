@@ -371,6 +371,16 @@ def test_design_signature_ignores_text_order_and_a_redesign_alone_is_a_change():
     assert u.changes(old, new) == []
     new.design = u.design_of(a)
     assert u.changes(old, new) == ["Cập nhật ảnh thiết kế Zeplin của 1 màn"]
+    # Zeplin's version id joins the signature: a redesign that keeps the size and every text is a change, but a file
+    # saved before versions were recorded does not read as changed just for gaining one
+    v1 = u.design_of({"https://zpl.io/a": {**a["https://zpl.io/a"], "ver": "aaa"}})
+    v2 = u.design_of({"https://zpl.io/a": {**a["https://zpl.io/a"], "ver": "bbb"}})
+    assert v1 == {"https://zpl.io/a": ["375x812", "Gửi", "OTP", "v:aaa"]}
+    old.design, new.design = u.design_of(a), v1
+    assert u.changes(old, new) == []
+    old.design, new.design = v1, v2
+    assert u.changes(old, new) == ["Cập nhật ảnh thiết kế Zeplin của 1 màn"]
+    assert u.Shot(src="data:image/png;base64,AA==", w=1, h=1, ver="69f17a677c732cfb92df1508").ver
 
 
 def test_merge_ai_repairs_a_link_whose_src_is_a_bare_button_id():  # VA-12584: 18 of 41 links lost, every button tap
@@ -423,3 +433,36 @@ def test_merge_ai_joins_the_skeletons_link_with_the_models_copy_of_it():  # VA-1
     f = flow_merge.merge_ai(raw, skel, "VA-1")
     got = [(k.src, k.to, k.when, k.ac) for k in f.links]
     assert got == [("a.x", "b", "Bấm X", "AC1"), ("a.x", "b", "Giữ X", "AC2")]
+
+
+def test_outline_for_the_ai_and_ac_codes_of_the_ticket():
+    flow = u.clean({"v": 2, "start": "a", "acs": ["AC1.2", "AC1.2", "x", "AC3"], "screens": [
+        {"id": "a", "title": "Đăng nhập", "ac": "AC1.1", "zeplin": "https://zpl.io/abc", "note": "chờ\nBE",
+         "items": [{"id": "go", "label": "Gửi OTP"}, {"id": "help", "label": "Trợ giúp"}]},
+        {"id": "b", "title": "OTP", "kind": "popup", "parent": "a", "items": []}],
+        "links": [{"src": "a.go", "to": "b", "act": "open", "when": "SĐT hợp lệ", "ac": "AC1.2"},
+                  {"src": "b", "to": "a", "act": "close"}],
+        "pending": [{"title": "Lỗi mạng", "ac": "AC3"}]}, "VA-1")
+    assert flow.acs == ["AC1.2", "AC3"]  # codes only, once each
+    text = u.outline(flow)
+    assert "uiflow-VA-1.html" in text and "- Đăng nhập [AC1.1] ← màn bắt đầu https://zpl.io/abc" in text
+    assert '  - "Gửi OTP" → OTP (khi: SĐT hợp lệ) [AC1.2]' in text and '  - chưa nối: "Trợ giúp"' in text
+    assert "- OTP (popup trên Đăng nhập)" in text and "  - close → Đăng nhập" in text and "ghi chú: chờ BE" in text
+    assert "chưa có thiết kế: Lỗi mạng [AC3]" in text
+    assert u.ac_codes("AC 1.2, ac-3 và AC1.2; BAC1 PAC-2 AC4.10.1") == ["AC1.2", "AC3", "AC4.10.1"]
+    same = flow.model_copy(update={"acs": ["AC9"]})
+    assert u.changes(flow, same) == ["Cập nhật danh sách AC của ticket"]  # savable, never "Sửa thuộc tính"
+
+
+def test_a_web_flow_keeps_its_frame_and_is_laid_out_anew_when_the_frame_changes():
+    raw = {"v": 2, "device": "web", "screens": [{"id": "a", "title": "A", "x": 10, "y": 20, "items": []}], "links": []}
+    web = u.clean(raw, "VA-1")
+    assert web.device == "web" and u.extract(u.build_html(web, "/*engine*/")).device == "web"
+    assert u.clean({**raw, "device": "tablet"}, "VA-1").device == "mobile"  # unknown: a phone, never a broken file
+    phone = u.clean({**raw, "device": "mobile"}, "VA-1")
+    assert "(rev 0, web)" in u.outline(web)
+    assert u.changes(phone, web) == ["Đổi khung màn sang web"]
+    fresh = web.model_copy(deep=True)
+    fresh.screens[0].x = fresh.screens[0].y = None
+    assert u.keep_manual(web, fresh)[1]["positions"] == 1  # same frame: where the user put it
+    assert u.keep_manual(phone, fresh)[1]["positions"] == 0 and u.keep_manual(phone, fresh)[0].screens[0].x is None

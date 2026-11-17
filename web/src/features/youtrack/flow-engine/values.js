@@ -21,4 +21,7 @@ const startOf = (f) => (f.start && f.screens.some((s) => s.id === f.start) ? f.s
 const isPop = (s) => s.kind !== "screen";
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
-export { scr, itm, str, num, rectOf, ZSCREEN, canon, startOf, isPop, clamp };
+/** "AC1.2, AC4.5" -> its codes. */
+const acCodes = (text) => String(text ?? "").split(/[,;]/).map((x) => x.trim()).filter(Boolean);
+
+export { scr, itm, str, num, rectOf, ZSCREEN, canon, startOf, isPop, clamp, acCodes };

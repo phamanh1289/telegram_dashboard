@@ -52,7 +52,7 @@ def test_explicit_tree_builds_ids_buttons_and_links_code_keeps_metadata_over_ai(
     text = f'[Login]({URL}a)\n├─ “Go” → [Home]({URL}b)\n└─ “Again” → Login'
     result = build(detail(description=text), shots={URL+"a": {"title": "Đăng nhập", "w": 375, "h": 812}})
     a, b = result.skeleton["screens"]
-    assert a["id"] == p.stable_id(URL+"a") and a["title"] == "Đăng nhập"
+    assert a["id"] == flow_merge.stable_id(URL+"a") and a["title"] == "Đăng nhập"
     assert len(result.skeleton["links"]) == 2
     flow = flow_merge.merge_ai({"adapter": 1, "screens": [{"id": a["id"], "title": "AI invented", "zeplin": "fake"}],
                            "links": []}, result.skeleton, "VA-1")
@@ -132,6 +132,10 @@ async def test_endpoint_precheck_counts_and_screens_mode_runs_no_ai_and_only_pas
                                      headers={"X-Ai-Job": "screens-job-1"})
             done = json.loads(only.text.splitlines()[-1])["done"]
             assert len(done["flow"]["screens"]) == 2 and done["flow"]["links"] == [] and not seen
+            assert done["flow"]["device"] == "mobile"
+            web = await client.post("/api/yt/ai/flow", json={"id": "VA-1", "mode": "screens", "target": "web"},
+                                    headers={"X-Ai-Job": "screens-job-2"})
+            assert json.loads(web.text.splitlines()[-1])["done"]["flow"]["device"] == "web"  # the platform picked
             full = await client.post("/api/yt/ai/flow", json={"id": "VA-1"}, headers={"X-Ai-Job": "full-job-1"})
             assert "done" in json.loads(full.text.splitlines()[-1])
             assert "FULL-TAIL" in seen[0][0] and seen[0][1] is True  # whole source, the user's (heavy) picks
@@ -182,7 +186,7 @@ def test_cost_comes_from_past_runs_on_the_same_model_only():
 
 def test_rerender_keeps_the_flow_on_screen_so_the_ai_writes_only_what_is_new():
     text = f'[Login]({URL}a)\n├─ “Go” → [Home]({URL}b)'
-    login, home = p.stable_id(URL+"a"), p.stable_id(URL+"b")
+    login, home = flow_merge.stable_id(URL+"a"), flow_merge.stable_id(URL+"b")
     previous = {"screens": [
         {"id": login, "title": "Login", "kind": "screen", "zeplin": URL+"a", "ac": "AC1",
          "items": [{"id": "x", "label": "X"}]},
@@ -268,16 +272,18 @@ def test_left_out_screen_takes_its_unclear_lines_and_numbers_stay_gapless():
 
     base = {"screens": [{"id": "a", "title": "47 A", "zeplin": "za", "items": []}], "links": []}
     amb = {'Màn 47 A -- "x" --> Màn Z': {"why": "unknown", "name": "Z", "hint": ""}}
-    amb |= {f"dòng {i} lạ": {"why": "format", "name": "", "hint": ""} for i in range(fp.RISK_AMBIGUOUS + 1)}
+    amb |= {f"dòng {i} lạ": {"why": "format", "name": "", "hint": ""} for i in range(60)}
     risk = next(r for r in fp.risks(0, base, amb, left=["47 A"]) if r["code"] == "ambiguous")
-    assert [x["no"] for x in risk["lines"]] == list(range(1, fp.RISK_AMBIGUOUS + 2))
+    assert [x["no"] for x in risk["lines"]] == list(range(1, 61))  # all listed: each is left out unless ticked
+    one = fp.risks(0, base, {"dòng lạ": {"why": "format", "name": "", "hint": ""}})
+    assert [len(r["lines"]) for r in one if r["code"] == "ambiguous"] == [1]  # a single unclear line is listed too
     assert all("47 A" not in x["line"] for x in risk["lines"])
 
 
 def test_platform_group_lists_every_screen_past_the_line_cap():
     from telegram_dashboard.youtrack import flow_prompt as fp
 
-    n = fp.SHOW_LINES + 5
+    n = 55
     screens = [{"id": f"s{i}", "title": f"W{i}", "zeplin": f"https://app.zeplin.io/project/p/screen/{i}", "items": []}
                for i in range(n)]
     shots = {s["zeplin"]: {"w": 1440, "h": 900} for s in screens}
@@ -299,3 +305,50 @@ def test_tree_with_short_names_root_on_the_branch_line_and_chains():  # VA-11840
     assert got == [("Ban 44", "Thông tin tài sản", "Ban 44 B"), ("Ban 44", "Pháp lý", "Ban 47 A"),
                    ("Ban 47 A", "Giấy tờ", "Ban 47 C"), ("Ban 56", "Vị trí", "Ban 44 B")]
     assert result.manifest["ambiguous_lines"] == 2  # "chọn nhóm" (no quoted button) and the unknown root "4"
+
+
+def test_the_prompt_names_screens_and_buttons_by_short_ids_and_the_answer_maps_back():
+    text = f'[Login]({URL}a)\n├─ “Go” → [Home]({URL}b)\n├─ “Quên” → [Home]({URL}b)'
+    result = build(detail(description=text))
+    login, home = flow_merge.stable_id(URL+"a"), flow_merge.stable_id(URL+"b")
+    go, forgot = flow_merge.stable_id("Go", "b"), flow_merge.stable_id("Quên", "b")
+    shown = result.shown
+    assert [s["id"] for s in shown["screens"]] == ["s1", "s2"] and login not in result.prompt
+    assert [i["id"] for i in shown["screens"][0]["items"]] == ["b1", "b2"]
+    assert shown["links"][0] == {"src": "s1.b1", "to": "s2"} and result.skeleton["links"][0]["src"] == f"{login}.{go}"
+    raw = {"adapter": 1, "pending": [{"title": "OTP", "src": "s2.n1"}],
+           "screens": [{"id": "s1", "kind": "screen", "items": [{"id": "b2", "label": "Quên"}]},
+                       {"id": "s2", "parent": "s1",
+                        "items": [{"id": "n1", "label": "Thoát"}, {"id": "n2", "label": "Thoát"}]}],
+           "links": [{"src": "s1.b1", "to": "s2", "when": "đúng"}, {"src": "b2", "to": "s2"},  # a button written alone
+                     {"src": "s2.n1", "to": "s1", "act": "back"}, {"src": "s2", "to": "s1", "act": "back"}]}
+    flow_merge.unalias(raw, result.back)
+    out = flow_merge.stable_id("Thoát", "b")
+    assert [s["id"] for s in raw["screens"]] == [login, home] and raw["screens"][1]["parent"] == login
+    assert [i["id"] for i in raw["screens"][1]["items"]] == [out, out + "x"]  # same label twice: both kept
+    assert [x["src"] for x in raw["links"]] == [f"{login}.{go}", f"{login}.{forgot}", f"{home}.{out}", home]
+    assert raw["pending"][0]["src"] == f"{home}.{out}"
+    flow = flow_merge.merge_ai(raw, result.skeleton, "VA-1")
+    assert len(flow.links) == 4 and flow.links[0].when == "đúng"
+    real = {"screens": [{"id": login, "items": []}], "links": [{"src": f"{login}.{go}", "to": home}]}
+    assert flow_merge.unalias(json.loads(json.dumps(real)), result.back) == real  # an answer in real ids: as written
+    # a split render: every part numbers the screens the same way
+    many = build(detail(description="\n".join(f"[S{k}]({URL}{k})" for k in range(14))),
+                 shots={f"{URL}{k}": {"texts": ["x"]} for k in range(14)})
+    parts = p.split(many)
+    assert len(parts) == 2 and '"id":"s13"' in parts[1].replace(" ", "") and '"id":"s1"' in parts[1].replace(" ", "")
+
+
+def test_a_long_page_in_a_web_project_is_web_and_flow_runs_price_renders():
+    proj = "https://app.zeplin.io/project/{}/screen/{}"
+    web, app = "a" * 24, "b" * 24
+    urls = [proj.format(web, f"{k:024x}") for k in (1, 2)] + [proj.format(app, f"{k:024x}") for k in (3, 4)]
+    sizes = [(1280, 1051), (1280, 2787), (375, 812), (1290, 2796)]
+    shots = {u: {"w": w, "h": h} for u, (w, h) in zip(urls, sizes, strict=True)}
+    got = build(detail(description="\n".join(f"[S{k}]({u})" for k, u in enumerate(urls))), shots=shots)
+    by = {r["code"]: [x["hint"] for x in r["lines"]] for r in got.manifest["risks"]}
+    assert by == {"web": ["1280×1051", "1280×2787"], "mobile": ["375×812", "1290×2796"]}  # @3x phone: its own project
+    row = {"ok": True, "cost": 0.01, "model": "claude-haiku-5-5", "output_tokens": 10_000}
+    rows = [{**row, "feature": "youtrack", "cost": 9.0}, {**row, "feature": "flow"}]
+    assert p.cost(rows, "haiku", 8000, 10)[0] == 0.018  # its own rows, not every YouTrack run's
+    assert p.cost(rows[:1], "haiku", 8000, 10)[1] == 1  # none yet: the YouTrack runs, as before
