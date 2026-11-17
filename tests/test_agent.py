@@ -290,3 +290,25 @@ def test_task_state_survives_an_answer_in_english():
     assert task_state("**Summary**\n- x\n\n**Status**\n- `cần bạn` (review the diff)") == "you"
     assert task_state("**Status**\n\n- Done, nothing left") == "done"
     assert task_state("**Summary**\n- status unknown") is None  # no section: not guessed
+
+
+async def test_git_changes_see_a_same_size_edit_in_the_same_second(tmp_path):
+    """git's racy-clean check needs the index mtime: the throwaway copy keeps it (a fresh one hid such an edit)."""
+    import os
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    g = lambda *a: subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)  # noqa: E731
+    g("init", "-q", "-b", "main")
+    a, t = tmp_path / "a.txt", 1_700_000_000
+    a.write_text("1\n")
+    g("add", ".")
+    g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "i")
+    base = await gitops.snapshot(str(tmp_path))
+    os.utime(a, (t, t))
+    g("update-index", "--refresh")
+    os.utime(tmp_path / ".git" / "index", (t, t))  # the index written in the file's second
+    a.write_text("2\n")
+    os.utime(a, (t, t))
+    assert [f["path"] for f in (await gitops.changes(str(tmp_path), base))["files"]] == ["a.txt"]

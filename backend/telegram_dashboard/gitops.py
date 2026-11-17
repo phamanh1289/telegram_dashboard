@@ -80,7 +80,9 @@ async def _tree(project: str) -> str | None:
     with tempfile.TemporaryDirectory() as d:
         tmp = os.path.join(d, "index")
         if os.path.exists(idx.strip()):
-            shutil.copyfile(idx.strip(), tmp)  # keeps the stat cache: only edited files get hashed
+            # keeps the stat cache (only edited files get hashed) and the index mtime: a fresh one would hide a
+            # same-size edit made in the same second as the last index write (git's racy-clean check)
+            shutil.copy2(idx.strip(), tmp)
         env = {"GIT_INDEX_FILE": tmp}
         code, _, err = await _git(project, "add", "--all", env=env)
         if code:
