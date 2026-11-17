@@ -48,6 +48,7 @@ export default {
   "Lưu lên ticket": "Save to ticket",
   "Đang tạo file HTML…": "Building the HTML file…",
   "Của {name}": "{name}'s",
+  "Đang tải lên ticket: để chạy xong, dừng giữa chừng sẽ không rõ đã lưu hay chưa.": "Uploading to the ticket: let it finish; stopping halfway would leave it unclear whether it was saved.",
   "File trên ticket do {name} lưu. Bạn sửa thử và tải file HTML được; chỉ {name} cập nhật hoặc xoá được file trên ticket.": "{name} saved the file on the ticket. You can edit it as a draft and download the HTML file; only {name} can update or remove the file on the ticket.",
   "Chỉ {name} xoá được file UI flow trên ticket.": "Only {name} can remove the UI flow file on the ticket.",
   "Bản sửa của bạn được giữ làm nháp trên máy; chỉ {name} cập nhật được file trên ticket.": "Your edits are kept as a draft on this computer; only {name} can update the file on the ticket.",

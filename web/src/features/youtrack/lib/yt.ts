@@ -214,7 +214,8 @@ export const yt = {
   /** The flow on screen as one Markdown document for an AI agent (read only: nothing is written). */
   flowMd: (id: string, flow: UiFlow, o: { note: string; sources: boolean; paths: boolean; data: boolean }) =>
     ytApi<{ name: string; md: string; tokens: number }>("/flow/md", { json: { id, flow, ...o } }),
-  flowHtml: (id: string, flow: UiFlow, shots: Record<string, FlowShot> = {}, theme: Record<string, string> = {}) => ytApi<{ name: string; html: string }>("/flow/html", { json: { id, flow, shots, theme } }),
+  flowHtml: (id: string, flow: UiFlow, shots: Record<string, FlowShot> = {}, theme: Record<string, string> = {}, signal?: AbortSignal) =>
+    ytApi<{ name: string; html: string }>("/flow/html", { json: { id, flow, shots, theme }, signal }),
 };
 /** Durable UI flow jobs are scoped by the server; browser storage holds only the editor draft. */
 export type FlowJobState = Omit<components["schemas"]["FlowJobDTO"], "result"> & { result: FlowResult | null };

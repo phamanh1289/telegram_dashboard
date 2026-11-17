@@ -260,20 +260,22 @@ async function pack(src: string): Promise<string> {
 
 /** The images a flow's file embeds ({url: shot with a data URI}) and how many could not be packed (drawn plain);
  *  `onEach(done, total)` as each one is packed. */
-export async function packShots(f: UiFlow, shots: Shots | undefined, onEach?: (done: number, total: number) => void): Promise<{ shots: Shots; failed: number }> {
+/** `signal`: Dừng — no image after it is packed (the one in hand finishes), and the call throws its AbortError. */
+export async function packShots(f: UiFlow, shots: Shots | undefined, onEach?: (done: number, total: number) => void, signal?: AbortSignal): Promise<{ shots: Shots; failed: number }> {
   const start = performance.now();
   const urls = zeplinUrls(f).filter((u) => shots?.[u]);
   let done = 0;
   const out: Shots = {};
   let cursor = 0;
   await Promise.all(Array.from({ length: Math.min(3, urls.length) }, async () => {
-    while (cursor < urls.length) {
+    while (cursor < urls.length && !signal?.aborted) {
       const url = urls[cursor++];
       try { out[url] = { ...shots![url], src: await pack(shots![url].src) }; }
       catch { /* A missing image remains a plain frame; the flow JSON is still saved. */ }
       finally { onEach?.(++done, urls.length); }
     }
   }));
+  signal?.throwIfAborted();
   const failed = urls.length - Object.keys(out).length;
   performance.clearMeasures("uiflow.pack");
   performance.measure("uiflow.pack", { start, detail: { images: urls.length, failed, encodedBytes: Object.values(out).reduce((sum, shot) => sum + shot.src.length, 0) } });

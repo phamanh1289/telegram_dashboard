@@ -36,6 +36,8 @@ import { type FlowEvent, FlowProgress, flowStage, flowSummary } from "./flow-pro
 
 /** The server's own words for a failed call (ytApi already translated the codes it knows); `status` for the 409. */
 const say = (e: unknown) => (e as Error).message;
+/** The user pressed Dừng: not an error to show. */
+const stopped = (e: unknown) => (e as Error | null)?.name === "AbortError";
 const statusOf = (e: unknown) => (e as { status?: number } | null | undefined)?.status;
 const CHANGES_MS = 4000;
 
@@ -197,23 +199,30 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const [htmlStep, setHtmlStep] = useState("");
   const [htmlFile, setHtmlFile] = useState<{ url: string; name: string } | null>(null);
   useEffect(() => () => { if (htmlFile) URL.revokeObjectURL(htmlFile.url); }, [htmlFile]);
+  // Dừng: a download only reads, so it stops at any point; a save only until its upload starts (after that, stopping
+  // would leave "saved or not?" open: the upload is left to finish and its button says so)
+  const htmlStop = useRef<AbortController | null>(null), saveStop = useRef<AbortController | null>(null);
+  const [uploading, setUploading] = useState(false);
   const html = useMutation({
     mutationFn: async (f: UiFlow) => {
+      const c = (htmlStop.current = new AbortController());
       setHtmlFile(null);
       setHtmlStep(t("Đang nhúng ảnh Zeplin vào file…"));
-      const p = await packShots(f, sq.data?.shots, (n, of) => setHtmlStep(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of })));
+      const p = await packShots(f, sq.data?.shots, (n, of) => setHtmlStep(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of })), c.signal);
       setHtmlStep(t("Đang tạo file HTML…"));
-      const r = await yt.flowHtml(issue, f, p.shots, flowTheme());
+      const r = await yt.flowHtml(issue, f, p.shots, flowTheme(), c.signal);
       return { url: URL.createObjectURL(new Blob([r.html], { type: "text/html" })), name: r.name };
     },
     onSuccess: (file) => {
       setHtmlFile(file);
       Object.assign(document.createElement("a"), { href: file.url, download: file.name }).click();
     },
+    onSettled: () => { htmlStop.current = null; },
   });
   const save = useMutation({
     mutationFn: async (f: UiFlow) => {
       busy.current = true;
+      const c = (saveStop.current = new AbortController());
       setSaving(""); // the popup's own lines until this run's first step
       if ((await yt.flowScope()).scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
       const op = ++operation.current;
@@ -223,7 +232,10 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         setUnknownSave(false);
       }
       setSaving(t("Đang nhúng ảnh Zeplin vào file…"));
-      const p = await packShots(f, sq.data?.shots, (n, of) => setSaving(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of }))); // the images go into the file, so it opens anywhere, offline
+      const p = await packShots(f, sq.data?.shots, (n, of) => setSaving(t("Đang nhúng ảnh Zeplin vào file {n}/{of}", { n, of })), c.signal); // the images go into the file, so it opens anywhere, offline
+      c.signal.throwIfAborted(); // the last moment Dừng counts: nothing has been sent
+      saveStop.current = null;
+      setUploading(true);
       setSaving(t("Đang tải file lên ticket và ghi bình luận thay đổi…"));
       if (draft.current) persist({ ...draft.current, outcomeUnknown: true }, true);
       const uploadStart = performance.now();
@@ -247,8 +259,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       void qc.invalidateQueries({ queryKey: ["yt", "detail", issue] }); // its attachments and the new comment
       // no invalidate of the flow key: the answer above is the saved version, and a refetch would api.set over the view
     },
-    onError: (e) => { const unknown = !statusOf(e) || statusOf(e) === 502; setUnknownSave(unknown); if (draft.current) persist({ ...draft.current, outcomeUnknown: unknown }, true); },
-    onSettled: () => { busy.current = false; },
+    onError: (e) => { if (stopped(e)) return; const unknown = !statusOf(e) || statusOf(e) === 502; setUnknownSave(unknown); if (draft.current) persist({ ...draft.current, outcomeUnknown: unknown }, true); },
+    onSettled: () => { busy.current = false; saveStop.current = null; setUploading(false); },
   });
   const reread = useRef(false); // the stored run is read once per open (not again on a refetch of the file)
   // the dialog closed: stop reading, the server's run goes on (opening the dialog again reads it)
@@ -468,9 +480,10 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
           <div className="relative min-h-0 flex-1">
             {body}
             <FlowBusy project={issue.split("-")[0]} pending={html.isPending} kind="flowHtml" step={htmlStep} title={t("Tải file HTML")}
-              text={t("File chỉ để xem, mở được offline; muốn sửa thì sửa trên dashboard.")} />
+              text={t("File chỉ để xem, mở được offline; muốn sửa thì sửa trên dashboard.")} onStop={() => htmlStop.current?.abort()} />
             <FlowBusy project={issue.split("-")[0]} pending={save.isPending} kind="flowSave" step={saving} title={noFile ? t("Lưu lên ticket") : t("Cập nhật")}
-              text={t("File mới thay file cũ trên ticket, kèm bình luận ghi rõ đã đổi gì.")} />
+              text={t("File mới thay file cũ trên ticket, kèm bình luận ghi rõ đã đổi gì.")}
+              onStop={uploading ? undefined : () => saveStop.current?.abort()} />
           </div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3 empty:hidden">
             {readErr ? null : bar ? (
@@ -510,7 +523,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 <Button size="icon-sm" variant="ghost" aria-label={t("Đóng")} onClick={() => setHtmlFile(null)}><X /></Button>
               </p>
             )}
-            {html.isError && <p role="alert" className="mt-2 text-xs text-error">{t("Không tải được file HTML: {msg}", { msg: say(html.error) })}</p>}
+            {html.isError && !stopped(html.error) && <p role="alert" className="mt-2 text-xs text-error">{t("Không tải được file HTML: {msg}", { msg: say(html.error) })}</p>}
             {redesigned.length > 0 && !mine && !dirty && !ai.isPending && engine.api && (
               <div role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-warn">
                 <span className="min-w-0 flex-1">
@@ -530,7 +543,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
             {sq.isError && flow && <p role="alert" className="mt-2 text-xs text-warn">{t("Không lấy được ảnh Zeplin: {msg}", { msg: say(sq.error) })}</p>}
             {!!sq.data?.missing.length && flow && <p className="mt-2 text-xs text-ink-3">{t("{n} màn Zeplin không đọc được (chưa chia sẻ với tài khoản này hoặc đã xoá)", { n: sq.data.missing.length })}</p>}
             {failed && !starting && <div className="mt-2">{failed}</div>}
-            {save.isError && (
+            {save.isError && !stopped(save.error) && (
               <p role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-sm text-error">
                 {say(save.error)}
               </p>
@@ -577,7 +590,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
 /** The file being packed (download) or sent to the ticket (save): a card with the feature's scene and the step it is on,
  *  held AI_WAIT_MS so it is seen, over the middle of the map. Not a modal and click-through: the map stays editable while
  *  it uploads (those edits stay a draft over the saved file); nothing to stop (a save of unknown outcome must not be cut). */
-function FlowBusy({ project, pending, kind, step, title, text }: { project: string; pending: boolean; kind: "flowHtml" | "flowSave"; step: string; title: string; text: string }) {
+/** `onStop`: Dừng; none while the step cannot be stopped (a save's upload): the button stays, greyed, with why. */
+function FlowBusy({ project, pending, kind, step, title, text, onStop }: { project: string; pending: boolean; kind: "flowHtml" | "flowSave"; step: string; title: string; text: string; onStop?: () => void }) {
+  const t = useT();
   const show = useAiWait(pending);
   if (!show) return null;
   return (
@@ -586,6 +601,12 @@ function FlowBusy({ project, pending, kind, step, title, text }: { project: stri
         <h3 className="text-base font-medium text-ink">{title}</h3>
         <p className="text-sm text-ink-2">{text}</p>
         <AiFetching kind={kind} project={project} lines={step ? [step] : undefined} className="min-h-72 py-2" />
+        {pending && (
+          <div className="pointer-events-auto flex items-center justify-end gap-3">
+            {!onStop && <span className="text-xs text-ink-3">{t("Đang tải lên ticket: để chạy xong, dừng giữa chừng sẽ không rõ đã lưu hay chưa.")}</span>}
+            <Button size="sm" variant="outline" disabled={!onStop} onClick={onStop}><X />{t("Dừng")}</Button>
+          </div>
+        )}
       </section>
     </div>
   );

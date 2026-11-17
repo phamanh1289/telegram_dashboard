@@ -309,6 +309,32 @@ test("someone else's file: edited freely as a draft, but only its author updates
   expect(await posts()).toEqual([]);
 });
 
+test("Dừng: a download stops at any point, quietly; a save cannot be stopped once its upload has started", async ({ page }) => {
+  await openFlow(page);
+  const d = dialog(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(4);
+  let downloads = 0;
+  page.on("download", () => { downloads++; });
+  await page.route("**/api/yt/flow/html", async (r) => { await new Promise((ok) => setTimeout(ok, 3000)); await r.continue().catch(() => {}); });
+  await d.getByRole("button", { name: "Tải xuống" }).click();
+  await page.getByRole("menuitem", { name: "File HTML (xem offline)" }).click();
+  const pack = page.getByRole("status", { name: "Tải file HTML" });
+  await pack.getByRole("button", { name: "Dừng" }).click();
+  await expect(pack).toHaveCount(0);
+  await expect(d.getByText("Không tải được file HTML", { exact: false })).toHaveCount(0); // stopped, not failed
+  await page.waitForTimeout(3500);
+  expect(downloads).toBe(0);
+
+  await ctl("/set", { save_ms: 1500 });
+  await d.getByRole("button", { name: "Sửa" }).click();
+  await dropScreen(page);
+  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  const busy = page.getByRole("status", { name: "Cập nhật" });
+  await expect(busy.getByRole("button", { name: "Dừng" })).toBeDisabled(); // the upload is under way
+  await expect(busy.getByText("dừng giữa chừng sẽ không rõ đã lưu hay chưa", { exact: false })).toBeVisible();
+  await expect(d.getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
+});
+
 test("save locks render replacement until upload completes", async ({ page }) => {
   await ctl("/set", { flow: "none", save_ms: 1500 });
   await openFlow(page); await render(page);
