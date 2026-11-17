@@ -75,8 +75,8 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "_oauth_token", token)
     monkeypatch.setattr(mod, "_oauth_get", get)
-    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})
-    monkeypatch.setattr(mod, "_profile", {"at": 0.0, "data": {}})
+    monkeypatch.setattr(mod, "_usage", {"at": mod.NEVER, "data": None})
+    monkeypatch.setattr(mod, "_profile", {"at": mod.NEVER, "data": {}})
     monkeypatch.setattr(mod, "_ua", {"ua": None})
     s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(exe)))
     acc = asyncio.run(mod.claude_account(s))
@@ -96,7 +96,7 @@ def test_claude_account_details_from_oauth_api(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "_oauth_get", limited)
     assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]
     assert calls == []  # polled again within USAGE_EVERY: no profile/usage call
-    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})  # restart, interval over
+    monkeypatch.setattr(mod, "_usage", {"at": mod.NEVER, "data": None})  # restart, interval over
     assert asyncio.run(mod.claude_account(s))["usage"] == acc["usage"]  # 429: reading from disk
     assert "usage" in calls
 
@@ -127,8 +127,8 @@ def test_claude_account_expired_token_keeps_last_reading(tmp_path, monkeypatch):
     monkeypatch.undo()  # the real _oauth_token (conftest stubs it), reading the fake login below
     monkeypatch.setattr(mod, "_oauth_creds", creds)
     monkeypatch.setattr(mod, "_wake_cli", wake)
-    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": None})
-    monkeypatch.setattr(mod, "_profile", {"at": 0.0, "data": {}})
+    monkeypatch.setattr(mod, "_usage", {"at": mod.NEVER, "data": None})
+    monkeypatch.setattr(mod, "_profile", {"at": mod.NEVER, "data": {}})
     acc = asyncio.run(mod.claude_account(s))
     assert woke == [1]  # the CLI was asked to run once, to refresh its own token
     assert acc["usage_error"] == "no_token" and acc["rate_tier"] == "default_claude_max_5x"
@@ -210,8 +210,9 @@ async def test_claude_reset_grants_listed_and_claimed(settings, monkeypatch):
     monkeypatch.setattr(claude, "_user_agent", ua)
     monkeypatch.setattr(claude, "_claude_details", details)
     org = {"organization": {"uuid": "0f8fad5b-d9cb-469f-a165-70867728950e"}}
-    monkeypatch.setattr(claude, "_profile", {"at": 0.0, "data": org})
-    monkeypatch.setattr(claude, "_usage", {"at": 0.0, "data": {"cedar_ember": {"next_grant_id": "full-reset-2611"}}})
+    monkeypatch.setattr(claude, "_profile", {"at": claude.NEVER, "data": org})
+    grant = {"cedar_ember": {"next_grant_id": "full-reset-2611"}}
+    monkeypatch.setattr(claude, "_usage", {"at": claude.NEVER, "data": grant})
     assert await claude.claude_reset(settings, None) == "reset"
     url, body = posts[0]
     assert url.endswith("/api/organizations/0f8fad5b-d9cb-469f-a165-70867728950e/reset_rate_limits")

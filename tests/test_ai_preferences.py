@@ -58,7 +58,7 @@ def test_fallback_steps_down_the_model_near_the_quota(settings, monkeypatch):
 
     later = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     over = {"five_hour": {"utilization": 95, "resets_at": later}}
-    monkeypatch.setattr(mod, "_usage", {"at": 0.0, "data": over})
+    monkeypatch.setattr(mod, "_usage", {"at": mod.NEVER, "data": over})
     settings.claude_prefs_path.parent.mkdir(parents=True, exist_ok=True)
     settings.claude_prefs_path.write_text('{"model": "opus", "task_model": "fable", "fallback": true}')
     assert run_choice(settings)[::2] == ("haiku", True)

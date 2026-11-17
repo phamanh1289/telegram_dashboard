@@ -57,9 +57,13 @@ async def _oauth_token() -> str | None:
     return o.get("accessToken") if o.get("expiresAt", 0) > time.time() * 1000 else None
 
 
+# "never asked" for the monotonic stamps below: monotonic() counts from boot, so 0.0 is not old enough on a fresh
+# machine (a CI runner, the app opened right after a reboot)
+NEVER = float("-inf")
+
 # An expired token stays expired until the CLI runs: one tiny Haiku answer wakes it, at most every WAKE_EVERY s.
 WAKE_EVERY = 900.0
-_wake: dict = {"at": 0.0}
+_wake: dict = {"at": NEVER}
 
 
 async def _wake_cli(settings) -> None:
@@ -107,8 +111,8 @@ USAGE_WINDOWS = {
 # (also after a failure) and serve the last good reading, kept on disk so a restart keeps it.
 # The profile follows the same rule (memory only); a login/logout asks again at once.
 USAGE_EVERY = 180.0
-_usage: dict = {"at": 0.0, "data": None}
-_profile: dict = {"at": 0.0, "data": {}}
+_usage: dict = {"at": NEVER, "data": None}
+_profile: dict = {"at": NEVER, "data": {}}
 
 
 def _usage_data(settings) -> dict:
@@ -140,7 +144,7 @@ def refresh_usage() -> bool:
     if time.monotonic() - _usage["at"] < 30:
         return False
     _account_changed()
-    _wake["at"] = 0.0  # an expired token: wake the CLI now, not WAKE_EVERY after the last try
+    _wake["at"] = NEVER  # an expired token: wake the CLI now, not WAKE_EVERY after the last try
     return True
 
 
@@ -248,7 +252,7 @@ async def claude_reset(settings, grant_id: str | None, *, request_id: str | None
         with contextlib.suppress(httpx.HTTPError):
             r = await c.post(f"https://api.anthropic.com/api/organizations/{org.lower()}/reset_rate_limits",
                              headers=_headers(token, ua), json=claim)  # fmt: skip
-    _usage["at"] = 0.0  # the quota after it, not the cached one
+    _usage["at"] = NEVER  # the quota after it, not the cached one
     with contextlib.suppress(Exception):
         await _claude_details(settings)
     if r is not None and r.status_code == 429:  # refused before running: nothing spent
@@ -282,7 +286,7 @@ def _login_pending() -> bool:
 
 
 def _account_changed() -> None:
-    _profile["at"] = _usage["at"] = 0.0
+    _profile["at"] = _usage["at"] = NEVER
     _profile["data"] = {}  # a reset must never claim against the previous account's organization
     _ua["ua"] = None  # a `claude update` shows on the next read
 
