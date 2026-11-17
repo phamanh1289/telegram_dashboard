@@ -274,6 +274,27 @@ test("reload restores the draft without another AI call or upload", async ({ pag
   expect(await posts()).toEqual([]);
 });
 
+test("a draft lives for its day: the next day it is gone, with the unsaved render the server kept", async ({ page }) => {
+  await ctl("/set", { flow: "none" });
+  await openFlow(page);
+  await render(page);
+  await expect(dialog(page).getByText("Đã lưu bản nháp", { exact: false })).toBeVisible();
+  page.once("dialog", (guard) => guard.accept());
+  await page.reload();
+  await page.clock.setSystemTime(Date.now() + 86_400_000); // the next day (only the date: timers run as they do)
+  await page.goto("/youtrack?ticket=VA-1");
+  await flowButton(page).click();
+  const d = dialog(page);
+  await expect(d.getByRole("button", { name: "Render bằng AI", exact: true })).toBeVisible(); // nothing left: the start panel
+  await expect(d.getByText("Đã khôi phục bản nháp", { exact: false })).toHaveCount(0);
+  await expect(d.locator(".uf-screen")).toHaveCount(0);
+  expect(await page.evaluate(() => new Promise((ok) => { // and the draft is out of the browser too
+    const r = indexedDB.open("uiflow-drafts", 1);
+    r.onsuccess = () => { const q = r.result.transaction("drafts").objectStore("drafts").count(); q.onsuccess = () => { ok(q.result); r.result.close(); }; };
+  }))).toBe(0);
+  expect(await aiCalls()).toBe(1);
+});
+
 test("save locks render replacement until upload completes", async ({ page }) => {
   await ctl("/set", { flow: "none", save_ms: 1500 });
   await openFlow(page); await render(page);
@@ -485,7 +506,7 @@ test("+ Từ Zeplin in the dialog reads the screen through /flow/shots; a Zeplin
   await d.getByRole("button", { name: "+ Từ Zeplin" }).click();
   await d.getByLabel("Link màn Zeplin").fill("https://zpl.io/pay");
   await d.getByLabel("Link màn Zeplin").press("Enter");
-  await expect(d.locator(".uf-zmsg")).toHaveText(/Không đọc được Zeplin: .*Token Zeplin bị từ chối/);
+  await expect(d.locator(".uf-zreport")).toContainText(/Không đọc được Zeplin: .*Token Zeplin bị từ chối/); // listed with its link
   fail = false;
   await d.getByRole("button", { name: "Thử lại" }).click();
   await expect(d.locator(".uf-screen", { hasText: "Thanh toán" })).toHaveCount(1);
@@ -494,6 +515,76 @@ test("+ Từ Zeplin in the dialog reads the screen through /flow/shots; a Zeplin
   expect(await aiCalls()).toBe(0);
 });
 
+
+test("reopened over an old Zeplin read: each screen updates the moment it is read; one read again unchanged is not redrawn", async ({ page }) => {
+  const [A, B] = ["https://zpl.io/a", "https://zpl.io/b"];
+  const exp = Math.floor(Date.now() / 1000) + 30 * 86_400; // Zeplin signs each read's image links anew, for 30 days
+  const link = (n: string, read: number) => `https://img.zeplin.io/p/x/screens/${n}.png?key=h.${btoa(JSON.stringify({ iat: read, exp }))}.s`;
+  const shot = (n: string, read: number, h = 844) => ({ src: link(n, read), w: 390, h, hits: [], ver: "v-" + n + h, cut: 0 });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="390" height="844"/>';
+  await page.route("https://img.zeplin.io/**", (r) => r.fulfill({ contentType: "image/svg+xml", body: svg }));
+  await page.route("**/api/yt/flow?*", async (r) => { // the saved flow, its first two screens linked to Zeplin
+    const res = await r.fetch(), j = await res.json();
+    j.flow.screens[0].zeplin = A;
+    j.flow.screens[1].zeplin = B;
+    await r.fulfill({ response: res, json: j });
+  });
+  let release = () => {}, releaseA = () => {}, aRead = false;
+  const held = new Promise<void>((ok) => { release = ok; }), heldA = new Promise<void>((ok) => { releaseA = ok; });
+  await page.route("**/api/yt/flow/shots", async (r) => {
+    const { urls, stale } = r.request().postDataJSON() as { urls: string[]; stale?: boolean };
+    if (stale) return r.fulfill({ json: { shots: { [A]: shot("a", 1), [B]: shot("b", 1) }, missing: [], stale: true } }); // the old read, at once
+    if (urls[0] === A) { // read again, unchanged: only its link signed anew (held until the old read is checked)
+      await heldA;
+      await r.fulfill({ json: { shots: { [A]: shot("a", 2) }, missing: [] } });
+      aRead = true;
+      return;
+    }
+    await held; // B: slow, and redesigned (longer)
+    await r.fulfill({ json: { shots: { [B]: shot("b", 2, 1800) }, missing: [] } });
+  });
+  await openFlow(page);
+  const d = dialog(page), img = (id: string) => d.locator(`.uf-screen[data-id="${id}"] .uf-img`);
+  await expect(img("login")).toHaveAttribute("src", link("a", 1));
+  await expect(img("code")).toHaveAttribute("src", link("b", 1));
+  await img("login").evaluate((e) => { e.dataset.mark = "1"; });
+  releaseA();
+  await expect.poll(() => aRead).toBe(true);
+  await page.waitForTimeout(300); // A is in, B still being read: nothing redrawn, the old image stays
+  await expect(img("login")).toHaveAttribute("data-mark", "1");
+  await expect(img("login")).toHaveAttribute("src", link("a", 1));
+  release();
+  await expect(img("code")).toHaveAttribute("src", link("b", 2)); // B's new design, the moment it is read
+  await expect(img("login")).toHaveAttribute("data-mark", "1"); // and A still untouched
+});
+
+test("Markdown cho AI: built once for copy and download, its size told; a changed choice builds it again", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  let builds = 0;
+  page.on("request", (r) => { if (r.url().endsWith("/api/yt/flow/md")) builds++; });
+  await openFlow(page);
+  const d = dialog(page);
+  await d.getByRole("button", { name: "Tải xuống" }).click();
+  await page.getByRole("menuitem", { name: "Markdown cho AI…" }).click();
+  const md = page.getByRole("dialog", { name: "Markdown cho AI" });
+  await expect(md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" })).not.toBeChecked(); // the tables say it
+  await md.getByRole("button", { name: "Sao chép" }).click();
+  await expect(md.getByRole("button", { name: "Đã sao chép" })).toBeVisible();
+  await expect(md.getByText(/Bản vừa tạo: khoảng [\d.,]+ token/)).toBeVisible();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("# UI flow VA-1");
+  expect(copied).not.toContain("## Dữ liệu sơ đồ");
+  const file = page.waitForEvent("download");
+  await md.getByRole("button", { name: "Tải file .md" }).click();
+  await expect(md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" })).toBeVisible(); // no wait scene: nothing asked
+  expect((await file).suggestedFilename()).toBe("uiflow-VA-1.md");
+  expect(builds).toBe(1); // the copy's build, downloaded as is
+  await md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" }).click();
+  await expect(md.getByText(/Bản vừa tạo/)).toHaveCount(0); // another choice: that build is not this one
+  await md.getByRole("button", { name: "Sao chép" }).click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("## Dữ liệu sơ đồ");
+  expect(builds).toBe(2);
+});
 
 test("a ticket edited after the file says how to pick it up; a render sends the flow on screen to keep its edits", async ({ page }) => {
   await ctl("/set", { ticket_newer: true });
@@ -530,7 +621,8 @@ test("Tải file HTML saves the flow on screen, draft included, and posts nothin
   await expect(d.getByRole("button", { name: "Lưu lên ticket", exact: true })).toBeVisible();
   await expect(d.getByRole("button", { name: "Bỏ bản nháp" })).toBeVisible();
   await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toHaveCount(0);
-  const [file] = await Promise.all([page.waitForEvent("download"), d.getByRole("button", { name: "Tải file HTML" }).click()]);
+  await d.getByRole("button", { name: "Tải xuống" }).click(); // one download button: a menu, HTML or Markdown for AI
+  const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "File HTML (xem offline)" }).click()]);
   expect(file.suggestedFilename()).toBe("uiflow-VA-1.html");
   expect(fs.readFileSync(await file.path(), "utf8")).toMatch(/<style>:root\{[^<]*--color-hl:[^;<]+;/); // the app's colours go along
   // the file stays as a real link: a browser that dropped the script-started save still gets it on a press
@@ -573,9 +665,10 @@ test("unclear flow lines start unticked: the render leaves them out unless ticke
   await ask.getByRole("checkbox", { name: "Vẽ dòng #2" }).check(); // opt in to one
   const request = page.waitForRequest((r) => r.url().endsWith("/api/yt/ai/flow") && r.method() === "POST");
   await confirmRender(page);
-  const note = (await request).postDataJSON().note as string;
-  expect(note).toContain("#1 Màn A sang màn lạ");
-  expect(note).not.toContain("Màn B sang màn khác");
+  // only the ticked ones go: the server writes the leave-out list itself, every line of it (no cut note)
+  const body = (await request).postDataJSON();
+  expect(body.draw).toEqual(["Màn B sang màn khác"]);
+  expect(body.note).not.toContain("Màn A sang màn lạ");
 });
 
 test("a Zeplin redesign that keeps every text is told by its version; a file saved before versions is not flagged for it", async ({ page }) => {
@@ -598,4 +691,36 @@ test("a Zeplin redesign that keeps every text is told by its version; a file sav
   await page.goto("/youtrack?ticket=VA-1");
   await flowButton(page).click();
   await expect(dialog(page).getByText(/Thiết kế Zeplin của 1 màn đã đổi/)).toBeVisible();
+});
+
+test("a folded long design is saved with the file and opens folded; the save sends Zeplin's version", async ({ page }) => {
+  const z = "https://app.zeplin.io/project/67b2d78bf0a65b348c2550f7/screen/69df58b7254a6ed20c9933f5";
+  const pic = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="780" height="5000"><rect width="780" height="5000" fill="#ddd"/></svg>');
+  await page.route(/\/api\/yt\/flow\?/, async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    const j = await (await route.fetch()).json();
+    if (j.flow) j.flow.screens[0].zeplin = z;
+    await route.fulfill({ json: j });
+  });
+  await page.route(/\/api\/yt\/flow\/shots/, (route) => route.fulfill({ json: { missing: [], shots: {
+    [z]: { title: "Danh sách", ver: "v42", src: pic, w: 780, h: 5000, hits: [["Gửi OTP", 60, 300, 660, 120]] } } } }));
+  // the save packs each image through the same-origin proxy (a Zeplin URL in real use)
+  await page.route(/\/api\/yt\/flow\/image/, (route) => route.fulfill({ contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="780" height="5000"><rect width="780" height="5000" fill="#ddd"/></svg>' }));
+  await openFlow(page);
+  const d = dialog(page), frame = d.locator(".uf-screen.uf-shot");
+  await d.getByRole("button", { name: "Sửa", exact: true }).click();
+  await frame.getByRole("button", { name: "Thu gọn" }).click();
+  await expect(frame).toHaveClass(/uf-folded/);
+  await expect(d.getByText(BAR)).toBeVisible();
+  await d.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await expect(d.getByText("Đã cập nhật file trên ticket")).toBeVisible();
+  const [p] = (await ctl("/state")).flow_posts as { flow: { screens: { fold?: number }[] }; shots: Record<string, { ver?: string }> }[];
+  expect(p.flow.screens[0].fold).toBeCloseTo(844 / 2500, 3);
+  expect(p.shots[z].ver).toBe("v42"); // the server records it in the file's design signature
+  // opened again: the file draws it folded
+  await d.getByRole("button", { name: "Đóng" }).click();
+  await page.goto("/youtrack?ticket=VA-1");
+  await flowButton(page).click();
+  await expect(dialog(page).locator(".uf-screen.uf-shot")).toHaveClass(/uf-folded/);
 });

@@ -47,6 +47,16 @@ class FlowHtml(FlowSave):
     theme: dict[str, str] = Field({}, max_length=32)  # app colour token -> plain CSS value, for the exported file
 
 
+class FlowMd(BaseModel):
+    """The Markdown export for an AI agent: the flow on screen and what to put in."""
+    id: str
+    flow: dict
+    note: str = Field("", max_length=4000)  # what the person exporting asks of the agent, first in the document
+    sources: bool = True  # the ticket's / stories' text, quoted whole
+    paths: bool = True  # the ways through from the start screen
+    data: bool = False  # the flow as JSON (the tables say it already: off unless asked)
+
+
 class FlowShots(BaseModel):
     urls: list[Annotated[str, Field(max_length=300)]] = Field(max_length=uiflow.MAX_SCREENS)
     stale: bool = False  # the last read first when there is one (answer "stale": true): the page then asks again
@@ -99,7 +109,7 @@ class AiTickets(BaseModel):
 class FlowPrecheck(BaseModel):
     id: str
     note: str = Field("", max_length=2000)
-    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # Zeplin URLs the dialog left out: not sent, not counted
+    target: Literal["mobile", "web"] = "mobile"  # the platform picked: the other one's screens not sent, not counted
 
 
 class AiFlow(BaseModel):
@@ -110,8 +120,11 @@ class AiFlow(BaseModel):
     split: bool = False  # "Chia phần": the screens in parts of 12, run 3 at a time, joined (big tickets)
     reuse: bool = False  # a re-render that keeps the flow's links and asks the AI only for what is new (fewer tokens)
     keep: dict | None = None  # the flow on screen: notes / tap areas / positions survive the render (never prompted)
-    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # Zeplin URLs left out in the dialog: not drawn
-    target: Literal["mobile", "web"] = "mobile"  # the platform picked: the frame the flow is drawn in (Flow.device)
+    # the platform picked: the frame the flow is drawn in (Flow.device); the other one's screens are not drawn
+    target: Literal["mobile", "web"] = "mobile"
+    # the unclear flow lines the user ticked in the pre-check (as listed there); every other one is left undrawn.
+    # None: a client that does not send it (the note says what to leave out, if anything)
+    draw: list[Annotated[str, Field(max_length=200)]] | None = Field(None, max_length=2000)
 
 
 class AiDraft(BaseModel):
@@ -132,7 +145,7 @@ class FlowAsk(BaseModel):
     note: str = Field("", max_length=2000)
     history: list[AiTurn] = Field(default_factory=list, max_length=12)
     question: str = Field(min_length=1, max_length=2000)
-    skip: list[str] = Field([], max_length=uiflow.MAX_SCREENS)  # as the dialog shows it: same lines, same #n
+    target: Literal["mobile", "web"] = "mobile"  # as the dialog counts it: same lines, same #n
 
 
 class AiFollowup(BaseModel):

@@ -21,8 +21,8 @@ export function FlowTargetPicker({ id, value, onChange, counts }: { id: string; 
     <span className="flex items-center gap-2 text-xs text-ink-3">{t("Nền tảng")}
       <Segmented id={id} label={t("Nền tảng")} value={value} onChange={onChange}
         items={[
-          { value: "mobile", label: n("mobile", t("Mobile")), title: t("Vẽ app mobile: màn cỡ web / desktop mặc định bỏ qua") },
-          { value: "web", label: n("web", t("Web")), title: t("Vẽ web: màn cỡ mobile mặc định bỏ qua") },
+          { value: "mobile", label: n("mobile", t("Mobile")), title: t("Vẽ app mobile: màn web / desktop mặc định bỏ qua") },
+          { value: "web", label: n("web", t("Web")), title: t("Vẽ web: màn mobile mặc định bỏ qua") },
         ]} />
     </span>
   );
@@ -56,10 +56,10 @@ export function FlowStart({ mode, onPick, onRun, resume, notice, target, onTarge
           : <p className="ai-text text-xs">{t("Đang đọc ticket và các màn Zeplin…")}</p>}
       </div>
       <div role="radiogroup" aria-label={t("Cách dựng")} className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
-        <OptionCard value="screens" picked={mode} onPick={onPick} icon={Code} title={t("Chỉ màn hình")} disabled={noZeplin}
-          when={noZeplin ? t("Ticket chưa có link Zeplin nào: chọn Màn + liên kết để AI đọc AC") : t("Các màn Zeplin và nút, không có mũi tên giữa màn")} cost={t("0 token · vài giây")}
-          tip={t("Khi nào: cần khung các màn để xem nhanh. Đánh đổi: không có mũi tên nối màn, AI không đọc AC.")} />
-        <OptionCard value="flow" picked={mode} onPick={onPick} icon={Sparkles} title={t("Màn + liên kết")} badge={t("Gợi ý")}
+        <OptionCard value="screens" picked={mode} onPick={onPick} icon={Code} title={t("Chỉ màn hình")} disabled={noZeplin} badge={noZeplin ? undefined : t("Gợi ý")}
+          when={noZeplin ? t("Ticket chưa có link Zeplin nào: chọn Màn + liên kết để AI đọc AC") : t("Chỉ UI các màn Zeplin, không có nút và mũi tên")} cost={t("0 token · vài giây")}
+          tip={t("Khi nào: cần khung các màn để xem nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC.")} />
+        <OptionCard value="flow" picked={mode} onPick={onPick} icon={Sparkles} title={t("Màn + liên kết")} badge={noZeplin ? t("Gợi ý") : undefined}
           when={t("AI đọc AC và vẽ mũi tên giữa các màn")} cost={aiCost}
           tip={t("Khi nào: cần sơ đồ luồng bấm đầy đủ. Đánh đổi: tốn token và chạy lâu hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} />
       </div>

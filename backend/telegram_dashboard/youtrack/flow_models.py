@@ -6,11 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class FlowRetryRequest(BaseModel):
-    note: str = Field("", max_length=2000)
+    note: str = Field("", max_length=8000)  # = AiFlow.note: a longer stored note must not break the job list
     mode: Literal["screens", "flow"] = "flow"  # a job saved before modes (it had "deep"): an AI render
     split: bool = False
-    skip: list[str] = Field([], max_length=255)  # Zeplin URLs the dialog left out: their screens are not drawn
     target: Literal["mobile", "web"] = "mobile"  # a job saved before platforms had frames: a phone's
+    draw: list[str] | None = None  # = AiFlow.draw
 
 
 class FlowLineDTO(BaseModel):  # a source line the code could not turn into a link, and why

@@ -104,6 +104,39 @@ async def test_ai_flow_gives_the_ai_the_zeplin_texts_not_the_mcp(monkeypatch):
     assert agent.kwargs["zeplin"] is None and agent.kwargs["system"] == AI_SYSTEM  # a no-tools run, MCP or not
 
 
+async def test_ai_flow_folds_a_new_screen_at_its_long_list(monkeypatch):
+    async def get(_self, urls, **_):
+        return {u: {"src": "", "w": 375, "h": 6936, "hits": [], "texts": [], "cut": 0.1114} for u in urls}, []
+
+    monkeypatch.setattr(zeplin.Shots, "get", get)
+    _, r = await _flow_post(FLOW_RAW, desc="Thiết kế https://zpl.io/abc).")
+    screens = r.json()["flow"]["screens"]
+    assert [s["fold"] for s in screens if s["zeplin"]] == [0.1114]
+    assert all(not s["fold"] for s in screens if not s["zeplin"])
+
+
+async def test_a_render_leaves_out_the_other_platform_itself_when_the_page_sent_no_skip(monkeypatch):
+    """Render pressed while the pre-check still counts: the page has no skip yet. The server's own read decides."""
+    link = "https://app.zeplin.io/project/{}/screen/{}".format
+    web, app = link("a" * 24, "c" * 24), link("b" * 24, "d" * 24)
+
+    async def get(_self, urls, **_):
+        size = {web: {"w": 1280, "h": 900, "platform": "web"}, app: {"w": 375, "h": 812, "platform": "ios"}}
+        return {u: {"src": "", "hits": [], "texts": [], **size[u]} for u in urls}, []
+
+    monkeypatch.setattr(zeplin.Shots, "get", get)
+
+    async def both(c, _svc):
+        out = {}
+        for target in ("mobile", "web"):
+            r = await c.post("/api/yt/ai/flow", json={"id": "VA-1", "mode": "screens", "target": target})
+            out[target] = [x["zeplin"] for x in r.json()["flow"]["screens"]]
+        return out
+
+    got = await _flow_post(FLOW_RAW, desc=f"[Trang chủ]({web}) [Đăng nhập]({app})", then=both)
+    assert got == {"mobile": [app], "web": [web]}
+
+
 async def test_ai_flow_reads_no_links_and_runs_on_the_users_heavy_picks(monkeypatch):
     async def never(*_, **__):
         raise AssertionError("the links block is not read for a UI flow")
@@ -214,10 +247,10 @@ async def test_ai_flow_job_streams_its_stages_and_each_screen_drawn(monkeypatch)
     assert zep.items() <= steps[3].items()  # the fake reads no screen one by one
     assert [s["title"] for s in steps if s["stage"] == "draw"] == ["Đăng nhập", "Nhập OTP"]
     assert not any(s.get("again") for s in steps)  # the opening reset is no restart
-    # next to the one designed screen (zpl.io/abc) the model's own two are not drawn: they wait in `pending`,
-    # and only the link to a screen nobody wrote ("ghost") counts as broken
+    # next to the one designed screen (zpl.io/abc) the model's own two are not drawn (no design: left out on
+    # purpose), and only the link to a screen nobody wrote ("ghost") counts as broken
     assert steps[-1] | {"at": 0} == {"kind": "stage", "at": 0, "stage": "check", "done": True, "screens": 1,
-                                     "links": 0, "dropped": 1, "pending": 2}
+                                     "links": 0, "dropped": 1}
     assert "flow" in _items(r)[-1]["done"]
 
 

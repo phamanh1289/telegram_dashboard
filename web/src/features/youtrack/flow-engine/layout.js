@@ -1,4 +1,4 @@
-import { normalize, parents } from './model.js';
+import { parents, sanitize } from './model.js';
 import { COL, GROUP_GAP, H, ROW, SHIFT } from './constants.js';
 import { frameH } from './geometry.js';
 import { scr, startOf } from './values.js';
@@ -13,7 +13,7 @@ import { scr, startOf } from './values.js';
  *  - The k-th popup / sheet / toast of a parent sits 60·k / 60·k right-down of it; the parent's row and its column
  *    grow by that much, so overlays never cover another screen. */
 function layout(flow) {
-  const f = normalize(flow);
+  const f = sanitize(flow);
   const by = new Map(f.screens.map((s) => [s.id, s]));
   const par = parents(f);
   const owner = (id) => { for (let n = 0; par.get(id) && n < 20; n++) id = par.get(id); return id; };

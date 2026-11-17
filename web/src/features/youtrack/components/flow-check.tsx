@@ -17,8 +17,8 @@ import { AiAsk, YtPicks } from "./bits";
 import { OptionCard } from "./flow-option-card";
 
 // Before an AI render: what it will send, counted by code (POST /flow/precheck, no AI). Nothing is cut or refused for
-// size: every render asks once in FlowRisks (counted when it opens). The screens left out in the dialog (`skip`) are
-// not sent: the count, the warnings and the render all follow them.
+// size: every render asks once in FlowRisks (counted when it opens). The other platform's screens are left out by
+// the server from the platform picked (`target`): the count, the warnings and the render all follow the same reads.
 
 const say = (e: unknown) => (e as Error).message;
 /** "$0.012" / "<$0.001": a render's estimated price, from past runs on its model. */
@@ -29,10 +29,10 @@ const PART: Record<string, Key> = { ticket: "Ticket", story: "Story cha", zeplin
 /** Screens per part of a split render (flow_prompt.PART_SCREENS). */
 const PART_SCREENS = 12;
 
-/** One query per count (the server caches the reads it makes, so the render that follows starts faster). A change of
- *  `skip` counts again; the old numbers stay on screen until the new ones land. */
-export function useFlowCheck(issue: string, enabled: boolean, skip: string[]) {
-  return useQuery({ queryKey: ["yt", "flow-check", issue, skip], queryFn: ({ signal }) => yt.flowCheck(issue, "", skip, signal),
+/** One query per count (the server caches the reads it makes and shares them while in flight, so a render pressed
+ *  mid-count waits on the same reads). Another platform counts again; the old numbers stay on until the new ones land. */
+export function useFlowCheck(issue: string, enabled: boolean, target: FlowTarget) {
+  return useQuery({ queryKey: ["yt", "flow-check", issue, target], queryFn: ({ signal }) => yt.flowCheck(issue, "", target, signal),
     enabled, staleTime: 60_000, retry: false, placeholderData: keepPreviousData });
 }
 
@@ -42,11 +42,6 @@ type Target = FlowTarget;
 type Mode = "screens" | "split" | "ai";
 /** A line's identity across counts: #n shifts when a left-out screen takes its lines, the line itself does not. */
 const lineKey = (l: Line) => `${l.why}|${l.line}`;
-
-/** The Zeplin links of the other platform's screens: what a render leaves out by default (a line's link is its screen's). */
-export function platformSkip(check: FlowCheck | undefined, target: FlowTarget) {
-  return (check?.risks.find((r) => r.code === (target === "mobile" ? "web" : "mobile"))?.lines ?? []).flatMap((l) => l.urls ?? []);
-}
 
 /** What is wrong with an unclear line and how to fix it in the ticket, in the writer's words. */
 function useWhy() {
@@ -151,17 +146,13 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
 // Light-colour steps for the stacked bar: the largest source first, so the shade steps down with the share.
 const SHADE = ["bg-hl", "bg-hl/70", "bg-hl/45", "bg-hl/30", "bg-hl/15"];
 
-/** What the dialog adds to the render's note: the platform, the unclear lines left out, the Q&A on the flow. The
- *  screens left out are not in the note: they are not sent (`skip`). */
-function extraNote(lines: Line[], isOff: (l: Line) => boolean, turns: Turn[], target: Target) {
-  const flow = lines.filter(isOff);
+/** What the dialog adds to the render's note: the platform, the Q&A on the flow. The screens left out are not in it
+ *  (they are not sent: `skip`), nor the unclear lines left out: the server writes those, every one (`draw`). */
+function extraNote(turns: Turn[], target: Target) {
   const done = turns.filter((x) => x.a);
   return [
     target === "web" ? "Sơ đồ này cho web (không phải app mobile): vẽ luồng trang web." : "",
     done.length ? "Làm rõ luồng trước khi vẽ (hỏi đáp với AI):\n" + done.map((x) => `Hỏi: ${x.q}\nĐáp: ${x.a}`).join("\n\n") : "",
-    // ponytail: last, so the 5500 cut takes the tail of a very long list (those lines are then guessed), not the Q&A;
-    // send the ticked ones as a field of their own if tickets with ~60+ unclear lines turn up
-    flow.length ? "Không vẽ liên kết cho các dòng luồng sau (chưa rõ, người dùng không chọn vẽ):\n" + flow.map((l) => `- #${l.no} ${l.line}`).join("\n") : "",
   ].filter(Boolean).join("\n\n").slice(0, 5500);
 }
 
@@ -171,20 +162,19 @@ function extraNote(lines: Line[], isOff: (l: Line) => boolean, turns: Turn[], ta
  *  unticked) are `skip`: the count, the warnings and the render follow them. */
 export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens, onSplit }: {
   issue: string; target: Target; open: boolean; onOpenChange: (o: boolean) => void;
-  onRun: (extra: string, skip: string[]) => void; onScreens: (skip: string[]) => void; onSplit: (extra: string, skip: string[]) => void;
+  onRun: (extra: string, draw: string[]) => void; onScreens: () => void; onSplit: (extra: string, draw: string[]) => void;
 }) {
   const t = useT();
   const [flip, setFlip] = useState<Set<string>>(new Set()); // unclear lines the user ticked to draw, by lineKey (default: left out)
   const [picked, setPicked] = useState<Mode | null>(null); // the way the user chose; null: the suggested one
-  const [sent, setSent] = useState({ key: "", list: [] as string[] }); // the skip the shown count was made with
   const [ask, setAsk] = useState("");
   const [turns, setTurns] = useState<Turn[]>([]);
-  const check = useFlowCheck(issue, open, sent.list);
+  const check = useFlowCheck(issue, open, target);
   const data = check.data, error = check.error;
   const feed = useFollow(turns);
   const qa = useMutation({
-    mutationFn: ({ q, advice }: { q: string; advice?: boolean }) => advice ? yt.flowAdvice(issue, "", sent.list)
-      : yt.flowAsk(issue, "", turns.filter((x) => x.a).slice(-12).map((x) => ({ q: x.q, a: x.a ?? "" })), q, sent.list),
+    mutationFn: ({ q, advice }: { q: string; advice?: boolean }) => advice ? yt.flowAdvice(issue, "", target)
+      : yt.flowAsk(issue, "", turns.filter((x) => x.a).slice(-12).map((x) => ({ q: x.q, a: x.a ?? "" })), q, target),
     onMutate: ({ q }) => { setTurns((all) => [...all, { q }]); setAsk(""); },
     onSuccess: (r) => setTurns((all) => all.map((x, i) => (i === all.length - 1 ? { ...x, a: r.text } : x))),
     onError: (e) => setTurns((all) => all.map((x, i) => (i === all.length - 1 ? { ...x, error: say(e) } : x))),
@@ -200,25 +190,22 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
   // the platform was picked before: neither size group is a warning here (the other platform is simply not sent)
   const risks = (data?.risks ?? []).filter((r) => r.code !== "web" && r.code !== "mobile");
   const lines = risks.flatMap((r) => r.lines ?? []);
-  // the other platform's screens are not sent (their Zeplin links): the count, the warnings and the render follow
-  const skip = platformSkip(data, target);
-  const skipKey = skip.join("\n");
-  if (skipKey !== sent.key) setSent({ key: skipKey, list: skip }); // the count follows the screens left out (set while rendering)
-  const extra = () => extraNote(lines, isOff, turns, target);
+  const extra = () => extraNote(turns, target);
+  const draw = () => lines.filter((l) => !isOff(l)).map((l) => l.line); // ticked: the server leaves out the rest
   const parts = Object.entries(data?.parts ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   const total = parts.reduce((sum, [, n]) => sum + n, 0) || 1;
   const chunks = data?.chunks ?? 1;
   const split = chunks > 1;
-  // a split is only a way when the flow has more than one part; the suggestion is the split then, else the AI render
+  // a split is only a way when the flow has more than one part; the picked default is the split then, else the AI render
   const mode: Mode = picked && (picked !== "split" || split) ? picked : split ? "split" : "ai";
   const close = (o: boolean) => { if (!o) qa.reset(); onOpenChange(o); };
   const changed = turns.some((x) => x.a) || flip.size > 0 || target === "web";
   const run = () => {
     const x = extra();
     close(false);
-    if (mode === "screens") onScreens(skip);
-    else if (mode === "split") onSplit(x, skip);
-    else onRun(x, skip);
+    if (mode === "screens") onScreens();
+    else if (mode === "split") onSplit(x, draw());
+    else onRun(x, draw());
   };
   const confirm = mode === "screens" ? t("Dựng màn hình") : mode === "split" ? t("Chia {n} phần và render", { n: chunks })
     : changed ? t("Render kèm phần đã làm rõ") : t("Render bằng AI");
@@ -278,15 +265,14 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
           <section className="grid shrink-0 grid-cols-1 gap-2 border-t border-rule pt-3">
             <h3 className="text-sm font-bold text-ink">{t("Chọn cách render")}</h3>
             <div role="radiogroup" aria-label={t("Chọn cách render")} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <OptionCard value="screens" picked={mode} icon={Code} title={t("Dựng màn hình")}
-                when={t("Chỉ vẽ các màn Zeplin, không có mũi tên giữa màn")} cost={t("0 token · vài giây")}
-                tip={t("Khi nào: cần khung các màn để dựng nhanh. Đánh đổi: không có mũi tên nối màn, AI không đọc AC.")} onPick={setPicked} />
+              <OptionCard value="screens" picked={mode} badge={t("Gợi ý")} icon={Code} title={t("Dựng màn hình")}
+                when={t("Chỉ UI các màn Zeplin, không có nút và mũi tên")} cost={t("0 token · vài giây")}
+                tip={t("Khi nào: cần khung các màn để dựng nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC.")} onPick={setPicked} />
               <OptionCard value="split" picked={mode} disabled={!split} icon={Layers} title={split ? t("Chia {n} phần", { n: chunks }) : t("Chia phần")}
-                badge={split ? t("Gợi ý") : undefined}
                 when={split ? t("Chia màn thành nhóm {p} màn, render song song rồi ghép", { p: PART_SCREENS }) : t("Chỉ có khi ticket trên {p} màn", { p: PART_SCREENS })}
                 cost={!split ? t("không áp dụng") : data?.split_tokens ? t("~{k} token · {n} lượt AI song song", { k: fmtK(data.split_tokens), n: chunks }) : t("{n} lượt AI chạy song song", { n: chunks })}
                 tip={t("Khi nào: nhiều màn (trên {p}) hoặc model nhẹ hay vẽ thiếu. Đánh đổi: AC và ticket gửi lại trong mỗi phần nên tốn token hơn; link giữa hai phần khác nhau có thể thiếu.", { p: PART_SCREENS })} onPick={setPicked} />
-              <OptionCard value="ai" picked={mode} badge={!split ? t("Gợi ý") : undefined} icon={Sparkles} title={t("Render bằng AI")}
+              <OptionCard value="ai" picked={mode} icon={Sparkles} title={t("Render bằng AI")}
                 when={t("Một lượt AI đọc đủ ticket và vẽ luồng có mũi tên")}
                 cost={data ? t("~{k} token · 1 lượt AI", { k: fmtK(data.tokens) }) : t("1 lượt AI")}
                 tip={t("Khi nào: ít màn và cần mũi tên nối đúng luồng. Đánh đổi: chậm hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} onPick={setPicked} />

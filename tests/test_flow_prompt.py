@@ -132,6 +132,7 @@ async def test_endpoint_precheck_counts_and_screens_mode_runs_no_ai_and_only_pas
                                      headers={"X-Ai-Job": "screens-job-1"})
             done = json.loads(only.text.splitlines()[-1])["done"]
             assert len(done["flow"]["screens"]) == 2 and done["flow"]["links"] == [] and not seen
+            assert all(not x["items"] for x in done["flow"]["screens"])  # the UI only: no buttons
             assert done["flow"]["device"] == "mobile"
             web = await client.post("/api/yt/ai/flow", json={"id": "VA-1", "mode": "screens", "target": "web"},
                                     headers={"X-Ai-Job": "screens-job-2"})
@@ -249,7 +250,7 @@ async def test_endpoint_split_runs_each_part_and_joins_one_flow(tmp_path):
             lines = [json.loads(x) for x in r.text.splitlines()]
             flow = lines[-1]["done"]["flow"]
             assert len(prompts) == 3 and len(flow["screens"]) == 25  # a screen with no design is not drawn
-            assert [p["title"] for p in flow["pending"]] == ["Lỗi"]  # the popup every part wrote: pending, once
+            assert "pending" not in flow  # the popup every part wrote has no design: left out
             draws = [x["step"]["title"] for x in lines if x.get("step", {}).get("stage") == "draw"]
             assert sorted(draws) == ["Phần 1/3", "Phần 2/3", "Phần 3/3"]
     await svc.aclose()
@@ -316,7 +317,7 @@ def test_the_prompt_names_screens_and_buttons_by_short_ids_and_the_answer_maps_b
     assert [s["id"] for s in shown["screens"]] == ["s1", "s2"] and login not in result.prompt
     assert [i["id"] for i in shown["screens"][0]["items"]] == ["b1", "b2"]
     assert shown["links"][0] == {"src": "s1.b1", "to": "s2"} and result.skeleton["links"][0]["src"] == f"{login}.{go}"
-    raw = {"adapter": 1, "pending": [{"title": "OTP", "src": "s2.n1"}],
+    raw = {"adapter": 1,
            "screens": [{"id": "s1", "kind": "screen", "items": [{"id": "b2", "label": "Quên"}]},
                        {"id": "s2", "parent": "s1",
                         "items": [{"id": "n1", "label": "Thoát"}, {"id": "n2", "label": "Thoát"}]}],
@@ -327,7 +328,6 @@ def test_the_prompt_names_screens_and_buttons_by_short_ids_and_the_answer_maps_b
     assert [s["id"] for s in raw["screens"]] == [login, home] and raw["screens"][1]["parent"] == login
     assert [i["id"] for i in raw["screens"][1]["items"]] == [out, out + "x"]  # same label twice: both kept
     assert [x["src"] for x in raw["links"]] == [f"{login}.{go}", f"{login}.{forgot}", f"{home}.{out}", home]
-    assert raw["pending"][0]["src"] == f"{home}.{out}"
     flow = flow_merge.merge_ai(raw, result.skeleton, "VA-1")
     assert len(flow.links) == 4 and flow.links[0].when == "đúng"
     real = {"screens": [{"id": login, "items": []}], "links": [{"src": f"{login}.{go}", "to": home}]}
@@ -337,6 +337,32 @@ def test_the_prompt_names_screens_and_buttons_by_short_ids_and_the_answer_maps_b
                  shots={f"{URL}{k}": {"texts": ["x"]} for k in range(14)})
     parts = p.split(many)
     assert len(parts) == 2 and '"id":"s13"' in parts[1].replace(" ", "") and '"id":"s1"' in parts[1].replace(" ", "")
+
+
+def test_the_ai_is_told_which_screens_are_a_list_and_may_echo_it_back():
+    got = build(detail(description=f"[Danh sách]({URL}a)\n[Chi tiết]({URL}b)"),
+                shots={URL + "a": {"texts": ["Xem hợp đồng"], "list": 11}, URL + "b": {"texts": ["x"], "list": 2}})
+    shown = {s["title"]: s.get("list") for s in got.shown["screens"]}
+    assert shown == {"Danh sách": 11, "Chi tiết": None}  # fewer than 3 items is not a list
+    assert '"list":11' in got.prompt.replace(" ", "") and "list" not in got.skeleton["screens"][0]  # the AI's copy only
+    raw = flow_merge.unalias({"screens": [{**got.shown["screens"][0], "items": []}], "links": []}, got.back)
+    assert flow_merge.merge_ai(raw, got.skeleton, "VA-1").screens[0].title == "Danh sách"  # an echoed "list": no harm
+
+
+def test_a_phone_wide_screen_is_mobile_then_the_zeplin_project_platform_then_the_size():
+    urls = [f"{URL}{k}" for k in "abcdefg"]
+    shots = dict(zip(urls, (
+        {"w": 375, "h": 812, "platform": "web"},  # S0 phone-wide in a project set to web ("[Agent] Bán [Mo]"): mobile
+        {"w": 1024, "h": 768, "platform": "ios"},  # S1 an iPad screen: its project's platform
+        {"w": 550, "h": 400, "platform": "web"},  # S2 a dialog of a web page, past 375 + 20%: its project's platform
+        {"w": 1440, "h": 900},  # S3 platform unread: by the size
+        {"w": 1125, "h": 2436, "dp": 375, "platform": "web"},  # S4 a phone at @3x
+        {"w": 450, "h": 900, "platform": "macos"}, {"w": 451, "h": 900, "platform": "macos"},  # S5, S6: the edge
+    ), strict=True))
+    got = build(detail(description="\n".join(f"[S{k}]({u})" for k, u in enumerate(urls))), shots=shots)
+    by = {r["code"]: [x["line"] for x in r["lines"]] for r in got.manifest["risks"]}
+    assert by == {"web": ["S2", "S3", "S6"], "mobile": ["S0", "S1", "S4", "S5"]}
+    assert p.zeplin.phone_wide({"w": 300}) and not p.zeplin.phone_wide({"w": 299}) and not p.zeplin.phone_wide({})
 
 
 def test_a_long_page_in_a_web_project_is_web_and_flow_runs_price_renders():
@@ -352,3 +378,28 @@ def test_a_long_page_in_a_web_project_is_web_and_flow_runs_price_renders():
     rows = [{**row, "feature": "youtrack", "cost": 9.0}, {**row, "feature": "flow"}]
     assert p.cost(rows, "haiku", 8000, 10)[0] == 0.018  # its own rows, not every YouTrack run's
     assert p.cost(rows[:1], "haiku", 8000, 10)[1] == 1  # none yet: the YouTrack runs, as before
+
+
+def test_unclear_lines_not_ticked_are_left_out_in_full_by_the_server():
+    from telegram_dashboard.youtrack import flow_prompt as fp
+
+    amb = {f"Màn {i} sang màn lạ {'x' * 150}": {"why": "unknown", "name": "", "hint": ""} for i in range(80)}
+    amb['Màn 47 A -- "x" --> Màn Z'] = {"why": "unknown", "name": "Z", "hint": ""}
+    ticked = [next(iter(amb)).strip()[:200]]
+    out = fp.leave_out(amb, ["47 A"], ticked)
+    assert out.count("\n- ") == 79  # all but the ticked one and the line of the left-out screen: none cut
+    assert ticked[0] not in out and "47 A" not in out
+    assert fp.leave_out(amb, [], None) == "" and fp.leave_out({}, [], []) == ""
+
+
+def test_unclear_notes_say_what_the_user_chose_not_a_general_warning():
+    from telegram_dashboard.youtrack import flow_prompt as fp
+
+    amb = {f"dòng {i}": {"why": "format", "name": "", "hint": ""} for i in range(5)}
+    assert fp.unclear_notes(amb, [], []) == ["5 dòng luồng chưa rõ không được vẽ (đã bỏ chọn trước khi render)"]
+    assert fp.unclear_notes(amb, [], ["dòng 0", "dòng 1"]) == [
+        "3 dòng luồng chưa rõ không được vẽ (đã bỏ chọn trước khi render)",
+        "AI tự suy luận 2 dòng luồng chưa rõ bạn chọn vẽ: kiểm tra các mũi tên đó trên sơ đồ"]
+    assert fp.unclear_notes(amb, [], list(amb))[0].startswith("AI tự suy luận 5")
+    assert fp.unclear_notes({}, [], []) == []
+    assert fp.unclear_notes(amb, [], None) == ["Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ."]

@@ -1,8 +1,8 @@
 import { family, isOverlay } from './model.js';
 import { inspector } from './inspector.js';
-import { cardAbs, frameH } from './geometry.js';
+import { cardAbs, frameH, oneFrame, setFold } from './geometry.js';
 import { shotOf } from './shots.js';
-import { CAP, COL, DRAG_PX, H, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, ROW, W } from './constants.js';
+import { CAP, COL, DBL_MS, DRAG_PX, H, MIN_FOLD, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
 import { clamp, isPop, itm, scr } from './values.js';
 import { box, h } from './dom.js';
 import { inlineEdit } from './inline-edit.js';
@@ -13,7 +13,7 @@ const nextId = (used, p) => { let n = 1; while (used.has(p + n)) n++; return p +
  *  double-click to rename, click to select (Delete removes, the panel changes what the shape cannot show).
  *  It never writes to the flow itself: every change goes through ctx.commit(flow, before), so undo and `dirty`
  *  stay in one place. ctx: {t, insp, cam, view, layer, get, commit, marks, frames, moveScreens, liveLink,
- *  tempLink, drawAll, centre}. */
+ *  tempLink, drawAll, centre, show(id): zoom onto a screen}. */
 function editor(ctx) {
   let sel = null; // {t: "screen" | "item" | "link", id?, item?, i?}
   let drawFor = null; // {id, item?}: the next drag on that screen's image draws a tap area (for `item`, or a new one)
@@ -126,18 +126,31 @@ function editor(ctx) {
     if (link) return select({ t: "link", i: +link.dataset.i });
     const frame = el?.closest?.(".uf-screen"), item = el?.closest?.(".uf-item");
     if (frame && item) return select({ t: "item", id: frame.dataset.id, item: item.dataset.item });
-    select(frame ? { t: "screen", id: frame.dataset.id } : null);
+    if (!frame) return select(null);
+    pickScreen(frame.dataset.id);
+  }
+  /** A click on a screen to edit it: selected, and the camera zooms onto it, every time. On its title bar the
+   *  move waits out a double click's gap, so the second click still lands on the title it renames (a new press or the double click drops it). */
+  let showT = 0;
+  function pickScreen(id, onHead = false) {
+    select({ t: "screen", id });
+    clearTimeout(showT);
+    if (onHead) showT = setTimeout(() => ctx.show(id), DBL_MS);
+    else ctx.show(id);
   }
 
   // ---------------- pointer
   function down(e) {
     const el = e.target;
+    clearTimeout(showT); // a new press (a drag, a double click's second): the camera stays under it
     if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
+    if (el.closest?.(".uf-fold")) return e.stopPropagation(); // its click folds / unfolds: no drag, no pan
     const frame = el.closest?.(".uf-screen");
-    const draw = drawFor && frame?.dataset.id === drawFor.id && !el.closest(".uf-head, .uf-dot");
+    const foldh = el.closest?.(".uf-foldh"); // the bottom edge of a long design: drag it to fold to that height
+    const draw = !foldh && drawFor && frame?.dataset.id === drawFor.id && !el.closest(".uf-head, .uf-dot");
     const knob = el.closest?.(".uf-handle"), dot = el.closest?.(".uf-dot"), head = el.closest?.(".uf-head");
     const hot = !draw && !dot && el.closest?.(".uf-rect"), rsz = hot && el.closest(".uf-rsz");
-    if (!knob && !dot && !head && !hot && !draw) return;
+    if (!knob && !dot && !head && !hot && !draw && !foldh) return;
     // A rename or a panel field commits on blur, and mousedown is about to blur it. Do it now, while there is
     // no drag yet, or `commit` would refuse it and the typed value would be lost. Everything read below is read
     // after it, so it comes from the flow that edit produced.
@@ -147,7 +160,11 @@ function editor(ctx) {
     at = null;
     drag = { rect, c0: { x: e.clientX, y: e.clientY }, before: JSON.stringify(f), moved: false,
       by: new Map(f.screens.map((x) => [x.id, x])) };
-    if (draw || hot) {
+    if (foldh) {
+      const s = drag.by.get(frame.dataset.id);
+      Object.assign(drag, { kind: "fold", s, card: frame.querySelector(".uf-card"), h0: frameH(s), h: frameH(s),
+        full: frameH(s, true), at: world(e, rect) });
+    } else if (draw || hot) {
       const s = drag.by.get(frame.dataset.id), k = scale(s), p = world(e, rect);
       if (!k) { drag = null; return; }
       if (draw) {
@@ -205,6 +222,9 @@ function editor(ctx) {
       drag.r = { x, y, w: Math.min(rnd(Math.abs(a.x - b.x)), 1 - x), h: Math.min(rnd(Math.abs(a.y - b.y)), 1 - y) };
       drag.el.hidden = false;
       box(drag.el, px(drag.r, k));
+    } else if (drag.kind === "fold") { // only the card while dragging; the release folds the flow (one undo)
+      drag.h = Math.round(clamp(drag.h0 + at.y - drag.at.y, MIN_FOLD, drag.full));
+      drag.card.style.height = drag.h + "px";
     } else if (drag.kind === "link") ctx.liveLink(drag.m, at, drag.by);
     else ctx.tempLink(drag.from, at);
   }
@@ -229,11 +249,16 @@ function editor(ctx) {
         return;
       }
       if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
+      if (d.kind === "fold") return select({ t: "screen", id: d.s.id });
       if (d.kind === "link") return select({ t: "link", i: d.m.i });
-      if (d.kind === "move") return select({ t: "screen", id: d.id });
+      if (d.kind === "move") return pickScreen(d.id, true);
       return select(d.src.includes(".") ? { t: "item", id: scr(d.src), item: itm(d.src) } : { t: "screen", id: d.src });
     }
     if (d.kind === "draw") return drawn(d);
+    if (d.kind === "fold") { // dragged down to its whole length: not folded any more
+      const sh = shotOf(d.s), g = structuredClone(get());
+      return ctx.commit(setFold(g, d.s.id, d.h >= d.full - 1 ? null : d.h / ((sh.h * W) / sh.w)));
+    }
     const f = get(), to = hit(world(e, d.rect));
     if (d.kind === "rect" || d.kind === "size") sel = { t: "item", id: d.s.id, item: d.it.id }; // keys nudge it next
     if (d.kind === "move" || d.kind === "rect" || d.kind === "size") return ctx.commit(f, d.before);
@@ -246,10 +271,18 @@ function editor(ctx) {
     }
     if (to && f.links.length >= MAX_LINKS) ctx.note(t("maxLinks", { n: MAX_LINKS }));
     else if (to && to.id !== d.src && !f.links.some((l) => l.src === d.src && l.to === to.id)) {
-      f.links.push({ src: d.src, to: to.id, act: isPop(to) ? "open" : "navigate", when: "", ac: "" });
+      f.links.push({ src: d.src, to: to.id, act: actFor(f, scr(d.src), to), when: "", ac: "" });
       return ctx.commit(f, d.before);
     }
     back();
+  }
+  /** What a new arrow from screen `here` to `to` does: back to (close, from a popup) the screen that opened
+   *  `here` — one with an arrow going forward into it, or a popup's parent — else open a popup / go to a screen. */
+  function actFor(f, here, to) {
+    const s = f.screens.find((x) => x.id === here);
+    const opener = s.parent === to.id || f.links.some((l) => scr(l.src) === to.id && l.to === here && (l.act === "navigate" || l.act === "open"));
+    if (opener) return isPop(s) ? "close" : "back";
+    return isPop(to) ? "open" : "navigate";
   }
   /** A finished draw: the tap area of the item it was for, or a new button with it. One undo step. */
   function drawn(d, label = "") {
@@ -266,6 +299,7 @@ function editor(ctx) {
     drawFor = null;
     ctx.root.classList.remove("uf-drawing");
     sel = { t: "item", id: s.id, item: item.id };
+    if (item.label === t("newItem")) nameSoon(); // dragged, not taken from a text: the cursor waits in its name
     ctx.commit(f);
   }
   /** Enter while drawing: a default area mid-screen (then the numbers / arrow keys place it), no pointer needed. */
@@ -311,6 +345,7 @@ function editor(ctx) {
     const el = ctx.on() ? e.target.closest?.(".uf-title, .uf-item, .uf-label") : null;
     if (!el || !ctx.layer.contains(el)) return;
     e.preventDefault();
+    clearTimeout(showT); // its second click picked the screen again: renaming in place, the camera stays
     const frame = el.closest(".uf-screen");
     const kind = el.classList.contains("uf-label") ? "link" : el.classList.contains("uf-item") ? "item" : "screen";
     const f0 = get(), link = kind === "link" ? f0.links[+el.dataset.i] : null;
@@ -328,7 +363,7 @@ function editor(ctx) {
     }, link ? link.when : null);
   }
 
-  const { fill, change } = inspector({ ctx, t, get, target, blocked, scale, rnd,
+  const { fill, change, nameSoon } = inspector({ ctx, t, get, target, blocked,
     select, selected: () => sel, startDraw, addItem, remove, fieldState });
 
   // ---------------- add / remove
@@ -338,34 +373,30 @@ function editor(ctx) {
     ctx.note(t("dragging"));
     return true;
   }
-  /** A new screen (`props`: title / zeplin; `near`: the id of the screen that leads to it, to sit beside) at
-   *  the centre of the view when that is free, else right of the last
-   *  screen on the top row: dropped on a screen it would hide it and take every click meant for it (a design
-   *  image covers the whole frame). Its id, or null when refused.
-   *  `also(flow, id)`: more to change in the same step (a pending entry it fulfils, the link into it). */
-  function addScreen(props = {}, also = null) {
+  /** New screens (`props`: title / zeplin / fold), one undo step: the first at the centre of the view when that is
+   *  free, else right of the last screen on the top row, the next ones to its right: dropped on a screen it would
+   *  hide it and take every click meant for it (a design image covers the whole frame). -> their ids, or null
+   *  when refused. */
+  function addScreens(list) {
     if (blocked()) return null;
     const f = structuredClone(get()), c = ctx.centre();
-    if (f.screens.length >= MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
-    const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
-    let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
-    const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && y < s.y + frameH(s) + ROOM && s.y < y + H + ROOM);
-    const { near, ...own } = props, by = near && f.screens.find((s) => s.id === near);
-    if (by) { // the screen that leads to it: the next column, the first free row (its arrow stays short)
-      x = by.x + COL;
-      y = by.y;
-      for (let n = 0; taken() && n < 20; n++) y += ROW;
+    if (f.screens.length + list.length > MAX_SCREENS) { ctx.note(t("maxScreens", { n: MAX_SCREENS })); return null; }
+    const ids = [];
+    for (const props of list) {
+      const id = nextId(new Set(f.screens.map((s) => s.id)), "s");
+      let x = Math.round(c.x - W / 2), y = Math.round(c.y - H / 2);
+      const taken = () => f.screens.some((s) => Math.abs(s.x - x) < W + ROOM && y < s.y + frameH(s) + ROOM && s.y < y + H + ROOM);
+      if (taken()) {
+        x = Math.max(...f.screens.map((s) => s.x)) + COL;
+        y = ids.length ? f.screens.find((s) => s.id === ids[0]).y : Math.min(...f.screens.map((s) => s.y)); // one row
+      }
+      f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x, y, zeplin: "", ac: "", note: "",
+        items: [], ...props });
+      ids.push(id);
     }
-    if (taken()) {
-      x = Math.max(...f.screens.map((s) => s.x)) + COL;
-      y = Math.min(...f.screens.map((s) => s.y));
-    }
-    f.screens.push({ id, title: t("newScreen"), kind: "screen", parent: null, x, y, zeplin: "", ac: "", note: "",
-      items: [], ...own });
-    also?.(f, id);
-    sel = { t: "screen", id };
+    sel = ids.length === 1 ? { t: "screen", id: ids[0] } : null;
     ctx.commit(f);
-    return id;
+    return ids;
   }
   function addItem() {
     if (sel?.t !== "screen" || blocked()) return;
@@ -406,22 +437,33 @@ function editor(ctx) {
       d.it.rect = d.r0;
       box(d.el, px(d.r0, d.k));
     } else if (d.kind === "draw") d.el.remove();
+    else if (d.kind === "fold") d.card.style.height = d.h0 + "px";
     back();
   }
   ctx.layer.addEventListener("pointerdown", down);
-  ctx.layer.addEventListener("pointermove", move);
-  ctx.layer.addEventListener("pointerup", up);
-  ctx.layer.addEventListener("pointercancel", cancel);
+  // moves and the release are heard on the whole view, not the layer: until a drag captures the pointer, a move
+  // that starts off a frame's edge (its fold edge pulled down, a tap area's corner pulled out) is over the empty
+  // map, outside every frame, and the layer would never hear it, so the drag would never start
+  ctx.view.addEventListener("pointermove", move);
+  ctx.view.addEventListener("pointerup", up);
+  ctx.view.addEventListener("pointercancel", cancel);
   ctx.layer.addEventListener("dblclick", dbl);
+  // the fold button on a long design: its top only (one phone high) or the whole of it again. One undo step.
+  ctx.layer.addEventListener("click", (e) => {
+    const b = ctx.on() && e.target.closest?.(".uf-fold"), id = b && b.closest(".uf-screen")?.dataset.id;
+    if (!id || blocked()) return;
+    const f = structuredClone(get()), s = f.screens.find((x) => x.id === id);
+    ctx.commit(setFold(f, id, s.fold ? null : oneFrame(s)));
+  });
   return {
     tap,
-    addScreen,
+    addScreens,
     remove,
     nudge,
     relayout,
     stopDraw,
     drawDefault,
-    pick: (x) => select(x),
+    pick: (x, name = false) => { if (name) nameSoon(); select(x); }, // name: the cursor goes to the button's name
     selected: () => sel,
     busy: () => !!drag, // a flow change mid-gesture would strand the objects and frames the drag holds
     cancel,
@@ -430,6 +472,7 @@ function editor(ctx) {
     sync,
     destroy() {
       cancelAnimationFrame(raf);
+      clearTimeout(showT);
     },
   };
 }

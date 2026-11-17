@@ -12,7 +12,7 @@ import { cn } from "@/shared/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -34,6 +34,7 @@ const LINES: Record<FetchKind, Key[]> = {
   runs: ["AI đang lắng nghe Claude, Codex", "Đang mở file của từng request", "Đang gom model, token, thời gian chạy", "Đang ghi chú lại thành lịch sử", "Sắp xong rồi"],
   sessions: ["AI đang mở lịch sử phiên AI", "Đang gom ticket của từng phiên", "Đang đọc lại câu hỏi và câu trả lời", "Đang xếp phiên theo ngày", "Sắp xong rồi"],
   flow: ["AI đang đọc AC và rule của ticket", "Đang mở màn hình trên Zeplin", "Đang xếp các màn thành luồng", "Đang nối nút với màn đích", "Sắp xong rồi"],
+  flowDoc: ["AI đang đọc ticket và story", "Đang trích nội dung từng AC", "Đang mở thiết kế Zeplin của từng màn", "Đang ghép màn, nút và màn đích", "Đang dò chỗ còn thiếu", "Đang viết tài liệu Markdown"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -233,6 +234,38 @@ const SCENES: Record<FetchKind, Scene> = {
       </svg>
       {go.map((d, k) => <Fly key={d} k={k} gap={0.6} dur={2.4} path={d} className="size-1.5 rounded-full bg-hl shadow-stock" />)}
       <Bot ring className="top-0 left-1/2 size-14 -translate-x-1/2" size="size-10" />
+    </>;
+  },
+
+  // Markdown cho AI: the ticket (AC), the Zeplin designs and the flow's map stream into the robot, which writes them up
+  // as one Markdown document: a "#" heading, lines, a table and a fenced block, line by line
+  flowDoc: ({ p, t }) => {
+    const src = [[14, <YtLogo key="yt" className="size-7" />, p || "YouTrack"], [62, <LayoutDashboard key="zp" className="size-6 text-hl-2" />, "Zeplin"],
+      [110, <GitBranch key="fl" className="size-6 text-info" />, "UI flow"]] as const;
+    const chips = [["AC-1", C.hl, 0], [t("Màn"), C.hl2, 1], [t("Nút →"), C.info, 2], [tid(p, 12), C.warn, 0], ["Zeplin", C.ok, 1], ["AC-2", C.hl, 0]] as const;
+    const doc = [[34, "w"], [62, "l"], [48, "l"], [70, "t"], [70, "t"], [54, "c"]] as const;
+    return <>
+      {chips.map(([s, c, row], k) => {
+        const y = src[row][0] + 18;
+        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>;
+      })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${44 + k * 22} 214 ${44 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      {src.map(([y, icon, label]) => (
+        <div key={label} className="absolute left-0 flex h-9 w-[54px] items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
+          {icon}<span className="sr-only">{label}</span>
+        </div>
+      ))}
+      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <div className="absolute top-2 right-1 bottom-2 w-[100px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <span className="absolute top-1.5 right-1.5 font-mono text-[9px] font-bold text-ink-3">.md</span>
+        {doc.map(([w, kind], k) => {
+          const at = v({ "--fx-d": "4.6s", animationDelay: `${0.4 + k * 0.55}s` });
+          return kind === "w" ? <span key={k} className="fx-step flex items-center gap-1 font-mono text-[10px] leading-none font-bold text-hl-2" style={at}>#<span className="block h-1.5 rounded-full bg-ink-3/45" style={{ width: w }} /></span>
+            : kind === "t" ? <span key={k} className="fx-step mt-1.5 grid grid-cols-3 gap-0.5" style={at}>{[0, 1, 2].map((c) => <span key={c} className="block h-1.5 rounded-sm bg-paper-3" />)}</span>
+            : kind === "c" ? <span key={k} className="fx-step mt-1.5 block h-3 rounded-sm bg-ink/10" style={{ ...at, width: w }} />
+            : <span key={k} className="fx-step mt-2 block h-1 rounded-full bg-ink-3/30" style={{ ...at, width: w }} />;
+        })}
+      </div>
     </>;
   },
 

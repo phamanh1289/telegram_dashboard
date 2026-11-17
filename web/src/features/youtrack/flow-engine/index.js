@@ -1,12 +1,9 @@
 import { SCREEN } from './constants.js';
 import { layout } from './layout.js';
-import { check } from './checks.js';
 import { h } from './dom.js';
 import { tr } from './i18n.js';
 import { mount } from './mount.js';
 import { APP_TOKENS } from './styles.js';
-import { checklist } from './checks.js';
-import { normalize } from './model.js';
 
 // ------------------------------------------------------------------ standalone auto-run
 function auto() {
@@ -35,7 +32,7 @@ function auto() {
   } catch { /* a file without images: plain frames */ }
   host.uiflow = mount(host, flow, { edit: true, shots }, src); // the only handle an exported file has on its engine
 }
-window.UIFlow = Object.freeze({ SCREEN, tokens: APP_TOKENS, layout, check, paths: (f, lang) => checklist(normalize(f), tr(lang)), mount: (el, flow, opts) => mount(el, flow, opts, null) });
+window.UIFlow = Object.freeze({ SCREEN, tokens: APP_TOKENS, layout, mount: (el, flow, opts) => mount(el, flow, opts, null) });
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", auto, { once: true });
 else auto();
 

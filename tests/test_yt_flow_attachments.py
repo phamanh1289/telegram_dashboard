@@ -233,3 +233,22 @@ async def test_flow_delete_removes_only_the_file_seen_then_comments(tmp_path):
     assert r.status_code == 200 and r.json() == {"warnings": []}
     assert yt.writes == [("DELETE", "/api/issues/VA-1/attachments/1-1"), ("POST", "/api/issues/VA-1/comments")]
     assert yt.comment.startswith("Đã xoá UI flow") and "issue:VA-1" not in svc._cache
+
+
+async def test_flow_md_exports_the_flow_on_screen_for_an_ai_and_writes_nothing(tmp_path, monkeypatch):
+    from telegram_dashboard import zeplin
+
+    monkeypatch.setattr(zeplin, "token", lambda: "")  # never asked: these screens link no design
+    yt = FakeYt([])
+    c, svc = flow_app(yt, tmp_path)
+    ticket = {"id": "VA-1", "summary": "Login", "description": "AC-1: Gửi OTP"}
+    svc._cache["issue:VA-1"] = (time.monotonic(), ticket)
+    async with c:
+        r = await c.post("/api/yt/flow/md", json={"id": "VA-1", "flow": FLOW, "note": "Làm bằng Compose",
+                                                  "data": False})
+    out = r.json()
+    assert r.status_code == 200, out
+    assert out["name"] == "uiflow-VA-1.md" and "## Yêu cầu của người giao việc\n\nLàm bằng Compose" in out["md"]
+    assert "AC-1: Gửi OTP" in out["md"] and "## Còn thiếu / cần hỏi lại" in out["md"]
+    assert "## Dữ liệu sơ đồ" not in out["md"] and yt.writes == []
+    assert out["tokens"] == -(-len(out["md"].encode()) // 3)  # the pre-check's estimate, shown in the dialog

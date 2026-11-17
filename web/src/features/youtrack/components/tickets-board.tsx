@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { animate, AnimatePresence, motion, Reorder, useDragControls, useMotionValue, useReducedMotion, useSpring, useTransform, useVelocity } from "motion/react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -20,6 +21,8 @@ const DND = { type: "spring", stiffness: 460, damping: 36 } as const;
 type Drag = { t: Ticket; from: string; w: number; h: number; land?: string }; // land: set on release, the column the card flies into
 const colAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>("[data-col]") ?? null;
 const GHOST = "\u0000ghost";
+/** order with xs put right after `from` (at the end when it isn't there). */
+const after = (order: string[], from: string, xs: string[]) => { const k = order.indexOf(from); return k < 0 ? [...order, ...xs] : [...order.slice(0, k + 1), ...xs, ...order.slice(k + 1)]; };
 
 /**
  * Columns by State (workflow order), cards dragged onto a column change the ticket's State in YouTrack.
@@ -46,7 +49,10 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   // columns keep their places while the same states are on the board: a drop that changes counts must not reshuffle them under the pointer
   const sig = cols.map(([s]) => s).sort().join("\n");
   const [keep, setKeep] = useState({ sig, order: cols.map(([s]) => s) });
-  if (keep.sig !== sig) setKeep({ sig, order: cols.map(([s]) => s) });
+  // mid-drop (a card landing in a column that just appeared beside its own, or leaving one empty) the others stay put, the new one stays beside it
+  if (keep.sig !== sig) setKeep({ sig, order: drag
+    ? after(keep.order.filter((s) => cols.some(([c]) => c === s)), drag.from, cols.map(([s]) => s).filter((s) => !keep.order.includes(s)))
+    : cols.map(([s]) => s) });
   const lanes = useMemo(() => { const m = new Map(cols); return keep.sig === sig ? keep.order.map((s) => [s, m.get(s)!] as const) : cols; }, [cols, keep, sig]);
   // the user's own column order (dragged by the header), per project; states it never placed keep the default order after it
   const laneKey = `ytLanes:${y.project}`;
@@ -56,16 +62,19 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     const at = new Map(placed.order.map((s, k) => [s, k]));
     return [...lanes].sort((a, b) => (at.get(a[0]) ?? 1e9) - (at.get(b[0]) ?? 1e9));
   }, [lanes, placed]);
-  const reorder = (next: string[]) => {
-    const order = [...next, ...placed.order.filter((s) => !next.includes(s))];
-    setPlaced({ key: laneKey, order });
-    put(laneKey, JSON.stringify(order));
-  };
+  const savePlaced = (order: string[]) => { setPlaced({ key: laneKey, order }); put(laneKey, JSON.stringify(order)); };
+  const reorder = (next: string[]) => savePlaced([...next, ...placed.order.filter((s) => !next.includes(s))]);
   const order = useMemo(() => new Map(rows.map((i, k) => [i.id, k])), [rows]);
   const write = !y.config?.mock;
   const flow = useFlow(y.project);
   const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
   const live = drag && !drag.land ? drag : null;
+  // while a card is dragged, the states it can move to that have no column yet open as empty columns right after its own, to drop it on
+  const fields = useQuery({ queryKey: ["yt", "fields", y.project], queryFn: () => yt.fields(y.project), staleTime: Infinity, enabled: write && !!y.project });
+  const extra = live ? (flow(live.t.state) ?? fields.data?.State ?? []).filter((s) => s !== live.t.state && !lanes.some(([c]) => c === s)) : [];
+  const shownLanes = live && extra.length
+    ? ranked.flatMap((l) => (l[0] === live.from ? [l, ...extra.map((s) => [s, [] as Ticket[]] as const)] : [l]))
+    : ranked;
   const target = live && over && over !== live.from && over !== "—" && canGo(live.t, over) ? over : null; // where the card goes if let go now
   const blocked = !!live && !!over && over !== live.from && !target;
 
@@ -87,6 +96,8 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
     setDrag({ ...drag, land: ok ? to : drag.from });
     if (!ok) return;
     setPend({ id: tk.id, state: to });
+    // dropped on a column that only opened for this drag: it keeps its place beside the source in the user's own order too
+    if (!lanes.some(([c]) => c === to) && placed.order.includes(drag.from)) savePlaced(after(placed.order.filter((s) => s !== to), drag.from, [to]));
     const prev = tk.state, go = (from: Ticket, s: string) => saveTicket(y.patchTicket, from, { state: s }, () => yt.setField(tk.id, "State", s));
     void go(tk, to).then((saved) => {
       setPend(null);
@@ -156,9 +167,10 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   }, [drag, still, lift, ox, oy, fade]);
 
   return (
-    <Reorder.Group as="div" axis="x" values={ranked.map(([s]) => s)} onReorder={reorder} ref={board} layoutScroll data-view
+    <Reorder.Group as="div" axis="x" values={shownLanes.map(([s]) => s)} onReorder={reorder} ref={board} layoutScroll data-view
       className="flex gap-3 overflow-x-auto pb-2 md:max-h-[calc(100dvh-var(--yt-top)-1rem)]">
-      {ranked.map(([st, list]) => {
+      <AnimatePresence initial={false}>
+      {shownLanes.map(([st, list]) => {
         const shown: (Ticket | typeof GHOST)[] = list.slice(0, PER);
         if (st === target && live) {
           const at = list.findIndex((i) => order.get(i.id)! > order.get(live.t.id)!);
@@ -166,7 +178,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
         }
         const away = drag && (drag.land ? drag.land !== drag.from : !!target); // the card is leaving its column: close its old slot
         return (
-          <Lane key={st} st={st} label={`${st}: ${t("{n} ticket", { n: list.length })}`}
+          <Lane key={st} st={st} fresh={extra.includes(st)} label={`${st}: ${t("{n} ticket", { n: list.length })}`}
             head={<><StatePill state={st} /><b className="ml-auto rounded-full bg-paper-3 px-1.5 font-mono text-xs font-medium text-ink-3">{list.length}</b></>}
             className={cn("relative flex w-72 shrink-0 flex-col rounded-[var(--radius-card)] bg-paper-2 transition-[background-color,box-shadow,opacity] duration-(--dur-short)",
               st === target && "bg-hl-wash shadow-[inset_0_0_0_2px_var(--color-hl)]",
@@ -182,6 +194,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
           </Lane>
         );
       })}
+      </AnimatePresence>
       {doneN > 0 && (
         <button type="button" onClick={() => setShowDone(!showDone)} aria-expanded={showDone} aria-label={t(showDone ? "Ẩn các cột đã xong" : "Hiện các cột đã xong")}
           className="flex w-12 shrink-0 flex-col items-center gap-2 rounded-[var(--radius-card)] bg-paper-2 py-3 text-xs font-medium text-ink-2 hover:bg-paper-3 hover:text-ink">
@@ -199,11 +212,12 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
 }
 
 /** A Board column, dragged by its header to a new place among the others (mouse / pen; touch keeps scrolling the board). */
-function Lane({ st, label, head, className, children }: { st: string; label: string; head: React.ReactNode; className: string; children: React.ReactNode }) {
+function Lane({ st, fresh, label, head, className, children }: { st: string; fresh: boolean; label: string; head: React.ReactNode; className: string; children: React.ReactNode }) {
   const t = useT();
   const ctl = useDragControls();
   return (
-    <Reorder.Item as="section" value={st} dragListener={false} dragControls={ctl} data-col={st} aria-label={label} className={className}
+    <Reorder.Item as="section" value={st} dragListener={false} dragControls={ctl} data-col={st} aria-label={label} className={cn(className, fresh && "border-2 border-dashed border-hl/45")}
+      initial={fresh ? { opacity: 0, scale: 0.96 } : false} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} transition={DND}
       whileDrag={{ scale: 1.02, zIndex: 20, boxShadow: "0 16px 40px -12px oklch(0% 0 0 / 0.35)" }}>
       <Hint text={t("Kéo để đổi thứ tự cột")} side="bottom">
         <header onPointerDown={(e) => { if (e.button === 0 && e.pointerType !== "touch") ctl.start(e); }}

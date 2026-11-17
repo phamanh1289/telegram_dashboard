@@ -19,6 +19,11 @@ test("tap area: drawn on the image as a new button, resized, typed, matched by t
   expect(item.label).toBe("Nút mới");
   for (const [got, want] of [[item.rect!.x, 0.2], [item.rect!.y, 0.4], [item.rect!.w, 0.3], [item.rect!.h, 0.05]]) expect(got).toBeCloseTo(want, 2);
   await expect(page.locator(".uf-root")).not.toHaveClass(/uf-drawing/);
+  // dragged, so no name: the cursor waits in the name box, "Nút mới" selected so typing replaces it
+  const name = page.locator(".uf-insp").getByRole("textbox", { name: "Tên nút" });
+  await expect(name).toBeFocused();
+  expect(await name.evaluate((i: HTMLInputElement) => [i.selectionStart, i.selectionEnd])).toEqual([0, "Nút mới".length]);
+  await page.locator(".uf-view").focus(); // leave it as it is: the rest of this test works on "Nút mới"
   const hot = page.locator(`.uf-screen[data-id="login"] .uf-item[data-item="${item.id}"]`);
   await expect(hot).toHaveClass(/uf-rect/);
   await expect(hot).toHaveClass(/uf-sel/);
@@ -29,16 +34,22 @@ test("tap area: drawn on the image as a new button, resized, typed, matched by t
   await page.mouse.move(r.x + r.width / 2 + 39 * k, r.y + r.height / 2, { steps: 4 });
   await page.mouse.up();
   expect(await page.evaluate((id) => window.__api.get().screens[0].items.find((i) => i.id === id)!.rect!.w, item.id)).toBeCloseTo(0.4, 2);
-  // numbers in design px (780 × 1688 image)
-  const x = page.getByRole("spinbutton", { name: "Vùng (px) X" });
-  await x.fill("78");
-  await x.press("Enter");
-  expect(await page.evaluate((id) => window.__api.get().screens[0].items.find((i) => i.id === id)!.rect!.x, item.id)).toBeCloseTo(0.1, 3);
+  await expect(page.getByRole("spinbutton", { name: /^Vùng \(px\)/ })).toHaveCount(0); // no number boxes: drag / keys
+  // "Nút mới" is no text on the design: matching it would drop it off the image, so a press asks for a name
   await page.getByRole("button", { name: "Khớp theo chữ" }).click();
-  expect(await page.evaluate((id) => "rect" in window.__api.get().screens[0].items.find((i) => i.id === id)!, item.id)).toBe(false);
-  for (let i = 0; i < 4; i++) await page.evaluate(() => window.__api.undo());
+  await expect(page.locator(".uf-note")).toContainText("Vùng bấm chưa có tên");
+  await expect(page.locator(".uf-insp").getByRole("textbox", { name: "Tên nút" })).toBeFocused();
+  expect(await page.evaluate((id) => "rect" in window.__api.get().screens[0].items.find((i) => i.id === id)!, item.id)).toBe(true);
+  await page.locator(".uf-view").focus();
+  for (let i = 0; i < 3; i++) await page.evaluate(() => window.__api.undo());
   expect(await page.evaluate(() => window.__api.get().screens[0].items.length)).toBe(1);
   expect(await dirty(page)).toBe(false);
+  // a drawn area over a button whose label is on the design: offered, and it goes back to the text's place
+  await page.evaluate(() => { const f = window.__api.get(); f.screens[0].items[0].rect = { x: 0.5, y: 0.5, w: 0.2, h: 0.05 }; window.__api.set(f); });
+  await page.locator('.uf-screen[data-id="login"] .uf-item[data-item="otp"]').click();
+  await page.getByRole("button", { name: "Khớp theo chữ" }).click();
+  expect(await page.evaluate(() => "rect" in window.__api.get().screens[0].items[0])).toBe(false);
+  await expect(page.locator('.uf-screen[data-id="login"] .uf-item[data-item="otp"]')).toHaveClass(/uf-hot/);
 });
 
 test("tap area: Esc leaves draw mode, a click without a drag draws nothing", async ({ page }) => {
@@ -143,7 +154,11 @@ test("keyboard only: find a screen, edit it, place a tap area and move it withou
   await page.keyboard.press("Enter");
   const item = await page.evaluate(() => window.__api.get().screens[0].items.at(-1)!);
   expect(item.rect).toBeTruthy();
-  await expect(page.locator(".uf-insp h2")).toHaveText("Nút: Nút mới");
+  await expect(page.locator(".uf-insp h2")).toHaveText("Nút mới");
+  // the cursor is in its name: type one, Enter, and the arrow keys move the area again
+  await page.keyboard.type("Đóng");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".uf-insp h2")).toHaveText("Đóng");
   const x0 = item.rect!.x;
   await page.keyboard.press("ArrowRight");
   expect(await page.evaluate(() => window.__api.get().screens[0].items.at(-1)!.rect!.x)).toBeCloseTo(x0 + 2 / 390, 3);
@@ -152,7 +167,7 @@ test("keyboard only: find a screen, edit it, place a tap area and move it withou
   await expect(page.locator(".uf-insp")).toBeHidden();
 });
 
-test("start screen: chosen in the panel, marked, used by Prototype and the flow check; unknown ids are dropped", async ({ page }) => {
+test("start screen: chosen in the panel, marked, used by Prototype; unknown ids are dropped", async ({ page }) => {
   await open(page);
   await edit(page);
   await selectScreen(page, "code");
@@ -160,12 +175,6 @@ test("start screen: chosen in the panel, marked, used by Prototype and the flow 
   expect(await page.evaluate(() => window.__api.get().start)).toBe("code");
   await expect(page.locator('.uf-screen[data-id="code"] .uf-startb')).toHaveCount(1);
   await expect(page.locator(".uf-startb")).toHaveCount(1);
-  const orphans = (start: string | null) => page.evaluate((start) => {
-    const f = { ...window.SAMPLE, start, links: window.SAMPLE.links.filter((l) => l.act !== "back") };
-    return window.UIFlow.check(f).filter((i) => i.kind === "orphan").map((i) => i.screen);
-  }, start);
-  expect(await orphans(null)).toEqual([]);
-  expect(await orphans("code")).toEqual(["login"]); // nothing leads back to the old first screen
   await page.getByRole("button", { name: "Prototype" }).click();
   await expect(title(page)).toHaveText("Nhập OTP");
   await page.getByRole("button", { name: "Toàn cục" }).click();
@@ -173,28 +182,6 @@ test("start screen: chosen in the panel, marked, used by Prototype and the flow 
   expect(await page.evaluate(() => window.__api.get().start)).toBeNull();
   await page.evaluate(() => window.__api.set({ ...window.SAMPLE, start: "ghost" }));
   expect(await page.evaluate(() => window.__api.get().start)).toBeNull();
-});
-
-test("Cần rà soát: buttons not on the design and screens with no source, filtered by kind", async ({ page }) => {
-  await open(page);
-  await remount(page); // login has an image whose only text is "Gửi OTP"
-  await page.evaluate(() => {
-    const f = window.__api.get();
-    f.screens[0].items.push({ id: "ghost", label: "Không có trên ảnh" });
-    window.__api.set(f);
-  });
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await expect(page.locator(".uf-issue", { hasText: "“Không có trên ảnh” chưa thấy trên ảnh màn “Đăng nhập”" })).toHaveCount(1);
-  await expect(page.locator(".uf-issue", { hasText: "“Nhập OTP” chưa có link Zeplin" })).toHaveCount(1);
-  await page.getByRole("button", { name: "Chưa khớp ảnh (1)", exact: true }).click();
-  await expect(page.locator(".uf-issue")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: "Chưa khớp ảnh (1)", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: /^Tất cả/ }).click();
-  expect(await page.locator(".uf-issue").count()).toBeGreaterThan(3);
-  await edit(page); // editing: a row opens the button it is about, ready to draw its area (the panel stays open)
-  await page.locator(".uf-issue", { hasText: "Không có trên ảnh" }).first().click();
-  await expect(page.locator(".uf-insp h2")).toHaveText("Nút: Không có trên ảnh");
-  await expect(page.getByRole("button", { name: "Vẽ vùng bấm", exact: true })).toBeVisible();
 });
 
 test("redo: steps forward after undo, from the toolbar and the keyboard; a new edit clears it", async ({ page }) => {
@@ -231,25 +218,6 @@ test("a run of arrow-key moves is one undo step", async ({ page }) => {
   expect(await x()).toBe(x0 + 50);
   await page.evaluate(() => window.__api.undo());
   expect(await x()).toBe(x0);
-});
-
-test("test checklist: paths from the start screen cover every reachable link; copy puts the text on the clipboard", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await open(page);
-  const text = await page.evaluate(() => window.UIFlow.paths(window.SAMPLE, "vi"));
-  const lines = text.split("\n");
-  expect(lines[0]).toBe("Checklist test UI flow VA-1: 3 đường, phủ 4/4 liên kết");
-  expect(lines).toContain("1. Đăng nhập → bấm “Gửi OTP” → Nhập OTP → bấm “Xác nhận” (khi Mã sai) → Sai mã");
-  expect(text).toContain("bấm “Để sau” → Trang chủ");
-  expect(text).toContain("quay lại → Đăng nhập");
-  // from another start, what cannot be reached is listed
-  expect(await page.evaluate(() => window.UIFlow.paths({ ...window.SAMPLE, start: "home" }, "vi"))).toContain("Chưa đi tới từ màn bắt đầu");
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await page.getByRole("button", { name: "Checklist test" }).click();
-  await expect(page.locator(".uf-paths li")).toHaveCount(3);
-  await page.getByRole("button", { name: "Sao chép" }).click();
-  await expect(page.locator(".uf-panel .uf-zmsg")).toHaveText("Đã sao chép");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(text);
 });
 
 test("tap areas stack four deep: the smaller one is on top whatever order they were made in, and takes the press", async ({ page }) => {
@@ -294,22 +262,6 @@ test("a screen is renamed in the panel's name field; an emptied box keeps the na
   expect(await page.evaluate(() => window.__api.get().screens[0].title)).toBe("Đăng nhập");
 });
 
-test("the edit tools are icons: the words slide out beside the icon on hover", async ({ page }) => {
-  await open(page);
-  await remount(page);
-  await edit(page);
-  for (const label of ["+ Từ Zeplin", "Sắp xếp lại", "↶ Hoàn tác", "↷ Làm lại"]) {
-    const b = page.locator(".uf-tools").getByRole("button", { name: label, exact: true });
-    await expect(b).not.toHaveAttribute("title", /.*/);
-    await expect(b.locator("svg")).toBeVisible();
-    expect((await b.locator("span").boundingBox())!.width).toBe(0);
-  }
-  const zep = page.locator(".uf-tools").getByRole("button", { name: "+ Từ Zeplin", exact: true });
-  await zep.hover();
-  await expect(zep.locator("span")).toHaveText("Từ Zeplin");
-  await expect.poll(async () => (await zep.locator("span").boundingBox())!.width).toBeGreaterThan(40);
-});
-
 /** The fixture's flow, changed by `tweak`, mounted editable with `shots` for the login screen's design. */
 const mountWith = (page: import("@playwright/test").Page, shot: object, tweak = "") => page.evaluate(({ shot, tweak, pic }) => {
   const f = structuredClone(window.SAMPLE);
@@ -332,7 +284,6 @@ test("a design that scrolls is drawn whole: its lower buttons sit on it, and not
   const frame = page.locator('.uf-screen[data-id="login"]');
   expect(await frame.evaluate((el) => (el as HTMLElement).style.height)).toBe("3500px");
   await expect(frame.locator('.uf-item[data-item="end"]')).toHaveClass(/uf-hot/); // on the design, not a row under a cut image
-  expect((await page.evaluate(() => window.UIFlow.check(window.__api.get()))).filter((i) => i.kind === "offshot" && i.item === "end")).toEqual([]);
   // a fresh layout puts nothing under a long design, and "fit" counts it as two phones: the other frames stay
   // readable instead of shrinking to a dot
   await edit(page);
@@ -364,48 +315,6 @@ test("+ Vùng bấm: a click on a text of the design makes it the button, with i
   await expect(page.locator(".uf-zl")).toHaveCount(0);
   await page.evaluate(() => window.__api.undo()); // one step
   expect(await page.evaluate(() => window.__api.get().screens[0].items.length)).toBe(1);
-});
-
-test("a checklist path is walked by Prototype itself, a step at a time; Esc stops it", async ({ page }) => {
-  await open(page);
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await page.getByRole("button", { name: "Checklist test" }).click();
-  await page.locator(".uf-paths .uf-path").first().click(); // Đăng nhập → Gửi OTP → Nhập OTP → Xác nhận → Sai mã
-  await expect(page.locator(".uf-root")).toHaveAttribute("data-mode", "play");
-  await expect(page.locator(".uf-phone")).toHaveClass(/uf-walking/);
-  await expect(title(page)).toHaveText("Đăng nhập");
-  await expect(title(page)).toHaveText("Nhập OTP");
-  await expect(page.locator(".uf-phone").getByRole("dialog", { name: "Sai mã" })).toBeVisible();
-  await expect(page.locator(".uf-phone")).not.toHaveClass(/uf-walking/); // the path is done
-  await page.getByRole("button", { name: "Toàn cục" }).click();
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await page.locator(".uf-paths .uf-path").first().click();
-  await expect(page.locator(".uf-phone")).toHaveClass(/uf-walking/);
-  await page.locator(".uf-phone").focus();
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".uf-phone")).not.toHaveClass(/uf-walking/);
-  await page.waitForTimeout(1300);
-  await expect(title(page)).toHaveText("Đăng nhập"); // it went no further
-});
-
-test("the ticket's AC no screen or arrow carries are one row; the steps without a design copy as a message of three", async ({ page, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await open(page);
-  await withFlow(page, `f.acs = ["AC1", "AC2.1", "AC9", "AC10", "bad"];
-    f.pending = ["Lỗi mạng", "Hết phiên", "Quên mật khẩu", "Khoá tài khoản"].map((title, n) => ({ title, ac: n ? "" : "AC7", src: n ? "" : "login.otp" }));`);
-  expect(await page.evaluate(() => window.__api.get().acs)).toEqual(["AC1", "AC2.1", "AC9", "AC10"]); // kept by a save
-  const rows = (await page.evaluate(() => window.UIFlow.check(window.__api.get()))).filter((i) => i.kind === "noflow");
-  // AC-1 on a screen is AC1; AC-2 on a screen covers AC2.1; AC1 does not cover AC10
-  expect(rows.map((r) => r.text)).toEqual(["2 AC của ticket chưa có trên màn, mũi tên hay bước chờ nào: AC9, AC10"]);
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await expect(page.locator(".uf-panel .uf-tag-noflow")).toHaveText("AC chưa lên sơ đồ");
-  await page.getByRole("button", { name: "Chờ bổ sung (4)" }).click();
-  await page.locator(".uf-panel").getByRole("button", { name: "Sao chép" }).click();
-  await expect(page.locator(".uf-panel .uf-zmsg")).toHaveText("Đã sao chép");
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe([
-    "VA-1: các bước sau chưa có thiết kế trên Zeplin, nhờ bổ sung link màn:",
-    "1. Lỗi mạng (sau nút “Gửi OTP” ở “Đăng nhập”) · AC7", "2. Hết phiên", "3. Quên mật khẩu", "4. Khoá tài khoản", // a lone fourth joins
-  ].join("\n"));
 });
 
 test("a web flow is drawn in browser windows at the design's own width, and switches frame when a flow of the other device comes", async ({ page }) => {
@@ -440,11 +349,152 @@ test("a web flow is drawn in browser windows at the design's own width, and swit
   await page.getByRole("button", { name: "Prototype" }).click();
   expect(await page.locator(".uf-phone").evaluate((el) => [(el as HTMLElement).offsetWidth, (el as HTMLElement).offsetHeight])).toEqual([1280, 800]);
   await expect(page.locator(".uf-status")).toBeHidden();
-  const shown = await box(page, ".uf-phone"), stage = await box(page, ".uf-stage");
-  expect(shown.width).toBeLessThanOrEqual(stage.width);
+  const stage = await box(page, ".uf-stage"); // the frame is scaled by a ResizeObserver, which may run after this read
+  await expect.poll(async () => (await box(page, ".uf-phone")).width).toBeLessThanOrEqual(stage.width);
   // the same mount gets a phone flow: every frame is a phone again
   await page.getByRole("button", { name: "Toàn cục" }).click();
   await page.evaluate(() => window.__api.set(structuredClone(window.SAMPLE)));
   await expect(root).toHaveAttribute("data-device", "mobile");
   expect(await size("home")).toEqual([390, 844]);
+});
+
+test("a tap area's panel lists its ways out: a press opens one, lights its arrow, picks its kind; ✕ removes it", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await page.evaluate(() => {
+    const f = window.__api.get();
+    f.links.push({ src: "login.otp", to: "home", act: "navigate", when: "đã có tài khoản", ac: "" }, { src: "login.otp", to: "err", act: "open", when: "", ac: "" });
+    window.__api.set(f);
+  });
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-item[data-item="otp"]').click();
+  const insp = page.locator(".uf-insp");
+  await expect(insp.getByText("Đường đi (3)")).toBeVisible();
+  const row = insp.getByRole("button", { name: "Đi tới → Trang chủ · đã có tài khoản" });
+  const arrow = page.locator('.uf-link[data-i="' + (await page.evaluate(() => window.__api.get().links.findIndex((l) => l.to === "home" && l.src === "login.otp"))) + '"]');
+  await row.hover();
+  await expect(arrow).toHaveClass(/uf-peek/);
+  await row.click();
+  await expect(row).toHaveAttribute("aria-expanded", "true");
+  await insp.getByRole("button", { name: "Quay lại", exact: true }).click();
+  expect(await page.evaluate(() => window.__api.get().links.find((l) => l.to === "home" && l.src === "login.otp")!.act)).toBe("back");
+  // still open after the change, its arrow still lit
+  await expect(insp.getByRole("button", { name: "Quay lại → Trang chủ · đã có tài khoản" })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".uf-link.uf-peek")).toHaveCount(1);
+  await insp.getByRole("button", { name: "Bỏ đường đi tới “Sai mã”" }).click();
+  await expect(insp.getByText("Đường đi (2)")).toBeVisible();
+  await insp.getByRole("button", { name: "Điều kiện, AC…" }).click();
+  await expect(insp.getByRole("heading")).toHaveText("Đăng nhập → Trang chủ");
+  await expect(page.locator(".uf-link.uf-peek")).toHaveCount(0);
+  for (let i = 0; i < 2; i++) await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get().links.filter((l) => l.src === "login.otp").map((l) => l.act))).toEqual(["navigate", "navigate", "open"]);
+});
+
+test("a tap area is renamed in its panel; a name that is a text on the design lets Khớp theo chữ place it", async ({ page }) => {
+  await open(page);
+  await remount(page);
+  await page.evaluate(() => { const f = window.__api.get(); f.screens[0].items[0] = { id: "otp", label: "Nút mới", rect: { x: 0.5, y: 0.5, w: 0.2, h: 0.05 } }; window.__api.set(f); });
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-item[data-item="otp"]').click();
+  const name = page.locator(".uf-insp").getByRole("textbox", { name: "Tên nút" });
+  await name.fill("Gửi OTP"); // the text on the design (fixture hits)
+  await name.press("Enter");
+  expect(await page.evaluate(() => window.__api.get().screens[0].items[0].label)).toBe("Gửi OTP");
+  await page.getByRole("button", { name: "Khớp theo chữ" }).click();
+  expect(await page.evaluate(() => "rect" in window.__api.get().screens[0].items[0])).toBe(false);
+});
+
+test("a long design folds to its top and back: on the frame, in the panel with its height; one undo each", async ({ page }) => {
+  await open(page);
+  await page.evaluate((pic) => {
+    window.__api.destroy();
+    const f = structuredClone(window.SAMPLE);
+    f.screens[0].items.push({ id: "end", label: "Cuối trang" });
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, {
+      edit: true, lang: "vi", onChange: (_: Flow, d: boolean) => { window.__dirty = d; },
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 5000, hits: [["Gửi OTP", 0, 100, 200, 50], ["Cuối trang", 0, 4800, 300, 80]] } },
+    } as object);
+  }, PIC);
+  const frame = page.locator('.uf-screen[data-id="login"]');
+  const height = () => frame.locator(".uf-card").evaluate((e) => (e as HTMLElement).offsetHeight); // map units: a pick zooms
+  const whole = await height();
+  await expect(frame.locator('.uf-item[data-item="end"]')).toHaveClass(/uf-hot/); // on the long image
+  await expect(frame.getByRole("button", { name: "Thu gọn" })).toHaveCount(0); // only while editing
+  await edit(page);
+  await frame.getByRole("button", { name: "Thu gọn" }).click();
+  expect(await page.evaluate(() => window.__api.get().screens[0].fold)).toBeCloseTo(844 / 2500, 3); // one phone of it
+  expect(await height()).toBeLessThan(whole / 2);
+  await expect(frame).toHaveClass(/uf-folded/);
+  await expect(frame.locator('.uf-item[data-item="end"]')).not.toHaveClass(/uf-hot/); // cut off: a row in the frame
+  // the panel: whole / folded, and the height shown in design px
+  await selectScreen(page, "login");
+  const px = page.getByRole("spinbutton", { name: "Cao (px) H" });
+  await expect(px).toHaveValue("1688");
+  await px.fill("2500");
+  await px.press("Enter");
+  expect(await page.evaluate(() => window.__api.get().screens[0].fold)).toBeCloseTo(0.5, 3);
+  await page.locator(".uf-insp").getByRole("button", { name: "Đầy đủ" }).click();
+  expect(await page.evaluate(() => "fold" in window.__api.get().screens[0])).toBe(false);
+  expect(await height()).toBeCloseTo(whole, 0);
+  for (let i = 0; i < 3; i++) await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => "fold" in window.__api.get().screens[0])).toBe(false);
+});
+
+test("a long design folds by dragging its bottom edge; buttons below the cut past three become one +k row", async ({ page }) => {
+  await open(page);
+  await page.evaluate((pic) => {
+    window.__api.destroy();
+    const f = structuredClone(window.SAMPLE);
+    f.screens[0].fold = 0.5; // half of it: its bottom edge is on the view (a whole one reaches far below)
+    for (let i = 1; i <= 5; i++) f.screens[0].items.push({ id: "r" + i, label: "Dòng " + i });
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, {
+      edit: true, lang: "vi", onChange: (_: Flow, d: boolean) => { window.__dirty = d; },
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 5000, hits: [["Gửi OTP", 0, 100, 200, 50],
+        ...[1, 2, 3, 4, 5].map((i) => ["Dòng " + i, 0, 3000 + i * 200, 300, 80])] } },
+    } as object);
+  }, PIC);
+  await edit(page);
+  const frame = page.locator('.uf-screen[data-id="login"]');
+  const card = async () => (await frame.locator(".uf-card").boundingBox())!;
+  const c0 = await card();
+  const edge = await box(page, '.uf-screen[data-id="login"] .uf-foldh');
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + edge.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + edge.width / 2, c0.y + c0.height * 0.6, { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.__api.get().screens[0].fold)).toBeCloseTo(0.3, 1);
+  // five buttons now below the cut: two rows of their own, the third stands for the other three
+  await expect(frame.locator(".uf-item.uf-more")).toHaveText("+3 nút ở phần ẩn");
+  await expect(frame.locator(".uf-item:not(.uf-hot)")).toHaveCount(3);
+  await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get().screens[0].fold)).toBe(0.5);
+});
+
+test("a folded design's edge pulls down as freely as up: the first move off the frame already drags", async ({ page }) => {
+  await open(page);
+  await page.evaluate((pic) => {
+    window.__api.destroy();
+    const f = structuredClone(window.SAMPLE);
+    f.screens[0].fold = 0.3;
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, {
+      edit: true, lang: "vi", onChange: (_: Flow, d: boolean) => { window.__dirty = d; },
+      shots: { "https://zpl.io/abc123": { src: pic, w: 780, h: 5000, hits: [] } },
+    } as object);
+  }, PIC);
+  await edit(page);
+  const fold = () => page.evaluate(() => window.__api.get().screens[0].fold);
+  const pull = async (dy: number) => { // straight down off the frame: the pointer is over the empty map at once
+    const e = await box(page, '.uf-screen[data-id="login"] .uf-foldh'), x = e.x + e.width / 2, y = e.y + e.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + dy, { steps: 8 });
+    await page.mouse.up();
+  };
+  await pull(120);
+  expect(await fold()).toBeGreaterThan(0.33);
+  const more = (await fold())!;
+  await pull(-60);
+  expect(await fold()).toBeLessThan(more);
+  await pull(120); // and down again, straight away
+  expect(await fold()).toBeGreaterThan(more - 0.01);
 });

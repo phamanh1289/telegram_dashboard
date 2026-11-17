@@ -3259,10 +3259,11 @@ export interface components {
              */
             note: string;
             /**
-             * Skip
-             * @default []
+             * Target
+             * @default mobile
+             * @enum {string}
              */
-            skip: string[];
+            target: "mobile" | "web";
         };
         /** FlowResultDTO */
         FlowResultDTO: {
@@ -3293,16 +3294,13 @@ export interface components {
              */
             split: boolean;
             /**
-             * Skip
-             * @default []
-             */
-            skip: string[];
-            /**
              * Target
              * @default mobile
              * @enum {string}
              */
             target: "mobile" | "web";
+            /** Draw */
+            draw?: string[] | null;
         };
         /** FlowRiskDTO */
         FlowRiskDTO: {

@@ -8,24 +8,24 @@ import { pathToFileURL } from "node:url";
 export type Item = { id: string; label: string; rect?: { x: number; y: number; w: number; h: number } | null };
 
 export type Screen = { id: string; title: string; kind: string; parent: string | null; x?: number | null; y?: number | null;
-  zeplin: string; ac: string; note?: string; items: Item[] };
+  zeplin: string; ac: string; note?: string; items: Item[]; fold?: number };
 
 export type Link = { src: string; to: string; act: string; when: string; ac: string };
 
 export type Pending = { title: string; kind?: string; ac?: string; src?: string; when?: string };
-export type Flow = { v: number; start?: string | null; ticket: string; rev: number; device: string; screens: Screen[]; links: Link[]; pending?: Pending[]; acs?: string[] };
+export type Flow = { v: number; start?: string | null; ticket: string; title?: string; rev: number; device: string; screens: Screen[]; links: Link[]; pending?: Pending[]; acs?: string[];
+  memos?: { id: string; x: number; y: number; w: number; h: number; text: string; fold?: boolean }[] };
 
-export type Issue = { kind: string; screen?: string; item?: string; text: string };
 
-export type Api = { get(): Flow; set(f: Flow): void; notes(list: string[]): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void;
+export type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void; title(name: string): void;
   mode(m: "map" | "play"): void };
 
-export const SCHEMA = new Set(["v", "ticket", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
-  "zeplin", "ac", "note", "items", "label", "rect", "w", "h", "src", "to", "act", "when", "start"]);
+export const SCHEMA = new Set(["v", "ticket", "title", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
+  "zeplin", "ac", "note", "items", "label", "rect", "w", "h", "src", "to", "act", "when", "start", "fold", "memos", "text"]); // a note's w / h / fold are named above
 
 declare global {
   interface Window {
-    UIFlow: { layout(f: Flow): Flow; check(f: Flow): Issue[]; paths(f: Flow, lang?: string): string; mount(el: Element, f: Flow, o: object): Api };
+    UIFlow: { layout(f: Flow): Flow; mount(el: Element, f: Flow, o: object): Api };
     SAMPLE: Flow;
     __api: Api;
     __dirty: boolean;
@@ -41,11 +41,6 @@ export const box = async (page: Page, sel: string) => (await page.locator(sel).f
 
 export const centre = (b: { x: number; y: number; width: number; height: number }) => [b.x + b.width / 2, b.y + b.height / 2];
 
-export const offCentre = async (page: Page, id: string) => {
-  const [sx, sy] = centre(await box(page, `.uf-screen[data-id="${id}"]`));
-  const [vx, vy] = centre(await box(page, ".uf-view"));
-  return Math.max(Math.abs(sx - vx), Math.abs(sy - vy));
-};
 
 export const layerTransform = (page: Page) => page.locator(".uf-layer").evaluate((l) => (l as HTMLElement).style.transform);
 
@@ -102,7 +97,7 @@ export async function addScreen(page: Page) {
 export const addScreensInPage = (page: Page, n: number) => page.evaluate((n) => {
   for (let i = 0; i < n; i++) {
     document.querySelector<HTMLButtonElement>(".uf-tools .uf-btn")!.click();
-    const link = document.querySelector<HTMLInputElement>(".uf-zform input")!;
+    const link = document.querySelector<HTMLTextAreaElement>(".uf-zform textarea")!;
     link.value = `https://zpl.io/loop${i}`;
     link.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   }
@@ -200,4 +195,8 @@ export const find = (page: Page) => page.getByRole("combobox", { name: /Tìm mà
 export const selectScreen = async (page: Page, id: string) => {
   await page.locator(`.uf-screen[data-id="${id}"] .uf-title`).click();
   await expect(page.locator(".uf-insp")).toBeVisible();
+  // a pick on the title zooms onto the screen once a double click's gap (DBL_MS) is over: let the camera rest
+  await page.waitForTimeout(300);
+  let last = "";
+  await expect.poll(async () => { const now = await layerTransform(page), still = now === last; last = now; return still; }).toBe(true);
 };

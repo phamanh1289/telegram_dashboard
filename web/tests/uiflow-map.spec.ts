@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { type Screen, SCHEMA, open, box, centre, offCentre, layerTransform, bigFlow, edit, scr, nav, flowOfShape, laid, VA12584 } from "./uiflow.helpers";
+import { type Screen, open, box, centre, layerTransform, bigFlow, edit, scr, nav, flowOfShape, laid, VA12584 } from "./uiflow.helpers";
 
 test("layout puts screens in columns by depth and popups beside their parent", async ({ page }) => {
   await open(page);
@@ -9,34 +9,6 @@ test("layout puts screens in columns by depth and popups beside their parent", a
   expect(by.home.x! - by.code.x!).toBe(670); // code's column grows by the 60 its popup sticks out
   expect([by.err.x! - by.code.x!, by.err.y! - by.code.y!]).toEqual([60, 60]);
   expect(await page.evaluate(() => window.SAMPLE.screens[0].x ?? null)).toBeNull(); // not modified in place
-});
-
-test("check reports orphan, dead button, missing back and missing AC; a row goes to its screen", async ({ page }) => {
-  await open(page);
-  const rows = await page.evaluate(() => {
-    const f = structuredClone(window.SAMPLE);
-    f.screens.push({ id: "lost", title: "Màn lạc", kind: "screen", parent: null, zeplin: "", ac: "AC-9", items: [] });
-    return window.UIFlow.check(f);
-  });
-  // nosrc: every screen of the sample but "login" has no Zeplin link
-  expect(rows.map((r) => r.kind).filter((k) => k !== "nosrc").sort()).toEqual(["dead", "noac", "noback", "nostart", "orphan"]);
-  expect(rows.filter((r) => r.kind === "nosrc").map((r) => r.screen).sort()).toEqual(["code", "home", "lost"]);
-  const by = Object.fromEntries(rows.map((r) => [r.kind, r]));
-  expect(by.orphan.screen).toBe("lost");
-  expect([by.dead.screen, by.dead.item]).toEqual(["home", "out"]);
-  expect(by.noback.screen).toBe("home");
-  expect(by.noac.screen).toBe("code");
-  expect(rows.every((r) => r.text.length > 0)).toBe(true);
-
-  await page.getByRole("button", { name: "Soát luồng (6)" }).click(); // 3 gaps + 2 screens with no source + no start screen
-  await page.locator(".uf-issue", { hasText: "Đăng xuất" }).click();
-  await expect(page.locator('.uf-screen[data-id="home"]')).toHaveClass(/uf-on/);
-  await expect(page.locator('.uf-screen[data-id="login"]')).not.toHaveClass(/uf-on/);
-  await expect.poll(async () => {
-    const [sx, sy] = centre(await box(page, '.uf-screen[data-id="home"]'));
-    const [vx, vy] = centre(await box(page, ".uf-view"));
-    return Math.max(Math.abs(sx - vx), Math.abs(sy - vy));
-  }).toBeLessThan(2);
 });
 
 test("map draws one frame per screen and one arrow per link, back dashed", async ({ page }) => {
@@ -151,7 +123,7 @@ test("plain wheel / two-finger scroll pans instead of zooming", async ({ page })
   await open(page);
   const a = await box(page, '.uf-screen[data-id="login"]');
   const view = await box(page, ".uf-view");
-  await page.mouse.move(view.x + 10, view.y + 10);
+  await page.mouse.move(view.x + 10, view.y + view.height - 10); // an empty corner: the finder sits top left
   await page.mouse.wheel(30, 40);
   await expect.poll(async () => (await box(page, '.uf-screen[data-id="login"]')).y - a.y).toBeCloseTo(-40, 0);
   const b = await box(page, '.uf-screen[data-id="login"]');
@@ -202,15 +174,6 @@ test("Esc clears the focus", async ({ page }) => {
   await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
 });
 
-test("goto from the check panel while in Prototype is applied when Map is shown again", async ({ page }) => {
-  await open(page);
-  await page.getByRole("button", { name: "Prototype" }).click();
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await page.locator(".uf-issue", { hasText: "Đăng xuất" }).click();
-  await page.getByRole("button", { name: "Toàn cục" }).click();
-  await expect.poll(() => offCentre(page, "home")).toBeLessThan(2);
-});
-
 test("goto right after mounting into a hidden host wins over the initial fit", async ({ page }) => {
   await open(page);
   await page.evaluate(() => {
@@ -227,25 +190,6 @@ test("goto right after mounting into a hidden host wins over the initial fit", a
     const [vx, vy] = centre(await box(page, "#late .uf-view"));
     return Math.max(Math.abs(sx - vx), Math.abs(sy - vy));
   }).toBeLessThan(2);
-});
-
-test("dropped data shows in the check panel; get() keeps the Flow shape", async ({ page }) => {
-  await open(page);
-  await page.evaluate(() => {
-    const f = structuredClone(window.SAMPLE);
-    f.screens.push({ ...f.screens[0] }); // duplicate id "login"
-    f.links.push({ src: "code.ok", to: "ghost", act: "navigate", when: "", ac: "AC-1" });
-    f.links.push({ src: "nope.x", to: "code", act: "navigate", when: "", ac: "AC-1" });
-    window.__api.set(f);
-  });
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await expect(page.locator(".uf-issue", { hasText: "Bỏ 2 liên kết hỏng" })).toHaveCount(1);
-  await expect(page.locator(".uf-issue", { hasText: "Bỏ màn trùng id “login”" })).toHaveCount(1);
-  const keys = await page.evaluate(() => {
-    const f = window.__api.get();
-    return [Object.keys(f), ...f.screens.map(Object.keys), ...f.screens.flatMap((s) => s.items.map(Object.keys)), ...f.links.map(Object.keys)];
-  });
-  expect(keys.flat().filter((k) => !SCHEMA.has(k))).toEqual([]);
 });
 
 test("a parent with 3 overlays: no frame overlaps a frame of another family", async ({ page }) => {
@@ -285,9 +229,10 @@ test("a 17-screen, loosely linked flow fits 1440x900 as a landscape map, not one
   expect(xs.size).toBeGreaterThanOrEqual(5);
   await page.evaluate((f) => window.__api.set(f), VA12584);
   const k = Number(/scale\(([\d.]+)\)/.exec(await layerTransform(page))![1]);
-  // 15 phone frames (610 x 964 with their gaps) in a 1376 x 787 view cannot do better than ~0.28 even packed
-  // perfectly, so 0.25 is the bar; the single-column layout gave 0.1 (the minimum zoom)
-  expect(k).toBeGreaterThanOrEqual(0.25);
+  // 15 phone frames (610 x 964 with their gaps) in a 1392 x 900 view (the toolbar rail takes 48 px of its width)
+  // cannot do better than ~0.27 even packed perfectly, so 0.24 is the bar; the single-column layout gave 0.1 (the
+  // minimum zoom)
+  expect(k).toBeGreaterThanOrEqual(0.24);
 });
 
 test("screens nothing links to or from form a grid, not a column", async ({ page }) => {
@@ -440,47 +385,51 @@ test("an AC chip lights only the screens and arrows that carry its codes; presse
   await expect(page.locator(".uf-root")).not.toHaveClass(/uf-focus/);
 });
 
-test("the render's warnings are rows of the flow check, counted on its button, and go when cleared", async ({ page }) => {
-  await open(page);
-  const check = page.getByRole("button", { name: /Soát luồng/ });
-  const before = Number((await check.getAttribute("aria-label"))!.match(/\d+/)![0]);
-  await page.evaluate(() => window.__api.notes(["Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ.", ""]));
-  await expect(check).toHaveAttribute("aria-label", `Soát luồng (${before + 1})`);
-  await check.click();
-  const row = page.locator(".uf-issue", { hasText: "Một số nhánh chưa đủ rõ" });
-  await expect(row).toHaveCount(1);
-  await expect(row.locator(".uf-tag")).toHaveText("Chưa rõ");
-  await page.evaluate(() => window.__api.notes([]));
-  await expect(row).toHaveCount(0);
-  await expect(check).toHaveAttribute("aria-label", `Soát luồng (${before})`);
-});
-
-test("back / close arrows stay off until the toolbar turns them on (remembered); a focused screen always shows its own", async ({ page }) => {
+test("back / close arrows are always drawn, dashed; the rail has no switch for them", async ({ page }) => {
   await open(page);
   // a straight arrow has an empty box, which Playwright calls hidden: ask for the computed display instead
-  const drawn = () => page.locator(".uf-link.uf-ret").first().evaluate((e) => getComputedStyle(e).display !== "none");
-  const toggle = () => page.getByRole("button", { name: "Hiện mũi tên quay lại" });
-  expect(await drawn()).toBe(false);
-  await expect(toggle()).toHaveAttribute("aria-pressed", "false");
-  const src = await page.evaluate(() => window.__api.get().links.find((l) => l.act === "back" || l.act === "close")!.src.split(".")[0]);
-  await page.locator(`.uf-screen[data-id="${src}"]`).click({ position: { x: 30, y: 300 } }); // focused: its arrows, back ones too
-  await expect.poll(drawn).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect.poll(drawn).toBe(false);
-  await toggle().click();
-  await expect.poll(drawn).toBe(true);
-  await page.reload();
-  await expect.poll(drawn).toBe(true);
-  await toggle().click();
-  await expect.poll(drawn).toBe(false);
+  const drawn = () => page.locator(".uf-link.uf-back").first().evaluate((e) => getComputedStyle(e).display !== "none");
+  expect(await drawn()).toBe(true);
+  await expect(page.locator(".uf-bar").getByRole("button", { name: "Hiện mũi tên quay lại" })).toHaveCount(0);
 });
 
-test("a toolbar icon says what it does on hover, without the browser's slow title tooltip", async ({ page }) => {
+test("the rail slides open with every name while the pointer rests on it, shut when it leaves; Sửa's tools slide in within it", async ({ page }) => {
   await open(page);
-  const backs = page.getByRole("button", { name: "Hiện mũi tên quay lại" });
-  await expect(backs).not.toHaveAttribute("title", /.*/);
-  const tip = () => backs.evaluate((b) => { const s = getComputedStyle(b, "::after"); return [s.content, s.opacity]; });
-  expect(await tip()).toEqual(['"Hiện mũi tên quay lại"', "0"]);
+  const width = async () => (await box(page, ".uf-bar")).width, backs = page.getByRole("button", { name: "Vừa màn hình" });
+  await expect(backs).not.toHaveAttribute("title", /.*/); // no slow browser tooltip: the name shows beside the icon
+  await expect(page.locator(".uf-menu")).toHaveCount(0); // hover opens it: no button for that
+  await edit(page);
+  await page.mouse.move(600, 500);
+  await expect.poll(width).toBe(48);
+  await expect(page.locator(".uf-tools")).toBeVisible();
+  for (const b of await page.locator(".uf-tools button").all()) { // narrow, the group stays inside the 48 px rail
+    const r = (await b.boundingBox())!;
+    expect(r.x + r.width).toBeLessThanOrEqual(48);
+  }
   await backs.hover();
-  await expect.poll(async () => (await tip())[1]).toBe("1");
+  await expect.poll(width).toBeGreaterThan(200);
+  await expect(backs.locator(".uf-lbl")).toHaveCSS("opacity", "1");
+  await expect(page.locator(".uf-tools .uf-lbl").first()).toHaveText("Từ Zeplin");
+  await backs.click(); // a tool picked: shut until the pointer leaves, so nothing it opens is covered
+  await expect.poll(width).toBe(48);
+  await page.mouse.move(600, 500);
+  await backs.hover();
+  await expect.poll(width).toBeGreaterThan(200);
+  await page.mouse.move(600, 500);
+  await expect.poll(width).toBe(48);
+  await edit(page); // Sửa off: its tools slide shut and leave the tab order
+  await expect(page.locator(".uf-tools")).toBeHidden();
+});
+
+test("a press outside + Từ Zeplin closes it; a press inside does not", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator(".uf-tools").getByRole("button", { name: "+ Từ Zeplin" }).click();
+  const form = page.locator(".uf-zform");
+  await expect(form).toBeVisible();
+  await form.getByRole("textbox").click();
+  await expect(form).toBeVisible();
+  await page.locator('.uf-screen[data-id="login"] .uf-title').click(); // outside: closed, and the press still selects
+  await expect(form).toBeHidden();
+  await expect(page.locator(".uf-insp")).toBeVisible();
 });

@@ -103,15 +103,11 @@ export function Sheet() {
                   <span className="self-center font-mono text-xs text-ink-3 tabular-nums">{k + 1}/{nav.length}</span>
                 </span>
               )}
-              {s.kind === "ticket" && y.aiOn && (
-                <Hint side="bottom" text={t("Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code")}><Button size="icon-sm" variant="ghost" className="ml-auto" aria-label={t("AI cho ticket này")}
-                  onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [s.id] })}><Sparkles /></Button></Hint>
-              )}
               {s.kind === "list" && y.aiOn && s.rows.length > 0 && (
                 <Hint side="bottom" text={t("Hỏi AI về {n} ticket trong danh sách này (ưu tiên ticket đang mở)", { n: Math.min(s.rows.length, AI_MAX) })}><Button size="sm" variant="ghost" className="ml-auto"
                   onClick={() => y.setSheet({ kind: "work", title: `AI · ${s.title}`, ids: [...s.rows].sort((a, b) => +!!a.resolved - +!!b.resolved).slice(0, AI_MAX).map((i) => i.id) })}><Sparkles /> {t("Hỏi AI")}</Button></Hint>
               )}
-              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(y.aiOn && (s.kind === "ticket" || (s.kind === "list" && s.rows.length > 0))) && "ml-auto")} onClick={close} aria-label={t("Đóng (Esc)")}><X /></Button>
+              <Button data-autofocus size="icon-sm" variant="ghost" className={cn(!(y.aiOn && s.kind === "list" && s.rows.length > 0) && "ml-auto")} onClick={close} aria-label={t("Đóng (Esc)")}><X /></Button>
             </div>
             <div className={cn("min-h-0 flex-1 p-4 sm:p-5", s.kind === "work" ? "flex flex-col" : "overflow-y-auto")}>{/* work: a chat, it scrolls its own middle */}
               {s.kind === "ticket" ? <TicketView key={s.id} id={s.id} draft={s.comment} />
@@ -216,14 +212,20 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       </motion.dl>
 
 
-      {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
+      {(y.aiOn || write) && ( // the ticket's two AI entries, side by side
         <motion.div variants={fade} className="flex flex-wrap gap-2">
-          <Hint text={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")}>
-            <Button size="sm" variant="outline" onClick={() => setFlowOpen(true)}>
-              <Workflow aria-hidden /> {t("UI flow")}
-              {flowRun && <span data-flow-running aria-hidden className="size-2 animate-pulse rounded-full bg-hl" />}
-            </Button>
-          </Hint>
+          {y.aiOn && (
+            <Spot label={t("AI cho ticket này")} hint={t("Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code")} className="ai-chip"
+              onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [id] })}><Sparkles aria-hidden /></Spot>
+          )}
+          {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
+            <Spot label={t("UI flow")} hint={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")}
+              className="bg-code-wash text-code shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-code)_45%,transparent)] hover:scale-105 hover:bg-code hover:text-paper focus-visible:bg-code focus-visible:text-paper"
+              onClick={() => setFlowOpen(true)}>
+              <Workflow aria-hidden />
+              {flowRun && <span data-flow-running aria-hidden className="absolute -top-0.5 -right-0.5 size-2.5 animate-pulse rounded-full bg-hl ring-2 ring-paper" />}
+            </Spot>
+          )}
         </motion.div>
       )}
       {flowOpen && <FlowDialog issue={id} open onClose={() => setFlowOpen(false)} />}
@@ -403,4 +405,20 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   }
   return <Picker label={node(ticket[key])} title={t("Đổi {field} {id}", { field: name, id: ticket.id })} value={cur} options={options} onPick={(v) => void change(v)}
     foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" }) : undefined} />;
+}
+
+/** A ticket's lead action (AI, UI flow): a colored round icon that slides its label out on hover / focus. */
+function Spot({ label, hint, className, onClick, children }: { label: string; hint: string; className: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Hint side="bottom" title={label} text={hint}>
+      <button type="button" onClick={onClick}
+        className={cn("group relative inline-flex h-9 items-center rounded-full px-2.5 text-sm font-bold transition-[color,background-color,box-shadow,scale] duration-(--dur-short) [&_svg]:size-4 [&_svg]:shrink-0", className)}>
+        {children}
+        {/* 0fr → 1fr: the label grows to its own width, no magic max-width */}
+        <span className="grid grid-cols-[0fr] opacity-0 transition-[grid-template-columns,opacity] duration-(--dur-short) group-hover:grid-cols-[1fr] group-hover:opacity-100 group-focus-visible:grid-cols-[1fr] group-focus-visible:opacity-100">
+          <span className="min-w-0 overflow-hidden whitespace-nowrap"><span className="pl-1.5">{label}</span></span>
+        </span>
+      </button>
+    </Hint>
+  );
 }

@@ -1,81 +1,142 @@
-import { btn, h } from './dom.js';
+import { btn, h, ibtn } from './dom.js';
 import { SHOTS, setShots } from './shots.js';
-import { CAP, CAP_URL, MAX_LINKS, MAX_SCREENS, ZEPLIN } from './constants.js';
-import { canon, scr, str } from './values.js';
+import { CAP, CAP_URL, MAX_SCREENS, ZEPLIN } from './constants.js';
+import { canon, str } from './values.js';
 
-/** "+ Từ Zeplin": a checked link, read once (ctx.lookup, the dashboard's), one new screen. Returns form(open, pend).
- *  `pend`: the title of the pending step this screen is for: it takes that step's kind / AC, is linked from
- *  where the step was reached, and the step leaves the list, all in the one undo step that adds the screen.
- *  ctx: {t, zform, view, lookup?, get(), addScreen(props, also), show(id), goto(id), opened(open)}. */
+const READERS = 3; // links read at once (the dashboard's server reads Zeplin 4 at a time and caches)
+
+/** "+ Từ Zeplin": a popover under its button. One or many links (comma, space or new line between them), each
+ *  checked, read (ctx.lookup, the dashboard's) and added as a screen, all in one undo step. When some go wrong,
+ *  nothing is added yet: only those are listed, with why; "Thử lại" reads the box again once fixed, "Thêm x màn
+ *  hình" adds the x that were fine and leaves the wrong ones in the box.
+ *  ctx: {t, zform, view, anchor(), lookup?, get(), addScreens(list), show(id), goto(id), opened(open)}. */
 export function zeplinForm(ctx) {
   const { t, zform } = ctx;
   let zTry = 0;
-  function form(open, pend = null) {
+  function place() { // beside the toolbar button that opens it, level with it, inside the map
+    const a = ctx.anchor?.(), p = zform.offsetParent;
+    if (!a || !p) return;
+    const pr = p.getBoundingClientRect(), ar = a.getBoundingClientRect();
+    zform.style.top = Math.max(8, Math.min(ar.top - pr.top, pr.height - zform.offsetHeight - 8)) + "px";
+  }
+  function form(open) {
     zTry++; // a read still in flight answers a form that is gone
     ctx.opened(open);
     zform.hidden = !open;
     if (!open) return;
-    const i = h("input", "uf-input");
-    i.type = "url";
-    i.placeholder = "https://app.zeplin.io/project/…/screen/…";
-    const lab = h("label", "uf-field");
-    lab.append(h("span", "uf-flab", t("zUrl")), i);
+    const box = h("textarea", "uf-input uf-zurls");
+    box.rows = 3;
+    box.placeholder = t("zPlaceholder");
+    box.setAttribute("aria-label", t("zUrl"));
+    const count = h("span", "uf-zcount");
     const msg = h("p", "uf-zmsg");
     msg.setAttribute("role", "status");
+    const report = h("div", "uf-zreport");
+    report.setAttribute("role", "alert");
+    report.hidden = true;
     const acts = h("div", "uf-acts uf-chips");
-    const say2 = (text, err, ...buttons) => {
-      msg.textContent = text;
-      msg.classList.toggle("uf-err", !!err);
-      acts.replaceChildren(add, ...buttons, btn(t("close"), "uf-btn", () => form(false)));
+    const add = btn(t("zAdd"), "uf-btn uf-zadd", () => run());
+    const close = ibtn("x", t("close"), "uf-btn uf-zclose", () => form(false)); // in the header: the row below is for actions
+    const links = () => [...new Set(box.value.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean))];
+    const recount = () => {
+      const n = links().length;
+      count.textContent = n > 1 ? t("zCount", { n }) : "";
+      add.textContent = n > 1 ? t("zAddN", { n }) : t("zAdd");
     };
-    const run = async (mode) => { // mode: undefined | "copy" (duplicate allowed) | "plain" (no image read)
-      const url = i.value.trim(), me = ++zTry;
-      if (!ZEPLIN.test(url) || url.length > CAP_URL) return say2(t("badZeplin"), true);
-      const cur = ctx.get(), dup = cur.screens.find((s) => s.zeplin && canon(s.zeplin) === canon(url));
-      if (dup && mode !== "copy") {
-        ctx.goto(dup.id);
-        return say2(t("zDup", { s: dup.title }), false, btn(t("zCopy"), "uf-btn", () => run("copy")));
+    const say = (text, err) => { msg.textContent = text; msg.classList.toggle("uf-err", !!err); };
+    /** Only the links that went wrong, each with why; the box keeps every link to fix and send again. */
+    function tell(bad, good) {
+      report.replaceChildren(h("p", "uf-zhead", t("zCheck", { n: bad.length })));
+      const ul = h("ul", "uf-zlist");
+      for (const b of bad) {
+        const li = h("li"), u = h("span", "uf-zurl", b.url);
+        u.title = b.url;
+        li.append(u, h("span", "uf-zwhy", b.why));
+        ul.append(li);
       }
-      if (cur.screens.length >= MAX_SCREENS) return say2(t("maxScreens", { n: MAX_SCREENS }), true);
-      let shot = null;
-      if (ctx.lookup && mode !== "plain") {
-        say2(t("zReading"));
+      report.append(ul);
+      report.hidden = false;
+      say("", false);
+      add.textContent = t("zRetry");
+      // the good ones are read already: added as they are, the wrong ones stay in the box
+      acts.replaceChildren(add, ...(good.length ? [btn(t("zAddValid", { n: good.length }), "uf-btn", () => put(good, bad))] : []));
+    }
+    /** Add the screens read for `good` (one undo step); `bad` stays in the box and the list. -> false when refused. */
+    function put(good, bad = []) {
+      const shots = good.filter((g) => g.shot);
+      if (shots.length) setShots({ ...SHOTS, ...Object.fromEntries(shots.map((g) => [g.url, g.shot])) }); // drawn at once
+      const list = good.map(({ url, shot }) => {
+        const title = str(shot?.title).replace(/\s+/g, " ").trim().slice(0, CAP);
+        return { zeplin: url, ...(title ? { title } : {}), ...(shot?.cut > 0 && shot.cut < 1 ? { fold: shot.cut } : {}) }; // a long list: folded
+      });
+      const ids = ctx.addScreens(list);
+      if (ids === null) { say(t("dragging"), true); return false; } // refused mid-gesture: nothing added, the links stay
+      if (!bad.length) form(false);
+      else { // what is left: the wrong ones only, still listed
+        box.value = bad.map((b) => b.url).join("\n");
+        recount();
+        add.textContent = t("zRetry"); // they still need fixing first
+        say(t("zAdded", { n: ids.length }), false);
+        acts.replaceChildren(add);
+      }
+      ctx.show(ids[0]); // the camera only: a screen just made is not where Prototype was
+      return true;
+    }
+    async function run() {
+      const me = ++zTry, urls = links();
+      if (!urls.length) return say(t("zNone"), true);
+      report.hidden = true;
+      const cur = ctx.get(), bad = [], todo = [];
+      for (const url of urls) {
+        const dup = cur.screens.find((s) => s.zeplin && canon(s.zeplin) === canon(url));
+        if (!ZEPLIN.test(url) || url.length > CAP_URL) bad.push({ url, why: t("badZeplin") });
+        else if (dup) {
+          bad.push({ url, why: t("zDup", { s: dup.title }) });
+          if (urls.length === 1) ctx.goto(dup.id); // the one asked for is already here: show it
+        } else todo.push(url);
+      }
+      if (cur.screens.length + todo.length > MAX_SCREENS) return say(t("maxScreens", { n: MAX_SCREENS }), true);
+      const good = [];
+      if (ctx.lookup && todo.length) { // read them, a few at a time; none of it touches the flow
+        say(t("zReadingN", { i: 0, n: todo.length }));
         add.disabled = true;
-        const again = btn(t("zRetry"), "uf-btn", () => run(mode)), keep = btn(t("zKeep"), "uf-btn", () => run("plain"));
-        try {
-          shot = await ctx.lookup(url);
-        } catch (e) {
-          if (me !== zTry) return;
-          add.disabled = false;
-          return say2(`${t("zFail")}: ${e instanceof Error ? e.message : String(e)}`, true, again, keep);
-        }
+        let next = 0, done = 0;
+        const reader = async () => {
+          while (next < todo.length) {
+            const url = todo[next++];
+            try {
+              const shot = await ctx.lookup(url);
+              if (shot) good.push({ url, shot });
+              else bad.push({ url, why: t("zMissing") });
+            } catch (e) {
+              bad.push({ url, why: `${t("zFail")}: ${e instanceof Error ? e.message : String(e)}` });
+            }
+            if (me === zTry) say(t("zReadingN", { i: ++done, n: todo.length }));
+          }
+        };
+        await Promise.all(Array.from({ length: Math.min(READERS, todo.length) }, reader));
         if (me !== zTry) return;
         add.disabled = false;
-        if (!shot) return say2(t("zMissing"), true, again, keep);
-      }
-      if (shot) setShots({ ...SHOTS, [url]: shot }); // drawn at once; the host's own shots replace it later
-      const title = str(shot?.title).replace(/\s+/g, " ").trim().slice(0, CAP);
-      const p = pend === null ? null : (ctx.get().pending || []).find((x) => x.title === pend); // read again: the flow may have changed while Zeplin answered
-      const id = ctx.addScreen({ zeplin: url, ...(p ? { title: p.title, kind: p.kind, ac: p.ac, ...(p.src ? { near: scr(p.src) } : {}) } : {}),
-        ...(title ? { title } : {}) },
-        p && ((f, to) => {
-          f.pending = f.pending.filter((x) => x.title !== p.title);
-          if (p.src && f.links.length < MAX_LINKS)
-            f.links.push({ src: p.src, to, act: p.kind === "screen" ? "navigate" : "open", when: p.when, ac: p.ac });
-        }));
-      if (id === null) return say2(t("dragging"), true);
-      form(false);
-      ctx.show(id); // the camera only: a screen just made is not where Prototype was
-    };
-    const add = btn(t("zAdd"), "uf-btn", () => run());
-    i.addEventListener("keydown", (e) => {
+      } else good.push(...todo.map((url) => ({ url, shot: null })));
+      const order = (a, b) => urls.indexOf(a.url) - urls.indexOf(b.url); // as the user wrote them
+      good.sort(order);
+      bad.sort(order);
+      if (!bad.length) return void put(good); // all of them: added, closed
+      say("", false);
+      tell(bad, good); // something went wrong: nothing added yet, the user checks first
+    }
+    box.addEventListener("input", () => { recount(); say("", false); acts.replaceChildren(add); }); // edited: Thử lại reads it all again
+    box.addEventListener("keydown", (e) => {
       e.stopPropagation();
-      if (e.key === "Enter") { e.preventDefault(); run(); }
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); run(); } // Shift+Enter: a new line
       else if (e.key === "Escape") { e.preventDefault(); form(false); ctx.view.focus({ preventScroll: true }); }
     });
-    say2("", false);
-    zform.replaceChildren(h("h2", "uf-ztitle", pend === null ? t("fromZeplin").replace(/^\+ /, "") : t("pendingAdd", { s: pend })), lab, msg, acts);
-    i.focus();
+    const head = h("div", "uf-zhead-row");
+    head.append(h("h2", "uf-ztitle", t("zTitle")), count, close);
+    acts.replaceChildren(add);
+    zform.replaceChildren(head, box, msg, report, acts);
+    place();
+    box.focus();
   }
   return form;
 }

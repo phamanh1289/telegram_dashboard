@@ -16,11 +16,11 @@ from ..ai_run import flow_metrics
 from ..claude import claude_runs
 from ..links import ISSUE, _ours
 from . import flow as uiflow
-from . import flow_locate, flow_merge, flow_prompt
+from . import flow_changes, flow_locate, flow_md, flow_merge, flow_prompt
 from .api_ai import _ai, background
 from .client import YtError, YtUnreachable
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
-from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowPrecheck, FlowSave, FlowShots, _issue_id
+from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowMd, FlowPrecheck, FlowSave, FlowShots, _issue_id
 from .service import YouTrackDashboard
 
 log = logging.getLogger(__name__)
@@ -36,6 +36,18 @@ def _clean(body: FlowSave) -> tuple[str, uiflow.Flow]:
         return i, uiflow.clean(body.flow, i)
     except ValueError:
         raise YtError(400, "UI flow không hợp lệ") from None
+
+
+def _story_ids(svc: YouTrackDashboard, detail: dict, i: str) -> list[str]:
+    """The stories a ticket points to (its parent, the tickets its description names), unless its own description
+    already is the story (long, or with a "Luồng màn" tree). Shared by the render and the Markdown export."""
+    own = detail.get("description") or ""
+    ids = []
+    if "Luồng màn" not in own and len(own) <= OWN_FLOW:
+        ids = [t["id"] for relation in detail.get("links", []) if relation["rel"].lower() == "subtask of"
+               for t in relation["issues"]]
+        ids += [m[2].upper() for m in ISSUE.finditer(own) if _ours(svc, m[1])]
+    return [sid for sid in dict.fromkeys(ids) if sid != i]
 
 
 def _engine(request: Request) -> str:
@@ -72,8 +84,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             got, missing = (old, []) if old is not None else await shots.get(urls)
         except zeplin.ZeplinError as e:
             raise YtError(502, str(e)) from None
-        return {"shots": {u: {k: v for k, v in x.items() if k != "texts"} for u, x in got.items()}, "missing": missing,
-                "stale": old is not None}  # fmt: skip
+        page = {u: {k: v for k, v in x.items() if k not in ("texts", "platform", "dp", "list")} for u, x in got.items()}
+        return {"shots": page, "missing": missing, "stale": old is not None}
 
     @r.get("/flow/image")
     async def flow_image(u: str = Query(max_length=2000)):
@@ -103,7 +115,7 @@ def register(r, svc: YouTrackDashboard) -> None:
             new.design = {
                 u: d for u, d in {**(old.design if old else {}), **uiflow.design_of(body.shots)}.items() if u in urls
             }
-            ch = uiflow.changes(old, new)
+            ch = flow_changes.changes(old, new)
             if not ch:
                 raise YtError(400, "Không có thay đổi")
             new.rev = (old.rev if old else 0) + 1
@@ -175,6 +187,44 @@ def register(r, svc: YouTrackDashboard) -> None:
         except ValueError as e:
             raise YtError(400, str(e)) from None
 
+    @r.post("/flow/md")
+    async def flow_markdown(body: FlowMd):
+        """The flow on screen (draft included) as one Markdown document for an AI agent: every screen with its design's
+        texts, the AC quoted from the ticket / stories, the ways through, what is missing. Read, never written: the
+        flow, its file and the map stay as they are."""
+        i, flow = _clean(body)
+        svc.need_token()
+        urls = list(dict.fromkeys(s.zeplin for s in flow.screens if s.zeplin))
+
+        async def designs():
+            try:
+                return (await shots.get(urls))[0] if urls else {}, ""
+            except zeplin.ZeplinError as e:  # no token / Zeplin down: the document says so, the rest is still worth it
+                return {}, str(e)
+
+        async def story(sid):
+            try:
+                return flow_prompt.source(await svc.issue_detail(sid))
+            except YtError as error:
+                if error.status not in (403, 404):
+                    raise
+                return sid  # not readable here: listed in the document as missing
+
+        # the designs, the ticket and its stories at once (Zeplin takes seconds when its read is cold)
+        reading = asyncio.ensure_future(designs())
+        try:
+            detail = await svc.issue_detail(i)
+            read = await asyncio.gather(*(story(sid) for sid in _story_ids(svc, detail, i)))
+            got, error = await reading
+        finally:
+            reading.cancel()  # a ticket read that failed: the Zeplin read is not waited for
+        sources = [flow_prompt.source(detail), *(x for x in read if isinstance(x, dict))]
+        lost = [x for x in read if isinstance(x, str)]
+        o = flow_md.Options(sources=body.sources, paths=body.paths, data=body.data, note=body.note, lost=lost,
+                            zeplin_error=error, ticket_url="" if svc.mock else f"{svc.base}/issue/{i}")
+        md = flow_md.build(flow, sources, got, o, at=time.strftime("%d/%m/%Y %H:%M"))
+        return {"name": f"uiflow-{i}.md", "md": md, "tokens": flow_prompt.estimate(md)}
+
     @r.get("/flow/scope")
     async def flow_scope() -> FlowScopeDTO:
         return {"scope": svc.flow_scope()}
@@ -210,9 +260,11 @@ def register(r, svc: YouTrackDashboard) -> None:
         await svc.flow_jobs.update(svc.flow_scope(), job_id, processed=True)
         return await flow_job_required(job_id)
 
-    async def gather(i: str, note: str, say=lambda **e: None, previous: dict | None = None, skip=()):
+    async def gather(i: str, note: str, say=lambda **e: None, previous: dict | None = None, draw=None,
+                     target="mobile"):
         """Ticket + stories + linked Zeplin texts -> the prompt (whole, with its risks). Shared by the render, the
-        pre-check and the advice: the reads are cached, so a pre-check makes the render that follows faster."""
+        pre-check and the advice: the reads are cached and shared while in flight, so a render pressed during the
+        pre-check waits on the same Zeplin reads, and leaves out the other platform from them itself (`target`)."""
         metrics = {}
         flow_metrics.set(metrics)
         mark = time.perf_counter()
@@ -220,17 +272,7 @@ def register(r, svc: YouTrackDashboard) -> None:
         svc.need_token()
         detail = await svc.issue_detail(i)
         ticket = data_json(flow_prompt.source(detail))
-        own = detail.get("description") or ""
-        ids = []
-        if "Luồng màn" not in own and len(own) <= OWN_FLOW:
-            ids = [
-                t["id"]
-                for relation in detail.get("links", [])
-                if relation["rel"].lower() == "subtask of"
-                for t in relation["issues"]
-            ]
-            ids += [m[2].upper() for m in ISSUE.finditer(own) if _ours(svc, m[1])]
-        ids = [sid for sid in dict.fromkeys(ids) if sid != i]
+        ids = _story_ids(svc, detail, i)
 
         async def read(sid):
             try:
@@ -273,7 +315,7 @@ def register(r, svc: YouTrackDashboard) -> None:
             texts = sum(1 for x in got.values() if x.get("texts"))
             say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
         try:
-            payload = flow_prompt.build(ticket, story, note, got, previous=previous, skip=skip)
+            payload = flow_prompt.build(ticket, story, note, got, previous=previous, draw=draw, target=target)
         except flow_prompt.BudgetExceeded as error:
             raise YtError(413, str(error)) from None
         payload.shots = got
@@ -330,13 +372,13 @@ def register(r, svc: YouTrackDashboard) -> None:
     @r.post("/flow/precheck")
     async def flow_precheck(body: FlowPrecheck, request: Request) -> FlowCheckDTO:
         """What a render will send, counted by code (no AI, no token): the dialog warns before a costly run."""
-        payload, _, _ = await gather(_issue_id(body.id), body.note, skip=body.skip)
+        payload, _, _ = await gather(_issue_id(body.id), body.note, target=body.target)
         return await _check(payload, request)
 
     @r.post("/ai/flow/advice")
     async def flow_advice(body: FlowPrecheck, request: Request):
         """A light model reads the pre-check's numbers (never the ticket's text): why it is costly, what to do."""
-        check = await _check((await gather(_issue_id(body.id), body.note, skip=body.skip))[0], request)
+        check = await _check((await gather(_issue_id(body.id), body.note, target=body.target))[0], request)
         prompt = f"{flow_prompt.ADVICE}\n<check>{check.model_dump_json()}</check>"
         return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
 
@@ -344,7 +386,7 @@ def register(r, svc: YouTrackDashboard) -> None:
     async def flow_ask(body: FlowAsk, request: Request):
         """The pre-check's Q&A: a light model reads the unclear lines (numbered as shown) and the screen names, then
         the thread and the question; it explains and rewrites lines. Its answers go into the render's note."""
-        payload = (await gather(_issue_id(body.id), body.note, skip=body.skip))[0]
+        payload = (await gather(_issue_id(body.id), body.note, target=body.target))[0]
         lines = next((x["lines"] for x in payload.manifest["risks"] if x["code"] == "ambiguous"), [])
         flow = {"lines": lines, "screens": [s["title"] for s in payload.skeleton["screens"]]}
         turns = data_json([t.model_dump() for t in body.history])
@@ -434,12 +476,14 @@ def register(r, svc: YouTrackDashboard) -> None:
                     lost = f"Không đọc được file trên ticket để giữ chỉnh tay: {e.message}"
             # "Chỉ vẽ phần mới": the AI starts from the flow on screen and writes only what is new
             previous = old.model_dump() if old is not None and body.reuse and body.mode == "flow" else None
-            payload, metrics, screens = await gather(i, body.note, say, previous, skip=body.skip)
+            payload, metrics, screens = await gather(i, body.note, say, previous, draw=body.draw, target=body.target)
             mark = time.perf_counter()
             if body.mode == "screens":
                 say(stage="check", chars=0)
                 try:
-                    flow = uiflow.clean({**payload.skeleton, "links": []}, i)
+                    # the screens' UI only: no buttons from the ticket's flow lines, no links (those are "flow")
+                    shown = [{**x, "items": []} for x in payload.skeleton["screens"]]
+                    flow = uiflow.clean({**payload.skeleton, "screens": shown, "links": []}, i)
                 except ValueError:
                     raise YtError(
                         422, 'Ticket chưa có màn Zeplin hay cây Luồng màn để dựng; chọn "Màn + liên kết" để AI đọc AC'
@@ -501,27 +545,30 @@ def register(r, svc: YouTrackDashboard) -> None:
                 except ValueError, TypeError, AttributeError:  # unreadable answer, or a shape clean refuses
                     raise YtError(502, "AI trả về không đọc được; thử lại hoặc chọn model / effort mạnh hơn") from None
             flow.rev = 0  # whatever was drawn: the dialog saves over the version it opened
-            flow.acs = list(payload.acs)  # what the flow check holds the map against ("AC chưa lên sơ đồ")
             flow.device = body.target  # the frame of the platform picked: a web design is not drawn in a phone
+            cuts = {zeplin.canonical(u): x.get("cut") for u, x in (payload.shots or {}).items()}
+            # a note on the map, the flow's name: a person's, never the AI's (keep_manual carries the old file's)
+            flow.memos, flow.title = [], ""
             for s in flow.screens:
                 s.x = s.y = None  # the layout is the dialog's job
+                # a long list shows its first screenful of items; a screen the flow already had: as it was (keep_manual)
+                s.fold = cuts.get(zeplin.canonical(s.zeplin)) or None
             kept = {}
             if lost:
                 payload.warnings.append(lost)
             if old is not None:
-                flow, kept = uiflow.keep_manual(old, flow)
+                flow, kept = flow_changes.keep_manual(old, flow)
             if body.mode == "flow":  # "screens" promises no AI, no token
                 await locate(flow, payload.shots, payload.warnings, detached)
             # raw: a dict, clean took it. A link to a screen the model wrote but that has no design is not a broken
-            # one: that screen waits in `pending`.
+            # one: that screen is left out on purpose (AI_FLOW_PATCH), added from Zeplin once it has a design.
             # ponytail: by the model's own ids; a remapped legacy id counts as waiting
             ids = {x.id for x in flow.screens}
             own = {x.get("id") for x in raw.get("screens") or [] if isinstance(x, dict)} - ids
             asked = [x for x in raw.get("links") or [] if isinstance(x, dict)]
             waiting = sum(1 for x in asked if x.get("to") in own or str(x.get("src", "")).partition(".")[0] in own)
             dropped = len(asked) - waiting - len(flow.links)
-            say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped),
-                pending=len(flow.pending))  # fmt: skip
+            say(stage="check", done=True, screens=len(flow.screens), links=len(flow.links), dropped=max(0, dropped))
             if svc.flow_scope() != scope:
                 raise YtError(409, "Tài khoản đã đổi; mở lại lượt vẽ trong tài khoản ban đầu")
             manifest = {**payload.manifest, "kept": kept, "mode": body.mode}
@@ -548,8 +595,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                 i,
                 body.base,
                 lambda on_text: work(on_text, detached=True),
-                request={"note": body.note, "mode": body.mode, "split": body.split, "skip": body.skip,
-                         "target": body.target},  # fmt: skip
+                request={"note": body.note, "mode": body.mode, "split": body.split, "target": body.target,
+                         "draw": body.draw},  # fmt: skip
             )
             if got is None:
                 raise YtError(409, "Mã lượt AI đã dùng; nối lại lượt hiện có")

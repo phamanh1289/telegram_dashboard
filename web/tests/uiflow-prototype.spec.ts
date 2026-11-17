@@ -29,11 +29,20 @@ test("a button without a target flashes and stays", async ({ page }) => {
   await expect(out).toHaveClass(/uf-flash/);
   await expect(title(page)).toHaveText("Trang chủ");
   await page.waitForTimeout(300); // tapped again mid-flash: the flash restarts instead of ending early
+  // timed in the page, not by sleeps: a slow machine must not turn "restarted" into "ended" (was flaky)
+  const before = await out.evaluate((b) => {
+    const w = window as unknown as { __gone?: number };
+    new MutationObserver((_, o) => { if (!b.classList.contains("uf-flash")) { w.__gone = performance.now(); o.disconnect(); } })
+      .observe(b, { attributes: true, attributeFilter: ["class"] });
+    return performance.now();
+  });
   await out.click();
-  expect(await page.evaluate(() => document.getAnimations().map((a) => Number(a.currentTime)))).toEqual([0]);
-  await page.waitForTimeout(400);
-  await expect(out).toHaveClass(/uf-flash/);
+  // one pulse running, from its start (the CSS transitions of the hover are not it)
+  expect(await out.evaluate((b) => document.getAnimations()
+    .filter((a) => (a.effect as KeyframeEffect | null)?.target === b && !(a instanceof CSSTransition)).map((a) => Number(a.currentTime)))).toEqual([0]);
   await expect(out).not.toHaveClass(/uf-flash/, { timeout: 1500 });
+  const gone = await page.evaluate(() => (window as unknown as { __gone: number }).__gone);
+  expect(gone - before).toBeGreaterThanOrEqual(580); // a full flash from the second tap, not the end of the first
   await expect(title(page)).toHaveText("Trang chủ");
 });
 
@@ -211,7 +220,7 @@ for (const [w, hh] of [[390, 844], [1440, 900]]) {
       .not.toBe("");
     const phone = await box(page, ".uf-phone"), stage = await box(page, ".uf-stage"), bar = await box(page, ".uf-bar");
     expect(phone.x).toBeGreaterThanOrEqual(0); // whole phone on screen
-    expect(phone.y).toBeGreaterThanOrEqual(bar.y + bar.height); // below the real (possibly wrapped) toolbar
+    expect(phone.x).toBeGreaterThanOrEqual(bar.x + bar.width); // right of the toolbar rail, never under it
     expect(phone.x + phone.width).toBeLessThanOrEqual(w);
     expect(phone.y + phone.height).toBeLessThanOrEqual(hh);
     const [px, py] = centre(phone), [sx, sy] = centre(stage);
@@ -289,10 +298,8 @@ test("Prototype goes on from the screen picked on the map, and keeps the walk wh
   await expect(title(page)).toHaveText("Trang chủ");
 });
 
-test("no start screen: the review list and Prototype say so; Prototype sets the screen shown as the start", async ({ page }) => {
+test("no start screen: Prototype says so and sets the screen shown as the start", async ({ page }) => {
   await open(page);
-  const nostart = () => page.evaluate(() => window.UIFlow.check(window.__api.get()).filter((i) => i.kind === "nostart").map((i) => i.screen));
-  expect(await nostart()).toEqual(["login"]); // where it starts meanwhile
   await page.getByRole("button", { name: "Prototype" }).click();
   await expect(page.locator(".uf-nostart")).toBeVisible();
   await tapIn(page, "Gửi OTP");
@@ -301,7 +308,6 @@ test("no start screen: the review list and Prototype say so; Prototype sets the 
   await expect(pin).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".uf-nostart")).toBeHidden();
   expect(await page.evaluate(() => window.__api.get().start)).toBe("code");
-  expect(await nostart()).toEqual([]);
   expect(await page.evaluate(() => window.__dirty)).toBe(true); // an edit like any other: saved, undoable
   await page.getByRole("button", { name: "Bắt đầu lại" }).click();
   await expect(title(page)).toHaveText("Nhập OTP");

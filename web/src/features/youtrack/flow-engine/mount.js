@@ -1,20 +1,20 @@
 import { createFinder } from './finder.js';
 import { injectStyle } from './styles.js';
 import { tr } from './i18n.js';
-import { setShots, shotOf } from './shots.js';
+import { SHOTS, sameShot, setShots, shotOf } from './shots.js';
 import { parents, sanitize } from './model.js';
 import { layout, sharedLead } from './layout.js';
 import { bounds, clearTall, curve, freeShots, linkEnds, linkText, r1 } from './geometry.js';
-import { btn, h, ibtn, icon, placeFrame, svg } from './dom.js';
+import { h, ibtn, placeFrame, svg } from './dom.js';
 import { readHash, saveFile } from './standalone.js';
 import { buildFrame, markers } from './frames.js';
-import { DEVICE, FIT_TALL, H, LABEL_HIDE, MERGE_MS, NOTE_MS, UNDO, W } from './constants.js';
+import { CAP_TITLE, DEVICE, FIT_TALL, FOCUS, H, LABEL_HIDE, MERGE_MS, NOTE_MS, UNDO, W } from './constants.js';
 import { acCodes, scr, startOf } from './values.js';
-import { checkPanel } from './check-panel.js';
 import { camera } from './camera.js';
 import { editor } from './editor.js';
 import { zeplinForm as zeplinFormOf } from './zeplin-form.js';
 import { player } from './player.js';
+import { memos } from './memos.js';
 
 // ------------------------------------------------------------------ mount
 let mounts = 0;
@@ -29,7 +29,7 @@ function mount(host, flow, opts = {}, src = null) {
   // state
   setShots(opts.shots);
   const first = sanitize(flow);
-  let cur = layout(clearTall(freeShots(first.flow))), dropped = first.dropped, base = JSON.stringify(cur), hist = [];
+  let cur = layout(clearTall(freeShots(first))), base = JSON.stringify(cur), hist = [];
   let fut = [], merging = null; // fut: what undo took back (redo); merging: {key, at} of the last mergeable step
   let shown = "map", focusId = null, focusLink = null, focusSrc = null, focusAc = null, here = null, editing = false; // focusLink: index of the arrow in hand (edit)
   let frames = new Map(), marks = []; // marks: [{path, lab, a, b}] per link, for focus dimming
@@ -45,12 +45,17 @@ function mount(host, flow, opts = {}, src = null) {
     root.style.setProperty("--uf-h", H + "px");
   };
   frameSize();
+  // the toolbar: a narrow rail down the left edge, icons only; it slides open with every name on hover / focus
+  // (styles: .uf-bar), each name staying its aria-label. Top to bottom: the view, Sửa and its tools, the map's
+  // display, then "Lưu file" (an exported file) at the foot.
   const bar = h("div", "uf-bar");
-  let bZep = null, bUndo = null, bRedo = null;
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-orientation", "vertical");
+  let bZep = null, bMemo = null, bUndo = null, bRedo = null;
   const seg = h("div", "uf-seg");
   seg.setAttribute("role", "group");
-  const bMap = btn(t("map"), "uf-btn", () => api.mode("map"));
-  const bPlay = btn(t("play"), "uf-btn", () => api.mode("play"));
+  const bMap = ibtn("map", t("map"), "uf-btn", () => api.mode("map"));
+  const bPlay = ibtn("play", t("play"), "uf-btn", () => api.mode("play"));
   seg.append(bMap, bPlay);
   bar.append(seg);
   if (opts.edit) {
@@ -61,44 +66,35 @@ function mount(host, flow, opts = {}, src = null) {
       root.classList.toggle("uf-editing", editing);
       if (!editing) { ed.clear(); zeplinForm(false); setFocus(null); }
       render(); // the dots and arrow handles only exist while editing
-    }, t("edit"));
+    });
     bEdit.setAttribute("aria-pressed", "false");
-    // the edit tools are icons; the words slide out beside the icon on hover / focus (styles: .uf-tools .uf-btn span)
-    const tool = (name, key, onClick) => {
-      const b = ibtn(name, t(key), "uf-btn", onClick, t(key).replace(/^[+↶↷]\s*/, ""));
-      b.removeAttribute("title"); // the words are shown: no second, slower tooltip
-      return b;
-    };
+    const tool = (name, key, onClick) => ibtn(name, t(key), "uf-btn", onClick);
     bZep = tool("plus", "fromZeplin", () => zeplinForm(true));
     bZep.setAttribute("aria-expanded", "false");
     bUndo = tool("undo", "undo", () => api.undo());
     bRedo = tool("redo", "redo", () => api.redo());
-    const tools = h("div", "uf-tools uf-add"); // one group, there only while editing
+    const tools = h("div", "uf-tools"), tin = h("div", "uf-tin"); // one group that slides open while editing (CSS)
     tools.setAttribute("role", "group");
-    tools.append(bZep, h("span", "uf-div"), tool("grid", "relayout", () => ed.relayout()), bUndo, bRedo);
-    bar.append(bEdit, tools);
+    bMemo = tool("memo", "addMemo", () => memo.toggle());
+    bMemo.setAttribute("aria-pressed", "false");
+    tin.append(bZep, bMemo, tool("grid", "relayout", () => ed.relayout()), h("span", "uf-div"), bUndo, bRedo);
+    tools.append(tin);
+    bar.append(h("span", "uf-div"), bEdit, tools);
   }
   const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
-  // "back" / "close" arrows mirror the ones that lead in: about half the lines of a map. Off until asked for
-  // (remembered on this browser); the ones of what is selected or focused always show.
-  const bBacks = ibtn("ret", t("backs"), "uf-btn uf-fit", () => setBacks(!root.classList.contains("uf-backs")));
-  function setBacks(on) {
-    root.classList.toggle("uf-backs", on);
-    bBacks.setAttribute("aria-pressed", String(on));
-    try { localStorage.setItem("uf-backs", on ? "1" : ""); } catch { /* private mode: not remembered */ }
+  bar.append(h("span", "uf-div uf-fit"), bFit);
+  if (src !== null) bar.append(h("span", "uf-sp"), ibtn("save", t("save"), "uf-btn", () => saveFile(src, cur)));
+  // every icon's name beside it, shown when the pointer rests on the rail (it slides open over the map: CSS)
+  for (const b of bar.querySelectorAll(".uf-icon[title]")) {
+    b.append(h("span", "uf-lbl", b.title.replace(/^[+↶↷]\s*/, ""))); // no glyph twice
+    b.removeAttribute("title"); // the name is right there: no slow browser tooltip
   }
-  let backs = false;
-  try { backs = localStorage.getItem("uf-backs") === "1"; } catch { /* no storage: off */ }
-  setBacks(backs);
-  bar.append(h("span", "uf-sp"), bBacks, bFit);
-  // the bar's icon buttons say what they do on hover at once (styles: .uf-bar [data-tip]); the browser's own title
-  // tooltip is slow and easy to miss. aria-label keeps the name.
-  for (const b of bar.querySelectorAll(".uf-icon[title]")) { b.dataset.tip = b.title; b.removeAttribute("title"); }
-  const bCheck = btn(null, "uf-btn uf-check", () => checks.toggle()), nCheck = h("span", "uf-badge");
-  bCheck.setAttribute("aria-expanded", "false");
-  bCheck.append(icon("check"), h("span", null, t("check", { n: "" }).replace(/\s*\(.*$/, "")), nCheck);
-  bar.append(bCheck);
-  if (src !== null) bar.append(btn(t("save"), "uf-btn", () => saveFile(src, cur)));
+  // a tool picked: the rail slides shut until the pointer leaves it, so what it opens beside it is not covered
+  // (Sửa excepted: its tools slide out under it to be picked next)
+  bar.addEventListener("click", (e) => {
+    if (e.target.closest?.(".uf-btn") && !e.target.closest(".uf-editbtn")) bar.classList.add("uf-hold");
+  });
+  bar.addEventListener("pointerleave", () => bar.classList.remove("uf-hold"));
 
   const main = h("div", "uf-main");
   const view = h("div", "uf-view");
@@ -110,8 +106,6 @@ function mount(host, flow, opts = {}, src = null) {
   const defs = markers(uid), tmp = svg("path", { class: "uf-temp" });
   view.append(layer);
   const play = h("div", "uf-play"); // prototype view: filled by player()
-  const panel = h("div", "uf-panel");
-  panel.hidden = true;
   const insp = h("div", "uf-insp"); // properties of what is selected while editing
   insp.hidden = true;
   const note = h("div", "uf-note"); // why an edit was refused (a cap); clears itself
@@ -119,14 +113,15 @@ function mount(host, flow, opts = {}, src = null) {
   note.hidden = true;
   const zform = h("div", "uf-panel uf-zform"); // + Từ Zeplin: link → read → one new screen
   zform.hidden = true;
-  main.append(view, play, panel);
+  main.append(view, play);
   if (opts.edit) main.append(insp, zform, note);
   let noteTimer = 0;
-  function say(text) {
+  /** A short note at the foot of the map (why an edit was refused, a hint); `stay`: up until the next say ("" hides). */
+  function say(text, stay = false) {
     note.textContent = text;
-    note.hidden = false;
+    note.hidden = !text;
     clearTimeout(noteTimer);
-    noteTimer = setTimeout(() => { note.hidden = true; }, NOTE_MS);
+    if (text && !stay) noteTimer = setTimeout(() => { note.hidden = true; }, NOTE_MS);
   }
   root.append(bar, main);
   host.replaceChildren(root);
@@ -142,13 +137,13 @@ function mount(host, flow, opts = {}, src = null) {
     goTo: (id) => goto(id, !reduced.matches),
     selectScreen: (id) => { if (editing && shown === "map") ed.pick({ t: "screen", id }); },
   });
-  bar.insertBefore(finder.element, bFit);
+  main.append(finder.element); // over the map's top left corner, in both views
 
   // ---------------- + Từ Zeplin (zeplin-form.js): a checked link, read once, one new screen
-  const zeplinForm = zeplinFormOf({ t, zform, view, lookup: opts.lookup, get: () => cur,
-    addScreen: (props, also) => ed.addScreen(props, also),
+  const zeplinForm = zeplinFormOf({ t, zform, view, lookup: opts.lookup, get: () => cur, anchor: () => bZep,
+    addScreens: (list, also) => ed.addScreens(list, also),
     show: (id) => show(id, !reduced.matches), goto: (id) => goto(id, !reduced.matches),
-    opened: (open) => { if (open && checks.isOpen()) checks.toggle(); bZep?.setAttribute("aria-expanded", String(open)); } });
+    opened: (open) => bZep?.setAttribute("aria-expanded", String(open)) });
 
   function render() {
     const had = root.contains(document.activeElement);
@@ -160,21 +155,24 @@ function mount(host, flow, opts = {}, src = null) {
       const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, lead, isStart,
         [s.id, ...s.items.map((it) => `${s.id}.${it.id}`)].map((id) => linked.has(id))]);
       const shot = shotOf(s), old = rendered.get(s.id);
-      const frame = old?.key === key && old.shot === shot ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
+      // a new read of the same design (the live one after the kept one): the frame stays, no image drawn again;
+      // one whose image failed to load is drawn again from the new read
+      const sameShotOk = !!old && sameShot(old.shot, shot) && !(old.shot !== shot && previous.get(s.id)?.querySelector("img[data-bad]"));
+      const frame = old?.key === key && sameShotOk ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
       if (old && old.kind !== s.kind) frame.classList.add("uf-morph"); // screen ↔ popup / sheet / toast: the new shape eases in
       placeFrame(frame, s);
-      if (!old || old.key !== key || old.shot !== shot || old.x !== s.x || old.y !== s.y) changed.add(s.id);
+      if (!old || old.key !== key || !sameShotOk || old.x !== s.x || old.y !== s.y) changed.add(s.id);
       next.set(s.id, { key, shot, x: s.x, y: s.y, kind: s.kind });
       return [s.id, frame];
     }));
     rendered = next;
     const nodes = [...frames.values()].sort((a, b) => a.classList.contains("uf-ov") - b.classList.contains("uf-ov"));
-    syncNodes(layer, [...nodes, links, labels]);
+    memo.sync();
+    syncNodes(layer, [...nodes, links, labels, memo.el]);
     drawLinks(changed);
     if (focusId && !frames.has(focusId)) focusId = null;
     applyFocus();
     finder.sync();
-    checks.refresh();
     ed.sync();
     if (bUndo) { bUndo.disabled = !hist.length; bRedo.disabled = !fut.length; }
     if (shown === "play") proto.refresh();
@@ -189,20 +187,20 @@ function mount(host, flow, opts = {}, src = null) {
       const old = previous[i];
       if (old?.key === key) { old.l = l; paths.push(old.path); if (old.lab) labs.push(old.lab); if (old.knob) knobs.push(old.knob); return old; }
       const ends = linkEnds(l, by), g = curve(ends), dashed = l.act === "back" || l.act === "close";
-      const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back uf-ret" : ""}`,
+      const path = svg("path", { d: g.d, class: `uf-link uf-${l.act}${dashed ? " uf-back" : ""}`,
         "marker-end": `url(#${uid}-${dashed ? "b" : "a"})`, "data-i": i });
       paths.push(path);
       const text = linkText(l);
       let lab = null;
       if (text) {
-        lab = h("div", "uf-label" + (dashed ? " uf-ret" : ""), text);
+        lab = h("div", "uf-label", text);
         lab.dataset.i = i;
         atMid(lab, g.mid);
         labs.push(lab);
       }
       let knob = null;
       if (editing) {
-        knob = svg("circle", { class: "uf-handle" + (dashed ? " uf-ret" : ""), r: 9, cx: r1(ends.q.x), cy: r1(ends.q.y), "data-i": i,
+        knob = svg("circle", { class: "uf-handle", r: 9, cx: r1(ends.q.x), cy: r1(ends.q.y), "data-i": i,
           "data-link": `${l.src}>${l.to}` });
         knobs.push(knob);
       }
@@ -290,7 +288,7 @@ function mount(host, flow, opts = {}, src = null) {
     },
   });
   cleanup.push(() => cam.destroy());
-  const fitAll = (animate) => cam.fit(bounds(cur.screens, FIT_TALL), animate);
+  const fitAll = (animate) => cam.fit(bounds([...cur.screens, ...(cur.memos || [])], FIT_TALL), animate); // a note: a screen's box
   /** The one way the flow changes. Refused while a drag is in flight: that gesture holds the screen objects
    *  and the frames of the current render, and a rebuild under it would strand them (and could commit half a
    *  link). A change that changes nothing costs no undo step. */
@@ -298,7 +296,6 @@ function mount(host, flow, opts = {}, src = null) {
     if (ed.busy()) return;
     const laid = layout(next), now = JSON.stringify(laid);
     if (now === before) return;
-    dropped = sanitize(next).dropped; // the "Dữ liệu hỏng" rows describe what is on screen now, as api.set does
     const at = Date.now();
     // a run of arrow-key steps on one thing is one undo step (the first one's "before" stays on the stack)
     if (!(merge && merging?.key === merge && at - merging.at < MERGE_MS && hist.length)) hist.push(before);
@@ -308,6 +305,11 @@ function mount(host, flow, opts = {}, src = null) {
     cur = laid;
     render();
     opts.onChange?.(structuredClone(cur), now !== base);
+  };
+  /** The world point in the middle of the view: where a new screen or note lands. */
+  const centre = () => {
+    const c = cam.get();
+    return { x: (view.clientWidth / 2 - c.x) / c.k, y: (view.clientHeight / 2 - c.y) / c.k };
   };
   const ed = editor({
     t, insp, cam, view, layer, root,
@@ -323,20 +325,16 @@ function mount(host, flow, opts = {}, src = null) {
     focus: (sel) => (sel?.t === "link" ? setFocus(null, sel.i, true)
       : setFocus(sel ? sel.id : null, null, true, sel?.t === "item" ? `${sel.id}.${sel.item}` : null)),
     note: say,
-    centre: () => {
-      const c = cam.get();
-      return { x: (view.clientWidth / 2 - c.x) / c.k, y: (view.clientHeight / 2 - c.y) / c.k };
-    },
+    centre,
+    show: (id) => show(id, !reduced.matches),
   });
   cleanup.push(() => ed.destroy());
+  const memo = memos({ t, cam, view, root, get: () => cur, commit, say, editing: () => editing && shown === "map",
+    button: () => bMemo });
   const setStart = (id) => { const f = structuredClone(cur); f.start = id; commit(f); seenStart = startOf(cur); };
   let seenStart = startOf(cur); // the start screen Prototype last knew: changed on the map since, it begins there
   const proto = player(play, { flow: () => cur, t, reduced, setStart: opts.edit ? setStart : null, onGo: (id) => { if (shown === "play") { here = id; setFocus(id); writeHash(); } } });
   cleanup.push(() => proto.destroy());
-  const checks = checkPanel({ t, panel, bCheck, nCheck, get: () => cur, dropped: () => dropped, commit,
-    editing: () => editing && shown === "map", goto: (id) => api.goto(id), pick: (sel) => ed.pick(sel),
-    zeplinForm: (open, pending) => zeplinForm(open, pending), zformOpen: () => !zform.hidden,
-    walk: (links) => { api.mode("play"); proto.walk(startOf(cur), links); } });
 
   const onKey = (e) => {
     const tag = e.target?.tagName;
@@ -361,15 +359,23 @@ function mount(host, flow, opts = {}, src = null) {
     }
     if (e.key !== "Escape") return;
     if (ed.busy()) return ed.cancel();
-    if (ed.stopDraw()) return;
+    if (ed.stopDraw() || memo.stop()) return;
     if (!zform.hidden) return zeplinForm(false);
-    if (checks.isOpen()) checks.toggle();
-    else if (shown === "play") proto.escape();
+    if (shown === "play") proto.escape();
     else if (editing && ed.selected()) ed.clear();
     else if (finder.hasMatches()) finder.clear();
     else setFocus(null);
   };
   root.addEventListener("keydown", onKey);
+  // a press outside "+ Từ Zeplin" closes it, as Esc does; the press still does what it does there (select a
+  // screen, pan). The toolbar is its home, not outside: Hoàn tác keeps it open. Capture: before the editor or the
+  // camera takes the pointer.
+  const onOutside = (e) => {
+    const t = e.target;
+    if (!(t instanceof Node) || bar.contains(t)) return;
+    if (!zform.hidden && !zform.contains(t) && !bZep?.contains(t)) zeplinForm(false);
+  };
+  document.addEventListener("pointerdown", onOutside, true);
 
   // hash (#s=<screen>&m=play): read on mount, written only when standalone
   function writeHash() {
@@ -382,7 +388,8 @@ function mount(host, flow, opts = {}, src = null) {
   /** Bring a screen into view; false when it is not in the flow. */
   function show(id, animate) {
     const s = cur.screens.find((x) => x.id === id);
-    if (s) cam.fit({ x: s.x, y: s.y, w: W, h: H }, animate);
+    // with a margin round it (FOCUS of its size each side): its neighbours and arrows stay in sight
+    if (s) cam.fit({ x: s.x - W * FOCUS, y: s.y - H * FOCUS, w: W * (1 + 2 * FOCUS), h: H * (1 + 2 * FOCUS) }, animate);
     return !!s;
   }
   function goto(id, animate) {
@@ -399,7 +406,7 @@ function mount(host, flow, opts = {}, src = null) {
     set(f) {
       ed.cancel(); // whatever the pointer was doing points at the flow that is being replaced
       const before = ids(cur), was = DEVICE;
-      ({ flow: cur, dropped } = sanitize(f));
+      cur = sanitize(f);
       if (DEVICE !== was) { // a re-render for the other platform: every frame is another size, none is reused
         rendered = new Map();
         frameSize();
@@ -433,12 +440,23 @@ function mount(host, flow, opts = {}, src = null) {
       writeHash();
     },
     goto: (id) => goto(id, true),
-    /** What the render could not make sure of (plain text lines), listed in the flow check; [] clears them. */
-    notes: (list) => checks.notes(list),
+    /** The flow's own name (the dashboard's header; "" drops it): one edit, one undo step. */
+    title(name) {
+      const f = structuredClone(cur), v = String(name ?? "").replace(/\s+/g, " ").trim().slice(0, CAP_TITLE);
+      if (v) f.title = v;
+      else delete f.title;
+      commit(f);
+    },
     /** New Zeplin images ({url: shot}): frames redraw, positions stay. */
     shots(map) {
-      ed.cancel();
+      // the same designs read again (only their image links signed anew): every frame stays as it is, so nothing
+      // redraws and a drag goes on; an image that failed to load is drawn again from the new link
+      const was = SHOTS, urls = Object.keys(map || {});
+      const same = urls.length === Object.keys(was).length && urls.every((u) => sameShot(was[u], map[u]))
+        && !layer.querySelector("img[data-bad]");
       setShots(map);
+      if (same) return;
+      ed.cancel();
       render();
     },
     fit: () => fitAll(true),
@@ -466,6 +484,7 @@ function mount(host, flow, opts = {}, src = null) {
       ed.destroy();
       clearTimeout(noteTimer);
       window.removeEventListener("beforeunload", onLeave);
+      document.removeEventListener("pointerdown", onOutside, true);
       host.replaceChildren();
       host.uiflow = null;
     },
@@ -473,7 +492,7 @@ function mount(host, flow, opts = {}, src = null) {
 
   const onLeave = (e) => { if (JSON.stringify(cur) !== base) e.preventDefault(); };
   if (src !== null) window.addEventListener("beforeunload", onLeave);
-  cleanup.push(() => { clearTimeout(noteTimer); window.removeEventListener("beforeunload", onLeave); });
+  cleanup.push(() => { clearTimeout(noteTimer); window.removeEventListener("beforeunload", onLeave); document.removeEventListener("pointerdown", onOutside, true); });
 
   render();
   const hs = readHash(); // before the first writeHash, which mode() runs

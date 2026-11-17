@@ -249,6 +249,7 @@ test("the editor refuses to pass the file's limits: 200 screens, 40 buttons, 100
   await expect(page.locator(".uf-zmsg")).toHaveText("Tối đa 200 màn");
   expect((await flowOf(page)).screens).toHaveLength(200);
 
+  await page.locator(".uf-zform").getByRole("button", { name: "Đóng" }).click(); // the popover sits over the map's corner
   await page.evaluate((f) => window.__api.set(f), sized(2, 40));
   await page.locator('.uf-screen[data-id="s0"] .uf-title').click();
   const addItem = insp(page).getByRole("button", { name: "+ Nút" });
@@ -270,7 +271,7 @@ test("a snapped-back arrow keeps its selection; a self link is refused", async (
   const view = await box(page, ".uf-view");
   await drag(page, '.uf-handle[data-link="login.otp>code"]', [view.x + 8, view.y + view.height - 8]);
   await expect(page.locator("path.uf-link.uf-sel")).toHaveCount(1); // the ring follows the redrawn arrow
-  await expect(insp(page).locator("h2")).toContainText("Mũi tên");
+  await expect(insp(page).locator(".uf-itag")).toHaveText("Mũi tên");
 
   const n = (await flowOf(page)).links.length;
   await drag(page, '.uf-dot[data-src="login"]', await centreOf(page, '.uf-screen[data-id="login"]'));
@@ -462,23 +463,6 @@ test("deleting the last screen is refused with a note", async ({ page }) => {
   expect(await dirty(page)).toBe(false);
 });
 
-test("an edit clears the dropped-data rows of the loaded file", async ({ page }) => {
-  await open(page);
-  await page.evaluate(() => {
-    const f = structuredClone(window.SAMPLE);
-    f.screens.push({ ...f.screens[0] }); // duplicate id "login"
-    window.__api.set(f);
-  });
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  const dup = page.locator(".uf-issue", { hasText: "Bỏ màn trùng id “login”" });
-  await expect(dup).toHaveCount(1);
-  await edit(page);
-  await addScreen(page); // the form takes the panel's place: open the list again to read it
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await expect(page.locator(".uf-issue").first()).toBeVisible();
-  await expect(dup).toHaveCount(0);
-});
-
 test("selecting in edit mode dims the map around what is selected; Esc clears it", async ({ page }) => {
   await open(page);
   await edit(page);
@@ -498,7 +482,7 @@ test("a button picked from its screen's panel is highlighted, lights only its ow
   await page.locator('.uf-screen[data-id="code"] .uf-title').click();
   await expect(insp(page).locator("h2")).toHaveText("Nhập OTP");
   await insp(page).getByRole("button", { name: "Xác nhận", exact: true }).click();
-  await expect(insp(page).locator("h2")).toHaveText("Nút: Xác nhận");
+  await expect(insp(page).locator("h2")).toHaveText("Xác nhận");
   const item = page.locator('.uf-screen[data-id="code"] .uf-item.uf-sel');
   await expect(item).toHaveCount(1);
   expect(await item.evaluate((e) => getComputedStyle(e).borderTopWidth)).toBe("2px");
@@ -510,41 +494,86 @@ test("a button picked from its screen's panel is highlighted, lights only its ow
   await expect(page.locator('.uf-screen[data-id="code"]')).toHaveClass(/uf-sel/);
 });
 
-test("pending steps: listed in Soát luồng, added from Zeplin with their link, or dropped; one undo each", async ({ page }) => {
+test("a new arrow back to the screen that opened this one is a Quay lại; from a popup to its parent, Đóng", async ({ page }) => {
   await open(page);
-  await page.evaluate(() => {
-    const f = structuredClone(window.SAMPLE);
-    f.pending = [{ title: "Hết phiên", kind: "popup", ac: "AC-9", src: "code", when: "token hết hạn" }, { title: "Trợ giúp" },
-      { title: " hết  PHIÊN " }, { title: "" }, { title: "Lạc", src: "nowhere.x" }];
-    window.__api.set(f);
-  });
-  expect((await flowOf(page)).pending).toEqual([ // one per title, a source that is not on the map forgotten
-    { title: "Hết phiên", kind: "popup", ac: "AC-9", src: "code", when: "token hết hạn" },
-    { title: "Trợ giúp", kind: "screen", ac: "", src: "", when: "" }, { title: "Lạc", kind: "screen", ac: "", src: "", when: "" }]);
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  const rows = page.locator(".uf-issue", { hasText: "chưa có thiết kế" });
-  await expect(rows).toHaveCount(3);
-  await expect(rows.first()).toContainText("“Hết phiên” chưa có thiết kế (sau “Nhập OTP”) · token hết hạn · AC-9");
-  await expect(page.getByRole("button", { name: "Bỏ khỏi danh sách chờ" })).toHaveCount(0); // reading only
-  await page.keyboard.press("Escape");
-
   await edit(page);
-  await page.getByRole("button", { name: /Soát luồng/ }).click();
-  await page.getByRole("button", { name: "Bỏ khỏi danh sách chờ" }).last().click(); // "Lạc" will never get a screen
-  expect((await flowOf(page)).pending).toHaveLength(2);
-  await rows.first().click();
-  await expect(page.locator(".uf-ztitle")).toHaveText("Bổ sung “Hết phiên”");
-  await page.getByLabel("Link màn Zeplin").fill("https://zpl.io/expired");
-  await page.getByLabel("Link màn Zeplin").press("Enter");
-  const f = await flowOf(page), added = f.screens.at(-1)!;
-  expect([added.title, added.kind, added.ac, added.zeplin]).toEqual(["Hết phiên", "popup", "AC-9", "https://zpl.io/expired"]);
-  expect(f.links.at(-1)).toEqual({ src: "code", to: added.id, act: "open", when: "token hết hạn", ac: "AC-9" });
-  // beside the screen that leads to it (the next column, 610 on), in the first row nothing is in
-  const from = f.screens.find((s) => s.id === "code")!;
-  expect(added.x).toBe(from.x! + 610);
-  for (const s of f.screens.slice(0, -1)) expect(Math.abs(s.x! - added.x!) >= 390 || Math.abs(s.y! - added.y!) >= 844).toBe(true);
-  expect(f.pending!.map((p) => p.title)).toEqual(["Trợ giúp"]);
-  await page.evaluate(() => window.__api.undo()); // the screen, its link and the list entry: one step
-  const back = await flowOf(page);
-  expect([back.screens.length, back.pending!.length]).toEqual([4, 2]);
+  // code.later goes forward to home: an arrow from home to code goes back
+  await drag(page, '.uf-dot[data-src="home.out"]', await centreOf(page, '.uf-screen[data-id="code"] .uf-title')); // its popup sits mid-frame
+  expect((await links(page)).find((l) => l.src === "home.out" && l.to === "code")!.act).toBe("back");
+  // nothing leads from home to login: forward
+  await drag(page, '.uf-dot[data-src="home"]', await centreOf(page, '.uf-screen[data-id="login"]'));
+  expect((await links(page)).find((l) => l.src === "home" && l.to === "login")!.act).toBe("navigate");
+  // the popup "Sai mã" over "Nhập OTP": closing it
+  await drag(page, '.uf-dot[data-src="err"]', await centreOf(page, '.uf-screen[data-id="code"] .uf-title'));
+  expect((await links(page)).find((l) => l.src === "err" && l.to === "code")!.act).toBe("close");
+});
+
+test("the panel header's icons say what they do on hover, without the slow title tooltip", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  await page.locator('.uf-screen[data-id="login"] .uf-title').click();
+  const x = page.locator(".uf-insp").getByRole("button", { name: "Bỏ chọn (Esc)" });
+  await expect(x).not.toHaveAttribute("title", /.*/);
+  await x.hover();
+  await expect.poll(() => x.evaluate((b) => getComputedStyle(b, "::after").opacity)).toBe("1");
+  expect(await x.evaluate((b) => getComputedStyle(b, "::after").content)).toBe('"Bỏ chọn (Esc)"');
+});
+
+test("a screen turned into a popup takes its arrows along: in Đi tới → Mở, out Quay lại → Đóng, and back again", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => { const f = window.__api.get(); f.links.push({ src: "home", to: "code", act: "back", when: "", ac: "AC-9" }); window.__api.set(f); });
+  await edit(page);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').click();
+  const acts = () => page.evaluate(() => window.__api.get().links.filter((l) => l.to === "home" || l.src.split(".")[0] === "home").map((l) => `${l.src}>${l.to}:${l.act}:${l.ac}`));
+  await page.locator(".uf-insp").getByRole("button", { name: "Popup", exact: true }).click();
+  expect(await acts()).toEqual(["code.later>home:open:AC-3", "home>code:close:AC-9"]);
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.parent)).toBe("code"); // the screen that opens it
+  await page.locator(".uf-insp").getByRole("button", { name: "Sheet", exact: true }).click(); // overlay to overlay: no change
+  expect(await acts()).toEqual(["code.later>home:open:AC-3", "home>code:close:AC-9"]);
+  await page.locator(".uf-insp").getByRole("button", { name: "Màn", exact: true }).click();
+  expect(await acts()).toEqual(["code.later>home:navigate:AC-3", "home>code:back:AC-9"]);
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "home")!.parent)).toBeNull();
+  for (let i = 0; i < 3; i++) await page.evaluate(() => window.__api.undo());
+  expect(await acts()).toEqual(["code.later>home:navigate:AC-3", "home>code:back:AC-9"]);
+});
+
+test("every screen picked to edit is zoomed onto, the first and every one after; on its title the move waits out a double click", async ({ page }) => {
+  await page.setViewportSize({ width: 2400, height: 1000 }); // wide: the next screen is whole and readable beside it
+  await open(page);
+  await edit(page);
+  const cam = () => page.locator(".uf-layer").evaluate((l) => { const m = new DOMMatrix(getComputedStyle(l).transform); return [m.a, m.e, m.f]; });
+  let last = [0, 0, 0]; // the zoom animates: wait until it rests
+  const rest = () => expect.poll(async () => { const now = await cam(), still = now.join() === last.join(); last = now; return still; }).toBe(true);
+  const off = async (id: string) => {
+    const [c, v] = [await box(page, `.uf-screen[data-id="${id}"] .uf-card`), await box(page, ".uf-view")];
+    return Math.abs(c.x + c.width / 2 - (v.x + v.width / 2));
+  };
+  const centred = (id: string) => expect.poll(() => off(id)).toBeLessThan(4);
+  for (const id of ["code", "home", "code"]) { // the next one too, readable already: the camera still comes to it
+    const [c, v] = [await box(page, `.uf-screen[data-id="${id}"] .uf-card`), await box(page, ".uf-view")];
+    const x0 = Math.max(c.x, v.x), x1 = Math.min(c.x + c.width, v.x + v.width); // its part in the view
+    if (id === "home") expect([c.x >= v.x, c.x + c.width <= v.x + v.width, last[0] >= 0.6]).toEqual([true, true, true]);
+    await page.mouse.click((x0 + x1) / 2, c.y + c.height * 0.38); // the body, under its buttons, above popup and panel
+    await expect(page.locator(`.uf-screen[data-id="${id}"]`)).toHaveClass(/uf-sel/);
+    await rest();
+    expect(last[0]).toBeGreaterThanOrEqual(0.6);
+    await centred(id);
+  }
+  const t = await box(page, '.uf-screen[data-id="home"] .uf-title'), v = await box(page, ".uf-view");
+  const was = await cam();
+  await page.mouse.click(Math.min(t.x + t.width - 8, v.x + v.width - 8), t.y + t.height / 2); // its title's part in view
+  expect(await cam()).toEqual(was); // not yet: a second click may follow to rename it
+  await centred("home");
+});
+
+test("the flow's own name: one edit, one undo step; blank drops it; a file's name is read back clean", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => window.__api.title("  Luồng\n đăng nhập  "));
+  expect(await page.evaluate(() => [window.__api.get().title, window.__dirty])).toEqual(["Luồng đăng nhập", true]);
+  await page.evaluate(() => window.__api.title(""));
+  expect(await page.evaluate(() => "title" in window.__api.get())).toBe(false);
+  await page.evaluate(() => window.__api.undo());
+  expect(await page.evaluate(() => window.__api.get().title)).toBe("Luồng đăng nhập");
+  await page.evaluate(() => window.__api.set({ ...window.SAMPLE, title: "x".repeat(300) }));
+  expect(await page.evaluate(() => window.__api.get().title!.length)).toBe(120);
 });

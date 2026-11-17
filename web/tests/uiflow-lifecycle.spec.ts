@@ -15,7 +15,8 @@ for (const interruption of ["pointercancel", "mode", "shots", "escape"] as const
     await page.evaluate((kind) => {
       if (kind === "pointercancel") document.querySelector(".uf-layer")!.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
       else if (kind === "mode") window.__api.mode("play");
-      else if (kind === "shots") (window.__api as unknown as { shots(s: object): void }).shots({});
+      else if (kind === "shots") (window.__api as unknown as { shots(s: object): void }).shots({ // a new design: frames rebuilt
+        "https://zpl.io/abc123": { src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E", w: 390, h: 844, hits: [] } });
       else document.querySelector(".uf-view")!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     }, interruption);
     await page.mouse.up();
@@ -25,6 +26,22 @@ for (const interruption of ["pointercancel", "mode", "shots", "escape"] as const
     expect(await page.evaluate(() => window.__api.get())).toEqual(before);
   });
 }
+
+test("the same designs read again (new image links only) leave a drag in hand alone", async ({ page }) => {
+  await open(page);
+  await edit(page);
+  const pic = (n: number) => ({ src: `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' id='${n}'/%3E`, w: 390, h: 844, hits: [] });
+  await page.evaluate((s) => (window.__api as unknown as { shots(s: object): void }).shots({ "https://zpl.io/abc123": s }), pic(1));
+  const x0 = await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "code")!.x!);
+  const head = await box(page, '.uf-screen[data-id="code"] .uf-head');
+  await page.mouse.move(head.x + 20, head.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(head.x + 100, head.y + 70, { steps: 4 });
+  await page.evaluate((s) => (window.__api as unknown as { shots(s: object): void }).shots({ "https://zpl.io/abc123": s }), pic(2));
+  await page.mouse.move(head.x + 140, head.y + 70, { steps: 2 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.__api.get().screens.find((s) => s.id === "code")!.x!)).toBeGreaterThan(x0 + 50); // the move landed
+});
 
 test("successful screen gesture commits once and one undo restores family", async ({ page }) => {
   await open(page);
@@ -171,4 +188,29 @@ test("schema v2: a newer file is refused, not edited", async ({ page }) => {
     try { window.__api.set({ ...structuredClone(window.SAMPLE), v: 3 }); return null; } catch (e) { return String(e); }
   });
   expect(err).toContain("v3");
+});
+
+test("a new read of the same designs keeps every frame; only a screen whose design changed is drawn again", async ({ page }) => {
+  await open(page);
+  const pic = (n: number) => "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688"><!--${n}--></svg>`);
+  await page.evaluate((src) => {
+    const f = structuredClone(window.SAMPLE);
+    f.screens[1].zeplin = "https://zpl.io/code1";
+    window.__api.destroy();
+    window.__api = window.UIFlow.mount(document.getElementById("uiflow")!, f, { edit: true, lang: "vi",
+      shots: { "https://zpl.io/abc123": { src, w: 780, h: 1688, hits: [["Gửi OTP", 0, 100, 200, 50]] },
+        "https://zpl.io/code1": { src, w: 780, h: 1688, hits: [["Xác nhận", 0, 100, 200, 50]] } } } as object);
+    for (const el of document.querySelectorAll<HTMLElement>(".uf-screen")) (el as HTMLElement & { mark?: number }).mark = 1;
+  }, pic(1));
+  const kept = () => page.evaluate(() => Object.fromEntries([...document.querySelectorAll(".uf-screen")]
+    .map((el) => [(el as HTMLElement).dataset.id, (el as HTMLElement & { mark?: number }).mark === 1])));
+  // the live read: a new address for every image, the same designs; then one redesigned (a text moved)
+  await page.evaluate((src) => (window.__api as unknown as { shots(m: object): void }).shots({
+    "https://zpl.io/abc123": { src, w: 780, h: 1688, hits: [["Gửi OTP", 0, 100, 200, 50]] },
+    "https://zpl.io/code1": { src, w: 780, h: 1688, hits: [["Xác nhận", 0, 100, 200, 50]] } }), pic(2));
+  expect(await kept()).toMatchObject({ login: true, code: true });
+  await page.evaluate((src) => (window.__api as unknown as { shots(m: object): void }).shots({
+    "https://zpl.io/abc123": { src, w: 780, h: 1688, hits: [["Gửi OTP", 0, 100, 200, 50]] },
+    "https://zpl.io/code1": { src, w: 780, h: 1688, hits: [["Xác nhận", 0, 900, 200, 50]] } }), pic(3));
+  expect(await kept()).toMatchObject({ login: true, code: false });
 });

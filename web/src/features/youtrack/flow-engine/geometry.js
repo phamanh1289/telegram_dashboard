@@ -1,5 +1,5 @@
 import { hotspots, layersOf, shotOf } from './shots.js';
-import { BOTTOM, CARD_HEAD, CARD_PAD, DEVICE, FOLD_SLACK, H, HEAD, PAD, ROW, STATUS, STEP, TALL, TOP, W, ZMAX, ZMIN } from './constants.js';
+import { MIN_FOLD, BOTTOM, CARD_HEAD, CARD_PAD, DEVICE, FOLD_SLACK, H, HEAD, PAD, ROW, STATUS, STEP, TALL, TOP, W, ZMAX, ZMIN } from './constants.js';
 import { family, isOverlay } from './model.js';
 import { clamp, itm, scr } from './values.js';
 
@@ -8,11 +8,26 @@ import { clamp, itm, scr } from './values.js';
  *  head / headH: the title bar; top / step: where item rows start and their pitch. */
 /** How high a screen's frame is: the phone, or the whole design when it is a page that scrolls (a 375 × 3714
  *  list): its lower buttons are on the map where the design has them, not rows under a cut image. */
-function frameH(s) {
+function frameH(s, whole = false) {
   const sh = shotOf(s), hh = sh ? (sh.h * W) / sh.w : 0;
-  if (DEVICE === "web") return sh ? Math.max(200, Math.round(hh)) : H; // a window is as high as its page, whatever that is
-  return hh > H * TALL ? Math.round(hh) : H;
+  // a window is as high as its page, whatever that is
+  const full = DEVICE === "web" ? (sh ? Math.max(MIN_FOLD, Math.round(hh)) : H) : hh > H * TALL ? Math.round(hh) : H;
+  // folded by the user (`fold`: the part of the design shown, 0..1): the rest is cut, its buttons become rows
+  return sh && s.fold && !whole ? Math.min(full, Math.max(MIN_FOLD, Math.round(hh * s.fold))) : full;
 }
+/** A design longer than one frame (a list that scrolls) can be folded to a part of it on the map. */
+const canFold = (s) => !!shotOf(s) && frameH(s, true) > H;
+/** Fold screen `id` of `f` to `fold` (0..1 of its design; null: whole), in place. Unfolding pushes down what sits
+ *  under it in its column, as a long design always did. -> f */
+function setFold(f, id, fold) {
+  const s = f.screens.find((x) => x.id === id);
+  if (fold && fold < 1) s.fold = Math.round(fold * 1e4) / 1e4;
+  else delete s.fold;
+  return clearTall(f);
+}
+/** The fold that shows the top of `s`: up to where its list of repeated items is cut (`cut`, from the dashboard:
+ *  the items that fit one screenful, whole), else one phone of it. */
+const oneFrame = (s) => { const sh = shotOf(s); return !sh ? null : sh.cut > 0 && sh.cut < 1 ? sh.cut : H / ((sh.h * W) / sh.w); };
 function cardOf(s) {
   const n = s.items.length;
   if (shotOf(s)) return { x: 0, y: 0, w: W, h: frameH(s), head: 0, headH: STATUS, top: TOP, step: STEP }; // head: over the status bar
@@ -40,11 +55,18 @@ function rowsOf(s) {
   // FOLD_SLACK keeps it (the home bar overlaps a bottom button by design); past that is the next screenful
   const on = (r) => r && r.y + r.h <= fh + (r.manual ? 0.5 : FOLD_SLACK);
   const off = items.filter((r) => !on(r)).length;
+  // the ones not on it are rows at its foot: up to OFF_ROWS, past that the last row stands for the rest ("+k
+  // nút"), so a folded list with many buttons below the cut does not stack rows over its whole image
+  const own = off > OFF_ROWS ? OFF_ROWS - 1 : off, rows = Math.min(off, OFF_ROWS);
   let n = 0;
   const z = layersOf(items.map((r) => (on(r) ? r : null)));
-  return items.map((r, i) => (on(r) ? { r, hot: true, z: z[i] }
-    : { r: { x: 16, y: fold - (off - n++) * 48, w: W - 32, h: 40 }, hot: false }));
+  return items.map((r, i) => {
+    if (on(r)) return { r, hot: true, z: z[i] };
+    const k = n++, row = { x: 16, y: fold - (rows - Math.min(k, own)) * 48, w: W - 32, h: 40 };
+    return k < own ? { r: row, hot: false } : { r: row, hot: false, more: off - own, lead: k === own };
+  });
 }
+const OFF_ROWS = 3;
 /** Full-frame overlays the layout once put over their parent (before they had an image): placed afresh. */
 function freeShots(f) {
   for (const s of f.screens) {
@@ -121,4 +143,4 @@ function zoomAt(c, k, px, py) {
   return { k, x: px - ((px - c.x) * k) / c.k, y: py - ((py - c.y) * k) / c.k };
 }
 
-export { frameH, cardOf, rowOf, cardAbs, rowsOf, freeShots, clearTall, linkEnds, r1, curve, linkText, bounds, fitCam, zoomAt };
+export { frameH, canFold, setFold, oneFrame, cardOf, rowOf, cardAbs, rowsOf, freeShots, clearTall, linkEnds, r1, curve, linkText, bounds, fitCam, zoomAt };

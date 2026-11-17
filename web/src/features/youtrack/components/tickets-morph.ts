@@ -52,27 +52,37 @@ export function morph(snap: Snap, root: HTMLElement) {
   const ease = getComputedStyle(root).getPropertyValue("--ease-out").trim() || "cubic-bezier(0.16, 1, 0.3, 1)", dur = 600;
   const runs: Animation[] = [], ghosts: HTMLElement[] = [], hid: HTMLElement[] = [];
   root.querySelector<HTMLElement>("[data-view]")?.animate({ opacity: [0, 1] }, { duration: 320, easing: ease });
-  let k = 0;
-  for (const el of itemsOf(root)) {
+  // every read first, then every write: measuring after each ghost went in would lay the whole page out once per item
+  const items = [...itemsOf(root)].flatMap((el) => {
     const s = snap.get(keyOf(el));
-    if (!s) continue;
-    const r = el.getBoundingClientRect(), cs = getComputedStyle(el), to = lookOf(el, r.width);
+    if (!s) return [];
+    const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+    return [{ el, s, r, radius: cs.borderRadius, shadow: cs.boxShadow, vis: seen(el, r, root), to: lookOf(el, r.width) }];
+  });
+  const box = (b: DOMRect, radius: string, shadow: string, opacity: number) =>
+    ({ transform: `translate(${b.left}px, ${b.top}px)`, width: `${b.width}px`, height: `${b.height}px`, borderRadius: radius, boxShadow: shadow, opacity });
+  let k = 0;
+  for (const { el, s, r, radius, shadow, vis, to } of items) {
     const g = document.createElement("div");
-    g.style.cssText = "position:fixed;left:0;top:0;z-index:60;pointer-events:none;overflow:hidden;background:var(--color-cotton)";
-    g.append(s.look, to);
-    document.body.append(g);
+    g.style.cssText = "position:fixed;left:0;top:0;z-index:60;pointer-events:none;overflow:hidden;background:var(--color-cotton);will-change:transform";
     ghosts.push(g);
+    const o = { duration: dur, delay: 0, easing: ease, fill: "both" as const };
+    if (!vis) { // its new place is off screen: a flight there would sweep across the page, so it just fades where it was
+      g.append(s.look);
+      runs.push(g.animate([box(s.r, s.radius, s.shadow, 1), { ...box(s.r, s.radius, s.shadow, 0), transform: `translate(${s.r.left}px, ${s.r.top}px) scale(0.96)` }], { ...o, duration: dur * 0.35 }));
+      continue;
+    }
+    o.delay = Math.min(k++ * 16, 240);
+    g.append(s.look, to);
     el.style.visibility = "hidden";
     hid.push(el);
-    const box = (b: DOMRect, radius: string, shadow: string, opacity: number) =>
-      ({ transform: `translate(${b.left}px, ${b.top}px)`, width: `${b.width}px`, height: `${b.height}px`, borderRadius: radius, boxShadow: shadow, opacity });
-    const o = { duration: dur, delay: Math.min(k++ * 16, 240), easing: ease, fill: "both" as const };
     runs.push(
-      g.animate([box(s.r, s.radius, s.shadow, 1), box(r, cs.borderRadius, cs.boxShadow, seen(el, r, root) ? 1 : 0)], o),
+      g.animate([box(s.r, s.radius, s.shadow, 1), box(r, radius, shadow, 1)], o),
       s.look.animate({ opacity: [1, 0] }, { ...o, duration: dur * 0.55 }),
       to.animate({ opacity: [0, 1] }, { ...o, delay: o.delay + dur * 0.2, duration: dur * 0.6 }),
     );
   }
+  document.body.append(...ghosts);
   let over = false;
   const done = () => {
     if (over) return;

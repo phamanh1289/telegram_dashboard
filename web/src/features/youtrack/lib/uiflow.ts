@@ -3,10 +3,10 @@
 // The UI flow engine (flow-engine/ source, bundled to public/uiflow.js and inlined in exports) in React: loaded once by a
 // <script> tag, mounted on an element. The engine owns its DOM; React only hands it a flow and hears its changes.
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { keepPreviousData, useQueries, useQuery, type UseQueryResult } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { type Lang, t } from "@/shared/lib/i18n";
-import { type FlowShot, type UiFlow, yt } from "@/features/youtrack/lib/yt";
+import { type FlowShot, type FlowShots, type UiFlow, yt } from "@/features/youtrack/lib/yt";
 
 /** What the dashboard uses of the engine's api (it also has mode / goto / fit / undo, driven by its own toolbar). */
 type FlowApi = {
@@ -15,8 +15,8 @@ type FlowApi = {
   set(f: UiFlow): void;
   /** New Zeplin images: the frames redraw, positions stay. */
   shots(s: Shots): void;
-  /** What the render could not make sure of: rows in the engine's flow check ("Soát luồng"); [] clears them. */
-  notes(list: string[]): void;
+  /** The flow's own name ("" drops it): an edit like any other (undo, dirty). */
+  title(name: string): void;
   destroy(): void;
 };
 type Shots = Record<string, FlowShot>;
@@ -62,7 +62,7 @@ function loadEngine(): Promise<Engine> {
  * Mounts the engine on `el` once both `el` and `flow` exist (editable, in `lang` at that time: a switch mid-edit would
  * cost the edits); a new `flow` afterwards is `set` into it, clean. `onChange(flow, dirty)` on every edit. Unmounts with `el`.
  */
-export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, onChange, shots, notes }: { lang: Lang; onChange: (f: UiFlow, dirty: boolean) => void; shots?: Shots; notes?: string[] }) {
+export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, onChange, shots }: { lang: Lang; onChange: (f: UiFlow, dirty: boolean) => void; shots?: Shots }) {
   const [api, setApi] = useState<FlowApi | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [tries, setTries] = useState(0);
@@ -117,8 +117,6 @@ export function useUiFlow(el: HTMLElement | null, flow: UiFlow | null, { lang, o
       try { api.shots(shots); } catch (e) { fail(e); }
     }
   }, [api, shots]);
-  const noted = (notes ?? []).join("\n");
-  useEffect(() => { api?.notes(noted ? noted.split("\n") : []); }, [api, noted]);
   return { api, error, retry: () => { setError(null); setTries((n) => n + 1); } };
 }
 
@@ -127,20 +125,51 @@ const lookup = (url: string) => yt.flowShots([url]).then((r) => r.shots[url] ?? 
 
 /**
  * The Zeplin screens a flow links (`urls`). The server's last read of them is drawn at once; when that was an older
- * read (after a restart, or past its hour), the live one follows and replaces it, so an opened flow does not wait
- * the 6-7 s Zeplin takes for twenty screens. A screen never read before is read live, as one answer.
+ * read (after a restart, or past its hour), the live one follows, so an opened flow does not wait the 6-7 s Zeplin
+ * takes for twenty screens. It is read screen by screen (the server reads four at a time): each one shows the
+ * moment it is in; the engine draws again only a screen whose design changed (sameShot in flow-engine/shots.js).
+ * A screen never read before is read live, as one answer.
  */
-export function useFlowShots(scope: string, urls: string[], enabled: boolean) {
+export function useFlowShots(scope: string, urls: string[], enabled: boolean, order: string[] = urls) {
   const first = useQuery({
     queryKey: ["yt", "flow-shots", scope, "first", ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal, true),
     enabled, staleTime: 30 * 60_000, retry: false, placeholderData: keepPreviousData,
   });
-  const live = useQuery({
-    queryKey: ["yt", "flow-shots", scope, ...urls], queryFn: ({ signal }) => yt.flowShots(urls, signal),
-    enabled: enabled && !!first.data?.stale && !first.isPlaceholderData, staleTime: 30 * 60_000, retry: false,
+  const behind = enabled && !!first.data?.stale && !first.isPlaceholderData;
+  const old = first.data;
+  // the reads so far over the old one (theirs: fresh image links, what a save embeds); the old one until one is in
+  const combine = useCallback((rs: UseQueryResult<FlowShots>[]) => {
+    const got = rs.filter((r) => r.data);
+    let data = old;
+    if (old && got.length) {
+      const shots = { ...old.shots }, missing = new Set(old.missing);
+      for (const { data: d } of got) {
+        for (const [u, s] of Object.entries(d!.shots)) { shots[u] = s; missing.delete(u); }
+        for (const u of d!.missing) { delete shots[u]; missing.add(u); }
+      }
+      data = { ...old, shots, missing: [...missing] };
+    }
+    return { data, fetching: rs.some((r) => r.isFetching), error: rs.find((r) => r.isError)?.error ?? null };
+  }, [old]);
+  const live = useQueries({
+    // asked in `order` (the screens seen first, first): the browser and the server's four readers take them as sent
+    queries: order.filter((u) => urls.includes(u)).concat(urls.filter((u) => !order.includes(u))).map((u) => ({
+      queryKey: ["yt", "flow-shots", scope, "live", u], queryFn: ({ signal }: { signal: AbortSignal }) => yt.flowShots([u], signal),
+      enabled: behind, staleTime: 30 * 60_000, retry: false,
+    })),
+    combine,
   });
-  return { data: live.data ?? first.data, isError: first.isError || live.isError, error: first.error ?? live.error };
+  // fetching: a read under a flow already on screen (a link edited, the live read after an old one)
+  return { data: behind ? live.data : old, isError: first.isError || !!live.error, error: first.error ?? live.error,
+    fetching: first.isFetching || live.fetching };
 }
+
+/** A flow's Zeplin links in the order a reader meets its screens: the start screen, then the flow's own order (its
+ *  first steps lead the map), so the screens on view at opening are read first. */
+export const readOrder = (f: UiFlow | null) => {
+  const s = f?.screens ?? [], start = s.find((x) => x.id === f?.start) ?? s[0];
+  return [...new Set([start, ...s].map((x) => x?.zeplin).filter((u): u is string => !!u))];
+};
 
 /** The Zeplin links of a flow's screens, sorted: the key the images are fetched by. */
 export const zeplinUrls = (f: UiFlow | null) =>

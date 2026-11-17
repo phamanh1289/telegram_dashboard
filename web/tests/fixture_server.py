@@ -27,6 +27,7 @@ from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.storage import Store  # noqa: E402
 from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
 from telegram_dashboard.youtrack import flow as uiflow  # noqa: E402
+from telegram_dashboard.youtrack import flow_md, flow_prompt  # noqa: E402
 from telegram_dashboard.youtrack.flow_jobs import FlowJobs  # noqa: E402
 
 A, B = "-1001", "-1002"
@@ -189,6 +190,13 @@ async def fake_yt(scope, receive, send) -> bool:
                          + "\n".join(f"- {c}" for c in changes)),
             }]
             await answer(send, 200, {"att": "1-2", "rev": rev, "changes": changes, "warn": ""})
+    elif path == "/api/yt/flow/md":  # the real builder over the fixture's ticket (no YouTrack / Zeplin read)
+        b = await body_of(receive)
+        md = flow_md.build(uiflow.clean(b["flow"], "VA-1"), [{"id": "VA-1", "summary": ISSUE.get("summary", ""),
+                           "description": ISSUE.get("description") or "", "comments": []}], {},
+                           flow_md.Options(note=b.get("note", ""), sources=b.get("sources", True),
+                                           paths=b.get("paths", True), data=b.get("data", False)))
+        await answer(send, 200, {"name": "uiflow-VA-1.md", "md": md, "tokens": flow_prompt.estimate(md)})
     elif path == "/api/yt/flow/precheck":  # `flow_check`: the counts a render would send (risks: the warning)
         await body_of(receive)
         await answer(send, 200, control.get("flow_check") or {

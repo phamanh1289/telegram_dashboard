@@ -153,7 +153,6 @@ class Payload:
     note: str = ""
     shots: dict | None = None  # Zeplin URL -> its shot as read for this render (api_flow.gather sets it)
     shown: dict | None = None  # the skeleton as the prompt writes it: short ids (flow_merge.alias)
-    acs: tuple = ()  # the AC codes the ticket writes (its story's when it writes none): Flow.acs
     back: dict | None = None  # those short ids -> the skeleton's own, for the answer (flow_merge.unalias)
 
 
@@ -162,12 +161,39 @@ def _render(head, design, base, note):
             f"\n<ask>{data_json(note)}</ask>")
 
 
-def build(ticket, stories, note, shots, *, previous=None, skip=()):
+def leave_out(ambiguous, left, draw):
+    """The note's line on the unclear flow lines the user did not tick (`draw`: the ones ticked, as the pre-check
+    lists them), whole: the server has every one, the page only the ones it ticked. "" when there is none."""
+    if draw is None:
+        return ""
+    ticked = set(draw)
+    out = [ln.strip()[:200] for ln, _ in _kept(ambiguous, left) if ln.strip()[:200] not in ticked]
+    return ("Không vẽ liên kết cho các dòng luồng sau (chưa rõ, người dùng không chọn vẽ):\n"
+            + "\n".join(f"- {x}" for x in out)) if out else ""
+
+
+def unclear_notes(ambiguous, left, draw):
+    """What the flow check says about the unclear lines after a render. The user chose in the pre-check (`draw`):
+    how many were left out, and how many the AI had to guess because they were ticked. A client that does not send
+    the choice (None): the old general warning."""
+    if draw is None:
+        return ["Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ."] if ambiguous else []
+    ticked, kept = set(draw), _kept(ambiguous, left)
+    on = sum(ln.strip()[:200] in ticked for ln, _ in kept)
+    out = [f"{len(kept) - on} dòng luồng chưa rõ không được vẽ (đã bỏ chọn trước khi render)"] if len(kept) > on else []
+    if on:
+        out.append(f"AI tự suy luận {on} dòng luồng chưa rõ bạn chọn vẽ: kiểm tra các mũi tên đó trên sơ đồ")
+    return out
+
+
+def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None):
     """The whole source, never trimmed: the user picks the model and is warned (`risks`) before a costly run.
     `previous`: the flow on screen (a re-render): its screens / links join the skeleton, so the AI writes only what
     is new or changed instead of the whole flow again (output is most of a render's cost).
-    `skip`: Zeplin URLs the dialog left out: their screens, links and design leave the prompt (so the count and the
-    render match), their lines stay in the dialog to be ticked back."""
+    `target` ("mobile" / "web"): the other platform's screens, links and design leave the prompt, decided here from
+    the same reads for the pre-check and the render (so the count and the render match), never by the page from a
+    count it may not have finished (a render pressed mid-count drew web screens into a mobile flow). Their unclear
+    lines go with them; their size group stays in the risks (the platform picker counts both)."""
     raw, unavailable = sources_from_blocks(ticket, stories)
     used, omitted, seen = [], [], set()
     for item in raw:
@@ -178,11 +204,8 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
             seen.add(identity)
             used.append(item)
     base, ambiguous = skeleton(used, shots)
-    # a sub-task's AC live in its story; a ticket that writes its own is checked against those only
-    texts = ["\n".join([x["description"], *(c["text"] for c in x["comments"])]) for x in used]
-    acs = next((got for got in map(uiflow.ac_codes, [texts[0], "\n".join(texts[1:])] if texts else []) if got), [])
     reused = reuse(base, previous) if previous else 0
-    gone = {zeplin.canonical(u) for u in skip}
+    gone = {s["zeplin"] for s, _, code in platforms(base["screens"], shots) if target and code != target}
     left = [s["title"] for s in base["screens"] if s.get("zeplin") in gone]
     design = {}
     for url, shot in shots.items():
@@ -194,7 +217,12 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
     other += "".join("\n<story>" + data_json(s) + "</story>" for s in unavailable)
     head = f"{flow_merge.AI_FLOW_PATCH}\n<ticket>\n{own}\n</ticket>{other}"
     sent = without(base, gone)
+    note = "\n\n".join(x for x in (note, leave_out(ambiguous, left, draw)) if x)
     shown, back = flow_merge.alias(sent)
+    lists = {zeplin.canonical(u): x.get("list") for u, x in shots.items()}
+    for s in shown["screens"]:  # the AI's copy only: told which screens are a list of repeated items (AI_FLOW_PATCH)
+        if (n := lists.get(s.get("zeplin"))) and n >= zeplin.LIST_MIN:
+            s["list"] = n
     prompt = _render(head, design, shown, note)
     tokens = estimate(prompt) + ENVELOPE_RESERVE
     if tokens > HARD_CONTEXT:
@@ -202,9 +230,7 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
                              "tách ticket theo sub-ticket trước khi vẽ")
     parts = {"ticket": estimate(own), "story": estimate(other), "zeplin": estimate(data_json(design)),
              "note": estimate(note), "rules": estimate(flow_merge.AI_FLOW_PATCH) + ENVELOPE_RESERVE}
-    warnings = []
-    if ambiguous:
-        warnings.append("Một số nhánh chưa đủ rõ; cần kiểm tra quan hệ và điều kiện trên sơ đồ.")
+    warnings = unclear_notes(ambiguous, left, draw)
     if unavailable:
         warnings.append("Một số story không đọc được; kiểm tra phần nguồn trước khi cập nhật.")
     manifest = {"measurement": "estimated", "estimated_input_tokens": tokens,
@@ -214,7 +240,7 @@ def build(ticket, stories, note, shots, *, previous=None, skip=()):
                 "warnings": warnings, "ambiguous_lines": len(ambiguous),
                 "risks": risks(tokens, sent, ambiguous, shots, every=base["screens"], left=left), "reused": reused}
     manifest["chunks"] = -(-len(sent["screens"]) // PART_SCREENS)
-    return Payload(prompt, sent, manifest, warnings, head, design, note, shown=shown, back=back, acs=tuple(acs))
+    return Payload(prompt, sent, manifest, warnings, head, design, note, shown=shown, back=back)
 
 
 def without(base, gone):
@@ -243,7 +269,6 @@ def reuse(base, previous):
             known[old["id"]] = {"id": old["id"], "title": old["title"], "kind": old.get("kind", "screen"),
                                 "parent": old.get("parent"), "zeplin": "", "ac": old.get("ac", ""), "items": items}
             base["screens"].append(known[old["id"]])
-    base["pending"] = list(previous.get("pending") or [])  # still waiting for a design: stays listed
     carried = 0
     for link in previous.get("links", []):
         screen, _, item = link["src"].partition(".")
@@ -273,12 +298,20 @@ def unclear(line, by_title, start=None, label="", end=None):
     return {"why": "label" if len(label) > 80 else "format", "name": "", "hint": ""}
 
 
+PLATFORMS = {"web": True, "macos": True, "ios": False, "android": False}  # Zeplin's project platform: web / desktop?
+
+
 def not_mobile(shot):
     """A Zeplin screen drawn at a web / desktop size, not a phone's: landscape and tablet-wide, or wider than any
-    phone at @3x (1290). ponytail: size only (risks() adds the screen's Zeplin project: one with web-sized screens
-    is a web project); the project's own platform once the client reads it."""
+    phone at @3x (1290). Only for a screen whose project platform was not read (risks() asks that first)."""
     w, h = shot.get("w") or 0, shot.get("h") or 0
     return w >= 1300 or (w > h and w >= 768)
+
+
+def _kept(ambiguous, left):
+    """The unclear lines still in play: one naming a left-out screen goes with it (pre-check and render agree)."""
+    return [(ln, why) for ln, why in ambiguous.items()
+            if not any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", ln) for t in left)]
 
 
 def risks(tokens, base, ambiguous, shots=None, every=None, left=()):
@@ -298,8 +331,7 @@ def risks(tokens, base, ambiguous, shots=None, every=None, left=()):
     no = 0
     # the lines that name a left-out screen go with it; the rest are numbered without gaps (the dialog keys its
     # tick-boxes by the line itself, and the Q&A gets the same `skip`, so #n means the same line in both)
-    kept = [(ln, why) for ln, why in ambiguous.items()
-            if not any(re.search(rf"(?<!\w){re.escape(t)}(?!\w)", ln) for t in left)]
+    kept = _kept(ambiguous, left)
     if kept:  # every one, however few or many: the dialog leaves each out of the render unless ticked
         lines = []
         for ln, why in kept:
@@ -309,15 +341,9 @@ def risks(tokens, base, ambiguous, shots=None, every=None, left=()):
         out.append({"code": "ambiguous", "text": f"{len(kept)} dòng luồng màn chưa rõ: không vẽ trừ khi bạn tick",
                     "lines": lines})
     # Both platforms' screens, so the dialog leaves out whichever the user does not build (mobile app or web).
-    sizes = {zeplin.canonical(u): x for u, x in (shots or {}).items()}
-    sized = [(s, sizes[s["zeplin"]]) for s in every if (sizes.get(s.get("zeplin")) or {}).get("w")]
-    # A long web page is portrait and may be narrower than a phone at @3x: size alone calls it mobile. Its Zeplin
-    # project tells: one that holds web-sized screens is a web project, and nothing tablet-wide in it is a phone.
-    project = lambda s: (zeplin.SCREEN.search(s["zeplin"]) or ("", ""))[1]  # noqa: E731
-    webs = {project(s) for s, x in sized if not_mobile(x)} - {""}
-    web = lambda s, x: not_mobile(x) or (x["w"] >= 768 and project(s) in webs)  # noqa: E731
-    for code, text in (("web", "màn Zeplin cỡ web / desktop"), ("mobile", "màn Zeplin cỡ mobile")):
-        group = [(s, x) for s, x in sized if web(s, x) == (code == "web")]
+    sized = platforms(every, shots)
+    for code, text in (("web", "màn Zeplin web / desktop"), ("mobile", "màn Zeplin mobile")):
+        group = [(s, x) for s, x, c in sized if c == code]
         if not group:
             continue
         lines = []
@@ -327,6 +353,24 @@ def risks(tokens, base, ambiguous, shots=None, every=None, left=()):
                           "hint": f"{round(x['w'])}×{round(x['h'])}", "urls": [s["zeplin"]]})
         out.append({"code": code, "text": f"{len(group)} {text}", "lines": lines})
     return out
+
+
+def platforms(every, shots):
+    """[(screen, its shot, "web" | "mobile")] for each screen whose design size was read, in order: one rule for the
+    pre-check's groups and the render's leaving out (build `target`)."""
+    sizes = {zeplin.canonical(u): x for u, x in (shots or {}).items()}
+    sized = [(s, sizes[s["zeplin"]]) for s in every if (sizes.get(s.get("zeplin")) or {}).get("w")]
+    # A phone-wide screen is mobile, whatever its project says (zeplin.phone_wide). Any other: by the platform of its
+    # Zeplin project (a 550-wide dialog of a web project is web, a tablet screen of an app is mobile). Platform unread
+    # (an older kept read, the project call failed): by the design size. There a long web page is portrait and may be
+    # narrower than a phone at @3x, so size alone calls it mobile; its project tells: one that holds web-sized
+    # screens is a web project, and nothing tablet-wide in it is a phone.
+    project = lambda s: (zeplin.SCREEN.search(s["zeplin"]) or ("", ""))[1]  # noqa: E731
+    known = lambda x: False if zeplin.phone_wide(x) else PLATFORMS.get(x.get("platform"))  # noqa: E731
+    webs = {project(s) for s, x in sized if known(x) is None and not_mobile(x)} - {""}
+    sized_web = lambda s, x: not_mobile(x) or (x["w"] >= 768 and project(s) in webs)  # noqa: E731
+    web = lambda s, x: sized_web(s, x) if known(x) is None else known(x)  # noqa: E731
+    return [(s, x, "web" if web(s, x) else "mobile") for s, x in sized]
 
 
 ADVICE = """\
@@ -403,12 +447,11 @@ def split(payload, size=PART_SCREENS):
 
 def combine(raws):
     """The parts' answers as one: a screen two parts both wrote (a shared popup) is kept once, links once."""
-    screens, seen, links, pending = [], set(), [], []
+    screens, seen, links = [], set(), []
     for raw in raws:
-        pending += [p for p in raw.get("pending") or [] if p not in pending]
         for x in raw.get("screens") or []:
             if isinstance(x, dict) and x.get("id") not in seen:
                 seen.add(x.get("id"))
                 screens.append(x)
         links += [e for e in raw.get("links") or [] if e not in links]
-    return {"adapter": 1, "screens": screens, "links": links, "pending": pending}
+    return {"adapter": 1, "screens": screens, "links": links}

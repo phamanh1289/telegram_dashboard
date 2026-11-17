@@ -1,4 +1,4 @@
-import { cardOf, rowsOf } from './geometry.js';
+import { canFold, cardOf, rowsOf } from './geometry.js';
 import { H } from './constants.js';
 import { shotOf } from './shots.js';
 import { box, btn, h, placeFrame, shotImg, svg, zeplinLink } from './dom.js';
@@ -9,13 +9,13 @@ import { isOverlay } from './model.js';
  *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
 function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
-  const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : ""));
+  const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : "") + (sh && s.fold ? " uf-folded" : ""));
   el.dataset.id = s.id;
   if (c.h !== H && sh) el.style.height = c.h + "px"; // a design that scrolls (or a web page): the frame is as long as it
   const card = h("div", "uf-card" + (s.items.length || sh ? "" : " uf-empty"));
   box(card, c);
   if (sh) {
-    const pic = h("div", "uf-imgbox");
+    const pic = h("div", "uf-imgbox uf-ld");
     pic.append(shotImg(sh, "", true));
     card.append(pic);
   }
@@ -45,13 +45,16 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);
   s.items.forEach((it, i) => {
-    const { r, hot, z } = rows[i];
+    const { r, hot, z, more, lead } = rows[i];
+    if (more && !lead) return; // drawn by the row that stands for them
     const rect = hot && it.rect; // hand-drawn and on the frame: edit mode moves / resizes it
-    const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (rect ? "uf-rect " : "") +
-      (linked.has(`${s.id}.${it.id}`) ? "uf-linked" : "uf-dead"), it.label);
+    const all = more ? s.items.filter((_, j) => rows[j].more) : [it]; // a "+k" row: every button it stands for
+    const row = h("div", "uf-item " + (hot ? "uf-hot " : "") + (rect ? "uf-rect " : "") + (more ? "uf-more " : "") +
+      (all.some((x) => linked.has(`${s.id}.${x.id}`)) ? "uf-linked" : "uf-dead"), more ? t("moreHidden", { n: more }) : it.label);
+    if (more) row.title = all.map((x) => x.label).join(", ");
     row.dataset.item = it.id;
     if (rect && edit) row.append(h("span", "uf-rsz"));
-    if (!hot && sh) row.title = t("offShot");
+    if (!hot && sh && !more) row.title = t("offShot");
     box(row, r);
     if (hot) row.style.zIndex = z; // a smaller area above a larger one: the press goes to the one on top
     row.style.lineHeight = r.h - 2 + "px";
@@ -70,9 +73,19 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
     };
     dot(s.id, c.w, c.head + c.headH / 2);
     s.items.forEach((it, i) => {
-      const r = rows[i].r;
+      const { r, more, lead } = rows[i];
+      if (more && !lead) return; // one dot on a "+k" row: pick a button in the panel to link the others
       dot(`${s.id}.${it.id}`, r.x + r.w, r.y + r.h / 2);
     });
+  }
+  if (edit && canFold(s)) { // a long design: fold it to its top / show it whole again (the editor handles the press)
+    const b = btn(t(s.fold ? "unfold" : "fold"), "uf-btn uf-fold");
+    b.setAttribute("aria-expanded", String(!s.fold));
+    b.style.top = Math.min(c.h, H) - 22 + "px"; // at the end of its first screenful: reachable without scrolling down a long list
+    const edge = h("div", "uf-foldh"); // drag the bottom edge: fold to exactly that height (the editor handles it)
+    edge.style.top = c.h - 7 + "px";
+    edge.setAttribute("aria-hidden", "true"); // the panel's height box is the keyboard way
+    card.append(b, edge);
   }
   el.append(card);
   placeFrame(el, s);

@@ -26,7 +26,8 @@ def missing(flow: uiflow.Flow, shots: dict[str, dict]) -> list[tuple[dict, list[
         if not shot or not shot.get("src"):
             continue
         free = [i for i in s.items if i.rect is None]  # the page matches only these against the hits, in order
-        lost = [free[k] for k in zeplin.unplaced([i.label for i in free], shot.get("hits") or [])]
+        found = [*(shot.get("hits") or []), *(shot.get("lines") or [])]
+        lost = [free[k] for k in zeplin.unplaced([i.label for i in free], found)]
         if lost:
             out.append((shot, lost))
     return out

@@ -21,53 +21,78 @@ const DARK = vars(1) + ";--uf-bezel:#2e333c;--uf-shadow:0 1px 2px rgba(0,0,0,.4)
 const CSS = `
 .uf-root{${vars(0)};--uf-bezel:#1b1d22;--uf-shadow:0 1px 2px rgba(16,24,40,.06),0 18px 44px -14px rgba(16,24,40,.22);
 --uf-accent-soft:color-mix(in srgb,var(--uf-accent) 14%,transparent);--uf-warn-soft:color-mix(in srgb,var(--uf-warn) 14%,transparent);
---uf-hit-soft:color-mix(in srgb,var(--uf-hit) 22%,transparent);--uf-r:var(--radius-input,8px);
-position:relative;display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
+--uf-hit-soft:color-mix(in srgb,var(--uf-hit) 22%,transparent);--uf-r:var(--radius-input,8px);--uf-ease:cubic-bezier(.22,.8,.24,1);
+position:relative;display:flex;height:100%;min-height:0;overflow:hidden;background:var(--uf-bg);
 color:var(--uf-ink);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 font-family:var(--font-body,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif);
 -webkit-font-smoothing:antialiased}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .uf-root{${DARK}}}
 [data-theme=dark] .uf-root{${DARK}}
 .uf-root *{box-sizing:border-box}
-.uf-bar{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:8px 10px;background:var(--uf-screen);
-border-bottom:1px solid var(--uf-line)}
+/* the toolbar: a rail down the left edge, over the map (.uf-main keeps its 48px clear). Icons only; the pointer
+ * resting on it (or the keyboard in it) slides it open with every name, and leaving slides it shut at once. Only
+ * the rail's width moves: every row stretches with it and keeps its icon where it was, the names fade in once there
+ * is room. .uf-hold: a tool was just picked, shut until the pointer leaves. */
+.uf-bar{position:absolute;left:0;top:0;bottom:0;z-index:5;display:flex;flex-direction:column;gap:2px;width:48px;
+padding:8px 0;background:var(--uf-screen);border-right:1px solid var(--uf-line);
+transition:width .3s var(--uf-ease),box-shadow .3s ease-out}
+/* a tool picked shuts it at once, as a menu does: what the tool does next (a note drawn by the edge, the Zeplin box
+ * beside it) is not under a rail still sliding */
+.uf-bar.uf-hold,.uf-hold .uf-lbl{transition:none}
+.uf-bar:hover:not(.uf-hold),.uf-bar:has(:focus-visible){width:212px;box-shadow:var(--uf-shadow);
+transition:width .3s var(--uf-ease) .12s,box-shadow .3s ease-out .12s}
+.uf-bar .uf-btn{flex:none;justify-content:flex-start;gap:9px;width:auto;height:34px;margin:0 7px;padding:0 0 0 8px;
+border-color:transparent;border-radius:9px;background:transparent;color:var(--uf-ink2)}
+.uf-bar .uf-btn:hover:not(:disabled){background:var(--uf-soft);color:var(--uf-ink)}
+.uf-bar .uf-btn[aria-pressed=true],.uf-bar .uf-btn[aria-expanded=true]{background:var(--uf-accent-soft);color:var(--uf-accent)}
+.uf-lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;opacity:0;transition:opacity .1s ease-out}
+.uf-bar:hover:not(.uf-hold) .uf-lbl,.uf-bar:has(:focus-visible) .uf-lbl{opacity:1;transition:opacity .2s ease-out .22s}
 .uf-sp{flex:1}
 .uf-btn{height:30px;padding:0 11px;border:1px solid var(--uf-line);border-radius:var(--uf-r);background:var(--uf-screen);
 color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
-.uf-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s ease-out,border-color .15s ease-out}
+.uf-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+transition:background .15s ease-out,border-color .15s ease-out,color .15s ease-out,transform .12s ease-out}
 .uf-btn svg{flex:none}
 .uf-btn:hover{background:var(--uf-soft)}
-.uf-btn:active{transform:scale(.97)}
+.uf-btn:active{transform:scale(.96)}
 .uf-btn[aria-pressed=true]{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
 .uf-icon{width:30px;padding:0}
-.uf-bar [data-tip]{position:relative}
-.uf-bar [data-tip]::after{content:attr(data-tip);position:absolute;top:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:40;
+.uf-ihead [data-tip]{position:relative}
+.uf-ihead [data-tip]::after{content:attr(data-tip);position:absolute;z-index:40;
 padding:5px 9px;border-radius:var(--uf-r);background:var(--uf-ink);color:var(--uf-screen);font-size:12px;font-weight:400;line-height:1.3;
 white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .12s ease-out}
-.uf-bar [data-tip]:hover::after,.uf-bar [data-tip]:focus-visible::after{opacity:1;transition-delay:.5s}
-/* toolbar: Sửa is the one coloured switch; its tools are one group that only exists while it is on */
-.uf-editbtn{border-color:color-mix(in srgb,var(--uf-accent) 45%,var(--uf-line));color:var(--uf-accent)}
-.uf-editbtn[aria-pressed=true]{background:var(--uf-fill);border-color:transparent;color:var(--uf-on-accent)}
-.uf-tools{display:inline-flex;flex-wrap:wrap;align-items:center;gap:2px;padding:2px;border-radius:var(--uf-r);background:var(--uf-accent-soft);
-animation:uf-in .18s ease-out}
-.uf-tools .uf-btn{height:26px;border-radius:5px;border-color:transparent;background:transparent}
-.uf-tools .uf-btn:hover:not(:disabled){background:var(--uf-screen)}
-.uf-tools .uf-btn{min-width:26px;padding:0 5px;gap:0}
-.uf-tools .uf-btn span{max-width:0;overflow:hidden;opacity:0;transition:max-width .18s ease-out,margin .18s ease-out,opacity .12s ease-out}
-.uf-tools .uf-btn:hover span,.uf-tools .uf-btn:focus-visible span,.uf-tools .uf-btn[aria-expanded=true] span{max-width:160px;margin:0 3px 0 6px;opacity:1}
-.uf-div{width:1px;height:16px;margin:0 3px;background:var(--uf-line)}
-.uf-check svg{color:var(--uf-warn)}
-.uf-clean svg{color:var(--uf-ok)}
-.uf-badge{min-width:20px;padding:1px 6px;border-radius:999px;background:var(--uf-warn-soft);color:var(--uf-warn);font-size:11px;
-font-weight:700;line-height:16px;text-align:center}
-.uf-clean .uf-badge{display:none}
+.uf-ihead [data-tip]:hover::after,.uf-ihead [data-tip]:focus-visible::after{opacity:1;transition-delay:.5s}
+/* Sửa is the one coloured switch; its tools are one group under it that slides open while it is on (the rows
+ * below glide down with it) and closed again; shut, it is out of the tab order (visibility) */
+.uf-bar .uf-editbtn{color:var(--uf-accent)}
+.uf-bar .uf-editbtn[aria-pressed=true]{background:var(--uf-fill);color:var(--uf-on-accent)}
+.uf-tools{flex:none;display:grid;grid-template-rows:0fr;grid-template-columns:minmax(0,1fr);margin:0 5px;padding:0 3px;border-radius:12px;
+background:var(--uf-accent-soft);opacity:0;visibility:hidden;
+transition:grid-template-rows .3s var(--uf-ease),padding .3s var(--uf-ease),opacity .2s ease-out,visibility 0s .3s}
+.uf-editing .uf-tools{grid-template-rows:1fr;padding:3px;opacity:1;visibility:visible;
+transition:grid-template-rows .3s var(--uf-ease),padding .3s var(--uf-ease),opacity .25s ease-out .05s,visibility 0s}
+.uf-root[data-mode=play] .uf-tools{display:none}
+.uf-tin{display:flex;flex-direction:column;gap:2px;min-height:0;overflow:hidden}
+.uf-bar .uf-tools .uf-btn{height:32px;margin:0;padding-left:7px;color:var(--uf-ink)}
+.uf-bar .uf-tools .uf-btn:hover:not(:disabled){background:var(--uf-screen)}
+.uf-div{flex:none;width:22px;height:1px;margin:5px 0;background:var(--uf-line)}
+.uf-bar .uf-div{width:auto;margin:5px 13px}
+.uf-bar .uf-tin .uf-div{margin:4px 6px}
+.uf-root[data-mode=play] .uf-bar .uf-div{display:none}
 .uf-seg{display:inline-flex;gap:2px;padding:2px;border-radius:var(--uf-r);background:var(--uf-soft);box-shadow:inset 0 0 0 1px var(--uf-line)}
+/* the rail's view switch: one filled pill that slides between Toàn cục and Prototype */
+.uf-bar .uf-seg{position:relative;flex:none;display:flex;flex-direction:column;margin:0 6px;border-radius:12px}
+.uf-bar .uf-seg::before{content:"";position:absolute;left:2px;right:2px;top:2px;height:32px;border-radius:9px;
+background:var(--uf-fill);pointer-events:none;transition:transform .34s cubic-bezier(.3,1.3,.5,1)}
+.uf-bar .uf-seg:has(>:last-child[aria-pressed=true])::before{transform:translateY(34px)}
+.uf-bar .uf-seg .uf-btn{position:relative;height:32px;margin:0;padding-left:8px;border-radius:9px}
+.uf-bar .uf-seg .uf-btn[aria-pressed=true],.uf-bar .uf-seg .uf-btn[aria-pressed=true]:hover:not(:disabled){background:transparent;color:var(--uf-on-accent)}
 .uf-seg .uf-btn{height:26px;border:0;border-radius:5px;background:transparent;color:var(--uf-ink2)}
 .uf-seg .uf-btn:hover{color:var(--uf-ink)}
 .uf-seg .uf-btn[aria-pressed=true]{background:var(--uf-fill);color:var(--uf-on-accent)}
-.uf-main{position:relative;flex:1;min-height:0}
+.uf-main{position:relative;flex:1;min-height:0;margin-left:48px}
 .uf-view{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;outline:none}
-.uf-btn:focus-visible,.uf-issue:focus-visible,.uf-zeplin:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
+.uf-btn:focus-visible,.uf-zeplin:focus-visible{outline:2px solid var(--uf-accent);outline-offset:2px}
 .uf-view:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-2px}
 .uf-view.uf-moving{cursor:grabbing}
 .uf-layer{position:absolute;left:0;top:0;transform-origin:0 0}
@@ -125,7 +150,20 @@ font-size:15px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-spac
 .uf-shot .uf-card{border-radius:54px}
 .uf-shot::before,.uf-shot::after{display:none}
 .uf-imgbox{position:absolute;inset:0;overflow:hidden;border-radius:inherit;background:var(--uf-screen)}
-.uf-img{display:block;width:100%;max-width:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
+.uf-folded .uf-imgbox::after{content:"";position:absolute;left:0;right:0;bottom:0;height:72px;pointer-events:none;
+background:linear-gradient(to bottom,transparent,color-mix(in srgb,var(--uf-screen) 92%,transparent))}
+.uf-fold{position:absolute;left:50%;z-index:61;height:28px;translate:-50% -50%;border-radius:999px;font-size:12px;
+box-shadow:var(--uf-shadow);opacity:0;transition:opacity .15s ease-out}
+.uf-foldh{position:absolute;left:25%;width:50%;height:14px;z-index:61;cursor:ns-resize}
+.uf-foldh::after{content:"";position:absolute;left:50%;top:5px;width:56px;height:4px;margin-left:-28px;border-radius:2px;
+background:var(--uf-accent);opacity:0;transition:opacity .15s ease-out}
+.uf-screen:hover .uf-foldh::after,.uf-screen.uf-sel .uf-foldh::after{opacity:.7}
+.uf-screen:hover .uf-fold,.uf-screen.uf-sel .uf-fold,.uf-folded .uf-fold,.uf-fold:focus-visible{opacity:1}
+/* a Zeplin image still loading: a small spinner at the top of its box (the image paints over it) */
+.uf-ld::before{content:"";position:absolute;left:50%;top:120px;width:28px;height:28px;margin-left:-14px;border-radius:50%;
+border:3px solid var(--uf-line);border-top-color:var(--uf-accent);animation:uf-spin .8s linear infinite;z-index:0}
+@keyframes uf-spin{to{transform:rotate(1turn)}}
+.uf-img{position:relative;display:block;width:100%;max-width:none;user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .uf-shot .uf-head{border-radius:54px 54px 0 0;padding-left:44px;background:color-mix(in srgb,var(--uf-screen) 88%,transparent);
 border-bottom:1px solid var(--uf-line)}
 .uf-shot .uf-head{transition:opacity .15s ease-out}
@@ -146,30 +184,34 @@ border-radius:4px;background:var(--uf-accent);cursor:nwse-resize;touch-action:no
 .uf-drawing .uf-screen.uf-drawon .uf-imgbox{outline:3px dashed var(--uf-accent);outline-offset:-3px}
 .uf-startb{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-accent);
 color:var(--uf-on-accent);font-size:11px}
-.uf-ptabs{display:flex;gap:4px;padding:4px 4px 6px}
-.uf-pfilter{display:flex;flex-wrap:wrap;gap:4px;padding:0 4px 6px}
-.uf-pfilter .uf-btn,.uf-ptabs .uf-btn{height:26px;padding:0 10px;font-size:12px}
-.uf-paths{margin:0;padding:4px 10px 6px 28px;font-size:13px;line-height:1.45}
-.uf-paths li{margin:4px 0;overflow-wrap:anywhere}
-.uf-path{display:block;width:100%;padding:3px 6px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.uf-path:hover{background:var(--uf-soft)}
-.uf-path:focus-visible{outline:2px solid var(--uf-accent);outline-offset:1px}
-.uf-walking{box-shadow:0 0 0 3px var(--uf-accent)}
 .uf-memo{flex:none;display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:var(--uf-hit-soft);
 color:var(--uf-ink);font-size:14px;cursor:help}
 .uf-screen.uf-match{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
 .uf-ov.uf-match .uf-card{box-shadow:0 0 0 5px var(--uf-hit),var(--uf-shadow)}
-.uf-find{position:relative;flex:0 1 260px;min-width:140px}
-.uf-find .uf-input{width:100%;height:30px;border-radius:var(--uf-r);padding:0 12px;background:var(--uf-soft)}
+/* find a screen: over the map's top left corner */
+.uf-find{position:absolute;top:10px;left:10px;z-index:3;width:min(280px,calc(100% - 20px))}
+.uf-find .uf-input{width:100%;height:34px;border-radius:10px;padding:0 12px;background:var(--uf-screen);
+box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow)}
 .uf-results{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:4;max-height:320px;overflow:auto;padding:4px;
 border-radius:12px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow)}
 .uf-res{display:block;width:100%;padding:7px 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;
 font-size:13px;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
 .uf-res[aria-selected=true],.uf-res:hover{background:var(--uf-accent-soft)}
 .uf-count{padding:4px 10px;color:var(--uf-ink2);font-size:12px}
-.uf-zform{padding:10px}
-.uf-zform h2{margin:0 0 6px;font-size:13px;font-weight:700}
-.uf-zform .uf-field{margin-top:4px}
+.uf-zform{right:auto;left:8px;width:min(400px,calc(100% - 16px));max-height:calc(100% - 16px);padding:12px;border-radius:12px}
+.uf-zhead-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.uf-zclose{width:26px;height:26px;border-color:transparent;background:transparent;color:var(--uf-ink2)}
+.uf-zform .uf-zadd{background:var(--uf-accent);border-color:var(--uf-accent);color:var(--uf-on-accent)}
+.uf-zform .uf-zadd:hover{background:var(--uf-accent);opacity:.9}
+.uf-zform h2{flex:1;min-width:0;margin:0;font-size:14px;font-weight:700}
+.uf-zcount{flex:none;font-size:12px;color:var(--uf-ink2)}
+.uf-zform .uf-zurls{display:block;width:100%;height:auto;min-height:64px;max-height:160px;resize:vertical;font:inherit;font-size:13px;line-height:1.4;padding:8px}
+.uf-zreport{margin-top:8px;padding:8px 10px;border-radius:var(--uf-r);background:var(--uf-warn-soft)}
+.uf-zhead{margin:0 0 4px;font-size:12px;font-weight:650;color:var(--uf-warn)}
+.uf-zlist{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;max-height:140px;overflow:auto}
+.uf-zlist li{display:flex;flex-direction:column;min-width:0;font-size:12px}
+.uf-zurl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,monospace;color:var(--uf-ink)}
+.uf-zwhy{color:var(--uf-ink2)}
 .uf-zmsg{margin:8px 2px 0;font-size:13px;color:var(--uf-ink2)}
 .uf-zmsg.uf-err{color:var(--uf-warn)}
 .uf-area{min-width:0;height:34px;min-height:34px;padding:6px 10px;border:1px solid var(--uf-line);border-radius:var(--uf-r);
@@ -184,11 +226,30 @@ background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;resize:v
 .uf-open{stroke-width:1.5}
 .uf-link.uf-on{stroke-width:3;opacity:1}
 .uf-back{stroke:var(--uf-muted);stroke-width:2;stroke-dasharray:8 7}
-/* back / close arrows (with their label and handle): hidden until the toolbar turns them on, or they are in hand */
-.uf-root:not(.uf-backs) .uf-ret:not(.uf-on):not(.uf-sel){display:none}
 .uf-mk-a{fill:var(--uf-accent)}
 .uf-mk-b{fill:var(--uf-muted)}
 .uf-labels{position:absolute;left:0;top:0;width:1px;height:1px}
+/* notes on the map (memos.js): a sticky note beside the screens, above the arrows */
+.uf-pins{position:absolute;left:0;top:0;width:1px;height:1px}
+.uf-pin{position:absolute;left:0;top:0;border-radius:12px;color:var(--uf-ink);box-shadow:var(--uf-shadow);
+background:color-mix(in srgb,var(--uf-hit) 18%,var(--uf-screen));border:1px solid color-mix(in srgb,var(--uf-hit) 55%,var(--uf-line))}
+.uf-pin:focus-within{outline:2px solid var(--uf-accent);outline-offset:2px}
+.uf-pinbar{display:flex;align-items:center;user-select:none;-webkit-user-select:none;gap:6px;height:34px;padding:0 6px 0 14px;font-size:13px;font-weight:600;color:var(--uf-ink2)}
+.uf-editing .uf-pinbar{cursor:grab;touch-action:none}
+.uf-btn.uf-pindel{width:26px;height:26px;padding:0;border:0;background:transparent;color:var(--uf-ink2)}
+.uf-pintext{display:block;box-sizing:border-box;width:100%;min-height:64px;margin:0;padding:2px 14px 14px;border:0;outline:0;
+background:transparent;color:inherit;font:inherit;font-size:16px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere;resize:none}
+.uf-pintext::placeholder{color:var(--uf-ink2)}
+.uf-pinname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-pinfold .uf-pinname{color:var(--uf-ink)}
+.uf-btn.uf-pintog{width:26px;height:26px;padding:0;border:0;background:transparent;color:var(--uf-ink2)}
+.uf-pinfold .uf-pintext,.uf-pinfold .uf-pinrsz{display:none}
+.uf-pinrsz{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;touch-action:none;
+background:linear-gradient(135deg,transparent 55%,var(--uf-ink2) 55% 62%,transparent 62% 72%,var(--uf-ink2) 72% 79%,transparent 79%);opacity:.6}
+.uf-pin:hover .uf-pinrsz{opacity:1}
+.uf-pinning .uf-view{cursor:crosshair}
+.uf-pinpad{position:absolute;inset:0;z-index:2;cursor:crosshair;touch-action:none}
+.uf-pinghost{position:absolute;border:2px dashed var(--uf-accent);border-radius:12px;background:color-mix(in srgb,var(--uf-hit) 14%,transparent)}
 .uf-label{position:absolute;left:0;top:0;padding:1px 7px;border-radius:8px;background:var(--uf-bg);color:var(--uf-ink2);
 font-size:14px;font-weight:650;white-space:nowrap;pointer-events:none;transition:opacity .2s ease-out}
 /* arrow labels: read them zoomed in, or on the flow in hand; zoomed out with nothing picked they are only noise */
@@ -199,17 +260,6 @@ font-size:14px;font-weight:650;white-space:nowrap;pointer-events:none;transition
 overflow:auto;padding:6px;border-radius:12px;background:var(--uf-screen);box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);
 animation:uf-in .18s ease-out}
 @keyframes uf-in{from{opacity:0;transform:translateY(-6px)}}
-.uf-issue{display:flex;align-items:flex-start;gap:10px;width:100%;padding:9px 10px;border:0;border-radius:10px;background:none;
-color:inherit;font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.uf-issue:hover{background:var(--uf-soft)}
-.uf-txt{min-width:0;overflow-wrap:anywhere}
-.uf-tag{flex:none;padding:1px 8px;border-radius:999px;background:var(--uf-soft);color:var(--uf-ink2);font-size:11px;font-weight:700}
-.uf-tag-orphan,.uf-tag-dead,.uf-tag-broken,.uf-tag-nostart,.uf-tag-unclear{background:var(--uf-warn-soft);color:var(--uf-warn)}
-.uf-tag-pending,.uf-tag-noflow{background:var(--uf-accent-soft);color:var(--uf-accent)}
-/* a pending step: the row, and (while editing) a way to drop it from the list */
-.uf-prow{display:flex;align-items:center;gap:2px}
-.uf-prow .uf-issue{flex:1;min-width:0}
-.uf-prow .uf-icon{flex:none;width:26px;height:26px;border-color:transparent;background:transparent;color:var(--uf-ink2)}
 .uf-none{margin:0;padding:14px;color:var(--uf-ink2);font-size:13px}
 /* prototype: one phone, scaled to fit (--k), centred in the stage; the path walked below it */
 .uf-stage{position:relative;flex:1;min-height:0;overflow:hidden}
@@ -305,19 +355,25 @@ border-radius:50%;background:var(--uf-accent);box-shadow:0 1px 3px rgba(16,24,40
 .uf-link.uf-sel{stroke-width:5;opacity:1}
 .uf-edit-on{background:var(--uf-screen);box-shadow:0 0 0 2px var(--uf-accent);cursor:text;text-overflow:clip;
 user-select:text;-webkit-user-select:text}
-.uf-insp{position:absolute;left:8px;bottom:8px;z-index:2;display:flex;flex-direction:column;width:min(300px,calc(100% - 16px));
-max-height:calc(100% - 16px);overflow:hidden;border-radius:12px;background:var(--uf-screen);
+.uf-insp{position:absolute;left:10px;bottom:10px;z-index:2;display:flex;flex-direction:column;width:min(320px,calc(100% - 20px));
+max-height:calc(100% - 64px);overflow:hidden;border-radius:14px;background:var(--uf-screen);
 box-shadow:0 0 0 1px var(--uf-line),var(--uf-shadow);animation:uf-in .18s ease-out}
 .uf-insp[hidden]{display:none}
-.uf-ihead{flex:none;display:flex;align-items:center;gap:6px;padding:8px 8px 8px 12px;border-bottom:1px solid var(--uf-line);
-background:linear-gradient(90deg,color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 14%,transparent),transparent 70%)}
-.uf-ihead h2{flex:1;min-width:0;margin:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.uf-ihead .uf-btn{width:28px;height:28px;border-color:transparent;background:transparent}
+.uf-ihead{flex:none;display:flex;align-items:center;gap:2px;padding:10px 8px;border-bottom:1px solid var(--uf-line);
+background:linear-gradient(180deg,color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 12%,transparent),transparent)}
+.uf-ititle{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:0 6px}
+.uf-ieye{display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--uf-ink2)}
+.uf-ihome{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-ihead [data-tip]::after{top:calc(100% + 6px);left:auto;right:0;transform:none;max-width:240px;white-space:normal;width:max-content}
+.uf-ihead [data-tip]:first-child::after{left:0;right:auto}
+.uf-ihead h2{margin:0;font-size:15px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-ihead .uf-btn{flex:none;width:28px;height:28px;border-color:transparent;background:transparent;color:var(--uf-ink2)}
+.uf-ihead .uf-btn:hover{color:var(--uf-ink)}
 .uf-ihead .uf-btn:hover{background:var(--uf-soft)}
 .uf-ihead .uf-danger:hover{background:color-mix(in srgb,var(--uf-bad) 14%,transparent)}
-.uf-itag{flex:none;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 18%,transparent);
-color:var(--uf-kind,var(--uf-accent));font-size:11px;font-weight:700}
-.uf-ibody{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:10px 12px 12px}
+.uf-itag{flex:none;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--uf-kind,var(--uf-accent)) 18%,transparent);
+color:var(--uf-kind,var(--uf-accent));font-size:11px;font-weight:700;line-height:18px}
+.uf-ibody{display:flex;flex-direction:column;gap:12px;min-height:0;overflow:auto;padding:12px}
 .uf-pick{position:relative;display:flex;gap:0}
 .uf-pick .uf-btn{position:relative;flex:1;min-width:0;padding:0 6px;font-size:12px;transition:color .2s ease-out}
 .uf-pick .uf-btn[aria-pressed=true]{background:transparent}
@@ -330,19 +386,55 @@ pointer-events:none;transition:transform .32s cubic-bezier(.3,1.35,.5,1),backgro
 .uf-ihead .uf-start{font-size:11px;color:var(--uf-ink2)}
 .uf-ihead .uf-start[aria-pressed=true]{background:var(--uf-accent);color:var(--uf-on-accent)}
 .uf-chips{display:flex;flex-wrap:wrap;gap:4px}
+/* a button's ways out: one card each (the act's icon in its colour, where it goes, how); open: its act and the rest */
+.uf-routes{display:flex;flex-direction:column;gap:6px;min-width:0}
+.uf-route{--uf-act:var(--uf-accent);border:1px solid var(--uf-line);border-radius:10px;background:var(--uf-screen);
+transition:border-color .15s ease-out,box-shadow .15s ease-out}
+.uf-route:hover{border-color:var(--uf-muted)}
+.uf-route.uf-open{border-color:color-mix(in srgb,var(--uf-accent) 60%,var(--uf-line));box-shadow:0 0 0 3px var(--uf-accent-soft)}
+.uf-a-open{--uf-act:var(--uf-c-popup)}
+.uf-a-back,.uf-a-close{--uf-act:var(--uf-ink2)}
+.uf-rhead{display:flex;align-items:center;gap:2px;min-width:0;padding:4px}
+.uf-rgo{flex:1;min-width:0;display:flex;align-items:center;gap:10px;height:auto;padding:2px 6px 2px 2px;border:0;background:transparent;text-align:left}
+.uf-rgo:hover{background:transparent}
+.uf-rgo>svg{flex:none;color:var(--uf-ink2);transition:transform .2s ease-out}
+.uf-open .uf-rgo>svg{transform:rotate(180deg)}
+.uf-ract{flex:none;display:grid;place-items:center;width:32px;height:32px;border-radius:8px;
+background:color-mix(in srgb,var(--uf-act) 14%,transparent);color:var(--uf-act)}
+.uf-rtxt{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.uf-rto,.uf-rsub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uf-rto{font-size:13px;font-weight:600;color:var(--uf-ink)}
+.uf-rsub{font-size:12px;font-weight:400;color:var(--uf-ink2)}
+.uf-btn.uf-rdel{flex:none;width:28px;height:28px;padding:0;border-color:transparent;background:transparent;color:var(--uf-ink2)}
+.uf-btn.uf-rdel:hover{background:color-mix(in srgb,var(--uf-bad) 12%,transparent);color:var(--uf-bad)}
+.uf-rbody{display:flex;flex-direction:column;gap:8px;padding:4px 10px 10px}
+.uf-btn.uf-rmore{display:flex;align-items:center;justify-content:space-between;width:100%;height:32px;padding:0 8px 0 10px;
+background:var(--uf-bg);font-weight:500}
+.uf-rmore svg{color:var(--uf-ink2)}
+.uf-rnone{margin:0;padding:12px;border:1px dashed var(--uf-line);border-radius:10px;font-size:12px;line-height:1.45;
+color:var(--uf-ink2);text-align:center}
+.uf-link.uf-peek{stroke-width:5;opacity:1}
 .uf-chips .uf-btn{height:26px;padding:0 10px;font-size:12px;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:block}
-.uf-field{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
-.uf-flab{flex:none;width:64px;color:var(--uf-ink2);font-size:12px;font-weight:650}
-.uf-nums{flex:1;min-width:0;display:flex;gap:6px}
-.uf-field>.uf-input,.uf-field>.uf-area,.uf-field>.uf-chips{flex:1}
-.uf-input{min-width:0;height:30px;padding:0 10px;border:1px solid var(--uf-line);border-radius:var(--uf-r);
+/* a field: its name beside its box, every box on one edge (the panel stays short over the map); a section
+ * (.uf-sec: a button's ways out) has its name over a list as wide as the panel */
+.uf-field{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
+.uf-flab{flex:none;width:72px;color:var(--uf-ink2);font-size:12px;font-weight:600}
+.uf-field>.uf-input,.uf-field>.uf-area,.uf-field>.uf-chips,.uf-field>.uf-nums{flex:1}
+.uf-field.uf-sec{flex-direction:column;align-items:stretch;flex-wrap:nowrap}
+.uf-sec>.uf-flab{width:auto}
+.uf-nums{min-width:0;display:flex;gap:6px}
+.uf-input{min-width:0;height:32px;padding:0 10px;border:1px solid var(--uf-line);border-radius:var(--uf-r);
 background:var(--uf-bg);color:var(--uf-ink);font:inherit;font-size:13px;transition:border-color .15s ease-out}
 .uf-input:hover,.uf-area:hover{border-color:var(--uf-muted)}
 .uf-input:focus-visible{outline:2px solid var(--uf-accent);outline-offset:-1px}
 .uf-acts{display:flex;gap:6px}
-.uf-ibody .uf-acts .uf-btn,.uf-chips .uf-addchip{border-style:dashed;color:var(--uf-accent)}
+.uf-chips .uf-addchip{border-style:dashed;color:var(--uf-accent)}
+.uf-ifoot{flex:none;display:flex;gap:6px;padding:10px 12px;border-top:1px solid var(--uf-line);background:var(--uf-bg)}
+.uf-ifoot .uf-btn{flex:1;min-width:0;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px}
+.uf-ifoot .uf-btn svg{flex:none;color:var(--uf-accent)}
+.uf-ifoot .uf-btn span{overflow:hidden;text-overflow:ellipsis}
 .uf-zform .uf-acts{margin-top:10px}
-.uf-bad{display:none;flex-basis:100%;padding-left:72px;color:var(--uf-warn);font-size:12px}
+.uf-bad{display:none;flex-basis:100%;padding-left:82px;color:var(--uf-warn);font-size:12px}
 .uf-has-bad .uf-bad{display:block}
 .uf-has-bad .uf-input{border-color:var(--uf-warn)}
 .uf-note{position:absolute;left:50%;bottom:16px;z-index:3;max-width:calc(100% - 32px);padding:8px 14px;

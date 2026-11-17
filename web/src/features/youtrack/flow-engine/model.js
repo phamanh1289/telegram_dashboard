@@ -1,35 +1,33 @@
 import { shotOf } from './shots.js';
-import { ACTS, CAP_NOTE, KINDS, VERSION, setDevice } from './constants.js';
+import { ACTS, CAP_NOTE, CAP_TITLE, KINDS, MAX_MEMOS, VERSION, setDevice } from './constants.js';
 import { itm, num, rectOf, scr, str } from './values.js';
 
 /** Shown as a card over its parent. A popup / sheet / toast with a Zeplin image is a full frame instead (the
  *  design draws its own scrim), laid out like a screen; it still opens as an overlay in Prototype (`isPop`). */
 const isOverlay = (s) => s.kind !== "screen" && !shotOf(s);
-/** A fresh, well-formed copy plus what had to go: {flow, dropped: {screens: [dup id], items: ["s.i"], links: n,
- *  bad: n}}. Known kinds / acts, string labels, and ONLY Flow-schema fields — a hand-edited file's extras are
- *  dropped here, so what "Lưu file" writes matches what the backend model accepts. */
+/** A fresh, well-formed copy: known kinds / acts, string labels, one screen / button per id, and ONLY Flow-schema
+ *  fields — a hand-edited file's extras are dropped here, so what "Lưu file" writes matches what the backend model
+ *  accepts (an older file's `pending` / `acs` included). */
 function sanitize(raw) {
   const f = raw && typeof raw === "object" ? raw : {};
   // never edit a newer file: saving it would drop the fields this engine does not know
   if (Number.isFinite(f.v) && f.v > VERSION) throw new Error(`UI flow v${f.v} > v${VERSION}`);
   const device = setDevice(f.device); // every read of a flow goes through here: the frame is the one of the flow in hand
-  const dropped = { screens: [], items: [], links: 0, bad: 0 };
   const seen = new Set(), screens = [];
   for (const s of Array.isArray(f.screens) ? f.screens : []) {
-    if (!s || typeof s.id !== "string") { dropped.bad++; continue; }
-    if (seen.has(s.id)) { dropped.screens.push(s.id); continue; }
+    if (!s || typeof s.id !== "string" || seen.has(s.id)) continue;
     seen.add(s.id);
     const ids = new Set(), items = [];
     for (const it of Array.isArray(s.items) ? s.items : []) {
-      if (!it || typeof it.id !== "string") { dropped.bad++; continue; }
-      if (ids.has(it.id)) { dropped.items.push(`${s.id}.${it.id}`); continue; }
+      if (!it || typeof it.id !== "string" || ids.has(it.id)) continue;
       ids.add(it.id);
       const r = rectOf(it.rect);
       items.push(r ? { id: it.id, label: str(it.label, it.id), rect: r } : { id: it.id, label: str(it.label, it.id) });
     }
     screens.push({ id: s.id, title: str(s.title, s.id) || s.id, kind: KINDS.includes(s.kind) ? s.kind : "screen",
       parent: typeof s.parent === "string" ? s.parent : null, x: num(s.x), y: num(s.y),
-      zeplin: str(s.zeplin), ac: str(s.ac), note: str(s.note).slice(0, CAP_NOTE), items });
+      zeplin: str(s.zeplin), ac: str(s.ac), note: str(s.note).slice(0, CAP_NOTE), items,
+      ...(Number.isFinite(s.fold) && s.fold > 0 && s.fold < 1 ? { fold: s.fold } : {}) }); // folded on the map (= Screen.fold)
   }
   const by = new Map(screens.map((s) => [s.id, s]));
   const okSrc = (src) => {
@@ -39,27 +37,24 @@ function sanitize(raw) {
   const all = Array.isArray(f.links) ? f.links : [];
   const links = all.filter((l) => l && okSrc(l.src) && by.has(l.to))
     .map((l) => ({ src: l.src, to: l.to, act: ACTS.includes(l.act) ? l.act : "navigate", when: str(l.when), ac: str(l.ac) }));
-  dropped.links = all.length - links.length;
   // v, device and rev are literals / an int in the backend model: anything else would make the file unreadable
   // (device: "mobile" | "web", anything else is a phone)
   const rev = Number.isFinite(f.rev) && f.rev > 0 ? Math.trunc(f.rev) : 0;
   const start = typeof f.start === "string" && by.has(f.start) ? f.start : null;
-  // steps the ticket describes that have no design yet (= Pending in the backend model): listed, never drawn.
-  // The key is only written when there are some, so a flow without them keeps its old shape.
-  const titles = new Set(), pending = [];
-  for (const p of Array.isArray(f.pending) ? f.pending : []) {
-    const title = p && typeof p === "object" ? str(p.title).trim() : "", key = title.toLowerCase().replace(/\s+/g, " ");
-    if (!title || titles.has(key)) continue;
-    titles.add(key);
-    pending.push({ title, kind: KINDS.includes(p.kind) ? p.kind : "screen", ac: str(p.ac), src: okSrc(p.src) ? p.src : "",
-      when: str(p.when) });
+  // notes on the map (= Flow.memos): one with no place or a repeated id is dropped, as the backend does
+  const mids = new Set(), memos = [];
+  for (const m of Array.isArray(f.memos) ? f.memos : []) {
+    if (!m || typeof m.id !== "string" || !/^[A-Za-z0-9_-]{1,40}$/.test(m.id) || mids.has(m.id) || num(m.x) === null || num(m.y) === null) continue;
+    mids.add(m.id);
+    // its box: the size drawn (= Memo.w / h), else the default; folded to its bar only when it says so
+    const size = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+    memos.push({ id: m.id, x: m.x, y: m.y, w: size(m.w, 160, 1600, 320), h: size(m.h, 80, 4000, 160), text: str(m.text).slice(0, CAP_NOTE),
+      ...(m.fold === true ? { fold: true } : {}) });
   }
-  // the ticket's AC codes, read at the last render (= Flow.acs): kept as they are, the editor never changes them
-  const acs = [...new Set((Array.isArray(f.acs) ? f.acs : []).filter((x) => typeof x === "string" && /^AC\d{1,3}(\.\d{1,3}){0,3}$/.test(x)))];
-  return { flow: { v: VERSION, ticket: str(f.ticket), rev, device, start, screens, links,
-    ...(pending.length ? { pending } : {}), ...(acs.length ? { acs } : {}) }, dropped };
+  const title = str(f.title).replace(/\s+/g, " ").trim().slice(0, CAP_TITLE); // its own name (= Flow.title); none: ""
+  return { v: VERSION, ticket: str(f.ticket), ...(title ? { title } : {}), rev, device, start, screens, links,
+    ...(memos.length ? { memos: memos.slice(0, MAX_MEMOS) } : {}) };
 }
-const normalize = (raw) => sanitize(raw).flow;
 /** id -> the screen an overlay sits on: its declared parent, else the screen whose `open` link targets it; null
  *  for screens and for overlays nothing opens. One rule for layout and focus. */
 function parents(f) {
@@ -84,4 +79,20 @@ function family(f, id) {
   return out;
 }
 
-export { isOverlay, sanitize, normalize, parents, family };
+/** Screen `id` of `f` becomes `kind`, in place, and its arrows keep meaning what they did: into it "navigate" ↔
+ *  "open", from it "back" ↔ "close" — only those carrying the old kind's default, a condition / AC stays. A popup
+ *  gets the screen under it (the first one that opens it) when it has none; a screen has none. -> f */
+function rekind(f, id, kind) {
+  const s = f.screens.find((x) => x.id === id), was = s.kind !== "screen", now = kind !== "screen";
+  s.kind = kind;
+  if (!now) s.parent = null;
+  if (was === now) return f;
+  const [inOld, inNew] = now ? ["navigate", "open"] : ["open", "navigate"], [outOld, outNew] = now ? ["back", "close"] : ["close", "back"];
+  for (const l of f.links) {
+    if (l.to === id && l.act === inOld) l.act = inNew;
+    if (scr(l.src) === id && l.act === outOld) l.act = outNew;
+  }
+  if (now && !s.parent) s.parent = scr(f.links.find((l) => l.to === id && l.act === "open" && scr(l.src) !== id)?.src ?? "") || null;
+  return f;
+}
+export { rekind, isOverlay, sanitize, parents, family };

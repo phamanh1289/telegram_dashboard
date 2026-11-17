@@ -114,16 +114,16 @@ export function TicketsPage() {
     return () => document.removeEventListener("keydown", onKey);
   });
 
-  // Bảng ↔ Board morph: the view shown lags y.view by one layout pass, so the old view is still on screen to measure
+  // Bảng ↔ Board morph: the old view is measured on the click, before React renders the new one (one render, no extra pass)
   const still = useReducedMotion();
   const page = useRef<HTMLElement>(null);
   const snap = useRef<Snap | null>(null);
-  const [view, setShownView] = useState(y.view);
-  useLayoutEffect(() => {
-    if (view === y.view) return;
+  const view = y.view;
+  const switchView = (v: typeof view) => {
+    if (v === view) return;
     snap.current = still || !page.current ? null : grab(page.current);
-    setShownView(y.view); // eslint-disable-line react-hooks/set-state-in-effect -- the old view had to be measured first; flushes before paint
-  }, [y.view, view, still]);
+    y.setView(v);
+  };
   useLayoutEffect(() => {
     const s = snap.current;
     snap.current = null;
@@ -168,7 +168,7 @@ export function TicketsPage() {
         <span aria-live="polite" className="px-1 font-mono text-xs whitespace-nowrap text-ink-3 tabular-nums">{t("{n} ticket", { n: fmt(shownAll.length) })}</span>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
           <Views />
-          <Segmented id="yt-tickets-view" label={t("Kiểu xem")} value={y.view} onChange={y.setView} items={[
+          <Segmented id="yt-tickets-view" label={t("Kiểu xem")} value={view} onChange={switchView} items={[
             { value: "table", label: <span className="inline-flex items-center gap-1"><Rows3 className="size-3.5" />{t("Bảng")}</span> },
             { value: "board", label: <span className="inline-flex items-center gap-1"><Columns3 className="size-3.5" />Board</span> },
           ]} />

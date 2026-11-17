@@ -1,4 +1,5 @@
 import asyncio
+import time
 from types import SimpleNamespace
 
 import httpx
@@ -320,6 +321,28 @@ async def test_short_link_reads_its_screen_with_the_name_and_keeps_the_token_off
     await shots.aclose()
 
 
+async def test_the_project_platform_is_read_once_per_project_and_goes_with_each_screen(shots, monkeypatch):
+    original, asked = httpx.AsyncClient, []
+
+    def handle(request):
+        if request.url.path.endswith("/versions/latest"):
+            return httpx.Response(200, json={"width": 1125, "height": 2436, "density_scale": 3, "layers": []})
+        if "/screens/" not in request.url.path:
+            asked.append(request.url.path)
+            return httpx.Response(200, json={"platform": "web"})
+        return httpx.Response(200, json={"name": "Home"})
+
+    monkeypatch.setattr(zeplin.httpx, "AsyncClient",
+                        lambda **kw: original(transport=httpx.MockTransport(handle), **kw))
+    other = URL[:-1] + "c"
+    first, _ = await shots.get([URL])
+    again, _ = await shots.get([other])
+    assert (first[URL]["platform"], again[other]["platform"]) == ("web", "web")
+    assert (first[URL]["w"], first[URL]["dp"]) == (1125, 375)  # the width at @1x: what tells a phone design
+    assert asked == ["/v1/projects/" + "a" * 24]  # the second screen of the project did not ask again
+    await shots.aclose()
+
+
 async def test_screen_name_read_failing_never_fails_the_screen(shots, monkeypatch):
     original = httpx.AsyncClient
 
@@ -332,6 +355,7 @@ async def test_screen_name_read_failing_never_fails_the_screen(shots, monkeypatc
                         lambda **kw: original(transport=httpx.MockTransport(handle), **kw))
     got, missing = await shots.get([URL])
     assert not missing and got[URL]["title"] == "" and got[URL]["w"] == 375
+    assert (got[URL]["platform"], got[URL]["dp"]) == ("", 375)  # nor does the project's: then by the size alone
     await shots.aclose()
 
 
@@ -342,7 +366,7 @@ async def test_the_last_read_is_kept_in_a_file_and_shown_before_the_live_one(tmp
 
     async def read(client, url):
         reads.append(url)
-        return {"src": f"v{len(reads)}"}
+        return {"src": f"v{len(reads)}", "cut": 0}
 
     first = zeplin.Shots(path=lambda: path)
     monkeypatch.setattr(first, "_read", read)
@@ -351,11 +375,26 @@ async def test_the_last_read_is_kept_in_a_file_and_shown_before_the_live_one(tmp
     assert await first.last([URL]) is None  # fresh in memory: get() answers at once
     assert "one" not in path.read_text() and oct(path.stat().st_mode)[-3:] == "600"  # never the token
     await first.aclose()
+    soon = zeplin.Shots(path=lambda: path)  # a restart within the hour: the file's read is as good as memory
+    monkeypatch.setattr(soon, "_read", read)
+    assert await soon.last([URL]) is None  # nothing older to show first: get() answers at once
+    assert (await soon.get([URL]))[0][URL]["src"] == "v1" and len(reads) == 1  # no call to Zeplin
+    await soon.aclose()
+    later = time.time() + zeplin.TTL + 1
+    monkeypatch.setattr(zeplin.time, "time", lambda: later)  # past the hour: shown first, then read again
     again = zeplin.Shots(path=lambda: path)  # a restart: memory is empty, the file is not
     monkeypatch.setattr(again, "_read", read)
-    assert (await again.last([URL + "?x=1"])) == {URL + "?x=1": {"src": "v1"}} and len(reads) == 1
+    assert (await again.last([URL + "?x=1"])) == {URL + "?x=1": {"src": "v1", "cut": 0}} and len(reads) == 1
     assert await again.last([URL, URL[:-1] + "c"]) is None  # one of them never read: the caller reads them all
     assert (await again.get([URL]))[0][URL]["src"] == "v2"  # the live read replaces it, in the file too
+    old = URL[:-1] + "d"
+
+    async def before(client, url):  # a read kept by a version before `cut`
+        return {"src": "old"}
+
+    monkeypatch.setattr(again, "_read", before)
+    await again.get([old])
+    assert await zeplin.Shots(path=lambda: path).last([old]) is None  # not shown first: the live read is waited for
     monkeypatch.setattr(zeplin, "token", lambda: "two")  # another account: its file is not this one's
     other = zeplin.Shots(path=lambda: path)
     assert await other.last([URL]) is None

@@ -9,13 +9,15 @@ import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from 
 import { Hint } from "@/shared/components/ui/hint";
 import { useLang, useT } from "@/shared/lib/i18n";
 import { getPref, put } from "@/shared/lib/prefs";
-import { flowTheme, packShots, useFlowShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
+import { flowTheme, packShots, readOrder, useFlowShots, useUiFlow, zeplinUrls } from "@/features/youtrack/lib/uiflow";
 import { AI_LEAVE, aiJobs, aiParts, flowSignals, flowCursors, type FlowJob, type FlowJobState, type FlowSaved, type FlowManifest, type FlowMode, type FlowTarget, newJobId, type UiFlow, yt, ytFlowQuery } from "@/features/youtrack/lib/yt";
-import { flowDraft, type FlowDraft } from "@/features/youtrack/lib/flow-draft";
+import { flowDraft, type FlowDraft, pastDay } from "@/features/youtrack/lib/flow-draft";
 import { cn } from "@/shared/lib/utils";
 import { YtFetching } from "./bits";
-import { FlowRisks, platformSkip, useFlowCheck } from "./flow-check";
+import { FlowRisks, useFlowCheck } from "./flow-check";
 import { FlowStart, FlowTargetPicker } from "./flow-start";
+import { FlowTitle } from "./flow-title";
+import { FlowDownload } from "./flow-md";
 
 /** The head line of the dialog: what the file is now (one state, its colour, a hint on what to do next). */
 const STATUS = {
@@ -70,6 +72,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // (`sum`: what the AI drew and could not read, for the bar under a fresh render)
   const [mine, setMine] = useState<{ flow: UiFlow; manifest?: FlowManifest | null; base: string | null; sum?: ReturnType<typeof flowSummary> } | null>(null);
   const [dirty, setDirty] = useState(false); // the engine's edits since it was last given a flow
+  // the flow's name as last edited, for the flow handed to the engine then (another one handed in: its own name)
+  const [named, setNamed] = useState<{ of: UiFlow | null; v: string } | null>(null);
   const [hid, setHid] = useState(false); // "Không": the bar stays away until the next edit or "Cập nhật lên ticket"
   const [saved, setSaved] = useState<FlowSaved | null>(null);
   const [ask, setAsk] = useState<"again" | "fresh" | "delete" | null>(null);
@@ -81,18 +85,19 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // "Render lại": keep the flow's links and ask the AI only for what is new (default), or draw it all again
   const [reuse, setReuse] = useState(true);
   // what the next new run asks for beyond the box ("Chỉ dựng màn" / "Chia phần" / "Chỉ vẽ phần mới"), read once
-  const runOpts = useRef<{ mode?: FlowMode; split?: boolean; reuse?: boolean; note?: string; skip?: string[] }>({});
+  const runOpts = useRef<{ mode?: FlowMode; split?: boolean; reuse?: boolean; note?: string; draw?: string[] }>({});
   const [shown, setShown] = useState(true); // false: sliding out; `onClose` comes when that animation ends
 
   // Background attachment refresh would replace engine-only edits; reopen, explicit refresh and save reconcile metadata.
   const q = useQuery({ ...ytFlowQuery(issue, scope), enabled: open, refetchOnWindowFocus: false, refetchOnReconnect: false });
   const flow = mine?.flow ?? q.data?.flow ?? null;
+  const name = named?.of === flow ? named.v : (flow?.title ?? "");
   const base = mine ? mine.base : q.data?.att ?? null;
   // the Zeplin screens the flow links (edits included): frames drawn from their images; the engine mounts once the
   // first answer is in (or failed), so it lays out with them and never shifts frames under the user
   const [edited, setEdited] = useState<string | null>(null); // the edited flow's links, "\n"-joined
   const urls = edited !== null ? edited.split("\n").filter(Boolean) : zeplinUrls(flow);
-  const sq = useFlowShots(scope, urls, open && !!flow && urls.length > 0);
+  const sq = useFlowShots(scope, urls, open && !!flow && urls.length > 0, readOrder(flow));
   const shotsReady = !urls.length || !!sq.data || sq.isError;
   // the screens whose Zeplin design changed since the file was saved: its size, its texts, or (a file saved with
   // one) its Zeplin version, so a redesign that keeps every text is told too. = design_of / redesigned in flow.py
@@ -114,9 +119,10 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     if (immediate) write(); else timer.current = setTimeout(write, 500);
   };
   const engine = useUiFlow(el, shotsReady ? flow : null, {
-    lang, shots: sq.data?.shots, notes: mine?.manifest?.warnings,
+    lang, shots: sq.data?.shots,
     onChange: (f, d) => {
       setDirty(d);
+      setNamed({ of: flow, v: f.title ?? "" });
       if (d) { setHid(false); persist({ flow: f, manifest: mine?.manifest, base, job: draft.current?.job ?? job?.id, pendingJob: draft.current?.pendingJob, outcomeUnknown: draft.current?.outcomeUnknown, updated: Date.now() }); }
       else if (draftReady && !busy.current && !ai.isPending) { if (mine) persist({ ...draft.current, flow: f, base, updated: Date.now() }); else if (draft.current) persist(null, true); }
       const k = zeplinUrls(f).join("\n");
@@ -146,7 +152,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       const c = (ctl.current = new AbortController());
       flowSignals.add(c.signal);
       const opts = again ? {} : runOpts.current; runOpts.current = {}; // once: the next run asks again
-      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, skip: opts.skip, target };
+      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, target, draw: opts.draw };
       pendingJob.current = current;
       stopRequested.current = null;
       if ((!again || again.retryAi) && draft.current) persist({ ...draft.current, pendingJob: current.id }, true);
@@ -163,7 +169,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         if (currentScope.scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
         const result = again && !again.retryAi
           ? await yt.flowJobEvents(current.id, cursor.current.at, c.signal)
-          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.skip ?? [], current.target ?? target);
+          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.target ?? target, current.draw);
         const state = await yt.flowJobState(current.id);
         if (op !== operation.current) return null;
         setJob(state);
@@ -263,7 +269,13 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       try {
         const jobs = await yt.flowJobs(issue);
         if (!active) return;
-        const current = jobs.find((j) => !j.processed && j.status !== "cancelled");
+        let current = jobs.find((j) => !j.processed && j.status !== "cancelled");
+        // an unsaved render (or a failed one to retry) from an earlier day is a draft too: gone with the day
+        if (current && !restored && !["queued", "running", "cancel_requested"].includes(current.status) && current.updated_at > 0 && pastDay(current.updated_at * 1000)) {
+          await yt.flowJobProcessed(current.id);
+          if (!active) return;
+          current = undefined;
+        }
         setJob(current ?? null);
         if ((!restored || pending === current?.id) && current?.result?.flow) { if (draft.current?.job && draft.current.job !== current.id) void yt.flowJobProcessed(draft.current.job).catch((e) => setJobError(say(e))); const value = { flow: current.result.flow, manifest: current.result.manifest, base: current.base, job: current.id, updated: Date.now() }; setMine(value); persist(value, true); }
         else if ((!restored || pending === current?.id) && current && ["queued", "running", "cancel_requested"].includes(current.status)) ai.mutate({ id: current.id, base: current.base, at: Date.now() });
@@ -294,7 +306,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const renderFailed = (ai.isError && (ai.error as Error).name !== "AbortError") || job?.status === "failed";
   const headStatus: keyof typeof STATUS = ai.isPending ? "running" : job?.needs_ai_retry ? "interrupted" : renderFailed ? "failed" : unsaved ? (base === null ? "unsaved" : "edited") : flow ? "flow" : "empty";
   // a render replaces the flow and unmounts the engine, so the edits it held are gone with it
-  const start = (m: FlowMode = mode, split = false, extra = "", skip: string[] = []) => { if (busy.current || !draftReady || stopping || jobError || (job && ["queued", "running", "cancel_requested"].includes(job.status))) return; const current = engine.api?.get(); keep.current = current ?? flow; if (current && unsaved) { setMine({ flow: current, manifest: mine?.manifest, base }); persist({ flow: current, manifest: mine?.manifest, base, job: job?.id, updated: Date.now() }, true); } setSaved(null); setDirty(false); setEdited(null); save.reset(); runOpts.current = { ...runOpts.current, mode: m, split, skip, note: extra || undefined }; ai.mutate(undefined); };
+  const start = (m: FlowMode = mode, split = false, extra = "", draw?: string[]) => { if (busy.current || !draftReady || stopping || jobError || (job && ["queued", "running", "cancel_requested"].includes(job.status))) return; const current = engine.api?.get(); keep.current = current ?? flow; if (current && unsaved) { setMine({ flow: current, manifest: mine?.manifest, base }); persist({ flow: current, manifest: mine?.manifest, base, job: job?.id, updated: Date.now() }, true); } setSaved(null); setDirty(false); setEdited(null); save.reset(); runOpts.current = { ...runOpts.current, mode: m, split, note: extra || undefined, draw }; ai.mutate(undefined); };
   // an AI render the pre-check flags asks once first; "screens" (no AI) and a clean check just start
   const run = () => { if (mode === "flow") setRisky(true); else start(); }; // an AI render always asks first (cost, gaps, model)
   const pickMode = (m: FlowMode) => { setMode(m); put("uiflowMode", m === "flow" ? m : null); };
@@ -348,19 +360,16 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // an interrupted render: one warn button, under the run button (or in the footer over a flow on screen)
   const resume = job?.needs_ai_retry && !ai.isPending ? (
     <Hint side="bottom" title={t("Render bị gián đoạn")} text={t("Lượt render trước chưa xong. Bấm để gọi AI lại với đúng chế độ, model và phạm vi màn của lượt đó. Kết quả chỉ lên ticket khi bạn bấm Cập nhật.")}>
-      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, skip: job.request?.skip ?? [], target: job.request?.target }); }}>
+      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, target: job.request?.target, draw: job.request?.draw ?? undefined }); }}>
         <RotateCw aria-hidden />{t("Tiếp tục render")}
       </Button>
     </Hint>
   ) : null;
   // the empty flow counts what a render would read (no AI; the warning dialog opens on the same cached count)
   const starting = !readErr && !ai.isPending && !waiting && !flow && !q.data?.broken;
-  // two counts: every screen (the sizes, for the platform picker), then without the other platform's (what is sent);
-  // the second is also the warning dialog's own key, so it opens on it at once
-  const startAll = useFlowCheck(issue, starting, []);
-  const startSkip = platformSkip(startAll.data, target);
-  const startSent = useFlowCheck(issue, starting && !!startAll.data, startSkip);
-  const startCheck = { data: startSent.data ?? startAll.data, error: startSent.error ?? startAll.error };
+  // one count for the platform picked: both platforms' screens (the picker's numbers) and what is sent; the warning
+  // dialog's own key too, so it opens on it at once
+  const startCheck = useFlowCheck(issue, starting, target);
   // a render that failed: one card, by the run button (start panel) or in the footer (a flow, a run, an error view); the AI's
   // own error first, else the job's (a reopened dialog only has the job). Gone once the next run starts.
   const failMsg = ai.isPending ? ""
@@ -393,12 +402,17 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     : ai.isPending ? <FlowProgress events={ev} started={started} mode={runMode} />
     : engine.error ? <Center><p role="alert" className="text-sm text-error">{say(engine.error)}</p><Button size="sm" variant="outline" onClick={engine.retry}><RotateCw aria-hidden />{t("Thử lại")}</Button></Center>
     : waiting ? <YtFetching kind="flow" />
-    : flow ? <div ref={setEl} className="h-full" />
+    : flow ? <div className="relative h-full">
+        <div ref={setEl} className="h-full" />
+        {sq.fetching && engine.api && <span role="status" className="pointer-events-none absolute top-3 left-1/2 z-10 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-rule bg-paper px-3 py-1 text-xs text-ink-2 shadow-sm">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />{t("Đang tải ảnh Zeplin…")}
+        </span>}
+      </div>
     : q.data?.broken ? <Center>
         <p className="max-w-sm text-sm text-ink-2">{t("File UI flow trên ticket không đọc được")}</p>
         <Button size="sm" className="rounded-full bg-hl text-hl-ink hover:brightness-110" onClick={run}><Sparkles aria-hidden />{t("Render lại bằng AI")}</Button>
       </Center>
-    : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens", false, "", startSkip) : run())} resume={resume} notice={<>{failed}{lost}</>} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
+    : <FlowStart mode={mode} onPick={pickMode} onRun={() => (mode === "screens" ? start("screens") : run())} resume={resume} notice={<>{failed}{lost}</>} target={target} onTarget={pickTarget} check={startCheck.data} checkError={startCheck.error} />;
 
   const bar = !readErr && unsaved && !hid && !waiting && !ai.isPending && !!engine.api; // the one row that asks to write to the ticket
   // draft autosave state + its two ways out; rides in that row, or on its own line when the row is away
@@ -421,7 +435,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
             </Hint>
             <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><Workflow className="size-4" aria-hidden /></span>
             <div className="flex min-w-0 flex-1 flex-col">
-              <DialogTitle className="truncate pr-0 text-sm font-bold text-ink">{t("UI flow {id}", { id: issue })}</DialogTitle>
+              <FlowTitle name={name} fallback={t("UI flow {id}", { id: issue })} onRename={flow && engine.api && !locked ? (v) => engine.api?.title(v) : undefined} />
               <p className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                 <span className={cn("shrink-0 rounded-full px-2 py-px text-2xs font-bold", STATUS[headStatus].tone)}>{t(STATUS[headStatus].label)}</span>
                 <span className="truncate">{t(STATUS[headStatus].hint)}</span>
@@ -433,9 +447,8 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
               </Hint>
             )}
             {flow && engine.api && (
-              <Hint side="bottom" text={t("Tải file HTML của sơ đồ đang xem (kể cả bản nháp chưa lưu): mở được offline, không cần app. Không ghi gì lên ticket.")}>
-                <Button size="icon-sm" variant="ghost" aria-label={t("Tải file HTML")} aria-busy={html.isPending} disabled={html.isPending || ai.isPending} onClick={() => engine.api && html.mutate(engine.api.get())}>{html.isPending ? <Loader2 className="animate-spin" /> : <Download />}</Button>
-              </Hint>
+              <FlowDownload issue={issue} get={() => engine.api?.get()} busy={html.isPending} disabled={html.isPending || ai.isPending}
+                onHtml={() => engine.api && html.mutate(engine.api.get())} />
             )}
             {flow && (
               <Hint side="bottom" text={q.data?.att ? t("Xoá UI flow: gỡ file trên ticket (có hỏi lại trước)") : t("Bỏ bản render: bỏ sơ đồ AI vừa vẽ, chưa lên ticket (có hỏi lại trước)")}>
@@ -518,7 +531,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
           </footer>
         </DialogContent>
       </Dialog>
-      {risky && <FlowRisks issue={issue} target={target} open={risky} onOpenChange={setRisky} onRun={(extra, skip) => start("flow", false, extra, skip)} onScreens={(skip) => { pickMode("screens"); start("screens", false, "", skip); }} onSplit={(extra, skip) => start("flow", true, extra, skip)} />}
+      {risky && <FlowRisks issue={issue} target={target} open={risky} onOpenChange={setRisky} onRun={(extra, draw) => start("flow", false, extra, draw)} onScreens={() => { pickMode("screens"); start("screens"); }} onSplit={(extra, draw) => start("flow", true, extra, draw)} />}
       {/* after a 409: the ticket's version replaces mine, and mine cannot be read back */}
       <ConfirmDialog open={ask === "fresh"} onOpenChange={(o) => !o && setAsk(null)} title={t("Bỏ thay đổi chưa lưu?")}
         description={t("Xem bản mới trên ticket sẽ mất các thay đổi chưa lưu của bạn.")} confirmLabel={t("Xem bản mới")}

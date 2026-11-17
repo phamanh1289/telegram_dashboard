@@ -2,7 +2,7 @@ import { str } from './values.js';
 import { W } from './constants.js';
 
 // ------------------------------------------------------------------ Zeplin images (shots)
-// {zeplin url: {src, w, h, hits: [[label, x, y, w, h]]}} in design units, from the dashboard (or the file's own
+// {zeplin url: {src, w, h, hits: [[label, x, y, w, h]], lines: [same, a multi-line text's lines]}} in design units, from the dashboard (or the file's own
 // block). Kept out of the flow: undo / dirty compare the flow as JSON, and images would make that heavy.
 // ponytail: one set per page (the dashboard shows one flow at a time); a map per mount if two ever share a page
 let SHOTS = {};
@@ -12,6 +12,17 @@ const shotOf = (s) => (s.zeplin && SHOTS[s.zeplin]) || null;
 const norm = (v) => str(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d")
   .replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const BACK = /(^| )(back|quay lai|tro lai|tro ve)( |$)/;
+/** Two reads of one design are the same screen when all but the image's address agree (a new read signs a new URL
+ *  for the same picture): its size, texts and where they sit, its list cut, Zeplin's version. -> a frame drawn
+ *  from the old read is kept, not drawn again. */
+const sigs = new WeakMap();
+const sigOf = (sh) => {
+  if (!sh) return "";
+  let v = sigs.get(sh);
+  if (v === undefined) sigs.set(sh, (v = JSON.stringify([sh.w, sh.h, sh.hits, sh.lines, sh.cut, sh.ver])));
+  return v;
+};
+const sameShot = (a, b) => a === b || (!!a && !!b && sigOf(a) === sigOf(b));
 function setShots(map) {
   SHOTS = map && typeof map === "object" ? map : {};
   hotCache.clear();
@@ -22,7 +33,9 @@ function hotspots(s, sh) {
   const key = W + s.zeplin + "\n" + s.items.map((i) => i.label + (i.rect ? JSON.stringify(i.rect) : "")).join("\n");
   let got = hotCache.get(key);
   if (got) return got;
-  const k = W / sh.w, hits = Array.isArray(sh.hits) ? sh.hits : [], ns = hits.map((x) => norm(x[0])), used = new Set();
+  // the lines of a multi-line text after every hit ("Căn hộ" under "Căn hộ Xác minh nhanh…"): a whole text first
+  const hits = [...(Array.isArray(sh.hits) ? sh.hits : []), ...(Array.isArray(sh.lines) ? sh.lines : [])];
+  const k = W / sh.w, ns = hits.map((x) => norm(x[0])), used = new Set();
   const at = (j) => {
     const [, x, y, w, hh] = hits[j];
     return { x: x * k, y: y * k, w: Math.max(w * k, 24), h: Math.max(hh * k, 24) };
@@ -66,4 +79,4 @@ function layersOf(rects) {
   return out;
 }
 
-export { SHOTS, hotCache, shotOf, norm, BACK, setShots, hotspots, layersOf };
+export { SHOTS, hotCache, shotOf, norm, BACK, setShots, hotspots, layersOf, sameShot };
