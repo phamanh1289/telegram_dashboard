@@ -9,9 +9,7 @@ import { APP_TOKENS } from './styles.js';
 function auto() {
   const data = document.getElementById("uiflow-data");
   if (!data) return; // the dashboard mounts the engine itself
-  const src = document.documentElement.outerHTML; // before mount: what "Lưu file" writes back
-  // the host fills the page (styles above). Added after `src`, so a saved file stays as built and gets it again
-  // when it is opened; the dashboard mounts through UIFlow.mount and sizes its own container.
+  // the host fills the page (styles above); the dashboard mounts through UIFlow.mount and sizes its own container.
   document.documentElement.classList.add("uf-file");
   let host = document.getElementById("uiflow");
   if (!host) {
@@ -30,7 +28,9 @@ function auto() {
   try {
     shots = JSON.parse(document.getElementById("uiflow-shots")?.textContent || "{}");
   } catch { /* a file without images: plain frames */ }
-  host.uiflow = mount(host, flow, { edit: true, shots }, src); // the only handle an exported file has on its engine
+  // view only: a file is edited on the dashboard (it checks the version on the ticket, the AI, the change log),
+  // never offline, where a second copy would drift from the ticket's
+  host.uiflow = mount(host, flow, { shots }, true); // the only handle an exported file has on its engine
 }
 window.UIFlow = Object.freeze({ SCREEN, tokens: APP_TOKENS, layout, mount: (el, flow, opts) => mount(el, flow, opts, null) });
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", auto, { once: true });

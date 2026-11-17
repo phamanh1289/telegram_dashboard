@@ -4,7 +4,7 @@ import time
 import httpx
 from telegram_dashboard.youtrack import flow as uiflow
 from telegram_dashboard.youtrack.client import YtError
-from yt_test_helpers import FLOW, UPLOAD, FakeYt, flow_app, flow_html, make, moved
+from yt_test_helpers import FLOW, ME, OTHER, UPLOAD, FakeYt, flow_app, flow_html, make, moved
 
 
 async def test_flow_save_uploads_then_deletes_old_then_comments(tmp_path):
@@ -75,16 +75,24 @@ async def test_flow_save_comment_lists_at_most_20_changes(tmp_path):
     assert len(lines) == 22 and lines[-1] == "- … và 5 thay đổi khác"
 
 
-async def test_flow_get_reads_only_our_file_and_flags_broken(tmp_path):
-    yt = FakeYt([{"id": "1-2", "name": "spec.html", "created": 9, "body": flow_html(4)},
-                 {"id": "1-3", "name": "uiflow-VA-1.html", "created": 5, "body": "<html>broken"}])  # fmt: skip
+async def test_flow_get_tells_our_file_by_its_content_not_its_name(tmp_path):
+    other = uiflow.clean(FLOW, "VA-2")  # another ticket's flow, attached here: not this ticket's file
+    yt = FakeYt([{"id": "1-1", "name": "spec.html", "created": 9, "body": "<html>plain"},
+                 {"id": "1-7", "name": "copy.html", "created": 8, "body": uiflow.build_html(other, "/*engine*/")},
+                 {"id": "1-2", "name": "uiflow-VA-1.pdf", "created": 7, "body": flow_html(4)},
+                 {"id": "1-3", "name": "Đăng nhập - VA-1.html", "created": 5,
+                  "body": uiflow.MARK + "<html>broken"}])  # fmt: skip
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
-        assert r.json() == {"att": "1-3", "flow": None, "broken": True, "ticket_newer": False}
-        yt.files = [yt.files[0]]
+        assert r.json() == {"att": "1-3", "flow": None, "broken": True, "ticket_newer": False, "author": None,
+                            "yours": True}  # fmt: skip
+        yt.files = yt.files[:3]
         r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
         assert r.json() == {"att": None, "flow": None, "broken": False}
+        yt.files.append({"id": "1-8", "name": "renamed by hand.html", "created": 1, "body": flow_html(5)})
+        r = await c.get("/api/yt/flow", params={"issue": "VA-1"})
+        assert (r.json()["att"], r.json()["flow"]["rev"]) == ("1-8", 5)
         yt.files = [
             {"id": "1-4", "name": "uiflow-VA-1.html", "created": 3, "body": flow_html(1)},
             {"id": "1-5", "name": "uiflow-VA-1.html", "created": 7, "body": flow_html(2)},
@@ -157,40 +165,13 @@ async def test_flow_save_upload_500_is_a_plain_failure(tmp_path):
     assert r.status_code == 502 and r.json()["error"].startswith("YouTrack 500") and yt.writes == [UPLOAD]
 
 
-async def test_flow_save_renamed_upload_is_taken_back_and_refused(tmp_path):
-    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}],
-                stored="uiflow-VA-1 (1).html")  # fmt: skip
-    c, svc = flow_app(yt, tmp_path)
-    svc._cache["issue:VA-1"] = (time.monotonic(), {})
-    async with c:
-        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-    assert r.status_code == 502
-    assert r.json()["error"] == "YouTrack lưu tệp dưới tên khác — chưa cập nhật được, UI flow trên ticket giữ nguyên"
-    # the file just uploaded goes, the old one stays, no comment
-    assert yt.writes == [UPLOAD, ("DELETE", "/api/issues/VA-1/attachments/1-9")]
-    assert "issue:VA-1" not in svc._cache
-
-
-async def test_flow_save_renamed_upload_whose_cleanup_fails_still_says_so(tmp_path):
-    gone = ("DELETE", "/api/issues/VA-1/attachments/1-9")
-    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2)}],
-                {gone: 500}, stored="uiflow-VA-1 (1).html")  # fmt: skip
-    c, _ = flow_app(yt, tmp_path)
-    async with c:
-        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
-    err = r.json()["error"]
-    assert r.status_code == 502 and err.startswith("YouTrack lưu tệp dưới tên khác — chưa cập nhật được")
-    assert "Chưa xoá được tệp thừa uiflow-VA-1 (1).html" in err
-    assert yt.writes == [UPLOAD, gone]  # nothing else written
-
-
 def test_real_engine_survives_build_html():
     engine = (pathlib.Path(__file__).resolve().parents[1] / "web/public/uiflow.js").read_text(encoding="utf-8")
     assert "UIFlow" in uiflow.build_html(uiflow.clean(FLOW, "VA-1"), engine)
 
 
 async def test_flow_save_replaces_a_broken_file(tmp_path):
-    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": "<html>broken"}])
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": uiflow.MARK + "<html>broken"}])
     c, _ = flow_app(yt, tmp_path)
     async with c:
         r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": FLOW, "base": "1-1"})
@@ -252,3 +233,34 @@ async def test_flow_md_exports_the_flow_on_screen_for_an_ai_and_writes_nothing(t
     assert "AC-1: Gửi OTP" in out["md"] and "## Còn thiếu / cần hỏi lại" in out["md"]
     assert "## Dữ liệu sơ đồ" not in out["md"] and yt.writes == []
     assert out["tokens"] == -(-len(out["md"].encode()) // 3)  # the pre-check's estimate, shown in the dialog
+
+
+async def test_only_the_files_author_may_replace_or_remove_it(tmp_path):
+    """The uploader YouTrack records is the file's signature: anyone opens and edits it (a draft), only they save."""
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2), "author": OTHER}])
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        got = (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()
+        assert (got["author"], got["yours"]) == ({"id": "1-2", "login": "an", "name": "An"}, False)
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+        assert r.status_code == 403 and r.json()["error"].startswith("Chỉ An (người lưu UI flow này)")
+        r = await c.post("/api/yt/flow/delete", json={"id": "VA-1", "base": "1-1"})
+        assert r.status_code == 403 and yt.writes == []  # nothing uploaded, removed or commented
+        yt.files[0]["author"] = ME
+        assert (await c.get("/api/yt/flow", params={"issue": "VA-1"})).json()["yours"] is True
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+        assert r.status_code == 200 and r.json()["rev"] == 3
+
+
+async def test_a_name_taken_by_another_attachment_gets_the_savers_name(tmp_path):
+    yt = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2), "author": ME},
+                 {"id": "1-5", "name": "uiflow-VA-1.html", "created": 1, "body": "<html>a copy"}])  # fmt: skip
+    c, _ = flow_app(yt, tmp_path)
+    async with c:
+        r = await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert r.status_code == 200 and b'filename="uiflow-VA-1 - T\xc3\xb4i.html"' in yt.upload  # "Tôi": the saver
+    yt2 = FakeYt([{"id": "1-1", "name": "uiflow-VA-1.html", "created": 5, "body": flow_html(2), "author": ME}])
+    c, _ = flow_app(yt2, tmp_path)
+    async with c:  # only the file being replaced has that name: kept as is
+        await c.post("/api/yt/flow", json={"id": "VA-1", "flow": moved(), "base": "1-1"})
+    assert b'filename="uiflow-VA-1.html"' in yt2.upload

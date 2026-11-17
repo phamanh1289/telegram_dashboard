@@ -266,8 +266,8 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
             <h3 className="text-sm font-bold text-ink">{t("Chọn cách render")}</h3>
             <div role="radiogroup" aria-label={t("Chọn cách render")} className="grid grid-cols-1 gap-2 sm:grid-cols-3">
               <OptionCard value="screens" picked={mode} badge={t("Gợi ý")} icon={Code} title={t("Dựng màn hình")}
-                when={t("Chỉ UI các màn Zeplin, không có nút và mũi tên")} cost={t("0 token · vài giây")}
-                tip={t("Khi nào: cần khung các màn để dựng nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC.")} onPick={setPicked} />
+                when={t("Chỉ UI các màn Zeplin, không nút, không mũi tên: Markdown cho AI không có luồng bấm")} cost={t("0 token · vài giây")}
+                tip={t("Khi nào: cần khung các màn để dựng nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC; Markdown cho AI chỉ có danh sách màn và ticket, agent phải tự đoán luồng và AC thuộc màn nào (nối tay trong Sửa hoặc render bằng AI để đủ).")} onPick={setPicked} />
               <OptionCard value="split" picked={mode} disabled={!split} icon={Layers} title={split ? t("Chia {n} phần", { n: chunks }) : t("Chia phần")}
                 when={split ? t("Chia màn thành nhóm {p} màn, render song song rồi ghép", { p: PART_SCREENS }) : t("Chỉ có khi ticket trên {p} màn", { p: PART_SCREENS })}
                 cost={!split ? t("không áp dụng") : data?.split_tokens ? t("~{k} token · {n} lượt AI song song", { k: fmtK(data.split_tokens), n: chunks }) : t("{n} lượt AI chạy song song", { n: chunks })}
@@ -275,7 +275,7 @@ export function FlowRisks({ issue, target, open, onOpenChange, onRun, onScreens,
               <OptionCard value="ai" picked={mode} icon={Sparkles} title={t("Render bằng AI")}
                 when={t("Một lượt AI đọc đủ ticket và vẽ luồng có mũi tên")}
                 cost={data ? t("~{k} token · 1 lượt AI", { k: fmtK(data.tokens) }) : t("1 lượt AI")}
-                tip={t("Khi nào: ít màn và cần mũi tên nối đúng luồng. Đánh đổi: chậm hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} onPick={setPicked} />
+                tip={t("Khi nào: ít màn và cần mũi tên nối đúng luồng, Markdown cho AI có nút → màn đích, điều kiện, AC theo từng màn và đường đi kiểm thử. Đánh đổi: chậm hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} onPick={setPicked} />
             </div>
           </section>
         </div>

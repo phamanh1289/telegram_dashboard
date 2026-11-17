@@ -186,7 +186,7 @@ function layersOf(rects) {
  *  design draws its own scrim), laid out like a screen; it still opens as an overlay in Prototype (`isPop`). */
 const isOverlay = (s) => s.kind !== "screen" && !shotOf(s);
 /** A fresh, well-formed copy: known kinds / acts, string labels, one screen / button per id, and ONLY Flow-schema
- *  fields — a hand-edited file's extras are dropped here, so what "Lưu file" writes matches what the backend model
+ *  fields — a hand-edited file's extras are dropped here, so what the dashboard saves matches what the backend model
  *  accepts (an older file's `pending` / `acs` included). */
 function sanitize(raw) {
   const f = raw && typeof raw === "object" ? raw : {};
@@ -530,17 +530,6 @@ function layout(flow) {
   for (const s of f.screens) if (par.get(s.id)) place(s, 0);
   return f;
 }
-/** What every screen title starts with, cut back to a word break ("Ban-TSCNY "): frame labels drop it so the part
- *  that tells screens apart is what fits. "" when screens share nothing or it would leave a title empty. */
-function sharedLead(f) {
-  const titles = f.screens.filter((s) => s.kind === "screen").map((s) => s.title);
-  if (titles.length < 2) return "";
-  let p = titles[0];
-  for (const x of titles) while (!x.startsWith(p)) p = p.slice(0, -1);
-  p = p.slice(0, p.lastIndexOf(" ") + 1);
-  return titles.some((x) => !x.slice(p.length).trim()) ? "" : p;
-}
-
 
 
 ;// ./web/src/features/youtrack/flow-engine/dom.js
@@ -566,7 +555,7 @@ const ICONS = {
   plus: "M12 5v14M5 12h14", memo: "M4 4h16v11l-5 5H4zM15 20v-5h5", down: "M6 9l6 6 6-6", up: "M6 15l6-6 6 6", x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   go: "M5 12h14M13 6l6 6-6 6", open: "M4 5h16v14H4zM4 9h16", chev: "M9 6l6 6-6 6",
   area: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4", text: "M5 7V5h14v2M12 5v14M9 19h6",
-  map: "M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15", play: "M8 5v14l11-7z", save: "M5 4h11l3 3v13H5zM8 4v5h7M8 20v-6h8",
+  map: "M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15", play: "M8 5v14l11-7z",
 };
 function icon(name, size = 16) {
   const i = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor",
@@ -626,7 +615,7 @@ function zeplinLink(url, t) {
 const T = {
   vi: {
     map: "Toàn cục", play: "Prototype", edit: "Sửa", fit: "Vừa màn hình",
-    save: "Lưu file", zeplin: "Mở trên Zeplin", canvas: "Sơ đồ luồng màn hình",
+    zeplin: "Mở trên Zeplin", canvas: "Sơ đồ luồng màn hình",
     bad: "Không đọc được dữ liệu UI flow trong file này.",
     back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
     noItems: "Màn này chưa có nút",
@@ -655,7 +644,7 @@ const T = {
   },
   en: {
     map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen",
-    save: "Save file", zeplin: "Open in Zeplin", canvas: "Screen flow map",
+    zeplin: "Open in Zeplin", canvas: "Screen flow map",
     bad: "Could not read the UI flow data in this file.",
     back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
     noItems: "No buttons on this screen yet",
@@ -839,7 +828,6 @@ border-color:transparent;border-radius:9px;background:transparent;color:var(--uf
 .uf-bar .uf-btn[aria-pressed=true],.uf-bar .uf-btn[aria-expanded=true]{background:var(--uf-accent-soft);color:var(--uf-accent)}
 .uf-lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;opacity:0;transition:opacity .1s ease-out}
 .uf-bar:hover:not(.uf-hold) .uf-lbl,.uf-bar:has(:focus-visible) .uf-lbl{opacity:1;transition:opacity .2s ease-out .22s}
-.uf-sp{flex:1}
 .uf-btn{height:30px;padding:0 11px;border:1px solid var(--uf-line);border-radius:var(--uf-r);background:var(--uf-screen);
 color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
 .uf-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
@@ -1253,26 +1241,10 @@ const APP_TOKENS = [...new Set(TOKENS.map((x) => x[1]))];
 
 
 ;// ./web/src/features/youtrack/flow-engine/standalone.js
-
-
-
 // ------------------------------------------------------------------ standalone helpers
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
   return { s: q.get("s"), m: q.get("m") };
-}
-/** Download the page as captured before mount, with the data block replaced by `flow`. */
-function saveFile(src, flow) {
-  const json = JSON.stringify(flow).replace(/</g, "\\u003c");
-  const html = "<!doctype html>\n" +
-    src.replace(/(<script[^>]*\bid=["']?uiflow-data["']?[^>]*>)[\s\S]*?(<\/script>)/i, (_, a, b) => a + json + b);
-  const a = h("a");
-  a.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
-  a.download = `uiflow-${str(flow.ticket, "flow").replace(/[^\w.-]/g, "_")}.html`;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 0);
 }
 
 
@@ -1285,9 +1257,8 @@ function saveFile(src, flow) {
 
 
 /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
- *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
- *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
-function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
+ *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from. */
+function buildFrame(s, t, linked, edit, isStart = false) {
   const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
   const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : "") + (sh && s.fold ? " uf-folded" : ""));
   el.dataset.id = s.id;
@@ -1321,7 +1292,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   const label = h("div", "uf-flabel");
   label.setAttribute("aria-hidden", "true"); // the in-frame title is the accessible name; this one only repeats it
   if (isStart) label.append(h("span", "uf-lstart", "▶")); // the in-frame badge is hidden with its title bar when zoomed out
-  label.append(h("span", "uf-ltitle", (lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title) || s.title));
+  label.append(h("span", "uf-ltitle", s.title)); // the screen's whole name, as in its title bar
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);
   s.items.forEach((it, i) => {
@@ -3041,8 +3012,8 @@ function memos(ctx) {
 
 // ------------------------------------------------------------------ mount
 let mounts = 0;
-/** src: the page's own HTML when standalone (enables "Lưu file" and hash writing), else null. */
-function mount(host, flow, opts = {}, src = null) {
+/** standalone: an exported file opened on its own (writes the hash); it is mounted view-only (no opts.edit). */
+function mount(host, flow, opts = {}, standalone = false) {
   const cleanup = [];
   try {
   injectStyle();
@@ -3070,7 +3041,7 @@ function mount(host, flow, opts = {}, src = null) {
   frameSize();
   // the toolbar: a narrow rail down the left edge, icons only; it slides open with every name on hover / focus
   // (styles: .uf-bar), each name staying its aria-label. Top to bottom: the view, Sửa and its tools, the map's
-  // display, then "Lưu file" (an exported file) at the foot.
+  // display.
   const bar = h("div", "uf-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-orientation", "vertical");
@@ -3106,7 +3077,6 @@ function mount(host, flow, opts = {}, src = null) {
   }
   const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
   bar.append(h("span", "uf-div uf-fit"), bFit);
-  if (src !== null) bar.append(h("span", "uf-sp"), ibtn("save", t("save"), "uf-btn", () => saveFile(src, cur)));
   // every icon's name beside it, shown when the pointer rests on the rail (it slides open over the map: CSS)
   for (const b of bar.querySelectorAll(".uf-icon[title]")) {
     b.append(h("span", "uf-lbl", b.title.replace(/^[+↶↷]\s*/, ""))); // no glyph twice
@@ -3171,17 +3141,16 @@ function mount(host, flow, opts = {}, src = null) {
   function render() {
     const had = root.contains(document.activeElement);
     const linked = new Set(cur.links.map((l) => l.src));
-    const lead = sharedLead(cur);
     const previous = frames, next = new Map(), changed = new Set();
     frames = new Map(cur.screens.map((s) => {
       const isStart = s.id === startOf(cur);
-      const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, lead, isStart,
+      const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, isStart,
         [s.id, ...s.items.map((it) => `${s.id}.${it.id}`)].map((id) => linked.has(id))]);
       const shot = shotOf(s), old = rendered.get(s.id);
       // a new read of the same design (the live one after the kept one): the frame stays, no image drawn again;
       // one whose image failed to load is drawn again from the new read
       const sameShotOk = !!old && sameShot(old.shot, shot) && !(old.shot !== shot && previous.get(s.id)?.querySelector("img[data-bad]"));
-      const frame = old?.key === key && sameShotOk ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
+      const frame = old?.key === key && sameShotOk ? previous.get(s.id) : buildFrame(s, t, linked, editing, isStart);
       if (old && old.kind !== s.kind) frame.classList.add("uf-morph"); // screen ↔ popup / sheet / toast: the new shape eases in
       placeFrame(frame, s);
       if (!old || old.key !== key || !sameShotOk || old.x !== s.x || old.y !== s.y) changed.add(s.id);
@@ -3402,7 +3371,7 @@ function mount(host, flow, opts = {}, src = null) {
 
   // hash (#s=<screen>&m=play): read on mount, written only when standalone
   function writeHash() {
-    if (src === null) return;
+    if (!standalone) return;
     const q = new URLSearchParams();
     if (here) q.set("s", here);
     if (shown === "play") q.set("m", "play");
@@ -3506,16 +3475,13 @@ function mount(host, flow, opts = {}, src = null) {
       proto.destroy();
       ed.destroy();
       clearTimeout(noteTimer);
-      window.removeEventListener("beforeunload", onLeave);
       document.removeEventListener("pointerdown", onOutside, true);
       host.replaceChildren();
       host.uiflow = null;
     },
   };
 
-  const onLeave = (e) => { if (JSON.stringify(cur) !== base) e.preventDefault(); };
-  if (src !== null) window.addEventListener("beforeunload", onLeave);
-  cleanup.push(() => { clearTimeout(noteTimer); window.removeEventListener("beforeunload", onLeave); document.removeEventListener("pointerdown", onOutside, true); });
+  cleanup.push(() => { clearTimeout(noteTimer); document.removeEventListener("pointerdown", onOutside, true); });
 
   render();
   const hs = readHash(); // before the first writeHash, which mode() runs
@@ -3545,9 +3511,7 @@ function mount(host, flow, opts = {}, src = null) {
 function auto() {
   const data = document.getElementById("uiflow-data");
   if (!data) return; // the dashboard mounts the engine itself
-  const src = document.documentElement.outerHTML; // before mount: what "Lưu file" writes back
-  // the host fills the page (styles above). Added after `src`, so a saved file stays as built and gets it again
-  // when it is opened; the dashboard mounts through UIFlow.mount and sizes its own container.
+  // the host fills the page (styles above); the dashboard mounts through UIFlow.mount and sizes its own container.
   document.documentElement.classList.add("uf-file");
   let host = document.getElementById("uiflow");
   if (!host) {
@@ -3566,7 +3530,9 @@ function auto() {
   try {
     shots = JSON.parse(document.getElementById("uiflow-shots")?.textContent || "{}");
   } catch { /* a file without images: plain frames */ }
-  host.uiflow = mount(host, flow, { edit: true, shots }, src); // the only handle an exported file has on its engine
+  // view only: a file is edited on the dashboard (it checks the version on the ticket, the AI, the change log),
+  // never offline, where a second copy would drift from the ticket's
+  host.uiflow = mount(host, flow, { shots }, true); // the only handle an exported file has on its engine
 }
 window.UIFlow = Object.freeze({ SCREEN: SCREEN, tokens: APP_TOKENS, layout: layout, mount: (el, flow, opts) => mount(el, flow, opts, null) });
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", auto, { once: true });

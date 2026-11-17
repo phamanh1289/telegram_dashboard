@@ -26,8 +26,6 @@ import { useFlow } from "./workflow";
 
 // The UI flow dialog (and, with it, the drawing engine) loads only when it is opened.
 const FlowDialog = dynamic(() => import("./flow").then((m) => m.FlowDialog));
-/** The ticket's UI flow file, as the dashboard names it: its row in the attachments opens the same dialog. */
-const flowName = (issue: string) => `uiflow-${issue}.html`; // = uiflow.NAME (backend/telegram_dashboard/youtrack/flow.py)
 
 // The side sheet: one ticket, the list behind a dashboard number, or an AI answer.
 
@@ -163,6 +161,11 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const flowRun = useFlowRunning(id, flowOpen); // the UI flow dialog (one entry: this ticket's "UI flow")
   const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
+  // which .html attachment is the UI flow file: told by the backend from the file's content (its name follows the
+  // flow's title); keyed by those attachments, so a save / upload asks again. Unread / failed: it is a plain file row.
+  const htmlIds = (d.data?.attachments ?? []).filter((a) => a.mime === "text/html" || /\.html?$/i.test(a.name)).map((a) => a.id);
+  const flowAtt = useQuery({ queryKey: ["yt", "flow-att", id, ...htmlIds], queryFn: ({ signal }) => yt.flow(id, signal).then((r) => r.att),
+    enabled: write && htmlIds.length > 0, staleTime: Infinity, retry: false }).data;
   const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
   const now = useNow();
 
@@ -245,7 +248,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
           <Label>{t("Tệp đính kèm ({n})", { n: loose.length })}</Label>
           <div className="flex flex-wrap gap-2">
             {loose.map((a) => (
-              a.name === flowName(id) ? ( // the same dialog as the "UI flow" button: this is that file
+              a.id === flowAtt ? ( // the same dialog as the "UI flow" button: this is that file
                 <button key={a.id} type="button" onClick={() => setFlowOpen(true)}
                   className="grid w-32 gap-1 rounded-lg bg-cotton p-1.5 text-left text-xs shadow-edge hover:bg-paper-2">
                   <span className="grid h-20 place-items-center rounded bg-hl-wash text-hl-2"><Workflow className="size-6" aria-hidden /></span>

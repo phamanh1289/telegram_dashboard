@@ -18,7 +18,7 @@ from ..links import ISSUE, _ours
 from . import flow as uiflow
 from . import flow_changes, flow_locate, flow_md, flow_merge, flow_prompt
 from .api_ai import _ai, background
-from .client import YtError, YtUnreachable
+from .client import YtError, YtUnreachable, _me
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
 from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowMd, FlowPrecheck, FlowSave, FlowShots, _issue_id
 from .service import YouTrackDashboard
@@ -57,6 +57,17 @@ def _engine(request: Request) -> str:
         raise YtError(503, "Thiếu uiflow.js — build lại web") from None
 
 
+async def _yours(svc: YouTrackDashboard, author: dict | None) -> bool:
+    """The file was uploaded by the token's own user (or YouTrack does not say who): only then may it be replaced or
+    removed. Anyone may still open, edit (a local draft) and download it."""
+    return author is None or author["id"] == (await svc.cached("me", lambda: _me(svc))).get("id")
+
+
+def _only_author(author: dict) -> YtError:
+    return YtError(403, f"Chỉ {author['name']} (người lưu UI flow này) mới cập nhật / xoá được file trên ticket. "
+                        "Bản bạn sửa vẫn giữ làm nháp trên máy.")  # fmt: skip
+
+
 def _job_id(job_id: str) -> None:
     if not JOB_ID.fullmatch(job_id):
         raise YtError(400, "Mã lượt AI không hợp lệ")
@@ -70,8 +81,9 @@ def register(r, svc: YouTrackDashboard) -> None:
         cur = await svc.flow_file(i)
         if cur is None:
             return {"att": None, "flow": None, "broken": False}
-        att, flow, newer = cur
-        return {"att": att, "flow": flow and flow.model_dump(), "broken": flow is None, "ticket_newer": newer}
+        att, flow, newer, author = cur
+        return {"att": att, "flow": flow and flow.model_dump(), "broken": flow is None, "ticket_newer": newer,
+                "author": author, "yours": await _yours(svc, author)}  # fmt: skip
 
     shots = svc.shots
 
@@ -110,6 +122,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             old_id, old = cur[:2] if cur else (None, None)
             if old_id != body.base:
                 raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
+            if cur and not await _yours(svc, cur[3]):
+                raise _only_author(cur[3])
             # the design as saved now: the shots sent (read live), the old signature for a screen not read this time
             urls = {s.zeplin for s in new.screens if s.zeplin}
             new.design = {
@@ -120,23 +134,22 @@ def register(r, svc: YouTrackDashboard) -> None:
                 raise YtError(400, "Không có thay đổi")
             new.rev = (old.rev if old else 0) + 1
             engine = _engine(request)
-            name = uiflow.NAME.format(issue=i)
+            name = uiflow.file_name(new)
+            # the same name as another file on the ticket (one attached by hand, a copy): the saver's name tells them
+            # apart; the flow file being replaced does not count
+            atts = (await svc.yt(f"/api/issues/{i}", fields="attachments(id,name,removed)")).get("attachments") or []
+            others = {a.get("name") for a in atts if a.get("id") != old_id and not a.get("removed")}
+            if name in others:
+                name = uiflow.file_name(new, (await svc.cached("me", lambda: _me(svc))).get("name") or "")
             try:
                 html = uiflow.build_html(new, engine, body.shots).encode()
             except ValueError as e:
                 raise YtError(400, str(e)) from None
             try:
                 try:
-                    att, stored = await svc.upload(i, name, html, mime="text/html")
+                    att, name = await svc.upload(i, name, html, mime="text/html")  # as YouTrack stored it
                 except YtUnreachable:  # YouTrack may have stored it: never let a blind retry add a second file
                     raise YtError(502, "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại") from None
-                if stored != name:  # renamed on upload: no read would ever find it (and every save would 409)
-                    msg = "YouTrack lưu tệp dưới tên khác — chưa cập nhật được, UI flow trên ticket giữ nguyên"
-                    try:  # take it back out; the old file is left as it was
-                        await svc.detach(i, att)
-                    except YtError as e:
-                        raise YtError(502, f"{msg}. Chưa xoá được tệp thừa {stored}: {e.message}") from None
-                    raise YtError(502, msg)
                 svc.seed_flow(i, att, len(html), new, auth=auth)
                 warn = ["Đã thay file UI flow hỏng trên ticket"] if old_id and old is None else []
                 if old_id:
@@ -164,6 +177,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             cur = await svc.flow_file(i)
             if (cur[0] if cur else None) != body.base:
                 raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
+            if cur and not await _yours(svc, cur[3]):
+                raise _only_author(cur[3])
             try:
                 await svc.detach(i, body.base)
             except YtUnreachable:  # YouTrack may have removed it: look before trying again
@@ -172,7 +187,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                 svc.stale(i)
             warn = []
             try:
-                await svc.comment(i, f"Đã xoá UI flow — tệp đính kèm {uiflow.NAME.format(issue=i)}")
+                gone = f" — tệp đính kèm {uiflow.file_name(cur[1])}" if cur and cur[1] else ""
+                await svc.comment(i, f"Đã xoá UI flow{gone}")
             except YtError as e:
                 warn.append(f"Đã xoá file nhưng chưa ghi được bình luận: {e.message}")
         return {"warnings": warn}
@@ -183,7 +199,7 @@ def register(r, svc: YouTrackDashboard) -> None:
         i, new = _clean(body)
         try:
             html = uiflow.build_html(new, _engine(request), body.shots, theme=body.theme)
-            return {"name": uiflow.NAME.format(issue=i), "html": html}
+            return {"name": uiflow.file_name(new), "html": html}
         except ValueError as e:
             raise YtError(400, str(e)) from None
 

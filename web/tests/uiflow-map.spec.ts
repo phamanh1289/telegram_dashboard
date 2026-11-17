@@ -313,7 +313,7 @@ test("a label rides along with its screen while it is dragged", async ({ page })
   await page.mouse.up();
 });
 
-test("a narrow label shows what tells screens apart: no shared title prefix, no AC chip", async ({ page }) => {
+test("the label above a frame is the screen's whole name, as in its title bar; no AC chip when narrow", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await open(page);
   await page.evaluate((f) => {
@@ -322,8 +322,8 @@ test("a narrow label shows what tells screens apart: no shared title prefix, no 
     window.__api.set(g);
   }, VA12584);
   const s44b = page.locator('.uf-screen[data-id="S44B"]');
-  await expect(s44b.locator(".uf-ltitle")).toHaveText("44B - Màn S44B"); // "Ban-TSCNY " is on every screen
-  await expect(s44b.locator(".uf-title")).toHaveText("Ban-TSCNY 44B - Màn S44B"); // the frame keeps the full title
+  await expect(s44b.locator(".uf-ltitle")).toHaveText("Ban-TSCNY 44B - Màn S44B"); // not cut to what tells screens apart
+  await expect(s44b.locator(".uf-title")).toHaveText("Ban-TSCNY 44B - Màn S44B");
   await expect(s44b.locator(".uf-lac")).toBeHidden(); // ~100px on screen: the chip would only push the name out
   await expect(page.locator('.uf-screen[data-id="P_lostperm44"] .uf-ltitle')).toHaveText("P_lostperm44"); // not a screen title
   await page.evaluate(() => window.__api.goto("S44B")); // close in, the label has room again... and steps aside anyway

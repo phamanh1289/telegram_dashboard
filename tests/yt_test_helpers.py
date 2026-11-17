@@ -50,12 +50,16 @@ def flow_html(rev: int, raw: dict = FLOW) -> str:
     return uiflow.build_html(f, "/*engine*/")
 
 
+ME = {"id": "1-1", "login": "me", "fullName": "Tôi"}  # the token's user
+OTHER = {"id": "1-2", "login": "an", "fullName": "An"}
+
+
 class FakeYt:
     """One ticket VA-1 with `files` ({id, name, created, removed?, body}); records every write.
-    `fail`: (method, path) -> HTTP status, or an exception to raise; `stored`: the name YouTrack answers on upload."""
+    `fail`: (method, path) -> HTTP status, or an exception to raise."""
 
-    def __init__(self, files: list[dict], fail: dict | None = None, stored: str = "uiflow-VA-1.html"):
-        self.files, self.fail, self.writes, self.stored = files, fail or {}, [], stored
+    def __init__(self, files: list[dict], fail: dict | None = None):
+        self.files, self.fail, self.writes = files, fail or {}, []
         self.upload = self.comment = None
         self.updated = 0  # the ticket's own "updated" (ms)
 
@@ -68,14 +72,16 @@ class FakeYt:
         if f:
             return httpx.Response(f, text="no")
         if p == "/api/issues/VA-1":
-            keep = ("id", "name", "created", "removed")
+            keep = ("id", "name", "created", "removed", "author")
             atts = [{k: f[k] for k in keep if k in f} | {"size": 9, "url": f"/files/{f['id']}"} for f in self.files]
             return httpx.Response(200, json={"updated": self.updated, "attachments": atts})
+        if p == "/api/users/me":
+            return httpx.Response(200, json=ME)
         if p.startswith("/files/"):
             return httpx.Response(200, text=next(f["body"] for f in self.files if f["id"] == p[7:]))
         if p == "/api/issues/VA-1/attachments":
             self.upload = req.content
-            return httpx.Response(200, json=[{"id": "1-9", "name": self.stored}])
+            return httpx.Response(200, json=[{"id": "1-9", "name": "uiflow-VA-1.html"}])
         if p == "/api/issues/VA-1/comments":
             self.comment = json.loads(req.content)["text"]
             return httpx.Response(200, json={"id": "c"})

@@ -35,6 +35,40 @@ def _link_changes(old: Flow, new: Flow) -> list[str]:
     return out + [f'Bỏ nối {_label(old, ol[k])} → "{ot[ol[k].to]}"' for k in ol if k not in nl]
 
 
+KINDS = {"screen": "màn thường", "popup": "popup", "sheet": "sheet", "toast": "toast"}
+
+
+def _was(old: str, new: str) -> str:
+    return f': "{old}" → "{new}"' if old and new else f': "{new}"' if new else f' (bỏ "{old}")'
+
+
+def _prop_changes(old: Flow, new: Flow) -> list[str]:
+    """What a screen / link carries besides its name and target: kind, AC, Zeplin link, parent, a link's condition."""
+    olds, titles = {s.id: s for s in old.screens}, {s.id: s.title for s in new.screens}
+    out = []
+    for s in new.screens:
+        if (o := olds.get(s.id)) is None:
+            continue
+        if o.kind != s.kind:
+            out.append(f'Đổi "{s.title}" thành {KINDS[s.kind]}')
+        if o.ac != s.ac:
+            out.append(f'Sửa AC màn "{s.title}"{_was(o.ac, s.ac)}')
+        if o.zeplin != s.zeplin:
+            out.append(f'{"Đổi" if s.zeplin else "Bỏ"} link Zeplin màn "{s.title}"')
+        if o.parent != s.parent:
+            out.append(f'Đặt "{s.title}" nằm trên "{titles[s.parent]}"' if s.parent in titles
+                       else f'Bỏ màn nền của "{s.title}"')  # fmt: skip
+    ol = {(k.src, k.act): k for k in old.links}
+    for k in new.links:
+        if (o := ol.get((k.src, k.act))) is None or o.to != k.to:
+            continue  # added / retargeted: said by _link_changes
+        if o.when != k.when:
+            out.append(f"Sửa điều kiện {_label(new, k)}{_was(o.when, k.when)}")
+        if o.ac != k.ac:
+            out.append(f"Sửa AC liên kết {_label(new, k)}{_was(o.ac, k.ac)}")
+    return out
+
+
 def _match(old_keys: dict[str, str], new_keys: dict[str, str]) -> dict[str, str]:
     """new id → old id: cùng id trước, rồi cùng nhãn đúng từng chữ (cái chưa dùng đầu tiên)."""
     out = {n: n for n in new_keys if n in old_keys}
@@ -76,11 +110,13 @@ def changes(old: Flow | None, new: Flow) -> list[str]:
         return [f"Tạo UI flow: {len(new.screens)} màn, {len(new.links)} liên kết"]
     raw = new
     new, matched = _align(old, raw)
-    if matched * 2 < len(old.screens):
+    # most of the old map gone AND most of the new one never there: rebuilt (an AI render), one line says it better
+    # than a list of every screen; screens only deleted by hand are still listed one by one
+    if matched * 2 < len(old.screens) and (len(raw.screens) - matched) * 2 > len(raw.screens):
         n0, m0 = len(old.screens), len(old.links)
-        return [f"Render lại: {len(raw.screens)} màn, {len(raw.links)} liên kết (trước: {n0} màn, {m0} liên kết)"]
+        return [f"Dựng lại sơ đồ: {len(raw.screens)} màn, {len(raw.links)} liên kết (trước: {n0} màn, {m0} liên kết)"]
     out = _renames("màn", {s.id: s.title for s in old.screens}, {s.id: s.title for s in new.screens})
-    out += _item_changes(old, new) + _link_changes(old, new) + _manual_changes(old, new)
+    out += _item_changes(old, new) + _link_changes(old, new) + _prop_changes(old, new) + _manual_changes(old, new)
     if old.device != raw.device:
         out.append("Đổi khung màn sang " + ("web" if raw.device == "web" else "điện thoại"))
     if out:

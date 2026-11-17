@@ -10,7 +10,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ..providers import ZEPLIN
 from ..zeplin import MAX_HITS
 
-NAME = "uiflow-{issue}.html"  # = flowName() in web/src/components/yt/sheet.tsx
+# Every file the dashboard writes carries this: the ticket's flow is found by it (and a readable data block for the
+# ticket), never by the attachment's name, which follows the flow's title. A plain mark, not a secret: each install
+# would have its own key, so a teammate's file could not be told apart from a stranger's.
+MARK = '<meta name="generator" content="uiflow/telegram-dashboard">'
 MAX_SCREENS, MAX_ITEMS, MAX_LINKS = 200, 40, 1000
 MAX_MEMOS = 50  # = MAX_MEMOS in web/src/features/youtrack/flow-engine/constants.js
 MAX_TITLE = 120  # the flow's own name; = CAP_TITLE there
@@ -243,7 +246,8 @@ def clean(raw: dict, ticket: str) -> Flow:
 SHELL = (
     '<!doctype html><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
-    '<title>{name}</title>{style}<div id="uiflow"></div>'
+    + MARK
+    + '<title>{name}</title>{style}<div id="uiflow"></div>'
     '<script type="application/json" id="uiflow-data">{data}</script>'
     '<script type="application/json" id="uiflow-shots">{shots}</script><script>{engine}</script>'
 )
@@ -277,6 +281,24 @@ def build_html(
                         style=f"<style>:root{{{css}}}</style>" if css else "")  # fmt: skip
 
 
+def ours(html: str) -> bool:
+    """Written by the dashboard: the mark, or (a file saved before the mark) the flow's data block."""
+    return MARK in html or DATA.search(html) is not None
+
+
+def _plain(text: str) -> str:
+    """Safe in a file name: no path / reserved characters, one space between words."""
+    return " ".join(re.sub(r'[\\/:*?"<>|\x00-\x1f]', " ", text).split())
+
+
+def file_name(flow: Flow, by: str = "") -> str:
+    """The attachment's name, for people only (the file is found by MARK): the flow's title when it has one;
+    `by`: who saves it, added when the plain name is already another attachment's on the ticket."""
+    title = _plain(flow.title or "")[:MAX_TITLE]
+    stem = f"{title} - {flow.ticket}" if title else f"uiflow-{flow.ticket}"
+    return f"{stem} - {_plain(by)[:60]}.html" if _plain(by) else f"{stem}.html"
+
+
 def extract(html: str) -> Flow | None:
     """The file's flow; None when it is not ours / broken. TooNew propagates: a newer file is not "broken"."""
     m = DATA.search(html)
@@ -296,8 +318,7 @@ def outline(flow: Flow) -> str:
     """The flow in a few lines for an AI that codes or answers on the ticket: each screen (kind, AC, design link,
     note), what each button leads to. Other people's text: the caller frames it."""
     by = {s.id: s for s in flow.screens}
-    name = f" “{flow.title}”" if flow.title else ""
-    out = [f"UI flow {NAME.format(issue=flow.ticket)}{name} (rev {flow.rev}, {flow.device}): màn → nút → màn đích"]
+    out = [f"UI flow {file_name(flow)} (rev {flow.rev}, {flow.device}): màn → nút → màn đích"]
     for s in flow.screens:
         on = f" trên {by[s.parent].title}" if s.parent in by else ""
         kind = "" if s.kind == "screen" else f" ({s.kind}{on})"

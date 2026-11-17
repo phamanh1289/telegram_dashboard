@@ -127,7 +127,10 @@ export type UiFlow = { v: 2; ticket: string; title?: string; rev: number; device
   /** Notes on the map, beside the screens (a caution, an idea to improve): only a person writes one (see Memo in flow.py). */
   memos?: { id: string; x: number; y: number; w: number; h: number; text: string; fold?: boolean }[] };
 /** The ticket's uiflow file: `att` its attachment id (the base a save goes over), `broken` it is there but unreadable. */
-export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean; ticket_newer?: boolean }; // ticket_newer: edited after the file was written
+/** ticket_newer: edited after the file was written; author: who uploaded it (YouTrack's record); yours: false = only the
+ *  author may update / remove it (anyone may edit a draft and download it). */
+export type FlowFile = { att: string | null; flow: UiFlow | null; broken: boolean; ticket_newer?: boolean;
+  author?: { id: string; login: string | null; name: string } | null; yours?: boolean };
 export type FlowManifest = components["schemas"]["FlowManifestDTO"];
 export type FlowCheck = components["schemas"]["FlowCheckDTO"];
 /** "screens": the Zeplin screens by code, no AI; "flow": + the AI's links. */

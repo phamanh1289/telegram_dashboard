@@ -102,15 +102,4 @@ function layout(flow) {
   for (const s of f.screens) if (par.get(s.id)) place(s, 0);
   return f;
 }
-/** What every screen title starts with, cut back to a word break ("Ban-TSCNY "): frame labels drop it so the part
- *  that tells screens apart is what fits. "" when screens share nothing or it would leave a title empty. */
-function sharedLead(f) {
-  const titles = f.screens.filter((s) => s.kind === "screen").map((s) => s.title);
-  if (titles.length < 2) return "";
-  let p = titles[0];
-  for (const x of titles) while (!x.startsWith(p)) p = p.slice(0, -1);
-  p = p.slice(0, p.lastIndexOf(" ") + 1);
-  return titles.some((x) => !x.slice(p.length).trim()) ? "" : p;
-}
-
-export { layout, sharedLead };
+export { layout };

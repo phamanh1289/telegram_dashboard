@@ -166,6 +166,7 @@ async def fake_yt(scope, receive, send) -> bool:
             await answer(send, 200, {
                 **dict(zip(("att", "flow", "broken"), got, strict=True)),
                 "ticket_newer": control.get("ticket_newer", False),
+                "author": control.get("owner"), "yours": not control.get("owner"),  # owner: someone else's file
             })
     elif path == "/api/yt/flow":
         b = await body_of(receive)

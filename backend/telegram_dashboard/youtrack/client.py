@@ -11,6 +11,7 @@ import os
 import re
 import time
 from collections import OrderedDict
+from typing import Literal
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
@@ -30,6 +31,13 @@ FIELDS = (
 )
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 FLOW_COMMENT_GRACE_MS = 120_000  # a save comments right after the file: that update is not "the ticket changed"
+
+
+def is_html(a: dict) -> bool:
+    """An attachment that may be a UI flow file: only those are opened to look for uiflow.MARK."""
+    return a.get("mimeType") == "text/html" or bool(re.search(r"\.html?$", a.get("name") or "", re.I))
+
+
 TIMEOUT = 20.0
 
 
@@ -125,7 +133,7 @@ class YtClient:
         self.shots = zeplin.Shots(
             scope=self.flow_scope, path=lambda: (d := getattr(settings, "data_dir", None)) and d / "zeplin_shots.json"
         )
-        self._flow_cache: OrderedDict[tuple, uiflow.Flow | None] = OrderedDict()
+        self._flow_cache: OrderedDict[tuple, uiflow.Flow | None | Literal[False]] = OrderedDict()
         self._flow_seed: dict[tuple, tuple[int, uiflow.Flow]] = {}
         self._since: dict[str, int] = {}
         self._trans_until: dict[str, int] = {}  # "p:days" -> ms the last read covers (0: cut at TRANS_PAGES)
@@ -207,42 +215,58 @@ class YtClient:
     async def comment(self, issue: str, text: str) -> None:
         await self.yt(f"/api/issues/{issue}/comments", post={"text": text}, fields="id")
 
-    async def flow_file(self, issue: str) -> tuple[str, uiflow.Flow | None, bool] | None:
-        """(attachment id, flow, ticket newer) of the ticket's newest uiflow-<issue>.html; flow None when it is not
-        ours / broken; `ticket newer`: the ticket changed after the file was written (its own save comment aside).
+    async def flow_file(self, issue: str) -> tuple[str, uiflow.Flow | None, bool, dict | None] | None:
+        """(attachment id, flow, ticket newer, author) of the ticket's newest UI flow file, told by its content
+        (uiflow.ours, for this ticket), not its name; flow None when broken; `ticket newer`: the ticket changed after
+        the file was written (its own save comment aside); `author`: {id, login, name} of who uploaded it, as YouTrack
+        records it (the file's signature: editing the file cannot change it), None when YouTrack does not say.
         None when the ticket has no such file."""
         auth = self._flow_auth
-        d = await self.yt(f"/api/issues/{issue}", fields="updated,attachments(id,name,created,removed,size,url)")
-        name = uiflow.NAME.format(issue=issue)
-        mine = [a for a in d.get("attachments") or [] if a.get("name") == name and not a.get("removed")]
-        if not mine:
-            return None
-        a = max(mine, key=lambda a: a.get("created") or 0)  # no id tiebreak: "1-9" sorts above "1-10" as a string
+        atts = "attachments(id,name,created,removed,size,url,mimeType,author(id,login,fullName))"
+        d = await self.yt(f"/api/issues/{issue}", fields=f"updated,{atts}")
+        html = [a for a in d.get("attachments") or [] if is_html(a) and not a.get("removed")]
+        for a in sorted(html, key=lambda a: a.get("created") or 0, reverse=True):  # no id tiebreak: "1-9" > "1-10"
+            flow = await self._flow_of(issue, a, auth)
+            if flow is not False:
+                newer = (d.get("updated") or 0) > (a.get("created") or 0) + FLOW_COMMENT_GRACE_MS
+                by = a.get("author") or {}
+                name = by.get("fullName") or by.get("login")
+                author = {"id": by["id"], "login": by.get("login"), "name": name} if by.get("id") else None
+                return a["id"], flow.model_copy(deep=True) if flow else None, newer, author
+        return None
+
+    async def _flow_of(self, issue: str, a: dict, auth: int) -> uiflow.Flow | None | Literal[False]:
+        """One .html attachment read (each once per version: cached): its flow, None when ours but broken, False when
+        not ours (another file, too big to be ours, or another ticket's flow attached here)."""
         key = (auth, issue, *(a.get(k) for k in ("id", "created", "size", "url")))
         if key in self._flow_cache:
             self._flow_cache.move_to_end(key)
-            flow = self._flow_cache[key]
+            return self._flow_cache[key]
+        seed = self._flow_seed.pop((auth, issue, a["id"]), None)
+        if seed and seed[0] == a.get("size"):
+            flow: uiflow.Flow | None | Literal[False] = seed[1]
+        elif (a.get("size") or 0) > MAX_FILE:
+            flow = False
         else:
-            seed = self._flow_seed.pop((auth, issue, a["id"]), None)
+            text = (await self._bytes(a)).decode("utf-8", "replace")
             try:
-                flow = seed[1] if seed and seed[0] == a.get("size") else uiflow.extract(
-                    (await self._bytes(a)).decode("utf-8", "replace")
-                )
+                flow = uiflow.extract(text) if uiflow.ours(text) else False
             except uiflow.TooNew as e:  # not cached: rare, and an app update must see it afresh
                 raise YtError(422, str(e)) from None
-            if auth == self._flow_auth:
-                self._flow_cache[key] = flow.model_copy(deep=True) if flow else None
-                while len(self._flow_cache) > 128:
-                    self._flow_cache.popitem(last=False)
-        newer = (d.get("updated") or 0) > (a.get("created") or 0) + FLOW_COMMENT_GRACE_MS
-        return a["id"], flow.model_copy(deep=True) if flow else None, newer
+            if flow and flow.ticket != issue:
+                flow = False
+        if auth == self._flow_auth:
+            self._flow_cache[key] = flow.model_copy(deep=True) if flow else flow
+            while len(self._flow_cache) > 128:
+                self._flow_cache.popitem(last=False)
+        return flow
 
     async def flow_outline(self, detail: dict) -> str | None:
         """The ticket's saved UI flow in a few lines (uiflow.outline), for an AI that reads the ticket: what leads
         where is drawn there, not written in the description. None when the ticket has none; a file that cannot be
         read is left out (the AI still has the ticket), never the reason an AI run fails."""
         issue = detail.get("id") or ""
-        if not any(a.get("name") == uiflow.NAME.format(issue=issue) for a in detail.get("attachments") or []):
+        if not any(is_html(a) for a in detail.get("attachments") or []):
             return None
         try:
             cur = await self.flow_file(issue)
@@ -348,8 +372,8 @@ async def _fields(svc: YtClient, project: str) -> dict[str, list[str]]:
 
 
 async def _me(svc: YtClient):
-    u = await svc.yt("/api/users/me", fields="login,fullName")
-    return {"login": u.get("login"), "name": u.get("fullName") or u.get("login")}
+    u = await svc.yt("/api/users/me", fields="id,login,fullName")
+    return {"id": u.get("id"), "login": u.get("login"), "name": u.get("fullName") or u.get("login")}
 
 
 # ---- token check (routes.py's /api/youtrack/*, ApiError codes) ----------------

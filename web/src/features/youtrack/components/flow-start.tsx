@@ -57,11 +57,11 @@ export function FlowStart({ mode, onPick, onRun, resume, notice, target, onTarge
       </div>
       <div role="radiogroup" aria-label={t("Cách dựng")} className="grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-2">
         <OptionCard value="screens" picked={mode} onPick={onPick} icon={Code} title={t("Chỉ màn hình")} disabled={noZeplin} badge={noZeplin ? undefined : t("Gợi ý")}
-          when={noZeplin ? t("Ticket chưa có link Zeplin nào: chọn Màn + liên kết để AI đọc AC") : t("Chỉ UI các màn Zeplin, không có nút và mũi tên")} cost={t("0 token · vài giây")}
-          tip={t("Khi nào: cần khung các màn để xem nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC.")} />
+          when={noZeplin ? t("Ticket chưa có link Zeplin nào: chọn Màn + liên kết để AI đọc AC") : t("Chỉ UI các màn Zeplin, không nút, không mũi tên: Markdown cho AI không có luồng bấm")} cost={t("0 token · vài giây")}
+          tip={t("Khi nào: cần khung các màn để xem nhanh. Đánh đổi: không có nút và mũi tên nối màn, AI không đọc AC; Markdown cho AI chỉ có danh sách màn và ticket, agent phải tự đoán luồng và AC thuộc màn nào (nối tay trong Sửa hoặc render bằng AI để đủ).")} />
         <OptionCard value="flow" picked={mode} onPick={onPick} icon={Sparkles} title={t("Màn + liên kết")} badge={noZeplin ? t("Gợi ý") : undefined}
           when={t("AI đọc AC và vẽ mũi tên giữa các màn")} cost={aiCost}
-          tip={t("Khi nào: cần sơ đồ luồng bấm đầy đủ. Đánh đổi: tốn token và chạy lâu hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} />
+          tip={t("Khi nào: cần sơ đồ luồng bấm đầy đủ, Markdown cho AI có nút → màn đích, điều kiện, AC theo từng màn và đường đi kiểm thử. Đánh đổi: tốn token và chạy lâu hơn; với nhiều màn, model nhẹ dễ vẽ thiếu.")} />
       </div>
       {notice}
       <FlowTargetPicker id="uiflow-target-start" value={target} onChange={onTarget} counts={counts} />

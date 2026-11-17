@@ -82,13 +82,23 @@ def test_extract_matches_data_block_by_id_in_any_attribute_order():
     assert u.extract(u.build_html(f, "") + u.build_html(other, "")) == f
 
 
-def test_changes_flags_property_only_edits_and_not_rev():
+def test_changes_name_each_property_edit_and_not_rev():
     old = u.clean(RAW, "VA-1")
-    for edit in (lambda f: setattr(f.screens[2], "kind", "sheet"), lambda f: setattr(f.links[0], "when", "x"),
-                 lambda f: setattr(f.screens[0], "zeplin", "https://zpl.io/q")):
+    edits = [
+        (lambda f: setattr(f.screens[2], "kind", "sheet"), 'Đổi "Sai mã" thành sheet'),
+        (lambda f: setattr(f.links[0], "when", "x"), 'Sửa điều kiện "Gửi OTP" (Đăng nhập): "x"'),
+        (lambda f: setattr(f.screens[0], "zeplin", "https://zpl.io/q"), 'Đổi link Zeplin màn "Đăng nhập"'),
+        (lambda f: setattr(f.screens[0], "ac", "AC1.2"), 'Sửa AC màn "Đăng nhập": "AC1.2"'),
+    ]
+    for edit, line in edits:
         new = old.model_copy(deep=True)
         edit(new)
-        assert fc.changes(old, new) == ["Sửa thuộc tính màn / liên kết"]
+        assert fc.changes(old, new) == [line]
+    # said alongside other edits too, not only when it is the one change
+    new = old.model_copy(deep=True)
+    new.screens[0].note, new.links[0].when = "x", "đã nhập SĐT"
+    cond = 'Sửa điều kiện "Gửi OTP" (Đăng nhập): "đã nhập SĐT"'
+    assert fc.changes(old, new) == [cond, 'Thêm ghi chú màn "Đăng nhập"']
     bumped = old.model_copy(deep=True, update={"rev": 5})
     assert fc.changes(old, bumped) == []
 
@@ -166,7 +176,13 @@ def test_changes_summarises_mostly_unrelated_render():
     old = u.clean(_live(), "VA-1")
     new = u.clean({"screens": [{"id": f"n{i}", "title": f"Khác {i}", "items": []} for i in range(3)],
                    "links": [{"src": "n0", "to": "n1"}]}, "VA-1")
-    assert fc.changes(old, new) == ["Render lại: 3 màn, 1 liên kết (trước: 6 màn, 5 liên kết)"]
+    assert fc.changes(old, new) == ["Dựng lại sơ đồ: 3 màn, 1 liên kết (trước: 6 màn, 5 liên kết)"]
+    # most screens deleted by hand: each one listed, not taken for a re-render
+    kept = old.model_copy(deep=True)
+    gone = {s.id for s in kept.screens[2:]}
+    kept.screens = kept.screens[:2]
+    kept.links = [k for k in kept.links if k.to not in gone and k.src.split(".")[0] not in gone]
+    assert fc.changes(old, kept)[:4] == ['Xoá màn "Màn 2"', 'Xoá màn "Màn 3"', 'Xoá màn "Màn 4"', 'Xoá màn "Màn 5"']
 
 
 def _layer(kind, name, x, y, w, h, content="", layers=()):
@@ -551,3 +567,15 @@ def test_flow_title_is_a_persons_name_kept_through_file_rerender_and_change_list
     assert fc.keep_manual(named, drawn)[0].title == "Luồng <OTP>"
     assert fc.changes(drawn, named) == ['Đổi tên UI flow thành "Luồng <OTP>"']
     assert fc.changes(named, drawn) == ["Bỏ tên riêng của UI flow"]
+
+
+def test_file_name_follows_the_title_and_the_file_carries_the_mark():
+    f = u.clean(RAW, "VA-1")
+    assert u.file_name(f) == "uiflow-VA-1.html"
+    f.title = '  Đăng nhập / OTP: "mới"\n'
+    assert u.file_name(f) == "Đăng nhập OTP mới - VA-1.html"
+    assert u.file_name(f, " B / QA ") == "Đăng nhập OTP mới - VA-1 - B QA.html"
+    html = u.build_html(f, "/*engine*/")
+    assert u.ours(html) and u.MARK in html
+    assert u.ours('<script id="uiflow-data">{}</script>')  # a file saved before the mark
+    assert not u.ours("<html>spec</html>")

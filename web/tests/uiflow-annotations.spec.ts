@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import fs from "node:fs";
-import { type Item, type Flow, open, box, title, standalone, edit, addScreen, dirty, PIC, remount, find, selectScreen, withFlow } from "./uiflow.helpers";
+import { type Item, type Flow, open, box, title, edit, addScreen, dirty, PIC, remount, find, selectScreen, withFlow } from "./uiflow.helpers";
 
 test("tap area: drawn on the image as a new button, resized, typed, matched by text again; each one undo", async ({ page }) => {
   await open(page);
@@ -99,20 +98,6 @@ test("arrow keys move a screen with its popup; Sắp xếp lại is one undo", a
   expect(await pos()).toEqual(start);
   await page.evaluate(() => window.__api.undo());
   expect(await pos()).toEqual(moved);
-});
-
-test("rect / note survive Lưu file of a standalone file without images", async ({ page }) => {
-  await standalone(page, "", `
-    f.screens[0].items[0].rect = { x: 0.1, y: 0.4, w: 0.3, h: 0.05 };
-    f.screens[3].note = "ghi chú giữ lại";`);
-  await edit(page);
-  // no image in this file: the rect is kept, the button is a plain row (only an image places it)
-  await expect(page.locator('.uf-screen[data-id="login"] .uf-rect')).toHaveCount(0);
-  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByRole("button", { name: "Lưu file" }).click()]);
-  const saved = JSON.parse(/id="uiflow-data">([\s\S]*?)<\/script>/.exec(fs.readFileSync((await dl.path())!, "utf8"))![1]) as Flow;
-  expect(saved.v).toBe(2);
-  expect(saved.screens[0].items[0].rect).toEqual({ x: 0.1, y: 0.4, w: 0.3, h: 0.05 });
-  expect(saved.screens[3].note).toBe("ghi chú giữ lại");
 });
 
 test("a tap area drags inside its image and nudges with the arrow keys", async ({ page }) => {

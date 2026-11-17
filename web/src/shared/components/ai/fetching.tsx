@@ -1,6 +1,6 @@
 "use client";
 
-import { AlarmClock, Check, FileText, Gauge, GitBranch, History, Hourglass, LayoutDashboard, ListChecks, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
+import { AlarmClock, ArrowDown, Check, Eye, FileText, Gauge, GitBranch, History, Hourglass, LayoutDashboard, ListChecks, MessageCircleQuestion, PackageCheck, Rocket, RotateCw, Search, Send, Server, ShieldCheck, Sparkles, TriangleAlert, X } from "lucide-react";
 import { type QueryKey, useQueryClient } from "@tanstack/react-query";
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentIcon } from "@/shared/components/ai/agent-icon";
@@ -12,7 +12,7 @@ import { cn } from "@/shared/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc" | "flowHtml" | "flowSave";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -35,6 +35,8 @@ const LINES: Record<FetchKind, Key[]> = {
   sessions: ["AI đang mở lịch sử phiên AI", "Đang gom ticket của từng phiên", "Đang đọc lại câu hỏi và câu trả lời", "Đang xếp phiên theo ngày", "Sắp xong rồi"],
   flow: ["AI đang đọc AC và rule của ticket", "Đang mở màn hình trên Zeplin", "Đang xếp các màn thành luồng", "Đang nối nút với màn đích", "Sắp xong rồi"],
   flowDoc: ["AI đang đọc ticket và story", "Đang trích nội dung từng AC", "Đang mở thiết kế Zeplin của từng màn", "Đang ghép màn, nút và màn đích", "Đang dò chỗ còn thiếu", "Đang viết tài liệu Markdown"],
+  flowHtml: ["Đang gom các màn của sơ đồ", "Đang nhúng ảnh Zeplin vào file…", "Đang đóng gói trình xem offline", "Đang tạo file HTML…", "Sắp xong rồi"],
+  flowSave: ["Đang nhúng ảnh Zeplin vào file…", "Đang tải file lên ticket", "Đang thay file cũ trên ticket", "Đang ghi bình luận thay đổi", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -265,6 +267,66 @@ const SCENES: Record<FetchKind, Scene> = {
             : kind === "c" ? <span key={k} className="fx-step mt-1.5 block h-3 rounded-sm bg-ink/10" style={{ ...at, width: w }} />
             : <span key={k} className="fx-step mt-2 block h-1 rounded-full bg-ink-3/30" style={{ ...at, width: w }} />;
         })}
+      </div>
+    </>;
+  },
+
+  // File HTML (xem offline): the map's three screens and their Zeplin images fly into an .html file, which fills with
+  // small frames joined by an arrow; an eye marks it view only and an arrow drops it into the downloads tray
+  flowHtml: ({ t }) => {
+    const step = (k: number) => v({ "--fx-d": "4.4s", animationDelay: `${0.5 + k * 0.5}s` });
+    return <>
+      {[18, 62, 106].map((y, k) => (
+        <div key={y} className="absolute left-1 grid h-9 w-7 content-start gap-1 rounded-md border border-rule bg-cotton px-1 pt-1.5 shadow-stock" style={{ top: y }}>
+          <Line w="70%" className="h-1 bg-ink-3/40" />
+          <span className={cn("block h-2 rounded-sm", k === 1 ? "bg-hl/50" : "bg-paper-3")} />
+        </div>
+      ))}
+      {[[t("Màn"), C.hl2, 36], ["Zeplin", C.ok, 80], [t("Nút →"), C.info, 124], ["PNG", C.warn, 80]].map(([s, c, y], k) =>
+        <Fly key={k} k={k} dot={c as string} gap={0.55} dur={2.4} path={`M40 ${y}C90 ${y} 96 80 132 80`}>{s}</Fly>)}
+      <Bot ring className="top-1/2 left-[150px] size-14 -translate-x-1/2 -translate-y-1/2" size="size-10" />
+      <div className="absolute top-3 right-6 bottom-7 w-[104px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <span className="absolute top-1.5 right-1.5 font-mono text-[9px] font-bold text-ink-3">.html</span>
+        <span className="fx-step absolute top-1 left-1.5 grid size-4 place-items-center rounded-full bg-hl-wash text-hl-2" style={step(0)}><Eye className="size-2.5" /></span>
+        <div className="mt-4 flex items-center gap-1">
+          {[0, 1, 2].map((k) => (
+            <Fragment key={k}>
+              {k > 0 && <span className="fx-step block h-0.5 w-1.5 rounded-full bg-hl-2" style={step(k + 2)} />}
+              <span className="fx-step grid h-12 flex-1 content-start gap-1 rounded border border-rule bg-paper p-0.5" style={step(k)}>
+                <Line w="80%" className="h-1 bg-ink-3/35" />
+                <span className={cn("block h-1.5 rounded-sm", k === 1 ? "bg-hl/50" : "bg-paper-3")} />
+                <span className="block h-1.5 rounded-sm bg-paper-3" />
+              </span>
+            </Fragment>
+          ))}
+        </div>
+        <Line w="70%" className="fx-step mt-2" />
+        <Line w="45%" className="fx-step mt-1.5" />
+      </div>
+      <span className="fx-step absolute right-[62px] bottom-0 grid size-6 place-items-center rounded-full bg-hl text-hl-ink shadow-stock" style={step(5)}><ArrowDown className="size-3.5" /></span>
+    </>;
+  },
+
+  // Lưu lên ticket: the robot carries the flow's .html file along an arc up to the YouTrack ticket, which takes it as an
+  // attachment (rev +1); under it the change comment writes itself line by line and a check pops
+  flowSave: ({ p, t }) => {
+    const step = (k: number) => v({ "--fx-d": "4.6s", animationDelay: `${0.6 + k * 0.5}s` });
+    return <>
+      <div className="absolute top-[52px] left-1 grid h-[72px] w-[60px] content-start gap-1 rounded-lg border border-rule bg-cotton p-1.5 shadow-stock">
+        <span className="font-mono text-[9px] font-bold text-ink-3">.html</span>
+        {[0, 1].map((k) => <span key={k} className={cn("block h-2.5 rounded-sm", k ? "bg-paper-3" : "bg-hl/50")} />)}
+        <Line w="70%" />
+      </div>
+      {[0, 1, 2].map((k) => <Fly key={k} k={k} gap={0.8} dur={2.4} path="M66 84C112 84 120 40 196 34" className="size-2 rounded-full bg-hl shadow-stock" />)}
+      <Bot ring className="top-[86px] left-[128px] size-14 -translate-x-1/2 -translate-y-1/2" size="size-10" />
+      <div className="absolute top-1 right-1 w-[118px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <span className="flex items-center gap-1 font-mono text-[10px] font-bold text-ink-2"><YtLogo className="size-4" />{tid(p, 12)}</span>
+        <span className="fx-step mt-1.5 inline-flex items-center gap-1 rounded-full border border-rule bg-paper px-1.5 font-mono text-[9px] text-hl-2" style={step(0)}>.html · rev +1</span>
+      </div>
+      <div className="absolute right-1 bottom-1 w-[118px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <span className="font-mono text-[9px] font-bold text-ink-3">{t("Bình luận")}</span>
+        {[80, 60, 70].map((w, k) => <span key={k} className="fx-step mt-1.5 block h-1 rounded-full bg-ink-3/30" style={{ ...step(k + 1), width: `${w}%` }} />)}
+        <span className="fx-step absolute -top-2 -right-2 grid size-5 place-items-center rounded-full bg-ok text-cotton shadow-stock" style={step(4)}><Check className="size-3" /></span>
       </div>
     </>;
   },

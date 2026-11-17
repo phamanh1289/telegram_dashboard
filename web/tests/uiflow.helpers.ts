@@ -20,9 +20,6 @@ export type Flow = { v: number; start?: string | null; ticket: string; title?: s
 export type Api = { get(): Flow; set(f: Flow): void; goto(id: string): void; undo(): void; redo(): void; destroy(): void; title(name: string): void;
   mode(m: "map" | "play"): void };
 
-export const SCHEMA = new Set(["v", "ticket", "title", "rev", "device", "screens", "links", "id", "title", "kind", "parent", "x", "y",
-  "zeplin", "ac", "note", "items", "label", "rect", "w", "h", "src", "to", "act", "when", "start", "fold", "memos", "text"]); // a note's w / h / fold are named above
-
 declare global {
   interface Window {
     UIFlow: { layout(f: Flow): Flow; mount(el: Element, f: Flow, o: object): Api };

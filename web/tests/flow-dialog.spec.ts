@@ -48,7 +48,7 @@ async function render(page: Page) {
 }
 
 test.beforeEach(async () => {
-  await ctl("/set", { yt: true, reset_jobs: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0, ticket_newer: false, ai_keep: null, flow_check: null });
+  await ctl("/set", { yt: true, reset_jobs: true, flow: "file", flow_save: "ok", flow_posts: [], ai_ms: 0, ai_calls: 0, save_ms: 0, ticket_newer: false, ai_keep: null, flow_check: null, owner: null });
 });
 test.afterAll(async () => { await ctl("/set", { yt: false }); }); // the other specs keep the real YouTrack routes
 
@@ -295,11 +295,29 @@ test("a draft lives for its day: the next day it is gone, with the unsaved rende
   expect(await aiCalls()).toBe(1);
 });
 
+test("someone else's file: edited freely as a draft, but only its author updates or removes it", async ({ page }) => {
+  await ctl("/set", { owner: { id: "1-2", login: "an", name: "An" } });
+  await openFlow(page);
+  const d = dialog(page);
+  await expect(d.getByText("Của An")).toBeVisible(); // said on opening, before any work
+  await expect(d.getByRole("button", { name: "Xoá UI flow" })).toBeDisabled();
+  await d.getByRole("button", { name: "Sửa" }).click();
+  await dropScreen(page);
+  await expect(d.locator(".uf-screen")).toHaveCount(3); // the edit itself is allowed
+  await expect(d.getByText("Bản sửa của bạn được giữ làm nháp trên máy; chỉ An cập nhật được file trên ticket.")).toBeVisible();
+  await expect(d.getByRole("button", { name: "Cập nhật", exact: true })).toBeDisabled();
+  expect(await posts()).toEqual([]);
+});
+
 test("save locks render replacement until upload completes", async ({ page }) => {
   await ctl("/set", { flow: "none", save_ms: 1500 });
   await openFlow(page); await render(page);
   await dialog(page).getByRole("button", { name: "Lưu lên ticket", exact: true }).click();
   await expect(dialog(page).getByRole("button", { name: "Render lại bằng AI" })).toBeDisabled();
+  const busy = page.getByRole("status", { name: "Lưu lên ticket" }); // the save's card, with its scene, until it is done
+  await expect(busy).toBeVisible();
+  await expect(busy).toContainText(/Đang (nhúng ảnh|tải file)/);
+  await expect(busy).toHaveCount(0);
   await expect(dialog(page).getByText("Đã cập nhật file trên ticket", { exact: false })).toBeVisible();
   expect(await aiCalls()).toBe(1);
 });
@@ -558,7 +576,7 @@ test("reopened over an old Zeplin read: each screen updates the moment it is rea
   await expect(img("login")).toHaveAttribute("data-mark", "1"); // and A still untouched
 });
 
-test("Markdown cho AI: built once for copy and download, its size told; a changed choice builds it again", async ({ page, context }) => {
+test("Markdown cho AI: its size told on opening, copy and download use that build; a changed choice counts again", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   let builds = 0;
   page.on("request", (r) => { if (r.url().endsWith("/api/yt/flow/md")) builds++; });
@@ -568,9 +586,10 @@ test("Markdown cho AI: built once for copy and download, its size told; a change
   await page.getByRole("menuitem", { name: "Markdown cho AI…" }).click();
   const md = page.getByRole("dialog", { name: "Markdown cho AI" });
   await expect(md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" })).not.toBeChecked(); // the tables say it
+  await expect(md.getByText(/Khoảng [\d.,]+ token/)).toBeVisible(); // counted on opening, before any copy
+  expect(builds).toBe(1);
   await md.getByRole("button", { name: "Sao chép" }).click();
   await expect(md.getByRole("button", { name: "Đã sao chép" })).toBeVisible();
-  await expect(md.getByText(/Bản vừa tạo: khoảng [\d.,]+ token/)).toBeVisible();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toContain("# UI flow VA-1");
   expect(copied).not.toContain("## Dữ liệu sơ đồ");
@@ -578,9 +597,10 @@ test("Markdown cho AI: built once for copy and download, its size told; a change
   await md.getByRole("button", { name: "Tải file .md" }).click();
   await expect(md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" })).toBeVisible(); // no wait scene: nothing asked
   expect((await file).suggestedFilename()).toBe("uiflow-VA-1.md");
-  expect(builds).toBe(1); // the copy's build, downloaded as is
+  expect(builds).toBe(1); // the opening's build, copied and downloaded as is
   await md.getByRole("checkbox", { name: "Kèm dữ liệu sơ đồ (JSON)" }).click();
-  await expect(md.getByText(/Bản vừa tạo/)).toHaveCount(0); // another choice: that build is not this one
+  await expect.poll(() => builds).toBe(2); // another choice: counted again, in place
+  await expect(md.getByText(/Khoảng [\d.,]+ token/)).toBeVisible();
   await md.getByRole("button", { name: "Sao chép" }).click();
   await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain("## Dữ liệu sơ đồ");
   expect(builds).toBe(2);
@@ -624,6 +644,9 @@ test("Tải file HTML saves the flow on screen, draft included, and posts nothin
   await d.getByRole("button", { name: "Tải xuống" }).click(); // one download button: a menu, HTML or Markdown for AI
   const [file] = await Promise.all([page.waitForEvent("download"), page.getByRole("menuitem", { name: "File HTML (xem offline)" }).click()]);
   expect(file.suggestedFilename()).toBe("uiflow-VA-1.html");
+  const packing = page.getByRole("status", { name: "Tải file HTML" }); // its scene, held long enough to be seen
+  await expect(packing).toBeVisible();
+  await expect(packing).toHaveCount(0);
   expect(fs.readFileSync(await file.path(), "utf8")).toMatch(/<style>:root\{[^<]*--color-hl:[^;<]+;/); // the app's colours go along
   // the file stays as a real link: a browser that dropped the script-started save still gets it on a press
   await expect(d.locator("a[download]", { hasText: "Tải xuống" })).toHaveAttribute("download", "uiflow-VA-1.html");

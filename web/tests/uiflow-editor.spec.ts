@@ -1,6 +1,5 @@
 import { expect, test } from "@playwright/test";
-import fs from "node:fs";
-import { type Flow, type Api, SCHEMA, open, box, title, standalone, edit, addScreen, addScreensInPage, dirty, links, drag, centreOf, insp, flowOf, sized } from "./uiflow.helpers";
+import { type Flow, type Api, open, box, title, standalone, edit, addScreen, addScreensInPage, dirty, links, drag, centreOf, insp, flowOf, sized } from "./uiflow.helpers";
 
 test("dragging an arrow head onto another screen retargets the link", async ({ page }) => {
   await open(page);
@@ -138,79 +137,19 @@ test("edit controls are absent when edit is off", async ({ page }) => {
   await expect(ro.locator("[contenteditable]")).toHaveCount(0);
 });
 
-test("editing in Map leaves the hash and the prototype alone", async ({ page }) => {
-  await standalone(page, "#s=code");
-  await edit(page);
-  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
-  await page.keyboard.type("Nhà");
-  await page.keyboard.press("Enter");
-  expect(await page.evaluate(() => window.__api?.get === undefined)).toBe(true); // standalone: no test api
-  await expect(page).toHaveURL(/#s=code$/);
-  await expect(page.locator(".uf-pscreen")).toHaveCount(0); // the player did not render
-  await page.getByRole("button", { name: "Prototype" }).click();
-  await expect(title(page)).toHaveText("Nhập OTP");
-});
-
-test("saved file reopens with the edit and still has exactly one data block", async ({ page }) => {
+test("an exported file is view only: no editing, no save, no leave prompt", async ({ page }) => {
   await standalone(page);
-  await edit(page);
-  await page.locator('.uf-screen[data-id="login"] .uf-title').dblclick();
-  await page.keyboard.type("Màn đăng nhập mới");
-  await page.keyboard.press("Enter");
-  const [dl] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Lưu file" }).click(),
-  ]);
-  expect(dl.suggestedFilename()).toBe("uiflow-VA-1.html");
-  const html = fs.readFileSync((await dl.path())!, "utf8");
-  expect(html.split('id="uiflow-data"').length - 1).toBe(1);
-  const data = /id="uiflow-data">([\s\S]*?)<\/script>/.exec(html)![1];
-  expect(data).not.toContain("<"); // "<" is escaped, so the JSON cannot close its own block
-  expect(JSON.parse(data).screens[0].title).toBe("Màn đăng nhập mới");
-  await page.setContent(html);
-  await expect(page.locator('.uf-screen[data-id="login"] .uf-title')).toHaveText("Màn đăng nhập mới");
   await expect(page.locator(".uf-screen")).toHaveCount(4);
-});
-
-test("Lưu file writes only Flow-schema fields, dropping what a hand-edited file added", async ({ page }) => {
-  await standalone(page, "", `
-    f.note = "thêm tay";
-    f.screens[0].img = "data:image/png;base64,xx";
-    f.screens[0].items[0].rect = [1, 2, 3, 4];
-    f.links[0].note = "thêm tay";`);
-  const [dl] = await Promise.all([
-    page.waitForEvent("download"),
-    page.getByRole("button", { name: "Lưu file" }).click(),
-  ]);
-  const html = fs.readFileSync((await dl.path())!, "utf8");
-  const saved = JSON.parse(/id="uiflow-data">([\s\S]*?)<\/script>/.exec(html)![1]) as Flow;
-  const keys = [Object.keys(saved), ...saved.screens.map(Object.keys),
-    ...saved.screens.flatMap((s) => s.items.map(Object.keys)), ...saved.links.map(Object.keys)].flat();
-  expect([...new Set(keys.filter((k) => !SCHEMA.has(k)))]).toEqual([]);
-  expect(html).not.toContain("thêm tay"); // the extras are gone from the file, not just from api.get()
-});
-
-test("an exported file asks before leaving with unsaved edits; the dashboard mount does not", async ({ page }) => {
-  const ask = () => page.evaluate(() => {
+  await expect(page.getByRole("button", { name: "Prototype" })).toBeVisible();
+  await expect(page.locator(".uf-editbtn")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Lưu file" })).toHaveCount(0);
+  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
+  await expect(page.locator(".uf-screen input, .uf-screen [contenteditable=true]")).toHaveCount(0);
+  expect(await page.evaluate(() => {
     const e = new Event("beforeunload", { cancelable: true });
     window.dispatchEvent(e);
     return e.defaultPrevented;
-  });
-  await standalone(page);
-  expect(await ask()).toBe(false); // nothing changed yet
-  await edit(page);
-  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
-  await page.keyboard.type("Nhà");
-  await page.keyboard.press("Enter");
-  expect(await ask()).toBe(true);
-
-  await open(page); // the same edit inside the dashboard: the app owns leaving, not the engine
-  await edit(page);
-  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
-  await page.keyboard.type("Nhà");
-  await page.keyboard.press("Enter");
-  expect(await dirty(page)).toBe(true);
-  expect(await ask()).toBe(false);
+  })).toBe(false);
 });
 
 test("a field never stores more than the backend keeps, and a bad Zeplin link is shown, not saved", async ({ page }) => {
@@ -317,20 +256,9 @@ test("undo remembers 50 steps, no more", async ({ page }) => {
   expect(await dirty(page)).toBe(true);
 });
 
-test("destroy() takes the leave-page guard with it", async ({ page }) => {
-  const ask = () => page.evaluate(() => {
-    const e = new Event("beforeunload", { cancelable: true });
-    window.dispatchEvent(e);
-    return e.defaultPrevented;
-  });
+test("destroy() of an exported file empties its host", async ({ page }) => {
   await standalone(page);
-  await edit(page);
-  await page.locator('.uf-screen[data-id="home"] .uf-title').dblclick();
-  await page.keyboard.type("Nhà");
-  await page.keyboard.press("Enter");
-  expect(await ask()).toBe(true);
   await page.evaluate(() => (document.getElementById("uiflow") as HTMLElement & { uiflow: Api }).uiflow.destroy());
-  expect(await ask()).toBe(false);
   await expect(page.locator(".uf-root")).toHaveCount(0);
   expect(await page.evaluate(() => (document.getElementById("uiflow") as HTMLElement & { uiflow: Api | null }).uiflow))
     .toBe(null);

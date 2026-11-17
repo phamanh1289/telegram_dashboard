@@ -5,9 +5,8 @@ import { box, btn, h, placeFrame, shotImg, svg, zeplinLink } from './dom.js';
 import { isOverlay } from './model.js';
 
 /** One frame: phone (screen) or overlay frame with its card; rows positioned from the same geometry as arrows.
- *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from.
- *  `lead`: the title prefix every screen shares, left out of the label above the frame. */
-function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
+ *  `linked`: set of "screen.item" sources that have a link. `edit`: also draw the dots you drag links from. */
+function buildFrame(s, t, linked, edit, isStart = false) {
   const c = cardOf(s), sh = shotOf(s), rows = rowsOf(s);
   const el = h("div", "uf-screen" + (isOverlay(s) ? " uf-ov uf-" + s.kind : "") + (sh ? " uf-shot" : "") + (sh && s.fold ? " uf-folded" : ""));
   el.dataset.id = s.id;
@@ -41,7 +40,7 @@ function buildFrame(s, t, linked, edit, lead = "", isStart = false) {
   const label = h("div", "uf-flabel");
   label.setAttribute("aria-hidden", "true"); // the in-frame title is the accessible name; this one only repeats it
   if (isStart) label.append(h("span", "uf-lstart", "▶")); // the in-frame badge is hidden with its title bar when zoomed out
-  label.append(h("span", "uf-ltitle", (lead && s.title.startsWith(lead) ? s.title.slice(lead.length) : s.title) || s.title));
+  label.append(h("span", "uf-ltitle", s.title)); // the screen's whole name, as in its title bar
   if (s.ac) label.append(h("span", "uf-lac", s.ac));
   card.append(label, head);
   s.items.forEach((it, i) => {

@@ -3,10 +3,10 @@ import { injectStyle } from './styles.js';
 import { tr } from './i18n.js';
 import { SHOTS, sameShot, setShots, shotOf } from './shots.js';
 import { parents, sanitize } from './model.js';
-import { layout, sharedLead } from './layout.js';
+import { layout } from './layout.js';
 import { bounds, clearTall, curve, freeShots, linkEnds, linkText, r1 } from './geometry.js';
 import { h, ibtn, placeFrame, svg } from './dom.js';
-import { readHash, saveFile } from './standalone.js';
+import { readHash } from './standalone.js';
 import { buildFrame, markers } from './frames.js';
 import { CAP_TITLE, DEVICE, FIT_TALL, FOCUS, H, LABEL_HIDE, MERGE_MS, NOTE_MS, UNDO, W } from './constants.js';
 import { acCodes, scr, startOf } from './values.js';
@@ -18,8 +18,8 @@ import { memos } from './memos.js';
 
 // ------------------------------------------------------------------ mount
 let mounts = 0;
-/** src: the page's own HTML when standalone (enables "Lưu file" and hash writing), else null. */
-function mount(host, flow, opts = {}, src = null) {
+/** standalone: an exported file opened on its own (writes the hash); it is mounted view-only (no opts.edit). */
+function mount(host, flow, opts = {}, standalone = false) {
   const cleanup = [];
   try {
   injectStyle();
@@ -47,7 +47,7 @@ function mount(host, flow, opts = {}, src = null) {
   frameSize();
   // the toolbar: a narrow rail down the left edge, icons only; it slides open with every name on hover / focus
   // (styles: .uf-bar), each name staying its aria-label. Top to bottom: the view, Sửa and its tools, the map's
-  // display, then "Lưu file" (an exported file) at the foot.
+  // display.
   const bar = h("div", "uf-bar");
   bar.setAttribute("role", "toolbar");
   bar.setAttribute("aria-orientation", "vertical");
@@ -83,7 +83,6 @@ function mount(host, flow, opts = {}, src = null) {
   }
   const bFit = ibtn("fit", t("fit"), "uf-btn uf-fit", () => api.fit());
   bar.append(h("span", "uf-div uf-fit"), bFit);
-  if (src !== null) bar.append(h("span", "uf-sp"), ibtn("save", t("save"), "uf-btn", () => saveFile(src, cur)));
   // every icon's name beside it, shown when the pointer rests on the rail (it slides open over the map: CSS)
   for (const b of bar.querySelectorAll(".uf-icon[title]")) {
     b.append(h("span", "uf-lbl", b.title.replace(/^[+↶↷]\s*/, ""))); // no glyph twice
@@ -148,17 +147,16 @@ function mount(host, flow, opts = {}, src = null) {
   function render() {
     const had = root.contains(document.activeElement);
     const linked = new Set(cur.links.map((l) => l.src));
-    const lead = sharedLead(cur);
     const previous = frames, next = new Map(), changed = new Set();
     frames = new Map(cur.screens.map((s) => {
       const isStart = s.id === startOf(cur);
-      const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, lead, isStart,
+      const key = JSON.stringify([{ ...s, x: undefined, y: undefined }, editing, isStart,
         [s.id, ...s.items.map((it) => `${s.id}.${it.id}`)].map((id) => linked.has(id))]);
       const shot = shotOf(s), old = rendered.get(s.id);
       // a new read of the same design (the live one after the kept one): the frame stays, no image drawn again;
       // one whose image failed to load is drawn again from the new read
       const sameShotOk = !!old && sameShot(old.shot, shot) && !(old.shot !== shot && previous.get(s.id)?.querySelector("img[data-bad]"));
-      const frame = old?.key === key && sameShotOk ? previous.get(s.id) : buildFrame(s, t, linked, editing, lead, isStart);
+      const frame = old?.key === key && sameShotOk ? previous.get(s.id) : buildFrame(s, t, linked, editing, isStart);
       if (old && old.kind !== s.kind) frame.classList.add("uf-morph"); // screen ↔ popup / sheet / toast: the new shape eases in
       placeFrame(frame, s);
       if (!old || old.key !== key || !sameShotOk || old.x !== s.x || old.y !== s.y) changed.add(s.id);
@@ -379,7 +377,7 @@ function mount(host, flow, opts = {}, src = null) {
 
   // hash (#s=<screen>&m=play): read on mount, written only when standalone
   function writeHash() {
-    if (src === null) return;
+    if (!standalone) return;
     const q = new URLSearchParams();
     if (here) q.set("s", here);
     if (shown === "play") q.set("m", "play");
@@ -483,16 +481,13 @@ function mount(host, flow, opts = {}, src = null) {
       proto.destroy();
       ed.destroy();
       clearTimeout(noteTimer);
-      window.removeEventListener("beforeunload", onLeave);
       document.removeEventListener("pointerdown", onOutside, true);
       host.replaceChildren();
       host.uiflow = null;
     },
   };
 
-  const onLeave = (e) => { if (JSON.stringify(cur) !== base) e.preventDefault(); };
-  if (src !== null) window.addEventListener("beforeunload", onLeave);
-  cleanup.push(() => { clearTimeout(noteTimer); window.removeEventListener("beforeunload", onLeave); document.removeEventListener("pointerdown", onOutside, true); });
+  cleanup.push(() => { clearTimeout(noteTimer); document.removeEventListener("pointerdown", onOutside, true); });
 
   render();
   const hs = readHash(); // before the first writeHash, which mode() runs

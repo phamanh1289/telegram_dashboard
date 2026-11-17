@@ -47,7 +47,6 @@ border-color:transparent;border-radius:9px;background:transparent;color:var(--uf
 .uf-bar .uf-btn[aria-pressed=true],.uf-bar .uf-btn[aria-expanded=true]{background:var(--uf-accent-soft);color:var(--uf-accent)}
 .uf-lbl{min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500;opacity:0;transition:opacity .1s ease-out}
 .uf-bar:hover:not(.uf-hold) .uf-lbl,.uf-bar:has(:focus-visible) .uf-lbl{opacity:1;transition:opacity .2s ease-out .22s}
-.uf-sp{flex:1}
 .uf-btn{height:30px;padding:0 11px;border:1px solid var(--uf-line);border-radius:var(--uf-r);background:var(--uf-screen);
 color:var(--uf-ink);font:inherit;font-size:13px;font-weight:600;white-space:nowrap;cursor:pointer}
 .uf-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;

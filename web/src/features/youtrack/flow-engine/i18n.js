@@ -3,7 +3,7 @@
 const T = {
   vi: {
     map: "Toàn cục", play: "Prototype", edit: "Sửa", fit: "Vừa màn hình",
-    save: "Lưu file", zeplin: "Mở trên Zeplin", canvas: "Sơ đồ luồng màn hình",
+    zeplin: "Mở trên Zeplin", canvas: "Sơ đồ luồng màn hình",
     bad: "Không đọc được dữ liệu UI flow trong file này.",
     back: "Quay lại", restart: "Bắt đầu lại", pick: "Chọn trường hợp", trail: "Đường đã đi",
     noItems: "Màn này chưa có nút",
@@ -32,7 +32,7 @@ const T = {
   },
   en: {
     map: "Map", play: "Prototype", edit: "Edit", fit: "Fit to screen",
-    save: "Save file", zeplin: "Open in Zeplin", canvas: "Screen flow map",
+    zeplin: "Open in Zeplin", canvas: "Screen flow map",
     bad: "Could not read the UI flow data in this file.",
     back: "Back", restart: "Start over", pick: "Pick a case", trail: "Path taken",
     noItems: "No buttons on this screen yet",

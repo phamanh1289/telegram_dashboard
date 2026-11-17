@@ -20,7 +20,7 @@ const ICONS = {
   plus: "M12 5v14M5 12h14", memo: "M4 4h16v11l-5 5H4zM15 20v-5h5", down: "M6 9l6 6 6-6", up: "M6 15l6-6 6 6", x: "M6 6l12 12M18 6 6 18", back: "M15 6l-6 6 6 6", check: "M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
   go: "M5 12h14M13 6l6 6-6 6", open: "M4 5h16v14H4zM4 9h16", chev: "M9 6l6 6-6 6",
   area: "M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4", text: "M5 7V5h14v2M12 5v14M9 19h6",
-  map: "M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15", play: "M8 5v14l11-7z", save: "M5 4h11l3 3v13H5zM8 4v5h7M8 20v-6h8",
+  map: "M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15", play: "M8 5v14l11-7z",
 };
 function icon(name, size = 16) {
   const i = svg("svg", { viewBox: "0 0 24 24", width: size, height: size, fill: "none", stroke: "currentColor",

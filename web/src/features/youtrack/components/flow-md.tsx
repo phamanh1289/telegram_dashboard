@@ -1,9 +1,9 @@
 "use client";
 
 import { Menu } from "@base-ui/react/menu";
-import { useMutation } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Download, FileText, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AiFetching, useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
@@ -44,27 +44,32 @@ export function FlowDownload({ issue, get, onHtml, busy, disabled }: { issue: st
 
 /** "Markdown cho AI": the flow on screen (draft included) as one document an AI agent builds from: every screen with
  *  its design's texts, the AC quoted from the ticket / stories, the ways through, what is still missing. Built by the
- *  server only now; nothing changes on the map, the flow or the ticket. Copied or downloaded. */
+ *  server (code, no AI) when the dialog opens and again on each changed choice, so its size shows before a copy;
+ *  nothing changes on the map, the flow or the ticket. Copied or downloaded. */
 function FlowMdDialog({ open, onOpenChange, issue, get }: { open: boolean; onOpenChange: (o: boolean) => void; issue: string; get: () => UiFlow | undefined }) {
   const t = useT();
   const [note, setNote] = useState("");
   const [o, setO] = useState<Opts>({ sources: true, paths: true, data: false }); // the JSON repeats the tables: asked for
   const [copied, setCopied] = useState(false);
-  // the document last built, for these choices: copy, then download, is one build (the map under this dialog cannot
-  // change while it is open; it goes when the dialog does)
-  const [made, setMade] = useState<{ key: string; r: { name: string; md: string; tokens: number } } | null>(null);
-  const key = JSON.stringify({ note, ...o });
-  const [asking, setAsking] = useState(false); // the server building it (a kept build is used at once: no scene)
-  const run = useMutation({
-    mutationFn: async (how: "copy" | "file") => {
+  const bare = !get()?.links.length; // "Dựng màn hình" (or nothing linked yet): the file has no tap flow
+  const [typed, setTyped] = useState(note); // the note once typing stops: what the shown size is built for
+  useEffect(() => { const id = setTimeout(() => setTyped(note), 600); return () => clearTimeout(id); }, [note]);
+  // the map under this dialog cannot change while it is open: one opening, one set of builds
+  const [opened] = useState(() => Date.now());
+  const qc = useQueryClient();
+  const build = (n: string) => ({
+    queryKey: ["yt", "flow-md", issue, opened, n, o] as const,
+    queryFn: () => {
       const f = get();
       if (!f) throw new Error(t("Chưa có sơ đồ"));
-      let r = made?.key === key ? made.r : null;
-      if (!r) {
-        setAsking(true);
-        try { r = await yt.flowMd(issue, f, { note, ...o }); } finally { setAsking(false); }
-      }
-      setMade({ key, r });
+      return yt.flowMd(issue, f, { note: n, ...o });
+    },
+    staleTime: Infinity, retry: false,
+  });
+  const doc = useQuery({ ...build(typed), placeholderData: keepPreviousData });
+  const run = useMutation({
+    mutationFn: async (how: "copy" | "file") => {
+      const r = await qc.fetchQuery(build(note)); // the shown build when it is this one, else built now
       if (how === "copy") {
         await navigator.clipboard.writeText(r.md);
         setCopied(true);
@@ -76,7 +81,10 @@ function FlowMdDialog({ open, onOpenChange, issue, get }: { open: boolean; onOpe
       }
     },
   });
-  const waiting = useAiWait(asking); // the server reads the ticket, its stories and the Zeplin designs first
+  // the first build reads the ticket, its stories and the Zeplin designs: the scene; a changed choice counts in place
+  const waiting = useAiWait(!doc.data && doc.isFetching);
+  const size = doc.data && !doc.isPlaceholderData && typed === note ? doc.data : null;
+  const failed = run.error ?? (doc.isError && typed === note ? doc.error : null);
   const box = (k: keyof Opts, label: string, hint: string) => (
     <Hint side="bottom" text={hint}>
       <label className="flex items-center gap-2 text-sm text-ink">
@@ -95,6 +103,7 @@ function FlowMdDialog({ open, onOpenChange, issue, get }: { open: boolean; onOpe
           </DialogDescription>
         </DialogHeader>
         {waiting ? <AiFetching kind="flowDoc" project={issue.split("-")[0]} className="min-h-80 py-2" /> : <div className="grid grid-cols-1 gap-3">
+          {bare && <p role="note" className="rounded-lg bg-warn-wash px-3 py-2 text-xs text-ink">{t("Sơ đồ chưa có nút / mũi tên (dựng bằng “Dựng màn hình”): file chỉ có danh sách màn, chữ thiết kế và ticket; agent phải tự đoán luồng và AC thuộc màn nào. Nối tay trong Sửa hoặc render bằng AI để file đủ.")}</p>}
           <label className="grid grid-cols-1 gap-1.5 text-sm text-ink">
             {t("Yêu cầu thêm cho AI (tuỳ chọn)")}
             <Textarea rows={4} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} disabled={run.isPending}
@@ -103,8 +112,9 @@ function FlowMdDialog({ open, onOpenChange, issue, get }: { open: boolean; onOpe
           {box("sources", t("Kèm nguyên văn ticket và story"), t("Mô tả và bình luận của ticket cùng story cha, nguyên văn, để AI đọc thêm phần AC không gắn vào màn nào."))}
           {box("paths", t("Kèm đường đi để kiểm thử"), t("Các đường từ màn bắt đầu tới màn cuối, từng bước bấm nút: dùng để viết test hoặc tự kiểm."))}
           {box("data", t("Kèm dữ liệu sơ đồ (JSON)"), t("Toàn bộ màn, nút, liên kết dạng JSON, cho công cụ đọc bằng máy. Trùng với bảng màn / nút nên mặc định tắt (tốn thêm token)."))}
-          {made?.key === key && <p className="text-xs text-ink-3">{t("Bản vừa tạo: khoảng {n} token ({k} ký tự). Đổi lựa chọn ở trên thì tạo lại.", { n: fmtNum(made.r.tokens), k: fmtNum(made.r.md.length) })}</p>}
-          {run.isError && <p role="alert" className="text-xs text-error">{t("Không tạo được Markdown: {msg}", { msg: (run.error as Error).message })}</p>}
+          {size ? <p className="text-xs text-ink-3">{t("Khoảng {n} token ({k} ký tự) khi dán vào AI agent; xuất file không tốn token.", { n: fmtNum(size.tokens), k: fmtNum(size.md.length) })}</p>
+            : !failed && <p className="ai-text text-xs">{t("Đang đếm token…")}</p>}
+          {failed && <p role="alert" className="text-xs text-error">{t("Không tạo được Markdown: {msg}", { msg: failed.message })}</p>}
         </div>}
         <DialogFooter className="items-center">
           <DialogClose disabled={run.isPending} render={<Button variant="ghost" className="sm:mr-auto" />}>{t("Đóng")}</DialogClose>

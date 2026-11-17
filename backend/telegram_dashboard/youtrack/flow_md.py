@@ -230,6 +230,9 @@ def _screen(g: _Graph, s: Screen, n: int, shot: dict | None, acs: dict[str, str]
 
 def _missing(g: _Graph, shots: dict[str, dict], acs: dict[str, str], src_acs: list[str], o: Options) -> list[str]:
     flow, out = g.flow, []
+    if not flow.links:  # "Dựng màn hình": screens only, the checks below on buttons / ways / AC say nothing new
+        out.append("Sơ đồ chưa có nút / liên kết (chỉ dựng màn): luồng bấm, điều kiện và AC thuộc màn nào chưa có ở"
+                   " đây; suy ra từ Nguồn yêu cầu và ghi rõ chỗ phải đoán.")
     if o.zeplin_error:
         out.append(f"Không đọc được Zeplin ({_md(o.zeplin_error)}): thiếu chữ trên thiết kế của mọi màn.")
     for sid in o.lost:

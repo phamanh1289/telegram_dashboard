@@ -6,7 +6,7 @@ import { itm, num, rectOf, scr, str } from './values.js';
  *  design draws its own scrim), laid out like a screen; it still opens as an overlay in Prototype (`isPop`). */
 const isOverlay = (s) => s.kind !== "screen" && !shotOf(s);
 /** A fresh, well-formed copy: known kinds / acts, string labels, one screen / button per id, and ONLY Flow-schema
- *  fields — a hand-edited file's extras are dropped here, so what "Lưu file" writes matches what the backend model
+ *  fields — a hand-edited file's extras are dropped here, so what the dashboard saves matches what the backend model
  *  accepts (an older file's `pending` / `acs` included). */
 function sanitize(raw) {
   const f = raw && typeof raw === "object" ? raw : {};

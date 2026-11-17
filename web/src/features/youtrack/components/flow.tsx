@@ -1,9 +1,9 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Download, Loader2, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow, X } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Lock, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useAiWait } from "@/shared/components/ai/fetching";
+import { AiFetching, useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
@@ -214,6 +214,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const save = useMutation({
     mutationFn: async (f: UiFlow) => {
       busy.current = true;
+      setSaving(""); // the popup's own lines until this run's first step
       if ((await yt.flowScope()).scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
       const op = ++operation.current;
       if (unknownSave) {
@@ -417,6 +418,9 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   const bar = !readErr && unsaved && !hid && !waiting && !ai.isPending && !!engine.api; // the one row that asks to write to the ticket
   // draft autosave state + its two ways out; rides in that row, or on its own line when the row is away
   const noFile = base === null; // no file on the ticket yet: a draft to keep or drop; over a saved file there is only "Cập nhật"
+  // the file on the ticket is someone else's: edit and download freely, but only its author updates / removes it (the server
+  // refuses too); said from the start, not after the work, so nobody edits expecting to save
+  const owner = q.data?.att && q.data.yours === false ? q.data.author ?? null : null;
   const draftErr = draftStatus.includes(":");
   const draftBits = (unsaved || draftStatus) && (noFile || draftErr) && <>
     {draftStatus && <span role="status" className="text-xs text-ink-3">{draftStatus}</span>}
@@ -438,7 +442,12 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
               <FlowTitle name={name} fallback={t("UI flow {id}", { id: issue })} onRename={flow && engine.api && !locked ? (v) => engine.api?.title(v) : undefined} />
               <p className="flex min-w-0 items-center gap-2 text-xs text-ink-3">
                 <span className={cn("shrink-0 rounded-full px-2 py-px text-2xs font-bold", STATUS[headStatus].tone)}>{t(STATUS[headStatus].label)}</span>
-                <span className="truncate">{t(STATUS[headStatus].hint)}</span>
+                {!owner && <span className="truncate">{t(STATUS[headStatus].hint)}</span>}
+                {owner && ( // instead of the status hint, which would say to press Cập nhật
+                  <Hint side="bottom" text={t("File trên ticket do {name} lưu. Bạn sửa thử và tải file HTML được; chỉ {name} cập nhật hoặc xoá được file trên ticket.", { name: owner.name })}>
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-paper-3 px-2 py-px text-2xs font-bold text-ink-2"><Lock className="size-3" aria-hidden />{t("Của {name}", { name: owner.name })}</span>
+                  </Hint>
+                )}
               </p>
             </div>
             {flow && ( // no render yet: the start panel has the run button, nothing to redo
@@ -451,18 +460,24 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 onHtml={() => engine.api && html.mutate(engine.api.get())} />
             )}
             {flow && (
-              <Hint side="bottom" text={q.data?.att ? t("Xoá UI flow: gỡ file trên ticket (có hỏi lại trước)") : t("Bỏ bản render: bỏ sơ đồ AI vừa vẽ, chưa lên ticket (có hỏi lại trước)")}>
-                <Button size="icon-sm" variant="ghost" className="hover:text-error" aria-label={q.data?.att ? t("Xoá UI flow") : t("Bỏ bản render")} disabled={locked} onClick={() => { remove.reset(); setAsk("delete"); }}><Trash2 /></Button>
+              <Hint side="bottom" text={owner ? t("Chỉ {name} xoá được file UI flow trên ticket.", { name: owner.name }) : q.data?.att ? t("Xoá UI flow: gỡ file trên ticket (có hỏi lại trước)") : t("Bỏ bản render: bỏ sơ đồ AI vừa vẽ, chưa lên ticket (có hỏi lại trước)")}>
+                <Button size="icon-sm" variant="ghost" className="hover:text-error" aria-label={q.data?.att ? t("Xoá UI flow") : t("Bỏ bản render")} disabled={locked || !!owner} onClick={() => { remove.reset(); setAsk("delete"); }}><Trash2 /></Button>
               </Hint>
             )}
           </header>
-          <div className="relative min-h-0 flex-1">{body}</div>
+          <div className="relative min-h-0 flex-1">
+            {body}
+            <FlowBusy project={issue.split("-")[0]} pending={html.isPending} kind="flowHtml" step={htmlStep} title={t("Tải file HTML")}
+              text={t("File chỉ để xem, mở được offline; muốn sửa thì sửa trên dashboard.")} />
+            <FlowBusy project={issue.split("-")[0]} pending={save.isPending} kind="flowSave" step={saving} title={noFile ? t("Lưu lên ticket") : t("Cập nhật")}
+              text={t("File mới thay file cũ trên ticket, kèm bình luận ghi rõ đã đổi gì.")} />
+          </div>
           <footer className="shrink-0 border-t border-rule bg-paper-2 p-3 empty:hidden">
             {readErr ? null : bar ? (
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-hl/40 bg-hl-wash py-2 pr-2 pl-3">
                 <span aria-hidden className="size-2 shrink-0 rounded-full bg-warn" />
                 <p role="status" className="min-w-0 flex-1 text-sm font-medium text-ink">
-                  {save.isPending && saving ? <span className="ai-text">{saving}</span>
+                  {owner ? t("Bản sửa của bạn được giữ làm nháp trên máy; chỉ {name} cập nhật được file trên ticket.", { name: owner.name })
                     : mine?.sum?.text && !dirty ? <>
                         {t("{s} — chưa lưu, cập nhật file trên ticket?", { s: mine.sum.text })}
                         {mine.sum.warn && <span role="alert" className="mt-0.5 block text-xs text-warn">{mine.sum.warn}</span>}
@@ -470,7 +485,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                     : t("Có thay đổi chưa lưu — cập nhật file trên ticket?")}
                 </p>
                 {draftBits}
-                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending || conflict} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{noFile ? t("Lưu lên ticket") : t("Cập nhật")}</Button>
+                <Button size="sm" aria-busy={save.isPending} disabled={save.isPending || conflict || !!owner} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{noFile ? t("Lưu lên ticket") : t("Cập nhật")}</Button>
                 <Hint text={t("Ẩn thanh này. Thay đổi vẫn được giữ làm bản nháp, chưa lên ticket.")}>
                   <Button size="icon-sm" variant="ghost" aria-label={t("Không")} disabled={save.isPending} onClick={() => setHid(true)}><X /></Button>
                 </Hint>
@@ -488,7 +503,6 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 </Hint>
               </div>
             ) : null}
-            {html.isPending && <p role="status" className="mt-2 text-xs text-ink-2"><span className="ai-text">{htmlStep}</span></p>}
             {htmlFile && !html.isPending && (
               <p role="status" className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-2">
                 <span className="min-w-0 flex-1">{t("Đã tạo file {name}. Trình duyệt chưa tự tải thì bấm Tải xuống.", { name: htmlFile.name })}</span>
@@ -502,7 +516,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
                 <span className="min-w-0 flex-1">
                   {t("Thiết kế Zeplin của {n} màn đã đổi từ lần cập nhật: {s}. Bấm Cập nhật để nhúng ảnh mới vào file; màn / nút mới: ↻ Render lại bằng AI (Chỉ vẽ phần mới). Nút không còn khớp chữ hiện trong mục kiểm tra của sơ đồ.", { n: redesigned.length, s: redesigned.slice(0, 5).map((s) => s.title).join(", ") + (redesigned.length > 5 ? "…" : "") })}
                 </span>
-                <Button size="xs" variant="outline" aria-busy={save.isPending} disabled={save.isPending || conflict} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{t("Cập nhật")}</Button>
+                <Button size="xs" variant="outline" aria-busy={save.isPending} disabled={save.isPending || conflict || !!owner} onClick={() => { if (engine.api) save.mutate(engine.api.get()); }}>{t("Cập nhật")}</Button>
               </div>
             )}
             {q.data?.ticket_newer && flow && !mine && !ai.isPending && <p className="mt-2 text-xs text-ink-3">{t("Ticket đã sửa sau lần cập nhật UI flow. Muốn lấy thay đổi: ↻ Render lại bằng AI (giữ ghi chú, vùng bấm vẽ tay, màn bắt đầu).")}</p>}
@@ -557,6 +571,23 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         <FlowTargetPicker id="uiflow-target-again" value={target} onChange={pickTarget} />
       </ConfirmDialog>
     </>
+  );
+}
+
+/** The file being packed (download) or sent to the ticket (save): a card with the feature's scene and the step it is on,
+ *  held AI_WAIT_MS so it is seen, over the middle of the map. Not a modal and click-through: the map stays editable while
+ *  it uploads (those edits stay a draft over the saved file); nothing to stop (a save of unknown outcome must not be cut). */
+function FlowBusy({ project, pending, kind, step, title, text }: { project: string; pending: boolean; kind: "flowHtml" | "flowSave"; step: string; title: string; text: string }) {
+  const show = useAiWait(pending);
+  if (!show) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center p-4">
+      <section role="status" aria-label={title} className="grid w-full max-w-md gap-2 rounded-lg bg-cotton p-5 shadow-pop animate-in fade-in-0 zoom-in-95 duration-(--dur-short)">
+        <h3 className="text-base font-medium text-ink">{title}</h3>
+        <p className="text-sm text-ink-2">{text}</p>
+        <AiFetching kind={kind} project={project} lines={step ? [step] : undefined} className="min-h-72 py-2" />
+      </section>
+    </div>
   );
 }
 

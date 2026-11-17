@@ -103,7 +103,7 @@ async def test_close_cancels_orphaned_reads(shots, monkeypatch):
 
 async def test_attachment_cache_checks_metadata_and_auth(tmp_path, monkeypatch):
     svc = YouTrackDashboard(SimpleNamespace(data_dir=tmp_path, youtrack_url="https://yt.test", youtrack_token="a"))
-    att = {"id": "1", "name": uiflow.NAME.format(issue="VA-1"), "created": 1, "size": 123, "url": "/a"}
+    att = {"id": "1", "name": "Đăng nhập - VA-1.html", "created": 1, "size": 123, "url": "/a"}
     metadata_reads = html_reads = 0
 
     async def yt(*args, **kw):
@@ -114,7 +114,7 @@ async def test_attachment_cache_checks_metadata_and_auth(tmp_path, monkeypatch):
     async def content(a):
         nonlocal html_reads
         html_reads += 1
-        return b"html"
+        return uiflow.MARK.encode()
 
     flow = uiflow.clean({"screens": [{"id": "a", "title": "A", "items": []}], "links": []}, "VA-1")
     monkeypatch.setattr(svc, "yt", yt)
@@ -291,7 +291,7 @@ async def test_save_route_seeds_next_fresh_get_without_html(tmp_path, monkeypatc
         opened = await client.get("/api/yt/flow", params={"issue": "VA-1"})
         assert opened.status_code == 200 and opened.json()["att"] == "new"
         assert opened.json()["flow"]["rev"] == 1
-    assert metadata_reads == 2  # conflict check and fresh open both inspect current attachments
+    assert metadata_reads == 3  # conflict check, the name check before the upload, and the fresh open
     await svc.aclose()
 
 
