@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCheck, ExternalLink, Loader2, Paperclip, Send } from "lucide-react";
+import { CheckCheck, ExternalLink, Info, Loader2, Paperclip, Send, Zap } from "lucide-react";
 import { createContext, memo, type ReactNode, use, useMemo } from "react";
 import { AiResultCard, dur, UserBubble } from "@/shared/components/ai/chat";
 import type { TaskEvent } from "@/shared/components/ai/steps";
@@ -15,6 +15,7 @@ import { t as tNow, useT } from "@/shared/lib/i18n";
 import { sessionId } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
 import { rememberQaGroup } from "@/features/telegram/lib/qa-recent";
+import { timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results (steps: ai/steps.tsx).
@@ -70,6 +71,14 @@ function TurnTimeline({ took, tools, cost }: { took: number; tools: number; cost
 
 const AI_TEXT = "text-md leading-[1.6]";
 
+/** When a log item was written, Vietnam time: "16:12, hôm nay", "09:05, hôm qua", "16:12, 28/10/2026". */
+function Stamp({ at, className }: { at?: number; className?: string }) {
+  useT(); // the day word follows a language switch
+  if (!at) return null; // logs from before timestamps
+  const iso = new Date(at * 1000).toISOString();
+  return <time dateTime={iso} className={cn("shrink-0 tabular-nums", className)}>{timeLabel(iso)}</time>;
+}
+
 /** Opens a message in its group (AI Agent: the session's group is `home`, attached messages of others name it by title). */
 export const OpenAttached = createContext<{ home: string | null; open: (chatId: string, messageId: string) => void } | null>(null);
 
@@ -105,12 +114,14 @@ function AttachedCard({ a }: { a: Attached }) {
 
 /** A prompt the user sent; attached messages fold under it, one card each. */
 /** `code`: a Trợ lý AI ask that read this project; with no typed text it says what the ask was, like the reply panel. */
-function UserTurn({ text, code }: { text: string; code?: string }) {
+/** `at`: when it was sent; `auto`: Vòng BE sent it (an answer came), not the user. */
+function UserTurn({ text, code, at, auto }: { text: string; code?: string; at?: number; auto?: boolean }) {
   const t = useT();
   const [typed, attached] = splitAttachments(text);
   const said = typed || attached ? typed : code ? t("Trả lời từ code · {project}", { project: code.split("/").pop() ?? code }) : t("Tóm tắt & gợi ý");
   const items = attached ? parseAttachments(attached) : [];
   return (
+    <>
     <UserBubble className={AI_TEXT}>
       {said && <p>{said}</p>}
       {items.length > 0 && (
@@ -120,20 +131,39 @@ function UserTurn({ text, code }: { text: string; code?: string }) {
         </details>
       )}
     </UserBubble>
+    <p className="mt-1 flex items-center justify-end gap-1.5 text-2xs text-ink-3">
+      {auto && (
+        <Hint text={t("Vòng BE tự gửi lượt này khi người được hỏi trả lời, không phải bạn gõ")}>
+          <span className="inline-flex items-center gap-1 rounded-sm bg-paper-2 px-1"><Zap className="size-3" aria-hidden />{t("Tự động")}</span>
+        </Hint>
+      )}
+      <Stamp at={at} />
+    </p>
+    </>
   );
 }
 
 /** One turn's text, prompt or result. Memoised on the event itself (the log keeps old event objects while it grows), so
  *  the 1.5s poll doesn't re-parse every Markdown block of the session. */
 export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: TaskEvent; took?: number; tools?: number }) {
-  if (ev.kind === "user") return <li><UserTurn text={ev.text} code={ev.code} /></li>;
+  const t = useT();
+  if (ev.kind === "user") return <li><UserTurn text={ev.text} code={ev.code} at={ev.at} auto={ev.auto} /></li>;
   if (ev.kind === "result") {
     return (
       <li>
-        <AiResultCard error={ev.error} className="p-4">
+        <AiResultCard error={ev.error} className="p-4"
+          title={<>{ev.error ? t("Có lỗi") : t("Kết quả")}<Stamp at={ev.at} className="ml-auto text-2xs font-normal text-ink-3" /></>}>
           {ev.text && <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />}
           {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} cost={ev.cost} />}
         </AiResultCard>
+      </li>
+    );
+  }
+  if (ev.kind === "note") { // a line from the app (Vòng BE held / paused, a PR opened…), not the AI
+    return (
+      <li className="grid gap-0.5 px-0.5 animate-in fade-in-0 duration-(--dur-short)">
+        <p className="flex items-center gap-1 text-2xs text-ink-3"><Info className="size-3" aria-hidden />{t("Ghi chú của dashboard")} · <Stamp at={ev.at} /></p>
+        <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />
       </li>
     );
   }

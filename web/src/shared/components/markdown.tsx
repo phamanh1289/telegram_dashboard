@@ -119,7 +119,16 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
         return TAGS.test(t) ? `${t}\n` : "";
       };
       for (const n of msgs.length ? msgs : sec) {
-        if (n.type === "list") n.children?.forEach((li) => mark(li));
+        if (n.type === "list") n.children?.forEach((li) => {
+          // "- Hỏi BE:\n  > @be_bot 1. …": the quote is the message, the item's line above it says who (its role)
+          const quotes = li.children?.filter((c) => c.type === "blockquote") ?? [];
+          if (!quotes.length) return mark(li);
+          const lead = li.children?.[0]?.type === "paragraph" ? roleIn(plain(li.children[0])) : null;
+          for (const q of quotes) {
+            mark(q, raw(q.position?.start.offset, q.position?.end.offset, true));
+            if (lead && q.data?.hProperties?.dataCopy != null) q.data.hProperties.dataRole = lead;
+          }
+        });
         else if (n.type === "code") { // a message fenced as code reads like a quoted one: its markdown rendered, in a quote
           mark(n, n.value?.trim() && to(n) + n.value.trim());
           Object.assign(n, { type: "blockquote", children: parse(n.value ?? "").children, value: undefined });
@@ -138,13 +147,13 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
     // it. Prose naming a role in passing never sets it.
     let role: AskRole | null = null;
     const tagRole = (n: MdNode) => {
-      if (role && n.data?.hProperties?.dataCopy != null) n.data.hProperties.dataRole = role;
+      if (role && n.data?.hProperties?.dataCopy != null) n.data.hProperties.dataRole ??= role; // an item's own lead wins
     };
     for (const n of root.children ?? []) {
       const label = labelOf(n);
       if (label) role = roleIn(plain(label));
       tagRole(n);
-      if (n.type === "list") n.children?.forEach(tagRole);
+      if (n.type === "list") n.children?.forEach((li) => { tagRole(li); li.children?.forEach(tagRole); }); // + its quotes
     }
   };
 }

@@ -139,8 +139,13 @@ export function withAttachments(text: string, msgs: Message[], home: string | nu
   return [text, `${ATTACH_HEAD}\n${note}\n<${tag}>\n${block.join("\n\n")}\n</${tag}>`].filter(Boolean).join("\n\n");
 }
 
+// The links' content the backend adds after a turn's prompt (link_block in links.py): for the AI, not the feed.
+const LINKS = "\n\n---\nNội dung các link (dashboard đã tải sẵn";
+
 /** A sent prompt split back into what was typed and its attached block ("" if none). */
-export function splitAttachments(text: string): [string, string] {
+export function splitAttachments(sent: string): [string, string] {
+  const l = sent.indexOf(LINKS);
+  const text = l < 0 ? sent : sent.slice(0, l);
   const i = text.startsWith(`${ATTACH_HEAD}\n`) ? 0 : text.indexOf(`\n\n${ATTACH_HEAD}\n`);
   if (i < 0) return [text, ""];
   const block = text.slice(text.indexOf("\n", i + 2) + 1);

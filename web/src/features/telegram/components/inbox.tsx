@@ -25,13 +25,13 @@ import { PendingInbox, type PendingTab } from "@/features/telegram/components/pe
 import { Kbd } from "@/shared/components/ui/kbd";
 import { ShortcutsDialog } from "@/shared/components/shortcuts";
 import { Toaster, TopBar } from "@/app/_components/shell";
-import { DateRangePicker, type DayRange, lastWeek, rangeLabel, rangeQuery } from "@/shared/components/date-range";
+import { DateRangePicker, type DayRange, rangeLabel, rangeQuery, readTagRange, saveTagRange } from "@/shared/components/date-range";
 import { Button } from "@/shared/components/ui/button";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { type StreamState, useSync } from "@/features/telegram/hooks/use-events";
-import { api, type Message, type Status, statusQuery } from "@/shared/lib/api";
+import { type Message, type Status, statusQuery } from "@/shared/lib/api";
 import type { View } from "@/features/telegram/hooks/use-chat-messages";
-import { ALL, askInQa, BRIEFING, groupsQuery, TODAY, goKey, msgKey, openQa, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, typing, useTaskList } from "@/features/telegram/lib/inbox";
+import { ALL, askInQa, BRIEFING, groupsQuery, TODAY, goKey, msgKey, openQa, openReplyById, openTask, PINNED, QA, QaCodes, scrollToRow, TASKS, taskToast, typing, useTaskList } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
 import { TicketSheetHost } from "@/features/telegram/components/message/rich-text";
 import { useBriefs } from "@/features/telegram/lib/briefs";
@@ -149,8 +149,9 @@ function Inbox({ status }: { status: Status }) {
     const i = open.findIndex((x) => msgKey(x) === msgKey(m));
     return i < 0 ? undefined : [i + 1, open.length];
   }, []);
-  const pickReply = useCallback((m: Message) => {
-    setReply({ m, external: false, at: place(m) });
+  // `live`: a Cả nhóm message, not a tag: no "3/17", a send just closes it.
+  const pickReply = useCallback((m: Message, live = false) => {
+    setReply({ m, external: live, at: live ? undefined : place(m) });
     setDraft(null); // an injected line belongs to the tag it was made for
   }, [place]);
   const [palette, setPalette] = useState(false);
@@ -160,7 +161,8 @@ function Inbox({ status }: { status: Status }) {
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
-  const [days, setDays] = useState<DayRange>(lastWeek);
+  const [days, setDaysState] = useState<DayRange>(readTagRange); // survives a reload
+  const setDays = useCallback((r: DayRange) => { setDaysState(r); saveTagRange(r); }, []);
   const range = rangeQuery(days);
   const [qaDays, setQaDays] = useState<QaDays>(7);
   // The groups you asked lately: their new replies (nav count) and which tags sit in a Q&A thread (row badges; tag
@@ -231,7 +233,7 @@ function Inbox({ status }: { status: Status }) {
     const next = dir < 0 ? all.findLast((m, j) => j < i && open(m, j))
       : all.find((m, j) => j > i && open(m, j)) ?? (dir ? undefined : all.findLast((m, j) => open(m, j)));
     if (dir && !next) return toast({ text: dir > 0 ? t("Không còn tag nào phía dưới") : t("Không còn tag nào phía trên") });
-    setReply(next ? { m: next, external: false, at: place(next, dir ? null : replyTo) } : null);
+    setReply(next ? { m: next, external: !!reply?.external, at: place(next, dir ? null : replyTo) } : null); // j/k from Cả nhóm stays live
     setDraft(null);
     if (next) requestAnimationFrame(() => {
       scrollToRow(msgKey(next));
@@ -618,9 +620,7 @@ function Inbox({ status }: { status: Status }) {
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} position={reply?.external ? undefined : reply?.at} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
               onClearReply={() => setReply(null)} onSent={() => { flashMessage(t("Đã gửi trả lời")); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
-              onTaskCreated={(id) => { setReply(null); toast({ text: t("Đã giao AI Agent"), action: { label: t("Mở phiên"), run: () => openTask(id) },
-                // Undo = stop the agent and delete the task (same as Xóa on the AI Agent page).
-                undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(() => qc.invalidateQueries({ queryKey: ["tasks"] })) }); }} draft={draft}
+              onTaskCreated={(id) => { setReply(null); taskToast(id, () => void qc.invalidateQueries({ queryKey: ["tasks"] })); }} draft={draft}
               aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />
               </div>
             )}

@@ -58,7 +58,7 @@
     "tab": "telegram",
     "area": "Briefing › To do",
     "title": "To do across all groups (For you, To confirm, To-dos…)",
-    "what": "Gathers questions needing confirmation, to-dos, decisions and changes from the latest summary of every group into one list with filter tabs. The \"Needs you\" tab shows only items asked of / assigned to you (by your YouTrack name; PO/PM for the PO role). Tick the circle to mark an item handled (saved on this machine). Items where you replied to the original message on Telegram (sent from the app or from Telegram) move to handled by themselves, marked \"You replied\". To-dos without a ticket are checked against YouTrack: a similar ticket shows \"may already exist …\", otherwise a prominent \"No ticket · Create\" button appears. Items nobody resolved in the last summary stay, labeled \"open since …\".",
+    "what": "Gathers questions needing confirmation, to-dos, decisions and changes from the latest summary of every group into one list with filter tabs. The \"Needs you\" tab shows only items asked of / assigned to you (by your YouTrack name; PO/PM for the PO role). Tick the circle to mark an item handled (saved on this machine). Items where you replied to the original message on Telegram (sent from the app or from Telegram) move to handled by themselves, marked \"You replied\". To-dos without a ticket are checked against YouTrack: a similar ticket shows \"may already exist …\", otherwise a prominent \"No ticket · Create\" button appears. With a role that uses code, every to-do has \"Check code\" (the AI reads the code: done yet, how far) and \"AI Agent\" (hand it to the AI Agent, the to-do already in the extra request; once handed over the button shows the session's state, click to open it). The To-dos tab has \"Check code for N to-dos\" at the top of each group to check them all in one session; each to-do shows \"Code: adapted / off / not done\" from the latest check (\"old\" when newer messages came in), and to-dos the AI finds done move to handled (with Undo). A decision naming a ticket has \"record on …\" to add it as a comment; a change to a ticket in a sprint shows \"changes sprint … scope\". Items nobody resolved in the last summary stay, labeled \"open since …\".",
     "how": [
       {
         "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
@@ -69,7 +69,7 @@
         "at": "css:[aria-label=\"Lọc việc\"]"
       },
       {
-        "t": "Click \"Reply\" / \"Create ticket\" right under an item, or click the group name to open the group's summary",
+        "t": "Click \"Reply\" / \"Create ticket\" / \"Check code\" / \"AI Agent\" right under an item, or click the group name to open the group's summary",
         "at": "css:ul[aria-label=\"Việc cần xử lý\"]"
       },
       {
@@ -77,7 +77,7 @@
         "at": "Đánh dấu đã xử lý"
       }
     ],
-    "keys": "for you decided needs confirmation questions awaiting confirmation briefing pending decisions to-dos handled tick mark todo replied auto reply youtrack no ticket suggest create ticket duplicate"
+    "keys": "for you decided needs confirmation questions awaiting confirmation briefing pending decisions to-dos handled tick mark todo replied auto reply youtrack no ticket suggest create ticket duplicate check code ai agent hand off"
   },
   {
     "id": "briefing-group-cards",

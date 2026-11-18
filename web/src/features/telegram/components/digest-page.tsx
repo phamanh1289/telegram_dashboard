@@ -1,22 +1,21 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bug, Check, Copy, MessageSquarePlus, Reply, RotateCw, ShieldCheck, ShieldOff, Sparkles, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Check, Copy, MessageSquarePlus, RotateCw, ShieldCheck, ShieldOff, Sparkles, TriangleAlert } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import { IssueDialog } from "@/features/telegram/components/composer-dialogs";
 import { BeTopics } from "@/features/telegram/components/be-topics";
 import { AiFetching, digestLines, useAiWait } from "@/shared/components/ai/fetching";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/shared/components/date-range";
-import { DeepItemAction, DeepPick } from "@/features/telegram/components/deep-think";
+import { DeepPick } from "@/features/telegram/components/deep-think";
+import { NextSteps } from "@/features/telegram/components/next-steps";
 import { TicketChip } from "@/features/telegram/components/message/rich-text";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog } from "@/shared/components/ui/dialog";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
-import { api, ApiError, type BeReply, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest, statusQuery } from "@/shared/lib/api";
+import { api, ApiError, type BeReply, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/shared/lib/api";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
-import { getMessage, openReplyById } from "@/features/telegram/lib/inbox";
 import { copyText, toast } from "@/shared/lib/notifications";
 import { smooth } from "@/shared/lib/utils";
 import { dayLabel, timeLabel } from "@/shared/lib/time";
@@ -100,6 +99,17 @@ export function autoDone(mark: string, keys: string[]) {
   put(AUTO, JSON.stringify([...seen, mark].slice(-300)));
   setDone(keys, true);
   return true;
+}
+
+/** Closes what code checks settled (`closedBy`), each once (`autoDone`): one toast for all of it, with Undo. */
+export function useAutoDone(settled: { mark: string; keys: string[]; why: Key }[]) {
+  const sig = settled.map((a) => a.mark).join("|");
+  useEffect(() => {
+    const ran = settled.filter((a) => autoDone(a.mark, a.keys));
+    const keys = ran.flatMap((a) => a.keys);
+    const why = [...new Set(ran.map((a) => tr(a.why)))].join(" / ");
+    if (keys.length) toast({ text: tr("Đóng {n} mục: {why}", { n: keys.length, why }), action: { label: tr("Hoàn tác"), run: () => setDone(keys, false) } });
+  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `settled` is new each render; `sig` names it
 }
 
 /** chat_id -> digest-cited message ids I have replied to on Telegram: those items tick themselves off. */
@@ -455,6 +465,9 @@ function RecordOn({ id, text }: { id: string; text: string }) {
   );
 }
 
+/** A decision's comment on the ticket it names (RecordOn), the same from a group's digest and from Briefing. */
+export const recordText = (it: DigestItem, title?: string) => `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}`;
+
 /** Tickets an item names (known YouTrack projects only); `record`: a decision's comment text. */
 export function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: boolean; record?: string }) {
   const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false });
@@ -465,38 +478,6 @@ export function Tickets({ ids, scope, record }: { ids: string[] | undefined; sco
       {record && <RecordOn id={id} text={record} />}
     </Fragment>
   ));
-}
-
-/** "Cần confirm" / "Việc cần làm" (and Briefing's asks): answer the message it came from, or make it a ticket. */
-/** `suggest`: no ticket yet and none similar on YouTrack, so "Tạo ticket" stands out; `onCreated`: after one is made. */
-export function ItemActions({ chatId, ids, text, suggest, onCreated }: { chatId: string; ids: string[]; text: string; suggest?: boolean; onCreated?: () => void }) {
-  const t = useT();
-  const status = useQuery({ ...statusQuery, staleTime: Infinity }).data; // the shell keeps it fresh
-  const [m, setM] = useState<Message | null>(null);
-  const load = useMutation({
-    mutationFn: () => getMessage(chatId, ids[0]), // the ticket form reads it
-    onSuccess: setM,
-    onError: (e) => toast({ text: errorText(e, {}, tr("Không mở được tin gốc, thử lại sau")) }),
-  });
-  if (!ids.length) return null;
-  const cls = "ml-1 h-5 px-1 text-ink-3 hover:bg-hl-wash hover:text-hl-2 [&_svg]:size-3";
-  return (
-    <>
-      <Button type="button" size="xs" variant="ghost" className={cls} onClick={() => void openReplyById(chatId, ids[0])}><Reply aria-hidden /> {t("Trả lời")}</Button>
-      {status?.youtrack_configured && (
-        <Button type="button" size="xs" variant="ghost" disabled={load.isPending} onClick={() => load.mutate()}
-          className={cn(cls, suggest && "bg-hl-wash font-medium text-hl-2")}><Bug aria-hidden /> {suggest ? t("Chưa có ticket · Tạo") : t("Tạo ticket")}</Button>
-      )}
-      {m && (
-        <IssueDialog m={m} note={text} ai={status?.ai_configured ?? false} open onOpenChange={(o) => { if (!o) setM(null); }}
-          onCreated={(line) => {
-            setM(null);
-            onCreated?.();
-            toast({ text: line.split(":")[0], action: { label: tr("Báo nhóm"), run: () => void openReplyById(chatId, m.message_id, line) } });
-          }} />
-      )}
-    </>
-  );
 }
 
 function Refs({ ids, lit, onJump }: { ids: string[]; lit: string | null; onJump: (id: string) => void }) {
@@ -654,10 +635,9 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
                         {extra && <span className="text-ink-3"> — {extra}</span>}
                         <ItemFlags it={it} />
                         <Tickets ids={it.tickets} scope={key === "changes"}
-                          record={key === "decisions" ? `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}` : undefined} />
+                          record={key === "decisions" ? recordText(it, title) : undefined} />
                         <Refs ids={it.message_ids ?? []} lit={lit} onJump={onJump} />
-                        {chatId && (key === "confirmations" || key === "actions") && <ItemActions chatId={chatId} ids={it.message_ids ?? []} text={it.text} />}
-                        {chatId && (key === "decisions" || key === "changes") && <DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />}
+                        {chatId && key !== "impacts" && <NextSteps chatId={chatId} it={it} kind={key} />}
                       </li>
                     );
                   })}

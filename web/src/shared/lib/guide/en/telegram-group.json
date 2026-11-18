@@ -26,7 +26,7 @@
     "tab": "telegram",
     "area": "Header › Date range",
     "title": "Filter by date range",
-    "what": "Shows only tags within the chosen dates (the last 7 days by default; pick \"All\" to see every stored tag); applies to the group list, counts and message lists.",
+    "what": "Shows only tags within the chosen dates (the last 7 days by default; pick \"All\" to see every stored tag); applies to the group list, counts and message lists. The chosen range is kept when the page reloads.",
     "how": [
       {
         "t": "Click \"To do\" in the sidebar to get a message list",
@@ -52,7 +52,7 @@
     "tab": "telegram",
     "area": "Group page › Message filter",
     "title": "Open / Handled / Whole group",
-    "what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Snoozing a message in Whole group saves it as a tag, back in the unhandled view when the time comes. \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
+    "what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Click a message in Whole group to open its detail page like a tag (reply, AI assistant, context, create a ticket, hand it to AI Agent). Snoozing, marking done or pinning a message in Whole group saves it as a tag (snoozed: back in the unhandled view when the time comes). \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
     "how": [
       {
         "t": "Click a group in the sidebar",

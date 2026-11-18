@@ -93,11 +93,12 @@ export const waiting = (i: QaItem) => !i.done && !answered(i);
 const TAG = /(?<![\w.])@(\w{5,32})/g;
 export const hasTag = (s: string) => new RegExp(TAG.source).test(s) || s.includes("](tg://user?id="); // or tagged by name (@ popup)
 /** Answered: you marked an answer, or someone other than the asker replied (the asker's own "up" / thanks is no
- *  answer); by default (Cài đặt › "Người được tag") only a reply from someone the question tagged (@username or a
- *  name mention) counts, when it tagged anyone. Reads its prefs live: pages re-render on a prefs change (`useNow`). */
+ *  answer, nor is a "got it, will report back": backend `holding`); by default (Cài đặt › "Người được tag") only a
+ *  reply from someone the question tagged (@username or a name mention) counts, when it tagged anyone. Reads its prefs
+ *  live: pages re-render on a prefs change (`useNow`). */
 export function answered(i: QaItem) {
   if (accepted(i)) return true;
-  const others = i.answers.filter((a) => a.sender_id !== i.question.sender_id);
+  const others = i.answers.filter((a) => a.sender_id !== i.question.sender_id && !i.holding.includes(a.message_id));
   if (readQaAnswerBy() !== "tagged") return others.length > 0;
   const q = i.question;
   const names = new Set([...q.text.matchAll(TAG)].map((x) => x[1].toLowerCase()));

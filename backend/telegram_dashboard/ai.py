@@ -207,6 +207,18 @@ class AiService:
         ok = tracking and all(i in by_id and not by_id[i].deleted for i in ids)
         return ok, [by_id[i] for i in ids if i in by_id], cursor
 
+    async def _with_live(self, chat_id: str, ids: list[int], msgs: list[StoredMessage], fetch):
+        """Cả nhóm: messages not kept, read live from Telegram (tracked chats only, like the kept ones)."""
+        have = {m.message_id for m in msgs}
+        missing = [i for i in ids if i not in have]
+        if not missing or missing[0] < 1 or missing[-1] >= 2**31:  # Telegram ids are int32
+            return False, msgs
+        if not await self.db.read(self.store.is_tracking, chat_id):
+            return False, msgs
+        got = [m for m in await fetch(chat_id, missing) if m.chat_id == chat_id]
+        by_id = {m.message_id: m for m in [*msgs, *got]}
+        return all(i in by_id and not by_id[i].deleted for i in ids), [by_id[i] for i in ids if i in by_id]
+
     async def run(
         self,
         kind: str,
@@ -225,13 +237,15 @@ class AiService:
         history: list[dict] | None = None,
         *,
         ref: str = "",
+        fetch=None,
     ) -> AiResult:
         """kind "draft" (analysis + reply drafts), "answer" (a question answered from the code in `project`, + reply
         drafts) or "ticket" (a YouTrack ticket proposal, JSON in `text`; `fields` = the project's Type / Priority
         values). `nearby`: surrounding group messages (context only); `images`: photo files to read; `tickets`:
         YouTrack tickets as JSON (answer: their state for progress questions). `on_text`: see `ask`.
         `history`: a saved Trợ lý AI session (its earlier asks and answers, maybe none): asks come as messages ready
-        to post. `ref`: the session code ("REF-…") logged with the run (Trợ lý AI turns)."""
+        to post. `ref`: the session code ("REF-…") logged with the run (Trợ lý AI turns). `fetch`: reads messages not
+        kept (Cả nhóm) live from Telegram."""
         if kind == "answer" and project is None:
             raise ApiError(422, "project_not_found")
         if not self.configured:
@@ -250,6 +264,9 @@ class AiService:
         if instruction and len(instruction) > MAX_INSTRUCTION_CHARS:
             raise ApiError(422, "ai_context_too_large")
         ok, msgs, cursor = await self.db.read(self._check, chat_id, ids)
+        live = not ok and fetch is not None  # Cả nhóm: read live, so only the group's tracking can change
+        if live:
+            ok, msgs = await self._with_live(chat_id, ids, msgs, fetch)
         if not ok:
             raise ApiError(403, "ai_scope_not_allowed")
         context = [{"id": str(m.message_id), **who(m), "text": m.text, **_links(m)} for m in msgs]
@@ -318,7 +335,10 @@ class AiService:
                 copies = [Path(shutil.copyfile(p, Path(tmp) / p.name)) for p in images]
                 user += f"\nAttached photos (open them with Read): {', '.join(map(str, copies))}"
             text = await self.ask(user, project, read_dir, on_text=on_text, feature=kind, ref=ref)
-        ok_after, _, _ = await self.db.read(self._check, chat_id, ids)
+        if live:
+            ok_after = await self.db.read(self.store.is_tracking, chat_id)
+        else:
+            ok_after, _, _ = await self.db.read(self._check, chat_id, ids)
         if not ok_after:
             raise ApiError(
                 409,

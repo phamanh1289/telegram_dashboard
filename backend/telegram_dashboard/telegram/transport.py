@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime
@@ -55,6 +56,14 @@ def raw_to_stored(msg, chat_id: str, sender_name: str | None = None) -> StoredMe
         media_kind=_media_kind(msg),
         links=[s for e in getattr(msg, "entities", None) or [] if (s := _span(e))],
     )
+
+
+def tags_me(msg, me: str) -> bool:
+    """Telegram flags @username, name mentions and replies to us. A bot that sends its own entities leaves "@me" as
+    plain text, unflagged: that is a tag too (only an @username can be matched, not a display name)."""
+    if msg.mentioned:
+        return True
+    return me.startswith("@") and re.search(rf"(?<![\w@]){re.escape(me)}(?!\w)", msg.message or "", re.I) is not None
 
 
 def _span(e) -> LinkSpan | None:
@@ -144,7 +153,7 @@ class TelethonTransport:
                 # Editing an old reply only updates it: it never re-closes a tag the user reopened.
                 await (b.on_message(m) if edit else b.on_my_reply(m))
             return
-        if msg.mentioned:  # @username, text mention or a reply to us (Telegram flags all three)
+        if tags_me(msg, b.me):
             chat = await event.get_chat()
             title = getattr(chat, "title", None) or chat_id
             kind = "supergroup" if event.is_channel else "group"

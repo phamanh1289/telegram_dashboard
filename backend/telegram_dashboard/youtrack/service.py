@@ -128,31 +128,33 @@ class YouTrackDashboard(YtQueries):
             write_private_json(self.watch_path, snap)
             return []
         before = saved.get("states") or dict.fromkeys(saved.get("ids") or [])  # an older file: states unknown
-        try:
-            if db is not None:
-                done = await self._finished(me["login"], before, rows)
-                try:
-                    await self._loop_back(db, done)
-                except Exception:  # not queued: keep their old state so the next round finds them again
-                    states.update({r["id"]: before[r["id"]] or "" for r in done})
-                    raise
-        finally:
-            write_private_json(self.watch_path, snap)
         now = time.monotonic()
         fresh = [
             r for r in rows
             if r["id"] not in before and r["reporter"] != me["name"]
             and now - self.touched.get(r["id"], -1e9) > WATCH_EVERY
         ]  # fmt: skip
-        if notify is None:
-            return fresh
-        if len(fresh) > 3:
-            await notify(f"{len(fresh)} ticket mới cho bạn", "", ", ".join(r["id"] for r in fresh[:10]))
-        for r in fresh if len(fresh) <= 3 else []:
+        # Banners before "Báo lại" and before the snapshot: a round failing below still records these ids as seen
+        say = fresh if notify is not None else []
+        if len(say) > 3:
+            await notify(f"{len(say)} ticket mới cho bạn", "", ", ".join(r["id"] for r in say[:10]))
+        for r in say if len(say) <= 3 else []:
             # the summary only when Settings allow message text in banners (lock screen / Notification Center)
             body = (r["summary"] or "") if telegram.NOTIFY_PREVIEW else "Mở dashboard để xem chi tiết"
             sub = "Giao cho bạn" if r["assigneeLogin"] == me["login"] else "Nhờ bạn test"
             await notify(f"Ticket mới · {r['id']}", sub, body)
+        done = None
+        try:
+            if db is not None:
+                done = await self._finished(me["login"], before, rows)
+                await self._loop_back(db, done)
+        except Exception:
+            # not queued: keep their old state (every ticket's when the look itself failed, the ones gone from the
+            # open list included) so the next round finds them again
+            states.update({i: before[i] for i in (before if done is None else [r["id"] for r in done])})
+            raise
+        finally:
+            write_private_json(self.watch_path, snap)
         return fresh
 
     async def _finished(self, login: str, before: dict, rows: list[dict]) -> list[dict]:

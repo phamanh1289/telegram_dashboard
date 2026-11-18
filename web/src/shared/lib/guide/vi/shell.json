@@ -109,7 +109,7 @@
         "at": "Thử model"
       },
       {
-        "t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí",
+        "t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí; mục \"Theo tính năng\" tách lượt AI YouTrack theo từng hành động (vd. \"YouTrack · tickets.standup\", \"YouTrack · filter\") để thấy hành động nào dùng nhiều, chậm hay bị hủy",
         "at": "Usage"
       },
       {

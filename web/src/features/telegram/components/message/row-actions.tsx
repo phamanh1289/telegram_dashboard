@@ -33,10 +33,11 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
   const yt = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
   const link = telegramLink(m);
   const answers = !m.outgoing || (tag && !!yt); // the ⋯ menu's "answer it" group shows
+  const deep = <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />;
   return (
     <div role="toolbar" aria-label={t("Thao tác tin #{id}", { id: m.message_id })} className="row-actions flex flex-row-reverse items-center gap-0.5 -my-1.5">
-      {tag && (
-        <>
+      {/* The edge button stays out; the rest sit in .row-more, which folds to nothing until the strip opens (globals.css). */}
+      {tag ? (
           <Hint side="bottom" title={done ? t("Mở lại (x)") : t("Xong (x)")}
             text={done ? t("Đánh dấu chưa xử lý.") : t("Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Không thả reaction: Shift+bấm (Shift+x) hoặc menu ⋯.")}>
             <Button type="button" size="xs" variant="ghost" aria-busy={mark.isPending} disabled={mark.isPending} aria-label={done ? t("Mở lại") : t("Xong")}
@@ -45,6 +46,10 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
               {done ? <RotateCcw /> : <CheckCheck />}<span className="row-label">{done ? t("Mở lại") : t("Xong")}</span>
             </Button>
           </Hint>
+      ) : deep}
+      <div className="row-more"><div className="flex flex-row-reverse items-center gap-0.5">
+      {tag && (
+        <>
           <Sep />
           {!done && <SnoozeMenu ms={[m]} />}
           <Hint side="bottom" title={t("Ngữ cảnh")} text={t("Xem các tin trước / sau trong nhóm.")}>
@@ -54,9 +59,9 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
             </Button>
           </Hint>
           <Sep />
+          {deep}
         </>
       )}
-      <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />
       {/* Cả nhóm: hoãn keeps the message (backend), so it comes back as a tag. */}
       {liveSnooze && <SnoozeMenu ms={[m]} />}
       <AttachPick m={m} />
@@ -97,6 +102,7 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
+      </div></div>
       {comment && (
         <span className="contents" onClick={(e) => e.stopPropagation()}>
           <CommentDialog m={m} open onOpenChange={setComment} onDone={() => setComment(false)} />

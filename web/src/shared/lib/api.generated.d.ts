@@ -3622,6 +3622,11 @@ export interface components {
              * @default false
              */
             done: boolean;
+            /**
+             * Holding
+             * @default []
+             */
+            holding: string[];
         };
         /** QaMarkRequest */
         QaMarkRequest: {

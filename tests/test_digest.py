@@ -507,7 +507,9 @@ def test_qa_threads_and_post(settings):
 
     fake.history[A] = [msg(1, "staging lỗi?\n#QA11", 5), msg(2, "không nhé", 4, reply=1, sender="8"),
                        msg(3, "chắc chưa?", 3.5, reply=2), msg(4, "chắc", 3, reply=3, sender="8"),
-                       msg(5, "Deploy?\n#QA22", 2), msg(6, "ok", 1), msg(9, "cũ\n#QA9", 24 * 9)]  # fmt: skip
+                       msg(5, "Deploy?\n#QA22", 2), msg(6, "ok", 1),
+                       msg(8, "đã ghi nhận, có kết quả báo lại", 1.5, reply=5, sender="8"),
+                       msg(9, "cũ\n#QA9", 24 * 9)]  # fmt: skip
     app = create_app(settings, transport=fake)
     with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         app.state.store.set_tracking(A, True, title="Orders", kind="supergroup")
@@ -517,7 +519,8 @@ def test_qa_threads_and_post(settings):
         app.state.store.apply_message(fake.history[A][1])  # a kept tag keeps its tag actions
         items = c.get("/api/qa", params={"chat_id": A}).json()
         got = [(i["code"], [a["message_id"] for a in i["answers"]]) for i in items]
-        assert got == [("#QA22", []), ("#QA11", ["2", "3", "4"])]  # the whole reply chain, latest activity first
+        assert got == [("#QA22", ["8"]), ("#QA11", ["2", "3", "4"])]  # the whole reply chain, latest activity first
+        assert [i["holding"] for i in items] == [["8"], []]  # "got it, will report back": the page keeps it waiting
         assert items[1]["chat_title"] == "Orders" and items[1]["answers"][0]["kept"]
         assert len(c.get("/api/qa", params={"chat_id": A, "days": 10}).json()) == 3
 

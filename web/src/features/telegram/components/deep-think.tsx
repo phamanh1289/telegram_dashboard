@@ -157,7 +157,7 @@ function useDoneNotice() {
 // A detail page over the inbox list (like a reply): pick topics and project, run, watch the AI read the code, read the table.
 
 type BulkItem = { text: string; message_ids: string[]; waiting?: boolean; key?: string }; // key: the topic id
-type Bulk = { chatId: string; title: string; items: BulkItem[] };
+type Bulk = { chatId: string; title: string; items: BulkItem[]; sub?: string }; // sub: the header's count line (default: topics with BE)
 let bulk: Bulk | null = null;
 const openBulk = (b: Bulk | null) => { bulk = b; subs.forEach((f) => f()); };
 export const closeBulk = () => { if (bulk) openBulk(null); };
@@ -170,18 +170,21 @@ const cap = (ids: string[]) => {
   return s.length > 10 ? [s[0], ...s.slice(-9)] : s;
 };
 
-/** "Đối chiếu code N chủ đề": a group's topics with BE (agreed or still waiting), checked against the code in one session. */
-export function DeepBulkAction({ chatId, title, items, className }: { chatId: string; title: string; items: BulkItem[]; className?: string }) {
+/** "Đối chiếu code N chủ đề": a group's topics with BE (agreed or still waiting), checked against the code in one session.
+ *  `label` / `hint` / `sub`: the button, its hint and the page's count line for another list (Briefing's to-dos). */
+export function DeepBulkAction({ chatId, title, items, label, hint, sub, className }: {
+  chatId: string; title: string; items: BulkItem[]; label?: string; hint?: string; sub?: string; className?: string;
+}) {
   const tt = useT();
   const list = items.filter((it) => it.message_ids.length);
   const code = usesCode(useRole());
   if (!list.length || !code) return null;
   return (
-    <Hint side="bottom" title={tt("Đối chiếu code các chủ đề BE đã trả lời")}
-      text={tt("AI soi code dự án với từng chủ đề BE đã trả lời / chốt của nhóm này và trả về một bảng: đã adapt, lệch, chưa làm. Chủ đề còn chờ BE: dùng nút Đối chiếu code trên thẻ của nó.")}>
+    <Hint side="bottom" title={label ?? tt("Đối chiếu code các chủ đề BE đã trả lời")}
+      text={hint ?? tt("AI soi code dự án với từng chủ đề BE đã trả lời / chốt của nhóm này và trả về một bảng: đã adapt, lệch, chưa làm. Chủ đề còn chờ BE: dùng nút Đối chiếu code trên thẻ của nó.")}>
       <Button type="button" size="xs" variant="outline" className={cn("gap-1 [&_svg]:size-3", className)}
-        onClick={(e) => { e.stopPropagation(); openBulk({ chatId, title, items: list }); }}>
-        <ListChecks aria-hidden /> {tt("Đối chiếu code {n} chủ đề đã trả lời", { n: list.length })}
+        onClick={(e) => { e.stopPropagation(); openBulk({ chatId, title, items: list, sub }); }}>
+        <ListChecks aria-hidden /> {label ?? tt("Đối chiếu code {n} chủ đề đã trả lời", { n: list.length })}
       </Button>
     </Hint>
   );
@@ -222,6 +225,13 @@ const VERDICT: Record<Verdict, { Icon: LucideIcon; label: Key; tone: string }> =
 export type TopicVerdict = { v: Verdict; task: string; at: string; anchor?: number; done?: boolean }; // done: the session was marked Done
 /** The topic has messages newer than the check read: its verdict may be out of date. */
 export const isStale = (tv: TopicVerdict, ids: string[]) => !!tv.anchor && ids.some((i) => Number(i) > tv.anchor!);
+/** What a check settled for a topic / to-do (`id`, citing `ids`): its session marked Done, or found adapted (✅) with
+ *  nothing newer since; `keys` then close (useAutoDone), once per check and reason. */
+export const closedBy = (tv: TopicVerdict | undefined, ids: string[], id: string, keys: string[]) =>
+  tv?.done ? [{ mark: `${tv.task}:${id}:done`, keys, why: "phiên đối chiếu đã Done" as Key }]
+    : tv?.v === "ok" && !isStale(tv, ids) ? [{ mark: `${tv.task}:${id}`, keys, why: "code đã adapt" as Key }] : [];
+/** A to-do's key among a check's verdicts: its text's first line (as the check's <items> summary, DEEP_BATCH_TASK). */
+export const verdictKey = (text: string) => text.slice(0, 1000).split("\n")[0];
 /** Per topic id (or title) of a chat: the newest finished check's verdict (the task list is newest first). */
 export function useVerdicts(chatId: string) {
   const pick = useCallback((l: Task[]) => {
@@ -385,12 +395,13 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
         <Hint side="bottom" text={tt("Quay lại Briefing")}>
           <Button size="icon-sm" variant="ghost" onClick={leave} aria-label={tt("Quay lại")}><ArrowLeft /></Button>
         </Hint>
-        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><ListChecks className="size-4" aria-hidden /></span>
+        <Hint side="bottom" title={tt("Đối chiếu code")} text={tt("AI soi code dự án, trả về bảng {verdicts}", { verdicts: VERDICTS.map(([e, l]) => `${e} ${tt(l)}`).join(", ") })}>
+          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-hl-wash text-hl-2"><ListChecks className="size-4" aria-hidden /></span>
+        </Hint>
         <div className="grid min-w-0 gap-0.5">
           <h2 className="truncate text-sm font-bold text-ink">{tt("Đối chiếu code")} · {b.title}</h2>
           <p className="truncate text-xs text-ink-3">
-            {tt("{n} chủ đề với BE", { n: b.items.length })}{waiting > 0 && <> · <span className="text-signal-2">{tt("{n} chờ BE", { n: waiting })}</span></>}
-            <span className="max-sm:hidden"> · {tt("AI soi code dự án, trả về bảng {verdicts}", { verdicts: VERDICTS.map(([e, l]) => `${e} ${tt(l)}`).join(", ") })}</span>
+            {b.sub ?? tt("{n} chủ đề với BE", { n: b.items.length })}{waiting > 0 && <> · <span className="text-signal-2">{tt("{n} chờ BE", { n: waiting })}</span></>}
           </p>
         </div>
         {taskId && (
@@ -460,23 +471,17 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
                               <span className="shrink-0 font-mono text-xs text-ink-3 tabular-nums">{String(i + 1).padStart(2, "0")}</span>
                               <span className="min-w-0 truncate text-sm font-medium text-ink">{head}</span>
                             </span>
-                            {rest[0] && <span className="line-clamp-1 text-xs text-ink-3">{rest[0]}</span>}
+                            {rest[0] && <span className="line-clamp-2 text-xs text-ink-3">{rest[0]}</span>}
                           </span>
                           {vOf(it) && !(it.waiting && vOf(it)!.v === "waiting") && <VerdictChip tv={vOf(it)!} stale={staleOf(it)} className="max-sm:hidden" />}
-                          {it.waiting
-                            ? <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-signal-wash px-1.5 text-xs leading-5 font-medium text-signal-2"><Hourglass className="size-3" aria-hidden />{tt("Chờ BE")}</span>
-                            : <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-ok-wash px-1.5 text-xs leading-5 font-medium text-ok"><CircleCheckBig className="size-3" aria-hidden />{tt("Đã chốt")}</span>}
+                          {it.waiting && <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-signal-wash px-1.5 text-xs leading-5 font-medium text-signal-2"><Hourglass className="size-3" aria-hidden />{tt("Chờ BE")}</span>}
                         </button>
                       </li>
                     );
                   })}
                 </ul>
               </section>
-              <section aria-label={tt("Dự án")} className="grid gap-2">
-                <span className="text-xs text-ink-3">{tt("Dự án để AI đọc code")}</span>
-                <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
-                <IntroNotice compact />
-              </section>
+              <IntroNotice compact />
             </>
           )}
         </div>
@@ -499,8 +504,9 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
             value={note} onChange={setNote} onSend={go} running={running || run.isPending}
             onStop={taskId ? () => stop.mutate() : undefined} stopping={stop.isPending} stopHint={tt("Dừng đối chiếu")} stopLabel={tt("Dừng")}
             tools={<>
+              <ProjectChip value={project} onChange={chooseProject} disabled={running} />
               <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
-              {blocker && !running && <span className="text-ink-3">{blocker}</span>}
+              {blocker && proj && !running && <span className="text-ink-3">{blocker}</span>}
             </>}
             actions={!running && (
               <Hint text={tt("Giao AI Agent đối chiếu các chủ đề với code dự án (Enter)")} side="bottom">
@@ -514,6 +520,17 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
         </div>
       </div>
     </section>
+  );
+}
+
+/** The project the AI reads, as the prompt box's tool chip (hidden while a run reads it). */
+function ProjectChip({ value, onChange, disabled }: { value: string; onChange: (p: string) => void; disabled?: boolean }) {
+  const tt = useT();
+  if (disabled) return null;
+  return (
+    <Hint side="bottom" text={tt("Dự án để AI đọc code")}>
+      <span className="inline-flex min-w-0"><ProjectPicker value={value} onChange={onChange} chip className="max-w-48" /></span>
+    </Hint>
   );
 }
 
@@ -631,10 +648,7 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
           <Said m={c} label={tt("2 · BE trả lời")} tone="bg-ok-wash text-ok" />
         </div>
 
-        <div className="grid gap-2">
-          <ProjectPicker value={project} onChange={chooseProject} className="max-w-full min-w-40" />
-          <IntroNotice compact />
-        </div>
+        <IntroNotice compact />
         </>}
 
         {run.isError && (
@@ -653,8 +667,9 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
           value={note} onChange={setNote} onSend={go} running={dr.running || run.isPending}
           onStop={taskId ? () => dr.stop.mutate() : undefined} stopping={dr.stop.isPending} stopHint={tt("Dừng đối chiếu")} stopLabel={tt("Dừng")}
           tools={<>
+            <ProjectChip value={project} onChange={chooseProject} disabled={dr.running} />
             <ModelEffortPicker kind="task" compact className="gap-x-2 text-xs" />
-            {blocker && !before.isPending && !dr.running && <span className="text-ink-3">{blocker}</span>}
+            {blocker && (proj || !q) && !before.isPending && !dr.running && <span className="text-ink-3">{blocker}</span>}
           </>}
           actions={!dr.running && (
             <Hint text={tt("Giao AI Agent đối chiếu câu trả lời của BE với code dự án (Enter)")} side="bottom">

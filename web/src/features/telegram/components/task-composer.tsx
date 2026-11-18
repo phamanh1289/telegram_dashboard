@@ -91,6 +91,10 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   const wanted = useWantEdit(id); // a message attached from a row: ticked for the user
   const edit = picked || wanted;
   const setEdit = (v: boolean) => { takeWantEdit(id); setPicked(v); }; // unticked, or sent: the user's own from now
+  // Approving a plan was mostly one of two typed lines: ticking "Cho sửa code" on an empty box writes it (the plan's
+  // "Làm được ngay" group while its asks wait: session_rules), unticking it untouched takes it back.
+  const approve = task.state === "waiting" ? t("Sửa trước phần “Làm được ngay”; phần chờ trả lời giữ nguyên.") : t("Chốt. Sửa theo mục Cần làm.");
+  const tick = (v: boolean) => { setEdit(v); setText((cur) => (v ? (cur.trim() ? cur : approve) : cur === approve ? "" : cur)); };
   // An edit turn uses the user's own MCP servers / plugins (outside the sandbox), on every CLI: on until unticked, remembered.
   const mcpOn = useAgentMcp();
   const canMcp = !assist && (task.mode === "edit" || (plan && edit));
@@ -209,7 +213,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         {plan && (
           <Hint text={t("Phiên đang ở chế độ chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.")} side="bottom">
             <label className="flex items-center gap-1.5">
-              <Checkbox checked={edit} onCheckedChange={(v) => setEdit(!!v)} disabled={running} />
+              <Checkbox checked={edit} onCheckedChange={(v) => tick(!!v)} disabled={running} />
               {t("Cho sửa code")}
             </label>
           </Hint>

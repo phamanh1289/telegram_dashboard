@@ -20,3 +20,15 @@ test("splitAsks: each message is renumbered from 1 and keeps the @tag", () => {
 test("splitAsks: a quote with no @tag is left alone", () => {
   expect(splitAsks(ask(7, ""))).toBe(ask(7, ""));
 });
+
+// "- Hỏi BE:" with the message quoted under it (label "**Còn lại / cần hỏi**" names no role): the send button posts
+// only the quote, asked to BE (its "#QA_BE_…" code), not the "Hỏi BE:" line.
+test("asks: a quote under a list item takes the item's role and is posted alone", async () => {
+  const { createElement: h } = await import("react");
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const { AskPost, Markdown } = await import("../src/shared/components/markdown");
+  const md = "**Còn lại / cần hỏi**\n- Chưa sửa: luồng V1.\n- Hỏi BE:\n  > @be_bot\n  > 1. `x` có đi thẳng được không?";
+  const got: [string, string | null][] = [];
+  renderToStaticMarkup(h(AskPost.Provider, { value: (text, role) => void got.push([text, role]) }, h(Markdown, { text: md, asks: true })));
+  expect(got).toEqual([["Chưa sửa: luồng V1.", null], ["@be_bot\n1. `x` có đi thẳng được không?", "BE"]]);
+});

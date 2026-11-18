@@ -252,3 +252,16 @@ test("an AI draft fills the reply box and is never sent on its own", async ({ pa
   await expect(feed.getByText("thêm câu hỏi về deadline")).toBeVisible();
   await expect(feed.getByText("Bản nháp AI: cảm ơn mọi người!")).toHaveCount(2);
 });
+
+test("ticking Cho sửa code on an empty box writes the approval; unticking it untouched takes it back", async ({ page }) => {
+  await page.goto("/?task=20260101-000000-e2e001");
+  const box = page.getByLabel("Nhắn tiếp cho AI");
+  const tick = page.getByRole("checkbox", { name: "Cho sửa code" });
+  await tick.click();
+  await expect(box).toHaveValue("Chốt. Sửa theo mục Cần làm.");
+  await tick.click();
+  await expect(box).toHaveValue("");
+  await box.fill("việc riêng của tôi"); // the user's own words are never replaced
+  await tick.click();
+  await expect(box).toHaveValue("việc riêng của tôi");
+});

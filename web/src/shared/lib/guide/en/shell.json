@@ -109,7 +109,7 @@
         "at": "Thử model"
       },
       {
-        "t": "Open the \"Usage\" tab for a report of requests, tokens and cost",
+        "t": "Open the \"Usage\" tab for a report of requests, tokens and cost; \"By feature\" lists YouTrack AI runs per action (e.g. \"YouTrack · tickets.standup\", \"YouTrack · filter\"), so you can see which action is used most, is slow or gets cancelled",
         "at": "Usage"
       },
       {

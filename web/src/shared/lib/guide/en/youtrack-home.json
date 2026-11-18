@@ -75,7 +75,7 @@
     "tab": "youtrack",
     "area": "Home page (Dev/QA/PO) › AI Studio",
     "title": "AI Studio on the home page",
-    "what": "A card that groups the role's AI jobs into tabs; answers are saved for the day (Weekly digest: for the week) so reopening them costs no run. Dev: Plan, Standup. QA: Test cases, Bug triage, Regression, Ticket quality. PO: Brief, Sprint planning, Grooming, Weekly digest, Release notes.",
+    "what": "A card that groups the role's AI jobs into tabs; answers are saved for the day (Weekly digest: for the week) so reopening them costs no run. Dev: Plan, Standup. QA: Test cases (for a ticket with a saved UI flow they follow the screens and buttons drawn there), Bug triage, Regression, Ticket quality. PO: Brief, Sprint planning, Grooming, Weekly digest, Release notes.",
     "how": [
       {
         "t": "In the \"AI Studio\" card, click the second AI tab (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Sprint planning\")",

@@ -121,14 +121,27 @@ def _usage_data(settings) -> dict:
     return _usage["data"]
 
 
+def _windows(usage: dict, now: datetime):
+    """The quota windows a reading still holds for: (label, window), a window that has reset since left out."""
+    for key, label in USAGE_WINDOWS.items():
+        w = usage.get(key)
+        if isinstance(w, dict) and isinstance(w.get("utilization"), int | float) and not _was_reset(w, now):
+            yield label, w
+
+
 def quota_now(settings) -> dict[str, float]:
     """Last known % used per window ("5h": 42.0), leaving out windows that have reset since."""
-    now, out = datetime.now(UTC), {}
-    for key, label in USAGE_WINDOWS.items():
-        w = _usage_data(settings).get(key)
-        if isinstance(w, dict) and isinstance(w.get("utilization"), int | float) and not _was_reset(w, now):
-            out[label] = w["utilization"]
-    return out
+    return {label: w["utilization"] for label, w in _windows(_usage_data(settings), datetime.now(UTC))}
+
+
+def quota_reset_in(settings, at: float) -> float | None:
+    """Seconds until the first window at or over `at`% resets; None when none is, or no reset time is known."""
+    now, waits = datetime.now(UTC), []
+    for _label, w in _windows(_usage_data(settings), now):
+        if w["utilization"] >= at:
+            with contextlib.suppress(TypeError, ValueError):
+                waits.append((datetime.fromisoformat(w["resets_at"]) - now).total_seconds())
+    return min(waits, default=None)
 
 
 def _was_reset(w: dict, now: datetime) -> bool:
@@ -176,10 +189,7 @@ async def _claude_details(settings) -> dict:
     usage, now = _usage["data"], datetime.now(UTC)
     windows = [
         {"label": label, "percent": w["utilization"], "resets_at": w.get("resets_at")}
-        for key, label in USAGE_WINDOWS.items()
-        if isinstance(w := usage.get(key), dict)
-        and isinstance(w.get("utilization"), int | float)
-        and not _was_reset(w, now)
+        for label, w in _windows(usage, now)
     ]
     extra = usage.get("extra_usage")
     return {

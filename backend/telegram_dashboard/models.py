@@ -841,6 +841,7 @@ class QaItem(BaseModel):
     question: MessageDTO
     answers: list[MessageDTO]  # the reply chain under the question (and messages naming its code), oldest first
     done: bool = False  # you marked it Xong: no nudge, not waiting (removed threads are not listed at all)
+    holding: list[str] = []  # message ids of answers that only say "got it, will report back" (qa.ack_only)
 
 
 class QaMarkRequest(BaseModel):

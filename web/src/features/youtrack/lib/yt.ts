@@ -161,7 +161,7 @@ export const yt = {
   since: (items: string[]) => ytApi<Record<string, number>>(`/statesince?items=${enc(items.join(","))}`),
   /** Assignee or QC (both single-user fields). */
   setAssignee: (id: string, login: string | null, field: UserField = "Assignee") => ytApi<Ticket>(field === "QC" ? "/issue/qc" : "/issue/assignee", { json: { id, login } }),
-  comment: (id: string, text: string) => ytApi<{ ok: true }>("/issue/comment", { json: { id, text } }),
+  comment: (id: string, text: string) => ytApi<{ ok: true }>("/issue/comment", { json: { id, text } }).then((r) => (selfEdits.set(id, Date.now()), r)),
   fields: (p: string) => ytApi<Partial<Record<Field, string[]>>>(`/fields?project=${enc(p)}`),
   workflow: (p: string) => ytApi<Workflow & { states: string[] }>(`/workflow?project=${enc(p)}`),
   setWorkflow: (p: string, w: Workflow) => ytApi<Workflow>(`/workflow?project=${enc(p)}`, { json: w }),

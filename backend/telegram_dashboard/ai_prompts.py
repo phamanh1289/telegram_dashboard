@@ -188,7 +188,9 @@ TASK_ANSWER = {
         f"{ANSWER_SHAPE}\n"
         "- Tóm tắt: 1–3 câu, yêu cầu này nghĩa là gì với dự án.\n"
         "- Hiện trạng: code đang xử lý thế nào (file:dòng).\n"
-        "- Cần làm: checklist theo file/màn, mỗi mục ghi nhỏ/vừa/lớn.\n"
+        "- Cần làm: checklist theo file/màn, mỗi mục ghi nhỏ/vừa/lớn. Còn câu hỏi chờ trả lời thì chia hai nhóm, mỗi "
+        "nhóm mở bằng một dòng chữ thường (không in đậm): `Làm được ngay:` việc không phụ thuộc câu trả lời (không có "
+        'thì ghi "không có"), rồi `Chờ trả lời:` việc phụ thuộc, ghi rõ chờ câu nào.\n'
         "- Rủi ro: dữ liệu/phiên bản cũ, luồng khác bị ảnh hưởng, case biên.\n"
         '- Cần hỏi lại: câu hỏi cụ thể theo field/case, viết theo "Cách viết câu hỏi" ở cuối (bỏ mục nếu không có).\n'
         f"{TASK_STATE_LINE}"
@@ -250,12 +252,13 @@ DEEP_TASK = (
     "Hiện trạng đánh dấu từng điểm BE chốt: ✅ đã đúng / ⚠️ lệch / ❌ chưa làm. Không cần sửa gì thì Cần làm ghi rõ."
 )
 DEEP_BATCH_TASK = (
-    f"<items> là các chủ đề trao đổi với team backend (BE) trong nhóm chat; {_DEEP_DATA} Mỗi chủ đề có tóm tắt, "
-    'trạng thái ("agreed": BE đã trả lời / đã chốt; "waiting": BE chưa trả lời) và các tin làm căn cứ.\n'
+    f"<items> là các chủ đề trao đổi trong nhóm chat (phần lớn với team backend, BE) hoặc việc cần làm; {_DEEP_DATA} "
+    'Mỗi chủ đề có tóm tắt, trạng thái ("agreed": đã trả lời / đã chốt, hoặc là việc cần làm; "waiting": BE chưa trả '
+    "lời) và các tin làm căn cứ.\n"
     "Việc cần làm (không sửa file):\n"
-    "1. Chủ đề agreed: code đã làm theo chưa. Chủ đề waiting: code hiện đang làm gì, mỗi khả năng trả lời sẽ cần "
-    "gì. Đọc và lần theo mọi thứ nó chạm tới: API endpoint, model request/response và parse, màn hình, state, "
-    "validate, xử lý lỗi.\n"
+    "1. Chủ đề agreed: code đã làm theo chưa (việc cần làm: đã làm chưa, làm tới đâu). Chủ đề waiting: code hiện "
+    "đang làm gì, mỗi khả năng trả lời sẽ cần gì. Đọc và lần theo mọi thứ nó chạm tới: API endpoint, model "
+    "request/response và parse, màn hình, state, validate, xử lý lỗi.\n"
     "2. Mở đầu câu trả lời bằng một bảng, mỗi chủ đề một dòng theo thứ tự: #, Mục (ngắn), Trạng thái (✅ Đã adapt / "
     "⚠️ Lệch / ❌ Chưa làm / ⏳ Chờ BE / ❓ Chưa rõ), Bằng chứng (file:dòng, hoặc vì sao không thấy; ⏳: code đang làm "
     "gì). Sau bảng là các mục bên dưới; Cần làm ghi số # của chủ đề, chỉ cho chủ đề ⚠️ / ❌ và ⏳ sẽ cần sửa code."

@@ -355,6 +355,9 @@ async def main():
             m.date = now - timedelta(minutes=len(tags) - k)
         found = [(TITLES[m.chat_id], "supergroup", m, False) for m in tags]
         await app.state.db.write(app.state.store.store_mentions, found)
+        # A read-only AI Agent session that never ran: its composer's "Cho sửa code" (inbox.spec).
+        await app.state.db.write(app.state.store.add_task, "20260101-000000-e2e001", None, None, str(tmp),
+                                 "Phiên plan e2e", title="Phiên plan e2e")  # fmt: skip
 
     main_srv = uvicorn.Server(
         uvicorn.Config(Faults(app), host="127.0.0.1", port=PORT, log_level="warning")

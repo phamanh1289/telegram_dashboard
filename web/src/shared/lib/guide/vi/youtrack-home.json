@@ -75,7 +75,7 @@
     "tab": "youtrack",
     "area": "Trang chủ (Dev/QA/PO) › AI Studio",
     "title": "AI Studio trên trang chủ",
-    "what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case, Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
+    "what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case (ticket đã lưu UI flow thì test case đi theo đúng màn và nút trong sơ đồ), Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
     "how": [
       {
         "t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",

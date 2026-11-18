@@ -19,7 +19,7 @@ import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/features/youtrack/lib/yt";
 import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
-import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
+import { saveTicket, useYt, type Yt, YtProvider } from "./state";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
 import { useFlow } from "./workflow";
@@ -175,7 +175,6 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
     setSending(true);
     try {
       await yt.comment(id, text);
-      selfEdits.set(id, Date.now());
       setComment("");
       toast({ text: t("Đã gửi bình luận") });
       await qc.invalidateQueries({ queryKey: ["yt", "detail", id] });

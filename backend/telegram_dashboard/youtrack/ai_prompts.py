@@ -171,6 +171,8 @@ AI_TESTCASES = (
     "dài / sai), lỗi (mất mạng, timeout, quyền), trạng thái loading / empty\n"
     "- Regression: phần / màn hình liên quan dễ bị ảnh hưởng\n"
     "- Cần hỏi: điều chưa rõ để test, hỏi ai (bỏ dòng nếu không có)\n"
+    'Ticket có trường "uiflow" (sơ đồ đã lưu trên ticket: màn → nút → màn đích): luồng chính đi đúng từng đường '
+    'trong đó, gọi tên màn và nút như sơ đồ; nút ghi "chưa nối" thì đưa vào Cần hỏi.\n'
     "Không bịa chức năng ngoài ticket; ý suy luận ghi '(có vẻ)'."
 )
 AI_TRIAGE = (

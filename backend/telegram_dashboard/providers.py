@@ -147,14 +147,20 @@ def run_choice(
     if provider != "claude":  # Antigravity's models carry their level; each Codex model lists its own
         return model, effort if provider == "codex" and effort in _codex_levels(model) else "", False
     effort = effort if effort in EFFORTS else ""  # a Codex-only level ("ultra") picked for the base kind
-    cheap = "sonnet" if task else "haiku"
     if (
         p["fallback"]
-        and TIERS.get(model, 9) > TIERS[cheap]  # "" (CLI default) or an id: assume costlier
+        and (cheap := step_down(model, task=task))
         and max(quota_now(settings).values(), default=0) >= p["fallback_at"]
     ):
         return cheap, effort, True
     return model, effort, False
+
+
+def step_down(model: str, *, task: bool = False) -> str:
+    """The cheap Claude model a run falls back to when quota runs low (tasks: sonnet, else haiku); "" when `model`
+    is already that cheap. "" (the CLI's default) or an id outside TIERS counts as costlier."""
+    cheap = "sonnet" if task else "haiku"
+    return cheap if TIERS.get(model, 9) > TIERS[cheap] else ""
 
 
 def fast_choice(provider: str) -> tuple[str, str, bool]:

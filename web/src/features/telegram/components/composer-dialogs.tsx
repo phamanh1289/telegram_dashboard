@@ -166,16 +166,17 @@ function agentLines(m: Message, analysis: string, note: string, project?: string
  * Hand the tagged message to an AI Agent session in a project, as a detail page over the reply: the message (the only part
  * that scrolls) with the request box pinned under it on the left, where and how it runs on the right (stacked when narrow).
  */
-export function TaskPage({ m, analysis, groupTitle, onBack, onCreated }: {
+export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
   m: Message;
   analysis: string;
   groupTitle?: string;
+  seed?: string; // the note to start from (a Briefing to-do's text)
   onBack: () => void;
   onCreated: (id: string) => void;
 }) {
   const t = useT();
   const qc = useQueryClient();
-  const [note, setNote] = useState(""); // only the user's extra prompt
+  const [note, setNote] = useState(seed ?? ""); // only the user's extra prompt
   const [mode, setMode] = useState<"plan" | "edit">("plan");
   const [tag] = useState(() => `telegram-${crypto.randomUUID()}`);
   const [custom, setCustom] = useState<string | null>(null); // the prompt as edited by hand, sent instead of the generated one

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from conftest import ORIGIN, A, B, msg
 from telegram_dashboard.ai import AiService
 from telegram_dashboard.config import Settings
@@ -44,6 +45,14 @@ def test_snooze_keeps_a_live_message(client):
     assert client.put(f"/api/chats/{A}/messages/11/snooze", json={"until": later}, headers=H).status_code == 204
     assert store.get_message(A, 11).snoozed_until is not None
     assert client.put(f"/api/chats/{A}/messages/12/snooze", json={"until": later}, headers=H).status_code == 404
+    # Xong / Ghim from the reply panel of a Cả nhóm message keep it too (reopen / unpin: nothing kept to change).
+    client.app.state.bridge.transport.history[A] += [msg(A, 13, "x", sender="5"), msg(A, 14, "y", sender="5")]
+    assert client.put(f"/api/chats/{A}/messages/13/handled", json={"handled": True}, headers=H).status_code == 204
+    assert store.get_message(A, 13).handled
+    assert client.put(f"/api/chats/{A}/messages/14/pin", json={"pinned": True}, headers=H).status_code == 204
+    assert store.get_message(A, 14).pinned
+    assert client.put(f"/api/chats/{A}/messages/12/handled", json={"handled": True}, headers=H).status_code == 404
+    assert client.put(f"/api/chats/{A}/messages/12/pin", json={"pinned": False}, headers=H).status_code == 404
 
 
 def test_pinned_sticks_to_top(client):
@@ -79,7 +88,7 @@ def test_rules_clear_existing_and_new_tags(client):
     assert [x["kind"] for x in client.get("/api/rules").json()] == ["keyword", "sender"]
 
 
-def test_context_is_live_and_only_around_kept_tags(client):
+def test_context_is_live_around_kept_tags_and_tracked_messages(client):
     store = client.app.state.store
     bridge = client.app.state.bridge
     bridge.state = "connected"
@@ -88,7 +97,8 @@ def test_context_is_live_and_only_around_kept_tags(client):
     store.apply_message(msg(A, 10, "m10"))
     ids = [m["message_id"] for m in client.get(f"/api/chats/{A}/messages/10/context").json()]
     assert ids == [str(i) for i in range(1, 16)]
-    assert client.get(f"/api/chats/{A}/messages/11/context").status_code == 404
+    assert client.get(f"/api/chats/{A}/messages/11/context").status_code == 200  # Cả nhóm: a tracked group's message
+    assert client.get(f"/api/chats/{B}/messages/11/context").status_code == 404  # an untracked group
     # A kept tag marked done shows as done in the live thread; the rest stay as Telegram has them.
     store.set_handled(A, 10, True)
     done = [m["message_id"] for m in client.get(f"/api/chats/{A}/messages/10/context").json() if m["handled"]]
@@ -114,6 +124,22 @@ async def test_draft_includes_context(env, tmp_path):
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], nearby=nearby)
     assert "login page crashes" in r.text and "<context>" in r.text
+
+
+async def test_draft_reads_a_message_not_kept_live(env, tmp_path):
+    """Cả nhóm: the reply panel's AI reads a message not kept live, in tracked groups only."""
+    env.store.set_tracking(A, True, "Alpha", "supergroup")
+    ai = AiService(Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort=""), env.store, env.db)
+
+    async def fetch(chat_id, ids):
+        return [msg(chat_id, i, "plain question", sender="7") for i in ids]
+
+    assert "plain question" in (await ai.run("draft", A, ["5"], fetch=fetch)).text
+    from telegram_dashboard.errors import ApiError
+
+    with pytest.raises(ApiError) as e:
+        await ai.run("draft", B, ["5"], fetch=fetch)  # B is not tracked
+    assert e.value.code == "ai_scope_not_allowed"
 
 
 def test_youtrack_not_configured(client):
@@ -355,6 +381,22 @@ async def test_reaction_never_replaces_or_removes_the_users_own():
         assert t.client.sent == sent, (results, emoji)
 
 
+def test_plain_text_at_username_is_a_tag():
+    """A bot sending its own entities leaves "@me" unflagged by Telegram: still a tag."""
+    from types import SimpleNamespace as NS
+
+    from telegram_dashboard.telegram.transport import tags_me
+
+    def m(text, mentioned=False):
+        return NS(message=text, mentioned=mentioned)
+
+    assert tags_me(m("x", mentioned=True), "@me")
+    assert tags_me(m("@Web · @PhamAnh1289 (Android)"), "@phamanh1289")
+    assert not tags_me(m("@phamanh12890 hi"), "@phamanh1289")  # a longer name
+    assert not tags_me(m("mail a@phamanh1289"), "@phamanh1289")
+    assert not tags_me(m("Anh Pham ơi"), "Anh Pham")  # no username: name text is not matched
+
+
 def test_old_terminal_task_lists_but_is_read_only(client):
     client.app.state.store.add_task("t9", A, 4, "/tmp/proj", "x", mode="terminal")
     assert client.get("/api/tasks").json()[0]["mode"] == "terminal"
@@ -428,9 +470,46 @@ def test_headless_task_runs_and_resumes(tmp_path):
         assert "--permission-mode acceptEdits" in ev["items"][-1]["text"] and "--resume" in ev["items"][-1]["text"]
 
 
+def test_new_session_answers_before_its_links_are_read(tmp_path, monkeypatch):
+    """Đối chiếu BE / Giao AI Agent: the id comes back (session already running) while the prompt's links are read."""
+    import asyncio
+    import shlex
+    import sys
+    import time
+
+    from conftest import FakeTransport, TestClient, create_app
+    from telegram_dashboard import tasks
+
+    async def slow_links(s, text, *a, **kw):
+        await asyncio.sleep(1.5)
+        return text
+
+    monkeypatch.setattr(tasks, "expand", slow_links)
+    fake = tmp_path / "fake_claude.py"
+    fake.write_text("import sys\nsys.stdin.read()\n")
+    (tmp_path / "web" / "out").mkdir(parents=True)
+    (tmp_path / "web" / "out" / "index.html").write_text("x")
+    cfg = Settings(root=tmp_path, ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:
+        c.app.state.store.add_project(str(proj), "proj")
+        t0 = time.monotonic()
+        r = c.post("/api/tasks", json={"project": str(proj), "prompt": "làm A", "mode": "plan"}, headers=H)
+        assert r.status_code == 200 and time.monotonic() - t0 < 1, r.text
+        assert c.get("/api/tasks").json()[0]["running"] is True  # the page shows the scene at once
+        for _ in range(100):
+            ev = c.get(f"/api/tasks/{r.json()['id']}/events").json()
+            if not ev["running"]:
+                break
+            time.sleep(0.05)
+        assert ev["items"][0]["kind"] == "user"  # then the turn ran
+
+
 def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
     import shlex
     import sys
+    import time
 
     from conftest import FakeTransport, TestClient, create_app
 
@@ -480,6 +559,11 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
         items = [{"text": "Chốt status", "message_ids": ["6", "7"]}]
         tid = c.post("/api/ai/deep-batch", json={"chat_id": A, "items": items, "project": str(proj)}, headers=H)
         tid = tid.json()["id"]
+        for _ in range(100):  # its first turn starts in the background, attaching the cited messages once it runs
+            with store._conn() as db:
+                if db.execute("SELECT 1 FROM task_refs WHERE task_id = ? AND message_id = 7", (tid,)).fetchone():
+                    break
+            time.sleep(0.05)
         assert c.put(f"/api/tasks/{tid}/handled", json={"handled": True, "react": False}, headers=H).status_code == 204
         assert store.get_message(A, 6).handled and store.get_message(A, 7).handled
         assert store.qa_marks(A)["#QA55"] == "done"

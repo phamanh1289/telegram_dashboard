@@ -249,15 +249,15 @@ const SCENES: Record<FetchKind, Scene> = {
     return <>
       {chips.map(([s, c, row], k) => {
         const y = src[row][0] + 18;
-        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>;
+        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C80 ${y} 90 80 120 80`}>{s}</Fly>;
       })}
-      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${44 + k * 22} 214 ${44 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M150 80C176 80 188 ${44 + k * 22} 214 ${44 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
       {src.map(([y, icon, label]) => (
         <div key={label} className="absolute left-0 flex h-9 w-[54px] items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
           {icon}<span className="sr-only">{label}</span>
         </div>
       ))}
-      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <Bot ring className="top-1/2 left-[135px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
       <div className="absolute top-2 right-1 bottom-2 w-[100px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
         <span className="absolute top-1.5 right-1.5 font-mono text-[9px] font-bold text-ink-3">.md</span>
         {doc.map(([w, kind], k) => {
@@ -283,9 +283,9 @@ const SCENES: Record<FetchKind, Scene> = {
         </div>
       ))}
       {[[t("Màn"), C.hl2, 36], ["Zeplin", C.ok, 80], [t("Nút →"), C.info, 124], ["PNG", C.warn, 80]].map(([s, c, y], k) =>
-        <Fly key={k} k={k} dot={c as string} gap={0.55} dur={2.4} path={`M40 ${y}C90 ${y} 96 80 132 80`}>{s}</Fly>)}
-      <Bot ring className="top-1/2 left-[150px] size-14 -translate-x-1/2 -translate-y-1/2" size="size-10" />
-      <div className="absolute top-3 right-6 bottom-7 w-[104px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <Fly key={k} k={k} dot={c as string} gap={0.55} dur={2.4} path={`M40 ${y}C74 ${y} 82 80 106 80`}>{s}</Fly>)}
+      <Bot ring className="top-1/2 left-[122px] size-14 -translate-x-1/2 -translate-y-1/2" size="size-10" />
+      <div className="absolute top-3 right-1 bottom-7 w-[104px] rounded-lg border border-rule bg-cotton p-2 shadow-stock">
         <span className="absolute top-1.5 right-1.5 font-mono text-[9px] font-bold text-ink-3">.html</span>
         <span className="fx-step absolute top-1 left-1.5 grid size-4 place-items-center rounded-full bg-hl-wash text-hl-2" style={step(0)}><Eye className="size-2.5" /></span>
         <div className="mt-4 flex items-center gap-1">
@@ -303,7 +303,7 @@ const SCENES: Record<FetchKind, Scene> = {
         <Line w="70%" className="fx-step mt-2" />
         <Line w="45%" className="fx-step mt-1.5" />
       </div>
-      <span className="fx-step absolute right-[62px] bottom-0 grid size-6 place-items-center rounded-full bg-hl text-hl-ink shadow-stock" style={step(5)}><ArrowDown className="size-3.5" /></span>
+      <span className="fx-step absolute right-[42px] bottom-0 grid size-6 place-items-center rounded-full bg-hl text-hl-ink shadow-stock" style={step(5)}><ArrowDown className="size-3.5" /></span>
     </>;
   },
 
@@ -340,15 +340,15 @@ const SCENES: Record<FetchKind, Scene> = {
     return <>
       {chips.map(([s, c, row], k) => {
         const y = src[row][0] + 18;
-        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>;
+        return <Fly key={k} k={k} dot={c} gap={0.5} dur={2.6} path={`M48 ${y}C80 ${y} 90 80 120 80`}>{s}</Fly>;
       })}
-      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M150 80C176 80 188 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
       {src.map(([y, icon, label]) => (
         <div key={label} className="absolute left-0 flex h-9 w-[54px] items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
           {icon}<span className="sr-only">{label}</span>
         </div>
       ))}
-      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <Bot ring className="top-1/2 left-[135px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
       <Sheet rows={[[58, C.warn], [46, C.hl], [62, C.info], [40, C.ok]]} />
     </>;
   },
@@ -429,10 +429,10 @@ const SCENES: Record<FetchKind, Scene> = {
   // overdue first
   inbox: ({ t }) => <>
     {([[t("@bạn"), C.err], ["Reply", C.info], ["Tag", C.warn], [`${t("@bạn")} 3h`, C.err], [t("Hỏi"), C.warn], ["FYI", C.info]] as const)
-      .map(([s, c], k) => <Fly key={k} k={k} gap={0.5} dur={2.6} dot={c} path="M44 80C80 52 104 52 140 80">{s}</Fly>)}
-    {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M170 80C190 80 196 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      .map(([s, c], k) => <Fly key={k} k={k} gap={0.5} dur={2.6} dot={c} path="M44 80C72 52 96 52 123 80">{s}</Fly>)}
+    {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M153 80C178 80 190 ${52 + k * 22} 214 ${52 + k * 22}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
     <Tile label="Telegram" className="top-1/2 left-1 -translate-y-1/2"><Tg /></Tile>
-    <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+    <Bot ring className="top-1/2 left-[138px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
     <Sheet rows={[[58, C.err], [44, C.err], [62, C.warn], [40, C.info]]} />
   </>,
 
@@ -477,14 +477,15 @@ const SCENES: Record<FetchKind, Scene> = {
     <Bot ring className="top-4 right-0 size-20" size="size-12" />
   </>,
 
-  // briefing: each group's summary sends its points over, the robot writes the brief and ticks the to-dos
+  // briefing: each group's summary sends its points into the robot (centred between the groups and the brief), which writes the brief and ticks the to-dos
   brief: () => {
     const groups = [["A", 14], ["B", 60], ["C", 106]] as const;
     return <>
       {Array.from({ length: 6 }, (_, k) => {
-        const y = groups[k % 3][1] + 18, to = 50 + (k % 4) * 24;
-        return <Fly key={k} k={k} gap={0.45} dur={2.4} path={`M96 ${y}C150 ${y} 160 ${to} 214 ${to}`} className="size-2 rounded-full bg-hl shadow-stock" />;
+        const y = groups[k % 3][1] + 18;
+        return <Fly key={k} k={k} gap={0.45} dur={2.2} path={`M96 ${y}C118 ${y} 124 80 139 80`} className="size-2 rounded-full bg-hl shadow-stock" />;
       })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.2} path={`M169 80C186 80 194 ${50 + k * 24} 214 ${50 + k * 24}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
       {groups.map(([n, y]) => (
         <div key={n} className="absolute left-1 flex h-9 w-[92px] items-center gap-1.5 rounded-lg border border-rule bg-cotton px-1.5 shadow-stock" style={{ top: y }}>
           <span className="grid size-5 shrink-0 place-items-center rounded-full bg-paper-3 text-[9px] font-bold text-ink-2">{n}</span>
@@ -503,7 +504,7 @@ const SCENES: Record<FetchKind, Scene> = {
           );
         })}
       </div>
-      <Bot className="-top-2 right-[70px] size-12" size="size-9" />
+      <Bot ring className="top-1/2 left-[154px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
     </>;
   },
 
@@ -527,9 +528,9 @@ const SCENES: Record<FetchKind, Scene> = {
       <Tg className="absolute -top-1 -left-1 size-6 shadow-stock" icon="size-3" />
       {([[t("Hỏi?"), 0, 40], ["BE: API", 2, 96], [t("Chốt"), 1, 64], [t("QA hỏi"), 0, 120], [t("Đổi field"), 2, 52], ["OK", 1, 108]] as const).map(([s, l, sy], k) => {
         const [, c, y] = lanes[l];
-        return <Fly key={k} k={k} gap={0.55} dur={3.2} dot={c} path={`M100 ${sy}C122 ${sy} 128 80 154 80C192 80 204 ${y} 232 ${y}`}>{s}</Fly>;
+        return <Fly key={k} k={k} gap={0.55} dur={3.2} dot={c} path={`M100 ${sy}C126 ${sy} 134 80 170 80C200 80 210 ${y} 232 ${y}`}>{s}</Fly>;
       })}
-      <Bot ring className="top-1/2 left-[112px] size-[72px] -translate-y-1/2" size="size-11" />
+      <Bot ring className="top-1/2 left-[134px] size-[72px] -translate-y-1/2" size="size-11" />
       {lanes.map(([l, c, y, Icon], n) => (
         <div key={l} className="absolute right-0 grid w-[84px] -translate-y-1/2 gap-1 rounded-md border border-rule bg-cotton px-1.5 py-1 shadow-stock" style={{ top: y }}>
           <span className="flex items-center gap-1 text-[9px] font-bold text-ink-2"><Icon className="size-2.5 shrink-0" style={{ color: c }} />{l}</span>
@@ -595,14 +596,14 @@ const SCENES: Record<FetchKind, Scene> = {
     const srcs = [[22, t("Tin"), <Tg key="t" className="size-6" icon="size-3" />], [80, "Ticket", <YtLogo key="y" className="size-6" />], [138, "Link", <FileText key="f" className="size-5 text-hl-2" />]] as const;
     return <>
       {([[t("Tin nhắn"), 0, C.info], ["YT-128", 1, C.hl], ["link", 2, C.warn], [t("Phân tích"), 0, C.hl2], ["spec.md", 2, C.ok], ["YT-342", 1, C.hl]] as const)
-        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M56 ${y}C100 ${y} 110 80 138 80`}>{l}</Fly>; })}
-      {Array.from({ length: 4 }, (_, k) => <Fly key={k} k={k} gap={0.6} dur={1.6} path="M182 80H236" className="size-1.5 rounded-full bg-hl" />)}
+        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M56 ${y}C92 ${y} 102 80 126 80`}>{l}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={k} k={k} gap={0.6} dur={1.6} path="M170 80H236" className="size-1.5 rounded-full bg-hl" />)}
       {srcs.map(([y, l, icon]) => (
         <div key={l} className="absolute left-0 flex h-9 w-14 -translate-y-1/2 items-center gap-1 rounded-lg border border-rule bg-cotton px-1 shadow-stock" style={{ top: y }}>
           {icon}<span className="font-mono text-[9px] font-bold text-ink-3">{l}</span>
         </div>
       ))}
-      <Bot ring className="top-1/2 left-[118px] size-20 -translate-y-1/2" size="size-12" />
+      <Bot ring className="top-1/2 left-[106px] size-20 -translate-y-1/2" size="size-12" />
       <div className="absolute top-4 right-0 bottom-4 w-[84px] overflow-hidden rounded-lg border border-rule bg-paper-2 shadow-stock">
         <div className="flex items-center gap-0.5 border-b border-rule bg-cotton px-1.5 py-1">
           {[C.err, C.warn, C.ok].map((c) => <span key={c} className="size-1.5 rounded-full" style={{ background: c }} />)}
@@ -631,18 +632,18 @@ const SCENES: Record<FetchKind, Scene> = {
     const notes = [["09:14", "opus", C.hl], ["09:05", "gpt", C.info], ["08:59", "sonnet", C.ok], ["08:57", "haiku", C.warn], ["08:56", "opus", C.hl]] as const;
     return <>
       {([["req.jsonl", 0, C.hl], ["rollout", 1, C.info], ["6.9M tok", 0, C.hl2], [t("tóm tắt"), 2, C.ok], ["255s", 1, C.warn], ["opus", 0, C.hl]] as const)
-        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M64 ${y}C100 ${y} 108 80 134 80`}>{l}</Fly>; })}
-      {Array.from({ length: 4 }, (_, k) => <Fly key={`n${k}`} k={k} gap={0.7} dur={1.8} path="M180 80C196 80 200 66 214 66" className="size-1.5 rounded-full bg-hl" />)}
+        .map(([l, s, c], k) => { const y = srcs[s][0]; return <Fly key={k} k={k} gap={0.5} dur={2.8} dot={c} path={`M64 ${y}C92 ${y} 100 80 118 80`}>{l}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`n${k}`} k={k} gap={0.7} dur={1.8} path="M164 80C186 80 196 66 214 66" className="size-1.5 rounded-full bg-hl" />)}
       {srcs.map(([y, icon, l]) => (
         <div key={l} className="absolute left-0 flex h-9 w-16 -translate-y-1/2 items-center gap-1 rounded-lg border border-rule bg-cotton px-1 shadow-stock" style={{ top: y }}>
           {icon}<span className="font-mono text-[9px] font-bold text-ink-3">{l}</span>
         </div>
       ))}
       {[0, 1, 2].map((k) => (
-        <span key={k} className="absolute top-1/2 left-[157px] size-12 -translate-1/2 animate-ping rounded-full border-2 border-hl/40"
+        <span key={k} className="absolute top-1/2 left-[142px] size-12 -translate-1/2 animate-ping rounded-full border-2 border-hl/40"
           style={{ animationDuration: "2.4s", animationDelay: `${k * 0.8}s` }} />
       ))}
-      <Bot className="top-1/2 left-[122px] size-[72px] -translate-y-1/2" size="size-11" />
+      <Bot className="top-1/2 left-[106px] size-[72px] -translate-y-1/2" size="size-11" />
       <div className="absolute top-2 right-0 bottom-2 w-[100px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
         <div className="flex items-center gap-1 border-b border-rule bg-paper-2 px-1.5 py-1">
           <FileText className="size-2.5 text-hl-2" />
@@ -673,14 +674,14 @@ const SCENES: Record<FetchKind, Scene> = {
     let row = 0;
     return <>
       {([[tid(p, 128), C.hl, 0], ["Q", C.info, 1], [tid(p, 342), C.hl, 0], ["A", C.ok, 1], [tid(p, 517), C.hl, 0], [t("Phiên AI"), C.hl2, 1]] as const)
-        .map(([s, c, from], k) => { const y = src[from][0]; return <Fly key={k} k={k} dot={c} gap={0.3} dur={2} path={`M48 ${y}C92 ${y} 100 80 140 80`}>{s}</Fly>; })}
-      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.4} dur={1.6} path={`M170 80C190 80 196 ${48 + k * 24} 214 ${48 + k * 24}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+        .map(([s, c, from], k) => { const y = src[from][0]; return <Fly key={k} k={k} dot={c} gap={0.3} dur={2} path={`M48 ${y}C82 ${y} 92 80 122 80`}>{s}</Fly>; })}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`o${k}`} k={k} gap={0.4} dur={1.6} path={`M152 80C176 80 188 ${48 + k * 24} 214 ${48 + k * 24}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
       {src.map(([y, icon, l]) => (
         <div key={l} className="absolute left-0 flex h-9 w-[54px] -translate-y-1/2 items-center justify-center rounded-lg border border-rule bg-cotton shadow-stock" style={{ top: y }}>
           {icon}<span className="sr-only">{l}</span>
         </div>
       ))}
-      <Bot ring className="top-1/2 left-[155px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <Bot ring className="top-1/2 left-[137px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
       <div className="absolute top-2 right-0 bottom-2 w-[100px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
         <div className="flex items-center gap-1 border-b border-rule bg-paper-2 px-1.5 py-1">
           <History className="size-2.5 text-hl-2" />
@@ -777,17 +778,17 @@ const SCENES: Record<FetchKind, Scene> = {
       </div>
       <span className="absolute -top-1 -left-1 grid size-6 place-items-center rounded-full bg-info text-cotton shadow-stock"><MessageCircleQuestion className="size-3.5" /></span>
       {([[t("Hỏi?"), 30, C.info], ["@BE", 64, C.warn], ["rule", 98, C.hl2], [t("Hỏi?"), 126, C.info]] as const)
-        .map(([s, y, c], k) => <Fly key={k} k={k} gap={0.7} dur={3} dot={c} path={`M80 ${y}C100 ${y} 104 88 124 88`}>{s}</Fly>)}
-      <span className={cn(CHIP, "absolute top-0 left-[96px] max-w-[96px] text-hl-2")}>
+        .map(([s, y, c], k) => <Fly key={k} k={k} gap={0.7} dur={3} dot={c} path={`M80 ${y}C108 ${y} 118 88 140 88`}>{s}</Fly>)}
+      <span className={cn(CHIP, "absolute top-0 left-[144px] max-w-[96px] -translate-x-1/2 text-hl-2")}>
         <Search className="size-2.5 shrink-0" strokeWidth={3} /><span className="truncate">{p || "grep"}</span><span className="h-2 w-px shrink-0 animate-pulse bg-hl" />
       </span>
-      {Array.from({ length: 4 }, (_, k) => <Fly key={`d${k}`} k={k} gap={0.5} dur={1.6} path={`M162 82C180 82 182 ${26 + k * 14} 200 ${26 + k * 14}`} className="size-1.5 rounded-full bg-hl" />)}
+      {Array.from({ length: 4 }, (_, k) => <Fly key={`d${k}`} k={k} gap={0.5} dur={1.6} path={`M178 82C188 82 190 ${26 + k * 14} 200 ${26 + k * 14}`} className="size-1.5 rounded-full bg-hl" />)}
       {([[Check, C.ok], [X, C.err], [Check, C.ok]] as const).map(([Icon, c], k) => (
-        <Fly key={`r${k}`} k={k} gap={1} dur={3} path="M162 100C180 100 182 128 200 128" className="grid size-4 place-items-center rounded-full bg-cotton shadow-stock">
+        <Fly key={`r${k}`} k={k} gap={1} dur={3} path="M178 100C188 100 190 128 200 128" className="grid size-4 place-items-center rounded-full bg-cotton shadow-stock">
           <Icon className="size-2.5" style={{ color: c }} strokeWidth={3} />
         </Fly>
       ))}
-      <Bot ring className="top-[90px] left-[90px] size-[76px] -translate-y-1/2" size="size-11" />
+      <Bot ring className="top-[90px] left-[106px] size-[76px] -translate-y-1/2" size="size-11" />
       <div className="absolute top-1 right-0 h-[86px] w-[120px] overflow-hidden rounded-lg border border-rule bg-cotton shadow-stock">
         <div className="flex items-center gap-0.5 border-b border-rule bg-paper-2 px-1.5 py-1">
           {[C.err, C.warn, C.ok].map((c) => <span key={c} className="size-1.5 rounded-full" style={{ background: c }} />)}

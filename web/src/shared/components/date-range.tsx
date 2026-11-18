@@ -6,6 +6,7 @@ import { useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { type Key, t, useT } from "@/shared/lib/i18n";
+import { put, readJson } from "@/shared/lib/prefs";
 import { dm, ymd } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 
@@ -32,6 +33,18 @@ export function rangeQuery({ from, to }: DayRange) {
 
 /** Default range of the tag lists: the last 7 days, open-ended so tags arriving after midnight still show. */
 export const lastWeek = (): DayRange => ({ from: daysAgo(6), to: "" });
+
+/** The tag lists' range, kept across reloads: a preset by its name (so "7 ngày qua" keeps sliding), else the exact days. */
+export function readTagRange(): DayRange {
+  const v = readJson("tagRange");
+  if (typeof v === "string") return presets().find((p) => p.label === v)?.range ?? lastWeek();
+  const r = v as Partial<DayRange> | null;
+  return typeof r?.from === "string" && typeof r.to === "string" ? { from: r.from, to: r.to } : lastWeek();
+}
+export function saveTagRange(r: DayRange) {
+  const p = presets().find((x) => x.range.from === r.from && x.range.to === r.to);
+  put("tagRange", JSON.stringify(p ? p.label : { from: r.from, to: r.to }));
+}
 
 function presets(): { label: Key; range: DayRange }[] {
   const today = ymd();

@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBot, AiPromptBox, AiResultCard, AiThinking, UserBubble, useFollow } from "@/shared/components/ai/chat";
-import { ItemActions } from "@/features/telegram/components/digest-page";
+import { ItemActions, NextSteps } from "@/features/telegram/components/next-steps";
 import { ASK_BTN, AskPost, Markdown } from "@/shared/components/markdown";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DIALOG_SHEET, DialogContent, DialogTitle } from "@/shared/components/ui/dialog";
@@ -19,7 +19,7 @@ import { copyText } from "@/shared/lib/notifications";
 import { readIntro } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { briefingQuery, useSaveBriefing } from "@/features/telegram/components/briefing/run";
-import { EASE, FADE, NextSteps, tgText } from "@/features/telegram/components/briefing/todo";
+import { EASE, FADE, tgText } from "@/features/telegram/components/briefing/todo";
 
 // ---- the AI assistant: questions across every group's latest digest ------------------------------------------------
 

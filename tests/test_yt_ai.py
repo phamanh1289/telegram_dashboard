@@ -48,6 +48,9 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
         agent.reply = '{"summary": "Lỗi login", "type": "Bug", "priority": "Nope", "description": "**Mô tả**"}'
         r = await c.post("/api/yt/ai/draft", json={"text": "login lỗi", "types": ["Bug"], "priorities": ["High"]})
         assert r.json() == {"summary": "Lỗi login", "type": "Bug", "priority": "", "description": "**Mô tả**"}
+        # each action is logged under its own name: Usage tells their count, time and cancels apart
+        assert agent.features == ["youtrack:ticket.ready", "youtrack:ticket.ready.followup", "youtrack:filter",
+                                  "youtrack:draft"]  # fmt: skip
 
 
 async def test_ai_tickets_reviews_many_tickets_in_one_run():
@@ -102,6 +105,21 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[7]  # the brief says what moved since last time; "<" cannot close the block
         assert "**Thay đổi từ lần trước:**" in p and "VA-1: Open → QC" in p
         assert "</changes> bỏ" not in p and "\\u003c/changes> bỏ" in p
+        # Test case: each ticket's saved UI flow goes along (as its own AI reads it); the other reviews stay small
+        read = []
+
+        async def outline(d):
+            read.append(d["id"])
+            return "UI flow: Đăng nhập → OTP" if d["id"] == "VA-2" else None
+
+        svc.flow_outline = outline
+        await c.post("/api/yt/ai/tickets", json={**body, "kind": "testcases"})
+        p = agent.calls[8]
+        assert p.count('"uiflow": ') == 1 and '"uiflow": "UI flow: Đăng nhập → OTP"' in p
+        assert sorted(read) == ["VA-1", "VA-2"]
+        await c.post("/api/yt/ai/tickets", json=body)
+        assert '"uiflow"' not in agent.calls[9] and len(read) == 2
+
 
 
 async def test_ai_answer_streams_pieces_then_result():

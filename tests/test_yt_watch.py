@@ -1,7 +1,9 @@
 import json
 import time
+from datetime import UTC, datetime
 
 import httpx
+import pytest
 from yt_test_helpers import issue, make
 
 
@@ -106,4 +108,55 @@ async def test_watch_queues_bao_lai_and_wakes_ticket_snoozes(tmp_path):
     one["VA-9"] = mine(9, "Done")
     await svc.wake_snoozes(db)
     assert st.get_message("c1", 4).snoozed_until is None
+    await svc.aclose()
+
+
+async def test_watch_round_failing_midway_loses_neither_banner_nor_bao_lai(tmp_path, monkeypatch):
+    from telegram_dashboard.events import Hub
+    from telegram_dashboard.models import StoredMessage
+    from telegram_dashboard.storage import Db, Store
+    from telegram_dashboard.telegram import bridge as telegram
+    from telegram_dashboard.youtrack.client import YtError
+
+    monkeypatch.setattr(telegram, "NOTIFY_PREVIEW", False)
+    st = Store(tmp_path / "d.sqlite3")
+    db = Db(st, Hub())
+    st.set_tracking("c1", True, "G", "group")
+    for mid, text in ((1, "VA-2 lỗi?"), (2, "VA-3 sao rồi")):
+        st.apply_message(StoredMessage(chat_id="c1", message_id=mid, sender_id="9", sender_name="A", text=text,
+                                       date=datetime(2026, 11, 1, tzinfo=UTC), edit_date=None, reply_to_id=None,
+                                       topic_id=None, outgoing=False, media_kind=None, deleted=False))  # fmt: skip
+    rows, one, down = [], {}, [True]
+
+    def mine(n, state="Open", resolved=None):
+        i = issue(n, state)
+        i["customFields"][1]["value"] = {"login": "me", "fullName": "Me"}
+        return {**i, "resolved": resolved}
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "me", "fullName": "Me"})
+        if req.url.path.startswith("/api/issues/"):
+            return httpx.Response(500) if down[0] else httpx.Response(200, json=one[req.url.path.rsplit("/", 1)[1]])
+        return httpx.Response(200, json=rows)
+
+    svc = make(handler)
+    svc.watch_path = tmp_path / "yt_watch.json"
+    sent = []
+
+    async def notify(*a):
+        sent.append(a)
+
+    rows[:] = [mine(2), mine(3)]
+    await svc.watch_once(notify, db)  # first look: record only
+    # one round: VA-7 is newly mine, VA-3 reached Fixed, VA-2 left the open list and reading it again fails
+    rows[:] = [mine(3, "Fixed"), mine(7)]
+    one["VA-2"] = mine(2, "Done", resolved=5)
+    with pytest.raises(YtError):
+        await svc.watch_once(notify, db)
+    assert [a[0] for a in sent] == ["Ticket mới · VA-7"]  # the banner does not wait on "Báo lại"
+    down[0] = False
+    await svc.watch_once(notify, db)
+    assert len(sent) == 1  # not twice
+    assert {i["ticket"] for i in st.loop_items()} == {"VA-2", "VA-3"}  # the failed round's "Báo lại" is found again
     await svc.aclose()

@@ -58,7 +58,7 @@
     "tab": "telegram",
     "area": "Briefing › Việc cần xử lý",
     "title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
-    "what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\".",
+    "what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Với vai trò dùng code: mọi việc cần làm có \"Đối chiếu code\" (AI soi code xem đã làm chưa, làm tới đâu) và \"AI Agent\" (giao việc cho AI Agent, câu việc cần làm điền sẵn vào yêu cầu thêm; giao rồi thì nút thành trạng thái phiên, bấm để mở). Tab Việc cần làm có \"Đối chiếu code N việc\" ở đầu mỗi nhóm để soi cả nhóm trong một phiên; mỗi việc hiện \"Code: đã adapt / lệch / chưa làm\" theo lần đối chiếu gần nhất (\"cũ\" khi có tin mới hơn), việc AI thấy đã làm tự chuyển sang đã xử lý (có Hoàn tác). Đã chốt có ticket: \"ghi vào …\" thêm quyết định làm bình luận; Thay đổi trên ticket đang trong sprint hiện \"đổi scope sprint\". Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\".",
     "how": [
       {
         "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -69,7 +69,7 @@
         "at": "css:[aria-label=\"Lọc việc\"]"
       },
       {
-        "t": "Bấm \"Trả lời\" / \"Tạo ticket\" ngay dưới mục, hoặc bấm tên nhóm để mở tóm tắt của nhóm",
+        "t": "Bấm \"Trả lời\" / \"Tạo ticket\" / \"Đối chiếu code\" / \"AI Agent\" ngay dưới mục, hoặc bấm tên nhóm để mở tóm tắt của nhóm",
         "at": "css:ul[aria-label=\"Việc cần xử lý\"]"
       },
       {
@@ -77,7 +77,7 @@
         "at": "Đánh dấu đã xử lý"
       }
     ],
-    "keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung"
+    "keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung doi chieu code ai agent giao viec"
   },
   {
     "id": "briefing-group-cards",

@@ -62,8 +62,11 @@ def test_explicit_tree_builds_ids_buttons_and_links_code_keeps_metadata_over_ai(
 
 
 def test_ambiguous_tree_is_not_guessed_and_legacy_ids_remap_by_url():
-    result = build(detail(description=f'[Login]({URL}a)\n├─ “Go” → unknown'))
+    own = detail(description=f'[Login]({URL}a)\n├─ “Go” → unknown')
+    result = build(own)
     assert not result.skeleton["links"] and result.manifest["ambiguous_lines"] == 1
+    # "Chỉ màn hình" draws no link: the unclear lines are no warning there
+    assert result.warnings and not build(own, links=False).warnings
     assert p.unclear("├─ “Go” → unknown", {}) == {"why": "unknown", "name": "unknown", "hint": ""}
     assert p.unclear("├─ “Go” → Đăng nhap", {"Đăng nhập": {"s1"}})["hint"] == "Đăng nhập"
     assert p.unclear("A → B", {})["why"] == "format"

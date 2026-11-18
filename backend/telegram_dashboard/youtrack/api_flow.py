@@ -17,7 +17,7 @@ from ..claude import claude_runs
 from ..links import ISSUE, _ours
 from . import flow as uiflow
 from . import flow_changes, flow_locate, flow_md, flow_merge, flow_prompt
-from .api_ai import _ai, background
+from .api_ai import _ai, _feature, background
 from .client import YtError, YtUnreachable, _me
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
 from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowMd, FlowPrecheck, FlowSave, FlowShots, _issue_id
@@ -277,7 +277,7 @@ def register(r, svc: YouTrackDashboard) -> None:
         return await flow_job_required(job_id)
 
     async def gather(i: str, note: str, say=lambda **e: None, previous: dict | None = None, draw=None,
-                     target="mobile"):
+                     target="mobile", *, links: bool = True):
         """Ticket + stories + linked Zeplin texts -> the prompt (whole, with its risks). Shared by the render, the
         pre-check and the advice: the reads are cached and shared while in flight, so a render pressed during the
         pre-check waits on the same Zeplin reads, and leaves out the other platform from them itself (`target`)."""
@@ -331,7 +331,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             texts = sum(1 for x in got.values() if x.get("texts"))
             say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
         try:
-            payload = flow_prompt.build(ticket, story, note, got, previous=previous, draw=draw, target=target)
+            payload = flow_prompt.build(ticket, story, note, got, previous=previous, draw=draw, target=target,
+                                        links=links)  # fmt: skip
         except flow_prompt.BudgetExceeded as error:
             raise YtError(413, str(error)) from None
         payload.shots = got
@@ -396,7 +397,8 @@ def register(r, svc: YouTrackDashboard) -> None:
         """A light model reads the pre-check's numbers (never the ticket's text): why it is costly, what to do."""
         check = await _check((await gather(_issue_id(body.id), body.note, target=body.target))[0], request)
         prompt = f"{flow_prompt.ADVICE}\n<check>{check.model_dump_json()}</check>"
-        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False,
+                                  feature=_feature("flow-advice"))}  # fmt: skip
 
     @r.post("/ai/flow/ask")
     async def flow_ask(body: FlowAsk, request: Request):
@@ -410,7 +412,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             f"{flow_prompt.FLOW_ASK}\n<flow>{data_json(flow)}</flow>\n<history>{turns}</history>"
             f"\n<ask>{body.question}</ask>"
         )
-        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False,
+                                  feature=_feature("flow-ask"))}  # fmt: skip
 
     @r.post("/ai/flow")
     async def ai_flow(body: AiFlow, request: Request):
@@ -492,7 +495,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                     lost = f"Không đọc được file trên ticket để giữ chỉnh tay: {e.message}"
             # "Chỉ vẽ phần mới": the AI starts from the flow on screen and writes only what is new
             previous = old.model_dump() if old is not None and body.reuse and body.mode == "flow" else None
-            payload, metrics, screens = await gather(i, body.note, say, previous, draw=body.draw, target=body.target)
+            payload, metrics, screens = await gather(i, body.note, say, previous, draw=body.draw, target=body.target,
+                                                     links=body.mode == "flow")  # fmt: skip
             mark = time.perf_counter()
             if body.mode == "screens":
                 say(stage="check", chars=0)

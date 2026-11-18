@@ -21,7 +21,7 @@ import { timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { yt } from "@/features/youtrack/lib/yt";
 import { briefingQuery, briefRunning, hasNews, runBrief, sortGroups, stopBrief, useBriefRun, useSaveBriefing } from "@/features/telegram/components/briefing/run";
-import { FADE, KIND, KINDS, type Tab, tgBriefing, type Todo, TodoRow } from "@/features/telegram/components/briefing/todo";
+import { FADE, KIND, KINDS, type Tab, tgBriefing, type Todo, TodoChecks, TodoRow } from "@/features/telegram/components/briefing/todo";
 import { AddGroup, RenewConsents, StatusDot } from "@/features/telegram/components/briefing/groups";
 import { AiPane } from "@/features/telegram/components/briefing/assistant";
 
@@ -333,13 +333,17 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                                       <ArrowUpRight className="size-3" aria-hidden />
                                     </button>
                                   </Hint>
+                                  {cur === "actions" && <TodoChecks chatId={c.chat_id} title={c.title} todos={its} className="ml-auto" />}
                                 </h3>
                                 <ul className="zebra grid gap-0.5"><AnimatePresence initial={false}>{its.map(row)}</AnimatePresence></ul>
                               </section>
                             ))}
                           </div>
                         ) : (
-                          <ul aria-label={tx("Việc cần xử lý")} className="zebra grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
+                          <>
+                            {cur === "actions" && <TodoChecks chatId={openItems[0].chat.chat_id} title={openItems[0].chat.title} todos={openItems} className="justify-end px-2.5 pb-1" />}
+                            <ul aria-label={tx("Việc cần xử lý")} className="zebra grid gap-0.5"><AnimatePresence initial={false}>{openItems.map(row)}</AnimatePresence></ul>
+                          </>
                         )
                       ) : (
                         <div className="grid justify-items-center gap-2 px-4 py-10 text-center">

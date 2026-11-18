@@ -35,6 +35,19 @@ def has_tag(text: str) -> bool:
     return bool(_TAG.search(text)) or "](tg://user?id=" in text  # or a tag by name (split_format)
 
 
+# "mình đã ghi nhận câu hỏi, BE đang xử lý, có kết quả mình báo lại": a holding reply, nothing answered yet.
+# ponytail: phrase match on a short text; a real answer saying "đang kiểm tra" in under ACK_MAX chars counts as one too
+_ACK = re.compile(r"ghi nhận|đã nhận (?:được |thêm )?(?:thông tin|câu hỏi|lỗi|yêu cầu)|có kết quả"
+                  r"|đang (?:xử lý|kiểm tra|check|xem|tìm hiểu)|(?:báo|phản hồi|trả lời|update|cập nhật) (?:lại|sau)",
+                  re.I)  # fmt: skip
+ACK_MAX = 300
+
+
+def ack_only(m: StoredMessage) -> bool:
+    """A short "got it, will report back" with no file: not an answer (Q&A stays waiting, Vòng BE runs nothing)."""
+    return not m.media_kind and len(m.text) <= ACK_MAX and bool(_ACK.search(m.text))
+
+
 Fetch = Callable[[list[int]], Awaitable[list[StoredMessage]]]
 
 

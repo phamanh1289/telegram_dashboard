@@ -144,6 +144,14 @@ class AgentRunner:
         with self.log_path(task_id).open("a") as f:
             f.write(json.dumps(item | {"at": round(time.time(), 1)}, ensure_ascii=False) + "\n")
 
+    def _why_failed(self, task_id: str, e: BaseException, stopped: bool = False) -> str:
+        """What a turn's log ends with when it did not finish: why it was stopped, else its error."""
+        if stopped or isinstance(e, asyncio.CancelledError):
+            return self._why.pop(task_id, "Đã dừng.")
+        if isinstance(e, ApiError):
+            return f"AI lỗi ({e.code}){f': {e.detail}' if e.detail else ''}"
+        return f"AI lỗi: {e!r}"
+
     async def start(
         self, task_id: str, project: str, text: str | Callable[[], Awaitable[str]], mode: str, session_id: str,
         resume: bool, ai: tuple[str | None, str | None] = (None, None), *, auto: bool = False, mcp: bool = False,
@@ -156,15 +164,17 @@ class AgentRunner:
         `mcp`: this turn may use the user's own MCP servers / plugins (provider_cmds.task_cmd; an edit turn).
         `auto`: Vòng BE sent this turn, not the user (marked in the log: how much the automation runs can be counted).
         Returns the session id to keep: Codex and Antigravity name a new one ("codex:" in, "codex:<id>" out).
-        Stopped while starting: the process is killed and 409 task_cancelled."""
+        Stopped while starting: the process is killed and 409 task_cancelled. A new session (not `resume`) that never
+        ran ends its log with why, before it stops showing running: its page follows it from the id alone
+        (tasks.start_task does not wait for this)."""
         if self.running(task_id):
             raise ApiError(409, "task_busy")
         self._starting[task_id] = proc = None
         provider, sid = providers.split_session(session_id)
         try:
+            tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             if callable(text):
                 text = await text()
-            tasks_dir(self.settings).mkdir(mode=0o700, exist_ok=True)
             choice = providers.run_choice(self.settings, task=True, provider=provider)  # the session's CLI
             if ai[0] is not None:  # picked for this session: used as is, no step-down
                 choice = (ai[0], ai[1] or "", False)
@@ -207,7 +217,12 @@ class AgentRunner:
             if proc is not None and proc.returncode is None:
                 kill_tree(proc)
                 await proc.wait()
-            if isinstance(e, ApiError) and task_id in self._cancel:
+            stopped = task_id in self._cancel
+            if not resume:
+                why = self._why_failed(task_id, e, stopped)
+                with contextlib.suppress(OSError):
+                    self._append(task_id, {"kind": "result", "error": True, "text": why})
+            if isinstance(e, ApiError) and stopped:
                 raise ApiError(409, "task_cancelled") from None
             raise
         finally:
@@ -234,15 +249,8 @@ class AgentRunner:
         async def turn():
             try:
                 r = await run()
-            except asyncio.CancelledError:
-                self._append(task_id, {"kind": "result", "error": True, "text": self._why.pop(task_id, "Đã dừng.")})
-                raise
-            except ApiError as e:
-                text = f"AI lỗi ({e.code}){f': {e.detail}' if e.detail else ''}"
-                self._append(task_id, {"kind": "result", "error": True, "text": text})
-                raise
-            except Exception as e:
-                self._append(task_id, {"kind": "result", "error": True, "text": f"AI lỗi: {e!r}"})
+            except (asyncio.CancelledError, Exception) as e:
+                self._append(task_id, {"kind": "result", "error": True, "text": self._why_failed(task_id, e)})
                 raise
             text = text_of(r)
             task_result_path(self.settings, task_id).write_text(text)

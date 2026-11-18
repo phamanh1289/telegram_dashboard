@@ -265,6 +265,7 @@ async def link_block(
                 "\n\nTóm tắt (AI tạo từ nội dung link, có thể sót số liệu / chi tiết):"
                 f"\n<untrusted_link_content>\n{out}\n</untrusted_link_content>"
             )
+    # its start is how the feed cuts it off a turn's prompt (LINKS in web/src/features/telegram/lib/attach.ts)
     head = f"Nội dung các link (dashboard đã tải sẵn, không cần mở lại). {UNTRUSTED}"
     return f"\n\n---\n{head}\n\n" + "\n\n".join(parts)
 

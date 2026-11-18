@@ -1,3 +1,4 @@
+import asyncio
 import shlex
 import sys
 import time
@@ -45,7 +46,8 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
             for _ in range(200):
                 ev = c.get(f"/api/tasks/{tid}/events").json()
                 users = [i for i in ev["items"] if i["kind"] == "user"]
-                if len(users) >= n and not ev["running"] and ev["items"][-1]["kind"] == "result":
+                last = [i["kind"] for i in ev["items"] if i["kind"] != "note"][-1]  # a note comes after a turn too
+                if len(users) >= n and not ev["running"] and last == "result":
                     return users
                 time.sleep(0.05)
             raise AssertionError("still running")
@@ -79,9 +81,15 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
         assert "KHÔNG tin cậy" in relayed["text"]
         with st._conn() as db:  # attached: the session's Done takes it along
             assert (A, 3) in [tuple(x) for x in db.execute("SELECT chat_id, message_id FROM task_refs")]
+        tag(msg(9, "mình đã ghi nhận câu hỏi, BE đang xử lý, có kết quả mình báo lại.  #BE508", sender="77", reply=2))
+        tag(msg(10, "@me Mình đã nhận lỗi, BE đang kiểm tra, có kết quả mình phản hồi", sender="77", reply=2))
         tag(msg(4, "@me ngoài lề", sender="66", reply=2))  # no relay rule for 66: stays a tag
         tag(msg(5, "@me cũng ngoài lề", sender="77"))  # no session up its chain
         assert len(turns(t["id"])) == 2
+        # a holding reply runs nothing: the session says it waits for the real answer
+        tag(msg(11, "mình đã nhận thêm thông tin, BE đang xem tiếp.\n\n#BE511", sender="77", reply=2))
+        notes = [i["text"] for i in c.get(f"/api/tasks/{t['id']}/events").json()["items"] if i["kind"] == "note"]
+        assert len(notes) == 3 and notes[-1].startswith("Tin #11 của U77 chỉ xác nhận đã nhận câu hỏi")
 
         # the user let a turn edit (and it runs slow): the answer that comes meanwhile waits, then may edit too
         slow = c.post(f"/api/tasks/{t['id']}/message", json={"text": "chậm", "edit": True}, headers=H)
@@ -105,10 +113,30 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
         c.portal.call(auto.flush, t["id"])
         assert "[#7] U77" in turns(t["id"], 5)[-1]["text"] and auto.error == "" and st.auto_pending() == {}
 
+        # a try that still finds no quota books the next one (it used to try once, then wait for ever)
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {"5h": 85.0})
+        tag(msg(12, "@me thêm ý 4", sender="77", reply=2))
+        auto._retry.cancel()
+        c.portal.call(auto._again)
+        c.portal.call(asyncio.sleep, 0.05)  # the try `_again` spawned
+        assert auto.pending.get(t["id"]) and auto._retry is not None
+        # the model fallback on: the turn runs on the cheap model instead of waiting, and says so; a full window waits
+        monkeypatch.setattr(autobe, "prefs", lambda _settings: {"fallback": True})
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {"5h": 100.0})
+        c.portal.call(auto.flush, t["id"])
+        assert auto.pending.get(t["id"])
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {"5h": 85.0})
+        c.portal.call(auto.flush, t["id"])
+        assert "[#12] U77" in turns(t["id"], 6)[-1]["text"] and not auto.pending.get(t["id"])
+        spared = c.get(f"/api/tasks/{t['id']}/events").json()["items"]
+        assert "--model sonnet" in [i for i in spared if i["kind"] == "result"][-1]["text"]
+        assert "hạ model xuống sonnet" in [i for i in spared if i["kind"] == "note"][-1]["text"]
+        monkeypatch.setattr(autobe, "quota_now", lambda _settings: {})
+
         # Done: no more relays into it
         c.put(f"/api/tasks/{t['id']}/handled", json={"handled": True, "react": False}, headers=H)
         tag(msg(8, "@me còn nữa", sender="77", reply=2))
-        assert len(turns(t["id"])) == 5
+        assert len(turns(t["id"])) == 6
 
         # relay + a Q&A thread no open session holds: the answer opens a plan session on the rule's project (the
         # question attached); the thread's next answer goes on in that session, not a second one

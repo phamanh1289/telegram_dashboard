@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, ExternalLink, Folder, FolderOpen, GitBranch, GitPullRequest, Loader2, RotateCw, Rows2, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Check, ChevronRight, ChevronsDownUp, ChevronsUpDown, Columns2, ExternalLink, Folder, FolderOpen, GitBranch, GitPullRequest, Loader2, MessageSquareText, Reply, RotateCw, Rows2, ShieldAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { AiFetching } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
@@ -10,7 +10,8 @@ import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { api, errorText, type Task } from "@/shared/lib/api";
 import { type Key, t as tNow, tMaybe, useT } from "@/shared/lib/i18n";
-import { sessionId } from "@/features/telegram/lib/inbox";
+import { openReplyById, sessionId, ticketsIn } from "@/features/telegram/lib/inbox";
+import { yt, ytProjectsQuery } from "@/features/youtrack/lib/yt";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 
@@ -416,6 +417,37 @@ function Half({ l, side }: { l?: Line; side: "o" | "n" }) {
 
 const SplitRow = ({ l, r }: { l?: Line; r?: Line }) => <div className="grid grid-cols-2"><Half l={l} side="o" /><Half l={r} side="n" /></div>;
 
+/** The PR is open: tell who asked, without typing its link again. "Báo nhóm" opens the reply on the session's tag with
+ *  the link written (the user sends it, as any reply); "Bình luận {id}" posts the link on a ticket that tag names. */
+function PrTell({ t, url }: { t: Task; url: string }) {
+  const tt = useT();
+  const ids = ticketsIn(t.message_text ?? "", useQuery(ytProjectsQuery).data);
+  const line = tt("Đã sửa xong, PR: {url}", { url });
+  const [told, setTold] = useState<readonly string[]>([]);
+  const comment = useMutation({
+    mutationFn: async (id: string) => { await yt.comment(id, line); return id; },
+    onSuccess: (id) => { setTold((x) => [...x, id]); toast({ text: tNow("Đã thêm comment vào {id}", { id }) }); },
+    onError: (e, id) => toast({ text: tNow("Không gửi được bình luận lên {id}: {msg}", { id, msg: e.message }) }),
+  });
+  const { chat_id: chat, message_id: mid } = t;
+  return (
+    <span className="ml-auto flex flex-wrap items-center gap-1.5 text-ink">
+      {chat && mid && (
+        <Hint side="bottom" text={tt("Mở trả lời tin tag của phiên, ô trả lời có sẵn link PR. Bạn xem lại rồi mới gửi.")}>
+          <Button size="sm" variant="outline" onClick={() => void openReplyById(chat, mid, line)}><Reply /> {tt("Báo nhóm")}</Button>
+        </Hint>
+      )}
+      {ids.map((id) => (
+        <Hint key={id} side="bottom" text={tt("Gửi ngay link PR làm bình luận trên {id}", { id })}>
+          <Button size="sm" variant="outline" disabled={told.includes(id) || comment.isPending} onClick={() => comment.mutate(id)}>
+            {told.includes(id) ? <Check /> : <MessageSquareText />} {tt("Bình luận {id}", { id })}
+          </Button>
+        </Hint>
+      ))}
+    </span>
+  );
+}
+
 /** Commit title + "Tạo nhánh + PR", asked twice before anything is pushed. `mixedOk`: the page shows the "carries
  *  earlier edits" warning, so the second click is the user's yes to it (the backend refuses without). */
 function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk: boolean; onDone: () => void }) {
@@ -434,10 +466,11 @@ function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk:
   });
   if (pr.data) {
     return (
-      <footer className="flex shrink-0 items-center gap-2 border-t px-4 py-3 text-sm text-ok">
+      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-3 text-sm text-ok">
         <GitPullRequest className="size-4" aria-hidden />
         {pr.data.url ? <a href={pr.data.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">{tt("Mở PR")} <ExternalLink className="size-3.5" aria-hidden /></a>
           : <span className="text-ink-2">{pr.data.note && tMaybe(pr.data.note)}</span>}
+        {pr.data.url && <PrTell t={t} url={pr.data.url} />}
       </footer>
     );
   }

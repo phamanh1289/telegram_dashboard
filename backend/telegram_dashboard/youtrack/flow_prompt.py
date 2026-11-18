@@ -186,14 +186,15 @@ def unclear_notes(ambiguous, left, draw):
     return out
 
 
-def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None):
+def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None, links=True):
     """The whole source, never trimmed: the user picks the model and is warned (`risks`) before a costly run.
     `previous`: the flow on screen (a re-render): its screens / links join the skeleton, so the AI writes only what
     is new or changed instead of the whole flow again (output is most of a render's cost).
     `target` ("mobile" / "web"): the other platform's screens, links and design leave the prompt, decided here from
     the same reads for the pre-check and the render (so the count and the render match), never by the page from a
     count it may not have finished (a render pressed mid-count drew web screens into a mobile flow). Their unclear
-    lines go with them; their size group stays in the risks (the platform picker counts both)."""
+    lines go with them; their size group stays in the risks (the platform picker counts both).
+    `links=False` ("Chỉ màn hình"): no link is drawn, so nothing is said about the unclear flow lines."""
     raw, unavailable = sources_from_blocks(ticket, stories)
     used, omitted, seen = [], [], set()
     for item in raw:
@@ -230,7 +231,7 @@ def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None
                              "tách ticket theo sub-ticket trước khi vẽ")
     parts = {"ticket": estimate(own), "story": estimate(other), "zeplin": estimate(data_json(design)),
              "note": estimate(note), "rules": estimate(flow_merge.AI_FLOW_PATCH) + ENVELOPE_RESERVE}
-    warnings = unclear_notes(ambiguous, left, draw)
+    warnings = unclear_notes(ambiguous, left, draw) if links else []
     if unavailable:
         warnings.append("Một số story không đọc được; kiểm tra phần nguồn trước khi cập nhật.")
     manifest = {"measurement": "estimated", "estimated_input_tokens": tokens,

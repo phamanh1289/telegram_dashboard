@@ -26,7 +26,7 @@
     "tab": "telegram",
     "area": "Thanh tiêu đề › Khoảng ngày",
     "title": "Lọc theo khoảng ngày",
-    "what": "Chỉ hiện tin tag trong khoảng ngày chọn (mặc định 7 ngày qua; chọn \"Tất cả\" để xem mọi tin đã lưu); áp dụng cho danh sách nhóm, số đếm và danh sách tin.",
+    "what": "Chỉ hiện tin tag trong khoảng ngày chọn (mặc định 7 ngày qua; chọn \"Tất cả\" để xem mọi tin đã lưu); áp dụng cho danh sách nhóm, số đếm và danh sách tin. Khoảng đã chọn được giữ khi tải lại trang.",
     "how": [
       {
         "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
@@ -52,7 +52,7 @@
     "tab": "telegram",
     "area": "Trang nhóm › Lọc tin",
     "title": "Chưa xử lý / Đã xử lý / Cả nhóm",
-    "what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và Cả nhóm: mọi tin khác trong nhóm đọc trực tiếp từ Telegram (không lưu; tin tag không lặp lại ở đây, chúng nằm ở Chưa / Đã xử lý). Hoãn một tin ở Cả nhóm thì tin được lưu thành tag, tới giờ hiện lại ở Chưa xử lý. Nút \"Xong tất cả\" ẩn khi đang lọc theo người gửi hoặc đang tìm, vì nó đánh dấu cả nhóm.",
+    "what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và Cả nhóm: mọi tin khác trong nhóm đọc trực tiếp từ Telegram (không lưu; tin tag không lặp lại ở đây, chúng nằm ở Chưa / Đã xử lý). Bấm một tin ở Cả nhóm để mở trang chi tiết như tin tag (trả lời, Trợ lý AI, ngữ cảnh, tạo ticket, giao AI Agent). Hoãn, Xong hay Ghim một tin ở Cả nhóm thì tin được lưu thành tag (Hoãn: tới giờ hiện lại ở Chưa xử lý). Nút \"Xong tất cả\" ẩn khi đang lọc theo người gửi hoặc đang tìm, vì nó đánh dấu cả nhóm.",
     "how": [
       {
         "t": "Bấm một nhóm ở thanh bên",

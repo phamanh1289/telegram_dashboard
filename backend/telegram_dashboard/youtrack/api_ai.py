@@ -104,10 +104,11 @@ async def _ai(
     retry: bool = True,
     *,
     read_dir: str | None = None,
-    feature: str = "youtrack",
+    feature: str,
 ) -> str:
     """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report, and
-    `feature` (a UI flow render logs "flow": its cost and time are told apart from the other YouTrack runs)."""
+    `feature`: which action ran (`_feature`; a UI flow render logs "flow"), so Usage tells their count, time, cost and
+    cancels apart."""
     ai = request.app.state.ai
     name = lambda: providers.NAMES[providers.chosen(ai.settings, yt=True)]  # noqa: E731  only on errors
     if not ai.configured:
@@ -129,6 +130,11 @@ async def _ai(
         raise YtError(min(e.status, 502), f"{msg}: {e.detail}" if e.detail else msg) from None
     finally:
         no_retry.reset(token)
+
+
+def _feature(action: str, kind: str = "") -> str:
+    """The run log's name of a YouTrack AI action: "youtrack:tickets.standup", "youtrack:filter"."""
+    return f"youtrack:{action}.{kind}" if kind else f"youtrack:{action}"
 
 
 SESSION_REF = re.compile(r"YT-[a-z0-9]{6}")
@@ -189,11 +195,13 @@ def register(r, svc: YouTrackDashboard) -> None:
         async def one(i: str) -> str:
             async with gate:
                 d = await svc.issue_detail(i)
+                # test cases walk the screens: the ticket's saved UI flow, as its own AI reads it (_ticket_block)
+                flow = await svc.flow_outline(d) if body.kind == "testcases" else None
             tg = await st.db.read(st.store.find_mentions, i, 5)
             return _ticket_json(d, 1200, 6, 500, telegram=[
                 {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                 for m in tg
-            ])  # fmt: skip
+            ], **({"uiflow": flow} if flow else {}))  # fmt: skip
 
         data = ",\n".join(await asyncio.gather(*map(one, ids)))
         scope = f"Phạm vi: {body.scope}\n" if body.scope else ""
@@ -240,11 +248,14 @@ def register(r, svc: YouTrackDashboard) -> None:
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
 
-    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
+    def answer(
+        request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False, *, feature: str
+    ):  # fmt: skip
         """The AI answer, streamed: a background run (`background`), or one that stops when the page goes."""
 
         async def work(on_text, detached=False):
-            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=detached)
+            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=detached,
+                             feature=feature)  # fmt: skip
             if not draft:
                 return {"text": text}
             brief, _, rest = text.partition("\n===")  # a ticket answer may end with a comment draft
@@ -272,16 +283,18 @@ def register(r, svc: YouTrackDashboard) -> None:
     @r.post("/ai/ticket")
     async def ai_ticket(body: AiTicket, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_ticket(body, request), draft=True, code=code, shell=body.shell)
+        return answer(request, *await p_ticket(body, request), draft=True, code=code, shell=body.shell,
+                      feature=_feature("ticket", body.kind))  # fmt: skip
 
     @r.post("/ai/data")
     async def ai_data(body: AiData, request: Request):
-        return answer(request, *await p_data(body, request), draft=False)
+        return answer(request, *await p_data(body, request), draft=False, feature=_feature("data", body.kind))
 
     @r.post("/ai/tickets")
     async def ai_tickets(body: AiTickets, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_tickets(body, request), draft=False, code=code, shell=body.shell)
+        return answer(request, *await p_tickets(body, request), draft=False, code=code, shell=body.shell,
+                      feature=_feature("tickets", body.kind))  # fmt: skip
 
     FOLLOW = {
         "/ai/ticket": (AiTicket, p_ticket), "/ai/data": (AiData, p_data),
@@ -301,21 +314,23 @@ def register(r, svc: YouTrackDashboard) -> None:
         code = await _code_dir(request, getattr(first, "folder", ""))  # a code session stays one
         turns = data_json([t.model_dump() for t in body.history])
         prompt += f"{AI_FOLLOWUP}\n<history>{turns}</history>\n<ask>{body.question}</ask>"
+        # a follow-up is its first request's action, asked again
         return answer(request, prompt, heavy, draft=body.path == "/ai/ticket", code=code,
-                      shell=getattr(first, "shell", False))  # fmt: skip
+                      shell=getattr(first, "shell", False),
+                      feature=_feature(body.path.rsplit("/", 1)[-1], f"{first.kind}.followup"))  # fmt: skip
 
     @r.post("/ai/draft")
     async def ai_draft(body: AiDraft, request: Request):
         """A new ticket (summary, Type, Priority, templated description) from a rough note."""
         fields = {"Type": body.types, "Priority": body.priorities}
         prompt = f"{AI_DRAFT}\n<fields>{data_json(fields)}</fields>\n<ask>{data_json(body.text)}</ask>"
-        return parse_ticket(await _ai(svc, request, prompt), fields)
+        return parse_ticket(await _ai(svc, request, prompt, feature=_feature("draft")), fields)
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):
         opts = data_json(body.options)[:20_000]
         prompt = f"{AI_FILTER}\n<options>{opts}</options>\n<ask>{body.text}</ask>"
-        out = json_object(await _ai(svc, request, prompt, notes=False))
+        out = json_object(await _ai(svc, request, prompt, notes=False, feature=_feature("filter")))
         if out is None:
             raise YtError(502, "AI trả về không đọc được, thử diễn đạt khác")
         return out

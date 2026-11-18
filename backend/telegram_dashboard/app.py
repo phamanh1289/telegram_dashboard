@@ -325,6 +325,11 @@ def create_app(
             yield ev
 
 
+    def _live_fetch(request: Request):
+        """Reads messages not kept (Cả nhóm) live, while Telegram is connected."""
+        s = S(request)
+        return s.bridge.fetch_ids if s.bridge.state == "connected" else None
+
     async def _draft_extras(request: Request, body: AiDraftRequest):
         """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
         s = S(request)
@@ -364,7 +369,7 @@ def create_app(
             return S(request).ai.run(
                 kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
                 platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
-                history=history, ref=ref,
+                history=history, ref=ref, fetch=_live_fetch(request),
             )  # fmt: skip
 
         async def work(on_text):
@@ -421,7 +426,7 @@ def create_app(
         s = S(request)
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        fetch = _live_fetch(request)
         prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
                                         body.instruction, fetch=fetch)  # fmt: skip
         task_id = new_task_id()
@@ -436,7 +441,7 @@ def create_app(
         s = S(request)
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        fetch = _live_fetch(request)
         items = [(i.text, i.message_ids, i.waiting, i.key) for i in body.items]
         prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items, body.project, body.instruction,
                                                       fetch=fetch)  # fmt: skip
@@ -455,6 +460,7 @@ def create_app(
         r = await S(request).ai.run(
             "ticket", body.chat_id, body.message_ids, body.instruction, None,
             nearby=nearby, images=images, platform=body.platform, role=body.role, intro=body.intro, fields=fields,
+            fetch=_live_fetch(request),
         )  # fmt: skip
         return AiTicketDraft(**parse_ticket(r.text, fields))
 

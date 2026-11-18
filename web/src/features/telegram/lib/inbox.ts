@@ -87,6 +87,12 @@ export const markHandled = (m: Pick<Message, "chat_id" | "message_id">, handled:
 
 /** Open the AI Agent page on this task (handled by the inbox shell). */
 export const openTask = (id: string) => dispatchEvent(new CustomEvent<string>("open-task", { detail: id }));
+/** "Đã giao AI Agent": open the session, or Undo = stop the agent and delete the task (same as Xóa on the AI Agent page);
+ *  `refresh`: reload the task list after the undo. */
+export function taskToast(id: string, refresh: () => void) {
+  toast({ text: t("Đã giao AI Agent"), action: { label: t("Mở phiên"), run: () => openTask(id) },
+    undo: () => api<void>(`/tasks/${id}`, { method: "DELETE" }).finally(refresh) });
+}
 /** A YouTrack ticket's sheet over the current page (TicketSheetHost takes it): the ticket chip's click. */
 export const openTicketHere = (id: string) => dispatchEvent(new CustomEvent<string>("open-ticket", { detail: id }));
 type Click = { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; preventDefault(): void };
@@ -442,7 +448,7 @@ export function useListShortcuts(
           setFocused(msgKey(next));
           scrollToRow(msgKey(next));
         }
-      } else if (k === " " && tag && onPick) onPick(tag); else if ((k === "r" || k === "Enter") && cur && actions) onReply(cur);
+      } else if (k === " " && tag && onPick) onPick(tag); else if ((k === "r" || k === "Enter") && cur) onReply(cur);
       else if (k === "o" && cur) openInTelegram(cur);
       else if (k === "x" && tag && !e.shiftKey) setHandled([tag], !tag.handled).catch(() => {}); // the toast already reported it
       else if (k === "x" && tag && !tag.handled) setHandled([tag], true, false).catch(() => {}); // Shift+x: no reaction

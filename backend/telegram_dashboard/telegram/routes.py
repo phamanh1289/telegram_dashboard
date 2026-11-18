@@ -65,7 +65,7 @@ from ..storage import _dt
 from ..tasks import mark_tags, remove_task
 from .digest import aware
 from .live_reads import TelegramReads
-from .qa import chain_code, find_threads, has_tag, qa_code
+from .qa import ack_only, chain_code, find_threads, has_tag, qa_code
 
 log = logging.getLogger(__name__)
 
@@ -183,7 +183,8 @@ def build_router(
     async def handled(chat_id: str, message_id: str, body: HandledRequest, request: Request) -> None:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if await s.db.read(s.store.get_message, chat_id, mid) is None:
+        stored = await s.db.read(s.store.get_message, chat_id, mid) is not None
+        if not stored and not (body.handled and await _keep_live(s, chat_id, mid)):
             raise ApiError(404, "message_not_found")
         by = "me" if body.react else "quiet"
         if await s.db.write(s.store.set_handled, chat_id, mid, body.handled, by) and body.react:
@@ -364,7 +365,7 @@ def build_router(
 
         marks = await s.db.read(s.store.qa_marks, chat_id)
         threads = [QaItem(code=code, chat_title=title, question=dto(ms[0]), answers=[dto(m) for m in ms[1:]],
-                          done=marks.get(code) == "done")
+                          done=marks.get(code) == "done", holding=[str(m.message_id) for m in ms[1:] if ack_only(m)])
                    for code, ms in find_threads(msgs) if marks.get(code) != "deleted"]  # fmt: skip
         return sorted(threads, key=lambda i: (i.answers or [i.question])[-1].date, reverse=True)
 
@@ -489,15 +490,18 @@ def build_router(
         on = body.on if body.until else None
         if await s.db.write(s.store.set_snooze, chat_id, mid, body.until, on):
             return
-        # Cả nhóm: a plain message, not kept yet. Keep it (tracked groups only), so it comes back as a tag.
-        live = next(iter(await s.bridge.fetch_ids(chat_id, [mid])), None) if body.until and 0 < mid < 2**31 else None
         if not (
-            live
-            and not live.deleted
-            and await s.db.write(s.store.apply_message, live)
+            body.until
+            and await _keep_live(s, chat_id, mid)
             and await s.db.write(s.store.set_snooze, chat_id, mid, body.until, on)
         ):
             raise ApiError(404, "message_not_found")
+
+
+    async def _keep_live(s, chat_id: str, mid: int) -> bool:
+        """Cả nhóm: a plain message, not kept yet. Keep it (tracked groups only): Hoãn / Xong / Ghim make it a tag."""
+        live = next(iter(await s.bridge.fetch_ids(chat_id, [mid])), None) if 0 < mid < 2**31 else None
+        return bool(live and not live.deleted and await s.db.write(s.store.apply_message, live))
 
 
     @router.get("/api/loopback")
@@ -546,7 +550,11 @@ def build_router(
     async def pin(chat_id: str, message_id: str, body: PinRequest, request: Request) -> None:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if not await s.db.write(s.store.set_pinned, chat_id, mid, body.pinned):
+        if not await s.db.write(s.store.set_pinned, chat_id, mid, body.pinned) and not (
+            body.pinned
+            and await _keep_live(s, chat_id, mid)
+            and await s.db.write(s.store.set_pinned, chat_id, mid, True)
+        ):
             raise ApiError(404, "message_not_found")
 
 
@@ -554,8 +562,9 @@ def build_router(
     async def context(chat_id: str, message_id: str, request: Request) -> list[MessageDTO]:
         s = S(request)
         mid = int_or_404(message_id, "message_not_found")
-        if await s.db.read(s.store.get_message, chat_id, mid) is None:
-            raise ApiError(404, "message_not_found")  # only around tags we keep
+        stored = await s.db.read(s.store.get_message, chat_id, mid) is not None
+        if not stored and not await s.db.read(s.store.is_tracking, chat_id):
+            raise ApiError(404, "message_not_found")  # around kept tags, or any message of a tracked group (Cả nhóm)
         live = await s.bridge.fetch_context(chat_id, mid)
         # Live copies don't know which of them are kept tags marked done: take that from the store.
         ids = [m.message_id for m in live]
