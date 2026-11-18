@@ -562,6 +562,20 @@ class Messages:
             )
             return [dict(r) for r in itertools.islice((r for r in rows if word.search(r["text"])), limit)]
 
+    def search_tracked(self, q: str, limit: int = 20) -> list[dict]:
+        """Kept messages of tracked chats holding every word of `q` (accent-less), newest first."""
+        words = fold(q).split()
+        if not words:
+            return []
+        with self._conn() as c:
+            rows = c.execute(
+                "SELECT m.chat_id, m.message_id, m.sender_name, m.text, m.date, m.outgoing, m.reply_to_id, c.title "
+                "FROM messages m JOIN chats c USING(chat_id) WHERE m.deleted=0 AND c.tracking=1 "
+                + "AND m.text_fold LIKE ? ESCAPE '\\' " * len(words) + "ORDER BY m.date DESC LIMIT ?",
+                (*(_like(w) for w in words), limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def my_replies(self, since: int, limit: int = 40, chat_id: str | None = None) -> list[dict]:
         """What the user sent in tracked groups (or one group) since a unix time, oldest first:
         a standup, the promises list, the drafts' tone."""

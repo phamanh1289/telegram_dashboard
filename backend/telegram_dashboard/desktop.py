@@ -1,4 +1,5 @@
-"""Native dialogs on this machine (macOS osascript, Windows PowerShell): the project folder picker, Terminal."""
+"""Native dialogs on this machine (macOS osascript, Windows PowerShell): the project folder picker, Terminal, and
+showing a file in Finder / Explorer."""
 
 import logging
 import sys
@@ -23,8 +24,9 @@ async def osascript(script: str, timeout: float = 15) -> tuple[int, str]:
 
 
 # osascript shows the dialog itself (no Finder automation permission); `activate` brings it front.
+PROJECT_PROMPT = "Chọn thư mục dự án cho Radar"
 PICK_FOLDER_SCRIPT = """activate
-POSIX path of (choose folder with prompt "Chọn thư mục dự án cho Radar")"""
+POSIX path of (choose folder with prompt {prompt})"""
 
 
 # Windows: WinForms dialog owned by a TopMost form so it opens above the browser.
@@ -32,12 +34,13 @@ PICK_FOLDER_PS = """[Console]::OutputEncoding = [Text.Encoding]::UTF8
 Add-Type -AssemblyName System.Windows.Forms
 $f = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}
 $d = New-Object System.Windows.Forms.FolderBrowserDialog
-$d.Description = 'Chọn thư mục dự án cho Radar'
+$d.Description = {prompt}
 if ($d.ShowDialog($f) -eq 'OK') { $d.SelectedPath }"""
 
 
-async def _pick_folder_windows() -> str | None:
-    got = await run_cli(["powershell", "-NoProfile", "-STA", "-Command", PICK_FOLDER_PS], timeout=600)
+async def _pick_folder_windows(prompt: str) -> str | None:
+    ps = PICK_FOLDER_PS.replace("{prompt}", "'" + prompt.replace("'", "''") + "'")
+    got = await run_cli(["powershell", "-NoProfile", "-STA", "-Command", ps], timeout=600)
     if got is None:
         raise ApiError(502, "picker_failed")
     code, out, err = got
@@ -46,14 +49,22 @@ async def _pick_folder_windows() -> str | None:
     return out.decode("utf-8", errors="replace").strip() or None  # empty = cancelled
 
 
-async def pick_folder() -> str | None:
-    """Native folder dialog on this machine (macOS / Windows); None when the user cancels."""
+async def pick_folder(*, prompt: str = PROJECT_PROMPT) -> str | None:
+    """Native folder dialog on this machine (macOS / Windows) titled `prompt`; None when the user cancels."""
     if sys.platform == "win32":
-        return await _pick_folder_windows()
-    code, out = await osascript(PICK_FOLDER_SCRIPT, 600)
+        return await _pick_folder_windows(prompt)
+    code, out = await osascript(PICK_FOLDER_SCRIPT.replace("{prompt}", applescript_str(prompt)), 600)
     if code == 0:
         return out or None
     if "(-128)" in out:  # "User canceled."
         return None
     log.warning("folder picker failed: %s", out[-200:])
     raise ApiError(502, "picker_failed", detail=out[-200:] or None)
+
+
+async def reveal(path: str) -> None:
+    """Show a file selected in Finder / Explorer (run_cli: child_env, outside any project)."""
+    win = sys.platform == "win32"
+    got = await run_cli(["explorer", f"/select,{path}"] if win else ["open", "-R", path])
+    if got is None or (got[0] and not win):  # explorer exits 1 even when it worked
+        raise ApiError(502, "reveal_failed", detail=got and got[2].decode(errors="replace")[-200:] or None)

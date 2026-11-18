@@ -24,6 +24,7 @@ const PARTS: Record<string, [Key, string]> = {
   media: ["Ảnh tag đã tải", "var(--cat-6)"],
   runs: ["Lịch sử chạy AI", "var(--cat-3)"],
   logs: ["Log server", "var(--cat-5)"],
+  docs: ["Tài liệu", "var(--color-ink-2)"],
   login: ["Đăng nhập Telegram", "var(--cat-1)"],
   config: ["Cấu hình", "var(--color-ink-3)"],
 };
@@ -63,6 +64,11 @@ const CLEARS: Record<string, Clear> = {
   logs: {
     name: "Log server", desc: "Nhật ký dò lỗi của bản chạy từ git. Quá 5 MB tự chuyển thành server.log.1 khi khởi động.", unit: "{n} tệp", ask: "Xóa log server?",
     lose: "Nhật ký các lỗi đã xảy ra.", keep: "App chạy bình thường; log mới vẫn ghi tiếp.",
+  },
+  docs: {
+    name: "Tài liệu", desc: "Bài Knowledge Base đã tải về và chỉ mục tài liệu, kèm bản tóm tắt.", unit: "{n} tài liệu", ask: "Xóa kho tài liệu?",
+    lose: "Bản lưu và chỉ mục các tài liệu; phiên AI sau phải tải và tóm tắt lại.",
+    keep: "Bài trên YouTrack và tệp trong thư mục bạn chọn; nguồn tài liệu đã cài.", safe: true,
   },
 };
 /** What each table of dashboard.sqlite3 holds. */
@@ -121,7 +127,7 @@ export function DataGroup() {
     </DataSection>
 
     <DataSection title="Dọn tệp trên máy" lead={t("Tệp trong thư mục dữ liệu, ngoài database.")}>
-      {tiles(["sessions", "media", "runs", "logs"])}
+      {tiles(["sessions", "media", "runs", "logs", "docs"])}
     </DataSection>
 
     <Card title="Tin theo nhóm" info="Dung lượng ước tính từ nội dung tin. Xóa ở đây giống ⋯ › Xóa dữ liệu nhóm trên trang nhóm.">

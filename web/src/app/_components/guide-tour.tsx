@@ -84,6 +84,7 @@ const isField = (el: HTMLElement) => el.matches("textarea, select, input:not([ty
 const GO: Record<Module, { t: Key; at: string }> = {
   telegram: { t: "Bấm \"Telegram\" trên thanh trên cùng để mở Telegram.", at: "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]" },
   youtrack: { t: "Bấm \"YouTrack\" trên thanh trên cùng để mở YouTrack.", at: "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/youtrack\"]" },
+  docs: { t: "Bấm \"Tài liệu\" trên thanh trên cùng để mở Tài liệu.", at: "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]" },
   settings: { t: "Bấm biểu tượng bánh răng \"Cài đặt\" ở góc phải thanh trên cùng.", at: "css:a[href^=\"/settings\"]" },
 };
 /** A feature's steps, starting from module `from` (a feature elsewhere first switches module). */

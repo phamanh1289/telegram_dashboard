@@ -277,8 +277,19 @@ CREATE TABLE IF NOT EXISTS flow_job_events (
             c.execute(statement)
 
 
+def _docs(c):
+    c.execute("""CREATE TABLE IF NOT EXISTS docs (
+ id INTEGER PRIMARY KEY, source TEXT NOT NULL, ref TEXT NOT NULL, title TEXT NOT NULL, path TEXT NOT NULL,
+ hash TEXT NOT NULL, chars INTEGER NOT NULL, size INTEGER NOT NULL DEFAULT 0, updated_at INTEGER,
+ fetched_at INTEGER NOT NULL, tickets TEXT NOT NULL DEFAULT '[]', summary TEXT, summary_hash TEXT,
+ UNIQUE(source, ref))""")
+    # heading/body: fold() text that is matched; title/text: the original heading/body shown back
+    c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS doc_parts USING fts5("
+              "heading, body, doc_id UNINDEXED, part UNINDEXED, line UNINDEXED, text UNINDEXED, title UNINDEXED)")
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
-    _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs,
+    _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs, _docs,
 ]  # fmt: skip

@@ -39,6 +39,8 @@ from .claude import (
 )
 from .config import Settings
 from .desktop import pick_folder
+from .docs.library import Library
+from .docs.routes import build_router as build_docs_router
 from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
 from .external_runs import external_runs, run_provider
@@ -88,7 +90,7 @@ log = logging.getLogger("telegram_dashboard.app")
 
 
 GUIDE_PROMPT = (
-    "Em là trợ lý biết tuốt của ứng dụng Radar (2 tab: Telegram và YouTrack, cùng Cài đặt), trò chuyện với "
+    "Em là trợ lý biết tuốt của ứng dụng Radar (3 tab: Telegram, YouTrack và Tài liệu, cùng Cài đặt), trò chuyện với "
     "người dùng. Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước; sau dòng "
     '"Tính năng khác" là các tính năng còn lại chỉ có [id] và tên: vẫn gắn [id] được, không bịa bước cho chúng. Câu hỏi'
     " về cách dùng: trả lời từ danh mục; không thấy thì nói rõ là không thấy, đừng bịa. Trả lời ngắn gọn, "
@@ -99,7 +101,8 @@ GUIDE_PROMPT = (
     "[Q&A](/?chat=__qa__), [Briefing](/?chat=__briefing__), [AI Agent](/?chat=__tasks__); YouTrack [Trang "
     "chủ](/youtrack/?view=home), [Dashboard](/youtrack/?view=dash), [Ticket](/youtrack/?view=tickets), "
     "[Release](/youtrack/?view=release), [Thành viên](/youtrack/?view=people), [YouTrack "
-    "AI](/youtrack/?view=ai); Cài đặt [Chung](/settings/#general), [Telegram](/settings/#telegram), "
+    "AI](/youtrack/?view=ai); [Tài liệu](/docs/); Cài đặt [Chung](/settings/#general), "
+    "[Telegram](/settings/#telegram), "
     "[YouTrack](/settings/#youtrack), [AI](/settings/#ai), [Cập nhật](/settings/#github), [Phím "
     "tắt](/settings/#shortcuts). Nhãn link ghi rõ đích, vd. [Cài đặt › Telegram](/settings/#telegram); không "
     "bịa đường dẫn khác (ngoài link có sẵn trong danh sách việc). <page> là trang người dùng đang mở; <state> là "
@@ -198,6 +201,7 @@ def create_app(
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
         await yt_dashboard.start_flow_jobs(st)
         app.state.ai = AiService(settings, st, db)
+        app.state.docs = Library(settings, db, app.state.ai)
         app.state.ai.me = lambda: bridge.me
         app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
         app.state.agent = AgentRunner(settings)
@@ -262,6 +266,7 @@ def create_app(
                                    or route.path.startswith("/api/yt/flow/jobs"))
     app.include_router(yt_router)
     app.include_router(build_task_router(settings))
+    app.include_router(build_docs_router(settings))
     app.include_router(updater.build_router(settings))
     app.include_router(privacy.build_router(settings))
     app.include_router(local_data.build_router(settings))

@@ -14,6 +14,7 @@ import youtrackDetails from "./youtrack-details.json";
 import youtrackAi from "./youtrack-ai.json";
 import youtrackDashboard from "./youtrack-dashboard.json";
 import telegramWork from "./telegram-work.json";
+import docs from "./docs.json";
 
 const features = [
   ...shell,
@@ -31,6 +32,7 @@ const features = [
   ...youtrackAi,
   ...youtrackDashboard,
   ...telegramWork,
+  ...docs,
 ];
 
 export default features;

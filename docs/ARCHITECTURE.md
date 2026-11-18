@@ -1,6 +1,6 @@
 # Cấu trúc và ranh giới module
 
-Source được tổ chức theo nghiệp vụ Telegram, YouTrack và các phần dùng chung. Backend Python tách khỏi frontend Next.js. URL và hợp đồng API không đổi.
+Source được tổ chức theo nghiệp vụ Telegram, YouTrack, Tài liệu và các phần dùng chung. Backend Python tách khỏi frontend Next.js. URL và hợp đồng API không đổi.
 
 ```text
 backend/
@@ -28,10 +28,19 @@ backend/
       flow_merge.py      # luật cho AI và ghép câu trả lời của AI vào skeleton (màn thiếu thiết kế → pending)
       flow_jobs.py       # vòng đời job dựng flow
       flow_md.py         # xuất Markdown cho AI agent (màn, chữ Zeplin, AC trích nguyên văn, đường đi, chỗ thiếu)
+    docs/                # Tài liệu: kho bài Knowledge Base YouTrack + file trong thư mục trên máy
+      library.py         # Library: nguồn (data/docs.json), bài KB lưu ở data/docs/youtrack/, tóm tắt
+      sync.py            # một lượt đồng bộ (khi mở màn / bấm đồng bộ), lỗi theo từng nguồn, nguồn lỗi giữ tài liệu cũ
+      extract.py         # đọc text file (.md/.txt/.json/.yaml/.docx)
+      parts.py           # chia đoạn, mã ticket, snippet tô từ khớp (không dấu)
+      ask.py             # Hỏi tài liệu: đoạn + tin Telegram khớp, cắt theo DOC_ASK_CHARS, lượt AI không tool
+      models.py          # DTO /api/docs
+      routes.py          # router /api/docs/* (list, search, sources, sync, ask, summary, reveal)
     app.py               # composition root/lifespan, lỗi, API AI/projects/status/events
     config.py            # cấu hình, secret env và đường dẫn dữ liệu
     storage/             # SQLite: __init__ ghép Store + Db, schema.py (schema/migration), messages, outbox,
-                         # tasks (rule/phiên AI/Q&A), data (digest/thống kê/dọn dữ liệu), flow (UI flow job)
+                         # tasks (rule/phiên AI/Q&A), data (digest/thống kê/dọn dữ liệu), flow (UI flow job),
+                         # docs (bảng tài liệu/đoạn, tìm không dấu, tóm tắt)
     models.py            # DTO/wire contract và model nội bộ
     ai.py                # AiService: soạn trả lời, ticket, Q&A, Đối chiếu BE; dữ liệu đưa vào prompt (data_json, who)
     ai_prompts.py        # prompt AI dùng chung: ASK_STYLE, ASK_MSG, SYSTEM_PROMPT, session_rules…
@@ -50,6 +59,7 @@ web/
       page.tsx           # entrypoint Telegram (/)
       youtrack/page.tsx  # entrypoint YouTrack (/youtrack/)
       settings/page.tsx  # entrypoint Settings (/settings/)
+      docs/page.tsx      # entrypoint Tài liệu (/docs/)
       _components/       # shell, guide và tour điều phối toàn app
       *.css              # design tokens và CSS toàn app
     features/
@@ -61,6 +71,9 @@ web/
         components/      # tickets, dashboard, flow, release, ticket form…
         lib/             # YouTrack client/query, flow draft, stats, mention adapter
         flow-engine/     # ES modules: model/layout, geometry, renderer, camera, player, editor/inspector, finder, styles
+      docs/
+        components/      # app (thanh tìm, lọc nguồn, dải lỗi đồng bộ), results, reader, sources, ask (ô hỏi AI)
+        lib/             # query/action /api/docs, lỗi, tô từ khớp
       settings/
         components/      # cấu hình và preview giao diện
     shared/

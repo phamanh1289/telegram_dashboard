@@ -7,6 +7,8 @@ from urllib.parse import parse_qs
 import httpx
 from conftest import FakeAgent
 from fastapi import FastAPI
+from telegram_dashboard.docs.library import Library
+from telegram_dashboard.storage import Db, Store
 from telegram_dashboard.youtrack.api import build_router
 from telegram_dashboard.youtrack.client import YtError
 from yt_test_helpers import done, issue, make
@@ -179,10 +181,11 @@ async def test_ai_reads_only_a_registered_code_folder():
         assert len(agent.calls) == 5
 
 
-async def test_ai_ticket_reads_kb_links_in_the_ticket():
+async def test_ai_ticket_reads_kb_links_in_the_ticket(tmp_path):
     def handler(req):
         if req.url.path == "/api/articles/VA-A-7":
-            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field"})
+            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field",
+                                             "updated": 1})  # fmt: skip
         if req.url.path == "/api/users/me":
             return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
         return httpx.Response(200, json={**issue(1), "description": "xem http://yt/articles/VA-A-7",
@@ -194,6 +197,10 @@ async def test_ai_ticket_reads_kb_links_in_the_ticket():
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.yt = svc
+    store = Store(tmp_path / "db.sqlite3")
+    app.state.docs = Library(
+        types.SimpleNamespace(data_dir=tmp_path / "data"), Db(store, types.SimpleNamespace(notify=lambda: None)), None
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "split"})
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})

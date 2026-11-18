@@ -323,6 +323,172 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Docs */
+        get: operations["docs_api_docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Search
+         * @description Matching parts (best first) and tracked-chat messages, with how much of it Hỏi AI would send.
+         */
+        get: operations["search_api_docs_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sources */
+        get: operations["sources_api_docs_sources_get"];
+        put?: never;
+        /** Set Sources */
+        post: operations["set_sources_api_docs_sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/sources/pick": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pick Source */
+        post: operations["pick_source_api_docs_sources_pick_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Now
+         * @description Errors come back per source in `errors`; a failed source keeps its docs.
+         */
+        post: operations["sync_now_api_docs_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask */
+        post: operations["ask_api_docs_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{doc_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detail */
+        get: operations["detail_api_docs__doc_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{doc_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Summary
+         * @description A stored summary still matching the text comes back at once, without an AI run.
+         */
+        post: operations["summary_api_docs__doc_id__summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/{doc_id}/reveal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reveal
+         * @description Show the file in Finder / Explorer: the stored path of a `file` doc only.
+         */
+        post: operations["reveal_api_docs__doc_id__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/update": {
         parameters: {
             query?: never;
@@ -3094,6 +3260,172 @@ export interface components {
              */
             status: "decided" | "open" | "dropped";
         };
+        /** DocAnswer */
+        DocAnswer: {
+            /** Text */
+            text: string;
+            /** Cites */
+            cites: components["schemas"]["DocCite"][];
+        };
+        /** DocAskBody */
+        DocAskBody: {
+            /** Question */
+            question: string;
+            /**
+             * Q
+             * @default
+             */
+            q: string;
+            /** Source */
+            source?: ("youtrack" | "telegram" | "file") | null;
+            /** Ticket */
+            ticket?: string | null;
+            /** Doc */
+            doc?: number | null;
+        };
+        /** DocCite */
+        DocCite: {
+            /** N */
+            n: number;
+            /** Doc */
+            doc?: number | null;
+            /** Part */
+            part?: number | null;
+            /** Chat Id */
+            chat_id?: string | null;
+            /** Message Id */
+            message_id?: number | null;
+        };
+        /** DocDTO */
+        DocDTO: {
+            /** Id */
+            id: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "youtrack" | "file";
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /** Chars */
+            chars: number;
+            /** Updated At */
+            updated_at: string | null;
+            /** Tickets */
+            tickets: string[];
+            /** Url */
+            url: string | null;
+            /** Has Summary */
+            has_summary: boolean;
+        };
+        /** DocDetail */
+        DocDetail: {
+            doc: components["schemas"]["DocDTO"];
+            /** Parts */
+            parts: components["schemas"]["DocPart"][];
+            /** Summary */
+            summary: string | null;
+        };
+        /** DocHit */
+        DocHit: {
+            doc: components["schemas"]["DocDTO"];
+            /** Part */
+            part: number;
+            /** Line */
+            line: number;
+            /** Heading */
+            heading: string;
+            /** Text */
+            text: string;
+            /** Marks */
+            marks: [
+                number,
+                number
+            ][];
+        };
+        /** DocMsgHit */
+        DocMsgHit: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: number;
+            /** Chat Title */
+            chat_title: string;
+            /** Sender Name */
+            sender_name: string | null;
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /** Text */
+            text: string;
+            /** Marks */
+            marks: [
+                number,
+                number
+            ][];
+        };
+        /** DocPart */
+        DocPart: {
+            /** Part */
+            part: number;
+            /** Line */
+            line: number;
+            /** Heading */
+            heading: string;
+            /** Body */
+            body: string;
+        };
+        /** DocSearch */
+        DocSearch: {
+            /** Hits */
+            hits: components["schemas"]["DocHit"][];
+            /** Messages */
+            messages: components["schemas"]["DocMsgHit"][];
+            /** Ask Parts */
+            ask_parts: number;
+            /** Ask Chars */
+            ask_chars: number;
+        };
+        /** DocSourceError */
+        DocSourceError: {
+            /** Source */
+            source: string;
+            /** Ref */
+            ref: string;
+            /** Code */
+            code: string;
+            /** Detail */
+            detail: string;
+        };
+        /** DocSources */
+        DocSources: {
+            /** Projects */
+            projects: string[];
+            /** Folders */
+            folders: string[];
+            /** Synced At */
+            synced_at: string | null;
+            /** Errors */
+            errors: components["schemas"]["DocSourceError"][];
+        };
+        /** DocSourcesBody */
+        DocSourcesBody: {
+            /** Projects */
+            projects: string[];
+            /** Folders */
+            folders: string[];
+        };
+        /** DocSummary */
+        DocSummary: {
+            /** Text */
+            text: string;
+            /** Cached */
+            cached: boolean;
+        };
         /**
          * FlowCheckDTO
          * @description A render's input counted by code before the run: estimated tokens by source, size, what may go wrong.
@@ -4724,6 +5056,307 @@ export interface operations {
             };
         };
     };
+    docs_api_docs_get: {
+        parameters: {
+            query?: {
+                source?: ("youtrack" | "telegram" | "file") | null;
+                ticket?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_api_docs_search_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                source?: ("youtrack" | "telegram" | "file") | null;
+                ticket?: string | null;
+                doc?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSearch"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_api_docs_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSources"];
+                };
+            };
+        };
+    };
+    set_sources_api_docs_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocSourcesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSources"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pick_source_api_docs_sources_pick_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSources"] | null;
+                };
+            };
+            /** @description Cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    sync_now_api_docs_sync_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSources"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ask_api_docs_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocAskBody"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: DocAnswer} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    detail_api_docs__doc_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summary_api_docs__doc_id__summary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: DocSummary} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reveal_api_docs__doc_id__reveal_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_update_api_update_get: {
         parameters: {
             query?: never;
@@ -4934,7 +5567,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                item: "messages" | "sessions" | "digests" | "outbox" | "media" | "runs" | "logs";
+                item: "messages" | "sessions" | "digests" | "outbox" | "media" | "runs" | "logs" | "docs";
             };
             cookie?: never;
         };

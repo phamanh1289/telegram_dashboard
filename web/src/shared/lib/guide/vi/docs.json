@@ -1,0 +1,97 @@
+[
+  {
+    "id": "docs-search",
+    "tab": "docs",
+    "area": "Tài liệu › Ô tìm",
+    "title": "Tìm trong tài liệu (gõ không dấu vẫn ra)",
+    "what": "Trang Tài liệu gom bài Knowledge Base của các project YouTrack đã chọn và file trong thư mục trên máy (.md, .txt, .json, .yaml, .docx) vào một kho, tìm ngay trên máy. Gõ có dấu hay không dấu đều khớp (\"giai ngan\" ra \"giải ngân\"); kết quả là từng đoạn khớp, gom theo tài liệu, đoạn tốt nhất lên đầu, chữ khớp được tô sáng. Dưới các tài liệu là \"Tin Telegram\": tin của các nhóm đang theo dõi có chứa từ tìm, bấm một tin để mở đúng tin đó trong nhóm. Chưa gõ gì thì danh sách là mọi tài liệu, mới cập nhật trước. Từ tìm, bộ lọc và tài liệu đang mở nằm trên URL: gửi link là người nhận mở đúng chỗ đó.",
+    "how": [
+      {
+        "t": "Bấm \"Tài liệu\" trên thanh trên cùng để mở trang Tài liệu",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]"
+      },
+      {
+        "t": "Gõ từ cần tìm vào ô \"Tìm trong tài liệu\" (có dấu hay không dấu đều được)",
+        "at": "Tìm trong tài liệu"
+      },
+      {
+        "t": "Chỉ xem một nguồn: chọn YouTrack, Telegram hoặc File ở \"Lọc theo nguồn\"",
+        "at": "Lọc theo nguồn"
+      },
+      {
+        "t": "Bấm một đoạn khớp để đọc nó trong tài liệu bên phải; bấm một tin Telegram để mở tin đó trong nhóm",
+        "at": "css:section[aria-label=\"Kết quả\"] button"
+      }
+    ],
+    "keys": "tai lieu tài liệu tim kiem tìm kiếm khong dau không dấu knowledge base kb bai viet bài viết file thu muc thư mục doan khop đoạn khớp to sang tin telegram ticket ma ticket docs search document"
+  },
+  {
+    "id": "docs-read",
+    "tab": "docs",
+    "area": "Tài liệu › Đọc tài liệu",
+    "title": "Đọc tài liệu và lọc theo ticket",
+    "what": "Cột phải hiện cả tài liệu đang mở, cuộn tới đúng đoạn vừa bấm (đoạn đó được tô nền) và tô các từ đang tìm. Tài liệu dài có \"Mục lục\" bên trái để nhảy giữa các mục. Dòng dưới tiêu đề ghi mã, ngày cập nhật, số ký tự và các ticket tài liệu nhắc tới: bấm một ticket để chỉ hiện các tài liệu nhắc ticket đó (bỏ lọc ở nút × cạnh \"lọc ticket:\"). Mã ticket trong nội dung hiện thành chip, rê chuột lên để xem nhanh ticket. \"Bản gốc\" mở bài trên YouTrack; với file trên máy, \"Mở file\" hiện file trong Finder / Explorer. Màn hẹp: danh sách và tài liệu thành một cột, nút mũi tên \"Quay lại danh sách\" trở về.",
+    "how": [
+      {
+        "t": "Bấm một tài liệu hoặc một đoạn khớp ở danh sách bên trái",
+        "at": "css:section[aria-label=\"Kết quả\"] button"
+      },
+      {
+        "t": "Dùng \"Mục lục\" để nhảy tới một mục",
+        "at": "css:nav[aria-label=\"Mục lục\"]"
+      },
+      "Bấm một mã ticket dưới tiêu đề để chỉ hiện tài liệu nhắc ticket đó; bấm × cạnh \"lọc ticket:\" để bỏ lọc",
+      {
+        "t": "Bấm \"Bản gốc\" (bài YouTrack) hoặc \"Mở file\" (file trên máy) để mở bản gốc",
+        "at": ["Bản gốc", "Mở file"]
+      }
+    ],
+    "keys": "doc tai lieu đọc tài liệu muc luc mục lục ticket loc ticket lọc ticket chip ban goc bản gốc mo file mở file finder explorer youtrack article reader nhac ticket nhắc ticket"
+  },
+  {
+    "id": "docs-sources",
+    "tab": "docs",
+    "area": "Tài liệu › Nguồn",
+    "title": "Chọn nguồn tài liệu và đồng bộ",
+    "what": "Nút \"Nguồn\" (cạnh ô tìm) chọn những gì vào kho: tick các project Knowledge Base của YouTrack, thêm thư mục trên máy (\"Thêm thư mục\" mở hộp chọn thư mục, mỗi thư mục tối đa 2.000 file), bỏ thư mục bằng nút × (file trên máy vẫn giữ). Lần đầu mở Tài liệu, kho lấy sẵn project đang dùng ở tab YouTrack. Mỗi lần mở trang app đồng bộ lại nếu lần trước đã quá 10 phút; nút xoay \"Đồng bộ lại\" đồng bộ ngay. Nguồn nào lỗi (thư mục không còn, file không đọc được, YouTrack lỗi) thì dải đỏ \"Đồng bộ chưa trọn\" hiện dưới thanh tìm, huy hiệu đỏ trên \"Nguồn\" đếm số lỗi; tài liệu cũ của nguồn đó vẫn giữ để tìm. Xóa cả kho ở Cài đặt › Dữ liệu › Tài liệu.",
+    "how": [
+      {
+        "t": "Bấm \"Nguồn\" cạnh ô tìm",
+        "at": "Nguồn"
+      },
+      {
+        "t": "Tick project Knowledge Base cần đưa vào kho, hoặc bấm \"Thêm thư mục\" để chọn một thư mục trên máy",
+        "at": "Thêm thư mục"
+      },
+      {
+        "t": "Bấm nút xoay \"Đồng bộ lại\" để tải lại mọi nguồn ngay",
+        "at": "Đồng bộ lại"
+      },
+      "Có dải đỏ \"Đồng bộ chưa trọn\": đọc lỗi trong dải (hoặc mục \"Lỗi đồng bộ\" trong \"Nguồn\"), sửa rồi bấm \"Thử lại\""
+    ],
+    "keys": "nguon nguồn dong bo đồng bộ sync them thu muc thêm thư mục folder project knowledge base kb loi dong bo lỗi đồng bộ dai bao do khong thay tai lieu không thấy tài liệu vi sao tim khong ra file md docx"
+  },
+  {
+    "id": "docs-ask",
+    "tab": "docs",
+    "area": "Tài liệu › Ô hỏi AI",
+    "title": "Hỏi AI trên tài liệu, tóm tắt một tài liệu",
+    "what": "Ô hỏi AI ghim dưới đáy trang Tài liệu. Đã gõ từ tìm: AI chỉ đọc các đoạn đang hiện trong danh sách, dòng trên ô ghi trước số đoạn và số ký tự sẽ gửi; không có đoạn nào khớp thì nút \"Hỏi\" tắt. Chưa gõ từ tìm: AI tự tìm đoạn theo từ của câu hỏi (trong tài liệu đang mở nếu có). Câu trả lời trích nguồn [1], [2]: bấm số để mở đúng đoạn hoặc đúng tin Telegram. Đang mở một tài liệu: \"Tóm tắt tài liệu này\" cho AI đọc cả tài liệu và tóm tắt; bản tóm tắt được lưu, lần sau hiện ngay nếu tài liệu chưa đổi. Nút thùng rác xóa hội thoại. Model / effort chọn ngay trong ô, dùng chung lựa chọn \"Tóm tắt, soạn nháp\" ở Cài đặt › AI.",
+    "how": [
+      {
+        "t": "Gõ từ tìm trước để chọn đoạn sẽ gửi; xem dòng \"Hỏi trên N đoạn đang hiện\" trên ô hỏi",
+        "at": "Tìm trong tài liệu"
+      },
+      {
+        "t": "Gõ câu hỏi vào ô \"Hỏi AI trên tài liệu\" rồi bấm \"Hỏi\" (hoặc Enter)",
+        "at": "Hỏi AI trên tài liệu"
+      },
+      "Bấm số [n] trong câu trả lời để mở đoạn / tin được trích",
+      {
+        "t": "Đang mở một tài liệu: bấm \"Tóm tắt tài liệu này\" để AI tóm tắt cả tài liệu",
+        "at": "Tóm tắt tài liệu này"
+      }
+    ],
+    "keys": "hoi ai hỏi ai tai lieu tóm tắt tom tat summary trich nguon trích nguồn doan dang hien đoạn đang hiện ky tu ký tự ask docs"
+  }
+]

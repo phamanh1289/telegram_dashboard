@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from conftest import FakeTransport, msg  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
+from telegram_dashboard.docs import sync as doc_sync  # noqa: E402
 from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.storage import Store  # noqa: E402
 from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
@@ -342,6 +343,30 @@ async def delete(request: Request):
 
 
 TITLES = {A: "Nhóm Dự án", B: "Nhóm Bạn bè"}
+
+# Tài liệu (docs.spec): the real library over folders in the temp dir. DOCS holds `files`; EXTRA (`extra`: true) one
+# more folder, which `extra: "gone"` deletes before the sync, as an unplugged drive (its docs stay, with an error).
+DOCS, EXTRA = tmp / "docs-e2e", tmp / "docs-e2e-extra"
+
+
+@ctl.post("/docs")
+async def docs_(request: Request):
+    b = await request.json()
+    DOCS.mkdir(exist_ok=True)
+    for name, text in b.get("files", {}).items():
+        (DOCS / name).write_text(text, encoding="utf-8")
+    extra = b.get("extra")
+    if extra is True:
+        EXTRA.mkdir(exist_ok=True)
+        (EXTRA / "so-tay.md").write_text("# Sổ tay\n\nGhi chú nội bộ của nhóm.\n", encoding="utf-8")
+    elif extra == "gone" and EXTRA.exists():
+        for f in EXTRA.iterdir():
+            f.unlink()
+        EXTRA.rmdir()
+    lib = app.state.docs
+    await lib.set_sources([], [str(DOCS), *([str(EXTRA)] if extra else [])])
+    await doc_sync.run(lib, app.state.yt)
+    return {"errors": lib.errors}
 
 
 async def main():

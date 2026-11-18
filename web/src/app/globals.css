@@ -527,6 +527,8 @@ button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-
 .md hr { border-color: var(--color-rule); }
 .md input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
+/* Tài liệu: the searched words in the open document (docs/reader.tsx, CSS Custom Highlight API). */
+::highlight(doc-hit) { background-color: var(--color-hl-wash); color: var(--color-ink); }
 /* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
 .yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* A mascot standing still (long lists, e.g. History rows: hundreds of looping animations would cost frames). */

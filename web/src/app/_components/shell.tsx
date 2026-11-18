@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
+import { BookOpenText, ExternalLink, Moon, Send, Settings, Sun } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -17,15 +17,17 @@ import { cn } from "@/shared/lib/utils";
 import { riskOf, useFreshTickets, useMyTickets, useWatchGlobal } from "@/features/youtrack/lib/yt";
 import { Pill } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
-import { GuideBot } from "@/app/_components/guide";
+import { GuideBot, type Module } from "@/app/_components/guide";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { note } from "@/features/youtrack/components/watch";
 
-// Chrome shared by the Telegram and YouTrack modules: the top bar and the toast.
+// Chrome shared by the modules (Telegram, YouTrack, Tài liệu) and Settings: the top bar and the toast.
 
+// label: a key of t(); "Telegram" / "YouTrack" are names and stay the same in English
 const MODULES = [
   ["telegram", "/", "Telegram", Send, "Chuyển sang Telegram Inbox"],
   ["youtrack", "/youtrack/", "YouTrack", YtLogo, "Chuyển sang YouTrack"],
+  ["docs", "/docs/", "Tài liệu", BookOpenText, "Chuyển sang Tài liệu"],
 ] as const;
 
 /** For the YouTrack switch while elsewhere (same cache key as the YouTrack page): `fresh` = open tickets newly given to me
@@ -68,7 +70,7 @@ function useUpdateState() {
 }
 
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
-export function TopBar({ module, children }: { module: "telegram" | "youtrack" | "settings"; children?: React.ReactNode }) {
+export function TopBar({ module, children }: { module: Module; children?: React.ReactNode }) {
   const t = useT();
   const { fresh, risk } = useYtBadge(module !== "youtrack");
   const tg = useTgBadge(module !== "telegram");
@@ -91,16 +93,16 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
           // Shared across both pages: on a module switch React morphs the pill and crossfades the rest (globals.css sets the timing).
           <ViewTransition key={id} name="module-pill">
             <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-              <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
+              <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{t(label)}</span>
             </span>
           </ViewTransition>
         ) : (
-          <Hint key={id} side="bottom" title={label} text={[t(title),
+          <Hint key={id} side="bottom" title={t(label)} text={[t(title),
             id === "telegram" && tg ? t("{n} tin tag đang chờ bạn", { n: tg }) : "",
             id === "youtrack" && fresh.length ? t("{n} ticket mới giao cho bạn: {list}", { n: fresh.length, list: list(fresh) }) : "",
             id === "youtrack" && risk.length ? t("{n} ticket cần xử lý ngay: {list}", { n: risk.length, list: list(risk) }) : ""].filter(Boolean).join(". ")}><Link href={href}
             className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] px-2.5 text-sm font-medium text-ink-3 no-underline transition-colors duration-(--dur-micro) hover:text-ink">
-            <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{label}</span>
+            <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{t(label)}</span>
             {/* New on the other module: red count; with nothing new, YouTrack's "needs you" amber. */}
             {id === "telegram" && tg > 0 && <SwitchBadge n={tg} label={t("tin tag đang chờ bạn")} />}
             {id === "youtrack" && (fresh.length > 0 ? <SwitchBadge n={fresh.length} label={t("ticket mới giao cho bạn")} />
@@ -109,6 +111,7 @@ export function TopBar({ module, children }: { module: "telegram" | "youtrack" |
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">
+        {/* Tài liệu: the default (telegram) scope, the closest one */}
         <AiQuota scope={module === "youtrack" ? "youtrack" : "telegram"} />
         <GuideBot module={module} />
         <Hint side="bottom" title={t("Giao diện")} text={t("Đổi giao diện sáng / tối.")}><Button size="icon-sm" variant="ghost" aria-label={t("Đổi giao diện sáng / tối")}

@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 KEEP_DAYS = 30  # "older than": messages and the send log
 LOGS = ("server.log", "server.log.1")  # the git launcher's (Start Dashboard Telegram.command)
 
-Item = Literal["messages", "sessions", "digests", "outbox", "media", "runs", "logs"]
+Item = Literal["messages", "sessions", "digests", "outbox", "media", "runs", "logs", "docs"]
 
 
 class DataItem(BaseModel):
@@ -54,7 +54,7 @@ class DataChat(BaseModel):
 
 
 class DataPart(BaseModel):
-    id: str  # db | sessions | media | runs | logs | login | config (the rest of data/ is total minus these)
+    id: str  # db | sessions | media | runs | logs | docs | login | config (the rest of data/ is total minus these)
     bytes: int
 
 
@@ -130,6 +130,7 @@ def stats(s, settings) -> DataStats:
     with contextlib.suppress(OSError), open(runs) as fh:
         first = next(fh, "")
     logs = _files(p for n in LOGS if _size(p := data / n))  # a cleared log stays as an empty file
+    docs = s.store.doc_stats()
     login = _files([Path(f"{settings.session_path}.session")])
     config = _files(data.glob("*.json"))
     items = [
@@ -140,12 +141,13 @@ def stats(s, settings) -> DataStats:
         DataItem(id="media", bytes=media[0], count=media[1], oldest=media[2]),
         DataItem(id="runs", bytes=_size(runs), count=_lines(runs), oldest=_first_at(first)),
         DataItem(id="logs", bytes=logs[0], count=logs[1]),  # an mtime is its latest line, not its oldest
+        DataItem(id="docs", bytes=_size(data / "docs"), count=docs["count"], oldest=_ts(docs["oldest"])),
         DataItem(id="login", bytes=login[0], count=login[1]),
         DataItem(id="config", bytes=config[0], count=config[1]),
     ]  # fmt: skip
     db_bytes = sum(_size(Path(f"{settings.db_path}{x}")) for x in ("", "-wal", "-shm"))
     on_disk = {"db": db_bytes, "sessions": _size(tasks_dir(settings)), "media": media[0], "runs": _size(runs),
-               "logs": logs[0], "login": login[0], "config": config[0]}  # fmt: skip
+               "logs": logs[0], "docs": _size(data / "docs"), "login": login[0], "config": config[0]}  # fmt: skip
     return DataStats(
         dir=str(data), total=_size(data), keep_days=KEEP_DAYS, db=db_bytes, db_free=db["free"],
         parts=[DataPart(id=k, bytes=v) for k, v in on_disk.items()],
@@ -171,6 +173,9 @@ def _clear_files(settings, item: str) -> None:
     if item == "media":
         for p in (data / "media").glob("*.jpg"):
             p.unlink(missing_ok=True)
+    elif item == "docs":  # the cached articles only: a chosen folder is indexed in place, its files are never here
+        with contextlib.suppress(FileNotFoundError):
+            shutil.rmtree(data / "docs")
     elif item == "runs":
         _runs_path(settings).unlink(missing_ok=True)
     elif item == "logs":
@@ -367,6 +372,14 @@ def build_router(settings) -> APIRouter:
             await s.db.write(s.store.clear_digests)
         elif item == "outbox":
             await s.db.write(s.store.clear_sent, _before())
+        elif item == "docs":
+            async with s.docs.sync_lock:  # a running sync must not write back what is cleared here
+                try:  # files first: a failure leaves rows and files as they were
+                    await asyncio.to_thread(_clear_files, settings, item)
+                except OSError as e:
+                    raise ApiError(500, "data_clear_failed") from e
+                await s.db.write(s.store.doc_clear)
+                s.docs.synced_at = None  # the screen syncs again when next opened, not after SYNC_STALE
         elif item == "sessions":
             for t in await s.db.read(_done_sessions, s):
                 if s.agent.running(t["id"]):  # started again since the list was read

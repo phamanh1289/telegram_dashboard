@@ -1,0 +1,97 @@
+[
+  {
+    "id": "docs-search",
+    "tab": "docs",
+    "area": "Documents › Search box",
+    "title": "Search the documents (accents optional)",
+    "what": "The Documents page gathers the Knowledge Base articles of the YouTrack projects you picked and the files in folders on this machine (.md, .txt, .json, .yaml, .docx) into one library, searched right on this machine. Words match with or without Vietnamese accents (\"giai ngan\" finds \"giải ngân\"); the results are the matching passages, grouped by document, best first, with the matched words highlighted. Under the documents comes \"Telegram messages\": messages of the groups you track that contain the words; click one to open that very message in its group. With nothing typed, the list is every document, most recently updated first. The search, the filters and the open document live in the URL: send the link and the reader lands on the same spot.",
+    "how": [
+      {
+        "t": "Click \"Documents\" in the top bar to open the Documents page",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]"
+      },
+      {
+        "t": "Type what you are looking for in \"Search the documents\" (with or without accents)",
+        "at": "Tìm trong tài liệu"
+      },
+      {
+        "t": "To see one source only: pick YouTrack, Telegram or File in \"Filter by source\"",
+        "at": "Lọc theo nguồn"
+      },
+      {
+        "t": "Click a matching passage to read it in the document on the right; click a Telegram message to open it in its group",
+        "at": "css:section[aria-label=\"Kết quả\"] button"
+      }
+    ],
+    "keys": "tai lieu tim kiem khong dau documents docs search accents knowledge base kb article file folder passage match highlight telegram messages"
+  },
+  {
+    "id": "docs-read",
+    "tab": "docs",
+    "area": "Documents › Reading a document",
+    "title": "Read a document and filter by ticket",
+    "what": "The right column shows the whole open document, scrolled to the passage you clicked (with a tinted background) and with the searched words lit. A long document has a \"Contents\" list on the left to jump between sections. The line under the title gives the reference, the update date, the size in characters and the tickets the document mentions: click a ticket to show only the documents that mention it (clear it with the × next to \"ticket filter:\"). Ticket IDs in the text show as chips; hover one for a quick look at the ticket. \"Original\" opens the article in YouTrack; for a file on this machine, \"Show file\" reveals it in Finder / Explorer. In a narrow window the list and the document share one column; the arrow button \"Back to the list\" goes back.",
+    "how": [
+      {
+        "t": "Click a document or a matching passage in the list on the left",
+        "at": "css:section[aria-label=\"Kết quả\"] button"
+      },
+      {
+        "t": "Use \"Contents\" to jump to a section",
+        "at": "css:nav[aria-label=\"Mục lục\"]"
+      },
+      "Click a ticket ID under the title to show only the documents that mention it; click × next to \"ticket filter:\" to clear it",
+      {
+        "t": "Click \"Original\" (YouTrack article) or \"Show file\" (file on this machine) to open the original",
+        "at": ["Bản gốc", "Mở file"]
+      }
+    ],
+    "keys": "doc tai lieu read document contents table of contents ticket filter chip original show file finder explorer youtrack article reader mentions ticket"
+  },
+  {
+    "id": "docs-sources",
+    "tab": "docs",
+    "area": "Documents › Sources",
+    "title": "Pick the document sources and sync",
+    "what": "The \"Sources\" button (next to the search box) picks what goes into the library: tick YouTrack Knowledge Base projects, add folders on this machine (\"Add folder\" opens a folder picker, up to 2,000 files per folder), remove a folder with its × button (the files on disk stay). The first time you open Documents, the library starts with the project in use on the YouTrack tab. Opening the page syncs again when the last sync is more than 10 minutes old; the round \"Sync again\" button syncs now. When a source fails (the folder is gone, a file cannot be read, YouTrack errors), a red \"Sync incomplete\" strip shows under the search bar and a red badge on \"Sources\" counts the errors; that source's earlier documents stay searchable. Clear the whole library in Settings › Data › Documents.",
+    "how": [
+      {
+        "t": "Click \"Sources\" next to the search box",
+        "at": "Nguồn"
+      },
+      {
+        "t": "Tick the Knowledge Base projects to include, or click \"Add folder\" to pick a folder on this machine",
+        "at": "Thêm thư mục"
+      },
+      {
+        "t": "Click the round \"Sync again\" button to reload every source now",
+        "at": "Đồng bộ lại"
+      },
+      "A red \"Sync incomplete\" strip: read the errors in it (or under \"Sync errors\" in \"Sources\"), fix them, then click \"Retry\""
+    ],
+    "keys": "nguon dong bo sources sync add folder project knowledge base kb sync errors red strip document missing why search cannot find file md docx"
+  },
+  {
+    "id": "docs-ask",
+    "tab": "docs",
+    "area": "Documents › AI box",
+    "title": "Ask the AI about the documents, summarise one",
+    "what": "The AI box is pinned at the bottom of the Documents page. With a search typed, the AI reads only the passages the list shows, and the line above the box says beforehand how many passages and characters it will send; with no matching passage the \"Ask\" button is off. With no search typed, the AI finds passages by the question's own words (in the open document, if one is open). Answers cite their sources as [1], [2]: click a number to open that passage or Telegram message. With a document open, \"Summarise this document\" has the AI read the whole document and summarise it; the summary is kept and shows at once next time if the document has not changed. The bin button clears the conversation. Pick the model / effort right in the box: the same pick as \"Summaries, drafts\" in Settings › AI.",
+    "how": [
+      {
+        "t": "Type a search first to choose the passages to send; see the line \"Asks over the N passages shown\" above the box",
+        "at": "Tìm trong tài liệu"
+      },
+      {
+        "t": "Type your question in \"Ask the AI about the documents\" and click \"Ask\" (or Enter)",
+        "at": "Hỏi AI trên tài liệu"
+      },
+      "Click a number [n] in the answer to open the cited passage / message",
+      {
+        "t": "With a document open: click \"Summarise this document\" to have the AI summarise all of it",
+        "at": "Tóm tắt tài liệu này"
+      }
+    ],
+    "keys": "hoi ai tai lieu tom tat ask ai documents summary summarise cite sources passages shown characters"
+  }
+]

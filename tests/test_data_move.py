@@ -151,3 +151,61 @@ def test_crash_after_rename_is_finished(tmp_path):
     os.rename(old, home / "data")  # the start that died before writing the pointer
     local_data.apply_move(s.root)
     assert s.data_dir == home.resolve() / "data" and s.db_path.is_file()
+
+
+def test_clearing_docs_empties_the_store_and_keeps_the_users_files(tmp_path):
+    s, data = _install(tmp_path)
+    (data / "docs" / "youtrack").mkdir(parents=True)
+    (data / "docs" / "youtrack" / "VA-A-1.md").write_text("cache")
+    mine = tmp_path / "my-docs"
+    mine.mkdir()
+    (mine / "spec.md").write_text("mine")  # a chosen folder: indexed in place, never inside data/docs
+    local_data._clear_files(s, "docs")
+    assert not (data / "docs").exists() and (mine / "spec.md").read_text() == "mine"
+    local_data._clear_files(s, "docs")  # nothing there: no error
+
+
+async def _clear_docs(tmp_path):
+    """DELETE /api/data/docs on a small app: (status, json, store, the Library stand-in)."""
+    import asyncio
+    from types import SimpleNamespace as NS
+
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+    from telegram_dashboard.storage import Db, Store
+
+    s, data = _install(tmp_path)
+    (data / "docs").mkdir()
+    store = Store(tmp_path / "db.sqlite3")
+    store.doc_upsert("yt_article", "VA-A-1", title="t", path="p", hash="h", chars=1, size=1, updated_at=1,
+                     tickets=[], parts=[])  # fmt: skip
+    app = FastAPI()
+    docs = NS(sync_lock=asyncio.Lock(), synced_at=1.0)
+    app.state.store, app.state.db, app.state.docs = store, Db(store, NS(notify=lambda: None)), docs
+    app.include_router(local_data.build_router(s))
+
+    @app.exception_handler(ApiError)
+    async def _(_, e):
+        return JSONResponse({"error": {"code": e.code}}, status_code=e.status)
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.delete("/api/data/docs")
+    return r, store, docs
+
+
+async def test_clearing_docs_failure_is_data_clear_failed_and_keeps_the_rows(tmp_path, monkeypatch):
+    def boom(*_a, **_k):
+        raise PermissionError(13, "denied")
+
+    monkeypatch.setattr(local_data.shutil, "rmtree", boom)
+    r, store, docs = await _clear_docs(tmp_path)
+    assert r.status_code == 500 and r.json()["error"]["code"] == "data_clear_failed"
+    assert store.doc_stats()["count"] == 1  # files and rows both untouched
+    assert docs.synced_at == 1.0 and not docs.sync_lock.locked()
+
+
+async def test_clearing_docs_makes_the_screen_sync_again_on_next_open(tmp_path):
+    r, store, docs = await _clear_docs(tmp_path)
+    assert r.status_code == 204 and store.doc_stats()["count"] == 0
+    assert docs.synced_at is None  # not an empty screen until SYNC_STALE passes

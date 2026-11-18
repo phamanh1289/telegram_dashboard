@@ -12,7 +12,7 @@ import { cn } from "@/shared/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc" | "flowHtml" | "flowSave";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc" | "flowHtml" | "flowSave" | "docs";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -37,6 +37,7 @@ const LINES: Record<FetchKind, Key[]> = {
   flowDoc: ["AI đang đọc ticket và story", "Đang trích nội dung từng AC", "Đang mở thiết kế Zeplin của từng màn", "Đang ghép màn, nút và màn đích", "Đang dò chỗ còn thiếu", "Đang viết tài liệu Markdown"],
   flowHtml: ["Đang gom các màn của sơ đồ", "Đang nhúng ảnh Zeplin vào file…", "Đang đóng gói trình xem offline", "Đang tạo file HTML…", "Sắp xong rồi"],
   flowSave: ["Đang nhúng ảnh Zeplin vào file…", "Đang tải file lên ticket", "Đang thay file cũ trên ticket", "Đang ghi bình luận thay đổi", "Sắp xong rồi"],
+  docs: ["AI đang mở kho tài liệu", "Đang lật từng tài liệu", "Đang soi đoạn khớp từ khóa", "Đang tô chữ khớp", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -216,6 +217,39 @@ const tid = (p: string, n: number) => `${p || "YT"}-${n}`; // a ticket ID of the
 const ARCS = ["M44 70C110 -6 200 0 268 80", "M44 70C110 150 200 160 268 80"];
 
 const SCENES: Record<FetchKind, Scene> = {
+  // Tài liệu: pages lift off a stack of documents into the robot, which holds a lens to the open page: a beam sweeps
+  // down it and the matching passages light up one by one
+  docs: () => {
+    const lit = (k: number) => v({ "--fx-d": "4.2s", animationDelay: `${0.5 + k * 0.7}s` });
+    const rows = [[80, false], [64, true], [72, false], [56, false], [70, true], [48, false], [66, true]] as const;
+    return <>
+      <div className="absolute top-[36px] left-1 h-[88px] w-[66px]">
+        {[2, 1, 0].map((k) => (
+          <span key={k} className="absolute inset-0 grid content-start gap-1.5 rounded-lg border border-rule bg-cotton p-2 shadow-stock" style={{ transform: `translate(${k * 3}px, ${-k * 3}px) rotate(${k * 3}deg)` }}>
+            <Line w="70%" className="h-1.5 bg-ink-3/40" /><Line w="90%" /><Line w="60%" /><Line w="80%" />
+          </span>
+        ))}
+      </div>
+      {[0, 1, 2, 3].map((k) => (
+        <Fly key={k} k={k} gap={0.7} dur={2.8} path="M44 76C72 36 100 44 124 76" className="grid h-6 w-5 content-start gap-0.5 rounded-sm border border-rule bg-cotton p-0.5 shadow-stock">
+          <Line w="80%" /><Line w="60%" />
+        </Fly>
+      ))}
+      <Cone className="top-[54px] left-[166px] h-14 w-[48px] rotate-180" />
+      <Bot ring className="top-1/2 left-[140px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <span className="absolute top-[90px] left-[154px] grid size-6 place-items-center rounded-full bg-cotton text-hl-2 shadow-stock"><Search className="size-3.5" /></span>
+      <div className="absolute top-2 right-1 bottom-2 w-[104px] overflow-hidden rounded-lg border border-rule bg-cotton p-2 shadow-stock">
+        <Line w="60%" className="h-1.5 bg-ink-3/40" />
+        {rows.map(([w, hit], k) => (
+          <span key={k} className="relative mt-2.5 block h-1 rounded-full bg-ink-3/25" style={{ width: `${w}%` }}>
+            {hit && <span className="fx-step absolute -inset-x-0.5 -inset-y-1 rounded-sm bg-hl/45" style={lit(k)} />}
+          </span>
+        ))}
+        <span className="fx-scan absolute inset-x-0 top-0 h-6 bg-linear-to-b from-transparent via-hl/20 to-transparent" style={v({ "--fx-y": "118px" })} />
+      </div>
+    </>;
+  },
+
   // UI flow: the robot sets down three phone screens one by one, then draws the arrows from a button to the next screen
   // (solid) and the way back (dashed grey), each with a dot running along it
   flow: () => {

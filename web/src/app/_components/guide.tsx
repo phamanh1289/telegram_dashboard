@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, BookOpen, ChevronDown, MousePointerClick, RotateCcw, Search, Send, Settings, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, BookOpenText, ChevronDown, MousePointerClick, RotateCcw, Search, Send, Settings, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { type CSSProperties, useDeferredValue, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -21,18 +21,18 @@ import { cn } from "@/shared/lib/utils";
 import { shortName, ytMeQuery } from "@/features/youtrack/lib/yt";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
 
-// In-app user guide as a floating "know-it-all" bot: a chat with the AI over every feature of the Telegram / YouTrack tabs
+// In-app user guide as a floating "know-it-all" bot: a chat with the AI over every feature of the Telegram / YouTrack / Tài liệu tabs
 // (shared/lib/guide/vi, English: shared/lib/guide/en) and, when allowed, the app's own code; each answer ends in buttons that take
 // you there: open the page, or a live walk-through of the feature's steps on the page (guide-tour). The top bar's light
 // bulb opens the same guide to browse (Guide), no AI.
 
-type Tab = "telegram" | "youtrack" | "settings";
-export type Module = "telegram" | "youtrack" | "settings";
+export type Module = "telegram" | "youtrack" | "settings" | "docs";
+type Tab = Module;
 /** A step: text with UI labels in quotes; `at` names the control the live guide lights (a label, or `css:<selector>`; several: first found). */
 export type Step = string | { t: string; at?: string | string[] };
 export type Feature = { id: string; tab: Tab; area: string; title: string; what: string; how: Step[]; keys?: string };
 export const stepText = (s: Step) => (typeof s === "string" ? s : s.t);
-const TAB: Record<Tab, Key> = { telegram: "Telegram", youtrack: "YouTrack", settings: "Cài đặt" };
+const TAB: Record<Tab, Key> = { telegram: "Telegram", youtrack: "YouTrack", docs: "Tài liệu", settings: "Cài đặt" };
 
 
 /** A step with its quoted UI labels drawn as little keys. */
@@ -261,7 +261,7 @@ export function GuideBot({ module }: { module: Module }) {
   const askBot = (q: string) => { setBook(false); setTimeout(() => { setBot({ ask: q }); if (!BOT_STATE.open) toggleBot(); }, EXIT * 1000); };
   return (
     <>
-      <Hint side="bottom" title={t("Hướng dẫn")} text={t("Duyệt mọi tính năng Telegram / YouTrack / Cài đặt: cách dùng từng bước, hoặc để app chỉ trực tiếp trên màn hình.")}>
+      <Hint side="bottom" title={t("Hướng dẫn")} text={t("Duyệt mọi tính năng Telegram / YouTrack / Tài liệu / Cài đặt: cách dùng từng bước, hoặc để app chỉ trực tiếp trên màn hình.")}>
         <Button size="icon-sm" variant="ghost" aria-label={t("Hướng dẫn sử dụng")} onClick={() => setBook(true)}><GuideBulb className="size-5" /></Button>
       </Hint>
       <Dialog open={book} onOpenChange={setBook}>
@@ -319,6 +319,7 @@ const STARTERS: Record<Module, Key[]> = {
   telegram: ["Làm sao tóm tắt một nhóm?", "Vì sao một tin không hiện trong Việc cần xử lý?", "Giao việc cho AI Agent thế nào?"],
   youtrack: ["Làm sao tạo ticket từ tin Telegram?", "Vì sao ticket không hiện trên Dashboard?", "Báo cáo release tự chạy khi nào?"],
   settings: ["Đổi model AI cho tóm tắt ở đâu?", "Bật thông báo khi có tag mới thế nào?", "Cập nhật app ra sao?"],
+  docs: ["Thêm thư mục tài liệu vào kho thế nào?", "Vì sao tìm không ra một tài liệu?", "Tìm tài liệu nhắc một ticket ra sao?"],
 };
 
 function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, onClose, onTour, t }: {
@@ -461,6 +462,7 @@ function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, o
 const TAB_LOOK: Record<Tab, { Icon: React.ComponentType<{ className?: string }>; tone: string }> = {
   telegram: { Icon: Send, tone: "bg-info-wash text-info" },
   youtrack: { Icon: YtLogo, tone: "bg-hl-wash text-hl-2" },
+  docs: { Icon: BookOpenText, tone: "bg-paper-3 text-ink" },
   settings: { Icon: Settings, tone: "bg-paper-3 text-ink-2" },
 };
 
@@ -481,7 +483,7 @@ function Guide({ cat, failed, onTour, onAsk, t }: { cat: Catalog | null; failed:
           className="h-9 w-full rounded-md border border-rule-2 bg-cotton pr-3 pl-8 text-sm text-ink placeholder:text-ink-3 hover:border-ink-3" />
       </div>
       <Segmented id="guide-tab" label={t("Khu vực")} value={tab} onChange={setTab} className="self-start"
-        items={[{ value: "all", label: t("Tất cả") }, { value: "telegram", label: "Telegram" }, { value: "youtrack", label: "YouTrack" }, { value: "settings", label: t("Cài đặt") }]} />
+        items={[{ value: "all", label: t("Tất cả") }, { value: "telegram", label: "Telegram" }, { value: "youtrack", label: "YouTrack" }, { value: "docs", label: t("Tài liệu") }, { value: "settings", label: t("Cài đặt") }]} />
       <div className="-mx-5 min-h-0 flex-1 overflow-y-auto px-5 pb-1">
         <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-ink">
           <BookOpen className="size-3.5 text-ink-3" aria-hidden />{dq ? t("Tính năng phù hợp") : t("Mọi tính năng")} <span className="font-mono font-normal text-ink-3 tabular-nums">{hits.length}</span><span className="h-px flex-1 bg-rule" />
