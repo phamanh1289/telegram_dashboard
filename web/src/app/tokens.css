@@ -62,6 +62,9 @@
   --color-ok: oklch(48% 0.11 150); --color-ok-wash: oklch(94.5% 0.035 145);
   --color-warn: oklch(50% 0.1 95); --color-warn-wash: oklch(95.5% 0.05 100);
   --color-error: oklch(50% 0.17 22); --color-error-wash: oklch(94.5% 0.03 22);
+  /* search hit (Tài liệu: the searched words in results and the open document): red fill, black text in light, white in dark */
+  --color-hit: oklch(70% 0.19 25); --color-hit-ink: oklch(15% 0 0);
+  --color-fav: oklch(80% 0.165 85); /* Yêu thích: the starred document's star, yellow in both modes */
   --color-badge: oklch(55% 0.2 25); /* new-items count on the module switch: red fill, white text, same in both modes */
   --color-info: oklch(48% 0.09 225); --color-info-wash: oklch(94.5% 0.025 225);
   /* code / key chips in messages: the one cool hue in the text, so keys never read as body copy or as the highlight */
@@ -111,6 +114,8 @@
   --color-ok: oklch(78% 0.11 150); --color-ok-wash: oklch(26% 0.04 150);
   --color-warn: oklch(84% 0.1 95); --color-warn-wash: oklch(27% 0.04 95);
   --color-error: oklch(73% 0.14 22); --color-error-wash: oklch(27% 0.055 22);
+  --color-hit: oklch(55% 0.2 25); --color-hit-ink: oklch(100% 0 0);
+  --color-fav: oklch(84% 0.16 88);
   --color-info: oklch(78% 0.08 225); --color-info-wash: oklch(26% 0.035 225);
   --color-code: oklch(83% 0.085 255); --color-code-wash: oklch(27% 0.045 258);
   --cat-1: oklch(70% 0.014 60); --cat-2: oklch(74% 0.11 45); --cat-3: oklch(74% 0.11 330);

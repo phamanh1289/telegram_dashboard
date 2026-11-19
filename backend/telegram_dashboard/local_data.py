@@ -373,7 +373,7 @@ def build_router(settings) -> APIRouter:
         elif item == "outbox":
             await s.db.write(s.store.clear_sent, _before())
         elif item == "docs":
-            async with s.docs.sync_lock:  # a running sync must not write back what is cleared here
+            async with s.docs.held():  # a running sync must not write back what is cleared here
                 try:  # files first: a failure leaves rows and files as they were
                     await asyncio.to_thread(_clear_files, settings, item)
                 except OSError as e:

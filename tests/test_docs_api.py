@@ -6,6 +6,7 @@ import pytest
 from conftest import ORIGIN, A, msg
 from telegram_dashboard import ai as ai_mod
 from telegram_dashboard import config
+from telegram_dashboard.config import write_private_json
 from telegram_dashboard.docs.library import Library, sha1
 from telegram_dashboard.docs.parts import split_parts, tickets_of
 from telegram_dashboard.storage import Db, Store
@@ -44,6 +45,11 @@ def add(client, ref, text, *, source="yt_article", path=None):
     path = path or s.settings.data_dir / "docs" / "youtrack" / f"{ref}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+    if source == "yt_article":  # its project chosen: not the Agent's hidden cache
+        src = s.docs.sources()
+        project = ref.split("-A-")[0]
+        if project not in src["projects"]:
+            write_private_json(s.settings.data_dir / "docs.json", {**src, "projects": [*src["projects"], project]})
     return s.store.doc_upsert(
         source, ref, title=f"Bài {ref}", path=str(path), hash=sha1(text), chars=len(text), size=len(text),
         updated_at=1_763_000_000_000, tickets=tickets_of(text), parts=split_parts(text),
@@ -231,3 +237,41 @@ def test_unknown_doc_is_404(client):
     for r in (client.get("/api/docs/999"), client.post("/api/docs/999/summary"),
               client.post("/api/docs/999/reveal")):  # fmt: skip
         assert r.status_code == 404 and r.json()["error"]["code"] == "doc_not_found"
+
+
+def test_long_parts_leave_room_for_telegram_messages():
+    from telegram_dashboard.docs.ask import DOC_ASK_CHARS, pack
+
+    parts = [{"doc_id": 1, "heading": "", "body": "x" * 2000} for _ in range(10)]
+    items, chars = pack(parts, [{"text": "tin nhóm"}])
+    assert items[-1]["text"] == "tin nhóm" and chars <= DOC_ASK_CHARS
+    assert len(pack(parts, [])[0]) == 6  # no message found: the parts get it all
+
+
+def test_the_agents_cache_is_hidden_listed_apart_and_dropped_alone(client):
+    add(client, "VA-A-1", "giải ngân trong nguồn")
+    s = client.app.state
+    path = s.settings.data_dir / "docs" / "youtrack" / "XO-A-9.md"
+    path.write_text("giải ngân ngoài nguồn", encoding="utf-8")
+    parts = [(1, "", "giải ngân ngoài nguồn")]  # an article the Agent opened, its project not chosen
+    s.store.doc_upsert("yt_article", "XO-A-9", title="x", path=str(path), hash="h", chars=1, size=1, updated_at=1,
+                       tickets=[], parts=parts)  # fmt: skip
+    refs = lambda r: [d["ref"] for d in r.json()]  # noqa: E731
+    assert refs(client.get("/api/docs")) == ["VA-A-1"]
+    assert refs(client.get("/api/docs", params={"source": "kb_cache"})) == ["XO-A-9"]
+    hits = client.get("/api/docs/search", params={"q": "giai ngan"}).json()["hits"]
+    assert [h["doc"]["ref"] for h in hits] == ["VA-A-1"]
+    hits = client.get("/api/docs/search", params={"q": "giai ngan", "source": "kb_cache"}).json()["hits"]
+    assert [h["doc"]["ref"] for h in hits] == ["XO-A-9"]
+    assert client.get("/api/docs/sources").json()["cached"] == 1
+    r = client.delete("/api/docs/cache")
+    assert r.status_code == 200 and r.json()["cached"] == 0
+    assert refs(client.get("/api/docs")) == ["VA-A-1"] and not path.exists()
+
+
+def test_ask_on_an_open_document_reads_all_of_it_matching_parts_first(client, ai):
+    text = "# Quy trình\n\n## Điều kiện\n\nCần đủ chữ ký.\n\n## Phí\n\nPhí 1%."
+    i = add(client, "VA-A-1", text)
+    r = client.post("/api/docs/ask", json={"question": "phí bao nhiêu?", "doc": i})
+    assert done(r)["cites"][0]["part"] == 2  # the matching part first
+    assert len(done(r)["cites"]) == 3 and "Cần đủ chữ ký" in ai.calls[-1]  # then the rest of the document

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import re
 from datetime import datetime
 from types import SimpleNamespace as NS
@@ -21,13 +22,14 @@ async def _no_ai(*_, **__):
 def state(tmp_path, content: str, tracked: bool = True, summary=None):
     calls = {"yt": 0}
     ask = summary or _no_ai
+
     async def yt(path, **_):
         assert path == "/api/articles/VA-A-134"
         calls["yt"] += 1
         return {"idReadable": "VA-A-134", "summary": "Quy trình", "content": content, "updated": 1}
 
-    async def read(fn, *a):
-        return fn(*a)
+    async def read(fn, *a, **kw):
+        return fn(*a, **kw)
 
     async def fetch_ids(chat_id, ids):
         assert (chat_id, ids) == ("-1001234", [39671])
@@ -48,8 +50,13 @@ def state(tmp_path, content: str, tracked: bool = True, summary=None):
         docs=Library(settings, db, ai),
         calls=calls,
         db=NS(read=read),
-        store=NS(get_messages_by_ids=lambda chat, ids: ([], ""), is_tracking=lambda chat: tracked,
-                 doc_find=store.doc_find),
+        store=NS(
+            get_messages_by_ids=lambda chat, ids: ([], ""),
+            is_tracking=lambda chat: tracked,
+            doc_find=store.doc_find,
+            doc_get=store.doc_get,
+            doc_list=store.doc_list,
+        ),
         bridge=NS(fetch_ids=fetch_ids),
     )
 
@@ -187,6 +194,40 @@ async def test_session_reads_tickets_named_by_id_and_their_documents(tmp_path):
     assert "dashboard không đọc được" not in out
     assert await link_block(s, text, None) == ""  # YouTrack AI: links only
     delete_links(s.settings, "t3")
+
+
+async def test_session_gets_library_docs_naming_its_ticket_and_typed_doc_refs(tmp_path):
+    s = state(tmp_path, "")
+    folder = tmp_path / "kb"
+    folder.mkdir()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "docs.json").write_text(json.dumps({"folders": [str(folder)]}))
+    spec, other = folder / "dac-ta.md", folder / "khac.md"
+    spec.write_text("Đặc tả VA-12: trả key theo vai trò")
+    other.write_text("Ghi chú nội bộ")
+    ids = [await s.docs.index("file", str(f), f.name, f.read_text(), path=f, size=1, updated_at=None)
+           for f in (spec, other)]  # fmt: skip
+
+    async def cached(key, fn):
+        return [{"shortName": "VA"}] if key == "projects" else await fn()
+
+    async def detail(i):
+        return {"id": i, "summary": "Trả key", "links": [], "comments": [], "description": "không link tài liệu"}
+
+    s.yt.cached, s.yt.detail = cached, detail
+    out = await expand(s, "làm VA-12", "t4")
+    assert f"## #DOC{ids[0]}" in out and "Tài liệu: dac-ta.md" in out and "trả key theo vai trò" in out
+    assert "Ghi chú nội bộ" not in out  # names no ticket of the session
+    typed = await expand(s, f"đọc #DOC{ids[1]}", "t4")
+    assert "Ghi chú nội bộ" in typed
+    quoted = await expand(s, f"xem tin\n\n<tg-ab12>\n#DOC{ids[1]}\n</tg-ab12>", "t4")
+    assert "Ghi chú nội bộ" not in quoted  # someone else's message can't pull a local file in
+    assert await link_block(s, f"#DOC{ids[1]}", None) == ""  # YouTrack AI: ticket text is not the user's ask
+    other.unlink()
+    (tmp_path / "data" / "docs.json").write_text(json.dumps({"folders": []}))
+    gone = await expand(s, f"đọc #DOC{ids[0]}", "t4")
+    assert "trả key theo vai trò" not in gone and "dashboard không đọc được" in gone  # out of the sources: unread
+    delete_links(s.settings, "t4")
 
 
 async def test_two_sessions_share_one_download_and_one_summary(tmp_path):

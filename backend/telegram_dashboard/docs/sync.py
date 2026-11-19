@@ -1,13 +1,16 @@
-"""One library sync: (1) the store dir against its rows, (2) the chosen projects' Knowledge Base articles, (3) the
-chosen folders. Runs when asked (opening the Tài liệu screen, refresh); no background timer.
+"""One library sync: (1) the store dir against its rows, (2) the chosen Knowledge Base projects and branches (a chosen
+article and every one under it, by parentArticle), (3) the chosen folders. Runs when asked (opening the Tài liệu
+screen, refresh); no background timer.
 
-A project's articles are listed with GET /api/admin/projects/{shortName}/articles?fields=idReadable,summary,updated
+A project's articles are listed with GET /api/admin/projects/{shortName}/articles?fields=idReadable,summary,updated,
+parentArticle(idReadable)
 paged by $top/$skip ("Articles in a Project", YouTrack REST docs). Taken from the docs, not checked with a live call
 (no token in the dev worktree), so a 403 / 404 there (admin endpoint closed to the user, or not on that server) falls
 back to GET /api/articles (no project filter, per the same docs) with project(shortName), kept to the project here.
-Only articles whose `updated` changed are downloaded.
+Only articles whose `updated` changed are downloaded, FETCHES at a time.
 
-Errors land in `lib.errors` as {source, ref, code, detail}; a failed source keeps its indexed docs."""
+Errors land in `lib.errors` as {source, ref, code, detail}; a failed source keeps its indexed docs. A sources change
+(`lib.stop`) ends the sync at its next doc: nothing more is written or dropped, errors and synced_at stay as is."""
 
 import asyncio
 import os
@@ -20,10 +23,20 @@ from .extract import EXTS, read_text
 from .library import Library, folder_prefix, sha1
 
 PAGE = 100
+FETCHES = 4  # articles downloaded at once
 MAX_FILES = 2000  # per folder: a picked home dir must not index the whole disk
 SKIP_DIRS = {"node_modules", "__pycache__"}  # and every dot dir (.git, .venv…)
 # what a broken / encrypted / odd file raises past read_text's ValueError(code)
 _READ_ERRORS = (OSError, RuntimeError, EOFError, NotImplementedError, zlib.error)
+
+
+class _Stopped(Exception):
+    pass
+
+
+def _go(lib: Library) -> None:
+    if lib.stop:
+        raise _Stopped
 
 
 def _err(errors: list, source: str, ref: str, code: str, detail: str = "") -> None:
@@ -39,8 +52,13 @@ async def _reconcile(lib: Library, errors: list) -> None:
     (not UTF-8, no permission) keeps its row and is reported."""
     keep = set()
     for r in await lib.db.read(lib.db.store.doc_list, source="yt_article"):
+        _go(lib)
         p = lib.path_of(r)
         try:
+            st = await asyncio.to_thread(p.stat)
+            if st.st_size == r["size"] and st.st_mtime <= r["fetched_at"]:  # untouched since it was indexed
+                keep.add(r["ref"])
+                continue
             text = await asyncio.to_thread(p.read_text, encoding="utf-8")
         except FileNotFoundError:
             continue
@@ -51,52 +69,94 @@ async def _reconcile(lib: Library, errors: list) -> None:
         keep.add(r["ref"])
         if sha1(text) != r["hash"]:
             await lib.index("yt_article", r["ref"], r["title"], text, path=p, size=len(text.encode()),
-                            updated_at=r["updated_at"])  # fmt: skip
-    await lib.db.write(lib.db.store.doc_delete, source="yt_article", keep=keep)
+                            updated_at=r["updated_at"], parent=r["parent"])  # fmt: skip
+    await lib.write(lib.db.store.doc_delete, source="yt_article", keep=keep)
 
 
 async def _pages(yt, path: str, fields: str) -> list[dict]:
-    listed, skip = [], 0
+    out, skip = [], 0
     while True:
         page = await yt.yt(path, fields=fields, **{"$top": PAGE, "$skip": skip})
-        listed += page
+        out += page
         if len(page) < PAGE:
-            return listed
+            return out
         skip += PAGE
 
 
-async def _listed(yt, project: str) -> list[dict]:
+FIELDS = "idReadable,summary,updated,parentArticle(idReadable)"
+
+
+def parent_of(a: dict) -> str | None:
+    return (a.get("parentArticle") or {}).get("idReadable")
+
+
+async def listed(yt, project: str, every: dict) -> list[dict]:
+    """A project's articles ({idReadable, summary, updated, parentArticle}). `every`: this sync's listing of all
+    articles, fetched once for every project that falls back to it."""
     try:
-        return await _pages(yt, f"/api/admin/projects/{project}/articles", "idReadable,summary,updated")
+        return await _pages(yt, f"/api/admin/projects/{project}/articles", FIELDS)
     except YtError as e:
         if isinstance(e, YtUnreachable) or e.status not in (403, 404):
             raise
         closed = e
-    every = await _pages(yt, "/api/articles", "idReadable,summary,updated,project(shortName)")
-    mine = [a for a in every if (a.get("project") or {}).get("shortName") == project]
+    if "all" not in every:
+        every["all"] = await _pages(yt, "/api/articles", f"{FIELDS},project(shortName)")
+    mine = [a for a in every["all"] if (a.get("project") or {}).get("shortName") == project]
     if not mine:  # a wrong / removed / hidden project: report it, never read as "no articles" (that drops its cache)
         raise closed
     return mine
 
 
-async def _project(lib: Library, yt, project: str, errors: list) -> None:
+def _branches(rows: list[dict], roots: list[str], errors: list) -> set[str]:
+    """The IDs of `roots` and every article under them; a root not listed (deleted, moved out, hidden) is reported."""
+    kids: dict[str, list[str]] = {}
+    for a in rows:
+        kids.setdefault(parent_of(a) or "", []).append(a["idReadable"])
+    ids, out = {a["idReadable"] for a in rows}, set()
+    todo = []
+    for r in roots:
+        if r in ids:
+            todo.append(r)
+        else:
+            _err(errors, "yt_article", r, "yt_404")
+    while todo:
+        if (a := todo.pop()) not in out:
+            out.add(a)
+            todo.extend(kids.get(a, ()))
+    return out
+
+
+async def _project(lib: Library, yt, project: str, errors: list, every: dict, roots: list[str] | None = None) -> None:
+    """`roots`: only those branches of the project (None: all of it)."""
     try:
-        listed = await _listed(yt, project)
+        rows = [a for a in await listed(yt, project, every) if a.get("idReadable")]
     except YtError as e:  # 401 / 403 / network: shown in the UI, the stored articles stay
         _yt_err(errors, project, e)
         return
     have = {r["ref"]: r for r in await lib.db.read(lib.db.store.doc_list, source="yt_article")}
-    for a in listed:
-        aid = a.get("idReadable")
-        if not aid or (aid in have and have[aid]["updated_at"] == a.get("updated")):
-            continue
-        try:
-            await lib.fetch(yt, aid)
-        except YtError as e:
-            _yt_err(errors, aid, e)
-            if isinstance(e, YtUnreachable) or e.status in (401, 403):
-                return  # the rest would fail the same way; nothing is dropped
-    await lib.drop_articles(f"{project}-A-", keep={a["idReadable"] for a in listed if a.get("idReadable")})
+    wanted = None if roots is None else _branches(rows, roots, errors)
+    todo = [a["idReadable"] for a in rows if (wanted is None or a["idReadable"] in wanted)
+            and not (a["idReadable"] in have and have[a["idReadable"]]["updated_at"] == a.get("updated"))]  # fmt: skip
+    sem, dead = asyncio.Semaphore(FETCHES), []
+
+    async def one(aid: str) -> None:
+        async with sem:
+            if dead or lib.stop:
+                return
+            try:
+                await lib.fetch(yt, aid)
+            except YtError as e:
+                _yt_err(errors, aid, e)
+                if isinstance(e, YtUnreachable) or e.status in (401, 403):
+                    dead.append(e)  # the rest would fail the same way
+
+    await asyncio.gather(*(one(aid) for aid in todo))
+    _go(lib)
+    # the listing's tree: articles moved since they were stored, and any download that came without its parent
+    await lib.write(lib.db.store.doc_set_parents, {a["idReadable"]: parent_of(a) for a in rows})
+    if dead:
+        return  # nothing is dropped
+    await lib.drop_articles(f"{project}-A-", keep={a["idReadable"] for a in rows})  # deleted on YouTrack
 
 
 def _walk(folder: str, errors: list) -> tuple[list[tuple[Path, int, int]], set[str], bool]:
@@ -141,6 +201,7 @@ async def _folder(lib: Library, folder: str, errors: list) -> None:
     files, failed, complete = await asyncio.to_thread(_walk, folder, errors)
     have = {r["ref"]: r for r in await lib.db.read(lib.db.store.doc_list, source="file")}
     for path, mtime, size in files:
+        _go(lib)
         row = have.get(str(path))
         if row and row["updated_at"] == mtime and row["size"] == size:
             continue
@@ -154,18 +215,28 @@ async def _folder(lib: Library, folder: str, errors: list) -> None:
             continue
         await lib.index("file", str(path), path.name, text, path=path, size=size, updated_at=mtime)
     if complete:  # a capped walk or an unlistable dir did not see every file: keep the rest
-        await lib.db.write(lib.db.store.doc_delete, source="file", path_prefix=folder_prefix(folder),
+        await lib.write(lib.db.store.doc_delete, source="file", path_prefix=folder_prefix(folder),
                            keep={str(p) for p, _, _ in files} | failed)  # fmt: skip
 
 
-async def run(lib: Library, yt) -> None:
-    """A second call waits for the one running, then runs."""
+async def run(lib: Library, yt, *, max_age: float = 0) -> None:
+    """A second call waits for the one running, then runs unless that one ended less than `max_age` seconds ago."""
     async with lib.sync_lock:
+        if lib.synced_at is not None and time.time() - lib.synced_at < max_age:
+            return
         errors: list[dict] = []
-        await _reconcile(lib, errors)
-        src = lib.sources()
-        for p in src["projects"]:
-            await _project(lib, yt, p, errors)
-        for f in src["folders"]:
-            await _folder(lib, f, errors)
+        try:
+            await _reconcile(lib, errors)
+            src, every = lib.sources(), {}
+            branches: dict[str, list[str]] = {}
+            for a in src["articles"]:
+                branches.setdefault(a.split("-A-")[0], []).append(a)
+            for p in [*src["projects"], *sorted(set(branches) - set(src["projects"]))]:
+                _go(lib)
+                await _project(lib, yt, p, errors, every, None if p in src["projects"] else branches[p])
+            for f in src["folders"]:
+                _go(lib)
+                await _folder(lib, f, errors)
+        except _Stopped:
+            return
         lib.errors, lib.synced_at = errors, time.time()

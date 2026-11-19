@@ -116,11 +116,15 @@ export function PendingInbox({
   const group = groups.some(([id]) => id === picked) ? picked : "";
   const view: View = pinned ? "pinned" : tab;
   const inGroup = useMemo(() => (group ? found.filter((p) => p.message.chat_id === group) : found), [found, group]);
-  // The "Đang xử lý" badge counts the to-do list (not the pinned one), the same on every tab: no group / search filter.
+  // The tab badges count the to-do list (not the pinned one), the same on every tab: no group / search filter.
   // Both lists stay loaded (same query keys as `q`, no extra request for the shown one): switching tabs is instant.
   const todo = useQuery({ ...pendingQuery(range), enabled: !!onTab }).data;
   useQuery({ ...pendingQuery(range, true), enabled: !!onTab });
-  const working = useMemo(() => (todo ?? []).filter((p) => !inQaPage(codes, p.message) && acted(p, tasks)).length, [todo, codes, tasks]);
+  const [waiting, working] = useMemo(() => {
+    const open = (todo ?? []).filter((p) => !inQaPage(codes, p.message));
+    const n = open.filter((p) => acted(p, tasks)).length;
+    return [open.length - n, n];
+  }, [todo, codes, tasks]);
   const sections = useMemo(
     () => sectionsOf(view === "pinned" ? inGroup : inGroup.filter((p) => acted(p, tasks) === (view === "working")), view, now, tasks),
     [inGroup, view, now, tasks],
@@ -156,7 +160,7 @@ export function PendingInbox({
         <Button size="icon-sm" variant="ghost" className="md:hidden" onClick={onBack} aria-label={t("Quay lại")}><ArrowLeft /></Button>
         {onTab && <Segmented id="pending-tab" label={t("Đang chờ, đang xử lý hoặc đã ghim")} value={view} onChange={onTab}
           items={[
-            { value: "todo", label: t("Đang chờ"), title: t("Tin tag bạn chưa xử lý, chưa có phiên AI nào") },
+            { value: "todo", label: <>{t("Đang chờ")}{waiting > 0 && <span className="ml-1 font-mono tabular-nums">{waiting}</span>}</>, title: t("Tin tag bạn chưa xử lý, chưa có phiên AI nào") },
             { value: "working", label: <>{t("Đang xử lý")}{working > 0 && <span className="ml-1 font-mono tabular-nums">{working}</span>}</>, title: t("Tin tag đã có phiên AI: AI Agent, Đối chiếu BE, Trợ lý AI") },
             { value: "pinned", label: t("Đã ghim"), title: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)") },
           ]} />}

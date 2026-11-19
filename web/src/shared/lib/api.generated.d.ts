@@ -378,6 +378,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/kb-tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Kb Tree
+         * @description A project's Knowledge Base articles with their parents, to pick branches in Nguồn.
+         */
+        get: operations["kb_tree_api_docs_kb_tree_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/sources/pick": {
         parameters: {
             query?: never;
@@ -415,6 +435,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/cache": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Drop Cache
+         * @description Drop the Agent's cache (articles of projects not in the sources); the chosen ones stay.
+         */
+        delete: operations["drop_cache_api_docs_cache_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/ask": {
         parameters: {
             query?: never;
@@ -426,6 +466,64 @@ export interface paths {
         put?: never;
         /** Ask */
         post: operations["ask_api_docs_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/ai": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Sessions
+         * @description The AI popup's conversations, newest first; `doc`: those with a turn on that document.
+         */
+        get: operations["ai_sessions_api_docs_ai_get"];
+        put?: never;
+        post?: never;
+        /** Ai Delete */
+        delete: operations["ai_delete_api_docs_ai_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/ai/{session}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ai Turns */
+        get: operations["ai_turns_api_docs_ai__session__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/zeplin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Zeplin Screens
+         * @description The Zeplin screens named `name` (a screen name written in a document), read with the zeplin MCP's token.
+         */
+        get: operations["zeplin_screens_api_docs_zeplin_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -460,7 +558,8 @@ export interface paths {
         put?: never;
         /**
          * Summary
-         * @description A stored summary still matching the text comes back at once, without an AI run.
+         * @description A stored summary still matching the text comes back at once, without an AI run; a new one is kept in
+         *     `session`'s history.
          */
         post: operations["summary_api_docs__doc_id__summary_post"];
         delete?: never;
@@ -3260,12 +3359,71 @@ export interface components {
              */
             status: "decided" | "open" | "dropped";
         };
+        /**
+         * DocAiSession
+         * @description One AI popup conversation in the history: `question` its first one ("" when it began with a Tóm tắt of
+         *     `doc_title`).
+         */
+        DocAiSession: {
+            /** Session */
+            session: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** N */
+            n: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ask" | "summary";
+            /** Question */
+            question: string;
+            /** Doc */
+            doc: number | null;
+            /** Doc Title */
+            doc_title: string;
+        };
+        /**
+         * DocAiTurn
+         * @description A turn of a conversation; `stale`: its document changed (or left the library) since.
+         */
+        DocAiTurn: {
+            /** Id */
+            id: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ask" | "summary";
+            /** Question */
+            question: string;
+            /** Text */
+            text: string;
+            /** Cites */
+            cites: components["schemas"]["DocCite"][];
+            /** Doc */
+            doc: number | null;
+            /** Doc Title */
+            doc_title: string;
+            /** Stale */
+            stale: boolean;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
         /** DocAnswer */
         DocAnswer: {
             /** Text */
             text: string;
             /** Cites */
             cites: components["schemas"]["DocCite"][];
+            /** Saved At */
+            saved_at?: string | null;
         };
         /** DocAskBody */
         DocAskBody: {
@@ -3277,11 +3435,18 @@ export interface components {
              */
             q: string;
             /** Source */
-            source?: ("youtrack" | "telegram" | "file") | null;
+            source?: ("youtrack" | "telegram" | "file" | "kb_cache") | null;
             /** Ticket */
             ticket?: string | null;
             /** Doc */
             doc?: number | null;
+            /** Session */
+            session?: string | null;
+            /**
+             * Fresh
+             * @default false
+             */
+            fresh: boolean;
         };
         /** DocCite */
         DocCite: {
@@ -3319,6 +3484,12 @@ export interface components {
             url: string | null;
             /** Has Summary */
             has_summary: boolean;
+            /** Parent */
+            parent?: string | null;
+            /** Folder */
+            folder?: string | null;
+            /** Rel */
+            rel?: string | null;
         };
         /** DocDetail */
         DocDetail: {
@@ -3327,6 +3498,11 @@ export interface components {
             parts: components["schemas"]["DocPart"][];
             /** Summary */
             summary: string | null;
+            /**
+             * Revs
+             * @default []
+             */
+            revs: components["schemas"]["DocRev"][];
         };
         /** DocHit */
         DocHit: {
@@ -3379,6 +3555,32 @@ export interface components {
             /** Body */
             body: string;
         };
+        /**
+         * DocRev
+         * @description One update seen by a sync: what changed since the stored copy (several edits between two syncs show as one).
+         */
+        DocRev: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** By */
+            by: string | null;
+            /** Blocks */
+            blocks: components["schemas"]["DocRevBlock"][];
+            /** More */
+            more: number;
+        };
+        /** DocRevBlock */
+        DocRevBlock: {
+            /** Heading */
+            heading: string;
+            /** Removed */
+            removed: string[];
+            /** Added */
+            added: string[];
+        };
         /** DocSearch */
         DocSearch: {
             /** Hits */
@@ -3405,12 +3607,16 @@ export interface components {
         DocSources: {
             /** Projects */
             projects: string[];
+            /** Articles */
+            articles: string[];
             /** Folders */
             folders: string[];
             /** Synced At */
             synced_at: string | null;
             /** Errors */
             errors: components["schemas"]["DocSourceError"][];
+            /** Cached */
+            cached: number;
         };
         /** DocSourcesBody */
         DocSourcesBody: {
@@ -3418,6 +3624,8 @@ export interface components {
             projects: string[];
             /** Folders */
             folders: string[];
+            /** Articles */
+            articles?: string[] | null;
         };
         /** DocSummary */
         DocSummary: {
@@ -3425,6 +3633,31 @@ export interface components {
             text: string;
             /** Cached */
             cached: boolean;
+        };
+        /**
+         * DocZeplinScreen
+         * @description A Zeplin screen matching a name written in a document: `image` a signed Zeplin image URL ("" when none), `url`
+         *     the screen on Zeplin's web app.
+         */
+        DocZeplinScreen: {
+            /** Project */
+            project: string;
+            /** Project Name */
+            project_name: string;
+            /** Platform */
+            platform: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Image */
+            image: string;
+            /** W */
+            w: number;
+            /** H */
+            h: number;
+            /** Url */
+            url: string;
         };
         /**
          * FlowCheckDTO
@@ -3703,6 +3936,18 @@ export interface components {
             items: components["schemas"]["MessageDTO"][];
             /** Truncated */
             truncated: boolean;
+        };
+        /**
+         * KbNode
+         * @description A Knowledge Base article in its project's tree, for picking branches.
+         */
+        KbNode: {
+            /** Id */
+            id: string;
+            /** Title */
+            title: string;
+            /** Parent */
+            parent: string | null;
         };
         /** LinkSpan */
         LinkSpan: {
@@ -5059,7 +5304,7 @@ export interface operations {
     docs_api_docs_get: {
         parameters: {
             query?: {
-                source?: ("youtrack" | "telegram" | "file") | null;
+                source?: ("youtrack" | "telegram" | "file" | "kb_cache") | null;
                 ticket?: string | null;
             };
             header?: never;
@@ -5092,7 +5337,7 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string;
-                source?: ("youtrack" | "telegram" | "file") | null;
+                source?: ("youtrack" | "telegram" | "file" | "kb_cache") | null;
                 ticket?: string | null;
                 doc?: number | null;
             };
@@ -5175,6 +5420,37 @@ export interface operations {
             };
         };
     };
+    kb_tree_api_docs_kb_tree_get: {
+        parameters: {
+            query: {
+                project: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KbNode"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pick_source_api_docs_sources_pick_post: {
         parameters: {
             query?: never;
@@ -5233,6 +5509,26 @@ export interface operations {
             };
         };
     };
+    drop_cache_api_docs_cache_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocSources"];
+                };
+            };
+        };
+    };
     ask_api_docs_ask_post: {
         parameters: {
             query?: never;
@@ -5253,6 +5549,128 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DocAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_sessions_api_docs_ai_get: {
+        parameters: {
+            query?: {
+                doc?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocAiSession"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_delete_api_docs_ai_delete: {
+        parameters: {
+            query: {
+                session: string[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_turns_api_docs_ai__session__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocAiTurn"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    zeplin_screens_api_docs_zeplin_get: {
+        parameters: {
+            query: {
+                name: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocZeplinScreen"][];
                 };
             };
             /** @description Validation Error */
@@ -5299,7 +5717,9 @@ export interface operations {
     };
     summary_api_docs__doc_id__summary_post: {
         parameters: {
-            query?: never;
+            query?: {
+                session?: string | null;
+            };
             header?: never;
             path: {
                 doc_id: number;

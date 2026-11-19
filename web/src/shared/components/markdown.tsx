@@ -11,9 +11,10 @@ import { useT } from "@/shared/lib/i18n";
 import { copyText } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 
-const PLUGINS = [remarkGfm, remarkBreaks];
+const PLUGINS = [remarkGfm, remarkBr, remarkBreaks];
 const TICKET = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
-const SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\))/; // code and links keep their ticket IDs as text
+/** Code and links (one capture group: `split` keeps them at odd indexes): they keep their ticket IDs as text. */
+export const MD_SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\))/;
 
 // Sections whose items the user forwards as is: questions to ask, things to confirm (the AI may answer in English).
 const ASK = /hỏi|confirm|xác nhận|làm rõ|\bask|clarif/i;
@@ -78,6 +79,17 @@ export function splitAsks(md: string): string {
 }
 /** remark plugin: under a heading or a bold label line naming an ask section, each item gets `data-copy`: its markdown
  *  as the AI wrote it (Telegram keeps **bold** / `code`), without the quote / list markers. */
+/** `<br>` (YouTrack writes it for a line break inside a table cell, where a newline would end the row): a real line
+ *  break. Every other raw HTML tag still shows as text. */
+const BR = /^<br\s*\/?>$/i;
+function remarkBr() {
+  const walk = (n: MdNode) => n.children?.forEach((c, i, all) => {
+    if (c.type === "html" && BR.test(c.value?.trim() ?? "")) all[i] = { type: "break" };
+    else walk(c);
+  });
+  return walk;
+}
+
 function remarkAsks(this: { parse: (md: string) => MdNode }) {
   const parse = (md: string) => this.parse(md); // the processor's parser, GFM included
   return (root: MdNode, file: { value: unknown }) => {
@@ -157,7 +169,7 @@ function remarkAsks(this: { parse: (md: string) => MdNode }) {
     }
   };
 }
-const ASK_PLUGINS = [remarkGfm, remarkAsks, remarkBreaks]; // breaks after asks: they reach a fenced message turned quote
+const ASK_PLUGINS = [remarkGfm, remarkAsks, remarkBr, remarkBreaks]; // breaks after asks: they reach a fenced message turned quote
 /** The AI Agent session's ID ("REF-97c501"): copied asks end with "#REF-97c501", so the tagged reply finds its session. */
 export const AskTag = createContext("");
 /** The send button next to each ask's copy button (AI Agent: post it to the session's group); null: none. */
@@ -197,7 +209,7 @@ export const Markdown = memo(function Markdown({ text, className, onTicket, asks
   const pad = use(AskPost) ? "relative pr-13" : "relative pr-7"; // room for the ask buttons top-right
   let src = asks ? splitAsks(text ?? "") : text ?? "";
   const chip = use(TicketRef);
-  if (onTicket || chip) src = src.split(SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
+  if (onTicket || chip) src = src.split(MD_SKIP).map((part, i) => (i % 2 ? part : part.replace(TICKET, "[$1](#ticket:$1)"))).join("");
   const components: Components = {
     // only this app's own files load inline: a remote image would fetch on sight (tracking pixel, or a
     // prompt-injected AI answer leaking data in its URL), so it stays a link the user chooses to open

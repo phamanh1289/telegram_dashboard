@@ -1,7 +1,9 @@
 import { keepPreviousData, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useSyncExternalStore } from "react";
 import type { components } from "@/shared/lib/api.generated";
 import { api, apiStream } from "@/shared/lib/api";
 import { t } from "@/shared/lib/i18n";
+import { getPref, isString, onPrefs, readList, setPref } from "@/shared/lib/prefs";
 import { fold } from "@/shared/lib/utils";
 
 // The document library's client (/api/docs): calls, query options, the sync hook, error texts.
@@ -17,7 +19,12 @@ export type DocSources = S["DocSources"];
 export type DocSourceError = S["DocSourceError"];
 export type DocAnswer = S["DocAnswer"];
 export type DocCite = S["DocCite"];
-export type DocSource = "youtrack" | "telegram" | "file";
+export type KbNode = S["KbNode"];
+export type DocAiSession = S["DocAiSession"];
+export type DocAiTurn = S["DocAiTurn"];
+export type DocZeplinScreen = S["DocZeplinScreen"];
+/** `kb_cache`: Knowledge Base articles of projects not in the sources (the AI Agent's cache, hidden elsewhere). */
+export type DocSource = "youtrack" | "telegram" | "file" | "kb_cache";
 /** What the screen shows: `source` "all" omits the param; `doc`: the open document. */
 export type DocFilter = { source: "all" | DocSource; ticket: string | null; doc: number | null };
 
@@ -39,13 +46,26 @@ export const docs = {
   setSources: (body: S["DocSourcesBody"]) => api<DocSources>("/docs/sources", { method: "POST", json: body }),
   /** The OS folder picker; undefined = cancelled (204). */
   pickFolder: () => api<DocSources | undefined>("/docs/sources/pick", { method: "POST" }),
+  /** One project's Knowledge Base articles with their parents (to pick branches in Nguồn). */
+  kbTree: (project: string, signal?: AbortSignal) => api<KbNode[]>(`/docs/kb-tree${qs({ project })}`, { signal }),
   /** Skipped by the server while the last sync is fresh, unless `force`. */
   sync: (force = false) => api<DocSources>(`/docs/sync${qs({ force })}`, { method: "POST" }),
   reveal: (id: number) => api<void>(`/docs/${id}/reveal`, { method: "POST" }),
-  /** Hỏi AI over what the search `body.q` shows (or, without it, the parts matching the question's words). */
+  /** Drops the Agent's cache (kb_cache); the chosen projects' articles stay. */
+  dropCache: () => api<DocSources>("/docs/cache", { method: "DELETE" }),
+  /** Hỏi AI over what the search `body.q` shows (or, without it, the parts matching the question's words). Kept in
+   *  `body.session`'s history; on an open document a question already answered there comes back saved (`saved_at`). */
   ask: (body: S["DocAskBody"], signal: AbortSignal, onPart: (text: string) => void) => apiStream<DocAnswer>("/docs/ask", body, signal, onPart),
-  /** A stored summary still matching the doc comes back at once (`cached`), without an AI run. */
-  summary: (id: number, signal: AbortSignal, onPart: (text: string) => void) => apiStream<S["DocSummary"]>(`/docs/${id}/summary`, {}, signal, onPart),
+  /** A stored summary still matching the doc comes back at once (`cached`), without an AI run; a new one joins `session`. */
+  summary: (id: number, session: string, signal: AbortSignal, onPart: (text: string) => void) =>
+    apiStream<S["DocSummary"]>(`/docs/${id}/summary${qs({ session })}`, {}, signal, onPart),
+  /** The AI popup's conversations, newest first (`doc`: those on that document). */
+  aiSessions: (doc: number | null, signal?: AbortSignal) => api<DocAiSession[]>(`/docs/ai${qs({ doc })}`, { signal }),
+  aiTurns: (session: string, signal?: AbortSignal) => api<DocAiTurn[]>(`/docs/ai/${encodeURIComponent(session)}`, { signal }),
+  /** The Zeplin screens named `name` (a screen name in a document), read with the zeplin MCP's token. */
+  zeplin: (name: string, signal?: AbortSignal) => api<DocZeplinScreen[]>(`/docs/zeplin${qs({ name })}`, { signal }),
+  aiDelete: (sessions: string[]) =>
+    api<void>(`/docs/ai?${sessions.map((s) => `session=${encodeURIComponent(s)}`).join("&")}`, { method: "DELETE" }),
 };
 
 export const docListQuery = (f: DocFilter) => ({
@@ -61,6 +81,16 @@ export const docSearchQuery = (q: string, f: DocFilter) => ({
 export const docDetailQuery = (id: number) => ({
   queryKey: ["docs", "doc", id],
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.detail(id, signal),
+});
+/** The AI history: every query under ["docs", "ai"], refreshed after each turn. */
+export const docAiQuery = (doc: number | null) => ({
+  queryKey: ["docs", "ai", doc],
+  queryFn: ({ signal }: { signal: AbortSignal }) => docs.aiSessions(doc, signal),
+});
+export const kbTreeQuery = (project: string) => ({
+  queryKey: ["docs", "kb-tree", project],
+  queryFn: ({ signal }: { signal: AbortSignal }) => docs.kbTree(project, signal),
+  staleTime: 60_000,
 });
 export const docSourcesQuery = {
   queryKey: ["docs", "sources"],
@@ -85,6 +115,11 @@ export const docErrors = () => ({
   doc_folder_not_a_directory: t("Thư mục không còn tồn tại."),
   doc_folder_is_root: t("Không chọn được cả ổ đĩa: hãy chọn một thư mục bên trong."),
   doc_bad_project: t("Mã project không hợp lệ."),
+  doc_bad_article: t("Mã bài Knowledge Base không hợp lệ."),
+  doc_kb_yt_unreachable: t("Không kết nối được YouTrack để tải cây bài."),
+  doc_kb_yt_401: t("YouTrack từ chối token: không tải được cây bài."),
+  doc_kb_yt_403: t("YouTrack từ chối token: không tải được cây bài."),
+  doc_kb_yt_404: t("Không thấy project này trên YouTrack."),
   doc_bad_folder: t("Đường dẫn thư mục không hợp lệ."),
   doc_not_found: t("Tài liệu không còn trong kho: bấm đồng bộ lại."),
   doc_not_a_file: t("Tài liệu này không phải file trên máy."),
@@ -93,7 +128,11 @@ export const docErrors = () => ({
   doc_bad_docx: t("Không đọc được nội dung file này."),
   doc_not_text: t("Không đọc được nội dung file này."),
   doc_unsupported: t("Không đọc được nội dung file này."),
+  doc_cache_clear_failed: t("Không xóa được bài KB ngoài nguồn, thử lại."),
   doc_no_match: t("Không tìm thấy trong tài liệu"),
+  doc_zeplin_no_token: t("Chưa cấu hình Zeplin MCP (cần ZEPLIN_ACCESS_TOKEN) nên chưa xem được màn Zeplin."),
+  doc_zeplin_token_refused: t("Token Zeplin bị từ chối (hết hạn?): cập nhật ZEPLIN_ACCESS_TOKEN của Zeplin MCP."),
+  doc_zeplin_unreachable: t("Không kết nối được Zeplin, thử lại sau."),
   doc_empty_question: t("Gõ câu hỏi trước."),
   ai_not_configured: t("AI chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI."),
 });
@@ -126,4 +165,20 @@ export function findTerms(text: string, q: string): [number, number][] {
   const out: [number, number][] = [];
   for (const w of words) for (let at = flat.indexOf(w); at >= 0; at = flat.indexOf(w, at + w.length)) out.push([pos[at], pos[at + w.length - 1] + 1]);
   return out;
+}
+
+/** Yêu thích: the documents starred in the reader, per browser, as "source:ref" (kept across syncs, a doc's id is not). */
+const FAVS = "docsFavs";
+const favKey = (d: Pick<Doc, "source" | "ref">) => `${d.source}:${d.ref}`;
+const readFavs = () => getPref(FAVS) ?? "[]";
+export function useDocFavs() {
+  const raw = useSyncExternalStore(onPrefs, readFavs, () => "[]");
+  const set = useMemo(() => new Set(readList(FAVS, [], isString)), [raw]); // eslint-disable-line react-hooks/exhaustive-deps -- raw: the stored list changed
+  return {
+    has: (d: Pick<Doc, "source" | "ref">) => set.has(favKey(d)),
+    toggle: (d: Pick<Doc, "source" | "ref">) => {
+      const k = favKey(d);
+      setPref(FAVS, JSON.stringify(set.has(k) ? [...set].filter((x) => x !== k) : [...set, k]));
+    },
+  };
 }

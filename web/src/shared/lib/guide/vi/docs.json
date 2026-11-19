@@ -4,7 +4,7 @@
     "tab": "docs",
     "area": "Tài liệu › Ô tìm",
     "title": "Tìm trong tài liệu (gõ không dấu vẫn ra)",
-    "what": "Trang Tài liệu gom bài Knowledge Base của các project YouTrack đã chọn và file trong thư mục trên máy (.md, .txt, .json, .yaml, .docx) vào một kho, tìm ngay trên máy. Gõ có dấu hay không dấu đều khớp (\"giai ngan\" ra \"giải ngân\"); kết quả là từng đoạn khớp, gom theo tài liệu, đoạn tốt nhất lên đầu, chữ khớp được tô sáng. Dưới các tài liệu là \"Tin Telegram\": tin của các nhóm đang theo dõi có chứa từ tìm, bấm một tin để mở đúng tin đó trong nhóm. Chưa gõ gì thì danh sách là mọi tài liệu, mới cập nhật trước. Từ tìm, bộ lọc và tài liệu đang mở nằm trên URL: gửi link là người nhận mở đúng chỗ đó.",
+    "what": "Trang Tài liệu gom bài Knowledge Base của các project YouTrack đã chọn và file trong thư mục trên máy (.md, .txt, .json, .yaml, .docx) vào một kho, tìm ngay trên máy. Gõ có dấu hay không dấu đều khớp (\"giai ngan\" ra \"giải ngân\"); kết quả là từng đoạn khớp, gom theo tài liệu, đoạn tốt nhất lên đầu, chữ khớp được tô sáng. Dưới các tài liệu là \"Tin Telegram\": tin của các nhóm đang theo dõi có chứa từ tìm, bấm một tin để mở đúng tin đó trong nhóm. Chưa gõ gì thì danh sách là mọi tài liệu, chọn cách xem ở trên danh sách: \"Theo thư mục\" (theo project Knowledge Base và thư mục, bài con nằm dưới bài cha, bấm ▸ để mở nhánh) \"Mới nhất\" (mới cập nhật trước) hoặc \"Yêu thích\" (tài liệu đã đánh sao, xếp theo cây như \"Theo thư mục\", lưu trên trình duyệt này; rê chuột lên một dòng hoặc nhìn cạnh tiêu đề tài liệu để bấm ngôi sao, sao vàng là đã đánh dấu); lựa chọn được nhớ. Từ tìm, bộ lọc và tài liệu đang mở nằm trên URL: gửi link là người nhận mở đúng chỗ đó.",
     "how": [
       {
         "t": "Bấm \"Tài liệu\" trên thanh trên cùng để mở trang Tài liệu",
@@ -30,65 +30,81 @@
     "tab": "docs",
     "area": "Tài liệu › Đọc tài liệu",
     "title": "Đọc tài liệu và lọc theo ticket",
-    "what": "Cột phải hiện cả tài liệu đang mở, cuộn tới đúng đoạn vừa bấm (đoạn đó được tô nền) và tô các từ đang tìm. Tài liệu dài có \"Mục lục\" bên trái để nhảy giữa các mục. Dòng dưới tiêu đề ghi mã, ngày cập nhật, số ký tự và các ticket tài liệu nhắc tới: bấm một ticket để chỉ hiện các tài liệu nhắc ticket đó (bỏ lọc ở nút × cạnh \"lọc ticket:\"). Mã ticket trong nội dung hiện thành chip, rê chuột lên để xem nhanh ticket. \"Bản gốc\" mở bài trên YouTrack; với file trên máy, \"Mở file\" hiện file trong Finder / Explorer. Màn hẹp: danh sách và tài liệu thành một cột, nút mũi tên \"Quay lại danh sách\" trở về.",
+    "what": "Cột phải hiện cả tài liệu đang mở, cuộn tới đúng đoạn vừa bấm (đoạn đó được tô nền) và tô các từ đang tìm; chỗ khớp nhiều từ nhất trong đoạn được đặt giữa khung đọc, kể cả khi nằm sâu trong một bảng dài. Tài liệu dài có \"Mục lục\" sát mép phải, nội dung chiếm phần rộng còn lại: mục đang đọc được đánh dấu, bấm một mục để cuộn mượt tới đó. Rê chuột lên kính lúp \"Tìm trong tài liệu này\" (hoặc ⌘F / Ctrl+F) để mở ô tìm ngay trên đầu tài liệu: ghi số đoạn khớp (\"2/5 đoạn\"), Enter / Shift+Enter hoặc nút ↑ ↓ nhảy giữa các đoạn khớp, Esc xóa chữ; tìm được cả đoạn chưa cuộn tới. Bảng và code dài tự xuống dòng, chỉ cuộn lên xuống. Rê chuột (hoặc Tab) lên \"cập nhật …\" để xem những lần tài liệu đã đổi: mỗi lần ghi ngày giờ, người sửa (bài YouTrack), các dòng bị bỏ (đỏ, gạch) và dòng thêm (xanh) theo từng mục; app tự so bản cũ với bản mới mỗi khi đồng bộ hoặc phiên AI thấy tài liệu đổi (không chạy AI), giữ 20 lần gần nhất. YouTrack không cho đọc lịch sử sửa bài nên chỉ có các lần từ khi app bắt đầu ghi, và nhiều lần sửa giữa hai lần đồng bộ hiện thành một. Dòng dưới tiêu đề ghi mã bài YouTrack, ngày cập nhật, số ký tự và các ticket tài liệu nhắc tới: tối đa 3 ticket, nhiều hơn thì \"+N\" (rê chuột để xem các ticket còn lại). Rê chuột lên một ticket để xem nhanh ticket; trong thẻ đó, \"Tài liệu nhắc ticket này\" chỉ hiện các tài liệu nhắc ticket đó (bỏ lọc ở nút × cạnh \"lọc ticket:\"). Mã ticket trong nội dung cũng là chip xem nhanh. Mã bài Knowledge Base trong nội dung (vd. VA-A-172) là link: bài đã có trong kho thì mở ngay tại đây; chưa có (gạch chân đứt) thì app hỏi có thêm bài đó (cùng các bài con) vào kho không: \"Thêm và mở\" đồng bộ một lần rồi mở bài, \"Không, mở trên YouTrack\" mở bài trên web. Tên màn Zeplin (đoạn code có số, trên dòng có chữ \"Zeplin\", vd. `Banv2-CNY 23 A1`; khoảng `Banv2-00 → 19` thành link cả hai đầu) cũng là link: bấm mở trang trượt từ phải hiện ảnh màn đó (mọi màn trùng tên, vd. bản Web và Mobile) và nút \"Mở trên Zeplin\". App đọc tên màn bằng token Zeplin MCP của bạn, lần đầu mất vài giây, sau đó nhớ 1 giờ. \"Bản gốc\" mở bài trên YouTrack; với file trên máy, \"Mở file\" hiện file trong Finder / Explorer. Bấm Esc (khi không gõ trong ô nào) để đóng tài liệu đang đọc. Màn hẹp: danh sách và tài liệu thành một cột, nút mũi tên \"Quay lại danh sách\" trở về.",
     "how": [
       {
         "t": "Bấm một tài liệu hoặc một đoạn khớp ở danh sách bên trái",
         "at": "css:section[aria-label=\"Kết quả\"] button"
       },
       {
-        "t": "Dùng \"Mục lục\" để nhảy tới một mục",
+        "t": "Dùng \"Mục lục\" để nhảy tới một mục, hoặc rê chuột lên kính lúp \"Tìm trong tài liệu này\" (⌘F / Ctrl+F) để tìm trong tài liệu đang mở",
         "at": "css:nav[aria-label=\"Mục lục\"]"
       },
-      "Bấm một mã ticket dưới tiêu đề để chỉ hiện tài liệu nhắc ticket đó; bấm × cạnh \"lọc ticket:\" để bỏ lọc",
+      "Rê chuột lên một mã ticket dưới tiêu đề, bấm \"Tài liệu nhắc ticket này\" để chỉ hiện tài liệu nhắc ticket đó; bấm × cạnh \"lọc ticket:\" để bỏ lọc",
       {
         "t": "Bấm \"Bản gốc\" (bài YouTrack) hoặc \"Mở file\" (file trên máy) để mở bản gốc",
         "at": ["Bản gốc", "Mở file"]
       }
     ],
-    "keys": "doc tai lieu đọc tài liệu muc luc mục lục ticket loc ticket lọc ticket chip ban goc bản gốc mo file mở file finder explorer youtrack article reader nhac ticket nhắc ticket"
+    "keys": "tim trong tai lieu nay tìm trong tài liệu này ctrl f cmd f doc tai lieu đọc tài liệu muc luc mục lục ticket loc ticket lọc ticket chip ban goc bản gốc mo file mở file finder explorer youtrack article reader nhac ticket nhắc ticket lich su cap nhat lịch sử cập nhật dong da doi dòng đã đổi nguoi sua người sửa"
+  },
+  {
+    "id": "docs-use",
+    "tab": "docs",
+    "area": "Tài liệu › Dùng tài liệu",
+    "title": "Đính kèm tài liệu vào phiên AI, hỏi team trong Q&A",
+    "what": "Nút \"Dùng tài liệu\" trên đầu tài liệu đang mở đưa nó sang chỗ khác. \"Đính kèm vào phiên AI ›\" liệt kê các phiên AI Agent đang làm (Giao AI Agent, Đối chiếu BE); chọn một phiên thì ô nhắn của phiên đó có sẵn dòng \"Đọc tài liệu …\" (bài YouTrack là link của bài, file trên máy là mã #DOC<số>) và trang mở phiên đó: viết tiếp yêu cầu rồi gửi, dashboard đọc tài liệu từ kho cho AI (không chạy AI thêm, bản tóm tắt dùng chung với \"Tóm tắt tài liệu này\"). Mã #DOC chỉ được đọc khi chính bạn gõ, không đọc trong tin người khác. \"Hỏi trong Q&A nhóm ›\" mở Q&A của nhóm đã chọn với ô hỏi điền sẵn tên và link bài để team xem; \"Sao chép link\" chép link bài. File trên máy không có link cho team mở nên chỉ đính kèm được vào phiên AI. Không cần đính kèm tay khi phiên đọc một ticket: phiên AI Agent tự kèm tối đa 3 tài liệu mới nhất trong kho có nhắc ticket đó.",
+    "how": [
+      {
+        "t": "Mở một tài liệu rồi bấm \"Dùng tài liệu\" trên đầu tài liệu",
+        "at": "Dùng tài liệu"
+      },
+      "Chọn \"Đính kèm vào phiên AI ›\" rồi chọn phiên: ô nhắn của phiên có sẵn dòng tài liệu, viết thêm yêu cầu rồi gửi",
+      "Hoặc chọn \"Hỏi trong Q&A nhóm ›\" rồi chọn nhóm: viết câu hỏi dưới link rồi gửi; \"Sao chép link\" để dán chỗ khác"
+    ],
+    "keys": "dung tai lieu dùng tài liệu dinh kem dính kèm phien ai phiên ai agent q&a hoi nhom hỏi nhóm sao chep link sao chép link #doc kb knowledge base gui link gửi link"
   },
   {
     "id": "docs-sources",
     "tab": "docs",
     "area": "Tài liệu › Nguồn",
     "title": "Chọn nguồn tài liệu và đồng bộ",
-    "what": "Nút \"Nguồn\" (cạnh ô tìm) chọn những gì vào kho: tick các project Knowledge Base của YouTrack, thêm thư mục trên máy (\"Thêm thư mục\" mở hộp chọn thư mục, mỗi thư mục tối đa 2.000 file), bỏ thư mục bằng nút × (file trên máy vẫn giữ). Lần đầu mở Tài liệu, kho lấy sẵn project đang dùng ở tab YouTrack. Mỗi lần mở trang app đồng bộ lại nếu lần trước đã quá 10 phút; nút xoay \"Đồng bộ lại\" đồng bộ ngay. Nguồn nào lỗi (thư mục không còn, file không đọc được, YouTrack lỗi) thì dải đỏ \"Đồng bộ chưa trọn\" hiện dưới thanh tìm, huy hiệu đỏ trên \"Nguồn\" đếm số lỗi; tài liệu cũ của nguồn đó vẫn giữ để tìm. Xóa cả kho ở Cài đặt › Dữ liệu › Tài liệu.",
+    "what": "Nút dấu cộng \"Thêm\" (góc phải thanh trên; chỉ hiện icon, rê chuột thì bung chữ) mở trang \"Nguồn tài liệu\" trượt từ bên phải để chọn những gì vào kho: tick một project Knowledge Base của YouTrack để đọc cả project, hoặc bấm \"Chọn nhánh\" rồi tick vài bài cha để chỉ đọc bài đó và mọi bài dưới nó (ô \"Lọc bài theo tên\" tìm nhanh trong cây bài); thêm thư mục trên máy (\"Thêm thư mục\" mở hộp chọn thư mục, mỗi thư mục tối đa 2.000 file), bỏ thư mục bằng nút × (file trên máy vẫn giữ). Thay đổi lưu ngay; đóng trang (× hoặc Esc) thì app đồng bộ một lần theo nguồn mới. Lần đầu mở Tài liệu kho trống, không tự nạp nhánh nào: danh sách hiện nút \"Thêm nhánh KB / thư mục\" để tự chọn. Bấm \"Chọn nhánh\" hoặc mũi tên của một bài để mở / thu gọn cây bài. Bài Knowledge Base nằm ngoài project / nhánh đã chọn (AI Agent đã mở, hoặc nguồn vừa bỏ tick) là \"bài KB ngoài nguồn\": ẩn khỏi danh sách, tìm và Hỏi AI, AI Agent vẫn dùng lại; tick lại thì bài hiện lại ngay. Dòng \"Bài KB ngoài nguồn\" trong trang \"Nguồn tài liệu\" ghi số bài, \"Xem\" lọc ra để đọc (bỏ lọc ở nút × cạnh chip), \"Xóa\" xóa riêng các bài này cùng bản tóm tắt. Mỗi lần mở trang app đồng bộ lại nếu lần trước đã quá 10 phút; nút xoay \"Cập nhật\" (cạnh \"Thêm\") đồng bộ ngay. Đổi nguồn khi đang đồng bộ thì lượt đó dừng và đồng bộ lại theo nguồn mới. Nguồn nào lỗi (thư mục không còn, file không đọc được, YouTrack lỗi) thì dải đỏ \"Đồng bộ chưa trọn\" hiện dưới thanh tìm, huy hiệu đỏ trên nút \"Thêm\" đếm số lỗi; tài liệu cũ của nguồn đó vẫn giữ để tìm. Xóa cả kho ở Cài đặt › Dữ liệu › Tài liệu.",
     "how": [
       {
-        "t": "Bấm \"Nguồn\" cạnh ô tìm",
-        "at": "Nguồn"
+        "t": "Bấm nút \"Thêm\" bên phải ô tìm",
+        "at": "Thêm nguồn"
       },
       {
-        "t": "Tick project Knowledge Base cần đưa vào kho, hoặc bấm \"Thêm thư mục\" để chọn một thư mục trên máy",
+        "t": "Tick project Knowledge Base cần đưa vào kho (hoặc \"Chọn nhánh\" để chỉ lấy vài nhánh bài), hay bấm \"Thêm thư mục\" để chọn một thư mục trên máy; đóng hộp thoại để đồng bộ",
         "at": "Thêm thư mục"
       },
       {
-        "t": "Bấm nút xoay \"Đồng bộ lại\" để tải lại mọi nguồn ngay",
-        "at": "Đồng bộ lại"
+        "t": "Bấm nút xoay \"Cập nhật\" để tải lại mọi nguồn ngay",
+        "at": "Cập nhật"
       },
-      "Có dải đỏ \"Đồng bộ chưa trọn\": đọc lỗi trong dải (hoặc mục \"Lỗi đồng bộ\" trong \"Nguồn\"), sửa rồi bấm \"Thử lại\""
+      "Có dải đỏ \"Đồng bộ chưa trọn\": đọc lỗi trong dải (hoặc mục \"Lỗi đồng bộ\" trong trang \"Nguồn tài liệu\"), sửa rồi bấm \"Thử lại\""
     ],
-    "keys": "nguon nguồn dong bo đồng bộ sync them thu muc thêm thư mục folder project knowledge base kb loi dong bo lỗi đồng bộ dai bao do khong thay tai lieu không thấy tài liệu vi sao tim khong ra file md docx"
+    "keys": "chon nhanh chọn nhánh nhanh bai cha cay bai cây bài bai kb ngoai nguon bài kb ngoài nguồn cache xoa cache xóa cache ai agent da mo nguon nguồn dong bo đồng bộ sync them thu muc thêm thư mục folder project knowledge base kb loi dong bo lỗi đồng bộ dai bao do khong thay tai lieu không thấy tài liệu vi sao tim khong ra file md docx"
   },
   {
     "id": "docs-ask",
     "tab": "docs",
     "area": "Tài liệu › Ô hỏi AI",
     "title": "Hỏi AI trên tài liệu, tóm tắt một tài liệu",
-    "what": "Ô hỏi AI ghim dưới đáy trang Tài liệu. Đã gõ từ tìm: AI chỉ đọc các đoạn đang hiện trong danh sách, dòng trên ô ghi trước số đoạn và số ký tự sẽ gửi; không có đoạn nào khớp thì nút \"Hỏi\" tắt. Chưa gõ từ tìm: AI tự tìm đoạn theo từ của câu hỏi (trong tài liệu đang mở nếu có). Câu trả lời trích nguồn [1], [2]: bấm số để mở đúng đoạn hoặc đúng tin Telegram. Đang mở một tài liệu: \"Tóm tắt tài liệu này\" cho AI đọc cả tài liệu và tóm tắt; bản tóm tắt được lưu, lần sau hiện ngay nếu tài liệu chưa đổi. Nút thùng rác xóa hội thoại. Model / effort chọn ngay trong ô, dùng chung lựa chọn \"Tóm tắt, soạn nháp\" ở Cài đặt › AI.",
+    "what": "Hỏi AI là một popup thả xuống ở góc trên bên phải tài liệu, nằm đè lên nội dung nên tài liệu và mục lục vẫn giữ đủ chỗ: mở bằng chip \"AI\" trên đầu tài liệu, hoặc khi chưa mở tài liệu, nút \"Hỏi AI trên tài liệu / trên kết quả tìm\" ở khung bên phải. AI tự biết hỏi trên gì: đang mở tài liệu thì hỏi về tài liệu đó (AI đọc cả tài liệu, đoạn khớp câu hỏi trước), chưa mở thì hỏi trên kết quả tìm / mọi tài liệu; dòng dưới chữ \"Hỏi AI\" ghi đang hỏi trên gì. Bấm nguồn [n] mở đúng đoạn trong tài liệu bên dưới; × hoặc Esc đóng, hội thoại vẫn giữ. Đã gõ từ tìm: AI chỉ đọc các đoạn và tin Telegram đang hiện trong danh sách (luôn chừa chỗ cho tin Telegram khi có), dòng trên ô ghi trước số đoạn và số ký tự sẽ gửi; không có đoạn nào khớp thì nút \"Hỏi\" tắt. Chưa gõ từ tìm: AI tự tìm đoạn theo từ của câu hỏi (trong tài liệu đang mở nếu có). Câu trả lời trích nguồn [1], [2]: bấm số để mở đúng đoạn hoặc đúng tin Telegram. Đang mở một tài liệu: \"Tóm tắt tài liệu này\" cho AI đọc cả tài liệu và tóm tắt; bản tóm tắt được lưu, lần sau hiện ngay nếu tài liệu chưa đổi. Mỗi câu trả lời và mỗi bản tóm tắt AI viết đều được lưu theo phiên: nút đồng hồ \"Lịch sử\" trên đầu popup liệt kê các phiên (đang mở tài liệu thì chỉ các phiên hỏi về tài liệu đó), gom theo ngày; bấm một phiên để xem lại nguyên hội thoại, không tốn token, hỏi tiếp thì nối vào phiên đó; nút thùng rác trên dòng / trên ngày xóa phiên. Lượt nào trên tài liệu đã đổi từ lúc hỏi thì ghi \"tài liệu đã đổi\"; bản tóm tắt cũ vẫn giữ khi tài liệu đổi. Hỏi lại đúng câu đã hỏi (không tính dấu, hoa thường, dấu chấm hỏi) trên đúng bản tài liệu đang mở thì hiện ngay \"Câu trả lời đã lưu\", không chạy AI; muốn AI trả lời lại thì bấm \"Hỏi lại AI\". Nút \"Phiên mới\" mở hội thoại trống, phiên cũ vẫn nằm trong Lịch sử. Model / effort chọn ngay trong ô, dùng chung lựa chọn \"Tóm tắt, soạn nháp\" ở Cài đặt › AI.",
     "how": [
       {
         "t": "Gõ từ tìm trước để chọn đoạn sẽ gửi; xem dòng \"Hỏi trên N đoạn đang hiện\" trên ô hỏi",
         "at": "Tìm trong tài liệu"
       },
       {
-        "t": "Gõ câu hỏi vào ô \"Hỏi AI trên tài liệu\" rồi bấm \"Hỏi\" (hoặc Enter)",
-        "at": "Hỏi AI trên tài liệu"
+        "t": "Mở một tài liệu, bấm chip \"AI\" trên đầu tài liệu, gõ câu hỏi rồi bấm \"Hỏi\" (hoặc Enter)",
+        "at": "Hỏi AI về tài liệu này"
       },
       "Bấm số [n] trong câu trả lời để mở đoạn / tin được trích",
       {
-        "t": "Đang mở một tài liệu: bấm \"Tóm tắt tài liệu này\" để AI tóm tắt cả tài liệu",
+        "t": "Trong popup, bấm \"Tóm tắt\" để AI tóm tắt cả tài liệu đang mở",
         "at": "Tóm tắt tài liệu này"
       }
     ],

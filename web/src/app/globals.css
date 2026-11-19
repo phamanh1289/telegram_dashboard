@@ -37,6 +37,9 @@
     --color-warn-wash: var(--color-warn-wash);
     --color-error: var(--color-error);
     --color-error-wash: var(--color-error-wash);
+    --color-hit: var(--color-hit);
+    --color-hit-ink: var(--color-hit-ink);
+    --color-fav: var(--color-fav);
     --color-badge: var(--color-badge);
     --color-info: var(--color-info);
     --color-info-wash: var(--color-info-wash);
@@ -528,8 +531,19 @@ button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-
 .md input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
 /* Tài liệu: the searched words in the open document (docs/reader.tsx, CSS Custom Highlight API). */
-::highlight(doc-hit) { background-color: var(--color-hl-wash); color: var(--color-ink); }
+::highlight(doc-hit) { background-color: var(--color-hit); color: var(--color-hit-ink); }
 /* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
 .yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* A mascot standing still (long lists, e.g. History rows: hundreds of looping animations would cost frames). */
 .agent-still, .agent-still * { animation: none !important; }
+
+/* Tài liệu's reader: one scroll direction only. Code wraps instead of scrolling sideways; a table fits the column
+   (fixed layout, every cell wraps anywhere) instead of being its own sideways scroll box. */
+.md-wrap pre { overflow-x: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md-wrap table { display: table; width: 100%; table-layout: fixed; }
+.md-wrap :is(th, td) { overflow-wrap: anywhere; vertical-align: top; }
+.md-wrap img { height: auto; }
+/* A part opened or jumped to in Tài liệu's reader: one soft flash, then plain text again. */
+@keyframes doc-flash { from { background-color: var(--color-hl-wash); } to { background-color: transparent; } }
+.doc-flash { animation: doc-flash 1.8s var(--ease-out) 0.25s both; }
+@media (prefers-reduced-motion: reduce) { .doc-flash { animation: none; } }

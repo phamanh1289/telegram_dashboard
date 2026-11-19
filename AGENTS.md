@@ -5,6 +5,7 @@
 - Mọi nhóm tab chọn-một (view, bộ lọc, khoảng thời gian…) dùng `Segmented` trong `web/src/shared/components/ui/segmented.tsx`; không tự viết `motion.span layoutId` + spring.
 - Highlight trượt kiểu khác (nav sidebar, gạch chân, tab có popover) dùng `Pill` cùng file với `className` riêng.
 - Đổi animation chỉ sửa `PILL_SPRING` / `Pill` ở đó; mỗi nhóm cần `id` (layoutId) riêng.
+- Mọi thu gọn / mở rộng, đóng / mở UI (nhánh cây, section, panel, popup, chi tiết một dòng, ô tìm co giãn…) **bắt buộc có animation**, không bật / tắt trần `{open && …}`: vùng gập dùng `Fold` (`web/src/shared/components/ui/fold.tsx`, CSS grid-rows, mượt cả lúc đóng); danh sách thêm / bớt dòng dùng `AnimatePresence` + `height: "auto"` như `RailSection` (`shared/components/ai/day-groups.tsx`); popup / panel nổi dùng spring scale + fade như bot Biết tuốt (mẫu `features/docs/components/ask.tsx`); Dialog / Popover base-ui đã có sẵn; chevron xoay `duration-(--dur-short) ease-(--ease-out)`. Tôn trọng `prefers-reduced-motion`.
 - Menu / icon cần giải thích khi hover: bọc bằng `Hint` (`web/src/shared/components/ui/hint.tsx`, trễ `HINT_DELAY` 500ms, linh vật bóng đèn); không dùng `title` cho phần giải thích đó. Nút AI giữ `AiAsk` (robot).
 
 ## Lỗi hay gặp: bắt buộc (chi tiết + cách sửa: skill `avoiding-dashboard-pitfalls`)

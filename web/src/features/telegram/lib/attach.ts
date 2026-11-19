@@ -81,6 +81,20 @@ export function takeConfirm(taskId: string) {
   if (confirmed.delete(taskId)) subs.forEach((f) => f());
 }
 
+// Lines for a session's next prompt from another page (Tài liệu › Dùng tài liệu: "Đọc tài liệu #DOC12 …" or a KB link,
+// read by links.py): the composer adds them to its box once, then they are the user's text.
+const lines = new Map<string, string[]>();
+export function addLine(taskId: string, line: string) {
+  const cur = lines.get(taskId) ?? NO_ROLES;
+  if (!cur.includes(line)) lines.set(taskId, [...cur, line]);
+  subs.forEach((f) => f());
+}
+export const useLines = (taskId: string) =>
+  useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => lines.get(taskId) ?? NO_ROLES, () => NO_ROLES);
+export function takeLines(taskId: string) {
+  if (lines.delete(taskId)) subs.forEach((f) => f());
+}
+
 export const useRefs = (taskId: string) =>
   useSyncExternalStore((f) => (subs.add(f), () => subs.delete(f)), () => drafts.get(taskId) ?? NONE, () => NONE);
 

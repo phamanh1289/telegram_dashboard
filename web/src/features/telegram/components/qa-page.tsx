@@ -21,7 +21,7 @@ import { fold } from "@/shared/lib/utils";
 import { getPref, QA_REMIND_CHOICES, qaRemindLabel, setPref, useQaRemind } from "@/shared/lib/prefs";
 import { parsePref, rememberQaGroup } from "@/features/telegram/lib/qa-recent";
 import { cn } from "@/shared/lib/utils";
-import { answered, atOf, deleteWithUndo, fresh, gist, hasTag, isLate, latest, markSeen, markWithUndo, mute, MUTED, nameTags, nudgeText, QA_DAYS, QA_MINE, qaQuery, type QaDays, resolve, resolvedIds, type Seen, SEEN, type Sent, sendable, sentCount, thread, useStored, waiting, who } from "@/features/telegram/lib/qa";
+import { answered, atOf, deleteWithUndo, fresh, gist, hasTag, isLate, isNudge, latest, markSeen, markWithUndo, mute, MUTED, nameTags, nudgeText, QA_DAYS, QA_MINE, qaQuery, type QaDays, resolve, resolvedIds, type Seen, SEEN, type Sent, sendable, sentCount, thread, useStored, waiting, who } from "@/features/telegram/lib/qa";
 import { DaysPicker, LoadError, Row } from "@/features/telegram/components/qa/bits";
 import { Thread } from "@/features/telegram/components/qa/thread";
 import { MyQuestions, QaGroups } from "@/features/telegram/components/qa/groups";
@@ -108,7 +108,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const nudge = (i: QaItem) => {
     show(i.code);
     setTarget(i.question);
-    if (!draft.get().trim() || draft.get() === autoText) {
+    if (!draft.get().trim() || draft.get() === autoText || isNudge(draft.get())) {
       const first = nudgeText(i); // "@Name" now; "@username" once the group's members load (the "@" popup's cache)
       edit(first);
       setAutoText(first);

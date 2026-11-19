@@ -16,7 +16,7 @@ import { msgKey } from "@/features/telegram/lib/inbox";
 import { copyText } from "@/shared/lib/notifications";
 import { qaRemindLabel, readIntro } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { accepted, fresh, gist, type QaMark, type Seen, thread, transcript, untag, waiting, who } from "@/features/telegram/lib/qa";
+import { accepted, fresh, gist, nudges, type QaMark, type Seen, thread, transcript, untag, waiting, who } from "@/features/telegram/lib/qa";
 import { PILL, State } from "@/features/telegram/components/qa/bits";
 
 const sumErr = () => ({ ai_not_configured: tr("Chưa cài AI (Cài đặt › AI)."), ai_context_too_large: tr("Chuỗi quá dài để AI đọc."), message_not_found: tr("Không đọc được các tin của chuỗi.") });
@@ -35,7 +35,7 @@ export function Thread({ i, now, title, seenAt, target, onTarget, onClose, late,
   const [sure, setSure] = useState(false); // Xóa waits for a second click
   const all = thread(i);
   const news = new Set(fresh(i, seenAt).map((m) => m.message_id));
-  const nudged = i.answers.filter((a) => a.outgoing).length;
+  const nudged = nudges(i);
   const answer = accepted(i);
   const [sum, setSum] = useState<{ text: string; busy: boolean; error?: string } | null>(null);
   const stop = useRef<AbortController | null>(null);

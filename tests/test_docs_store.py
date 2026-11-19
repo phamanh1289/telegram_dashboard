@@ -83,3 +83,33 @@ def test_search_tracked_folds_and_skips_untracked_and_deleted(env):
     env.store.apply_deletion(A, ["3"])
     assert [r["message_id"] for r in env.store.search_tracked("dieu kien giai")] == [1]
     assert env.store.search_tracked("") == []
+
+
+def test_parts_of_the_first_docs_schema_survive_the_move_to_doc_ranges(tmp_path):
+    import sqlite3
+
+    from telegram_dashboard.storage.common import fold
+    from telegram_dashboard.storage.schema import MIGRATIONS, SCHEMA, _doc_parts_by_doc
+
+    path = tmp_path / "old.sqlite3"
+    c = sqlite3.connect(path, isolation_level=None)
+    c.row_factory = sqlite3.Row
+    c.create_function("fold", 1, fold)
+    c.executescript(SCHEMA)
+    before = MIGRATIONS.index(_doc_parts_by_doc)
+    for step in MIGRATIONS[:before]:
+        step(c)
+    c.execute(f"PRAGMA user_version={before}")
+    c.execute(
+        "INSERT INTO docs(id,source,ref,title,path,hash,chars,fetched_at) VALUES(7,'file','/a.md','a','/a','h',1,1)"
+    )
+    c.execute(
+        "INSERT INTO doc_parts(heading,body,doc_id,part,line,text,title) "
+        "VALUES('# dieu','giai ngan',7,0,1,'giải ngân','# Điều')"
+    )
+    c.close()
+    store = Store(path)
+    assert store.doc_parts(7) == [{"part": 0, "line": 1, "heading": "# Điều", "body": "giải ngân"}]
+    assert [r["doc_id"] for r in store.doc_search("giai ngan")] == [7]
+    store.doc_delete(source="file")
+    assert store.doc_parts(7) == [] and store.doc_search("giai") == []

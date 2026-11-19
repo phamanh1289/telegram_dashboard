@@ -55,7 +55,6 @@ export default {
   "Người làm": "Assignee",
   "Chưa assign": "Unassigned",
   "Cập nhật": "Update",
-  "Mở ở trang YouTrack": "Open in the YouTrack page",
   "Mở trong YouTrack": "Open in YouTrack",
   "Không tải được ticket": "Could not load the ticket",
   "Đang tải…": "Loading…",

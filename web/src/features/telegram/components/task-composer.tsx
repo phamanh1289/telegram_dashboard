@@ -9,7 +9,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Hint } from "@/shared/components/ui/hint";
 import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/shared/lib/api";
-import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeWantEdit, useConfirm, useRefs, useWantEdit, withAttachments } from "@/features/telegram/lib/attach";
+import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeLines, takeWantEdit, useConfirm, useLines, useRefs, useWantEdit, withAttachments } from "@/features/telegram/lib/attach";
 import { readIntro, readPlatform, setPref, useAgentMcp, useRole } from "@/shared/lib/prefs";
 import { toast } from "@/shared/lib/notifications";
 import { timeLabel } from "@/shared/lib/time";
@@ -115,6 +115,13 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     if (!assist) setText((cur) => (cur.includes(line) ? cur : [cur.trim(), line].filter(Boolean).join("\n"))); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from a row, once
     takeConfirm(id); // Trợ lý AI: dropped, it has no code to trace
   }, [confirmed, id, t, assist]);
+  // A document attached from Tài liệu: its line ("#DOC12 …" / the KB link) in the box, for the user to write around.
+  const added = useLines(id);
+  useEffect(() => {
+    if (!added.length) return;
+    setText((cur) => [cur.trim(), ...added.filter((l) => !cur.includes(l))].filter(Boolean).join("\n")); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from Tài liệu, once
+    takeLines(id);
+  }, [added, id]);
   const looked = useQueries({ queries: refs.map(messageQuery) });
   const resolving = looked.some((r) => r.isPending);
   const failed = looked.some((r) => r.isError); // a dangling "[#id]" mark: the AI would get no quote for it

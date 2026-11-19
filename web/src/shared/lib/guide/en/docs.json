@@ -4,7 +4,7 @@
     "tab": "docs",
     "area": "Documents › Search box",
     "title": "Search the documents (accents optional)",
-    "what": "The Documents page gathers the Knowledge Base articles of the YouTrack projects you picked and the files in folders on this machine (.md, .txt, .json, .yaml, .docx) into one library, searched right on this machine. Words match with or without Vietnamese accents (\"giai ngan\" finds \"giải ngân\"); the results are the matching passages, grouped by document, best first, with the matched words highlighted. Under the documents comes \"Telegram messages\": messages of the groups you track that contain the words; click one to open that very message in its group. With nothing typed, the list is every document, most recently updated first. The search, the filters and the open document live in the URL: send the link and the reader lands on the same spot.",
+    "what": "The Documents page gathers the Knowledge Base articles of the YouTrack projects you picked and the files in folders on this machine (.md, .txt, .json, .yaml, .docx) into one library, searched right on this machine. Words match with or without Vietnamese accents (\"giai ngan\" finds \"giải ngân\"); the results are the matching passages, grouped by document, best first, with the matched words highlighted. Under the documents comes \"Telegram messages\": messages of the groups you track that contain the words; click one to open that very message in its group. With nothing typed the list is every document; pick how above it: \"By folder\" (by Knowledge Base project and folder, child articles under their parent, ▸ opens a branch) \"Recent\" (most recently updated first) or \"Favourites\" (the starred documents, as a tree like \"By folder\", kept in this browser; hover a row or look beside a document's title to click its star, a yellow star means starred); the pick is kept. The search, the filters and the open document live in the URL: send the link and the reader lands on the same spot.",
     "how": [
       {
         "t": "Click \"Documents\" in the top bar to open the Documents page",
@@ -30,65 +30,81 @@
     "tab": "docs",
     "area": "Documents › Reading a document",
     "title": "Read a document and filter by ticket",
-    "what": "The right column shows the whole open document, scrolled to the passage you clicked (with a tinted background) and with the searched words lit. A long document has a \"Contents\" list on the left to jump between sections. The line under the title gives the reference, the update date, the size in characters and the tickets the document mentions: click a ticket to show only the documents that mention it (clear it with the × next to \"ticket filter:\"). Ticket IDs in the text show as chips; hover one for a quick look at the ticket. \"Original\" opens the article in YouTrack; for a file on this machine, \"Show file\" reveals it in Finder / Explorer. In a narrow window the list and the document share one column; the arrow button \"Back to the list\" goes back.",
+    "what": "The right column shows the whole open document, scrolled to the passage you clicked (with a tinted background) and with the searched words lit; the spot holding the most searched words is centred in the reader, even deep in a long table. A long document has \"Contents\" on the right edge, the text taking the rest of the width: the section being read is marked, click one to glide to it. Hover the magnifier \"Find in this document\" (or ⌘F / Ctrl+F) to open a find box at the top of the document: it counts the matching passages (\"2/5 passages\"), Enter / Shift+Enter or the ↑ ↓ buttons jump between them, Esc clears it; it also finds passages not scrolled to yet. Long tables and code wrap, so the document only scrolls up and down. Hover (or Tab to) \"updated …\" to see the times the document changed: each with its date and time, who edited it (YouTrack articles), the lines removed (red, struck) and added (green) per section; the app compares the old copy with the new one whenever a sync or an AI session sees the document change (no AI run) and keeps the last 20. YouTrack doesn't expose article history, so only changes since the app started recording show, and several edits between two syncs show as one. The line under the title gives the YouTrack article ID, the update date, the size in characters and the tickets the document mentions: up to 3 tickets, then \"+N\" (hover it for the rest). Hover a ticket for a quick look at it; in that card, \"Documents naming this ticket\" shows only the documents that mention it (clear it with the × next to \"ticket filter:\"). Ticket IDs in the text are quick-look chips too. Knowledge Base article IDs in the text (e.g. VA-A-172) are links: an article in the library opens right here; one that is not (dashed underline) asks whether to add it (with the ones under it) to the library: \"Add and open\" syncs once then opens it, \"No, open it on YouTrack\" opens it on the web. Zeplin screen names (a code span with a digit on a line that says \"Zeplin\", e.g. `Banv2-CNY 23 A1`; a range `Banv2-00 → 19` links both ends) are links too: one opens a page sliding in from the right with that screen's design (every screen of that name, e.g. a Web and a Mobile one) and \"Open in Zeplin\". The names are read with your Zeplin MCP token, a few seconds the first time, then kept for an hour. \"Original\" opens the article in YouTrack; for a file on this machine, \"Show file\" reveals it in Finder / Explorer. Press Esc (when not typing in a box) to close the document being read. In a narrow window the list and the document share one column; the arrow button \"Back to the list\" goes back.",
     "how": [
       {
         "t": "Click a document or a matching passage in the list on the left",
         "at": "css:section[aria-label=\"Kết quả\"] button"
       },
       {
-        "t": "Use \"Contents\" to jump to a section",
+        "t": "Use \"Contents\" to jump to a section, or hover the magnifier \"Find in this document\" (⌘F / Ctrl+F) to search the open document",
         "at": "css:nav[aria-label=\"Mục lục\"]"
       },
-      "Click a ticket ID under the title to show only the documents that mention it; click × next to \"ticket filter:\" to clear it",
+      "Hover a ticket ID under the title and click \"Documents naming this ticket\" to show only those; click × next to \"ticket filter:\" to clear it",
       {
         "t": "Click \"Original\" (YouTrack article) or \"Show file\" (file on this machine) to open the original",
         "at": ["Bản gốc", "Mở file"]
       }
     ],
-    "keys": "doc tai lieu read document contents table of contents ticket filter chip original show file finder explorer youtrack article reader mentions ticket"
+    "keys": "find in this document ctrl f cmd f doc tai lieu read document contents table of contents ticket filter chip original show file finder explorer youtrack article reader mentions ticket update history changed lines who edited diff"
+  },
+  {
+    "id": "docs-use",
+    "tab": "docs",
+    "area": "Documents › Use document",
+    "title": "Attach a document to an AI session, ask the team in Q&A",
+    "what": "The \"Use document\" button at the top of the open document puts it to work elsewhere. \"Attach to AI session ›\" lists the AI Agent sessions in progress (Give to AI Agent, Check vs BE); pick one and its message box gets a \"Read the document …\" line (a YouTrack article as its link, a file on this machine as #DOC<number>) and that session opens: write the rest of your request and send, and the dashboard reads the document from the library for the AI (no extra AI run; the summary is shared with \"Summarize this document\"). A #DOC code is read only when you type it yourself, never inside someone else's message. \"Ask in a group's Q&A ›\" opens the chosen group's Q&A with the box pre-filled with the article's title and link for the team; \"Copy link\" copies the article link. A file on this machine has no link the team can open, so it can only be attached to an AI session. No need to attach by hand when a session reads a ticket: an AI Agent session adds up to the 3 newest library documents that mention that ticket.",
+    "how": [
+      {
+        "t": "Open a document and click \"Use document\" at its top",
+        "at": "Dùng tài liệu"
+      },
+      "Choose \"Attach to AI session ›\" and pick a session: its message box has the document line, add your request and send",
+      "Or choose \"Ask in a group's Q&A ›\" and pick a group: write the question under the link and send; \"Copy link\" to paste it elsewhere"
+    ],
+    "keys": "use document attach ai session agent q&a ask group copy link #doc kb knowledge base share link"
   },
   {
     "id": "docs-sources",
     "tab": "docs",
     "area": "Documents › Sources",
     "title": "Pick the document sources and sync",
-    "what": "The \"Sources\" button (next to the search box) picks what goes into the library: tick YouTrack Knowledge Base projects, add folders on this machine (\"Add folder\" opens a folder picker, up to 2,000 files per folder), remove a folder with its × button (the files on disk stay). The first time you open Documents, the library starts with the project in use on the YouTrack tab. Opening the page syncs again when the last sync is more than 10 minutes old; the round \"Sync again\" button syncs now. When a source fails (the folder is gone, a file cannot be read, YouTrack errors), a red \"Sync incomplete\" strip shows under the search bar and a red badge on \"Sources\" counts the errors; that source's earlier documents stay searchable. Clear the whole library in Settings › Data › Documents.",
+    "what": "The plus button \"Add\" (top right; an icon until hovered, then its label slides out) opens the \"Document sources\" page, sliding in from the right, to pick what goes into the library: tick a YouTrack Knowledge Base project to read all of it, or click \"Pick branches\" and tick a few parent articles to read just them and everything under them (the \"Filter articles by name\" box finds one in the tree); add folders on this machine (\"Add folder\" opens a folder picker, up to 2,000 files per folder), remove a folder with its × button (the files on disk stay). Changes save at once; closing the page (× or Esc) syncs once with the new sources. The first time you open Documents the library is empty, no branch is loaded for you: the list shows \"Add KB branch / folder\" to pick your own. Click \"Pick branches\" or an article's arrow to unfold / fold the article tree. Knowledge Base articles outside the chosen projects / branches (opened by the AI Agent, or of a source just unticked) are \"KB articles outside the sources\": hidden from the list, search and Ask AI, still reused by the AI Agent; tick it again and they show at once. The \"KB articles outside the sources\" line on the \"Document sources\" page gives their count, \"View\" filters to them (clear with the × on the chip), \"Delete\" deletes just them and their summaries. Opening the page syncs again when the last sync is more than 10 minutes old; the round \"Update\" button (next to \"Add\") syncs now. Changing the sources during a sync stops it and syncs again with the new sources. When a source fails (the folder is gone, a file cannot be read, YouTrack errors), a red \"Sync incomplete\" strip shows under the search bar and a red badge on the \"Add\" button counts the errors; that source's earlier documents stay searchable. Clear the whole library in Settings › Data › Documents.",
     "how": [
       {
-        "t": "Click \"Sources\" next to the search box",
-        "at": "Nguồn"
+        "t": "Click the \"Add\" button right of the search box",
+        "at": "Thêm nguồn"
       },
       {
-        "t": "Tick the Knowledge Base projects to include, or click \"Add folder\" to pick a folder on this machine",
+        "t": "Tick the Knowledge Base projects to include (or \"Pick branches\" for just some branches), or click \"Add folder\" to pick a folder on this machine; close the dialog to sync",
         "at": "Thêm thư mục"
       },
       {
-        "t": "Click the round \"Sync again\" button to reload every source now",
-        "at": "Đồng bộ lại"
+        "t": "Click the round \"Update\" button to reload every source now",
+        "at": "Cập nhật"
       },
-      "A red \"Sync incomplete\" strip: read the errors in it (or under \"Sync errors\" in \"Sources\"), fix them, then click \"Retry\""
+      "A red \"Sync incomplete\" strip: read the errors in it (or under \"Sync errors\" on the \"Document sources\" page), fix them, then click \"Retry\""
     ],
-    "keys": "nguon dong bo sources sync add folder project knowledge base kb sync errors red strip document missing why search cannot find file md docx"
+    "keys": "pick branches branch parent article tree kb cache outside the sources delete cache ai agent opened nguon dong bo sources sync add folder project knowledge base kb sync errors red strip document missing why search cannot find file md docx"
   },
   {
     "id": "docs-ask",
     "tab": "docs",
     "area": "Documents › AI box",
     "title": "Ask the AI about the documents, summarise one",
-    "what": "The AI box is pinned at the bottom of the Documents page. With a search typed, the AI reads only the passages the list shows, and the line above the box says beforehand how many passages and characters it will send; with no matching passage the \"Ask\" button is off. With no search typed, the AI finds passages by the question's own words (in the open document, if one is open). Answers cite their sources as [1], [2]: click a number to open that passage or Telegram message. With a document open, \"Summarise this document\" has the AI read the whole document and summarise it; the summary is kept and shows at once next time if the document has not changed. The bin button clears the conversation. Pick the model / effort right in the box: the same pick as \"Summaries, drafts\" in Settings › AI.",
+    "what": "Ask AI is a popup dropping from the top right of the document, laid over the text so the document and its contents keep their room: open it with the \"AI\" chip at the top of a document, or, with no document open, the \"Ask AI on the documents / on the search results\" button in the right pane. It knows what to ask over: with a document open, that document (the AI reads all of it, the passages matching the question first); with none open, the search results / all documents; the line under \"Ask AI\" says which. A source [n] opens its passage in the document underneath; × or Esc closes it, the conversation stays. With a search typed, the AI reads only the passages and Telegram messages the list shows (always leaving room for messages when there are any), and the line above the box says beforehand how many passages and characters it will send; with no matching passage the \"Ask\" button is off. With no search typed, the AI finds passages by the question's own words (in the open document, if one is open). Answers cite their sources as [1], [2]: click a number to open that passage or Telegram message. With a document open, \"Summarise this document\" has the AI read the whole document and summarise it; the summary is kept and shows at once next time if the document has not changed. Every answer and every summary the AI writes is kept by conversation: the clock button \"History\" at the top of the popup lists the conversations (with a document open, only those about it), by day; click one to read the whole conversation again at no token cost, and asking on carries on in it; the bin on a row / a day deletes conversations. A turn on a document changed since says \"document changed since\"; an old summary is kept when the document changes. Asking again the very question already asked (accents, case and the question mark aside) on the same version of the open document shows the \"Saved answer\" at once, with no AI run; click \"Ask the AI again\" to have it answer anew. \"New conversation\" starts an empty one; the old one stays in History. Pick the model / effort right in the box: the same pick as \"Summaries, drafts\" in Settings › AI.",
     "how": [
       {
         "t": "Type a search first to choose the passages to send; see the line \"Asks over the N passages shown\" above the box",
         "at": "Tìm trong tài liệu"
       },
       {
-        "t": "Type your question in \"Ask the AI about the documents\" and click \"Ask\" (or Enter)",
-        "at": "Hỏi AI trên tài liệu"
+        "t": "Open a document, click the \"AI\" chip at its top, type your question and click \"Ask\" (or Enter)",
+        "at": "Hỏi AI về tài liệu này"
       },
       "Click a number [n] in the answer to open the cited passage / message",
       {
-        "t": "With a document open: click \"Summarise this document\" to have the AI summarise all of it",
+        "t": "In the popup, click \"Summary\" to have the AI summarise the open document",
         "at": "Tóm tắt tài liệu này"
       }
     ],

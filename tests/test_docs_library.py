@@ -16,6 +16,7 @@ class FakeYt:
     def __init__(self):
         self.updated, self.content_calls, self.fail, self.admin_fail, self.all_calls = 1, 0, None, None, 0
         self.content = {"VA-A-1": "# Giải ngân\nĐiều kiện xem VA-12", "VA-A-2": "Bài hai"}
+        self.parents: dict[str, str] = {}  # article -> parent article (the Knowledge Base tree)
 
     async def yt(self, path, **params):
         if self.fail:
@@ -23,7 +24,9 @@ class FakeYt:
         if path == "/api/admin/projects/VA/articles":
             if self.admin_fail:
                 raise self.admin_fail
-            rows = [{"idReadable": a, "summary": f"Bài {a}", "updated": self.updated} for a in self.content]
+            rows = [{"idReadable": a, "summary": f"Bài {a}", "updated": self.updated,
+                     "parentArticle": {"idReadable": self.parents[a]} if a in self.parents else None}
+                    for a in self.content]  # fmt: skip
             return rows[params["$skip"] : params["$skip"] + params["$top"]]
         if path == "/api/articles":  # every project's articles
             assert "project(shortName)" in params["fields"]
@@ -32,10 +35,12 @@ class FakeYt:
             rows.append({"idReadable": "XO-A-1", "updated": 1, "project": {"shortName": "XO"}})  # another project
             return rows[params["$skip"] : params["$skip"] + params["$top"]]
         aid = path.rsplit("/", 1)[1]
-        out = {"idReadable": aid, "summary": f"Bài {aid}", "updated": self.updated}
+        out = {"idReadable": aid, "summary": f"Bài {aid}", "updated": self.updated,
+               "parentArticle": {"idReadable": self.parents[aid]} if aid in self.parents else None}  # fmt: skip
         if "content" in params["fields"]:
             self.content_calls += 1
             out["content"] = self.content[aid]
+            out["updatedBy"] = {"fullName": "Lan PO", "login": "lan"}
         return out
 
 
@@ -86,6 +91,36 @@ async def test_article_is_downloaded_once_until_it_changes(lib, yt, store):
     assert f.stat().st_mode & 0o777 == 0o600 and f.parent.stat().st_mode & 0o777 == 0o700
     assert store.doc_find("yt_article", "VA-A-1")["tickets"] == ["VA-12"]
     assert store.doc_search("dieu kien")
+
+
+async def test_an_update_records_the_lines_it_changed_and_who(lib, yt, store, tmp_path, monkeypatch):
+    folder = tmp_path / "docs"
+    folder.mkdir()
+    (folder / "a.md").write_text("# API\nđăng nhập\n\n## Lỗi\nmã 401")
+    await lib.set_sources(["VA"], [str(folder)])
+    await sync.run(lib, yt)
+    art = store.doc_find("yt_article", "VA-A-1")
+    assert store.doc_revs(art["id"]) == []  # first read: nothing to compare with
+    yt.updated += 1
+    yt.content["VA-A-1"] = "# Giải ngân\nĐiều kiện xem VA-12 và VA-13"
+    (folder / "a.md").write_text("# API\nđăng nhập\n\n## Lỗi\nmã 401\nmã 403")
+    os.utime(folder / "a.md", (1, 2_000_000))  # a new mtime even within the same second
+    await sync.run(lib, yt)
+    [rev] = store.doc_revs(art["id"])
+    assert rev["by"] == "Lan PO" and rev["at"] == yt.updated and rev["more"] == 0
+    assert rev["blocks"] == [{"heading": "# Giải ngân", "removed": ["Điều kiện xem VA-12"],
+                              "added": ["Điều kiện xem VA-12 và VA-13"]}]  # fmt: skip
+    f = store.doc_find("file", str((folder / "a.md").resolve()))
+    [frev] = store.doc_revs(f["id"])
+    assert frev["by"] is None and frev["blocks"] == [{"heading": "## Lỗi", "removed": [], "added": ["mã 403"]}]
+    monkeypatch.setattr("telegram_dashboard.storage.docs.KEEP_REVS", 2)
+    for n in range(3):
+        yt.updated += 1
+        yt.content["VA-A-1"] = f"bản {n}"
+        await lib.article(yt, "VA-A-1")
+    assert [r["blocks"][0]["added"] for r in store.doc_revs(art["id"])] == [["bản 2"], ["bản 1"]]  # newest kept
+    store.doc_delete(source="yt_article", only={"VA-A-1"})
+    assert store.doc_revs(art["id"]) == []  # gone with the document
 
 
 async def test_store_never_writes_through_a_symlink(lib, yt, tmp_path):
@@ -211,7 +246,7 @@ async def test_big_folder_stops_at_max_files_and_skips_node_modules(lib, store, 
     assert len(refs) == 3 and not any("node_modules" in r or ".git" in r for r in refs)
 
 
-async def test_dropping_a_project_or_folder_removes_its_docs(lib, store, yt, tmp_path):
+async def test_an_unticked_project_is_hidden_cache_a_dropped_folder_leaves(lib, store, yt, tmp_path):
     folder, other = tmp_path / "docs", tmp_path / "docs2"
     for f in (folder, other):
         f.mkdir()
@@ -220,9 +255,14 @@ async def test_dropping_a_project_or_folder_removes_its_docs(lib, store, yt, tmp
     await sync.run(lib, yt)
     await lib.put("yt_article", "VAX-A-1", "khác", "khác", updated_at=1)  # a project whose name starts with VA
     await lib.set_sources([], [str(other)])
-    assert lib.sources() == {"projects": [], "folders": [str(other)]}
-    assert store.doc_list(source="yt_article")[0]["ref"] == "VAX-A-1"
-    assert not (lib.dir / "youtrack" / "VA-A-1.md").exists()
+    assert lib.sources() == {"projects": [], "articles": [], "folders": [str(other)]}
+    assert store.doc_list(source="yt_article", projects=[]) == []  # hidden from the list and search
+    assert {r["ref"] for r in await lib.cached()} == {"VA-A-1", "VA-A-2", "VAX-A-1"}  # kept for the Agent
+    await lib.set_sources(["VA"], [str(other)])
+    assert {r["ref"] for r in await lib.cached()} == {"VAX-A-1"}  # ticked again: back at once, no download
+    assert await lib.drop_cache() == 1
+    assert {r["ref"] for r in store.doc_list(source="yt_article")} == {"VA-A-1", "VA-A-2"}
+    assert not (lib.dir / "youtrack" / "VAX-A-1.md").exists() and (lib.dir / "youtrack" / "VA-A-1.md").exists()
     assert _files(store) == {str((other / "a.md").resolve())}
     assert (folder / "a.md").exists()  # the user's own file is never touched
     with pytest.raises(ValueError):
@@ -334,3 +374,46 @@ async def test_a_401_on_the_admin_listing_is_reported_not_retried(lib, yt, store
     await lib.set_sources(["VA"], [])
     await sync.run(lib, yt)
     assert yt.all_calls == 0 and [e["code"] for e in lib.errors] == ["yt_401"]
+
+
+async def test_a_sources_change_stops_the_running_sync_at_its_next_doc(lib, yt):
+    await lib.set_sources(["VA"], [])
+    gate, fetching, real = asyncio.Event(), asyncio.Event(), yt.yt
+
+    async def slow(path, **params):
+        if "content" in params.get("fields", ""):
+            fetching.set()
+            await gate.wait()
+        return await real(path, **params)
+
+    yt.yt = slow
+    running = asyncio.create_task(sync.run(lib, yt))
+    await fetching.wait()
+    saving = asyncio.create_task(lib.set_sources(["VA"], []))
+    await asyncio.sleep(0)
+    gate.set()
+    await asyncio.gather(running, saving)
+    assert lib.synced_at is None and not lib.stop  # stopped, not counted as a sync; the next one runs in full
+    await sync.run(lib, yt)
+    assert lib.synced_at is not None
+
+
+async def test_a_sync_waiting_behind_another_skips_while_fresh(lib, yt):
+    await lib.set_sources(["VA"], [])
+    await asyncio.gather(sync.run(lib, yt, max_age=600), sync.run(lib, yt, max_age=600))
+    assert yt.content_calls == 2  # the second found the first one's sync fresh
+
+
+async def test_a_chosen_branch_reads_that_article_and_those_under_it_only(lib, yt, store):
+    yt.content.update({"VA-A-3": "Con của 1", "VA-A-4": "Cháu của 1"})
+    yt.parents.update({"VA-A-3": "VA-A-1", "VA-A-4": "VA-A-3"})
+    await lib.set_sources([], [], articles=["VA-A-1", "VA-A-9"])
+    await sync.run(lib, yt)
+    shown = store.doc_list(source="yt_article", projects=[], roots=lib.sources()["articles"])
+    assert {r["ref"] for r in shown} == {"VA-A-1", "VA-A-3", "VA-A-4"} and yt.content_calls == 3  # VA-A-2 not read
+    assert [(e["ref"], e["code"]) for e in lib.errors] == [("VA-A-9", "yt_404")]  # a branch gone from YouTrack
+    yt.parents["VA-A-4"] = "VA-A-2"  # moved out of the branch on YouTrack
+    await sync.run(lib, yt)
+    assert {r["ref"] for r in await lib.cached()} == {"VA-A-4"}  # kept for the Agent, hidden
+    with pytest.raises(ValueError):
+        await lib.set_sources([], [], articles=["VA-12"])  # a ticket, not an article

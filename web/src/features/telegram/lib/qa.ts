@@ -133,13 +133,19 @@ export function mute(code: string, off: boolean) {
 export const lastOwn = (i: QaItem) => thread(i).findLast((m) => m.outgoing)?.date ?? i.question.date;
 export const isLate = (i: QaItem, mins: number, now: number, muted: readonly string[]) =>
   mins > 0 && i.question.outgoing && waiting(i) && !muted.includes(i.code) && now - new Date(lastOwn(i)).getTime() >= mins * 60_000;
+/** Your nudges in the thread (it is only nudged while nothing in it counts as an answer: `answered`). */
+export const nudges = (i: QaItem) => i.answers.filter((a) => a.outgoing).length;
+/** A nudge left untouched in the box (the draft outlives a reload): the next nudge replaces it. */
+export const isNudge = (s: string) => /^Nhờ .+ xem giúp phần này nha\.( \(lần \d+\))?$/.test(s);
 /** The nudge put in the box (polite, peer to peer, short): the people the question tagged, else everyone (a reply to
- *  the question, so it is quoted). Vietnamese whatever the UI language: it goes to the group. */
+ *  the question, so it is quoted); from the 2nd nudge with no reply it says which one. Vietnamese whatever the UI
+ *  language: it goes to the group. */
 export function nudgeText(i: QaItem, members: readonly Member[] = []) { // members: a name tag goes as its @username when it has one
   const q = i.question;
   const named = Object.entries(nameTags(q)).map(([at, id]) => { const u = members.find((m) => m.user_id === id)?.username; return u ? `@${u}` : at; });
   const ats = [...new Set([...[...q.text.matchAll(TAG)].map((x) => `@${x[1]}`), ...named])].join(" ");
-  return `Nhờ ${ats || "mọi người"} xem giúp phần này nha.`;
+  const n = nudges(i) + 1;
+  return `Nhờ ${ats || "mọi người"} xem giúp phần này nha.${n > 1 ? ` (lần ${n})` : ""}`;
 }
 /** The members a message tagged by name (no @username: a mention entity), "@Name" → user id: a box answering it
  *  sends those "@Name" as tags again (useMention `known`). */

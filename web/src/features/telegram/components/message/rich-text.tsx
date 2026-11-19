@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { hueOf } from "@/shared/components/avatar";
 import { type Message } from "@/shared/lib/api";
 import { ticketClick } from "@/features/telegram/lib/inbox";
@@ -18,7 +18,7 @@ export const MEDIA: Record<string, Key> = {
 
 // Three looks so they never blur: links are underlined copper text, @mentions an outlined copper chip, keys/code a
 // slate-blue mono chip (the one cool hue, so it stands off body text and the paper-2 quote well too).
-const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
+export const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
 const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline ring-1 ring-inset ring-hl/30";
 const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] text-code ring-1 ring-inset ring-code/30";
 
@@ -59,10 +59,10 @@ export function TicketSheetHost() {
 }
 
 /** VA-123 of a known YouTrack project: a chip that opens the YouTrack tab's ticket sheet right here (⌘ / middle click:
- *  the YouTrack page). Hover / focus shows a peek card (summary,
- *  state, priority, assignee, last update) with links to the YouTrack module and to YouTrack itself, so a reply needn't
- *  leave Telegram to check a ticket. */
-export function TicketChip({ id }: { id: string }) {
+ *  the YouTrack page; the page needs a TicketSheetHost). Hover / focus shows a peek card (summary, state, priority,
+ *  assignee, last update) with a link to YouTrack itself, so a reply needn't leave the page to check a ticket. */
+/** `more`: one more action in the card's link row (Tài liệu: "Tài liệu nhắc ticket này"). */
+export function TicketChip({ id, more }: { id: string; more?: ReactNode }) {
   const t = useT();
   const [hover, setHover] = useState(false);
   const projects = useQuery(ytProjectsQuery);
@@ -91,9 +91,9 @@ export function TicketChip({ id }: { id: string }) {
                   <span className="text-ink-3">{t("Cập nhật|lúc")}</span><span className="font-mono tabular-nums">{ago(tk.updated)}</span>
                 </span>
                 <span className="flex flex-wrap gap-x-3 border-t border-rule pt-1.5">
-                  <a href={`/youtrack/?ticket=${id}`} className={linkCls}>{t("Mở ở trang YouTrack")}</a>
                   {base && <a href={`${base.replace(/\/$/, "")}/issue/${id}`} target="_blank" rel="noreferrer" className={cn(linkCls, "inline-flex items-center gap-1")}>
                     {t("Mở trong YouTrack")}<ExternalLink className="size-3" aria-hidden /></a>}
+                  {more}
                 </span>
               </>
             ) : d.isError ? d.error.message || t("Không tải được ticket") : t("Đang tải…")}

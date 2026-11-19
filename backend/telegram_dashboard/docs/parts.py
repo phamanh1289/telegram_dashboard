@@ -1,6 +1,7 @@
 """Document text -> searchable parts, ticket ids and accent-safe snippets (the doc library's text rules)."""
 
 import re
+from difflib import SequenceMatcher
 
 from ..storage.common import fold
 
@@ -10,6 +11,8 @@ BLOCK = 2000
 # A ticket named without a link ("VA-123", not inside a URL or an article ID).
 BARE = re.compile(r"(?<![\w/-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)")
 _HEADING = re.compile(r"#{1,4}\s+\S")
+REV_LINES = 80  # changed lines kept per update; the rest is counted in "more"
+REV_LINE_CHARS = 300
 
 
 def tickets_of(text: str) -> list[str]:
@@ -80,10 +83,15 @@ def split_parts(text: str) -> list[tuple[int, str, str]]:
     return parts
 
 
+_BR = re.compile(r"<br\s*/?>", re.I)
+
+
 def snippet(text: str, q: str, width: int = 200) -> tuple[str, list[tuple[int, int]]]:
     """Original text (accents kept) of `width` chars around the first hit of a word of `q`, and the (start, end)
     ranges of the hits in the returned string. Matching is on fold(), which can change the length, so a map from
-    folded to original positions is built per character."""
+    folded to original positions is built per character. `<br>` (a line break in a YouTrack table cell) reads as
+    a space."""
+    text = _BR.sub(" ", text)
     folded, pos = [], []
     for i, ch in enumerate(text):
         f = fold(ch)
@@ -106,3 +114,60 @@ def snippet(text: str, q: str, width: int = 200) -> tuple[str, list[tuple[int, i
             else:
                 marks.append((s0 - a, e0 - a))
     return text[a:b], marks
+
+
+def _lines(parts: list[tuple[int, str, str]]) -> tuple[list[str], list[str]]:
+    """The non-blank lines of `parts` and the heading each sits under; a heading counts once, where its section
+    starts. Parts drop blank lines, so a file's old text (gone from disk) and the new one compare alike."""
+    texts, heads, last = [], [], None
+    for _, head, body in parts:
+        if head and head != last:
+            texts.append(head)
+            heads.append(head)
+        last = head
+        for line in body.split("\n"):
+            if line.strip():
+                texts.append(line.rstrip())
+                heads.append(head)
+    return texts, heads
+
+
+def changes(old: list[tuple[int, str, str]], new: list[tuple[int, str, str]]) -> dict | None:
+    """What an update changed, line by line: {"blocks": [{"heading", "removed", "added"}], "more": lines left out past
+    REV_LINES}; None when only blank lines / trailing spaces moved."""
+    a, ha = _lines(old)
+    b, hb = _lines(new)
+    blocks: list[dict] = []
+    kept = more = 0
+    for op, i1, i2, j1, j2 in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal":
+            continue
+        head = hb[j1] if j1 < j2 else ha[i1]
+        got = {}
+        for key, lines in (("removed", a[i1:i2]), ("added", b[j1:j2])):
+            room = max(0, REV_LINES - kept)
+            got[key] = [x[:REV_LINE_CHARS] for x in lines[:room]]
+            kept += len(got[key])
+            more += len(lines) - len(got[key])
+        if not (got["removed"] or got["added"]):
+            continue
+        if blocks and blocks[-1]["heading"] == head:
+            blocks[-1]["removed"] += got["removed"]
+            blocks[-1]["added"] += got["added"]
+        else:
+            blocks.append({"heading": head, **got})
+    return {"blocks": blocks, "more": more} if blocks or more else None
+
+
+if __name__ == "__main__":  # self-check of changes()
+    old = split_parts("# Quy trình\n\nBước 1\nBước 2\n\n## Hạn\n\n3 ngày")
+    new = split_parts("# Quy trình\n\nBước 1\nBước 2 (sửa)\n\n\n## Hạn\n\n3 ngày\n5 ngày nếu lễ")
+    assert changes(old, new) == {
+        "blocks": [
+            {"heading": "# Quy trình", "removed": ["Bước 2"], "added": ["Bước 2 (sửa)"]},
+            {"heading": "## Hạn", "removed": [], "added": ["5 ngày nếu lễ"]},
+        ],
+        "more": 0,
+    }, changes(old, new)
+    assert changes(old, split_parts("# Quy trình\n\nBước 1  \n\n\nBước 2\n\n## Hạn\n\n3 ngày")) is None
+    print("ok")

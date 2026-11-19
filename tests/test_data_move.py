@@ -181,7 +181,8 @@ async def _clear_docs(tmp_path):
     store.doc_upsert("yt_article", "VA-A-1", title="t", path="p", hash="h", chars=1, size=1, updated_at=1,
                      tickets=[], parts=[])  # fmt: skip
     app = FastAPI()
-    docs = NS(sync_lock=asyncio.Lock(), synced_at=1.0)
+    lock = asyncio.Lock()
+    docs = NS(sync_lock=lock, synced_at=1.0, held=lambda: lock)
     app.state.store, app.state.db, app.state.docs = store, Db(store, NS(notify=lambda: None)), docs
     app.include_router(local_data.build_router(s))
 

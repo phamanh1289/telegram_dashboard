@@ -312,7 +312,7 @@
     "tab": "telegram",
     "area": "Nội dung tin › Mã ticket",
     "title": "Chip ticket YouTrack trong tin",
-    "what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột hoặc Tab tới chip để xem nhanh ticket (Trạng thái, Ưu tiên, Người làm, QC, Cập nhật) với hai link “Mở ở trang YouTrack” và “Mở trong YouTrack”; Esc đóng. Kết quả phiên AI Agent (trang AI Agent, Đối chiếu BE, Trợ lý AI) cũng hiện mã ticket thành chip như vậy. Bấm chip (cả ở Hôm nay, ticket liên quan khi trả lời, ⌘K “Mở ticket”) mở chi tiết ticket ngay tại chỗ, không rời trang; Esc đóng; ⌘/Ctrl + bấm mở ở trang YouTrack. Link, @mention và `code` cũng được tô riêng.",
+    "what": "Mã ticket (vd. VA-123) của project YouTrack đã biết hiện thành chip; rê chuột hoặc Tab tới chip để xem nhanh ticket (Trạng thái, Ưu tiên, Người làm, QC, Cập nhật) với link “Mở trong YouTrack”; Esc đóng. Bấm chip mở trang chi tiết ticket của tab YouTrack ngay tại chỗ (cả ở trang Tài liệu). Kết quả phiên AI Agent (trang AI Agent, Đối chiếu BE, Trợ lý AI) cũng hiện mã ticket thành chip như vậy. Bấm chip (cả ở Hôm nay, ticket liên quan khi trả lời, ⌘K “Mở ticket”) mở chi tiết ticket ngay tại chỗ, không rời trang; Esc đóng; ⌘/Ctrl + bấm mở ở trang YouTrack. Link, @mention và `code` cũng được tô riêng.",
     "how": [
       {
         "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",

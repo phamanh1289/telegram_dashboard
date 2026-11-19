@@ -1,18 +1,24 @@
 """The document library: YouTrack Knowledge Base articles cached in data/docs/youtrack/<ID>.md (verbatim; redaction
 happens on the way out to the AI) and the user's own folders read in place. Both are indexed in the `docs` tables;
-sources live in data/docs.json. Sync is in sync.py."""
+sources live in data/docs.json. Sync is in sync.py.
+
+Knowledge Base sources: whole projects (`projects`) or branches (`articles`: an article and every one under it; KB
+articles nest by `parent`). An article outside them (one the AI Agent opened, or of a source unticked since) stays as
+the Agent's cache: hidden from the list, search and Hỏi AI, shown under the `kb_cache` filter, dropped by
+`drop_cache`."""
 
 import asyncio
 import hashlib
 import logging
 import os
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .. import ai as _ai
 from .. import config
 from .extract import read_text
-from .parts import split_parts, tickets_of
+from .parts import changes, split_parts, tickets_of
 
 log = logging.getLogger("telegram_dashboard.docs")
 
@@ -50,11 +56,17 @@ class Library:
         self.errors: list[dict] = []
         self.synced_at: float | None = None
         self.sync_lock = asyncio.Lock()
+        self.stop = False  # set by a sources change: the running sync ends at its next doc instead of finishing
         self._summary_locks: dict[int, asyncio.Lock] = {}  # ponytail: one per doc summarised, never pruned
 
     @property
     def _store(self):
         return self.db.store
+
+    async def write(self, fn, *args, **kwargs):
+        """A store write without Db.write's hub.notify: the change feed carries messages only, and a sync notifying
+        per doc would spin every open SSE stream for nothing."""
+        return await asyncio.to_thread(fn, *args, **kwargs)
 
     def path_of(self, row: dict) -> Path:
         """A doc's file. An article's comes from its ref under today's data dir, not the stored path: the data dir can
@@ -71,27 +83,40 @@ class Library:
             f.write(text)
         return path
 
+    @asynccontextmanager
+    async def held(self):
+        """Stop a running sync and hold the sync lock: nothing that sync writes comes back after what is done inside."""
+        self.stop = True
+        async with self.sync_lock:
+            self.stop = False
+            yield
+
     # sources
 
     def sources(self) -> dict:
         d = config._read_json(self.settings.data_dir / "docs.json")
-        return {"projects": list(d.get("projects") or []), "folders": list(d.get("folders") or [])}
+        return {
+            "projects": list(d.get("projects") or []),
+            "articles": list(d.get("articles") or []),
+            "folders": list(d.get("folders") or []),
+        }
 
-    async def set_sources(self, projects: list[str], folders: list[str]) -> None:
+    async def set_sources(self, projects: list[str], folders: list[str], *, articles: list[str] | None = None) -> None:
+        """`articles` None keeps the chosen branches."""
         if not all(PROJECT.fullmatch(p) for p in projects):
             raise ValueError("bad_project")
+        if articles is not None and not all(ARTICLE_ID.fullmatch(a) for a in articles):
+            raise ValueError("bad_article")
         if not all(os.path.isabs(f) for f in folders):
             raise ValueError("bad_folder")
-        async with self.sync_lock:  # a running sync must not put back what is dropped here
+        async with self.held():  # the running sync stops, the page syncs again with the new sources
             old = self.sources()
-            await asyncio.to_thread(
-                config.write_private_json, self.settings.data_dir / "docs.json",
-                {"projects": projects, "folders": folders},
-            )  # fmt: skip
-            for p in set(old["projects"]) - set(projects):
-                await self.drop_articles(f"{p}-A-")
+            kept = old["articles"] if articles is None else articles
+            new = {"projects": projects, "articles": kept, "folders": folders}
+            await asyncio.to_thread(config.write_private_json, self.settings.data_dir / "docs.json", new)
+            # an unticked project's articles stay as the Agent's cache (hidden; ticked again: back at once)
             for f in set(old["folders"]) - set(folders):  # the user's files stay; only their index goes
-                await self.db.write(self._store.doc_delete, source="file", path_prefix=folder_prefix(f))
+                await self.write(self._store.doc_delete, source="file", path_prefix=folder_prefix(f))
 
     async def drop_articles(self, prefix: str, *, keep: set[str] | None = None) -> None:
         """Rows and cached files of the articles whose ID starts with `prefix`, except `keep`."""
@@ -99,7 +124,23 @@ class Library:
         for r in rows:
             if r["ref"].startswith(prefix) and r["ref"] not in (keep or ()):
                 self.path_of(r).unlink(missing_ok=True)
-        await self.db.write(self._store.doc_delete, source="yt_article", ref_prefix=prefix, keep=keep)
+        await self.write(self._store.doc_delete, source="yt_article", ref_prefix=prefix, keep=keep)
+
+    async def cached(self) -> list[dict]:
+        """The Agent's cache: articles of projects not in the sources."""
+        src = self.sources()
+        return await self.db.read(
+            self._store.doc_list, source="yt_article", projects=src["projects"], roots=src["articles"], cache=True
+        )
+
+    async def drop_cache(self) -> int:
+        """Rows and files of the Agent's cache; the chosen projects' articles stay."""
+        async with self.held():
+            rows = await self.cached()
+            for r in rows:  # files first: a failure leaves rows and files as they were
+                await asyncio.to_thread(self.path_of(r).unlink, missing_ok=True)
+            refs = {r["ref"] for r in rows}
+            return await self.write(self._store.doc_delete, source="yt_article", only=refs) if refs else 0
 
     # writing
 
@@ -113,29 +154,47 @@ class Library:
         updated_at: int | None,
         path: Path | None = None,
         size: int = 0,
+        parent: str | None = None,
+        by: str | None = None,
     ) -> int:
         """Index a document. `yt_article`: the text is saved to the store first; `file`: `path` is the user's file,
-        nothing is written."""
+        nothing is written. `by`: who last updated it (YouTrack's updatedBy)."""
         if source == "yt_article":
             if not ARTICLE_ID.fullmatch(ref):
                 raise ValueError("bad_ref")
             path = await asyncio.to_thread(self._write, ref, text)
             size = len(text.encode())
-        return await self.index(source, ref, title, text, path=path, size=size, updated_at=updated_at)
+        return await self.index(
+            source, ref, title, text, path=path, size=size, updated_at=updated_at, parent=parent, by=by
+        )
 
-    async def index(self, source, ref, title, text, *, path, size, updated_at) -> int:
-        return await self.db.write(
-            self._store.doc_upsert, source, ref, title=title, path=str(path), hash=sha1(text), chars=len(text),
-            size=size, updated_at=updated_at, tickets=tickets_of(text), parts=split_parts(text),
+    async def index(self, source, ref, title, text, *, path, size, updated_at, parent=None, by=None) -> int:
+        """A document stored before with other text gets what changed recorded (Tài liệu: hover its update date),
+        diffed from its stored parts: a file's old text is gone from disk by now."""
+        h, parts, rev = sha1(text), split_parts(text), None
+        old = await self.db.read(self._store.doc_find, source, ref)
+        if old and old["hash"] != h:
+            prev = await self.db.read(self._store.doc_parts, old["id"])
+            rev = changes([(p["line"], p["heading"], p["body"]) for p in prev], parts)
+        return await self.write(
+            self._store.doc_upsert, source, ref, title=title, path=str(path), hash=h, chars=len(text), size=size,
+            updated_at=updated_at, tickets=tickets_of(text), parts=parts, parent=parent, rev=rev, by=by,
         )  # fmt: skip
 
     async def fetch(self, yt, aid: str) -> str:
         """Download an article, save and index it; the text as links._article returned it."""
-        a = await yt.yt(f"/api/articles/{aid}", fields="idReadable,summary,updated,content")
+        a = await yt.yt(
+            f"/api/articles/{aid}",
+            fields="idReadable,summary,updated,content,parentArticle(idReadable),updatedBy(fullName,login)",
+        )
         ref = a.get("idReadable") or aid
         text = f"# {ref} {a.get('summary') or ''}\n\n{a.get('content') or ''}"
+        parent = (a.get("parentArticle") or {}).get("idReadable")
         try:
-            await self.put("yt_article", ref, a.get("summary") or "", text, updated_at=a.get("updated"))
+            by = (a.get("updatedBy") or {}).get("fullName") or (a.get("updatedBy") or {}).get("login")
+            await self.put(
+                "yt_article", ref, a.get("summary") or "", text, updated_at=a.get("updated"), parent=parent, by=by
+            )
         except OSError as e:  # disk full / a symlink in the way: the caller still gets the article
             log.warning("article %s not saved: %s", ref, type(e).__name__)
         return text
@@ -153,14 +212,19 @@ class Library:
 
     # AI
 
-    async def _sent(self, doc: dict) -> str:
-        """The text a summary of `doc` is made from and hashed by: its file, redacted when set, framed safely."""
+    async def text(self, doc: dict) -> str:
+        """`doc`'s text from its file. A file no longer under a chosen folder (or a symlink now pointing out) raises
+        ValueError: what was taken out of the sources is not read for an AI any more."""
         path = self.path_of(doc)
         if doc["source"] == "file" and not any(
             str(path.resolve()).startswith(folder_prefix(f)) for f in self.sources()["folders"]
         ):
-            raise ValueError("outside")  # no longer under a chosen folder (or a symlink now points out)
-        text = await asyncio.to_thread(read_text, path)
+            raise ValueError("outside")
+        return await asyncio.to_thread(read_text, path)
+
+    async def _sent(self, doc: dict) -> str:
+        """The text a summary of `doc` is made from and hashed by: its file, redacted when set, framed safely."""
+        text = await self.text(doc)
         return _TAG.sub("[untrusted_link_content]", _ai.redact(text) if _ai.REDACT else text)
 
     async def saved_summary(self, doc: dict) -> str | None:
@@ -191,5 +255,5 @@ class Library:
             )  # fmt: skip
             out = out.strip()[:SUMMARY_CHARS]
             if out:
-                await self.db.write(self._store.doc_set_summary, doc_id, out, h)
+                await self.write(self._store.doc_set_summary, doc_id, out, h)
             return out, False

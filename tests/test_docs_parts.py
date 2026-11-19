@@ -96,3 +96,8 @@ def test_a_big_text_file_is_read_only_up_to_the_cut(tmp_path, monkeypatch):
     (tmp_path / "c.md").write_bytes(b"ab\xff" + b"x" * 100)  # a bad byte before the cut is still not text
     with pytest.raises(ValueError, match="not_text"):
         read_text(tmp_path / "c.md")
+
+
+def test_snippet_reads_a_table_cells_br_as_a_space():
+    text, marks = snippet("VA-12083 — CLOSED<br>24h · VA-12396<br/>giải ngân", "giai ngan")
+    assert "<br" not in text and text[marks[0][0] : marks[0][1]] == "giải"

@@ -369,8 +369,9 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
 /** Set by the dashboard: a card there gets an AI button that opens a chat about that one report. */
 export const CardAi = createContext<((title: string) => void) | null>(null);
 
-/** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. */
-export function AiAsk({ label, onClick, hint, big, openRight }: { label: string; onClick: () => void; hint?: string; big?: boolean; openRight?: boolean }) {
+/** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. `text`: the chip's own
+ *  words in place of "AI" / "Hỏi AI tổng quan". */
+export function AiAsk({ label, onClick, hint, big, openRight, text }: { label: string; onClick: () => void; hint?: string; big?: boolean; openRight?: boolean; text?: string }) {
   const t = useT();
   const [peek, setPeek] = useState(false);
   // Near the left edge of what clips it (a dialog, the window), the bot pops out to the right so the bubble stays inside.
@@ -399,7 +400,7 @@ export function AiAsk({ label, onClick, hint, big, openRight }: { label: string;
           </motion.span>
         )}
       </AnimatePresence>
-      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{big ? t("Hỏi AI tổng quan") : "AI"}
+      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{text ?? (big ? t("Hỏi AI tổng quan") : "AI")}
     </button>
   );
 }
