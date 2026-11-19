@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/shared/components/ai";
 import { AiBotIcon, AiPromptBox } from "@/shared/components/ai/chat";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { AiFetching, useAiWait } from "@/shared/components/ai/fetching";
 import { ProjectPicker, useProjects } from "@/shared/components/project-picker";
 import { createTicket, TicketForm, useOpenSimilar, useYtProject } from "@/features/youtrack/components/ticket-form";
@@ -177,6 +178,7 @@ export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
   const t = useT();
   const qc = useQueryClient();
   const [note, setNote] = useState(seed ?? ""); // only the user's extra prompt
+  const docTag = useDocTag("ai", note, setNote); // "#": a library document for the AI to read
   const [mode, setMode] = useState<"plan" | "edit">("plan");
   const [tag] = useState(() => `telegram-${crypto.randomUUID()}`);
   const [custom, setCustom] = useState<string | null>(null); // the prompt as edited by hand, sent instead of the generated one
@@ -265,7 +267,7 @@ export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
                   }, t("Không khởi động được AI Agent."))}
                 </p>
               )}
-              <AiPromptBox aria-label={t("Yêu cầu thêm cho AI")} autoFocus maxLength={4000} value={note} onChange={setNote} onSend={start}
+              <AiPromptBox aria-label={t("Yêu cầu thêm cho AI")} autoFocus maxLength={4000} value={note} onChange={setNote} onSend={start} mention={docTag}
                 placeholder={t("Ví dụ: chỉ sửa màn hình đăng nhập (Enter giao việc, Shift+Enter xuống dòng)")}
                 running={task.isPending}
                 top={custom !== null && (

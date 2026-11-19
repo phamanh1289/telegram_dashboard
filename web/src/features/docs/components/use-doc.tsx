@@ -15,7 +15,7 @@ import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 import { addLine } from "@/features/telegram/lib/attach";
 import { groupsQuery, sessionId, taskListQuery } from "@/features/telegram/lib/inbox";
-import type { DocDetail } from "@/features/docs/lib/docs";
+import { type DocDetail, docName, docRef } from "@/features/docs/lib/docs";
 
 // "Dùng tài liệu ▾" in the reader's header: put this document to work elsewhere.
 // · Đính kèm vào phiên AI: its line goes into the session's box (a KB article as its link, a file as "#DOC<id>", which
@@ -28,9 +28,8 @@ const SUB = cn(MENU_ACTION, MENU_ITEM, "text-sm");
 export function UseDoc({ doc }: { doc: DocDetail["doc"] }) {
   const t = useT();
   const router = useRouter();
-  const name = doc.title || doc.ref;
-  const line = doc.url ? t("Đọc tài liệu {ref} ({title})", { ref: doc.url, title: name })
-    : t("Đọc tài liệu {ref} ({title})", { ref: `#DOC${doc.id}`, title: name });
+  const name = docName(doc);
+  const line = t("Đọc tài liệu {ref} ({title})", { ref: docRef(doc), title: name });
   const copy = () => navigator.clipboard.writeText(doc.url ?? "").then(
     () => toast({ text: t("Đã chép link tài liệu") }),
     () => toast({ text: t("Không chép được link, mở Bản gốc để lấy") }),

@@ -214,4 +214,8 @@ export default {
   "Không, mở trên YouTrack": "No, open it on YouTrack",
   "YouTrack không trả bài {ref} (đã xóa, hoặc bạn không có quyền đọc).": "YouTrack did not return article {ref} (deleted, or you cannot read it).",
   "Đánh dấu yêu thích": "Mark as favourite",
+  "Đang tải tài liệu…": "Loading documents…",
+  "Không tải được danh sách tài liệu": "Could not load the documents",
+  "File trên máy không có link cho team mở: chỉ dùng trong phiên AI.": "A file on this machine has no link the team can open: use it in an AI session only.",
+  "Chọn tài liệu": "Pick a document",
 } satisfies Dict;

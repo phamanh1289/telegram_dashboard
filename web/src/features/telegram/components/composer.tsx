@@ -15,7 +15,8 @@ import { DeepBadge, DeepPick } from "@/features/telegram/components/deep-think";
 import { promiseChoice, RemindPick, remindAt } from "@/features/telegram/components/remind";
 import { WorkTrail } from "@/features/telegram/components/work-trail";
 import { Snippets } from "@/features/telegram/components/snippets";
-import { useMention } from "@/shared/components/mention";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { groupMembers } from "@/features/telegram/lib/mentions";
 import { ContextPanel } from "@/features/telegram/components/message/context-panel";
 import { inline, richText } from "@/features/telegram/components/message/rich-text";
@@ -114,7 +115,7 @@ export function Composer({
     if (!remindSet && text.trim()) setRemindAfter(promiseChoice(text)); // eslint-disable-line react-hooks/set-state-in-effect -- follows the typed text
   }, [text, remindSet]);
   const [snips, setSnips] = useState(false);
-  const { attach, ...mention } = useMention(groupMembers(chatId), text, setText);
+  const { attach, ...mention } = useJoin(useMention(groupMembers(chatId), text, setText), useDocTag("telegram", text, setText)); // "@" tags, "#" a document's link
   const [pane, setPane] = useState<"reply" | "ai">("reply"); // narrow (split view, phones): one pane at a time
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
   const [targetDeleted, setTargetDeleted] = useState(false);

@@ -20,7 +20,8 @@ import { api, errorText, type YouTrackIssue } from "@/shared/lib/api";
 import { getPref, setPref } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { resolveProject, yt, ytMeQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
-import { useMention } from "@/shared/components/mention";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { ytPeople } from "@/features/youtrack/lib/mentions";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -237,7 +238,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const assignee = meta.assignee ?? me.data?.login ?? "";
   const fields = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !!project && !demo });
   const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000, enabled: !!project });
-  const { attach, ...mention } = useMention(ytPeople(project), desc, setDesc); // "@" in the description tags the team
+  const { attach, ...mention } = useJoin(useMention(ytPeople(project), desc, setDesc), useDocTag("youtrack", desc, setDesc)); // "@" tags the team, "#" links a document
   const q = useDeferredValue(summary.trim());
   const similar = useOpenSimilar(q, { project, enabled: q.length > 8 });
 

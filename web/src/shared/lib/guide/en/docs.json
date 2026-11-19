@@ -65,6 +65,18 @@
     "keys": "use document attach ai session agent q&a ask group copy link #doc kb knowledge base share link"
   },
   {
+    "id": "docs-hash",
+    "tab": "docs",
+    "area": "Message box › #",
+    "title": "Type # to put a document into a message, comment or AI session",
+    "what": "Type # (at a line start or after a space) in a message box to open the Documents library's list, then a few letters of the name (accents optional, newest first); ↑↓ to pick, Enter / Tab to insert, Esc to close. In an AI Agent session's follow-up box and the extra-request box of Give to AI Agent and Check vs BE: it inserts the document's code (a YouTrack article as its link, a file on this machine as #DOC<number>) with its name, and the dashboard reads the document for the AI to find what bears on the task. In the Telegram reply box, Q&A, and YouTrack comments and ticket descriptions: it inserts the name with the original article's link for the team to open; Knowledge Base articles only (a file on this machine has no link for the team). When nothing matches the list closes by itself, so #QA… codes and hashtags type as usual. The AI assistant reads no links, so it has no #.",
+    "how": [
+      "In a message box, type # and a few letters of the document's name",
+      "Pick with ↑↓ and Enter (or click the row); write the rest and send as usual"
+    ],
+    "keys": "# hash hashtag insert document doc link original document ai session comment telegram youtrack #doc"
+  },
+  {
     "id": "docs-sources",
     "tab": "docs",
     "area": "Documents › Sources",

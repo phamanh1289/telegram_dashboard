@@ -68,6 +68,11 @@ export const docs = {
     api<void>(`/docs/ai?${sessions.map((s) => `session=${encodeURIComponent(s)}`).join("&")}`, { method: "DELETE" }),
 };
 
+/** How a document is named in a box and read by an AI session (links.py): a KB article as its link (read fresh), a
+ *  file on this machine as "#DOC<id>". Dùng tài liệu and "#" both write it. */
+export const docRef = (d: Pick<Doc, "id" | "url">) => d.url ?? `#DOC${d.id}`;
+export const docName = (d: Pick<Doc, "title" | "ref">) => d.title || d.ref;
+
 export const docListQuery = (f: DocFilter) => ({
   queryKey: ["docs", "list", f.source, f.ticket],
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.list(src(f), f.ticket, signal),

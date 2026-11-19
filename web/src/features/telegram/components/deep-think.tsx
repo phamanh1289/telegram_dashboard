@@ -5,6 +5,7 @@ import { ArrowDown, ArrowLeft, BrainCircuit, Check, CheckCheck, CircleCheckBig, 
 import { type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBotIcon, AiPromptBox, AiResultCard } from "@/shared/components/ai/chat";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { AiFetching, deepLines, useAiWait } from "@/shared/components/ai/fetching";
 import { type Block, groupEvents, type TaskEvent, toolMeta } from "@/shared/components/ai/steps";
 import { EventItem, SessionAsks, useTaskLog } from "@/features/telegram/components/tasks-feed";
@@ -359,6 +360,7 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
   const projects = useProjects();
   const proj = projects.data?.find((p) => p.path === project);
   const [note, setNote] = useState("");
+  const docTag = useDocTag("ai", note, setNote); // "#": a library document for the AI to read
   const qc = useQueryClient();
   // Back on the page while this group's check still runs: pick its scene up again instead of starting over.
   const [taskId, setTaskId] = useState<string | null>(() =>
@@ -501,7 +503,7 @@ export function DeepBulkPage({ b, onClose }: { b: Bulk; onClose: () => void }) {
             </p>
           )}
           <AiPromptBox aria-label={tt("Yêu cầu thêm")} placeholder={tt("Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán")} maxLength={2000}
-            value={note} onChange={setNote} onSend={go} running={running || run.isPending}
+            value={note} onChange={setNote} onSend={go} mention={docTag} running={running || run.isPending}
             onStop={taskId ? () => stop.mutate() : undefined} stopping={stop.isPending} stopHint={tt("Dừng đối chiếu")} stopLabel={tt("Dừng")}
             tools={<>
               <ProjectChip value={project} onChange={chooseProject} disabled={running} />
@@ -573,6 +575,7 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
   const projects = useProjects();
   const proj = projects.data?.find((p) => p.path === project);
   const [note, setNote] = useState("");
+  const docTag = useDocTag("ai", note, setNote); // "#": a library document for the AI to read
   const qc = useQueryClient();
   const chooseProject = (p: string) => { setProject(p); setPref("agentProject", p); };
   // A read-only AI Agent session, followed here like the bulk page (scene, then the answer); closing leaves it running.
@@ -664,7 +667,7 @@ function DeepDialog({ c, preset, onClose }: { c: Message; preset?: string; onClo
         )}
 
         <AiPromptBox aria-label={tt("Yêu cầu thêm")} placeholder={tt("Yêu cầu thêm (tùy chọn), ví dụ: chỉ xét màn thanh toán")} maxLength={2000}
-          value={note} onChange={setNote} onSend={go} running={dr.running || run.isPending}
+          value={note} onChange={setNote} onSend={go} mention={docTag} running={dr.running || run.isPending}
           onStop={taskId ? () => dr.stop.mutate() : undefined} stopping={dr.stop.isPending} stopHint={tt("Dừng đối chiếu")} stopLabel={tt("Dừng")}
           tools={<>
             <ProjectChip value={project} onChange={chooseProject} disabled={dr.running} />

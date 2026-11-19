@@ -5,6 +5,7 @@ import { FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, TriangleAlert, X } 
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/shared/components/ai";
 import { AiPromptBox, AiSend } from "@/shared/components/ai/chat";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Hint } from "@/shared/components/ui/hint";
@@ -117,6 +118,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   }, [confirmed, id, t, assist]);
   // A document attached from Tài liệu: its line ("#DOC12 …" / the KB link) in the box, for the user to write around.
   const added = useLines(id);
+  const docTag = useDocTag("ai", text, setText); // "#": a library document for the AI to read (not Trợ lý AI: it reads no links)
   useEffect(() => {
     if (!added.length) return;
     setText((cur) => [cur.trim(), ...added.filter((l) => !cur.includes(l))].filter(Boolean).join("\n")); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from Tài liệu, once
@@ -195,7 +197,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         ))}
       </ol>
     )}
-    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={assist ? 2000 : 8000} value={text} onChange={setText} onPaste={paste}
+    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={assist ? 2000 : 8000} value={text} onChange={setText} onPaste={paste} mention={assist ? undefined : docTag}
       onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
       stopHint={t("Dừng AI (giữ hội thoại, có thể nhắn tiếp)")}
       placeholder={running ? t("AI đang làm: {mod}+Enter để thêm vào hàng đợi", { mod: MOD }) : t("Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, {mod}+Enter vào hàng đợi)", { mod: MOD })}

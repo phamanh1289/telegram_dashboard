@@ -342,7 +342,7 @@ export default {
   "Bình luận ({n})": "Comments ({n})",
   "Chưa có bình luận": "No comments yet",
   "Bình luận mới": "New comment",
-  "Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag)…": "Write a comment (posted to YouTrack, ⌘↵ to send, @ to tag)…",
+  "Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag, # chèn tài liệu)…": "Write a comment (posted to YouTrack, ⌘↵ to send, @ to tag, # to insert a document)…",
   "Gửi bình luận": "Send comment",
   "Nhận": "Take",
   "Tôi": "Me",

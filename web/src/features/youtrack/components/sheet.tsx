@@ -7,7 +7,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ImageView } from "@/shared/components/markdown";
 import { useEffect, useRef, useState } from "react";
-import { useMention } from "@/shared/components/mention";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { ytPeople } from "@/features/youtrack/lib/mentions";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
@@ -166,7 +167,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const htmlIds = (d.data?.attachments ?? []).filter((a) => a.mime === "text/html" || /\.html?$/i.test(a.name)).map((a) => a.id);
   const flowAtt = useQuery({ queryKey: ["yt", "flow-att", id, ...htmlIds], queryFn: ({ signal }) => yt.flow(id, signal).then((r) => r.att),
     enabled: write && htmlIds.length > 0, staleTime: Infinity, retry: false }).data;
-  const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
+  const { attach, ...mention } = useJoin(useMention(ytPeople(proj), comment, setComment), useDocTag("youtrack", comment, setComment)); // "@" tags the project's team, "#" links a document
   const now = useNow();
 
   async function send() {
@@ -320,7 +321,7 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
         {write && (
           <div className="relative grid gap-2">
             {mention.popup}
-            <Textarea ref={attach} rows={3} maxLength={20000} value={comment} aria-label={t("Bình luận mới")} placeholder={t("Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag)…")}
+            <Textarea ref={attach} rows={3} maxLength={20000} value={comment} aria-label={t("Bình luận mới")} placeholder={t("Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag, # chèn tài liệu)…")}
               onChange={(e) => { setComment(e.target.value); mention.track(e); }} onSelect={mention.track}
               onKeyDown={(e) => { if (mention.onKeyDown(e)) return; if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !sending) { e.preventDefault(); void send(); } }} />
             <Button size="sm" className="justify-self-end" disabled={!comment.trim() || sending} aria-busy={sending} onClick={() => void send()}><MessageSquareText /> {t("Gửi bình luận")}</Button>

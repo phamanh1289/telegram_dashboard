@@ -65,6 +65,18 @@
     "keys": "dung tai lieu dùng tài liệu dinh kem dính kèm phien ai phiên ai agent q&a hoi nhom hỏi nhóm sao chep link sao chép link #doc kb knowledge base gui link gửi link"
   },
   {
+    "id": "docs-hash",
+    "tab": "docs",
+    "area": "Ô nhắn › #",
+    "title": "Gõ # để chèn tài liệu vào tin, comment hoặc phiên AI",
+    "what": "Gõ # (đầu dòng hoặc sau dấu cách) trong ô nhắn để mở danh sách tài liệu của kho Tài liệu, gõ tiếp vài chữ của tên (không dấu vẫn khớp, mới nhất lên đầu); ↑↓ chọn, Enter / Tab chèn, Esc đóng. Ở ô nhắn tiếp của phiên AI Agent, ô yêu cầu thêm của Giao AI Agent và Đối chiếu BE: chèn mã tài liệu (bài YouTrack là link của bài, file trên máy là #DOC<số>) kèm tên, dashboard đọc tài liệu cho AI để nó tìm chỗ liên quan tới việc. Ở ô trả lời Telegram, Q&A, bình luận và mô tả ticket YouTrack: chèn tên kèm link bài gốc để team mở; chỉ có bài Knowledge Base (file trên máy không có link cho team). Không có tài liệu nào khớp thì danh sách tự đóng, gõ #QA… hay hashtag vẫn bình thường. Trợ lý AI không đọc link nên không có #.",
+    "how": [
+      "Trong ô nhắn, gõ # rồi vài chữ của tên tài liệu",
+      "Chọn bằng ↑↓ rồi Enter (hoặc bấm vào dòng); viết tiếp rồi gửi như thường"
+    ],
+    "keys": "# thang hashtag chen tai lieu chèn tài liệu doc link tai lieu goc tài liệu gốc phien ai phiên ai comment binh luan bình luận telegram youtrack #doc"
+  },
+  {
     "id": "docs-sources",
     "tab": "docs",
     "area": "Tài liệu › Nguồn",
