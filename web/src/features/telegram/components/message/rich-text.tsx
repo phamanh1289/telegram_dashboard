@@ -1,13 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
 import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { hueOf } from "@/shared/components/avatar";
 import { type Message } from "@/shared/lib/api";
 import { ticketClick } from "@/features/telegram/lib/inbox";
 import { ago } from "@/shared/lib/time";
-import { yt, ytDetailQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { ytDetailQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
 import { cn } from "@/shared/lib/utils";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -60,14 +59,13 @@ export function TicketSheetHost() {
 
 /** VA-123 of a known YouTrack project: a chip that opens the YouTrack tab's ticket sheet right here (⌘ / middle click:
  *  the YouTrack page; the page needs a TicketSheetHost). Hover / focus shows a peek card (summary, state, priority,
- *  assignee, last update) with a link to YouTrack itself, so a reply needn't leave the page to check a ticket. */
+ *  assignee, last update; `more`: the page's own links), so a reply needn't leave the page to check a ticket. */
 /** `more`: one more action in the card's link row (Tài liệu: "Tài liệu nhắc ticket này"). */
 export function TicketChip({ id, more }: { id: string; more?: ReactNode }) {
   const t = useT();
   const [hover, setHover] = useState(false);
   const projects = useQuery(ytProjectsQuery);
   const d = useQuery({ ...ytDetailQuery(id), retry: false, enabled: hover });
-  const base = useQuery({ queryKey: ["yt", "config"], queryFn: yt.config, staleTime: Infinity, enabled: hover }).data?.base;
   if (!projects.data?.some((p) => p.shortName === id.split("-")[0])) return id;
   const tk = d.data;
   return (
@@ -90,11 +88,7 @@ export function TicketChip({ id, more }: { id: string; more?: ReactNode }) {
                   {tk.qc && <><span className="text-ink-3">QC</span><span className="truncate">{tk.qc}</span></>}
                   <span className="text-ink-3">{t("Cập nhật|lúc")}</span><span className="font-mono tabular-nums">{ago(tk.updated)}</span>
                 </span>
-                <span className="flex flex-wrap gap-x-3 border-t border-rule pt-1.5">
-                  {base && <a href={`${base.replace(/\/$/, "")}/issue/${id}`} target="_blank" rel="noreferrer" className={cn(linkCls, "inline-flex items-center gap-1")}>
-                    {t("Mở trong YouTrack")}<ExternalLink className="size-3" aria-hidden /></a>}
-                  {more}
-                </span>
+                {more && <span className="flex flex-wrap gap-x-3 border-t border-rule pt-1.5">{more}</span>}
               </>
             ) : d.isError ? d.error.message || t("Không tải được ticket") : t("Đang tải…")}
           </span>

@@ -312,7 +312,7 @@
     "tab": "telegram",
     "area": "Message text › Ticket ID",
     "title": "YouTrack ticket chips in messages",
-    "what": "A ticket ID (e.g. VA-123) of a known YouTrack project becomes a chip; hover or Tab to the chip for a quick look at the ticket (State, Priority, Assignee, QC, Updated) with a link \"Open in YouTrack\"; Esc closes it. Clicking the chip opens the YouTrack tab's ticket page right there (on the Documents page too). AI Agent session results (AI Agent page, Đối chiếu BE, Trợ lý AI) show ticket IDs as the same chip. Clicking a chip (also in Today, related tickets when replying, ⌘K “Open ticket”) opens the ticket detail right there, without leaving the page; Esc closes it; ⌘/Ctrl + click opens it in the YouTrack page. Links, @mentions and `code` are styled too.",
+    "what": "A ticket ID (e.g. VA-123) of a known YouTrack project becomes a chip; hover or Tab to the chip for a quick look at the ticket (State, Priority, Assignee, QC, Updated); Esc closes it. Clicking the chip opens the YouTrack tab's ticket page right there (on the Documents page too). AI Agent session results (AI Agent page, Đối chiếu BE, Trợ lý AI) show ticket IDs as the same chip. Clicking a chip (also in Today, related tickets when replying, ⌘K “Open ticket”) opens the ticket detail right there, without leaving the page; Esc closes it; ⌘/Ctrl + click opens it in the YouTrack page. Links, @mentions and `code` are styled too.",
     "how": [
       {
         "t": "Click \"To do\" in the sidebar to get a message list",
