@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Cài đặt › Tìm cài đặt",
     "title": "Tìm một cài đặt",
-    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở. Nhấn Esc (khi không gõ trong ô nào, không mở popup nào) để đóng Cài đặt, như nút \"Quay lại\".",
     "how": [
       {
         "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",

@@ -19,6 +19,7 @@ import { type Key, type Lang, type T, tr, useLang, useT } from "@/shared/lib/i18
 import { fold } from "@/shared/lib/utils";
 import { BOT_SIZES, type BotCorner, type BotMode, readYtRole, setPref, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
+import { POP, POP_EXIT, POP_OUT, POP_SPRING } from "@/shared/lib/motion";
 import { shortName, ytMeQuery } from "@/features/youtrack/lib/yt";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
 
@@ -112,7 +113,7 @@ const AI_ERR: Record<string, Key> = { ai_provider_error: "AI không chạy đư�
 /** One question to the bot and its answer (`error` instead when it failed). */
 type Turn = { q: string; a: string; error?: string };
 const BOT_KEY = "guide-bot"; // open + conversation (sessionStorage): survives a reload; the module keeps it across pages
-const EXIT = 0.2; // seconds the chat takes to close
+const EXIT = POP_EXIT; // seconds the chat takes to close
 const GAP = 16, TOP = 56; // GAP: the floating bot's margin on every edge; TOP: the chat panel's, under the top bar
 // bot and chat: z-[55], over the side panel and dialogs (z-50), under the toast (z-[60]) and the walk-through (z-[70])
 type Pt = { x: number; y: number };
@@ -221,7 +222,7 @@ export function GuideBot({ module }: { module: Module }) {
       if (e.key === "F1") { e.preventDefault(); toggleBot(); }
       // Esc with the focus outside the chat closes it too; in another popup or a field, Esc is theirs (in the chat: its own handler)
       else if (e.key === "Escape" && BOT_STATE.open && !e.defaultPrevented
-        && !document.activeElement?.closest("[role=dialog], [role=menu], [role=listbox], input, textarea, [contenteditable]")) setBot({ open: false });
+        && !document.activeElement?.closest("[role=dialog], [role=menu], [role=listbox], input, textarea, [contenteditable]")) { e.preventDefault(); setBot({ open: false }); } // taken: the page's own Esc (Settings: back) stays put
     };
     document.addEventListener("keydown", k);
     // a walk-through going on (it moved here through a link): carry on once the page has rendered
@@ -377,18 +378,12 @@ function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose
   const still = useReducedMotion();
   // fixed at the right: slides in like a drawer; otherwise it grows out of the bot (`from`) and shrinks back into it, the
   // bot fading the other way (globals.css gb-away). Transform + opacity only: the compositor runs them, no repaint per frame.
-  const spring = { type: "spring" as const, stiffness: 420, damping: 34 };
-  const out = { duration: EXIT, ease: [0.4, 0, 1, 1] as const };
   const anim = still ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } }
     : mode === "side" ? {
       initial: { x: box.width + 40 },
-      animate: { x: 0, transition: spring },
-      exit: { x: box.width + 40, transition: out },
-    } : {
-      initial: { opacity: 0, scale: 0.5 },
-      animate: { opacity: 1, scale: 1, transition: { scale: spring, opacity: { duration: 0.16 } } },
-      exit: { opacity: 0, scale: 0.5, transition: out },
-    };
+      animate: { x: 0, transition: POP_SPRING },
+      exit: { x: box.width + 40, transition: POP_OUT },
+    } : { initial: POP.shut, animate: POP.open, exit: POP.shut };
   const you = name ? shortName(name) : t("anh/chị");
   // while typing: the features the words match, at once and with no AI — a click walks through it on the page
   const hits = cat && !live ? rank(cat, q, 3, true) : [];

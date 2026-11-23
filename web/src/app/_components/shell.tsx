@@ -81,7 +81,8 @@ function useUpdateState() {
 }
 
 /** Module switch left; AI quota, guide, theme and the shared settings right. */
-export function TopBar({ module, children }: { module: Module; children?: React.ReactNode }) {
+/** `onClose`: Settings only, its leave (the closing animation, then back): the gear clicked again runs it. */
+export function TopBar({ module, children, onClose }: { module: Module; children?: React.ReactNode; onClose?: () => void }) {
   const t = useT();
   const { fresh, risk } = useYtBadge(module !== "youtrack");
   const tg = useTgBadge(module !== "telegram");
@@ -89,7 +90,6 @@ export function TopBar({ module, children }: { module: Module; children?: React.
   useWatchGlobal((id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
   useWaitNudge(true); // Chờ bổ sung waiting over 3 days: once a day, on every page
   const behind = useUpdateState();
-  const router = useRouter();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
   useEffect(() => {
     const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -138,7 +138,7 @@ export function TopBar({ module, children }: { module: Module; children?: React.
         </Button></Hint>
         <Hint side="bottom" title={t("Cài đặt")} text={behind ? t("Có {n} bản cập nhật: mở Cài đặt › Cập nhật.", { n: behind }) : t("Telegram, YouTrack, AI, giao diện, cập nhật.")}><Link href={behind ? "/settings/#github" : "/settings/"} aria-current={module === "settings" ? "page" : undefined}
           // A second click closes Settings, like its "Quay lại".
-          onClick={module === "settings" ? (e) => { e.preventDefault(); if (history.length > 1) router.back(); else router.push("/"); } : undefined}
+          onClick={onClose && ((e) => { e.preventDefault(); onClose(); })}
           className={buttonVariants({ size: "icon-sm", variant: module === "settings" ? "secondary" : "ghost", className: "relative" })}
           aria-label={behind ? t("Cài đặt (có {n} bản cập nhật)", { n: behind }) : t("Cài đặt")}
           >

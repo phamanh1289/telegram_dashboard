@@ -184,7 +184,7 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
     return () => { document.removeEventListener("click", onClick, true); document.removeEventListener("change", onChange, true); };
   }, [el, last, end, f.id, from, i]);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") end(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.preventDefault(); end(); } };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [end]);

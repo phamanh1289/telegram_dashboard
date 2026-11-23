@@ -12,6 +12,7 @@ import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { errorText } from "@/shared/lib/api";
 import { fmtDate, fmtNum, t as tr, useT } from "@/shared/lib/i18n";
+import { POP, POP_FADE } from "@/shared/lib/motion";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 import { type DocAiSession, type DocCite, type DocDetail, type DocFilter, docDetailQuery, docErrors, docs, docSearchQuery } from "@/features/docs/lib/docs";
@@ -187,7 +188,7 @@ export function DocAsk({ q, f, onOpen, open, onClose }: {
   return (
     <motion.aside ref={panel} data-doc-ask aria-label={t("Hỏi AI")} inert={!open}
       onKeyDown={(e) => { if (e.key === "Escape") { e.stopPropagation(); if (!busy) onClose(); } }}
-      initial={false} animate={open ? "open" : "shut"} variants={still ? FADE : GROW} onAnimationComplete={() => { if (!open) setShown(false); }}
+      initial={false} animate={open ? "open" : "shut"} variants={still ? POP_FADE : POP} onAnimationComplete={() => { if (!open) setShown(false); }}
       className={cn("absolute top-14 right-3 bottom-20 z-30 flex w-[28rem] max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-xl border bg-paper-2 shadow-pop",
         !shown && "hidden")}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
@@ -264,15 +265,6 @@ export function DocAsk({ q, f, onOpen, open, onClose }: {
     </motion.aside>
   );
 }
-
-// the Biết tuốt bot's open / close (guide.tsx): spring in from half size, a quick ease out
-const SPRING = { type: "spring" as const, stiffness: 420, damping: 34 };
-const OUT = { duration: 0.2, ease: [0.4, 0, 1, 1] as const };
-const GROW = {
-  open: { opacity: 1, scale: 1, transition: { scale: SPRING, opacity: { duration: 0.16 } } },
-  shut: { opacity: 0, scale: 0.5, transition: OUT },
-};
-const FADE = { open: { opacity: 1 }, shut: { opacity: 0 } };
 
 /** Tóm tắt for the open document, in the prompt box (its size in the hint). */
 function SummaryChip({ d, onRun }: { d: DocDetail; onRun: () => void }) {

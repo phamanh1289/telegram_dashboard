@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowLeft, Database, GitBranch, Keyboard, Mail, Palette, Search, Send, SlidersHorizontal, Sparkles } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Toaster, TopBar } from "@/app/_components/shell";
@@ -20,6 +21,7 @@ import { Input } from "@/shared/components/ui/input";
 import { Pill } from "@/shared/components/ui/segmented";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { type Key, tr, useT } from "@/shared/lib/i18n";
+import { POP, POP_FADE } from "@/shared/lib/motion";
 import { cn, fold } from "@/shared/lib/utils";
 
 type GroupId = "general" | "look" | "bot" | "telegram" | "youtrack" | "ai" | "data" | "shortcuts" | "github" | "contact";
@@ -74,7 +76,24 @@ export function SettingsPage() {
     return () => { clearTimeout(t); delete el.dataset.flash; };
   }, [jump]);
   const router = useRouter();
+  // Opens and closes like the Biết tuốt bot (shared/lib/motion POP), growing out of the gear at the top right; every way out
+  // (Quay lại, Esc, the gear again) plays the close, then goes back.
+  const still = useReducedMotion();
+  const [leaving, setLeaving] = useState(false);
+  const leave = () => setLeaving(true);
   const back = () => (history.length > 1 ? router.back() : router.push("/"));
+  // Esc leaves Settings, like "Quay lại". On window, so the bot / tour / popups (document listeners) take it first; a field or an open popup keeps it.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if ((e.target as Element).closest?.("[role=dialog], [role=alertdialog], [role=menu], [role=listbox], input, textarea, select, [contenteditable]")) return;
+      // a popup open with the focus elsewhere (base-ui keeps a closed Select's list mounted, hidden: only a visible one counts)
+      if ([...document.querySelectorAll("[role=dialog], [role=alertdialog], [role=menu], [role=listbox]")].some((p) => p.checkVisibility())) return;
+      setLeaving(true);
+    };
+    addEventListener("keydown", k);
+    return () => removeEventListener("keydown", k);
+  }, []);
   // A dot on the groups that need a look: Telegram not signed in / offline, YouTrack on sample data.
   const st = useStatus().data;
   const attention: Partial<Record<GroupId, string>> = st ? {
@@ -83,10 +102,12 @@ export function SettingsPage() {
   } : {};
   return (
     <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)]">
-      <div className="sticky top-0 z-30"><TopBar module="settings" /></div>
-      <div className="grid w-full grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10 md:px-8 md:py-10 xl:px-12">
-        <nav aria-label={t("Mục cài đặt")} className="page-in sticky top-11 z-20 -mx-4 -mt-6 grid min-w-0 content-start gap-3 bg-paper px-4 pt-6 pb-2 md:top-[calc(2.75rem+2.5rem)] md:m-0 md:self-start md:bg-transparent md:p-0">
-          <button type="button" onClick={back} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
+      <div className="sticky top-0 z-30"><TopBar module="settings" onClose={leave} /></div>
+      <motion.div initial="shut" animate={leaving ? "shut" : "open"} variants={still ? POP_FADE : POP} style={{ transformOrigin: "top right" }}
+        onAnimationComplete={(v) => { if (v === "shut") back(); }}
+        className="grid w-full grid-cols-1 content-start gap-6 px-4 py-6 md:grid-cols-[15rem_minmax(0,1fr)] md:gap-10 md:px-8 md:py-10 xl:px-12">
+        <nav aria-label={t("Mục cài đặt")} className="sticky top-11 z-20 -mx-4 -mt-6 grid min-w-0 content-start gap-3 bg-paper px-4 pt-6 pb-2 md:top-[calc(2.75rem+2.5rem)] md:m-0 md:self-start md:bg-transparent md:p-0">
+          <button type="button" onClick={leave} className="flex w-fit items-center gap-1.5 text-sm text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
             <ArrowLeft className="size-4" aria-hidden /> {t("Quay lại")}
           </button>
           <h1 className="text-xl font-bold tracking-tight">{t("Cài đặt")}</h1>
@@ -136,7 +157,7 @@ export function SettingsPage() {
           {tab === "shortcuts" && <ShortcutsGroup />}
           {tab === "contact" && <ContactGroup />}
         </main>
-      </div>
+      </motion.div>
       <Toaster />
     </div>
   );

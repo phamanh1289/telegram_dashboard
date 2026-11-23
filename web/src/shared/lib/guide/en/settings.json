@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Settings › Search settings",
     "title": "Find a setting",
-    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
+    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself. Press Esc (when not typing in a field and no popup is open) to close Settings, like the \"Back\" button.",
     "how": [
       {
         "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
