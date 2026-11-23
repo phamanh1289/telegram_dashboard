@@ -37,7 +37,7 @@ def test_contact_sends_dm_with_photos(settings):
         assert c.post("/api/contact", json={**BODY, "title": "  "}).status_code == 422
         assert c.post("/api/contact", json={**BODY, "text": "x" * 3001}).status_code == 422  # one Telegram message
 
-        async def lost(peer, text, photos):
+        async def lost(peer, text, photos, *, doc=None):
             raise ConnectionError
 
         fake.send_to = lost  # the text may be there: "check before sending again", never a plain failure

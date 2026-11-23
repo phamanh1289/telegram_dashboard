@@ -455,8 +455,8 @@ class TelethonTransport:
             raise SendRejected("forbidden") from e  # nothing sent yet: a plain failure, not "unknown"
         except errors.FloodWaitError as e:
             raise SendRejected("retry_after", int(e.seconds)) from e
+        first = None
         try:
-            first = None
             for part in chunks(text):
                 m = await self.client.send_message(to, part, parse_mode=None, link_preview=False)
                 first = first or m
@@ -471,9 +471,12 @@ class TelethonTransport:
                 f = io.BytesIO(doc[1])
                 f.name = doc[0]
                 await self.client.send_file(to, f, force_document=True, reply_to=first.id if first else None)
-        except errors.FloodWaitError as e:
-            raise SendRejected("retry_after", int(e.seconds)) from e
-        except (errors.UserIsBlockedError, errors.PrivacyRestrictedError, errors.ChatWriteForbiddenError) as e:
+        except (errors.FloodWaitError, errors.UserIsBlockedError, errors.PrivacyRestrictedError,
+                errors.ChatWriteForbiddenError) as e:  # fmt: skip
+            if first:  # the text went out already: a resend would send it twice (bridge: delivery_unknown)
+                raise
+            if isinstance(e, errors.FloodWaitError):
+                raise SendRejected("retry_after", int(e.seconds)) from e
             raise SendRejected("forbidden") from e
 
     async def _entities(self, tags: list[tuple[int, int, int | str]]) -> list:

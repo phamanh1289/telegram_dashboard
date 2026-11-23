@@ -95,7 +95,7 @@ export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
         <Popover.Portal>
           <Popover.Positioner sideOffset={6} align="end" className="z-40 outline-none">
             <Popover.Popup aria-label={t("Hạn mức AI")}
-              className="grid w-[22rem] max-w-[calc(100vw-2rem)] origin-(--transform-origin) grid-cols-1 gap-3 rounded-lg bg-cotton p-3 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+              className="grid w-[24rem] max-w-[calc(100vw-2rem)] origin-(--transform-origin) grid-cols-1 gap-3 rounded-lg bg-cotton p-3 shadow-pop outline-none transition-[transform,opacity] duration-(--dur-short) ease-(--ease-out) data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
               <header className="flex items-center gap-2.5">
                 <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-paper-2 shadow-groove"><AgentIcon provider={provider} className="size-8" /></span>
                 <span className="grid min-w-0 gap-0.5">
@@ -105,7 +105,7 @@ export function AiQuota({ scope = "telegram" }: { scope?: AiScope }) {
                   </span>
                 </span>
               </header>
-              <Segmented id="quota-agent" label={t("AI hiện hạn mức trên thanh trên cùng")} variant="card" value={pick === provider ? pick : ""} onChange={saveQuotaAgent}
+              <Segmented id="quota-agent" label={t("AI hiện hạn mức trên thanh trên cùng")} variant="card" className="flex-nowrap" value={pick === provider ? pick : ""} onChange={saveQuotaAgent}
                 items={[
                   { value: "", label: <><WandSparkles className="size-3.5" aria-hidden />{t("Tự động")}</>, title: t("Theo AI đang chạy việc hằng ngày ở trang này ({name})", { name: info(auto)?.name ?? auto }) },
                   ...AIS.map(([id, short]) => ({ value: id as string, title: t("Luôn hiện hạn mức của {name}", { name: info(id)?.name ?? short }),

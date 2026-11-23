@@ -47,20 +47,27 @@ async def close_in_done_qa(s, msgs: list[StoredMessage]) -> None:
     found then (else one stays hidden by Q&A yet counted as waiting). In the thread: up its reply chain (kept copies
     first, else live) a message naming its code, or one the thread had when marked Xong (qa_members: the question
     someone asked that I answered with Q&A too). Its new answers still show as "trả lời mới".
-    ponytail: one chain walk per tag replying in a group with a Xong thread; batch per group if backfills grow."""
+    Per batch: one done_qa per group, each message read once; live reads under the scans' cap (live_reads.scan)."""
+    marks: dict[str, tuple[set[str], set[int]]] = {}
+    got: dict[tuple[str, int], StoredMessage] = {}
+
+    async def fetch(cid: str, ids: list[int]) -> list[StoredMessage]:
+        if miss := [i for i in ids if (cid, i) not in got]:
+            kept, _ = await s.db.read(s.store.get_messages_by_ids, cid, miss)
+            found = kept or await s.live_reads.scan(s.bridge.fetch_ids(cid, miss))
+            got.update(((cid, x.message_id), x) for x in found)
+        return [got[(cid, i)] for i in ids if (cid, i) in got]
+
     for m in msgs:
         if m.outgoing or (m.reply_to_id is None and not names_code(m.text)):
             continue
         try:
-            done, members = await s.db.read(s.store.done_qa, m.chat_id)
+            if m.chat_id not in marks:
+                marks[m.chat_id] = await s.db.read(s.store.done_qa, m.chat_id)
+            done, members = marks[m.chat_id]
             if not done:
                 continue
-
-            async def fetch(ids: list[int], cid=m.chat_id):
-                kept, _ = await s.db.read(s.store.get_messages_by_ids, cid, ids)
-                return kept or await s.bridge.fetch_ids(cid, ids)
-
-            async for x in chain_walk(fetch, m.message_id, CHAIN_MAX):
+            async for x in chain_walk(lambda ids, cid=m.chat_id: fetch(cid, ids), m.message_id, CHAIN_MAX):
                 if x.message_id in members or qa_codes(x.text) & done:
                     await s.db.write(s.store.set_handled, m.chat_id, m.message_id, True, "quiet")
                     break

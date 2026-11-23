@@ -115,6 +115,12 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     from telegram_dashboard.provider_cmds import run_env
 
     assert run_env("claude", None, True) == {"TD_MCP_YOUTRACK_AUTHORIZATION": "Bearer t0k"}
+    # the user's settings.json env (a proxy token) goes in the process env, never on the command line
+    (tmp_path / ".claude").mkdir(exist_ok=True)
+    (tmp_path / ".claude" / "settings.json").write_text(json.dumps({"env": {"ANTHROPIC_AUTH_TOKEN": "s3cr"}}))
+    assert run_env("claude", None)["ANTHROPIC_AUTH_TOKEN"] == "s3cr"
+    assert "ANTHROPIC_AUTH_TOKEN" not in run_env("codex", None)
+    assert "s3cr" not in " ".join(task_cmd(s, "claude", "edit", "sid", True, "", ""))
     assert "--strict-mcp-config" in task_cmd(s, "claude", "plan", "sid", True, "", "", mcp=True)
     # a Zeplin link: the user's zeplin server only, its read-only tools, read-only turns too
     zs = {"type": "stdio", "command": "npx", "args": ["-y", "@zeplin/mcp-server"], "env": {"ZEPLIN_ACCESS_TOKEN": "x"}}

@@ -714,6 +714,7 @@ def test_new_tag_in_a_xong_qa_thread_closes(tmp_path):
 
     from telegram_dashboard.storage import Db, Store
     from telegram_dashboard.tasks import close_in_done_qa
+    from telegram_dashboard.telegram.live_reads import TelegramReads
 
     st = Store(tmp_path / "db.sqlite3")
     # the questions were sent from the Q&A box (read live, never stored); #QA70 is Xong, #QA71 still open
@@ -732,8 +733,10 @@ def test_new_tag_in_a_xong_qa_thread_closes(tmp_path):
 
     async def run():
         db = Db(st, SimpleNamespace(notify=lambda: None))
-        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids))
+        reads = TelegramReads()
+        s = SimpleNamespace(store=st, db=db, bridge=SimpleNamespace(fetch_ids=fetch_ids), live_reads=reads)
         await close_in_done_qa(s, tags)
+        await reads.aclose()
 
     asyncio.run(run())
     assert [st.get_message(A, i).handled for i in (10, 11, 12, 13)] == [True, False, False, True]

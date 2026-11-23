@@ -69,7 +69,7 @@ NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy.
 SANDBOXED = ["--append-system-prompt", NO_JVM]  # paired with the shell-enabled _claude_settings
 # Claude runs load the project's settings only: the user's own CLAUDE.md, skills, plugins, hooks and permission rules
 # stay out (they told the AI to build / upload on "build dev"; hooks run outside the sandbox; SCOPE_RULE). Their env
-# and apiKeyHelper still come along (_claude_settings): a proxy or key helper the CLI needs to sign in.
+# (run_env) and apiKeyHelper (_claude_settings) still come along: a proxy or key helper the CLI needs to sign in.
 CLAUDE_SOURCES = ["--setting-sources", "project,local"]
 # Claude Code has no sandbox on Windows, and prompts carry others' text: no shell there. An edit turn still edits
 # files; build / test are left to the user.
@@ -199,7 +199,9 @@ def run_env(p: str | None, zeplin: dict | None, own: bool = False) -> dict[str, 
     if p not in ("claude", "codex"):
         return {}
     servers = {**(own_servers(p) if own else {}), **({"zeplin": zeplin} if zeplin else {})}
-    return {k: v for n, srv in servers.items() for k, v in mcp_env(srv, n).items()}
+    # Claude: the env of the user's settings.json (a proxy, a token) here, never on the line (_claude_settings)
+    user = {k: v for k, v in _dict(_user_claude().get("env")).items() if isinstance(v, str)} if p == "claude" else {}
+    return {**user, **{k: v for n, srv in servers.items() for k, v in mcp_env(srv, n).items()}}
 
 
 def _mcp_config(servers: dict) -> list[str]:
@@ -234,13 +236,18 @@ def _codex_mcp(servers: dict[str, dict]) -> list[str]:
     return out
 
 
-def _claude_settings(settings, shell: bool) -> list[str]:
-    """--settings for a Claude run: the sandbox when it may run commands, and the user's env / apiKeyHelper (their own
-    settings stay out: CLAUDE_SOURCES)."""
-    user: dict = {}
+def _user_claude() -> dict:
+    """The user's ~/.claude/settings.json: only its env (run_env) and apiKeyHelper come along (CLAUDE_SOURCES)."""
     with contextlib.suppress(OSError, ValueError, AttributeError):
-        user = _dict(json.loads((Path.home() / ".claude" / "settings.json").read_text()))
-    cfg = {**{k: user[k] for k in ("env", "apiKeyHelper") if k in user}, **(_sandbox(settings) if shell else {})}
+        return _dict(json.loads((Path.home() / ".claude" / "settings.json").read_text()))
+    return {}
+
+
+def _claude_settings(settings, shell: bool) -> list[str]:
+    """--settings for a Claude run: the sandbox when it may run commands, and the user's apiKeyHelper. Their env goes
+    in the process env (run_env): any local user reads a command line."""
+    helper = {"apiKeyHelper": h} if (h := _user_claude().get("apiKeyHelper")) else {}
+    cfg = {**helper, **(_sandbox(settings) if shell else {})}
     return ["--settings", json.dumps(cfg)] if cfg else []
 
 

@@ -67,11 +67,12 @@ function useUpdateState() {
   const q = useQuery({ ...updateStateQuery, refetchInterval: 60_000, retry: false });
   const first = useRef<string | null>(null);
   const v = q.data?.version;
+  const waiting = !!q.data?.pending; // installed, not restarted: the old server still answers, keep its UI
   useEffect(() => {
     if (!v) return;
     if (first.current === null) first.current = v;
-    else if (first.current !== v) location.reload(); // auto-update pulled and restarted: load the new UI
-  }, [v]);
+    else if (first.current !== v && !waiting) location.reload(); // auto-update pulled and restarted: load the new UI
+  }, [v, waiting]);
   return q.data?.behind ?? 0;
 }
 
