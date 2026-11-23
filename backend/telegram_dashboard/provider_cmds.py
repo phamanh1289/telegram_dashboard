@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from .claude import flags_for
+from .config import RUN_DIR
 from .errors import ApiError
 from .providers import (
     CODEX_EFFORTS,
@@ -31,7 +32,16 @@ AGY_TOOLS = {"none": [], "read": ["view_file", "list_dir", "grep_search", "find_
 AGY_TOOLS["edit"] = [*AGY_TOOLS["read"], "write_to_file", "replace_file_content", "multi_replace_file_content"]
 _AGY_DENY = ["mcp(*)", "read_url(*)", "execute_url(*)", "command(*)"]
 # Secrets outside this app's data dir that no AI run reads (Claude: Read rules; agy: read_file dirs).
-SECRET_HOME = (".ssh", ".codex", ".aws", ".config/gh", ".gnupg", ".telegram_dashboard")  # last: the API token
+# The user's other secrets, under ~ (dirs or files): sign-in keys and tokens (MCP tokens sit in ~/.claude.json), and
+# browser profiles (history keeps the ?t= sign-in link, cookies). .telegram_dashboard: the API token.
+# ponytail: not ~/.gemini — Antigravity keeps its own working files there; add a path when a new token store shows up
+SECRET_HOME = (".ssh", ".codex", ".aws", ".config/gh", ".gnupg", ".telegram_dashboard", ".claude.json", ".npmrc",
+               ".netrc", ".git-credentials", ".pypirc", ".docker", ".kube", ".config/gcloud", ".azure",
+               "Library/Application Support/Google/Chrome", "Library/Application Support/Microsoft Edge",
+               "Library/Application Support/BraveSoftware", "Library/Application Support/Arc",
+               "Library/Application Support/Firefox", "Library/Safari", "Library/Cookies", "Library/Keychains",
+               "AppData/Local/Google/Chrome", "AppData/Local/Microsoft/Edge", "AppData/Roaming/Mozilla",
+               ".gemini/oauth_creds.json")  # fmt: skip  # the token alone: Antigravity's working files stay readable
 # Claude task turns, enforced here, not left to ~/.claude settings: shell only in `edit` (plan prompts
 # carry Telegram text written by others, e.g. deep thinking, so a read-only run must not reach a
 # shell), no web, no MCP servers, no reads of this app's data dir (Telegram session, tokens), and no
@@ -73,7 +83,8 @@ ALLOW = {"plan": "Read,Grep,Glob,Skill", "edit": "Bash"}
 # DO_NOT_TRACK: no telemetry or update check from a run whose prompt carries others' text.
 # Through mcp_pin: codegraph_explore takes any indexed repo's path (this app's too), the pin keeps it on the project.
 CODEGRAPH = {"type": "stdio", "command": sys.executable, "env": {"DO_NOT_TRACK": "1"},
-             "args": ["-m", "telegram_dashboard.mcp_pin", "codegraph", "serve", "--mcp"]}  # fmt: skip
+             # -P: cwd is the project, which an AI edit turn writes; a planted json.py must not load here, unsandboxed
+             "args": ["-P", "-m", "telegram_dashboard.mcp_pin", "codegraph", "serve", "--mcp"]}  # fmt: skip
 CODEGRAPH_TOOL = "mcp__codegraph__codegraph_explore"
 ZEPLIN_READ = ("get_screen", "get_component", "get_design_tokens")
 ZEPLIN_TOOLS = ",".join(f"mcp__zeplin__{t}" for t in ZEPLIN_READ)
@@ -143,8 +154,18 @@ def _by_ref(server: dict, name: str = "zeplin") -> dict:
         heads = _dict(server.get("headers"))
         return {"type": server.get("type") or "http", "url": server["url"],
                 "headers": {h: f"${{{_ref(name, h)}}}" for h in heads}}  # fmt: skip
-    return {"type": "stdio", "command": server["command"], "args": list(server.get("args") or []),
-            "env": {k: f"${{{k}}}" for k in _dict(server.get("env"))}}  # fmt: skip
+    command, args = _away(server["command"], server.get("args"))
+    env = {k: f"${{{k}}}" for k in _dict(server.get("env"))}
+    return {"type": "stdio", "command": command, "args": args, "env": env}
+
+
+def _away(command: str, args) -> tuple[str, list[str]]:
+    """A user's stdio server (npx …) starts outside the sandbox: from the project it would take the project's .npmrc /
+    node_modules (an edit turn may have written them) as its registry or its code. mcp_pin starts it in this app's own
+    empty folder instead (-P: no module from the project dir either)."""
+    home = RUN_DIR / "mcp"
+    home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return sys.executable, ["-P", "-m", "telegram_dashboard.mcp_pin", "--cwd", str(home), command, *(args or [])]
 
 
 # The user's MCP servers "Dùng MCP / plugin" loads, by name: they run outside the sandbox with the user's logins, so
@@ -199,28 +220,37 @@ def _codex_mcp(servers: dict[str, dict]) -> list[str]:
             keys = {"url": srv["url"], **token, **{f"env_http_headers.{h}": _ref(name, h) for h in _heads(srv)}}
         else:  # passed through from the run's env (run_env)
             env_vars = [*_dict(srv.get("env")), *(v for v in srv.get("env_vars") or [] if isinstance(v, str))]
-            keys = {"command": srv["command"], "args": list(srv.get("args") or []), "env_vars": env_vars}
+            command, args = _away(srv["command"], srv.get("args"))
+            keys = {"command": command, "args": args, "env_vars": env_vars}
         keys |= {"enabled_tools": list(ZEPLIN_READ)} if name == "zeplin" else {}
         keys["default_tools_approval_mode"] = "approve"
         out += [x for k, v in keys.items() for x in ("-c", f"mcp_servers.{name}.{k}={json.dumps(v)}")]
     return out
 
 
-def _claude_settings(shell: bool) -> list[str]:
+def _claude_settings(settings, shell: bool) -> list[str]:
     """--settings for a Claude run: the sandbox when it may run commands, and the user's env / apiKeyHelper (their own
     settings stay out: CLAUDE_SOURCES)."""
     user: dict = {}
     with contextlib.suppress(OSError, ValueError, AttributeError):
         user = _dict(json.loads((Path.home() / ".claude" / "settings.json").read_text()))
-    cfg = {**{k: user[k] for k in ("env", "apiKeyHelper") if k in user}, **(SANDBOX if shell else {})}
+    cfg = {**{k: user[k] for k in ("env", "apiKeyHelper") if k in user}, **(_sandbox(settings) if shell else {})}
     return ["--settings", json.dumps(cfg)] if cfg else []
+
+
+def _sandbox(settings) -> dict:
+    """SANDBOX, and what no sandboxed command reads: a Read() rule binds the Read tool only, not a script that names
+    the path at run time (`cat "$f"` read ~/.ssh in a real edit turn), so the same paths go to the sandbox itself."""
+    hidden = [*_secret_dirs(settings), str(settings.root.resolve() / ".env"), *_app_dirs(settings)]
+    return {"sandbox": {**SANDBOX["sandbox"], "filesystem": {"denyRead": hidden}}}
 
 
 SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
 # Project files no run writes, on every CLI: they run code later (on folder open, commit, cd, the dashboard's own git
 # calls: .git/config, hooks, a .gitmodules pointing elsewhere) or load tools into the next session.
 PROTECTED_DIRS = (".claude", ".git", ".github", ".vscode", ".idea", ".husky")
-PROTECTED_FILES = (".gitmodules", ".envrc", ".mcp.json")
+# .npmrc / .yarnrc: the registry and node options every npm / yarn in the project would take, the user's own too
+PROTECTED_FILES = (".gitmodules", ".envrc", ".mcp.json", ".npmrc", ".yarnrc", ".yarnrc.yml")
 DENY = ",".join(
     ["WebFetch", "WebSearch", *(f"Edit({d}/**)" for d in PROTECTED_DIRS), *(f"Edit({f})" for f in PROTECTED_FILES),
      # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
@@ -293,7 +323,8 @@ def _agy_base(settings, kind: str, model: str, mcp: list[str] | None = None, pro
         ok = tuple(f"mcp({a[4:].split('/')[0]}/" for a in mcp)
         base += ["mcp(zeplin/download_layer_asset)", *(g for g in _agy_grants() if not g.startswith(ok))]
     # edit: no writes into the app, the secrets or the project's PROTECTED_* files either (agy has no sandbox)
-    mine = [str(Path(project) / x) for x in (*PROTECTED_DIRS, *PROTECTED_FILES)] if project else []
+    # node_modules too: agy starts its own MCP servers (npx) from the project and has no shell to npm install with
+    mine = [str(Path(project) / x) for x in (*PROTECTED_DIRS, *PROTECTED_FILES, "node_modules")] if project else []
     writes = ["write_file(*)"] if kind != "edit" else [f"write_file({d})" for d in (*dirs, *mine)]
     deny = [*base, *reads, *writes]
     perms = json.dumps({"permissions": {"deny": deny, **({"allow": mcp} if mcp else {})}})
@@ -348,9 +379,10 @@ def _rule_path(p: Path) -> str:
 
 def _data_deny(settings) -> str:
     """Rules for this app's data dir (Telegram session, tokens, API token), the user's other secrets and the app's own
-    files (_app_dirs): prompts carry others' text. Read() also binds reader commands in Bash (and the edit sandbox's
-    reads); the Bash rules catch a command naming the dir or its secrets."""
-    home = ",".join(f"Read(~/{h}/**)" for h in SECRET_HOME)
+    files (_app_dirs): prompts carry others' text. Read() binds the Read tool and a Bash command naming the path, not a
+    script that builds it (the edit sandbox's own denyRead does: _sandbox); the Bash rules catch a command naming the
+    dir or its secrets. A SECRET_HOME entry may be a file (~/.claude.json): the rule for it and for what is under it."""
+    home = ",".join(f"Read(~/{h}{g})" for h in SECRET_HOME for g in ("", "/**"))
     data = ",".join(f"Read({_rule_path(d)}/**),Bash(*{d}*)" for d in settings.secret_dirs)
     # Edit() also binds the sandbox's writes: a project above the app (~/Documents) must not write into it from Bash
     app = "".join(f",{t}({_rule_path(Path(d))}{g})" for d in _app_dirs(settings)
@@ -397,7 +429,7 @@ def ask_cmd(
         if is_claude(cmd):
             if "--strict-mcp-config" not in cmd:
                 cmd.append("--strict-mcp-config")  # the user's MCP servers would bring tools back
-            cmd += [*CLAUDE_SOURCES, *_claude_settings(shell), "--output-format", "stream-json", "--verbose",
+            cmd += [*CLAUDE_SOURCES, *_claude_settings(settings, shell), "--output-format", "stream-json", "--verbose",
                     *(["--include-partial-messages"] if stream else [])]  # fmt: skip
             if tools:
                 cmd += ["--disallowedTools", *([DENY] if shell else []), _data_deny(settings)]
@@ -470,7 +502,7 @@ def task_cmd(
         box = SANDBOXED if shell else ["--tools", ALLOW["plan"]] if plan else ["--append-system-prompt", NO_SHELL]
         return [*exe(settings, p), "-p", *flags_for(model, effort), "--output-format", "stream-json", "--verbose",
                 "--permission-mode", "default" if plan and zeplin else PERMISSION[mode],
-                *CLAUDE_SOURCES, *_claude_settings(shell), "--strict-mcp-config", *_mcp_config(servers),
+                *CLAUDE_SOURCES, *_claude_settings(settings, shell), "--strict-mcp-config", *_mcp_config(servers),
                 "--allowedTools", allow, *box,
                 "--disallowedTools", DENY if shell or plan else f"{DENY},Bash", _data_deny(settings),
                 *([ZEPLIN_DENY] if "zeplin" in servers else []), *add,

@@ -1,4 +1,5 @@
 import json
+import sys
 
 from telegram_dashboard.config import Settings
 from telegram_dashboard.provider_cmds import task_cmd
@@ -92,7 +93,8 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     i = task_cmd(s, "claude", "plan", "sid", False, "", "", index=True)
     server = json.loads(i[i.index("--mcp-config") + 1])["mcpServers"]["codegraph"]
     assert server["args"][-3:] == ["codegraph", "serve", "--mcp"] and server["env"] == {"DO_NOT_TRACK": "1"}
-    assert server["args"][:2] == ["-m", "telegram_dashboard.mcp_pin"]  # pinned to the project (projectPath)
+    # pinned to the project (projectPath); -P: a json.py the AI planted in the project (its cwd) never loads
+    assert server["args"][:3] == ["-P", "-m", "telegram_dashboard.mcp_pin"]
     assert i[i.index("--allowedTools") + 1] == "Read,Grep,Glob,Skill,mcp__codegraph__codegraph_explore"
     assert "--strict-mcp-config" in i and i[i.index("--tools") + 1] == "Read,Grep,Glob,Skill"
     # the user's own MCP servers: only an edit turn they ticked it for, only OWN_MCP ones; Bash stays sandboxed
@@ -126,10 +128,17 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert "mcp__zeplin__download_layer_asset" in z[z.index("--disallowedTools") :]  # past a user's allow rule
     assert z[z.index("--permission-mode") + 1] == "default" and z[z.index("--tools") + 1] == "Read,Grep,Glob,Skill"
     assert "ZEPLIN_ACCESS_TOKEN" in z[z.index("--mcp-config") + 1] and '"x"' not in " ".join(z)  # by ${NAME} only
+    # npx starts outside the sandbox: never from the project (its .npmrc / node_modules), through mcp_pin --cwd
+    from telegram_dashboard.provider_cmds import RUN_DIR
+
+    zep = json.loads(z[z.index("--mcp-config") + 1])["mcpServers"]["zeplin"]
+    away = ["-P", "-m", "telegram_dashboard.mcp_pin", "--cwd", str(RUN_DIR / "mcp"), "npx"]
+    assert zep["command"] == sys.executable and zep["args"][:6] == away and zep["args"][6:] == zs["args"]
     # Codex: read-only zeplin tools approved ahead, token from the env; with MCP on, the user's config
     c = task_cmd(s, "codex", "plan", "codex:", False, "", "", zeplin=zs)
     assert "--ignore-user-config" in c and 'mcp_servers.zeplin.env_vars=["ZEPLIN_ACCESS_TOKEN"]' in c
     assert 'mcp_servers.zeplin.default_tools_approval_mode="approve"' in c and '"x"' not in " ".join(c)
+    assert f"mcp_servers.zeplin.command={json.dumps(sys.executable)}" in c and '"--cwd"' in " ".join(c)
     (tmp_path / ".codex").mkdir(exist_ok=True)
     (tmp_path / ".codex" / "config.toml").write_text(
         '[mcp_servers.lean-ctx]\ncommand = "lean-ctx"\n'
@@ -310,6 +319,7 @@ def test_no_ai_run_reads_the_apps_own_files(tmp_path, monkeypatch):
     assert f"read_file({web})" in g
     e = " ".join(task_cmd(s, "antigravity", "edit", "agy:", False, "", "", project=str(tmp_path)))
     assert f"write_file({web})" in e  # a project above the app: no writes into it (agy has no sandbox)
+    assert f"write_file({tmp_path / 'node_modules'})" in e and f"write_file({tmp_path / '.npmrc'})" in e  # SEC-091
     assert f"Edit(/{web}/**)" in " ".join(task_cmd(s, "claude", "edit", "sid", False, "", "", project=str(tmp_path)))
     assert s.forbids_project(root / "web") and s.forbids_project(tmp_path) and not s.forbids_project(proj)
 
@@ -331,3 +341,26 @@ def test_codegraph_answers_about_the_runs_own_project_only():
     assert json.loads(pin(json.dumps([call]).encode(), "/proj"))[0]["params"]["arguments"]["projectPath"] == "/proj"
     other = b'{"jsonrpc": "2.0", "id": 1, "method": "initialize"}\n'
     assert json.loads(pin(other, "/proj")) == json.loads(other) and pin(b"not json\n", "/p") == b"not json\n"
+
+
+def test_no_ai_run_reads_the_users_other_credentials(tmp_path, monkeypatch):
+    """Injected text must not read a token file (MCP tokens in ~/.claude.json, npm / git / docker auth, browser
+    history holding the ?t= sign-in link) on any CLI, nor from a script in the edit sandbox."""
+    from telegram_dashboard.provider_cmds import ask_cmd, task_cmd
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    s = Settings(root=tmp_path / "app")
+    claude = task_cmd(s, "claude", "edit", "sid", False, "", "")
+    deny = " ".join(claude[claude.index("--disallowedTools") + 1 : claude.index("--disallowedTools") + 3])
+    for f in (".claude.json", ".npmrc", ".netrc", ".git-credentials", "Library/Application Support/Google/Chrome"):
+        assert f"Read(~/{f})" in deny and f"Read(~/{f}/**)" in deny
+    # the sandbox itself: a script that builds the path at run time is not bound by a Read() rule
+    sandbox = json.loads(claude[claude.index("--settings") + 1])["sandbox"]
+    for hidden in (tmp_path / ".ssh", tmp_path / ".claude.json", s.data_dir.resolve(), s.root.resolve() / ".env"):
+        assert str(hidden) in sandbox["filesystem"]["denyRead"]
+    assert sandbox["network"]["strictAllowlist"] and sandbox["allowUnsandboxedCommands"] is False
+    fs = next(a for a in ask_cmd(s, "codex", tools=True, read_dir=None, model="", effort="")
+              if a.startswith("permissions.td.filesystem="))  # fmt: skip
+    assert f'"{tmp_path / ".claude.json"}"="none"' in fs and f'"{tmp_path / ".docker"}"="none"' in fs
+    agy = " ".join(task_cmd(s, "antigravity", "plan", "", False, "", ""))
+    assert f"read_file({tmp_path / '.npmrc'})" in agy

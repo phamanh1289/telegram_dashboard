@@ -23,8 +23,12 @@ def pin(line: bytes, project: str) -> bytes:
 
 
 def main() -> None:
-    project = os.getcwd()
-    proc = subprocess.Popen(sys.argv[1:], stdin=subprocess.PIPE)  # its stdout / stderr go straight to the client
+    """`--cwd DIR`: start the server there (provider_cmds._away: a user's npx server, away from the project's .npmrc /
+    node_modules); without it the server runs in the project, its projectPath pinned to it (codegraph)."""
+    project, args, cwd = os.getcwd(), sys.argv[1:], None
+    if args[:1] == ["--cwd"]:
+        cwd, args = args[1], args[2:]
+    proc = subprocess.Popen(args, stdin=subprocess.PIPE, cwd=cwd)  # its stdout / stderr go straight to the client
     try:
         for line in sys.stdin.buffer:
             proc.stdin.write(pin(line, project))
