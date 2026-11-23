@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import provider_cmds, providers
 from .ai import at_usernames
-from .ai_prompts import LANG_TURN
+from .ai_prompts import LANG_TURN, SCOPE_TURN
 from .ai_run import cli_reason
 from .claude import note_run
 from .config import child_env, kill_tree, on_path
@@ -169,6 +169,8 @@ class AgentRunner:
         (tasks.start_task does not wait for this)."""
         if self.running(task_id):
             raise ApiError(409, "task_busy")
+        if self.settings.forbids_project(project):  # registered before the rule, or the app itself
+            raise ApiError(422, "project_forbidden")
         self._starting[task_id] = proc = None
         provider, sid = providers.split_session(session_id)
         try:
@@ -186,7 +188,7 @@ class AgentRunner:
             zeplin, hint = provider_cmds.zeplin_for(text, found=self._zeplin(task_id, text))
             text += hint
             cmd = provider_cmds.task_cmd(self.settings, provider, mode, sid, resume, *choice[:2], read_dir, index=index,
-                                     mcp=mcp, zeplin=zeplin)  # fmt: skip
+                                     mcp=mcp, zeplin=zeplin, project=project)  # fmt: skip
             if index and mode == "plan":
                 await asyncio.to_thread(prime_codegraph, project)
             try:  # its own process group: a kill also reaches the shell commands it started
@@ -200,7 +202,7 @@ class AgentRunner:
                 raise ApiError(502, "task_launch_failed", detail=type(e).__name__) from None
             self._starting[task_id] = proc
             try:
-                proc.stdin.write(providers.stdin(provider, text + (LANG_TURN if resume else "")))
+                proc.stdin.write(providers.stdin(provider, text + (LANG_TURN + SCOPE_TURN if resume else "")))
                 await proc.stdin.drain()
                 proc.stdin.close()
             except OSError:  # the CLI quit at once (bad flag, unknown session): stderr says why

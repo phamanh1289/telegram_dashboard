@@ -17,13 +17,13 @@ import { useTodayWork, workText } from "@/features/telegram/components/today-pag
 import { apiStream, errorText, statusQuery } from "@/shared/lib/api";
 import { type Key, type Lang, type T, tr, useLang, useT } from "@/shared/lib/i18n";
 import { fold } from "@/shared/lib/utils";
-import { BOT_SIZES, type BotCorner, type BotMode, readYtRole, setPref, useBotCode, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
+import { BOT_SIZES, type BotCorner, type BotMode, readYtRole, setPref, useBotDock, useBotMode, useBotShow, useBotSize } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { shortName, ytMeQuery } from "@/features/youtrack/lib/yt";
 import { GuideTour, readTour, saveTour, type TourState } from "./guide-tour";
 
 // In-app user guide as a floating "know-it-all" bot: a chat with the AI over every feature of the Telegram / YouTrack / Tài liệu tabs
-// (shared/lib/guide/vi, English: shared/lib/guide/en) and, when allowed, the app's own code; each answer ends in buttons that take
+// (shared/lib/guide/vi, English: shared/lib/guide/en), never the app's own code; each answer ends in buttons that take
 // you there: open the page, or a live walk-through of the feature's steps on the page (guide-tour). The top bar's light
 // bulb opens the same guide to browse (Guide), no AI.
 
@@ -201,7 +201,7 @@ function Orb({ px, bot, ping, busy }: { px: number; bot: string; ping?: boolean;
 export function GuideBot({ module }: { module: Module }) {
   const t = useT();
   const { open, turns, from } = useBot();
-  const show = useBotShow(), mode = useBotMode(), sizeId = useBotSize(), size = BOT_SIZES[sizeId], dock = useBotDock(), code = useBotCode();
+  const show = useBotShow(), mode = useBotMode(), sizeId = useBotSize(), size = BOT_SIZES[sizeId], dock = useBotDock();
   const vp = useViewport();
   const [tour, setTour] = useState<TourState | null>(null);
   const [drag, setDrag] = useState<{ x: number; y: number } | null>(null); // left / top while it is dragged
@@ -305,7 +305,7 @@ export function GuideBot({ module }: { module: Module }) {
         </Hint>
       )}
       <AnimatePresence>
-        {open && box && <Bot key="bot" cat={cat} failed={failed} module={module} turns={turns} code={code} name={name} state={state}
+        {open && box && <Bot key="bot" cat={cat} failed={failed} module={module} turns={turns} name={name} state={state}
           mode={mode} box={box} from={from ?? { x: box.left + box.width - 24, y: box.top + 24 }}
           onClose={() => setBot({ open: false })} onTour={start} t={t} />}
       </AnimatePresence>
@@ -324,8 +324,8 @@ const STARTERS: Record<Module, Key[]> = {
   docs: ["Thêm thư mục tài liệu vào kho thế nào?", "Vì sao tìm không ra một tài liệu?", "Tìm tài liệu nhắc một ticket ra sao?"],
 };
 
-function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, onClose, onTour, t }: {
-  cat: Catalog | null; failed: boolean; module: Module; turns: Turn[]; code: boolean; name: string; state: string;
+function Bot({ cat, failed, module, turns, name, state, mode, box, from, onClose, onTour, t }: {
+  cat: Catalog | null; failed: boolean; module: Module; turns: Turn[]; name: string; state: string;
   mode: BotMode; box: Box; from: Pt; onClose: () => void; onTour: (f: Feature) => void; t: T;
 }) {
   const [q, setQ] = useState("");
@@ -347,7 +347,7 @@ function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, o
       // a follow-up carries the AI session on: only the features it has not got, no history (it holds both)
       const run = async (sid?: string) => {
         const g = guideFor(cat, question, history.at(-1), sid ? (BOT_STATE.seen ?? []) : undefined);
-        const r = await apiStream<{ text: string; sid?: string }>("/ai/guide", { question, guide: g.text, history: sid ? [] : history, page: location.pathname + location.search + location.hash, code, name, state, sid, work: workText(work, t).slice(0, 12_000) },
+        const r = await apiStream<{ text: string; sid?: string }>("/ai/guide", { question, guide: g.text, history: sid ? [] : history, page: location.pathname + location.search + location.hash, name, state, sid, work: workText(work, t).slice(0, 12_000) },
           ctl.signal, (a) => setLive({ q: question, a }));
         return { text: r.text, sid: r.sid || undefined, seen: [...(sid ? (BOT_STATE.seen ?? []) : []), ...g.ids] };
       };
@@ -355,7 +355,7 @@ function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, o
       const r = await run(sid).catch((e) => {
         if (!sid || ctl.signal.aborted) throw e;
         setLive({ q: question, a: "" });
-        return run(); // the session is gone (cleaned up, another AI picked, "Đọc code" switched): once more, whole
+        return run(); // the session is gone (cleaned up, another AI picked): once more, whole
       });
       setBot({ turns: [...BOT_STATE.turns, { q: question, a: r.text }], sid: r.sid, seen: r.seen });
     } catch (e) {
@@ -431,7 +431,7 @@ function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, o
           </div>
         )}
         {[...turns, ...(live ? [live] : [])].map((x, i) => (
-          <Answer key={i} turn={x} busy={x === live} byId={cat?.byId} code={code} t={t} onTour={onTour} onGo={go} />
+          <Answer key={i} turn={x} busy={x === live} byId={cat?.byId} t={t} onTour={onTour} onGo={go} />
         ))}
         {!cat && failed && <p role="alert" className="text-sm text-error">{t("Không tải được hướng dẫn, thử mở lại.")}</p>}
       </div>
@@ -538,13 +538,13 @@ const PART = /\[(?![^\n]*\))[^\n]*$/; // a link / [id] still being written: show
 
 /** One turn: your question, then the bot searching, answering, and the buttons that take you there — open the page it
  *  linked, or walk through a feature it named, lit on the page. */
-function Answer({ turn, busy, byId, code, t, onTour, onGo }: {
-  turn: Turn; busy: boolean; byId?: Catalog["byId"]; code: boolean; t: T; onTour: (f: Feature) => void; onGo: (href: string) => void;
+function Answer({ turn, busy, byId, t, onTour, onGo }: {
+  turn: Turn; busy: boolean; byId?: Catalog["byId"]; t: T; onTour: (f: Feature) => void; onGo: (href: string) => void;
 }) {
   const links = [...new Map([...turn.a.matchAll(LINK)].map((m) => [m[2], m[1]]))];
   const refs = [...new Set([...turn.a.matchAll(REF)].map((m) => m[1]))].flatMap((id) => byId?.get(id) ?? []);
   const text = turn.a.replace(LINK, "**$1**").replace(REF, (m, id) => (byId?.has(id) ? "" : m));
-  const lines = [t("Đang tìm trong hướng dẫn"), ...(code ? [t("Đang đọc code của app")] : []), t("Đang soạn cách làm")];
+  const lines = [t("Đang tìm trong hướng dẫn"), t("Đang soạn cách làm")];
   return (
     <>
       <UserBubble>{turn.q}</UserBubble>

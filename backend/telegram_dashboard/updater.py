@@ -22,6 +22,7 @@ from fastapi import APIRouter, Request
 
 from .config import _read_json, run_cli
 from .errors import ApiError
+from .gitops import SAFE
 
 log = logging.getLogger("telegram_dashboard.updater")
 CHECK_EVERY = 3600  # seconds between background checks (badge; auto-update when on)
@@ -41,10 +42,10 @@ def _signed(path: Path, sig: bytes) -> bool:
 
     try:
         with open(path, "rb") as f:
-            rsa.verify(f, sig, rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()))
+            method = rsa.verify(f, sig, rsa.PublicKey.load_pkcs1(RELEASE_KEY.read_bytes()))
     except (rsa.VerificationError, OSError, ValueError):
         return False
-    return True
+    return method == "SHA-256"  # what CI signs with; never a weaker hash the signature names
 
 
 def home() -> Path | None:
@@ -191,7 +192,8 @@ async def _run(root: Path, *cmd: str, timeout: float = 600) -> str:
     exe = shutil.which(cmd[0])  # Windows: npm is npm.cmd
     if not exe:
         raise ApiError(503, "update_failed", detail=f"Không tìm thấy {cmd[0]}")
-    got = await run_cli([exe, *cmd[1:]], timeout=timeout, cwd=root, merge=True)
+    safe = SAFE if cmd[0] == "git" else ()  # the checkout's own hooks / fsmonitor never run (gitops.SAFE)
+    got = await run_cli([exe, *safe, *cmd[1:]], timeout=timeout, cwd=root, merge=True)
     if got is None:  # timed out (killed and reaped), or did not start
         raise ApiError(504, "update_failed", detail=f"{' '.join(cmd)}: quá thời gian / không chạy được")
     text = got[1].decode(errors="replace").strip()

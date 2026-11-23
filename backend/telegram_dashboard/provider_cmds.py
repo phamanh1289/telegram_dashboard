@@ -140,18 +140,27 @@ def _codex_own() -> list[str]:
     # a bare key only: Codex reads a quoted one ("x") as a new server named with the quotes, and refuses to start
     names = [n for n, v in servers.items() if isinstance(v, dict) and v.get("enabled", True) is not False
              and re.fullmatch(r"[A-Za-z0-9_-]+", n)]  # fmt: skip
-    return [x for n in names for x in ("-c", f'mcp_servers.{n}.default_tools_approval_mode="approve"')]
+    return [x for n in names for x in ("-c", f"mcp_servers.{n}.enabled=false" if n in SHELL_MCP
+                                       else f'mcp_servers.{n}.default_tools_approval_mode="approve"')]  # fmt: skip
 
 
 MCP_TOOLS = "mcp__*"  # every tool of every MCP server loaded (task_cmd `mcp`)
+# The user's MCP servers that read / write any file or run commands: they run outside the sandbox, past every Read /
+# Edit rule, so "Dùng MCP / plugin" never loads them (SCOPE_RULE: files only in the project, never this app).
+# ponytail: a name list; a server not named here still runs with the user's logins. Add one when it shows up.
+SHELL_MCP = ("lean-ctx", "context-mode", "context_mode", "serena", "node_repl", "computer-use", "filesystem",
+             "desktop-commander", "terminal")  # fmt: skip
+SHELL_MCP_DENY = ",".join(f"mcp__{n},mcp__plugin_{n}_{n}" for n in SHELL_MCP)  # Claude: a server's tools, plugin too
 SHELL_TOOLS = "Read,Grep,Glob,Skill,Bash"  # an answer that may run commands, never Edit/Write
-DENY = (
-    "WebFetch,WebSearch,Edit(.claude/**),Edit(.git/**),Edit(.github/**),"
-    # files that run code later (on folder open, commit, cd) or load tools into the next session
-    "Edit(.vscode/**),Edit(.idea/**),Edit(.husky/**),Edit(.envrc),Edit(.mcp.json),"
-    # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
-    "Bash(curl:*),Bash(wget:*),Bash(nc:*),Bash(ncat:*),Bash(ssh:*),Bash(scp:*)"
-)
+# Project files no run writes, on every CLI: they run code later (on folder open, commit, cd, the dashboard's own git
+# calls: .git/config, hooks, a .gitmodules pointing elsewhere) or load tools into the next session.
+PROTECTED_DIRS = (".claude", ".git", ".github", ".vscode", ".idea", ".husky")
+PROTECTED_FILES = (".gitmodules", ".envrc", ".mcp.json")
+DENY = ",".join(
+    ["WebFetch", "WebSearch", *(f"Edit({d}/**)" for d in PROTECTED_DIRS), *(f"Edit({f})" for f in PROTECTED_FILES),
+     # the shell's casual ways out (prefix rules: weak, not a sandbox; see _data_deny)
+     "Bash(curl:*)", "Bash(wget:*)", "Bash(nc:*)", "Bash(ncat:*)", "Bash(ssh:*)", "Bash(scp:*)"]
+)  # fmt: skip
 
 
 # ---- commands ----
@@ -209,15 +218,19 @@ def _agy_agent(kind: str, inherit: bool = False) -> str:
     return name
 
 
-def _agy_base(settings, kind: str, model: str, mcp: list[str] | None = None) -> list[str]:
+def _agy_base(settings, kind: str, model: str, mcp: list[str] | None = None, project: str | None = None) -> list[str]:
     """`mcp`: MCP tools the run may call ("mcp(*)": all, "mcp(zeplin/get_screen)": one), through an agent that loads
     the user's MCP servers; None: no MCP."""
     # read_file(<dir>) covers the whole dir; headless agy auto-denies anything it would prompt for
-    reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in _secret_dirs(settings)]
-    base = [x for x in _AGY_DENY if not (mcp and x == "mcp(*)")]
+    dirs = [*_secret_dirs(settings), *_app_dirs(settings)]
+    reads = ["read_file(*)"] if kind == "none" else [f"read_file({d})" for d in dirs]
+    base = [x for x in _AGY_DENY if not (mcp and x == "mcp(*)")] + ([f"mcp({n}/*)" for n in SHELL_MCP] if mcp else [])
     if mcp and "mcp(*)" not in mcp:  # some tools only: what agy was told to always allow would run too (a deny wins)
         base += ["mcp(zeplin/download_layer_asset)", *(g for g in _agy_grants() if not g.startswith("mcp(zeplin/"))]
-    deny = [*base, *reads, *(["write_file(*)"] if kind != "edit" else [])]
+    # edit: no writes into the app, the secrets or the project's PROTECTED_* files either (agy has no sandbox)
+    mine = [str(Path(project) / x) for x in (*PROTECTED_DIRS, *PROTECTED_FILES)] if project else []
+    writes = ["write_file(*)"] if kind != "edit" else [f"write_file({d})" for d in (*dirs, *mine)]
+    deny = [*base, *reads, *writes]
     perms = json.dumps({"permissions": {"deny": deny, **({"allow": mcp} if mcp else {})}})
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
             "--disable-slash-commands", "--agent", _agy_agent(kind, bool(mcp)),
@@ -229,20 +242,34 @@ def _secret_dirs(settings) -> list[str]:
     return [*map(str, settings.secret_dirs), *(str(home / h) for h in SECRET_HOME)]
 
 
+def _app_dirs(settings) -> list[str]:
+    """This app's own files (source, web, scripts, git, docs, notes): no AI run reads them (SCOPE_RULE). Each entry at
+    the app's root, but agent-links/ (a session's saved link content, its read_dir) when the data home is the root (a
+    checkout). No project is ever the app or a folder holding it (Settings.forbids_project)."""
+    root = settings.root.resolve()
+    keep = (settings.data_dir.parent / "agent-links").resolve()
+    with contextlib.suppress(OSError):
+        return sorted(str(c) for c in root.iterdir() if c.resolve() != keep)
+    return [str(root)]
+
+
 def _codex_sandbox(settings, write: bool) -> list[str]:
     """Codex's legacy modes (read-only / workspace-write) read the whole disk: a permissions profile over them that
-    reads everything but this app's data, its .env and the user's other secrets (what _data_deny keeps from Claude),
-    and writes only in the project and temp dirs when `write`. The legacy mode stays on the command, as config (the
-    `-s` flag would win over the profile), for a CLI too old to know profiles. Not on Windows: its sandbox cannot hide
+    reads everything but this app's data, its .env, the user's other secrets and the app's own files (_app_dirs; what
+    _data_deny keeps from Claude), and writes only in the project (but PROTECTED_*) and temp dirs when `write`. The
+    legacy mode stays on the command, as config (the `-s` flag would win over the profile), for a CLI too old to know
+    profiles. Not on Windows: its sandbox cannot hide
     a path and would refuse to run.
     ponytail: profile keys as of codex-cli 0.166 (an unknown key aborts the run, it never runs wider)."""
     legacy = ["-c", f'sandbox_mode="{"workspace-write" if write else "read-only"}"']
     if sys.platform == "win32":
         return legacy
     fs = {":root": "read", **({":tmpdir": "write", "/tmp": "write"} if write else {}),
-          **dict.fromkeys([*_secret_dirs(settings), str(settings.root.resolve() / ".env")], "none")}  # fmt: skip
+          **dict.fromkeys([*_secret_dirs(settings), str(settings.root.resolve() / ".env"),
+                          *_app_dirs(settings)], "none")}  # fmt: skip
     body = ", ".join(f"{json.dumps(k)}={json.dumps(v)}" for k, v in fs.items())
-    body += ', ":workspace_roots"={"."="write"}' if write else ""
+    keep = ", ".join(f'{json.dumps(x)}="read"' for x in (*PROTECTED_DIRS, *PROTECTED_FILES))
+    body += f', ":workspace_roots"={{"."="write", {keep}}}' if write else ""
     return [*legacy, "-c", 'default_permissions="td"', "-c", f"permissions.td.filesystem={{{body}}}"]
 
 
@@ -255,13 +282,16 @@ def _rule_path(p: Path) -> str:
 
 
 def _data_deny(settings) -> str:
-    """Rules for this app's data dir (Telegram session, tokens, API token) and the user's other secrets: prompts
-    carry others' text. Read() also binds reader commands in Bash (and the edit sandbox's reads); the Bash rules
-    catch a command naming the dir or its secrets."""
+    """Rules for this app's data dir (Telegram session, tokens, API token), the user's other secrets and the app's own
+    files (_app_dirs): prompts carry others' text. Read() also binds reader commands in Bash (and the edit sandbox's
+    reads); the Bash rules catch a command naming the dir or its secrets."""
     home = ",".join(f"Read(~/{h}/**)" for h in SECRET_HOME)
     data = ",".join(f"Read({_rule_path(d)}/**),Bash(*{d}*)" for d in settings.secret_dirs)
+    # Edit() also binds the sandbox's writes: a project above the app (~/Documents) must not write into it from Bash
+    app = "".join(f",{t}({_rule_path(Path(d))}{g})" for d in _app_dirs(settings)
+                  for t in ("Read", "Edit") for g in ("", "/**"))  # fmt: skip
     return (
-        f"{data},Read({_rule_path(settings.root.resolve())}/.env),{home},"
+        f"{data},Read({_rule_path(settings.root.resolve())}/.env),{home}{app},"
         f"Bash(*{settings.session_path.name}.session*),Bash(*{settings.db_path.name}*)"
     )
 
@@ -278,8 +308,10 @@ def ask_cmd(
     shell: bool = False,
     session: tuple[str, bool] | None = None,
     zeplin: dict | None = None,
+    project: str | None = None,
 ) -> list[str]:
     """One answer (prompt on stdin), no file edits. `tools`: may read the project (cwd); else none.
+    `project`: that cwd (Antigravity: no writes to its PROTECTED_* files).
     `zeplin`: the user's zeplin MCP server (task_cmd `zeplin`): its read-only tools too, with or without `tools`,
     its token in the run's env (mcp_env); never a shell or another MCP tool.
     `session` (id, resume): the run starts that session, or carries it on (only where `keeps_session`).
@@ -324,7 +356,7 @@ def ask_cmd(
         ]
     kind = "read" if tools or read_dir else "none"  # no tools asked: none at all, not just "no project"
     return [
-        *_agy_base(settings, kind, model, ZEPLIN_AGY if zeplin else None),
+        *_agy_base(settings, kind, model, ZEPLIN_AGY if zeplin else None, project),
         *(["--add-dir", read_dir] if read_dir else []),
     ]
 
@@ -342,6 +374,7 @@ def task_cmd(
     index: bool = False,
     mcp: bool = False,
     zeplin: dict | None = None,
+    project: str | None = None,
 ) -> list[str]:
     """One task turn (prompt on stdin): `plan` reads files, `edit` may edit them and run shell commands.
     `read_dir`: another folder it may read (link content saved by links.py; Codex reads anywhere but the secrets).
@@ -352,7 +385,8 @@ def task_cmd(
     steer them. Antigravity still gets no shell (it has no sandbox).
     `zeplin`: the user's zeplin MCP server (a Zeplin link in the session): its read-only tools in any mode, its token
     in the run's env (mcp_env). Claude's plan mode refuses them (they are not marked read-only), so such a plan turn
-    runs in default mode: still no write tool or shell (`--tools`), and only the allowed tools run (headless)."""
+    runs in default mode: still no write tool or shell (`--tools`), and only the allowed tools run (headless).
+    `project`: the session's folder (cwd; Antigravity: no writes to its PROTECTED_* files)."""
     add = ["--add-dir", read_dir] if read_dir else []
     own = mcp and mode != "plan"
     if p == "claude":
@@ -370,7 +404,7 @@ def task_cmd(
                 *([] if own else ["--strict-mcp-config"]), *mcp,
                 "--allowedTools", allow, *box,
                 "--disallowedTools", DENY if shell or plan else f"{DENY},Bash", _data_deny(settings),
-                *([ZEPLIN_DENY] if zeplin and not own else []), *add,
+                *([ZEPLIN_DENY] if zeplin and not own else []), *([SHELL_MCP_DENY] if own else []), *add,
                 *(["--resume", sid] if resume else ["--session-id", sid])]  # fmt: skip
     if p == "codex":
         sandbox = _codex_sandbox(settings, mode != "plan")
@@ -379,5 +413,5 @@ def task_cmd(
         return [*head, *_codex_base(settings, model, effort, own), *zep, *sandbox, *([sid] if resume else []), "-"]
     edit = ["--mode", "accept-edits"] if mode != "plan" else []
     allow = ["mcp(*)"] if own else ZEPLIN_AGY if zeplin else None
-    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, allow), *edit,
+    return [*_agy_base(settings, "read" if mode == "plan" else "edit", model, allow, project), *edit,
             *add, *(["--conversation", sid] if resume else [])]  # fmt: skip

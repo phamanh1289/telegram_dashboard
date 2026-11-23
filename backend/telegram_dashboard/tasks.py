@@ -117,6 +117,8 @@ async def start_task(
     BE's scene used to wait for all of it). A start that fails or is stopped keeps the row, its log ending with why
     (agent.start); awaiting the run raises it. `refs`: messages it is about (Đối chiếu BE's cited ones); `ask_refs`:
     its asks reply to the last of them. `mcp`: its first turn may use the user's own MCP servers / plugins."""
+    if s.settings.forbids_project(project):  # before git runs there (snapshot)
+        raise ApiError(422, "project_forbidden")
     session = s.agent.new_session()
     try:  # the tree before the AI touches it: Thay đổi shows this session's edits only
         base = await gitops.snapshot(project)

@@ -77,6 +77,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     import json
 
     monkeypatch.setenv("HOME", str(tmp_path))  # agy's agent files and saved grants, Codex's config
+    monkeypatch.delenv("CODEX_HOME", raising=False)
     s = Settings(root=tmp_path)
     e = task_cmd(s, "claude", "edit", "sid", False, "", "")
     box = json.loads(e[e.index("--settings") + 1])["sandbox"]
@@ -96,6 +97,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     # the user's own MCP servers / plugins: only an edit turn they ticked it for; Bash stays sandboxed
     m = task_cmd(s, "claude", "edit", "sid", True, "", "", mcp=True)
     assert "--strict-mcp-config" not in m and m[m.index("--allowedTools") + 1].endswith(",mcp__*") and "--settings" in m
+    assert "mcp__lean-ctx" in " ".join(m) and "mcp__plugin_context-mode_context-mode" in " ".join(m)  # no shell MCP
     assert "--strict-mcp-config" in task_cmd(s, "claude", "plan", "sid", True, "", "", mcp=True)
     # a Zeplin link: the user's zeplin server only, its read-only tools, read-only turns too
     zs = {"type": "stdio", "command": "npx", "args": ["-y", "@zeplin/mcp-server"], "env": {"ZEPLIN_ACCESS_TOKEN": "x"}}
@@ -110,7 +112,13 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     c = task_cmd(s, "codex", "plan", "codex:", False, "", "", zeplin=zs)
     assert "--ignore-user-config" in c and 'mcp_servers.zeplin.env_vars=["ZEPLIN_ACCESS_TOKEN"]' in c
     assert 'mcp_servers.zeplin.default_tools_approval_mode="approve"' in c and '"x"' not in " ".join(c)
-    assert "--ignore-user-config" not in task_cmd(s, "codex", "edit", "codex:", False, "", "", mcp=True)
+    (tmp_path / ".codex").mkdir(exist_ok=True)
+    (tmp_path / ".codex" / "config.toml").write_text(
+        '[mcp_servers.lean-ctx]\ncommand = "lean-ctx"\n[mcp_servers.youtrack]\ncommand = "yt"\n'
+    )
+    own = " ".join(task_cmd(s, "codex", "edit", "codex:", False, "", "", mcp=True))
+    assert "--ignore-user-config" not in own and "mcp_servers.lean-ctx.enabled=false" in own  # no shell MCP
+    assert 'mcp_servers.youtrack.default_tools_approval_mode="approve"' in own
     assert "--ignore-user-config" in task_cmd(s, "codex", "plan", "codex:", False, "", "", mcp=True)
     # Antigravity: an agent with the user's MCP servers, only the allowed tools; never a shell
     (tmp_path / ".gemini" / "config").mkdir(parents=True)
@@ -127,7 +135,7 @@ def test_claude_edit_turns_run_bash_in_the_sandbox_and_plan_turns_have_read_tool
     assert "mcp(zeplin/get_screen)" not in perms["deny"]
     e = task_cmd(s, "antigravity", "edit", "agy:", False, "", "", mcp=True)
     perms = json.loads(e[e.index("--settings") + 1])["permissions"]
-    assert perms["allow"] == ["mcp(*)"] and "command(*)" in perms["deny"]
+    assert perms["allow"] == ["mcp(*)"] and "command(*)" in perms["deny"] and "mcp(lean-ctx/*)" in perms["deny"]
     n = task_cmd(s, "antigravity", "plan", "agy:", False, "", "")  # no link, no MCP: none at all
     assert "mcp(*)" in json.loads(n[n.index("--settings") + 1])["permissions"]["deny"]
 
@@ -168,7 +176,8 @@ def test_codex_reads_no_secrets_and_windows_claude_gets_no_shell(tmp_path, monke
         assert 'default_permissions="td"' in c and '":root"="read"' in fs
         for hidden in (s.data_dir.resolve(), tmp_path.resolve() / ".env", tmp_path / ".ssh"):
             assert f'"{hidden}"="none"' in fs
-        assert ('":workspace_roots"={"."="write"}' in fs) is write
+        assert ('":workspace_roots"={"."="write", ".claude"="read", ".git"="read"' in fs) is write
+        assert ('".gitmodules"="read"' in fs) is write  # no hook / git config the dashboard's git would run
     # Claude where it has no sandbox (Windows): an edit turn edits files but gets no Bash, sandboxed or not
     monkeypatch.setattr(provider_cmds, "SHELL_OK", False)
     c = task_cmd(s, "claude", "edit", "sid", False, "", "")
@@ -255,3 +264,27 @@ def test_ask_cmd_zeplin_for_codex_and_antigravity(settings, tmp_path, monkeypatc
     assert "mcp(zeplin/get_screen)" in " ".join(g)
     deny = json.loads(g[g.index("--settings") + 1])["permissions"]["deny"]
     assert "read_file(*)" in deny and "command(*)" in deny and "mcp(zeplin/download_layer_asset)" in deny
+
+
+def test_no_ai_run_reads_the_apps_own_files(tmp_path, monkeypatch):
+    """SCOPE_RULE, enforced: every CLI is kept out of the app's source / git / notes, but agent-links/ (read_dir)."""
+    from telegram_dashboard.provider_cmds import ask_cmd
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("TD_HOME", raising=False)
+    root, proj = tmp_path / "app", tmp_path / "proj"
+    for d in (root / "web", root / ".git", root / "agent-links", proj):
+        d.mkdir(parents=True)
+    (root / "README.md").write_text("x")
+    s = Settings(root=root)
+    web = str((root / "web").resolve())
+    deny = " ".join(task_cmd(s, "claude", "plan", "sid", False, "", "", project=str(proj)))
+    assert f"Read(/{web}/**)" in deny and "README.md)" in deny and "/.git/**)" in deny and "agent-links" not in deny
+    x = " ".join(task_cmd(s, "codex", "edit", "codex:", False, "", "", project=str(proj)))
+    assert f'"{web}"="none"' in x and "agent-links" not in x
+    g = " ".join(ask_cmd(s, "antigravity", tools=True, read_dir=None, model="", effort="", project=str(proj)))
+    assert f"read_file({web})" in g
+    e = " ".join(task_cmd(s, "antigravity", "edit", "agy:", False, "", "", project=str(tmp_path)))
+    assert f"write_file({web})" in e  # a project above the app: no writes into it (agy has no sandbox)
+    assert f"Edit(/{web}/**)" in " ".join(task_cmd(s, "claude", "edit", "sid", False, "", "", project=str(tmp_path)))
+    assert s.forbids_project(root / "web") and s.forbids_project(tmp_path) and not s.forbids_project(proj)

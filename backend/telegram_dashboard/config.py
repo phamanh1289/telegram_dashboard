@@ -209,6 +209,13 @@ class Settings:
     def data_dir(self) -> Path:
         return data_root(self.root)
 
+    def forbids_project(self, path: str | Path) -> bool:
+        """A folder no AI session or run works in (SCOPE_RULE): this app (its root, inside it, or a folder holding it),
+        the home folder, the app's data and its token dir (or a folder holding them)."""
+        p, root = Path(path).expanduser().resolve(), self.root.resolve()
+        guarded = [root, *self.secret_dirs, RUN_DIR.resolve()]
+        return p == Path.home().resolve() or any(p.is_relative_to(d) or d.is_relative_to(p) for d in guarded)
+
     @property
     def secret_dirs(self) -> list[Path]:
         """What an AI run may not read: data/, the install's own data/ (a log from before a move holds the

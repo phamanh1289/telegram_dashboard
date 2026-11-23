@@ -19,6 +19,7 @@ from .ai_prompts import (
     PLATFORM_FOCUS,
     PO_OPTIONS,
     QA_SUMMARY_TASK,
+    SCOPE_RULE,
     SYSTEM_PROMPT,
     TICKET_TASK,
     about_user,
@@ -539,16 +540,18 @@ class AiService:
         `zeplin`: the user's zeplin MCP server: the run may read the design with its read-only tools (the longer
         timeout), its token in the run's env only (provider_cmds.mcp_env)."""
         s = self.settings
+        if project and s.forbids_project(project):
+            raise ApiError(422, "project_forbidden")
         cwd = project or read_dir  # anything to read => the read-only tool command
         provider = providers.chosen(s, task=heavy, brief=brief, yt=yt, guide=guide)
         choice = ((*pick, False) if pick else providers.fast_choice(provider) if fast else
                   providers.run_choice(s, task=heavy, provider=provider, brief=brief, yt=yt, guide=guide))  # fmt: skip
         cmd = provider_cmds.ask_cmd(s, provider, tools=bool(cwd), read_dir=read_dir if project else None,
                                 model=choice[0], effort=choice[1], stream=on_text is not None, shell=shell,
-                                session=session, zeplin=zeplin)  # fmt: skip
+                                session=session, zeplin=zeplin, project=cwd)  # fmt: skip
         if provider == "claude" and not providers.is_claude(cmd):
             provider = None  # another AI command only prints its answer
-        prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}\n\n{user_prompt}")
+        prompt = providers.stdin(provider or "claude", f"{system}{LANG_RULE}{SCOPE_RULE}\n\n{user_prompt}")
         # Briefing / Digest parts read many messages, a Zeplin run reads designs: the longer timeout
         long = bool(project or heavy or brief or zeplin)
         # the token only where the command loads the zeplin server (Antigravity runs its own)

@@ -149,6 +149,7 @@ const COMMON: Record<string, (e: ApiError) => string> = {
   delivery_unknown: () => t("Chưa rõ đã gửi chưa (mất kết nối giữa chừng). Xem nhóm trước khi gửi lại. "),
   telegram_error: (e) => (e.detail ? t("Telegram báo lỗi ({detail}), thử lại sau. ", { detail: e.detail }) : t("Telegram báo lỗi, thử lại sau. ")),
   task_cancelled: () => t("Phiên đã bị dừng khi đang khởi động. "),
+  project_forbidden: () => t("Không dùng được thư mục này làm dự án: đó là thư mục của chính app, thư mục chứa app, thư mục nhà hoặc dữ liệu của app. Chọn thư mục code của dự án. "),
   ai_scope_not_allowed: () => t("Tin này không còn được theo dõi hoặc đã bị xóa. "),
 };
 

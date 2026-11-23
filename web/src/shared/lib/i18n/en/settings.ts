@@ -25,8 +25,6 @@ export default {
   "Trên phải": "Top right",
   "Dưới trái": "Bottom left",
   "Dưới phải": "Bottom right",
-  "Đọc code khi trả lời": "Read the code when answering",
-  "Bật: AI đọc code của app (chỉ đọc) để trả lời rule, giới hạn, vì sao một nút ẩn / hiện; chậm hơn. Tắt: chỉ dựa vào hướng dẫn, nhanh hơn.": "On: the AI reads the app's code (read-only) to answer rules, limits, why a button is shown or hidden; slower. Off: the guide only, faster.",
   // ---- settings.tsx: groups
   "Chung": "General",
   "Vai trò, ngôn ngữ, về bạn": "Role, language, about you",

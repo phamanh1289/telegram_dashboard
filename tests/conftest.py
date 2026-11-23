@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -161,12 +162,20 @@ def env(tmp_path):
     return Env(tmp_path)
 
 
+def app_root(tmp_path: Path) -> Path:
+    """The app's root beside tmp_path, not in or above it: the projects a test makes in tmp_path (or tmp_path itself)
+    are then allowed (Settings.forbids_project)."""
+    root = tmp_path.with_name(f"{tmp_path.name}-app")
+    root.mkdir(exist_ok=True)
+    return root
+
+
 @pytest.fixture
 def settings(tmp_path):
-    out = tmp_path / "web" / "out"
+    out = app_root(tmp_path) / "web" / "out"
     out.mkdir(parents=True)
     (out / "index.html").write_text("<html>shell</html>")
-    return Settings(root=tmp_path)
+    return Settings(root=app_root(tmp_path))
 
 
 @pytest.fixture

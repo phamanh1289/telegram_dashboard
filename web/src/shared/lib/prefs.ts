@@ -182,7 +182,7 @@ export const saveQuotaAgent = (v: string) => setPref("quotaAgent", v || null);
 
 // The know-it-all bot (components/guide; Cài đặt › Chung › Trợ lý biết tuốt): shown or F1 only, how it shows (floating,
 // fixed at the right, in the top bar), size, where it docks (a corner, or any point along an edge: dragging docks it to the
-// nearest edge), and whether the AI may read the app's code (slower, knows the rules).
+// nearest edge). The bot never reads the app's code (backend SCOPE_RULE).
 export const BOT_SIZES = { s: 40, m: 48, l: 60 } as const;
 export type BotSize = keyof typeof BOT_SIZES;
 export type BotCorner = "tl" | "tr" | "bl" | "br";
@@ -192,7 +192,6 @@ export const readBotMode = (): BotMode => { const v = getPref("botMode"); return
 export const readBotSize = (): BotSize => { const v = getPref("botSize"); return v === "s" || v === "l" ? v : "m"; };
 /** A corner ("tl"…), or "x,y": the bot's centre as fractions of the viewport, 0 / 1 on the edge it hugs (guide.tsx parses it). */
 export const readBotDock = () => getPref("botCorner") ?? "br";
-export const readBotCode = () => getPref("botCode") !== "0";
 /** AI Agent edit turns (Claude) load the user's own MCP servers / plugins: on until unticked, remembered. */
 export const readAgentMcp = () => getPref("agentMcp") !== "0";
 export const useAgentMcp = () => useSyncExternalStore(onPrefs, readAgentMcp, () => true);
@@ -200,7 +199,6 @@ export const useBotShow = () => useSyncExternalStore(onPrefs, readBotShow, () =>
 export const useBotMode = () => useSyncExternalStore(onPrefs, readBotMode, () => "float" as const);
 export const useBotSize = () => useSyncExternalStore(onPrefs, readBotSize, () => "m" as const);
 export const useBotDock = () => useSyncExternalStore(onPrefs, readBotDock, () => "br");
-export const useBotCode = () => useSyncExternalStore(onPrefs, readBotCode, () => true);
 
 /** Angle the assistant analyses tags from; sent with every /ai/draft. */
 /** Dev: the one platform they code. QC / PO: what they cover (Mobile, Tất cả), and the AI lays the platforms side by side. */

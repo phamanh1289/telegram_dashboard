@@ -62,6 +62,7 @@ async def test_agent_command_gets_prompt_on_stdin(env, tmp_path):
     s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="")
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], "be brief")
     assert "hello" in r.text and "be brief" in r.text
+    assert "SCOPE (hard rule" in r.text  # ai.ask: every one-shot run (Biết tuốt, drafts, YouTrack AI…) gets it
 
 
 async def test_agent_command_failure_is_provider_error(env, tmp_path):

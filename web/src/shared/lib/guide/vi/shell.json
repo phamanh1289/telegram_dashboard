@@ -70,7 +70,7 @@
     "tab": "telegram",
     "area": "Góc màn hình › Trợ lý biết tuốt",
     "title": "Hỏi trợ lý biết tuốt về app",
-    "what": "Con bot nổi ở góc màn hình mọi trang là hướng dẫn sử dụng kiêm trợ lý AI dạng chat. Hỏi bằng câu tự nhiên: bot tìm trong hướng dẫn (và đọc chính code của app, chỉ đọc, khi hỏi về rule, giới hạn, vì sao một nút / mục ẩn hay hiện, kèm nguồn), trả lời cách làm theo từng bước, rồi gắn nút dẫn tận nơi: \"Mở …\" mở đúng trang hoặc nhóm Cài đặt, nút tên tính năng chạy tour làm sáng từng nút cần bấm. Hỏi cả việc của bạn (\"còn tin nào chờ?\", \"ticket nào gấp?\", \"đang chờ ai?\"): bot đọc danh sách trang Hôm nay, báo nhanh số việc, việc gấp trước, mỗi việc kèm nút \"Mở …\" mở thẳng tin, ticket, Q&A hay phiên AI đó. Hỏi tiếp được nhiều lượt, bot biết bạn đang ở trang nào; cuộc hỏi giữ nguyên khi chuyển trang. Kéo bot rồi thả ở bất kỳ chỗ nào sát mép màn hình: nó tự bám vào mép gần nhất. Bot xưng \"em\", gọi bạn theo tên YouTrack (không có thì tên Telegram, không nữa thì \"anh/chị\"). Cài đặt › Trợ lý biết tuốt: ẩn / hiện bot, cách hiển thị (Nổi, Cố định bên phải, Trên thanh công cụ), kích thước, vị trí, có đọc code hay không, model / effort riêng cho bot.",
+    "what": "Con bot nổi ở góc màn hình mọi trang là hướng dẫn sử dụng kiêm trợ lý AI dạng chat. Hỏi bằng câu tự nhiên: bot tìm trong hướng dẫn, trả lời cách làm theo từng bước, rồi gắn nút dẫn tận nơi: \"Mở …\" mở đúng trang hoặc nhóm Cài đặt, nút tên tính năng chạy tour làm sáng từng nút cần bấm. Hỏi cả việc của bạn (\"còn tin nào chờ?\", \"ticket nào gấp?\", \"đang chờ ai?\"): bot đọc danh sách trang Hôm nay, báo nhanh số việc, việc gấp trước, mỗi việc kèm nút \"Mở …\" mở thẳng tin, ticket, Q&A hay phiên AI đó. Hỏi tiếp được nhiều lượt, bot biết bạn đang ở trang nào; cuộc hỏi giữ nguyên khi chuyển trang. Kéo bot rồi thả ở bất kỳ chỗ nào sát mép màn hình: nó tự bám vào mép gần nhất. Bot xưng \"em\", gọi bạn theo tên YouTrack (không có thì tên Telegram, không nữa thì \"anh/chị\"). Cài đặt › Trợ lý biết tuốt: ẩn / hiện bot, cách hiển thị (Nổi, Cố định bên phải, Trên thanh công cụ), kích thước, vị trí, model / effort riêng cho bot. Bot chỉ hỏi đáp về cách dùng app và việc của bạn: không đọc code, nhánh hay repo của dự án; hỏi ngoài phạm vi đó thì bot báo là ngoài phạm vi.",
     "how": [
       {
         "t": "Bấm con bot ở góc màn hình (hoặc F1); kéo nó sang góc khác nếu đang che nút",
@@ -82,7 +82,7 @@
       },
       "Dưới câu trả lời: bấm \"Mở …\" để tới đúng trang, hoặc bấm tên tính năng để app chỉ trực tiếp trên màn hình; bấm \"Cuộc hỏi mới\" để bắt đầu lại",
       {
-        "t": "Đổi cách hiển thị, kích thước, vị trí, ẩn bot, tắt đọc code hoặc chọn model / effort cho bot ở Cài đặt › \"Trợ lý biết tuốt\"",
+        "t": "Đổi cách hiển thị, kích thước, vị trí, ẩn bot hoặc chọn model / effort cho bot ở Cài đặt › \"Trợ lý biết tuốt\"",
         "at": "css:a[href^=\"/settings\"]"
       }
     ],

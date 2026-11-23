@@ -2453,7 +2453,7 @@ export interface components {
         };
         /**
          * AiGuideRequest
-         * @description A question about how to use the app, answered from the in-app guide (sent by the page) and the app's own code.
+         * @description A question about how to use the app, answered from the in-app guide the page sends (never the app's own code).
          */
         AiGuideRequest: {
             /** Question */
@@ -2467,11 +2467,6 @@ export interface components {
              * @default
              */
             page: string;
-            /**
-             * Code
-             * @default true
-             */
-            code: boolean;
             /**
              * Name
              * @default

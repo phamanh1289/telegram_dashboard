@@ -727,13 +727,12 @@ class GuideTurn(BaseModel):
 
 
 class AiGuideRequest(BaseModel):
-    """A question about how to use the app, answered from the in-app guide (sent by the page) and the app's own code."""
+    """A question about how to use the app, answered from the in-app guide the page sends (never the app's own code)."""
 
     question: str = Field(min_length=1, max_length=500)
     guide: str = Field(max_length=200_000)
     history: list[GuideTurn] = Field(default_factory=list, max_length=6)
     page: str = Field("", max_length=200)  # the page the user is on (path), so "here" / "this button" make sense
-    code: bool = True  # may read the app's own code (rules, show / hide conditions); off: the guide only, faster
     name: str = Field("", max_length=80)  # how the bot calls the user (YouTrack, else Telegram name); "": anh/chị
     state: str = Field("", max_length=300)  # what this machine has set up (Telegram, AI, YouTrack, role)
     # the Hôm nay list as the page reads it now (today-page.tsx workText): "còn việc nào chờ?" answered from it; sent

@@ -24,7 +24,6 @@ export default {
   "Sẵn sàng giúp anh/chị": "Ready to help",
   "Hỏi gì cũng được: còn tin nào chờ tôi? vì sao không thấy nút Gửi?": "Ask anything: any messages waiting for me? why don't I see the Send button?",
   "Đang tìm trong hướng dẫn": "Searching the guide",
-  "Đang đọc code của app": "Reading the app's code",
   "Đang soạn cách làm": "Writing up the steps",
   "Chỉ tôi tận nơi": "Take me there",
   "Mở {page}": "Open {page}",

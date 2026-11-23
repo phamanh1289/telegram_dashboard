@@ -4,7 +4,7 @@ import sys
 import time
 from datetime import UTC, datetime
 
-from conftest import ORIGIN, FakeTransport, TestClient, create_app
+from conftest import ORIGIN, FakeTransport, TestClient, app_root, create_app
 from telegram_dashboard import autobe
 from telegram_dashboard.config import Settings
 from telegram_dashboard.models import StoredMessage
@@ -31,7 +31,7 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
     out = tmp_path / "web" / "out"
     out.mkdir(parents=True)
     (out / "index.html").write_text("x")
-    cfg = Settings(root=tmp_path, ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
+    cfg = Settings(root=app_root(tmp_path), ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
     proj = tmp_path / "proj"
     proj.mkdir()
     with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:

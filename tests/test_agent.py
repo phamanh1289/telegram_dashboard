@@ -3,6 +3,7 @@ import dataclasses
 import json
 
 import pytest
+from conftest import app_root
 from telegram_dashboard.agent import AgentRunner, read_task_result
 from telegram_dashboard.config import Settings
 from telegram_dashboard.errors import ApiError
@@ -22,7 +23,7 @@ def runner(tmp_path, script: str) -> AgentRunner:
     exe = tmp_path / "claude"
     exe.write_text(script)
     exe.chmod(0o755)
-    s = Settings(root=tmp_path, ai_task_command=str(exe), ai_task_model="", ai_task_effort="")
+    s = Settings(root=app_root(tmp_path), ai_task_command=str(exe), ai_task_model="", ai_task_effort="")
     s.ensure_data_dir()
     return AgentRunner(s)
 
@@ -314,3 +315,40 @@ async def test_git_changes_see_a_same_size_edit_in_the_same_second(tmp_path):
     a.write_text("2\n")
     os.utime(a, (t, t))
     assert [f["path"] for f in (await gitops.changes(str(tmp_path), base))["files"]] == ["a.txt"]
+
+
+async def test_git_never_runs_what_a_session_planted_in_the_repo(tmp_path, monkeypatch):
+    """An AI session that wrote .git/config / hooks / .gitmodules gets nothing run outside its sandbox: snapshot,
+    Thay đổi and the PR commit run no fsmonitor, hook or textconv, and no submodule outside the project."""
+    import subprocess
+
+    from telegram_dashboard import gitops
+
+    for k in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(k, "t")
+    for k in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(k, "t@t")
+    repo, other, pwned = tmp_path / "repo", tmp_path / "app", tmp_path / "pwned"
+    g = lambda d, *a: subprocess.run(["git", "-C", str(d), *a], check=True, capture_output=True)  # noqa: E731
+    for d in (repo, other):
+        subprocess.run(["git", "init", "-q", "-b", "main", str(d)], check=True)
+        (d / "a.txt").write_text("1\n")
+        g(d, "add", ".")
+        g(d, "commit", "-qm", "init")
+    g(repo, "config", "core.fsmonitor", f"touch {pwned}/fsmonitor; false")
+    g(repo, "config", "diff.x.textconv", f"touch {pwned}/textconv; cat")
+    (repo / ".gitattributes").write_text("*.txt diff=x\n")
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    hook.write_text(f"#!/bin/sh\ntouch {pwned}/hook\n")
+    hook.chmod(0o755)
+    (repo / ".gitmodules").write_text('[submodule "x"]\n\tpath = ../app\n')
+    pwned.mkdir()
+    base = await gitops.snapshot(str(repo))
+    assert '"../app"' not in base  # not a submodule of this repo: never touched
+    (repo / "a.txt").write_text("2\n")
+    c = await gitops.changes(str(repo), base)
+    assert "a.txt" in {f["path"] for f in c["files"]} and "+2" in c["diff"]
+    with pytest.raises(ApiError):  # no remote: the push fails, after the commit
+        await gitops.open_pr(str(repo), "ai/x", "Sửa a", "", base, mixed_ok=True)
+    assert g(repo, "log", "-1", "--format=%s").stdout.decode().strip() == "Sửa a"  # committed, pre-commit not run
+    assert list(pwned.iterdir()) == []

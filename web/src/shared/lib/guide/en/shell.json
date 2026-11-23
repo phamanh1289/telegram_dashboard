@@ -70,7 +70,7 @@
     "tab": "telegram",
     "area": "Screen corner › Know-it-all assistant",
     "title": "Ask the know-it-all assistant about the app",
-    "what": "The bot floating in a corner of every page is the user guide and a chat AI assistant in one. Ask in your own words: it searches the guide (and reads the app's own code, read-only, for rules, limits, why a button or item is shown or hidden, citing where), answers with the steps, then adds buttons that take you there: \"Open …\" opens the right page or Settings group, a feature's name runs a walk-through that lights each control to click. Ask about your own work too (\"any messages waiting?\", \"which tickets are urgent?\", \"who am I waiting on?\"): it reads the Today list, reports how many, the urgent ones first, each with an \"Open …\" button straight to that message, ticket, Q&A or AI session. Ask follow-ups, it knows which page you are on; the conversation stays as you move between pages. Drag the bot and let go anywhere along a screen edge: it sticks to the nearest edge. It calls you by your YouTrack name (else your Telegram name). Settings › Know-it-all assistant: show / hide the bot, how it shows (Floating, Fixed at the right, In the top bar), its size, position, whether it reads the code, and its own model / effort.",
+    "what": "The bot floating in a corner of every page is the user guide and a chat AI assistant in one. Ask in your own words: it searches the guide, answers with the steps, then adds buttons that take you there: \"Open …\" opens the right page or Settings group, a feature's name runs a walk-through that lights each control to click. Ask about your own work too (\"any messages waiting?\", \"which tickets are urgent?\", \"who am I waiting on?\"): it reads the Today list, reports how many, the urgent ones first, each with an \"Open …\" button straight to that message, ticket, Q&A or AI session. Ask follow-ups, it knows which page you are on; the conversation stays as you move between pages. Drag the bot and let go anywhere along a screen edge: it sticks to the nearest edge. It calls you by your YouTrack name (else your Telegram name). Settings › Know-it-all assistant: show / hide the bot, how it shows (Floating, Fixed at the right, In the top bar), its size, position and its own model / effort. The bot only answers questions about using the app and your own work: it never reads the project's code, branches or repository; anything outside that, it says is out of scope.",
     "how": [
       {
         "t": "Click the bot in the screen corner (or F1); drag it to another corner if it covers a button",
@@ -82,7 +82,7 @@
       },
       "Under the answer: click \"Open …\" to go to the right page, or a feature's name to have the app show you on screen; click \"New conversation\" to start over",
       {
-        "t": "Change how it shows, its size, position, hide the bot, stop it reading the code or pick its model / effort in Settings › \"Know-it-all assistant\"",
+        "t": "Change how it shows, its size, position, hide the bot or pick its model / effort in Settings › \"Know-it-all assistant\"",
         "at": "css:a[href^=\"/settings\"]"
       }
     ],

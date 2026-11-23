@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from conftest import ORIGIN, A, B, msg
+from conftest import ORIGIN, A, B, app_root, msg
 from telegram_dashboard.ai import AiService
 from telegram_dashboard.config import Settings
 
@@ -120,7 +120,7 @@ def test_one_message_kept_else_live(client):
 async def test_draft_includes_context(env, tmp_path):
     env.store.set_tracking(A, True, "Alpha", "supergroup")
     env.store.apply_message(msg(A, 1, "@me what about this?", sender="7"))
-    s = Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort="")
+    s = Settings(root=app_root(tmp_path), ai_agent_command="cat", ai_model="", ai_effort="")
     nearby = [msg(A, 0, "the login page crashes on iOS", sender="8")]
     r = await AiService(s, env.store, env.db).run("draft", A, ["1"], nearby=nearby)
     assert "login page crashes" in r.text and "<context>" in r.text
@@ -129,7 +129,8 @@ async def test_draft_includes_context(env, tmp_path):
 async def test_draft_reads_a_message_not_kept_live(env, tmp_path):
     """Cả nhóm: the reply panel's AI reads a message not kept live, in tracked groups only."""
     env.store.set_tracking(A, True, "Alpha", "supergroup")
-    ai = AiService(Settings(root=tmp_path, ai_agent_command="cat", ai_model="", ai_effort=""), env.store, env.db)
+    cfg = Settings(root=app_root(tmp_path), ai_agent_command="cat", ai_model="", ai_effort="")
+    ai = AiService(cfg, env.store, env.db)
 
     async def fetch(chat_id, ids):
         return [msg(chat_id, i, "plain question", sender="7") for i in ids]
@@ -427,7 +428,7 @@ def test_headless_task_runs_and_resumes(tmp_path):
     out = tmp_path / "web" / "out"
     out.mkdir(parents=True)
     (out / "index.html").write_text("x")
-    cfg = Settings(root=tmp_path, ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
+    cfg = Settings(root=app_root(tmp_path), ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
     proj = tmp_path / "proj"
     proj.mkdir()
     with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:
@@ -493,7 +494,7 @@ def test_new_session_answers_before_its_links_are_read(tmp_path, monkeypatch):
     fake.write_text("import sys\nsys.stdin.read()\n")
     (tmp_path / "web" / "out").mkdir(parents=True)
     (tmp_path / "web" / "out" / "index.html").write_text("x")
-    cfg = Settings(root=tmp_path, ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
+    cfg = Settings(root=app_root(tmp_path), ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")
     proj = tmp_path / "proj"
     proj.mkdir()
     with TestClient(create_app(cfg, transport=FakeTransport()), base_url=ORIGIN) as c:
@@ -521,7 +522,7 @@ def test_deep_thinking_runs_as_a_read_only_agent_session(tmp_path):
     fake.write_text("import sys\nsys.stdin.read()\n")
     (tmp_path / "web" / "out").mkdir(parents=True)
     (tmp_path / "web" / "out" / "index.html").write_text("x")
-    cfg = Settings(root=tmp_path, ai_agent_command="cat", ai_agent_project_command="pwd",
+    cfg = Settings(root=app_root(tmp_path), ai_agent_command="cat", ai_agent_project_command="pwd",
                    ai_task_command=f"{shlex.quote(sys.executable)} {shlex.quote(str(fake))}")  # fmt: skip
     proj = tmp_path / "proj"
     proj.mkdir()

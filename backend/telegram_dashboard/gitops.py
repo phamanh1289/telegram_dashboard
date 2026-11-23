@@ -10,8 +10,14 @@ import re
 import shutil
 import tempfile
 
+from .config import child_env
 from .errors import ApiError
 
+# What a project's own repo could run when the dashboard runs git there, outside any AI sandbox: an AI session may have
+# planted it (.git/config, hooks), so none of it runs. Diffs also pass --no-textconv (a config-named program).
+SAFE = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "protocol.ext.allow=never",
+        "-c", "log.showSignature=false")  # fmt: skip
+PATCH = ("--no-color", "--no-ext-diff", "--no-textconv")  # a patch for the page: no program from the repo's config
 MAX_DIFF = 200_000  # chars of patch text sent to the page
 TIMEOUT = 60.0
 SECRET_FILE = re.compile(
@@ -22,13 +28,16 @@ SECRET_FILE = re.compile(
 BASE_BRANCHES = {"main", "master", "develop", "dev"}
 
 
-async def _git(cwd: str, *args: str, tool: str = "git", env: dict | None = None) -> tuple[int, str, str]:
-    """Run git (or gh) in `cwd` to its end, or kill it after TIMEOUT. Uses the user's own credentials (push, gh)."""
+async def _git(
+    cwd: str, *args: str, tool: str = "git", env: dict | None = None, creds: bool = False
+) -> tuple[int, str, str]:
+    """Run git (or gh) in `cwd` to its end, or kill it after TIMEOUT; git never runs the repo's hooks / fsmonitor
+    (SAFE). `creds`: the user's whole env (push, gh: their tokens); else without this app's secrets (child_env)."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            tool, *args, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
+            tool, *(SAFE if tool == "git" else ()), *args, cwd=cwd, stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0", **(env or {})},
+            env={**(os.environ if creds else child_env()), "GIT_TERMINAL_PROMPT": "0", **(env or {})},
         )  # fmt: skip
     except OSError:
         raise ApiError(422, "git_missing" if tool == "git" else "gh_missing") from None
@@ -97,7 +106,9 @@ async def _subs(root: str) -> list[str]:
     """Checked-out submodules of the repo at `root` (paths from it): edits inside one never reach the parent's tree."""
     code, out, _ = await _git(root, "config", "--file", ".gitmodules", "--get-regexp", r"^submodule\..*\.path$")
     paths = [ln.split(" ", 1)[1] for ln in out.splitlines() if " " in ln] if not code else []
-    return [p for p in paths if os.path.exists(os.path.join(root, p, ".git"))]
+    top = os.path.realpath(root)
+    inside = [p for p in paths if os.path.realpath(os.path.join(top, p)).startswith(top + os.sep)]  # .gitmodules is
+    return [p for p in inside if os.path.exists(os.path.join(root, p, ".git"))]  # a plain file: never ../elsewhere
 
 
 async def snapshot(project: str) -> str | None:
@@ -122,7 +133,7 @@ async def _diff(cwd: str, a: str, b: str, prefix: str = "") -> tuple[list[dict],
     shown = [p for _, p in pairs if not SECRET_FILE.search(p)]
     if not shown:
         return files, ""
-    opts = ("--no-renames", "--no-color", "--no-ext-diff", f"--src-prefix=a/{prefix}", f"--dst-prefix=b/{prefix}")
+    opts = ("--no-renames", *PATCH, f"--src-prefix=a/{prefix}", f"--dst-prefix=b/{prefix}")
     git = ("--literal-pathspecs", "-c", "core.quotePath=false", "diff")
     _, patch, _ = await _git(cwd, *git, *opts, a, b, "--", *shown)
     return files, patch
@@ -154,7 +165,7 @@ async def changes(project: str, base: str | None = None) -> dict:
         files, patch = await _diff(root, bases[""], await _tree(root))
     else:
         _, st, _ = await _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-        _, patch, _ = await _git(root, "-c", "core.quotePath=false", "diff", "HEAD", "--no-color", "--no-ext-diff")
+        _, patch, _ = await _git(root, "-c", "core.quotePath=false", "diff", "HEAD", *PATCH)
         files = _files(st)
         for f in files:  # untracked files are not in `git diff HEAD`: show them as all-added (secrets never read)
             if f["status"] == "??" and not f["secret"] and len(patch) <= MAX_DIFF:
@@ -224,11 +235,12 @@ async def open_pr(
         code, _, err = await _git(project, "--literal-pathspecs", *cmd)
         if code:
             raise ApiError(409, "git_failed", detail=err.strip()[-300:])
-    code, _, err = await _git(project, "push", "-u", "origin", cur)
+    code, _, err = await _git(project, "push", "-u", "origin", cur, creds=True)
     if code:
         raise ApiError(409, "git_push_failed", detail=err.strip()[-300:])
     try:
-        code, out, err = await _git(project, "pr", "create", "--title", title, "--body", body, "--head", cur, tool="gh")
+        pr = ("pr", "create", "--title", title, "--body", body, "--head", cur)
+        code, out, err = await _git(project, *pr, tool="gh", creds=True)
     except ApiError:
         return {"url": None, "branch": cur, "skipped": skipped, "note": "Đã đẩy nhánh; máy chưa có gh nên chưa mở PR."}
     url = next((ln for ln in out.split() if ln.startswith("https://")), None)

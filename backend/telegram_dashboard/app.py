@@ -144,12 +144,6 @@ GUIDE_MORE = (
     " chỉ thêm các tính năng chưa gửi (có thể trống); các tính năng và mục lục đã gửi trước vẫn dùng được. Danh sách"
     " việc lần này là bản mới nhất, thay bản trước."
 )
-GUIDE_CODE = (
-    " Em được đọc (chỉ đọc) mã nguồn của chính app: thư mục hiện tại là backend Python, web/src (nếu có) là "
-    "giao diện. Câu hỏi về rule, điều kiện một nút / mục ẩn hay hiện, vì sao không thấy, giới hạn, mặc định: "
-    "đọc code để trả lời đúng như code đang chạy, nói điều kiện bằng lời người dùng, cuối câu ghi nguồn "
-    "`file:dòng`."
-)
 
 MASCOT_PROMPT = (
     "You draw a mascot icon for an app's AI assistant, from the user's description and style. "
@@ -490,25 +484,19 @@ def create_app(
             + ("" if body.sid else f"<history>\n{past}</history>\n")  # a session carried on already holds them
             + f"\nCâu hỏi của người dùng: {body.question}"
         )
-        # the app's own code, read-only: the backend always ships; the web source only in a checkout (not the installs)
-        web = s.settings.root / "web" / "src"
-
-        here = str(Path(__file__).parent)
-        code = {"project": here, "read_dir": str(web) if web.is_dir() else None} if body.code else {}
-
         # Claude's CLI keeps the conversation: a follow-up carries its session on (the page then sends only what is new,
         # read from the prompt cache) instead of sending the guide and the turns before again
-        keep = providers.keeps_session(s.settings, providers.chosen(s.settings, guide=True), bool(code))
+        keep = providers.keeps_session(s.settings, providers.chosen(s.settings, guide=True), False)
         if body.sid and not keep:
             raise ApiError(409, "guide_session_gone")  # the AI picked changed: the page asks again, whole
         sid = str(body.sid or uuid4()) if keep else ""
 
         async def work(on_text):
             voice = GUIDE_VOICE.format(name=_guide_name(body.name))
-            first = GUIDE_PROMPT + GUIDE_WORK + voice + (GUIDE_CODE if body.code else "")
+            first = GUIDE_PROMPT + GUIDE_WORK + voice
             system = GUIDE_MORE if body.sid else first
             text = await s.ai.ask(user, system=system, on_text=on_text, feature="guide", guide=True,
-                                  session=(sid, bool(body.sid)) if sid else None, **code)  # fmt: skip
+                                  session=(sid, bool(body.sid)) if sid else None)  # fmt: skip
             return {"text": text, "sid": sid}
 
         return stream_answer(work)
@@ -523,6 +511,8 @@ def create_app(
         path = Path(raw.strip()).expanduser().resolve()
         if not path.is_dir():
             raise ApiError(422, "project_not_a_directory")
+        if s.settings.forbids_project(path):
+            raise ApiError(422, "project_forbidden")
         await s.db.write(s.store.add_project, str(path), path.name)
         return ProjectDTO(path=str(path), name=path.name)
 

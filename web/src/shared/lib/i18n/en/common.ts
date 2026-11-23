@@ -29,6 +29,7 @@ export default {
   "Telegram báo lỗi ({detail}), thử lại sau. ": "Telegram returned an error ({detail}), try again later. ",
   "Telegram báo lỗi, thử lại sau. ": "Telegram returned an error, try again later. ",
   "Phiên đã bị dừng khi đang khởi động. ": "The session was stopped while starting. ",
+  "Không dùng được thư mục này làm dự án: đó là thư mục của chính app, thư mục chứa app, thư mục nhà hoặc dữ liệu của app. Chọn thư mục code của dự án. ": "This folder can't be a project: it is the app's own folder, a folder holding the app, your home folder or the app's data. Pick the project's code folder. ",
   "Tin này không còn được theo dõi hoặc đã bị xóa. ": "This message is no longer tracked or was deleted. ",
   "Có lỗi xảy ra.": "Something went wrong.",
   // lib/yt (the YouTrack router's fixed error texts)
