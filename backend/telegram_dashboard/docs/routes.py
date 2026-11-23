@@ -119,9 +119,7 @@ async def _summary(s, doc_id: int, session: str | None, on_text) -> dict:
     return DocSummary(text=text, cached=cached).model_dump()
 
 
-def build_router(settings) -> APIRouter:  # settings: the routers' shape; state is read from the app
-    r = APIRouter(prefix="/api/docs")
-
+def _list_routes(r: APIRouter) -> None:
     @r.get("")
     async def docs(request: Request, source: Source | None = None, ticket: str | None = None) -> list[DocDTO]:
         s = request.app.state
@@ -152,6 +150,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
         ]  # fmt: skip
         return DocSearch(hits=hits, messages=messages, ask_parts=len(items), ask_chars=chars)
 
+
+def _source_routes(r: APIRouter) -> None:
     @r.get("/sources")
     async def sources(request: Request) -> DocSources:
         return await _sources(request.app.state.docs)
@@ -202,6 +202,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
             raise ApiError(500, "doc_cache_clear_failed", detail=type(e).__name__) from None
         return await _sources(lib)
 
+
+def _add_routes(r: APIRouter) -> None:
     @r.post(
         "/ask",
         responses={200: {"model": DocAnswer, "description": "NDJSON: delta / reset lines, then {done: DocAnswer}"}},
@@ -252,6 +254,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
             raise ApiError(500, "doc_not_saved", detail=type(e).__name__) from None
         return doc_dto(s, await _doc(s, doc_id))
 
+
+def _ai_routes(r: APIRouter) -> None:
     # the AI history (before /{doc_id}: "ai" is not an id)
     @r.get("/ai")
     async def ai_sessions(request: Request, doc: int | None = None) -> list[DocAiSession]:
@@ -282,6 +286,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
         web = "https://app.zeplin.io/project/{project}/screen/{id}"
         return [DocZeplinScreen(**r, url=web.format(**r)) for r in rows]
 
+
+def _doc_routes(r: APIRouter) -> None:
     @r.get("/{doc_id}")
     async def detail(doc_id: int, request: Request) -> DocDetail:
         s = request.app.state
@@ -336,4 +342,9 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
             raise ApiError(409, "doc_not_a_file")
         await desktop.reveal(d["path"])
 
+
+def build_router(settings) -> APIRouter:  # settings: the routers' shape; state is read from the app
+    r = APIRouter(prefix="/api/docs")
+    for add in (_list_routes, _source_routes, _add_routes, _ai_routes, _doc_routes):  # in order: /ai before /{doc_id}
+        add(r)
     return r

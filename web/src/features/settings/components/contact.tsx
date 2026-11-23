@@ -173,25 +173,41 @@ function livePolish(s: string, d: Draft) {
 }
 
 /** Browser, language and window size: the part of the machine info only the page knows. */
-const clientLine = () => `${navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/)?.[0]?.replace("Version", "Safari") ?? "?"} · ${navigator.language} · ${innerWidth}×${innerHeight}`;
+function clientLine() {
+  const browser = navigator.userAgent.match(/(Edg|Chrome|Firefox|Version)\/[\d.]+/)?.[0]?.replace("Version", "Safari") ?? "?";
+  return `${browser} · ${navigator.language} · ${innerWidth}×${innerHeight}`;
+}
 
-/** Cài đặt › Liên hệ: a bug report / request with photos, previewed, then sent to the developer as a Telegram DM from this account. */
-export function ContactGroup() {
+const kindOf = (k: Req["kind"]) => KINDS.find((x) => x.value === k) ?? KINDS[0];
+const fadeIn = (reduce: boolean | null) => reduce ? { initial: false as const, animate: { opacity: 1 }, exit: { opacity: 0 } }
+  : { initial: { opacity: 0, y: 4 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 } };
+
+/** The photos going along (≤ MAX_PHOTOS, each one Telegram takes) and why some were left out. */
+function usePhotos() {
   const t = useT();
-  // A toast's "Báo lỗi" opens this with its report; else the saved draft.
-  const [d, setD] = useState<Draft>(() => readPrefill() ?? { ...EMPTY, ...(readJson(DRAFT_KEY, {}) as Partial<Draft>) });
-  useEffect(clearPrefill, []);
-  const behind = useQuery({ ...updateStateQuery, retry: false }).data?.behind ?? 0;
-  const [logs, setLogs] = useState(false);
-  const [over, setOver] = useState(false); // a file dragged over the composer
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [diag, setDiag] = useState(true);
   const [bad, setBad] = useState("");
-  const [req, setReq] = useState<Req | null>(null); // the message last previewed (photos as base64); kept while the dialog animates out
-  const [open, setOpen] = useState(false);
-  const file = useRef<HTMLInputElement>(null);
-  const textBox = useRef<HTMLTextAreaElement>(null);
-  // AI viết lại: one tool-less run; the answer streams into the fields, then a toast offers to undo it.
+  const add = async (files: File[]) => {
+    const imgs = files.filter((f) => f.type.startsWith("image/"));
+    if (!imgs.length) return;
+    const room = MAX_PHOTOS - photos.length;
+    const got = (await Promise.all(imgs.slice(0, room).map(async (f) => {
+      const b = await fit(f);
+      const url = b && await dataUrl(b).catch(() => null);
+      return url ? { id: ++seq, name: f.name || t("Ảnh dán"), url, b64: url.slice(url.indexOf(",") + 1) } : null;
+    }))).filter((p) => p !== null);
+    setPhotos((p) => [...p, ...got].slice(0, MAX_PHOTOS));
+    setBad(imgs.length > room ? t("Tối đa {n} ảnh.", { n: MAX_PHOTOS }) : got.length < imgs.length ? t("Có ảnh không mở được, đã bỏ qua.") : "");
+  };
+  const remove = (id: number) => setPhotos((x) => x.filter((y) => y.id !== id));
+  const clear = () => { setPhotos([]); setBad(""); };
+  return { photos, bad, add, remove, clear };
+}
+type Photos = ReturnType<typeof usePhotos>;
+
+/** AI viết lại: one tool-less run; the answer streams into the fields (`live`), then a toast offers to undo it. */
+function usePolish(d: Draft, setD: React.Dispatch<React.SetStateAction<Draft>>) {
+  const t = useT();
   const [partial, setPartial] = useState<string | null>(null);
   const stop = useRef<AbortController | null>(null);
   const polish = useMutation({
@@ -206,130 +222,167 @@ export function ContactGroup() {
     },
     onSettled: () => setPartial(null),
   });
-  const writing = polish.isPending;
-  const live = partial !== null ? livePolish(partial, d) : null;
-  const polishErr = polish.isError && !(polish.error instanceof Error && polish.error.name === "AbortError")
+  const err = polish.isError && !(polish.error instanceof Error && polish.error.name === "AbortError")
     ? errorText(polish.error, {}, t("AI không viết lại được, thử lại.")) : "";
+  return { run: polish.mutate, writing: polish.isPending, live: partial !== null ? livePolish(partial, d) : null, err, stop: () => stop.current?.abort() };
+}
+
+/** The "update first" notice (bugs only), the type tiles, the area, and what to write for the type. */
+function ContactHead({ d, edit }: { d: Draft; edit: (p: Partial<Draft>) => void }) {
+  const t = useT();
+  const fade = fadeIn(useReducedMotion());
+  const behind = useQuery({ ...updateStateQuery, retry: false }).data?.behind ?? 0;
+  return (
+    <>
+      <div className="grid gap-2">{/* no gap around the folded notice */}
+        <Fold open={d.kind === "bug" && behind > 0}>
+          <p className="mb-1 flex flex-wrap items-center gap-x-2 rounded-md bg-signal-wash px-3 py-2 text-xs text-signal-2">
+            <TriangleAlert aria-hidden className="size-3.5 shrink-0" />{t("Đang chậm {n} bản: lỗi có thể đã được sửa ở bản mới.", { n: behind })}
+            <a href="#github" className={linkCls}>{t("Cập nhật trước")}</a>
+          </p>
+        </Fold>
+        <KindTiles value={d.kind} onChange={(v) => edit({ kind: v })} />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-xs font-medium text-ink-2">{t("Khu vực")}</span>
+        <Segmented id="contact-area" variant="card" label={t("Khu vực")} value={d.area} onChange={(v) => edit({ area: v })}
+          items={AREAS.map(([value, k, Icon]) => ({ value, label: <><Icon className="size-3.5" />{t(k)}</> }))} />
+      </div>
+      <div className="flex gap-2 rounded-md bg-paper-2 px-3 py-2 text-xs leading-relaxed text-ink-2">
+        <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.p key={d.kind} {...fade} transition={{ duration: 0.16 }}>{t(kindOf(d.kind).guide)}</motion.p>
+        </AnimatePresence>
+      </div>
+    </>
+  );
+}
+
+/** The photos under the description, each with its remove button, and the privacy reminder. */
+function PhotoStrip({ ph }: { ph: Photos }) {
+  const t = useT();
   const reduce = useReducedMotion();
+  return (
+    <Fold open={ph.photos.length > 0}>
+      <div className="grid gap-1.5 px-3 pb-2.5">
+        <div className="flex flex-wrap gap-2">
+          <AnimatePresence initial={false}>
+            {ph.photos.map((p) => (
+              <motion.figure key={p.id} layout={!reduce} initial={reduce ? false : { opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                className="group relative size-16 overflow-hidden rounded-md border border-rule bg-paper-2">
+                {/* eslint-disable-next-line @next/next/no-img-element -- a local data: URL, nothing to optimise */}
+                <img src={p.url} alt={p.name} className="size-full object-cover transition-transform duration-(--dur-short) ease-(--ease-out) group-hover:scale-105" />
+                <button type="button" aria-label={t("Bỏ ảnh {name}", { name: p.name })} onClick={() => ph.remove(p.id)}
+                  className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-ink/70 text-paper opacity-0 transition-opacity duration-(--dur-micro) group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100">
+                  <X className="size-3" aria-hidden />
+                </button>
+              </motion.figure>
+            ))}
+          </AnimatePresence>
+        </div>
+        <span className="text-xs text-ink-3">{t("Ảnh chụp có thể lộ tin nhắn của khách hàng: kiểm tra trước khi gửi.")}</span>
+      </div>
+    </Fold>
+  );
+}
+
+/** The description box: text (photos pasted / dropped in), the photos, and the toolbar of what goes along + AI viết lại. */
+function DescBox({ id, text, placeholder, onText, d, ph, ai, diag, setDiag, logs, setLogs }: {
+  id: string; text: string; placeholder: string; onText: (v: string) => void; d: Draft; ph: Photos; ai: ReturnType<typeof usePolish>;
+  diag: boolean; setDiag: (v: boolean) => void; logs: boolean; setLogs: (v: boolean) => void;
+}) {
+  const t = useT();
+  const reduce = useReducedMotion();
+  const [over, setOver] = useState(false); // a file dragged over the composer
+  const file = useRef<HTMLInputElement>(null);
+  const textBox = useRef<HTMLTextAreaElement>(null);
+  const { writing } = ai;
+  return (
+    <div className={cn("relative flex min-h-0 flex-1 flex-col rounded-md border bg-cotton transition-colors duration-(--dur-micro) focus-within:border-hl", over ? "border-hl" : "border-rule-2 hover:border-ink-3", writing && "ai-ring")}
+      onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
+      onDrop={(e) => { e.preventDefault(); setOver(false); void ph.add([...e.dataTransfer.files]); }}>
+      <Textarea id={id} ref={textBox} maxLength={TEXT_MAX} value={text} readOnly={writing} aria-busy={writing} onChange={(e) => onText(e.target.value)} placeholder={placeholder}
+        className="min-h-48 flex-1 resize-none md:min-h-24 overflow-y-auto border-0 bg-transparent field-sizing-fixed hover:border-0 focus-visible:outline-none"
+        onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.length) { e.preventDefault(); void ph.add(f); } }} />
+      <PhotoStrip ph={ph} />
+      <div className="flex flex-wrap items-center gap-1.5 border-t border-rule px-2 py-1.5">
+        <Hint text={t("Thêm ảnh (tối đa 5, ảnh lớn tự thu nhỏ). Dán ⌘V hoặc kéo thả vào ô này cũng được.")}>
+          <button type="button" className={chipCls(ph.photos.length > 0)} disabled={ph.photos.length >= MAX_PHOTOS} onClick={() => file.current?.click()}>
+            <ImagePlus aria-hidden className="size-3.5" />{ph.photos.length ? `${ph.photos.length}/${MAX_PHOTOS}` : t("Ảnh")}
+          </button>
+        </Hint>
+        <Toggle on={diag} onChange={setDiag} icon={Cpu} label={t("Thông tin máy")}
+          hint={t("Kèm phiên bản app, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack. Không gửi token, tin nhắn hay tên nhóm.")} />
+        <AnimatePresence initial={false}>
+          {d.kind === "bug" && (
+            <motion.span key="logs" initial={reduce ? false : { opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }} className="overflow-hidden">
+              <Toggle on={logs} onChange={setLogs} icon={FileText} label={t("Log lỗi")}
+                hint={t("Kèm cảnh báo / lỗi của app trong 24 giờ qua thành file log.txt (đã ẩn SĐT / email); xem được trước khi gửi.")} />
+            </motion.span>
+          )}
+        </AnimatePresence>
+        <span className="ml-auto flex items-center gap-2">
+          {writing ? <>
+            <AiWriting label={t("AI đang viết lại")} />
+            <Hint text={t("Dừng, giữ nguyên bản của bạn")}>
+              <Button variant="outline" size="icon-xs" className="rounded-full" aria-label={t("Dừng")} onClick={ai.stop}><Square className="fill-current" aria-hidden /></Button>
+            </Hint>
+          </> : (
+            <AiAsk label={t("AI viết lại mô tả")} hint={t("Viết lại cho rõ: các bước, kết quả, mong đợi. Bạn xem rồi giữ hoặc hoàn tác.")}
+              onClick={() => (d.text.trim() ? ai.run(d) : textBox.current?.focus())} />
+          )}
+        </span>
+      </div>
+      <div aria-hidden className={cn("pointer-events-none absolute inset-0 grid place-items-center rounded-md border-2 border-dashed border-hl bg-hl-wash/90 text-sm font-medium text-hl-2 transition-opacity duration-(--dur-short)", !over && "opacity-0")}>
+        <span className={cn("flex items-center gap-2 transition-transform duration-(--dur-short) ease-(--ease-out)", !over && "scale-95")}><ImagePlus className="size-5" />{t("Thả ảnh vào đây")}</span>
+      </div>
+      <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => { void ph.add([...(e.target.files ?? [])]); e.target.value = ""; }} />
+    </div>
+  );
+}
+
+/** Cài đặt › Liên hệ: a bug report / request with photos, previewed, then sent to the developer as a Telegram DM from this account. */
+export function ContactGroup() {
+  const t = useT();
+  // A toast's "Báo lỗi" opens this with its report; else the saved draft.
+  const [d, setD] = useState<Draft>(() => readPrefill() ?? { ...EMPTY, ...(readJson(DRAFT_KEY, {}) as Partial<Draft>) });
+  useEffect(clearPrefill, []);
+  const [logs, setLogs] = useState(false);
+  const [diag, setDiag] = useState(true);
+  const [req, setReq] = useState<Req | null>(null); // the message last previewed (photos as base64); kept while the dialog animates out
+  const [open, setOpen] = useState(false);
+  const ph = usePhotos();
+  const ai = usePolish(d, setD);
+  const { writing, live } = ai;
+  const fade = fadeIn(useReducedMotion());
   const box = useRef<HTMLDivElement>(null);
   const height = useFillHeight(box);
-  const kind = KINDS.find((k) => k.value === d.kind) ?? KINDS[0];
-  const bug = d.kind === "bug"; // Log lỗi and the "update first" notice are about bugs only
+  const kind = kindOf(d.kind);
   useEffect(() => { put(DRAFT_KEY, d.title || d.text ? JSON.stringify(d) : null); }, [d]); // text survives a reload or a failed send
   const edit = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
 
-  const add = async (files: File[]) => {
-    const imgs = files.filter((f) => f.type.startsWith("image/"));
-    if (!imgs.length) return;
-    const room = MAX_PHOTOS - photos.length;
-    const got = (await Promise.all(imgs.slice(0, room).map(async (f) => {
-      const b = await fit(f);
-      const url = b && await dataUrl(b).catch(() => null);
-      return url ? { id: ++seq, name: f.name || t("Ảnh dán"), url, b64: url.slice(url.indexOf(",") + 1) } : null;
-    }))).filter((p) => p !== null);
-    setPhotos((p) => [...p, ...got].slice(0, MAX_PHOTOS));
-    setBad(imgs.length > room ? t("Tối đa {n} ảnh.", { n: MAX_PHOTOS }) : got.length < imgs.length ? t("Có ảnh không mở được, đã bỏ qua.") : "");
-  };
   const ready = !!d.title.trim() && !!d.text.trim();
-  const preview = () => { setReq({ ...d, diag, logs: logs && bug, client: diag ? clientLine() : "", photos: photos.map((p) => p.b64) }); setOpen(true); };
-  const sent = () => { setOpen(false); setD(EMPTY); setPhotos([]); setBad(""); toast({ text: t("Đã gửi cho nhà phát triển qua Telegram") }); };
+  const preview = () => { setReq({ ...d, diag, logs: logs && d.kind === "bug", client: diag ? clientLine() : "", photos: ph.photos.map((p) => p.b64) }); setOpen(true); };
+  const sent = () => { setOpen(false); setD(EMPTY); ph.clear(); toast({ text: t("Đã gửi cho nhà phát triển qua Telegram") }); };
 
   const title = live?.title ?? d.title, text = live?.text ?? d.text;
   const ids = useId();
-  const errs = [bad && { k: "bad", tone: "text-warn", msg: bad }, polishErr && { k: "ai", tone: "text-error", msg: polishErr }].filter((x) => !!x);
-  const fade = reduce ? { initial: false as const, animate: { opacity: 1 }, exit: { opacity: 0 } }
-    : { initial: { opacity: 0, y: 4 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -4 } };
+  const errs = [ph.bad && { k: "bad", tone: "text-warn", msg: ph.bad }, ai.err && { k: "ai", tone: "text-error", msg: ai.err }].filter((x) => !!x);
 
   return (
     <div ref={box} className="@container min-w-0" style={height ? { height } : undefined}>
     <Card fill title="Gửi cho nhà phát triển" info="Gửi bằng tài khoản Telegram đang đăng nhập trong app, thành tin nhắn riêng tới nhà phát triển; ảnh đi kèm thành một album. Câu trả lời sẽ về Telegram của bạn.">
       <div className="flex min-h-0 flex-col gap-4 pt-1" onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && ready && !writing) { e.preventDefault(); preview(); } }}>
-        <div className="grid gap-2">{/* no gap around the folded notice */}
-          <Fold open={bug && behind > 0}>
-            <p className="mb-1 flex flex-wrap items-center gap-x-2 rounded-md bg-signal-wash px-3 py-2 text-xs text-signal-2">
-              <TriangleAlert aria-hidden className="size-3.5 shrink-0" />{t("Đang chậm {n} bản: lỗi có thể đã được sửa ở bản mới.", { n: behind })}
-              <a href="#github" className={linkCls}>{t("Cập nhật trước")}</a>
-            </p>
-          </Fold>
-          <KindTiles value={d.kind} onChange={(v) => edit({ kind: v })} />
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-xs font-medium text-ink-2">{t("Khu vực")}</span>
-          <Segmented id="contact-area" variant="card" label={t("Khu vực")} value={d.area} onChange={(v) => edit({ area: v })}
-            items={AREAS.map(([value, k, Icon]) => ({ value, label: <><Icon className="size-3.5" />{t(k)}</> }))} />
-        </div>
-        <div className="flex gap-2 rounded-md bg-paper-2 px-3 py-2 text-xs leading-relaxed text-ink-2">
-          <Info aria-hidden className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.p key={d.kind} {...fade} transition={{ duration: 0.16 }}>{t(kind.guide)}</motion.p>
-          </AnimatePresence>
-        </div>
+        <ContactHead d={d} edit={edit} />
         <div className="grid gap-1.5">
           <FieldHead id={`${ids}t`} label={t("Tiêu đề")} n={title.length} max={TITLE_MAX} />
           <Input id={`${ids}t`} maxLength={TITLE_MAX} value={title} readOnly={writing} onChange={(e) => edit({ title: e.target.value })} placeholder={t(kind.title)} />
         </div>
         <div className="flex min-h-0 flex-1 flex-col gap-1.5">
           <FieldHead id={`${ids}d`} label={t("Mô tả")} n={text.length} max={TEXT_MAX} />
-          <div className={cn("relative flex min-h-0 flex-1 flex-col rounded-md border bg-cotton transition-colors duration-(--dur-micro) focus-within:border-hl", over ? "border-hl" : "border-rule-2 hover:border-ink-3", writing && "ai-ring")}
-            onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
-            onDrop={(e) => { e.preventDefault(); setOver(false); void add([...e.dataTransfer.files]); }}>
-            <Textarea id={`${ids}d`} ref={textBox} maxLength={TEXT_MAX} value={text} readOnly={writing} aria-busy={writing} onChange={(e) => edit({ text: e.target.value })} placeholder={t(kind.text)}
-              className="min-h-48 flex-1 resize-none md:min-h-24 overflow-y-auto border-0 bg-transparent field-sizing-fixed hover:border-0 focus-visible:outline-none"
-              onPaste={(e) => { const f = [...e.clipboardData.files]; if (f.length) { e.preventDefault(); void add(f); } }} />
-            <Fold open={photos.length > 0}>
-              <div className="grid gap-1.5 px-3 pb-2.5">
-                <div className="flex flex-wrap gap-2">
-                  <AnimatePresence initial={false}>
-                    {photos.map((p) => (
-                      <motion.figure key={p.id} layout={!reduce} initial={reduce ? false : { opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }} exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
-                        className="group relative size-16 overflow-hidden rounded-md border border-rule bg-paper-2">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- a local data: URL, nothing to optimise */}
-                        <img src={p.url} alt={p.name} className="size-full object-cover transition-transform duration-(--dur-short) ease-(--ease-out) group-hover:scale-105" />
-                        <button type="button" aria-label={t("Bỏ ảnh {name}", { name: p.name })} onClick={() => setPhotos((x) => x.filter((y) => y.id !== p.id))}
-                          className="absolute top-0.5 right-0.5 grid size-5 place-items-center rounded-full bg-ink/70 text-paper opacity-0 transition-opacity duration-(--dur-micro) group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100">
-                          <X className="size-3" aria-hidden />
-                        </button>
-                      </motion.figure>
-                    ))}
-                  </AnimatePresence>
-                </div>
-                <span className="text-xs text-ink-3">{t("Ảnh chụp có thể lộ tin nhắn của khách hàng: kiểm tra trước khi gửi.")}</span>
-              </div>
-            </Fold>
-            <div className="flex flex-wrap items-center gap-1.5 border-t border-rule px-2 py-1.5">
-              <Hint text={t("Thêm ảnh (tối đa 5, ảnh lớn tự thu nhỏ). Dán ⌘V hoặc kéo thả vào ô này cũng được.")}>
-                <button type="button" className={chipCls(photos.length > 0)} disabled={photos.length >= MAX_PHOTOS} onClick={() => file.current?.click()}>
-                  <ImagePlus aria-hidden className="size-3.5" />{photos.length ? `${photos.length}/${MAX_PHOTOS}` : t("Ảnh")}
-                </button>
-              </Hint>
-              <Toggle on={diag} onChange={setDiag} icon={Cpu} label={t("Thông tin máy")}
-                hint={t("Kèm phiên bản app, hệ điều hành, trình duyệt, trạng thái Telegram / YouTrack. Không gửi token, tin nhắn hay tên nhóm.")} />
-              <AnimatePresence initial={false}>
-                {bug && (
-                  <motion.span key="logs" initial={reduce ? false : { opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={reduce ? { opacity: 0 } : { opacity: 0, width: 0 }} className="overflow-hidden">
-                    <Toggle on={logs} onChange={setLogs} icon={FileText} label={t("Log lỗi")}
-                      hint={t("Kèm cảnh báo / lỗi của app trong 24 giờ qua thành file log.txt (đã ẩn SĐT / email); xem được trước khi gửi.")} />
-                  </motion.span>
-                )}
-              </AnimatePresence>
-              <span className="ml-auto flex items-center gap-2">
-                {writing ? <>
-                  <AiWriting label={t("AI đang viết lại")} />
-                  <Hint text={t("Dừng, giữ nguyên bản của bạn")}>
-                    <Button variant="outline" size="icon-xs" className="rounded-full" aria-label={t("Dừng")} onClick={() => stop.current?.abort()}><Square className="fill-current" aria-hidden /></Button>
-                  </Hint>
-                </> : (
-                  <AiAsk label={t("AI viết lại mô tả")} hint={t("Viết lại cho rõ: các bước, kết quả, mong đợi. Bạn xem rồi giữ hoặc hoàn tác.")}
-                    onClick={() => (d.text.trim() ? polish.mutate(d) : textBox.current?.focus())} />
-                )}
-              </span>
-            </div>
-            <div aria-hidden className={cn("pointer-events-none absolute inset-0 grid place-items-center rounded-md border-2 border-dashed border-hl bg-hl-wash/90 text-sm font-medium text-hl-2 transition-opacity duration-(--dur-short)", !over && "opacity-0")}>
-              <span className={cn("flex items-center gap-2 transition-transform duration-(--dur-short) ease-(--ease-out)", !over && "scale-95")}><ImagePlus className="size-5" />{t("Thả ảnh vào đây")}</span>
-            </div>
-          </div>
+          <DescBox id={`${ids}d`} text={text} placeholder={t(kind.text)} onText={(v) => edit({ text: v })} d={d} ph={ph} ai={ai}
+            diag={diag} setDiag={setDiag} logs={logs} setLogs={setLogs} />
         </div>
-        <input ref={file} type="file" accept="image/*" multiple hidden onChange={(e) => { void add([...(e.target.files ?? [])]); e.target.value = ""; }} />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="grid min-w-0 flex-1 gap-1">
             <AnimatePresence initial={false}>
@@ -347,7 +400,7 @@ export function ContactGroup() {
           </Hint>
         </div>
       </div>
-      {req && <PreviewDialog open={open} req={req} photos={photos} onClose={() => setOpen(false)} onSent={sent} />}
+      {req && <PreviewDialog open={open} req={req} photos={ph.photos} onClose={() => setOpen(false)} onSent={sent} />}
     </Card>
     </div>
   );

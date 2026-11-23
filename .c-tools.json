@@ -1,0 +1,5 @@
+{
+  "quality": {
+    "exclude": ["web/src/shared/lib/api.generated.d.ts", "web/public/uiflow.js"]
+  }
+}

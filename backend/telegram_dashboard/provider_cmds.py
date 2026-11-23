@@ -66,7 +66,7 @@ SANDBOX = {
 # JVM builds stay out: the model leaves them to the user instead of failing at them.
 NO_JVM = ("Sandbox chặn Gradle / Maven (gradlew, gradle, mvn): đừng chạy. Cuối câu trả lời ghi rõ lệnh build / "
           "test để người dùng tự chạy kiểm tra.")  # fmt: skip
-SANDBOXED = ["--append-system-prompt", NO_JVM]  # with _claude_settings(shell=True)
+SANDBOXED = ["--append-system-prompt", NO_JVM]  # paired with the shell-enabled _claude_settings
 # Claude runs load the project's settings only: the user's own CLAUDE.md, skills, plugins, hooks and permission rules
 # stay out (they told the AI to build / upload on "build dev"; hooks run outside the sandbox; SCOPE_RULE). Their env
 # and apiKeyHelper still come along (_claude_settings): a proxy or key helper the CLI needs to sign in.
