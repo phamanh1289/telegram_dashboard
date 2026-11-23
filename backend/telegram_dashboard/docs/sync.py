@@ -3,7 +3,7 @@ article and every one under it, by parentArticle), (3) the chosen folders. Runs 
 screen, refresh); no background timer.
 
 A project's articles are listed with GET /api/admin/projects/{shortName}/articles?fields=idReadable,summary,updated,
-parentArticle(idReadable)
+ordinal,parentArticle(idReadable)
 paged by $top/$skip ("Articles in a Project", YouTrack REST docs). Taken from the docs, not checked with a live call
 (no token in the dev worktree), so a 403 / 404 there (admin endpoint closed to the user, or not on that server) falls
 back to GET /api/articles (no project filter, per the same docs) with project(shortName), kept to the project here.
@@ -72,7 +72,7 @@ async def _reconcile(lib: Library, errors: list) -> None:
     await lib.write(lib.db.store.doc_delete, source="yt_article", keep=keep)
 
 
-FIELDS = "idReadable,summary,updated,parentArticle(idReadable)"
+FIELDS = "idReadable,summary,updated,ordinal,parentArticle(idReadable)"
 
 
 def parent_of(a: dict) -> str | None:
@@ -80,8 +80,8 @@ def parent_of(a: dict) -> str | None:
 
 
 async def listed(yt, project: str, every: dict) -> list[dict]:
-    """A project's articles ({idReadable, summary, updated, parentArticle}). `every`: this sync's listing of all
-    articles, fetched once for every project that falls back to it."""
+    """A project's articles ({idReadable, summary, updated, ordinal, parentArticle}). `every`: this sync's listing of
+    all articles, fetched once for every project that falls back to it."""
     try:
         return await pages(yt, f"/api/admin/projects/{project}/articles", fields=FIELDS)
     except YtError as e:
@@ -141,8 +141,8 @@ async def _project(lib: Library, yt, project: str, errors: list, every: dict, ro
 
     await asyncio.gather(*(one(aid) for aid in todo))
     _go(lib)
-    # the listing's tree: articles moved since they were stored, and any download that came without its parent
-    await lib.write(lib.db.store.doc_set_parents, {a["idReadable"]: parent_of(a) for a in rows})
+    # the listing's tree: articles moved / reordered since they were stored, and any download that came without it
+    await lib.write(lib.db.store.doc_set_tree, {a["idReadable"]: (parent_of(a), a.get("ordinal")) for a in rows})
     if dead:
         return  # nothing is dropped
     await lib.drop_articles(f"{project}-A-", keep={a["idReadable"] for a in rows})  # deleted on YouTrack

@@ -7,7 +7,8 @@ import json
 from .common import _like, fold, now_ts
 
 _LIST = (
-    "id,source,ref,title,path,hash,chars,size,updated_at,fetched_at,tickets,parent,summary IS NOT NULL AS has_summary"
+    "id,source,ref,title,path,hash,chars,size,updated_at,fetched_at,tickets,parent,ordinal,"
+    "summary IS NOT NULL AS has_summary"
 )
 _COLS = _LIST + ",summary,summary_hash,added_at"
 # updates kept per document (doc_revs), newest: every one since the document came in (Lịch sử thay đổi)
@@ -200,12 +201,14 @@ class Docs:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    def doc_set_parents(self, parents: dict[str, str | None]) -> None:
-        """Articles moved in the Knowledge Base tree since they were stored (the listing gives every one's parent)."""
+    def doc_set_tree(self, tree: dict[str, tuple[str | None, int | None]]) -> None:
+        """Each article's (parent, ordinal) from the listing: moved or reordered in the Knowledge Base tree since it was
+        stored, or downloaded without them."""
         with self._conn(write=True) as c:
             c.executemany(
-                "UPDATE docs SET parent=? WHERE source='yt_article' AND ref=? AND parent IS NOT ?",
-                [(p, ref, p) for ref, p in parents.items()],
+                "UPDATE docs SET parent=?, ordinal=? WHERE source='yt_article' AND ref=? "
+                "AND (parent IS NOT ? OR ordinal IS NOT ?)",
+                [(p, o, ref, p, o) for ref, (p, o) in tree.items()],
             )
 
     def doc_revs(self, id: int) -> list[dict]:

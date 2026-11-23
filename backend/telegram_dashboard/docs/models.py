@@ -22,6 +22,7 @@ class DocDTO(BaseModel):
     url: str | None
     has_summary: bool
     parent: str | None = None  # a Knowledge Base article's parent article (the list's tree)
+    ordinal: int | None = None  # and its place among its siblings (YouTrack's tree order)
     folder: str | None = None  # a file's source folder as chosen, and its path under it (the list's tree)
     rel: str | None = None
     size: int = 0  # bytes of the file (a Telegram file: as Telegram sent it, to tell its versions apart)
@@ -108,12 +109,28 @@ class DocSourcesBody(BaseModel):
     articles: list[str] | None = None  # None: the chosen branches stay
 
 
+class DocMention(BaseModel):
+    """A ticket or Knowledge Base article named by / naming a document; `doc`: the article's id in the library."""
+
+    ref: str
+    title: str  # "" when YouTrack did not give it (deleted, hidden)
+    kind: Literal["issue", "article"]
+    resolved: bool = False
+    doc: int | None = None
+
+
+class DocMentions(BaseModel):
+    out: list[DocMention]  # what the document names
+    inward: list[DocMention] | None  # what names it (Knowledge Base articles only)
+
+
 class KbNode(BaseModel):
     """A Knowledge Base article in its project's tree, for picking branches."""
 
     id: str
     title: str
     parent: str | None
+    ordinal: int | None = None  # its place among its siblings (YouTrack's tree order)
 
 
 SESSION = r"^[A-Za-z0-9_-]{1,64}$"  # an AI popup conversation's id (the page makes it)

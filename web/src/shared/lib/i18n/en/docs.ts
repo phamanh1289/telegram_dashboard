@@ -52,6 +52,11 @@ export default {
   "Không có bài nào khớp.": "No article matches.",
   "Mã bài Knowledge Base không hợp lệ.": "Invalid Knowledge Base article ID.",
   "Không kết nối được YouTrack để tải cây bài.": "Could not reach YouTrack to load the article tree.",
+  "Không kết nối được YouTrack để tải mục được nhắc.": "Could not reach YouTrack to load the mentions.",
+  "YouTrack từ chối token: không tải được mục được nhắc.": "YouTrack refused the token: the mentions could not load.",
+  "Mục được nhắc": "Mentions",
+  "Được nhắc ở đây": "Items mentioned here",
+  "Nhắc tới bài này": "Inward mentions",
   "YouTrack từ chối token: không tải được cây bài.": "YouTrack refused the token: the article tree did not load.",
   "Không thấy project này trên YouTrack.": "This project was not found on YouTrack.",
   // screen, list, reader find

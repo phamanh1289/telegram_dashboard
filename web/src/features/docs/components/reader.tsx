@@ -22,6 +22,7 @@ import { type OnLine, RevsSheet, Updated } from "./revs";
 import { DiffMark, docLines, locate, type Mark } from "./diff-mark";
 import { UseDoc } from "./use-doc";
 import { KbAdd } from "./kb-add";
+import { DocMentions } from "./doc-mentions";
 import { TgDocActions } from "./tg-file";
 import { ZeplinSheet } from "./zeplin-sheet";
 
@@ -217,6 +218,7 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
           </TicketRef>
           {toc.length > 1 && <Toc toc={toc} active={active} onGo={onPart} />}
         </div>
+        <DocMentions key={doc.id} doc={doc} anchor={anchor} onTicket={onTicket} />
       </div>
       <ZeplinSheet name={zeplin} onClose={() => setZeplin(null)} />
       <RevsSheet open={revs} onClose={() => setRevs(false)} data={data} onLine={showLine} />

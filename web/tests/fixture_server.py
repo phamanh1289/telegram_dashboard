@@ -365,23 +365,44 @@ TITLES = {A: "Nhóm Dự án", B: "Nhóm Bạn bè"}
 # Tài liệu (docs.spec): the real library over folders in the temp dir. DOCS holds `files`; EXTRA (`extra`: true) one
 # more folder, which `extra: "gone"` deletes before the sync, as an unplugged drive (its docs stay, with an error);
 # `kb_cache`: true adds a Knowledge Base article of a project not in the sources (the Agent's hidden cache);
-# `kb`: true serves project VA's Knowledge Base tree (KB below) in place of YouTrack, to pick branches in Nguồn.
-DOCS, EXTRA = tmp / "docs-e2e", tmp / "docs-e2e-extra"
+# `kb`: true serves project VA's Knowledge Base tree (KB below) in place of YouTrack, to pick branches in Nguồn;
+# `kb_articles`: the chosen branches, set directly.
+# outside `tmp` (the app's root): the library skips the app's own dirs (Settings.guarded_dirs)
+_side = Path(tempfile.mkdtemp(prefix="td-e2e-docs-"))
+DOCS, EXTRA = _side / "docs-e2e", _side / "docs-e2e-extra"
 KB = {"VA-A-1": ("Bán V2 · Bàn giao", None), "VA-A-2": ("FE / Mobile", "VA-A-1"),
       "VA-A-3": ("Đợt 1a — Khảo sát", "VA-A-2"), "VA-A-4": ("Sprint tuần 3", None)}  # fmt: skip
+ORDINAL = {"VA-A-4": 0, "VA-A-1": 1}  # YouTrack's tree order: not by title
+# what VA-A-3's foot reads: the ticket it names, the ticket and article naming it (YouTrack's mentions)
+ISSUES = {"VA-12": "Điều kiện giải ngân", "VA-30": "Màn khảo sát V2"}
 
 
 def kb_yt(real):
     def row(aid: str, **more) -> dict:
         title, parent = KB[aid]
-        return {"idReadable": aid, "summary": title, "updated": 1,
+        return {"idReadable": aid, "summary": title, "updated": 1, "ordinal": ORDINAL.get(aid),
                 "parentArticle": {"idReadable": parent} if parent else None, **more}  # fmt: skip
 
+    def page(rows: list, params: dict) -> list:
+        return rows[params["$skip"] : params["$skip"] + params["$top"]]
+
+    def issues(ids) -> list:
+        return [{"idReadable": i, "summary": ISSUES[i], "resolved": None} for i in ids]
+
     async def yt(path, **params):
+        if path == "/api/admin/projects":
+            return page([{"id": "0-1", "shortName": "VA", "name": "Bán V2"}], params)
         if path == "/api/admin/projects/VA/articles":
-            return [row(a) for a in KB][params["$skip"] : params["$skip"] + params["$top"]]
+            return page([row(a) for a in KB], params)
         if path.startswith("/api/articles/") and (aid := path.rsplit("/", 1)[1]) in KB:
-            return row(aid, content=f"Nội dung bài {KB[aid][0]}, giải ngân theo nhánh.")
+            more = " Xem VA-12 và VA-A-4." if aid == "VA-A-3" else ""
+            return row(aid, content=f"Nội dung bài {KB[aid][0]}, giải ngân theo nhánh.{more}")
+        if path == "/api/articles" and params.get("query") == '"VA-A-3"':
+            return page([row("VA-A-3"), row("VA-A-4")], params)
+        if path == "/api/issues" and params.get("query") == "issue id: VA-12":
+            return issues(["VA-12"])
+        if path == "/api/issues" and params.get("query") == "mentions: VA-A-3":
+            return page(issues(["VA-30"]), params)
         return await real(path, **params)
 
     return yt
@@ -406,12 +427,13 @@ async def docs_(request: Request):
     if b.get("kb") and not control.get("kb"):
         control["kb"] = control["yt"] = True
         app.state.yt.yt = kb_yt(app.state.yt.yt)
+        app.state.yt._cache.pop("projects", None)  # an empty list cached before this YouTrack had a project
     if "yt_base" in b:  # the KB articles' YouTrack link (Dùng tài liệu › Hỏi trong Q&A nhóm); "" takes it away
         app.state.yt.base = b["yt_base"]
     if b.get("kb_cache"):  # an article the AI Agent opened, its project not in the sources
         text = "# XO-A-1 Bài ngoài nguồn\n\nAgent đã mở."
         await lib.put("yt_article", "XO-A-1", "Bài ngoài nguồn", text, updated_at=1)
-    await lib.set_sources([], [str(DOCS), *([str(EXTRA)] if extra else [])])
+    await lib.set_sources([], [str(DOCS), *([str(EXTRA)] if extra else [])], articles=b.get("kb_articles"))
     await doc_sync.run(lib, app.state.yt)
     return {"errors": lib.errors}
 

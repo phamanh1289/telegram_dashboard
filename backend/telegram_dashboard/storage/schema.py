@@ -342,6 +342,11 @@ def _doc_ai(c):
     c.execute("CREATE INDEX IF NOT EXISTS doc_ai_doc ON doc_ai(doc_id, qkey)")
 
 
+def _doc_ordinal(c):
+    """An article's place among its siblings in the Knowledge Base tree (YouTrack's `ordinal`), for the list's order."""
+    _add_cols(c, "docs", {"ordinal": "INTEGER"})
+
+
 def _message_file(c):
     """A document's name / size / MIME as JSON (models.FileInfo): Việc cần xử lý checks it against Tài liệu."""
     _add_cols(c, "messages", {"file": "TEXT"})
@@ -351,5 +356,5 @@ MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
     _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs, _docs,
-    _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai, _doc_added, _message_file,
+    _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai, _doc_added, _message_file, _doc_ordinal,
 ]  # fmt: skip

@@ -591,6 +591,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/{doc_id}/mentions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Doc Mentions
+         * @description What the document names and, for a Knowledge Base article, what names it (YouTrack's mentions).
+         */
+        get: operations["doc_mentions_api_docs__doc_id__mentions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/{doc_id}/summary": {
         parameters: {
             query?: never;
@@ -730,6 +750,26 @@ export interface paths {
         get: operations["get_state_api_update_state_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/update/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Restart
+         * @description Run what auto-update installed: the page then waits for /health and reloads.
+         */
+        post: operations["post_restart_api_update_restart_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3768,6 +3808,8 @@ export interface components {
             has_summary: boolean;
             /** Parent */
             parent?: string | null;
+            /** Ordinal */
+            ordinal?: number | null;
             /** Folder */
             folder?: string | null;
             /** Rel */
@@ -3811,6 +3853,35 @@ export interface components {
                 number,
                 number
             ][];
+        };
+        /**
+         * DocMention
+         * @description A ticket or Knowledge Base article named by / naming a document; `doc`: the article's id in the library.
+         */
+        DocMention: {
+            /** Ref */
+            ref: string;
+            /** Title */
+            title: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "issue" | "article";
+            /**
+             * Resolved
+             * @default false
+             */
+            resolved: boolean;
+            /** Doc */
+            doc?: number | null;
+        };
+        /** DocMentions */
+        DocMentions: {
+            /** Out */
+            out: components["schemas"]["DocMention"][];
+            /** Inward */
+            inward: components["schemas"]["DocMention"][] | null;
         };
         /** DocMsgHit */
         DocMsgHit: {
@@ -4351,6 +4422,8 @@ export interface components {
             title: string;
             /** Parent */
             parent: string | null;
+            /** Ordinal */
+            ordinal?: number | null;
         };
         /** LinkSpan */
         LinkSpan: {
@@ -6272,6 +6345,37 @@ export interface operations {
             };
         };
     };
+    doc_mentions_api_docs__doc_id__mentions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocMentions"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     summary_api_docs__doc_id__summary_post: {
         parameters: {
             query?: {
@@ -6518,6 +6622,28 @@ export interface operations {
         };
     };
     get_state_api_update_state_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    post_restart_api_update_restart_post: {
         parameters: {
             query?: never;
             header?: never;

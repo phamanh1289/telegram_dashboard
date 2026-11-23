@@ -17,6 +17,7 @@ from ..zeplin_names import NAMES
 from . import sync
 from .ask import answer, docs_of, find, pack, scope
 from .library import ARTICLE_ID, PROJECT, folder_prefix
+from .mentions import mentions
 from .models import (
     SESSION,
     DocAiSession,
@@ -26,6 +27,7 @@ from .models import (
     DocDetail,
     DocDTO,
     DocHit,
+    DocMentions,
     DocMsgHit,
     DocPart,
     DocRev,
@@ -50,7 +52,7 @@ def _dt(ts: float | None) -> datetime | None:
 
 
 def _yt_error(e: YtError, what: str) -> ApiError:
-    """`what`: kb (the KB tree, Nguồn) / article (one article downloaded again)."""
+    """`what`: kb (the KB tree, Nguồn) / article (one article downloaded again) / mentions (a document's foot)."""
     code = "yt_unreachable" if isinstance(e, YtUnreachable) else f"yt_{e.status}"
     return ApiError(502, f"doc_{what}_{code}", detail=e.message)
 
@@ -67,7 +69,8 @@ def doc_dto(s, d: dict, folders: dict[str, str] | None = None) -> DocDTO:
         id=d["id"], source="youtrack" if yt else "telegram" if tg else "file", ref=d["ref"], title=d["title"],
         chars=d["chars"], updated_at=_dt(d["updated_at"] / 1000) if d["updated_at"] else None, tickets=d["tickets"],
         url=f"{base}/articles/{d['ref']}" if yt and base else None, has_summary=bool(d["has_summary"]),
-        parent=None if tg else d["parent"], folder=home and home[1], rel=home and d["ref"][len(home[0]):],
+        parent=None if tg else d["parent"], ordinal=d.get("ordinal"), folder=home and home[1],
+        rel=home and d["ref"][len(home[0]):],
         size=d["size"], origin=d["parent"] if tg else None,
     )  # fmt: skip
 
@@ -168,8 +171,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
             rows = await sync.listed(request.app.state.yt, project, {})
         except YtError as e:
             raise _yt_error(e, "kb") from None
-        return [KbNode(id=a["idReadable"], title=a.get("summary") or "", parent=sync.parent_of(a))
-                for a in rows if a.get("idReadable")]  # fmt: skip
+        return [KbNode(id=a["idReadable"], title=a.get("summary") or "", parent=sync.parent_of(a),
+                       ordinal=a.get("ordinal")) for a in rows if a.get("idReadable")]  # fmt: skip
 
     @r.post("/sources/pick", responses={204: {"description": "Cancelled"}})
     async def pick_source(request: Request, response: Response) -> DocSources | None:
@@ -289,6 +292,15 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
             doc=doc_dto(s, d), parts=[DocPart(**p) for p in parts], summary=await s.docs.saved_summary(d), revs=revs,
             added_at=_dt(d.get("added_at")),
         )
+
+    @r.get("/{doc_id}/mentions")
+    async def doc_mentions(doc_id: int, request: Request) -> DocMentions:
+        """What the document names and, for a Knowledge Base article, what names it (YouTrack's mentions)."""
+        s = request.app.state
+        try:
+            return await mentions(s, await _doc(s, doc_id))
+        except YtError as e:
+            raise _yt_error(e, "mentions") from None
 
     @r.post(
         "/{doc_id}/summary",

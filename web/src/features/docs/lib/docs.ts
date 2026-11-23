@@ -20,6 +20,7 @@ export type DocSourceError = S["DocSourceError"];
 export type DocAnswer = S["DocAnswer"];
 export type DocCite = S["DocCite"];
 export type KbNode = S["KbNode"];
+export type DocMention = S["DocMention"];
 export type DocAiSession = S["DocAiSession"];
 export type DocAiTurn = S["DocAiTurn"];
 export type DocZeplinScreen = S["DocZeplinScreen"];
@@ -48,6 +49,8 @@ export const docs = {
   pickFolder: () => api<DocSources | undefined>("/docs/sources/pick", { method: "POST" }),
   /** One project's Knowledge Base articles with their parents (to pick branches in Nguồn). */
   kbTree: (project: string, signal?: AbortSignal) => api<KbNode[]>(`/docs/kb-tree${qs({ project })}`, { signal }),
+  /** What the document names and, for a KB article, what names it (YouTrack's mentions). */
+  mentions: (id: number, signal?: AbortSignal) => api<S["DocMentions"]>(`/docs/${id}/mentions`, { signal }),
   /** Skipped by the server while the last sync is fresh, unless `force`. */
   sync: (force = false) => api<DocSources>(`/docs/sync${qs({ force })}`, { method: "POST" }),
   reveal: (id: number) => api<void>(`/docs/${id}/reveal`, { method: "POST" }),
@@ -110,6 +113,11 @@ export const kbTreeQuery = (project: string) => ({
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.kbTree(project, signal),
   staleTime: 60_000,
 });
+export const docMentionsQuery = (id: number) => ({
+  queryKey: ["docs", "mentions", id],
+  queryFn: ({ signal }: { signal: AbortSignal }) => docs.mentions(id, signal),
+  staleTime: 60_000,
+});
 export const docSourcesQuery = {
   queryKey: ["docs", "sources"],
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.sources(signal),
@@ -143,6 +151,9 @@ export const docErrors = () => ({
   doc_article_yt_401: t("YouTrack từ chối token: không tải lại được bài."),
   doc_article_yt_403: t("YouTrack từ chối token: không tải lại được bài."),
   doc_article_yt_404: t("YouTrack không trả bài này (đã xóa, hoặc bạn không có quyền đọc)."),
+  doc_mentions_yt_unreachable: t("Không kết nối được YouTrack để tải mục được nhắc."),
+  doc_mentions_yt_401: t("YouTrack từ chối token: không tải được mục được nhắc."),
+  doc_mentions_yt_403: t("YouTrack từ chối token: không tải được mục được nhắc."),
   doc_bad_folder: t("Đường dẫn thư mục không hợp lệ."),
   doc_not_found: t("Tài liệu không còn trong kho: bấm đồng bộ lại."),
   doc_not_a_file: t("Tài liệu này không phải file trên máy."),

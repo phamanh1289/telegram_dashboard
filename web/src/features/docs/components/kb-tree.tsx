@@ -15,6 +15,7 @@ import { docErrors, kbTreeQuery, type KbNode } from "@/features/docs/lib/docs";
 // One Knowledge Base project's article tree in Nguồn: tick an article to read it and every article under it (a branch).
 // Articles under a ticked one show ticked and locked; ticking an article drops the ticked ones under it (now implied).
 
+const LAST = Number.MAX_SAFE_INTEGER;
 type Tree = { byId: Map<string, KbNode>; kids: Map<string | null, KbNode[]> };
 
 function build(nodes: KbNode[]): Tree {
@@ -24,6 +25,7 @@ function build(nodes: KbNode[]): Tree {
     const p = n.parent && byId.has(n.parent) ? n.parent : null; // a parent outside the listing: a root here
     kids.set(p, [...(kids.get(p) ?? []), n]);
   }
+  for (const k of kids.values()) k.sort((a, b) => (a.ordinal ?? LAST) - (b.ordinal ?? LAST)); // YouTrack's order
   return { byId, kids };
 }
 

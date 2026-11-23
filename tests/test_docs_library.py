@@ -18,6 +18,7 @@ class FakeYt:
         self.updated, self.content_calls, self.fail, self.admin_fail, self.all_calls = 1, 0, None, None, 0
         self.content = {"VA-A-1": "# Giải ngân\nĐiều kiện xem VA-12", "VA-A-2": "Bài hai"}
         self.parents: dict[str, str] = {}  # article -> parent article (the Knowledge Base tree)
+        self.ordinals: dict[str, int] = {}  # article -> its place among its siblings
 
     async def yt(self, path, **params):
         if self.fail:
@@ -25,7 +26,7 @@ class FakeYt:
         if path == "/api/admin/projects/VA/articles":
             if self.admin_fail:
                 raise self.admin_fail
-            rows = [{"idReadable": a, "summary": f"Bài {a}", "updated": self.updated,
+            rows = [{"idReadable": a, "summary": f"Bài {a}", "updated": self.updated, "ordinal": self.ordinals.get(a),
                      "parentArticle": {"idReadable": self.parents[a]} if a in self.parents else None}
                     for a in self.content]  # fmt: skip
             return rows[params["$skip"] : params["$skip"] + params["$top"]]
@@ -421,6 +422,47 @@ async def test_a_chosen_branch_reads_that_article_and_those_under_it_only(lib, y
     assert {r["ref"] for r in await lib.cached()} == {"VA-A-4"}  # kept for the Agent, hidden
     with pytest.raises(ValueError):
         await lib.set_sources([], [], articles=["VA-12"])  # a ticket, not an article
+
+
+async def test_a_reorder_on_youtrack_reaches_the_list_without_a_download(lib, yt, store):
+    yt.ordinals = {"VA-A-1": 1, "VA-A-2": 0}
+    await lib.set_sources(["VA"], [])
+    await sync.run(lib, yt)
+    yt.ordinals = {"VA-A-1": 0, "VA-A-2": 1}  # dragged on YouTrack: `updated` stays
+    await sync.run(lib, yt, max_age=0)
+    assert {r["ref"]: r["ordinal"] for r in store.doc_list(source="yt_article")} == {"VA-A-1": 0, "VA-A-2": 1}
+    assert yt.content_calls == 2  # the first sync only
+
+
+async def test_mentions_name_both_ways_and_skip_non_tickets(lib, yt, store):
+    from telegram_dashboard.docs.mentions import mentions
+
+    class Yt:
+        calls: list = []
+
+        async def cached(self, key, fn):
+            return [{"shortName": "VA"}]
+
+        async def yt(self, path, **p):
+            self.calls.append((path, p.get("query")))
+            if path == "/api/issues" and p["query"].startswith("issue id:"):
+                return [{"idReadable": "VA-12", "summary": "Giải ngân", "resolved": 1}]
+            if path == "/api/issues":  # mentions: VA-A-1
+                return [{"idReadable": "VA-30", "summary": "Nhắc bài"}][p["$skip"] :]
+            if path == "/api/articles":  # "VA-A-1": the article itself comes back too
+                return [{"idReadable": "VA-A-1"}, {"idReadable": "VA-A-2"}][p["$skip"] :]
+            raise YtError(404, "không có")  # VA-A-7: gone
+
+    await lib.put("yt_article", "VA-A-1", "Bài một", "Xem VA-12, UTF-8, VA-A-2 và VA-A-7, chính VA-A-1", updated_at=1)
+    await lib.put("yt_article", "VA-A-2", "Bài hai", "VA-A-1", updated_at=1)
+    d = store.doc_find("yt_article", "VA-A-1")
+    got = await mentions(NS(yt=Yt(), db=lib.db, store=store), d)
+    assert [(m.ref, m.title, m.kind, m.resolved, m.doc is not None) for m in got.out] == [
+        ("VA-A-2", "Bài hai", "article", False, True), ("VA-A-7", "", "article", False, False),
+        ("VA-12", "Giải ngân", "issue", True, False),
+    ]  # fmt: skip
+    assert [(m.ref, m.kind) for m in got.inward] == [("VA-A-2", "article"), ("VA-30", "issue")]
+    assert ("/api/issues", "issue id: VA-12") in Yt.calls  # UTF-8: no such project, never in the query
 
 
 async def test_a_folder_holding_the_app_skips_its_data_and_source(store, ai, yt, tmp_path):

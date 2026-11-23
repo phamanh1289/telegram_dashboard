@@ -183,14 +183,36 @@ test("Nguồn: chọn một nhánh bài KB thì chỉ đọc bài đó và các 
   await expect(results(page).getByText("Sprint tuần 3")).toHaveCount(0); // outside the branch: not read
   // an article ID in a document opens that article
   await results(page).getByRole("button", { name: /^lien-ket\.md/ }).click();
-  await page.locator("article").getByRole("button", { name: "VA-A-3" }).click();
+  await page.locator("article [data-doc-text]").getByRole("button", { name: "VA-A-3" }).click(); // the text, not its foot
   await expect(page.locator("article header h1")).toContainText("Đợt 1a — Khảo sát"); // after the YouTrack logo
   // one it does not hold asks first: yes adds it (a branch) and opens it here
   await results(page).getByRole("button", { name: /^lien-ket\.md/ }).click();
-  await page.locator("article").getByRole("button", { name: "VA-A-4" }).click();
+  await page.locator("article [data-doc-text]").getByRole("button", { name: "VA-A-4" }).click(); // the text, not its foot
   const ask = page.getByRole("alertdialog", { name: "Chưa có VA-A-4 trong Tài liệu" });
   await ask.getByRole("button", { name: "Thêm và mở" }).click();
   await expect(ask).toBeHidden();
+  await expect(page.locator("article header h1")).toContainText("Sprint tuần 3");
+});
+
+test("cây KB như YouTrack: tên project, thứ tự YouTrack, nhánh rời gom dưới bài cha; cuối bài là mục được nhắc", async ({ page }) => {
+  await ctl("/docs", { kb: true, kb_articles: ["VA-A-3", "VA-A-4"] }); // VA-A-3's parents stay out of the library
+  await open(page);
+  const tree = results(page).getByRole("list", { name: "Cây tài liệu" });
+  await expect(tree.getByText("Bán V2", { exact: true })).toBeVisible(); // the project's name, not "VA"
+  // VA-A-3 under its parents read from the project's tree (grey, not openable), after VA-A-4 as YouTrack orders them
+  await tree.getByRole("button", { name: "Mở nhánh Bán V2 · Bàn giao" }).click();
+  await tree.getByRole("button", { name: "Mở nhánh FE / Mobile" }).click();
+  const rows = tree.locator("li li > div");
+  await expect(rows.first()).toContainText("Sprint tuần 3");
+  await expect(rows.nth(1)).toContainText("Bán V2 · Bàn giao");
+  await tree.getByRole("button", { name: /Đợt 1a — Khảo sát/ }).click();
+  // the foot: what it names (a ticket, an article) and what names it on YouTrack
+  const foot = page.locator("article").getByRole("region", { name: "Mục được nhắc" });
+  await foot.scrollIntoViewIfNeeded();
+  await expect(foot.getByRole("button", { name: /Được nhắc ở đây 2\s+Nhắc tới bài này 2/ })).toBeVisible();
+  await expect(foot.getByText("Điều kiện giải ngân")).toBeVisible();
+  await expect(foot.getByText("Màn khảo sát V2")).toBeVisible();
+  await foot.getByRole("button", { name: "VA-A-4" }).first().click(); // in the library: opens here
   await expect(page.locator("article header h1")).toContainText("Sprint tuần 3");
 });
 
