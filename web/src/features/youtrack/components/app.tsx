@@ -10,7 +10,7 @@ import { Toaster, TopBar } from "@/app/_components/shell";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { Button } from "@/shared/components/ui/button";
 import { Dropdown } from "@/shared/components/ui/dropdown";
-import { fmtClock, type Key, tMaybe, useT } from "@/shared/lib/i18n";
+import { fmtClock, type Key, t as tNow, tMaybe, useT } from "@/shared/lib/i18n";
 import { goKey, typing } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
 import { fold } from "@/shared/lib/utils";
@@ -67,7 +67,8 @@ function Shell() {
   const [collapsed, setCollapsed] = useState(() => getPref("ytSide") === "1");
   const { asideRef, mainRef, markSlide } = useSideSlide(collapsed);
   // first load and a scope / project not warmed yet: the AI fetch scene; the AI chat page keeps its thread, dimmed under a bar
-  const wait = useAiWait(y.issues.isPending || (y.issues.isPlaceholderData && y.page !== "ai"));
+  // config failed: the list never starts (issues stays pending), the banner says why: no endless fetch scene under it
+  const wait = useAiWait((y.issues.isPending && !y.configError) || (y.issues.isPlaceholderData && y.page !== "ai"));
   const dim = y.issues.isPlaceholderData && !wait;
   const [menu, setMenu] = useState(false);
   const [pal, setPal] = useState(false);
@@ -123,7 +124,9 @@ function Shell() {
       </div>
       <div className={cn("grid min-h-0 grid-cols-[minmax(0,1fr)]", collapsed ? "md:grid-cols-[4rem_minmax(0,1fr)]" : "md:grid-cols-[15rem_minmax(0,1fr)]")}>
           <>
-            {menu && <div aria-hidden className="fixed inset-0 z-40 bg-(--scrim) md:hidden" onClick={() => setMenu(false)} />}
+            <AnimatePresence>
+              {menu && <motion.div aria-hidden initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="fixed inset-0 z-40 bg-(--scrim) md:hidden" onClick={() => setMenu(false)} />}
+            </AnimatePresence>
             <aside ref={asideRef} className={cn("yt-noprint fixed inset-y-0 left-0 z-50 flex w-60 flex-col gap-1 overflow-x-clip border-r bg-paper-2 p-3 transition-transform duration-(--dur-short) md:sticky md:top-11 md:z-10 md:h-[calc(100dvh-2.75rem)] md:w-auto md:translate-x-0",
               menu ? "translate-x-0 shadow-pop" : "-translate-x-full")}>
               <div className="mb-2 flex min-h-10 items-center gap-3 px-1">
@@ -267,6 +270,9 @@ function RolePicker() {
   );
 }
 
+/** A person in the Người filter and its chip: the short name; the "no assignee" key in the UI's own words. */
+const who = (v: string) => (v === UNASSIGNED ? tNow("Chưa assign") : shortName(v));
+
 /** A failed YouTrack load in words the user can act on; the raw reason stays as a secondary line. */
 function loadError(e: Error): Key {
   const m = e.message;
@@ -330,7 +336,7 @@ function Header({ title, onPalette }: { title: string; onPalette: () => void }) 
       </div></Hint>
       {/* fixed widths: a label that changes with the filter must not re-wrap the bar (the page jumps) */}
       <MultiSelect label="Sprint" all={t("Tất cả sprint")} options={y.sprintOptions} value={y.filters.sprint} onChange={(sprint) => y.setFilters({ sprint })} render={shortSp} className="w-36" />
-      <MultiSelect label={t("Người")} all={t("Tất cả người")} options={y.peopleOptions} value={a} onChange={(assignee) => y.setFilters({ assignee })} render={shortName} className="w-36" />
+      <MultiSelect label={t("Người")} all={t("Tất cả người")} options={y.peopleOptions} value={a} onChange={(assignee) => y.setFilters({ assignee })} render={who} className="w-36" />
       <Hint side="bottom" text={t("Mở ticket, chuyển trang, hỏi AI, lọc bằng AI (⌘K)")}><Button size="sm" variant="outline" onClick={onPalette} aria-label={t(y.aiOn ? "Tìm, hỏi AI" : "Tìm")} className="text-ink-3">
         {y.aiOn ? <Sparkles className="text-hl-2" /> : <Search />}<span className="max-xl:hidden">{t(y.aiOn ? "Tìm, hỏi AI" : "Tìm")}</span><kbd className="font-mono text-xs max-lg:hidden">⌘K</kbd>
       </Button></Hint>
@@ -388,7 +394,7 @@ function FilterChips() {
   const f = y.filters;
   const chips: [string, string, () => void][] = [
     ...f.sprint.map((v) => ["Sprint", shortSp(v), () => y.setFilters({ sprint: f.sprint.filter((x) => x !== v) })] as [string, string, () => void]),
-    ...(y.scope ? [] : f.assignee).map((v) => [t("Người"), v === UNASSIGNED ? v : shortName(v), () => y.setFilters({ assignee: f.assignee.filter((x) => x !== v) })] as [string, string, () => void]),
+    ...(y.scope ? [] : f.assignee).map((v) => [t("Người"), who(v), () => y.setFilters({ assignee: f.assignee.filter((x) => x !== v) })] as [string, string, () => void]),
     ...(y.page === "tickets" ? [...f.state.map((v) => ["State", v, () => y.setFilters({ state: f.state.filter((x) => x !== v) })] as [string, string, () => void]),
       ...f.priority.map((v) => ["Priority", v, () => y.setFilters({ priority: f.priority.filter((x) => x !== v) })] as [string, string, () => void]),
       ...f.type.map((v) => ["Type", v, () => y.setFilters({ type: f.type.filter((x) => x !== v) })] as [string, string, () => void])] : []),

@@ -2,10 +2,11 @@
 
 import { RotateCw, Search, TriangleAlert, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { type ReactNode, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Toaster, TopBar } from "@/app/_components/shell";
 import { Button } from "@/shared/components/ui/button";
 import { NoPick } from "@/shared/components/ui/empty";
+import { GrowRow } from "@/shared/components/ui/grow";
 import { Hint } from "@/shared/components/ui/hint";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -47,10 +48,11 @@ function writeUrl({ q, f, part }: View) {
   try { history.replaceState(null, "", p.size ? `?${p}` : location.pathname); } catch {}
 }
 
-const noop = () => () => {};
 export function DocsApp() {
-  // the state starts from the URL: render in the browser only (the static export prerenders an empty shell)
-  const client = useSyncExternalStore(noop, () => true, () => false);
+  // the state starts from the URL: render in the browser only (the static export prerenders an empty shell), after a
+  // commit, as inbox.tsx reads its deep link: a client navigation here (Link, router.push) renders before the new URL is in
+  const [client, setClient] = useState(false);
+  useEffect(() => setClient(true), []); // eslint-disable-line react-hooks/set-state-in-effect -- waits for the URL, once
   return client ? <Docs /> : null;
 }
 
@@ -117,11 +119,13 @@ function Docs() {
                 <Input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder={t("Tìm trong mọi tài liệu…")} aria-label={t("Tìm trong tài liệu")}
                   onFocus={() => setWide(true)} onBlur={() => setWide(false)} className="pl-8" />
               </label>
-              <Hint side="bottom" text={t("Đồng bộ lại mọi nguồn ngay (bỏ qua lần đồng bộ gần đây).")}>
-                <GrowButton aria-label={t("Cập nhật")} aria-busy={sync.isPending} disabled={sync.isPending} onClick={() => sync.mutate(true)}
-                  icon={<RotateCw className={cn(sync.isPending && "animate-spin")} />} label={t("Cập nhật")} />
-              </Hint>
-              <Sources open={adding} onOpenChange={setAdding} onSaved={() => sync.mutate(true)} onView={() => filter({ source: "kb_cache" })} />
+              <GrowRow className="flex items-center gap-1.5">
+                <Hint side="bottom" text={t("Đồng bộ lại mọi nguồn ngay (bỏ qua lần đồng bộ gần đây).")}>
+                  <GrowButton aria-label={t("Cập nhật")} aria-busy={sync.isPending} disabled={sync.isPending} onClick={() => sync.mutate(true)}
+                    icon={<RotateCw className={cn(sync.isPending && "animate-spin")} />} label={t("Cập nhật")} />
+                </Hint>
+                <Sources open={adding} onOpenChange={setAdding} onSaved={() => sync.mutate(true)} onView={() => filter({ source: "kb_cache" })} />
+              </GrowRow>
             </div>
         </div>
         <SyncBanner error={sync.error} retrying={sync.isPending} onRetry={() => sync.mutate(true)} />

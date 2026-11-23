@@ -72,7 +72,7 @@ export function Results({ q, f, part, syncing, onOpen, onAdd }: {
   let body: ReactNode;
   if (cur.isError) body = <p role="alert" className="px-4 py-6 text-sm text-error">{errorText(cur.error, docErrors())}</p>;
   else if (!cur.data || wait) body = null;
-  else if (!q && f.source === "telegram") body = <Empty icon={<MessageCircle />} title={t("Gõ từ khóa để tìm trong tin Telegram")}>{t("Tin của các nhóm đang theo dõi chỉ hiện khi tìm.")}</Empty>;
+  else if (!q && f.source === "telegram" && empty) body = <Empty icon={<MessageCircle />} title={t("Gõ từ khóa để tìm trong tin Telegram")}>{t("Tin của các nhóm đang theo dõi chỉ hiện khi tìm. File thêm từ tin Telegram (Việc cần xử lý) nằm ở đây.")}</Empty>;
   else if (empty) body = q
     ? <Empty icon={<SearchX />} title={t("Không thấy đoạn nào khớp")}>{t("Thử từ khác, bỏ bộ lọc, hoặc thêm nguồn ở \"Thêm\".")}</Empty>
     : f.source === "kb_cache"
@@ -86,7 +86,7 @@ export function Results({ q, f, part, syncing, onOpen, onAdd }: {
 
   return (
     <section aria-label={t("Kết quả")} className="relative flex min-h-0 flex-1 flex-col">
-      {!q && f.source !== "telegram" && (
+      {!q && !(f.source === "telegram" && empty) && (
         <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
           <Segmented id="docs-list-view" label={t("Cách xem danh sách tài liệu")} value={view}
             onChange={(v) => { setView(v); setPref(VIEW, v); }}

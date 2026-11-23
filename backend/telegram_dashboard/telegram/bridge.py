@@ -9,10 +9,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from ..ai import role_tags, with_tags
 from ..config import run_cli
 from ..desktop import applescript_str as _applescript_str
 from ..errors import ApiError
-from ..models import GroupInfo, Member, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
+from ..models import FileInfo, GroupInfo, Member, OutboxDTO, ReplyRequest, SentMessage, StoredMessage
 from ..storage import Db, Store
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -66,6 +67,7 @@ class Transport(Protocol):
         self, chat_id: str, message_id: int, before: int, after: int
     ) -> list[StoredMessage]: ...
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool: ...
+    async def download_file(self, chat_id: str, message_id: int, dest: Path, max_bytes: int) -> FileInfo | None: ...
     async def fetch_range(
         self, chat_id: str, since: datetime, until: datetime, limit: int
     ) -> list[StoredMessage]: ...  # newest `limit` in [since, until), oldest first
@@ -264,6 +266,9 @@ class TelegramBridge:
     async def download_photo(self, chat_id: str, message_id: int, dest: Path) -> bool:
         return await self.ensure_connected().download_photo(chat_id, message_id, dest)
 
+    async def download_file(self, chat_id: str, message_id: int, dest: Path, max_bytes: int) -> FileInfo | None:
+        return await self.ensure_connected().download_file(chat_id, message_id, dest, max_bytes)
+
     async def fetch_range(
         self, chat_id: str, since: datetime, until: datetime, limit: int
     ) -> list[StoredMessage]:
@@ -273,10 +278,14 @@ class TelegramBridge:
         return await self.ensure_connected().fetch_ids(chat_id, ids)
 
     async def send_saved(self, text: str) -> None:
+        t = self.ensure_connected()
         try:
-            await self.ensure_connected().send_saved(text)
+            await asyncio.wait_for(t.send_saved(text), SEND_TIMEOUT)
         except SendRejected as e:
             raise ApiError(429, "flood_wait", retry_after=e.retry_after) from e
+        except Exception as e:  # timeout, connection loss: some parts may already be in Saved Messages
+            log.warning("saved send result unknown: %s", type(e).__name__)
+            raise ApiError(504, "delivery_unknown") from e
 
     async def send_direct(self, chat_id: str, reply_to: int | None, text: str) -> int:
         """Post to any group the account is in, tracked or not, outside the outbox (Q&A); the new message's id.
@@ -312,6 +321,9 @@ class TelegramBridge:
     async def _react(
         self, t: Transport, chat_id: str, message_ids: list[int], emoji: str | None
     ) -> None:
+        mine = [m.message_id for m in (await self.db.read(self.store.get_messages_by_ids, chat_id, message_ids))[0]
+                if m.outgoing]  # our own messages never get the Done reaction (nor its removal)
+        message_ids = [mid for mid in message_ids if mid not in mine]
         async with self._react_lock:  # in commit order, so a quick undo ends with no reaction
             for n, mid in enumerate(message_ids):
                 try:
@@ -341,9 +353,11 @@ class TelegramBridge:
             reply_to = int(req.reply_to_message_id)
         except ValueError:
             raise ApiError(404, "reply_not_found") from None
+        # an AI Agent session's ask to BE / PO / QC: the people Settings lists for that role are tagged
+        tags = role_tags(await self.db.read(self.store.list_rules)).get(req.qa_role, []) if req.qa_role else []
         rec, _ = await self.db.write(
             self.store.outbox_create, rid, req.chat_id, reply_to, req.text, secrets.randbits(63), req.quote,
-            qa=req.qa, qa_role=req.qa_role,
+            qa=req.qa, qa_role=req.qa_role, tagged=with_tags(req.text, tags),
         )
         if rec.status in ("sent", "sending") or (rec.status == "unknown" and not req.retry_unknown):
             return rec
@@ -393,9 +407,11 @@ class TelegramBridge:
 
 
 # ```block``` -> pre, `x` -> code, `[Name](tg://user?id=N)` (the reply box's tag of someone without a @username)
-# -> mention; leftmost match wins, so a tag inside backticks stays code.
+# -> mention, `[text](https://…)` (a document picked by "#") -> the link under the text; leftmost match wins, so a
+# tag inside backticks stays code.
 _FORMAT = re.compile(
     r"```(?:[^\n`]*\n)?([\s\S]+?)\n?```|`([^`\n]+)`|\[([^\[\]\n]{1,64})\]\(tg://user\?id=(\d{1,20})\)"
+    r"|\[([^\[\]\n]{1,256})\]\((https?://[^\s()]{1,2000})\)"
 )
 
 
@@ -404,13 +420,16 @@ def _u16(s: str) -> int:
 
 
 def split_format(text: str) -> tuple[str, list[tuple[int, int, int | str]]]:
-    """Markdown code spans and name tags -> plain text plus (offset, length, user_id | "code" | "pre") per span,
-    in UTF-16 units as Telegram entities count."""
+    """Markdown code spans, name tags and links -> plain text plus (offset, length, user_id | "code" | "pre" | url)
+    per span, in UTF-16 units as Telegram entities count."""
     out, ents, at = [], [], 0
     for m in _FORMAT.finditer(text):
         out.append(text[at : m.start()])
         off = _u16("".join(out))
-        body, kind = (m[1], "pre") if m[1] is not None else (m[2], "code") if m[2] is not None else (m[3], int(m[4]))
+        body, kind = (
+            (m[1], "pre") if m[1] is not None else (m[2], "code") if m[2] is not None
+            else (m[3], int(m[4])) if m[3] is not None else (m[5], m[6])
+        )  # fmt: skip
         out.append(body)
         ents.append((off, _u16(body), kind))
         at = m.end()

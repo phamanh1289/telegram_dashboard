@@ -51,7 +51,9 @@ function SessionAi({ t: task, disabled }: { t: Task; disabled: boolean }) {
 
 // Queued prompts per task, kept outside the panel so switching sessions doesn't drop them.
 // ponytail: client-only, drains only while that session is open and lost on reload; move server-side if that matters.
-type Queued = { line: string; refs: Ref[] }; // refs: sent along so Done on the session ticks them too
+// refs: sent along so Done on the session ticks them too. edit / mcp: as ticked when it was queued, not when its turn
+// comes (a prompt written for a plan turn must not become an edit turn because the box was ticked for a later one).
+type Queued = { line: string; refs: Ref[]; edit?: boolean; mcp?: boolean };
 const queues = new Map<string, Queued[]>();
 
 /** One attached message above the composer: who and when, two lines of it; or why it can't be read. */
@@ -77,8 +79,9 @@ function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Messa
 }
 
 /** The follow-up composer of a headless session (queue, attachments, send / stop). */
-/** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". */
-export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Task; cut?: boolean }) {
+/** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". `redo`: that turn's ask, for
+ *  Trợ lý AI, whose turns do not resume: going on asks it again (a bare "go on" would reach the AI with no question). */
+export const TaskComposer = memo(function TaskComposer({ t: task, cut, redo }: { t: Task; cut?: boolean; redo?: string }) {
   const t = useT();
   const { id } = task;
   const running = !!task.running;
@@ -135,8 +138,8 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     setRefs(id, attach(id, []).filter((x) => !r.some((y) => sameRef(x, y)))); // attach(id, []): the draft as it is now
   };
   const send = useMutation({
-    mutationFn: ({ line, refs }: Queued & { queued?: boolean }) => {
-      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit, mcp } });
+    mutationFn: ({ line, refs, edit: e = plan && edit, mcp: m = mcp }: Queued & { queued?: boolean }) => {
+      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: e, mcp: m } });
       // the AI reads attached messages as group messages, so only the session's group (its tag first)
       if (refs.some((r) => r.chat_id !== task.chat_id)) throw new ApiError(422, "assist_other_chat", null, null);
       return apiStart("/ai/draft", {
@@ -152,6 +155,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
       await qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
+  const again = splitAttachments(redo ?? "")[0].trim(); // the typed part: its attached messages are not sent again
   const submit = () => {
     if (ready && !running && !send.isPending) { setEdit(edit); send.mutate({ line, refs }, { onSuccess: sentOnly(text, refs) }); }
   };
@@ -162,7 +166,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     queues.set(id, next);
     setQueueState(next);
   };
-  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
+  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs, edit: plan && edit, mcp }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
   /** A paste of message IDs / links only: attach them and leave a "[#id]" mark at the caret, so the sentence still reads. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const add = parseRefs(e.clipboardData.getData("text"), task.chat_id);
@@ -207,9 +211,9 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
           {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== task.chat_id}
             onRemove={() => setRefs(id, refs.filter((x) => !sameRef(x, r)))} />)}
         </ul>
-      ) : cut && !queue.length && !send.isPending && (
+      ) : cut && !queue.length && !send.isPending && (!assist || !!again) && (
         <Button size="xs" variant="outline" className="justify-self-start animate-in fade-in-0 duration-(--dur-short)"
-          onClick={() => send.mutate({ line: "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
+          onClick={() => send.mutate({ line: assist ? again : "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
           <RotateCw /> {t("Chạy tiếp")}
         </Button>
       )}

@@ -165,7 +165,7 @@ export function PendingInbox({
             { value: "pinned", label: t("Đã ghim"), title: t("Tin bạn ghim để giữ lại, kể cả khi đã xử lý (g p)") },
           ]} />}
         <p className="min-w-0 truncate text-sm text-ink-2" aria-live="polite">
-          {!q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : view === "working" ? t("Không có tin đang xử lý") : t("Không còn việc nào")) : (
+          {q.isError && !q.data ? t("Không tải được danh sách.") : !q.data ? t("Đang tải…") : items.length === 0 ? (pinned ? t("Chưa có tin ghim") : view === "working" ? t("Không có tin đang xử lý") : t("Không còn việc nào")) : (
             <>
               {t.n(pinned ? "{n} tin đã ghim" : view === "working" ? "{n} tin đang xử lý" : "{n} tin đang chờ bạn", { n: <span className="font-mono text-base font-bold text-ink tabular-nums">{items.length}</span> })}
               {late > 0 && <span className="ml-2 font-medium text-signal-2">{t.n("({n} quá hạn)", { n: <span className="font-mono tabular-nums">{late}</span> })}</span>}

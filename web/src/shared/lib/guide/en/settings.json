@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Settings › Search settings",
     "title": "Find a setting",
-    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
+    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
     "how": [
       {
         "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
@@ -240,7 +240,7 @@
     "tab": "settings",
     "area": "Settings › General › About you, for the AI",
     "title": "Summary platform",
-    "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Mobile in general, No limit).",
+    "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Web, Mobile (Android + iOS), All): it applies to Summarize & suggest, tickets from messages, Briefing, a group's Summary page, the Briefing assistant and AI Agent. A dev picks the platform they code: Briefing leaves out topics that only concern other platforms (Android / iOS drop web, Web drops the apps) and has no Impact entries for that team. QA/QC and PO/PM pick Mobile or All: the AI reports each platform's status (QC: bugs, fixed, still to retest; PO: done, in progress, not started, blocked) and flags a platform lagging behind. The self-introduction box shows a template for your role (app dev, web dev, QC, PO) with what the AI needs to know: platforms, environments, devices, what you decide, what to skip.",
     "how": [
       {
         "t": "Choose the \"General\" section",
@@ -251,7 +251,7 @@
         "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
       }
     ],
-    "keys": "summary platform android ios mobile reply default"
+    "keys": "summary platform android ios mobile reply default briefing web qc po all intro template"
   },
   {
     "id": "settings-briefing-model",

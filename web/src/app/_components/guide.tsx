@@ -1,5 +1,6 @@
 "use client";
 
+import { goApp } from "@/shared/lib/nav";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, BookOpen, BookOpenText, ChevronDown, MousePointerClick, RotateCcw, Search, Send, Settings, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -277,19 +278,20 @@ export function GuideBot({ module }: { module: Module }) {
           </button>
         </Hint>
       )}
+      {/* a live walk running: the orb steps aside (it floats over dialogs, and its corner is where a prompt box's run button sits) */}
       {show && mode === "side" && vp && (
         <Hint side="bottom" title={t("Trợ lý biết tuốt")} text={ask}>
-          <button type="button" data-gb-launcher aria-label={t("Hỏi trợ lý biết tuốt")} onClick={toggleBot} inert={open} {...warmUp}
+          <button type="button" data-gb-launcher aria-label={t("Hỏi trợ lý biết tuốt")} onClick={toggleBot} inert={open || !!tour} {...warmUp}
             style={{ left: w - size - 8, top: 44 + (h - 44 - size) / 2, width: size, height: size }}
-            className={cn("gb-orb gb-still gb-peek fixed z-[55] grid place-items-center", open && "gb-away")}>
+            className={cn("gb-orb gb-still gb-peek fixed z-[55] grid place-items-center", (open || tour) && "gb-away")}>
             <Orb px={size} bot={botIcon} ping />
           </button>
         </Hint>
       )}
       {show && mode === "float" && at && (
         <Hint title={t("Trợ lý biết tuốt")} text={t("Hỏi bất cứ điều gì về app: tính năng, rule, vì sao một nút ẩn / hiện. Kéo tới bất kỳ chỗ nào sát mép màn hình (F1).")}>
-          <button type="button" data-gb-launcher aria-label={t("Hỏi trợ lý biết tuốt")} style={{ left: at.x, top: at.y, width: size, height: size }} inert={open} {...warmUp}
-            className={cn("gb-orb fixed z-[55] grid touch-none place-items-center", drag && "gb-drag", open && "gb-away")}
+          <button type="button" data-gb-launcher aria-label={t("Hỏi trợ lý biết tuốt")} style={{ left: at.x, top: at.y, width: size, height: size }} inert={open || !!tour} {...warmUp}
+            className={cn("gb-orb fixed z-[55] grid touch-none place-items-center", drag && "gb-drag", (open || tour) && "gb-away")}
             onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); grab.current = { dx: e.clientX - at.x, dy: e.clientY - at.y, x0: e.clientX, y0: e.clientY }; }}
             onPointerMove={(e) => {
               const g = grab.current;
@@ -371,15 +373,7 @@ function Bot({ cat, failed, module, turns, code, name, state, mode, box, from, o
     if (p && cat && !live) { setBot({ ask: undefined }); queueMicrotask(() => ask(p)); }
   }, [pending, cat, live]); // eslint-disable-line react-hooks/exhaustive-deps -- ask is fresh each render
   const router = useRouter();
-  /** Open a page of the app without reloading it: another module mounts and reads the URL; Cài đặt follows the hash; the
-   *  module you are on switches its view ("guide-go": inbox.tsx, yt/state.tsx). */
-  const go = (href: string) => {
-    setBot({ open: false });
-    const u = new URL(href, location.origin), path = (p: string) => p.replace(/\/$/, "");
-    if (path(u.pathname) !== path(location.pathname)) router.push(href);
-    else if (u.hash) location.hash = u.hash;
-    else dispatchEvent(new CustomEvent("guide-go", { detail: u.searchParams }));
-  };
+  const go = (href: string) => { setBot({ open: false }); goApp(router, href); };
   const still = useReducedMotion();
   // fixed at the right: slides in like a drawer; otherwise it grows out of the bot (`from`) and shrinks back into it, the
   // bot fading the other way (globals.css gb-away). Transform + opacity only: the compositor runs them, no repaint per frame.

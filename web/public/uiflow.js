@@ -40,7 +40,7 @@ const TALL = 1.1, FIT_TALL = 2, MIN_FOLD = 200; // MIN_FOLD: the lowest a folded
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
-const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220, DBL_MS = 280; // DBL_MS: a double click's gap
+const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
 const FOCUS = 0.18; // a screen brought into view: this much of its size left round it each side
 const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
 // prototype: motion, phone bezel, margin
@@ -1950,20 +1950,12 @@ function editor(ctx) {
     if (!frame) return select(null);
     pickScreen(frame.dataset.id);
   }
-  /** A click on a screen to edit it: selected, and the camera zooms onto it, every time. On its title bar the
-   *  move waits out a double click's gap, so the second click still lands on the title it renames (a new press or the double click drops it). */
-  let showT = 0;
-  function pickScreen(id, onHead = false) {
-    select({ t: "screen", id });
-    clearTimeout(showT);
-    if (onHead) showT = setTimeout(() => ctx.show(id), DBL_MS);
-    else ctx.show(id);
-  }
+  /** A click on a screen selects (highlights) it; the camera stays. A double click zooms onto it (mount.js). */
+  const pickScreen = (id) => select({ t: "screen", id });
 
   // ---------------- pointer
   function down(e) {
     const el = e.target;
-    clearTimeout(showT); // a new press (a drag, a double click's second): the camera stays under it
     if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
     if (el.closest?.(".uf-fold")) return e.stopPropagation(); // its click folds / unfolds: no drag, no pan
     const frame = el.closest?.(".uf-screen");
@@ -2072,7 +2064,7 @@ function editor(ctx) {
       if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
       if (d.kind === "fold") return select({ t: "screen", id: d.s.id });
       if (d.kind === "link") return select({ t: "link", i: d.m.i });
-      if (d.kind === "move") return pickScreen(d.id, true);
+      if (d.kind === "move") return pickScreen(d.id);
       return select(d.src.includes(".") ? { t: "item", id: scr(d.src), item: itm(d.src) } : { t: "screen", id: d.src });
     }
     if (d.kind === "draw") return drawn(d);
@@ -2166,7 +2158,6 @@ function editor(ctx) {
     const el = ctx.on() ? e.target.closest?.(".uf-title, .uf-item, .uf-label") : null;
     if (!el || !ctx.layer.contains(el)) return;
     e.preventDefault();
-    clearTimeout(showT); // its second click picked the screen again: renaming in place, the camera stays
     const frame = el.closest(".uf-screen");
     const kind = el.classList.contains("uf-label") ? "link" : el.classList.contains("uf-item") ? "item" : "screen";
     const f0 = get(), link = kind === "link" ? f0.links[+el.dataset.i] : null;
@@ -2293,7 +2284,6 @@ function editor(ctx) {
     sync,
     destroy() {
       cancelAnimationFrame(raf);
-      clearTimeout(showT);
     },
   };
 }
@@ -3318,9 +3308,16 @@ function mount(host, flow, opts = {}, standalone = false) {
       : setFocus(sel ? sel.id : null, null, true, sel?.t === "item" ? `${sel.id}.${sel.item}` : null)),
     note: say,
     centre,
-    show: (id) => show(id, !reduced.matches),
   });
   cleanup.push(() => ed.destroy());
+  // a click only highlights a screen; a double click zooms onto it. On the view: the camera's pointer capture sends
+  // the click there, so the screen is the one under the pointer. A title, button or arrow label in Edit renames
+  // (the editor's preventDefault) and the camera stays
+  view.addEventListener("dblclick", (e) => {
+    const el = e.defaultPrevented ? null : document.elementFromPoint(e.clientX, e.clientY);
+    const f = el && !el.closest("button, a, [contenteditable]") && el.closest(".uf-screen");
+    if (f && layer.contains(f)) show(f.dataset.id, !reduced.matches);
+  });
   const memo = memos({ t, cam, view, root, get: () => cur, commit, say, editing: () => editing && shown === "map",
     button: () => bMemo });
   const setStart = (id) => { const f = structuredClone(cur); f.start = id; commit(f); seenStart = startOf(cur); };

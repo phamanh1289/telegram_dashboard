@@ -26,8 +26,8 @@ Trước khi sửa code, đọc `docs/ARCHITECTURE.md`, xác định module sở
 
 | Loại thay đổi | Nơi đặt code |
 | --- | --- |
-| Backend Telegram: chat, message, gửi tin, Q&A, Digest/Briefing | `backend/telegram_dashboard/telegram/`; HTTP ở `routes.py` |
-| Backend YouTrack: ticket, workflow, UI flow/job | `backend/telegram_dashboard/youtrack/`; `/api/youtrack/*` ở `routes.py`, `/api/yt/*` ở `api.py` (AI: `api_ai.py`, UI flow: `api_flow.py`) |
+| Backend Telegram: chat, message, gửi tin, Q&A, Digest/Briefing | `backend/telegram_dashboard/telegram/`; HTTP ở `routes.py` (Digest / Briefing / Q&A: `routes_digest.py`) |
+| Backend YouTrack: ticket, workflow, UI flow/job | `backend/telegram_dashboard/youtrack/`; `/api/youtrack/*` ở `routes.py`, `/api/yt/*` ở `api.py` (AI: `api_ai.py`, UI flow: file `api_flow_file.py`, render / job `api_flow.py`) |
 | Backend dùng chung: cấu hình, auth, storage, AI, events, updater | Module sở hữu tương ứng trong `backend/telegram_dashboard/`; `app.py` giữ composition/lifespan và API chung |
 | Tài liệu (kho KB + file, tìm, hỏi AI) | Backend `backend/telegram_dashboard/docs/` (HTTP `/api/docs/*` ở `routes.py`), SQLite ở `storage/docs.py`; frontend `web/src/features/docs/{components,lib}`, entrypoint `web/src/app/docs/` |
 | Frontend Telegram | `web/src/features/telegram/{components,hooks,lib}` |

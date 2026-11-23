@@ -24,6 +24,7 @@ import { dayLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { useT } from "@/shared/lib/i18n";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 export function MessageList({
   chatId,
@@ -294,6 +295,7 @@ export function MessageList({
 function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string; onPurged: () => void }) {
   const t = useT();
   const [confirm, setConfirm] = useState(false);
+  const asking = useLinger(confirm); // mounted while asked, and until it has closed
   return (
     <>
       <Menu.Root>
@@ -313,7 +315,7 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      {confirm && <PurgeChat chatId={chatId} title={title} onClose={() => setConfirm(false)} onPurged={onPurged} />}
+      {asking && <PurgeChat open={confirm} chatId={chatId} title={title} onClose={() => setConfirm(false)} onPurged={onPurged} />}
     </>
   );
 }

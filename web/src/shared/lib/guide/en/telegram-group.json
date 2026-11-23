@@ -52,7 +52,7 @@
     "tab": "telegram",
     "area": "Group page › Message filter",
     "title": "Open / Handled / Whole group",
-    "what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Click a message in Whole group to open its detail page like a tag (reply, AI assistant, context, create a ticket, hand it to AI Agent). Snoozing, marking done or pinning a message in Whole group saves it as a tag (snoozed: back in the unhandled view when the time comes). \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
+    "what": "Switches between unhandled tags, handled tags, and Whole group: every other message in the group read live from Telegram (not saved; tags are not repeated there, they stay in the unhandled / handled views). Click a message in Whole group to open its detail page like a tag (reply, AI assistant, context, create a ticket, hand it to AI Agent). Snoozing, marking done or pinning a message in Whole group saves it as a tag (snoozed: back in the unhandled view when the time comes). The ⌛ \"Waiting on…\" button on a message (yours too) puts it under Briefing › To follow up, followed until someone replies (the wait reasons are set in Settings › Telegram › Briefing). \"Mark all done\" is hidden while a sender filter or a search is on, since it marks the whole group.",
     "how": [
       {
         "t": "Click a group in the sidebar",
@@ -163,7 +163,7 @@
     "tab": "telegram",
     "area": "Group page › Summary (Digest)",
     "title": "Group summary (Digest)",
-    "what": "The AI sums up the group's conversation: To confirm, Settled, Changes, Team impact, To-dos and Topics; read live from Telegram, regardless of tags; messages from senders in Settings › Telegram › Always ignore are left out. Busy groups (up to 2,000 messages at a time) are read in several passes and merged. To confirm / To-dos nobody resolved carry over to the next summary (labeled \"open since …\") until a new message answers / completes them, so nothing slips. For a group already in Briefing, the \"Summary\" button opens that group's Briefing (the summary continues from the last one); to see details or summarize another range, use the \"Open\" button next to the group in Briefing. Summaries of a custom range or of selected messages are for viewing only and do not replace the one in Briefing.",
+    "what": "The AI sums up the group's conversation: To confirm, Settled, Changes, Team impact, To-dos and Topics; read live from Telegram, regardless of tags; messages from senders in Settings › Telegram › Always ignore are left out. Busy groups (up to 2,000 messages at a time) are read in several passes and merged. To confirm / To-dos nobody resolved carry over to the next summary (labeled \"open since …\") until a new message answers / completes them, so nothing slips. Settled / Change items naming a ticket are kept too (labeled \"not in the story since …\") until Update story or marked done. For a group already in Briefing, the \"Summary\" button opens that group's Briefing (the summary continues from the last one); to see details or summarize another range, use the \"Open\" button next to the group in Briefing. Summaries of a custom range or of selected messages are for viewing only and do not replace the one in Briefing.",
     "how": [
       {
         "t": "Click a group in the sidebar",
@@ -181,7 +181,7 @@
         "t": "Click \"Summarize N messages\"",
         "at": "Tóm tắt N tin"
       },
-      "Wait for the AI summary: To confirm, Settled, Changes, Team impact, To-dos, Topics",
+      "Wait for the AI summary: To confirm, Settled, Changes, Team impact, To-dos, Topics (the red stop button next to \"Summarizing…\" cancels the run; picking another range midway cancels it too)",
       {
         "t": "Click the \"Back to group\" arrow to return",
         "at": "Quay lại nhóm"
@@ -255,7 +255,7 @@
     "tab": "telegram",
     "area": "Group page › Summary › Result",
     "title": "Use the summary",
-    "what": "Click a #message number to jump to the original message; YouTrack ticket chips show their state on hover; decisions about a ticket can be posted as a comment; changes to a ticket in the sprint get a scope-change warning; copy everything as Markdown.",
+    "what": "Click a #message number to jump to the original message; YouTrack ticket chips show their state on hover; decisions about a ticket can be posted as a comment (the PO/PM role uses Update story in Briefing instead); changes to a ticket in the sprint get a scope-change warning; copy everything as Markdown.",
     "how": [
       {
         "t": "Click a group in the sidebar",
@@ -275,7 +275,7 @@
         "at": "css:button[aria-label^=\"Xem tin gốc\"]"
       },
       {
-        "t": "Under Settled, click \"post to <ticket>\" to add a comment on YouTrack",
+        "t": "Under Settled, click \"post to <ticket>\" to add a comment on YouTrack (Dev / QA; PO/PM use Update story in Briefing)",
         "at": "ghi vào <ticket>"
       },
       {

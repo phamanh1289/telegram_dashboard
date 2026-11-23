@@ -8,7 +8,8 @@ import { type ReactNode, useEffect, useState } from "react";
 import { AiBot, AiStop } from "@/shared/components/ai/chat";
 import { AiFetching, digestLines, useAiWait } from "@/shared/components/ai/fetching";
 import { BeTopics } from "@/features/telegram/components/be-topics";
-import { answeredQuery, beRepliesQuery, digestError, isClosedItem, isAnswered, openCount, todoKey, toMarkdown, useDone } from "@/features/telegram/components/digest-page";
+import { answeredQuery, beRepliesQuery, digestError, isClosedItem, isAnswered, openCount, todoKey, toMarkdown } from "@/features/telegram/lib/digest";
+import { useDone } from "@/features/telegram/lib/follow";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -24,6 +25,8 @@ import { briefingQuery, briefRunning, hasNews, runBrief, sortGroups, stopBrief, 
 import { FADE, KIND, KINDS, type Tab, tgBriefing, type Todo, TodoChecks, TodoRow } from "@/features/telegram/components/briefing/todo";
 import { AddGroup, RenewConsents, StatusDot } from "@/features/telegram/components/briefing/groups";
 import { AiPane } from "@/features/telegram/components/briefing/assistant";
+import { chatTitle } from "@/features/telegram/lib/attach";
+import { useWaits, WaitList } from "@/features/telegram/components/briefing/waits";
 
 // Layout: header, a strip of group chips (status + filter), then two panes that scroll on their own: the to-do feed
 // and the AI assistant (on phones one at a time). The page itself never scrolls.
@@ -93,6 +96,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
   const blocked = items.filter((i) => !i.consent);
   const todo = allowed.filter(hasNews);
   const offline = allowed.length > 0 && allowed.every((i) => i.latest_id == null);
+  const unreadN = allowed.filter((i) => i.unread).length; // Telegram would not read these: "no news" is not known for them
   const summarized = allowed.some((i) => i.saved);
   // Items whose cited message I have replied to on Telegram tick themselves off.
   const answered = useQuery({ ...answeredQuery, enabled: summarized });
@@ -116,19 +120,25 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
   const leftAll = todos.filter(pending).length;
   // Opening Briefing lands on the sidebar's first group, pinned so the order shifting after a summary doesn't jump away.
   const first = sortGroups(items, (i) => openCount(i.chat_id, i.saved?.result, done, answered.data))[0]?.chat_id;
-  const group = picked === undefined ? first ?? null : picked;
+  // a picked group that left Briefing meanwhile (AI permission revoked on its Tóm tắt, or expired): all groups, not an empty list
+  const group = picked === undefined ? first ?? null : picked && list.data && !allowed.some((c) => c.chat_id === picked) ? null : picked;
   useEffect(() => { if (picked === undefined && first) onGroup(first); }, [picked, first, onGroup]);
 
   const shown = group ? todos.filter((t) => t.chat.chat_id === group) : todos;
+  const follow = useWaits(true); // decided, still waiting on a design / the BU (parked from any item's "Chờ…")
+  const allWaits = follow.waits;
+  const waits = group ? allWaits.filter((w) => w.chat_id === group) : allWaits;
   const tabs: [Tab, Key, string][] = [
     ...(todos.some((x) => x.mine) ? [["mine", "Cần bạn", "bg-hl"] as [Tab, Key, string]] : []),
+    // any role ("Chờ…" has reasons for each); an unreadable list shows its error there, not an empty page
+    ...(waits.length || follow.error ? [["wait", "Chờ bổ sung", "bg-warn"] as [Tab, Key, string]] : []),
     // always for Dev (an empty one says how to get BE topics); QA / PO: none, its items stay in the kind tabs
     ...(usesCode(role) ? [["be", "Với BE", "bg-code"] as [Tab, Key, string]] : []),
     ...KINDS.map((k) => [k, KIND[k].label, KIND[k].dot] as [Tab, Key, string]),
   ];
-  const inTabOf = (t: Tab) => shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
+  const inTabOf = (t: Tab) => t === "wait" ? [] : shown.filter((x) => (t === "mine" ? x.mine : t === "be" ? x.be : x.kind === t));
   // "Với BE": topics still waiting on BE (as its "N chờ trả lời"); what is settled stays listed for the code check, uncounted.
-  const left = (t: Tab) => t === "be"
+  const left = (t: Tab) => t === "wait" ? waits.length : t === "be"
     ? new Set(inTabOf(t).filter((x) => x.kind === "confirmations" && !isClosed(x) && !isAnswered(x, beReplies?.[x.chat.chat_id])).map((x) => `${x.chat.chat_id}:${x.topic || x.text}`)).size
     : inTabOf(t).filter((x) => !isClosed(x)).length;
   const cur = tabs.find(([t]) => t === tab)?.[0] ?? tabs.find(([t]) => left(t))?.[0] ?? "confirmations";
@@ -196,6 +206,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                 <span>{tx.n("{n} việc chờ xử lý", { n: <b className="font-bold text-ink-2 tabular-nums">{scope ? scopeLeft : leftAll}</b> })}</span>
                 {(scope?.saved?.created_at ?? last) && <span className="hidden sm:inline">{tx("· cập nhật {time}", { time: timeLabel((scope?.saved?.created_at ?? last)!) })}</span>}
                 {offline && <span className="text-warn">{tx("· Telegram chưa kết nối")}</span>}
+                {unreadN > 0 && <span className="text-warn">{tx("· {n} nhóm chưa đọc được", { n: unreadN })}</span>}
               </>}
             </p>
           </div>
@@ -218,7 +229,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
             </Popover.Root>
             <Hint side="bottom" text={tx("Kiểm tra lại tin mới ở các nhóm")}>
               <Button size="icon-sm" variant="ghost" aria-label={tx("Kiểm tra lại")} disabled={running || list.isFetching}
-                onClick={() => { void list.refetch(); void answered.refetch(); }}>
+                onClick={() => { void list.refetch(); void answered.refetch(); void qc.refetchQueries({ queryKey: beRepliesQuery.queryKey }); }}>
                 <RotateCw className={cn(list.isFetching && "animate-spin")} />
               </Button>
             </Hint>
@@ -229,7 +240,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
             </Hint>
             <Hint side="bottom" text={tx("Gửi các mục chưa xử lý của mọi nhóm vào Saved Messages trên Telegram")}>
               <Button size="icon-sm" variant="ghost" aria-label={tx("Gửi vào Saved Messages")} disabled={!summarized || save.isPending}
-                onClick={() => save.mutate(tgBriefing(todos.filter((t) => !isClosed(t))))}>
+                onClick={() => save.mutate(tgBriefing(todos.filter((t) => !isClosed(t)), allWaits))}>
                 {save.isPending ? <Loader2 className="animate-spin" /> : <Send />}
               </Button>
             </Hint>
@@ -257,7 +268,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
         {summarized && (
           <div className="shrink-0 px-3 pt-2 lg:hidden">
             <Segmented id="brief-pane" label={tx("Khung")} variant="card" value={pane} onChange={setPane}
-              items={[{ value: "todo", label: <><ListTodo className="size-3.5" aria-hidden />{tx("Việc · {n}", { n: leftAll })}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{tx("Trợ lý AI")}</> }]} />
+              items={[{ value: "todo", label: <><ListTodo className="size-3.5" aria-hidden />{tx("Việc · {n}", { n: scope ? scopeLeft : leftAll })}</> }, { value: "ai", label: <><Sparkles className="size-3.5" aria-hidden />{tx("Trợ lý AI")}</> }]} />
           </div>
         )}
 
@@ -274,7 +285,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                 {digestError(list.error)}
                 <Button size="xs" variant="outline" onClick={() => void list.refetch()}><RotateCw /> {tx("Thử lại")}</Button>
               </p>
-            ) : !allowed.length ? (
+            ) : !allowed.length && !waits.length && !follow.error ? ( // a message waiting from any group still shows
               <Empty icon={<Plus className="size-5" aria-hidden />} title={tx("Chưa có nhóm nào trong Briefing")}
                 text={tx("Chọn một nhóm, cho phép AI đọc, rồi mỗi sáng chỉ cần bấm một nút để biết: ai đang chờ bạn, đã chốt gì, việc gì cần làm.")}
                 action={
@@ -283,7 +294,7 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                     <Plus className="size-4" aria-hidden /> {tx("Thêm nhóm")}
                   </AddGroup>
                 } />
-            ) : !summarized ? (
+            ) : !summarized && !waits.length && !follow.error ? (
               <Empty icon={<Sparkles className="size-5" aria-hidden />} title={tx("Chưa có bản tóm tắt nào")}
                 text={tx("Tóm tắt các nhóm có tin mới: AI gom câu hỏi cần confirm, việc cần làm, quyết định và thay đổi vào một danh sách.")} action={runButton} />
             ) : (
@@ -295,13 +306,16 @@ export function BriefingPage({ group: picked, onGroup, onBack, onOpenDigest }: {
                       value: v,
                       label: <span className="flex items-center gap-1.5">{tx(l)}<span className="font-mono tabular-nums opacity-70">{left(v)}</span></span>,
                       title: v === "mine" ? tx("Câu hỏi chờ bạn trả lời và việc giao cho bạn (theo tên YouTrack / vai trò PO)")
-                        : v === "be" ? tx("Hỏi / trả lời / chốt với BE (API, field, data): đối chiếu với code để không sót") : undefined,
+                          : v === "be" ? tx("Hỏi / trả lời / chốt với BE (API, field, data): đối chiếu với code để không sót")
+                        : v === "wait" ? tx("Việc / tin còn chờ người khác (lý do chờ đổi ở Cài đặt › Telegram › Briefing)") : undefined,
                     }))} />
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-2 pb-4 md:px-3">
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.div key={`${cur}:${group}`} {...FADE}>
-                      {cur === "be" && !openItems.length && legacy.length ? (
+                      {cur === "wait" ? (
+                        <WaitList waits={waits} error={follow.error} retry={follow.retry} po={role === "po"} titleOf={(id) => allowed.find((c) => c.chat_id === id)?.title ?? chatTitle(qc, id)} />
+                      ) : cur === "be" && !openItems.length && legacy.length ? (
                         <Empty icon={<MessageCircleQuestion className="size-5" aria-hidden />} title={tx("Bản tóm tắt chưa gom theo chủ đề BE")}
                           text={tx("{groups}: bản tóm tắt làm trước khi có tính năng này. Đọc lại 7 ngày gần nhất để AI gom câu hỏi / trả lời với BE theo chủ đề.", { groups: legacy.map((c) => c.title).join(", ") })}
                           action={<Button size="sm" disabled={running} onClick={() => void run(legacy, 168)}><Sparkles /> {tx("Đọc lại 7 ngày · {n} nhóm", { n: legacy.length })}</Button>} />

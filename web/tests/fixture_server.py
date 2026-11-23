@@ -25,7 +25,7 @@ from telegram_dashboard import zeplin_names  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
 from telegram_dashboard.docs import sync as doc_sync  # noqa: E402
-from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
+from telegram_dashboard.models import FileInfo, GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.storage import Store  # noqa: E402
 from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
 from telegram_dashboard.youtrack import flow as uiflow  # noqa: E402
@@ -340,10 +340,15 @@ async def state():
 
 @ctl.post("/message")
 async def message(request: Request):
-    """A live tag (new or edited), as Telegram delivers one that mentions us."""
+    """A live tag (new or edited), as Telegram delivers one that mentions us. `file`: {name, body} attaches a document
+    (Việc cần xử lý › the file's chip downloads `body`)."""
     b = await request.json()
     m = msg(b["chat"], b["id"], b["text"], edit=b.get("edit"), sender=b.get("sender", "7"))
     m.date = datetime.now(UTC)
+    if f := b.get("file"):
+        data = f.get("body", "").encode()
+        m.media_kind, m.file = "document", FileInfo(name=f["name"], size=len(data), mime="text/markdown")
+        fake.files[(m.chat_id, m.message_id)] = (m.file, data)
     await app.state.bridge.on_mention(m, TITLES[b["chat"]], "supergroup")
     return {"ok": True}
 

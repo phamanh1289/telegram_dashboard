@@ -24,7 +24,7 @@
         "at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
       },
       {
-        "t": "Bấm biểu tượng xoay \"Kiểm tra lại\" để kiểm tra tin mới",
+        "t": "Bấm biểu tượng xoay \"Kiểm tra lại\" để kiểm tra tin mới (nhóm có dấu chấm than vàng: Telegram chưa đọc được nhóm đó, chưa rõ có tin mới hay không)",
         "at": "Kiểm tra lại"
       }
     ],
@@ -58,7 +58,7 @@
     "tab": "telegram",
     "area": "Briefing › Việc cần xử lý",
     "title": "Việc cần xử lý của mọi nhóm (Cần bạn, Cần confirm, Việc cần làm…)",
-    "what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy này). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Với vai trò dùng code: mọi việc cần làm có \"Đối chiếu code\" (AI soi code xem đã làm chưa, làm tới đâu) và \"AI Agent\" (giao việc cho AI Agent, câu việc cần làm điền sẵn vào yêu cầu thêm; giao rồi thì nút thành trạng thái phiên, bấm để mở). Tab Việc cần làm có \"Đối chiếu code N việc\" ở đầu mỗi nhóm để soi cả nhóm trong một phiên; mỗi việc hiện \"Code: đã adapt / lệch / chưa làm\" theo lần đối chiếu gần nhất (\"cũ\" khi có tin mới hơn), việc AI thấy đã làm tự chuyển sang đã xử lý (có Hoàn tác). Đã chốt có ticket: \"ghi vào …\" thêm quyết định làm bình luận; Thay đổi trên ticket đang trong sprint hiện \"đổi scope sprint\". Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\".",
+    "what": "Gom câu hỏi cần confirm, việc cần làm, quyết định đã chốt và thay đổi từ bản tóm tắt mới nhất của mọi nhóm vào một danh sách có tab lọc. Tab \"Cần bạn\" chỉ hiện mục hỏi / giao cho bạn (theo tên YouTrack, PO/PM với vai trò PO). Tick vòng tròn để đánh dấu đã xử lý (lưu trên máy chủ dashboard: trình duyệt / máy nào cũng thấy). Mục mà bạn đã reply đúng tin gốc trên Telegram (gửi từ app hay từ Telegram) tự chuyển sang đã xử lý, ghi \"Bạn đã trả lời\". Việc cần làm chưa có ticket được đối chiếu với YouTrack: có ticket giống thì hiện \"có thể đã có …\", không thì nút \"Chưa có ticket · Tạo\" nổi bật. Với vai trò dùng code: mọi việc cần làm có \"Đối chiếu code\" (AI soi code xem đã làm chưa, làm tới đâu) và \"AI Agent\" (giao việc cho AI Agent, câu việc cần làm điền sẵn vào yêu cầu thêm; giao rồi thì nút thành trạng thái phiên, bấm để mở). Tab Việc cần làm có \"Đối chiếu code N việc\" ở đầu mỗi nhóm để soi cả nhóm trong một phiên; mỗi việc hiện \"Code: đã adapt / lệch / chưa làm\" theo lần đối chiếu gần nhất (\"cũ\" khi có tin mới hơn), việc AI thấy đã làm tự chuyển sang đã xử lý (có Hoàn tác). Đã chốt có ticket: \"ghi vào …\" thêm quyết định làm bình luận (vai trò PO/PM không có nút này: dùng \"Cập nhật story\", vừa sửa mô tả vừa để lại bình luận); Thay đổi trên ticket đang trong sprint hiện \"đổi scope sprint\". Mục chưa ai giải quyết ở lần tóm tắt trước vẫn ở lại, có nhãn \"còn mở từ …\"; mục Đã chốt / Thay đổi có mã ticket chưa đưa vào story cũng ở lại (nhãn \"chưa vào story từ …\") tới khi Cập nhật story hoặc đánh dấu đã xử lý, để QC test đúng điều đã chốt.",
     "how": [
       {
         "t": "Ở mục \"Trợ lý AI\" của thanh bên, bấm \"Briefing\" (số cam = số nhóm có tin mới)",
@@ -78,6 +78,73 @@
       }
     ],
     "keys": "cho ban chot can confirm cau hoi cho xac nhan briefing pending decisions viec can lam da xu ly tick danh dau todo da tra loi tu dong reply youtrack chua co ticket goi y tao ticket trung doi chieu code ai agent giao viec"
+  },
+  {
+    "id": "briefing-wait",
+    "tab": "telegram",
+    "area": "Briefing › Chờ bổ sung",
+    "title": "Việc còn chờ người khác (Chờ bổ sung) và Cập nhật story",
+    "what": "Mỗi mục Cần confirm / Việc cần làm / Đã chốt / Thay đổi có nút \"Chờ…\" để đưa việc còn chờ người khác vào tab \"Chờ bổ sung\"; chuỗi Q&A cũng có \"Chờ…\" ở thanh \"Đã chốt\" (chưa chốt: ở thẻ Kết luận AI), vd. chốt xong còn chờ design / BU. Lý do chờ theo vai trò (ô Role bên YouTrack hoặc Cài đặt): PO/PM \"Chờ design\" / \"Chờ BU\"; Dev \"Chờ BE\" / \"Chờ PO\"; QA \"Chờ build\" / \"Chờ fix\"; đổi ở Cài đặt › Telegram › Briefing › \"Lý do chờ\" (bấm × để bỏ, thêm lý do có sẵn của vai trò khác hoặc gõ lý do riêng như \"Chờ khách hàng\"; lý do riêng hiện \"Có vẻ xong\" khi có người trả lời tin gốc). Ở tab \"Cả nhóm\" của một nhóm, mọi tin (kể cả tin của bạn) có nút ⌛ \"Chờ…\" trên thanh thao tác để theo dõi tin đó tới khi có người trả lời. Mục rời danh sách chưa xử lý; danh sách lưu trên máy chủ dashboard nên trình duyệt / máy nào cũng thấy, giữ cả khi tóm tắt lần sau không còn mục đó. Ở tab này mỗi mục hiện tuổi (đỏ \"chờ N ngày\" khi quá 3 ngày); \"Nhắc\" mở ô trả lời ngay tin gốc với câu nhắc soạn sẵn (vd. \"Nhờ BE hỗ trợ giúp…\", \"Nhờ fix giúp…\") @tag sẵn người phải trả lời / làm việc đó nếu tìm thấy trong nhóm (không thấy thì tự gõ @); tick vòng tròn khi hết chờ; \"Bỏ chờ\" trả mục về danh sách chưa xử lý. Mỗi ngày một lần, ở bất kỳ trang nào (Telegram, YouTrack, Tài liệu, Cài đặt), app nhắc khi có việc chờ quá 3 ngày (thông báo hệ điều hành nếu app đang ở nền và bật Thông báo). Nút gửi Saved Messages của Briefing gửi kèm phần Chờ bổ sung. Riêng vai trò PO/PM: mục Cần confirm / Đã chốt / Thay đổi có \"Cập nhật story\" (đưa nội dung đã chốt vào mô tả ticket: tự sửa hoặc nhờ AI soạn, rồi \"Lưu\"; bình luận YouTrack và tin Telegram trả lời ngay tin đã chốt gửi riêng bằng nút của từng ô, gõ @ hoặc bấm nhóm tag nhanh để tag); mục đã lưu hiện \"Đã vào story VA-1\" và tự sang đã xử lý. Chọn \"Chờ design\" cho mục có ticket thì thông báo có nút chuyển ticket sang trạng thái design của project (vd. ASSIGN TO DESIGN); tick xong một mục chờ thì thông báo có nút \"Cập nhật story\". Khi việc đang chờ đã có, mục hiện \"Có vẻ xong\" kèm lý do và nút \"Đóng\" (không tự đóng): Chờ fix / Chờ build / Chờ design theo trạng thái ticket đầu tiên (đã sang chờ test / đã build / rời trạng thái design, sau lúc bắt đầu chờ); Chờ BE / PO / BU khi có người trả lời tin gốc trên Telegram. Mục đã vào story và đã xử lý vẫn hiện \"Đã vào story VA-1\" ở phần Đã xử lý.",
+    "how": [
+      {
+        "t": "Ở mục “Trợ lý AI” của thanh bên, bấm “Briefing”",
+        "at": "Briefing"
+      },
+      {
+        "t": "Ở một mục chưa xử lý (Cần confirm / Việc cần làm / Đã chốt / Thay đổi), bấm “Chờ…”",
+        "at": "Chờ…"
+      },
+      {
+        "t": "Chọn lý do chờ (PO/PM: Chờ design / Chờ BU; Dev: Chờ BE / Chờ PO; QA: Chờ build / Chờ fix)",
+        "at": [
+          "Chờ design",
+          "Chờ BE",
+          "Chờ build"
+        ]
+      },
+      {
+        "t": "Mở tab “Chờ bổ sung” để xem các việc còn chờ",
+        "at": "Chờ bổ sung"
+      },
+      "Mỗi mục hiện tuổi (đỏ khi quá 3 ngày); khi việc đang chờ đã có, mục hiện “Có vẻ xong” kèm lý do và nút “Đóng”. Tick vòng tròn khi hết chờ, “Bỏ chờ” để trả mục về danh sách chưa xử lý; PO/PM có thêm “Cập nhật story”",
+      {
+        "t": "Bấm “Nhắc”: ô trả lời mở ngay tin gốc với câu nhắc soạn sẵn, @tag sẵn người cần trả lời; xem lại rồi gửi",
+        "at": "Nhắc"
+      }
+    ],
+    "keys": "cho bo sung chờ bổ sung cho design chờ design cho bu chờ bu po chot chốt cap nhat story cập nhật story ac tieu chi nghiem thu mo ta ticket bao nhom báo nhóm tag nhac nhắc qua han quá hạn saved messages da vao story đã vào story assign to design state nhac moi ngay nhắc mỗi ngày vai tro po role cho be chờ be cho po chờ po cho build chờ build cho fix chờ fix dev qa qc co ve xong có vẻ xong tu dong tự đóng nhac tag san nhắc tag sẵn nguoi can tra loi người cần trả lời q&a qa chuoi chuỗi da chot đã chốt ket luan kết luận"
+  },
+  {
+    "id": "briefing-story",
+    "tab": "telegram",
+    "area": "Briefing › Cập nhật story (PO)",
+    "title": "Đưa điều đã chốt trong nhóm vào story (Cập nhật story)",
+    "what": "Vai trò PO/PM: mục Cần confirm / Đã chốt / Thay đổi trong Briefing có nút “Cập nhật story”. Nội dung của mục (kèm bối cảnh) hiện ngay trên ô mô tả để bạn đưa vào story, và là thay đổi điền sẵn nếu nhờ AI soạn. Mục đã lưu hiện “Đã vào story VA-1” và tự sang đã xử lý; bấm lại để cập nhật lần nữa. Tin báo Telegram trả lời ngay tin đã chốt. Trong khung: mô tả mở sẵn để sửa tay, AI chỉ là chip “AI” bấm khi cần (bản AI soạn mở ở tab “So sánh”). Ô mô tả có ba tab: “Viết” để sửa, “So sánh” cho thấy dòng thêm / bỏ so với mô tả đang có trên YouTrack, “Xem trước” hiện mô tả như YouTrack sẽ hiển thị. “Lưu” chỉ ghi mô tả lên YouTrack; tick “Thêm bình luận và gửi Telegram” cạnh nút “Lưu” (mặc định tắt) thì “Lưu” gửi luôn bình luận và tin Telegram. Phần “Báo cho ai” gồm hai ô độc lập, không ô nào chờ ô nào và cũng không chờ “Lưu”: “Bình luận trên YouTrack” (nút “Gửi bình luận”) và “Tin nhắn Telegram” (nút “Gửi Telegram”, gửi thẳng vào nhóm). Mỗi ô điền sẵn một câu kèm tag Assignee / QC theo đúng nền tảng (YouTrack tag theo login, Telegram theo @username của thành viên nhóm), sửa thoải mái; gõ @ để chọn người từ danh sách của nền tảng đó. Dưới mỗi ô là các nhóm tag nhanh (mặc định Android, iOS, FE, BE, QA/QC): bấm một nhóm để tag cả nhóm; bấm ⚙ để đổi tên nhóm, thêm / bớt người hoặc thêm nhóm (lưu trên trình duyệt này, riêng cho từng nền tảng). Số cạnh tên nhóm là số người trong nhóm; người đã thêm được nhớ kèm tên nên vẫn hiện khi chưa chọn nhóm Telegram. Tin Telegram bị mất kết nối giữa chừng sẽ báo “chưa rõ đã gửi chưa”: xem nhóm trước khi bấm “Gửi lại”.",
+    "how": [
+      {
+        "t": "Ở mục “Trợ lý AI” của thanh bên, bấm “Briefing”",
+        "at": "Briefing"
+      },
+      {
+        "t": "Chọn tab Cần confirm, Đã chốt hoặc Thay đổi",
+        "at": "css:[aria-label=\"Lọc việc\"]"
+      },
+      {
+        "t": "Bấm “Cập nhật story” ngay dưới một mục",
+        "at": "Cập nhật story"
+      },
+      {
+        "t": "Kiểm mã ticket ở đầu khung rồi sửa thẳng trong ô “Mô tả” (thêm AC, quyết định mới)",
+        "at": "css:textarea[aria-label=\"Mô tả\"]"
+      },
+      "Tab “So sánh” cho thấy dòng thêm (xanh) và bỏ (đỏ); tab “Xem trước” hiện mô tả như trên YouTrack. Muốn AI soạn giúp: bấm chip “AI”, ghi thay đổi rồi “Soạn”, bản AI hiện ngay trong ô này để bạn duyệt",
+      "Phần “Báo cho ai” có hai ô riêng, mỗi ô một nút gửi: “Bình luận trên YouTrack” và “Tin nhắn Telegram”. Gõ thoải mái, gõ @ để tag (mỗi nền tảng hiện danh sách người của nó), hoặc bấm nhóm tag nhanh (Android, iOS, FE, BE, QA/QC); biểu tượng ⚙ để sửa các nhóm này",
+      {
+        "t": "Bấm “Lưu” để ghi mô tả lên YouTrack (bị chặn nếu ai đó vừa sửa mô tả trên YouTrack: “Lấy bản mới để sửa”). Tick “Thêm bình luận và gửi Telegram” trước khi lưu nếu muốn gửi luôn hai tin; không thì khung vẫn mở để bạn gửi từng tin",
+        "at": "css:button[data-story-save]"
+      }
+    ],
+    "keys": "cap nhat story cập nhật story briefing po pm da chot đã chốt mo ta ticket mô tả ticket ac bao nhom báo nhóm da vao story đã vào story tag ten tag tên chon nguoi tag chọn người tag bao telegram báo telegram binh luan youtrack bình luận youtrack sua tay sửa tay xem truoc xem trước preview tag nhanh nhom tag nhóm tag android ios fe be qa qc go @ gõ @ gui binh luan gửi bình luận gui telegram gửi telegram"
   },
   {
     "id": "briefing-group-cards",

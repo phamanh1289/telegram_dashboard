@@ -205,6 +205,13 @@ class AutoBe:
         items, _ = self.s.agent.read(row["id"])
         return row["mode"] == "edit" or any(i.get("kind") == "user" and i.get("mode") == "edit" for i in items)
 
+    def mcp_on(self, row: dict) -> bool:
+        """ "Dùng MCP / plugin" as the user left it on their last own edit turn (the box lives in the browser, so the
+        turn carries it). A turn logged before the flag was kept ran with MCP: on."""
+        items, _ = self.s.agent.read(row["id"])
+        mine = [i for i in items if i.get("kind") == "user" and i.get("mode") == "edit" and not i.get("auto")]
+        return bool(mine[-1].get("mcp", True)) if mine else True
+
     async def flush(self, task_id: str) -> None:
         """Send the answers waiting for a session as one turn, once it is not running."""
         s = self.s
@@ -234,8 +241,9 @@ class AutoBe:
         titles = {c["chat_id"]: c["title"] for m in msgs if (c := await s.db.read(s.store.get_chat, m.chat_id))}
         text = with_attachments(RELAY.format(who=names, act=ACT[mode]), msgs, row["chat_id"], titles)
         try:
-            # an edit turn: MCP, like the user's
-            await send_turn(s, row, text, took, mode == "edit", auto=True, mcp=True, model=cheap or None)
+            # an edit turn: MCP only as the user's own last edit turn had it ("Dùng MCP / plugin")
+            mcp = mode == "edit" and await asyncio.to_thread(self.mcp_on, row)
+            await send_turn(s, row, text, took, mode == "edit", auto=True, mcp=mcp, model=cheap or None)
             if cheap:
                 s.agent.note(task_id, f"Vòng BE: quota Claude đã tới {QUOTA_STOP}%, lượt tự chạy này hạ model xuống "
                                       f"{cheap} (“Tự hạ model khi gần hết hạn mức” đang bật). Lượt bạn tự nhắn vẫn "

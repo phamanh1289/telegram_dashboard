@@ -36,7 +36,8 @@ class Tasks:
     def add_rule(self, kind: str, value: str, label: str = "", extra: str = "") -> tuple[dict, list[tuple[str, int]]]:
         """Save a rule (keyword: text in the tag, any case; sender: a sender id) and clear the
         pending tags it already matches; returns the rule and the (chat_id, message_id) it cleared.
-        `priority` (a sender id) clears nothing: that sender's tags sort first from now on; nor do `relay` / `agent`."""
+        `priority` (a sender id) clears nothing: that sender's tags sort first from now on; nor do `relay` / `agent` /
+        `tag_*`."""
         value = value.strip().lower() if kind == "keyword" else value.strip()
         if not value:  # "" is in every text: it would clear every tag
             raise ApiError(422, "rule_value_empty")
@@ -56,7 +57,7 @@ class Tasks:
             rule["project"] = json.loads(rule.pop("extra") or "{}").get("project", "")
             if kind == "priority":
                 self._set_priority(c, value, True)
-            if kind in ("priority", "relay", "agent"):
+            if kind not in ("keyword", "sender"):  # priority, relay, agent, tag_*: nothing to clear
                 return rule, []
             rows = c.execute("SELECT * FROM messages WHERE outgoing=0 AND handled=0 AND deleted=0").fetchall()
             cleared = []
@@ -289,6 +290,19 @@ class Tasks:
         with self._conn() as c:
             rows = c.execute("SELECT code, state FROM qa_marks WHERE chat_id=?", (chat_id,))
             return {r["code"]: r["state"] for r in rows}
+
+    def qa_answers(self, chat_id: str) -> dict[str, str]:
+        """Thread code -> the message id marked as its answer ("Chốt"), for one group."""
+        with self._conn() as c:
+            rows = c.execute("SELECT code, message_id FROM qa_answers WHERE chat_id=?", (chat_id,))
+            return {r["code"]: r["message_id"] for r in rows}
+
+    def set_qa_answer(self, chat_id: str, code: str, message_id: str | None) -> None:
+        with self._conn(write=True) as c:
+            if message_id:
+                c.execute("INSERT OR REPLACE INTO qa_answers VALUES (?,?,?,?)", (chat_id, code, message_id, now_ts()))
+            else:
+                c.execute("DELETE FROM qa_answers WHERE chat_id=? AND code=?", (chat_id, code))
 
     def set_qa_mark(self, chat_id: str, code: str, state: str | None) -> str | None:
         """The state it had before."""

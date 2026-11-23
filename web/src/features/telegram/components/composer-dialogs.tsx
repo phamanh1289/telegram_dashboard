@@ -1,8 +1,9 @@
 "use client";
 
-import { ArrowLeft, Check, ChevronRight, Eye, FilePen, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Check, Eye, FilePen, Loader2, MessageSquarePlus, MessageSquareQuote, Plus, RotateCcw, ScrollText, Search, TriangleAlert } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { FoldMore } from "@/shared/components/ui/fold";
 import { ModelEffortPicker, useAiPrefs } from "@/shared/components/ai";
 import { AiBotIcon, AiPromptBox } from "@/shared/components/ai/chat";
 import { useDocTag } from "@/features/docs/components/doc-tag";
@@ -23,6 +24,7 @@ import Link from "next/link";
 import { cn } from "@/shared/lib/utils";
 import { yt } from "@/features/youtrack/lib/yt";
 import { type Key, t, useT } from "@/shared/lib/i18n";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 const TASK_MODE_NOTE: Record<"plan" | "edit", Key> = {
   plan: "Đọc code, lập phương án. Không sửa file, không chạy lệnh.",
@@ -122,13 +124,13 @@ function Step({ n, title, aside, className, children }: { n: number; title: stri
 }
 
 /** The exact prompt the agent gets, editable; saving a copy that differs from the generated one makes it the one sent. */
-function PromptDialog({ onClose, generated, custom, onSave }: {
-  onClose: () => void; generated: string; custom: string | null; onSave: (p: string | null) => void;
+function PromptDialog({ open, onClose, generated, custom, onSave }: {
+  open: boolean; onClose: () => void; generated: string; custom: string | null; onSave: (p: string | null) => void;
 }) {
   const t = useT();
   const [draft, setDraft] = useState(custom ?? generated); // mounted only while open: starts from the prompt as it is now
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="flex flex-col sm:max-w-3xl">
         <DialogTitle>{t("Prompt gửi AI Agent")}</DialogTitle>
         <DialogDescription>{t("Sửa trực tiếp nếu cần. Đã sửa tay thì yêu cầu thêm và mẫu trả lời không còn tự cập nhật vào prompt.")}</DialogDescription>
@@ -183,6 +185,7 @@ export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
   const [tag] = useState(() => `telegram-${crypto.randomUUID()}`);
   const [custom, setCustom] = useState<string | null>(null); // the prompt as edited by hand, sent instead of the generated one
   const [peek, setPeek] = useState(false); // the prompt dialog is open
+  const peeking = useLinger(peek); // …or still closing
   const aiName = useAiPrefs().nameOf("task");
   const [project, setProject] = useState(readAgentProject); // last project the agent ran in
   const choose = (p: string) => { setProject(p); setPref("agentProject", p); };
@@ -233,12 +236,9 @@ export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
                   <blockquote className="whitespace-pre-wrap break-words text-md leading-[1.6] text-ink">{m.text || t("(không có chữ)")}</blockquote>
                 </figure>
                 {analysis && (
-                  <details className="group rounded-lg bg-paper-2 px-4 py-2.5 text-sm">
-                    <summary className="flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-ink-2 hover:text-ink [&::-webkit-details-marker]:hidden">
-                      <ChevronRight className="size-3.5 transition-transform duration-(--dur-micro) group-open:rotate-90" aria-hidden />{t("Phân tích AI (gửi kèm cho Agent)")}
-                    </summary>
-                    <p className="mt-2 whitespace-pre-line text-ink-2">{analysis}</p>
-                  </details>
+                  <FoldMore label={t("Phân tích AI (gửi kèm cho Agent)")} className="rounded-lg bg-paper-2 px-4 py-2.5 text-sm" labelClassName="text-xs">
+                    <p className="pt-2 whitespace-pre-line text-ink-2">{analysis}</p>
+                  </FoldMore>
                 )}
               </div>
             </Step>
@@ -295,7 +295,7 @@ export function TaskPage({ m, analysis, groupTitle, seed, onBack, onCreated }: {
                     <span aria-hidden className="ml-0.5 font-mono text-2xs font-normal opacity-70">↵</span>
                   </Button>
                 </>} />
-              {peek && <PromptDialog onClose={() => setPeek(false)} generated={generated} custom={custom} onSave={setCustom} />}
+              {peeking && <PromptDialog open={peek} onClose={() => setPeek(false)} generated={generated} custom={custom} onSave={setCustom} />}
             </Step>
           </div>
 
@@ -410,12 +410,9 @@ export function CommentDialog({ m, open, onOpenChange, onDone }: {
                   </ul>}
           {comment.isError && <p role="alert" className="px-1 text-xs text-error">{comment.error.message || t("Không thêm được comment.")}</p>}
         </section>
-        <details className="group rounded-lg bg-paper-2 px-3 py-2 text-xs">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-medium text-ink-2 select-none">
-            <ChevronRight className="size-3.5 transition-transform duration-(--dur-short) group-open:rotate-90" aria-hidden />{t("Nội dung comment sẽ gửi")}
-          </summary>
-          <pre className="mt-2 max-h-40 overflow-y-auto font-sans whitespace-pre-wrap break-words text-ink-2">{tagComment(m)}</pre>
-        </details>
+        <FoldMore label={t("Nội dung comment sẽ gửi")} className="rounded-lg bg-paper-2 px-3 py-2 text-xs">
+          <pre className="max-h-40 overflow-y-auto pt-2 font-sans whitespace-pre-wrap break-words text-ink-2">{tagComment(m)}</pre>
+        </FoldMore>
       </DialogContent>
     </Dialog>
   );

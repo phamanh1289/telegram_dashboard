@@ -8,7 +8,7 @@ import { AiBotIcon, AiPromptBox, AiResultCard } from "@/shared/components/ai/cha
 import { useDocTag } from "@/features/docs/components/doc-tag";
 import { AiFetching, deepLines, useAiWait } from "@/shared/components/ai/fetching";
 import { type Block, groupEvents, type TaskEvent, toolMeta } from "@/shared/components/ai/steps";
-import { EventItem, SessionAsks, useTaskLog } from "@/features/telegram/components/tasks-feed";
+import { EventItem, SessionAsks, taskGone, useTaskLog } from "@/features/telegram/components/tasks-feed";
 import { ProjectPicker, useProjects } from "@/shared/components/project-picker";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/shared/components/ui/dialog";
@@ -298,8 +298,11 @@ function LiveStep({ items }: { items?: TaskEvent[] }) {
 function useDeepRun(taskId: string | null) {
   const qc = useQueryClient();
   const task = useQuery({ ...taskListQuery, select: useCallback((l: Task[]) => l.find((t) => t.id === taskId), [taskId]), enabled: !!taskId }).data;
-  const running = !!taskId && (!task || task.running); // the log ending refetches the list (useTaskLog), so this flips soon after
-  const items = useTaskLog(taskId, running).data?.items;
+  const listed = !!taskId && (!task || !!task.running); // the log ending refetches the list (useTaskLog), so this flips soon after
+  const log = useTaskLog(taskId, listed);
+  // Not in the list: a run just started, unless its log says it ended (past the list's cap) or it is gone (deleted)
+  const running = listed && !taskGone(log.error) && (!!task || log.data?.running !== false);
+  const items = log.data?.items;
   // The last turn as the AI Agent session shows it (its texts, then the result card with asks and timeline), tools aside.
   const turn = useMemo(() => {
     const b = groupEvents(items ?? []);

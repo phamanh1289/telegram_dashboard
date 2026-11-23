@@ -24,7 +24,7 @@
         "at": "css:aside[aria-label=\"Trợ lý AI\"] [role=\"group\"]"
       },
       {
-        "t": "Click the circular \"Check again\" icon to look for new messages",
+        "t": "Click the circular \"Check again\" icon to look for new messages (a group with a yellow exclamation mark: Telegram could not be read for it, so whether it has news is not known)",
         "at": "Kiểm tra lại"
       }
     ],
@@ -58,7 +58,7 @@
     "tab": "telegram",
     "area": "Briefing › To do",
     "title": "To do across all groups (For you, To confirm, To-dos…)",
-    "what": "Gathers questions needing confirmation, to-dos, decisions and changes from the latest summary of every group into one list with filter tabs. The \"Needs you\" tab shows only items asked of / assigned to you (by your YouTrack name; PO/PM for the PO role). Tick the circle to mark an item handled (saved on this machine). Items where you replied to the original message on Telegram (sent from the app or from Telegram) move to handled by themselves, marked \"You replied\". To-dos without a ticket are checked against YouTrack: a similar ticket shows \"may already exist …\", otherwise a prominent \"No ticket · Create\" button appears. With a role that uses code, every to-do has \"Check code\" (the AI reads the code: done yet, how far) and \"AI Agent\" (hand it to the AI Agent, the to-do already in the extra request; once handed over the button shows the session's state, click to open it). The To-dos tab has \"Check code for N to-dos\" at the top of each group to check them all in one session; each to-do shows \"Code: adapted / off / not done\" from the latest check (\"old\" when newer messages came in), and to-dos the AI finds done move to handled (with Undo). A decision naming a ticket has \"record on …\" to add it as a comment; a change to a ticket in a sprint shows \"changes sprint … scope\". Items nobody resolved in the last summary stay, labeled \"open since …\".",
+    "what": "Gathers questions needing confirmation, to-dos, decisions and changes from the latest summary of every group into one list with filter tabs. The \"Needs you\" tab shows only items asked of / assigned to you (by your YouTrack name; PO/PM for the PO role). Tick the circle to mark an item handled (saved on the dashboard server: every browser / machine sees it). Items where you replied to the original message on Telegram (sent from the app or from Telegram) move to handled by themselves, marked \"You replied\". To-dos without a ticket are checked against YouTrack: a similar ticket shows \"may already exist …\", otherwise a prominent \"No ticket · Create\" button appears. With a role that uses code, every to-do has \"Check code\" (the AI reads the code: done yet, how far) and \"AI Agent\" (hand it to the AI Agent, the to-do already in the extra request; once handed over the button shows the session's state, click to open it). The To-dos tab has \"Check code for N to-dos\" at the top of each group to check them all in one session; each to-do shows \"Code: adapted / off / not done\" from the latest check (\"old\" when newer messages came in), and to-dos the AI finds done move to handled (with Undo). A decision naming a ticket has \"record on …\" to add it as a comment (not for the PO/PM role: \"Update story\" edits the description and leaves the comment); a change to a ticket in a sprint shows \"changes sprint … scope\". Items nobody resolved in the last summary stay, labeled \"open since …\"; a Settled / Change item naming a ticket and not put in its story yet stays too (labeled \"not in the story since …\") until Update story or marked done, so QC tests what was decided.",
     "how": [
       {
         "t": "In the sidebar's \"AI assistant\" section, click \"Briefing\" (the orange number = groups with new messages)",
@@ -78,6 +78,73 @@
       }
     ],
     "keys": "for you decided needs confirmation questions awaiting confirmation briefing pending decisions to-dos handled tick mark todo replied auto reply youtrack no ticket suggest create ticket duplicate check code ai agent hand off"
+  },
+  {
+    "id": "briefing-wait",
+    "tab": "telegram",
+    "area": "Briefing › To follow up",
+    "title": "Items waiting on someone else (To follow up) and Update story",
+    "what": "Each To confirm / To-do / Decided / Change item has a \"Waiting on…\" button that puts an item still waiting on someone else on the \"To follow up\" tab; a Q&A thread has \"Waiting on…\" too, on its \"Đã chốt\" bar (not settled yet: on the AI conclusion card), e.g. settled but still waiting on a design / the BU. The reasons follow your role (the Role box on YouTrack, or Settings): PO/PM \"Waiting on design\" / \"Waiting on BU\"; Dev \"Waiting on BE\" / \"Needs PO\"; QA \"Waiting on build\" / \"Waiting on fix\"; change them in Settings › Telegram › Briefing › \"Wait reasons\" (× to drop one, add another role's built-in reason or type your own such as \"Waiting on the client\"; a reason of your own shows \"Looks done\" once someone replies to the original message). On a group's \"Whole group\" tab every message (yours too) has a ⌛ \"Waiting on…\" button in its action strip to follow it until someone replies. The item leaves the open list; the list is saved on the dashboard server, so every browser / machine sees it, kept even when a later summary no longer has it. On that tab each item shows its age (red \"waiting N days\" past 3 days); \"Remind\" opens the reply box on the original message with a drafted reminder (e.g. \"Nhờ BE hỗ trợ giúp…\", \"Nhờ fix giúp…\") with whoever must answer / do it already @tagged when found in the group (else type @ yourself); tick the circle once it is no longer waiting; \"Stop waiting\" puts it back in the open list. Once a day, on any page (Telegram, YouTrack, Documents, Settings), the app reminds you when something has waited over 3 days (a system notification when the app is in the background and Notifications are on). Briefing's Saved Messages button also sends the To follow up items. PO/PM role only: To confirm / Decided / Change items have \"Update story\" (put what was decided into the ticket description: edit it yourself or have the AI draft it, then \"Save\"; the YouTrack comment and the Telegram reply to the deciding message are each sent with their own button, type @ or click a quick-tag group to tag); a saved item shows \"In story VA-1\" and moves to handled. Picking \"Waiting on design\" for an item with a ticket offers moving it to the project's design state (e.g. ASSIGN TO DESIGN); ticking a waiting item done offers \"Update story\". When what it waits on has happened, the item shows \"Looks done\" with why and a \"Close\" button (never closed by itself): waiting on fix / build / design follows its first ticket's state (moved to test / built / left the design state, after the wait began); waiting on BE / PO / BU, someone replied to the original message on Telegram. An item put into a story and handled still shows \"In story VA-1\" under Handled.",
+    "how": [
+      {
+        "t": "Under “AI assistant” in the sidebar, click “Briefing”",
+        "at": "Briefing"
+      },
+      {
+        "t": "On an open item (To confirm / To-do / Decided / Change), click “Waiting on…”",
+        "at": "Chờ…"
+      },
+      {
+        "t": "Pick what it waits on (PO/PM: Waiting on design / Waiting on BU; Dev: Waiting on BE / Needs PO; QA: Waiting on build / Waiting on fix)",
+        "at": [
+          "Chờ design",
+          "Chờ BE",
+          "Chờ build"
+        ]
+      },
+      {
+        "t": "Open the “To follow up” tab to see what is still waiting",
+        "at": "Chờ bổ sung"
+      },
+      "Each item shows its age (red past 3 days); once what it waits on has happened it shows “Looks done” with why and a “Close” button. Tick the circle when it is no longer waiting, “Stop waiting” puts it back in the open list; PO/PM also get “Update story”",
+      {
+        "t": "Click “Remind”: the reply box opens on the original message with a drafted reminder, whoever must answer already @tagged; review, then send",
+        "at": "Nhắc"
+      }
+    ],
+    "keys": "waiting design bu follow up q&a qa thread settled conclusion po decided update story acceptance criteria ac ticket description tell group tag cho bo sung cap nhat story remind overdue saved messages in story assign to design state daily reminder po role waiting be po build fix dev qa qc looks done auto close remind tag who must answer"
+  },
+  {
+    "id": "briefing-story",
+    "tab": "telegram",
+    "area": "Briefing › Update story (PO)",
+    "title": "Put what the group decided into the story (Update story)",
+    "what": "PO/PM role: To confirm / Decided / Change items in Briefing have an “Update story” button. The item (with its context) is shown above the description box for you to put into the story, and is the change already filled in if you ask the AI to draft. A saved item shows “In story VA-1” and moves to handled; click it again to update once more. The Telegram message replies to the deciding message. In the dialog: the description opens ready to edit by hand, AI is just the “AI” chip to click when needed (its draft opens on the “Compare” tab). The description box has three tabs: “Write” to edit, “Compare” for the lines added / removed against what YouTrack has, “Preview” for the description as YouTrack will show it. “Save” only writes the description to YouTrack; tick “Add the comment and send to Telegram” next to “Save” (off by default) and “Save” also sends the comment and the Telegram message. “Who to tell” has two independent boxes, neither waits for the other nor for “Save”: “Comment on YouTrack” (“Send comment”) and “Telegram message” (“Send to Telegram”, posted straight to the group). Each box starts with a ready line tagging the Assignee / QC the platform's own way (YouTrack by login, Telegram by the group member's @username), freely editable; type @ to pick from that platform's people. Under each box are quick-tag groups (Android, iOS, FE, BE, QA/QC by default): click one to tag the whole group; ⚙ renames groups, adds / removes people or adds a group (kept in this browser, per platform). The number beside a group is how many people it has; people are remembered with their names, so they still show before a Telegram group is picked. A Telegram send that loses the connection midway reads “not sure it was sent”: check the group before “Send again”.",
+    "how": [
+      {
+        "t": "Under “AI assistant” in the sidebar, click “Briefing”",
+        "at": "Briefing"
+      },
+      {
+        "t": "Pick the To confirm, Decided or Change tab",
+        "at": "css:[aria-label=\"Lọc việc\"]"
+      },
+      {
+        "t": "Click “Update story” under an item",
+        "at": "Cập nhật story"
+      },
+      {
+        "t": "Check the ticket ID at the top, then edit right in the “Description” box (a missing AC, a new decision)",
+        "at": "css:textarea[aria-label=\"Mô tả\"]"
+      },
+      "The “Compare” tab shows lines added (green) and removed (red); the “Preview” tab shows the description as on YouTrack. Want the AI to draft it: click the “AI” chip, write the change, then “Draft”; its text lands in this same box for you to review",
+      "“Who to tell” has two separate boxes, each with its own send button: “Comment on YouTrack” and “Telegram message”. Type freely, type @ to tag (each platform lists its own people), or click a quick-tag group (Android, iOS, FE, BE, QA/QC); the ⚙ icon edits those groups",
+      {
+        "t": "Click “Save” to write the description to YouTrack (blocked when someone has just edited it on YouTrack: “Load the latest to edit”). Tick “Add the comment and send to Telegram” before saving to send both along; otherwise the dialog stays open so you can send each one",
+        "at": "css:button[data-story-save]"
+      }
+    ],
+    "keys": "update story briefing po pm decided description acceptance criteria tell group in story tag people pick who to tag tell telegram comment on youtrack edit by hand preview quick tag groups android ios fe be qa qc type @ send comment send to telegram"
   },
   {
     "id": "briefing-group-cards",

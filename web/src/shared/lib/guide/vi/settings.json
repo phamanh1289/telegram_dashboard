@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Cài đặt › Tìm cài đặt",
     "title": "Tìm một cài đặt",
-    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
     "how": [
       {
         "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -240,7 +240,7 @@
     "tab": "settings",
     "area": "Cài đặt › Chung › Giới thiệu bản thân cho AI",
     "title": "Nền tảng tóm tắt",
-    "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Mobile chung, Không giới hạn).",
+    "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Web, Mobile (Android + iOS), Tất cả): áp dụng cho Tóm tắt & gợi ý, tạo ticket từ tin, Briefing, trang Tóm tắt của nhóm, Trợ lý Briefing và AI Agent. Dev chọn nền tảng mình code: Briefing bỏ chủ đề chỉ liên quan nền tảng khác (Android / iOS bỏ web, Web bỏ app) và không chia mục Ảnh hưởng cho team đó. QA/QC, PO/PM chọn Mobile hoặc Tất cả: AI báo tình trạng từng nền tảng (QC: lỗi, đã sửa, chưa test lại; PO: xong, đang làm, chưa bắt đầu, bị chặn) và chỉ ra nền tảng đang chậm. Ô Giới thiệu bản thân hiện mẫu theo vai trò (Dev app, Dev web, QC, PO) gợi ý những gì AI cần biết: nền tảng, môi trường, thiết bị, việc bạn chốt, phần cần bỏ qua.",
     "how": [
       {
         "t": "Chọn mục \"Chung\"",
@@ -251,7 +251,7 @@
         "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
       }
     ],
-    "keys": "mo san tom tat nen tang android ios mobile platform tra loi"
+    "keys": "mo san tom tat nen tang android ios mobile platform tra loi briefing web qc po tat ca gioi thieu mau"
   },
   {
     "id": "settings-briefing-model",

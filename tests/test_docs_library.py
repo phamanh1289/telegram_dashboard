@@ -7,6 +7,7 @@ from telegram_dashboard import ai as ai_mod
 from telegram_dashboard.docs import sync
 from telegram_dashboard.docs.library import Library
 from telegram_dashboard.storage import Db, Store
+from telegram_dashboard.youtrack import client as yt_client
 from telegram_dashboard.youtrack.client import YtError
 
 
@@ -101,18 +102,21 @@ async def test_an_update_records_the_lines_it_changed_and_who(lib, yt, store, tm
     await sync.run(lib, yt)
     art = store.doc_find("yt_article", "VA-A-1")
     assert store.doc_revs(art["id"]) == []  # first read: nothing to compare with
+    added = art["added_at"]
+    assert added  # the history counts from here
     yt.updated += 1
     yt.content["VA-A-1"] = "# Giải ngân\nĐiều kiện xem VA-12 và VA-13"
     (folder / "a.md").write_text("# API\nđăng nhập\n\n## Lỗi\nmã 401\nmã 403")
     os.utime(folder / "a.md", (1, 2_000_000))  # a new mtime even within the same second
     await sync.run(lib, yt)
     [rev] = store.doc_revs(art["id"])
+    assert store.doc_find("yt_article", "VA-A-1")["added_at"] == added  # an update keeps it
     assert rev["by"] == "Lan PO" and rev["at"] == yt.updated and rev["more"] == 0
     assert rev["blocks"] == [{"heading": "# Giải ngân", "removed": ["Điều kiện xem VA-12"],
-                              "added": ["Điều kiện xem VA-12 và VA-13"]}]  # fmt: skip
+                              "added": ["Điều kiện xem VA-12 và VA-13"], "at": 2}]  # fmt: skip
     f = store.doc_find("file", str((folder / "a.md").resolve()))
     [frev] = store.doc_revs(f["id"])
-    assert frev["by"] is None and frev["blocks"] == [{"heading": "## Lỗi", "removed": [], "added": ["mã 403"]}]
+    assert frev["by"] is None and frev["blocks"] == [{"heading": "## Lỗi", "removed": [], "added": ["mã 403"], "at": 4}]
     monkeypatch.setattr("telegram_dashboard.storage.docs.KEEP_REVS", 2)
     for n in range(3):
         yt.updated += 1
@@ -150,7 +154,7 @@ async def test_summary_runs_once_per_text_and_again_when_redact_flips(lib, ai, y
 
 
 async def test_sync_indexes_changed_articles_and_folder_files(lib, yt, store, tmp_path, monkeypatch):
-    monkeypatch.setattr(sync, "PAGE", 1)  # pages through the list
+    monkeypatch.setattr(yt_client, "LIST_PAGE", 1)  # pages through the list
     folder = tmp_path / "docs"
     (folder / "sub").mkdir(parents=True)
     (folder / "a.md").write_text("# API\nđăng nhập")

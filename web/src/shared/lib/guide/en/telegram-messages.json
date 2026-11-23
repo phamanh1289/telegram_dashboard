@@ -23,7 +23,7 @@
     "tab": "telegram",
     "area": "Message row › Done",
     "title": "Mark Done / Reopen",
-    "what": "Marks a tag as handled (no reply needed / handled elsewhere) and drops a reaction on Telegram; done messages can be reopened. A notice offers \"Undo\".",
+    "what": "Marks a tag as handled (no reply needed / handled elsewhere) and drops a reaction on Telegram (only on messages others sent, never on your own, also when an AI Agent session or Q&A finishes it); done messages can be reopened. A notice offers \"Undo\".",
     "how": [
       {
         "t": "Click a group in the sidebar",
@@ -109,11 +109,12 @@
     "tab": "telegram",
     "area": "Tin tag › Hoãn › Luôn bỏ qua",
     "title": "Always ignore a person or keyword",
-    "what": "Tags from a listed sender or containing a listed keyword go straight to Handled, with no notification; an ignored sender's messages also stay out of Briefing / Digest. See, add and remove them in Settings › Telegram › Always ignore: each rule is a chip coloured by kind, × removes it (tags already cleared don't reopen).",
+    "what": "Tags from a listed sender or containing a listed keyword go straight to Handled, with no notification; an ignored sender's messages also stay out of Briefing / Digest. See, add and remove them in Settings › Telegram › Always ignore (the Senders and Keyword rows): each rule is a chip, × removes it (tags already cleared don't reopen).",
     "how": [
       "From a message: open its Snooze menu and pick “Always ignore {name}” (the notice has Undo)",
       "In Settings › Telegram › Always ignore: type in “Sender name…” and pick the person, or type in “Keyword” and press Enter",
-      "Click × on a chip to get notified again"
+      "In the Tags when AI Agent asks card, the BE bot / PO / QC rows: type a name and pick who is always tagged when an AI Agent session posts a question to that role in the group",
+      "Click × on a chip to get notified again (the notice has Undo if you removed the wrong one)"
     ],
     "keys": "luon bo qua always ignore mute silence block sender keyword rule notifications"
   },
@@ -122,9 +123,10 @@
     "tab": "telegram",
     "area": "Tag › Snooze › Always prioritize",
     "title": "Always prioritize a person",
-    "what": "The opposite of \"Always ignore\": this person's tags always go to the top of To do (after pinned ones), carry a yellow \"Priority\" mark and count as overdue at half the usual threshold. Remove it in Settings › Telegram › Always ignore (× on the chip).",
+    "what": "The opposite of \"Always ignore\": this person's tags always go to the top of To do (after pinned ones), carry a yellow \"Priority\" mark and count as overdue at half the usual threshold. Remove it in Settings › Telegram › Priority and automation (× on the chip).",
     "how": [
       "Open a tag's Snooze menu and choose \"Always prioritize {name}\"",
+      "Or in Settings › Telegram › Priority and automation: type in “Sender name…” on the Always prioritize row and pick the person",
       "The notice at the bottom of the screen has an Undo button"
     ],
     "keys": "priority always prioritize sender rules vip"
@@ -134,7 +136,7 @@
     "tab": "telegram",
     "area": "Tag › Snooze › BE automation",
     "title": "BE automation: AI sessions take BE's answers by themselves",
-    "what": "Two per-sender rules so you no longer pass answers on by hand. \"Pass {name}'s answers on to the AI session\": when that person answers a question an AI Agent session posted (found up the reply chain by its #REF-… or #QA… code), that session goes on with the answer attached: it does what is now clear and drafts the next questions for the rest; it edits code only if the session was ever allowed to, a running session waits for its turn to end, a Done one is left alone. A short holding reply (like \"noted, BE is on it, will report back\" or \"got more info, BE is still looking\") runs nothing: the session notes it is only an acknowledgement, not a confirmation, so it stops and waits for the real confirmation; the message stays in To do and the real answer that follows runs. An answer in a Q&A thread no open session holds opens a read-only session (with the thread's question attached) in the project you last picked in Assign AI Agent when the rule was set; the thread's later answers go on in that session. \"Always assign {name}'s messages to AI Agent\": each new message from that person opens a read-only session in the project you picked last in Assign AI Agent. Every session answer ends with a Status (Awaiting reply / Ready for Done / Needs you), shown in the AI Agent list and Today. Nothing is sent to Telegram by itself. Remove the rules in Settings › Telegram › Always ignore. Dev role only. An automatic turn uses the session's model at medium effort at most. When Claude's quota (5-hour or weekly window) reaches 80%, the BE loop spares quota. With \"Step down the model near the quota limit\" (Settings › AI) on, an automatic turn steps down to Sonnet instead of the session's model, the session notes it, and the loop only pauses once a window is 100% used. With it off, the BE loop pauses from 80%. While paused, answers wait in a queue, the session notes why, and the app tries again the moment the quota resets (every 10 minutes at the latest) until they run; turns you type still run. The queue is saved, so restarting the app does not lose it.",
+    "what": "Two per-sender rules so you no longer pass answers on by hand. \"Pass {name}'s answers on to the AI session\": when that person answers a question an AI Agent session posted (found up the reply chain by its #REF-… or #QA… code), that session goes on with the answer attached: it does what is now clear and drafts the next questions for the rest; it edits code only if the session was ever allowed to, a running session waits for its turn to end, a Done one is left alone. A short holding reply (like \"noted, BE is on it, will report back\" or \"got more info, BE is still looking\") runs nothing: the session notes it is only an acknowledgement, not a confirmation, so it stops and waits for the real confirmation; the message stays in To do and the real answer that follows runs. An answer in a Q&A thread no open session holds opens a read-only session (with the thread's question attached) in the project you last picked in Assign AI Agent when the rule was set; the thread's later answers go on in that session. \"Always assign {name}'s messages to AI Agent\": each new message from that person opens a read-only session in the project you picked last in Assign AI Agent. Every session answer ends with a Status (Awaiting reply / Ready for Done / Needs you), shown in the AI Agent list and Today. Nothing is sent to Telegram by itself. Remove the rules in Settings › Telegram › Priority and automation. Dev role only. An automatic turn uses the session's model at medium effort at most. When Claude's quota (5-hour or weekly window) reaches 80%, the BE loop spares quota. With \"Step down the model near the quota limit\" (Settings › AI) on, an automatic turn steps down to Sonnet instead of the session's model, the session notes it, and the loop only pauses once a window is 100% used. With it off, the BE loop pauses from 80%. While paused, answers wait in a queue, the session notes why, and the app tries again the moment the quota resets (every 10 minutes at the latest) until they run; turns you type still run. The queue is saved, so restarting the app does not lose it.",
     "how": [
       "Open the Snooze menu of a message from the BE bot and choose \"Pass {name}'s answers on to the AI session\" or \"Always assign {name}'s messages to AI Agent\"",
       "The notice at the bottom of the screen has an Undo button"
@@ -324,6 +326,28 @@
       }
     ],
     "keys": "ticket chip youtrack ticket id va-123 state assignee link tag"
+  },
+  {
+    "id": "msg-doc-links",
+    "tab": "telegram",
+    "area": "Nội dung tin › Bài KB và file đính kèm",
+    "title": "KB articles and files in a message: in Documents or not, add / update",
+    "what": "A link to a Knowledge Base article (…/articles/VA-A-134) or an article ID (VA-A-134) of our YouTrack shows as a chip: a ✓ means it is in Documents, a dashed + means it is not. An attached file shows as an attachment chip (name, size, a state mark). The state only compares the article ID / file name with the library on this machine: no AI, nothing loaded on hover. Hover a chip for a small card: what it is, whether Documents has it, and one main button. Not there yet: a click pins the card (it stays when the pointer leaves; a click outside or Esc closes it). Already there: a click opens its text right here (the text only), and \"Open in Documents\" goes to the Documents page on that article / file. An article not there: \"Add to Documents\" (with the articles under it, one sync; you stay on the message). One that is: \"Open in Documents\", or \"Update\" to download it again from YouTrack now (the change goes into its change history). A file (.md, .txt, .json, .yaml, .docx, PDFs with text, up to 20 MB): \"Add to Documents\" downloads it into the library; when the library holds an older version with that name, \"Update with this file\"; when it holds a newer one, you can only open that one (no roll back). Files added from Telegram sit under the Telegram filter of the Documents page, in the \"Telegram\" folder; the document has a \"Message\" button and a bin button to remove it.",
+    "how": [
+      {
+        "t": "Click \"To do\" in the sidebar to get the list of messages",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Hover a KB article chip to see whether it is in Documents; click to add it (not there) or read it right here (there)",
+        "at": "css:[data-testid=\"message\"] button[aria-haspopup]"
+      },
+      {
+        "t": "Hover / click an attached file's chip to add it to Documents (or update it when the library holds an older version); one already there opens right here on a click",
+        "at": "css:[data-testid=\"message\"] button[aria-haspopup]"
+      }
+    ],
+    "keys": "documents kb knowledge base article link attached file attachment pdf docx add update in documents newer version telegram remove"
   },
   {
     "id": "msg-task-result",

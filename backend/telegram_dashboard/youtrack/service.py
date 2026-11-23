@@ -1,11 +1,12 @@
 """YouTrackDashboard: the app's one YouTrack service (client + reads, see client.py / queries.py), the team's
 settings files (AI notes, saved prompts, workflow) and the background watch (new tickets, "Báo lại", snoozes).
-HTTP: /api/yt/* in api.py (+ api_ai.py, api_flow.py), /api/youtrack/* in routes.py.
+HTTP: /api/yt/* in api.py (+ api_ai.py, api_flow_file.py, api_flow.py), /api/youtrack/* in routes.py.
 """
 
 import asyncio
 import logging
 import os
+import random
 import re
 import time
 
@@ -191,11 +192,12 @@ class YouTrackDashboard(YtQueries):
 
     async def wake_snoozes(self, db) -> None:
         """Tags snoozed "until VA-1 is done": wake those whose ticket is resolved / Fixed / Done."""
-        for i in (await db.read(db.store.ticket_snoozes))[:WAKE_MAX]:
+        ids = await db.read(db.store.ticket_snoozes)
+        for i in random.sample(ids, min(WAKE_MAX, len(ids))):  # a different slice each round: none is never checked
             try:
                 r = _normalize(await self.yt(f"/api/issues/{i}", fields=FIELDS))
             except YtError as e:
-                if e.status == 404:  # gone: the snooze's own time wakes it
+                if e.status in (403, 404):  # gone / not mine to read: the snooze's own time wakes it
                     continue
                 raise
             if r["resolved"] or FINISHED.match(r["state"] or ""):

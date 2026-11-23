@@ -4,7 +4,7 @@
     "tab": "telegram",
     "area": "Top bar › Telegram / YouTrack / Documents",
     "title": "Switch between Telegram, YouTrack and Documents",
-    "what": "The Telegram / YouTrack / Documents tabs at the left of the top bar (also on the Settings page) switch between the modules (Documents: the library of Knowledge Base articles and files on this machine, to search and ask the AI); the open tab is highlighted, and the other tab shows a red badge for what is new: on Telegram = the tags under Việc cần xử lý › Đang chờ (no AI session yet), on YouTrack = tickets newly given to you since you last opened YouTrack (opening it clears them); with nothing new, the YouTrack tab shows an amber badge = the number of your tickets that need action now. Each sidebar holds only its own module's pages; ⌘K on either side still finds pages of the other.",
+    "what": "The Telegram / YouTrack / Documents tabs at the left of the top bar (also on the Settings page) switch between the modules (Documents: the library of Knowledge Base articles and files on this machine, to search and ask the AI); the open tab is highlighted, and the other tab shows a red badge for what is new: on Telegram = the tags under Việc cần xử lý › Đang chờ (no AI session yet), on YouTrack = tickets newly given to you since you last opened YouTrack (opening it clears them); with nothing new, the YouTrack tab shows an amber badge = the number of tickets that need you now (at risk, with a comment asking you, and for the PO/PM role: tickets assigned to you waiting on your decision), each ticket counted once; hover the tab to see the list. Each sidebar holds only its own module's pages; ⌘K on either side still finds pages of the other.",
     "how": [
       {
         "t": "Hover \"YouTrack\" to see new tickets (red badge) or those that need action now (yellow badge), then click to go to YouTrack",
@@ -19,7 +19,7 @@
         "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]"
       }
     ],
-    "keys": "switch module youtrack telegram badge tickets need action now tabs red badge new tickets new messages documents docs tai lieu"
+    "keys": "switch module youtrack telegram badge tickets need action now tabs red badge new tickets new messages documents docs tai lieu asked in comments waiting on your decision po"
   },
   {
     "id": "ai-quota-pill",

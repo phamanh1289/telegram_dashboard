@@ -75,7 +75,7 @@
     "tab": "youtrack",
     "area": "Trang chủ (Dev/QA/PO) › AI Studio",
     "title": "AI Studio trên trang chủ",
-    "what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case (ticket đã lưu UI flow thì test case đi theo đúng màn và nút trong sơ đồ), Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Bản tin tuần, Release notes.",
+    "what": "Thẻ gom các việc AI theo vai trò thành từng tab; câu trả lời được lưu trong ngày (Bản tin tuần: lưu cả tuần) nên mở lại không tốn lượt. Dev: Kế hoạch, Standup. QA: Test case (ticket đã lưu UI flow thì test case đi theo đúng màn và nút trong sơ đồ), Bug triage, Regression, Chất lượng ticket. PO: Brief, Lên sprint, Grooming, Chất lượng ticket (ticket trong sprint chưa tới bước test còn thiếu tiêu chí nghiệm thu, kèm gợi ý), Bản tin tuần, Release notes.",
     "how": [
       {
         "t": "Trong thẻ \"AI Studio\", bấm tab việc AI thứ hai (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Lên sprint\")",
@@ -92,7 +92,7 @@
       },
       "Nhấn Esc. \"Làm lại\" chạy lại, \"Xóa\" xóa nội dung đã lưu"
     ],
-    "keys": "ai studio ke hoach kế hoạch standup test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes"
+    "keys": "ai studio ke hoach kế hoạch standup test case bug triage regression chat luong ticket chất lượng ticket brief len sprint lên sprint grooming ban tin tuan bản tin tuần release notes chat luong ticket chất lượng ticket thieu ac thiếu ac po"
   },
   {
     "id": "yt-ai-standup-dev",
@@ -230,6 +230,32 @@
     "keys": "brief po pm cho po chot chờ po chốt tien do sprint tiến độ sprint can chu y cần chú ý wip"
   },
   {
+    "id": "yt-hoi-ban-trong-binh-luan",
+    "tab": "youtrack",
+    "area": "Trang chủ YouTrack › Hỏi bạn trong bình luận",
+    "title": "Bình luận YouTrack đang hỏi bạn (chưa trả lời)",
+    "what": "Ticket đang mở (có bình luận trong 30 ngày) có bình luận của người khác hỏi bạn (tag @login của bạn, nhắc tên bạn) sau lần cuối bạn bình luận: người khác bình luận chen vào sau câu hỏi vẫn không làm mất nó. Cũng hiện trong trang Hôm nay bên Telegram. Vai trò PO/PM: ở cuối thẻ \"Chờ PO chốt\", tính cả bình luận hỏi PO / PM (câu hỏi có dấu \"?\" nhắc PO / PM, hoặc \"cần / nhờ / chờ / hỏi PO\", \"PO ơi / giúp\"); bình luận chỉ nhắc tới PO như \"chốt thay PO\", \"PO đã chốt\" không tính. Vai trò Dev và QA: thẻ riêng \"Hỏi bạn trong bình luận\" ở cột phải trang chủ. Bạn bình luận trả lời sau đó là ticket tự rời danh sách. Bấm một dòng để mở ticket và trả lời. Khi bạn đang ở Telegram / Tài liệu / Cài đặt, ticket có bình luận hỏi bạn cộng vào huy hiệu vàng trên nút YouTrack ở thanh trên (cùng ticket rủi ro và, với PO/PM, ticket chờ bạn chốt).",
+    "how": [
+      {
+        "t": "Mở trang chủ YouTrack (Dev: Hôm nay, QA: Kiểm thử, PO: Tổng quan)",
+        "at": [
+          "Hôm nay",
+          "Kiểm thử",
+          "Tổng quan"
+        ]
+      },
+      {
+        "t": "Ở “Hỏi bạn trong bình luận” (PO: cuối thẻ “Chờ PO chốt”), bấm một dòng để mở ticket",
+        "at": "css:ul[aria-label=\"Hỏi bạn trong bình luận\"] li button"
+      },
+      {
+        "t": "Viết trả lời ở ô bình luận cuối bảng bên, ⌘↵ gửi: ticket rời danh sách",
+        "at": "css:textarea[aria-label=\"Bình luận mới\"]"
+      }
+    ],
+    "keys": "hoi ban trong binh luan hỏi bạn trong bình luận cho po chot chờ po chốt comment youtrack tag mention po pm chua tra loi dev qa"
+  },
+  {
     "id": "yt-ai-brief-po",
     "tab": "youtrack",
     "area": "Brief (PO) › AI Studio",
@@ -280,7 +306,7 @@
       },
       "Chờ AI viết xong (đóng bảng bằng Esc để báo cáo hiện trong thẻ); đặt lịch tự tạo ở Cài đặt › YouTrack",
       {
-        "t": "Bấm \"Xem đầy đủ\" (hoặc \"Thu gọn\") để mở rộng nội dung",
+        "t": "Báo cáo dài thì thẻ gập lại: bấm \"Xem đầy đủ\" (hoặc \"Thu gọn\") để mở rộng nội dung; báo cáo ngắn hiện trọn, không có nút này",
         "at": [
           "Xem đầy đủ",
           "Thu gọn"

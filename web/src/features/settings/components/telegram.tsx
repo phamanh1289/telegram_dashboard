@@ -1,17 +1,19 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Plus, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState, useSyncExternalStore } from "react";
 import { AUTO_BRIEF } from "@/features/telegram/components/briefing-page";
-import { RulesSection } from "@/features/telegram/components/tools-menu";
+import { BUILTIN_WAITS, ROLE_WAITS, saveWaitChoices, toChoice, useWaitChoices, WAIT_ON, waitName } from "@/features/telegram/components/briefing/waits";
+import { ADD_CHIP, POP, RulesCount, RulesSection } from "@/features/telegram/components/tools-menu";
 import { Card, linkCls, quietBtn, Row, StatusLine, Switch, tMap, usePrivacy, useStatus } from "@/features/settings/components/parts";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { api, errorText } from "@/shared/lib/api";
 import { type Key, useT } from "@/shared/lib/i18n";
-import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, qaRemindLabel, readNotify, readOverdueHours, readQaAnswerBy, readRowActions, setPref, useQaRemind } from "@/shared/lib/prefs";
+import { applyRowActions, getPref, onPrefs, OVERDUE_CHOICES, QA_REMIND_CHOICES, qaRemindLabel, readNotify, readOverdueHours, readQaAnswerBy, readRowActions, setPref, useQaRemind, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 
 /** Telegram-only preferences: the account, the queue, notifications, Q&A, Briefing, rules, local data. */
@@ -78,13 +80,76 @@ export function TelegramGroup() {
       <Row label={t("Tự tóm tắt Briefing")} desc={t("Khi app đang mở, nhóm có tin mới được tóm tắt nền tối đa 2 giờ một lần, mở Briefing là có sẵn. Tắt: chỉ tóm tắt khi bạn bấm.")}>
         <Switch label={t("Tự tóm tắt Briefing")} checked={autoBrief} onChange={(v) => { setAutoBrief(v); setPref(AUTO_BRIEF, v ? null : "0"); }} />
       </Row>
+      <WaitChoicesRow />
     </Card>
 
-    <Card advanced title="Luôn bỏ qua" info="Người gửi (thêm bằng ô Tên người gửi ở đây, hoặc “Luôn bỏ qua …” trong menu Hoãn của một tin) và từ khóa: tag khớp tự sang Đã xử lý, không báo; tin của người gửi trong danh sách không vào tóm tắt Briefing / Digest. Bấm × trên chip để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
-      <RulesSection />
+    <Card advanced badge={<RulesCount kinds={["sender", "keyword"]} />} title="Luôn bỏ qua" info="Tag khớp tự sang Đã xử lý, không báo; tin của người gửi trong danh sách cũng không vào tóm tắt Briefing / Digest. Thêm người gửi ở đây hoặc bằng “Luôn bỏ qua …” trong menu Hoãn của một tin. Bấm × trên chip để nhận thông báo lại; tag đã dọn trước đó không tự mở lại.">
+      <RulesSection kinds={["sender", "keyword"]} />
+    </Card>
+
+    <Card advanced badge={<RulesCount kinds={["priority", "relay", "agent"]} />} title="Ưu tiên và tự động" info="Quy tắc theo người gửi. Luôn ưu tiên: gõ tên ở đây hoặc chọn “Luôn ưu tiên …” trong menu Hoãn của một tin. Tự chuyển / Tự giao AI Agent cần dự án nên thêm từ menu Hoãn (“Tự chuyển trả lời của … vào phiên AI”, “Luôn giao AI Agent cho tin của …”). Bấm × trên chip để gỡ, thông báo có nút Hoàn tác.">
+      <RulesSection kinds={["priority", "relay", "agent"]} />
+    </Card>
+
+    <Card advanced badge={<RulesCount kinds={["tag_be", "tag_po", "tag_qc"]} />} title="Tag khi AI Agent hỏi" info="Người được tag ở đầu câu hỏi mà phiên AI Agent gửi BE / PO / QC vào nhóm: phiên mới soạn sẵn tag này, lúc gửi tự thêm tag còn thiếu.">
+      <RulesSection kinds={["tag_be", "tag_po", "tag_qc"]} />
     </Card>
 
   </>;
+}
+
+/** The "Chờ…" menu's reasons for the user's role: drop one (×), add another role's built-in one or words of one's own. */
+function WaitChoicesRow() {
+  const t = useT();
+  const role = useRoleOrDev();
+  const list = useWaitChoices(role);
+  const [word, setWord] = useState("");
+  const save = (next: string[]) => saveWaitChoices(role, next);
+  const add = (s: string) => {
+    const v = s.trim().slice(0, 60), low = v.toLowerCase();
+    const id = BUILTIN_WAITS.find((k) => k === low || t(WAIT_ON[k].label).toLowerCase() === low) ?? v; // "Chờ BE": the built-in one
+    if (v && !list.includes(id)) save([...list, id]);
+    setWord("");
+  };
+  const roleName = t(YT_ROLES.find(([r]) => r === role)![1]);
+  return (
+    <Row label={t("Lý do chờ")} desc={t("Các lựa chọn của nút “Chờ…” (mục Briefing, Q&A, tin ở tab Cả nhóm) cho vai trò {role}. Lý do tự thêm hiện “Có vẻ xong” khi có người trả lời tin gốc.", { role: roleName })} stack>
+      <div className="grid gap-2">
+        <ul aria-label={t("Lý do chờ")} className="flex flex-wrap items-center gap-1.5">
+          <AnimatePresence initial={false} mode="popLayout">
+            {list.map((s) => {
+              const c = toChoice(s), { Icon } = WAIT_ON[c.on], name = waitName(c);
+              return (
+                <motion.li key={s} layout {...POP} className="flex h-7 max-w-full min-w-0 items-center gap-1 rounded-full bg-warn-wash pr-0.5 pl-2.5 text-xs font-medium text-ink">
+                  <Icon className="size-3.5 shrink-0 text-warn" aria-hidden /><span className="truncate">{name}</span>
+                  <button type="button" aria-label={t("Xóa {name}", { name })} onClick={() => save(list.filter((x) => x !== s))}
+                    className="grid size-6 shrink-0 place-items-center rounded-full text-warn transition-colors duration-(--dur-micro) hover:bg-cotton/70 focus-visible:outline-2 focus-visible:outline-(--color-focus)">
+                    <X className="size-3.5" aria-hidden />
+                  </button>
+                </motion.li>
+              );
+            })}
+            {BUILTIN_WAITS.filter((k) => !list.includes(k)).map((k) => (
+              <motion.li key={`+${k}`} layout="position" {...POP} className="flex">
+                <button type="button" className={ADD_CHIP} onClick={() => add(k)}><Plus className="size-3.5 shrink-0" aria-hidden />{t(WAIT_ON[k].label)}</button>
+              </motion.li>
+            ))}
+            <motion.li key="add" layout="position" className="flex">
+              <form className={ADD_CHIP} onSubmit={(e) => { e.preventDefault(); add(word); }}>
+                <Plus className="size-3.5 shrink-0" aria-hidden />
+                <input aria-label={t("Thêm lý do chờ riêng")} placeholder={t("Lý do riêng, vd. Chờ khách hàng")} value={word} maxLength={60}
+                  onChange={(e) => setWord(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setWord("")}
+                  className="w-60 max-w-full bg-transparent text-ink outline-none placeholder:text-ink-3" />
+              </form>
+            </motion.li>
+          </AnimatePresence>
+        </ul>
+        {list.join() !== ROLE_WAITS[role].join() && (
+          <button type="button" className={quietBtn} onClick={() => saveWaitChoices(role, null)}>{t("Về mặc định của vai trò")}</button>
+        )}
+      </div>
+    </Row>
+  );
 }
 
 const TG_ERRORS: Record<string, Key> = {

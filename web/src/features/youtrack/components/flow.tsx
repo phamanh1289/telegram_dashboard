@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Download, Loader2, Lock, RefreshCw, RotateCw, Sparkles, Trash2, TriangleAlert, Workflow, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AiFetching, useAiWait } from "@/shared/components/ai/fetching";
+import { useAiWait } from "@/shared/components/ai/fetching";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogContent, DialogTitle, DIALOG_SHEET } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
@@ -18,17 +18,8 @@ import { FlowRisks, useFlowCheck } from "./flow-check";
 import { FlowStart, FlowTargetPicker } from "./flow-start";
 import { FlowTitle } from "./flow-title";
 import { FlowDownload } from "./flow-md";
+import { Center, FlowBusy, STATUS } from "./flow-status";
 
-/** The head line of the dialog: what the file is now (one state, its colour, a hint on what to do next). */
-const STATUS = {
-  running: { label: "Đang render", hint: "Lượt AI đang chạy, xem tiến độ bên dưới", tone: "bg-hl-wash text-hl-2" },
-  interrupted: { label: "Bị gián đoạn", hint: "Bấm “Tiếp tục render” để chạy lại", tone: "bg-warn/15 text-warn" },
-  failed: { label: "Lỗi render", hint: "Xem lý do ở thẻ lỗi, rồi bấm render để thử lại", tone: "bg-error/10 text-error" },
-  unsaved: { label: "Chưa lưu", hint: "Sơ đồ chỉ nằm trong bản nháp, chưa lên ticket", tone: "bg-warn/15 text-warn" },
-  edited: { label: "Chưa cập nhật", hint: "Có thay đổi chưa lên ticket; bấm Cập nhật để ghi", tone: "bg-warn/15 text-warn" },
-  flow: { label: "Đã có sơ đồ", hint: "Kéo thả để sửa; lưu lên ticket bằng Cập nhật", tone: "bg-paper-3 text-ink-2" },
-  empty: { label: "Chưa có", hint: "Chọn cách dựng ở giữa, rồi bấm nút bên dưới", tone: "bg-paper-3 text-ink-3" },
-} as const;
 import { type FlowEvent, FlowProgress, flowStage, flowSummary } from "./flow-progress";
 
 // The ticket's UI flow: the file on the ticket drawn by the engine (web/public/uiflow.js), one AI run to build it, and
@@ -154,7 +145,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
       const c = (ctl.current = new AbortController());
       flowSignals.add(c.signal);
       const opts = again ? {} : runOpts.current; runOpts.current = {}; // once: the next run asks again
-      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, note: opts.note, target, draw: opts.draw };
+      const current = again ?? { id: newJobId(), base: q.data?.att ?? null, at: Date.now(), mode: opts.mode, split: opts.split, reuse: opts.reuse, note: opts.note, target, draw: opts.draw };
       pendingJob.current = current;
       stopRequested.current = null;
       if ((!again || again.retryAi) && draft.current) persist({ ...draft.current, pendingJob: current.id }, true);
@@ -171,7 +162,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
         if (currentScope.scope !== scope) throw new Error(t("Tài khoản YouTrack đã đổi. Mở lại UI flow."));
         const result = again && !again.retryAi
           ? await yt.flowJobEvents(current.id, cursor.current.at, c.signal)
-          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!opts.reuse, !!current.split, current.target ?? target, current.draw);
+          : await yt.aiFlow(issue, current.note ?? "", current.mode ?? mode, c.signal, current.base, again ? null : keep.current, !!current.reuse, !!current.split, current.target ?? target, current.draw);
         const state = await yt.flowJobState(current.id);
         if (op !== operation.current) return null;
         setJob(state);
@@ -373,7 +364,7 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
   // an interrupted render: one warn button, under the run button (or in the footer over a flow on screen)
   const resume = job?.needs_ai_retry && !ai.isPending ? (
     <Hint side="bottom" title={t("Render bị gián đoạn")} text={t("Lượt render trước chưa xong. Bấm để gọi AI lại với đúng chế độ, model và phạm vi màn của lượt đó. Kết quả chỉ lên ticket khi bạn bấm Cập nhật.")}>
-      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, target: job.request?.target, draw: job.request?.draw ?? undefined }); }}>
+      <Button size="sm" className="border border-warn bg-warn/15 text-warn hover:bg-warn/25" disabled={save.isPending} onClick={() => { if (!job) return; ai.mutate({ id: newJobId(), base: job.base, at: Date.now(), retryAi: true, note: job.request?.note ?? "", mode: job.request?.mode ?? mode, split: job.request?.split, reuse: job.request?.reuse, target: job.request?.target, draw: job.request?.draw ?? undefined }); }}>
         <RotateCw aria-hidden />{t("Tiếp tục render")}
       </Button>
     </Hint>
@@ -586,32 +577,3 @@ function ScopedFlowDialog({ issue, open, onClose, scope }: { issue: string; open
     </>
   );
 }
-
-/** The file being packed (download) or sent to the ticket (save): a card with the feature's scene and the step it is on,
- *  held AI_WAIT_MS so it is seen, over the middle of the map. Not a modal and click-through: the map stays editable while
- *  it uploads (those edits stay a draft over the saved file); nothing to stop (a save of unknown outcome must not be cut). */
-/** `onStop`: Dừng; none while the step cannot be stopped (a save's upload): the button stays, greyed, with why. */
-function FlowBusy({ project, pending, kind, step, title, text, onStop }: { project: string; pending: boolean; kind: "flowHtml" | "flowSave"; step: string; title: string; text: string; onStop?: () => void }) {
-  const t = useT();
-  const show = useAiWait(pending);
-  if (!show) return null;
-  return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center p-4">
-      <section role="status" aria-label={title} className="grid w-full max-w-md gap-2 rounded-lg bg-cotton p-5 shadow-pop animate-in fade-in-0 zoom-in-95 duration-(--dur-short)">
-        <h3 className="text-base font-medium text-ink">{title}</h3>
-        <p className="text-sm text-ink-2">{text}</p>
-        <AiFetching kind={kind} project={project} lines={step ? [step] : undefined} className="min-h-72 py-2" />
-        {pending && (
-          <div className="pointer-events-auto flex items-center justify-end gap-3">
-            {!onStop && <span className="text-xs text-ink-3">{t("Đang tải lên ticket: để chạy xong, dừng giữa chừng sẽ không rõ đã lưu hay chưa.")}</span>}
-            <Button size="sm" variant="outline" disabled={!onStop} onClick={onStop}><X />{t("Dừng")}</Button>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-const Center = ({ children }: { children: React.ReactNode }) => (
-  <div className="grid h-full w-full place-content-center justify-items-center gap-3 p-6 text-center">{children}</div>
-);

@@ -4,7 +4,7 @@
     "tab": "telegram",
     "area": "Thanh trên cùng › Telegram / YouTrack / Tài liệu",
     "title": "Chuyển module Telegram / YouTrack / Tài liệu",
-    "what": "Ba tab Telegram / YouTrack / Tài liệu ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa các module (Tài liệu: kho tài liệu Knowledge Base và file trên máy, tìm và hỏi AI); tab đang mở được tô sáng, tab bên kia có huy hiệu đỏ báo việc mới: trên tab Telegram = số tin tag ở Việc cần xử lý › Đang chờ (chưa có phiên AI), trên tab YouTrack = số ticket mới giao cho bạn từ lần cuối mở YouTrack (mở YouTrack là xoá); không có ticket mới thì tab YouTrack hiện huy hiệu vàng hổ phách = số ticket của bạn cần xử lý ngay. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
+    "what": "Ba tab Telegram / YouTrack / Tài liệu ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa các module (Tài liệu: kho tài liệu Knowledge Base và file trên máy, tìm và hỏi AI); tab đang mở được tô sáng, tab bên kia có huy hiệu đỏ báo việc mới: trên tab Telegram = số tin tag ở Việc cần xử lý › Đang chờ (chưa có phiên AI), trên tab YouTrack = số ticket mới giao cho bạn từ lần cuối mở YouTrack (mở YouTrack là xoá); không có ticket mới thì tab YouTrack hiện huy hiệu vàng hổ phách = số ticket cần bạn ngay (rủi ro, có bình luận đang hỏi bạn, và với vai trò PO/PM: ticket gán cho bạn đang chờ bạn chốt), mỗi ticket đếm một lần; rê chuột lên tab để xem danh sách. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
     "how": [
       {
         "t": "Rê chuột vào \"YouTrack\" để xem ticket mới (huy hiệu đỏ) hoặc cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
@@ -19,7 +19,7 @@
         "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]"
       }
     ],
-    "keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay huy hieu do huy hiệu đỏ ticket moi ticket mới tin moi tin mới tai lieu tài liệu docs"
+    "keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay huy hieu do huy hiệu đỏ ticket moi ticket mới tin moi tin mới tai lieu tài liệu docs hoi ban trong binh luan hỏi bạn trong bình luận cho ban chot chờ bạn chốt po"
   },
   {
     "id": "ai-quota-pill",

@@ -18,10 +18,11 @@ const QUERY = /(?:^|\s)@([^\s@]{0,32}(?: [^\s@]{0,32}){0,3})$/; // "@Lan Q" righ
 export const SHOWN = 8;
 
 /** What a box wires in for a caret popup ("@", "#"): `ref={attach}`, `track` (onChange + onSelect), `onKeyDown` first,
- *  `popup` inside a `relative` parent; send `wire(text)`. */
+ *  `popup` inside a `relative` parent, `top` (what was picked, as chips) above the text; send `wire(text)`. */
 export type Picker = {
   attach: (el: HTMLTextAreaElement | null) => void; track: (e: SyntheticEvent<HTMLTextAreaElement>) => void;
   onKeyDown: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean; wire: (s: string) => string; popup: ReactNode; open: boolean;
+  top?: ReactNode;
 };
 
 /** The word typed after a trigger right before the caret (`re` group 1), the row picked, and putting a pick in. */
@@ -96,7 +97,7 @@ export function useJoin(a: Picker, b: Picker): Picker {
   const attach = useCallback((el: HTMLTextAreaElement | null) => { aa(el); ba(el); }, [aa, ba]);
   return {
     attach, track: (e) => { a.track(e); b.track(e); }, onKeyDown: (e) => a.onKeyDown(e) || b.onKeyDown(e),
-    wire: (s) => b.wire(a.wire(s)), popup: <>{a.popup}{b.popup}</>, open: a.open || b.open,
+    wire: (s) => b.wire(a.wire(s)), popup: <>{a.popup}{b.popup}</>, open: a.open || b.open, top: a.top ?? b.top,
   };
 }
 

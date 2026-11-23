@@ -205,6 +205,24 @@ def test_rerender_keeps_the_flow_on_screen_so_the_ai_writes_only_what_is_new():
     assert result.manifest["reused"] == 1  # the link to the gone screen is dropped
 
 
+def test_rerender_merges_a_hand_added_screen_into_its_design_not_a_second_copy():
+    text = f'[Login]({URL}a)\n├─ “Go” → [Home]({URL}b)'
+    login, home = flow_merge.stable_id(URL+"a"), flow_merge.stable_id(URL+"b")
+    previous = {"screens": [  # "s1": added in the editor, then linked to Login's design
+        {"id": "s1", "title": "Login", "zeplin": URL+"a",
+         "items": [{"id": "b1", "label": "Go"}, {"id": "b2", "label": "Quên"}]},
+        {"id": home, "title": "Home", "zeplin": URL+"b", "items": []},
+        {"id": "err", "title": "Lỗi", "kind": "popup", "parent": "s1", "zeplin": "", "items": []}],
+        "links": [{"src": "s1.b1", "to": "err", "act": "open"}, {"src": "s1.b2", "to": home}]}
+    result = build(detail(description=text), previous=previous)
+    screens = {s["id"]: s for s in result.skeleton["screens"]}
+    assert list(screens) == [login, home, "err"] and screens["err"]["parent"] == login
+    go = next(i["id"] for i in screens[login]["items"] if i["label"] == "Go")  # the skeleton's own button, not a twin
+    assert [i["label"] for i in screens[login]["items"]].count("Go") == 1
+    assert {"src": f"{login}.{go}", "to": "err", "act": "open"} in result.skeleton["links"]
+    assert {"src": f"{login}.b2", "to": home} in result.skeleton["links"] and result.manifest["reused"] == 2
+
+
 def test_split_parts_share_the_ac_keep_own_screens_and_combine_once():
     screens = "\n".join(f"[S{n}]({URL}{n})" for n in range(30))
     shots = {URL+str(n): {"texts": [f"Nút {n}"]} for n in range(30)}

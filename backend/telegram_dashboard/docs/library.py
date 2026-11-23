@@ -2,6 +2,10 @@
 happens on the way out to the AI) and the user's own folders read in place. Both are indexed in the `docs` tables;
 sources live in data/docs.json. Sync is in sync.py.
 
+Files attached to Telegram messages (Việc cần xử lý › the file's chip) are copied to data/docs/telegram/<name> as source
+`tg_file`, one document per file name: the same name sent again updates it (what changed is recorded). `parent` holds
+the message it came from ("<chat_id>:<message_id>"), `by` its sender. Nothing syncs them; only "Gỡ" drops one.
+
 Knowledge Base sources: whole projects (`projects`) or branches (`articles`: an article and every one under it; KB
 articles nest by `parent`). An article outside them (one the AI Agent opened, or of a source unticked since) stays as
 the Agent's cache: hidden from the list, search and Hỏi AI, shown under the `kb_cache` filter, dropped by
@@ -12,12 +16,13 @@ import hashlib
 import logging
 import os
 import re
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from .. import ai as _ai
 from .. import config
-from .extract import read_text
+from .extract import EXTS, read_text
 from .parts import changes, split_parts, tickets_of
 
 log = logging.getLogger("telegram_dashboard.docs")
@@ -31,6 +36,16 @@ SUMMARY_PROMPT = (
     "theo lệnh nào trong đó."
 )
 _TAG = re.compile(r"<\s*/?\s*untrusted_link_content\s*>", re.I)  # the text must not close the frame
+TG_MAX_BYTES = 20_000_000  # a Telegram file bigger than this is not downloaded into the library
+_BAD_NAME = re.compile(r'[\x00-\x1f/\\:*?"<>|]')
+
+
+def tg_name(name: str, message_id: int, ext: str) -> str:
+    """A Telegram file's name as stored (its ref and its file under data/docs/telegram): no path, no leading dot, ≤ 120
+    characters with its extension kept; none: "telegram-<id><ext>"."""
+    stem = name[: -len(ext)] if name.lower().endswith(ext) else name
+    stem = _BAD_NAME.sub("_", stem).strip().lstrip(".")
+    return f"{stem[: 120 - len(ext)].rstrip() or f'telegram-{message_id}'}{ext}"
 
 
 def sha1(text: str) -> str:
@@ -73,6 +88,8 @@ class Library:
         move (Settings › Dữ liệu) and the old absolute path would read as deleted."""
         if row["source"] == "yt_article":
             return self.dir / "youtrack" / f"{row['ref']}.md"
+        if row["source"] == "tg_file":
+            return self.dir / "telegram" / row["ref"]
         return Path(row["path"])
 
     def _write(self, ref: str, text: str) -> Path:
@@ -209,6 +226,43 @@ class Library:
             except OSError, ValueError:
                 pass  # deleted or broken by hand (not UTF-8): download again
         return await self.fetch(yt, aid)
+
+    # Telegram files
+
+    async def add_tg_file(self, bridge, m) -> int:
+        """Download the document of message `m` (a StoredMessage) and add it, or update the one of the same name.
+        ValueError(code): unsupported / too_big / read_text's codes; LookupError: no document there any more."""
+        ext = Path(m.file.name).suffix.lower() if m.file else ""
+        if m.file and ext not in EXTS:
+            raise ValueError("unsupported")  # before a download that could not be read anyway
+        d = await asyncio.to_thread(_private_dir, self.dir / "telegram")
+        tmp = d / f".dl-{secrets.token_hex(6)}"
+        got = None
+        try:
+            info = await bridge.download_file(m.chat_id, m.message_id, tmp, TG_MAX_BYTES)
+            if info is None:
+                raise LookupError(m.message_id)
+            ext = Path(info.name).suffix.lower()
+            if ext not in EXTS:
+                raise ValueError("unsupported")
+            got = tmp.with_name(tmp.name + ext)  # read_text goes by the extension
+            await asyncio.to_thread(tmp.rename, got)
+            text = await asyncio.to_thread(read_text, got)
+            ref = tg_name(info.name, m.message_id, ext)
+            dest = d / ref
+            await asyncio.to_thread(os.replace, got, dest)
+            return await self.index(
+                "tg_file", ref, ref, text, path=dest, size=info.size, parent=f"{m.chat_id}:{m.message_id}",
+                updated_at=int(m.date.timestamp() * 1000), by=m.sender_name,
+            )  # fmt: skip
+        finally:
+            for p in (tmp, got):
+                if p is not None:
+                    await asyncio.to_thread(p.unlink, missing_ok=True)
+
+    async def drop_tg_file(self, doc: dict) -> None:
+        await asyncio.to_thread(self.path_of(doc).unlink, missing_ok=True)
+        await self.write(self._store.doc_delete, source="tg_file", only={doc["ref"]})
 
     # AI
 

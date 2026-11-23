@@ -16,7 +16,7 @@ import { type Brief, saveBrief } from "@/features/telegram/lib/briefs";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
 import { askInQa } from "@/features/telegram/lib/inbox";
 import { copyText } from "@/shared/lib/notifications";
-import { readIntro } from "@/shared/lib/prefs";
+import { aboutMe } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { briefingQuery, useSaveBriefing } from "@/features/telegram/components/briefing/run";
 import { EASE, FADE, tgText } from "@/features/telegram/components/briefing/todo";
@@ -167,7 +167,7 @@ export function AiPane({ ready, brief, bare, onSave, saving, onClose, className 
     setQ("");
     setTurns((all) => [...all, { id, q: question, text: "", busy: true }]);
     try {
-      const r = await apiStream<{ text: string }>("/briefing/ask", { question, intro: readIntro() }, ctl.signal, (text) => set({ text }));
+      const r = await apiStream<{ text: string }>("/briefing/ask", { question, ...aboutMe() }, ctl.signal, (text) => set({ text }));
       set({ text: r.text, busy: false });
       // kept in AI Agent › Briefing, to read again later
       done.current.push({ q: question, a: r.text });

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 
 from . import gitops
 from .agent import delete_task_files, read_task_prompt, read_task_result, task_active_at
-from .ai import at_usernames
+from .ai import at_usernames, role_tags
 from .ai_prompts import session_rules, task_state
 from .errors import ApiError, int_or_404
 from .links import expand, has_links, links_dir
@@ -126,7 +126,8 @@ async def start_task(
     await s.db.write(s.store.add_task, task_id, chat_id, message_id, project, prompt,
                      mode=mode, session_id=session, kind=kind, title=title, git_base=base)  # fmt: skip
     # one frame for every session (Giao AI Agent, Đối chiếu BE): who the user is, rules, answer sections, questions
-    rules = session_rules(mode, about.role, about.platform, about.intro)
+    rules = session_rules(mode, about.role, about.platform, about.intro,
+                          tags=role_tags(await s.db.read(s.store.list_rules)))  # fmt: skip
 
     async def text() -> str:
         return await expand(s, at_usernames(prompt), task_id, chat_id=chat_id) + f"\n\n{rules}"
@@ -312,7 +313,9 @@ def build_router(settings) -> APIRouter:
         title, text = body.title.strip(), body.body.strip()
         base = row["git_base"]
         res = await gitops.open_pr(row["project"], f"ai/{task_id}", title, text, base, mixed_ok=body.mixed_ok)
-        if row["git_base"]:  # what went into the PR is no longer this session's open change
+        # what went into the PR is no longer this session's open change. Checked again: a turn that started while this
+        # pushed (a queued prompt, Vòng BE) may have edited files since, and a new base would hide those edits
+        if row["git_base"] and not s.agent.running(task_id):
             await s.db.write(s.store.set_task_base, task_id, await gitops.snapshot(row["project"]))
         pushed = f"Đã đẩy nhánh `{res['branch']}`. {res['note'] or ''}"
         s.agent.note(task_id, f"Đã mở PR: {res['url']}" if res["url"] else pushed)

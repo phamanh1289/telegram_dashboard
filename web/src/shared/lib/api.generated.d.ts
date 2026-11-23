@@ -472,6 +472,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/docs/kb/{ref}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kb Refresh
+         * @description Download the article again now (instead of waiting for the next sync); what changed is recorded.
+         */
+        post: operations["kb_refresh_api_docs_kb__ref__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/docs/telegram": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Add Telegram
+         * @description The document of a kept message into the library: added, or the one of the same name updated.
+         */
+        post: operations["add_telegram_api_docs_telegram_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/docs/ai": {
         parameters: {
             query?: never;
@@ -541,7 +581,11 @@ export interface paths {
         get: operations["detail_api_docs__doc_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Remove
+         * @description Drop a Telegram file from the library (the others leave with their source).
+         */
+        delete: operations["remove_api_docs__doc_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -582,6 +626,72 @@ export interface paths {
          * @description Show the file in Finder / Explorer: the stored path of a `file` doc only.
          */
         post: operations["reveal_api_docs__doc_id__reveal_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/follow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Follow */
+        get: operations["get_follow_api_briefing_follow_get"];
+        put?: never;
+        /**
+         * Change Follow
+         * @description One change, merged here (the page does not send the list back), so two tabs do not undo each other.
+         */
+        post: operations["change_follow_api_briefing_follow_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/follow/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Wait Replies
+         * @description Replies from others to the messages a wait cites, after it was parked: "có vẻ xong" for Chờ BE / PO / BU.
+         *     Reads each group once through the Q&A memo (TTL + LIVE_READS).
+         */
+        post: operations["wait_replies_api_briefing_follow_replies_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/done": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Done
+         * @description The Briefing items ticked done ("đã xử lý"), oldest first: the same on every browser / machine.
+         */
+        get: operations["get_done_api_briefing_done_get"];
+        put?: never;
+        /**
+         * Set Done
+         * @description Ticks `keys` on or off, merged here (not the whole list sent back), so two tabs do not undo each other.
+         */
+        post: operations["set_done_api_briefing_done_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1384,126 +1494,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/groups": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Groups
-         * @description Every Telegram group the account is in, live: Briefing adds untagged ones from here.
-         */
-        get: operations["groups_api_groups_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chats/{chat_id}/digest-consent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Digest Consent */
-        get: operations["get_digest_consent_api_chats__chat_id__digest_consent_get"];
-        /** Put Digest Consent */
-        put: operations["put_digest_consent_api_chats__chat_id__digest_consent_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chats/{chat_id}/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * History
-         * @description Live from Telegram, not stored: the Digest view reads and picks from this.
-         */
-        get: operations["history_api_chats__chat_id__history_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chats/{chat_id}/digest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Saved Digest
-         * @description Latest digest of this chat and how far digests have read (null when none).
-         */
-        get: operations["saved_digest_api_chats__chat_id__digest_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chats/{chat_id}/evidence": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Evidence
-         * @description Live, not stored: the messages a digest item cites plus the ones they reply to (Briefing's
-         *     item detail shows them as the evidence behind it).
-         */
-        get: operations["evidence_api_chats__chat_id__evidence_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/briefing": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Briefing
-         * @description Tracked groups and digest-only ones, with their Digest state; latest_id tells
-         *     whether there is news.
-         */
-        get: operations["briefing_api_briefing_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/chats/{chat_id}/members": {
         parameters: {
             query?: never;
@@ -1518,173 +1508,6 @@ export interface paths {
         get: operations["members_api_chats__chat_id__members_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/qa": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Qa
-         * @description Q&A threads of one group over the last `days`, live from Telegram (not stored, no AI), latest activity first.
-         *     Tags we keep come as their stored copy (kept, with done / pin state), so the row offers its tag actions.
-         */
-        get: operations["qa_api_qa_get"];
-        put?: never;
-        /**
-         * Qa Post
-         * @description Post a question to any group the account is in, the text then a "#QA…" line; with `reply_to`, a reply in
-         *     its thread as typed, or (`start`) an answer to someone's question that opens a thread on it. Answering a tag
-         *     we keep marks it done, like a reply from the reply panel. `start` on a message already in a thread (up its reply
-         *     chain) answers in that thread as typed: no second code. A question / answer that tags nobody (@username) goes
-         *     out as a plain message: no code, no Q&A.
-         */
-        post: operations["qa_post_api_qa_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/qa/mark": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        /**
-         * Qa Mark
-         * @description Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
-         *     null undoes. Xong / undoing it moves the thread's kept tags too, as Done on each from the list (no reaction).
-         */
-        put: operations["qa_mark_api_qa_mark_put"];
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/qa/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Qa Summary
-         * @description AI conclusion of one Q&A thread (question, answer, what is still open), for a ticket or a recap.
-         */
-        post: operations["qa_summary_api_qa_summary_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/briefing/ask": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Briefing Ask
-         * @description Ask AI across every group's latest digest (no new Telegram reads).
-         */
-        post: operations["briefing_ask_api_briefing_ask_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/briefing/answered": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Briefing Answered
-         * @description chat_id -> digest-cited message ids I have replied to since (Briefing ticks them off).
-         */
-        get: operations["briefing_answered_api_briefing_answered_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/briefing/be-replies": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Briefing Be Replies
-         * @description chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE shows them).
-         */
-        get: operations["briefing_be_replies_api_briefing_be_replies_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/briefing/saved": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Briefing Saved
-         * @description Send the briefing (or an AI answer about it) to my own Saved Messages.
-         */
-        post: operations["briefing_saved_api_briefing_saved_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/digest": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Digest */
-        post: operations["digest_api_digest_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2061,6 +1884,313 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Groups
+         * @description Every Telegram group the account is in, live: Briefing adds untagged ones from here.
+         */
+        get: operations["groups_api_groups_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/digest-consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Digest Consent */
+        get: operations["get_digest_consent_api_chats__chat_id__digest_consent_get"];
+        /** Put Digest Consent */
+        put: operations["put_digest_consent_api_chats__chat_id__digest_consent_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * History
+         * @description Live from Telegram, not stored: the Digest view reads and picks from this.
+         */
+        get: operations["history_api_chats__chat_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Saved Digest
+         * @description Latest digest of this chat and how far digests have read (null when none).
+         */
+        get: operations["saved_digest_api_chats__chat_id__digest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chats/{chat_id}/evidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Evidence
+         * @description Live, not stored: the messages a digest item cites plus the ones they reply to (Briefing's
+         *     item detail shows them as the evidence behind it).
+         */
+        get: operations["evidence_api_chats__chat_id__evidence_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Briefing
+         * @description Tracked groups and digest-only ones, with their Digest state; latest_id tells
+         *     whether there is news.
+         */
+        get: operations["briefing_api_briefing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Qa
+         * @description Q&A threads of one group over the last `days`, live from Telegram (not stored, no AI), latest activity first.
+         *     Tags we keep come as their stored copy (kept, with done / pin state), so the row offers its tag actions.
+         */
+        get: operations["qa_api_qa_get"];
+        put?: never;
+        /**
+         * Qa Post
+         * @description Post a question to any group the account is in, the text then a "#QA…" line; with `reply_to`, a reply in
+         *     its thread as typed, or (`start`) an answer to someone's question that opens a thread on it. Answering a tag
+         *     we keep marks it done, like a reply from the reply panel. `start` on a message already in a thread (up its reply
+         *     chain) answers in that thread as typed: no second code. A question / answer that tags nobody (@username) goes
+         *     out as a plain message: no code, no Q&A.
+         */
+        post: operations["qa_post_api_qa_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Qa Accept
+         * @description Chốt: the reply marked as a thread's answer (null: none), kept here so every browser shows it.
+         */
+        put: operations["qa_accept_api_qa_accept_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa/mark": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Qa Mark
+         * @description Xong (no nudge, not waiting) or removed from the dashboard's Q&A (Telegram keeps the messages).
+         *     null undoes. Xong / undoing it moves the thread's kept tags too, as Done on each from the list (no reaction).
+         */
+        put: operations["qa_mark_api_qa_mark_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/qa/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Qa Summary
+         * @description AI conclusion of one Q&A thread (question, answer, what is still open), for a ticket or a recap.
+         */
+        post: operations["qa_summary_api_qa_summary_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Briefing Ask
+         * @description Ask AI across every group's latest digest (no new Telegram reads).
+         */
+        post: operations["briefing_ask_api_briefing_ask_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/answered": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Briefing Answered
+         * @description chat_id -> digest-cited message ids I have replied to since (Briefing ticks them off).
+         */
+        get: operations["briefing_answered_api_briefing_answered_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/be-replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Briefing Be Replies
+         * @description chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE shows them).
+         */
+        get: operations["briefing_be_replies_api_briefing_be_replies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/briefing/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Briefing Saved
+         * @description Send the briefing (or an AI answer about it) to my own Saved Messages.
+         */
+        post: operations["briefing_saved_api_briefing_saved_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Digest */
+        post: operations["digest_api_digest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/youtrack/auth": {
         parameters: {
             query?: never;
@@ -2226,7 +2356,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Intro
              * @default
@@ -2256,7 +2386,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Intro
              * @default
@@ -2296,7 +2426,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Role
              * @default dev
@@ -2782,7 +2912,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Role
              * @default dev
@@ -2907,6 +3037,14 @@ export interface components {
              * @default
              */
             intro: string;
+            /**
+             * Platform
+             * @default any
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "web" | "mobile" | "any";
+            /** Role */
+            role?: ("dev" | "qa" | "po") | null;
         };
         /** BriefingItem */
         BriefingItem: {
@@ -2921,6 +3059,11 @@ export interface components {
             saved?: components["schemas"]["SavedDigest"] | null;
             /** Latest Id */
             latest_id?: string | null;
+            /**
+             * Unread
+             * @default false
+             */
+            unread: boolean;
         };
         /** ChangeItem */
         ChangeItem: {
@@ -3285,6 +3428,14 @@ export interface components {
              * @default
              */
             intro: string;
+            /**
+             * Platform
+             * @default any
+             * @enum {string}
+             */
+            platform: "android" | "ios" | "web" | "mobile" | "any";
+            /** Role */
+            role?: ("dev" | "qa" | "po") | null;
         };
         /** DigestResult */
         DigestResult: {
@@ -3469,7 +3620,7 @@ export interface components {
              * Source
              * @enum {string}
              */
-            source: "youtrack" | "file";
+            source: "youtrack" | "file" | "telegram";
             /** Ref */
             ref: string;
             /** Title */
@@ -3490,6 +3641,13 @@ export interface components {
             folder?: string | null;
             /** Rel */
             rel?: string | null;
+            /**
+             * Size
+             * @default 0
+             */
+            size: number;
+            /** Origin */
+            origin?: string | null;
         };
         /** DocDetail */
         DocDetail: {
@@ -3503,6 +3661,8 @@ export interface components {
              * @default []
              */
             revs: components["schemas"]["DocRev"][];
+            /** Added At */
+            added_at?: string | null;
         };
         /** DocHit */
         DocHit: {
@@ -3580,6 +3740,8 @@ export interface components {
             removed: string[];
             /** Added */
             added: string[];
+            /** At */
+            at?: number | null;
         };
         /** DocSearch */
         DocSearch: {
@@ -3635,6 +3797,16 @@ export interface components {
             cached: boolean;
         };
         /**
+         * DocTgBody
+         * @description A Telegram message whose document goes into the library (added, or updating the one of the same name).
+         */
+        DocTgBody: {
+            /** Chat Id */
+            chat_id: string;
+            /** Message Id */
+            message_id: number;
+        };
+        /**
          * DocZeplinScreen
          * @description A Zeplin screen matching a name written in a document: `image` a signed Zeplin image URL ("" when none), `url`
          *     the screen on Zeplin's web app.
@@ -3658,6 +3830,34 @@ export interface components {
             h: number;
             /** Url */
             url: string;
+        };
+        /** DoneChange */
+        DoneChange: {
+            /** Keys */
+            keys: string[];
+            /** On */
+            on: boolean;
+        };
+        /**
+         * FileInfo
+         * @description A document attached to a message (Telegram's file name, bytes, MIME): Tài liệu checks and adds it by name.
+         */
+        FileInfo: {
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Size
+             * @default 0
+             */
+            size: number;
+            /**
+             * Mime
+             * @default
+             */
+            mime: string;
         };
         /**
          * FlowCheckDTO
@@ -3866,6 +4066,11 @@ export interface components {
             target: "mobile" | "web";
             /** Draw */
             draw?: string[] | null;
+            /**
+             * Reuse
+             * @default false
+             */
+            reuse: boolean;
         };
         /** FlowRiskDTO */
         FlowRiskDTO: {
@@ -3880,6 +4085,73 @@ export interface components {
         FlowScopeDTO: {
             /** Scope */
             scope: string;
+        };
+        /** Follow */
+        Follow: {
+            /** Waits */
+            waits?: components["schemas"]["FollowWait"][];
+            /** Storied */
+            storied?: {
+                [key: string]: components["schemas"]["FollowStory"];
+            };
+        };
+        /** FollowChange */
+        FollowChange: {
+            /** Add */
+            add?: components["schemas"]["FollowWait"][];
+            /** Drop */
+            drop?: string[];
+            /** Storied */
+            storied?: {
+                [key: string]: components["schemas"]["FollowStory"];
+            };
+        };
+        /** FollowStory */
+        FollowStory: {
+            /** Id */
+            id: string;
+            /** At */
+            at: number;
+        };
+        /** FollowWait */
+        FollowWait: {
+            /** Key */
+            key: string;
+            /** Chat Id */
+            chat_id: string;
+            /**
+             * On
+             * @enum {string}
+             */
+            on: "design" | "bu" | "be" | "po" | "build" | "fix" | "other";
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /** Text */
+            text: string;
+            /**
+             * Why
+             * @default
+             */
+            why: string;
+            /**
+             * Who
+             * @default
+             */
+            who: string;
+            /** Tickets */
+            tickets?: string[];
+            /** Message Ids */
+            message_ids?: string[];
+            /**
+             * State
+             * @default
+             */
+            state: string;
+            /** At */
+            at: number;
         };
         /** GroupInfo */
         GroupInfo: {
@@ -4044,6 +4316,7 @@ export interface components {
             outgoing: boolean;
             /** Media Kind */
             media_kind: string | null;
+            file?: components["schemas"]["FileInfo"] | null;
             /** Deleted */
             deleted: boolean;
             /**
@@ -4185,6 +4458,15 @@ export interface components {
             /** Path */
             path: string;
         };
+        /** QaAcceptRequest */
+        QaAcceptRequest: {
+            /** Chat Id */
+            chat_id: string;
+            /** Code */
+            code: string;
+            /** Message Id */
+            message_id: string | null;
+        };
         /** QaItem */
         QaItem: {
             /** Code */
@@ -4204,6 +4486,18 @@ export interface components {
              * @default []
              */
             holding: string[];
+            /** Accepted */
+            accepted?: string | null;
+        };
+        /** QaList */
+        QaList: {
+            /** Items */
+            items: components["schemas"]["QaItem"][];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
         };
         /** QaMarkRequest */
         QaMarkRequest: {
@@ -4321,7 +4615,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender" | "priority" | "relay" | "agent";
+            kind: "keyword" | "sender" | "priority" | "relay" | "agent" | "tag_be" | "tag_po" | "tag_qc";
             /** Value */
             value: string;
             /** Label */
@@ -4341,7 +4635,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Intro
              * @default
@@ -4351,7 +4645,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "keyword" | "sender" | "priority" | "relay" | "agent";
+            kind: "keyword" | "sender" | "priority" | "relay" | "agent" | "tag_be" | "tag_po" | "tag_qc";
             /** Value */
             value: string;
             /**
@@ -4555,7 +4849,7 @@ export interface components {
              * @default android
              * @enum {string}
              */
-            platform: "android" | "ios" | "mobile" | "any";
+            platform: "android" | "ios" | "web" | "mobile" | "any";
             /**
              * Intro
              * @default
@@ -4617,6 +4911,45 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WaitRef */
+        WaitRef: {
+            /** Key */
+            key: string;
+            /** Chat Id */
+            chat_id: string;
+            /** Message Ids */
+            message_ids: string[];
+            /** At */
+            at: number;
+        };
+        /** WaitRefs */
+        WaitRefs: {
+            /** Items */
+            items: components["schemas"]["WaitRef"][];
+        };
+        /** WaitReplies */
+        WaitReplies: {
+            /** Replies */
+            replies?: {
+                [key: string]: components["schemas"]["WaitReply"][];
+            };
+            /** Failed */
+            failed?: string[];
+        };
+        /** WaitReply */
+        WaitReply: {
+            /** Message Id */
+            message_id: string;
+            /** Sender */
+            sender: string;
+            /** Text */
+            text: string;
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
         };
         /** WeekNumbers */
         WeekNumbers: {
@@ -5562,6 +5895,70 @@ export interface operations {
             };
         };
     };
+    kb_refresh_api_docs_kb__ref__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_telegram_api_docs_telegram_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DocTgBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocDTO"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     ai_sessions_api_docs_ai_get: {
         parameters: {
             query?: {
@@ -5715,6 +6112,35 @@ export interface operations {
             };
         };
     };
+    remove_api_docs__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     summary_api_docs__doc_id__summary_post: {
         parameters: {
             query?: {
@@ -5765,6 +6191,145 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_follow_api_briefing_follow_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Follow"];
+                };
+            };
+        };
+    };
+    change_follow_api_briefing_follow_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FollowChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Follow"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wait_replies_api_briefing_follow_replies_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WaitRefs"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WaitReplies"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_done_api_briefing_done_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    set_done_api_briefing_done_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DoneChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -7222,211 +7787,6 @@ export interface operations {
             };
         };
     };
-    groups_api_groups_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["GroupInfo"][];
-                };
-            };
-        };
-    };
-    get_digest_consent_api_chats__chat_id__digest_consent_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DigestConsent"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    put_digest_consent_api_chats__chat_id__digest_consent_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DigestConsentRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DigestConsent"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    history_api_chats__chat_id__history_get: {
-        parameters: {
-            query: {
-                since: string;
-                until?: string | null;
-                limit?: number;
-            };
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HistoryPage"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    saved_digest_api_chats__chat_id__digest_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SavedDigest"] | null;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    evidence_api_chats__chat_id__evidence_get: {
-        parameters: {
-            query: {
-                ids: number[];
-            };
-            header?: never;
-            path: {
-                chat_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MessageDTO"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    briefing_api_briefing_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["BriefingItem"][];
-                };
-            };
-        };
-    };
     members_api_chats__chat_id__members_get: {
         parameters: {
             query?: never;
@@ -7445,276 +7805,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Member"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    qa_api_qa_get: {
-        parameters: {
-            query: {
-                chat_id: string;
-                days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QaItem"][];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    qa_post_api_qa_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QaPostRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QaPosted"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    qa_mark_api_qa_mark_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QaMarkRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    qa_summary_api_qa_summary_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["QaSummaryRequest"];
-            };
-        };
-        responses: {
-            /** @description NDJSON: delta / reset lines, then {done: {text}} */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    briefing_ask_api_briefing_ask_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BriefingAskRequest"];
-            };
-        };
-        responses: {
-            /** @description NDJSON: delta / reset lines, then {done: {text}} */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    briefing_answered_api_briefing_answered_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string[];
-                    };
-                };
-            };
-        };
-    };
-    briefing_be_replies_api_briefing_be_replies_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: components["schemas"]["BeReply"][];
-                    };
-                };
-            };
-        };
-    };
-    briefing_saved_api_briefing_saved_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SavedMessageRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    digest_api_digest_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DigestRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DigestResult"];
                 };
             };
             /** @description Validation Error */
@@ -8322,6 +8412,512 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TelegramSignInResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    groups_api_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupInfo"][];
+                };
+            };
+        };
+    };
+    get_digest_consent_api_chats__chat_id__digest_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestConsent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_digest_consent_api_chats__chat_id__digest_consent_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestConsentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestConsent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    history_api_chats__chat_id__history_get: {
+        parameters: {
+            query: {
+                since: string;
+                until?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saved_digest_api_chats__chat_id__digest_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedDigest"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    evidence_api_chats__chat_id__evidence_get: {
+        parameters: {
+            query: {
+                ids: number[];
+            };
+            header?: never;
+            path: {
+                chat_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageDTO"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    briefing_api_briefing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BriefingItem"][];
+                };
+            };
+        };
+    };
+    qa_api_qa_get: {
+        parameters: {
+            query: {
+                chat_id: string;
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_post_api_qa_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaPostRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QaPosted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_accept_api_qa_accept_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaAcceptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_mark_api_qa_mark_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    qa_summary_api_qa_summary_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QaSummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: {text}} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    briefing_ask_api_briefing_ask_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BriefingAskRequest"];
+            };
+        };
+        responses: {
+            /** @description NDJSON: delta / reset lines, then {done: {text}} */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    briefing_answered_api_briefing_answered_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+        };
+    };
+    briefing_be_replies_api_briefing_be_replies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["BeReply"][];
+                    };
+                };
+            };
+        };
+    };
+    briefing_saved_api_briefing_saved_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SavedMessageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    digest_api_digest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DigestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestResult"];
                 };
             };
             /** @description Validation Error */

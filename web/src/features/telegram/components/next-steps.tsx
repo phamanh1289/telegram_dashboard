@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bug, Reply } from "lucide-react";
 import { useState } from "react";
 import { IssueDialog, TaskPage } from "@/features/telegram/components/composer-dialogs";
+import { StoryAction, WaitMenu } from "@/features/telegram/components/briefing/waits";
+import { todoKey } from "@/features/telegram/lib/digest";
 import { DeepItemAction, DeepTopicAction, isStale, useVerdicts, VerdictChip, verdictKey } from "@/features/telegram/components/deep-think";
 import { TicketChip } from "@/features/telegram/components/message/rich-text";
 import { getMessage, openReplyById, openTask, taskToast, useSessionOn } from "@/features/telegram/lib/inbox";
@@ -15,10 +17,12 @@ import { Hint } from "@/shared/components/ui/hint";
 import { type DigestItem, errorText, type Message, statusQuery } from "@/shared/lib/api";
 import { t as tr, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
-import { useRole, usesCode } from "@/shared/lib/prefs";
+import { useRole, useRoleOrDev, usesCode } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 
 const OPEN = new Set(["confirmations", "actions"]);
+const STORY = new Set(["confirmations", "decisions", "changes"]); // what a story may need to say
+const WAITS = new Set(["confirmations", "actions", "decisions", "changes"]); // what can wait on someone else
 
 /** "Cần confirm" / "Việc cần làm" (and Briefing's asks): answer the message it came from, or make it a ticket.
  *  `suggest`: no ticket yet and none similar on YouTrack, so "Tạo ticket" stands out; `onCreated`: after one is made.
@@ -106,10 +110,17 @@ function TodoVerdict({ chatId, it }: { chatId: string; it: DigestItem }) {
  *  question / to-do is answered, made a ticket or (a to-do) handed to the AI Agent; one with BE, and every to-do (is it
  *  done in the code yet?), is also checked against the code; the rest checked against the code. */
 export function NextSteps({ chatId, it, kind, onCreated }: { chatId: string; it: DigestItem; kind: string; onCreated?: () => void }) {
-  if (!OPEN.has(kind)) return <DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />;
+  const role = useRoleOrDev(); // no role picked yet: Dev, as YouTrack's workflow does
+  // what was (or is being) settled goes into the story (PO only); any role parks an item still waiting on someone else
+  const settle = WAITS.has(kind) && <>
+    {role === "po" && STORY.has(kind) && <StoryAction chatId={chatId} itemKey={todoKey(chatId, kind, it)} it={it} />}
+    <WaitMenu chatId={chatId} kind={kind} it={it} role={role} />
+  </>;
+  if (!OPEN.has(kind)) return <><DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />{settle}</>;
   return <>
     {kind === "actions" && <TodoVerdict chatId={chatId} it={it} />}
     <TodoActions chatId={chatId} it={it} kind={kind} onCreated={onCreated} />
     {(it.be || kind === "actions") && <DeepTopicAction chatId={chatId} item={{ text: it.text, message_ids: it.message_ids ?? [], waiting: kind === "confirmations" }} />}
+    {settle}
   </>;
 }

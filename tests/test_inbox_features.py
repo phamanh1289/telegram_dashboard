@@ -342,6 +342,10 @@ def _reaction_flow(client):
     assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]  # bulk marks stay private
     client.put(url, json={"handled": True, "react": False}, headers=H)  # done without a reaction
     assert reactions(3) == [(A, 1, "👍"), (A, 1, None)]
+    client.app.state.store.apply_message(msg(A, 3, "my own", outgoing=True))
+    client.put(f"/api/chats/{A}/messages/3/handled", json={"handled": True}, headers=H)  # mine: no reaction
+    client.put(url, json={"handled": False}, headers=H)  # sent after it, in order
+    assert reactions(3) == [(A, 1, "👍"), (A, 1, None), (A, 1, None)]
 
 
 async def test_reaction_never_replaces_or_removes_the_users_own():

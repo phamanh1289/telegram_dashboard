@@ -81,7 +81,7 @@ export function takeConfirm(taskId: string) {
   if (confirmed.delete(taskId)) subs.forEach((f) => f());
 }
 
-// Lines for a session's next prompt from another page (Tài liệu › Dùng tài liệu: "Đọc tài liệu #DOC12 …" or a KB link,
+// Lines for a session's next prompt from another page (Tài liệu › Dùng tài liệu: "Đọc tài liệu #DOC12 …" or a KB article's ID,
 // read by links.py): the composer adds them to its box once, then they are the user's text.
 const lines = new Map<string, string[]>();
 export function addLine(taskId: string, line: string) {

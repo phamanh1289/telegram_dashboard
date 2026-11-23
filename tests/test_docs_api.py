@@ -275,3 +275,23 @@ def test_ask_on_an_open_document_reads_all_of_it_matching_parts_first(client, ai
     r = client.post("/api/docs/ask", json={"question": "phí bao nhiêu?", "doc": i})
     assert done(r)["cites"][0]["part"] == 2  # the matching part first
     assert len(done(r)["cites"]) == 3 and "Cần đủ chữ ký" in ai.calls[-1]  # then the rest of the document
+
+
+def test_a_pos_draft_gets_the_kb_parts_matching_the_tag(client, monkeypatch):
+    from telegram_dashboard.models import AiResult
+
+    add(client, "VA-A-1", "# Giải ngân\nĐiều kiện giải ngân: đủ hồ sơ")
+    add(client, "VA-A-2", "Bài khác hẳn")
+    client.app.state.store.set_tracking(A, True, title="Dự án", kind="supergroup")
+    client.app.state.store.apply_message(msg(A, 1, "PO chốt giúp điều kiện giải ngân?", sender="7"))
+    seen = []
+
+    async def run(self, kind, *a, kb="", **kw):
+        seen.append(kb)
+        return AiResult(text="", options=[], analysis="", source_message_ids=["1"], context_revision="")
+
+    monkeypatch.setattr("telegram_dashboard.ai.AiService.run", run)
+    for role in ("po", "dev"):
+        client.post("/api/ai/draft", json={"chat_id": A, "message_ids": ["1"], "instruction": "", "role": role})
+    assert "VA-A-1" in seen[0] and "đủ hồ sơ" in seen[0] and "VA-A-2" not in seen[0]
+    assert seen[1] == ""  # only a PO's draft searches the KB

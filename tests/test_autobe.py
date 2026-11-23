@@ -101,6 +101,7 @@ def test_be_answers_go_on_in_their_session_and_agent_rule_opens_one(tmp_path, mo
         assert not auto.pending.get(t["id"]) and auto.error == ""
 
         assert last[-1].get("auto") is True and "auto" not in last[-2]  # the log tells whose turn it was
+        assert [x["mcp"] for x in last[-2:]] == [False, False]  # the relay follows that turn's "Dùng MCP / plugin"
 
         # quota at the threshold: the answer waits (kept in the DB: a restart reads it back), runs once quota is back
         monkeypatch.setattr(autobe, "quota_now", lambda _settings: {"5h": 85.0})

@@ -4,10 +4,11 @@ import { Bell, BellRing } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { t, useT } from "@/shared/lib/i18n";
 import { getPref, setPref } from "@/shared/lib/prefs";
-import { deskNotify, type Ticket } from "@/features/youtrack/lib/yt";
+import { selfEdits, type Ticket } from "@/features/youtrack/lib/yt";
+import { deskNotify } from "@/features/youtrack/lib/watch";
 import { ago } from "@/shared/lib/time";
 import { Popover } from "./bits";
-import { selfEdits, useYt } from "./state";
+import { useYt } from "./state";
 
 // What changed on my tickets (assignee or QC) between two refreshes: state moved, updated by someone (a comment, an edit);
 // tickets newly given to me come from checkNew in the shell (`note`). Kept for the session; a desktop notification when
@@ -84,8 +85,8 @@ export function WatchBell() {
             </div>
             {list.length ? (
               <ul className="zebra grid max-h-80 overflow-y-auto p-1">
-                {list.map((e, k) => (
-                  <li key={k} className="rounded"><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
+                {list.map((e) => (
+                  <li key={`${e.id}:${e.at}:${e.text}`} className="rounded"><button type="button" onClick={() => { close(); y.openTicket(e.id); }} className="grid w-full gap-0.5 rounded px-2 py-1.5 text-left hover:bg-paper-2">
                     <span className="flex gap-2 text-xs"><b className="font-mono">{e.id}</b><span className="ml-auto text-ink-3">{ago(e.at)}</span></span>
                     <span className="truncate text-sm">{e.text}</span>
                   </button></li>

@@ -163,6 +163,8 @@ const ENTRIES: Entry[] = [
   { t: "Câu hỏi Q&A tính là đã trả lời khi", g: "telegram", card: "Q&A", k: "qa tag nguoi duoc hoi tra loi" },
   { t: "Tự tóm tắt Briefing", g: "telegram", card: "Briefing", k: "tu dong nen briefing auto" },
   { t: "Luôn bỏ qua người gửi / từ khóa", g: "telegram", card: "Luôn bỏ qua", k: "tat bat lai thong bao mute quy tac rule tu danh dau da xu ly" },
+  { t: "Luôn ưu tiên, tự chuyển vào phiên, tự giao AI Agent", g: "telegram", card: "Ưu tiên và tự động", k: "priority uu tien relay vong be bot be quy tac rule tu dong" },
+  { t: "Tag bot BE / PO / QC khi phiên AI hỏi", g: "telegram", card: "Tag khi AI Agent hỏi", k: "tag mention bot be po qc hoi cau hoi phien ai agent gui nhom" },
   { t: "Xóa nháp và danh sách Báo lại", g: "data", card: "Dữ liệu trên trình duyệt này", k: "draft du lieu" },
   { t: "Tài khoản YouTrack, URL và token", g: "youtrack", card: "Tài khoản YouTrack", view: "connect", k: "ket noi" },
   { t: "Báo cáo release tự động", g: "youtrack", card: "Báo cáo release", view: "connect", k: "report lich hang ngay" },

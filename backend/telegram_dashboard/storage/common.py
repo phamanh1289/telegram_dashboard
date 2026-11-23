@@ -88,6 +88,7 @@ def _row_to_message(r: sqlite3.Row) -> StoredMessage:
         topic_id=r["topic_id"],
         outgoing=bool(r["outgoing"]),
         media_kind=r["media_kind"],
+        file=json.loads(r["file"]) if "file" in r.keys() and r["file"] else None,  # noqa: SIM118 (sqlite3.Row)
         deleted=bool(r["deleted"]),
         handled=bool(r["handled"]),
         handled_by=r["handled_by"],

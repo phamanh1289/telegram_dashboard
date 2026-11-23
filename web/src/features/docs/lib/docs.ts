@@ -64,13 +64,20 @@ export const docs = {
   aiTurns: (session: string, signal?: AbortSignal) => api<DocAiTurn[]>(`/docs/ai/${encodeURIComponent(session)}`, { signal }),
   /** The Zeplin screens named `name` (a screen name in a document), read with the zeplin MCP's token. */
   zeplin: (name: string, signal?: AbortSignal) => api<DocZeplinScreen[]>(`/docs/zeplin${qs({ name })}`, { signal }),
+  /** Download the article again now; what changed is recorded. */
+  kbRefresh: (ref: string) => api<Doc>(`/docs/kb/${encodeURIComponent(ref)}/refresh`, { method: "POST" }),
+  /** A kept message's file into the library: added, or the one of the same name updated. */
+  addTelegram: (chat_id: string, message_id: string) =>
+    api<Doc>("/docs/telegram", { method: "POST", json: { chat_id, message_id: Number(message_id) } }),
+  /** Drops a file kept from Telegram (the other sources leave with their folder / project). */
+  remove: (id: number) => api<void>(`/docs/${id}`, { method: "DELETE" }),
   aiDelete: (sessions: string[]) =>
     api<void>(`/docs/ai?${sessions.map((s) => `session=${encodeURIComponent(s)}`).join("&")}`, { method: "DELETE" }),
 };
 
-/** How a document is named in a box and read by an AI session (links.py): a KB article as its link (read fresh), a
- *  file on this machine as "#DOC<id>". Dùng tài liệu and "#" both write it. */
-export const docRef = (d: Pick<Doc, "id" | "url">) => d.url ?? `#DOC${d.id}`;
+/** How a document is named in an AI session's box and read by it (links.py): a KB article by its ID ("VA-A-176", read
+ *  fresh from YouTrack), a file on this machine as "#DOC<id>". Dùng tài liệu and "#" both write it. */
+export const docRef = (d: Pick<Doc, "id" | "source" | "ref">) => (d.source === "youtrack" ? d.ref : `#DOC${d.id}`);
 export const docName = (d: Pick<Doc, "title" | "ref">) => d.title || d.ref;
 
 export const docListQuery = (f: DocFilter) => ({
@@ -92,6 +99,12 @@ export const docAiQuery = (doc: number | null) => ({
   queryKey: ["docs", "ai", doc],
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.aiSessions(doc, signal),
 });
+/** Every listed document (no filter): Telegram's chips check KB articles and files against it, one shared query. */
+export const allDocsQuery = docListQuery({ source: "all", ticket: null, doc: null });
+/** Extensions the library reads (backend docs/extract.py EXTS: change both together). */
+export const READABLE = new Set([".md", ".txt", ".json", ".yaml", ".yml", ".docx", ".pdf"]);
+export const extOf = (name: string) => (/\.[^.]+$/.exec(name)?.[0] ?? "").toLowerCase();
+
 export const kbTreeQuery = (project: string) => ({
   queryKey: ["docs", "kb-tree", project],
   queryFn: ({ signal }: { signal: AbortSignal }) => docs.kbTree(project, signal),
@@ -125,6 +138,10 @@ export const docErrors = () => ({
   doc_kb_yt_401: t("YouTrack từ chối token: không tải được cây bài."),
   doc_kb_yt_403: t("YouTrack từ chối token: không tải được cây bài."),
   doc_kb_yt_404: t("Không thấy project này trên YouTrack."),
+  doc_article_yt_unreachable: t("Không kết nối được YouTrack để tải lại bài."),
+  doc_article_yt_401: t("YouTrack từ chối token: không tải lại được bài."),
+  doc_article_yt_403: t("YouTrack từ chối token: không tải lại được bài."),
+  doc_article_yt_404: t("YouTrack không trả bài này (đã xóa, hoặc bạn không có quyền đọc)."),
   doc_bad_folder: t("Đường dẫn thư mục không hợp lệ."),
   doc_not_found: t("Tài liệu không còn trong kho: bấm đồng bộ lại."),
   doc_not_a_file: t("Tài liệu này không phải file trên máy."),
@@ -132,7 +149,15 @@ export const docErrors = () => ({
   doc_outside: t("File không còn nằm trong thư mục đã chọn."),
   doc_bad_docx: t("Không đọc được nội dung file này."),
   doc_not_text: t("Không đọc được nội dung file này."),
-  doc_unsupported: t("Không đọc được nội dung file này."),
+  doc_unsupported: t("Tài liệu chưa đọc được loại file này."),
+  doc_bad_pdf: t("Không đọc được file PDF này (hỏng hoặc có mật khẩu)."),
+  doc_pdf_no_text: t("PDF này không có chữ (bản scan), Tài liệu chưa đọc được."),
+  doc_too_big: t("File quá lớn (tối đa 20 MB)."),
+  doc_tg_no_file: t("Tin không còn file đính kèm (đã xóa?)."),
+  doc_tg_offline: t("Chưa kết nối Telegram, thử lại sau."),
+  doc_not_saved: t("Không lưu được vào kho tài liệu, thử lại."),
+  doc_not_removable: t("Chỉ gỡ được file thêm từ Telegram."),
+  doc_not_removed: t("Không gỡ được file, thử lại."),
   doc_cache_clear_failed: t("Không xóa được bài KB ngoài nguồn, thử lại."),
   doc_no_match: t("Không tìm thấy trong tài liệu"),
   doc_zeplin_no_token: t("Chưa cấu hình Zeplin MCP (cần ZEPLIN_ACCESS_TOKEN) nên chưa xem được màn Zeplin."),
@@ -151,6 +176,8 @@ export function syncErrorText(e: DocSourceError) {
     : e.code === "too_many_files" ? t("quá nhiều file (tối đa {n})", { n: e.detail })
     : e.code === "outside_folder" ? t("file trỏ ra ngoài thư mục")
     : e.code === "unreadable" ? t("không đọc được")
+    : e.code === "bad_pdf" ? t("PDF hỏng hoặc có mật khẩu")
+    : e.code === "pdf_no_text" ? t("PDF không có chữ (bản scan)")
     : e.detail ? `${e.code}: ${e.detail}` : e.code;
   return `${e.ref}: ${why}`;
 }

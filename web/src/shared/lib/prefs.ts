@@ -203,7 +203,8 @@ export const useBotDock = () => useSyncExternalStore(onPrefs, readBotDock, () =>
 export const useBotCode = () => useSyncExternalStore(onPrefs, readBotCode, () => true);
 
 /** Angle the assistant analyses tags from; sent with every /ai/draft. */
-export const PLATFORMS = [["android", "Android"], ["ios", "iOS"], ["mobile", "Mobile chung"], ["any", "Không giới hạn"]] as const;
+/** Dev: the one platform they code. QC / PO: what they cover (Mobile, Tất cả), and the AI lays the platforms side by side. */
+export const PLATFORMS = [["android", "Android"], ["ios", "iOS"], ["web", "Web"], ["mobile", "Mobile"], ["any", "Tất cả"]] as const;
 export type Platform = (typeof PLATFORMS)[number][0];
 export function readPlatform(): Platform {
   const v = getPref("aiPlatform");
@@ -216,9 +217,13 @@ export const readIntro = () => (getPref("aiIntro") ?? "").trim().slice(0, INTRO_
 /** Live, so an open dialog drops its "AI chưa biết bạn làm gì" notice once Settings saves one. */
 export const useIntro = () => useSyncExternalStore(onPrefs, readIntro, () => "");
 
-/** Teams Digest checks for impact; sent with every /digest. */
+/** Teams Digest checks for impact; sent with every /digest. The other client's team is dropped (Tóm tắt theo nền tảng). */
 export const DEFAULT_DIGEST_TEAMS = ["Web", "Mobile", "Backend", "QA", "Design"];
-export const readDigestTeams = () => readList("digestTeams", DEFAULT_DIGEST_TEAMS, isString);
+const OTHER_TEAM: Partial<Record<Platform, string>> = { android: "Web", ios: "Web", mobile: "Web", web: "Mobile" };
+export const readDigestTeams = () => {
+  const other = OTHER_TEAM[readPlatform()];
+  return readList("digestTeams", DEFAULT_DIGEST_TEAMS, isString).filter((t) => t !== other);
+};
 
 /** The role (Cài đặt chung › Hệ thống): YouTrack's home, views, dashboard and AI, and Telegram's AI angle and AI Agent follow it. null = not chosen yet. */
 export type YtRole = "dev" | "qa" | "po";
@@ -248,8 +253,12 @@ export const readMascot = () => {
   return m === "robot" || m.startsWith("role:") || m.startsWith("data:image/") ? m : roleMascot();
 };
 export const useMascot = () => useSyncExternalStore(onPrefs, readMascot, () => "");
+/** One pref's text, live ("" when unset): re-renders when this tab or another changes it (setPref / storage). */
+export const usePrefValue = (key: string) => useSyncExternalStore(onPrefs, () => getPref(key) ?? "", () => "");
 /** The role, live; null = not chosen (Telegram then acts as Dev). */
 export const useRole = () => useSyncExternalStore(onPrefs, readYtRole, () => null);
+/** The role, or Dev while none is picked (as the server's workflow and the Telegram side do). */
+export const useRoleOrDev = (): YtRole => useRole() ?? "dev";
 /** QA and PO never work in a code folder: no AI Agent, no project picker. */
 export const usesCode = (r: YtRole | null) => r !== "qa" && r !== "po";
 

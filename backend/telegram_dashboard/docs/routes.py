@@ -16,7 +16,7 @@ from ..youtrack.client import YtError, YtUnreachable
 from ..zeplin_names import NAMES
 from . import sync
 from .ask import answer, docs_of, find, pack, scope
-from .library import PROJECT, folder_prefix
+from .library import ARTICLE_ID, PROJECT, folder_prefix
 from .models import (
     SESSION,
     DocAiSession,
@@ -34,6 +34,7 @@ from .models import (
     DocSources,
     DocSourcesBody,
     DocSummary,
+    DocTgBody,
     DocZeplinScreen,
     KbNode,
     Source,
@@ -48,16 +49,26 @@ def _dt(ts: float | None) -> datetime | None:
     return None if ts is None else datetime.fromtimestamp(ts, UTC)
 
 
+def _yt_error(e: YtError, what: str) -> ApiError:
+    """`what`: kb (the KB tree, Nguồn) / article (one article downloaded again)."""
+    code = "yt_unreachable" if isinstance(e, YtUnreachable) else f"yt_{e.status}"
+    return ApiError(502, f"doc_{what}_{code}", detail=e.message)
+
+
 def doc_dto(s, d: dict, folders: dict[str, str] | None = None) -> DocDTO:
-    """`folders`: {resolved prefix: folder as chosen}, to place a file under its source folder (the list's tree)."""
-    yt = d["source"] == "yt_article"
+    """`folders`: {resolved prefix: folder as chosen}, to place a file under its source folder (the list's tree). A
+    Telegram file sits under a "Telegram" folder; its `parent` column is the message it came from (`origin`)."""
+    yt, tg = d["source"] == "yt_article", d["source"] == "tg_file"
     base = getattr(s.yt, "base", "")
     home = next(((p, f) for p, f in (folders or {}).items() if not yt and d["ref"].startswith(p)), None)
+    if tg:
+        home = ("", "Telegram")
     return DocDTO(
-        id=d["id"], source="youtrack" if yt else "file", ref=d["ref"], title=d["title"], chars=d["chars"],
-        updated_at=_dt(d["updated_at"] / 1000) if d["updated_at"] else None, tickets=d["tickets"],
+        id=d["id"], source="youtrack" if yt else "telegram" if tg else "file", ref=d["ref"], title=d["title"],
+        chars=d["chars"], updated_at=_dt(d["updated_at"] / 1000) if d["updated_at"] else None, tickets=d["tickets"],
         url=f"{base}/articles/{d['ref']}" if yt and base else None, has_summary=bool(d["has_summary"]),
-        parent=d["parent"], folder=home and home[1], rel=home and d["ref"][len(home[0]):],
+        parent=None if tg else d["parent"], folder=home and home[1], rel=home and d["ref"][len(home[0]):],
+        size=d["size"], origin=d["parent"] if tg else None,
     )  # fmt: skip
 
 
@@ -109,8 +120,6 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
     @r.get("")
     async def docs(request: Request, source: Source | None = None, ticket: str | None = None) -> list[DocDTO]:
         s = request.app.state
-        if source == "telegram":  # messages are found by search only
-            return []
         rows = await s.db.read(s.store.doc_list, ticket=ticket or None, **scope(s, source))
         folders = await asyncio.to_thread(lambda: {folder_prefix(f): f for f in s.docs.sources()["folders"]})
         return [doc_dto(s, d, folders) for d in rows]
@@ -156,8 +165,7 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
         try:
             rows = await sync.listed(request.app.state.yt, project, {})
         except YtError as e:
-            code = "yt_unreachable" if isinstance(e, YtUnreachable) else f"yt_{e.status}"
-            raise ApiError(502, f"doc_kb_{code}", detail=e.message) from None
+            raise _yt_error(e, "kb") from None
         return [KbNode(id=a["idReadable"], title=a.get("summary") or "", parent=sync.parent_of(a))
                 for a in rows if a.get("idReadable")]  # fmt: skip
 
@@ -202,6 +210,43 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
 
         return stream_answer(work)
 
+    # Việc cần xử lý: a KB article named in a message downloaded again now, a message's file into the library (removing
+    # one: below, after /ai, which "/{doc_id}" would catch). Whether either is in the library is read from the list.
+
+    @r.post("/kb/{ref}/refresh")
+    async def kb_refresh(ref: str, request: Request) -> DocDTO:
+        """Download the article again now (instead of waiting for the next sync); what changed is recorded."""
+        s = request.app.state
+        if not ARTICLE_ID.fullmatch(ref):
+            raise ApiError(422, "doc_bad_article")
+        try:
+            await s.docs.fetch(s.yt, ref)
+        except YtError as e:
+            raise _yt_error(e, "article") from None
+        d = await s.db.read(s.store.doc_find, "yt_article", ref)
+        if not d:  # fetched but not saved (disk full / a symlink in the way)
+            raise ApiError(500, "doc_not_saved")
+        return doc_dto(s, d)
+
+    @r.post("/telegram")
+    async def add_telegram(body: DocTgBody, request: Request) -> DocDTO:
+        """The document of a kept message into the library: added, or the one of the same name updated."""
+        s = request.app.state
+        m = await s.db.read(s.store.get_message, body.chat_id, body.message_id)
+        if m is None or m.deleted or m.media_kind != "document":  # kept messages only, never any chat the account sees
+            raise ApiError(404, "doc_tg_no_file")
+        if s.bridge.state != "connected":
+            raise ApiError(503, "doc_tg_offline")
+        try:
+            doc_id = await s.docs.add_tg_file(s.bridge, m)
+        except LookupError:
+            raise ApiError(404, "doc_tg_no_file") from None
+        except ValueError as e:  # unsupported / too_big / read_text's codes
+            raise ApiError(422, f"doc_{e.args[0] if e.args else 'unreadable'}") from None
+        except OSError as e:
+            raise ApiError(500, "doc_not_saved", detail=type(e).__name__) from None
+        return doc_dto(s, await _doc(s, doc_id))
+
     # the AI history (before /{doc_id}: "ai" is not an id)
     @r.get("/ai")
     async def ai_sessions(request: Request, doc: int | None = None) -> list[DocAiSession]:
@@ -239,7 +284,8 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
         parts = await s.db.read(s.store.doc_parts, doc_id)
         revs = [DocRev(**{**r, "at": _dt(r["at"] / 1000)}) for r in await s.db.read(s.store.doc_revs, doc_id)]
         return DocDetail(
-            doc=doc_dto(s, d), parts=[DocPart(**p) for p in parts], summary=await s.docs.saved_summary(d), revs=revs
+            doc=doc_dto(s, d), parts=[DocPart(**p) for p in parts], summary=await s.docs.saved_summary(d), revs=revs,
+            added_at=_dt(d.get("added_at")),
         )
 
     @r.post(
@@ -255,6 +301,18 @@ def build_router(settings) -> APIRouter:  # settings: the routers' shape; state 
         s = request.app.state
         await _doc(s, doc_id)  # an unknown doc is a plain 404, not a stream
         return stream_answer(lambda on_text: _summary(s, doc_id, session, on_text))
+
+    @r.delete("/{doc_id}", status_code=204)
+    async def remove(doc_id: int, request: Request) -> None:
+        """Drop a Telegram file from the library (the others leave with their source)."""
+        s = request.app.state
+        d = await _doc(s, doc_id)
+        if d["source"] != "tg_file":
+            raise ApiError(409, "doc_not_removable")
+        try:
+            await s.docs.drop_tg_file(d)
+        except OSError as e:
+            raise ApiError(500, "doc_not_removed", detail=type(e).__name__) from None
 
     @r.post("/{doc_id}/reveal", status_code=204)
     async def reveal(doc_id: int, request: Request) -> None:

@@ -8,18 +8,20 @@ backend/
     telegram/
       bridge.py          # TelegramBridge: vòng kết nối, ingest/backfill tag, outbox gửi tin, Transport protocol
       transport.py       # TelethonTransport: connect/login, event, đọc tin, gửi tin/reaction
-      routes.py          # HTTP chat/message/rule/login, Q&A và Digest/Briefing
+      routes.py          # HTTP chat/message/tag/rule/login
+      routes_digest.py   # HTTP Digest/Briefing và Q&A (cùng S, known_chat của routes.py)
       digest.py          # nghiệp vụ tóm tắt và theo dõi phản hồi
       qa.py              # nhận diện và duyệt chuỗi Q&A
-      live_reads.py      # TTL, gộp request đọc và giới hạn đồng thời
+      live_reads.py      # TTL, gộp request đọc và giới hạn đồng thời: hai làn (quét: Q&A, Briefing, digest, lịch sử; click: @, ngữ cảnh, một trang)
     youtrack/
       client.py          # YtClient: HTTP, cache TTL, file đính kèm/UI flow, whoami
       queries.py         # YtQueries: danh sách/chi tiết ticket, lịch sử State, people, sprint
       service.py         # YouTrackDashboard: cài đặt team (notes/prompts/workflow), vòng watch
       schemas.py         # body request /api/yt/* và kiểm id/project/role
-      api.py             # router /api/yt/* (ticket, field, workflow), ghép api_ai + api_flow
+      api.py             # router /api/yt/* (ticket, field, workflow), ghép api_ai + api_flow_file + api_flow
       api_ai.py          # /api/yt/ai/* (một lượt CLI mỗi lần bấm)
-      api_flow.py        # /api/yt/flow*, /api/yt/ai/flow, flow jobs
+      api_flow_file.py   # /api/yt/flow (đọc / lưu / xoá file), /flow/html, /flow/md, /flow/shots, /flow/image
+      api_flow.py        # /api/yt/flow/precheck, /api/yt/ai/flow*, flow jobs
       ai_prompts.py      # prompt AI YouTrack
       routes.py          # auth, tạo issue và tìm issue /api/youtrack/*
       flow.py            # schema và xử lý file UI flow
@@ -68,8 +70,8 @@ web/
         hooks/           # SSE và lịch sử chat
         lib/             # query/action Telegram, draft, brief, mention adapter…
       youtrack/
-        components/      # tickets, dashboard, flow, release, ticket form…
-        lib/             # YouTrack client/query, flow draft, stats, mention adapter
+        components/      # tickets, dashboard (biểu đồ chung: charts.tsx), flow, release, ticket form…
+        lib/             # YouTrack client/query, flow draft, stats, mention adapter, watch (ticket mới, Báo lại, retest)
         flow-engine/     # ES modules: model/layout, geometry, renderer, camera, player, editor/inspector, finder, styles
       docs/
         components/      # app (thanh tìm, lọc nguồn, dải lỗi đồng bộ), results, reader, sources, ask (ô hỏi AI)

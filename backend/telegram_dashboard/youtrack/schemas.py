@@ -31,6 +31,12 @@ class Comment(BaseModel):
     text: str = Field(min_length=1, max_length=20000)
 
 
+class Description(BaseModel):
+    id: str
+    text: str = Field(max_length=60000)
+    base: str | None = Field(None, max_length=60000)  # the description the change was made on: saved only if still live
+
+
 class FlowDelete(BaseModel):
     id: str
     base: str = Field(min_length=1, max_length=500)  # attachment id of the file the user saw: removed only if current
@@ -70,7 +76,8 @@ class FieldSet(BaseModel):
 
 class AiTicket(BaseModel):
     id: str
-    kind: Literal["brief", "ready", "reply", "rewrite", "split"]
+    kind: Literal["brief", "ready", "reply", "rewrite", "split", "amend"]
+    note: str = Field("", max_length=8000)  # amend: what changed (a decision, missing AC), put into the description
     folder: str = Field("", max_length=1000)  # a registered code folder: the AI reads it (read-only)
     shell: bool = False  # with a folder: may also run commands there (build, test) in the sandbox
 

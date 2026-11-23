@@ -73,9 +73,12 @@ def test_binary_and_broken_docx_raise(tmp_path):
     (tmp_path / "b.docx").write_bytes(b"not a zip")
     with pytest.raises(ValueError, match="bad_docx"):
         read_text(tmp_path / "b.docx")
-    (tmp_path / "c.pdf").write_bytes(b"x")
-    with pytest.raises(ValueError, match="unsupported"):
+    (tmp_path / "c.pdf").write_bytes(b"x")  # PDFs are read now (pypdf): a broken one has its own code
+    with pytest.raises(ValueError, match="bad_pdf"):
         read_text(tmp_path / "c.pdf")
+    (tmp_path / "d.xlsx").write_bytes(b"x")
+    with pytest.raises(ValueError, match="unsupported"):
+        read_text(tmp_path / "d.xlsx")
 
 
 def test_long_file_is_cut_with_a_note(tmp_path):

@@ -9,8 +9,10 @@ from .common import _like, fold, now_ts
 _LIST = (
     "id,source,ref,title,path,hash,chars,size,updated_at,fetched_at,tickets,parent,summary IS NOT NULL AS has_summary"
 )
-_COLS = _LIST + ",summary,summary_hash"
-KEEP_REVS = 20  # updates kept per document (doc_revs), newest
+_COLS = _LIST + ",summary,summary_hash,added_at"
+# updates kept per document (doc_revs), newest: every one since the document came in (Lịch sử thay đổi)
+# ponytail: a safety cap only, ≤ ~24KB each (REV_LINES); trim older ones if a doc ever churns past it
+KEEP_REVS = 1000
 KEEP_AI = 1000  # Tài liệu's AI history rows kept (doc_ai), newest
 SHIFT = 20  # parts per doc < 2**20: a 200k-char doc of one-line headings stays far below
 
@@ -120,8 +122,8 @@ class Docs:
             else:
                 doc_id = c.execute(
                     "INSERT INTO docs(title,path,chars,size,updated_at,fetched_at,tickets,parent,hash,"
-                    "source,ref) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                    (*meta, hash, source, ref),
+                    "source,ref,added_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (*meta, hash, source, ref, now_ts()),
                 ).lastrowid
             base = doc_id << SHIFT
             c.executemany(

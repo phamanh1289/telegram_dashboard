@@ -4,10 +4,10 @@ import { Check, Monitor, Moon, Pipette, RotateCcw, Sun } from "lucide-react";
 import { useState } from "react";
 import { LookPreview } from "@/features/settings/components/look-preview";
 import { MascotRow } from "@/features/settings/components/mascot";
-import { Card, picked, quietBtn, Row, Switch } from "@/features/settings/components/parts";
+import { Card, PickPill, picked, quietBtn, Row, Switch } from "@/features/settings/components/parts";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
-import { Segmented } from "@/shared/components/ui/segmented";
+import { Pill, Segmented } from "@/shared/components/ui/segmented";
 import { FONT_SIZES, FONTS, type FontId } from "@/shared/lib/fonts";
 import { type Key, tMaybe, useT } from "@/shared/lib/i18n";
 import { ACCENTS, applyTheme, CHROMA_MAX, CHROMA_MIN, hexToAccent, type Look, MIXES, oklchHex, readLook, readTheme, saveLook, type ThemePref, type UiStyle } from "@/shared/lib/prefs";
@@ -60,10 +60,10 @@ export function LookSection() {
               <div role="radiogroup" aria-label={t("Màu có sẵn")} className="flex flex-wrap gap-1.5">
                 {ACCENTS.map(([h, name]) => (
                   <Hint key={h} side="bottom" text={t(name)}><button type="button" role="radio" aria-checked={look.hue === h} aria-label={t(name)} onClick={() => set({ hue: h })}
-                    className={cn("grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
-                      look.hue === h ? "ring-2 ring-ink" : "hover:ring-2 hover:ring-rule-2")}
+                    className={cn("relative grid size-7 place-items-center rounded-full ring-offset-2 ring-offset-cotton transition-shadow duration-(--dur-micro)",
+                      look.hue !== h && "hover:ring-2 hover:ring-rule-2")}
                     style={{ background: swatch(h, look.chroma) }}>
-                    {look.hue === h && <Check className="size-3.5 text-white" aria-hidden />}
+                    {look.hue === h && <><Pill id="set-accent" className="-inset-1 rounded-full border-2 border-ink" /><Check className="size-3.5 text-white" aria-hidden /></>}
                   </button></Hint>
                 ))}
                 <Hint side="bottom" text={t("Chọn màu bất kỳ (bảng màu, mã hex)")}>
@@ -98,6 +98,7 @@ export function LookSection() {
                 return (
                   <button key={name} type="button" role="radio" aria-checked={on} disabled={simple} onClick={() => set({ hue: a, hue2: b, gradient: true })}
                     className={cn("flex h-8 items-center gap-1.5 rounded-full border pr-3 pl-1 text-xs disabled:cursor-not-allowed disabled:opacity-40", picked(on), on && "text-hl-2")}>
+                    <PickPill id="set-mix" on={on} className="rounded-full" />
                     <span aria-hidden className="size-6 rounded-full" style={{ background: `linear-gradient(120deg, ${swatch(a, look.chroma)}, ${swatch(b, look.chroma)})` }} />
                     {t(name)}
                   </button>

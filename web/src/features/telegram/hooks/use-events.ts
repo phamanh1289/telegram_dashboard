@@ -2,7 +2,7 @@
 
 import { type InfiniteData, type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaItem, type Status, type Task } from "@/shared/lib/api";
+import { api, type ChangeItem, type ChangesPage, type Message, type MessagesPage, type PendingItem, type QaList, type Status, type Task } from "@/shared/lib/api";
 import { t } from "@/shared/lib/i18n";
 import { msgKey, sentQuery } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
@@ -74,8 +74,8 @@ function patchEdit(qc: QueryClient, m: Message) {
 
 function inQa(qc: QueryClient, it: ChangeItem) {
   const ids = [it.message_id, it.message?.reply_to_id].filter(Boolean);
-  return ids.length > 0 && qc.getQueriesData<QaItem[]>({ queryKey: ["qa", it.chat_id] })
-    .some(([, d]) => d?.some((i) => [i.question, ...i.answers].some((m) => ids.includes(m.message_id))));
+  return ids.length > 0 && qc.getQueriesData<QaList>({ queryKey: ["qa", it.chat_id] })
+    .some(([, d]) => d?.items.some((i) => [i.question, ...i.answers].some((m) => ids.includes(m.message_id))));
 }
 
 /** Apply one /changes page to the caches; each query is invalidated once per page, not once per item. */

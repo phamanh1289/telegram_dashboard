@@ -133,8 +133,9 @@ def _lines(parts: list[tuple[int, str, str]]) -> tuple[list[str], list[str]]:
 
 
 def changes(old: list[tuple[int, str, str]], new: list[tuple[int, str, str]]) -> dict | None:
-    """What an update changed, line by line: {"blocks": [{"heading", "removed", "added"}], "more": lines left out past
-    REV_LINES}; None when only blank lines / trailing spaces moved."""
+    """What an update changed, line by line: {"blocks": [{"heading", "removed", "added", "at"}], "more": lines left out
+    past REV_LINES}; None when only blank lines / trailing spaces moved. `at`: where the block's first change sits in
+    the new text, as an index into its _lines (the reader finds the line there: docs/components/diff-mark.tsx)."""
     a, ha = _lines(old)
     b, hb = _lines(new)
     blocks: list[dict] = []
@@ -155,7 +156,7 @@ def changes(old: list[tuple[int, str, str]], new: list[tuple[int, str, str]]) ->
             blocks[-1]["removed"] += got["removed"]
             blocks[-1]["added"] += got["added"]
         else:
-            blocks.append({"heading": head, **got})
+            blocks.append({"heading": head, **got, "at": j1})
     return {"blocks": blocks, "more": more} if blocks or more else None
 
 
@@ -164,8 +165,8 @@ if __name__ == "__main__":  # self-check of changes()
     new = split_parts("# Quy trình\n\nBước 1\nBước 2 (sửa)\n\n\n## Hạn\n\n3 ngày\n5 ngày nếu lễ")
     assert changes(old, new) == {
         "blocks": [
-            {"heading": "# Quy trình", "removed": ["Bước 2"], "added": ["Bước 2 (sửa)"]},
-            {"heading": "## Hạn", "removed": [], "added": ["5 ngày nếu lễ"]},
+            {"heading": "# Quy trình", "removed": ["Bước 2"], "added": ["Bước 2 (sửa)"], "at": 2},
+            {"heading": "## Hạn", "removed": [], "added": ["5 ngày nếu lễ"], "at": 5},
         ],
         "more": 0,
     }, changes(old, new)

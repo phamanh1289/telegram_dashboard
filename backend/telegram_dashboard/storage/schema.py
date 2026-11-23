@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS qa_marks (  -- a Q&A thread (live from Telegram, neve
   at INTEGER NOT NULL,
   PRIMARY KEY (chat_id, code)
 );
+CREATE TABLE IF NOT EXISTS qa_answers (  -- "Chốt": the reply you marked as a Q&A thread's answer
+  chat_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, code)
+);
 CREATE TABLE IF NOT EXISTS loop_back (  -- "Báo lại": my ticket reached Fixed / Done, a stored message asked about it
   ticket TEXT NOT NULL,
   chat_id TEXT NOT NULL,
@@ -317,6 +324,12 @@ def _doc_revs(c):
     c.execute("CREATE INDEX IF NOT EXISTS doc_revs_doc ON doc_revs(doc_id, id)")
 
 
+def _doc_added(c):
+    """When a document came into the library (Tài liệu: its change history counts from there); NULL for the ones
+    stored before this column."""
+    _add_cols(c, "docs", {"added_at": "INTEGER"})
+
+
 def _doc_ai(c):
     """Tài liệu's AI history: each Hỏi answer and each Tóm tắt the AI wrote (not a summary given back from the cache),
     by `session` (one conversation of the AI popup). `doc_hash`: docs.hash then, so an answer on a document changed
@@ -329,9 +342,14 @@ def _doc_ai(c):
     c.execute("CREATE INDEX IF NOT EXISTS doc_ai_doc ON doc_ai(doc_id, qkey)")
 
 
+def _message_file(c):
+    """A document's name / size / MIME as JSON (models.FileInfo): Việc cần xử lý checks it against Tài liệu."""
+    _add_cols(c, "messages", {"file": "TEXT"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
     _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs, _docs,
-    _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai,
+    _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai, _doc_added, _message_file,
 ]  # fmt: skip

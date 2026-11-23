@@ -2,7 +2,7 @@ import { family, isOverlay } from './model.js';
 import { inspector } from './inspector.js';
 import { cardAbs, frameH, oneFrame, setFold } from './geometry.js';
 import { shotOf } from './shots.js';
-import { CAP, COL, DBL_MS, DRAG_PX, H, MIN_FOLD, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
+import { CAP, COL, DRAG_PX, H, MIN_FOLD, MAX_ITEMS, MAX_LINKS, MAX_SCREENS, W } from './constants.js';
 import { clamp, isPop, itm, scr } from './values.js';
 import { box, h } from './dom.js';
 import { inlineEdit } from './inline-edit.js';
@@ -129,20 +129,12 @@ function editor(ctx) {
     if (!frame) return select(null);
     pickScreen(frame.dataset.id);
   }
-  /** A click on a screen to edit it: selected, and the camera zooms onto it, every time. On its title bar the
-   *  move waits out a double click's gap, so the second click still lands on the title it renames (a new press or the double click drops it). */
-  let showT = 0;
-  function pickScreen(id, onHead = false) {
-    select({ t: "screen", id });
-    clearTimeout(showT);
-    if (onHead) showT = setTimeout(() => ctx.show(id), DBL_MS);
-    else ctx.show(id);
-  }
+  /** A click on a screen selects (highlights) it; the camera stays. A double click zooms onto it (mount.js). */
+  const pickScreen = (id) => select({ t: "screen", id });
 
   // ---------------- pointer
   function down(e) {
     const el = e.target;
-    clearTimeout(showT); // a new press (a drag, a double click's second): the camera stays under it
     if (!ctx.on() || el.closest?.("a, [contenteditable]")) return;
     if (el.closest?.(".uf-fold")) return e.stopPropagation(); // its click folds / unfolds: no drag, no pan
     const frame = el.closest?.(".uf-screen");
@@ -251,7 +243,7 @@ function editor(ctx) {
       if (d.kind === "rect" || d.kind === "size") return select({ t: "item", id: d.s.id, item: d.it.id });
       if (d.kind === "fold") return select({ t: "screen", id: d.s.id });
       if (d.kind === "link") return select({ t: "link", i: d.m.i });
-      if (d.kind === "move") return pickScreen(d.id, true);
+      if (d.kind === "move") return pickScreen(d.id);
       return select(d.src.includes(".") ? { t: "item", id: scr(d.src), item: itm(d.src) } : { t: "screen", id: d.src });
     }
     if (d.kind === "draw") return drawn(d);
@@ -345,7 +337,6 @@ function editor(ctx) {
     const el = ctx.on() ? e.target.closest?.(".uf-title, .uf-item, .uf-label") : null;
     if (!el || !ctx.layer.contains(el)) return;
     e.preventDefault();
-    clearTimeout(showT); // its second click picked the screen again: renaming in place, the camera stays
     const frame = el.closest(".uf-screen");
     const kind = el.classList.contains("uf-label") ? "link" : el.classList.contains("uf-item") ? "item" : "screen";
     const f0 = get(), link = kind === "link" ? f0.links[+el.dataset.i] : null;
@@ -472,7 +463,6 @@ function editor(ctx) {
     sync,
     destroy() {
       cancelAnimationFrame(raf);
-      clearTimeout(showT);
     },
   };
 }

@@ -15,6 +15,7 @@ import { api, ApiError, type DataStats, errorText } from "@/shared/lib/api";
 import { fmtBytes, fmtDay, fmtNum, type Key, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 type DataItem = DataStats["items"][number];
 /** The parts of data/ on disk (local_data.DataPart ids): name and categorical colour. The rest of data/ is "Khác". */
@@ -89,6 +90,7 @@ export function DataGroup() {
   const q = useQuery(dataQuery);
   const [asking, setAsking] = useState<DataItem | null>(null);
   const [purging, setPurging] = useState<{ chat_id: string; title: string } | null>(null);
+  const purgeShown = useLinger(purging); // the group asked about, until its dialog has closed
   const d = q.data;
   const drafts = (
     <Card title="Dữ liệu trên trình duyệt này">
@@ -141,7 +143,7 @@ export function DataGroup() {
     {drafts}
 
     {asking && <ClearData it={asking} keep={d.keep_days} onClose={() => setAsking(null)} />}
-    {purging && <PurgeChat chatId={purging.chat_id} title={purging.title} onClose={() => setPurging(null)} />}
+    {purgeShown && <PurgeChat open={!!purging} chatId={purgeShown.chat_id} title={purgeShown.title} onClose={() => setPurging(null)} />}
   </>;
 }
 

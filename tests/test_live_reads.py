@@ -152,3 +152,30 @@ async def test_qa_and_members_have_separate_concurrency_lanes():
     await asyncio.gather(*requests)
     assert peak == live_reads.LIVE_READS
     await reads.aclose()
+
+
+async def test_qa_scan_says_when_the_range_holds_more_than_one_read_takes(monkeypatch):
+    monkeypatch.setattr(live_reads, "QA_SCAN", 3)
+    msgs = [SimpleNamespace(reply_to_id=None, message_id=i, text="") for i in range(1, 6)]
+
+    async def fetch(_chat, _since, _until, limit):
+        return msgs[-limit:]
+
+    got, cut = await TelegramReads().qa_scan(SimpleNamespace(fetch_range=fetch), "a", 7)
+    assert [m.message_id for m in got] == [3, 4, 5] and cut is True  # the newest; older threads are known missing
+    monkeypatch.setattr(live_reads, "QA_SCAN", 10)
+    assert (await TelegramReads().qa_scan(SimpleNamespace(fetch_range=fetch), "a", 7))[1] is False
+
+
+async def test_group_list_is_read_once_per_ttl_and_forgotten_with_the_account():
+    reads, calls = TelegramReads(), 0
+
+    async def groups():
+        nonlocal calls
+        calls += 1
+        return [calls]
+
+    bridge = SimpleNamespace(list_groups=groups)
+    assert await reads.groups(bridge) == [1] and await reads.groups(bridge) == [1]
+    reads.forget()
+    assert await reads.groups(bridge) == [2]

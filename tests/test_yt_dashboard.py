@@ -107,10 +107,15 @@ async def test_transitions_keep_state_changes_across_pages():
     ]  # only State changes, oldest first  # fmt: skip
     assert svc._trans_until["VA:14"] > 0  # read to the end: not cut
 
-    n = iter(range(100))  # a project busier than TRANS_PAGES: cut, flagged
-    svc = make(lambda req: httpx.Response(200, json={"activities": [], "hasAfter": True, "afterCursor": f"c{next(n)}"}))
-    await svc.transitions("VA", 14)
-    assert svc._trans_until["VA:14"] == 0
+    assert "VA:14" not in svc.trans_cut
+
+    n = iter(range(100))  # a project busier than TRANS_PAGES: read newest first, so only the window's far end is cut
+    busy = lambda req: httpx.Response(200, json={  # noqa: E731
+        "activities": [act(100 - next(n))], "hasAfter": True, "afterCursor": f"c{next(n)}"})
+    svc = make(busy)
+    out = await svc.transitions("VA", 14)
+    assert [t["at"] for t in out] == sorted(t["at"] for t in out)  # still handed oldest first
+    assert svc.trans_cut["VA:14"] == min(t["at"] for t in out) and svc._trans_until["VA:14"] > 0  # statesince trusts it
 
 
 async def test_who_lists_come_from_the_cached_whole_project():
@@ -153,3 +158,59 @@ async def test_statesince_reads_project_transitions_once_then_falls_back_per_tic
     assert calls.count("/api/activitiesPage") == 1
     await svc.since_all(["VA-1@400", "VA-2@250"])
     assert calls.count("/api/activitiesPage") == 1  # cached: no second project read
+
+
+async def test_a_write_that_timed_out_is_unknown_and_no_cached_ticket_is_trusted():
+    def slow(req):
+        if req.method == "POST":
+            raise httpx.ReadTimeout("slow")  # sent: YouTrack may have applied it
+        return httpx.Response(200, json=issue(1))
+
+    svc = make(slow)
+    await svc.issue_detail("VA-1")
+    assert svc.fresh("issue:VA-1") is not None
+    try:
+        await svc.comment("VA-1", "hi")
+    except YtError as e:
+        assert e.status == 502 and "Không rõ YouTrack đã ghi chưa" in e.message  # look before sending again
+    else:
+        raise AssertionError("expected YtError")
+    assert svc.fresh("issue:VA-1") is None
+    await svc.aclose()
+
+
+async def test_admin_lists_are_paged_not_cut_at_one_page(monkeypatch):
+    from telegram_dashboard.youtrack import client as yt_client
+
+    monkeypatch.setattr(yt_client, "LIST_PAGE", 2)
+    rows = [{"id": str(n), "shortName": f"P{n}", "name": f"P{n}"} for n in range(5)]
+
+    def handler(req):
+        q = parse_qs(req.url.query.decode())
+        skip, top = int(q["$skip"][0]), int(q["$top"][0])
+        return httpx.Response(200, json=rows[skip : skip + top])
+
+    svc = make(handler)
+    assert [p["shortName"] for p in await yt_client._projects(svc)] == ["P0", "P1", "P2", "P3", "P4"]
+    await svc.aclose()
+
+
+async def test_a_read_begun_before_forget_does_not_cache_the_old_ticket():
+    gate, n = asyncio.Event(), iter(range(10))
+
+    async def slow(i):
+        k = next(n)
+        if k == 0:
+            await gate.wait()  # the older read lands last
+        return {"id": i, "v": k}
+
+    svc = make(lambda req: httpx.Response(200, json={}))
+    svc.detail = slow
+    old = asyncio.ensure_future(svc.issue_detail("VA-1"))
+    await asyncio.sleep(0)
+    svc.forget("VA-1")
+    assert (await svc.issue_detail("VA-1"))["v"] == 1  # read fresh
+    gate.set()
+    assert (await old)["v"] == 0
+    assert svc.fresh("issue:VA-1")["v"] == 1  # the older answer did not overwrite it
+    await svc.aclose()

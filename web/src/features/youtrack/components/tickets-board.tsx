@@ -11,7 +11,7 @@ import { toast } from "@/shared/lib/notifications";
 import { useT } from "@/shared/lib/i18n";
 import { isString, put, readList } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { bucket, fmt, stateColor, stateSem, tagsOf, type Ticket, titleOf, yt } from "@/features/youtrack/lib/yt";
+import { bucket, fmt, stateColor, stateSem, tagsOf, type Ticket, titleOf, yt, ytFieldsQuery } from "@/features/youtrack/lib/yt";
 import { Person, Prio, StatePill, Tag, TypeTag } from "./bits";
 import { saveTicket, useYt } from "./state";
 import { useFlow } from "./workflow";
@@ -70,7 +70,7 @@ export function Board({ rows, onOpen }: { rows: Ticket[]; onOpen: (i: Ticket) =>
   const canGo = (t: Ticket, to: string) => { const f = flow(t.state); return !f || f.includes(to); };
   const live = drag && !drag.land ? drag : null;
   // while a card is dragged, the states it can move to that have no column yet open as empty columns right after its own, to drop it on
-  const fields = useQuery({ queryKey: ["yt", "fields", y.project], queryFn: () => yt.fields(y.project), staleTime: Infinity, enabled: write && !!y.project });
+  const fields = useQuery({ ...ytFieldsQuery(y.project), enabled: write && !!y.project });
   const extra = live ? (flow(live.t.state) ?? fields.data?.State ?? []).filter((s) => s !== live.t.state && !lanes.some(([c]) => c === s)) : [];
   const shownLanes = live && extra.length
     ? ranked.flatMap((l) => (l[0] === live.from ? [l, ...extra.map((s) => [s, [] as Ticket[]] as const)] : [l]))

@@ -6,13 +6,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 # API names of the sources; `youtrack` is stored as `yt_article`, `telegram` is the tracked-chat messages, `kb_cache`
-# the articles of projects not in the sources (the AI Agent's cache, hidden everywhere else)
+# the articles of projects not in the sources (the AI Agent's cache, hidden everywhere else); `telegram` also lists the
+# files kept from Telegram messages (stored as `tg_file`)
 Source = Literal["youtrack", "telegram", "file", "kb_cache"]
 
 
 class DocDTO(BaseModel):
     id: int
-    source: Literal["youtrack", "file"]
+    source: Literal["youtrack", "file", "telegram"]
     ref: str
     title: str
     chars: int
@@ -23,6 +24,8 @@ class DocDTO(BaseModel):
     parent: str | None = None  # a Knowledge Base article's parent article (the list's tree)
     folder: str | None = None  # a file's source folder as chosen, and its path under it (the list's tree)
     rel: str | None = None
+    size: int = 0  # bytes of the file (a Telegram file: as Telegram sent it, to tell its versions apart)
+    origin: str | None = None  # a Telegram file: the message it came from, "<chat_id>:<message_id>"
 
 
 class DocPart(BaseModel):
@@ -36,6 +39,8 @@ class DocRevBlock(BaseModel):
     heading: str  # the section the lines sit under ("" before the first heading)
     removed: list[str]
     added: list[str]
+    # index of the first changed line among the new text's non-blank lines (headings once); None: recorded before
+    at: int | None = None
 
 
 class DocRev(BaseModel):
@@ -51,7 +56,8 @@ class DocDetail(BaseModel):
     doc: DocDTO
     parts: list[DocPart]
     summary: str | None
-    revs: list[DocRev] = []  # newest first
+    revs: list[DocRev] = []  # newest first, every one since `added_at`
+    added_at: datetime | None = None  # when it came into the library; None: stored before the app recorded it
 
 
 class DocHit(BaseModel):
@@ -182,3 +188,11 @@ class DocZeplinScreen(BaseModel):
     w: float
     h: float
     url: str
+
+
+class DocTgBody(BaseModel):
+    """A Telegram message whose document goes into the library (added, or updating the one of the same name)."""
+
+    chat_id: str = Field(pattern=r"^-?\d{1,20}$")
+    message_id: int = Field(ge=1)
+

@@ -241,6 +241,11 @@
 /* AI "thinking" loader in the composer: the sparkle hops and tilts, the dots ride a wave. */
 /* Module switch (TopBar): crossfade the page, morph the active pill */
 ::view-transition-group(*) { animation-duration: var(--dur-short); animation-timing-function: var(--ease-out); }
+/* Tabs ride above the pill (it is nested in the active tab, so it would paint over the label); their snapshots keep their
+   size, left-anchored, so a label never stretches while the tab's width changes (a badge fading in or out). */
+::view-transition-group(module-pill) { z-index: 1; }
+::view-transition-group(.module-tab) { z-index: 2; }
+::view-transition-old(.module-tab), ::view-transition-new(.module-tab) { inline-size: auto; block-size: 100%; object-fit: none; object-position: left center; }
 /* Page body entering (Settings): a short delay (held hidden by `both`) lets the mount's first busy frames pass, so the fade starts from 0 instead of popping in midway; a soft deceleration, not the expo --ease-out that spends itself in the first frames. */
 .page-in { animation: page-in var(--dur-long) var(--ease-emph) 40ms both; }
 @keyframes page-in { from { opacity: 0; translate: 0 8px; } }
@@ -532,6 +537,8 @@ button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
 /* Tài liệu: the searched words in the open document (docs/reader.tsx, CSS Custom Highlight API). */
 ::highlight(doc-hit) { background-color: var(--color-hit); color: var(--color-hit-ink); }
+/* Tài liệu: a changed line opened from Lịch sử thay đổi, its added text (docs/diff-mark.tsx). */
+::highlight(doc-add) { background-color: var(--color-ok-wash); }
 /* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
 .yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* A mascot standing still (long lists, e.g. History rows: hundreds of looping animations would cost frames). */

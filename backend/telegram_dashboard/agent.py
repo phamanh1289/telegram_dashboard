@@ -233,8 +233,9 @@ class AgentRunner:
         if not resume:
             task_result_path(self.settings, task_id).unlink(missing_ok=True)
             self.log_path(task_id).unlink(missing_ok=True)
-        # mode: autobe reads whether edits were let
-        self._append(task_id, {"kind": "user", "text": text, "mode": mode, **({"auto": True} if auto else {})})
+        # mode, and on an edit turn mcp: autobe reads whether edits were let, and with the user's MCP / plugins
+        flags = ({"mcp": mcp} if mode == "edit" else {}) | ({"auto": True} if auto else {})
+        self._append(task_id, {"kind": "user", "text": text, "mode": mode, **flags})
         return session_id
 
     def side_start(self, task_id: str, prompt: dict, run: Callable[[], Awaitable], text_of: Callable[..., str]):

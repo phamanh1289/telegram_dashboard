@@ -6,21 +6,22 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { fmtDay, type T, tMaybe, useT } from "@/shared/lib/i18n";
-import { Told } from "@/features/telegram/lib/inbox";
 import { useSaveBriefing } from "@/features/telegram/components/briefing/run";
 import { useNow } from "@/shared/hooks/use-now";
 import { copyText, toast } from "@/shared/lib/notifications";
 import { ymd } from "@/shared/lib/time";
 import { getPref, put, setPref } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, shortName, tagsOf, type Ticket, titleOf, todayList, UNASSIGNED, when, yt } from "@/features/youtrack/lib/yt";
-import { Card, Label, Markdown, Prio, StatePill, Tag } from "./bits";
+import { AI_MAX, type AiReq, bucket, bugSpike, DAY, type Focus, isBlocked, isBug, isBuilt, needsPo, qaList, rank, riskOf, shortName, type Ticket, titleOf, todayList, UNASSIGNED, when, yt } from "@/features/youtrack/lib/yt";
+import { Card, Label, Markdown, Prio, StatePill, Title } from "./bits";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
 import { day0 } from "@/features/youtrack/lib/yt-stats";
 import { Aging, Attention, Kpis, Progress, QcState, useQc, useStats, Wip } from "./dashboard";
+import { AskedMe } from "./asked-me";
 import { ReportCard } from "./report";
 import { setPerson } from "./sheet";
+import { saveMany, undoMany } from "./tickets-bulk";
 import { useYt } from "./state";
 
 // Each mode's home: Dev "Hôm nay" (my tickets in the order to do them), QA "Kiểm thử" (what to test / triage first),
@@ -111,6 +112,15 @@ function AiStudio({ id, tabs }: { id: string; tabs: Tab[] }) {
 
 /** The one standup (Dev and QA): my tickets touched since the last working day (Friday on Mondays) and the ones still
  *  open, as assignee (Dev) or QC (QA); the server adds my Telegram replies and finished AI Agent sessions. */
+/** The quality gate (QA and PO): sprint tickets not yet with QC, so gaps (AC, repro steps) are caught before they reach
+ *  the test queue; the server words the answer for the page's role. */
+function qualityTab(t: T, sprintOpen: Ticket[], sprint: string): Tab {
+  const upstream = sprintOpen.filter((i) => bucket(i) < 2).sort((a, b) => rank(a) - rank(b));
+  return { k: "quality", label: t("Chất lượng ticket"), busy: t("AI đang rà {n} ticket", { n: Math.min(upstream.length, AI_MAX) }), disabled: upstream.length ? undefined : t("Sprint đang xem không còn ticket nào chưa tới QC."),
+    hint: t("Ticket của {s} chưa tới bước test: thiếu tiêu chí nghiệm thu, bug thiếu bước tái hiện, nên tách, chưa estimate, có vẻ trùng.", { s: sprint }),
+    ids: upstream.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(upstream.slice(0, AI_MAX).map((i) => i.id), `${sprint}, chưa tới QC`, "quality", sig) };
+}
+
 function standupTab(t: T, rows: Ticket[], me: string | null, qa: boolean, now: number): Tab {
   const d = new Date(now);
   d.setHours(0, 0, 0, 0);
@@ -180,6 +190,7 @@ export function DevHome() {
             standupTab(t, y.rows, y.me, false, now),
           ]} />
         )}
+        <AskedMe card />
         <Card title={t("Mới cập nhật")} meta={t(own ? "ticket của bạn" : "ticket trong phạm vi")}>
           {recent.length ? (
             <ul className="zebra grid gap-0.5">
@@ -202,9 +213,9 @@ export function DevHome() {
 function LensBar<L extends string>({ label, lenses, value, onChange }: { label: string; lenses: [L, string, number | null, string][]; value: L; onChange: (l: L) => void }) {
   const all = lenses[0][0];
   return (
-    <div role="radiogroup" aria-label={label} className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] divide-x divide-rule overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock max-sm:grid-cols-3 max-sm:divide-x-0">
+    <div role="group" aria-label={label} className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] divide-x divide-rule overflow-hidden rounded-[var(--radius-card)] bg-cotton shadow-stock max-sm:grid-cols-3 max-sm:divide-x-0">
       {lenses.map(([l, name, n, tone]) => (
-        <button key={l} type="button" role="radio" aria-checked={value === l} onClick={() => onChange(value === l ? all : l)}
+        <button key={l} type="button" aria-pressed={value === l} onClick={() => onChange(value === l ? all : l)}
           className={cn("relative grid justify-items-start gap-0.5 px-3 py-2.5 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2", value === l && l !== all && "bg-hl-wash")}>
           {value === l && l !== all && <i aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-hl" />}
           <span className="max-w-full truncate text-xs text-ink-3">{name}</span>
@@ -319,8 +330,6 @@ export function QaHome() {
   const TESTS = 10; // test cases are long: a handful of tickets per run
   const testIds = (mine.length ? mine : ranked.filter((x) => LENS.queue[1](x.i))).slice(0, TESTS).map((x) => x.i.id);
   const spike = useMemo(() => bugSpike(y.rows, now), [y.rows, now]);
-  // quality gate: sprint tickets not yet with QC, so gaps (AC, repro steps) are caught before they reach the test queue
-  const upstream = d.sprintOpen.filter((i) => bucket(i) < 2).sort((a, b) => rank(a) - rank(b));
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)]">
       <div className="grid content-start gap-4">
@@ -353,11 +362,10 @@ export function QaHome() {
             { k: "regression", label: "Regression", busy: t("AI đang đọc {n} ticket chờ release", { n: Math.min(built.length, AI_MAX) }), disabled: built.length ? undefined : t("Không có ticket nào đã build / chờ release."),
               hint: t("Checklist regression cho bản sắp phát hành từ các ticket Built / Done on dev / Waiting to release: smoke test, theo màn hình, rủi ro cao."),
               ids: built.slice(0, AI_MAX).map((x) => x.i.id), run: (sig) => yt.aiTickets(built.slice(0, AI_MAX).map((x) => x.i.id), "Ticket đã build, chờ release", "regression", sig) },
-            { k: "quality", label: t("Chất lượng ticket"), busy: t("AI đang rà {n} ticket", { n: Math.min(upstream.length, AI_MAX) }), disabled: upstream.length ? undefined : t("Sprint đang xem không còn ticket nào chưa tới QC."),
-              hint: t("Ticket của {s} chưa tới bước test: thiếu tiêu chí nghiệm thu, bug thiếu bước tái hiện, nên tách, chưa estimate, có vẻ trùng.", { s: d.per.label }),
-              ids: upstream.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(upstream.slice(0, AI_MAX).map((i) => i.id), `${d.per.label}, chưa tới QC`, "quality", sig) },
+            qualityTab(t, d.sprintOpen, d.per.label),
           ]} />
         )}
+        <AskedMe card />
         <QcMine qc={qc} waiting={mine.map((x) => x.i)} retest={ranked.filter((x) => LENS.retest[1](x.i)).map((x) => x.i)} />
         <QcSplit open={open} />
         <Card title={t("Bug 7 ngày qua")}>
@@ -374,17 +382,6 @@ export function QaHome() {
 }
 
 /** The title reads first: [tags] as chips, the "A > B >" path quiet, the last segment (the actual job) in full ink. */
-function Title({ i, clamp }: { i: Ticket; clamp: string }) {
-  const t = titleOf(i), k = t.lastIndexOf(" > ");
-  return (
-    <span title={i.summary ?? ""} className={cn("min-w-0 text-sm leading-snug", clamp)}>
-      {tagsOf(i).map((g) => <Fragment key={g}><Tag name={g} />{" "}</Fragment>)}
-      {k > 0 && <span className="text-ink-3">{t.slice(0, k).replaceAll(" > ", " › ")} › </span>}
-      <span className="font-medium text-ink">{k > 0 ? t.slice(k + 3) : t}</span>
-    </span>
-  );
-}
-
 function FocusRow({ i, why, n, all, top, now }: { i: Ticket; why: string[]; n: number; all: Ticket[]; top: boolean; now: number }) {
   const y = useYt();
   const hot = isBlocked(i) || (!!i.due && i.due < now) || rank(i) <= 1;
@@ -429,6 +426,7 @@ export function PoHome() {
               { k: "groom", label: "Grooming", busy: t("AI đang đọc {n} ticket backlog", { n: Math.min(backlog.length, AI_MAX) }), disabled: backlog.length ? undefined : t("Không có ticket mở nào ngoài sprint đang xem."),
                 hint: t("Rà backlog: ticket đã sẵn sàng, cần làm rõ (hỏi ai, hỏi gì), nên tách / gộp, đề xuất priority, nên đóng."),
                 ids: backlog.slice(0, AI_MAX).map((i) => i.id), run: (sig) => yt.aiTickets(backlog.slice(0, AI_MAX).map((i) => i.id), `Backlog ngoài ${d.per.label}`, "groom", sig) },
+              qualityTab(t, d.sprintOpen, d.per.label),
               { k: "weekly", label: t("Bản tin tuần"), weekly: true, busy: t("AI đang viết bản tin tuần"), disabled: y.rows.length ? undefined : t("Chưa có dữ liệu ticket."),
                 hint: t("7 ngày qua: tổng quan, từng người xong gì / đang làm / kẹt, rủi ro tuần tới. Lưu cả tuần, dán thẳng vào Telegram."),
                 run: (sig) => yt.aiData("weekly", weekData(y.rows, Date.now()), sig) },
@@ -453,6 +451,7 @@ export function PoHome() {
                 {waitPo.length > 8 && <li><button type="button" onClick={() => y.setSheet({ kind: "list", title: t("Chờ PO chốt"), rows: waitPo })} className="px-1.5 text-xs text-ink-3 hover:text-ink">{t("Xem cả {n} ticket", { n: waitPo.length })}</button></li>}
               </ul>
             ) : <p className="text-sm text-ink-3">{t("Không có ticket nào chờ định nghĩa / xác nhận.")}</p>}
+            <AskedMe po />
           </Card>
           <Card title={t("Cần chú ý")} meta={t("ticket đang mở")}><Attention d={d} /></Card>
           <Card title={t("Công việc đang làm")} meta={`${t("ngưỡng WIP")} ${y.wip}`}><Wip d={d} /></Card>
@@ -527,17 +526,13 @@ function QcSplit({ open }: { open: Ticket[] }) {
   /** Every suggestion at once (5 calls at a time); one toast puts them all back. */
   async function all() {
     setBusy(true);
-    const done: string[] = [], fail: string[] = [], todo = plan.filter((x) => login(x.who));
-    for (let k = 0; k < todo.length; k += 5) await Promise.all(todo.slice(k, k + 5).map((x) =>
-      yt.setAssignee(x.i.id, login(x.who)!, "QC").then((tk) => { void y.patchTicket(tk); done.push(x.i.id); }, (e: Error) => { fail.push(`${x.i.id}: ${e.message}`); })));
+    const todo = plan.filter((x) => login(x.who)), qc = new Map(todo.map((x) => [x.i.id, { qc: x.who, qcLogin: login(x.who)! }]));
+    const { done, fail } = await saveMany(y.patchTicket, todo.map((x) => [x.i, qc.get(x.i.id)!]), (i) => yt.setAssignee(i.id, qc.get(i.id)!.qcLogin, "QC"));
     setBusy(false);
     const noLogin = plan.length - todo.length; // the suggested person is not in the project's team list
-    const why = [noLogin ? t("{n} chưa có login YouTrack của người được gợi ý", { n: noLogin }) : "", fail.length ? t("lỗi {n} — {e}", { n: fail.length, e: fail[0] }) : ""].filter(Boolean).join("; ");
-    toast({ text: t("Đã gán QC {a}/{b} ticket", { a: done.length, b: plan.length }) + (why ? ` (${why})` : ""), undo: done.length ? async () => {
-      const bad: string[] = [];
-      for (const id of done) await yt.setAssignee(id, null, "QC").then(y.patchTicket, (e: Error) => { bad.push(`${id}: ${e.message}`); });
-      if (bad.length) throw new Told(`${bad.length < done.length ? t("Chỉ hoàn tác được {a}/{b} ticket", { a: done.length - bad.length, b: done.length }) : t("Không hoàn tác được")} — ${bad[0]}`);
-    } : undefined });
+    const why = [noLogin ? t("{n} chưa có login YouTrack của người được gợi ý", { n: noLogin }) : "", fail.length ? t("lỗi {n} — {e}", { n: fail.length, e: fail[0].join(": ") }) : ""].filter(Boolean).join("; ");
+    toast({ text: t("Đã gán QC {a}/{b} ticket", { a: done.length, b: plan.length }) + (why ? ` (${why})` : ""), undo: done.length
+      ? () => undoMany(y.patchTicket, done.map((i) => [{ ...i, ...qc.get(i.id) }, { qc: null, qcLogin: null }]), (i) => yt.setAssignee(i.id, null, "QC")) : undefined });
   }
   return (
     <Card title={t("Gợi ý chia QC")} meta={<span className="flex items-center gap-1">

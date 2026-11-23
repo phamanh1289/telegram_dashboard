@@ -4,6 +4,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+# Cài đặt chung › Tóm tắt theo nền tảng: the angle of every Telegram AI run (ai_prompts.PLATFORM_FOCUS)
+Platform = Literal["android", "ios", "web", "mobile", "any"]
+
 ChangeKind = Literal["new", "edit", "delete", "tracking", "untrack", "purge", "migrated"]
 OutboxStatus = Literal["pending", "sending", "sent", "failed", "unknown"]
 ChatKind = Literal["group", "supergroup"]
@@ -16,6 +19,14 @@ class LinkSpan(BaseModel):
     kind: Literal[
         "link", "mention", "code", "pre", "bold", "italic", "underline", "strike", "spoiler", "blockquote"
     ] = "link"
+
+
+class FileInfo(BaseModel):
+    """A document attached to a message (Telegram's file name, bytes, MIME): Tài liệu checks and adds it by name."""
+
+    name: str = ""
+    size: int = 0
+    mime: str = ""
 
 
 # How a tag got handled: me = Xong (with the reaction), quiet = Shift+Xong (no reaction), reply = our own reply on
@@ -37,6 +48,7 @@ class StoredMessage(BaseModel):
     topic_id: int | None = None
     outgoing: bool = False
     media_kind: str | None = None
+    file: FileInfo | None = None  # media_kind "document" only
     deleted: bool = False
     handled: bool = False  # answered (any reply from us) or marked done by hand
     handled_by: HandledBy = ""  # how it got handled ("" while pending, or marked before this was kept)
@@ -81,6 +93,7 @@ class MessageDTO(BaseModel):
     topic_id: str | None
     outgoing: bool
     media_kind: str | None
+    file: FileInfo | None = None
     deleted: bool
     handled: bool = False
     handled_by: HandledBy = ""
@@ -184,7 +197,7 @@ class AiDraftRequest(BaseModel):
     instruction: str = Field(max_length=2000)
     project: str | None = None  # path of a registered project the agent may read
     with_context: bool = True  # add nearby group messages (fetched live, not stored)
-    platform: Literal["android", "ios", "mobile", "any"] = "android"  # angle of the analysis
+    platform: Platform = "android"  # angle of the analysis
     role: Literal["dev", "qa", "po"] = "dev"  # who reads it (Cài đặt chung › Vai trò)
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt chung)
     # with `project`: the tag's question answered from the code ("Trả lời từ code"); these tickets give its progress
@@ -198,7 +211,7 @@ class AboutMe(BaseModel):
     """Who the user is (Settings), for every AI Agent session's frame (ai.session_rules)."""
 
     role: Literal["dev", "qa", "po"] | None = None  # None: not chosen yet
-    platform: Literal["android", "ios", "mobile", "any"] = "android"
+    platform: Platform = "android"
     intro: str = Field("", max_length=2000)
 
 
@@ -327,15 +340,16 @@ class WeekStats(BaseModel):
 
 
 # priority: a sender whose tags sort first; relay: a sender's answers to an AI Agent session's asks go on in that
-# session; agent: a sender's new tags open an AI Agent session (plan) on the rule's project. Those three clear nothing.
-RuleKind = Literal["keyword", "sender", "priority", "relay", "agent"]
+# session; agent: a sender's new tags open an AI Agent session (plan) on the rule's project. tag_be / tag_po / tag_qc:
+# who an AI Agent session's ask to BE / PO / QC tags (ai.role_tags). Only keyword and sender clear tags.
+RuleKind = Literal["keyword", "sender", "priority", "relay", "agent", "tag_be", "tag_po", "tag_qc"]
 
 
 class RuleDTO(BaseModel):
     id: int
     kind: RuleKind
     value: str  # keyword: lowercase text; sender / priority: the sender's id
-    label: str  # sender / priority / relay / agent: the sender's name
+    label: str  # every kind but keyword: the sender's name
     project: str = ""  # agent: the project folder its sessions run in
 
 
@@ -765,6 +779,8 @@ class DigestRequest(BaseModel):
     closed: list[Annotated[str, Field(max_length=400)]] = Field(default=[], max_length=500)
     teams: list[Annotated[str, Field(max_length=30)]] = Field(default=[], max_length=10)
     intro: str = Field("", max_length=2000)  # the user's self-introduction (Cài đặt › Telegram)
+    platform: Platform = "any"  # Cài đặt chung › Tóm tắt theo nền tảng
+    role: Literal["dev", "qa", "po"] | None = None  # Cài đặt chung › Vai trò
 
 
 class DigestRef(BaseModel):
@@ -827,6 +843,8 @@ class BriefingAskRequest(BaseModel):
 
     question: str = Field(min_length=1, max_length=1000)
     intro: str = Field("", max_length=2000)
+    platform: Platform = "any"
+    role: Literal["dev", "qa", "po"] | None = None
 
 
 class SavedMessageRequest(BaseModel):
@@ -842,12 +860,24 @@ class QaItem(BaseModel):
     answers: list[MessageDTO]  # the reply chain under the question (and messages naming its code), oldest first
     done: bool = False  # you marked it Xong: no nudge, not waiting (removed threads are not listed at all)
     holding: list[str] = []  # message ids of answers that only say "got it, will report back" (qa.ack_only)
+    accepted: str | None = None  # "Chốt": the message id you marked as the answer (the same on every browser)
+
+
+class QaList(BaseModel):
+    items: list[QaItem]
+    truncated: bool = False  # the group wrote more in the range than one read takes: older threads are missing
 
 
 class QaMarkRequest(BaseModel):
     chat_id: str
     code: str = Field(pattern=r"^#QA(?:_(?:BE|PO|QC)_)?\d+$")
     state: Literal["done", "deleted"] | None  # None: back to normal
+
+
+class QaAcceptRequest(BaseModel):
+    chat_id: str
+    code: str = Field(pattern=r"^#QA(?:_(?:BE|PO|QC)_)?\d+$")
+    message_id: str | None = Field(pattern=r"^\d{1,20}$")  # None: no answer marked
 
 
 class QaPostRequest(BaseModel):
@@ -886,6 +916,7 @@ class BriefingItem(BaseModel):
     consent_until: datetime | None = None  # the consent's end, also once passed (Briefing offers to renew)
     saved: SavedDigest | None = None
     latest_id: str | None = None  # newest message on Telegram; None if unknown or no consent
+    unread: bool = False  # Telegram could not be read for this group just now: "no news" is not known
 
 
 def utf16_len(text: str) -> int:
@@ -905,6 +936,7 @@ def to_dto(m: StoredMessage) -> MessageDTO:
         topic_id=None if m.topic_id is None else str(m.topic_id),
         outgoing=m.outgoing,
         media_kind=m.media_kind,
+        file=m.file,
         deleted=m.deleted,
         handled=m.handled,
         handled_by=m.handled_by,

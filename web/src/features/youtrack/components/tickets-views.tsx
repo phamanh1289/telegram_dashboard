@@ -37,7 +37,7 @@ export async function aiFilterApply(y: Yt, text: string) {
       .filter(([, v]) => v.length).map(([k, v]) => `- **${k}:** ${v.join(", ")}`);
     done(rows.length ? `${tNow("Bộ lọc AI đã đặt:")}\n${rows.join("\n")}` : tNow("AI không đặt được bộ lọc nào từ câu này."));
     toast({ text: tNow("AI đã đặt bộ lọc, xem các chip bên dưới") });
-  } catch (e) { toast({ text: tNow("AI lọc lỗi: {msg}", { msg: (e as Error).message }) }); }
+  } catch (e) { const text = tNow("AI lọc lỗi: {msg}", { msg: (e as Error).message }); done(text); toast({ text }); } // done: the history session is not left "Chưa xong"
   finally { setFilterBusy(false); }
 }
 

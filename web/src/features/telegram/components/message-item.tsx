@@ -4,6 +4,7 @@ import { AlarmClock, Check, CheckCheck, CornerDownRight, PenLine, Pin, RotateCcw
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/shared/components/avatar";
 import { Feat, FEATS } from "@/shared/components/ui/feat";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import { type Message, type Task } from "@/shared/lib/api";
 import { msgKey, settled, useHasDraft, waitLabel } from "@/features/telegram/lib/inbox";
@@ -11,7 +12,7 @@ import { toast } from "@/shared/lib/notifications";
 import { smooth } from "@/shared/lib/utils";
 import { clockLabel, timeLabel } from "@/shared/lib/time";
 import { readOverdueHours, useRole } from "@/shared/lib/prefs";
-import { useRetest } from "@/features/youtrack/lib/yt";
+import { useRetest } from "@/features/youtrack/lib/watch";
 import { cn } from "@/shared/lib/utils";
 import { type Key, t, useT } from "@/shared/lib/i18n";
 import { MEDIA, nameColor, richText } from "@/features/telegram/components/message/rich-text";
@@ -19,6 +20,7 @@ import { RowActions } from "@/features/telegram/components/message/row-actions";
 import { snoozeHint } from "@/features/telegram/components/message/snooze-menu";
 import { AnswersFor, byState, DeepFeat, SentBadge, TaskFeat } from "@/features/telegram/components/message/badges";
 import { ContextPanel } from "@/features/telegram/components/message/context-panel";
+import { TgFile } from "@/features/docs/components/tg-file";
 
 export type MessageItemProps = {
   m: Message;
@@ -104,13 +106,13 @@ function MessageRow({
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 text-xs leading-5">
             {extra}
-            <RowActions m={m} tag={!m.outgoing && !live} liveSnooze={!!live && !liveReply && !m.outgoing} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
+            <RowActions m={m} tag={!m.outgoing && !live} liveSnooze={!!live && !liveReply && !m.outgoing} liveWait={!!live && !liveReply && !m.deleted} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         </div>
         <RowMedia m={m} />
         {m.text && <MessageText m={m} dim={quiet || m.outgoing} />}
-        {/* portalled, but React events still bubble to the row: a click in the dialog must not open the reply panel */}
-        {showContext && <ContextPanel m={m} reveal />}
+        {/* inside the row: a click on a context line (to read / select it) must not open the reply panel */}
+        <Fold open={showContext}><div onClick={(e) => e.stopPropagation()}><ContextPanel m={m} reveal={showContext} /></div></Fold>
       </div>
     </li>
   );
@@ -250,7 +252,7 @@ function RowWhen({ m, clock, tasks, live, bare }: { m: Message; clock?: boolean;
   );
 }
 
-/** A photo (falls back to its label when it can't load), or what kind of media it is. */
+/** A photo (falls back to its label when it can't load), a document against Tài liệu, or what kind of media it is. */
 function RowMedia({ m }: { m: Message }) {
   const t = useT();
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -261,6 +263,8 @@ function RowMedia({ m }: { m: Message }) {
       <img src={photo} alt={t("Ảnh trong tin")} loading="lazy" onError={() => setPhotoFailed(true)}
         className="max-h-64 rounded-md border border-rule object-contain" />
     </a>
+  ) : m.media_kind === "document" && m.file ? (
+    <TgFile m={{ ...m, file: m.file }} />
   ) : (
     m.media_kind && <p className="text-xs text-ink-3">{t("[{kind}, chưa tải]", { kind: t(MEDIA[m.media_kind] ?? "Tệp đính kèm") })}</p>
   );

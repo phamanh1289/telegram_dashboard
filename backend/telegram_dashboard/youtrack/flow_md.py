@@ -62,7 +62,11 @@ def ac_blocks(texts: list[str]) -> dict[str, str]:
             found.setdefault(cur, []).append("\n".join(buf).strip())
         for k, parts in found.items():
             out.setdefault(k, []).extend(p for p in parts if p)
-    return {k: "\n\n".join(dict.fromkeys(v))[:MAX_AC] for k, v in out.items()}
+
+    def cut(text: str) -> str:  # said when cut: the block is labelled as quoted in full
+        return text if len(text) <= MAX_AC else text[:MAX_AC] + "\n(… đã cắt bớt, xem phần còn lại trên ticket)"
+
+    return {k: cut("\n\n".join(dict.fromkeys(v))) for k, v in out.items()}
 
 
 def _norm(v: str) -> str:

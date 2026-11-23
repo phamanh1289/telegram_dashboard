@@ -52,7 +52,7 @@
     "tab": "telegram",
     "area": "Trang nhóm › Lọc tin",
     "title": "Chưa xử lý / Đã xử lý / Cả nhóm",
-    "what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và Cả nhóm: mọi tin khác trong nhóm đọc trực tiếp từ Telegram (không lưu; tin tag không lặp lại ở đây, chúng nằm ở Chưa / Đã xử lý). Bấm một tin ở Cả nhóm để mở trang chi tiết như tin tag (trả lời, Trợ lý AI, ngữ cảnh, tạo ticket, giao AI Agent). Hoãn, Xong hay Ghim một tin ở Cả nhóm thì tin được lưu thành tag (Hoãn: tới giờ hiện lại ở Chưa xử lý). Nút \"Xong tất cả\" ẩn khi đang lọc theo người gửi hoặc đang tìm, vì nó đánh dấu cả nhóm.",
+    "what": "Chuyển giữa tin tag chưa xử lý, tin tag đã xử lý, và Cả nhóm: mọi tin khác trong nhóm đọc trực tiếp từ Telegram (không lưu; tin tag không lặp lại ở đây, chúng nằm ở Chưa / Đã xử lý). Bấm một tin ở Cả nhóm để mở trang chi tiết như tin tag (trả lời, Trợ lý AI, ngữ cảnh, tạo ticket, giao AI Agent). Hoãn, Xong hay Ghim một tin ở Cả nhóm thì tin được lưu thành tag (Hoãn: tới giờ hiện lại ở Chưa xử lý). Nút ⌛ \"Chờ…\" trên tin (kể cả tin của bạn) đưa tin vào Briefing › Chờ bổ sung để theo dõi tới khi có người trả lời (lý do chờ đổi ở Cài đặt › Telegram › Briefing). Nút \"Xong tất cả\" ẩn khi đang lọc theo người gửi hoặc đang tìm, vì nó đánh dấu cả nhóm.",
     "how": [
       {
         "t": "Bấm một nhóm ở thanh bên",
@@ -163,7 +163,7 @@
     "tab": "telegram",
     "area": "Trang nhóm › Tóm tắt (Digest)",
     "title": "Tóm tắt nhóm (Digest)",
-    "what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag; bỏ tin của người gửi trong Cài đặt › Telegram › Luôn bỏ qua. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất. Nhóm đã có trong Briefing: nút \"Tóm tắt\" mở Briefing của nhóm đó (bản tóm tắt chạy nối tiếp); xem chi tiết hay tóm tắt khoảng khác bằng nút \"Mở\" cạnh nhóm ở Briefing. Tóm tắt theo khoảng tự chọn hoặc tin đã chọn chỉ để xem riêng, không thay bản trong Briefing.",
+    "what": "AI tóm tắt hội thoại của nhóm: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm và Chủ đề; đọc trực tiếp từ Telegram, không phụ thuộc tag; bỏ tin của người gửi trong Cài đặt › Telegram › Luôn bỏ qua. Nhóm nhiều tin (tới 2.000 tin một lần) được AI đọc thành nhiều đợt rồi gộp lại. Câu hỏi Cần confirm / Việc cần làm chưa ai giải quyết được giữ sang lần tóm tắt sau (nhãn \"còn mở từ …\") cho tới khi tin mới trả lời / làm xong nó, nên không bị trôi mất. Mục Đã chốt / Thay đổi có mã ticket cũng được giữ (nhãn \"chưa vào story từ …\") tới khi Cập nhật story hoặc đánh dấu đã xử lý. Nhóm đã có trong Briefing: nút \"Tóm tắt\" mở Briefing của nhóm đó (bản tóm tắt chạy nối tiếp); xem chi tiết hay tóm tắt khoảng khác bằng nút \"Mở\" cạnh nhóm ở Briefing. Tóm tắt theo khoảng tự chọn hoặc tin đã chọn chỉ để xem riêng, không thay bản trong Briefing.",
     "how": [
       {
         "t": "Bấm một nhóm ở thanh bên",
@@ -181,7 +181,7 @@
         "t": "Bấm \"Tóm tắt N tin\"",
         "at": "Tóm tắt N tin"
       },
-      "Chờ AI tóm tắt: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm, Chủ đề",
+      "Chờ AI tóm tắt: Cần confirm, Đã chốt, Thay đổi, Ảnh hưởng team, Việc cần làm, Chủ đề (nút dừng đỏ cạnh \"Đang tóm tắt…\" hủy lượt đang chạy; đổi khoảng thời gian giữa chừng cũng hủy lượt đó)",
       {
         "t": "Bấm mũi tên \"Quay lại nhóm\" để trở lại",
         "at": "Quay lại nhóm"
@@ -255,7 +255,7 @@
     "tab": "telegram",
     "area": "Trang nhóm › Tóm tắt › Kết quả",
     "title": "Dùng kết quả tóm tắt",
-    "what": "Bấm số #tin để nhảy tới tin gốc; chip ticket YouTrack hiện trạng thái khi rê chuột; quyết định liên quan ticket có thể ghi thành bình luận; thay đổi trên ticket đang trong sprint được cảnh báo đổi scope; copy toàn bộ dạng Markdown.",
+    "what": "Bấm số #tin để nhảy tới tin gốc; chip ticket YouTrack hiện trạng thái khi rê chuột; quyết định liên quan ticket có thể ghi thành bình luận (vai trò PO/PM dùng Cập nhật story ở Briefing thay cho nút này); thay đổi trên ticket đang trong sprint được cảnh báo đổi scope; copy toàn bộ dạng Markdown.",
     "how": [
       {
         "t": "Bấm một nhóm ở thanh bên",
@@ -275,7 +275,7 @@
         "at": "css:button[aria-label^=\"Xem tin gốc\"]"
       },
       {
-        "t": "Ở mục Đã chốt, bấm \"ghi vào <ticket>\" để thêm bình luận lên YouTrack",
+        "t": "Ở mục Đã chốt, bấm \"ghi vào <ticket>\" để thêm bình luận lên YouTrack (Dev / QA; PO/PM dùng Cập nhật story ở Briefing)",
         "at": "ghi vào <ticket>"
       },
       {

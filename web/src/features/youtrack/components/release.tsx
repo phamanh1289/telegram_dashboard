@@ -2,21 +2,22 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ChartBar, CircleCheck, CircleX, Download, FileDown, List, MessageSquare, Printer, TriangleAlert } from "lucide-react";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { fmtDate, type Key, tMaybe, useT, type Vars } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
-import { getPref, onPrefs, setPref } from "@/shared/lib/prefs";
+import { setPref, usePrefValue } from "@/shared/lib/prefs";
 import { ago, ymd } from "@/shared/lib/time";
 import { cn, downloadText } from "@/shared/lib/utils";
 import { AI_MAX, bucket, DAY, isBlocked, isBug, isBuilt, needsPo, rank, shortName, shortSp, tagsOf, type Ticket, titleOf, when, ytApi } from "@/features/youtrack/lib/yt";
+import { type Trace, ytTraceQuery } from "@/features/youtrack/lib/trace";
 import { useAiWait } from "@/shared/components/ai/fetching";
 import { AiAsk, Card, Menu, MultiSelect, Person, Tag, YtFetching } from "./bits";
 import { runningSprints } from "@/features/youtrack/lib/yt-stats";
-import { HBars, Stack } from "./dashboard";
+import { HBars, Stack } from "./charts";
 import { PAGE, Pager } from "./home";
 import { workDays } from "./report";
 import { useYt } from "./state";
@@ -27,7 +28,6 @@ import { useYt } from "./state";
 // Open tickets linked to the scope but outside it count too: they can hold the release. The whole project, not the header's
 // people filter. The go-live day is the AI release report's one (`ytRelease:<project>`).
 
-type Trace = Record<string, { desc?: string; links:{ rel: string; issues: Ticket[] }[]; last: { text: string; created: number; author: string | null } | null }>;
 type St = "block" | "po" | "todo" | "doing" | "qc" | "ready" | "done";
 type Tr = (key: Key, v?: Vars) => string;
 const ST: Record<St, { label: Key; chip: string; bar: string; next: (t: Tr, i: Ticket, day: string) => string }> = {
@@ -61,7 +61,6 @@ const plain = (s: string) => s.replace(/!\[[^\]]*\]\([^)]*\)(\{[^}]*\})?/g, "").
 const brief = (s?: string) => { const t = plain(s ?? ""); return t.length > 200 ? `${t.slice(0, 197)}…` : t; };
 /** Link names (read from this ticket's side) meaning "can't ship before the other one": YouTrack's Depend and Subtask. */
 const WAIT_RE = /depends on|blocked by|parent for/i;
-const usePrefValue =(key: string) => useSyncExternalStore(onPrefs, () => getPref(key) ?? "", () => "");
 
 export function ReleasePage() {
   const y = useYt();
@@ -79,7 +78,7 @@ export function ReleasePage() {
   const all = useQuery({
     queryKey: ["yt", "issues", y.project, "*"],
     queryFn: ({ signal }) => ytApi<Ticket[]>(`/issues?project=${encodeURIComponent(y.project)}`, { signal }),
-    enabled: !!y.config && !y.config.mock, staleTime: 60_000,
+    enabled: y.config ? !y.config.mock : !!y.configError, staleTime: 60_000, // config failed: read anyway, so its own error (and Thử lại) shows, not an endless wait
   });
 
   // scope: the picked sprints (default: the ones running now, else the latest), or a day range ending on go-live
@@ -100,11 +99,7 @@ export function ReleasePage() {
     return (all.data ?? []).filter((i) => inRange(i.created) || inRange(i.updated) || inRange(i.resolved) || inRange(i.due));
   }, [all.data, sprints, by, from, rel]);
   const ids = useMemo(() => rows.map((i) => i.id).sort().slice(0, 300), [rows]);
-  const trace = useQuery({
-    queryKey: ["yt", "trace", ids.join(",")],
-    queryFn: ({ signal }) => ytApi<Trace>(`/trace?ids=${encodeURIComponent(ids.join(","))}`, { signal }),
-    enabled: ids.length > 0, staleTime: 60_000,
-  });
+  const trace = useQuery(ytTraceQuery(ids));
   const tr = trace.data ?? NO_TRACE;
 
   const left = workDays(now, day);

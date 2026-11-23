@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronDown, ChevronUp, Download, FileDown, FileText, Printer, RotateCw, Sheet, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { ChevronDown, Download, FileDown, FileText, Printer, RotateCw, Sheet, Sparkles } from "lucide-react";
+import { motion } from "motion/react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/shared/components/ui/button";
 import { Input } from "@/shared/components/ui/input";
 import { Segmented } from "@/shared/components/ui/segmented";
@@ -9,7 +10,7 @@ import { fmtClock, fmtDate, fmtDay, type Key, useT } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
 import { ymd } from "@/shared/lib/time";
-import { getPref, onPrefs, put, readReportAt, setPref, YT_ROLES } from "@/shared/lib/prefs";
+import { getPref, put, readReportAt, setPref, usePrefValue, YT_ROLES } from "@/shared/lib/prefs";
 import { cn, downloadCsv, downloadText } from "@/shared/lib/utils";
 import { type AiReq, bucket, bugSpike, DAY, inTest, isBug, isBuilt, QUICK, rank, type Ticket, when, yt } from "@/features/youtrack/lib/yt";
 import { reportData } from "@/features/youtrack/lib/yt-stats";
@@ -17,6 +18,8 @@ import { AiBox, Card, Markdown, Menu, useAi } from "./bits";
 import { useQc, useStats } from "./dashboard";
 import { useHistory } from "./history";
 import { useYt } from "./state";
+
+const CLAMP = 288; // px: the height a long saved report folds to on the home page
 
 // The release report: written by the AI from the dashboard's own figures, for the role picked in Settings and the project
 // picked on the left. Two scopes: by sprint (every ticket of the sprint(s) being viewed, against the release day) or by day
@@ -40,14 +43,14 @@ export function ReportCard() {
   const d = useStats();
   const qc = useQc();
   const now = useNow();
-  const at = useSyncExternalStore(onPrefs, () => getPref("ytReportAt") ?? "", () => "");
+  const at = usePrefValue("ytReportAt");
   const sched = useMemo(() => readReportAt(), [at]); // eslint-disable-line react-hooks/exhaustive-deps -- re-read on change
   const relKey = `ytRelease:${y.project}`;
   // default release day: the end of the sprint(s) being viewed
   const sprintEnd = Math.max(0, ...[...d.per.set].map((n) => y.sprints.get(n)?.finish ?? 0));
-  const relPref = useSyncExternalStore(onPrefs, () => getPref(relKey) ?? "", () => "");
+  const relPref = usePrefValue(relKey);
   const release = relPref || (sprintEnd ? ymd(sprintEnd) : ymd(now + 7 * DAY));
-  const by: By = useSyncExternalStore(onPrefs, () => getPref("ytReportBy") ?? "", () => "") === "day" ? "day" : "sprint";
+  const by: By = usePrefValue("ytReportBy") === "day" ? "day" : "sprint";
   const key = `ytReport:${y.project}:${y.mode}:${ymd(now)}${by === "day" ? ":day" : ""}`;
   const [ver, setVer] = useState(0);
   const [full, setFull] = useState(false); // a long report stays folded on the home page
@@ -132,6 +135,16 @@ export function ReportCard() {
   }); // no deps: checked every render (useNow ticks each minute); the stored key keeps it to one run a day
 
   const view = useRef<HTMLDivElement>(null);
+  // a report longer than CLAMP folds (and unfolds, animated); a short one shows whole, with no button
+  // not measured yet (null): clamped by CSS, and the first measure lands without an animation (no fold on every load)
+  const [tall, setTall] = useState<boolean | null>(null), [moving, setMoving] = useState(false), shown = !!saved && !busy;
+  useEffect(() => {
+    const el = view.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { setTall(el.scrollHeight > CLAMP); setTimeout(() => setMoving(true)); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [shown]);
   const file = `bao-cao-${y.project}-${y.mode}-${ymd(saved?.at ?? now)}`;
   const scope = (x: Saved) => (x.release ? `Release: ${x.release}` : t("Tình trạng test tính tới lúc tạo"));
   const md = () => `# ${title}\n\n${scope(saved!)} · ${t("tạo lúc {w}", { w: when(saved!.at) })}\n\n${saved!.text}\n`;
@@ -189,11 +202,13 @@ export function ReportCard() {
       {saved && !busy ? (
         <div className="grid gap-2">
           <p className="text-xs text-ink-3">{t("Viết lúc {w}, {x}", { w: when(saved.at), x: saved.release ? t("cho release {r}", { r: saved.release }) : t("tình trạng test tính tới lúc viết") })}</p>
-          <div className={cn("relative", !full && "max-h-72 overflow-hidden")}>
+          <motion.div initial={false} animate={{ height: tall && !full ? CLAMP : "auto" }} transition={{ duration: moving ? 0.25 : 0, ease: [0.2, 0, 0, 1] }} className={cn("relative overflow-hidden", tall === null && "max-h-72")}>
             <div ref={view}><Markdown text={saved.text} onTicket={(i) => y.openTicket(i)} /></div>
-            {!full && <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-cotton" />}
-          </div>
-          <Button size="xs" variant="ghost" className="justify-self-start" onClick={() => setFull(!full)}>{full ? <><ChevronUp /> {t("Thu gọn")}</> : <><ChevronDown /> {t("Xem đầy đủ")}</>}</Button>
+            {tall && <div aria-hidden className={cn("pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-cotton transition-opacity duration-(--dur-short)", full && "opacity-0")} />}
+          </motion.div>
+          {tall && <Button size="xs" variant="ghost" className="justify-self-start" aria-expanded={full} onClick={() => setFull(!full)}>
+            <ChevronDown className={cn("transition-transform duration-(--dur-short) ease-(--ease-out)", full && "rotate-180")} /> {t(full ? "Thu gọn" : "Xem đầy đủ")}
+          </Button>}
           {stale && <p className="text-xs text-warn">{t("Báo cáo viết cho ngày release {a}; bấm Tạo lại để tính theo {b}.", { a: saved.release, b: release })}</p>}
         </div>
       ) : ai.s.status === "idle" && (

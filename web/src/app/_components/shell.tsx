@@ -14,12 +14,16 @@ import { useNow } from "@/shared/hooks/use-now";
 import { toast, type ToastMsg } from "@/shared/lib/notifications";
 import { applyTheme, readTheme, useRole } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { riskOf, useFreshTickets, useMyTickets, useWatchGlobal } from "@/features/youtrack/lib/yt";
+import { useFreshTickets, useMyTickets, useWatchGlobal } from "@/features/youtrack/lib/watch";
+import { needOf, skipAskKey, skipNeedKey } from "@/features/youtrack/lib/yt-stats";
+import { useDone } from "@/features/telegram/lib/follow";
+import { useAsked } from "@/features/youtrack/lib/trace";
 import { Pill } from "@/shared/components/ui/segmented";
 import { Hint } from "@/shared/components/ui/hint";
 import { GuideBot, type Module } from "@/app/_components/guide";
 import { YtLogo } from "@/shared/components/yt-logo";
 import { note } from "@/features/youtrack/components/watch";
+import { useWaitNudge } from "@/features/telegram/components/briefing/waits";
 
 // Chrome shared by the modules (Telegram, YouTrack, Tài liệu) and Settings: the top bar and the toast.
 
@@ -31,13 +35,21 @@ const MODULES = [
 ] as const;
 
 /** For the YouTrack switch while elsewhere (same cache key as the YouTrack page): `fresh` = open tickets newly given to me
- *  since I was last there (red count), `risk` = mine that need attention now (amber, when nothing is new). */
+ *  since I was last there (red count), `risk` = mine that need attention now (amber, when nothing is new): at risk,
+ *  waiting on my define / confirm (PO), or with a comment asking me, each ticket once. */
 function useYtBadge(on: boolean) {
-  const { me, rows } = useMyTickets(on);
+  const t = useT();
+  const { me, rows, project } = useMyTickets(on);
   const now = useNow();
   const role = useRole(); // "me" = my tickets + those I QC; QA counts the QC ones, PO all of them, Dev the assigned ones
   const fresh = useFreshTickets(!on).filter((id) => rows.some((i) => i.id === id && !i.resolved));
-  const risk = rows.flatMap((i) => { const r = (role === "po" || (role === "qa" ? i.qc : i.assignee) === me) ? riskOf(i, now) : null; return r ? [`${i.id}: ${r}`] : []; });
+  const asked = useAsked(project, role === "po", on && !!me, true).data; // unreadable: counted as none (Hôm nay says the error)
+  const [done] = useDone(); // "Bỏ qua" on Hôm nay takes a row off the count too
+  const risk = [...new Map([
+    ...rows.flatMap((i): [string, string][] => { const r = needOf(role, i, me, now); return r && !done.has(skipNeedKey(i, r)) ? [[i.id, `${i.id}: ${r}`]] : []; }),
+    ...(asked ?? []).filter(({ ticket: i, ask }) => !done.has(skipAskKey(i.id, ask.created)))
+      .map(({ ticket: i }): [string, string] => [i.id, `${i.id}: ${t("hỏi bạn trong bình luận")}`]),
+  ]).values()];
   return { fresh, risk };
 }
 
@@ -76,6 +88,7 @@ export function TopBar({ module, children }: { module: Module; children?: React.
   const tg = useTgBadge(module !== "telegram");
   // New tickets for me and new "Báo lại" items (queued by the server's watch), on every page.
   useWatchGlobal((id, text) => { toast({ text: `${id}: ${text}` }); note(id, text); });
+  useWaitNudge(true); // Chờ bổ sung waiting over 3 days: once a day, on every page
   const behind = useUpdateState();
   const router = useRouter();
   // "Theo hệ thống": follow the OS when it flips while the page is open.
@@ -89,15 +102,17 @@ export function TopBar({ module, children }: { module: Module; children?: React.
     <div className="col-span-full flex h-11 items-center gap-2 border-b bg-paper-2 px-2 sm:px-3">
       {children}
       <nav aria-label={t("Chuyển module")} className="flex gap-0.5 rounded-[var(--radius-card)] bg-paper-3 p-0.5 shadow-groove">
+        {/* Module switch: each tab and the pill keep a name across pages, so the pill slides while the tabs move with it
+            (a badge shows only on the other modules, shifting them); globals.css sets the timing and layering. */}
         {MODULES.map(([id, href, label, Icon, title]) => id === module ? (
-          // Shared across both pages: on a module switch React morphs the pill and crossfades the rest (globals.css sets the timing).
-          <ViewTransition key={id} name="module-pill">
-            <span aria-current="page" className="flex h-8 items-center gap-2 rounded-[var(--radius-input)] bg-hl px-2.5 text-sm font-medium text-hl-ink">
-              <Icon className="size-4 shrink-0" aria-hidden /><span className="max-sm:sr-only">{t(label)}</span>
+          <ViewTransition key={id} name={`module-${id}`} default="module-tab">
+            <span aria-current="page" className="relative flex h-8 items-center gap-2 px-2.5 text-sm font-medium text-hl-ink">
+              <ViewTransition name="module-pill"><span aria-hidden className="absolute inset-0 rounded-[var(--radius-input)] bg-hl" /></ViewTransition>
+              <Icon className="relative size-4 shrink-0" aria-hidden /><span className="relative max-sm:sr-only">{t(label)}</span>
             </span>
           </ViewTransition>
         ) : (
-          <Hint key={id} side="bottom" title={t(label)} text={[t(title),
+          <ViewTransition key={id} name={`module-${id}`} default="module-tab"><Hint side="bottom" title={t(label)} text={[t(title),
             id === "telegram" && tg ? t("{n} tin tag đang chờ bạn", { n: tg }) : "",
             id === "youtrack" && fresh.length ? t("{n} ticket mới giao cho bạn: {list}", { n: fresh.length, list: list(fresh) }) : "",
             id === "youtrack" && risk.length ? t("{n} ticket cần xử lý ngay: {list}", { n: risk.length, list: list(risk) }) : ""].filter(Boolean).join(". ")}><Link href={href}
@@ -107,7 +122,7 @@ export function TopBar({ module, children }: { module: Module; children?: React.
             {id === "telegram" && tg > 0 && <SwitchBadge n={tg} label={t("tin tag đang chờ bạn")} />}
             {id === "youtrack" && (fresh.length > 0 ? <SwitchBadge n={fresh.length} label={t("ticket mới giao cho bạn")} />
               : risk.length > 0 && <SwitchBadge n={risk.length} label={t("ticket cần xử lý ngay")} className="bg-signal" />)}
-          </Link></Hint>
+          </Link></Hint></ViewTransition>
         ))}
       </nav>
       <div className="ml-auto flex items-center gap-1">

@@ -13,8 +13,9 @@ import { cn } from "@/shared/lib/utils";
 
 const PLUGINS = [remarkGfm, remarkBr, remarkBreaks];
 const TICKET = /\b([A-Z][A-Z0-9]+-\d+)\b/g;
-/** Code and links (one capture group: `split` keeps them at odd indexes): they keep their ticket IDs as text. */
-export const MD_SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\))/;
+/** Code, links and bare URLs (one capture group: `split` keeps them at odd indexes): they keep their ticket IDs as
+ *  text ("…/articles/VA-A-169/…" stays one URL, GFM links it). */
+export const MD_SKIP = /(```[\s\S]*?```|`[^`\n]*`|\[[^\]]*\]\([^)]*\)|<?\bhttps?:\/\/[^\s<>]+>?)/;
 
 // Sections whose items the user forwards as is: questions to ask, things to confirm (the AI may answer in English).
 const ASK = /hỏi|confirm|xác nhận|làm rõ|\bask|clarif/i;

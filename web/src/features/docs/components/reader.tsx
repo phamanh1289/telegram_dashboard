@@ -18,9 +18,11 @@ import { type DocDetail, type DocPart, docDetailQuery, docErrors, docs, findTerm
 import { headingText, SourceIcon } from "./results";
 import { docLinks, useDocAnchor } from "./doc-links";
 import { FavStar } from "./fav-star";
-import { Updated } from "./revs";
+import { type OnLine, RevsSheet, Updated } from "./revs";
+import { DiffMark, docLines, locate, type Mark } from "./diff-mark";
 import { UseDoc } from "./use-doc";
 import { KbAdd } from "./kb-add";
+import { TgDocActions } from "./tg-file";
 import { ZeplinSheet } from "./zeplin-sheet";
 
 // Right column of Tài liệu: one document, part by part. Parts off screen stay placeholders of about their height until
@@ -57,6 +59,17 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
   const { doc, parts } = data;
   const [zeplin, setZeplin] = useState<string | null>(null); // a Zeplin screen name clicked in the text
   const [missing, setMissing] = useState<string | null>(null); // an article ID the library does not hold, clicked
+  const [revs, setRevs] = useState(false); // Lịch sử thay đổi, from the update date
+  const [mark, setMark] = useState<Mark | null>(null); // a changed line clicked there, shown in the text
+  const aim = useRef<((root: HTMLElement) => number | null) | null>(null); // DiffMark's scroll goal
+  const lines = useMemo(() => docLines(parts), [parts]);
+  const diff = mark?.doc === doc.id ? mark : null;
+  const showLine: OnLine = (rev, b, line) => { // a changed line clicked in the update date's card or the sheet
+    const at = locate(lines, b, line);
+    if (!at) return;
+    setMark({ ...at, doc: doc.id, key: Date.now(), rev });
+    onPart(at.part);
+  };
   const anchor = useDocAnchor(onDoc, setZeplin, setMissing);
   const box = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState<ReadonlySet<number>>(() => new Set(parts.slice(0, 3).map((p) => p.part)));
@@ -101,13 +114,15 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
   // On open the parts around it render just after the jump: it stays pinned until they settle or the reader scrolls.
   const first = useRef(true);
   const was = useRef(part);
+  const marked = useRef(diff?.key);
   useEffect(() => {
     const root = box.current;
-    const moved = was.current !== part;
+    const moved = was.current !== part || marked.current !== diff?.key;
     was.current = part;
+    marked.current = diff?.key;
     // the same part with the find box cleared: stay where the reader is
     if (part == null || !root || (!first.current && !moved && !find.trim())) return;
-    const goal = () => spot(root, part, term);
+    const goal = () => aim.current?.(root) ?? spot(root, part, term);
     if (first.current) {
       first.current = false;
       const pin = () => { const g = goal(); if (g != null) root.scrollTop = g; };
@@ -133,7 +148,7 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
     const g = goal();
     if (g != null) root.scrollTo({ top: g, behavior: "smooth" });
     return () => root.removeEventListener("scrollend", settle);
-  }, [part, term]); // eslint-disable-line react-hooks/exhaustive-deps -- find: read only to skip a cleared box
+  }, [part, term, diff?.key]); // eslint-disable-line react-hooks/exhaustive-deps -- find: read only to skip a cleared box
 
   // light the searched words in what is rendered
   useEffect(() => {
@@ -162,43 +177,49 @@ function Body({ data, part, q, onPart, onTicket, onBack, onAi, onDoc }: {
   const active = useSpy(box, toc);
   return (
     <article className="@container flex min-h-0 flex-1 flex-col">
-      {/* wraps: the tools drop under the title rather than squeeze it when the find box opens in a narrow reader */}
-      <header className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-5 py-2.5">
-        <Button size="icon-sm" variant="ghost" className="-ml-2 hidden @max-3xl/docs:inline-flex" aria-label={t("Quay lại danh sách")} onClick={onBack}><ArrowLeft /></Button>
-        <div className="grid min-w-0 flex-[1_1_18rem] gap-0.5">
-          <h1 className="flex min-w-0 items-center gap-2 text-base font-bold text-ink"><SourceIcon doc={doc} /><span className="line-clamp-2 break-words">{doc.title || doc.ref}</span><FavStar doc={doc} /></h1>
-          <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-ink-3">
-            {/* a file's ref is its full path: "Mở file" shows it, the line keeps the short facts */}
-            {doc.source === "youtrack" && <span className="font-mono">{doc.ref}</span>}
-            {doc.updated_at && <Updated at={doc.updated_at} revs={data.revs ?? []} />}
-            <span>{t("{n} ký tự", { n: fmtNum(doc.chars) })}</span>
-            {doc.tickets.length > 0 && <Tickets ids={doc.tickets} onTicket={onTicket} />}
-          </p>
+      {/* title + one row of icon tools (named by their Hint and aria-label), the facts in one line under them */}
+      <header className="grid gap-1 border-b px-5 py-2">
+        {/* wraps: the tools drop under the title rather than squeeze it when the find box opens in a narrow reader */}
+        {/* top-aligned: a two-line title keeps the tools at the top right, not centred beside it */}
+        <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-1.5">
+          <Button size="icon-sm" variant="ghost" className="-ml-2 -mr-1 hidden @max-3xl/docs:inline-flex" aria-label={t("Quay lại danh sách")} onClick={onBack}><ArrowLeft /></Button>
+          <h1 className="flex min-h-[30px] min-w-0 flex-[1_1_16rem] items-center gap-2 text-base font-bold text-ink"><SourceIcon doc={doc} /><span className="line-clamp-2 break-words">{doc.title || doc.ref}</span></h1>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <FavStar doc={doc} />
+            <FindBox input={input} value={find} hits={hits.length} at={at} onGo={go}
+              onChange={(v) => {
+                setFind(v);
+                const h = matching(parts, v); // to the first match as it is typed, unless the open part matches
+                if (h.length && (part == null || !h.includes(part))) onPart(h[0]);
+              }} />
+            <AiAsk label={t("Hỏi AI về tài liệu này")} hint={t("Hỏi mình về tài liệu này nhé!")} onClick={onAi} />
+            <span aria-hidden className="mx-1 h-5 w-px bg-rule" />
+            <UseDoc doc={doc} />
+            <Original doc={doc} onBack={onBack} />
+          </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <FindBox input={input} value={find} hits={hits.length} at={at} onGo={go}
-            onChange={(v) => {
-              setFind(v);
-              const h = matching(parts, v); // to the first match as it is typed, unless the open part matches
-              if (h.length && (part == null || !h.includes(part))) onPart(h[0]);
-            }} />
-          <AiAsk label={t("Hỏi AI về tài liệu này")} hint={t("Hỏi mình về tài liệu này nhé!")} onClick={onAi} />
-          <UseDoc doc={doc} />
-          <Original doc={doc} />
-        </div>
+        <p className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pb-0.5 text-xs text-ink-3">
+          {/* a file's ref is its full path: "Mở file" shows it, the line keeps the short facts */}
+          {doc.source === "youtrack" && <span className="font-mono">{doc.ref}</span>}
+          {doc.updated_at && <Updated at={doc.updated_at} revs={data.revs ?? []} onOpen={() => setRevs(true)} onLine={showLine} />}
+          <span>{t("{n} ký tự", { n: fmtNum(doc.chars) })}</span>
+          {doc.tickets.length > 0 && <Tickets ids={doc.tickets} onTicket={onTicket} />}
+        </p>
       </header>
       <div ref={box} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
         {/* the text takes all the width the Mục lục (on the right edge) leaves */}
         <div className="flex gap-10 py-6 pr-4 pl-6 @max-xl:px-4">
           <TicketRef value={chip}>
             <div data-doc-text className="grid min-w-0 flex-1 content-start gap-0">
-              {parts.map((p, i) => <Part key={p.part} p={p} head={p.heading !== parts[i - 1]?.heading} shown={shown(p.part)} on={p.part === part} self={doc.ref} anchor={anchor} />)}
+              {parts.map((p, i) => <Part key={p.part} p={p} head={p.heading !== parts[i - 1]?.heading} shown={shown(p.part)} on={p.part === part} self={doc.ref} anchor={anchor}
+                mark={diff?.part === p.part ? <DiffMark mark={diff} aimRef={aim} onClose={() => setMark(null)} /> : null} />)}
             </div>
           </TicketRef>
           {toc.length > 1 && <Toc toc={toc} active={active} onGo={onPart} />}
         </div>
       </div>
       <ZeplinSheet name={zeplin} onClose={() => setZeplin(null)} />
+      <RevsSheet open={revs} onClose={() => setRevs(false)} data={data} onLine={showLine} />
       <KbAdd ref_={missing} onClose={() => setMissing(null)} onOpen={onDoc} />
     </article>
   );
@@ -363,22 +384,24 @@ const depth = (h: string) => /^#+/.exec(h)?.[0].length ?? 1;
 
 /** A part: its heading on the first block of a section; a placeholder of about its height until it comes near. Article
  *  IDs in it (not the document's own, `self`) and Zeplin screen names link (doc-links.tsx). */
-function Part({ p, head, shown, on, self, anchor }: {
+function Part({ p, head, shown, on, self, anchor, mark }: {
   p: DocPart; head: boolean; shown: boolean; on: boolean; self: string; anchor: (hash: string) => React.ReactNode;
+  mark: React.ReactNode; // the diff card of a changed line shown in this part (diff-mark.tsx)
 }) {
   const text = head && p.heading ? `${p.heading}\n\n${p.body}` : p.body;
   const lines = text.split("\n").length + text.length / 75;
   return (
     // on: the part opened / jumped to flashes once (key: again on the next jump), no lasting tint
-    <section data-part={p.part} className={cn("-mx-3 scroll-mt-4 rounded-md px-3", on && "doc-flash")}
+    <section data-part={p.part} className={cn("relative -mx-3 scroll-mt-4 rounded-md px-3", on && !mark && "doc-flash")}
       style={shown ? undefined : { height: `${Math.ceil(lines) * 1.55}rem` }}>
       {shown && <Markdown text={docLinks(text, self)} anchor={anchor} className="md-wrap py-1 text-md leading-[1.6]" />}
+      {shown && mark}
     </section>
   );
 }
 
 /** The original: the YouTrack article, or the file shown in Finder / Explorer. */
-function Original({ doc }: { doc: DocDetail["doc"] }) {
+function Original({ doc, onBack }: { doc: DocDetail["doc"]; onBack: () => void }) {
   const t = useT();
   const reveal = useMutation({
     mutationFn: () => docs.reveal(doc.id),
@@ -386,16 +409,17 @@ function Original({ doc }: { doc: DocDetail["doc"] }) {
   });
   if (doc.url) return (
     <Hint side="bottom" text={t("Mở bài gốc trên YouTrack.")}>
-      <a href={doc.url} target="_blank" rel="noopener noreferrer" className={buttonVariants({ size: "sm", variant: "outline", className: "no-underline" })}>
-        <ExternalLink /><span className="@max-xl:sr-only">{t("Bản gốc")}</span>
+      <a href={doc.url} target="_blank" rel="noopener noreferrer" aria-label={t("Bản gốc")} className={buttonVariants({ size: "icon-sm", variant: "ghost" })}>
+        <ExternalLink />
       </a>
     </Hint>
   );
+  if (doc.source === "telegram") return <TgDocActions doc={doc} onRemoved={onBack} />;
   if (doc.source !== "file") return null;
   return (
     <Hint side="bottom" text={t("Hiện file trong Finder / Explorer.")}>
-      <Button size="sm" variant="outline" aria-busy={reveal.isPending} disabled={reveal.isPending} onClick={() => reveal.mutate()}>
-        <FolderOpen /><span className="@max-xl:sr-only">{t("Mở file")}</span>
+      <Button size="icon-sm" variant="ghost" aria-label={t("Mở file")} aria-busy={reveal.isPending} disabled={reveal.isPending} onClick={() => reveal.mutate()}>
+        <FolderOpen />
       </Button>
     </Hint>
   );

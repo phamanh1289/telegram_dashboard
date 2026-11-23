@@ -372,6 +372,7 @@ export function AiPromptBox({ value, onChange, onSend, onModEnter, running, onSt
     <div className={cn("relative rounded-2xl border border-rule-2 bg-cotton shadow-stock transition-[border-color,box-shadow] duration-(--dur-short) focus-within:border-ink-3",
       running && "ai-ring", className)}>
       {mention?.popup}
+      {mention?.top}
       {top && <div className="relative px-3 pt-3">{top}</div>}
       <textarea {...field} ref={mention?.attach} rows={2} value={value}
         onChange={(e) => { onChange(e.target.value); mention?.track(e); }} onSelect={mention?.track}

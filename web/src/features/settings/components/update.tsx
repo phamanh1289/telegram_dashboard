@@ -1,10 +1,11 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Check, ChevronDown, Download, Lightbulb, Loader2, RotateCw, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, Download, Lightbulb, Loader2, RotateCw, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Row, StatusLine, Switch, waitRestart } from "@/features/settings/components/parts";
 import { AiFetching, UpdateHero } from "@/shared/components/ai/fetching";
+import { FoldMore } from "@/shared/components/ui/fold";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
@@ -170,11 +171,8 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
           <WaitTips />
         </> : <div className="grid gap-2">
           {!!d.commits.length && (
-            <details className="group rounded-lg border border-rule">
-              <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-3 py-2 text-sm text-ink-2 select-none hover:bg-paper-2 [&::-webkit-details-marker]:hidden">
-                <ChevronDown aria-hidden className="size-4 -rotate-90 text-ink-3 transition-transform group-open:rotate-0" />
-                {t("Có gì mới")} <span className="text-ink-3">({d.commits.length})</span>
-              </summary>
+            <FoldMore className="rounded-lg border border-rule" labelClassName="gap-2 rounded-lg px-3 py-2 text-sm font-normal hover:bg-paper-2"
+              label={<>{t("Có gì mới")} <span className="text-ink-3">({d.commits.length})</span></>}>
               <ul className="grid max-h-36 grid-cols-1 overflow-y-auto border-t border-rule py-1 text-xs">
                 {d.commits.map((c, i) => (
                   <li key={c.sha} className="flex items-center gap-2.5 px-3 py-1.5">
@@ -184,7 +182,7 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
                   </li>
                 ))}
               </ul>
-            </details>
+            </FoldMore>
           )}
           <Hint text={t("Server chạy code cũ tới khi khởi động lại, nên luôn khởi động lại sau khi cài; đang có task AI Agent thì đợi task xong.")}>
             <p tabIndex={0} className="flex w-fit items-center gap-2 rounded px-3 text-xs text-ink-3 outline-none focus-visible:ring-2 focus-visible:ring-hl"><RotateCw aria-hidden className="size-3.5" />{t("Tự khởi động lại server sau khi cài")}</p>

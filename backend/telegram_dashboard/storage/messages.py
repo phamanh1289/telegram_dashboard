@@ -161,16 +161,17 @@ class Messages:
     # ---- messages ------------------------------------------------------
     def _upsert_message(self, c: sqlite3.Connection, m: StoredMessage, chat: sqlite3.Row) -> bool:
         existing = self._msg(c, m.chat_id, m.message_id)
+        file = m.file and m.file.model_dump_json()
         values = (
             m.sender_id, m.sender_name, m.text, _ts(m.date), _ts(m.edit_date), m.reply_to_id,
-            m.topic_id, int(m.outgoing), m.media_kind, json.dumps([x.model_dump() for x in m.links]),
+            m.topic_id, int(m.outgoing), m.media_kind, file, json.dumps([x.model_dump() for x in m.links]),
         )  # fmt: skip
         if existing is None:
             if (_ts(m.date) or 0) < self._pruned_before(c):
                 return False  # cleared in Settings › Dữ liệu: an old message edited or backfilled is not a new tag
             c.execute(
-                "INSERT INTO messages (sender_id,sender_name,text,date,edit_date,reply_to_id,"
-                "topic_id,outgoing,media_kind,links,text_fold,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO messages (sender_id,sender_name,text,date,edit_date,reply_to_id,topic_id,outgoing,"
+                "media_kind,file,links,text_fold,chat_id,message_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (*values, fold(m.text), m.chat_id, m.message_id),
             )
             c.execute("UPDATE messages SET priority=1 WHERE chat_id=? AND message_id=? AND sender_id IN "
@@ -182,18 +183,19 @@ class Messages:
         if existing["deleted"]:
             return False  # tombstones are never resurrected
         if (_ts(m.edit_date) or 0) <= (existing["edit_date"] or 0):
-            # Same version refetched (e.g. mention backfill): pick up entities stored before we kept them all.
-            if m.text != existing["text"] or values[-1] == existing["links"]:
+            # Same version refetched (e.g. mention backfill): pick up entities / a file name stored before we kept them.
+            file = file or existing["file"]
+            if m.text != existing["text"] or (values[-1], file) == (existing["links"], existing["file"]):
                 return False  # replay or stale version
             c.execute(
-                "UPDATE messages SET links=? WHERE chat_id=? AND message_id=?",
-                (values[-1], m.chat_id, m.message_id),
+                "UPDATE messages SET links=?, file=? WHERE chat_id=? AND message_id=?",
+                (values[-1], file, m.chat_id, m.message_id),
             )
             self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
             return True
         c.execute(
             "UPDATE messages SET sender_id=?,sender_name=?,text=?,date=?,edit_date=?,reply_to_id=?,"
-            "topic_id=?,outgoing=?,media_kind=?,links=?,text_fold=? WHERE chat_id=? AND message_id=?",
+            "topic_id=?,outgoing=?,media_kind=?,file=?,links=?,text_fold=? WHERE chat_id=? AND message_id=?",
             (*values, fold(m.text), m.chat_id, m.message_id),
         )
         self._record(c, m.chat_id, m.message_id, "edit", chat["generation"])
@@ -270,7 +272,7 @@ class Messages:
                 else:
                     c.execute(
                         "UPDATE messages SET text='', text_fold='', sender_name=NULL, sender_id=NULL, "
-                        "media_kind=NULL, deleted=1 WHERE chat_id=? AND message_id=?",
+                        "media_kind=NULL, file=NULL, deleted=1 WHERE chat_id=? AND message_id=?",
                         (cid, mid),
                     )
                 self._clear_outbox_text(c, cid, [mid])

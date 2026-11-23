@@ -4,7 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, CircleCheckBig, CornerDownRight, GitCompareArrows, Hourglass, ListTodo, type LucideIcon, MessageCircleQuestion, MessageSquareReply, RotateCw } from "lucide-react";
 import { closedBy, DeepBulkAction, DeepTopicAction, isStale, type TopicVerdict, useVerdicts, VerdictChip, VerdictTally } from "@/features/telegram/components/deep-think";
 import { useState } from "react";
-import { beRepliesQuery, Evidence, isAnswered, ItemFlags, repliesTo, Tickets, todoKey, useAutoDone } from "@/features/telegram/components/digest-page";
+import { Evidence, ItemFlags, Tickets } from "@/features/telegram/components/digest-page";
+import { beRepliesQuery, isAnswered, repliesTo, todoKey, useAutoDone } from "@/features/telegram/lib/digest";
 import { ItemActions } from "@/features/telegram/components/next-steps";
 import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
@@ -222,7 +223,7 @@ function Card({ chatId, t, tv, hits, onToggle, onJump, lit }: {
                 )}
               </div>
               {onToggle && (
-                <Hint side="bottom" text={tx("Đánh dấu đã xử lý (chỉ trên máy này): mục này rời khỏi Với BE")}>
+                <Hint side="bottom" text={tx("Đánh dấu đã xử lý: mục này rời khỏi Với BE")}>
                   <button type="button" aria-label={tx("Đánh dấu đã xử lý")}
                     onClick={() => { onToggle(kind, it); toast({ text: tr("Đã đánh dấu xử lý"), action: { label: tr("Hoàn tác"), run: () => onToggle(kind, it) } }); }}
                     className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-[1.5px] border-rule-2 text-transparent transition-colors duration-(--dur-short) hover:border-ok hover:bg-ok-wash hover:text-ok">

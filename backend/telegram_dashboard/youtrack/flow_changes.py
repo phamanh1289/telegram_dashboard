@@ -1,6 +1,8 @@
 """What a UI flow save changes, said as the dialog lists it, and what a re-render keeps of the old flow (only a person
 writes it: notes, tap areas, positions, the start screen, folds, notes on the map)."""
 
+from collections import Counter
+
 from .flow import Flow, Link, _items_by_screen, redesigned
 
 
@@ -23,11 +25,17 @@ def _label(flow: Flow, link: Link) -> str:
     return f'"{_items_by_screen(flow)[screen][item]}" ({title})' if item else f'Màn "{title}" ({link.act})'
 
 
-def _link_changes(old: Flow, new: Flow) -> list[str]:
-    def by_key(flow: Flow) -> dict[tuple[str, str], Link]:
-        return {(k.src, k.act): k for k in flow.links}
+def _link_keys(old: Flow, new: Flow):
+    """Each flow's links by (src, act); a button with several branches (same src and act, told apart by `when`) by
+    its condition too, so adding a branch reads as a new link, not as the first one retargeted."""
+    count = lambda f: Counter((k.src, k.act) for k in f.links)  # noqa: E731
+    many = {k for f in (old, new) for k, n in count(f).items() if n > 1}
+    key = lambda k: (k.src, k.act, k.when if (k.src, k.act) in many else "")  # noqa: E731
+    return {key(k): k for k in old.links}, {key(k): k for k in new.links}, key
 
-    ol, nl = by_key(old), by_key(new)
+
+def _link_changes(old: Flow, new: Flow) -> list[str]:
+    ol, nl, _ = _link_keys(old, new)
     ot = {s.id: s.title for s in old.screens}
     nt = {s.id: s.title for s in new.screens}
     out = [f'{_label(new, nl[k])}: "{ot[ol[k].to]}" → "{nt[nl[k].to]}"' for k in nl if k in ol and ol[k].to != nl[k].to]
@@ -58,9 +66,9 @@ def _prop_changes(old: Flow, new: Flow) -> list[str]:
         if o.parent != s.parent:
             out.append(f'Đặt "{s.title}" nằm trên "{titles[s.parent]}"' if s.parent in titles
                        else f'Bỏ màn nền của "{s.title}"')  # fmt: skip
-    ol = {(k.src, k.act): k for k in old.links}
+    ol, _, key = _link_keys(old, new)
     for k in new.links:
-        if (o := ol.get((k.src, k.act))) is None or o.to != k.to:
+        if (o := ol.get(key(k))) is None or o.to != k.to:
             continue  # added / retargeted: said by _link_changes
         if o.when != k.when:
             out.append(f"Sửa điều kiện {_label(new, k)}{_was(o.when, k.when)}")

@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/shared/components/ui/button";
 import { cn } from "@/shared/lib/utils";
@@ -118,6 +118,17 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
   const go = useCallback((n: number) => { saveTour({ id: f.id, from, i: n }); setI(n); }, [f.id, from]);
   const next = useCallback(() => (last ? end() : go(i + 1)), [last, end, go, i]);
   useEffect(() => saveTour({ id: f.id, from, i }), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // An app dialog opened by a step (Cập nhật story…) hides everything outside it from assistive tech (aria-hidden /
+  // inert on the body's other children): the tour sits above it and stays readable and usable.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const keep = () => { if (el.hasAttribute("aria-hidden")) el.removeAttribute("aria-hidden"); if (el.inert) el.inert = false; };
+    const mo = new MutationObserver(keep);
+    mo.observe(el, { attributes: true, attributeFilter: ["aria-hidden", "inert"] });
+    return () => mo.disconnect();
+  }, []);
 
   // keep looking for this step's control: it may appear later (a page change, a panel the user opens, data loading)
   useEffect(() => {
@@ -196,7 +207,7 @@ export function GuideTour({ f, from, start, onEnd }: { f: Feature; from: Module;
 
   // portal: the top bar is a stacking context (sticky z-30) that app dialogs would cover
   return createPortal(
-    <div data-guide-tour className="pointer-events-none fixed inset-0 z-[70]">
+    <div ref={root} data-guide-tour className="pointer-events-none fixed inset-0 z-[70]">
       <div className="pointer-events-auto absolute inset-0 bg-black/75 transition-[clip-path] duration-300 ease-(--ease-out) animate-in fade-in-0" style={{ clipPath: clip }} />
       {h && (
         <div aria-hidden className="absolute rounded-lg ring-2 ring-hl transition-[left,top,width,height] duration-300 ease-(--ease-out)"

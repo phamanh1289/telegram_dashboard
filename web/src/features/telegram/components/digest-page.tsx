@@ -2,184 +2,39 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, Copy, MessageSquarePlus, RotateCw, ShieldCheck, ShieldOff, Sparkles, TriangleAlert } from "lucide-react";
-import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Skeleton } from "@/shared/components/ui/skeleton";
 import { BeTopics } from "@/features/telegram/components/be-topics";
+import { AiStop } from "@/shared/components/ai/chat";
 import { AiFetching, digestLines, useAiWait } from "@/shared/components/ai/fetching";
 import { DateRangePicker, type DayRange, rangeLabel, rangeQuery } from "@/shared/components/date-range";
 import { DeepPick } from "@/features/telegram/components/deep-think";
 import { NextSteps } from "@/features/telegram/components/next-steps";
+import { useBriefRun } from "@/features/telegram/components/briefing/run";
+import { answeredQuery, byTeam, closedIds, digestError, isClosedItem, meta, recordText, SECTIONS, STATUS, todoKey, toMarkdown } from "@/features/telegram/lib/digest";
+import { useDone } from "@/features/telegram/lib/follow";
 import { TicketChip } from "@/features/telegram/components/message/rich-text";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog } from "@/shared/components/ui/dialog";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
-import { api, ApiError, type BeReply, errorText, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/shared/lib/api";
-import { type Key, t as tr, useT } from "@/shared/lib/i18n";
+import { api, type DigestConsent, type DigestItem, type DigestResult, type HistoryPage, type Message, type SavedDigest } from "@/shared/lib/api";
+import { t as tr, useT } from "@/shared/lib/i18n";
 import { copyText, toast } from "@/shared/lib/notifications";
 import { smooth } from "@/shared/lib/utils";
 import { dayLabel, timeLabel } from "@/shared/lib/time";
-import { isString, put, readDigestTeams, readIntro, readList, useRole, usesCode } from "@/shared/lib/prefs";
+import { aboutMe, readDigestTeams, useRole, usesCode } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { lastSp, yt } from "@/features/youtrack/lib/yt";
 import { Segmented } from "@/shared/components/ui/segmented";
 
 const PRESETS = [["24h", 24], ["3 ngày", 72], ["7 ngày", 168]] as const;
 
-const ERRORS: Record<string, Key> = {
-  digest_consent_required: "Cần cho phép AI đọc nhóm này trước.",
-  digest_empty: "Không có tin nào để tóm tắt.",
-  digest_too_large: "Quá nhiều tin cho một lần tóm tắt (tối đa 2.000 tin); hãy thu hẹp khoảng thời gian.",
-  not_connected: "Telegram chưa kết nối.",
-  ai_not_configured: "AI đang chọn chưa cài hoặc chưa đăng nhập, xem Cài đặt › AI.",
-  ai_timeout: "AI phản hồi quá lâu; thử lại hoặc thu hẹp khoảng thời gian.",
-  ai_provider_error: "AI gặp lỗi; thử lại.",
-  ai_permission_changed: "Quyền đã đổi trong lúc xử lý; kết quả bị bỏ.",
-  chat_not_found: "Không tìm thấy nhóm.",
-};
-/** The server's own explanation when it gives one, else the code's text. */
-export const digestError = (e: unknown) =>
-  e instanceof ApiError && e.detail && e.code !== "not_connected" ? e.detail : errorText(e, Object.fromEntries(Object.entries(ERRORS).map(([k, v]) => [k, tr(v)])));
-
-// Reading order: what needs me first, the record after.
-const SECTIONS = [
-  ["confirmations", "Cần confirm"],
-  ["decisions", "Đã chốt"],
-  ["changes", "Thay đổi"],
-  ["impacts", "Ảnh hưởng team"],
-  ["actions", "Việc cần làm"],
-] as const;
-const STATUS: Record<string, [Key, string]> = {
-  decided: ["Đã chốt", "bg-ok-wash text-ok"],
-  open: ["Đang bàn", "bg-warn-wash text-warn"],
-  dropped: ["Bỏ ngỏ", "bg-paper-3 text-ink-3"],
-};
-
 // `until` is always set when a range is chosen, so the list and the digest cover the same messages.
 type Span = { since: string; until: string };
 const span = (since: string, until?: string | null): Span => ({ since, until: until ?? new Date().toISOString() });
 const hoursAgo = (h: number) => span(new Date(Date.now() - h * 3_600_000).toISOString());
 const CONSENT_DAYS = [7, 30, 90] as const;
-
-// Handled marks, per browser, refs only (chat, kind, message ids; a hash when an item cites none): never the text.
-// Shared by Briefing (where you tick them) and a group's Tóm tắt (whose "Với BE" view leaves them out).
-const DONE = "briefDone";
-const OPEN = ["confirmations", "actions"] as const;
-const hash = (s: string) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) | 0, 0).toString(36);
-export const todoKey = (chat: string, kind: string, it: DigestItem) => `${chat}:${kind}:${it.message_ids?.length ? it.message_ids.join(",") : hash(it.text)}`;
-
-// One store for the page, the sidebar's counts and a group's Tóm tắt: a tick shows everywhere at once.
-let doneSet: Set<string> | null = null;
-const doneSubs = new Set<() => void>();
-const NONE = new Set<string>();
-const readDone = () => (doneSet ??= new Set(readList(DONE, [], isString)));
-const subDone = (f: () => void) => { doneSubs.add(f); return () => { doneSubs.delete(f); }; };
-
-/** Ticks `keys` on or off. */
-export function setDone(keys: string[], on: boolean) {
-  const next = new Set(readDone());
-  for (const k of keys) if (on) next.add(k); else next.delete(k);
-  put(DONE, JSON.stringify([...next].slice(-500))); // ponytail: oldest marks drop off past 500
-  doneSet = next;
-  doneSubs.forEach((f) => f());
-}
-
-export function useDone() {
-  const done = useSyncExternalStore(subDone, readDone, () => NONE);
-  const toggle = (key: string) => setDone([key], !readDone().has(key));
-  return [done, toggle] as const;
-}
-
-// A code check that found a topic adapted (✅) ticks its items off once per check and topic: an untick sticks.
-const AUTO = "briefAutoDone";
-/** Ticks `keys` off for `mark` (check id + topic) unless that mark already ran; true when it did now. */
-export function autoDone(mark: string, keys: string[]) {
-  const seen = readList(AUTO, [], isString);
-  if (seen.includes(mark)) return false;
-  put(AUTO, JSON.stringify([...seen, mark].slice(-300)));
-  setDone(keys, true);
-  return true;
-}
-
-/** Closes what code checks settled (`closedBy`), each once (`autoDone`): one toast for all of it, with Undo. */
-export function useAutoDone(settled: { mark: string; keys: string[]; why: Key }[]) {
-  const sig = settled.map((a) => a.mark).join("|");
-  useEffect(() => {
-    const ran = settled.filter((a) => autoDone(a.mark, a.keys));
-    const keys = ran.flatMap((a) => a.keys);
-    const why = [...new Set(ran.map((a) => tr(a.why)))].join(" / ");
-    if (keys.length) toast({ text: tr("Đóng {n} mục: {why}", { n: keys.length, why }), action: { label: tr("Hoàn tác"), run: () => setDone(keys, false) } });
-  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `settled` is new each render; `sig` names it
-}
-
-/** chat_id -> digest-cited message ids I have replied to on Telegram: those items tick themselves off. */
-export const answeredQuery = {
-  queryKey: ["briefing-answered"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, string[]>>("/briefing/answered", { signal }),
-  staleTime: 60_000,
-};
-
-/** chat_id -> replies from others to questions still open with BE, newer than the digest (Với BE: "vừa trả lời"). */
-export const beRepliesQuery = {
-  queryKey: ["briefing-be-replies"],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<Record<string, BeReply[]>>("/briefing/be-replies", { signal }),
-  staleTime: 60_000,
-};
-/** The replies to an item's question (any of its cited messages), and the guesses (`direct` false) when nobody replied. */
-export const repliesTo = (it: DigestItem, hits?: BeReply[]) => hits?.filter((h) => it.message_ids?.includes(h.reply_to)) ?? [];
-/** BE replied to the question itself: it no longer waits (a guess does not count). */
-export const isAnswered = (it: DigestItem, hits?: BeReply[]) => repliesTo(it, hits).some((h) => h.direct);
-
-/** Ticked off (here) or replied to (on Telegram). */
-export const isClosedItem = (chat: string, kind: string, it: DigestItem, done: Set<string>, answered?: Record<string, string[]>) =>
-  done.has(todoKey(chat, kind, it)) || ((OPEN as readonly string[]).includes(kind) && !!it.message_ids?.some((id) => answered?.[chat]?.includes(id)));
-
-/** What still waits in a group's latest digest: open questions / to-dos not ticked off or replied to. */
-export const openCount = (chat: string, r: DigestResult | undefined, done: Set<string>, answered?: Record<string, string[]>) =>
-  OPEN.reduce((n, k) => n + (r?.[k] ?? []).filter((it) => !isClosedItem(chat, k, it, done, answered)).length, 0);
-
-/** A chat's open items I have closed, as their joined message ids: the next digest drops them instead of carrying them on. */
-export function closedIds(chat: string, r: DigestResult | undefined, answered?: Record<string, string[]>) {
-  const done = readDone();
-  return OPEN.flatMap((k) => (r?.[k] ?? []).filter((it) => it.message_ids?.length && isClosedItem(chat, k, it, done, answered)))
-    .map((it) => it.message_ids!.join(","));
-}
-
-/** Impacts grouped by team, in first-seen order. */
-function byTeam(list: DigestItem[]): [string, DigestItem[]][] {
-  const out = new Map<string, DigestItem[]>();
-  for (const it of list) out.set(it.who || tr("Khác"), [...(out.get(it.who || tr("Khác")) ?? []), it]);
-  return [...out];
-}
-
-function meta(key: string, it: DigestItem) {
-  if (key === "decisions" && it.who) return tr("chốt bởi {who}", { who: it.who });
-  if (key === "confirmations" && it.who) return tr("hỏi {who}", { who: it.who });
-  if (key === "actions") return [it.who, it.due && tr("hạn {due}", { due: it.due })].filter(Boolean).join(", ");
-  return "";
-}
-
-export function toMarkdown(r: DigestResult, title: string) {
-  const refs = (ids: string[], tix: string[] = []) => (ids.length || tix.length ? ` (${[...tix, ...ids.map((i) => `#${i}`)].join(", ")})` : "");
-  const out = [`# ${tr("Tóm tắt: {title}", { title })}`];
-  for (const [key, label] of SECTIONS) {
-    const items = r[key] ?? [];
-    if (!items.length) continue;
-    out.push("", `## ${tr(label)}`);
-    for (const it of items) {
-      const m = key === "impacts" ? `**${it.who || tr("Khác")}**: ` : "";
-      const extra = meta(key, it);
-      const flags = `${it.be ? "[BE] " : ""}${it.carried && it.at ? `[${tr("còn mở từ {day}", { day: dayLabel(it.at).toLowerCase() })}] ` : ""}`;
-      out.push(`- ${m}${flags}${it.text}${extra ? ` — ${extra}` : ""}${refs(it.message_ids ?? [], it.tickets)}`);
-    }
-  }
-  if (r.topics?.length) {
-    out.push("", `## ${tr("Chủ đề")}`);
-    for (const tp of r.topics) out.push(`- **${tp.title}** [${tr(STATUS[tp.status ?? "open"][0])}]: ${tp.summary}${refs(tp.message_ids ?? [], tp.tickets)}`);
-  }
-  if (r.raw) out.push("", r.raw);
-  return out.join("\n");
-}
 
 /** Structured AI summary of a group conversation, read live from Telegram. Independent of tags. */
 export function DigestPage({ chatId, title, onBack }: { chatId: string; title: string; onBack: () => void }) {
@@ -233,6 +88,10 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
   // Only a run that carries on from the last one (or the first ever) feeds Briefing; picked messages and other
   // ranges are a one-off view that leaves Briefing's running summary and cursor alone.
   const keep = !picked.size && (preset === "last" || !last);
+  // Briefing's batch is summarizing this group right now: a run here would save over it (or be saved over)
+  const inBatch = useBriefRun().runs[chatId]?.status === "running";
+  // Aborting is the stop: the server sees the request go and kills that AI run (as Briefing's batch does).
+  const stop = useRef<AbortController | null>(null);
   const run = useMutation({
     mutationFn: (save: boolean) =>
       api<DigestResult>("/digest", {
@@ -246,18 +105,26 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           save,
           closed: closedIds(chatId, last?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams: readDigestTeams(),
-          intro: readIntro(),
+          ...aboutMe(),
         },
+        signal: (stop.current = new AbortController()).signal,
       }),
+    // the range stays as summarized: a first digest's new cursor must not swap the list under its result for "since last time"
+    onMutate: () => { touched.current = true; },
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["digest-saved", chatId] }); void qc.invalidateQueries({ queryKey: ["briefing"] }); },
   });
 
+  /** Stop the run in flight (the Stop button, or another range picked: its result would be for the old one). */
+  function stopRun() {
+    stop.current?.abort();
+    run.reset();
+  }
   function choose(next: Span) {
     touched.current = true;
     setWin(next);
     setPicked(new Set());
     anchor.current = null;
-    run.reset();
+    stopRun();
   }
   function onPreset(h: number | "last") {
     if (h === "last" && !last) return;
@@ -319,11 +186,14 @@ export function DigestPage({ chatId, title, onBack }: { chatId: string; title: s
           ...PRESETS.map(([l, h]) => ({ value: h, label: t(l) })),
         ]} />
         <DateRangePicker value={days} onChange={onDays} emptyLabel={t("Tuỳ chọn ngày")} />
-        <Button size="sm" className="ml-auto" aria-busy={run.isPending}
-          disabled={!enabled || !items.length || run.isPending || history.isFetching || tooMany}
-          onClick={() => run.mutate(keep)}>
-          <Sparkles /> {run.isPending ? t("Đang tóm tắt…") : picked.size ? t("Tóm tắt {n} tin đã chọn", { n: picked.size }) : tooMany ? t("Quá nhiều tin") : t("Tóm tắt {n} tin", { n: items.length })}
-        </Button>
+        <span className="ml-auto flex items-center gap-2">
+          {run.isPending && <AiStop onClick={stopRun} label={t("Dừng tóm tắt")} hint={t("Dừng tóm tắt")} />}
+          <Button size="sm" aria-busy={run.isPending}
+            disabled={!enabled || !items.length || run.isPending || history.isFetching || tooMany || inBatch}
+            onClick={() => run.mutate(keep)}>
+            <Sparkles /> {run.isPending ? t("Đang tóm tắt…") : inBatch ? t("Briefing đang tóm tắt nhóm này…") : picked.size ? t("Tóm tắt {n} tin đã chọn", { n: picked.size }) : tooMany ? t("Quá nhiều tin") : t("Tóm tắt {n} tin", { n: items.length })}
+          </Button>
+        </span>
       </div>
 
       {consent.data && !enabled && (
@@ -465,17 +335,15 @@ function RecordOn({ id, text }: { id: string; text: string }) {
   );
 }
 
-/** A decision's comment on the ticket it names (RecordOn), the same from a group's digest and from Briefing. */
-export const recordText = (it: DigestItem, title?: string) => `Đã chốt trên Telegram${title ? ` (${title})` : ""}: ${it.text}${it.who ? ` — ${it.who}` : ""}`;
-
 /** Tickets an item names (known YouTrack projects only); `record`: a decision's comment text. */
 export function Tickets({ ids, scope, record }: { ids: string[] | undefined; scope?: boolean; record?: string }) {
+  const po = useRole() === "po"; // a PO records a decision with "Cập nhật story" (description + comment): no second way here
   const projects = useQuery({ queryKey: ["yt", "projects"], queryFn: yt.projects, staleTime: Infinity, retry: false });
   return (ids ?? []).filter((id) => projects.data?.some((p) => p.shortName === id.split("-")[0])).map((id) => (
     <Fragment key={id}>
       {" "}<TicketChip id={id} />
       {scope && <ScopeFlag id={id} />}
-      {record && <RecordOn id={id} text={record} />}
+      {record && !po && <RecordOn id={id} text={record} />}
     </Fragment>
   ));
 }
@@ -552,14 +420,19 @@ export function Evidence({ chatId, ids, extra, asker }: { chatId: string; ids: s
   );
 }
 
-export function ItemFlags({ it, be = true }: { it: DigestItem; be?: boolean }) {
+/** `kind`: a decision / change kept from an earlier digest waits on the story (not on a reply), and says so. */
+export function ItemFlags({ it, be = true, kind }: { it: DigestItem; be?: boolean; kind?: string }) {
   const t = useT();
+  const story = kind === "decisions" || kind === "changes";
   return (
     <>
       {be && it.be && <span className="ml-1 rounded-sm bg-code-wash px-1 text-xs font-medium text-code">BE</span>}
       {it.carried && it.at && (
-        <Hint side="bottom" text={t("Chưa ai trả lời / làm từ lần tóm tắt trước; tự mất khi tin mới giải quyết nó")}>
-          <span tabIndex={0} className="ml-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn">{t("còn mở từ {day}", { day: dayLabel(it.at).toLowerCase() })}</span>
+        <Hint side="bottom" text={story ? t("Đã chốt từ lần tóm tắt trước, chưa đưa vào story ticket: giữ lại tới khi Cập nhật story hoặc đánh dấu đã xử lý")
+          : t("Chưa ai trả lời / làm từ lần tóm tắt trước; tự mất khi tin mới giải quyết nó")}>
+          <span tabIndex={0} className="ml-1 rounded-full bg-warn-wash px-1.5 text-xs leading-5 text-warn">
+            {story ? t("chưa vào story từ {day}", { day: dayLabel(it.at).toLowerCase() }) : t("còn mở từ {day}", { day: dayLabel(it.at).toLowerCase() })}
+          </span>
         </Hint>
       )}
     </>
@@ -633,7 +506,7 @@ export function Result({ r, when, lit, onJump, onCopy, title, chatId }: { r: Dig
                       <li key={i} className="text-sm leading-relaxed">
                         <span className={closed(key, it) ? "text-ink-3 line-through decoration-ink-3/60" : "text-ink"}>{it.text}</span>
                         {extra && <span className="text-ink-3"> — {extra}</span>}
-                        <ItemFlags it={it} />
+                        <ItemFlags it={it} kind={key} />
                         <Tickets ids={it.tickets} scope={key === "changes"}
                           record={key === "decisions" ? recordText(it, title) : undefined} />
                         <Refs ids={it.message_ids ?? []} lit={lit} onJump={onJump} />

@@ -1,22 +1,24 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCheck, ExternalLink, Info, Loader2, Paperclip, Send, Zap } from "lucide-react";
-import { createContext, memo, type ReactNode, use, useMemo } from "react";
+import { CheckCheck, ChevronDown, ExternalLink, Info, Loader2, Paperclip, Send, Zap } from "lucide-react";
+import { createContext, memo, type ReactNode, use, useMemo, useState } from "react";
 import { AiResultCard, dur, UserBubble } from "@/shared/components/ai/chat";
 import type { TaskEvent } from "@/shared/components/ai/steps";
-import { SEND_ERRORS } from "@/features/telegram/components/composer";
+import { SEND_ERRORS, sendLost, sendLostText } from "@/features/telegram/lib/send";
 import { ASK_BTN, AskPost, type AskRole, AskTag, Markdown, TicketRef } from "@/shared/components/markdown";
 import { TicketChip } from "@/features/telegram/components/message/rich-text";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import { api, ApiError, errorText, type Outbox, type Task } from "@/shared/lib/api";
 import { type Attached, chatByTitle, chatTitle, parseAttachments, splitAttachments } from "@/features/telegram/lib/attach";
-import { t as tNow, useT } from "@/shared/lib/i18n";
+import { t as tNow, tMaybe, useT } from "@/shared/lib/i18n";
 import { sessionId } from "@/features/telegram/lib/inbox";
 import { toast } from "@/shared/lib/notifications";
 import { rememberQaGroup } from "@/features/telegram/lib/qa-recent";
 import { timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { DocRefText } from "@/features/docs/components/doc-tag";
 
 // An AI Agent session's conversation: the log's events folded into turns, tool runs and results (steps: ai/steps.tsx).
 
@@ -42,9 +44,13 @@ export function useTaskLog(id: string | null, running: boolean) {
     // Until the log itself says the run ended: the list can flip `running` off before the last poll caught the
     // result. The server keeps `running` true if the turn finishes during a log read, allowing one final poll.
     // A finished turn only changes after a send, which refetches.
-    refetchInterval: (query) => (running || query.state.data?.running ? 1500 : false),
+    // A session deleted meanwhile (404) is not asked again.
+    refetchInterval: (query) => (taskGone(query.state.error) ? false : running || query.state.data?.running ? 1500 : false),
   });
 }
+
+/** The session no longer exists (deleted here, in another tab, or with its group's data). */
+export const taskGone = (e: unknown) => e instanceof ApiError && e.status === 404;
 
 /** Where a turn's time went: tools vs the model thinking/writing, as one bar. */
 /** USD the CLI reports, short: $0.42, $1.3 */
@@ -63,7 +69,7 @@ function TurnTimeline({ took, tools, cost }: { took: number; tools: number; cost
         <span>{t("Tổng {time}", { time: dur(took) })}</span>
         <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-warn/80" aria-hidden />{t("Công cụ {time}", { time: dur(tools) })}</span>
         <span className="inline-flex items-center gap-1"><span className="size-1.5 rounded-full bg-hl/70" aria-hidden />{t("Suy nghĩ {time}", { time: dur(took - tools) })}</span>
-        {cost !== undefined && <span title={t("Ước tính theo giá API do CLI báo (gói thuê bao không trừ tiền theo số này)")}>≈ {usd(cost)}</span>}
+        {cost !== undefined && <Hint text={t("Ước tính theo giá API do CLI báo (gói thuê bao không trừ tiền theo số này)")}><span>≈ {usd(cost)}</span></Hint>}
       </p>
     </div>
   );
@@ -120,15 +126,19 @@ function UserTurn({ text, code, at, auto }: { text: string; code?: string; at?: 
   const [typed, attached] = splitAttachments(text);
   const said = typed || attached ? typed : code ? t("Trả lời từ code · {project}", { project: code.split("/").pop() ?? code }) : t("Tóm tắt & gợi ý");
   const items = attached ? parseAttachments(attached) : [];
+  const [open, setOpen] = useState(false);
   return (
     <>
     <UserBubble className={AI_TEXT}>
-      {said && <p>{said}</p>}
+      {said && <p><DocRefText text={said} /></p>}
       {items.length > 0 && (
-        <details className={cn("whitespace-normal text-xs text-ink-2", said && "mt-1.5")}>
-          <summary className="inline-flex cursor-pointer items-center gap-1 rounded-sm hover:text-ink"><Paperclip className="size-3" aria-hidden /> {t("{n} tin đính kèm", { n: items.length })}</summary>
-          <ul className="mt-1.5 grid gap-1.5">{items.map((a, i) => <AttachedCard key={a.id || i} a={a} />)}</ul>
-        </details>
+        <div className={cn("whitespace-normal text-xs text-ink-2", said && "mt-1.5")}>
+          <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 rounded-sm hover:text-ink">
+            <Paperclip className="size-3" aria-hidden /> {t("{n} tin đính kèm", { n: items.length })}
+            <ChevronDown className={cn("size-3 transition-transform duration-(--dur-short) ease-(--ease-out)", !open && "-rotate-90")} aria-hidden />
+          </button>
+          <Fold open={open}><ul className="mt-1.5 grid gap-1.5">{items.map((a, i) => <AttachedCard key={a.id || i} a={a} />)}</ul></Fold>
+        </div>
       )}
     </UserBubble>
     <p className="mt-1 flex items-center justify-end gap-1.5 text-2xs text-ink-3">
@@ -153,7 +163,8 @@ export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: Task
       <li>
         <AiResultCard error={ev.error} className="p-4"
           title={<>{ev.error ? t("Có lỗi") : t("Kết quả")}<Stamp at={ev.at} className="ml-auto text-2xs font-normal text-ink-3" /></>}>
-          {ev.text && <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />}
+          {/* an error is the app's own wording ("Đã dừng."): in the UI language when it has one */}
+          {ev.text && <Markdown asks text={ev.error ? tMaybe(ev.text) : ev.text} className={cn(AI_TEXT, "text-ink")} />}
           {took !== undefined && <TurnTimeline took={took} tools={tools ?? 0} cost={ev.cost} />}
         </AiResultCard>
       </li>
@@ -163,7 +174,7 @@ export const EventItem = memo(function EventItem({ ev, took, tools }: { ev: Task
     return (
       <li className="grid gap-0.5 px-0.5 animate-in fade-in-0 duration-(--dur-short)">
         <p className="flex items-center gap-1 text-2xs text-ink-3"><Info className="size-3" aria-hidden />{t("Ghi chú của dashboard")} · <Stamp at={ev.at} /></p>
-        <Markdown asks text={ev.text} className={cn(AI_TEXT, "text-ink")} />
+        <Markdown asks text={tMaybe(ev.text)} className={cn(AI_TEXT, "text-ink")} />
       </li>
     );
   }
@@ -193,8 +204,9 @@ function PostAsk({ text, role }: { text: string; role: AskRole | null }) {
   const qc = useQueryClient();
   const rid = useQuery({ queryKey: ["ask-id", at.taskId, text], queryFn: () => askRequestId(at.taskId, text), staleTime: Infinity });
   const key = ["outbox", rid.data];
-  const rec = useQuery({
+  const rec = useQuery<Outbox | null>({
     queryKey: key, enabled: !!rid.data, staleTime: Infinity, retry: false,
+    refetchInterval: (q) => (q.state.data?.status === "pending" || q.state.data?.status === "sending" ? 1500 : false), // another tab's send
     queryFn: ({ signal }) => api<Outbox>(`/outbox/${rid.data}`, { signal })
       .catch((e) => { if (e instanceof ApiError && e.status === 404) return null; throw e; }), // never sent
   });
@@ -212,11 +224,11 @@ function PostAsk({ text, role }: { text: string; role: AskRole | null }) {
       if (r.status === "failed") return void toast({ text: SEND_ERRORS[r.error_code ?? ""] ?? tNow("Gửi thất bại.") });
       if (at.qa) rememberQaGroup(at.chatId); // the Q&A tab follows this group's answers
       toast({ text: r.status === "sent" ? tNow("Đã gửi vào nhóm") : r.status === "unknown"
-        ? tNow("Chưa rõ Telegram đã nhận tin hay chưa: xem nhóm trước khi gửi lại.") : tNow("Đang gửi vào nhóm…") });
+        ? sendLostText() : tNow("Đang gửi vào nhóm…") });
     },
     onError: (e) => {
       void qc.invalidateQueries({ queryKey: key });
-      toast({ text: errorText(e, SEND_ERRORS, tNow("Gửi thất bại.")) });
+      toast({ text: sendLost(e, status === "unknown") ? sendLostText() : errorText(e, SEND_ERRORS, tNow("Gửi thất bại.")) });
     },
   });
   const sent = status === "sent";

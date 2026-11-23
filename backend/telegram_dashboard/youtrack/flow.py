@@ -175,7 +175,7 @@ KINDS = ("screen", "popup", "sheet", "toast")
 
 def _loose(d: dict) -> dict:
     """AI hay ghi "ac" thành mảng mã (["AC1.2"]) và "kind" ngoài danh sách ("web", "map"): sửa, không từ chối"""
-    d = dict(d)
+    d = {k: v for k, v in d.items() if v is not None}  # "when": null, "ac": null: the field's default
     if isinstance(d.get("ac"), list):
         d["ac"] = ", ".join(str(a) for a in d["ac"])
     if "kind" in d and d["kind"] not in KINDS:
@@ -192,7 +192,7 @@ def _trim(raw: dict) -> dict:
     """Cắt chuỗi / danh sách quá dài thay vì từ chối cả flow AI trả về."""
     screens = [
         _cut(_loose(s), title=80, ac=40, note=MAX_NOTE)
-        | {"items": [_cut(i, label=80) for i in s.get("items") or []][:MAX_ITEMS]}
+        | {"items": [_cut(i, label=80) for i in s.get("items") or [] if i.get("label")][:MAX_ITEMS]}  # no label: gone
         for s in raw.get("screens") or []
     ]
     links = [_cut(_loose(k), when=80, ac=40) for k in (raw.get("links") or [])[:MAX_LINKS]]

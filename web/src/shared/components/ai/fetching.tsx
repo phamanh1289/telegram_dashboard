@@ -12,7 +12,7 @@ import { cn } from "@/shared/lib/utils";
 // Waiting on YouTrack / Telegram: one frame (shown at least AI_WAIT_MS via useAiWait, zoomed down in a narrow box, rotating lines, a running bar),
 // one scene per feature that acts out what the feature does with the data. Scenes draw in a 320 × 160 box; paths are in its px.
 
-export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc" | "flowHtml" | "flowSave" | "docs";
+export type FetchKind = "waiting" | "tickets" | "release" | "people" | "chat" | "inbox" | "history" | "qa" | "brief" | "agent" | "digest" | "today" | "update" | "restart" | "deep" | "code" | "runs" | "sessions" | "flow" | "flowDoc" | "flowHtml" | "flowSave" | "docs" | "zeplin";
 
 /** Each scene's rotating lines, as keys: translated where shown. */
 const LINES: Record<FetchKind, Key[]> = {
@@ -38,6 +38,7 @@ const LINES: Record<FetchKind, Key[]> = {
   flowHtml: ["Đang gom các màn của sơ đồ", "Đang nhúng ảnh Zeplin vào file…", "Đang đóng gói trình xem offline", "Đang tạo file HTML…", "Sắp xong rồi"],
   flowSave: ["Đang nhúng ảnh Zeplin vào file…", "Đang tải file lên ticket", "Đang thay file cũ trên ticket", "Đang ghi bình luận thay đổi", "Sắp xong rồi"],
   docs: ["AI đang mở kho tài liệu", "Đang lật từng tài liệu", "Đang soi đoạn khớp từ khóa", "Đang tô chữ khớp", "Sắp xong rồi"],
+  zeplin: ["AI đang kết nối Zeplin", "Đang tìm màn có tên này", "Đang mở thiết kế Web và Mobile", "Đang tải ảnh thiết kế", "Sắp xong rồi"],
   agent: ["Đang đọc tin cần xử lý", "Đang mở ticket, link trong tin", "Đang ghép phân tích và yêu cầu thêm", "Đang mở dự án", "Đang khởi động phiên AI Agent"],
 };
 
@@ -246,6 +247,26 @@ const SCENES: Record<FetchKind, Scene> = {
           </span>
         ))}
         <span className="fx-scan absolute inset-x-0 top-0 h-6 bg-linear-to-b from-transparent via-hl/20 to-transparent" style={v({ "--fx-y": "118px" })} />
+      </div>
+    </>;
+  },
+
+  // Màn Zeplin (Tài liệu): the screen name (`p`) flies from Zeplin into the robot, which lays the design out on an
+  // artboard: its bar, picture, lines and buttons paint in one by one under a sweeping beam
+  zeplin: ({ p }) => {
+    const step = (k: number) => v({ "--fx-d": "4.4s", animationDelay: `${0.4 + k * 0.45}s` });
+    const chips = [[p || "Zeplin", C.hl2], ["Web", C.info], ["Mobile", C.ok]] as const;
+    return <>
+      {chips.map(([s, c], k) => <Fly key={k} k={k} dot={c} gap={0.8} dur={2.4} path="M62 72C90 40 106 46 126 76" className={cn(CHIP, "max-w-24")}><span className="truncate">{s}</span></Fly>)}
+      {[0, 1, 2].map((k) => <Fly key={`o${k}`} k={k} gap={0.7} dur={2.1} path={`M176 80C196 80 204 ${48 + k * 30} 226 ${48 + k * 30}`} className="size-2 rounded-full bg-hl shadow-stock" />)}
+      <Tile label="Zeplin" className="top-1/2 left-1 -translate-y-1/2"><LayoutDashboard className="size-7 text-hl-2" /></Tile>
+      <Bot ring className="top-1/2 left-[150px] size-16 -translate-x-1/2 -translate-y-1/2" size="size-11" />
+      <div className="absolute top-2 right-1 bottom-2 grid w-[88px] content-start gap-1.5 overflow-hidden rounded-xl border border-rule bg-cotton p-2 shadow-stock">
+        <span className="fx-step block h-2 rounded-sm bg-hl-2/40" style={step(0)} />
+        <span className="fx-step block h-12 rounded-md bg-paper-3" style={step(1)} />
+        {["80%", "55%"].map((w) => <span key={w} className="fx-step block h-1 rounded-full bg-ink-3/25" style={{ ...step(2), width: w }} />)}
+        <span className="fx-step mt-1 grid grid-cols-2 gap-1" style={step(3)}><span className="block h-3 rounded-sm bg-paper-3" /><span className="block h-3 rounded-sm bg-hl/50" /></span>
+        <span className="fx-scan absolute inset-x-0 top-0 h-6 bg-linear-to-b from-transparent via-hl/20 to-transparent" style={v({ "--fx-y": "126px" })} />
       </div>
     </>;
   },

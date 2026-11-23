@@ -44,6 +44,8 @@ class FakeTransport:
     connect_impl: object = None
     bridge: object = None
     connected: bool = False
+    files: dict = field(default_factory=dict)  # (chat_id, message_id) -> (FileInfo, bytes) for download_file
+    downloads: list = field(default_factory=list)
 
     def attach(self, bridge):
         self.bridge = bridge
@@ -75,6 +77,16 @@ class FakeTransport:
 
     async def download_photo(self, chat_id, message_id, dest):
         return False
+
+    async def download_file(self, chat_id, message_id, dest, max_bytes):
+        self.downloads.append((chat_id, message_id))
+        got = self.files.get((chat_id, message_id))
+        if got is None:
+            return None
+        if got[0].size > max_bytes:
+            raise ValueError("too_big")
+        dest.write_bytes(got[1])
+        return got[0]
 
     async def fetch_mentions(self, cutoff):
         return []

@@ -579,3 +579,13 @@ def test_file_name_follows_the_title_and_the_file_carries_the_mark():
     assert u.ours(html) and u.MARK in html
     assert u.ours('<script id="uiflow-data">{}</script>')  # a file saved before the mark
     assert not u.ours("<html>spec</html>")
+
+
+def test_ai_nulls_take_the_default_and_a_second_branch_is_a_new_link():
+    raw = {"screens": [*RAW["screens"][:2], {**RAW["screens"][2], "items": [{"id": "x", "label": None}]}],
+           "links": [{"src": "login.otp", "to": "code", "when": None, "ac": None}]}  # fmt: skip
+    old = u.clean(raw, "VA-1")
+    assert (old.links[0].when, old.links[0].ac, old.screens[2].items) == ("", "", [])
+    new = old.model_copy(deep=True)
+    new.links.append(u.Link(src="login.otp", to="err", when="sai mã"))
+    assert fc.changes(old, new) == ['Nối "Gửi OTP" (Đăng nhập) → "Sai mã"']

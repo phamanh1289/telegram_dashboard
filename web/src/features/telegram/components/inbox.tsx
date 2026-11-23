@@ -160,6 +160,8 @@ function Inbox({ status }: { status: Status }) {
   const [digest, setDigest] = useState(false); // the Digest view replaces the group's tag list
   const [named, setNamed] = useState(""); // title of a group opened from Briefing: untagged ones are not in the chat list
   const [draft, setDraft] = useState<DraftInjection | null>(null);
+  /** Leave the reply: a line injected for that tag (Báo lại, Digest) goes with it, never into the next one opened. */
+  const closeReply = () => { setReply(null); setDraft(null); };
   // "Từ lúc" filter: datetime-local text (local time) -> ISO instant for the API.
   const [days, setDaysState] = useState<DayRange>(readTagRange); // survives a reload
   const setDays = useCallback((r: DayRange) => { setDaysState(r); saveTagRange(r); }, []);
@@ -224,7 +226,7 @@ function Inbox({ status }: { status: Status }) {
   // `dir` 0: after a send / done (the next one, else the last before it); 1 / -1: Alt+↓ / Alt+↑ in the reply panel.
   function advance(dir: 0 | 1 | -1 = 0) {
     if (reply?.external && !dir) {
-      setReply(null);
+      closeReply();
       return;
     }
     const all = listItems.current;
@@ -302,7 +304,7 @@ function Inbox({ status }: { status: Status }) {
   });
   // "Trả lời bằng Q&A" on a message (lib/inbox `answerQa`): its group's Q&A, replying to it.
   const onQaAnswer = useEffectEvent((e: Event) => {
-    setReply(null);
+    closeReply();
     setQaGroup((e as CustomEvent<Message>).detail.chat_id);
     go(QA);
   });
@@ -312,7 +314,7 @@ function Inbox({ status }: { status: Status }) {
    *  Briefing. False: the URL names none of them. */
   const openLink = useEffectEvent((q: URLSearchParams) => {
     const chat = q.get("chat"), msg = q.get("msg"), qa = q.get("qa"), code = q.get("code"), task = q.get("task"), brief = q.get("brief");
-    if (chat && msg) void openReplyById(chat, msg);
+    if (chat && msg) void openReplyById(chat, msg, q.get("text") ?? undefined); // `text`: a line for the reply box (Cập nhật story › Báo nhóm)
     else if (qa && code) openQa(qa, code);
     else if (qa) askInQa(qa, q.get("ask") ?? "");
     else if (task) openTask(task);
@@ -409,7 +411,7 @@ function Inbox({ status }: { status: Status }) {
   // otherwise the group's Digest, where AI is allowed to read it.
   const openDigest = status.ai_configured ? () => {
     if (briefList.some((i) => i.chat_id === chatId && i.consent)) { setBriefGroup(chatId); go(BRIEFING); return; }
-    setReply(null); setFocus(null); setDigest(true);
+    closeReply(); setFocus(null); setDigest(true);
   } : undefined;
   // Rail: labels wait for the rail to open (hover or focus); phones always show them.
   const fade = cn("transition-opacity duration-(--dur-micro)", collapsed && "md:opacity-0 md:group-hover/side:opacity-100 md:group-focus-within/side:opacity-100");
@@ -571,7 +573,7 @@ function Inbox({ status }: { status: Status }) {
             {chatId ? (
               <div key={`${chatId === PINNED ? ALL : chatId}:${digest}`} className={cn("page-in relative grid min-h-0 grid-cols-[minmax(0,1fr)]", (chatId === BRIEFING || chatId === TASKS || chatId === TODAY || digest) && "ai-in")}>
                 {chatId === TODAY ? (
-                  <TodayPage onReply={(m) => setReply({ m, external: true })} onGo={() => go(ALL)} onBriefGroup={(id) => { setBriefGroup(id); go(BRIEFING); }} />
+                  <TodayPage onReply={(m) => { setReply({ m, external: true }); setDraft(null); }} onGo={() => go(ALL)} onBriefGroup={(id) => { setBriefGroup(id); go(BRIEFING); }} />
                 ) : chatId === QA ? (
                   <QaPage key={qaShown} focus={focus} group={qaShown} onGroup={setQaGroup} days={qaDays} onDays={setQaDays} onBack={() => go(ALL)} />
                 ) : chatId === BRIEFING ? (
@@ -619,8 +621,8 @@ function Inbox({ status }: { status: Status }) {
             {replyTo && (
               <div key={`${replyTo.chat_id}:${replyTo.message_id}`} className="detail-in grid min-h-0 grid-cols-[minmax(0,1fr)]">
                 <Composer chatId={replyTo.chat_id} position={reply?.external ? undefined : reply?.at} youtrackConfigured={status.youtrack_configured ?? false} replyTo={replyTo}
-              onClearReply={() => setReply(null)} onSent={() => { flashMessage(t("Đã gửi trả lời")); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
-              onTaskCreated={(id) => { setReply(null); taskToast(id, () => void qc.invalidateQueries({ queryKey: ["tasks"] })); }} draft={draft}
+              onClearReply={closeReply} onSent={() => { flashMessage(t("Đã gửi trả lời")); advance(); void qc.invalidateQueries({ queryKey: ["qa"] }); }} onDone={() => advance()} onStep={advance}
+              onTaskCreated={(id) => { closeReply(); taskToast(id, () => void qc.invalidateQueries({ queryKey: ["tasks"] })); }} draft={draft}
               aiConfigured={status.ai_configured} groupTitle={chatsData.find((c) => c.chat_id === replyTo.chat_id)?.title} />
               </div>
             )}

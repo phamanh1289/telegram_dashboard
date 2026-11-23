@@ -18,7 +18,7 @@ import { groupsQuery, sessionId, taskListQuery } from "@/features/telegram/lib/i
 import { type DocDetail, docName, docRef } from "@/features/docs/lib/docs";
 
 // "Dùng tài liệu ▾" in the reader's header: put this document to work elsewhere.
-// · Đính kèm vào phiên AI: its line goes into the session's box (a KB article as its link, a file as "#DOC<id>", which
+// · Đính kèm vào phiên AI: its line goes into the session's box (docRef: a KB article's ID, a file "#DOC<id>", which
 //   links.py reads from the library), then the session opens.
 // · Hỏi trong Q&A nhóm: the group's Q&A box pre-filled with the KB link (?qa=&ask=, as the YouTrack sheet does).
 // · Sao chép link. A file on this machine has no link the team can open: those two are off for it.
@@ -37,8 +37,8 @@ export function UseDoc({ doc }: { doc: DocDetail["doc"] }) {
   return (
     <Menu.Root>
       <Hint side="bottom" text={t("Đính kèm tài liệu này vào phiên AI Agent, hỏi team trong Q&A nhóm kèm link, hoặc chép link.")}>
-        <Menu.Trigger className={buttonVariants({ size: "sm", variant: "outline" })}>
-          <Paperclip /><span className="@max-xl:sr-only">{t("Dùng tài liệu")}</span><ChevronDown />
+        <Menu.Trigger aria-label={t("Dùng tài liệu")} className={buttonVariants({ size: "sm", variant: "ghost", className: "gap-0.5 px-1.5" })}>
+          <Paperclip /><ChevronDown className="size-3 text-ink-3" />
         </Menu.Trigger>
       </Hint>
       <Menu.Portal>

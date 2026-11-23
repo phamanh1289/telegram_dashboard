@@ -39,6 +39,7 @@ from .claude import (
 )
 from .config import Settings
 from .desktop import pick_folder
+from .docs import ask as docs_ask
 from .docs.library import Library
 from .docs.routes import build_router as build_docs_router
 from .errors import ApiError, int_or_404
@@ -78,9 +79,11 @@ from .tasks import add_refs, assist_history, new_task_id, start_task
 from .tasks import build_router as build_task_router
 from .telegram.bridge import TelegramBridge, Transport, notify_mac
 from .telegram.digest import DigestService
+from .telegram.follow import build_router as build_follow_router
 from .telegram.live_reads import TelegramReads
 from .telegram.routes import build_router as build_telegram_router
 from .telegram.routes import photo_file, prune_media
+from .telegram.routes_digest import build_router as build_digest_router
 from .youtrack.api import build_router
 from .youtrack.client import YtError
 from .youtrack.routes import build_router as build_youtrack_router
@@ -203,7 +206,7 @@ def create_app(
         app.state.ai = AiService(settings, st, db)
         app.state.docs = Library(settings, db, app.state.ai)
         app.state.ai.me = lambda: bridge.me
-        app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
+        app.state.digest = DigestService(settings, st, db, bridge, app.state.ai, live=live_reads.live)
         app.state.agent = AgentRunner(settings)
         app.state.autobe = auto = AutoBe(app.state)  # Vòng BE tự chạy: rules relay / agent on new tags
         app.state.agent.on_idle, bridge.on_tags = auto.on_idle, auto.on_tags
@@ -233,6 +236,7 @@ def create_app(
     yt_dashboard = YouTrackDashboard(settings)
     live_reads = TelegramReads()
     app = FastAPI(title="Radar", lifespan=lifespan)
+    app.state.live_reads = live_reads
     app.add_middleware(
         LocalGuardMiddleware,
         host_header=settings.host_header,
@@ -267,6 +271,7 @@ def create_app(
     app.include_router(yt_router)
     app.include_router(build_task_router(settings))
     app.include_router(build_docs_router(settings))
+    app.include_router(build_follow_router(settings, live_reads))
     app.include_router(updater.build_router(settings))
     app.include_router(privacy.build_router(settings))
     app.include_router(local_data.build_router(settings))
@@ -369,12 +374,14 @@ def create_app(
         nearby, images = await _draft_extras(request, body)
         kind = "answer" if body.project else "draft"  # a project picked: "Trả lời từ code"
         tickets = await yt_dashboard.brief(body.ticket_ids) if kind == "answer" else ""
+        po = kind == "draft" and body.role == "po"  # a PO's Tóm tắt & gợi ý: options from the KB
+        kb = await docs_ask.kb_for(S(request), body.chat_id, body.message_ids) if po else ""
 
         def run(on_text, history=None, ref=""):
             return S(request).ai.run(
                 kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
                 platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
-                history=history, ref=ref, fetch=_live_fetch(request),
+                history=history, ref=ref, fetch=_live_fetch(request), kb=kb,
             )  # fmt: skip
 
         async def work(on_text):
@@ -716,6 +723,7 @@ def create_app(
         app.state.settings = value
 
     app.include_router(build_telegram_router(get_settings, set_settings, live_reads))
+    app.include_router(build_digest_router(live_reads))
     app.include_router(build_youtrack_router(get_settings, set_settings, yt_dashboard))
 
     @app.api_route(

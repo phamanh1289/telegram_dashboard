@@ -30,9 +30,11 @@ import { useRole, usesCode } from "@/shared/lib/prefs";
 import { ALL, BRIEFING, openReply, sessionId, sessionMatches, TASK_STATE, useTaskList } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
+import { Fold } from "@/shared/components/ui/fold";
 import { fold } from "@/shared/lib/utils";
 import { ago, timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
+import { DocRefText } from "@/features/docs/components/doc-tag";
 
 // The AI Agent page: session list and the selected session (its log in tasks-feed.tsx, its input in task-composer.tsx).
 
@@ -108,7 +110,7 @@ function ChatPanel({ t, head }: { t: Task; head: ReactNode }) {
   const cut = !running && last?.kind === "result" && !!last.error; // stopped / restarted / failed: offer to go on
 
   return (
-    <Feed follow={(items?.length ?? 0) + (running ? 0.5 : 0)} footer={<TaskComposer t={t} cut={cut} />}>
+    <Feed follow={(items?.length ?? 0) + (running ? 0.5 : 0)} footer={<TaskComposer t={t} cut={cut} redo={cut && t.kind === "assist" ? items?.findLast((e) => e.kind === "user")?.text : undefined} />}>
       {head}
       {turns.length > 0 && (
         <p className="-mt-2 flex gap-3 font-mono text-2xs text-ink-3 tabular-nums">
@@ -207,7 +209,7 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
       .finally(() => { void qc.invalidateQueries({ queryKey: ["qa"] }); return refresh(); }); // its Q&A follow (#QA in the prompt too)
   const mark = useMutation({
     mutationFn: ({ handled, react }: { handled: boolean; react: boolean }) => put(handled, react),
-    onSuccess: (_, { handled }) => { if (handled) toast({ text: tNow("Đã đánh dấu xong"), undo: () => put(false) }); },
+    onSuccess: (_, { handled }) => { if (handled) toast({ text: tNow("Đã đánh dấu xong"), undo: () => put(false).catch((e) => toast({ text: errorText(e, {}, tNow("Không cập nhật được, thử lại sau")) })) }); },
     onError: (e) => toast({ text: errorText(e, {}, tNow("Không cập nhật được, thử lại sau")) }),
   });
 
@@ -242,7 +244,7 @@ function TaskDetail({ t, now, onBack, onChanges, onOpenGroup }: {
         className="flex w-fit items-center gap-1 rounded-sm text-left text-xs font-medium text-ink-3 transition-colors duration-(--dur-micro) hover:text-ink">
         <ChevronDown className={cn("size-3.5 transition-transform duration-(--dur-short)", !open && "-rotate-90")} aria-hidden /> {tt("Yêu cầu đã giao")}
       </button>
-      {open && <p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-paper-2 p-3 text-sm leading-relaxed text-ink-2 animate-in fade-in-0 duration-(--dur-short)">{t.prompt}</p>}
+      <Fold open={open}><p className="max-h-60 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-paper-2 p-3 text-sm leading-relaxed text-ink-2"><DocRefText text={t.prompt} /></p></Fold>
     </section>}
   </>;
 

@@ -20,8 +20,8 @@ export function Pill({ id, className }: { id: string; className?: string }) {
 export type SegmentedItem<T> = { value: T; label: ReactNode; title?: string };
 
 /** One-of-many toggle (view, filter, period): the active one gets the sliding Pill. Toggle buttons (aria-pressed), not
- *  tabs: most groups filter a list in place, with no tab panel. `variant="card"`: full width, equal segments, a raised
- *  cotton pill (settings forms). */
+ *  tabs: most groups filter a list in place, with no tab panel. `variant="card"`: full width, equal segments (settings
+ *  forms); same highlight as every tab group, so the slide reads in both themes. */
 export function Segmented<T extends string | number>({ id, label, value, onChange, items, className, variant = "fill" }: {
   id: string; label: string; value: T | null; onChange: (v: T) => void; items: SegmentedItem<T>[]; className?: string; variant?: "fill" | "card";
 }) {
@@ -33,8 +33,8 @@ export function Segmented<T extends string | number>({ id, label, value, onChang
         const b = (
           <button key={it.value} type="button" aria-pressed={on} onClick={() => onChange(it.value)}
             className={cn("relative h-[26px] whitespace-nowrap rounded-[5px] px-3 transition-colors duration-(--dur-micro)", card && "flex h-7 items-center justify-center gap-1.5 px-2",
-              on ? cn("font-medium", card ? "text-ink" : "text-hl-ink") : "text-ink-3 hover:text-ink")}>
-            {on && <Pill id={id} className={card ? "inset-0 rounded-[5px] bg-cotton shadow-stock" : undefined} />}
+              on ? "font-medium text-hl-ink" : "text-ink-3 hover:text-ink")}>
+            {on && <Pill id={id} />}
             <span className={cn("relative", card && "flex items-center gap-1.5")}>{it.label}</span>
           </button>
         );

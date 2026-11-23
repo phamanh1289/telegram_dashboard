@@ -23,7 +23,7 @@
     "tab": "telegram",
     "area": "Dòng tin › Xong",
     "title": "Đánh dấu Xong / Mở lại",
-    "what": "Đánh dấu tin tag đã xử lý (không cần trả lời / đã xử lý nơi khác), đồng thời thả reaction trên Telegram; tin đã xong có thể mở lại. Có thông báo kèm \"Hoàn tác\".",
+    "what": "Đánh dấu tin tag đã xử lý (không cần trả lời / đã xử lý nơi khác), đồng thời thả reaction trên Telegram (chỉ trên tin người khác gửi, tin của bạn không thả, cả khi phiên AI Agent hay Q&A xong theo); tin đã xong có thể mở lại. Có thông báo kèm \"Hoàn tác\".",
     "how": [
       {
         "t": "Bấm một nhóm ở thanh bên",
@@ -109,11 +109,12 @@
     "tab": "telegram",
     "area": "Tin tag › Hoãn › Luôn bỏ qua",
     "title": "Luôn bỏ qua một người hoặc từ khóa",
-    "what": "Tag của người gửi / chứa từ khóa trong danh sách tự sang Đã xử lý, không báo; tin của người gửi bị bỏ qua cũng không vào Briefing / Digest. Xem, thêm và gỡ ở Cài đặt › Telegram › Luôn bỏ qua: mỗi quy tắc là một chip màu theo loại, bấm × để gỡ (tag đã dọn trước đó không tự mở lại).",
+    "what": "Tag của người gửi / chứa từ khóa trong danh sách tự sang Đã xử lý, không báo; tin của người gửi bị bỏ qua cũng không vào Briefing / Digest. Xem, thêm và gỡ ở Cài đặt › Telegram › Luôn bỏ qua (dòng Người gửi, dòng Từ khóa): mỗi quy tắc là một chip, bấm × để gỡ (tag đã dọn trước đó không tự mở lại).",
     "how": [
       "Từ một tin: mở menu Hoãn, chọn “Luôn bỏ qua {tên}” (thông báo có nút Hoàn tác)",
       "Trong Cài đặt › Telegram › Luôn bỏ qua: gõ tên vào ô “Tên người gửi…” rồi chọn người, hoặc gõ từ khóa vào ô “Từ khóa” rồi Enter",
-      "Bấm × trên chip để nhận thông báo lại"
+      "Thẻ Tag khi AI Agent hỏi, dòng Bot BE / PO / QC: gõ tên rồi chọn người luôn được tag khi phiên AI Agent gửi câu hỏi cho vai trò đó vào nhóm",
+      "Bấm × trên chip để nhận thông báo lại (thông báo có nút Hoàn tác nếu gỡ nhầm)"
     ],
     "keys": "luon bo qua luôn bỏ qua mute tat thong bao tắt thông báo chan chặn nguoi gui người gửi tu khoa từ khóa ignore block quy tac quy tắc"
   },
@@ -122,9 +123,10 @@
     "tab": "telegram",
     "area": "Tin tag › Hoãn › Luôn ưu tiên",
     "title": "Luôn ưu tiên một người",
-    "what": "Ngược với “Luôn bỏ qua”: tin tag của người này luôn lên đầu Việc cần xử lý (sau tin ghim), có dấu “Ưu tiên” màu vàng và bị coi là quá hạn ở nửa ngưỡng thường. Gỡ ở Cài đặt › Telegram › Luôn bỏ qua (bấm × trên chip).",
+    "what": "Ngược với “Luôn bỏ qua”: tin tag của người này luôn lên đầu Việc cần xử lý (sau tin ghim), có dấu “Ưu tiên” màu vàng và bị coi là quá hạn ở nửa ngưỡng thường. Gỡ ở Cài đặt › Telegram › Ưu tiên và tự động (bấm × trên chip).",
     "how": [
       "Mở menu Hoãn của một tag, chọn “Luôn ưu tiên {tên}”",
+      "Hoặc trong Cài đặt › Telegram › Ưu tiên và tự động: gõ tên vào ô “Tên người gửi…” ở dòng Luôn ưu tiên rồi chọn người",
       "Thông báo dưới màn hình có nút Hoàn tác"
     ],
     "keys": "uu tien ưu tiên luon uu tien luôn ưu tiên nguoi gui người gửi quy tac quy tắc priority vip"
@@ -134,7 +136,7 @@
     "tab": "telegram",
     "area": "Tin tag › Hoãn › Vòng BE tự chạy",
     "title": "Vòng BE tự chạy: phiên AI tự nhận câu trả lời của BE",
-    "what": "Hai quy tắc theo người gửi để không phải chuyển tay. “Tự chuyển trả lời của {tên} vào phiên AI”: khi người đó trả lời câu hỏi mà một phiên AI Agent đã gửi (tìm theo chuỗi reply tới mã #REF-… hoặc #QA…), phiên đó tự chạy tiếp với câu trả lời đính kèm: phần đã rõ thì làm luôn, phần chưa rõ thì soạn câu hỏi tiếp; được sửa code chỉ khi phiên đã từng được cho sửa, phiên đang chạy thì chờ lượt xong, phiên đã Done thì thôi. Tin chỉ tiếp nhận ngắn (kiểu “đã ghi nhận, BE đang xử lý, có kết quả mình báo lại”, “đã nhận thêm thông tin, BE đang xem tiếp”) không chạy gì: phiên ghi một dòng rằng đó chỉ là xác nhận, chưa phải confirm, nên dừng và chờ confirm chính thức; tin vẫn nằm ở Việc cần xử lý, câu trả lời thật đến sau mới chạy. Câu trả lời trong một thread Q&A chưa có phiên nào đang mở thì tự mở một phiên chỉ đọc (kèm câu hỏi của thread) ở dự án bạn chọn gần nhất trong Giao AI Agent lúc bật quy tắc; các câu trả lời sau trong thread đó chạy tiếp trong phiên này. “Luôn giao AI Agent cho tin của {tên}”: mỗi tin mới của người đó tự mở một phiên chỉ đọc ở dự án bạn chọn gần nhất trong Giao AI Agent. Mỗi câu trả lời của phiên kết thúc bằng Trạng thái (Chờ trả lời / Có thể Done / Cần bạn xem), hiện ở danh sách AI Agent và Hôm nay. Không có gì tự gửi lên Telegram. Gỡ quy tắc ở Cài đặt › Telegram › Luôn bỏ qua. Chỉ có với vai trò Dev. Lượt tự chạy dùng model của phiên với effort tối đa medium. Khi quota Claude (cửa sổ 5 giờ hoặc tuần) tới 80%, Vòng BE tiết kiệm quota. Nếu “Tự hạ model khi gần hết hạn mức” (Cài đặt › AI) đang bật, lượt tự chạy hạ xuống Sonnet thay cho model của phiên, phiên ghi một dòng về việc đó, và chỉ tạm dừng khi một cửa sổ đã dùng hết 100%. Nếu không bật, Vòng BE tạm dừng từ 80%. Lúc tạm dừng, câu trả lời nằm ở hàng chờ, phiên ghi lý do, app thử lại đúng lúc quota đặt lại (chậm nhất 10 phút một lần) cho tới khi chạy được; lượt bạn tự gõ vẫn chạy. Hàng chờ được lưu, khởi động lại app không làm mất.",
+    "what": "Hai quy tắc theo người gửi để không phải chuyển tay. “Tự chuyển trả lời của {tên} vào phiên AI”: khi người đó trả lời câu hỏi mà một phiên AI Agent đã gửi (tìm theo chuỗi reply tới mã #REF-… hoặc #QA…), phiên đó tự chạy tiếp với câu trả lời đính kèm: phần đã rõ thì làm luôn, phần chưa rõ thì soạn câu hỏi tiếp; được sửa code chỉ khi phiên đã từng được cho sửa, phiên đang chạy thì chờ lượt xong, phiên đã Done thì thôi. Tin chỉ tiếp nhận ngắn (kiểu “đã ghi nhận, BE đang xử lý, có kết quả mình báo lại”, “đã nhận thêm thông tin, BE đang xem tiếp”) không chạy gì: phiên ghi một dòng rằng đó chỉ là xác nhận, chưa phải confirm, nên dừng và chờ confirm chính thức; tin vẫn nằm ở Việc cần xử lý, câu trả lời thật đến sau mới chạy. Câu trả lời trong một thread Q&A chưa có phiên nào đang mở thì tự mở một phiên chỉ đọc (kèm câu hỏi của thread) ở dự án bạn chọn gần nhất trong Giao AI Agent lúc bật quy tắc; các câu trả lời sau trong thread đó chạy tiếp trong phiên này. “Luôn giao AI Agent cho tin của {tên}”: mỗi tin mới của người đó tự mở một phiên chỉ đọc ở dự án bạn chọn gần nhất trong Giao AI Agent. Mỗi câu trả lời của phiên kết thúc bằng Trạng thái (Chờ trả lời / Có thể Done / Cần bạn xem), hiện ở danh sách AI Agent và Hôm nay. Không có gì tự gửi lên Telegram. Gỡ quy tắc ở Cài đặt › Telegram › Ưu tiên và tự động. Chỉ có với vai trò Dev. Lượt tự chạy dùng model của phiên với effort tối đa medium. Khi quota Claude (cửa sổ 5 giờ hoặc tuần) tới 80%, Vòng BE tiết kiệm quota. Nếu “Tự hạ model khi gần hết hạn mức” (Cài đặt › AI) đang bật, lượt tự chạy hạ xuống Sonnet thay cho model của phiên, phiên ghi một dòng về việc đó, và chỉ tạm dừng khi một cửa sổ đã dùng hết 100%. Nếu không bật, Vòng BE tạm dừng từ 80%. Lúc tạm dừng, câu trả lời nằm ở hàng chờ, phiên ghi lý do, app thử lại đúng lúc quota đặt lại (chậm nhất 10 phút một lần) cho tới khi chạy được; lượt bạn tự gõ vẫn chạy. Hàng chờ được lưu, khởi động lại app không làm mất.",
     "how": [
       "Mở menu Hoãn của một tin từ bot BE, chọn “Tự chuyển trả lời của {tên} vào phiên AI” hoặc “Luôn giao AI Agent cho tin của {tên}”",
       "Thông báo dưới màn hình có nút Hoàn tác"
@@ -324,6 +326,28 @@
       }
     ],
     "keys": "ticket chip youtrack ma ticket va-123 trang thai assignee link mention"
+  },
+  {
+    "id": "msg-doc-links",
+    "tab": "telegram",
+    "area": "Nội dung tin › Bài KB và file đính kèm",
+    "title": "Bài KB và file trong tin: đã có trong Tài liệu chưa, thêm / cập nhật",
+    "what": "Link bài Knowledge Base (…/articles/VA-A-134) hoặc mã bài (VA-A-134) của YouTrack mình hiện thành chip: dấu ✓ là đã có trong Tài liệu, dấu + gạch đứt là chưa có. File đính kèm hiện thành ô đính kèm (tên, dung lượng, dấu trạng thái). Trạng thái chỉ so mã bài / tên file với kho trên máy: không gọi AI, không tải gì khi rê chuột. Rê chuột lên chip để xem khung nhỏ: bài / file là gì, đang có trong Tài liệu chưa, và một nút chính. Chưa có: bấm chip để ghim khung lại (rê ra ngoài vẫn còn, bấm ra ngoài hoặc Esc để đóng). Đã có: bấm chip mở nội dung ngay tại chỗ (chỉ phần chữ), nút \"Mở trong Tài liệu\" chuyển sang trang Tài liệu đúng bài / file đó. Bài chưa có: \"Thêm vào Tài liệu\" (cùng các bài con, đồng bộ một lần, tin vẫn ở nguyên chỗ). Bài đã có: \"Mở trong Tài liệu\", hoặc \"Cập nhật\" để tải lại bài từ YouTrack ngay (thay đổi ghi vào Lịch sử thay đổi). File (.md, .txt, .json, .yaml, .docx, .pdf có chữ, tối đa 20 MB): \"Thêm vào Tài liệu\" tải file vào kho; kho đang giữ bản cũ hơn cùng tên thì \"Cập nhật bằng file này\"; kho giữ bản mới hơn thì chỉ mở bản đó (không quay về bản cũ). File thêm từ Telegram nằm ở bộ lọc Telegram của trang Tài liệu, thư mục \"Telegram\"; trong bài có nút \"Tin gốc\" và nút thùng rác để gỡ.",
+    "how": [
+      {
+        "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
+        "at": "Việc cần xử lý"
+      },
+      {
+        "t": "Rê chuột lên chip bài KB để xem bài đã có trong Tài liệu chưa; bấm để thêm (chưa có) hoặc đọc nội dung ngay tại chỗ (đã có)",
+        "at": "css:[data-testid=\"message\"] button[aria-haspopup]"
+      },
+      {
+        "t": "Rê chuột / bấm ô file đính kèm để thêm file vào Tài liệu (hoặc cập nhật khi kho đang giữ bản cũ hơn); file đã có thì bấm để đọc ngay tại chỗ",
+        "at": "css:[data-testid=\"message\"] button[aria-haspopup]"
+      }
+    ],
+    "keys": "tai lieu tài liệu kb knowledge base bai viet bài viết link file dinh kem đính kèm tep tệp pdf docx them thêm cap nhat cập nhật da co đã có ban moi bản mới telegram go gỡ"
   },
   {
     "id": "msg-task-result",

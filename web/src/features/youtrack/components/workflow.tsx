@@ -4,13 +4,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, EyeOff, LayoutGrid, Plus, Trash2, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { type PointerEvent as RPointerEvent, useEffect, useRef, useState } from "react";
+import { FoldMore } from "@/shared/components/ui/fold";
 import { Button } from "@/shared/components/ui/button";
+import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Dropdown } from "@/shared/components/ui/dropdown";
 import { Hint } from "@/shared/components/ui/hint";
 import { useT } from "@/shared/lib/i18n";
-import { getPref, put, useRole, YT_ROLES } from "@/shared/lib/prefs";
+import { getPref, put, useRoleOrDev, YT_ROLES } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { stateColor, type Workflow, yt, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { resolveProject, stateColor, type Workflow, yt, ytProjectsQuery } from "@/features/youtrack/lib/yt";
 
 const W = 150, H = 36, GX = 180, GY = 80, PAD = 24;
 
@@ -58,7 +60,7 @@ function readDraft(at: string): Workflow | null {
 
 /** The team's workflow for a project and the current role, as "which states can a ticket in `from` move to" (null: no rule, YouTrack decides). */
 export function useFlow(project: string) {
-  const role = useRole() ?? "dev"; // the flow shown / saved / applied; no role yet: Dev, as on the server
+  const role = useRoleOrDev(); // the flow shown / saved / applied; no role yet: Dev, as on the server
   const q = useQuery({ queryKey: ["yt", "workflow", project, role], queryFn: () => yt.workflow(project), staleTime: 5 * 60_000, enabled: !!project });
   const wf = q.data;
   return (from: string | null): string[] | null => (wf?.on ? wf.edges.filter(([s]) => s === from).map(([, t]) => t) : null);
@@ -82,8 +84,8 @@ export function WorkflowSection() {
   const projects = useQuery(ytProjectsQuery);
   const [project, setProject] = useState(() => getPref("project") || "VA");
   const ps = projects.data;
-  const p = !ps?.length || ps.some((x) => x.shortName === project) ? project : ps[0].shortName;
-  const role = useRole() ?? "dev"; // the flow shown / saved / applied; no role yet: Dev, as on the server
+  const p = resolveProject(ps, project); // the same fallback as the YouTrack tab and the ticket form
+  const role = useRoleOrDev(); // the flow shown / saved / applied; no role yet: Dev, as on the server
   const q = useQuery({ queryKey: ["yt", "workflow", p, role], queryFn: () => yt.workflow(p) });
   const qc = useQueryClient();
   const at = `${p}:${role}`; // a draft belongs to the project and role it was drawn for
@@ -94,7 +96,8 @@ export function WorkflowSection() {
   const [cols, setCols] = useState(3); // as many boxes as fit across the canvas
   const fit = (el: HTMLDivElement | null) => { if (el) setCols(Math.max(1, Math.floor((el.clientWidth - PAD - W) / GX) + 1)); };
   const saved: Workflow | null = q.data ? { on: q.data.on, pos: { ...layout(states, q.data.edges, cols), ...q.data.pos }, edges: q.data.edges.filter(([s, t]) => states.includes(s) && states.includes(t)), hidden: (q.data.hidden ?? []).filter((s) => states.includes(s)) } : null;
-  const wf = draft ?? saved;
+  // a draft's `pos` may miss boxes ("Tự xếp" lays out the shown ones only; YouTrack gained a State since): the saved place
+  const wf = draft ? { ...draft, pos: { ...saved?.pos, ...draft.pos } } : saved;
   const shown = states.filter((s) => !wf?.hidden.includes(s)); // the boxes on the canvas
   const hide = (s: string) => wf && set({ hidden: [...wf.hidden, s], edges: wf.edges.filter((e) => !e.includes(s)) });
   const set = (patch: Partial<Workflow>) => {
@@ -107,8 +110,9 @@ export function WorkflowSection() {
     onSuccess: () => { setDraft(null); void qc.invalidateQueries({ queryKey: ["yt", "workflow", p, role] }); },
   });
   const fromYt = useMutation({
-    mutationFn: () => yt.youtrackFlow(p),
-    onSuccess: (d) => { // hidden boxes stay hidden; nothing placed by hand yet: lay out along the new flow
+    mutationFn: (proj: string) => yt.youtrackFlow(proj),
+    onSuccess: (d, proj) => { // hidden boxes stay hidden; nothing placed by hand yet: lay out along the new flow
+      if (proj !== p) return; // the project was switched while reading: not this one's arrows
       const edges = d.edges.filter(([s, t]) => shown.includes(s) && shown.includes(t));
       set({ edges, ...(Object.keys(q.data?.pos ?? {}).length ? {} : { pos: layout(shown, edges, cols) }) });
     },
@@ -123,7 +127,7 @@ export function WorkflowSection() {
         <Dropdown label="Project" value={p} onChange={(v) => { setProject(v); fromYt.reset(); }} className="w-auto text-sm"
           options={(ps ?? [{ shortName: p, name: p }]).map((x) => ({ value: x.shortName, label: x.shortName, hint: x.name }))} />
         <Hint title={t("Lấy từ YouTrack")} text={t("Thay các mũi tên bằng luồng YouTrack đang cho phép (đọc từ mỗi state một ticket). Chưa lưu cho tới khi bấm Lưu.")}>
-          <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate()}>
+          <Button type="button" size="sm" variant="outline" disabled={!states.length || fromYt.isPending} onClick={() => fromYt.mutate(p)}>
             <Download className="size-3.5" />{t(fromYt.isPending ? "Đang đọc…" : "Lấy từ YouTrack")}
           </Button>
         </Hint>
@@ -134,7 +138,7 @@ export function WorkflowSection() {
           <Button type="button" size="sm" variant="ghost" disabled={!wf.edges.length} onClick={() => set({ edges: [] })}><Trash2 className="size-3.5" />{t("Xóa hết")}</Button>
         </Hint>
         <label className="ml-auto flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={wf.on} onChange={(e) => set({ on: e.target.checked })} /> {t("Áp dụng trong app")}
+          <Checkbox checked={wf.on} onCheckedChange={(v) => set({ on: !!v })} /> {t("Áp dụng trong app")}
         </label>
       </div>
       {fromYt.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được: {msg}", { msg: (fromYt.error as Error).message })}</p>}
@@ -293,22 +297,23 @@ function EdgeList({ states, edges, onChange }: { states: string[]; edges: [strin
   const dupe = f === dst || edges.some(([a, b]) => a === f && b === dst);
   const opts = states.map((s) => ({ value: s, label: s }));
   return (
-    <details className="grid gap-2 text-sm">
-      <summary className="cursor-pointer text-xs text-ink-3">{t("Danh sách mũi tên ({n})", { n: edges.length })}</summary>
-      <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, dst]]); }}>
-        <Dropdown label={t("Từ state")} value={f} onChange={setFrom} options={opts} className="w-auto" />
-        <span aria-hidden>→</span>
-        <Dropdown label={t("Sang state")} value={dst} onChange={setTo} options={opts} className="w-auto" />
-        <Button type="submit" size="sm" variant="outline" disabled={dupe}>{t("Thêm")}</Button>
-      </form>
-      <ul className="mt-2 flex flex-wrap gap-1.5">
-        {edges.map(([a, b]) => (
-          <li key={key([a, b])} className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-1 pl-2.5 text-xs">
-            {a} → {b}
-            <button type="button" aria-label={t("Xóa {from} → {to}", { from: a, to: b })} onClick={() => onChange(edges.filter((e) => e[0] !== a || e[1] !== b))} className="rounded-full p-0.5 text-ink-3 hover:bg-paper-3 hover:text-error"><X className="size-3" /></button>
-          </li>
-        ))}
-      </ul>
-    </details>
+    <FoldMore className="text-sm" labelClassName="text-xs font-normal text-ink-3" label={t("Danh sách mũi tên ({n})", { n: edges.length })}>
+      <div className="grid gap-2 pt-2">
+        <form className="flex flex-wrap items-center gap-2"   onSubmit={(e) => { e.preventDefault(); if (!dupe) onChange([...edges, [f, dst]]); }}>
+          <Dropdown label={t("Từ state")} value={f} onChange={setFrom} options={opts} className="w-auto" />
+          <span aria-hidden>→</span>
+          <Dropdown label={t("Sang state")} value={dst} onChange={setTo} options={opts} className="w-auto" />
+          <Button type="submit" size="sm" variant="outline" disabled={dupe}>{t("Thêm")}</Button>
+        </form>
+        <ul className="flex flex-wrap gap-1.5">
+          {edges.map(([a, b]) => (
+            <li key={key([a, b])} className="inline-flex items-center gap-1 rounded-full bg-paper-2 py-0.5 pr-1 pl-2.5 text-xs">
+              {a} → {b}
+              <button type="button" aria-label={t("Xóa {from} → {to}", { from: a, to: b })} onClick={() => onChange(edges.filter((e) => e[0] !== a || e[1] !== b))} className="rounded-full p-0.5 text-ink-3 hover:bg-paper-3 hover:text-error"><X className="size-3" /></button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </FoldMore>
   );
 }

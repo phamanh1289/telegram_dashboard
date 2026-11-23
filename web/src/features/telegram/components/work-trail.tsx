@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Fragment, type ReactNode, use, useEffect, useRef, useState } from "react";
 import { Markdown } from "@/shared/components/markdown";
 import { Button } from "@/shared/components/ui/button";
+import { Fold } from "@/shared/components/ui/fold";
 import type { Message } from "@/shared/lib/api";
 import { useT } from "@/shared/lib/i18n";
 import { msgKey, openQa, openReply, openTask, qaAskKey, QaCodes, ticketClick, ticketsIn, useTaskList } from "@/features/telegram/lib/inbox";
@@ -30,6 +31,8 @@ export function WorkTrail({ m }: { m: Message }) {
   const replied = m.handled && (m.handled_by === "reply" || m.handled_by === "dashboard");
   const [openId, setOpen] = useState<string | null>(null);
   const shown = tasks.find((x) => x.id === openId && x.result);
+  const [view, setView] = useState(shown); // what the panel draws: the last one opened, still there while it folds shut
+  if (shown && shown !== view) setView(shown);
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => { if (openId) panel.current?.scrollIntoView({ block: "nearest", behavior: smooth() }); }, [openId]); // it opens below the fold
   const steps: ReactNode[] = [
@@ -54,16 +57,18 @@ export function WorkTrail({ m }: { m: Message }) {
         <span className="mr-1 text-xs font-medium text-ink-3">{t("Luồng việc")}</span>
         {steps.map((s, i) => <Fragment key={i}>{i > 0 && <ChevronRight className="size-3 text-ink-3" aria-hidden />}{s}</Fragment>)}
       </nav>
-      {shown && (
-        <div ref={panel} className="grid gap-2 rounded-[var(--radius-input)] bg-cotton p-3 shadow-stock animate-in fade-in-0 duration-(--dur-short) motion-reduce:animate-none">
-          {/* Actions first: a long result would push them below the fold. */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="xs" onClick={() => openReply(m, shown.result!)}><MessageSquare />{t("Dùng làm nháp trả lời")}</Button>
-            <Button size="xs" variant="ghost" onClick={() => openTask(shown.id)}>{shown.kind === "deep" ? <BrainCircuit /> : <AiBotIcon />}{t("Mở phiên")}</Button>
+      <Fold open={!!shown}>
+        {view && (
+          <div ref={panel} className="grid gap-2 rounded-[var(--radius-input)] bg-cotton p-3 shadow-stock">
+            {/* Actions first: a long result would push them below the fold. */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button size="xs" onClick={() => openReply(m, view.result!)}><MessageSquare />{t("Dùng làm nháp trả lời")}</Button>
+              <Button size="xs" variant="ghost" onClick={() => openTask(view.id)}>{view.kind === "deep" ? <BrainCircuit /> : <AiBotIcon />}{t("Mở phiên")}</Button>
+            </div>
+            <Markdown text={view.result} className="line-clamp-12 text-sm text-ink" />
           </div>
-          <Markdown text={shown.result} className="line-clamp-12 text-sm text-ink" />
-        </div>
-      )}
+        )}
+      </Fold>
     </div>
   );
 }

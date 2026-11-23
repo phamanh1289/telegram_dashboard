@@ -18,11 +18,10 @@ import time
 import zlib
 from pathlib import Path
 
-from ..youtrack.client import YtError, YtUnreachable
+from ..youtrack.client import YtError, YtUnreachable, pages
 from .extract import EXTS, read_text
 from .library import Library, folder_prefix, sha1
 
-PAGE = 100
 FETCHES = 4  # articles downloaded at once
 MAX_FILES = 2000  # per folder: a picked home dir must not index the whole disk
 SKIP_DIRS = {"node_modules", "__pycache__"}  # and every dot dir (.git, .venv…)
@@ -73,16 +72,6 @@ async def _reconcile(lib: Library, errors: list) -> None:
     await lib.write(lib.db.store.doc_delete, source="yt_article", keep=keep)
 
 
-async def _pages(yt, path: str, fields: str) -> list[dict]:
-    out, skip = [], 0
-    while True:
-        page = await yt.yt(path, fields=fields, **{"$top": PAGE, "$skip": skip})
-        out += page
-        if len(page) < PAGE:
-            return out
-        skip += PAGE
-
-
 FIELDS = "idReadable,summary,updated,parentArticle(idReadable)"
 
 
@@ -94,13 +83,13 @@ async def listed(yt, project: str, every: dict) -> list[dict]:
     """A project's articles ({idReadable, summary, updated, parentArticle}). `every`: this sync's listing of all
     articles, fetched once for every project that falls back to it."""
     try:
-        return await _pages(yt, f"/api/admin/projects/{project}/articles", FIELDS)
+        return await pages(yt, f"/api/admin/projects/{project}/articles", fields=FIELDS)
     except YtError as e:
         if isinstance(e, YtUnreachable) or e.status not in (403, 404):
             raise
         closed = e
     if "all" not in every:
-        every["all"] = await _pages(yt, "/api/articles", f"{FIELDS},project(shortName)")
+        every["all"] = await pages(yt, "/api/articles", fields=f"{FIELDS},project(shortName)")
     mine = [a for a in every["all"] if (a.get("project") or {}).get("shortName") == project]
     if not mine:  # a wrong / removed / hidden project: report it, never read as "no articles" (that drops its cache)
         raise closed

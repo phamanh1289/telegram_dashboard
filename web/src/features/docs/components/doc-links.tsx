@@ -8,7 +8,7 @@ import { Hint } from "@/shared/components/ui/hint";
 import { useT } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
 import { linkCls } from "@/features/telegram/components/message/rich-text";
-import { docListQuery } from "@/features/docs/lib/docs";
+import { allDocsQuery } from "@/features/docs/lib/docs";
 
 // Links drawn into the open document's text:
 // - Knowledge Base article IDs ("VA-A-172"): to that article in the reader when the library has it, else asking to add
@@ -57,7 +57,7 @@ export function docLinks(text: string, self: string): string {
  *  hold asks to add it (`onMissing`); a screen name opens the Zeplin page (`onZeplin`). All callbacks stable, or every
  *  rendered part redraws. */
 export function useDocAnchor(onDoc: (id: number) => void, onZeplin: (name: string) => void, onMissing: (ref: string) => void): (hash: string) => ReactNode {
-  const list = useQuery(docListQuery({ source: "all", ticket: null, doc: null }));
+  const list = useQuery(allDocsQuery);
   const byRef = useMemo(() => new Map((list.data ?? []).filter((d) => d.source === "youtrack").map((d) => [d.ref, d])), [list.data]);
   return useCallback((hash: string) => {
     if (hash.startsWith("zpl:")) {

@@ -17,6 +17,7 @@ export function FavStar({ doc, quiet }: { doc: Pick<Doc, "source" | "ref">; quie
     <Hint side="bottom" text={on ? t("Bỏ khỏi Yêu thích") : t("Thêm vào Yêu thích để mở lại nhanh")}>
       <Button size="icon-xs" variant="ghost" aria-pressed={on} aria-label={t("Đánh dấu yêu thích")} onClick={() => favs.toggle(doc)}
         className={cn("shrink-0 aria-pressed:bg-transparent hover:text-fav", on ? "text-fav aria-pressed:text-fav" : "text-ink-3",
+          quiet && "self-start", // a row's: top right beside a two-line title, not centred
           quiet && !on && "opacity-0 transition-opacity duration-(--dur-micro) group-hover/row:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100")}>
         <Star className={cn("transition-[scale,fill] duration-(--dur-short) ease-(--ease-out)", on && "scale-110 fill-current")} />
       </Button>

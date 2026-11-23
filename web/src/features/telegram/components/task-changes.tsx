@@ -156,6 +156,7 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
     return { tree, groups, files: groups.flatMap((g) => g.files) };
   }, [q.data]);
   const mixed = useMemo(() => (q.data?.files ?? []).filter((f) => f.mixed && !f.secret).map((f) => f.path), [q.data]);
+  const [pr, setPr] = useState<Pr | null>(null); // kept here: once the PR is out the file list is empty, its link must stay
   const [shut, setShut] = useState<Record<string, boolean>>({}); // tree folders the user closed
   const [cur, setCur] = useState<string | null>(null); // the file last picked in the tree
   const isOpen = (f: File) => fold[f.path] ?? f.size <= OPEN_MAX;
@@ -252,8 +253,9 @@ export function TaskChanges({ t, onBack }: { t: Task; onBack: () => void }) {
               </div>
             </div>
           </div>
-          <PrBar t={t} count={files.filter((f) => !f.secret).length} mixedOk={mixed.length > 0 || !q.data.baseline} onDone={() => void q.refetch()} />
+          {!pr && <PrBar t={t} count={files.filter((f) => !f.secret).length} mixedOk={mixed.length > 0 || !q.data.baseline} onDone={(r) => { setPr(r); void q.refetch(); }} />}
         </>}
+      {pr && <PrDone t={t} pr={pr} />}
     </div>
   );
 }
@@ -448,9 +450,22 @@ function PrTell({ t, url }: { t: Task; url: string }) {
   );
 }
 
+/** The PR (or the pushed branch) just made, with the ways to tell who asked. */
+function PrDone({ t, pr }: { t: Task; pr: Pr }) {
+  const tt = useT();
+  return (
+    <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-3 text-sm text-ok">
+      <GitPullRequest className="size-4" aria-hidden />
+      {pr.url ? <a href={pr.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">{tt("Mở PR")} <ExternalLink className="size-3.5" aria-hidden /></a>
+        : <span className="text-ink-2">{pr.note && tMaybe(pr.note)}</span>}
+      {pr.url && <PrTell t={t} url={pr.url} />}
+    </footer>
+  );
+}
+
 /** Commit title + "Tạo nhánh + PR", asked twice before anything is pushed. `mixedOk`: the page shows the "carries
  *  earlier edits" warning, so the second click is the user's yes to it (the backend refuses without). */
-function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk: boolean; onDone: () => void }) {
+function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk: boolean; onDone: (r: Pr) => void }) {
   const tt = useT();
   const qc = useQueryClient();
   const [title, setTitle] = useState(() => (t.title || t.message_text || t.prompt || "").split("\n")[0].slice(0, 120));
@@ -460,20 +475,10 @@ function PrBar({ t, count, mixedOk, onDone }: { t: Task; count: number; mixedOk:
     onSuccess: (r) => {
       toast({ text: r.url ? tNow("Đã mở PR") : tNow("Đã đẩy nhánh {branch}", { branch: r.branch }) });
       void qc.invalidateQueries({ queryKey: ["task-events", t.id] });
-      onDone();
+      onDone(r);
     },
     onError: () => setSure(false),
   });
-  if (pr.data) {
-    return (
-      <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-4 py-3 text-sm text-ok">
-        <GitPullRequest className="size-4" aria-hidden />
-        {pr.data.url ? <a href={pr.data.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline underline-offset-4">{tt("Mở PR")} <ExternalLink className="size-3.5" aria-hidden /></a>
-          : <span className="text-ink-2">{pr.data.note && tMaybe(pr.data.note)}</span>}
-        {pr.data.url && <PrTell t={t} url={pr.data.url} />}
-      </footer>
-    );
-  }
   if (!count) return null;
   return (
     <footer className="shrink-0 border-t px-3 py-2.5 sm:px-4">
