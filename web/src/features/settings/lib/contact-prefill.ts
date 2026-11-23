@@ -11,10 +11,11 @@ const KEY = "contact-prefill"; // sessionStorage: this tab only, read once by C�
 export function prefillReport(text: string, f: Failure) {
   const path = location.pathname;
   const area: Req["area"] = path.startsWith("/youtrack") ? "youtrack" : path.startsWith("/docs") ? "docs" : path.startsWith("/settings") ? "settings" : "telegram";
+  // within the description's limit (TEXT_MAX 3000 in contact.tsx, the server's too), the last line kept to fill in
   const body = [
-    `Thông báo lỗi: ${text.trim()}`,
+    `Thông báo lỗi: ${text.trim().slice(0, 500)}`,
     `Mã lỗi: ${f.code}${f.status ? ` (HTTP ${f.status})` : ""}`,
-    ...(f.detail ? [`Chi tiết: ${f.detail}`] : []),
+    ...(f.detail ? [`Chi tiết: ${f.detail.slice(0, 2000)}`] : []),
     `Màn: ${path}${location.hash}`,
     "",
     "Đã làm gì ngay trước đó: ",
