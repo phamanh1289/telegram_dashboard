@@ -94,15 +94,15 @@ Chưa làm bước 2 → riêng job `npm` fail, GitHub Release vẫn đã phát 
    git commit -m "chore(release): vX.Y.Z"
    git tag -a vX.Y.Z --cleanup=verbatim -F "${TMPDIR:-/tmp}/tag-msg.md"
    ```
-   `tag-msg.md` là release note song ngữ (Việt + Anh): viết theo skill `release-notes` **trước** lệnh tag, xem trước
-   bằng `bash scripts/release-notes.sh vX.Y.Z`.
+   `tag-msg.md` là release note: trọn bản tiếng Việt (`## Tiếng Việt`) rồi trọn bản tiếng Anh (`## English`), viết theo
+   skill `release-notes` **trước** lệnh tag; xem trước bằng `bash scripts/release-notes.sh vX.Y.Z` (không được ra `warning`).
 5. **Push**: `git push origin HEAD` (master, qua cổng c-tools theo skill `push-gate`) rồi `git push origin vX.Y.Z`
    (tag, không qua cổng). Khi nào được push mà không hỏi lại: xem `push-gate` › Quy ước.
 6. **Theo dõi CI**: `gh run list --workflow release.yml -L 1`, `gh run watch <id>` (cần `gh auth login`;
    không có thì đưa user link `https://github.com/phamanh1289/telegram_dashboard/actions`).
 7. **Xác nhận**: `gh release view vX.Y.Z --json assets -q '.assets[].name'` phải có đủ 5 file ở trên
    và 2 file `.zip.sig`.
-   Kiểm body: `gh release view vX.Y.Z --json body -q .body | head` mở đầu `## Có gì mới`, có `## What's new`
+   Kiểm body: `gh release view vX.Y.Z --json body -q .body | head` mở đầu `## Tiếng Việt`, sau đó `## English` (trọn tiếng Việt trước, trọn tiếng Anh sau; khung ở skill `release-notes`)
    (tag tạo theo skill `release-notes`; tag không có thân thì body chỉ có danh sách commit).
    npm: job `npm` xanh và `npm view telegram-dashboard version` ra `X.Y.Z` (registry có thể trễ 1–2 phút).
    Báo user link release `https://github.com/phamanh1289/telegram_dashboard/releases/tag/vX.Y.Z`

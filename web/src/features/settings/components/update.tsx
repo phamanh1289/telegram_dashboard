@@ -11,7 +11,7 @@ import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
 import { api, ApiError, errorText, updateStateQuery } from "@/shared/lib/api";
-import { type Key, t as tPlain, tMaybe, useT } from "@/shared/lib/i18n";
+import { type Key, type Lang, t as tPlain, tMaybe, useLang, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
 
@@ -173,6 +173,14 @@ function WaitTips() {
   );
 }
 
+/** A release's notes in the app's language: scripts/release-notes.sh writes "## Tiếng Việt" then "## English" (the
+ *  commit list closes the English half); notes without both headings (older releases) show whole. */
+function notesIn(md: string, lang: Lang): string {
+  const vi = md.search(/^## Tiếng Việt[ \t]*$/m), en = md.search(/^## English[ \t]*$/m);
+  if (vi < 0 || en < vi) return md;
+  return (lang === "vi" ? md.slice(vi, en) : md.slice(en)).replace(/^## [^\n]*\n+/, "").trim();
+}
+
 /** Hero first: GitHub → robot → app (at rest), versions, what's new folded; once confirmed the same hero runs (AI pulls
  *  the release) over a stepper of the two phases the server really reports (install, restart). */
 function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, error, onConfirm }: {
@@ -180,6 +188,7 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
   phase: UpdatePhase; error?: string; onConfirm: () => void
 }) {
   const t = useT();
+  const lang = useLang();
   const busy = phase !== "idle";
   const stages: [Key, UpdatePhase][] = [["Kéo & cài bản mới", "install"], ["Khởi động lại", "restart"], ["Tải lại trang", "idle"]];
   const at = stages.findIndex(([, p]) => p === phase);
@@ -229,8 +238,8 @@ function UpdateDialog({ open, onOpenChange, info: d, latest, release, phase, err
                       <span className="min-w-0 flex-1 truncate text-ink-2">{c.subject}</span>
                       <span className="shrink-0 text-ink-3 tabular-nums">{c.when}</span>
                     </div>
-                    {/* release builds: the Release body (summary, then features / fixes / other) */}
-                    {c.notes && <Markdown text={c.notes} className="text-xs text-ink-2" />}
+                    {/* release builds: the Release body, the half in the app's language */}
+                    {c.notes && <Markdown text={notesIn(c.notes, lang)} className="text-xs text-ink-2" />}
                   </li>
                 ))}
               </ul>

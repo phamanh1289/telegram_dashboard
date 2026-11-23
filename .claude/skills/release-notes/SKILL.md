@@ -13,17 +13,20 @@ Job `release` trong `.github/workflows/release.yml` chạy `bash scripts/release
 1. **Thân message của annotated tag** (mọi dòng sau dòng 1 + dòng trống): phần tóm tắt cho người dùng, do agent
    viết lúc tag. Tag không có thân → phần này trống, release chỉ còn danh sách commit.
 2. **Commit từ tag `v*` trước** (theo ancestry, `git describe "$tag^"`), bỏ merge và `chore(release)`, nhóm
-   `### Tính năng / Features` (`feat`), `### Sửa lỗi / Fixes` (`fix`), `### Khác / Other` (còn lại).
-   `feat(docs): x` → `- **docs**: x` (subject commit viết tiếng Anh nên phần này dùng chung cho 2 ngôn ngữ).
-3. GitHub tự nối thêm danh sách PR + link **Full Changelog** (`generate_release_notes: true`).
+   `### Features` (`feat`), `### Fixes` (`fix`), `### Other` (còn lại). `feat(docs): x` → `- **docs**: x`.
+   Subject commit viết tiếng Anh nên danh sách này nằm cuối **nửa tiếng Anh**, tiêu đề tiếng Anh.
+3. GitHub tự nối thêm danh sách PR + link **Full Changelog** (`generate_release_notes: true`), cũng ở nửa tiếng Anh.
 
-App đã cài **không** đọc body release (updater chỉ tải zip), nên note chỉ hiện trên trang GitHub Release.
+App đã cài đọc body release: Cài đặt › Cập nhật › "Có gì mới" hiện **đúng nửa theo ngôn ngữ app** (`notesIn` trong
+`web/src/features/settings/components/update.tsx` cắt theo `## Tiếng Việt` / `## English`; note thiếu 2 tiêu đề đó
+hiện nguyên). Sai khung → người dùng thấy cả hai thứ tiếng lẫn lộn.
 
 Commit subject quyết định nhóm: dùng đúng prefix `feat(...)`, `fix(...)`, `ci(...)`, `wip(...)`, `chore(release)`.
 
-**Song ngữ**: note luôn có tiếng Việt trước, tiếng Anh sau, cùng nội dung (người dùng app chọn VI / EN trong app).
-Tóm tắt có 2 khối `## Có gì mới` và `## What's new`, cùng nhóm, cùng số gạch, cùng thứ tự; tiêu đề nhóm commit do
-script in sẵn dạng `Việt / English`.
+**Một thứ tiếng rồi mới tới thứ tiếng kia, không xen kẽ**: trọn bản tiếng Việt ở trên (`## Tiếng Việt`), xong hết
+mới tới trọn bản tiếng Anh (`## English`, gồm tóm tắt rồi danh sách commit). Không tiêu đề song ngữ kiểu `Việt / English`,
+không khối tiếng Anh nào nằm trong nửa tiếng Việt. Hai bản cùng nhóm, cùng số gạch, cùng thứ tự. Script cảnh báo
+(`warning: … should have '## Tiếng Việt' then '## English'`) khi tóm tắt sai khung: sửa trước khi push tag.
 
 ## Viết tóm tắt (trước khi tag)
 
@@ -41,7 +44,7 @@ script in sẵn dạng `Việt / English`.
    ```markdown
    vX.Y.Z
 
-   ## Có gì mới
+   ## Tiếng Việt
 
    **Tài liệu**
    - <thay đổi người dùng thấy, 1 câu, theo nhãn UI tiếng Việt>
@@ -55,7 +58,7 @@ script in sẵn dạng `Việt / English`.
    **Cài đặt** / **Chung**
    - …
 
-   ## What's new
+   ## English
 
    **Documents**
    - <cùng ý với gạch tiếng Việt tương ứng, theo nhãn UI tiếng Anh>
@@ -76,6 +79,8 @@ script in sẵn dạng `Việt / English`.
      "Yêu thích" → "Favourites"), không tự dịch khác app. Không tên file, hàm, API, field, mã commit.
      Tra nhãn: `grep -rn '"Yêu thích"' web/src/shared/lib/i18n/en/` (không thấy → `grep -rn 'Yêu thích' web/src/shared/lib/guide/en/`).
    - Khối tiếng Anh dịch đúng từng gạch tiếng Việt: không thêm, không bớt, không đổi thứ tự.
+   - `## Tiếng Việt` / `## English` là 2 tiêu đề `##` duy nhất trong tóm tắt (app cắt theo đúng 2 dòng này; không
+     thêm `## Có gì mới`, `## What's new`). Danh sách commit script tự nối sau `## English`, không viết tay.
    - Không `@tên` (GitHub notify người đó), không hứa điều chưa kiểm (chỉ viết cái có trong code / guide).
    - Sửa lỗi người dùng gặp → nhóm theo màn, câu dạng "Sửa: <hiện tượng> không còn xảy ra".
 4. Tag (giữ dòng `##` / `#`, mặc định git xoá dòng bắt đầu bằng `#`):
@@ -90,14 +95,14 @@ script in sẵn dạng `Việt / English`.
 Sửa trang release công khai: hỏi user trước, trừ khi chính user vừa yêu cầu viết lại note cho đúng tag đó.
 
 ```bash
+S="${TMPDIR:-/tmp}/summary-vX.Y.Z.md"   # tóm tắt "## Tiếng Việt …" + "## English …" (khuôn ở trên, không dòng vX.Y.Z)
 N="${TMPDIR:-/tmp}/notes-vX.Y.Z.md"
-# 1. tóm tắt "## Có gì mới …" + "## What's new …" (khuôn ở trên, không có dòng vX.Y.Z) vào "$N"
-bash scripts/release-notes.sh vX.Y.Z >> "$N"                                  # danh sách commit như CI
+bash scripts/release-notes.sh vX.Y.Z "$S" > "$N"     # tóm tắt mới thay thân tag (tag đã push không sửa), rồi commit như CI
 printf '**Full Changelog**: https://github.com/phamanh1289/telegram_dashboard/compare/<tag trước>...vX.Y.Z\n' >> "$N"
 gh release edit vX.Y.Z --notes-file "$N"
 gh release view vX.Y.Z --json body,isDraft,assets -q '(.body|split("\n")|.[0:3]|join("\n")), .isDraft, (.assets|length)'
 ```
-Kiểm: body mở đầu `## Có gì mới`, có `## What's new`, `isDraft` false, đủ 7 asset (xem skill `release`). `gh release edit` chỉ đổi
+Kiểm: body mở đầu `## Tiếng Việt`, có `## English` sau phần tiếng Việt, không còn `## Có gì mới` / `Tính năng / Features`, `isDraft` false, đủ 7 asset (xem skill `release`). `gh release edit` chỉ đổi
 body, không đụng asset / tag. Tag cũ không có thân message thì `release-notes.sh` chỉ in danh sách commit: đúng.
 
 ## Lỗi hay gặp
@@ -105,13 +110,14 @@ body, không đụng asset / tag. Tag cũ không có thân message thì `release
 | Hiện tượng | Nguyên nhân | Cách đúng |
 |---|---|---|
 | Release chỉ có "What's Changed" + tên PR | tag tạo bằng `-m "vX.Y.Z"` (không thân) | tag bằng `-F tag-msg.md` có tóm tắt |
-| Mất các dòng `## Có gì mới` | `git tag` cleanup=strip xoá dòng `#` | `--cleanup=verbatim` |
+| Mất các dòng `## Tiếng Việt` | `git tag` cleanup=strip xoá dòng `#` | `--cleanup=verbatim` |
 | Tóm tắt không hiện | thiếu dòng trống sau dòng 1 | dòng 2 để trống |
 | Script in `no tag vX.Y.Z`, exit 1 | gõ sai tag / chưa tag | `git tag --list 'v*'` |
 | `fixup!` / `feature …` lọt nhóm sai | subject không theo prefix | sửa subject trước khi push (sau push thì để nguyên) |
 | File ghi ra `/tag-msg.md` | `$TMPDIR` trống (Linux) | luôn `${TMPDIR:-/tmp}` |
 | Người bị nhắc nhận notify | `@tên` trong note / subject | bỏ `@` hoặc bọc backtick |
 | Note viết tên hàm, API | viết cho dev | viết theo màn và nhãn UI |
-| Chỉ có tiếng Việt / EN lệch ý VI | quên khối `## What's new` hoặc dịch tự do | 2 khối, gạch dịch 1–1, nhãn lấy từ `i18n/en` |
+| Chỉ có tiếng Việt / EN lệch ý VI | quên khối `## English` hoặc dịch tự do | 2 khối, gạch dịch 1–1, nhãn lấy từ `i18n/en` |
+| Note nửa Việt nửa Anh, app hiện cả hai | tiêu đề song ngữ, thiếu / sai thứ tự `## Tiếng Việt` → `## English` | đúng khung trên, script không còn cảnh báo |
 
 Liên quan: skill `release` (cả quy trình phát hành), skill `push-gate` (push master / tag qua cổng c-tools).
