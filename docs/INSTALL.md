@@ -60,13 +60,19 @@ npx telegram-dashboard
 Gói npm chỉ là launcher: nó chạy đúng lệnh cài ở trên cho máy của bạn (cùng thư mục cài, cùng kiểm chữ ký / sha256),
 nên app và dữ liệu không nằm trong `node_modules`. Chưa cài thì cài rồi mở app, đã cài thì mở app (`myradar start`).
 `npx telegram-dashboard update` cài bản mới nhất, `npx telegram-dashboard open` mở lại trang khi app đang chạy.
+PowerShell báo `npx.ps1 cannot be loaded`: gõ `npx.cmd telegram-dashboard` (hoặc chạy trong cmd).
+
+## Lỗi khi cài
+
+Bảng thông báo lỗi và cách sửa (mạng, chữ ký, Node / npm, PowerShell…):
+[README › Lỗi khi cài / cập nhật](../README.md#lỗi-khi-cài--cập-nhật).
 
 ## Cập nhật
 
 **Cài đặt › GitHub › Cập nhật**: app tự kiểm tra GitHub mỗi giờ; có bản mới thì hiện số bản → bấm **Cập nhật**
 (hoặc bật *Tự động cập nhật*). App tải gói mới, khởi động lại và tải lại trang; đăng nhập, cài đặt và dữ liệu giữ nguyên.
 
-Chạy lại lệnh cài (PowerShell / Terminal) hoặc Setup.exe bản mới hơn cũng được; **đóng app trước**, dữ liệu giữ nguyên.
+Chạy lại lệnh cài (PowerShell / Terminal), `npx telegram-dashboard update` hoặc Setup.exe bản mới hơn cũng được; **đóng app trước**, dữ liệu giữ nguyên.
 
 ## AI (tùy chọn)
 

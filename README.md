@@ -27,6 +27,12 @@ curl -fsSL https://github.com/phamanh1289/telegram_dashboard/releases/latest/dow
 irm https://github.com/phamanh1289/telegram_dashboard/releases/latest/download/install-windows.ps1 | iex
 ```
 
+**Đã có Node.js ≥ 18** (macOS hoặc Windows):
+
+```bash
+npx telegram-dashboard
+```
+
 <p align="center">
   <a href="#cài-đặt-3-phút">Cài đặt</a> ·
   <a href="#mở-web-sau-khi-cài">Mở web</a> ·
@@ -71,9 +77,28 @@ Radar gom mọi tin có người **tag** hoặc **reply** bạn trong các nhóm
 
 ## Cài đặt (3 phút)
 
-Không cần cài Python, Node hay git: gói cài đã có sẵn tất cả. Chạy lại lệnh cài = cập nhật, dữ liệu giữ nguyên.
+Có 2 cách, cài ra **cùng một chỗ, cùng một app**: lệnh cài (không cần cài gì trước) hoặc `npx` (cho máy đã có Node.js). Cả hai tải gói từ GitHub Releases và kiểm chữ ký / checksum trước khi cài. Chạy lại = cập nhật, dữ liệu giữ nguyên.
 
-### macOS (Apple Silicon)
+### Chuẩn bị
+
+| Cần | Lệnh cài (khuyên dùng) | `npx` |
+|---|---|---|
+| Máy | Mac chip Apple (M1 trở lên) hoặc Windows 10/11 64-bit | Như bên trái |
+| Cài sẵn | Không cần gì (Python, Node, git đã có trong gói) | **Node.js ≥ 18** (kèm npm) |
+| Quyền Admin | Không | Không |
+| Mạng | Vào được `github.com` | `github.com` và `registry.npmjs.org` |
+
+Kiểm tra trước khi cài:
+
+- **Chip Mac**: menu Apple (góc trái trên) › *About This Mac* › dòng *Chip* phải là **Apple M…**. Mac Intel chưa có gói cài (chạy từ source, xem [Cho developer](#cho-developer)).
+- **Windows 64-bit**: Settings › System › About › *System type* phải là **64-bit operating system**.
+- **Node.js** (chỉ cách `npx`): mở terminal gõ `node -v`, cần `v18` trở lên. Chưa có thì tải bản LTS ở [nodejs.org](https://nodejs.org), cài xong **mở terminal mới**.
+- **Sau khi cài** sẽ cần: Telegram **API ID / API Hash** (lấy ở bước [Lần đầu sử dụng](#lần-đầu-sử-dụng)); tùy chọn token YouTrack và một AI CLI.
+- Đang chạy Radar bản cũ? Windows phải **đóng cửa sổ đen của server** trước khi cài lại / cập nhật.
+
+### Cách 1: lệnh cài
+
+#### macOS (Apple Silicon)
 
 1. Mở **Terminal**: bấm `⌘ Space`, gõ `Terminal`, Enter.
 2. Dán lệnh dưới đây, bấm Enter:
@@ -87,7 +112,7 @@ Không cần cài Python, Node hay git: gói cài đã có sẵn tất cả. Ch�
 
 > **Vì sao không tải zip bằng trình duyệt?** App chưa được Apple notarize nên file tải qua trình duyệt bị chặn (*"Apple could not verify…"*). Lệnh cài ở trên không bị chặn. Nếu đã lỡ tải zip: **System Settings › Privacy & Security › Open Anyway**, hoặc chạy `xattr -dr com.apple.quarantine "<thư mục Telegram Dashboard>"`.
 
-### Windows 10/11 (64-bit)
+#### Windows 10/11 (64-bit)
 
 1. Bấm **Start**, gõ `PowerShell`, mở lên (không cần quyền Admin).
 2. Dán lệnh dưới đây, bấm Enter:
@@ -99,10 +124,27 @@ Không cần cài Python, Node hay git: gói cài đã có sẵn tất cả. Ch�
 3. Lệnh cài vào `%LOCALAPPDATA%\Programs\Telegram Dashboard`, tạo shortcut **Radar** ở Start Menu và Desktop rồi mở app.
 4. Một cửa sổ đen hiện ra: đó là server, **để nguyên** (đóng cửa sổ = tắt app). Trình duyệt tự mở `http://127.0.0.1:8765`.
 
-### Đã có Node.js (≥ 18)
+### Cách 2: `npx` (đã có Node.js ≥ 18)
 
-`npx telegram-dashboard` chạy đúng lệnh cài ở trên (cùng thư mục, cùng kiểm chữ ký) rồi mở app. Lần sau gõ lại để mở;
-`npx telegram-dashboard update` để cập nhật, `npx telegram-dashboard open` để mở lại trang khi app đang chạy.
+1. Mở **Terminal** (macOS) hoặc **cmd / PowerShell** (Windows).
+2. Chạy:
+
+   ```bash
+   npx telegram-dashboard
+   ```
+
+3. Lần đầu npm hỏi `Need to install the following packages… Ok to proceed? (y)`: gõ `y`, Enter.
+4. Lệnh chạy đúng lệnh cài của Cách 1 cho máy bạn (cùng thư mục cài, cùng kiểm chữ ký), rồi mở app như trên.
+
+| Lệnh | Làm gì |
+|---|---|
+| `npx telegram-dashboard` | Chưa cài: cài rồi mở app. Đã cài: mở app (như `myradar start`) |
+| `npx telegram-dashboard update` | Cài bản mới nhất (Windows: đóng app trước) |
+| `npx telegram-dashboard open` | Server đang chạy: chỉ mở lại trang (như `myradar open`) |
+
+- Gói npm chỉ là trình khởi chạy: app và dữ liệu nằm ở thư mục cài của Cách 1, **không** nằm trong `node_modules`, nên xóa cache npm không mất gì.
+- Muốn gõ ngắn: `npm i -g telegram-dashboard` một lần, sau đó dùng `telegram-dashboard`, `telegram-dashboard update`…
+- Windows PowerShell báo *"npx.ps1 cannot be loaded because running scripts is disabled"*: gõ `npx.cmd telegram-dashboard` (hoặc chạy trong **cmd**), không cần đổi Execution Policy.
 
 <details>
 <summary><b>Tải bộ cài bằng tay (Setup.exe / zip)</b></summary>
@@ -133,7 +175,7 @@ Sau khi cài, app tự mở trình duyệt. Những lần sau:
 
 - **Phải dùng `127.0.0.1`**. Mở bằng `localhost` thì trang vẫn hiện nhưng mọi thao tác bị từ chối.
 - Port 8765 bị app khác chiếm thì server tự dùng port trống kế tiếp (8766…) và tự mở đúng địa chỉ. Mở app lần nữa khi đang chạy chỉ mở lại trang, không chạy thêm server.
-- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `myradar open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.backend/telegram_dashboard/api_token`. Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
+- **Màn hình khóa** khi mở bằng bookmark hoặc trình duyệt khác: chạy `myradar open` một lần (trang mở kèm mã, trình duyệt được nhớ ~1 năm), hoặc dán mã trong file `~/.telegram_dashboard/api_token` (Windows: `%USERPROFILE%\.telegram_dashboard\api_token`). Nhờ vậy chương trình khác trên máy, kể cả AI Agent, không gọi được API để gửi tin thay bạn.
 - Tắt app: đóng cửa sổ Terminal / cửa sổ đen của server.
 
 ## Lần đầu sử dụng
@@ -286,7 +328,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 - Nháp / tóm tắt / Digest: `AI_AGENT_COMMAND` (mặc định `claude -p --tools ""`: prompt qua stdin, kết quả qua stdout, tắt công cụ để nội dung chat không thể thực thi gì; timeout 180s), model `AI_MODEL` (mặc định `haiku`, effort `AI_EFFORT` mặc định `medium`). Model / effort chọn trong Cài đặt được ưu tiên.
 - Có dự án hoặc tin có ảnh: `AI_AGENT_PROJECT_COMMAND` (chỉ Read / Grep / Glob / Skill; skill có lệnh shell bị chặn).
 - AI Agent: `AI_TASK_COMMAND` / `AI_TASK_MODEL` / `AI_TASK_EFFORT` (mặc định `sonnet`). AI YouTrack đọc trên 10 ticket cũng chạy bằng model này. Briefing / Digest có model / effort riêng (`by.<cli>.brief_*`; để trống thì theo model tóm tắt).
-- AI Agent **edit**: sửa file (trừ `.claude/`, `.git/`, `.github/`) và chạy shell trong sandbox của Claude Code; mạng chỉ tới kho package (npm, PyPI, Maven, Google Maven, Gradle), không tới `127.0.0.1`. Luôn tắt WebFetch / WebSearch và MCP (trừ codegraph); dùng được skill / plugin của Claude Code; không đọc được `data/`, `.env`, `~/.ssh`, `~/.codex`, `~/.aws`, `~/.config/gh`.
+- AI Agent **edit**: sửa file (trừ `.claude/`, `.git/`, `.github/`) và chạy shell trong sandbox của Claude Code; mạng chỉ tới kho package (npm, PyPI, Maven, Google Maven, Gradle), không tới `127.0.0.1`. Luôn tắt WebFetch / WebSearch và MCP (cả codegraph: máy chủ của nó chạy git ngoài sandbox); dùng được skill / plugin của Claude Code; không đọc được `data/`, `.env`, `~/.ssh`, `~/.codex`, `~/.aws`, `~/.config/gh`.
 - Codex chạy sandbox `read-only` (Task sửa file: `workspace-write`), nháp thì tắt shell. Antigravity chạy custom agent `telegram-dashboard-none` / `-read` / `-edit` (app tự ghi vào `~/.gemini/antigravity-cli/agents/`): nháp / tóm tắt không có tool, lượt đọc chỉ đọc file, Task sửa file chỉ có tool đọc / sửa, không shell. Hạn mức và tự hạ model chỉ có ở Claude. Đổi lệnh bằng `CODEX_COMMAND` / `ANTIGRAVITY_COMMAND`.
 - Nháp AI biết mention nào là bạn (tự lấy @username, `TELEGRAM_ME` để ghi đè), nhớ bạn là cấp gì với từng người gửi và bắt chước giọng các tin bạn từng gửi.
 - Các lệnh AI không nhận biến môi trường `TELEGRAM_*`, `YOUTRACK_*`, `YT_*`, `GH_TOKEN`, `GITHUB_TOKEN`, `NPM_TOKEN`, `AWS_*`, `AZURE_*`, `GOOGLE_APPLICATION_CREDENTIALS`.
@@ -297,7 +339,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 ## Cập nhật
 
 - **Trong app (khuyên dùng)**: **Cài đặt › Cập nhật**. App kiểm tra GitHub mỗi giờ; có bản mới thì nút bánh răng hiện chấm → bấm **Cập nhật** (hộp xác nhận hiện bản mới, danh sách thay đổi và lệnh sẽ chạy), hoặc bật **Tự động cập nhật** (bỏ qua khi đang có task AI Agent). App tải gói mới, khởi động lại và tải lại trang; đăng nhập, cài đặt và dữ liệu giữ nguyên.
-- **Bằng lệnh**: đóng app rồi chạy lại lệnh cài ở trên (hoặc Setup.exe bản mới hơn).
+- **Bằng lệnh**: đóng app rồi chạy lại lệnh cài ở trên, `npx telegram-dashboard update`, hoặc Setup.exe bản mới hơn.
 
 ## Gỡ cài đặt
 
@@ -305,6 +347,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 |---|---|
 | Windows | Settings › Apps › **Radar** › Uninstall. Thư mục `data\` (gồm phiên Telegram) được giữ lại; xóa tay nếu muốn sạch hẳn |
 | macOS | Xóa `~/Applications/Telegram Dashboard`, `~/Applications/Radar.app` và `~/.local/bin/myradar`, `~/.local/bin/mydashboard` |
+| Đã cài qua npm | Gỡ app như hai dòng trên; nếu từng `npm i -g` thì thêm `npm uninstall -g telegram-dashboard` |
 | Cả hai | Nên thu hồi phiên: Telegram › Settings › Devices › kết thúc phiên của Radar |
 
 ## Dữ liệu và bảo mật
@@ -312,7 +355,7 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 - Mọi dữ liệu nằm trong thư mục `data/` của bản cài trên máy bạn: phiên Telegram (`account.session`), database (`dashboard.sqlite3`), cấu hình (`config.json`), log (`server.log`). File quyền 0600, thư mục 0700. Muốn để chỗ khác (ổ khác, thư mục khác): **Cài đặt › Dữ liệu › Đổi thư mục**; app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ (`server.log` đi theo từ lần mở app kế tiếp). Thư mục đã có dữ liệu Radar thì app hỏi có dùng dữ liệu ở đó không (dữ liệu đang dùng giữ nguyên, không xóa). Thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database.
 - **`data/account.session` = quyền đăng nhập Telegram của bạn.** Không copy, không gửi ai.
 - Server chỉ nghe trên `127.0.0.1`, kiểm tra Host / Origin; máy khác trong mạng không truy cập được, Firewall không hỏi.
-- API chỉ nhận trình duyệt đã mở khóa bằng mã (`~/.backend/telegram_dashboard/api_token`).
+- API chỉ nhận trình duyệt đã mở khóa bằng mã (`~/.telegram_dashboard/api_token`).
 - Chỉ tin tag bạn (và tin bạn trả lời) được lưu; không nạp lịch sử.
 - Thu hồi: Telegram › Settings › Devices › kết thúc phiên, rồi xóa `data/account.session`; app sẽ báo `login_required`. Xóa sạch: xóa cả thư mục `data/`.
 
@@ -326,12 +369,38 @@ Cài xong: **khởi động lại Radar**, rồi vào **Cài đặt › AI**:
 
 ## Xử lý sự cố
 
+### Lỗi khi cài / cập nhật
+
+Lệnh cài **không bao giờ cài gói sai chữ ký / sai checksum**: gặp lỗi thì chạy lại sau, đừng tải zip về cài tay để né.
+
+| Thông báo / hiện tượng | Nguyên nhân | Cách sửa |
+|---|---|---|
+| `Chỉ hỗ trợ Mac chip Apple (arm64).` | Mac Intel | Chưa có gói cài: chạy từ source ([Cho developer](#cho-developer)) |
+| `npm error code EBADPLATFORM` hoặc `Radar chỉ có bản macOS (Apple Silicon) và Windows x64.` | Linux / hệ điều hành khác | Chạy từ source |
+| `curl: (6) Could not resolve host`, `(7) Failed to connect`, `(28) … timed out`; npm `ENOTFOUND`, `ETIMEDOUT`, `ECONNRESET` | Mất mạng, hoặc VPN / proxy công ty chặn `github.com` / `registry.npmjs.org` | Kiểm tra mạng, bật / tắt VPN, thử mạng khác (4G). npm sau proxy: `npm config set proxy http://<proxy>:<port>` |
+| `curl: (22) The requested URL returned error: 404`; Windows `Ban vX.Y.Z chua co bo cai Windows.` | Bản mới vừa phát hành, CI chưa đóng gói xong (khoảng 15 phút) | Đợi vài phút rồi chạy lại |
+| `Bản vX.Y.Z không có chữ ký (.sig): không cài.` | Bản phát hành chưa đủ file | Đợi vài phút rồi chạy lại; vẫn lỗi thì báo developer |
+| `Gói tải về không có chữ ký hợp lệ của Radar: không cài.`; Windows `Bo cai tai ve sai checksum: khong cai.` | File tải về bị hỏng hoặc bị thay giữa đường (proxy, mạng chập chờn) | Chạy lại, đổi mạng; vẫn lỗi thì báo developer kèm đoạn lỗi |
+| Windows `Radar dang chay: dong cua so den cua no roi chay lai lenh nay.` | App đang chạy, không ghi đè được | Đóng cửa sổ đen của server rồi chạy lại lệnh |
+| Windows `Invoke-RestMethod: … rate limit exceeded` (403) | GitHub giới hạn số lượt hỏi theo IP (mạng công ty dùng chung IP) | Đợi khoảng 1 giờ hoặc đổi mạng; hoặc tải `Setup.exe` bằng tay (mục *Tải bộ cài bằng tay*) |
+| Windows `Could not create SSL/TLS secure channel` khi chạy `irm` | PowerShell 5.1 trên Windows cũ chưa bật TLS 1.2 | Chạy trước `[Net.ServicePointManager]::SecurityProtocol = 'Tls12'`, rồi chạy lại lệnh `irm` |
+| `node: command not found` / `'npx' is not recognized…` | Chưa cài Node.js, hoặc terminal mở từ trước khi cài | Cài Node.js LTS ở [nodejs.org](https://nodejs.org), **mở terminal mới**; hoặc dùng Cách 1 |
+| `npx.ps1 cannot be loaded because running scripts is disabled` | PowerShell chặn script `.ps1` của npm | Gõ `npx.cmd telegram-dashboard`, hoặc chạy trong **cmd** |
+| `npm warn EBADENGINE` | Node.js cũ hơn 18 | Cập nhật Node.js LTS |
+| `npm error code E404 … telegram-dashboard` | Gói npm chưa phát hành, hoặc npm đang trỏ registry riêng của công ty (`npm config get registry`) | Dùng Cách 1; hoặc `npx --registry https://registry.npmjs.org telegram-dashboard` |
+| `npm error code EACCES` / `EPERM` ở thư mục `~/.npm` | Cache npm thuộc root (từng chạy `sudo npm`) | macOS: `sudo chown -R $(id -u):$(id -g) ~/.npm`; sau đó chạy `npx` **không** kèm `sudo` |
+| `Radar chưa được cài: chạy npx telegram-dashboard trước.` | Gọi `open` khi máy chưa cài Radar | Chạy `npx telegram-dashboard` (không kèm `open`) |
+| Cài xong gõ `myradar` báo `command not found` | Terminal cũ chưa nhận PATH mới | Mở **cửa sổ terminal mới** |
+
+Báo lỗi cài đặt: chép **toàn bộ** chữ trong cửa sổ Terminal / PowerShell (từ dòng lệnh tới dòng lỗi) gửi developer.
+
+### Lỗi khi dùng
+
 | Triệu chứng | Cách xử lý |
 |---|---|
 | Trình duyệt báo không kết nối được | Server chưa chạy hoặc đã tắt: mở lại **Radar** / `myradar start`. Xem log `data/server.log` |
 | Mọi nút bấm báo lỗi / bị từ chối | Đang mở `localhost` → đổi sang `http://127.0.0.1:8765` |
-| Hiện màn hình khóa | Chạy `myradar open`, hoặc dán mã trong `~/.backend/telegram_dashboard/api_token` |
-| `myradar: command not found` | Mở **cửa sổ terminal mới** sau khi cài (PATH mới có hiệu lực) |
+| Hiện màn hình khóa | Chạy `myradar open`, hoặc dán mã trong `~/.telegram_dashboard/api_token` (Windows: `%USERPROFILE%\.telegram_dashboard\api_token`) |
 | Inbox trống sau khi cài | Bình thường: app không nạp lịch sử, chờ có người tag / reply bạn |
 | App báo `login_required` | Phiên Telegram hết hạn hoặc đã bị thu hồi → đăng nhập lại ở Cài đặt › Telegram |
 | `FloodWaitError` khi đăng nhập | Telegram giới hạn số lần thử, đợi đủ số giây báo rồi thử lại |
@@ -372,7 +441,7 @@ Trình duyệt (React, TanStack Query) ──REST /api/*──▶ FastAPI ──
 | UI | **Tailwind CSS** 4.3 (`@tailwindcss/postcss`, token ở `web/src/app/tokens.css`, container query), **shadcn** trên **Base UI** 1.9 (`web/src/shared/components/ui/`), **Motion** 14 (animation, `Pill` / `Segmented`), **lucide-react** (icon), `class-variance-authority`, `tw-animate-css` |
 | Nội dung | `react-markdown` + `remark-gfm` + `remark-breaks` (kết quả AI, tin nhắn); font Quicksand / Be Vietnam Pro / Inter / Nunito tải từ Google Fonts khi được chọn (hoặc font máy) |
 | Kiểu API | `openapi-typescript`: Python xuất OpenAPI → `web/src/shared/lib/api.generated.d.ts` (`npm run api:types`) |
-| AI | Không gọi API trực tiếp: chạy **Claude Code** (`claude -p`), **Codex** (`codex exec`), **Antigravity** (`agy`) dưới dạng subprocess không tương tác, prompt qua stdin; sandbox / tool theo từng lượt (`provider_cmds.py`). Project có `.codegraph/` thì lượt đọc code dùng MCP codegraph (chỉ đọc) |
+| AI | Không gọi API trực tiếp: chạy **Claude Code** (`claude -p`), **Codex** (`codex exec`), **Antigravity** (`agy`) dưới dạng subprocess không tương tác, prompt qua stdin; sandbox / tool theo từng lượt (`provider_cmds.py`). Không nạp MCP codegraph (máy chủ của nó chạy git ngoài sandbox) |
 | Kiểm tra | **pytest** + pytest-asyncio, **Ruff** (line 120, `E F I B UP SIM`), **ESLint** 10 + `eslint-config-next`, `tsc --noEmit`, **Playwright** 1.64 (e2e với backend fixture) |
 | Đóng gói | `scripts/package.py`: CPython standalone (python-build-standalone qua `uv python install`) + deps + app + `web/out` → zip; Windows thêm **Inno Setup** (`packaging/windows/setup.iss`); macOS tạo `Radar.app` từ `install.sh` |
 | Phát hành | GitHub Actions `.github/workflows/release.yml` (action pin theo SHA), ký từng gói bằng **RSA** (`.sig`, khóa công khai `backend/telegram_dashboard/release_key.pem`), lệnh cài kiểm sha256 |
