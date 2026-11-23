@@ -146,6 +146,15 @@ class Env:
 
 
 @pytest.fixture(autouse=True)
+def _own_home(tmp_path, monkeypatch):
+    """An empty home: the developer's ~/.claude/settings.json, ~/.claude.json, Codex config never reach the commands a
+    test builds. Beside tmp_path, not tmp_path: ~ is no project (Settings.forbids_project). A test may set its own."""
+    home = tmp_path.with_name(f"{tmp_path.name}-home")
+    home.mkdir(exist_ok=True)
+    monkeypatch.setenv("HOME", str(home))
+
+
+@pytest.fixture(autouse=True)
 def _no_keychain(monkeypatch):
     """A claude run refreshes the quota for its log line: never the real Keychain/API in tests."""
     import telegram_dashboard.claude as mod

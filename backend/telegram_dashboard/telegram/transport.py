@@ -471,7 +471,7 @@ class TelethonTransport:
                 f = io.BytesIO(doc[1])
                 f.name = doc[0]
                 await self.client.send_file(to, f, force_document=True, reply_to=first.id if first else None)
-        except (errors.FloodWaitError, errors.UserIsBlockedError, errors.PrivacyRestrictedError,
+        except (errors.FloodWaitError, errors.UserIsBlockedError, errors.UserPrivacyRestrictedError,
                 errors.ChatWriteForbiddenError) as e:  # fmt: skip
             if first:  # the text went out already: a resend would send it twice (bridge: delivery_unknown)
                 raise

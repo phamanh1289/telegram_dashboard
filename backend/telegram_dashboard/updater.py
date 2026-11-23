@@ -283,19 +283,33 @@ def auto_enabled(settings) -> bool:
     return bool(_read_json(settings.config_path).get("auto_update", False))
 
 
+async def _owe_restart(root: Path, agent) -> None:
+    """An auto-update is on disk: `pending` names it for the page's restart prompt. A checkout rebuilt web/out in
+    place (this server would hand out the new UI to the old API), so it restarts now, after a running AI Agent task."""
+    global pending
+    try:
+        pending = await _installed(root)
+    except (ApiError, OSError):  # installed all the same: the restart is still owed
+        pending = "new"
+    if home():
+        log.info("auto-update installed %s, waiting for a restart", pending)
+    else:
+        log.info("auto-update pulled %s, restarting", pending)
+        restart(agent)
+
+
 async def auto_loop(settings, agent) -> None:
     """Check every CHECK_EVERY (feeds the badge). When auto-update is on in Settings and no AI Agent
     task is running: install, then wait for the user to restart from the page (`pending`, POST /restart)."""
-    global last_error, pending
+    global last_error
     await asyncio.sleep(60)
     while True:
         try:
             await check(settings.root)
             if (behind and auto_enabled(settings) and not agent.busy
                     and (await apply(settings.root))["updated"]):
-                pending = await _installed(settings.root)
-                log.info("auto-update installed %s, waiting for a restart", pending)
                 last_error = ""
+                await _owe_restart(settings.root, agent)
                 return  # the running code is stale now: a check would offer the same update again
             last_error = ""
         except ApiError as e:

@@ -5,6 +5,7 @@ type Req = components["schemas"]["ContactRequest"];
 export type ContactDraft = Pick<Req, "kind" | "area" | "title" | "text">;
 
 const KEY = "contact-prefill"; // sessionStorage: this tab only, read once by Cài đặt › Liên hệ
+export const PREFILL_EVENT = "contact-prefill"; // Liên hệ already open (no hashchange, no mount): it applies the report
 
 /** A toast's "Báo lỗi": a bug report about `text` / `f` on the current screen, for Liên hệ to open with. The body is the
  *  message's own words (Vietnamese, like the machine info the server adds). */
@@ -23,6 +24,7 @@ export function prefillReport(text: string, f: Failure) {
   try {
     sessionStorage.setItem(KEY, JSON.stringify({ kind: "bug", area, title: text.trim().slice(0, 120), text: body } satisfies ContactDraft));
   } catch { /* blocked storage: Liên hệ just opens empty */ }
+  dispatchEvent(new Event(PREFILL_EVENT));
 }
 
 /** The report a toast left (Liên hệ reads it as it opens, then clears it: StrictMode runs the read twice). */

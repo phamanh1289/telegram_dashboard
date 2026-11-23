@@ -740,6 +740,10 @@ def test_new_tag_in_a_xong_qa_thread_closes(tmp_path):
 
     asyncio.run(run())
     assert [st.get_message(A, i).handled for i in (10, 11, 12, 13)] == [True, False, False, True]
+    # reopened, the messages it had when Xong go: Xong again alone (no list read) closes nothing new through them
+    st.set_qa_mark(A, "#QA72", None)
+    st.set_qa_mark(A, "#QA72", "done")
+    assert st.done_qa(A)[1] == set()
 
 
 def test_snooze_until_reply_or_ticket_wakes_early(tmp_path):

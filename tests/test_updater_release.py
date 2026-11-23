@@ -75,6 +75,17 @@ def test_auto_update_installs_then_waits_for_the_user_to_restart(tmp_path, monke
     monkeypatch.setattr(updater, "auto_enabled", lambda _s: True)
     monkeypatch.setattr(updater, "restart", restarts.append)
     monkeypatch.setattr(updater, "pending", "")
-    asyncio.run(updater.auto_loop(SimpleNamespace(root=tmp_path), SimpleNamespace(busy=False)))
+    monkeypatch.setattr(updater, "home", lambda: tmp_path)  # an installed release: versions/<ver>, its own web/out
+    agent = SimpleNamespace(busy=False)
+    asyncio.run(updater.auto_loop(SimpleNamespace(root=tmp_path), agent))
     assert updater.pending == "v1.2.0"
     assert restarts == []  # the page asks first (POST /api/update/restart)
+
+    # a git checkout rebuilt web/out in place: it restarts now; a version it can't read still owes the restart
+    async def unreadable(_root):
+        raise OSError("gone")
+
+    monkeypatch.setattr(updater, "home", lambda: None)
+    monkeypatch.setattr(updater, "_installed", unreadable)
+    asyncio.run(updater.auto_loop(SimpleNamespace(root=tmp_path), agent))
+    assert updater.pending == "new" and restarts == [agent]

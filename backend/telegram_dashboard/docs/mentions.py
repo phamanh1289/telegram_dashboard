@@ -15,6 +15,7 @@ ARTICLE = re.compile(r"(?<![\w-])([A-Z][A-Z0-9]*-A-\d+)(?!\w)")
 ISSUE = "idReadable,summary,resolved"
 CHUNK = 100  # tickets a search
 MAX = 200  # of each kind: a changelog naming thousands is cut, never a hundred searches
+AT_ONCE = 8  # article reads in flight for one foot (up to MAX of them)
 
 
 def _issue(a: dict) -> DocMention:
@@ -33,12 +34,15 @@ async def _issues(yt, ids: list[str]) -> list[DocMention]:
 
 
 async def _articles(s, refs: list[str]) -> list[DocMention]:
+    gate = asyncio.Semaphore(AT_ONCE)
+
     async def one(ref: str) -> DocMention:
         d = await s.db.read(s.store.doc_find, "yt_article", ref)
         if d:
             return DocMention(ref=ref, title=d["title"], kind="article", doc=d["id"])
         try:
-            a = await s.yt.yt(f"/api/articles/{ref}", fields="idReadable,summary")
+            async with gate:
+                a = await s.yt.yt(f"/api/articles/{ref}", fields="idReadable,summary")
         except YtError as e:
             if e.status != 404:  # 401 / 403 / network: the whole foot says so
                 raise

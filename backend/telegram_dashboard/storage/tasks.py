@@ -322,6 +322,8 @@ class Tasks:
                 c.execute("INSERT OR REPLACE INTO qa_marks VALUES (?,?,?,?)", (chat_id, code, state, now_ts()))
             else:
                 c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=?", (chat_id, code))
+            if state != "done":  # reopened / removed: the messages it had when Xong no longer close new tags
+                c.execute("DELETE FROM qa_members WHERE chat_id=? AND code=?", (chat_id, code))
             return r[0] if r else None
 
     def mark_qa_thread(self, chat_id: str, code: str, handled: bool, *, ids: Sequence[int] = ()) -> list[int]:

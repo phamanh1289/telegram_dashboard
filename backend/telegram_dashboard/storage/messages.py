@@ -113,6 +113,7 @@ class Messages:
             if c.execute("DELETE FROM loop_back WHERE chat_id=?", (chat_id,)).rowcount:
                 self.loop_rev += 1
             c.execute("DELETE FROM auto_pending WHERE chat_id=?", (chat_id,))
+            c.execute("DELETE FROM qa_members WHERE chat_id=?", (chat_id,))  # message ids of the group's Xong Q&A
             c.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
             self._record(c, chat_id, None, "purge", gen)
 

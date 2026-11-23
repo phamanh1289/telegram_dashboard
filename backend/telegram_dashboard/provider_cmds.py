@@ -303,7 +303,7 @@ def _codex_base(settings, model: str, effort: str) -> list[str]:
             *(["-c", f'model_reasoning_effort="{effort}"'] if effort in CODEX_EFFORTS else [])]  # fmt: skip
 
 
-def _agy_agent(kind: str) -> str:
+def agy_agent(kind: str) -> str:
     """The custom agent a run uses, written where agy looks agents up by name: `none`, `read` or `edit`; never with
     the user's customizations (they bring every MCP server they set up)."""
     name = f"telegram-dashboard-{kind}"
@@ -330,7 +330,7 @@ def _agy_base(settings, kind: str, model: str, project: str | None = None) -> li
     writes = ["write_file(*)"] if kind != "edit" else [f"write_file({d})" for d in (*dirs, *mine)]
     perms = json.dumps({"permissions": {"deny": [*_AGY_DENY, *reads, *writes]}})
     return [*exe(settings, "antigravity"), "-p", "", "--input-format", "stream-json", "--output-format", "stream-json",
-            "--disable-slash-commands", "--agent", _agy_agent(kind),
+            "--disable-slash-commands", "--agent", agy_agent(kind),
             "--settings", perms, *(["--model", model] if model else [])]  # fmt: skip
 
 

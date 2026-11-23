@@ -77,3 +77,43 @@ def test_contact_polish_rewrites_draft(client):
     r = client.post("/api/contact/polish", json=draft, headers={"Origin": ORIGIN})
     done = json.loads(r.text.strip().splitlines()[-1])["done"]
     assert done == {"title": "treo", "text": "Chỉ có mô tả"}
+
+
+async def test_contact_send_failing_after_the_text_is_delivery_unknown():
+    """Blocked / FloodWait before anything went out: a plain failure. After the text: unknown (a resend repeats it)."""
+    import pytest
+    from telegram_dashboard.telegram.bridge import SendRejected
+    from telegram_dashboard.telegram.transport import TelethonTransport
+    from telethon import errors
+
+    t = TelethonTransport.__new__(TelethonTransport)  # no client of its own: each case sets one
+    sent = []
+
+    class Client:
+        def __init__(self, fail_text):
+            self.fail_text = fail_text
+
+        async def get_input_entity(self, peer):
+            return peer
+
+        async def send_message(self, to, part, **_):
+            if self.fail_text:
+                raise self.fail_text
+            sent.append(part)
+            return type("M", (), {"id": 1})()
+
+        async def send_file(self, *_a, **_k):
+            raise errors.FloodWaitError(request=None, capture=7)
+
+    t.client = Client(errors.UserIsBlockedError(request=None))
+    with pytest.raises(SendRejected) as e:
+        await t.send_to("dev", "hi", [])
+    assert e.value.code == "forbidden" and not sent
+    t.client = Client(errors.FloodWaitError(request=None, capture=7))
+    with pytest.raises(SendRejected) as e:
+        await t.send_to("dev", "hi", [])
+    assert e.value.code == "retry_after" and e.value.retry_after == 7
+    t.client = Client(None)  # the text goes, the album hits FloodWait: not a SendRejected (bridge: delivery_unknown)
+    with pytest.raises(errors.FloodWaitError):
+        await t.send_to("dev", "hi", [("a.png", b"x")])
+    assert sent == ["hi"]

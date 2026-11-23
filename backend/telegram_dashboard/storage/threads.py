@@ -18,6 +18,7 @@ def _mark_qa(c: sqlite3.Connection, rows: Iterable, handled: bool) -> None:
                 c.execute("INSERT INTO qa_marks VALUES (?,?,'done',?) ON CONFLICT DO NOTHING", (cid, code, now_ts()))
             else:
                 c.execute("DELETE FROM qa_marks WHERE chat_id=? AND code=? AND state='done'", (cid, code))
+                c.execute("DELETE FROM qa_members WHERE chat_id=? AND code=?", (cid, code))  # set_qa_mark too
 
 
 def _session_asks(c: sqlite3.Connection, task_id: str) -> list[sqlite3.Row]:
@@ -79,20 +80,20 @@ def _tags_under(c: sqlite3.Connection, roots: set[tuple[str, int]]) -> list[tupl
             values = list(ids)
             for offset in range(0, len(values), 500):  # stay below SQLite's legacy 999-variable limit
                 chunk = values[offset:offset + 500]
-                yield cid, chunk, ",".join("?" for _ in chunk)
+                yield cid, chunk, ",".join("?" for _ in chunk)  # the SQL below formats in only these
 
+    below = "SELECT message_id FROM messages WHERE chat_id=? AND reply_to_id IN ({})"
+    kept = "SELECT message_id FROM messages WHERE chat_id=? AND outgoing=0 AND deleted=0 AND message_id IN ({})"
     seen, level = set(roots), set(roots)
     for _ in range(CHAIN_MAX):
         children = {(cid, r[0]) for cid, ids, marks in batches(level)
-                    for r in c.execute(f"SELECT message_id FROM messages WHERE chat_id=? AND reply_to_id IN ({marks})",
-                                       (cid, *ids))}  # fmt: skip
+                    for r in c.execute(below.format(marks), (cid, *ids))}  # fmt: skip  # c-sec-ignore: "?" only
         level = children - seen
         if not level:
             break
         seen.update(level)
     return [(cid, r[0]) for cid, ids, marks in batches(seen)
-            for r in c.execute(f"SELECT message_id FROM messages WHERE chat_id=? AND message_id IN ({marks}) "
-                               "AND outgoing=0 AND deleted=0", (cid, *ids))]  # fmt: skip
+            for r in c.execute(kept.format(marks), (cid, *ids))]  # fmt: skip  # c-sec-ignore: "?" only
 
 
 def _qa_text(c: sqlite3.Connection, cid: str, mid: int | None) -> tuple:

@@ -5,7 +5,7 @@ import { BookOpen, Bug, Check, Cpu, Ellipsis, Eye, FileText, HelpCircle, ImagePl
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Card, linkCls, PickPill, picked, StatusLine, tMap, useStatus } from "@/features/settings/components/parts";
-import { clearPrefill, type ContactDraft, readPrefill } from "@/features/settings/lib/contact-prefill";
+import { clearPrefill, type ContactDraft, PREFILL_EVENT, readPrefill } from "@/features/settings/lib/contact-prefill";
 import { AiAsk } from "@/features/youtrack/components/bits";
 import { AiWriting } from "@/shared/components/ai/chat";
 import type { components } from "@/shared/lib/api.generated";
@@ -346,7 +346,12 @@ export function ContactGroup() {
   const t = useT();
   // A toast's "Báo lỗi" opens this with its report; else the saved draft.
   const [d, setD] = useState<Draft>(() => readPrefill() ?? { ...EMPTY, ...(readJson(DRAFT_KEY, {}) as Partial<Draft>) });
-  useEffect(clearPrefill, []);
+  useEffect(() => {
+    clearPrefill();
+    const apply = () => { const p = readPrefill(); if (p) { setD(p); clearPrefill(); } }; // a toast's report, open already
+    addEventListener(PREFILL_EVENT, apply);
+    return () => removeEventListener(PREFILL_EVENT, apply);
+  }, []);
   const [logs, setLogs] = useState(false);
   const [diag, setDiag] = useState(true);
   const [req, setReq] = useState<Req | null>(null); // the message last previewed (photos as base64); kept while the dialog animates out
