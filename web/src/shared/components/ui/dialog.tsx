@@ -214,12 +214,15 @@ function ConfirmDialog({ open, onOpenChange, title, description, items, unit, co
         )}
         {children}
         {error && <p role="alert" className="text-sm text-error">{error}</p>}
-        <DialogFooter>
-          {footerStart && <div className="flex min-w-0 flex-wrap items-center gap-2 sm:mr-auto">{footerStart}</div>}
-          <DialogPrimitive.Close disabled={busy} render={<Button variant="outline" />}>{t("Hủy")}</DialogPrimitive.Close>
-          <Button className={look.button} aria-busy={busy} disabled={busy} onClick={onConfirm}>
-            {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Icon aria-hidden />}{confirmLabel}
-          </Button>
+        {/* wraps: a long footerStart (a link button) takes its own row; Hủy and the confirm button stay together */}
+        <DialogFooter className="sm:flex-wrap">
+          {footerStart && <div className="flex flex-wrap items-center gap-2 sm:mr-auto">{footerStart}</div>}
+          <div className="flex flex-col-reverse gap-2 sm:ml-auto sm:flex-row sm:items-center">
+            <DialogPrimitive.Close disabled={busy} render={<Button variant="outline" />}>{t("Hủy")}</DialogPrimitive.Close>
+            <Button className={look.button} aria-busy={busy} disabled={busy} onClick={onConfirm}>
+              {busy ? <Loader2 className="animate-spin" aria-hidden /> : <Icon aria-hidden />}{confirmLabel}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

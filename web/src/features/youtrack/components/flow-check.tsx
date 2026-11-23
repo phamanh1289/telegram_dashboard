@@ -106,7 +106,7 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
                 const off = isOff(l), [what, fix] = why(l);
                 const label = l.why === "unknown" && l.hint ? l.hint : l.name;
                 return (
-                  <li key={l.no} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,input")) onCite(l.no); }}
+                  <li key={l.no} onClick={(e) => { if (!(e.target as HTMLElement).closest("a,input,button")) onCite(l.no); }}
                     className={cn("grid cursor-pointer grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 rounded-lg border border-rule bg-cotton px-3 py-2.5 transition-[opacity,border-color] hover:border-hl/50", off && "bg-paper-2 opacity-70")}>
                     <Hint side="bottom" text={off ? t("Chọn lại: AI vẽ dòng này") : t("Bỏ chọn: AI không vẽ dòng này")}>
                       <input type="checkbox" checked={!off} onChange={() => onToggle(l)} aria-label={t("Vẽ dòng #{n}", { n: l.no })} className="mt-0.5 size-4 accent-(--color-hl)" />
@@ -114,7 +114,7 @@ function Issues({ risk, isOff, onToggle, onSetAll, onCite }: { risk: FlowCheck["
                     <div className="grid grid-cols-1 gap-1">
                       <div className="flex items-start gap-2">
                         <Hint side="bottom" text={t("Đưa dòng này vào câu hỏi AI (bấm cả dòng cũng được)")}>
-                          <span className="shrink-0 rounded bg-hl-wash px-1.5 font-mono text-2xs leading-5 text-hl-2">#{l.no}</span>
+                          <button type="button" onClick={() => onCite(l.no)} className="shrink-0 rounded bg-hl-wash px-1.5 font-mono text-2xs leading-5 text-hl-2 hover:brightness-95">#{l.no}</button>
                         </Hint>
                         <span className={cn("min-w-0 font-mono text-xs leading-5 break-words text-ink", off && "line-through")}><Linked text={l.line} /></span>
                       </div>

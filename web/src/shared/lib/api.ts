@@ -15,6 +15,10 @@ export type Project = S["ProjectDTO"];
 export type Task = S["TaskDTO"];
 export type DataStats = S["DataStats"];
 export type PendingItem = S["PendingItem"];
+export type Follow = S["Follow"];
+export type FollowWait = S["FollowWait"];
+export type FollowChange = S["FollowChange"];
+export type WaitReplies = S["WaitReplies"];
 export type Rule = S["RuleDTO"];
 export type RuleAdded = S["RuleAdded"];
 export type HandledAllResponse = S["HandledAllResponse"];
@@ -35,6 +39,7 @@ export type DigestTopic = S["DigestTopic"];
 export type HistoryPage = S["HistoryPage"];
 export type BriefingItem = S["BriefingItem"];
 export type QaItem = S["QaItem"];
+export type QaList = S["QaList"];
 export type QaPosted = S["QaPosted"];
 export type SavedDigest = S["SavedDigest"];
 export type GroupInfo = S["GroupInfo"];
@@ -153,8 +158,9 @@ export const statusQuery = {
   queryFn: ({ signal }: { signal: AbortSignal }) => api<Status>("/status", { signal }),
 };
 
-/** Codes whose `detail` is the CLI's own words, worth showing after ours. */
-const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_login_failed", "ai_login_failed"]);
+/** Codes whose `detail` is the CLI's own words (or YouTrack's: why it refused a new ticket, or that it may have been
+ *  created), worth showing after ours. */
+const WITH_DETAIL = new Set(["ai_provider_error", "task_launch_failed", "claude_login_failed", "ai_login_failed", "youtrack_error"]);
 
 /** The message for an error's code; an AI run's failure also gets the CLI's own reason (`detail`). */
 export function errorText(e: unknown, map: Record<string, string>, fallback = t("Có lỗi xảy ra.")) {

@@ -75,7 +75,7 @@
     "tab": "youtrack",
     "area": "Home page (Dev/QA/PO) › AI Studio",
     "title": "AI Studio on the home page",
-    "what": "A card that groups the role's AI jobs into tabs; answers are saved for the day (Weekly digest: for the week) so reopening them costs no run. Dev: Plan, Standup. QA: Test cases, Bug triage, Regression, Ticket quality. PO: Brief, Sprint planning, Grooming, Weekly digest, Release notes.",
+    "what": "A card that groups the role's AI jobs into tabs; answers are saved for the day (Weekly digest: for the week) so reopening them costs no run. Dev: Plan, Standup. QA: Test cases (for a ticket with a saved UI flow they follow the screens and buttons drawn there), Bug triage, Regression, Ticket quality. PO: Brief, Sprint planning, Grooming, Ticket quality (sprint tickets not yet in test that lack acceptance criteria, with suggestions), Weekly digest, Release notes.",
     "how": [
       {
         "t": "In the \"AI Studio\" card, click the second AI tab (Dev: \"Standup\", QA: \"Bug triage\", PO: \"Sprint planning\")",
@@ -92,7 +92,7 @@
       },
       "Press Esc. \"Redo\" runs it again, \"Delete\" removes the saved content"
     ],
-    "keys": "ai studio plan standup test case bug triage regression ticket quality brief sprint planning grooming weekly update release notes"
+    "keys": "ai studio plan standup test case bug triage regression ticket quality brief sprint planning grooming weekly update release notes ticket quality missing ac po"
   },
   {
     "id": "yt-ai-standup-dev",
@@ -230,6 +230,32 @@
     "keys": "brief po pm waiting for po decision sprint progress needs attention wip overview"
   },
   {
+    "id": "yt-hoi-ban-trong-binh-luan",
+    "tab": "youtrack",
+    "area": "YouTrack home › Asked of you in comments",
+    "title": "YouTrack comments asking you (not answered yet)",
+    "what": "Open tickets (commented on in the last 30 days) with a comment by someone else asking you (tags your @login, names you) after your last comment: someone chiming in after the question does not hide it. Also shown on Telegram's Today page. PO/PM role: at the bottom of the \"Waiting for PO\" card, also counting comments that ask the PO / PM (a question with \"?\" naming the PO / PM, or \"cần / nhờ / chờ / hỏi PO\", \"PO ơi / giúp\"); a comment that only names the PO, like \"chốt thay PO\" or \"PO đã chốt\", does not count. Dev and QA roles: its own \"Asked of you in comments\" card in the home's right column. Once you comment after it, the ticket leaves the list. Click a row to open the ticket and answer. While you are on Telegram / Documents / Settings, tickets with a comment asking you add to the yellow badge on the top bar's YouTrack button (with tickets at risk and, for PO/PM, tickets waiting on your decision).",
+    "how": [
+      {
+        "t": "Open the YouTrack home (Dev: Today, QA: Testing, PO: Overview)",
+        "at": [
+          "Hôm nay",
+          "Kiểm thử",
+          "Tổng quan"
+        ]
+      },
+      {
+        "t": "Under “Asked of you in comments” (PO: at the bottom of the “Waiting for PO” card), click a row to open the ticket",
+        "at": "css:ul[aria-label=\"Hỏi bạn trong bình luận\"] li button"
+      },
+      {
+        "t": "Write your answer in the comment box at the bottom of the side panel, ⌘↵ sends: the ticket leaves the list",
+        "at": "css:textarea[aria-label=\"Bình luận mới\"]"
+      }
+    ],
+    "keys": "asked of you in comments waiting on po comment youtrack tag mention po pm unanswered hoi ban trong binh luan dev qa"
+  },
+  {
     "id": "yt-ai-brief-po",
     "tab": "youtrack",
     "area": "Brief (PO) › AI Studio",
@@ -280,7 +306,7 @@
       },
       "Wait for the AI to finish (close the panel with Esc so the report shows in the card); schedule automatic reports in Settings › YouTrack",
       {
-        "t": "Click \"Show all\" (or \"Collapse\") to expand the content",
+        "t": "A long report is folded in the card: click \"Show all\" (or \"Collapse\") to expand it; a short report shows whole, without this button",
         "at": [
           "Xem đầy đủ",
           "Thu gọn"

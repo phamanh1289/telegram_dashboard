@@ -215,8 +215,37 @@ def test_split_format_utf16_offsets():
     text, ents = split_format("😀 hỏi [Lan QA](tg://user?id=43) và [Minh](tg://user?id=42) nhé")
     assert text == "😀 hỏi Lan QA và Minh nhé"
     assert ents == [(7, 6, 43), (17, 4, 42)]  # 😀 is 2 UTF-16 units, as Telegram and JS count
-    assert split_format("không tag [x](https://a.b)") == ("không tag [x](https://a.b)", [])
+    assert split_format("xem [Sprint 3 · T11](https://yt.example/articles/VA-A-1) nhé") == (
+        "xem Sprint 3 · T11 nhé", [(4, 14, "https://yt.example/articles/VA-A-1")]
+    )  # a "#" document: the link under its title
+    assert split_format("[x](ftp://a.b) [y](https://a b)") == ("[x](ftp://a.b) [y](https://a b)", [])
     # code spans: backticks dropped, a tag inside backticks stays code, a lone ` stays text
     text, ents = split_format("1. Q171: `data` và `[a](tg://user?id=1)` lẻ ` nhé\n```json\n{}\n```")
     assert text == "1. Q171: data và [a](tg://user?id=1) lẻ ` nhé\n{}"
     assert ents == [(9, 4, "code"), (17, 19, "code"), (46, 2, "pre")]
+
+
+async def test_ask_to_a_role_opens_with_the_tags_set_for_it(ready, monkeypatch):
+    """Settings › Luôn bỏ qua › Tag bot BE / PO / QC: the session's prompt names them, the send adds those missing."""
+    from telegram_dashboard import ai
+    from telegram_dashboard.ai_prompts import ASK_MSG, session_rules
+
+    monkeypatch.setattr(ai, "cached_username", {"7": "be_bot"}.get)
+    ready.store.add_rule("tag_be", "7", "BE Hỗ trợ")
+    _, cleared = ready.store.add_rule("tag_be", "42", "Lan [PO] <x>")  # no @username: tagged by name, name cleaned
+    assert cleared == []  # a tag rule clears no pending tag
+    tags = ai.role_tags(ready.store.list_rules())
+    assert tags == {"BE": ["@be_bot", "[Lan PO x](tg://user?id=42)"]}
+    rules = session_rules("plan", "dev", "android", "", tags=tags)
+    assert "`**BE:**` (câu cần BE confirm) luôn mở bằng `@be_bot [Lan PO x](tg://user?id=42)`" in rules
+    assert "citics_be_support_bot" not in rules and "citics_be_support_bot" in ASK_MSG  # the default, nothing set
+
+    ask = ReplyRequest(request_id=uuid.uuid4(), chat_id=A, reply_to_message_id="5", text="@BE_bot 1. status?",
+                       quote=False, qa=True, qa_role="BE")  # fmt: skip
+    rec = await ready.bridge.submit_reply(ask)
+    sent = ready.fake.send_calls[-1]["text"]
+    assert rec.status == "sent" and sent.startswith("[Lan PO x](tg://user?id=42) @BE_bot 1. status?\n#QA_BE_")
+    assert (await ready.bridge.submit_reply(ask)).status == "sent" and len(ready.fake.send_calls) == 1  # same request
+    plain = req(text="hỏi PO")  # no role (a typed reply): as typed
+    await ready.bridge.submit_reply(plain)
+    assert ready.fake.send_calls[-1]["text"] == "hỏi PO"

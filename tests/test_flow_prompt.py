@@ -62,8 +62,11 @@ def test_explicit_tree_builds_ids_buttons_and_links_code_keeps_metadata_over_ai(
 
 
 def test_ambiguous_tree_is_not_guessed_and_legacy_ids_remap_by_url():
-    result = build(detail(description=f'[Login]({URL}a)\n├─ “Go” → unknown'))
+    own = detail(description=f'[Login]({URL}a)\n├─ “Go” → unknown')
+    result = build(own)
     assert not result.skeleton["links"] and result.manifest["ambiguous_lines"] == 1
+    # "Chỉ màn hình" draws no link: the unclear lines are no warning there
+    assert result.warnings and not build(own, links=False).warnings
     assert p.unclear("├─ “Go” → unknown", {}) == {"why": "unknown", "name": "unknown", "hint": ""}
     assert p.unclear("├─ “Go” → Đăng nhap", {"Đăng nhập": {"s1"}})["hint"] == "Đăng nhập"
     assert p.unclear("A → B", {})["why"] == "format"
@@ -200,6 +203,24 @@ def test_rerender_keeps_the_flow_on_screen_so_the_ai_writes_only_what_is_new():
     assert ids == [login, home, "err"] and result.skeleton["screens"][0]["ac"] == "AC1"
     assert {"src": f"{login}.x", "to": "err", "act": "open"} in result.skeleton["links"]
     assert result.manifest["reused"] == 1  # the link to the gone screen is dropped
+
+
+def test_rerender_merges_a_hand_added_screen_into_its_design_not_a_second_copy():
+    text = f'[Login]({URL}a)\n├─ “Go” → [Home]({URL}b)'
+    login, home = flow_merge.stable_id(URL+"a"), flow_merge.stable_id(URL+"b")
+    previous = {"screens": [  # "s1": added in the editor, then linked to Login's design
+        {"id": "s1", "title": "Login", "zeplin": URL+"a",
+         "items": [{"id": "b1", "label": "Go"}, {"id": "b2", "label": "Quên"}]},
+        {"id": home, "title": "Home", "zeplin": URL+"b", "items": []},
+        {"id": "err", "title": "Lỗi", "kind": "popup", "parent": "s1", "zeplin": "", "items": []}],
+        "links": [{"src": "s1.b1", "to": "err", "act": "open"}, {"src": "s1.b2", "to": home}]}
+    result = build(detail(description=text), previous=previous)
+    screens = {s["id"]: s for s in result.skeleton["screens"]}
+    assert list(screens) == [login, home, "err"] and screens["err"]["parent"] == login
+    go = next(i["id"] for i in screens[login]["items"] if i["label"] == "Go")  # the skeleton's own button, not a twin
+    assert [i["label"] for i in screens[login]["items"]].count("Go") == 1
+    assert {"src": f"{login}.{go}", "to": "err", "act": "open"} in result.skeleton["links"]
+    assert {"src": f"{login}.b2", "to": home} in result.skeleton["links"] and result.manifest["reused"] == 2
 
 
 def test_split_parts_share_the_ac_keep_own_screens_and_combine_once():

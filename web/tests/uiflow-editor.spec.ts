@@ -465,7 +465,7 @@ test("a screen turned into a popup takes its arrows along: in Đi tới → Mở
   expect(await acts()).toEqual(["code.later>home:navigate:AC-3", "home>code:back:AC-9"]);
 });
 
-test("every screen picked to edit is zoomed onto, the first and every one after; on its title the move waits out a double click", async ({ page }) => {
+test("a click on a screen only highlights it, a double click zooms onto it; a double click on its title renames, the camera stays", async ({ page }) => {
   await page.setViewportSize({ width: 2400, height: 1000 }); // wide: the next screen is whole and readable beside it
   await open(page);
   await edit(page);
@@ -477,21 +477,27 @@ test("every screen picked to edit is zoomed onto, the first and every one after;
     return Math.abs(c.x + c.width / 2 - (v.x + v.width / 2));
   };
   const centred = (id: string) => expect.poll(() => off(id)).toBeLessThan(4);
-  for (const id of ["code", "home", "code"]) { // the next one too, readable already: the camera still comes to it
+  const body = async (id: string) => { // a point on its body, under its buttons, above popup and panel
     const [c, v] = [await box(page, `.uf-screen[data-id="${id}"] .uf-card`), await box(page, ".uf-view")];
-    const x0 = Math.max(c.x, v.x), x1 = Math.min(c.x + c.width, v.x + v.width); // its part in the view
-    if (id === "home") expect([c.x >= v.x, c.x + c.width <= v.x + v.width, last[0] >= 0.6]).toEqual([true, true, true]);
-    await page.mouse.click((x0 + x1) / 2, c.y + c.height * 0.38); // the body, under its buttons, above popup and panel
+    return [(Math.max(c.x, v.x) + Math.min(c.x + c.width, v.x + v.width)) / 2, c.y + c.height * 0.38] as const;
+  };
+  await rest();
+  for (const id of ["code", "home", "code"]) {
+    const was = await cam();
+    await page.mouse.click(...(await body(id)));
     await expect(page.locator(`.uf-screen[data-id="${id}"]`)).toHaveClass(/uf-sel/);
+    await rest();
+    expect(last).toEqual(was); // a single click: highlighted, the camera stays
+    await page.mouse.dblclick(...(await body(id)));
     await rest();
     expect(last[0]).toBeGreaterThanOrEqual(0.6);
     await centred(id);
   }
-  const t = await box(page, '.uf-screen[data-id="home"] .uf-title'), v = await box(page, ".uf-view");
   const was = await cam();
-  await page.mouse.click(Math.min(t.x + t.width - 8, v.x + v.width - 8), t.y + t.height / 2); // its title's part in view
-  expect(await cam()).toEqual(was); // not yet: a second click may follow to rename it
-  await centred("home");
+  await page.locator('.uf-screen[data-id="code"] .uf-title').dblclick();
+  await expect(page.locator('.uf-screen[data-id="code"] .uf-title[contenteditable]')).toBeVisible();
+  expect(await cam()).toEqual(was);
+  await page.keyboard.press("Escape");
 });
 
 test("the flow's own name: one edit, one undo step; blank drops it; a file's name is read back clean", async ({ page }) => {

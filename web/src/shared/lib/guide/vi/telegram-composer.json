@@ -82,7 +82,7 @@
     "tab": "telegram",
     "area": "Khung Trả lời › Tóm tắt",
     "title": "AI tóm tắt và gợi ý trả lời",
-    "what": "AI tóm tắt tin được tag (kèm ngữ cảnh nhóm) theo góc nhìn vai trò và nền tảng, đề xuất bước tiếp theo và các mẫu trả lời; hiện chữ trực tiếp khi AI đang viết.",
+    "what": "AI tóm tắt tin được tag (kèm ngữ cảnh nhóm) theo góc nhìn vai trò và nền tảng, đề xuất bước tiếp theo và các mẫu trả lời; hiện chữ trực tiếp khi AI đang viết. Vai trò PO: tin chờ bạn quyết thì AI tìm thêm trong Tài liệu (Knowledge Base, file) và thêm mục \"Phương án\" (các lựa chọn bằng lời thường) + \"Nên chọn\" (kèm lý do, ghi tài liệu căn cứ); các mẫu trả lời chốt luôn theo phương án đó.",
     "how": [
       {
         "t": "Bấm \"Việc cần xử lý\" ở thanh bên để có danh sách tin",
@@ -106,7 +106,7 @@
       "Chữ hiện dần khi AI viết; bấm \"Hủy\" để dừng, \"Tóm tắt lại\" để chạy lại.",
       "Mỗi lần hỏi được lưu vào phiên Trợ lý AI của tin đó (một tin một phiên, có mã REF-…): mở lại tin là thấy các lượt cũ, AI nhớ các lượt trước. Câu hỏi AI soạn sẵn (khối trích dẫn mở bằng @tên) có nút chép và nút gửi thẳng vào nhóm kèm mã #QA để Q&A theo dõi trả lời. Hỏi tiếp, Done hay xóa phiên ở AI Agent › Trợ lý AI."
     ],
-    "keys": "tom tat goi y ai summary draft prompt phim a tom tat lai huy phien tro ly ai luu gui cau hoi qa"
+    "keys": "tom tat goi y ai summary draft prompt phim a tom tat lai huy phien tro ly ai luu gui cau hoi qa po phuong an nen chon chot knowledge base tai lieu"
   },
   {
     "id": "composer-ai-code",

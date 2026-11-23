@@ -3,7 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Info } from "lucide-react";
 import { useState } from "react";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
+import { Pill } from "@/shared/components/ui/segmented";
 import { api, errorText, statusQuery } from "@/shared/lib/api";
 import { type Key, t as tPlain, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
@@ -17,25 +19,28 @@ export function useStatus() {
 }
 
 /** A settings card: title (+ the long explanation behind the bulb), an optional action on the right, then its rows.
- *  `advanced`: rarely changed; folded to its title until opened, so the everyday settings come first. `title` (the key) is
+ *  `advanced`: rarely changed; folded to its title until opened (animated both ways), so the everyday settings come first;
+ *  `badge` shows beside the title while folded (e.g. how many rules it holds). `title` (the key) is
  *  also the search's scroll anchor (`data-card`), the same in both languages. */
-export function Card({ title, info, action, advanced, children }: { title: Key; info?: Key; action?: React.ReactNode; advanced?: boolean; children: React.ReactNode }) {
+export function Card({ title, info, action, advanced, badge, children }: { title: Key; info?: Key; action?: React.ReactNode; advanced?: boolean; badge?: React.ReactNode; children: React.ReactNode }) {
   const t = useT();
   const [open, setOpen] = useState(!advanced);
+  const body = <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5">{children}</div>;
   return (
     <section aria-label={t(title)} data-card={title} className="grid scroll-mt-24 rounded-[var(--radius-card)] border border-rule bg-cotton shadow-stock outline-offset-2 data-flash:outline-2 data-flash:outline-hl">
-      <header className={cn("flex min-h-11 items-center gap-1.5 px-4 pt-3 sm:px-5", !open && "pb-3")}>
+      <header className="flex min-h-11 items-center gap-1.5 px-4 py-3 sm:px-5">
         {advanced ? (
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 rounded-sm text-sm font-bold text-ink">
             <ChevronDown className={cn("size-4 text-ink-3 transition-transform duration-(--dur-short) ease-(--ease-out)", !open && "-rotate-90")} aria-hidden />
             <h3>{t(title)}</h3>
             <span className="rounded-full bg-paper-2 px-1.5 text-2xs font-medium text-ink-3">{t("Nâng cao")}</span>
+            {!open && badge}
           </button>
         ) : <h3 className="text-sm font-bold text-ink">{t(title)}</h3>}
         {info && <InfoHint title={t(title)} text={t(info)} />}
         {action && open && <span className="ml-auto flex items-center gap-2">{action}</span>}
       </header>
-      {open && <div className="grid divide-y divide-rule px-4 pb-4 sm:px-5 animate-in fade-in-0 slide-in-from-top-1 duration-(--dur-short) ease-(--ease-out) motion-reduce:animate-none">{children}</div>}
+      {advanced ? <Fold open={open}>{body}</Fold> : body}
     </section>
   );
 }
@@ -88,8 +93,13 @@ export function Switch({ label, checked, onChange, disabled }: { label: string; 
   );
 }
 
-/** A picked / unpicked tile (role, mascot, drawing, preset mix): the border and wash say which. */
-export const picked = (on: boolean) => cn("transition-[background-color,border-color] duration-(--dur-micro)", on ? "border-hl bg-hl-wash" : "border-rule hover:border-rule-2 hover:bg-paper-2");
+/** A picked / unpicked tile (role, mascot, drawing, preset mix). The picked tile's border and wash are a `PickPill`
+ *  that slides between tiles like `Segmented`; the tile's own border hides under it. */
+export const picked = (on: boolean) => cn("relative isolate transition-[background-color,border-color] duration-(--dur-micro)", on ? "border-transparent" : "border-rule hover:border-rule-2 hover:bg-paper-2");
+
+/** The picked tile's sliding highlight: `id` per group, `className` the tile's radius. Behind the content (`-z-10` in the tile's `isolate`). */
+export const PickPill = ({ id, on, className }: { id: string; on: boolean; className: string }) =>
+  on ? <Pill id={id} className={cn("-inset-px -z-10 border border-hl bg-hl-wash", className)} /> : null;
 
 /** An error-code map of keys, translated for `errorText`. */
 export const tMap = (t: (k: Key) => string, m: Record<string, Key>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, t(v)]));

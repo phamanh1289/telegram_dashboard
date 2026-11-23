@@ -1,7 +1,7 @@
 // Dashboard numbers for the YouTrack module (pure, no DOM); ported from public/yt/js/stats.js.
 import { fmtDay, type Key, t, tMaybe } from "@/shared/lib/i18n";
 import type { YtRole } from "@/shared/lib/prefs";
-import { bucket, byAs, bySp, DAY, type Filters, isBug, QUICK, shortSp, type Sprint, tagsOf, type Ticket } from "@/features/youtrack/lib/yt";
+import { bucket, byAs, bySp, DAY, type Filters, isBug, needsPo, QUICK, riskOf, shortSp, type Sprint, tagsOf, type Ticket } from "@/features/youtrack/lib/yt";
 
 export const AGE = { warn: 2, bad: 3 }; // days a ticket may sit in a watched state: > warn amber, > bad red
 const SEV = { bad: 0, warn: 1 };
@@ -12,6 +12,21 @@ const ATTN: Record<YtRole, [string, keyof typeof SEV][]> = {
   po: [["waitpo", "bad"], ["critical", "bad"], ["overdue", "bad"], ["blocked", "bad"], ["unassigned", "warn"], ["noest", "warn"], ["stale", "warn"]],
 };
 const up = (s: string | null | undefined) => String(s || "—").toUpperCase();
+
+export const PO_WAIT = "Chờ bạn chốt";
+/** Why one of my tickets (assigned or QC) needs me now, by role: its risk (a PO: any of them, QA: the ones they QC, a
+ *  Dev or no role yet: the assigned ones), or (PO) it sits in a define / confirm State assigned to me. null: nothing
+ *  now. One rule for Hôm nay and the top bar's count. */
+export function needOf(role: YtRole | null, i: Ticket, me: string | null | undefined, now: number) {
+  if (role !== "po" && (role === "qa" ? i.qc : i.assignee) !== me) return null;
+  return riskOf(i, now) ?? (role === "po" && needsPo(i) && i.assignee === me ? t(PO_WAIT) : null);
+}
+/** Reasons that put a ticket under Hôm nay's "Gấp". */
+export const needHot = (why: string) => why === t("Quá hạn") || why === t("Blocked");
+/** "Bỏ qua" on Hôm nay (kept in the Briefing done store, telegram/lib/follow.ts): a ticket row stays off until the ticket
+ *  changes or turns urgent, an ask until a newer one. The top bar's count reads the same keys. */
+export const skipNeedKey = (i: Ticket, why: string) => `ytskip:${i.id}:${i.updated}${needHot(why) ? ":hot" : ""}`;
+export const skipAskKey = (id: string, created: number) => `ytask:${id}:${created}`;
 const inSet = (set: Set<string>) => (i: Ticket) => i.sprints.some((s) => set.has(s));
 export const kindOf = (i: Ticket) => (isBug(i) ? "bug" : ["Story", "Improvement", "Feature"].includes(i.type ?? "") ? "feat" : "task");
 export const day0 = (t: number) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };

@@ -33,7 +33,9 @@ export default {
   "Có lỗi xảy ra.": "Something went wrong.",
   // lib/yt (the YouTrack router's fixed error texts)
   "Backend chưa có tính năng này: khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại.": "The backend does not have this feature yet: restart the dashboard (Start Dashboard › Restart) and try again.",
+  "Dashboard từ chối yêu cầu ở “{where}”. Nếu vừa cập nhật app, khởi động lại dashboard (Start Dashboard › Restart) rồi thử lại.": "The dashboard refused the request at “{where}”. If you just updated the app, restart the dashboard (Start Dashboard › Restart) and try again.",
   "Không kết nối được YouTrack": "Could not connect to YouTrack",
+  "Không rõ YouTrack đã ghi chưa — mở lại ticket để kiểm tra trước khi làm lại": "Not sure YouTrack saved it — reopen the ticket to check before doing it again",
   "YouTrack trả về không phải JSON — kiểm tra URL YouTrack trong Cài đặt": "YouTrack did not return JSON — check the YouTrack URL in Settings",
   "Chưa có token YouTrack — dán token trong Cài đặt": "No YouTrack token yet — paste one in Settings",
   "Tệp quá lớn để xem trong dashboard — mở trên YouTrack": "The file is too large to view in the dashboard — open it in YouTrack",

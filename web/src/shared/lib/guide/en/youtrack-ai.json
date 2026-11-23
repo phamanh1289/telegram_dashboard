@@ -38,7 +38,7 @@
     "tab": "youtrack",
     "area": "Side panel › AI session › Suggestion buttons",
     "title": "Ready-made prompts in the AI session",
-    "what": "Ready-made AI job buttons: Thread summary, Check AC coverage, Split tasks & estimate, Tidy up description, Test cases, Draft reply (1 ticket); Summary & to-dos, Review for lead, Release notes (several tickets). Each role has 4 default buttons.",
+    "what": "Ready-made AI job buttons: Thread summary, Check AC coverage, Split tasks & estimate, Tidy up description, Test cases, Draft reply (1 ticket); Summary & to-dos, Review for lead, Release notes (several tickets). Each role has 4 default buttons. PO/PM role: a \"Tidy up description\" answer has \"Save to description\", which opens Update story on the new text (see the changes, edit, save on YouTrack; blocked when the description changed after the AI read it).",
     "how": [
       {
         "t": "Click \"Tickets\"",
@@ -62,7 +62,43 @@
       },
       "Buttons that need exactly 1 ticket or 2+ tickets tell you in a notice"
     ],
-    "keys": "ready-made prompts summarize thread check ac split tasks estimate tidy up description test cases draft reply review for lead release notes"
+    "keys": "ready-made prompts summarize thread check ac split tasks estimate tidy up description test cases draft reply review for lead release notes save to description po"
+  },
+  {
+    "id": "yt-luu-vao-mo-ta",
+    "tab": "youtrack",
+    "area": "Side panel › AI session › Tidy up description (PO)",
+    "title": "Tidy up the description, then save it on the ticket",
+    "what": "PO/PM role: the answer of “Tidy up description” in a one-ticket AI session has “Save to description”. It opens Update story on the new text: see the changes against the current description, edit if needed, then “Save” (blocked when the description changed after the AI read it). A description too long for the AI to read whole only offers Copy.",
+    "how": [
+      {
+        "t": "Click “Ticket”",
+        "at": "Ticket"
+      },
+      {
+        "t": "Click a ticket row (on its title) to open the side panel",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Click ✨ “AI for this ticket”",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Click the “Tidy up description” suggestion",
+        "at": "Chuẩn hoá mô tả"
+      },
+      "Wait for the AI to write the new description",
+      {
+        "t": "Click “Save to description”",
+        "at": "Lưu vào mô tả"
+      },
+      "See the “Compare” tab; “Write” to change it by hand",
+      {
+        "t": "Click “Save”",
+        "at": "css:button[data-story-save]"
+      }
+    ],
+    "keys": "tidy up description save to description rewrite po pm"
   },
   {
     "id": "yt-dua-vao-binh-luan",

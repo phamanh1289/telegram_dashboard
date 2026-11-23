@@ -59,7 +59,7 @@ export function usePrompts() {
     onError: (e) => toast({ text: tNow("Không lưu được prompt: {msg}", { msg: (e as Error).message }) }),
   });
   const lib: PromptLib = { prompts: [], shown: {}, hidden: [], ...q.data };
-  return { q, lib, save: m.mutate, saving: m.isPending };
+  return { q, lib, save: m.mutate, saving: m.isPending }; // save(next, { onSuccess }): act only once it is stored
 }
 
 type Item = { name: string; label: string; sub: string; mine?: number }; // name: the stored one (identity), label: shown; mine: index in lib.prompts (a team prompt)
@@ -81,7 +81,7 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
   const ctx: PromptCtx = `${role}:${many ? "many" : "one"}`;
   const custom = !!lib.shown[ctx];
   const shown = shownFor(lib, ctx);
-  const update = (next: Partial<PromptLib>) => put({ ...lib, ...next });
+  const update = (next: Partial<PromptLib>, done?: () => void) => put({ ...lib, ...next }, { onSuccess: done });
   const everywhere = (f: (names: string[]) => string[]) => Object.fromEntries(Object.entries(lib.shown).map(([k, v]) => [k, f(v)])); // every context's buttons
 
   const items: Item[] = [
@@ -101,12 +101,12 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
   function save() {
     if (!ok) return;
     const p = { name, text: draft.text.trim() };
-    if (edit === "new") update({ prompts: [...list, p] });
+    const close = () => setEdit(null); // only once saved: a failed save keeps the form and what was typed
+    if (edit === "new") update({ prompts: [...list, p] }, close);
     else {
       const was = list[edit as number].name; // a renamed prompt keeps its buttons
-      update({ prompts: list.map((x, k) => (k === edit ? p : x)), shown: everywhere((v) => v.map((s) => (s === was ? name : s))) });
+      update({ prompts: list.map((x, k) => (k === edit ? p : x)), shown: everywhere((v) => v.map((s) => (s === was ? name : s))) }, close);
     }
-    setEdit(null);
   }
   function remove(i: Item) {
     const shownNext = everywhere((v) => v.filter((s) => s !== i.name));
@@ -114,6 +114,7 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
     else update({ hidden: [...lib.hidden, i.name], shown: shownNext });
     setConfirm(null);
     if (edit === i.mine) setEdit(null);
+    else if (i.mine !== undefined && typeof edit === "number" && i.mine < edit) setEdit(edit - 1); // the list shifts under the open form
   }
   function pin(n: string) {
     const set = (v: string[]) => update({ shown: { ...lib.shown, [ctx]: v } }); // the first change starts from the role's default
@@ -152,7 +153,7 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
     const main = onPick ? () => onPick(i.name) : i.mine !== undefined ? () => open(i.mine!) : undefined;
     return (
       <li key={i.name} className="group relative flex items-center gap-1 rounded-lg pr-1 transition-colors duration-(--dur-micro) hover:bg-paper-2 focus-within:bg-paper-2">
-        <button type="button" disabled={!main} onClick={main} title={i.sub}
+        <Hint side="bottom" text={i.sub.length > 300 ? `${i.sub.slice(0, 300)}…` : i.sub}><button type="button" disabled={!main} onClick={main}
           className="flex min-w-0 flex-1 items-start gap-2.5 rounded-lg px-2 py-2 text-left outline-none">
           <span className={cn("mt-0.5 grid size-6 shrink-0 place-items-center rounded-md", i.mine !== undefined ? "bg-hl-wash text-hl-2" : "bg-paper-2 text-ink-3 group-hover:bg-cotton")}>
             {i.mine !== undefined ? <MessageSquareText className="size-3.5" /> : <Sparkles className="size-3.5" />}
@@ -164,7 +165,7 @@ export function PromptManager({ onPick, role: role0, many: many0 = false }: { on
             </span>
             <span className="line-clamp-1 text-xs text-ink-3">{i.sub}</span>
           </span>
-        </button>
+        </button></Hint>
         {sure ? (
           <span className="flex shrink-0 items-center gap-1 animate-in fade-in-0 duration-(--dur-micro)">
             <Button size="xs" variant="destructive" disabled={saving} onClick={() => remove(i)} autoFocus onBlur={() => setConfirm(null)}>{t("Xóa")}</Button>

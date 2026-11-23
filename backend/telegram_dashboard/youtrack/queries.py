@@ -7,7 +7,21 @@ from datetime import UTC, datetime, timedelta
 from ..ai import data_json
 from ..errors import ApiError
 from ..telegram.digest import VN
-from .client import FIELDS, ID_RE, YtClient, YtError, _label, _me, _normalize, _projects, _rel, _who_clause
+from .client import (
+    COMMENTS,
+    FIELDS,
+    ID_RE,
+    YtClient,
+    YtError,
+    _label,
+    _me,
+    _normalize,
+    _projects,
+    _rel,
+    _who_clause,
+    live,
+    pages,
+)
 
 WAVE = 4  # issue pages fetched concurrently
 PAGE = 500
@@ -35,7 +49,7 @@ def _ticket_json(d: dict, desc: int = 8000, ncom: int = 30, clen: int = 1500, **
             ],
             "comments": [
                 {"author": c["author"], "date": _day(c["created"]), "text": (c["text"] or "")[:clen]}
-                for c in d["comments"][-ncom:]  # fmt: skip
+                for c in live(d["comments"])[-ncom:]  # fmt: skip
             ],
             **extra,
         }
@@ -128,7 +142,7 @@ class YtQueries(YtClient):
             issue_id = (await self.yt("/api/issues", post=post, fields="idReadable"))["idReadable"]
         except YtError as e:
             code = "youtrack_unauthorized" if e.status in (401, 403) else "youtrack_error"
-            raise ApiError(502, code) from None
+            raise ApiError(502, code, detail=e.message) from None  # why YouTrack refused / "may have been created"
         except KeyError, TypeError, ValueError:
             raise ApiError(502, "youtrack_error") from None
         return issue_id, f"{self.base}/issue/{issue_id}"
@@ -154,7 +168,7 @@ class YtQueries(YtClient):
     async def detail(self, issue_id: str):
         d = await self.yt(
             f"/api/issues/{issue_id}",
-            fields=FIELDS + ",description,comments(id,text,created,author(fullName,login)),"
+            fields=f"{FIELDS},description,{COMMENTS},"
             "attachments(id,name,mimeType,size,removed,comment(id)),"
             "links(direction,linkType(name,sourceToTarget,targetToSource),"
             "issues(idReadable,summary,resolved))",
@@ -179,9 +193,10 @@ class YtQueries(YtClient):
             "comments": [
                 {
                     "id": c.get("id"),
-                    "text": c.get("text"),
+                    "text": None if c.get("deleted") else c.get("text"),  # deleted: the UI says so, its text stays out
                     "created": c.get("created"),
                     "author": (c.get("author") or {}).get("fullName") or (c.get("author") or {}).get("login"),
+                    "deleted": bool(c.get("deleted")),
                 }
                 for c in d.get("comments") or []
             ],
@@ -201,10 +216,11 @@ class YtQueries(YtClient):
         }
 
     async def trace(self, ids: list[str]) -> dict:
-        """For the release report, per ticket: the start of its description, its links (the linked
-        tickets with their state, type, assignee) and its latest comment. One search per 100 tickets."""
+        """Per ticket: its State / updated / resolved (Chờ bổ sung's "có vẻ xong"), the start of its description, its
+        links (the linked tickets with their state, type, assignee) and its latest comment (the release report).
+        One search per 100 tickets."""
         fields = (
-            "idReadable,description,comments(text,created,author(fullName,login)),"
+            f"{FIELDS},description,{COMMENTS},"
             f"links(direction,linkType(name,sourceToTarget,targetToSource),issues({FIELDS}))"
         )  # ponytail: every comment comes back to pick the last one; fine for a release's ~100-300 tickets
 
@@ -215,9 +231,11 @@ class YtQueries(YtClient):
         out = {}
         for rows in await asyncio.gather(*(chunk(ids[n : n + 100]) for n in range(0, len(ids), 100))):
             for d in rows:
-                last = max(d.get("comments") or [], key=lambda c: c.get("created") or 0, default=None)
+                last = max(live(d.get("comments")), key=lambda c: c.get("created") or 0, default=None)
                 a = (last or {}).get("author") or {}
+                own = _normalize(d)
                 out[d["idReadable"]] = {
+                    "state": own["state"], "updated": own["updated"], "resolved": own["resolved"],
                     "desc": (d.get("description") or "")[:600],
                     "links": [
                         {"rel": _rel(x), "issues": [_normalize(i) for i in x.get("issues") or []]}
@@ -253,22 +271,26 @@ class YtQueries(YtClient):
 
     async def transitions(self, project: str, days: int) -> list[dict]:
         """Every State change in the project over the last `days`, oldest first: the page works out
-        QC pass / fail / reopen from them. One paged activity read for the whole project."""
-        read_at = int(time.time() * 1000)
+        QC pass / fail / reopen from them. One paged activity read for the whole project, newest page first: a project
+        busier than TRANS_PAGES loses the far end of the window (said in `trans_cut`), never its latest changes."""
+        read_at, key = int(time.time() * 1000), f"{project}:{days}"
         start = int((time.time() - days * 86400) * 1000)
         day = (datetime.now(UTC) - timedelta(days=days)).date().isoformat()
         params = {
             "categories": "CustomFieldCategory",
             "issueQuery": f"project: {{{project}}} updated: {day} .. Today",
             "start": start,
+            "reverse": "true",
             "fields": "activities(timestamp,author(fullName,login),target(idReadable),field(name),"
-            "added(name),removed(name)),afterCursor,hasAfter",
+            "added(name),removed(name)),afterCursor,hasAfter,beforeCursor,hasBefore",
             "$top": 1000,
         }
         out: list[dict] = []
+        way, oldest = "", read_at
         for _ in range(TRANS_PAGES):  # ponytail: page cap; raise it if busy projects get cut short
             page = await self.yt("/api/activitiesPage", **params)
             for a in page.get("activities") or []:
+                oldest = min(oldest, a.get("timestamp") or oldest)
                 tid = (a.get("target") or {}).get("idReadable")
                 if tid and (a.get("field") or {}).get("name") == "State":
                     by = a.get("author") or {}
@@ -276,15 +298,18 @@ class YtQueries(YtClient):
                         "id": tid, "at": a.get("timestamp"), "by": by.get("fullName") or by.get("login"),
                         "from": _label(a.get("removed")), "to": _label(a.get("added")),
                     })  # fmt: skip
-            cur = page.get("afterCursor")
-            if not page.get("hasAfter") or not cur or cur == params.get("cursor"):  # a repeated cursor: done
-                self._trans_until[f"{project}:{days}"] = read_at
+            # the next page is the older one: "after" in the order asked for (YouTrack's docs); a server that counts
+            # its cursors by time instead has only a "before" on this first, newest page
+            way = way or ("After" if page.get("hasAfter") or not page.get("hasBefore") else "Before")
+            cur = page.get(f"{way.lower()}Cursor")
+            if not page.get(f"has{way}") or not cur or cur == params.get("cursor"):  # a repeated cursor: done
+                self.trans_cut.pop(key, None)
                 break
             params["cursor"] = cur
-        else:  # cut short: the newest changes are missing, so statesince can't trust it
-            # ponytail: oldest-first; reading newest-first (activitiesPage `reverse`) needs a check on a live YouTrack
-            self._trans_until[f"{project}:{days}"] = 0
-        return out
+        else:  # cut short: the oldest changes of the window are missing, the page says from when it counts
+            self.trans_cut[key] = oldest
+        self._trans_until[key] = read_at  # the newest changes are always in: statesince can trust it
+        return sorted(out, key=lambda t: t["at"] or 0)
 
     async def since_all(self, items: list[str]) -> dict[str, int]:
         """Latest State change per "ID@updated": from the project's State changes over SINCE_DAYS (one
@@ -340,7 +365,7 @@ class YtQueries(YtClient):
         return [{"login": k, "name": v} for k, v in seen.items()]
 
     async def sprints(self, project: str):
-        boards = await self.yt("/api/agiles", fields="projects(shortName),sprints(name,start,finish)", **{"$top": 200})
+        boards = await pages(self, "/api/agiles", fields="projects(shortName),sprints(name,start,finish)")
         seen = {}
         for b in boards:
             if not b.get("projects") or any(p["shortName"] == project for p in b["projects"]):

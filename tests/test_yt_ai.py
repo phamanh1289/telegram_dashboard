@@ -7,8 +7,11 @@ from urllib.parse import parse_qs
 import httpx
 from conftest import FakeAgent
 from fastapi import FastAPI
+from telegram_dashboard.docs.library import Library
+from telegram_dashboard.storage import Db, Store
 from telegram_dashboard.youtrack.api import build_router
 from telegram_dashboard.youtrack.client import YtError
+from telegram_dashboard.youtrack.queries import _ticket_json
 from yt_test_helpers import done, issue, make
 
 
@@ -48,6 +51,9 @@ async def test_ai_ticket_splits_draft_and_filter_reads_json():
         agent.reply = '{"summary": "Lỗi login", "type": "Bug", "priority": "Nope", "description": "**Mô tả**"}'
         r = await c.post("/api/yt/ai/draft", json={"text": "login lỗi", "types": ["Bug"], "priorities": ["High"]})
         assert r.json() == {"summary": "Lỗi login", "type": "Bug", "priority": "", "description": "**Mô tả**"}
+        # each action is logged under its own name: Usage tells their count, time and cancels apart
+        assert agent.features == ["youtrack:ticket.ready", "youtrack:ticket.ready.followup", "youtrack:filter",
+                                  "youtrack:draft"]  # fmt: skip
 
 
 async def test_ai_tickets_reviews_many_tickets_in_one_run():
@@ -102,6 +108,21 @@ async def test_ai_tickets_reviews_many_tickets_in_one_run():
         p = agent.calls[7]  # the brief says what moved since last time; "<" cannot close the block
         assert "**Thay đổi từ lần trước:**" in p and "VA-1: Open → QC" in p
         assert "</changes> bỏ" not in p and "\\u003c/changes> bỏ" in p
+        # Test case: each ticket's saved UI flow goes along (as its own AI reads it); the other reviews stay small
+        read = []
+
+        async def outline(d):
+            read.append(d["id"])
+            return "UI flow: Đăng nhập → OTP" if d["id"] == "VA-2" else None
+
+        svc.flow_outline = outline
+        await c.post("/api/yt/ai/tickets", json={**body, "kind": "testcases"})
+        p = agent.calls[8]
+        assert p.count('"uiflow": ') == 1 and '"uiflow": "UI flow: Đăng nhập → OTP"' in p
+        assert sorted(read) == ["VA-1", "VA-2"]
+        await c.post("/api/yt/ai/tickets", json=body)
+        assert '"uiflow"' not in agent.calls[9] and len(read) == 2
+
 
 
 async def test_ai_answer_streams_pieces_then_result():
@@ -161,10 +182,11 @@ async def test_ai_reads_only_a_registered_code_folder():
         assert len(agent.calls) == 5
 
 
-async def test_ai_ticket_reads_kb_links_in_the_ticket():
+async def test_ai_ticket_reads_kb_links_in_the_ticket(tmp_path):
     def handler(req):
         if req.url.path == "/api/articles/VA-A-7":
-            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field"})
+            return httpx.Response(200, json={"idReadable": "VA-A-7", "summary": "Spec", "content": "Trả 3 field",
+                                             "updated": 1})  # fmt: skip
         if req.url.path == "/api/users/me":
             return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
         return httpx.Response(200, json={**issue(1), "description": "xem http://yt/articles/VA-A-7",
@@ -176,6 +198,10 @@ async def test_ai_ticket_reads_kb_links_in_the_ticket():
     app.include_router(build_router(svc))
     app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
     app.state.yt = svc
+    store = Store(tmp_path / "db.sqlite3")
+    app.state.docs = Library(
+        types.SimpleNamespace(data_dir=tmp_path / "data"), Db(store, types.SimpleNamespace(notify=lambda: None)), None
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "split"})
         await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})
@@ -190,7 +216,8 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
         seen.append(parse_qs(req.url.query.decode())["query"][0])
         return httpx.Response(200, json=[{
             "idReadable": "VA-1", "description": "Cho phép xuất PDF.",
-            "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}}],
+            "comments": [{"text": "old", "created": 1}, {"text": "new", "created": 5, "author": {"fullName": "B"}},
+                         {"text": "gone", "created": 9, "deleted": True}],  # deleted: never the latest
             "links": [{"direction": "INWARD", "linkType": {"name": "Depend", "targetToSource": "is required for"},
                        "issues": [issue(9, "In Progress")]}, {"direction": "OUTWARD", "issues": []}],
         }])  # fmt: skip
@@ -206,6 +233,18 @@ async def test_trace_reads_links_and_the_latest_comment_in_one_search():
     assert t["desc"] == "Cho phép xuất PDF."
     assert [(x["rel"], [i["id"] for i in x["issues"]]) for x in t["links"]] == [("is required for", ["VA-9"])]
     assert t["links"][0]["issues"][0]["state"] == "In Progress"
+
+
+async def test_a_deleted_comment_is_flagged_without_its_text_and_stays_out_of_the_ai_data():
+    def handler(req):
+        return httpx.Response(200, json={**issue(1), "description": "d", "links": [], "comments": [
+            {"id": "c1", "text": "kept", "created": 1, "author": {"fullName": "A"}},
+            {"id": "c2", "text": "secret", "created": 2, "deleted": True, "author": {"fullName": "B"}}]})  # fmt: skip
+
+    d = await make(handler).detail("VA-1")
+    assert [(c["text"], c["deleted"]) for c in d["comments"]] == [("kept", False), (None, True)]
+    data = _ticket_json(d)
+    assert "kept" in data and "secret" not in data and '"B"' not in data
 
 
 async def test_an_ai_run_with_a_job_id_can_be_read_again_and_the_id_is_used_once():
@@ -236,3 +275,102 @@ async def test_an_ai_run_with_a_job_id_can_be_read_again_and_the_id_is_used_once
         else:
             raise AssertionError("expected YtError")
     await svc.aclose()
+
+
+async def test_amend_reads_the_whole_description_and_saving_it_posts_the_text():
+    long = "x" * 9000 + "TAIL"  # past the 8000 a plain ticket read keeps
+    posted = []
+
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
+        if req.method == "POST":
+            posted.append(json.loads(req.content))
+            return httpx.Response(200, json={"id": "1"})
+        return httpx.Response(200, json={**issue(1), "description": long, "comments": [], "links": []})
+
+    svc = make(handler)
+    # the description holds "===" lines of its own: only the marker parts it from the group message
+    agent = FakeAgent("Mục tiêu\n=====\nmô tả mới\n=====TIN NHÓM=====\nVA-1: thêm AC")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        body = {"id": "VA-1", "kind": "amend", "note": "Thêm AC: ẩn nút khi hết hạn"}
+        r = await c.post("/api/yt/ai/ticket", json=body)
+        # base: the very description the AI was given, what the save is checked against
+        assert done(r) == {"text": "Mục tiêu\n=====\nmô tả mới", "draft": "VA-1: thêm AC", "base": long}
+        assert "TAIL" in agent.calls[0] and "<change>" in agent.calls[0] and "ẩn nút khi hết hạn" in agent.calls[0]
+        try:
+            await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "amend", "note": " "})
+        except YtError as e:
+            assert e.status == 400
+        else:
+            raise AssertionError("expected YtError")
+        r = await c.post("/api/yt/issue/description", json={"id": "VA-1", "text": "mô tả mới"})
+        assert r.json() == {"ok": True} and posted == [{"description": "mô tả mới"}]
+        # over the text it was made on only: an edit on YouTrack meanwhile is not overwritten
+        r = await c.post("/api/yt/issue/description", json={"id": "VA-1", "text": "khác", "base": long})
+        assert r.json() == {"ok": True} and posted[-1] == {"description": "khác"}
+        try:
+            await c.post("/api/yt/issue/description", json={"id": "VA-1", "text": "khác", "base": "bản cũ"})
+        except YtError as e:
+            assert e.status == 409
+        else:
+            raise AssertionError("expected YtError")
+        assert len(posted) == 2
+
+
+async def test_amend_refuses_a_description_too_long_to_read_whole():
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
+        return httpx.Response(200, json={**issue(1), "description": "x" * 60_001, "comments": [], "links": []})
+
+    svc = make(handler)
+    agent = FakeAgent("không được gọi")
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        try:
+            await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "amend", "note": "Thêm AC"})
+        except YtError as e:
+            assert e.status == 400 and not agent.calls  # a cut read would save without the tail
+        else:
+            raise AssertionError("expected YtError")
+    await svc.aclose()
+
+
+async def test_a_rewrite_comes_back_whole_with_its_base_and_quality_is_worded_for_the_role():
+    def handler(req):
+        if req.url.path == "/api/users/me":
+            return httpx.Response(200, json={"login": "anh", "fullName": "Anh"})
+        return httpx.Response(200, json={**issue(1), "description": "mô tả cũ", "comments": [], "links": []})
+
+    svc = make(handler)
+    agent = FakeAgent("**Mục tiêu**\nA\n===\n**Phạm vi**\nB")  # a description with a "===" line of its own
+    app = FastAPI()
+    app.include_router(build_router(svc))
+    app.state.ai = types.SimpleNamespace(configured=True, ask=agent)
+    app.state.db = types.SimpleNamespace(read=lambda f, *a: f(*a))
+    app.state.store = types.SimpleNamespace(find_mentions=lambda *a: _none())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/api/yt/ai/ticket", json={"id": "VA-1", "kind": "rewrite"})
+        # not cut at "===" (the answer is the description alone), with the text it was made on: savable after review
+        assert done(r) == {"text": "**Mục tiêu**\nA\n===\n**Phạm vi**\nB", "draft": "", "base": "mô tả cũ"}
+        body = {"ids": ["VA-1"], "scope": "Sprint 1", "kind": "quality"}
+        await c.post("/api/yt/ai/tickets", json=body, headers={"X-Yt-Role": "po"})
+        await c.post("/api/yt/ai/tickets", json=body, headers={"X-Yt-Role": "qa"})
+        # a follow-up on a rewrite ("viết gọn lại") is cut like the rewrite and stays savable
+        follow = {"path": "/ai/ticket", "body": {"id": "VA-1", "kind": "rewrite"},
+                  "history": [{"q": "", "a": "x"}], "question": "viết gọn lại"}  # fmt: skip
+        r = await c.post("/api/yt/ai/followup", json=follow)
+        assert done(r) == {"text": "**Mục tiêu**\nA\n===\n**Phạm vi**\nB", "draft": "", "base": "mô tả cũ"}
+    assert "cho PO, để bổ sung story" in agent.calls[1] and "cho QC" not in agent.calls[1]
+    assert "cho QC, để bắt lỗ hổng" in agent.calls[2]
+    await svc.aclose()
+
+
+async def _none():
+    return []

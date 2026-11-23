@@ -3,7 +3,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { Menu } from "@base-ui/react/menu";
 import { ArrowDown, ArrowLeft, CheckCheck, Ellipsis, MessageSquare, RotateCw, Search, Sparkles, Trash2 } from "lucide-react";
-import { use, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { use, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChats } from "@/features/telegram/components/chat-list";
 import { MessageItem, revealMessage } from "@/features/telegram/components/message-item";
 import { AiFetching, AllDone, useAiWait } from "@/shared/components/ai/fetching";
@@ -24,6 +24,7 @@ import { dayLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { useT } from "@/shared/lib/i18n";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 export function MessageList({
   chatId,
@@ -49,7 +50,7 @@ export function MessageList({
   chatId: string;
   onBack: () => void;
   replyTo: string | null; // msgKey of the message being answered
-  onReply: (m: Message) => void;
+  onReply: (m: Message, live: boolean) => void; // live: a Cả nhóm message, not a tag of the list
   itemsRef?: React.RefObject<Message[]>; // what is on screen, for "open the next tag"
 }) {
   const t = useT();
@@ -97,7 +98,8 @@ export function MessageList({
   }, [items]);
   const now = useNow();
   const tasks = useTasks();
-  const focused = useListShortcuts(items, onReply, !live, { initial: focus ? msgKey({ chat_id: chatId, message_id: focus }) : null });
+  const reply = useCallback((m: Message) => onReply(m, live), [onReply, live]);
+  const focused = useListShortcuts(items, reply, !live, { initial: focus ? msgKey({ chat_id: chatId, message_id: focus }) : null });
   useEffect(() => { if (itemsRef) itemsRef.current = items; }, [items, itemsRef]);
 
   // Scroll: stick to bottom only when already there; keep position when older pages load.
@@ -257,7 +259,7 @@ export function MessageList({
               now={now}
               focused={focused === msgKey(m)}
               tasks={tasks.get(msgKey(m))}
-              onReply={onReply}
+              onReply={reply}
               live={live}
             />
             );
@@ -293,6 +295,7 @@ export function MessageList({
 function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string; onPurged: () => void }) {
   const t = useT();
   const [confirm, setConfirm] = useState(false);
+  const asking = useLinger(confirm); // mounted while asked, and until it has closed
   return (
     <>
       <Menu.Root>
@@ -312,7 +315,7 @@ function GroupMenu({ chatId, title, onPurged }: { chatId: string; title: string;
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      {confirm && <PurgeChat chatId={chatId} title={title} onClose={() => setConfirm(false)} onPurged={onPurged} />}
+      {asking && <PurgeChat open={confirm} chatId={chatId} title={title} onClose={() => setConfirm(false)} onPurged={onPurged} />}
     </>
   );
 }

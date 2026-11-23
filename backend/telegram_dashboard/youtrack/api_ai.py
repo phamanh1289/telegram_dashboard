@@ -1,6 +1,7 @@
 """AI on YouTrack tickets (/api/yt/ai/*): one CLI run per click, text back only; it never writes to YouTrack."""
 
 import asyncio
+import hashlib
 import re
 from datetime import datetime
 
@@ -24,8 +25,9 @@ from .ai_prompts import (
     AI_FILTER,
     AI_FOLLOWUP,
     AI_GROOM,
+    AI_NO_TOOLS,
     AI_PLAN,
-    AI_QUALITY,
+    AI_READ_ONLY,
     AI_REGRESSION,
     AI_SHELL,
     AI_STANDUP,
@@ -36,27 +38,30 @@ from .ai_prompts import (
     AI_TICKETS,
     AI_TODAY,
     AI_TRIAGE,
+    AMEND_MARK,
+    ai_quality,
 )
 from .client import YtError, _me
 from .queries import WAVE, _day, _ticket_json
-from .schemas import ROLES, AiData, AiDraft, AiFilter, AiFollowup, AiTicket, AiTickets, _issue_id, _role
+from .schemas import AiData, AiDraft, AiFilter, AiFollowup, AiTicket, AiTickets, _issue_id, _role
 from .service import YouTrackDashboard
 
 
 async def _ticket_block(
     svc: YouTrackDashboard, request: Request, i: str, links: bool = True, *,
-    desc: int = 8000, skip: frozenset[str] = frozenset(),
+    desc: int = 8000, skip: frozenset[str] = frozenset(), detail: dict | None = None,
 ) -> tuple[str, str]:  # fmt: skip
     """(ticket JSON, KB / ticket / Telegram links in it read for the AI; no web) of ticket `i`.
-    `skip`: tickets the prompt already carries in full, not read (nor summarized) again as links."""
+    `skip`: tickets the prompt already carries in full, not read (nor summarized) again as links.
+    `detail`: the ticket already read by the caller (amend: the very text the save is checked against)."""
     svc.need_token()
-    d = await svc.issue_detail(i)
+    d = detail or await svc.issue_detail(i)
     flow = await svc.flow_outline(d)  # as an AI Agent session reads the ticket (links._issue)
     ticket = _ticket_json(d, desc=desc, **({"uiflow": flow} if flow else {}))
     if not links:
         return ticket, ""
     text = ISSUE.sub(lambda m: "" if m[2].upper() in skip else m[0], ticket)
-    key = f"links:{i}:{desc}:{','.join(sorted(skip))}"
+    key = f"links:{hashlib.sha1(text.encode()).hexdigest()}"  # by content: a saved description is read again
     return ticket, await svc.cached(key, lambda: link_block(request.app.state, text, None))
 
 
@@ -80,8 +85,8 @@ async def _whoami(svc: YouTrackDashboard) -> str:
 def _team_notes(svc: YouTrackDashboard, request: Request) -> str:
     """The instructions of the role the page is in (header X-Yt-Role), under the system rules:
     they shape format / language / scope, they never lift the untrusted-data rules."""
-    role = request.headers.get("x-yt-role", "")
-    text = getattr(svc.notes(), role, "").strip() if role in ROLES else ""
+    role = _role(request)
+    text = getattr(svc.notes(), role, "").strip()
     if not text:
         return ""
     return (
@@ -104,10 +109,11 @@ async def _ai(
     retry: bool = True,
     *,
     read_dir: str | None = None,
-    feature: str = "youtrack",
+    feature: str,
 ) -> str:
     """The run log keeps the page's session code (header X-Ai-Session, "YT-xxxxxx") to trace a bug report, and
-    `feature` (a UI flow render logs "flow": its cost and time are told apart from the other YouTrack runs)."""
+    `feature`: which action ran (`_feature`; a UI flow render logs "flow"), so Usage tells their count, time, cost and
+    cancels apart."""
     ai = request.app.state.ai
     name = lambda: providers.NAMES[providers.chosen(ai.settings, yt=True)]  # noqa: E731  only on errors
     if not ai.configured:
@@ -121,7 +127,8 @@ async def _ai(
         prompt, heavy = prompt + AI_CODE + (AI_SHELL if shell else ""), True
     token = no_retry.set(not retry)
     try:
-        return await ai.ask(f"{head}{prompt}", project=code, read_dir=read_dir, system=AI_SYSTEM, heavy=heavy,
+        system = AI_SYSTEM.replace(AI_NO_TOOLS, AI_READ_ONLY) if code else AI_SYSTEM
+        return await ai.ask(f"{head}{prompt}", project=code, read_dir=read_dir, system=system, heavy=heavy,
                             on_text=on_text, feature=feature, yt=True, shell=shell and bool(code),
                             ref=_session_ref(request))  # fmt: skip
     except ApiError as e:
@@ -131,7 +138,14 @@ async def _ai(
         no_retry.reset(token)
 
 
+def _feature(action: str, kind: str = "") -> str:
+    """The run log's name of a YouTrack AI action: "youtrack:tickets.standup", "youtrack:filter"."""
+    return f"youtrack:{action}.{kind}" if kind else f"youtrack:{action}"
+
+
 SESSION_REF = re.compile(r"YT-[a-z0-9]{6}")
+DRAFT_SEP = "\n==="  # a ticket answer, then the comment draft
+AMEND_MAX = 60_000  # a description amend reads whole (schemas.Description saves as much)
 
 
 def _session_ref(request: Request) -> str:
@@ -164,9 +178,26 @@ def background(svc: YouTrackDashboard, request: Request, work, key: str = ""):
 
 def register(r, svc: YouTrackDashboard) -> None:
     async def p_ticket(body: AiTicket, request: Request) -> tuple[str, bool]:
-        rewrite = body.kind == "rewrite"  # a rewrite only keeps the links
-        ticket, links = await _ticket_block(svc, request, _issue_id(body.id), not rewrite)
-        return f"{AI_TICKET[body.kind]}\n<ticket>\n{ticket}\n</ticket>{links}", False
+        i, amend = _issue_id(body.id), body.kind == "amend"
+        edit = amend or body.kind == "rewrite"  # a rewrite / amend only keeps the links
+        detail = None
+        if amend and not body.note.strip():
+            raise YtError(400, "Nhập thay đổi cần đưa vào story")
+        if edit:
+            # the answer is a whole description the user may save: read fresh and uncut, or the save drops an edit /
+            # its tail
+            svc.need_token()
+            svc.forget(i)
+            detail = await svc.issue_detail(i)
+            long = len(detail["description"]) > AMEND_MAX
+            if amend and long:
+                raise YtError(400, f"Mô tả dài hơn {AMEND_MAX} ký tự, AI không đọc hết: sửa trực tiếp trên YouTrack")
+            # back with the answer: the save's base (ai_ticket). A rewrite of a longer one is read cut: not savable
+            request.state.desc_base = None if long else detail["description"]
+        ticket, links = await _ticket_block(svc, request, i, not edit, desc=AMEND_MAX if edit else 8000,
+                                            detail=detail)  # fmt: skip
+        change = f"\n<change>{data_json(body.note)}</change>" if amend else ""
+        return f"{AI_TICKET[body.kind]}\n<ticket>\n{ticket}\n</ticket>{change}{links}", False
 
     async def p_data(body: AiData, request: Request) -> tuple[str, bool]:
         data = data_json(body.data)
@@ -189,18 +220,20 @@ def register(r, svc: YouTrackDashboard) -> None:
         async def one(i: str) -> str:
             async with gate:
                 d = await svc.issue_detail(i)
+                # test cases walk the screens: the ticket's saved UI flow, as its own AI reads it (_ticket_block)
+                flow = await svc.flow_outline(d) if body.kind == "testcases" else None
             tg = await st.db.read(st.store.find_mentions, i, 5)
             return _ticket_json(d, 1200, 6, 500, telegram=[
                 {"from": m["sender_name"], "date": _day(m["date"] * 1000), "text": m["text"][:300]}
                 for m in tg
-            ])  # fmt: skip
+            ], **({"uiflow": flow} if flow else {}))  # fmt: skip
 
         data = ",\n".join(await asyncio.gather(*map(one, ids)))
         scope = f"Phạm vi: {body.scope}\n" if body.scope else ""
         heads = {
             "today": AI_TODAY, "summary": AI_SUMMARY, "ask": AI_ASK_TICKETS, "standup": AI_STANDUP,
             "plan": AI_PLAN, "testcases": AI_TESTCASES, "triage": AI_TRIAGE, "regression": AI_REGRESSION,
-            "groom": AI_GROOM, "quality": AI_QUALITY,
+            "groom": AI_GROOM, "quality": ai_quality(_role(request)),
         }  # fmt: skip
         head = heads.get(body.kind, AI_TICKETS)
         if body.kind == "standup":
@@ -240,15 +273,24 @@ def register(r, svc: YouTrackDashboard) -> None:
         # many tickets is a long read: the task model (Settings › Claude) does it better
         return f"{head}\n{scope}<tickets>\n[{data}]\n</tickets>", len(ids) > 10
 
-    def answer(request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False):
-        """The AI answer, streamed: a background run (`background`), or one that stops when the page goes."""
+    def answer(
+        request: Request, prompt: str, heavy: bool, draft: bool, code: str | None = None, shell=False, *, feature: str,
+        sep: str | None = DRAFT_SEP, extra: dict | None = None,
+    ):  # fmt: skip
+        """The AI answer, streamed: a background run (`background`), or one that stops when the page goes.
+        `sep`: what parts the answer from its draft (None: no draft, the answer is whole); `extra`: sent back with a
+        `draft` answer (amend / rewrite: the description it was made on)."""
 
         async def work(on_text, detached=False):
-            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=detached)
+            text = await _ai(svc, request, prompt, heavy, on_text, code=code, shell=shell, detached=detached,
+                             feature=feature)  # fmt: skip
             if not draft:
                 return {"text": text}
-            brief, _, rest = text.partition("\n===")  # a ticket answer may end with a comment draft
-            return {"text": brief.strip(), "draft": rest.strip()}
+            # a ticket answer may end with a comment draft; amend's own marker is cut at its last one (the
+            # description before it is saved whole, and may hold "===" lines)
+            cut = -1 if sep is None else text.find(sep) if sep == DRAFT_SEP else text.rfind(sep)
+            brief, rest = (text[:cut], text[cut + len(sep) :]) if cut >= 0 else (text, "")
+            return {"text": brief.strip(), "draft": rest.strip(), **(extra or {})}
 
         return background(svc, request, work) or stream_answer(work)
 
@@ -269,19 +311,29 @@ def register(r, svc: YouTrackDashboard) -> None:
     async def ai_job_stop(job_id: str):
         svc.jobs.stop(job_id)
 
+    def desc_cut(request: Request, kind: str) -> dict:
+        """How a ticket answer (and a follow-up on it) is cut: a description to save ends with amend's own marker,
+        a rewrite is the description alone; `base` is the description `p_ticket` just read, for the save's check."""
+        base = getattr(request.state, "desc_base", None)
+        return {"sep": {"amend": f"\n{AMEND_MARK}", "rewrite": None}.get(kind, DRAFT_SEP),
+                "extra": None if base is None else {"base": base}}  # fmt: skip
+
     @r.post("/ai/ticket")
     async def ai_ticket(body: AiTicket, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_ticket(body, request), draft=True, code=code, shell=body.shell)
+        prompt, heavy = await p_ticket(body, request)
+        return answer(request, prompt, heavy, draft=True, code=code, shell=body.shell,
+                      feature=_feature("ticket", body.kind), **desc_cut(request, body.kind))  # fmt: skip
 
     @r.post("/ai/data")
     async def ai_data(body: AiData, request: Request):
-        return answer(request, *await p_data(body, request), draft=False)
+        return answer(request, *await p_data(body, request), draft=False, feature=_feature("data", body.kind))
 
     @r.post("/ai/tickets")
     async def ai_tickets(body: AiTickets, request: Request):
         code = await _code_dir(request, body.folder)
-        return answer(request, *await p_tickets(body, request), draft=False, code=code, shell=body.shell)
+        return answer(request, *await p_tickets(body, request), draft=False, code=code, shell=body.shell,
+                      feature=_feature("tickets", body.kind))  # fmt: skip
 
     FOLLOW = {
         "/ai/ticket": (AiTicket, p_ticket), "/ai/data": (AiData, p_data),
@@ -301,21 +353,24 @@ def register(r, svc: YouTrackDashboard) -> None:
         code = await _code_dir(request, getattr(first, "folder", ""))  # a code session stays one
         turns = data_json([t.model_dump() for t in body.history])
         prompt += f"{AI_FOLLOWUP}\n<history>{turns}</history>\n<ask>{body.question}</ask>"
-        return answer(request, prompt, heavy, draft=body.path == "/ai/ticket", code=code,
-                      shell=getattr(first, "shell", False))  # fmt: skip
+        # a follow-up is its first request's action, asked again
+        ticket = body.path == "/ai/ticket"
+        return answer(request, prompt, heavy, draft=ticket, code=code, shell=getattr(first, "shell", False),
+                      feature=_feature(body.path.rsplit("/", 1)[-1], f"{first.kind}.followup"),
+                      **(desc_cut(request, first.kind) if ticket else {}))  # fmt: skip
 
     @r.post("/ai/draft")
     async def ai_draft(body: AiDraft, request: Request):
         """A new ticket (summary, Type, Priority, templated description) from a rough note."""
         fields = {"Type": body.types, "Priority": body.priorities}
         prompt = f"{AI_DRAFT}\n<fields>{data_json(fields)}</fields>\n<ask>{data_json(body.text)}</ask>"
-        return parse_ticket(await _ai(svc, request, prompt), fields)
+        return parse_ticket(await _ai(svc, request, prompt, feature=_feature("draft")), fields)
 
     @r.post("/ai/filter")
     async def ai_filter(body: AiFilter, request: Request):
         opts = data_json(body.options)[:20_000]
         prompt = f"{AI_FILTER}\n<options>{opts}</options>\n<ask>{body.text}</ask>"
-        out = json_object(await _ai(svc, request, prompt, notes=False))
+        out = json_object(await _ai(svc, request, prompt, notes=False, feature=_feature("filter")))
         if out is None:
             raise YtError(502, "AI trả về không đọc được, thử diễn đạt khác")
         return out

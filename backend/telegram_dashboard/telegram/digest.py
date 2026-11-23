@@ -12,7 +12,7 @@ import time
 from datetime import UTC, datetime, timedelta, timezone
 
 from ..ai import AiService, data_json, json_object, who
-from ..ai_prompts import about_user
+from ..ai_prompts import PLATFORM_FOCUS, PLATFORM_OTHERS, about_user, role_angle
 from ..errors import ApiError
 from ..models import BeReply, DigestRequest, DigestResult, StoredMessage
 from ..storage import Db, Store, _dt
@@ -28,11 +28,26 @@ GENERIC = {"be", "backend", "dev", "team", "fe", "po", "pm", "qa", "qc", "ba", "
 OWN = ("message_ids", "tickets", "be", "at", "carried")  # set by us, never taken as text from the model
 KEYS = ("topics", "decisions", "changes", "impacts", "confirmations", "actions")
 OPEN = ("confirmations", "actions")  # what still waits on someone: kept until a later digest settles it
+# settled, naming a ticket: kept until it is in the story (or ticked), so QC tests what was decided; never re-judged
+STORY = ("decisions", "changes")
 CARRY_DAYS = 30  # ponytail: an open item nobody settled in a month drops off; a "closed" store if that misses things
 MAX_CARRY = 60
 STATUSES = ("decided", "open", "dropped")
 TICKET = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
 log = logging.getLogger(__name__)
+
+
+def angle(platform: str, role: str | None) -> str:
+    """The user's platform and role (Cài đặt chung) for a digest / Briefing question: other clients' work left out,
+    a QC / PO over several platforms sees them side by side."""
+    out = ""
+    if platform in PLATFORM_FOCUS:
+        out += (f"\nThe user works on {PLATFORM_FOCUS[platform]}: leave out topics and items that concern only "
+                f"{PLATFORM_OTHERS[platform]} and change nothing for theirs; backend / API / design items that reach "
+                "their platform stay.")  # fmt: skip
+    return out + role_angle(platform, role)
+
+
 # What the UI shows; the server's own zone may be UTC. Fixed +07:00 (VN has no DST): ZoneInfo needs a tz
 # database the bundled Windows Python lacks ("No time zone found with key Asia/Ho_Chi_Minh" at startup).
 VN = timezone(timedelta(hours=7), "ICT")
@@ -165,16 +180,19 @@ def _chunks(msgs: list[StoredMessage]) -> list[list[StoredMessage]]:
     return [*out, cur] if cur else out
 
 
-def _carry(prev: dict | None, seen: set[str], closed: set[str]) -> list[tuple[str, dict]]:
-    """Open items of the saved digest, as (key, item), that this run does not read again (it re-judges those) and
-    the user has not closed (`closed`: their joined message ids, as Briefing keys its ticks)."""
+def _carry(prev: dict | None, seen: set[str], closed: set[str], keys=OPEN) -> list[tuple[str, dict]]:
+    """Items of `keys` in the saved digest (open ones; STORY: those naming a ticket), as (key, item), that this run
+    does not read again (it re-judges those) and the user has not closed (`closed`: their joined message ids, as
+    Briefing keys its ticks)."""
     if prev is None:
         return []
     res = DigestResult.model_validate_json(prev["result"])
     made, old = _dt(prev["created_at"]), datetime.now(UTC) - timedelta(days=CARRY_DAYS)
     out = []
-    for key in OPEN:
+    for key in keys:
         for it in getattr(res, key):
+            if key in STORY and not it.tickets:
+                continue
             at = aware(it.at) or made
             if at >= old and not set(it.message_ids) & seen and ",".join(it.message_ids) not in closed:
                 out.append((key, it.model_dump() | {"at": at, "carried": True}))
@@ -182,12 +200,13 @@ def _carry(prev: dict | None, seen: set[str], closed: set[str]) -> list[tuple[st
 
 
 class DigestService:
-    def __init__(self, settings, store: Store, db: Db, bridge, ai: AiService):
+    def __init__(self, settings, store: Store, db: Db, bridge, ai: AiService, *, live: asyncio.Semaphore):
         self.settings = settings
         self.store = store
         self.db = db
         self.bridge = bridge
         self.ai = ai
+        self._live = live  # the app's one cap on live Telegram reads (TelegramReads.live)
         self._scan_lock = asyncio.Lock()
         self._scan_hit: tuple[float, dict] | None = None
 
@@ -210,10 +229,12 @@ class DigestService:
                 raise ApiError(422, "digest_empty") from None
             if not ids or ids[0] < 1 or ids[-1] >= 2**31:  # Telegram ids are int32
                 raise ApiError(422, "digest_empty")
-            msgs = await self.bridge.fetch_ids(req.chat_id, ids)
+            async with self._live:
+                msgs = await self.bridge.fetch_ids(req.chat_id, ids)
             since = until = None
         elif since is not None:
-            msgs = await self.bridge.fetch_range(req.chat_id, since, until, MAX_RUN + 1)
+            async with self._live:
+                msgs = await self.bridge.fetch_range(req.chat_id, since, until, MAX_RUN + 1)
             if req.after_id is not None:  # `since` has 1s precision: the boundary would repeat
                 msgs = [m for m in msgs if m.message_id > req.after_id]
         else:
@@ -237,7 +258,9 @@ class DigestService:
         # Open items of the last digest ride along until a run settles them: a busy chat never drops a question.
         # A long stretch is read in parts the same way: each part gets what the earlier parts left open.
         prev = await self.db.read(self.store.get_digest, req.chat_id)
-        pending = _carry(prev, {str(m.message_id) for m in msgs}, set(req.closed)) if req.save else []
+        seen, closed = {str(m.message_id) for m in msgs}, set(req.closed)
+        pending = _carry(prev, seen, closed) if req.save else []
+        kept = _carry(prev, seen, closed, STORY) if req.save else []  # not in <open>: the AI never "settles" them
         out: dict[str, list] = {k: [] for k in KEYS}
         raws = []
         for part in chunks:
@@ -258,7 +281,7 @@ class DigestService:
                 for row in parsed[key]:
                     row["at"] = min((dates[i] for i in row["message_ids"]), default=part[-1].date)
                     pending.append((key, row))
-        for key, row in pending:
+        for key, row in [*pending, *kept]:
             out[key].append(row)
         result = DigestResult(
             **out,
@@ -296,7 +319,7 @@ class DigestService:
         prompt = TASK
         if teams := [t.strip() for t in req.teams if t.strip()]:
             prompt += f'\nTeams for "impacts.who" (use only these names): {", ".join(teams)}.'
-        prompt += about_user(req.intro)
+        prompt += angle(req.platform, req.role) + about_user(req.intro)
         if pending:
             rows = [{"key": f"p{i}", "kind": "confirm" if key == "confirmations" else "action",
                      **{f: it[f] for f in ("text", "who", "due", "message_ids") if it.get(f)}}
@@ -306,7 +329,9 @@ class DigestService:
         text = await self.ai.ask(prompt, feature="digest", brief=True)
         return text, parse_result(text, {c["id"] for c in context})
 
-    async def ask(self, question: str, intro: str = "", on_text=None) -> str:
+    async def ask(
+        self, question: str, intro: str = "", on_text=None, *, platform: str = "any", role: str | None = None
+    ) -> str:
         """A question about every consented group's saved digest (the AI's own earlier output, no
         new messages are read)."""
         if not self.ai.configured:
@@ -322,7 +347,7 @@ class DigestService:
             data.append({"group": r["title"], "id": r["chat_id"], "summarized_at": at, **keep})
         if not data:
             raise ApiError(422, "briefing_empty")
-        prompt = ASK + about_user(intro)
+        prompt = ASK + angle(platform, role) + about_user(intro)
         prompt += f"\n<briefing>\n{data_json(data)}\n</briefing>\n\nCâu hỏi: {question}"
         return await self.ai.ask(prompt, on_text=on_text, feature="briefing", brief=True)
 
@@ -354,7 +379,6 @@ class DigestService:
             return out
 
     async def _read_all(self) -> dict[str, tuple[list[str], list[BeReply]]]:
-        live = asyncio.Semaphore(4)
         now = datetime.now(UTC)
         skip = await self._ignored()
 
@@ -367,7 +391,7 @@ class DigestService:
             since = aware(res.since) or _dt(r["digest"]["last_date"]) - timedelta(days=7)
             since = min([since, *(aware(it.at) for it in items if it.at)])  # carried items were asked earlier
             try:
-                async with live:
+                async with self._live:
                     msgs = await self.bridge.fetch_range(r["chat_id"], since, now, MAX_MESSAGES)
             except Exception as e:  # one unreachable group must not hide the others
                 log.warning("answered: %s unread: %r", r["chat_id"], e)

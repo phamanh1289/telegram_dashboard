@@ -3,7 +3,8 @@
 import { Send } from "lucide-react";
 import { useMemo, useSyncExternalStore } from "react";
 import { AiPromptBox } from "@/shared/components/ai/chat";
-import { useMention } from "@/shared/components/mention";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { groupMembers } from "@/features/telegram/lib/mentions";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
@@ -36,7 +37,7 @@ export function QaBox({ chatId, draft, onSend, busy, to, title, top }: {
   const tx = useT();
   const typed = useSyncExternalStore(draft.sub, draft.get, draft.get);
   const known = useMemo(() => nameTags(to), [to]); // the nudge's "@Name" of the question's tags
-  const mention = useMention(groupMembers(chatId), typed, draft.set, known);
+  const mention = useJoin(useMention(groupMembers(chatId), typed, draft.set, known), useDocTag("telegram", typed, draft.set));
   const text = mention.wire(typed); // as sent: a member tagged by name counts as a tag
   const send = () => onSend(text);
   return (

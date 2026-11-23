@@ -38,7 +38,7 @@
     "tab": "youtrack",
     "area": "Bảng bên › Phiên AI › nút gợi ý",
     "title": "Prompt có sẵn trong phiên AI",
-    "what": "Các nút việc AI dựng sẵn: Tóm tắt thread, Kiểm tra đủ AC, Chia task & estimate, Chuẩn hoá mô tả, Test case, Soạn trả lời (1 ticket); Tóm tắt & việc cần làm, Rà soát cho lead, Release notes (nhiều ticket). Mỗi vai trò có 4 nút mặc định.",
+    "what": "Các nút việc AI dựng sẵn: Tóm tắt thread, Kiểm tra đủ AC, Chia task & estimate, Chuẩn hoá mô tả, Test case, Soạn trả lời (1 ticket); Tóm tắt & việc cần làm, Rà soát cho lead, Release notes (nhiều ticket). Mỗi vai trò có 4 nút mặc định. Vai trò PO/PM: câu trả lời của “Chuẩn hoá mô tả” có nút “Lưu vào mô tả”, mở khung Cập nhật story với bản mới (xem thay đổi, sửa, lưu lên YouTrack; bị chặn nếu mô tả đã đổi sau khi AI đọc).",
     "how": [
       {
         "t": "Bấm \"Ticket\"",
@@ -62,7 +62,43 @@
       },
       "Nút cần đúng 1 ticket hoặc từ 2 ticket thì thông báo sẽ nhắc"
     ],
-    "keys": "prompt co san prompt có sẵn tom tat thread tóm tắt thread kiem tra du ac kiểm tra đủ ac chia task estimate chuan hoa mo ta chuẩn hoá mô tả test case soan tra loi soạn trả lời ra soat cho lead rà soát cho lead release notes"
+    "keys": "prompt co san prompt có sẵn tom tat thread tóm tắt thread kiem tra du ac kiểm tra đủ ac chia task estimate chuan hoa mo ta chuẩn hoá mô tả test case soan tra loi soạn trả lời ra soat cho lead rà soát cho lead release notes luu vao mo ta lưu vào mô tả chuan hoa mo ta chuẩn hoá mô tả po"
+  },
+  {
+    "id": "yt-luu-vao-mo-ta",
+    "tab": "youtrack",
+    "area": "Bảng bên › Phiên AI › Chuẩn hoá mô tả (PO)",
+    "title": "Chuẩn hoá mô tả rồi lưu thẳng vào ticket",
+    "what": "Vai trò PO/PM: câu trả lời của nút “Chuẩn hoá mô tả” trong phiên AI một ticket có nút “Lưu vào mô tả”. Bấm để mở khung Cập nhật story với bản mới: xem thay đổi so với mô tả hiện tại, sửa nếu cần, rồi “Lưu” (bị chặn nếu mô tả đã đổi sau khi AI đọc). Mô tả quá dài để AI đọc hết thì chỉ còn Copy.",
+    "how": [
+      {
+        "t": "Bấm “Ticket”",
+        "at": "Ticket"
+      },
+      {
+        "t": "Bấm một dòng ticket (bấm vào tiêu đề) để mở bảng bên",
+        "at": "css:tbody tr[data-id]"
+      },
+      {
+        "t": "Bấm ✨ “AI cho ticket này”",
+        "at": "AI cho ticket này"
+      },
+      {
+        "t": "Bấm nút gợi ý “Chuẩn hoá mô tả”",
+        "at": "Chuẩn hoá mô tả"
+      },
+      "Chờ AI viết xong mô tả mới",
+      {
+        "t": "Bấm “Lưu vào mô tả”",
+        "at": "Lưu vào mô tả"
+      },
+      "Xem tab “So sánh”, “Viết” để chỉnh tay",
+      {
+        "t": "Bấm “Lưu”",
+        "at": "css:button[data-story-save]"
+      }
+    ],
+    "keys": "chuan hoa mo ta chuẩn hoá mô tả luu vao mo ta lưu vào mô tả rewrite po pm mo ta ticket mô tả ticket"
   },
   {
     "id": "yt-dua-vao-binh-luan",

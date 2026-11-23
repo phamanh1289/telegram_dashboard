@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlarmClock, ArrowRight, ChevronDown, Clock, Hourglass, Inbox, type LucideIcon, Megaphone, MessageCircleQuestion, RotateCw, Sparkles, TriangleAlert } from "lucide-react";
 import { AiBotIcon } from "@/shared/components/ai/chat";
 import { AnimatePresence, motion, MotionConfig } from "motion/react";
@@ -10,8 +10,12 @@ import { GROUP_NEST as NEST, GroupBar } from "@/shared/components/ai/day-groups"
 import { AiFetching, AllDone, useAiWait, useReload } from "@/shared/components/ai/fetching";
 import { Empty } from "@/shared/components/ui/empty";
 import { briefingQuery } from "@/features/telegram/components/briefing/run";
+import { chatTitle } from "@/features/telegram/lib/attach";
 import { ROW_MOTION } from "@/features/telegram/components/briefing/todo";
-import { answeredQuery, openCount, useDone } from "@/features/telegram/components/digest-page";
+import { answeredQuery, openCount } from "@/features/telegram/lib/digest";
+import { setDone, useDone, useFollow } from "@/features/telegram/lib/follow";
+import { waitName } from "@/features/telegram/components/briefing/waits";
+import { useAsked } from "@/features/youtrack/lib/trace";
 import { mineOpen, useQaNews } from "@/features/telegram/lib/qa";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
@@ -22,14 +26,17 @@ import { useNow } from "@/shared/hooks/use-now";
 import { useRole } from "@/shared/lib/prefs";
 import { loopKey, useDoneLoop, useLoopBack } from "@/features/telegram/lib/report-back";
 import { timeLabel } from "@/shared/lib/time";
-import { riskOf, useMyTickets, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { useMyTickets } from "@/features/youtrack/lib/watch";
+import { ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { needHot, needOf, PO_WAIT, skipAskKey, skipNeedKey } from "@/features/youtrack/lib/yt-stats";
+import { toast } from "@/shared/lib/notifications";
 import { cn, groupBy } from "@/shared/lib/utils";
 
 // "Hôm nay": everything that needs you, from every source, in one list ordered by how urgent it is, and what you are
 // waiting on from others. It only reads what the shell already loads and polls (pending tags, my tickets, Q&A, AI
 // Agent, Báo lại, Briefing); the snoozed list is its one extra read, keyed under "pending" so the live sync refreshes it.
 
-type Src = "tg" | "yt" | "qa" | "agent" | "loop" | "brief";
+type Src = "tg" | "yt" | "qa" | "agent" | "loop" | "brief" | "wait";
 const SRC: Record<Src, [Key, LucideIcon, string]> = {
   tg: ["Tag", Clock, "bg-hl-wash text-hl-2"],
   yt: ["YouTrack", TriangleAlert, "bg-paper-3 text-ink-2"],
@@ -37,6 +44,7 @@ const SRC: Record<Src, [Key, LucideIcon, string]> = {
   agent: ["AI Agent", AiBotIcon, "bg-paper-3 text-ink-2"],
   loop: ["Báo lại", Megaphone, "bg-ok-wash text-ok"],
   brief: ["Briefing", Sparkles, "bg-paper-3 text-ink-2"],
+  wait: ["Chờ bổ sung", Hourglass, "bg-warn-wash text-warn"],
 };
 
 /** `links`: what ties a row to others ("chat:message" of a tag or a Q&A message, "yt:VA-1"); `side`: "theirs" waits on
@@ -46,6 +54,7 @@ type Row = { key: string; src: Src; title: ReactNode; text: string; to: string; 
   links?: string[]; side?: "theirs" | "ctx" };
 type Thread = { head: Row; rest: Row[]; hot: boolean; at: number; theirs: boolean };
 
+const PO_ROWS = 8; // "Chờ bạn chốt" rows shown, as YouTrack's own card
 const byUrgency = (a: { hot?: boolean; at: number }, b: { hot?: boolean; at: number }) => Number(!!b.hot) - Number(!!a.hot) || a.at - b.at; // urgent first, then the oldest
 
 /** Rows sharing a link join one thread: the tag leads (else the most urgent row), its AI sessions, Q&A and tickets under it.
@@ -83,7 +92,10 @@ export function useTodayWork(onReply?: (m: Message) => void, onBriefGroup?: (cha
   const role = useRole();
   const pending = useQuery(pendingQuery(""));
   const snoozed = useQuery(snoozedQuery);
-  const { me, rows: tickets } = useMyTickets(true, false); // the shell's 5-minute poll feeds it
+  const { me, rows: tickets, project } = useMyTickets(true, false); // the shell's 5-minute poll feeds it
+  const askedQ = useAsked(project, role === "po", !!me); // comments asking me (no identity: none)
+  const qc = useQueryClient();
+  const followQ = useFollow(); // Chờ bổ sung: what I wait on from others
   const known = useQuery(ytProjectsQuery).data;
   const qa = useQaNews(7, false, false);
   const codes = qa.codes; // as the inbox's QaCodes, which the bot (outside the inbox) has no provider for
@@ -96,7 +108,7 @@ export function useTodayWork(onReply?: (m: Message) => void, onBriefGroup?: (cha
   const briefQ = useQuery(briefingQuery);
   const brief = briefQ.data ?? [];
   // a source that failed (not the tag list: it has its own alert): its items are missing, so the page must not read "all done"
-  const partial = [taskQ.error, qa.error, briefQ.error, loopQ.error].find(Boolean);
+  const partial = [taskQ.error, qa.error, briefQ.error, loopQ.error, askedQ.error, followQ.error].find(Boolean);
   const [done] = useDone();
   const answered = useQuery({ ...answeredQuery, enabled: brief.some((b) => b.saved) }).data;
 
@@ -116,6 +128,20 @@ export function useTodayWork(onReply?: (m: Message) => void, onBriefGroup?: (cha
   const theirQa = mineOpen(qa.lists).filter((i) => !seen.has(i));
   for (const i of theirQa) seen.add(i);
 
+  // my tickets that need me: at risk, and (PO) waiting on my define / confirm, the PO_ROWS that waited longest
+  // (the rest: one row to YouTrack's "Chờ PO chốt", or a long backlog would bury the page)
+  const need = tickets.flatMap((i) => { const why = needOf(role, i, me, now); return why && !done.has(skipNeedKey(i, why)) ? [{ i, why }] : []; });
+  // "Bỏ qua" on a ticket row: off Hôm nay until it comes back by its key (yt-stats.ts), with an undo
+  const skip = (key: string, id: string, tip: string) => (
+    <Hint side="bottom" text={tip}>
+      <Button size="xs" variant="ghost" className="text-ink-3" onClick={(e) => {
+        e.preventDefault(); e.stopPropagation(); // inside the row's link
+        setDone([key], true);
+        toast({ text: t("Đã bỏ qua {id} khỏi Hôm nay", { id }), action: { label: t("Hoàn tác"), run: () => setDone([key], false) } });
+      }}>{t("Bỏ qua")}</Button>
+    </Hint>
+  );
+  const waitPo = need.filter((x) => x.why === t(PO_WAIT)).sort((a, b) => a.i.updated - b.i.updated);
   const rows: Row[] = [
     ...(pending.data ?? []).filter((p) => !inQaPage(codes, p.message)).map(({ chat_title, message: m }): Row => { // Q&A rows cover those
       const w = waitLabel(m.date, now, !!m.priority);
@@ -123,11 +149,28 @@ export function useTodayWork(onReply?: (m: Message) => void, onBriefGroup?: (cha
       return { key: `tg:${msgKey(m)}`, src: "tg", title: <><b className="font-medium text-ink">{who(m, t)}:</b> {body}</>, text: `${who(m, t)}: ${body}`, to: msgTo(m),
         where: chat_title, why: w.text, hot: w.overdue || !!m.pinned, at: ms(m.date), go: () => onReply?.(m), links: tagLinks(m) };
     }),
-    ...tickets.flatMap((i): Row[] => {
-      const risk = (role === "po" || (role === "qa" ? i.qc : i.assignee) === me) && riskOf(i, now);
+    ...[...need.filter((x) => x.why !== t(PO_WAIT)), ...waitPo.slice(0, PO_ROWS)].map(({ i, why }): Row => {
       const href = `/youtrack/?ticket=${encodeURIComponent(i.id)}`;
-      return risk ? [{ key: `yt:${i.id}`, src: "yt", title: <><Id>{i.id}</Id> {i.summary}</>, text: `${i.id} ${i.summary}`, to: href, where: i.state ?? undefined,
-        why: risk, hot: risk === t("Quá hạn") || risk === t("Blocked"), at: i.updated, href, click: ticketClick(i.id), links: [`yt:${i.id}`] }] : [];
+      return { key: `yt:${i.id}`, src: "yt", title: <><Id>{i.id}</Id> {i.summary}</>, text: `${i.id} ${i.summary}`, to: href, where: i.state ?? undefined,
+        why, hot: needHot(why), at: i.updated, href, click: ticketClick(i.id), links: [`yt:${i.id}`],
+        extra: skip(skipNeedKey(i, why), i.id, t("Ẩn khỏi Hôm nay tới khi ticket có thay đổi")) };
+    }),
+    ...(waitPo.length > PO_ROWS ? [{ key: "ytpo", src: "yt" as const, title: t("Còn {n} ticket khác chờ bạn chốt", { n: waitPo.length - PO_ROWS }),
+      text: t("Còn {n} ticket khác chờ bạn chốt", { n: waitPo.length - PO_ROWS }), to: "/youtrack/", href: "/youtrack/", why: t(PO_WAIT), at: waitPo[PO_ROWS].i.updated }] : []),
+    ...(askedQ.data ?? []).filter(({ ticket: i, ask }) => !done.has(skipAskKey(i.id, ask.created))).map(({ ticket: i, ask }): Row => {
+      const href = `/youtrack/?ticket=${encodeURIComponent(i.id)}`;
+      return { key: `ya:${i.id}`, src: "yt", title: <><Id>{i.id}</Id> <b className="font-medium text-ink">{ask.author ?? "?"}:</b> {ask.text}</>,
+        text: `${i.id} ${ask.author ?? "?"}: ${ask.text}`, to: href, where: i.summary ?? undefined, why: t("hỏi bạn trong bình luận"),
+        at: ask.created, href, click: ticketClick(i.id), links: [`yt:${i.id}`],
+        extra: skip(skipAskKey(i.id, ask.created), i.id, t("Ẩn khỏi Hôm nay tới khi có bình luận hỏi mới")) };
+    }),
+    // waiting on someone else (Chờ…): theirs, urgent once it has waited 3 days
+    ...(followQ.data?.waits ?? []).map((w): Row => {
+      const days = Math.floor((now - w.at) / 864e5);
+      return { key: `wt:${w.key}`, src: "wait", side: "theirs", title: w.text, text: w.text, to: q({ brief: w.chat_id }),
+        where: brief.find((b) => b.chat_id === w.chat_id)?.title ?? chatTitle(qc, w.chat_id), why: days >= 3 ? t("{label} · {n} ngày", { label: waitName(w), n: days }) : waitName(w),
+        hot: days >= 3, at: w.at, go: () => onBriefGroup?.(w.chat_id),
+        links: [...w.message_ids.map((id) => `${w.chat_id}:${id}`), ...w.tickets.map((id) => `yt:${id}`)] };
     }),
     ...qa.lateItems.map((i) => qaRow(i, `qal:${i.code}`, t("Chưa ai trả lời: {q}", { q: i.question.text }), t("cần nhắc"), { hot: true })),
     ...(qa.total && qa.firstNew ? [{ key: "qan", src: "qa" as const, hot: false, title: t("{n} trả lời mới cho câu hỏi của bạn", { n: qa.total }), where: qa.firstNew.chat_title,
@@ -182,7 +225,7 @@ export function TodayPage({ onReply, onGo, onBriefGroup }: {
   const t = useT();
   const now = useNow();
   const { mine, theirs, pending, snoozed, qa, partial } = useTodayWork(onReply, onBriefGroup);
-  const [loading, reload] = useReload([["pending"], ["tasks"], ["qa"], ["briefing"], ["yt", "issues"], ["briefing-answered"]]); // every source the page reads
+  const [loading, reload] = useReload([["pending"], ["tasks"], ["qa"], ["briefing"], ["yt", "issues"], ["yt", "asked"], ["briefing-answered"], ["briefing-follow"]]); // every source the page reads
   const wait = useAiWait(pending.isPending || loading);
   const theirWait = useAiWait(snoozed.isPending || qa.loading); // its own reads: tags you snoozed, your Q&A threads
 

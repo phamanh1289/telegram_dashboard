@@ -2,11 +2,11 @@
 
 import { type QueryClient, useMutation } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
-import { answeredQuery, closedIds, digestError } from "@/features/telegram/components/digest-page";
+import { answeredQuery, closedIds, digestError } from "@/features/telegram/lib/digest";
 import { api, type BriefingItem, type DigestResult, errorText } from "@/shared/lib/api";
 import { t as tr } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
-import { readDigestTeams, readIntro } from "@/shared/lib/prefs";
+import { aboutMe, readDigestTeams } from "@/shared/lib/prefs";
 
 export type RunState = { status: "running" | "done" | "error"; error?: string };
 
@@ -54,7 +54,7 @@ export async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: 
           after_id: it.saved && !hours ? Number(it.saved.last_message_id) : null,
           closed: closedIds(it.chat_id, it.saved?.result, qc.getQueryData(answeredQuery.queryKey)),
           teams,
-          intro: readIntro(),
+          ...aboutMe(),
         },
         signal: stop,
       });
@@ -65,9 +65,10 @@ export async function runBrief(qc: QueryClient, groups: BriefingItem[], hours?: 
     setBrief((b) => ({ ...b, batch: b.batch && { ...b.batch, done: b.batch.done + 1 } }));
     void qc.invalidateQueries({ queryKey: ["digest-saved", it.chat_id] });
     void qc.invalidateQueries({ queryKey: ["briefing"] }); // each group fills in as its digest lands
-    void qc.invalidateQueries({ queryKey: ["briefing-answered"] });
-    void qc.invalidateQueries({ queryKey: ["briefing-be-replies"] });
   }
+  // once for the batch: this reads every summarized group live, and per group it was N × N reads of Telegram
+  void qc.invalidateQueries({ queryKey: ["briefing-answered"] });
+  void qc.invalidateQueries({ queryKey: ["briefing-be-replies"] });
   setBrief((b) => ({ ...b, batch: null }));
 }
 
@@ -83,5 +84,8 @@ export const sortGroups = (items: BriefingItem[], left: (i: BriefingItem) => num
 export const useSaveBriefing = () => useMutation({
   mutationFn: (text: string) => api<null>("/briefing/saved", { method: "POST", json: { text } }),
   onSuccess: () => toast({ text: tr("Đã gửi vào Saved Messages") }),
-  onError: (e) => toast({ text: errorText(e, { not_connected: tr("Telegram chưa kết nối.") }, tr("Không gửi được, thử lại sau")) }),
+  onError: (e) => toast({ text: errorText(e, {
+    not_connected: tr("Telegram chưa kết nối."),
+    delivery_unknown: tr("Chưa rõ đã gửi chưa (mất kết nối giữa chừng). Xem Saved Messages trước khi gửi lại."),
+  }, tr("Không gửi được, thử lại sau")) }),
 });

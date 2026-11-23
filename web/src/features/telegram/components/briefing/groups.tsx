@@ -8,7 +8,8 @@ import { type ReactNode, useState } from "react";
 import { NavSkeleton, navRowCls, railHide } from "@/features/telegram/components/chat-list";
 import { Avatar } from "@/shared/components/avatar";
 import { NavPill } from "@/app/_components/shell";
-import { answeredQuery, digestError, openCount, useDone } from "@/features/telegram/components/digest-page";
+import { answeredQuery, digestError, openCount } from "@/features/telegram/lib/digest";
+import { useDone } from "@/features/telegram/lib/follow";
 import { Button } from "@/shared/components/ui/button";
 import { ConfirmDialog } from "@/shared/components/ui/dialog";
 import { Hint } from "@/shared/components/ui/hint";
@@ -59,6 +60,7 @@ export function RenewConsents({ items }: { items: BriefingItem[] }) {
 export function StatusDot({ i, r }: { i: BriefingItem; r?: RunState }) {
   return r?.status === "running" ? <Loader2 className="size-3 shrink-0 animate-spin text-hl" aria-hidden />
     : r?.status === "error" ? <CircleAlert className="size-3 shrink-0 text-error" aria-hidden />
+    : i.unread ? <CircleAlert className="size-3 shrink-0 text-warn" aria-hidden /> // Telegram would not read it: "no news" is not known
     : <span aria-hidden className={cn("size-2 shrink-0 rounded-full", hasNews(i) ? "bg-signal ring-[3px] ring-signal-wash" : i.saved ? "bg-ok/70" : "bg-rule-2")} />;
 }
 
@@ -149,6 +151,7 @@ export function BriefingGroups({ selected, onSelect, onOpenDigest, collapsed }: 
   const status = (i: BriefingItem) => {
     const r = runs[i.chat_id];
     return r?.status === "error" ? tx("Lỗi: {e}", { e: r.error ?? "" }) : r?.status === "running" ? tx("Đang tóm tắt…")
+      : i.unread ? tx("Chưa đọc được nhóm này trên Telegram: chưa rõ có tin mới hay không, bấm Kiểm tra lại")
       : !i.saved ? tx("Chưa tóm tắt lần nào") : `${tx("Tóm tắt lúc {time}", { time: timeLabel(i.saved.created_at) })}${hasNews(i) ? tx(" · có tin mới") : ""}`;
   };
   return (

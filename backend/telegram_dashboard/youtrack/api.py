@@ -1,6 +1,7 @@
 """YouTrack dashboard API (/api/yt/*): a thin proxy over YouTrackDashboard's cache.
 
-Writes: the assignee / QC / State of one ticket, a comment the user typed, a ticket's UI flow (api_flow.py).
+Writes: the assignee / QC / State of one ticket, a comment the user typed, a description the user reviewed
+(Cập nhật story), a ticket's UI flow (api_flow_file.py: the file; api_flow.py: the AI render).
 AI (/api/yt/ai/*, api_ai.py): one CLI run per click, text back only; it never writes to YouTrack.
 """
 
@@ -10,12 +11,14 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from ..config import write_private_json
-from . import api_ai, api_flow
+from . import api_ai, api_flow, api_flow_file
+from .asked import asked
 from .client import FIELDS, ID_RE, YtError, _fields, _me, _normalize, _projects
 from .schemas import (
     AiNotes,
     Assignee,
     Comment,
+    Description,
     FieldSet,
     Mention,
     SavedPrompts,
@@ -27,7 +30,7 @@ from .schemas import (
 from .service import YouTrackDashboard
 
 LOGIN_RE = re.compile(r"^[\w.@-]+$")
-SINCE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+@\d+$")
+SINCE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+@\d+\Z")
 
 
 def build_router(svc: YouTrackDashboard) -> APIRouter:
@@ -97,7 +100,11 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
     @r.get("/transitions")
     async def transitions(project: str, days: int = 14):
         p, n = _project(project), max(1, min(days, 90))
-        return [] if svc.mock else JSONResponse(await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n)))
+        if svc.mock:
+            return {"rows": [], "since": None}
+        rows = await svc.cached(f"trans:{p}:{n}", lambda: svc.transitions(p, n))
+        # since: a project too busy to read whole, the oldest change read (the window before it is not counted)
+        return JSONResponse({"rows": rows, "since": svc.trans_cut.get(f"{p}:{n}")})
 
     @r.get("/sprints")
     async def sprints(project: str = ""):
@@ -167,6 +174,22 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         svc.stale(i)
         return {"ok": True}
 
+    @r.post("/issue/description")
+    async def set_description(body: Description):
+        """The whole description, as the user reviewed it (Cập nhật story); with `base`, only over that same text, so
+        an edit made on YouTrack meanwhile is not overwritten."""
+        i = _issue_id(body.id)
+        svc.need_token()
+        if body.base is not None:
+            live = (await svc.yt(f"/api/issues/{i}", fields="description")).get("description") or ""
+            norm = lambda s: s.replace("\r\n", "\n").strip()  # noqa: E731
+            if norm(live) != norm(body.base):
+                msg = "Mô tả trên YouTrack vừa đổi sau khi bạn mở bản này: Soạn lại (hoặc lấy bản mới để tự sửa)"
+                raise YtError(409, msg)
+        await svc.yt(f"/api/issues/{i}", post={"description": body.text}, fields="id")
+        svc.stale(i)
+        return {"ok": True}
+
     @r.get("/fields")
     async def fields(project: str):
         """Values for the fields the sheet can change, in the project's bundle order."""
@@ -222,6 +245,12 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         svc.stale(i)
         return _normalize(await svc.yt(f"/api/issues/{i}", fields=FIELDS))
 
+    @r.get("/asked")
+    async def asked_me(project: str, po: bool = False):
+        """Hỏi bạn trong bình luận: open tickets with a comment asking me, still unanswered (asked.py)."""
+        p = _project(project)
+        return [] if svc.mock else JSONResponse(await asked(svc, p, po))
+
     @r.get("/mentions")
     async def mentions(request: Request, id: str = Query()) -> list[Mention]:
         """Telegram messages (tracked groups) that mention this ticket. `message_id` / `outgoing` /
@@ -238,5 +267,6 @@ def build_router(svc: YouTrackDashboard) -> APIRouter:
         ]  # fmt: skip
 
     api_ai.register(r, svc)
+    api_flow_file.register(r, svc)
     api_flow.register(r, svc)
     return r

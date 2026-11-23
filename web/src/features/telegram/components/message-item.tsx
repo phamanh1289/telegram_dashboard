@@ -4,6 +4,7 @@ import { AlarmClock, Check, CheckCheck, CornerDownRight, PenLine, Pin, RotateCcw
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "@/shared/components/avatar";
 import { Feat, FEATS } from "@/shared/components/ui/feat";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import { type Message, type Task } from "@/shared/lib/api";
 import { msgKey, settled, useHasDraft, waitLabel } from "@/features/telegram/lib/inbox";
@@ -11,7 +12,7 @@ import { toast } from "@/shared/lib/notifications";
 import { smooth } from "@/shared/lib/utils";
 import { clockLabel, timeLabel } from "@/shared/lib/time";
 import { readOverdueHours, useRole } from "@/shared/lib/prefs";
-import { useRetest } from "@/features/youtrack/lib/yt";
+import { useRetest } from "@/features/youtrack/lib/watch";
 import { cn } from "@/shared/lib/utils";
 import { type Key, t, useT } from "@/shared/lib/i18n";
 import { MEDIA, nameColor, richText } from "@/features/telegram/components/message/rich-text";
@@ -19,6 +20,7 @@ import { RowActions } from "@/features/telegram/components/message/row-actions";
 import { snoozeHint } from "@/features/telegram/components/message/snooze-menu";
 import { AnswersFor, byState, DeepFeat, SentBadge, TaskFeat } from "@/features/telegram/components/message/badges";
 import { ContextPanel } from "@/features/telegram/components/message/context-panel";
+import { TgFile } from "@/features/docs/components/tg-file";
 
 export type MessageItemProps = {
   m: Message;
@@ -30,8 +32,8 @@ export type MessageItemProps = {
   isReplyTarget: boolean;
   tasks?: Task[];
   onReply: (m: Message) => void;
-  live?: boolean; // read live from Telegram, not stored: no tag actions, no reply panel
-  liveReply?: boolean; // live, yet a click still picks it to reply to (Q&A threads)
+  live?: boolean; // read live from Telegram, not stored: no tag actions (a click still opens the reply panel)
+  liveReply?: boolean; // live, picked to reply to in place (Q&A threads): no Hoãn in the strip
   fresh?: boolean; // arrived since you last looked (Q&A threads): a "Mới" pill
   bare?: boolean; // Q&A thread: no ID, "trả lời #…" or #QA badge (the order is the chain, the thread names its code)
   extra?: React.ReactNode; // a page's own control before the row actions (Q&A: "Chốt" this answer)
@@ -63,11 +65,10 @@ function MessageRow({
   const snoozed = !done && !!m.snoozed_until && new Date(m.snoozed_until).getTime() > now;
   const selected = !!focused || isReplyTarget;
   const quiet = !m.outgoing && (done || snoozed);
-  const opens = !live || !!liveReply; // a click / Enter opens the reply panel
   const shown = head || !!groupTitle; // the sender's avatar and name open a run of their messages
   const row = useRef<HTMLLIElement>(null);
-  useRowFocus(row, !!focused, opens);
-  const open = rowOpen(m, opens, onReply, onPick);
+  useRowFocus(row, !!focused);
+  const open = rowOpen(m, onReply, onPick);
 
   return (
     <li
@@ -76,14 +77,13 @@ function MessageRow({
       data-id={m.message_id}
       data-key={msgKey(m)}
       data-selected={selected}
-      tabIndex={opens ? 0 : undefined}
+      tabIndex={0}
       aria-current={isReplyTarget ? "true" : undefined}
       className={cn(
-        "group/row relative grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-4 py-3 animate-in fade-in-0 transition-colors duration-(--dur-short) hover:bg-paper-2 focus-visible:-outline-offset-2 @xl:px-5",
+        "group/row relative grid cursor-pointer grid-cols-[2rem_minmax(0,1fr)] gap-x-3 px-4 py-3 animate-in fade-in-0 transition-colors duration-(--dur-short) hover:bg-paper-2 focus-visible:-outline-offset-2 @xl:px-5",
         selected && "bg-linear-to-r from-hl-wash to-hl-wash/35 before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-hl",
         picked && "bg-hl-wash/60 ring-2 ring-inset ring-hl",
         !head && !groupTitle && "pt-1.5",
-        opens && "cursor-pointer",
       )}
       onKeyDown={open.onKeyDown}
       onClick={open.onClick}
@@ -106,30 +106,30 @@ function MessageRow({
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 text-xs leading-5">
             {extra}
-            <RowActions m={m} tag={!m.outgoing && !live} liveSnooze={!!live && !liveReply && !m.outgoing} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
+            <RowActions m={m} tag={!m.outgoing && !live} liveSnooze={!!live && !liveReply && !m.outgoing} liveWait={!!live && !liveReply && !m.deleted} showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} />
           </div>
         </div>
         <RowMedia m={m} />
         {m.text && <MessageText m={m} dim={quiet || m.outgoing} />}
-        {/* portalled, but React events still bubble to the row: a click in the dialog must not open the reply panel */}
-        {showContext && <ContextPanel m={m} reveal />}
+        {/* inside the row: a click on a context line (to read / select it) must not open the reply panel */}
+        <Fold open={showContext}><div onClick={(e) => e.stopPropagation()}><ContextPanel m={m} reveal={showContext} /></div></Fold>
       </div>
     </li>
   );
 }
 
 /** The j/k cursor is real focus (screen readers follow it), unless you are typing or in a menu / dialog. */
-function useRowFocus(row: React.RefObject<HTMLLIElement | null>, focused: boolean, opens: boolean) {
+function useRowFocus(row: React.RefObject<HTMLLIElement | null>, focused: boolean) {
   useEffect(() => {
-    if (focused && opens && !document.activeElement?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu]")) row.current?.focus({ preventScroll: true });
-  }, [row, focused, opens]);
+    if (focused && !document.activeElement?.closest("input, textarea, select, [contenteditable], [role=dialog], [role=menu]")) row.current?.focus({ preventScroll: true });
+  }, [row, focused]);
 }
 
 /** A row opens the reply panel on click / Enter; Shift+click picks it. */
-function rowOpen(m: Message, opens: boolean, onReply: (m: Message) => void, onPick?: (m: Message) => void) {
+function rowOpen(m: Message, onReply: (m: Message) => void, onPick?: (m: Message) => void) {
   const onKeyDown = (e: React.KeyboardEvent<HTMLLIElement>) => {
     // Enter on the row itself (Tab or j/k focus); preventDefault keeps the list's own Enter from replying twice.
-    if (e.key !== "Enter" || e.target !== e.currentTarget || !opens) return;
+    if (e.key !== "Enter" || e.target !== e.currentTarget) return;
     e.preventDefault();
     onReply(m);
   };
@@ -142,7 +142,7 @@ function rowOpen(m: Message, opens: boolean, onReply: (m: Message) => void, onPi
       return onPick(m);
     }
     const selecting = !!sel?.toString() && !!sel.anchorNode && e.currentTarget.contains(sel.anchorNode);
-    if (!opens || selecting) return;
+    if (selecting) return;
     onReply(m);
   };
   return { onKeyDown, onClick };
@@ -252,7 +252,7 @@ function RowWhen({ m, clock, tasks, live, bare }: { m: Message; clock?: boolean;
   );
 }
 
-/** A photo (falls back to its label when it can't load), or what kind of media it is. */
+/** A photo (falls back to its label when it can't load), a document against Tài liệu, or what kind of media it is. */
 function RowMedia({ m }: { m: Message }) {
   const t = useT();
   const [photoFailed, setPhotoFailed] = useState(false);
@@ -263,6 +263,8 @@ function RowMedia({ m }: { m: Message }) {
       <img src={photo} alt={t("Ảnh trong tin")} loading="lazy" onError={() => setPhotoFailed(true)}
         className="max-h-64 rounded-md border border-rule object-contain" />
     </a>
+  ) : m.media_kind === "document" && m.file ? (
+    <TgFile m={{ ...m, file: m.file }} />
   ) : (
     m.media_kind && <p className="text-xs text-ink-3">{t("[{kind}, chưa tải]", { kind: t(MEDIA[m.media_kind] ?? "Tệp đính kèm") })}</p>
   );

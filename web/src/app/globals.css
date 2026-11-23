@@ -37,6 +37,9 @@
     --color-warn-wash: var(--color-warn-wash);
     --color-error: var(--color-error);
     --color-error-wash: var(--color-error-wash);
+    --color-hit: var(--color-hit);
+    --color-hit-ink: var(--color-hit-ink);
+    --color-fav: var(--color-fav);
     --color-badge: var(--color-badge);
     --color-info: var(--color-info);
     --color-info-wash: var(--color-info-wash);
@@ -155,13 +158,16 @@
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
-/* Row actions sit right to left (flex-row-reverse): the first one (Xong; the Telegram link on your own messages)
-   stays at the edge, the rest tuck behind it and slide out leftwards on a card when it is hovered or focused.
-   Hidden ones take no pointer (pointer-events inherit from the strip), so only the first wakes them; once out, the
-   whole strip keeps them; so does the selected row (j/k, or the one being answered). Settings can keep them shown (data-row-actions="always"); touch screens always show them.
-   Transform + opacity only. */
+/* Row actions sit right to left (flex-row-reverse): the first one (Xong; Đối chiếu BE on your own / live messages)
+   stays at the edge, the rest (in .row-more) tuck behind it and slide out leftwards on a card when it is hovered or
+   focused. Hidden ones take no pointer (pointer-events inherit from the strip), so only the first wakes them; once out,
+   the whole strip keeps them; so does the selected row (j/k, or the one being answered). Settings can keep them shown
+   (data-row-actions="always"); touch screens always show them. */
 /* An open menu (Hoãn) keeps the strip out and sits above the rows below. */
 .row-actions:has([aria-haspopup][aria-expanded="true"]) { position: relative; z-index: 30; }
+/* A grid track so the tucked group's width can glide between nothing and its own width (0fr ⇄ 1fr) both ways. */
+.row-more { display: grid; grid-template-columns: 1fr; }
+.row-more > * { min-width: 0; }
 @media (hover: hover) {
   :root:not([data-row-actions="always"]) .row-actions { position: relative; isolation: isolate; pointer-events: none; }
   :root:not([data-row-actions="always"]) .row-actions > :first-child,
@@ -172,18 +178,30 @@
     opacity: 0; transform: scaleX(0.2); transform-origin: right;
     transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-short) var(--ease-out);
   }
-  :root:not([data-row-actions="always"]) .row-actions > :not(:first-child) {
+  :root:not([data-row-actions="always"]) .row-more > * > * {
     opacity: 0; transform: translateX(0.75rem) scale(0.9);
     transition: opacity var(--dur-micro) var(--ease-out), transform var(--dur-short) var(--ease-out);
   }
   :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"])))::before { opacity: 1; transform: none; }
-  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > * { opacity: 1; transform: none; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-more > * > * { opacity: 1; transform: none; }
   /* Out from the edge: nearest first. Tucking back has no delay. */
-  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(3) { transition-delay: 30ms; }
-  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(n+5) { transition-delay: 60ms; }
-  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) > :nth-child(n+7) { transition-delay: 90ms; }
-  /* Tucked: the edge button (Xong) is just its icon; out, it spells itself. */
-  :root:not([data-row-actions="always"]) .row-actions:not(:is([data-selected="true"] *, :hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-label { display: none; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-more > * > :nth-child(2) { transition-delay: 30ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-more > * > :nth-child(n+4) { transition-delay: 60ms; }
+  :root:not([data-row-actions="always"]) :is([data-selected="true"] .row-actions, .row-actions:is(:hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-more > * > :nth-child(n+6) { transition-delay: 90ms; }
+  /* Tucked: the edge button (Xong) is just its icon; out, its label unrolls (the negative margin eats the button's gap). */
+  :root:not([data-row-actions="always"]) .row-label {
+    display: inline-block; max-width: 6rem; overflow-x: clip; white-space: nowrap;
+    transition: max-width var(--dur-short) var(--ease-out), margin var(--dur-short) var(--ease-out);
+  }
+  :root:not([data-row-actions="always"]) .row-actions:not(:is([data-selected="true"] *, :hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-label { max-width: 0; margin-inline-start: -0.25rem; }
+  /* Tucked ones take no room either: a page's own control before the strip (Q&A: Chốt) sits next to Xong and is pushed
+     out, smoothly, as the strip opens. Wide rows only: on a narrow one opening would wrap the header out from under the
+     cursor, so there they keep their room (the strip already sits on its own line). Clipped sideways while it glides. */
+  @container (min-width: 42rem) {
+    :root:not([data-row-actions="always"]) .row-more { transition: grid-template-columns var(--dur-short) var(--ease-out); }
+    :root:not([data-row-actions="always"]) .row-more > * { overflow-x: clip; overflow-clip-margin: 3px; }
+    :root:not([data-row-actions="always"]) .row-actions:not(:is([data-selected="true"] *, :hover, :focus-within, :has([aria-haspopup][aria-expanded="true"]))) .row-more { grid-template-columns: 0fr; }
+  }
 }
 
 
@@ -223,6 +241,11 @@
 /* AI "thinking" loader in the composer: the sparkle hops and tilts, the dots ride a wave. */
 /* Module switch (TopBar): crossfade the page, morph the active pill */
 ::view-transition-group(*) { animation-duration: var(--dur-short); animation-timing-function: var(--ease-out); }
+/* Tabs ride above the pill (it is nested in the active tab, so it would paint over the label); their snapshots keep their
+   size, left-anchored, so a label never stretches while the tab's width changes (a badge fading in or out). */
+::view-transition-group(module-pill) { z-index: 1; }
+::view-transition-group(.module-tab) { z-index: 2; }
+::view-transition-old(.module-tab), ::view-transition-new(.module-tab) { inline-size: auto; block-size: 100%; object-fit: none; object-position: left center; }
 /* Page body entering (Settings): a short delay (held hidden by `both`) lets the mount's first busy frames pass, so the fade starts from 0 instead of popping in midway; a soft deceleration, not the expo --ease-out that spends itself in the first frames. */
 .page-in { animation: page-in var(--dur-long) var(--ease-emph) 40ms both; }
 @keyframes page-in { from { opacity: 0; translate: 0 8px; } }
@@ -512,7 +535,22 @@ button.gb-orb.gb-drag { transition: scale var(--dur-short) var(--ease-out), box-
 .md hr { border-color: var(--color-rule); }
 .md input[type="checkbox"] { margin-right: 0.4em; vertical-align: -1px; }
 .md button { cursor: pointer; font-family: var(--font-mono); color: var(--color-hl-2); text-decoration: underline dotted; }
+/* Tài liệu: the searched words in the open document (docs/reader.tsx, CSS Custom Highlight API). */
+::highlight(doc-hit) { background-color: var(--color-hit); color: var(--color-hit-ink); }
+/* Tài liệu: a changed line opened from Lịch sử thay đổi, its added text (docs/diff-mark.tsx). */
+::highlight(doc-add) { background-color: var(--color-ok-wash); }
 /* Board drag (tickets.tsx): the grabbing hand everywhere and no text selection until the card is let go. */
 .yt-dragging, .yt-dragging * { cursor: grabbing !important; user-select: none !important; }
 /* A mascot standing still (long lists, e.g. History rows: hundreds of looping animations would cost frames). */
 .agent-still, .agent-still * { animation: none !important; }
+
+/* Tài liệu's reader: one scroll direction only. Code wraps instead of scrolling sideways; a table fits the column
+   (fixed layout, every cell wraps anywhere) instead of being its own sideways scroll box. */
+.md-wrap pre { overflow-x: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+.md-wrap table { display: table; width: 100%; table-layout: fixed; }
+.md-wrap :is(th, td) { overflow-wrap: anywhere; vertical-align: top; }
+.md-wrap img { height: auto; }
+/* A part opened or jumped to in Tài liệu's reader: one soft flash, then plain text again. */
+@keyframes doc-flash { from { background-color: var(--color-hl-wash); } to { background-color: transparent; } }
+.doc-flash { animation: doc-flash 1.8s var(--ease-out) 0.25s both; }
+@media (prefers-reduced-motion: reduce) { .doc-flash { animation: none; } }

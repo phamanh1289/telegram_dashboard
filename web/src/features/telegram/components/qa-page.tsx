@@ -20,8 +20,9 @@ import { toast } from "@/shared/lib/notifications";
 import { fold } from "@/shared/lib/utils";
 import { getPref, QA_REMIND_CHOICES, qaRemindLabel, setPref, useQaRemind } from "@/shared/lib/prefs";
 import { parsePref, rememberQaGroup } from "@/features/telegram/lib/qa-recent";
+import { sendLost, sendLostText } from "@/features/telegram/lib/send";
 import { cn } from "@/shared/lib/utils";
-import { answered, atOf, deleteWithUndo, fresh, gist, hasTag, isLate, latest, markSeen, markWithUndo, mute, MUTED, nameTags, nudgeText, QA_DAYS, QA_MINE, qaQuery, type QaDays, resolve, resolvedIds, type Seen, SEEN, type Sent, sendable, sentCount, thread, useStored, waiting, who } from "@/features/telegram/lib/qa";
+import { answered, atOf, deleteWithUndo, fresh, gist, hasTag, isLate, isNudge, latest, markSeen, markWithUndo, mute, MUTED, nameTags, nudgeText, QA_DAYS, QA_MINE, qaQuery, type QaDays, acceptedId, resolve, moveOldAnswers, type Seen, SEEN, type Sent, sendable, sentCount, thread, useStored, waiting, who } from "@/features/telegram/lib/qa";
 import { DaysPicker, LoadError, Row } from "@/features/telegram/components/qa/bits";
 import { Thread } from "@/features/telegram/components/qa/thread";
 import { MyQuestions, QaGroups } from "@/features/telegram/components/qa/groups";
@@ -76,6 +77,8 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const qc = useQueryClient();
   const list = useQuery({ ...qaQuery(chatId, days), refetchInterval: 60_000 }); // answers show up while you read
   const listWait = useAiWait(list.isPending);
+  const threads = list.data?.items;
+  const cut = !!list.data?.truncated; // the range holds more than one read takes: older threads are missing
   const sentQ = useQuery(sentQuery);
   const sent = sentQ.data;
   const now = useNow();
@@ -108,7 +111,7 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   const nudge = (i: QaItem) => {
     show(i.code);
     setTarget(i.question);
-    if (!draft.get().trim() || draft.get() === autoText) {
+    if (!draft.get().trim() || draft.get() === autoText || isNudge(draft.get())) {
       const first = nudgeText(i); // "@Name" now; "@username" once the group's members load (the "@" popup's cache)
       edit(first);
       setAutoText(first);
@@ -127,10 +130,12 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
     if (off) toast({ text: tr("Đã bỏ qua nhắc {code}", { code: i.code }), undo: () => mute(i.code, false) });
   };
   const onResolve = (i: QaItem, id: string | null) => {
-    const was = resolvedIds()[i.code] ?? null;
-    resolve(i.code, id);
-    toast({ text: id ? tr("Đã chốt câu trả lời cho {code}", { code: i.code }) : tr("Đã bỏ chốt {code}", { code: i.code }), undo: () => resolve(i.code, was) });
+    const was = acceptedId(i);
+    void resolve(qc, i, id).then((ok) => ok &&
+      toast({ text: id ? tr("Đã chốt câu trả lời cho {code}", { code: i.code }) : tr("Đã bỏ chốt {code}", { code: i.code }), undo: () => resolve(qc, i, was) }));
   };
+  const loaded = threads;
+  useEffect(() => { if (loaded) moveOldAnswers(qc, loaded); }, [loaded, qc]); // "Chốt" marks kept in this browser before: to the server once
   // "Trả lời bằng Q&A" on a message of this group, from anywhere (taken on open, or while open).
   useEffect(() => {
     const take = () => { const m = takeQaAnswer(chatId); if (m) { setOpen("new"); setTarget(m); requestAnimationFrame(focusBox); } };
@@ -160,17 +165,17 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   // "Mới" is against what you had seen when the group opened; everything shown counts as seen from then on.
   const [seenAt, setSeenAt] = useState(() => parsePref<Seen>(getPref(SEEN), {}));
   useEffect(() => {
-    if (list.data) markSeen(list.data.map((i) => [i.code, Math.max(...thread(i).map((m) => Number(m.message_id)))]));
-  }, [list.data]);
+    if (threads) markSeen(threads.map((i) => [i.code, Math.max(...thread(i).map((m) => Number(m.message_id)))]));
+  }, [threads]);
 
 
   // One-shot open of a code once the list has it (effect below the list).
   const want = useRef<{ code: string; widen: boolean } | null>(focus ? { code: focus, widen: true } : null);
-  const items = list.data ?? [];
+  const items = threads ?? [];
   const cur = items.find((i) => i.code === open);
   const to = target ?? (cur && latest(cur)) ?? null; // what a send answers; none: a new question
   // A target outside every thread (someone's question): the answer opens a thread on it.
-  const start = !!target && !!list.data && !items.some((i) => thread(i).some((m) => msgKey(m) === msgKey(target)));
+  const start = !!target && !!threads && !items.some((i) => thread(i).some((m) => msgKey(m) === msgKey(target)));
   const reading = !!cur || open === "new" || !!target; // narrow screens: the reader takes the list's place
 
   const post = useMutation({
@@ -190,7 +195,11 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
         : !to || start ? tr("Đã gửi như tin thường: không tag ai nên không tạo Q&A") : tr("Đã gửi trả lời") });
       void qc.invalidateQueries({ queryKey: ["qa", chatId] });
     },
-    onError: (e) => toast({ text: errorText(e, { forbidden: tr("Nhóm không cho bạn gửi tin"), reply_not_found: tr("Tin được trả lời không còn") }, tr("Không gửi được, thử lại")) }),
+    onError: (e) => {
+      if (!sendLost(e)) return void toast({ text: errorText(e, { forbidden: tr("Nhóm không cho bạn gửi tin"), reply_not_found: tr("Tin được trả lời không còn") }, tr("Không gửi được, thử lại")) });
+      toast({ text: sendLostText() }); // it may be in the group: the list is read again, the typed text stays
+      void qc.invalidateQueries({ queryKey: ["qa", chatId] });
+    },
   });
   const send = (t: string) => { if (t.trim() && !post.isPending) post.mutate(t); };
 
@@ -220,21 +229,22 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
   // or the question just posted (waits for the refetch).
   useEffect(() => {
     const w = want.current;
-    if (!w || !list.data) return;
-    if (!list.data.some((i) => i.code === w.code)) {
+    if (!w || !threads) return;
+    if (!threads.some((i) => i.code === w.code)) {
       if (!w.widen) return;
       if (days < 30) return onDays(30);
       want.current = null;
-      toast({ text: tr("Không thấy {code} trong 30 ngày qua của nhóm này", { code: w.code }) });
+      toast({ text: cut ? tr("Không thấy {code}: nhóm nhắn nhiều, chỉ đọc được các tin gần nhất", { code: w.code })
+        : tr("Không thấy {code} trong 30 ngày qua của nhóm này", { code: w.code }) });
       return;
     }
     want.current = null;
-    reveal(list.data.find((i) => i.code === w.code)!);
+    reveal(threads.find((i) => i.code === w.code)!);
     setOpen(w.code); // `show` minus the nudge cleanup: a send already emptied the box
     setTarget(null);
     setRead((r) => new Set(r).add(w.code));
     requestAnimationFrame(() => revealRow(document.querySelector<HTMLElement>(`[data-qa="${CSS.escape(w.code)}"]`)));
-  }, [list.data, days, onDays]);
+  }, [threads, days, onDays, cut]);
 
   const remove = (its: QaItem[]) => { if (cur && its.includes(cur)) show(null); void deleteWithUndo(qc, its); };
   const qaRow = (i: QaItem, isLate: boolean) => (
@@ -297,6 +307,9 @@ function GroupQa({ chatId, title, focus, days, onDays }: {
 
       <div className="grid min-h-0 grid-cols-1 @4xl/qa:grid-cols-[minmax(18rem,23rem)_minmax(0,1fr)]">
         <div className={cn("min-h-0 overflow-y-auto px-2 pb-2 @4xl/qa:border-r", reading ? "hidden @4xl/qa:block" : "block")}>
+          {cut && !listWait && (
+            <p role="note" className="px-2 pt-2 text-xs text-warn">{tx("Nhóm nhắn nhiều: chỉ đọc được các tin gần nhất trong khoảng này, chuỗi Q&A cũ hơn có thể chưa hiện.")}</p>
+          )}
           {listWait ? (
             <AiFetching kind="qa" />
           ) : list.isError ? (

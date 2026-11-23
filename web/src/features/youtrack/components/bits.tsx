@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover as BasePopover } from "@base-ui/react/popover";
-import { Check, ChevronDown, Copy, MessageSquareText, Sparkles, X } from "lucide-react";
+import { Check, ChevronDown, Copy, FilePenLine, MessageSquareText, Sparkles, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { createContext, Fragment, use, useId, useLayoutEffect, useRef, useState } from "react";
 import { AiBot, AiResultCard, AiStop, AiThinking, AiWriting, UserBubble } from "@/shared/components/ai/chat";
@@ -13,7 +13,7 @@ import { Hint } from "@/shared/components/ui/hint";
 import type { AiStep } from "@/shared/lib/api";
 import { fmtNum, t as tNow, useT } from "@/shared/lib/i18n";
 import { cn } from "@/shared/lib/utils";
-import { aiJobs, aiParts, aiSessions, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, typeColor, newJobId, yt } from "@/features/youtrack/lib/yt";
+import { aiJobs, aiParts, aiSessions, type AiReq, aiReqs, type AiTurn, type Attachment, fileUrl, hue, IMG, initials, PCOL, PLVL, rank, shortName, stateColor, stateSem, tagsOf, type Ticket, titleOf, typeColor, newJobId, yt } from "@/features/youtrack/lib/yt";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { copyText } from "@/shared/lib/notifications";
 import { fold } from "@/shared/lib/utils";
@@ -53,6 +53,18 @@ export function Tag({ name }: { name: string }) {
   return <span className="rounded-[4px] px-1.5 text-xs leading-[18px] font-medium text-ink" style={{ background: `oklch(var(--av-l) calc(var(--av-c) * 2) ${tagHue(name)})` }}>{name}</span>;
 }
 
+/** A ticket title: its [tags] as chips, the "A > B" path dimmed, the last part in ink. `clamp`: truncate / line-clamp-N. */
+export function Title({ i, clamp }: { i: Ticket; clamp: string }) {
+  const t = titleOf(i), k = t.lastIndexOf(" > ");
+  return (
+    <span title={i.summary ?? ""} className={cn("min-w-0 text-sm leading-snug", clamp)}>
+      {tagsOf(i).map((g) => <Fragment key={g}><Tag name={g} />{" "}</Fragment>)}
+      {k > 0 && <span className="text-ink-3">{t.slice(0, k).replaceAll(" > ", " › ")} › </span>}
+      <span className="font-medium text-ink">{k > 0 ? t.slice(k + 3) : t}</span>
+    </span>
+  );
+}
+
 export function Prio({ p }: { p: string | null }) {
   const t = useT();
   if (!p || !PCOL[p]) return <span className="text-ink-3">—</span>;
@@ -76,11 +88,12 @@ export function TypeTag({ type }: { type: string | null }) {
 }
 
 /** Button + floating panel (Base UI: closes on outside click and Esc, focus goes back to the button). `title`: a Hint on the button. */
-export function Popover({ label, children, className, align = "left", title, chevron = true }: { label: React.ReactNode; children: (close: () => void) => React.ReactNode; className?: string; align?: "left" | "right"; title?: string; chevron?: boolean }) {
+export function Popover({ label, children, className, align = "left", title, name: given, chevron = true }: { label: React.ReactNode; children: (close: () => void) => React.ReactNode; className?: string; align?: "left" | "right"; title?: string; name?: string; chevron?: boolean }) {
   const [open, setOpen] = useState(false);
   // the button shows the value ("Tất cả sprint"), so the field's name goes in its label: screen readers (and the live
-  // guide, which finds a control by name) have only the value otherwise — `title` is a hover hint, not a name
-  const name = title && (typeof label === "string" ? `${title}: ${label}` : title);
+  // guide, which finds a control by name) have only the value otherwise — `title` is a hover hint, not a name.
+  // `name`: the accessible name of a trigger whose label is not text (the hint alone would name it)
+  const name = given ?? (title && (typeof label === "string" ? `${title}: ${label}` : title));
   const trigger = (
     <BasePopover.Trigger render={<Button size="sm" variant="outline" aria-label={name} className={cn("max-w-56 justify-between", className)} />}>
       <span className="truncate">{label}</span>{chevron && <ChevronDown className="text-ink-3" />}
@@ -104,16 +117,18 @@ export type PickOpt = { v: string; node: React.ReactNode; text?: string; hint?: 
 /**
  * Pick one value: the trigger shows the current one, the list opens in the top layer (native popover: a scrolling table never clips it).
  * Type to filter (`search`), ↑ ↓ to move, Enter to pick, Esc closes only the list.
+ * `values`: several at once (the picked ones): a pick toggles through `onPick` and the list stays open.
  */
-export function Picker({ label, title, value, options, onPick, search, foot, disabled, className }: {
-  label: React.ReactNode; title: string; value: string; options: PickOpt[]; onPick: (v: string) => void; search?: string; foot?: React.ReactNode; disabled?: boolean; className?: string;
+export function Picker({ label, title, value, values, options, onPick, search, foot, disabled, className }: {
+  label: React.ReactNode; title: string; value: string; values?: string[]; options: PickOpt[]; onPick: (v: string) => void; search?: string; foot?: React.ReactNode; disabled?: boolean; className?: string;
 }) {
   const t = useT();
   const id = useId(), btn = useRef<HTMLButtonElement>(null), pop = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [q, setQ] = useState("");
   const shown = q ? options.filter((o) => fold(`${o.text ?? o.v} ${o.v}`).includes(fold(q))) : options;
   const hide = () => { pop.current?.hidePopover(); btn.current?.focus(); };
-  const pick = (v: string) => { hide(); if (v !== value) onPick(v); };
+  const on = (v: string) => (values ? values.includes(v) : v === value);
+  const pick = (v: string) => { if (values) return onPick(v); hide(); if (v !== value) onPick(v); };
   useLayoutEffect(() => { // place it under the trigger (above when there is no room), then focus the search or the current value
     const p = pop.current, b = btn.current;
     if (!open || !p || !b) return;
@@ -147,13 +162,13 @@ export function Picker({ label, title, value, options, onPick, search, foot, dis
           <div className="flex max-h-80 flex-col">
             {search && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={search} aria-label={search}
               className="m-2 mb-1 h-8 shrink-0 rounded-md border border-rule bg-paper px-2 text-sm focus:border-hl" />}
-            <div role="listbox" aria-label={title} className="grid min-h-0 overflow-y-auto p-1">
+            <div role="listbox" aria-label={title} aria-multiselectable={!!values || undefined} className="grid min-h-0 overflow-y-auto p-1">
               {shown.map((o) => (
-                <button key={o.v} type="button" role="option" aria-selected={o.v === value} onClick={() => pick(o.v)}
+                <button key={o.v} type="button" role="option" aria-selected={on(o.v)} onClick={() => pick(o.v)}
                   className="flex min-h-8 items-center gap-2 rounded px-2 py-1 text-left text-sm outline-none hover:bg-paper-2 focus-visible:bg-paper-2 aria-selected:font-medium">
                   <span className="flex min-w-0 flex-1 items-center gap-2 truncate">{o.node}</span>
                   {o.hint && <small className="shrink-0 text-xs text-ink-3">{o.hint}</small>}
-                  <Check aria-hidden className={cn("size-4 shrink-0 text-hl-2", o.v !== value && "invisible")} />
+                  <Check aria-hidden className={cn("size-4 shrink-0 text-hl-2", !on(o.v) && "invisible")} />
                 </button>
               ))}
               {!shown.length && <p className="px-2 py-1.5 text-sm text-ink-3 italic">{t("Không thấy “{q}”", { q })}</p>}
@@ -226,9 +241,9 @@ export function Markdown({ text, className, onTicket, files }: { text: string | 
 // ---------- AI ----------
 /** A turn saved as it starts, before (or without) its answer. */
 export type AiPending = { q: string; label: string; job?: string }; // job: its background run on the server
-export type AiRun = { label: string; q?: string; run: (signal: AbortSignal) => Promise<{ text: string; draft?: string }> };
+export type AiRun = { label: string; q?: string; run: (signal: AbortSignal) => Promise<{ text: string; draft?: string; base?: string }> };
 // steps: the run's working steps (reading code, running a command), shown like AI Agent's
-type AiState = { status: "idle" } | { status: "busy"; label: string; text?: string; steps?: AiStep[] } | { status: "done"; text: string; draft?: string; steps?: AiStep[] } | { status: "error"; error: string };
+type AiState = { status: "idle" } | { status: "busy"; label: string; text?: string; steps?: AiStep[] } | { status: "done"; text: string; draft?: string; base?: string; steps?: AiStep[] } | { status: "error"; error: string };
 
 /** One AI run at a time per box: busy line with Hủy, then the answer with Copy. Aborts on a new run or Hủy; closing the
  *  view does not (the run goes on in the background and lands in the history: `onTurn`).
@@ -269,7 +284,7 @@ export function useAi(onTurn?: (req: AiReq | null, thread: AiTurn[], first: bool
         setReq(r);
         setThread(next);
         setQ("");
-        setS({ status: "done", text, draft: out.draft, steps });
+        setS({ status: "done", text, draft: out.draft, base: out.base, steps });
         onTurn?.(r, next, first);
         return { ...out, req: r };
       }
@@ -323,7 +338,9 @@ export function YtPicks({ heavy, className }: { heavy: boolean; className?: stri
 /** An AI run as a conversation, the AI Agent look: asks in bubbles, answers in result cards, the live turn thinking or
  *  writing. `ids={false}`: ticket IDs stay plain text (in the AI sheet, opening one would replace the answer).
  *  `stop={false}`: no stop button by the live turn (the page's prompt box has its own). */
-export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; ids?: boolean; stop?: boolean }) {
+/** `onDescribe`: the answer is a whole new description (a rewrite: it comes with `base`, the text it was made on): the
+ *  caller opens its review and save. */
+export function AiBox({ ai, className, onClose, onUse, onDescribe, ids = true, stop = true }: { ai: ReturnType<typeof useAi>; className?: string; onClose?: () => void; onUse?: (text: string) => void; onDescribe?: (text: string, base: string) => void; ids?: boolean; stop?: boolean }) {
   const t = useT();
   const y = useYt();
   const s = ai.s;
@@ -355,6 +372,7 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
         <AiSteps items={s.steps} />
         <AiResultCard actions={<>
           {onUse && <Hint side="bottom" text={t("Đặt vào ô bình luận để sửa rồi gửi lên YouTrack")}><Button size="xs" variant="ghost" onClick={() => onUse(s.draft || s.text)}><MessageSquareText /> {t("Đưa vào bình luận")}</Button></Hint>}
+          {onDescribe && s.base != null && <Hint side="bottom" text={t("Xem thay đổi so với mô tả hiện tại, sửa nếu cần rồi lưu lên YouTrack")}><Button size="xs" variant="ghost" onClick={() => onDescribe(s.text, s.base!)}><FilePenLine /> {t("Lưu vào mô tả")}</Button></Hint>}
           <Button size="xs" variant="ghost" onClick={() => void copyText(s.text)}><Copy /> Copy</Button>
           {closeBtn}
         </>}>
@@ -368,8 +386,9 @@ export function AiBox({ ai, className, onClose, onUse, ids = true, stop = true }
 /** Set by the dashboard: a card there gets an AI button that opens a chat about that one report. */
 export const CardAi = createContext<((title: string) => void) | null>(null);
 
-/** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. */
-export function AiAsk({ label, onClick, hint, big, openRight }: { label: string; onClick: () => void; hint?: string; big?: boolean; openRight?: boolean }) {
+/** The AI entry point: a glinting "AI" chip; hover / focus pops a robot up with a speech bubble. `text`: the chip's own
+ *  words in place of "AI" / "Hỏi AI tổng quan". */
+export function AiAsk({ label, onClick, hint, big, openRight, text }: { label: string; onClick: () => void; hint?: string; big?: boolean; openRight?: boolean; text?: string }) {
   const t = useT();
   const [peek, setPeek] = useState(false);
   // Near the left edge of what clips it (a dialog, the window), the bot pops out to the right so the bubble stays inside.
@@ -398,7 +417,7 @@ export function AiAsk({ label, onClick, hint, big, openRight }: { label: string;
           </motion.span>
         )}
       </AnimatePresence>
-      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{big ? t("Hỏi AI tổng quan") : "AI"}
+      <Sparkles className={big ? "size-3.5" : "size-3"} aria-hidden />{text ?? (big ? t("Hỏi AI tổng quan") : "AI")}
     </button>
   );
 }

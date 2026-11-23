@@ -188,8 +188,9 @@ export function ResetTicket({ provider }: { provider: Provider }) {
 
 const FEATURES: Record<string, Key> = { draft: "Soạn nháp", answer: "Trả lời từ code", summary: "Tóm tắt", links: "Tóm tắt link", test: "Thử model", ai: "Khác" };
 const NAMES: Record<string, string> = { ticket: "Ticket", digest: "Digest", youtrack: "YouTrack", agent: "AI Agent" };
-/** A feature's name in the current language (call from a component that uses `useT`). */
-const feat = (f: string) => (FEATURES[f] ? t(FEATURES[f]) : NAMES[f] ?? f);
+/** A feature's name in the current language (call from a component that uses `useT`). A YouTrack run names its
+ *  action ("youtrack:tickets.standup"): shown as "YouTrack · tickets.standup", so each action has its own row. */
+const feat = (f: string) => (FEATURES[f] ? t(FEATURES[f]) : NAMES[f] ?? f.replace(/^youtrack:/, "YouTrack · "));
 /** The backend logs a run without a model pick as "mặc định": translated like the catalog's fixed texts. */
 const shortModel = (m: string) => tMaybe(m.replace(/^claude-/, ""));
 const PERIODS = [[1, "24 giờ"], [7, "7 ngày"], [30, "30 ngày"]] as const;

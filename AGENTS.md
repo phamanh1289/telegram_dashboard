@@ -5,6 +5,7 @@
 - Mọi nhóm tab chọn-một (view, bộ lọc, khoảng thời gian…) dùng `Segmented` trong `web/src/shared/components/ui/segmented.tsx`; không tự viết `motion.span layoutId` + spring.
 - Highlight trượt kiểu khác (nav sidebar, gạch chân, tab có popover) dùng `Pill` cùng file với `className` riêng.
 - Đổi animation chỉ sửa `PILL_SPRING` / `Pill` ở đó; mỗi nhóm cần `id` (layoutId) riêng.
+- Mọi thu gọn / mở rộng, đóng / mở UI (nhánh cây, section, panel, popup, chi tiết một dòng, ô tìm co giãn…) **bắt buộc có animation**, không bật / tắt trần `{open && …}`: vùng gập dùng `Fold` (`web/src/shared/components/ui/fold.tsx`, CSS grid-rows, mượt cả lúc đóng); danh sách thêm / bớt dòng dùng `AnimatePresence` + `height: "auto"` như `RailSection` (`shared/components/ai/day-groups.tsx`); popup / panel nổi dùng spring scale + fade như bot Biết tuốt (mẫu `features/docs/components/ask.tsx`); Dialog / Popover base-ui đã có sẵn; chevron xoay `duration-(--dur-short) ease-(--ease-out)`. Tôn trọng `prefers-reduced-motion`.
 - Menu / icon cần giải thích khi hover: bọc bằng `Hint` (`web/src/shared/components/ui/hint.tsx`, trễ `HINT_DELAY` 500ms, linh vật bóng đèn); không dùng `title` cho phần giải thích đó. Nút AI giữ `AiAsk` (robot).
 
 ## Lỗi hay gặp: bắt buộc (chi tiết + cách sửa: skill `avoiding-dashboard-pitfalls`)
@@ -25,9 +26,10 @@ Trước khi sửa code, đọc `docs/ARCHITECTURE.md`, xác định module sở
 
 | Loại thay đổi | Nơi đặt code |
 | --- | --- |
-| Backend Telegram: chat, message, gửi tin, Q&A, Digest/Briefing | `backend/telegram_dashboard/telegram/`; HTTP ở `routes.py` |
-| Backend YouTrack: ticket, workflow, UI flow/job | `backend/telegram_dashboard/youtrack/`; `/api/youtrack/*` ở `routes.py`, `/api/yt/*` ở `api.py` (AI: `api_ai.py`, UI flow: `api_flow.py`) |
+| Backend Telegram: chat, message, gửi tin, Q&A, Digest/Briefing | `backend/telegram_dashboard/telegram/`; HTTP ở `routes.py` (Digest / Briefing / Q&A: `routes_digest.py`) |
+| Backend YouTrack: ticket, workflow, UI flow/job | `backend/telegram_dashboard/youtrack/`; `/api/youtrack/*` ở `routes.py`, `/api/yt/*` ở `api.py` (AI: `api_ai.py`, UI flow: file `api_flow_file.py`, render / job `api_flow.py`) |
 | Backend dùng chung: cấu hình, auth, storage, AI, events, updater | Module sở hữu tương ứng trong `backend/telegram_dashboard/`; `app.py` giữ composition/lifespan và API chung |
+| Tài liệu (kho KB + file, tìm, hỏi AI) | Backend `backend/telegram_dashboard/docs/` (HTTP `/api/docs/*` ở `routes.py`), SQLite ở `storage/docs.py`; frontend `web/src/features/docs/{components,lib}`, entrypoint `web/src/app/docs/` |
 | Frontend Telegram | `web/src/features/telegram/{components,hooks,lib}` |
 | Frontend YouTrack | `web/src/features/youtrack/{components,hooks,lib}`; chỉ tạo thư mục con khi có code thật |
 | Frontend Settings | `web/src/features/settings/` |

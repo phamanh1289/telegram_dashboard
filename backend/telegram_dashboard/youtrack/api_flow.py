@@ -1,4 +1,5 @@
-"""A ticket's UI flow (/api/yt/flow*, /api/yt/ai/flow): read / save the attachment, Zeplin shots, AI render jobs."""
+"""A ticket's UI flow render (/api/yt/flow/precheck, /api/yt/ai/flow*, /api/yt/flow/jobs*): what a render sends, the AI
+run and its jobs. The file itself (read, save, delete, export, Zeplin shots) is in api_flow_file.py."""
 
 import asyncio
 import json
@@ -7,7 +8,7 @@ import re
 import tempfile
 import time
 
-from fastapi import Query, Request, Response
+from fastapi import Query, Request
 
 from .. import providers, zeplin
 from ..ai import data_json, json_object
@@ -16,11 +17,11 @@ from ..ai_run import flow_metrics
 from ..claude import claude_runs
 from ..links import ISSUE, _ours
 from . import flow as uiflow
-from . import flow_changes, flow_locate, flow_md, flow_merge, flow_prompt
-from .api_ai import _ai, background
-from .client import YtError, YtUnreachable, _me
+from . import flow_changes, flow_locate, flow_merge, flow_prompt
+from .api_ai import _ai, _feature, background
+from .client import YtError
 from .flow_models import FlowCheckDTO, FlowJobDTO, FlowRiskDTO, FlowScopeDTO
-from .schemas import AiFlow, FlowAsk, FlowDelete, FlowHtml, FlowMd, FlowPrecheck, FlowSave, FlowShots, _issue_id
+from .schemas import AiFlow, FlowAsk, FlowPrecheck, _issue_id
 from .service import YouTrackDashboard
 
 log = logging.getLogger(__name__)
@@ -28,14 +29,6 @@ log = logging.getLogger(__name__)
 PART_RUNS = 3  # parts of a split render run at once: faster, without flooding the CLI / quota
 COST_DAYS = 30  # the run log read for a render's $ estimate
 OWN_FLOW = 4000  # a description this long (or with a "Luồng màn" tree) is the story itself, not a pointer to one
-
-
-def _clean(body: FlowSave) -> tuple[str, uiflow.Flow]:
-    i = _issue_id(body.id)
-    try:
-        return i, uiflow.clean(body.flow, i)
-    except ValueError:
-        raise YtError(400, "UI flow không hợp lệ") from None
 
 
 def _story_ids(svc: YouTrackDashboard, detail: dict, i: str) -> list[str]:
@@ -50,196 +43,13 @@ def _story_ids(svc: YouTrackDashboard, detail: dict, i: str) -> list[str]:
     return [sid for sid in dict.fromkeys(ids) if sid != i]
 
 
-def _engine(request: Request) -> str:
-    try:
-        return (request.app.state.settings.static_dir / "uiflow.js").read_text(encoding="utf-8")
-    except OSError:
-        raise YtError(503, "Thiếu uiflow.js — build lại web") from None
-
-
-async def _yours(svc: YouTrackDashboard, author: dict | None) -> bool:
-    """The file was uploaded by the token's own user (or YouTrack does not say who): only then may it be replaced or
-    removed. Anyone may still open, edit (a local draft) and download it."""
-    return author is None or author["id"] == (await svc.cached("me", lambda: _me(svc))).get("id")
-
-
-def _only_author(author: dict) -> YtError:
-    return YtError(403, f"Chỉ {author['name']} (người lưu UI flow này) mới cập nhật / xoá được file trên ticket. "
-                        "Bản bạn sửa vẫn giữ làm nháp trên máy.")  # fmt: skip
-
-
 def _job_id(job_id: str) -> None:
     if not JOB_ID.fullmatch(job_id):
         raise YtError(400, "Mã lượt AI không hợp lệ")
 
 
 def register(r, svc: YouTrackDashboard) -> None:
-    @r.get("/flow")
-    async def get_flow(issue: str = Query()):
-        i = _issue_id(issue)
-        svc.need_token()
-        cur = await svc.flow_file(i)
-        if cur is None:
-            return {"att": None, "flow": None, "broken": False}
-        att, flow, newer, author = cur
-        return {"att": att, "flow": flow and flow.model_dump(), "broken": flow is None, "ticket_newer": newer,
-                "author": author, "yours": await _yours(svc, author)}  # fmt: skip
-
     shots = svc.shots
-
-    @r.post("/flow/shots")
-    async def flow_shots(body: FlowShots):
-        """The Zeplin screens a flow links: image URL, design size, where its texts / buttons sit (no AI, cached)."""
-        urls = [u for u in body.urls if providers.ZEPLIN.fullmatch(u)]
-        try:  # `stale`: the last read of them all, when there is an older one, without waiting for Zeplin
-            old = await shots.last(urls) if body.stale else None
-            got, missing = (old, []) if old is not None else await shots.get(urls)
-        except zeplin.ZeplinError as e:
-            raise YtError(502, str(e)) from None
-        page = {u: {k: v for k, v in x.items() if k not in ("texts", "platform", "dp", "list")} for u, x in got.items()}
-        return {"shots": page, "missing": missing, "stale": old is not None}
-
-    @r.get("/flow/image")
-    async def flow_image(u: str = Query(max_length=2000)):
-        """One Zeplin image, same-origin, so the page can compress it into the file it saves."""
-        try:
-            data, kind = await zeplin.image(u)
-        except zeplin.ZeplinError as e:
-            raise YtError(502, str(e)) from None
-        return Response(data, media_type=kind, headers={"Cache-Control": "private, max-age=86400"})
-
-    flow_lock = asyncio.Lock()  # ponytail: one for every ticket, saves are rare; other users still race on YouTrack
-
-    @r.post("/flow")
-    async def save_flow(body: FlowSave, request: Request):
-        """Save the ticket's UI flow as a new attachment, only over the version the user opened (409 otherwise);
-        then drop the old file and comment what changed. Those two steps failing only warn: the new file is in."""
-        i, new = _clean(body)
-        svc.need_token()
-        async with flow_lock:
-            auth = svc._flow_auth
-            cur = await svc.flow_file(i)
-            old_id, old = cur[:2] if cur else (None, None)
-            if old_id != body.base:
-                raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
-            if cur and not await _yours(svc, cur[3]):
-                raise _only_author(cur[3])
-            # the design as saved now: the shots sent (read live), the old signature for a screen not read this time
-            urls = {s.zeplin for s in new.screens if s.zeplin}
-            new.design = {
-                u: d for u, d in {**(old.design if old else {}), **uiflow.design_of(body.shots)}.items() if u in urls
-            }
-            ch = flow_changes.changes(old, new)
-            if not ch:
-                raise YtError(400, "Không có thay đổi")
-            new.rev = (old.rev if old else 0) + 1
-            engine = _engine(request)
-            name = uiflow.file_name(new)
-            # the same name as another file on the ticket (one attached by hand, a copy): the saver's name tells them
-            # apart; the flow file being replaced does not count
-            atts = (await svc.yt(f"/api/issues/{i}", fields="attachments(id,name,removed)")).get("attachments") or []
-            others = {a.get("name") for a in atts if a.get("id") != old_id and not a.get("removed")}
-            if name in others:
-                name = uiflow.file_name(new, (await svc.cached("me", lambda: _me(svc))).get("name") or "")
-            try:
-                html = uiflow.build_html(new, engine, body.shots).encode()
-            except ValueError as e:
-                raise YtError(400, str(e)) from None
-            try:
-                try:
-                    att, name = await svc.upload(i, name, html, mime="text/html")  # as YouTrack stored it
-                except YtUnreachable:  # YouTrack may have stored it: never let a blind retry add a second file
-                    raise YtError(502, "Không rõ đã lưu chưa — mở lại UI flow để kiểm tra trước khi lưu lại") from None
-                svc.seed_flow(i, att, len(html), new, auth=auth)
-                warn = ["Đã thay file UI flow hỏng trên ticket"] if old_id and old is None else []
-                if old_id:
-                    try:
-                        await svc.detach(i, old_id)
-                    except YtError as e:
-                        warn.append(f"Đã tải bản mới nhưng chưa xoá được file cũ: {e.message}")
-                head = f"UI flow {'mới' if new.rev == 1 else 'cập nhật'} (rev {new.rev}) — tệp đính kèm {name}"
-                more = [f"- … và {len(ch) - 20} thay đổi khác"] if len(ch) > 20 else []
-                try:
-                    await svc.comment(i, "\n".join([head, *(f"- {c}" for c in ch[:20]), *more]))
-                except YtError as e:
-                    warn.append(f"Đã tải bản mới nhưng chưa post được comment: {e.message}")
-            finally:
-                svc.stale(i)
-        return {"att": att, "rev": new.rev, "changes": ch, "warn": ". ".join(warn)}
-
-    @r.post("/flow/delete")
-    async def delete_flow(body: FlowDelete):
-        """Remove the ticket's UI flow file, only the version the user saw (409 otherwise), then say so in a comment
-        (the comment failing only warns: the file is gone)."""
-        i = _issue_id(body.id)
-        svc.need_token()
-        async with flow_lock:
-            cur = await svc.flow_file(i)
-            if (cur[0] if cur else None) != body.base:
-                raise YtError(409, "UI flow vừa được người khác cập nhật — mở lại để xem bản mới")
-            if cur and not await _yours(svc, cur[3]):
-                raise _only_author(cur[3])
-            try:
-                await svc.detach(i, body.base)
-            except YtUnreachable:  # YouTrack may have removed it: look before trying again
-                raise YtError(502, "Không rõ đã xoá chưa — mở lại UI flow để kiểm tra") from None
-            finally:
-                svc.stale(i)
-            warn = []
-            try:
-                gone = f" — tệp đính kèm {uiflow.file_name(cur[1])}" if cur and cur[1] else ""
-                await svc.comment(i, f"Đã xoá UI flow{gone}")
-            except YtError as e:
-                warn.append(f"Đã xoá file nhưng chưa ghi được bình luận: {e.message}")
-        return {"warnings": warn}
-
-    @r.post("/flow/html")
-    async def flow_html(body: FlowHtml, request: Request):
-        """The flow on screen (draft included) as the standalone file, to open locally; nothing is written."""
-        i, new = _clean(body)
-        try:
-            html = uiflow.build_html(new, _engine(request), body.shots, theme=body.theme)
-            return {"name": uiflow.file_name(new), "html": html}
-        except ValueError as e:
-            raise YtError(400, str(e)) from None
-
-    @r.post("/flow/md")
-    async def flow_markdown(body: FlowMd):
-        """The flow on screen (draft included) as one Markdown document for an AI agent: every screen with its design's
-        texts, the AC quoted from the ticket / stories, the ways through, what is missing. Read, never written: the
-        flow, its file and the map stay as they are."""
-        i, flow = _clean(body)
-        svc.need_token()
-        urls = list(dict.fromkeys(s.zeplin for s in flow.screens if s.zeplin))
-
-        async def designs():
-            try:
-                return (await shots.get(urls))[0] if urls else {}, ""
-            except zeplin.ZeplinError as e:  # no token / Zeplin down: the document says so, the rest is still worth it
-                return {}, str(e)
-
-        async def story(sid):
-            try:
-                return flow_prompt.source(await svc.issue_detail(sid))
-            except YtError as error:
-                if error.status not in (403, 404):
-                    raise
-                return sid  # not readable here: listed in the document as missing
-
-        # the designs, the ticket and its stories at once (Zeplin takes seconds when its read is cold)
-        reading = asyncio.ensure_future(designs())
-        try:
-            detail = await svc.issue_detail(i)
-            read = await asyncio.gather(*(story(sid) for sid in _story_ids(svc, detail, i)))
-            got, error = await reading
-        finally:
-            reading.cancel()  # a ticket read that failed: the Zeplin read is not waited for
-        sources = [flow_prompt.source(detail), *(x for x in read if isinstance(x, dict))]
-        lost = [x for x in read if isinstance(x, str)]
-        o = flow_md.Options(sources=body.sources, paths=body.paths, data=body.data, note=body.note, lost=lost,
-                            zeplin_error=error, ticket_url="" if svc.mock else f"{svc.base}/issue/{i}")
-        md = flow_md.build(flow, sources, got, o, at=time.strftime("%d/%m/%Y %H:%M"))
-        return {"name": f"uiflow-{i}.md", "md": md, "tokens": flow_prompt.estimate(md)}
 
     @r.get("/flow/scope")
     async def flow_scope() -> FlowScopeDTO:
@@ -277,7 +87,7 @@ def register(r, svc: YouTrackDashboard) -> None:
         return await flow_job_required(job_id)
 
     async def gather(i: str, note: str, say=lambda **e: None, previous: dict | None = None, draw=None,
-                     target="mobile"):
+                     target="mobile", *, links: bool = True):
         """Ticket + stories + linked Zeplin texts -> the prompt (whole, with its risks). Shared by the render, the
         pre-check and the advice: the reads are cached and shared while in flight, so a render pressed during the
         pre-check waits on the same Zeplin reads, and leaves out the other platform from them itself (`target`)."""
@@ -331,7 +141,8 @@ def register(r, svc: YouTrackDashboard) -> None:
             texts = sum(1 for x in got.values() if x.get("texts"))
             say(stage="zeplin", n=len(urls), of=len(urls), done=True, texts=texts, missing=len(missing))
         try:
-            payload = flow_prompt.build(ticket, story, note, got, previous=previous, draw=draw, target=target)
+            payload = flow_prompt.build(ticket, story, note, got, previous=previous, draw=draw, target=target,
+                                        links=links)  # fmt: skip
         except flow_prompt.BudgetExceeded as error:
             raise YtError(413, str(error)) from None
         payload.shots = got
@@ -395,22 +206,27 @@ def register(r, svc: YouTrackDashboard) -> None:
     async def flow_advice(body: FlowPrecheck, request: Request):
         """A light model reads the pre-check's numbers (never the ticket's text): why it is costly, what to do."""
         check = await _check((await gather(_issue_id(body.id), body.note, target=body.target))[0], request)
-        prompt = f"{flow_prompt.ADVICE}\n<check>{check.model_dump_json()}</check>"
-        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+        # numbers only, as ADVICE says: the risks' lines and the warnings quote the ticket / Zeplin titles
+        nums = check.model_dump(exclude={"risks": {"__all__": {"lines"}}, "warnings": True})
+        prompt = f"{flow_prompt.ADVICE}\n<check>{data_json(nums)}</check>"
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False,
+                                  feature=_feature("flow-advice"))}  # fmt: skip
 
     @r.post("/ai/flow/ask")
     async def flow_ask(body: FlowAsk, request: Request):
         """The pre-check's Q&A: a light model reads the unclear lines (numbered as shown) and the screen names, then
         the thread and the question; it explains and rewrites lines. Its answers go into the render's note."""
         payload = (await gather(_issue_id(body.id), body.note, target=body.target))[0]
-        lines = next((x["lines"] for x in payload.manifest["risks"] if x["code"] == "ambiguous"), [])
+        # every numbered line the dialog shows (unclear ones and the other platform's): any "#n" can be asked about
+        lines = [ln for x in payload.manifest["risks"] for ln in x.get("lines") or []]
         flow = {"lines": lines, "screens": [s["title"] for s in payload.skeleton["screens"]]}
         turns = data_json([t.model_dump() for t in body.history])
         prompt = (
             f"{flow_prompt.FLOW_ASK}\n<flow>{data_json(flow)}</flow>\n<history>{turns}</history>"
             f"\n<ask>{body.question}</ask>"
         )
-        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False)}
+        return {"text": await _ai(svc, request, prompt, heavy=False, notes=False, retry=False,
+                                  feature=_feature("flow-ask"))}  # fmt: skip
 
     @r.post("/ai/flow")
     async def ai_flow(body: AiFlow, request: Request):
@@ -437,7 +253,12 @@ def register(r, svc: YouTrackDashboard) -> None:
                 say_part(stage="draw", n=len(got), title=f"Phần {k + 1}/{n}", items=items)
                 return raw
 
-            return flow_prompt.combine(await asyncio.gather(*(one(k, t) for k, t in enumerate(prompts))))
+            runs = [asyncio.ensure_future(one(k, t)) for k, t in enumerate(prompts)]
+            try:
+                return flow_prompt.combine(await asyncio.gather(*runs))
+            finally:  # one part failed: the others (running or still queued) stop, not burn quota on a dead render
+                for run in runs:
+                    run.cancel()
 
         say_part = lambda **e: None  # noqa: E731  set by work: the stage line of the run being drawn
 
@@ -492,7 +313,8 @@ def register(r, svc: YouTrackDashboard) -> None:
                     lost = f"Không đọc được file trên ticket để giữ chỉnh tay: {e.message}"
             # "Chỉ vẽ phần mới": the AI starts from the flow on screen and writes only what is new
             previous = old.model_dump() if old is not None and body.reuse and body.mode == "flow" else None
-            payload, metrics, screens = await gather(i, body.note, say, previous, draw=body.draw, target=body.target)
+            payload, metrics, screens = await gather(i, body.note, say, previous, draw=body.draw, target=body.target,
+                                                     links=body.mode == "flow")  # fmt: skip
             mark = time.perf_counter()
             if body.mode == "screens":
                 say(stage="check", chars=0)
@@ -612,7 +434,7 @@ def register(r, svc: YouTrackDashboard) -> None:
                 body.base,
                 lambda on_text: work(on_text, detached=True),
                 request={"note": body.note, "mode": body.mode, "split": body.split, "target": body.target,
-                         "draw": body.draw},  # fmt: skip
+                         "draw": body.draw, "reuse": body.reuse},  # fmt: skip
             )
             if got is None:
                 raise YtError(409, "Mã lượt AI đã dùng; nối lại lượt hiện có")

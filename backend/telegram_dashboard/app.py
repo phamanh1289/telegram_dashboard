@@ -39,6 +39,9 @@ from .claude import (
 )
 from .config import Settings
 from .desktop import pick_folder
+from .docs import ask as docs_ask
+from .docs.library import Library
+from .docs.routes import build_router as build_docs_router
 from .errors import ApiError, int_or_404
 from .events import Hub, event_stream
 from .external_runs import external_runs, run_provider
@@ -76,9 +79,11 @@ from .tasks import add_refs, assist_history, new_task_id, start_task
 from .tasks import build_router as build_task_router
 from .telegram.bridge import TelegramBridge, Transport, notify_mac
 from .telegram.digest import DigestService
+from .telegram.follow import build_router as build_follow_router
 from .telegram.live_reads import TelegramReads
 from .telegram.routes import build_router as build_telegram_router
 from .telegram.routes import photo_file, prune_media
+from .telegram.routes_digest import build_router as build_digest_router
 from .youtrack.api import build_router
 from .youtrack.client import YtError
 from .youtrack.routes import build_router as build_youtrack_router
@@ -88,7 +93,7 @@ log = logging.getLogger("telegram_dashboard.app")
 
 
 GUIDE_PROMPT = (
-    "Em là trợ lý biết tuốt của ứng dụng Radar (2 tab: Telegram và YouTrack, cùng Cài đặt), trò chuyện với "
+    "Em là trợ lý biết tuốt của ứng dụng Radar (3 tab: Telegram, YouTrack và Tài liệu, cùng Cài đặt), trò chuyện với "
     "người dùng. Trong <guide> là danh mục tính năng, mỗi dòng có [id], vị trí, tác dụng và các bước; sau dòng "
     '"Tính năng khác" là các tính năng còn lại chỉ có [id] và tên: vẫn gắn [id] được, không bịa bước cho chúng. Câu hỏi'
     " về cách dùng: trả lời từ danh mục; không thấy thì nói rõ là không thấy, đừng bịa. Trả lời ngắn gọn, "
@@ -99,7 +104,8 @@ GUIDE_PROMPT = (
     "[Q&A](/?chat=__qa__), [Briefing](/?chat=__briefing__), [AI Agent](/?chat=__tasks__); YouTrack [Trang "
     "chủ](/youtrack/?view=home), [Dashboard](/youtrack/?view=dash), [Ticket](/youtrack/?view=tickets), "
     "[Release](/youtrack/?view=release), [Thành viên](/youtrack/?view=people), [YouTrack "
-    "AI](/youtrack/?view=ai); Cài đặt [Chung](/settings/#general), [Telegram](/settings/#telegram), "
+    "AI](/youtrack/?view=ai); [Tài liệu](/docs/); Cài đặt [Chung](/settings/#general), "
+    "[Telegram](/settings/#telegram), "
     "[YouTrack](/settings/#youtrack), [AI](/settings/#ai), [Cập nhật](/settings/#github), [Phím "
     "tắt](/settings/#shortcuts). Nhãn link ghi rõ đích, vd. [Cài đặt › Telegram](/settings/#telegram); không "
     "bịa đường dẫn khác (ngoài link có sẵn trong danh sách việc). <page> là trang người dùng đang mở; <state> là "
@@ -198,8 +204,9 @@ def create_app(
         app.state.store, app.state.hub, app.state.db, app.state.bridge = st, hub, db, bridge
         await yt_dashboard.start_flow_jobs(st)
         app.state.ai = AiService(settings, st, db)
+        app.state.docs = Library(settings, db, app.state.ai)
         app.state.ai.me = lambda: bridge.me
-        app.state.digest = DigestService(settings, st, db, bridge, app.state.ai)
+        app.state.digest = DigestService(settings, st, db, bridge, app.state.ai, live=live_reads.live)
         app.state.agent = AgentRunner(settings)
         app.state.autobe = auto = AutoBe(app.state)  # Vòng BE tự chạy: rules relay / agent on new tags
         app.state.agent.on_idle, bridge.on_tags = auto.on_idle, auto.on_tags
@@ -229,6 +236,7 @@ def create_app(
     yt_dashboard = YouTrackDashboard(settings)
     live_reads = TelegramReads()
     app = FastAPI(title="Radar", lifespan=lifespan)
+    app.state.live_reads = live_reads
     app.add_middleware(
         LocalGuardMiddleware,
         host_header=settings.host_header,
@@ -262,6 +270,8 @@ def create_app(
                                    or route.path.startswith("/api/yt/flow/jobs"))
     app.include_router(yt_router)
     app.include_router(build_task_router(settings))
+    app.include_router(build_docs_router(settings))
+    app.include_router(build_follow_router(settings, live_reads))
     app.include_router(updater.build_router(settings))
     app.include_router(privacy.build_router(settings))
     app.include_router(local_data.build_router(settings))
@@ -325,6 +335,11 @@ def create_app(
             yield ev
 
 
+    def _live_fetch(request: Request):
+        """Reads messages not kept (Cả nhóm) live, while Telegram is connected."""
+        s = S(request)
+        return s.bridge.fetch_ids if s.bridge.state == "connected" else None
+
     async def _draft_extras(request: Request, body: AiDraftRequest):
         """Photos and nearby messages of a tag, for a draft or a ticket: (nearby, images)."""
         s = S(request)
@@ -359,12 +374,14 @@ def create_app(
         nearby, images = await _draft_extras(request, body)
         kind = "answer" if body.project else "draft"  # a project picked: "Trả lời từ code"
         tickets = await yt_dashboard.brief(body.ticket_ids) if kind == "answer" else ""
+        po = kind == "draft" and body.role == "po"  # a PO's Tóm tắt & gợi ý: options from the KB
+        kb = await docs_ask.kb_for(S(request), body.chat_id, body.message_ids) if po else ""
 
         def run(on_text, history=None, ref=""):
             return S(request).ai.run(
                 kind, body.chat_id, body.message_ids, body.instruction, body.project, nearby=nearby, images=images,
                 platform=body.platform, role=body.role, intro=body.intro, on_text=on_text, tickets=tickets,
-                history=history, ref=ref,
+                history=history, ref=ref, fetch=_live_fetch(request), kb=kb,
             )  # fmt: skip
 
         async def work(on_text):
@@ -421,7 +438,7 @@ def create_app(
         s = S(request)
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        fetch = _live_fetch(request)
         prompt, title = await s.ai.deep(body.chat_id, body.question_id, body.confirm_id, body.project,
                                         body.instruction, fetch=fetch)  # fmt: skip
         task_id = new_task_id()
@@ -436,7 +453,7 @@ def create_app(
         s = S(request)
         if not s.agent.available:
             raise ApiError(422, "ai_agent_missing")
-        fetch = s.bridge.fetch_ids if s.bridge.state == "connected" else None
+        fetch = _live_fetch(request)
         items = [(i.text, i.message_ids, i.waiting, i.key) for i in body.items]
         prompt, title, anchor = await s.ai.deep_batch(body.chat_id, items, body.project, body.instruction,
                                                       fetch=fetch)  # fmt: skip
@@ -455,6 +472,7 @@ def create_app(
         r = await S(request).ai.run(
             "ticket", body.chat_id, body.message_ids, body.instruction, None,
             nearby=nearby, images=images, platform=body.platform, role=body.role, intro=body.intro, fields=fields,
+            fetch=_live_fetch(request),
         )  # fmt: skip
         return AiTicketDraft(**parse_ticket(r.text, fields))
 
@@ -705,6 +723,7 @@ def create_app(
         app.state.settings = value
 
     app.include_router(build_telegram_router(get_settings, set_settings, live_reads))
+    app.include_router(build_digest_router(live_reads))
     app.include_router(build_youtrack_router(get_settings, set_settings, yt_dashboard))
 
     @app.api_route(

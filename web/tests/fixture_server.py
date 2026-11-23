@@ -21,9 +21,11 @@ sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "backend"))
 
 from conftest import FakeTransport, msg  # noqa: E402
+from telegram_dashboard import zeplin_names  # noqa: E402
 from telegram_dashboard.app import create_app  # noqa: E402
 from telegram_dashboard.config import Settings  # noqa: E402
-from telegram_dashboard.models import GroupInfo, SentMessage  # noqa: E402
+from telegram_dashboard.docs import sync as doc_sync  # noqa: E402
+from telegram_dashboard.models import FileInfo, GroupInfo, SentMessage  # noqa: E402
 from telegram_dashboard.storage import Store  # noqa: E402
 from telegram_dashboard.telegram.bridge import SendRejected  # noqa: E402
 from telegram_dashboard.youtrack import flow as uiflow  # noqa: E402
@@ -129,6 +131,8 @@ async def fake_yt(scope, receive, send) -> bool:
     path, post, q = scope["path"], scope["method"] == "POST", scope["query_string"].decode()
     if path == "/api/yt/config":
         await answer(send, 200, CONFIG)
+    elif path == "/api/yt/projects" and control.get("kb"):  # Tài liệu › Nguồn lists it, to pick branches
+        await answer(send, 200, [{"shortName": "VA", "name": "Bán V2"}])
     elif path == "/api/yt/flow/scope":
         await answer(send, 200, {"scope": control.get("flow_scope", FLOW_SCOPE)})
     elif path == "/api/yt/flow/jobs":
@@ -268,6 +272,16 @@ async def send_impl(call):
 
 
 fake.send_impl = send_impl
+
+
+async def zeplin_find(name: str) -> list[dict]:
+    """Tài liệu's Zeplin links: never the real Zeplin (this machine's MCP token), one known screen."""
+    screen = {"project": "p1", "project_name": "Bán Web", "platform": "web", "id": "s1", "name": "Banv2-00",
+              "image": "", "w": 375, "h": 812}  # fmt: skip
+    return [screen] if name.lower() == "banv2-00" else []
+
+
+zeplin_names.NAMES.find = zeplin_find
 app = create_app(settings, transport=fake)
 
 
@@ -326,10 +340,15 @@ async def state():
 
 @ctl.post("/message")
 async def message(request: Request):
-    """A live tag (new or edited), as Telegram delivers one that mentions us."""
+    """A live tag (new or edited), as Telegram delivers one that mentions us. `file`: {name, body} attaches a document
+    (Việc cần xử lý › the file's chip downloads `body`)."""
     b = await request.json()
     m = msg(b["chat"], b["id"], b["text"], edit=b.get("edit"), sender=b.get("sender", "7"))
     m.date = datetime.now(UTC)
+    if f := b.get("file"):
+        data = f.get("body", "").encode()
+        m.media_kind, m.file = "document", FileInfo(name=f["name"], size=len(data), mime="text/markdown")
+        fake.files[(m.chat_id, m.message_id)] = (m.file, data)
     await app.state.bridge.on_mention(m, TITLES[b["chat"]], "supergroup")
     return {"ok": True}
 
@@ -343,6 +362,59 @@ async def delete(request: Request):
 
 TITLES = {A: "Nhóm Dự án", B: "Nhóm Bạn bè"}
 
+# Tài liệu (docs.spec): the real library over folders in the temp dir. DOCS holds `files`; EXTRA (`extra`: true) one
+# more folder, which `extra: "gone"` deletes before the sync, as an unplugged drive (its docs stay, with an error);
+# `kb_cache`: true adds a Knowledge Base article of a project not in the sources (the Agent's hidden cache);
+# `kb`: true serves project VA's Knowledge Base tree (KB below) in place of YouTrack, to pick branches in Nguồn.
+DOCS, EXTRA = tmp / "docs-e2e", tmp / "docs-e2e-extra"
+KB = {"VA-A-1": ("Bán V2 · Bàn giao", None), "VA-A-2": ("FE / Mobile", "VA-A-1"),
+      "VA-A-3": ("Đợt 1a — Khảo sát", "VA-A-2"), "VA-A-4": ("Sprint tuần 3", None)}  # fmt: skip
+
+
+def kb_yt(real):
+    def row(aid: str, **more) -> dict:
+        title, parent = KB[aid]
+        return {"idReadable": aid, "summary": title, "updated": 1,
+                "parentArticle": {"idReadable": parent} if parent else None, **more}  # fmt: skip
+
+    async def yt(path, **params):
+        if path == "/api/admin/projects/VA/articles":
+            return [row(a) for a in KB][params["$skip"] : params["$skip"] + params["$top"]]
+        if path.startswith("/api/articles/") and (aid := path.rsplit("/", 1)[1]) in KB:
+            return row(aid, content=f"Nội dung bài {KB[aid][0]}, giải ngân theo nhánh.")
+        return await real(path, **params)
+
+    return yt
+
+
+@ctl.post("/docs")
+async def docs_(request: Request):
+    b = await request.json()
+    DOCS.mkdir(exist_ok=True)
+    for name, text in b.get("files", {}).items():  # "api/mua.md": in a sub-folder (the list's tree)
+        (DOCS / name).parent.mkdir(parents=True, exist_ok=True)
+        (DOCS / name).write_text(text, encoding="utf-8")
+    extra = b.get("extra")
+    if extra is True:
+        EXTRA.mkdir(exist_ok=True)
+        (EXTRA / "so-tay.md").write_text("# Sổ tay\n\nGhi chú nội bộ của nhóm.\n", encoding="utf-8")
+    elif extra == "gone" and EXTRA.exists():
+        for f in EXTRA.iterdir():
+            f.unlink()
+        EXTRA.rmdir()
+    lib = app.state.docs
+    if b.get("kb") and not control.get("kb"):
+        control["kb"] = control["yt"] = True
+        app.state.yt.yt = kb_yt(app.state.yt.yt)
+    if "yt_base" in b:  # the KB articles' YouTrack link (Dùng tài liệu › Hỏi trong Q&A nhóm); "" takes it away
+        app.state.yt.base = b["yt_base"]
+    if b.get("kb_cache"):  # an article the AI Agent opened, its project not in the sources
+        text = "# XO-A-1 Bài ngoài nguồn\n\nAgent đã mở."
+        await lib.put("yt_article", "XO-A-1", "Bài ngoài nguồn", text, updated_at=1)
+    await lib.set_sources([], [str(DOCS), *([str(EXTRA)] if extra else [])])
+    await doc_sync.run(lib, app.state.yt)
+    return {"errors": lib.errors}
+
 
 async def main():
     async def seed():
@@ -355,6 +427,9 @@ async def main():
             m.date = now - timedelta(minutes=len(tags) - k)
         found = [(TITLES[m.chat_id], "supergroup", m, False) for m in tags]
         await app.state.db.write(app.state.store.store_mentions, found)
+        # A read-only AI Agent session that never ran: its composer's "Cho sửa code" (inbox.spec).
+        await app.state.db.write(app.state.store.add_task, "20260101-000000-e2e001", None, None, str(tmp),
+                                 "Phiên plan e2e", title="Phiên plan e2e")  # fmt: skip
 
     main_srv = uvicorn.Server(
         uvicorn.Config(Faults(app), host="127.0.0.1", port=PORT, log_level="warning")

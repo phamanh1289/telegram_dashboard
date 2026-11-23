@@ -1,11 +1,12 @@
 """YouTrackDashboard: the app's one YouTrack service (client + reads, see client.py / queries.py), the team's
 settings files (AI notes, saved prompts, workflow) and the background watch (new tickets, "Báo lại", snoozes).
-HTTP: /api/yt/* in api.py (+ api_ai.py, api_flow.py), /api/youtrack/* in routes.py.
+HTTP: /api/yt/* in api.py (+ api_ai.py, api_flow_file.py, api_flow.py), /api/youtrack/* in routes.py.
 """
 
 import asyncio
 import logging
 import os
+import random
 import re
 import time
 
@@ -128,31 +129,33 @@ class YouTrackDashboard(YtQueries):
             write_private_json(self.watch_path, snap)
             return []
         before = saved.get("states") or dict.fromkeys(saved.get("ids") or [])  # an older file: states unknown
-        try:
-            if db is not None:
-                done = await self._finished(me["login"], before, rows)
-                try:
-                    await self._loop_back(db, done)
-                except Exception:  # not queued: keep their old state so the next round finds them again
-                    states.update({r["id"]: before[r["id"]] or "" for r in done})
-                    raise
-        finally:
-            write_private_json(self.watch_path, snap)
         now = time.monotonic()
         fresh = [
             r for r in rows
             if r["id"] not in before and r["reporter"] != me["name"]
             and now - self.touched.get(r["id"], -1e9) > WATCH_EVERY
         ]  # fmt: skip
-        if notify is None:
-            return fresh
-        if len(fresh) > 3:
-            await notify(f"{len(fresh)} ticket mới cho bạn", "", ", ".join(r["id"] for r in fresh[:10]))
-        for r in fresh if len(fresh) <= 3 else []:
+        # Banners before "Báo lại" and before the snapshot: a round failing below still records these ids as seen
+        say = fresh if notify is not None else []
+        if len(say) > 3:
+            await notify(f"{len(say)} ticket mới cho bạn", "", ", ".join(r["id"] for r in say[:10]))
+        for r in say if len(say) <= 3 else []:
             # the summary only when Settings allow message text in banners (lock screen / Notification Center)
             body = (r["summary"] or "") if telegram.NOTIFY_PREVIEW else "Mở dashboard để xem chi tiết"
             sub = "Giao cho bạn" if r["assigneeLogin"] == me["login"] else "Nhờ bạn test"
             await notify(f"Ticket mới · {r['id']}", sub, body)
+        done = None
+        try:
+            if db is not None:
+                done = await self._finished(me["login"], before, rows)
+                await self._loop_back(db, done)
+        except Exception:
+            # not queued: keep their old state (every ticket's when the look itself failed, the ones gone from the
+            # open list included) so the next round finds them again
+            states.update({i: before[i] for i in (before if done is None else [r["id"] for r in done])})
+            raise
+        finally:
+            write_private_json(self.watch_path, snap)
         return fresh
 
     async def _finished(self, login: str, before: dict, rows: list[dict]) -> list[dict]:
@@ -189,11 +192,12 @@ class YouTrackDashboard(YtQueries):
 
     async def wake_snoozes(self, db) -> None:
         """Tags snoozed "until VA-1 is done": wake those whose ticket is resolved / Fixed / Done."""
-        for i in (await db.read(db.store.ticket_snoozes))[:WAKE_MAX]:
+        ids = await db.read(db.store.ticket_snoozes)
+        for i in random.sample(ids, min(WAKE_MAX, len(ids))):  # a different slice each round: none is never checked
             try:
                 r = _normalize(await self.yt(f"/api/issues/{i}", fields=FIELDS))
             except YtError as e:
-                if e.status == 404:  # gone: the snooze's own time wakes it
+                if e.status in (403, 404):  # gone / not mine to read: the snooze's own time wakes it
                     continue
                 raise
             if r["resolved"] or FINISHED.match(r["state"] or ""):

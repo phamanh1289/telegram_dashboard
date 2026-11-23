@@ -1,13 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useState } from "react";
 import { hueOf } from "@/shared/components/avatar";
 import { type Message } from "@/shared/lib/api";
 import { ticketClick } from "@/features/telegram/lib/inbox";
 import { ago } from "@/shared/lib/time";
-import { yt, ytDetailQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { Person, Prio, StatePill } from "@/features/youtrack/components/bits";
+import { ytDetailQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { KbChip } from "@/features/docs/components/kb-chip";
+import { Peek } from "@/shared/components/ui/peek";
 import { cn } from "@/shared/lib/utils";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -18,7 +20,7 @@ export const MEDIA: Record<string, Key> = {
 
 // Three looks so they never blur: links are underlined copper text, @mentions an outlined copper chip, keys/code a
 // slate-blue mono chip (the one cool hue, so it stands off body text and the paper-2 quote well too).
-const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
+export const linkCls = "text-hl-2 underline decoration-hl decoration-1 underline-offset-[3px] transition-[text-decoration-thickness] duration-(--dur-micro) hover:decoration-2";
 const mentionCls = "rounded-sm bg-hl-wash px-1 font-medium text-hl-2 no-underline ring-1 ring-inset ring-hl/30";
 const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] text-code ring-1 ring-inset ring-code/30";
 
@@ -26,8 +28,11 @@ const codeCls = "rounded-sm bg-code-wash px-1 py-px font-mono text-[0.875em] tex
 const SAFE_URL = /^(https?|tg|mailto):/i;
 const WEB_URL = /^(https?|mailto):/i; // a hidden link (label ≠ url) from anyone: no tg:// (proxy, join, login)
 
-// Bare URLs, @username mentions (not inside e-mails), `code` the sender typed literally and YouTrack IDs (VA-123).
-const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`|(?<![\w-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)/g;
+// Bare URLs, @username mentions (not inside e-mails), `code` the sender typed literally, Knowledge Base article IDs
+// (VA-A-134) and YouTrack IDs (VA-123).
+const INLINE = /(https?:\/\/[^\s<>"']+[^\s<>"'.,;:!?)\]])|(?<![\w.@])(@[A-Za-z][A-Za-z0-9_]{3,31})|`([^`\n]+)`|(?<![\w/-])([A-Z][A-Z0-9]{1,9}-A-\d{1,6})(?!\w)|(?<![\w-])([A-Z][A-Z0-9]{1,9}-\d{1,6})(?!\w)/g;
+// A Knowledge Base article's link (links.py ARTICLE): drawn as the article's chip when it is on our YouTrack.
+const ARTICLE_URL = /\/articles\/([A-Za-z][\w]*-A-\d+)/;
 
 export function inline(text: string, key: number) {
   const out: React.ReactNode[] = [];
@@ -35,10 +40,15 @@ export function inline(text: string, key: number) {
   for (const x of text.matchAll(INLINE)) {
     out.push(text.slice(at, x.index));
     const k = `${key}-${x.index}`;
-    if (x[1]) out.push(<a key={k} href={x[1]} target="_blank" rel="noreferrer" className={cn(linkCls, "break-all")}>{x[1]}</a>);
+    if (x[1]) {
+      const a = <a key={k} href={x[1]} target="_blank" rel="noreferrer" className={cn(linkCls, "break-all")}>{x[1]}</a>;
+      const kb = ARTICLE_URL.exec(x[1]);
+      out.push(kb ? <KbChip key={k} id={kb[1]} url={x[1]} fallback={a} className={linkCls} /> : a);
+    }
     else if (x[2]) out.push(<a key={k} href={`https://t.me/${x[2].slice(1)}`} target="_blank" rel="noreferrer" className={mentionCls}>{x[2]}</a>);
     else if (x[3]) out.push(<code key={k} className={codeCls}>{x[3]}</code>);
-    else out.push(<TicketChip key={k} id={x[4]} />);
+    else if (x[4]) out.push(<KbChip key={k} id={x[4]} fallback={x[4]} className={linkCls} />);
+    else out.push(<TicketChip key={k} id={x[5]} />);
     at = x.index + x[0].length;
   }
   out.push(text.slice(at));
@@ -59,48 +69,32 @@ export function TicketSheetHost() {
 }
 
 /** VA-123 of a known YouTrack project: a chip that opens the YouTrack tab's ticket sheet right here (⌘ / middle click:
- *  the YouTrack page). Hover / focus shows a peek card (summary,
- *  state, priority, assignee, last update) with links to the YouTrack module and to YouTrack itself, so a reply needn't
- *  leave Telegram to check a ticket. */
-export function TicketChip({ id }: { id: string }) {
+ *  the YouTrack page; the page needs a TicketSheetHost). Hover / focus shows a peek card (summary, state, priority,
+ *  assignee, last update; `more`: the page's own links), so a reply needn't leave the page to check a ticket. */
+/** `more`: one more action in the card's link row (Tài liệu: "Tài liệu nhắc ticket này"). */
+export function TicketChip({ id, more }: { id: string; more?: ReactNode }) {
   const t = useT();
   const [hover, setHover] = useState(false);
   const projects = useQuery(ytProjectsQuery);
-  const d = useQuery({ ...ytDetailQuery(id), retry: false, enabled: hover });
-  const base = useQuery({ queryKey: ["yt", "config"], queryFn: yt.config, staleTime: Infinity, enabled: hover }).data?.base;
+  const d = useQuery({ ...ytDetailQuery(id), retry: false, enabled: hover, staleTime: 0 }); // each hover reads it again: the state follows YouTrack
   if (!projects.data?.some((p) => p.shortName === id.split("-")[0])) return id;
   const tk = d.data;
   return (
-    <span className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}
-      onKeyDown={(e) => { if (e.key === "Escape" && hover) { e.stopPropagation(); setHover(false); } }}>
-      <a href={`/youtrack/?ticket=${id}`} aria-describedby={hover ? `peek-${id}` : undefined}
-        onClick={(e) => { setHover(false); ticketClick(id)(e); }}
-        className={cn(codeCls, "font-bold no-underline hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/30", tk?.resolved && "line-through")}>{id}</a>
-      {hover && (
-        // pt, not mt: the pointer crosses into the card without leaving the chip's box.
-        <span className="absolute top-full left-0 z-30 pt-1">
-          <span id={`peek-${id}`} className="grid w-80 gap-2 rounded-md bg-cotton p-3 text-xs leading-snug whitespace-normal text-ink-2 shadow-pop animate-in fade-in-0 duration-(--dur-micro)">
-            {tk ? (
-              <>
-                <span className="line-clamp-3 text-sm font-medium text-ink">{tk.summary || id}</span>
-                <span className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5">
-                  <span className="text-ink-3">{t("Trạng thái")}</span><span className={cn("truncate", tk.resolved && "text-ok")}>{tk.state || "—"}</span>
-                  <span className="text-ink-3">{t("Ưu tiên")}</span><span className="truncate">{tk.priority || "—"}</span>
-                  <span className="text-ink-3">{t("Người làm")}</span><span className="truncate">{tk.assignee || t("Chưa assign")}</span>
-                  {tk.qc && <><span className="text-ink-3">QC</span><span className="truncate">{tk.qc}</span></>}
-                  <span className="text-ink-3">{t("Cập nhật|lúc")}</span><span className="font-mono tabular-nums">{ago(tk.updated)}</span>
-                </span>
-                <span className="flex flex-wrap gap-x-3 border-t border-rule pt-1.5">
-                  <a href={`/youtrack/?ticket=${id}`} className={linkCls}>{t("Mở ở trang YouTrack")}</a>
-                  {base && <a href={`${base.replace(/\/$/, "")}/issue/${id}`} target="_blank" rel="noreferrer" className={cn(linkCls, "inline-flex items-center gap-1")}>
-                    {t("Mở trong YouTrack")}<ExternalLink className="size-3" aria-hidden /></a>}
-                </span>
-              </>
-            ) : d.isError ? d.error.message || t("Không tải được ticket") : t("Đang tải…")}
+    <Peek open={hover} onOpenChange={setHover} label={t("Xem nhanh ticket {id}", { id })} card={tk ? (
+        <>
+          <span className="line-clamp-3 text-sm font-medium text-ink">{tk.summary || id}</span>
+          <span className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-0.5">
+            <span className="text-ink-3">{t("Trạng thái")}</span><span className="flex min-w-0"><StatePill state={tk.state} /></span>
+            <span className="text-ink-3">{t("Ưu tiên")}</span><span className="flex min-w-0"><Prio p={tk.priority} /></span>
+            <span className="text-ink-3">{t("Người làm")}</span><span className="flex min-w-0"><Person name={tk.assignee} empty={t("Chưa assign")} /></span>
+            {tk.qc && <><span className="text-ink-3">QC</span><span className="flex min-w-0"><Person name={tk.qc} /></span></>}
+            <span className="text-ink-3">{t("Cập nhật|lúc")}</span><span className="font-mono tabular-nums">{ago(tk.updated)}</span>
           </span>
-        </span>
-      )}
-    </span>
+          {more && <span className="flex flex-wrap gap-x-3 border-t border-rule pt-1.5">{more}</span>}
+        </>
+      ) : d.isError ? d.error.message || t("Không tải được ticket") : t("Đang tải…")}
+      trigger={<a href={`/youtrack/?ticket=${id}`} role="link" onClick={(e) => { setHover(false); ticketClick(id)(e); }}
+        className={cn(codeCls, "font-bold no-underline hover:bg-hl-wash hover:text-hl-2 hover:ring-hl/30", tk?.resolved && "line-through")}>{id}</a>} />
   );
 }
 
@@ -116,6 +110,13 @@ const STYLE: Partial<Record<Span["kind"], string>> = {
   blockquote: "my-1 block rounded-r-sm border-l-[3px] border-rule-2 bg-paper-2 py-1 pr-2 pl-2.5", // neutral: copper stays for links/mentions
   pre: "my-1 block overflow-x-auto rounded-sm bg-paper-3 px-2 py-1.5 font-mono text-[0.875em] ring-1 ring-inset ring-rule-2/40",
 };
+
+/** A hidden link (text ≠ url) or a name mention; a link to a Knowledge Base article becomes its chip. */
+function entityLink(k: string, l: Span, kids: ReactNode[]) {
+  const a = <a key={k} href={l.url} target="_blank" rel="noreferrer" title={l.url} className={l.kind === "mention" ? mentionCls : linkCls}>{kids}</a>;
+  const kb = l.kind === "link" ? ARTICLE_URL.exec(l.url) : null;
+  return kb ? <KbChip key={k} id={kb[1]} url={l.url} label={kids} fallback={a} className={linkCls} /> : a;
+}
 
 // Telegram entities nest (bold inside a quote, a link inside bold); offsets are UTF-16, like JS strings. Spans are
 // sorted outer-first, so each one's children are among the spans after it. Plain text between them still gets bare
@@ -133,7 +134,7 @@ function render(text: string, spans: Span[], from: number, to: number, plain: bo
       l.kind === "code" ? <code key={k} className={codeCls}>{kids}</code>
         : l.kind === "link" || l.kind === "mention"
           ? (l.kind === "mention" ? SAFE_URL : WEB_URL).test(l.url)
-            ? <a key={k} href={l.url} target="_blank" rel="noreferrer" title={l.url} className={l.kind === "mention" ? mentionCls : linkCls}>{kids}</a>
+            ? entityLink(k, l, kids)
             : <span key={k}>{kids}</span>
           : <span key={k} className={STYLE[l.kind]}>{kids}</span>,
     );

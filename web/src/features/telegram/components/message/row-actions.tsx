@@ -18,6 +18,8 @@ import { cn } from "@/shared/lib/utils";
 import { t, useT } from "@/shared/lib/i18n";
 import { SnoozeMenu } from "@/features/telegram/components/message/snooze-menu";
 import { AttachPick } from "@/features/telegram/components/message/attach";
+import { MessageWaitMenu } from "@/features/telegram/components/briefing/waits";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 /** Thin rule between action groups in the hover strip. */
 const Sep = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-rule-2" />;
@@ -26,17 +28,19 @@ const Sep = () => <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-rule-2"
  *  edge and the rest tuck behind it until the row is hovered or selected (globals.css; always shown per Settings and on
  *  touch screens); always in the tab order. Groups: Xong | Hoãn, Ngữ cảnh | AI | ⋯ (rarer actions, spelled out with
  *  their keys). Replying is a click on the row (or Enter / r). Negative margin so the 30px targets don't make the line taller. */
-export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }: { m: Message; tag: boolean; liveSnooze: boolean; showContext: boolean; onToggleContext: () => void }) {
+export function RowActions({ m, tag, liveSnooze, liveWait, showContext, onToggleContext }: { m: Message; tag: boolean; liveSnooze: boolean; liveWait: boolean; showContext: boolean; onToggleContext: () => void }) {
   const t = useT();
   const { done, pinned, mark, togglePin } = useTagMark(m);
   const [comment, setComment] = useState(false);
+  const commenting = useLinger(comment); // mounted while open, and until it has closed
   const yt = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
   const link = telegramLink(m);
   const answers = !m.outgoing || (tag && !!yt); // the ⋯ menu's "answer it" group shows
+  const deep = <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />;
   return (
     <div role="toolbar" aria-label={t("Thao tác tin #{id}", { id: m.message_id })} className="row-actions flex flex-row-reverse items-center gap-0.5 -my-1.5">
-      {tag && (
-        <>
+      {/* The edge button stays out; the rest sit in .row-more, which folds to nothing until the strip opens (globals.css). */}
+      {tag ? (
           <Hint side="bottom" title={done ? t("Mở lại (x)") : t("Xong (x)")}
             text={done ? t("Đánh dấu chưa xử lý.") : t("Không cần trả lời / đã xử lý nơi khác; thả reaction trên Telegram. Không thả reaction: Shift+bấm (Shift+x) hoặc menu ⋯.")}>
             <Button type="button" size="xs" variant="ghost" aria-busy={mark.isPending} disabled={mark.isPending} aria-label={done ? t("Mở lại") : t("Xong")}
@@ -45,6 +49,10 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
               {done ? <RotateCcw /> : <CheckCheck />}<span className="row-label">{done ? t("Mở lại") : t("Xong")}</span>
             </Button>
           </Hint>
+      ) : deep}
+      <div className="row-more"><div className="flex flex-row-reverse items-center gap-0.5">
+      {tag && (
+        <>
           <Sep />
           {!done && <SnoozeMenu ms={[m]} />}
           <Hint side="bottom" title={t("Ngữ cảnh")} text={t("Xem các tin trước / sau trong nhóm.")}>
@@ -54,11 +62,13 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
             </Button>
           </Hint>
           <Sep />
+          {deep}
         </>
       )}
-      <DeepPick m={m} className="hover:bg-hl-wash hover:text-hl-2" />
       {/* Cả nhóm: hoãn keeps the message (backend), so it comes back as a tag. */}
       {liveSnooze && <SnoozeMenu ms={[m]} />}
+      {/* Cả nhóm: any message (your own too) waits under Briefing › Chờ bổ sung until someone replies to it. */}
+      {liveWait && <MessageWaitMenu m={m} />}
       <AttachPick m={m} />
       <Hint side="bottom" title={t("Chép ID tin")} text={t("Chép ID {id}: dán vào ô nhắn của phiên AI (kể cả phiên đã Done) để đính kèm tin, hoặc dùng khi báo lỗi.", { id: dbId(m) })}>
         <Button type="button" size="icon-xs" variant="ghost" aria-label={t("Chép ID tin")}
@@ -97,9 +107,10 @@ export function RowActions({ m, tag, liveSnooze, showContext, onToggleContext }:
           </Menu.Positioner>
         </Menu.Portal>
       </Menu.Root>
-      {comment && (
+      </div></div>
+      {commenting && (
         <span className="contents" onClick={(e) => e.stopPropagation()}>
-          <CommentDialog m={m} open onOpenChange={setComment} onDone={() => setComment(false)} />
+          <CommentDialog m={m} open={comment} onOpenChange={setComment} onDone={() => setComment(false)} />
         </span>
       )}
     </div>

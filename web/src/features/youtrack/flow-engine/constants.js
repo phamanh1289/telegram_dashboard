@@ -30,7 +30,7 @@ const TALL = 1.1, FIT_TALL = 2, MIN_FOLD = 200; // MIN_FOLD: the lowest a folded
 // phone: status bar, nav bar, first row, home bar
 const CARD_HEAD = 60, CARD_PAD = 20, STEP = 64;
 // overlay card header, bottom padding; max row step
-const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220, DBL_MS = 280; // DBL_MS: a double click's gap
+const ZMIN = 0.1, ZMAX = 2, PAD = 32, ANIM_MS = 220;
 const FOCUS = 0.18; // a screen brought into view: this much of its size left round it each side
 const SLIDE_MS = 200, TOAST_MS = 2000, FLASH_MS = 600, HINT_MS = 450, BEZEL = 11, GAP = 16;
 // prototype: motion, phone bezel, margin
@@ -52,4 +52,4 @@ const ZEPLIN = /^https?:\/\/(?:zpl\.io|app\.zeplin\.io|scene\.zeplin\.io)\/\S+$/
 // = providers.ZEPLIN
 const SVGNS = "http://www.w3.org/2000/svg";
 
-export { MIN_FOLD, SCREEN, FRAMES, DEVICE, setDevice, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, FOLD_SLACK, TALL, FIT_TALL, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, DBL_MS, FOCUS, SLIDE_MS, TOAST_MS, FLASH_MS, HINT_MS, BEZEL, GAP, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, MAX_MEMOS, VERSION, CAP_NOTE, CAP_TITLE, KINDS, ACTS, ZEPLIN, SVGNS };
+export { MIN_FOLD, SCREEN, FRAMES, DEVICE, setDevice, W, H, COL, ROW, SHIFT, GROUP_GAP, LABEL_HIDE, STATUS, HEAD, TOP, BOTTOM, FOLD_SLACK, TALL, FIT_TALL, CARD_HEAD, CARD_PAD, STEP, ZMIN, ZMAX, PAD, ANIM_MS, FOCUS, SLIDE_MS, TOAST_MS, FLASH_MS, HINT_MS, BEZEL, GAP, NOTE_MS, MERGE_MS, CAP, UNDO, DRAG_PX, CAP_AC, CAP_URL, MAX_SCREENS, MAX_ITEMS, MAX_LINKS, MAX_MEMOS, VERSION, CAP_NOTE, CAP_TITLE, KINDS, ACTS, ZEPLIN, SVGNS };

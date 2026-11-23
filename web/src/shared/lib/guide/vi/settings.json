@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Cài đặt › Tìm cài đặt",
     "title": "Tìm một cài đặt",
-    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
+    "what": "Gõ tên cài đặt (không cần dấu) để nhảy thẳng tới nó: trang tự mở đúng mục, đúng nhóm con của YouTrack và làm nổi thẻ chứa cài đặt. Thẻ ít dùng (Luôn bỏ qua, Ưu tiên và tự động, Tag khi AI Agent hỏi, Kho prompt, Workflow, Báo cáo release) gập lại với nhãn “Nâng cao”; bấm tên thẻ để mở, tìm tới thẻ thì nó tự mở.",
     "how": [
       {
         "t": "Bấm ô \"Tìm cài đặt\" dưới chữ Cài đặt (hoặc nhấn /)",
@@ -20,7 +20,7 @@
     "tab": "settings",
     "area": "Cài đặt › Dữ liệu",
     "title": "Xem dung lượng và dọn dữ liệu trên máy",
-    "what": "Cho biết app đang chiếm bao nhiêu trên máy (thanh chia theo phần: Database, Phiên AI, Ảnh tag đã tải, Lịch sử chạy AI, Log server, Đăng nhập Telegram, Cấu hình), database theo từng bảng và theo từng nhóm. Xóa từng phần: tin đã xử lý cũ hơn 30 ngày, bản tóm tắt Briefing, lịch sử gửi cũ, phiên AI đã xong, ảnh đã tải, lịch sử chạy AI, log server, dữ liệu của một nhóm, nháp trả lời trên trình duyệt. Mỗi lần xóa hỏi lại và nói rõ mất gì, giữ gì; database tự thu gọn sau khi xóa. Khi khởi động app tự dọn ảnh quá 30 ngày, lịch sử chạy AI quá 90 ngày và cắt log quá 5 MB. Nút \"Đổi thư mục\" (cuối thẻ Dung lượng, cạnh đường dẫn) chuyển toàn bộ dữ liệu sang thư mục khác: nhập đường dẫn tuyệt đối, app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ; lỗi thì vẫn dùng thư mục cũ. Nếu thư mục đó đã có dữ liệu Radar (ổ từng dùng với bản cài khác), hộp thoại hỏi \"Dùng dữ liệu ở đó\": app chuyển sang dữ liệu đó, dữ liệu đang dùng giữ nguyên chỗ cũ, không xóa. Không đổi được khi AI Agent đang chạy; thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database. Nếu thư mục mới nằm trên ổ ngoài, ổ phải gắn sẵn khi mở app.",
+    "what": "Cho biết app đang chiếm bao nhiêu trên máy (thanh chia theo phần: Database, Phiên AI, Ảnh tag đã tải, Lịch sử chạy AI, Log server, Đăng nhập Telegram, Cấu hình), database theo từng bảng và theo từng nhóm. Xóa từng phần: tin đã xử lý cũ hơn 30 ngày, bản tóm tắt Briefing, lịch sử gửi cũ, phiên AI đã xong, ảnh đã tải, lịch sử chạy AI, log server, dữ liệu của một nhóm, kho Tài liệu (bài Knowledge Base đã tải, chỉ mục và bản tóm tắt; đồng bộ lại để tải về), nháp trả lời trên trình duyệt. Mỗi lần xóa hỏi lại và nói rõ mất gì, giữ gì; database tự thu gọn sau khi xóa. Khi khởi động app tự dọn ảnh quá 30 ngày, lịch sử chạy AI quá 90 ngày và cắt log quá 5 MB. Nút \"Đổi thư mục\" (cuối thẻ Dung lượng, cạnh đường dẫn) chuyển toàn bộ dữ liệu sang thư mục khác: nhập đường dẫn tuyệt đối, app khởi động lại, chuyển xong mới dùng chỗ mới và xóa bản cũ; lỗi thì vẫn dùng thư mục cũ. Nếu thư mục đó đã có dữ liệu Radar (ổ từng dùng với bản cài khác), hộp thoại hỏi \"Dùng dữ liệu ở đó\": app chuyển sang dữ liệu đó, dữ liệu đang dùng giữ nguyên chỗ cũ, không xóa. Không đổi được khi AI Agent đang chạy; thư mục đồng bộ đám mây (iCloud, Dropbox, OneDrive, Google Drive) bị từ chối vì làm hỏng database. Nếu thư mục mới nằm trên ổ ngoài, ổ phải gắn sẵn khi mở app.",
     "how": [
       {
         "t": "Mở Cài đặt › Dữ liệu",
@@ -36,7 +36,7 @@
         "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
       }
     ],
-    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean doi thu muc chuyen di doi noi luu duong dan o dia move folder location path"
+    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean doi thu muc chuyen di doi noi luu duong dan o dia move folder location path tai lieu kho tai lieu docs"
   },
   {
     "id": "settings-role",
@@ -240,7 +240,7 @@
     "tab": "settings",
     "area": "Cài đặt › Chung › Giới thiệu bản thân cho AI",
     "title": "Nền tảng tóm tắt",
-    "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Mobile chung, Không giới hạn).",
+    "what": "Chọn nền tảng AI tập trung khi tóm tắt (Android, iOS, Web, Mobile (Android + iOS), Tất cả): áp dụng cho Tóm tắt & gợi ý, tạo ticket từ tin, Briefing, trang Tóm tắt của nhóm, Trợ lý Briefing và AI Agent. Dev chọn nền tảng mình code: Briefing bỏ chủ đề chỉ liên quan nền tảng khác (Android / iOS bỏ web, Web bỏ app) và không chia mục Ảnh hưởng cho team đó. QA/QC, PO/PM chọn Mobile hoặc Tất cả: AI báo tình trạng từng nền tảng (QC: lỗi, đã sửa, chưa test lại; PO: xong, đang làm, chưa bắt đầu, bị chặn) và chỉ ra nền tảng đang chậm. Ô Giới thiệu bản thân hiện mẫu theo vai trò (Dev app, Dev web, QC, PO) gợi ý những gì AI cần biết: nền tảng, môi trường, thiết bị, việc bạn chốt, phần cần bỏ qua.",
     "how": [
       {
         "t": "Chọn mục \"Chung\"",
@@ -251,7 +251,7 @@
         "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
       }
     ],
-    "keys": "mo san tom tat nen tang android ios mobile platform tra loi"
+    "keys": "mo san tom tat nen tang android ios mobile platform tra loi briefing web qc po tat ca gioi thieu mau"
   },
   {
     "id": "settings-briefing-model",

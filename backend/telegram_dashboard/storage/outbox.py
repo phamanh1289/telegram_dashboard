@@ -40,10 +40,12 @@ class Outbox:
         *,
         qa: bool = False,
         qa_role: str | None = None,
+        tagged: str | None = None,
     ) -> tuple[OutboxDTO, bool]:
         """Returns (record, created). Same id with different payload => 409. `qa`: a "#QA…" line under a text that
         tags someone, minted once here (the hash is over the text as typed), so a retry sends the same code; `qa_role`
-        (BE / PO / QC) goes in it: "#QA_BE_…"."""
+        (BE / PO / QC) goes in it: "#QA_BE_…". `tagged`: the text to send, opening with the role's tags
+        (ai.with_tags); the hash stays over the typed one, so a retry after the setting changed is the same request."""
         qa_key = f"\nqa{qa_role or ''}" if qa else ""
         h = content_hash(f"{chat_id}\n{reply_to}\n{text}" + ("" if quote else "\nnew") + qa_key)
         with self._conn(write=True) as c:
@@ -63,6 +65,7 @@ class Outbox:
             if quote and (target["deleted"] if target is not None else not attached):
                 raise ApiError(404, "reply_not_found")
             ts = now_ts()
+            text = tagged or text
             if qa and has_tag(text):
                 text = f"{text.strip()}\n{qa_code(datetime.now(UTC), role=qa_role)}"
             c.execute(

@@ -1,15 +1,16 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, Check, ChevronRight, CircleCheckBig, GitCompareArrows, ListTodo, type LucideIcon, MessageCircleQuestion } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { useState } from "react";
-import { DeepItemAction, DeepTopicAction } from "@/features/telegram/components/deep-think";
-import { Evidence, ItemActions, ItemFlags, Tickets } from "@/features/telegram/components/digest-page";
-import { TicketChip } from "@/features/telegram/components/message/rich-text";
-import { useOpenSimilar } from "@/features/youtrack/components/ticket-form";
+import { closedBy, DeepBulkAction, useVerdicts, VerdictTally, verdictKey } from "@/features/telegram/components/deep-think";
+import { Evidence, ItemFlags, Tickets } from "@/features/telegram/components/digest-page";
+import { recordText, useAutoDone } from "@/features/telegram/lib/digest";
+import { NextSteps } from "@/features/telegram/components/next-steps";
+import { StoryMark, tgWaits, type Wait } from "@/features/telegram/components/briefing/waits";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
-import { type BriefingItem, type DigestItem, statusQuery } from "@/shared/lib/api";
+import type { BriefingItem, DigestItem } from "@/shared/lib/api";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
 import { timeLabel } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/utils";
@@ -25,7 +26,7 @@ export const FADE = { initial: { opacity: 0, y: 6 }, animate: { opacity: 1, y: 0
 // ---- to-do items: every group's latest digest in one list ------------------------------------------------------------
 
 export type Kind = "confirmations" | "actions" | "decisions" | "changes";
-export type Tab = "mine" | "be" | Kind;
+export type Tab = "mine" | "be" | "wait" | Kind;
 export type Todo = DigestItem & { kind: Kind; chat: BriefingItem; key: string; mine: boolean; replied: boolean };
 export const KINDS = ["confirmations", "actions", "decisions", "changes"] as const;
 // One hue per kind, the same on its tab, its icon and in Saved Messages. Confirmations need you: the signal amber.
@@ -45,7 +46,7 @@ function meta(t: Todo) {
 
 // Saved Messages: Telegram's markdown has bold / italic only, no headings or lists.
 export const tgText = (md: string) => md.replace(/^#{1,6}\s+(.+)$/gm, "**$1**").replace(/^(\s*)[-*]\s+/gm, "$1• ");
-export function tgBriefing(open: Todo[]) {
+export function tgBriefing(open: Todo[], waits: Wait[] = []) {
   const out = [`**Briefing ${timeLabel(new Date().toISOString(), true)}**`];
   for (const c of new Set(open.map((t) => t.chat))) {
     out.push("", `**${c.title}**`);
@@ -57,33 +58,27 @@ export function tgBriefing(open: Todo[]) {
       }));
     }
   }
-  if (!open.length) out.push("", tr("Không còn mục nào cần xử lý."));
+  if (waits.length) out.push("", ...tgWaits(waits));
+  if (!open.length && !waits.length) out.push("", tr("Không còn mục nào cần xử lý."));
   return out.join("\n");
 }
 
-/** "Trả lời" / "Tạo ticket"; a to-do with no ticket is checked against YouTrack: a likely match is shown, else creating one is suggested. */
-function TodoActions({ chatId, it, kind, onCreated }: { chatId: string; it: DigestItem; kind: string; onCreated?: () => void }) {
+/** A group's open to-dos: their last code check counted, one check for all of them, and what it found done closed
+ *  (as Với BE does for its topics). */
+export function TodoChecks({ chatId, title, todos, className }: { chatId: string; title: string; todos: Todo[]; className?: string }) {
   const tx = useT();
-  const ytOn = useQuery({ ...statusQuery, staleTime: Infinity }).data?.youtrack_configured; // the shell keeps it fresh
-  const check = !!ytOn && kind === "actions" && !it.tickets?.length;
-  const similar = useOpenSimilar(it.text, { enabled: check });
-  const hit = similar.data?.[0];
+  const verdicts = useVerdicts(chatId);
+  const vs = todos.map((t) => [t, verdicts?.get(verdictKey(t.text))] as const);
+  useAutoDone(vs.flatMap(([t, tv]) => closedBy(tv, t.message_ids ?? [], t.key, [t.key])));
+  const items = todos.filter((t) => t.message_ids?.length).map((t) => ({ text: t.text, message_ids: t.message_ids ?? [] }));
+  const checked = vs.flatMap(([, tv]) => (tv ? [tv.v] : []));
   return (
-    <>
-      {hit && <span className="inline-flex items-center gap-1">{tx("có thể đã có")} <TicketChip id={hit.id} /></span>}
-      <ItemActions chatId={chatId} ids={it.message_ids ?? []} text={it.text} suggest={check && similar.isSuccess && !hit} onCreated={onCreated} />
-    </>
+    <span className={cn("flex items-center gap-2 font-normal", className)}>
+      {checked.length > 0 && <VerdictTally vs={checked} />}
+      <DeepBulkAction chatId={chatId} title={title} items={items} label={tx("Đối chiếu code {n} việc", { n: items.length })} sub={tx("{n} việc cần làm", { n: items.length })}
+        hint={tx("AI soi code dự án với từng việc cần làm của nhóm này và trả về một bảng: đã làm, lệch, chưa làm. Việc AI thấy đã làm tự chuyển sang đã xử lý (có Hoàn tác).")} />
+    </span>
   );
-}
-
-/** The next step on a digest item, for Briefing's rows and the Trợ lý's cited points alike: an open question / to-do
- *  is answered or made a ticket (one with BE also checked against the code); the rest checked against the code. */
-export function NextSteps({ chatId, it, kind, onCreated }: { chatId: string; it: DigestItem; kind: string; onCreated?: () => void }) {
-  if (kind !== "confirmations" && kind !== "actions") return <DeepItemAction chatId={chatId} ids={it.message_ids ?? []} />;
-  return <>
-    <TodoActions chatId={chatId} it={it} kind={kind} onCreated={onCreated} />
-    {it.be && <DeepTopicAction chatId={chatId} item={{ text: it.text, message_ids: it.message_ids ?? [], waiting: kind === "confirmations" }} />}
-  </>;
 }
 
 const TOPIC: Record<string, [Key, string]> = { decided: ["đã chốt", "text-ok"], open: ["đang bàn", "text-signal-2"], dropped: ["bỏ", "text-ink-3"] };
@@ -97,28 +92,25 @@ function TodoDetail({ t, onOpen }: { t: Todo; onOpen: () => void }) {
   const topic = [...(t.chat.saved?.result.topics ?? [])].sort((a, b) => overlap(b.message_ids) - overlap(a.message_ids))
     .find((x) => overlap(x.message_ids) > 0);
   return (
-    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2, ease: EASE }}
-      className="overflow-hidden">
-      <div className="mt-1.5 grid gap-3 rounded-lg border border-rule bg-cotton/60 p-3 text-xs">
-        {t.why && (
-          <div className="grid gap-0.5">
-            <p className="font-medium text-ink-3">{tx("Bối cảnh")}</p>
-            <p className="text-sm leading-relaxed text-ink-2">{t.why}</p>
-          </div>
-        )}
-        {topic && (
-          <div className="grid gap-0.5">
-            <p className="font-medium text-ink-3">{tx("Chủ đề")} <span className={TOPIC[topic.status ?? "open"]?.[1]}>· {tx(TOPIC[topic.status ?? "open"]?.[0] ?? "đang bàn")}</span></p>
-            <p className="text-sm leading-relaxed text-ink-2"><b className="font-bold text-ink">{topic.title}</b>{topic.summary && `: ${topic.summary}`}</p>
-          </div>
-        )}
-        <Evidence chatId={t.chat.chat_id} ids={ids} extra={
-          <button type="button" onClick={onOpen} className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-sm font-normal whitespace-nowrap hover:text-ink hover:underline">
-            {tx("Xem cả nhóm")} <ArrowUpRight className="size-3" aria-hidden />
-          </button>
-        } />
-      </div>
-    </motion.div>
+    <div className="mt-2.5 grid gap-3 rounded-lg border border-rule bg-cotton/60 p-3 text-xs">
+      {t.why && (
+        <div className="grid gap-0.5">
+          <p className="font-medium text-ink-3">{tx("Bối cảnh")}</p>
+          <p className="text-sm leading-relaxed text-ink-2">{t.why}</p>
+        </div>
+      )}
+      {topic && (
+        <div className="grid gap-0.5">
+          <p className="font-medium text-ink-3">{tx("Chủ đề")} <span className={TOPIC[topic.status ?? "open"]?.[1]}>· {tx(TOPIC[topic.status ?? "open"]?.[0] ?? "đang bàn")}</span></p>
+          <p className="text-sm leading-relaxed text-ink-2"><b className="font-bold text-ink">{topic.title}</b>{topic.summary && `: ${topic.summary}`}</p>
+        </div>
+      )}
+      <Evidence chatId={t.chat.chat_id} ids={ids} extra={
+        <button type="button" onClick={onOpen} className="ml-auto inline-flex shrink-0 items-center gap-0.5 rounded-sm font-normal whitespace-nowrap hover:text-ink hover:underline">
+          {tx("Xem cả nhóm")} <ArrowUpRight className="size-3" aria-hidden />
+        </button>
+      } />
+    </div>
   );
 }
 
@@ -133,7 +125,7 @@ export function TodoRow({ t, closed, showKind, showGroup, onToggle, onOpen }: {
   return (
     <motion.li layout="position" {...ROW_MOTION}
       className="group/todo flex gap-3 rounded-lg px-2.5 py-2.5 transition-colors duration-(--dur-micro) hover:bg-paper-2/70 focus-within:bg-paper-2/70">
-      <Hint side="bottom" text={t.replied ? tx("Bạn đã trả lời tin này trên Telegram") : closed ? tx("Đánh dấu chưa xử lý") : tx("Đánh dấu đã xử lý (chỉ trên máy này)")}>
+      <Hint side="bottom" text={t.replied ? tx("Bạn đã trả lời tin này trên Telegram") : closed ? tx("Đánh dấu chưa xử lý") : tx("Đánh dấu đã xử lý")}>
         <button type="button" aria-pressed={closed} aria-label={closed ? tx("Bỏ đánh dấu đã xử lý") : tx("Đánh dấu đã xử lý")} onClick={onToggle} disabled={t.replied}
           className={cn("mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-[1.5px] transition-[background-color,border-color,color,scale] duration-(--dur-short) ease-(--ease-out) active:scale-85",
             closed ? "border-ok bg-ok text-cotton" : "border-rule-2 text-transparent hover:border-ok hover:bg-ok-wash hover:text-ok")}>
@@ -145,11 +137,11 @@ export function TodoRow({ t, closed, showKind, showGroup, onToggle, onOpen }: {
           <k.Icon className="size-3.5" aria-hidden />
         </span>
       )}
-      <div className="grid min-w-0 flex-1 gap-1">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <p className={cn("text-sm leading-relaxed text-ink transition-colors duration-(--dur-short)", closed && "text-ink-3 line-through decoration-ink-3/60")}>
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="rounded-sm text-left hover:text-hl-2">{t.text}</button>
-          <ItemFlags it={t} />
-          <Tickets ids={t.tickets} />
+          <ItemFlags it={t} kind={t.kind} />
+          <Tickets ids={t.tickets} scope={t.kind === "changes"} record={t.kind === "decisions" ? recordText(t, t.chat.title) : undefined} />
         </p>
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-ink-3">
           <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}
@@ -165,9 +157,10 @@ export function TodoRow({ t, closed, showKind, showGroup, onToggle, onOpen }: {
               <button type="button" onClick={onOpen} className="max-w-48 truncate rounded-sm underline-offset-2 hover:text-ink hover:underline">{t.chat.title}</button>
             </Hint>
           )}
-          {!closed && <NextSteps chatId={t.chat.chat_id} it={t} kind={t.kind} onCreated={onToggle} />}
+          {!closed ? <NextSteps chatId={t.chat.chat_id} it={t} kind={t.kind} onCreated={onToggle} /> : <StoryMark itemKey={t.key} />}
         </div>
-        <AnimatePresence initial={false}>{open && <TodoDetail key="detail" t={t} onOpen={onOpen} />}</AnimatePresence>
+        {/* -mt-1 cancels the gap while shut (a flex column: a grid gap would stay) */}
+        <Fold open={open} className="-mt-1"><TodoDetail t={t} onOpen={onOpen} /></Fold>
       </div>
     </motion.li>
   );

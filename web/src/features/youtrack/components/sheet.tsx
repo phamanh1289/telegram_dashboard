@@ -1,25 +1,29 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, ExternalLink, MessageCircleQuestion, MessageSquareText, Sparkles, Workflow, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, ExternalLink, FilePenLine, MessageCircleQuestion, Sparkles, Workflow, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ImageView } from "@/shared/components/markdown";
 import { useEffect, useRef, useState } from "react";
-import { useMention } from "@/shared/components/mention";
-import { ytPeople } from "@/features/youtrack/lib/mentions";
 import { Button } from "@/shared/components/ui/button";
+import { GrowLabel, GrowRow, useGrow } from "@/shared/components/ui/grow";
 import { Hint } from "@/shared/components/ui/hint";
 import { Skeleton } from "@/shared/components/ui/skeleton";
-import { Textarea } from "@/shared/components/ui/textarea";
 import { fmtNum, type Key, t as tNow, useT } from "@/shared/lib/i18n";
 import { useNow } from "@/shared/hooks/use-now";
 import { toast } from "@/shared/lib/notifications";
+import { goApp } from "@/shared/lib/nav";
+import { useRoleOrDev } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, shortName, type Ticket, type UserField, when, yt, ytDetailQuery } from "@/features/youtrack/lib/yt";
-import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, TypeTag } from "./bits";
-import { saveTicket, selfEdits, useYt, type Yt, YtProvider } from "./state";
+import { AI_MAX, type Detail, type Field, fileUrl, useFlowRunning, issueUrl, type Ticket, type UserField, when, yt, ytDetailQuery, ytFieldsQuery, ytPeopleQuery } from "@/features/youtrack/lib/yt";
+import { Avatar, Label, Markdown, Person, Picker, Prio, StatePill, Title, TypeTag } from "./bits";
+import { Comments, ENTRY, Rail, Who } from "./comments";
+import { saveTicket, useYt, type Yt, YtProvider } from "./state";
+import { tagsFor } from "@/features/telegram/lib/mentions";
+import { StoryUpdate } from "./story-update";
 import { Related } from "./ticket-extras";
 import { WorkView } from "./work";
 import { useFlow } from "./workflow";
@@ -87,13 +91,15 @@ export function Sheet() {
           <motion.div key="dim" data-sheet aria-hidden className="fixed inset-0 z-40 bg-(--scrim)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={close} />
           <motion.aside key="sheet" ref={panel} role="dialog" aria-modal aria-label={s.kind === "ticket" ? `Ticket ${s.id}` : s.title}
             initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", stiffness: 420, damping: 40 }}
-            className={cn("fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-paper shadow-pop", s.kind === "ticket" ? "max-w-2xl" : "max-w-4xl")}>
+            className={cn("fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-paper shadow-pop", s.kind === "work" ? "max-w-4xl" : "max-w-2xl")}>
             <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-paper-2 px-4">
               {s.kind === "ticket" ? (
                 <Hint side="bottom" text={t("Mở trên YouTrack")}><a href={issueUrl(y.config?.base ?? "", s.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-mono text-sm font-bold no-underline hover:text-hl-2">
                   {s.id}<ExternalLink className="size-3.5" aria-hidden /><span className="sr-only">, {t("mở trên YouTrack")}</span>
                 </a></Hint>
-              ) : <h2 className="truncate text-sm font-bold">{s.title}</h2>}
+              ) : <h2 className="flex min-w-0 items-center gap-2 text-sm font-bold"><span className="truncate">{s.title}</span>
+                {s.kind === "list" && <span aria-label={t("{n} ticket", { n: fmtNum(s.rows.length, t.lang) })} className="shrink-0 rounded-full bg-paper-3 px-2 text-2xs leading-5 font-medium text-ink-2 tabular-nums">{fmtNum(s.rows.length, t.lang)}</span>}
+              </h2>}
               {k >= 0 && (
                 <span className="ml-1 flex gap-0.5">
                   <Hint side="bottom" text={t("Ticket trước (k)")}><Button size="icon-xs" variant="ghost" disabled={k <= 0} onClick={() => step(-1)} aria-label={t("Ticket trước")}><ChevronLeft /></Button></Hint>
@@ -124,23 +130,23 @@ export function TicketList({ rows }: { rows: Ticket[] }) {
   const t = useT();
   const y = useYt();
   const MAX = 300;
+  if (!rows.length) return <p className="py-10 text-center text-sm text-ink-3">{t("Không có ticket nào.")}</p>;
+  const shown = rows.slice(0, MAX);
   return (
-    <div className="grid gap-2">
-      <p className="text-xs text-ink-3">{t("{n} ticket", { n: fmtNum(rows.length, t.lang) })}{rows.length > MAX ? t(", hiện {n} đầu", { n: MAX }) : ""}</p>
-      {rows.length ? (
-        <ul className="zebra divide-y divide-rule overflow-hidden rounded-lg bg-cotton shadow-stock">
-          {rows.slice(0, MAX).map((i) => (
-            <li key={i.id}>
-              <button type="button" onClick={() => y.openTicket(i.id, rows.slice(0, MAX))} className="grid w-full grid-cols-[6.5rem_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2 text-left hover:bg-paper-2 max-sm:grid-cols-[5.5rem_minmax(0,1fr)]">
-                <span className="grid"><b className="font-mono text-xs">{i.id}</b><span className="truncate text-xs text-ink-2">{i.assignee ? shortName(i.assignee) : t("Chưa assign")}</span></span>
-                <span className={cn("truncate text-sm", i.resolved && "text-ink-3 line-through")}>{i.summary}</span>
-                <span className="flex items-center gap-3 max-sm:hidden"><StatePill state={i.state} /><Prio p={i.priority} /></span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : <p className="text-sm text-ink-3 italic">{t("Không có ticket nào.")}</p>}
-    </div>
+    <ul className="zebra grid gap-0.5">
+      {shown.map((i) => (
+        <li key={i.id} className="rounded-md">
+          <button type="button" onClick={() => y.openTicket(i.id, shown)} className="grid w-full gap-1.5 rounded-md px-2.5 py-2 text-left transition-colors duration-(--dur-micro) hover:bg-paper-2">
+            <Title i={i} clamp={cn("line-clamp-2", i.resolved && "line-through opacity-60")} />
+            <span className="flex min-w-0 items-center gap-2.5 text-xs">
+              <span className="shrink-0 font-mono text-ink-3">{i.id}</span><StatePill state={i.state} />{i.priority && <Prio p={i.priority} />}
+              <span className="ml-auto min-w-0 text-ink-2"><Person name={i.assignee} empty={t("Chưa assign")} /></span>
+            </span>
+          </button>
+        </li>
+      ))}
+      {rows.length > MAX && <li data-zebra-off className="px-2.5 py-2 text-xs text-ink-3">{t("{n} ticket", { n: fmtNum(rows.length, t.lang) })}{t(", hiện {n} đầu", { n: MAX })}</li>}
+    </ul>
   );
 }
 
@@ -153,35 +159,25 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const mentions = useQuery({ queryKey: ["yt", "mentions", id], queryFn: () => yt.mentions(id), staleTime: 60_000 });
   // a ticket of another project (a link, a chip): Assignee / QC pick from that project's team (same query as the tab's)
   const proj = id.split("-")[0], other = proj !== y.project;
-  const team = useQuery({ queryKey: ["yt", "people", proj], queryFn: () => yt.people(proj), staleTime: 10 * 60_000, enabled: other });
+  const team = useQuery({ ...ytPeopleQuery(proj), enabled: other });
   const acts: AssigneeActs = other ? { ...y, people: team.data ?? [], loginOf: new Map([...y.loginOf, ...(team.data ?? []).map((p) => [p.name, p.login] as const)]) } : y;
   const i: Ticket | Detail | undefined = d.data ?? row;
-  const [comment, setComment] = useState(draft ?? ""); // draft: an AI answer the user chose to send as a comment
   const [flowOpen, setFlowOpen] = useState(false);
+  const [storyOpen, setStoryOpen] = useState(false);
+  const role = useRoleOrDev(), po = role === "po";
+  // who a reply about this ticket tags, by role: QC tells the Assignee (the dev), a Dev the QC, the PO both; never me
+  const notify = (i ? role === "qa" ? [i.assignee] : role === "dev" ? [i.qc] : [i.assignee, i.qc] : []).filter((p): p is string => !!p && p !== y.me);
+  const router = useRouter();
+  // Cập nhật story › Telegram: a reply to the latest Telegram message naming this ticket (none: the user picks a group)
+  const lastMention = mentions.data?.reduce<(typeof mentions.data)[number] | undefined>((a, m) => (!a || m.date > a.date ? m : a), undefined);
   const flowRun = useFlowRunning(id, flowOpen); // the UI flow dialog (one entry: this ticket's "UI flow")
-  const [sending, setSending] = useState(false);
   const write = !y.config?.mock;
   // which .html attachment is the UI flow file: told by the backend from the file's content (its name follows the
   // flow's title); keyed by those attachments, so a save / upload asks again. Unread / failed: it is a plain file row.
   const htmlIds = (d.data?.attachments ?? []).filter((a) => a.mime === "text/html" || /\.html?$/i.test(a.name)).map((a) => a.id);
   const flowAtt = useQuery({ queryKey: ["yt", "flow-att", id, ...htmlIds], queryFn: ({ signal }) => yt.flow(id, signal).then((r) => r.att),
     enabled: write && htmlIds.length > 0, staleTime: Infinity, retry: false }).data;
-  const { attach, ...mention } = useMention(ytPeople(proj), comment, setComment); // "@" tags the project's team
   const now = useNow();
-
-  async function send() {
-    const text = comment.trim();
-    if (!text) return;
-    setSending(true);
-    try {
-      await yt.comment(id, text);
-      selfEdits.set(id, Date.now());
-      setComment("");
-      toast({ text: t("Đã gửi bình luận") });
-      await qc.invalidateQueries({ queryKey: ["yt", "detail", id] });
-    } catch (e) { toast({ text: t("Không gửi được: {msg}", { msg: (e as Error).message }) }); }
-    finally { setSending(false); }
-  }
 
   const loadError = d.isError && <p role="alert" className="text-sm text-error">{t("Không tải được {id}: {msg}", { id, msg: (d.error as Error).message })}</p>;
   if (!i) {
@@ -197,11 +193,11 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
   const said = [d.data?.description, ...(d.data?.comments.map((c) => c.text) ?? [])].join("\n");
   const loose = files.filter((a) => !said.includes(`(${a.name}`) && !said.includes(`(${encodeURI(a.name)}`)); // not shown inline in any text
   const meta: [Key, React.ReactNode][] = [
-    ["State", <FieldSelect key="s" ticket={i} name="State" />], ["Assignee", <AssigneeSelect key="a" ticket={i} acts={acts} />], ["Priority", <FieldSelect key="p" ticket={i} name="Priority" />],
+    ["State", <FieldSelect key="s" ticket={i} name="State" />], ["Assignee", <AssigneePicker key="a" ticket={i} acts={acts} className="-ml-1.5" />], ["Priority", <FieldSelect key="p" ticket={i} name="Priority" />],
     ["QC", <AssigneePicker key="q" ticket={i} acts={acts} field="QC" className="-ml-1.5" />], ["Type", <FieldSelect key="t" ticket={i} name="Type" />],
     ["Sprint", i.sprints.join(", ") || "—"], ...(i.due ? [["Hạn", <span key="d" className={cn(i.due < now && !i.resolved && "font-medium text-error")}>{when(i.due)}</span>] as [Key, React.ReactNode]] : []),
     ...(i.estimate ? [["Estimate", `${+(i.estimate / 60).toFixed(1)}h`] as [Key, string]] : []),
-    ["Ngày tạo", when(i.created)], ["Cập nhật lúc", when(i.updated)], ["Reporter", d.data?.reporter || (d.isPending ? "…" : "—")],
+    ["Ngày tạo", when(i.created)], ["Cập nhật lúc", when(i.updated)], ["Reporter", d.isPending ? "…" : <Person key="r" name={d.data?.reporter || null} />],
   ];
   // a UI flow render left going when its dialog closed (read again on open); this re-renders as the dialog closes
 
@@ -215,26 +211,35 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       </motion.dl>
 
 
-      {(y.aiOn || write) && ( // the ticket's two AI entries, side by side
-        <motion.div variants={fade} className="flex flex-wrap gap-2">
-          {y.aiOn && (
-            <Spot label={t("AI cho ticket này")} hint={t("Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code")} className="ai-chip"
-              onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [id] })}><Sparkles aria-hidden /></Spot>
-          )}
-          {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
-            <Spot label={t("UI flow")} hint={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")}
-              className="bg-code-wash text-code shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--color-code)_45%,transparent)] hover:scale-105 hover:bg-code hover:text-paper focus-visible:bg-code focus-visible:text-paper"
-              onClick={() => setFlowOpen(true)}>
-              <Workflow aria-hidden />
-              {flowRun && <span data-flow-running aria-hidden className="absolute -top-0.5 -right-0.5 size-2.5 animate-pulse rounded-full bg-hl ring-2 ring-paper" />}
-            </Spot>
-          )}
+      {(y.aiOn || write) && ( // the ticket's features, one row, one look; Cập nhật story last, so an icon sits in the same place for every role
+        <motion.div variants={fade}>
+          <GrowRow className="flex w-fit max-w-full flex-wrap gap-2">
+            {y.aiOn && (
+              <Spot label={t("AI cho ticket này")} hint={t("Hỏi AI về ticket này, có thể thêm ticket khác hoặc trace code")} className="ai-chip"
+                onClick={() => y.setSheet({ kind: "work", title: "AI", ids: [id] })}><Sparkles aria-hidden /></Spot>
+            )}
+            {write && ( // reads and saves the ticket's attachment: needs a token like the other writes
+              <Spot label={t("UI flow")} hint={flowRun ? t("Đang render UI flow — mở để xem") : t("Sơ đồ màn hình và luồng bấm của ticket này")} className={TONE.code}
+                onClick={() => setFlowOpen(true)}>
+                <Workflow aria-hidden />
+                {flowRun && <span data-flow-running aria-hidden className="absolute -top-0.5 -right-0.5 size-2.5 animate-pulse rounded-full bg-hl ring-2 ring-paper" />}
+              </Spot>
+            )}
+            {write && po && ( // a PO tool (story = their spec); Dev / QC ask the PO instead
+              <Spot label={t("Cập nhật story")} hint={t("Sửa mô tả (thay đổi, AC còn thiếu) rồi lưu lên YouTrack; cần thì nhờ AI soạn và báo nhóm")} className={TONE.ok}
+                onClick={() => setStoryOpen(true)}><FilePenLine aria-hidden /></Spot>
+            )}
+          </GrowRow>
         </motion.div>
       )}
       {flowOpen && <FlowDialog issue={id} open onClose={() => setFlowOpen(false)} />}
 
       <motion.section variants={fade} className="grid gap-2">
         <Label>{t("Mô tả")}</Label>
+        {storyOpen && (
+          <StoryUpdate ids={[id]} note="" onClose={() => setStoryOpen(false)}
+            notify={lastMention ? { chatId: lastMention.chat_id, replyTo: lastMention.message_id } : undefined} />
+        )}
         {d.isPending ? (
           <div aria-label={t("Đang tải mô tả…")} className="grid gap-2 rounded-lg bg-cotton p-3 shadow-edge">
             {[96, 88, 92, 60].map((w) => <Skeleton key={w} className="h-3.5" style={{ width: `${w}%` }} />)}
@@ -287,65 +292,49 @@ function TicketView({ id, draft }: { id: string; draft?: string }) {
       )}
 
       {!!mentions.data?.length && (
-        <motion.section variants={fade} className="grid gap-1.5">
+        <motion.section variants={fade} className="grid gap-2">
           <Label>{t("Nhắc trên Telegram ({n})", { n: mentions.data.length })}</Label>
-          {mentions.data.map((m) => (
-            <div key={`${m.chat_id}:${m.message_id}`} className="grid rounded-lg bg-cotton text-sm shadow-edge">
-              <Link href={`/?chat=${encodeURIComponent(m.chat_id)}&msg=${encodeURIComponent(m.message_id)}`} className="grid gap-0.5 rounded-t-lg p-2.5 pb-1.5 no-underline hover:bg-paper-2">
-                <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{m.chat}</span><span>{m.from || "?"}</span><time className="ml-auto">{when(m.date)}</time></small>
-                <span className="line-clamp-3">{m.text}</span>
-              </Link>
-              {/* Q&A in that group, the box prefilled (inbox reads ?qa= / ?ask=): the post gets a #QA code and nudges */}
-              <Hint side="bottom" text={t("Đăng câu hỏi Q&A vào nhóm này (kèm mã #QA, có nhắc khi chưa ai trả lời)")}>
-                <Link href={`/?qa=${encodeURIComponent(m.chat_id)}&ask=${encodeURIComponent(`Về ${i.id} ${i.summary ?? ""}: `)}`}
-                  className="inline-flex items-center gap-1 justify-self-start rounded-md px-2.5 py-1 text-xs text-hl-2 no-underline hover:bg-paper-2">
-                  <MessageCircleQuestion className="size-3.5" aria-hidden /> {t("Hỏi lại trong nhóm")}
-                </Link>
-              </Hint>
-            </div>
-          ))}
+          <ul className="grid gap-1.5">{/* rows like the comments below; each its own message, so no line joins them */}
+            {mentions.data.map((m) => (
+              <li key={`${m.chat_id}:${m.message_id}`} className="grid">
+                <Hint side="bottom" text={notify.length ? t("Trả lời tin này trong nhóm, @tag sẵn {who} (nếu có trong nhóm)", { who: notify.join(", ") }) : t("Trả lời tin này trong nhóm")}>
+                  <Link href={`/?chat=${encodeURIComponent(m.chat_id)}&msg=${encodeURIComponent(m.message_id)}`} className={cn(ENTRY, "-mx-2 rounded-lg px-2 py-1.5 no-underline hover:bg-paper-2")}
+                    onClick={(e) => { // tags found in the group go into the reply box; none found: the plain link
+                      if (!notify.length || e.metaKey || e.ctrlKey || e.shiftKey) return;
+                      e.preventDefault();
+                      const href = e.currentTarget.getAttribute("href")!;
+                      void tagsFor(qc, m.chat_id, notify).then((tags) => goApp(router, tags ? `${href}&text=${encodeURIComponent(`${tags} `)}` : href));
+                    }}>
+                    <Rail name={m.from || "?"} line={false} />
+                    <span className="grid min-w-0">
+                      <Who name={m.from || "?"} mine={m.outgoing} meta={m.chat} at={m.date} now={now} />
+                      <span className="line-clamp-3 text-sm text-ink">{m.text}</span>
+                    </span>
+                  </Link>
+                </Hint>
+                {/* Q&A in that group, the box prefilled (inbox reads ?qa= / ?ask=): the post gets a #QA code and nudges */}
+                <Hint side="bottom" text={t("Đăng câu hỏi Q&A vào nhóm này (kèm mã #QA, có nhắc khi chưa ai trả lời)")}>
+                  <Link href={`/?qa=${encodeURIComponent(m.chat_id)}&ask=${encodeURIComponent(`Về ${i.id} ${i.summary ?? ""}: `)}`}
+                    className="ml-8 inline-flex items-center gap-1 justify-self-start rounded-md px-2 py-1 text-xs text-hl-2 no-underline hover:bg-paper-2">
+                    <MessageCircleQuestion className="size-3.5" aria-hidden /> {t("Hỏi lại trong nhóm")}
+                  </Link>
+                </Hint>
+              </li>
+            ))}
+          </ul>
         </motion.section>
       )}
 
       {mentions.isError && <p role="alert" className="text-xs text-error">{t("Không đọc được tin Telegram nhắc ticket này: {msg}", { msg: (mentions.error as Error).message })}</p>}
 
-      <motion.section variants={fade} className="grid gap-2">
-        <Label>{t("Bình luận ({n})", { n: d.data?.comments.length ?? (d.isError ? "—" : "…") })}</Label>
-        {d.data?.comments.map((c, k) => (
-          <div key={c.id ?? k} className="grid gap-1 rounded-lg bg-cotton p-3 shadow-edge">
-            <small className="flex gap-2 text-xs text-ink-3"><span className="font-medium text-ink-2">{c.author || "—"}</span><time className="ml-auto">{when(c.created)}</time></small>
-            <Markdown text={c.text} files={{ issue: id, list: files, comment: c.id }} />
-          </div>
-        ))}
-        {d.data && !d.data.comments.length && <p className="text-sm text-ink-3 italic">{t("Chưa có bình luận")}</p>}
-        {write && (
-          <div className="relative grid gap-2">
-            {mention.popup}
-            <Textarea ref={attach} rows={3} maxLength={20000} value={comment} aria-label={t("Bình luận mới")} placeholder={t("Viết bình luận (gửi lên YouTrack, ⌘↵ gửi, @ để tag)…")}
-              onChange={(e) => { setComment(e.target.value); mention.track(e); }} onSelect={mention.track}
-              onKeyDown={(e) => { if (mention.onKeyDown(e)) return; if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && !sending) { e.preventDefault(); void send(); } }} />
-            <Button size="sm" className="justify-self-end" disabled={!comment.trim() || sending} aria-busy={sending} onClick={() => void send()}><MessageSquareText /> {t("Gửi bình luận")}</Button>
-          </div>
-        )}
-      </motion.section>
+      <motion.div variants={fade}>
+        <Comments id={id} comments={d.data?.comments} pending={d.isPending} failed={d.isError} files={files} draft={draft} write={write} />
+      </motion.div>
     </motion.div>
   );
 }
 const fade = { h: { opacity: 0, y: 6 }, v: { opacity: 1, y: 0 } };
 
-/** Change the assignee; "Nhận" takes it. The toast offers to put it back. */
-export function AssigneeSelect({ ticket, acts: y }: { ticket: Ticket; acts: AssigneeActs }) {
-  const t = useT();
-  const me = y.me ? y.loginOf.get(y.me) : undefined;
-  return (
-    <span className="flex min-w-0 items-center gap-1">
-      <AssigneePicker ticket={ticket} acts={y} className="-ml-1.5" />
-      {me && userLogin(y, ticket, "Assignee") !== me && !y.config?.mock && (
-        <Button size="xs" variant="ghost" className="shrink-0 text-ink-3" onClick={() => void setPerson(y, ticket, "Assignee", me)}>{t("Nhận")}</Button>
-      )}
-    </span>
-  );
-}
 /** The same picker fed by props: a memoized table row must not subscribe to the whole YouTrack context. */
 export type AssigneeActs = Pick<Yt, "people" | "loginOf" | "patchTicket" | "config" | "me">;
 /** The two single-user fields: the ticket keys they live in and their empty label. */
@@ -394,12 +383,14 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
   const t = useT();
   const y = useYt();
   const project = ticket.id.split("-")[0];
-  const opts = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !y.config?.mock });
+  const opts = useQuery({ ...ytFieldsQuery(project), enabled: !y.config?.mock });
   const { key, node } = FIELD[name], cur = ticket[key] ?? "";
   const flowOf = useFlow(project);
   const flow = name === "State" ? flowOf(cur) : null; // the team's arrows out of this state; null: no rule
   const all = opts.data?.[name] ?? [];
   const values = flow ? all.filter((v) => v === cur || flow.includes(v)) : all;
+  // the values could not be read (a token without rights, YouTrack down): say why the field cannot be changed here
+  if (opts.isError) return <Hint side="bottom" text={t("Không tải được danh sách {name} nên chưa đổi được ở đây: {msg}", { name, msg: opts.error.message })}><span>{node(ticket[key])}</span></Hint>;
   if (!values.length) return node(ticket[key]);
   const options = (values.includes(cur) || !cur ? values : [cur, ...values]).map((v) => ({ v, node: node(v) }));
   async function change(v: string) {
@@ -410,17 +401,19 @@ function FieldSelect({ ticket, name }: { ticket: Ticket; name: Field }) {
     foot={flow && all.length > values.length ? t(flow.length ? "Theo workflow của team: chỉ hiện các bước đi tiếp từ {state}" : "Workflow của team: {state} là bước cuối", { state: cur || "—" }) : undefined} />;
 }
 
-/** A ticket's lead action (AI, UI flow): a colored round icon that slides its label out on hover / focus. */
+/** A feature's own colour (AI has `ai-chip`): tinted at rest, filled under the pointer. */
+const TINT = "bg-(--w) text-(--c) shadow-[inset_0_0_0_1px_color-mix(in_oklch,var(--c)_45%,transparent)] hover:scale-105 hover:bg-(--c) hover:text-paper focus-visible:bg-(--c) focus-visible:text-paper";
+const TONE = { code: `[--c:var(--color-code)] [--w:var(--color-code-wash)] ${TINT}`, ok: `[--c:var(--color-ok)] [--w:var(--color-ok-wash)] ${TINT}` };
+
+/** One of a ticket's features (AI, UI flow, Cập nhật story), in a GrowRow: a colored round icon, its label slides out. */
 function Spot({ label, hint, className, onClick, children }: { label: string; hint: string; className: string; onClick: () => void; children: React.ReactNode }) {
+  const g = useGrow();
   return (
-    <Hint side="bottom" title={label} text={hint}>
-      <button type="button" onClick={onClick}
-        className={cn("group relative inline-flex h-9 items-center rounded-full px-2.5 text-sm font-bold transition-[color,background-color,box-shadow,scale] duration-(--dur-short) [&_svg]:size-4 [&_svg]:shrink-0", className)}>
+    <Hint side="bottom" text={hint}>{/* no title: the label is already out beside the icon */}
+      <button type="button" onClick={onClick} onPointerEnter={g.enter}
+        className={cn("group/grow relative inline-flex h-9 items-center rounded-full px-2.5 text-sm font-bold transition-[color,background-color,box-shadow,scale] duration-(--dur-short) [&_svg]:size-4 [&_svg]:shrink-0", className)}>
         {children}
-        {/* 0fr → 1fr: the label grows to its own width, no magic max-width */}
-        <span className="grid grid-cols-[0fr] opacity-0 transition-[grid-template-columns,opacity] duration-(--dur-short) group-hover:grid-cols-[1fr] group-hover:opacity-100 group-focus-visible:grid-cols-[1fr] group-focus-visible:opacity-100">
-          <span className="min-w-0 overflow-hidden whitespace-nowrap"><span className="pl-1.5">{label}</span></span>
-        </span>
+        <GrowLabel open={g.open}>{label}</GrowLabel>
       </button>
     </Hint>
   );

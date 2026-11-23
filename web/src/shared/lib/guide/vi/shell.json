@@ -2,9 +2,9 @@
   {
     "id": "module-switch",
     "tab": "telegram",
-    "area": "Thanh trên cùng › Telegram / YouTrack",
-    "title": "Chuyển module Telegram / YouTrack",
-    "what": "Hai tab Telegram / YouTrack ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa hai module; tab đang mở được tô sáng, tab bên kia có huy hiệu đỏ báo việc mới: trên tab Telegram = số tin tag ở Việc cần xử lý › Đang chờ (chưa có phiên AI), trên tab YouTrack = số ticket mới giao cho bạn từ lần cuối mở YouTrack (mở YouTrack là xoá); không có ticket mới thì tab YouTrack hiện huy hiệu vàng hổ phách = số ticket của bạn cần xử lý ngay. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
+    "area": "Thanh trên cùng › Telegram / YouTrack / Tài liệu",
+    "title": "Chuyển module Telegram / YouTrack / Tài liệu",
+    "what": "Ba tab Telegram / YouTrack / Tài liệu ở góc trái thanh trên cùng (cả trang Cài đặt) chuyển giữa các module (Tài liệu: kho tài liệu Knowledge Base và file trên máy, tìm và hỏi AI); tab đang mở được tô sáng, tab bên kia có huy hiệu đỏ báo việc mới: trên tab Telegram = số tin tag ở Việc cần xử lý › Đang chờ (chưa có phiên AI), trên tab YouTrack = số ticket mới giao cho bạn từ lần cuối mở YouTrack (mở YouTrack là xoá); không có ticket mới thì tab YouTrack hiện huy hiệu vàng hổ phách = số ticket cần bạn ngay (rủi ro, có bình luận đang hỏi bạn, và với vai trò PO/PM: ticket gán cho bạn đang chờ bạn chốt), mỗi ticket đếm một lần; rê chuột lên tab để xem danh sách. Mỗi thanh bên chỉ chứa trang của module đó; ⌘K ở mỗi bên vẫn tìm được trang của bên kia.",
     "how": [
       {
         "t": "Rê chuột vào \"YouTrack\" để xem ticket mới (huy hiệu đỏ) hoặc cần xử lý ngay (huy hiệu vàng), rồi bấm để sang YouTrack",
@@ -13,9 +13,13 @@
       {
         "t": "Bấm \"Telegram\" để quay lại Telegram Inbox",
         "at": "css:nav[aria-label=\"Chuyển module\"] a[href=\"/\"]"
+      },
+      {
+        "t": "Bấm \"Tài liệu\" để mở kho tài liệu",
+        "at": "css:nav[aria-label=\"Chuyển module\"] a[href^=\"/docs\"]"
       }
     ],
-    "keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay huy hieu do huy hiệu đỏ ticket moi ticket mới tin moi tin mới"
+    "keys": "chuyen module chuyển module youtrack telegram switch module badge ticket can xu ly ngay huy hieu do huy hiệu đỏ ticket moi ticket mới tin moi tin mới tai lieu tài liệu docs hoi ban trong binh luan hỏi bạn trong bình luận cho ban chot chờ bạn chốt po"
   },
   {
     "id": "ai-quota-pill",
@@ -49,13 +53,13 @@
     "tab": "telegram",
     "area": "Thanh trên cùng › Hướng dẫn",
     "title": "Duyệt hướng dẫn mọi tính năng",
-    "what": "Nút bóng đèn trên thanh trên cùng mở danh mục mọi tính năng Telegram / YouTrack / Cài đặt, không cần AI: gõ để lọc ngay, lọc theo khu vực, bấm một tính năng xem cách dùng từng bước rồi \"Chỉ cho tôi trên màn hình\" để app làm sáng từng nút cần bấm. Không tìm thấy thì chuyển câu đang gõ sang Trợ lý biết tuốt để hỏi bằng câu tự nhiên.",
+    "what": "Nút bóng đèn trên thanh trên cùng mở danh mục mọi tính năng Telegram / YouTrack / Tài liệu / Cài đặt, không cần AI: gõ để lọc ngay, lọc theo khu vực, bấm một tính năng xem cách dùng từng bước rồi \"Chỉ cho tôi trên màn hình\" để app làm sáng từng nút cần bấm. Không tìm thấy thì chuyển câu đang gõ sang Trợ lý biết tuốt để hỏi bằng câu tự nhiên.",
     "how": [
       {
         "t": "Bấm bóng đèn \"Hướng dẫn sử dụng\" trên thanh trên cùng",
         "at": "Hướng dẫn sử dụng"
       },
-      "Gõ vào ô tìm hoặc chọn khu vực Telegram / YouTrack / Cài đặt",
+      "Gõ vào ô tìm hoặc chọn khu vực Telegram / YouTrack / Tài liệu / Cài đặt",
       "Bấm một tính năng để xem các bước, rồi bấm \"Chỉ cho tôi trên màn hình\"",
       "Không có tính năng khớp: bấm \"Hỏi trợ lý biết tuốt\" để hỏi AI"
     ],
@@ -109,7 +113,7 @@
         "at": "Thử model"
       },
       {
-        "t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí",
+        "t": "Mở tab \"Usage\" xem báo cáo số request, token, chi phí; mục \"Theo tính năng\" tách lượt AI YouTrack theo từng hành động (vd. \"YouTrack · tickets.standup\", \"YouTrack · filter\") để thấy hành động nào dùng nhiều, chậm hay bị hủy",
         "at": "Usage"
       },
       {

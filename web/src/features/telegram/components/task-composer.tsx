@@ -5,11 +5,12 @@ import { FolderGit2, ListPlus, Loader2, Paperclip, RotateCw, TriangleAlert, X } 
 import { memo, useEffect, useState } from "react";
 import { Picks, useAiPrefs } from "@/shared/components/ai";
 import { AiPromptBox, AiSend } from "@/shared/components/ai/chat";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { Button } from "@/shared/components/ui/button";
 import { Checkbox } from "@/shared/components/ui/checkbox";
 import { Hint } from "@/shared/components/ui/hint";
 import { type AiPicks, api, ApiError, apiStart, errorText, type Message, type Task } from "@/shared/lib/api";
-import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeWantEdit, useConfirm, useRefs, useWantEdit, withAttachments } from "@/features/telegram/lib/attach";
+import { attach, chatTitle, MAX_REFS, messageQuery, parseRefs, type Ref, sameRef, setRefs, splitAttachments, takeConfirm, takeLines, takeWantEdit, useConfirm, useLines, useRefs, useWantEdit, withAttachments } from "@/features/telegram/lib/attach";
 import { readIntro, readPlatform, setPref, useAgentMcp, useRole } from "@/shared/lib/prefs";
 import { toast } from "@/shared/lib/notifications";
 import { timeLabel } from "@/shared/lib/time";
@@ -50,7 +51,9 @@ function SessionAi({ t: task, disabled }: { t: Task; disabled: boolean }) {
 
 // Queued prompts per task, kept outside the panel so switching sessions doesn't drop them.
 // ponytail: client-only, drains only while that session is open and lost on reload; move server-side if that matters.
-type Queued = { line: string; refs: Ref[] }; // refs: sent along so Done on the session ticks them too
+// refs: sent along so Done on the session ticks them too. edit / mcp: as ticked when it was queued, not when its turn
+// comes (a prompt written for a plan turn must not become an edit turn because the box was ticked for a later one).
+type Queued = { line: string; refs: Ref[]; edit?: boolean; mcp?: boolean };
 const queues = new Map<string, Queued[]>();
 
 /** One attached message above the composer: who and when, two lines of it; or why it can't be read. */
@@ -76,8 +79,9 @@ function AttachChip({ r, q, other, onRemove }: { r: Ref; q: UseQueryResult<Messa
 }
 
 /** The follow-up composer of a headless session (queue, attachments, send / stop). */
-/** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". */
-export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Task; cut?: boolean }) {
+/** `cut`: the last turn ended in an error (stopped, server restarted): a one-click "go on". `redo`: that turn's ask, for
+ *  Trợ lý AI, whose turns do not resume: going on asks it again (a bare "go on" would reach the AI with no question). */
+export const TaskComposer = memo(function TaskComposer({ t: task, cut, redo }: { t: Task; cut?: boolean; redo?: string }) {
   const t = useT();
   const { id } = task;
   const running = !!task.running;
@@ -91,6 +95,10 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
   const wanted = useWantEdit(id); // a message attached from a row: ticked for the user
   const edit = picked || wanted;
   const setEdit = (v: boolean) => { takeWantEdit(id); setPicked(v); }; // unticked, or sent: the user's own from now
+  // Approving a plan was mostly one of two typed lines: ticking "Cho sửa code" on an empty box writes it (the plan's
+  // "Làm được ngay" group while its asks wait: session_rules), unticking it untouched takes it back.
+  const approve = task.state === "waiting" ? t("Sửa trước phần “Làm được ngay”; phần chờ trả lời giữ nguyên.") : t("Chốt. Sửa theo mục Cần làm.");
+  const tick = (v: boolean) => { setEdit(v); setText((cur) => (v ? (cur.trim() ? cur : approve) : cur === approve ? "" : cur)); };
   // An edit turn uses the user's own MCP servers / plugins (outside the sandbox), on every CLI: on until unticked, remembered.
   const mcpOn = useAgentMcp();
   const canMcp = !assist && (task.mode === "edit" || (plan && edit));
@@ -111,6 +119,14 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     if (!assist) setText((cur) => (cur.includes(line) ? cur : [cur.trim(), line].filter(Boolean).join("\n"))); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from a row, once
     takeConfirm(id); // Trợ lý AI: dropped, it has no code to trace
   }, [confirmed, id, t, assist]);
+  // A document attached from Tài liệu: its line ("#DOC12 …" / the KB link) in the box, for the user to write around.
+  const added = useLines(id);
+  const docTag = useDocTag("ai", text, setText); // "#": a library document for the AI to read (not Trợ lý AI: it reads no links)
+  useEffect(() => {
+    if (!added.length) return;
+    setText((cur) => [cur.trim(), ...added.filter((l) => !cur.includes(l))].filter(Boolean).join("\n")); // eslint-disable-line react-hooks/set-state-in-effect -- consumes an attach from Tài liệu, once
+    takeLines(id);
+  }, [added, id]);
   const looked = useQueries({ queries: refs.map(messageQuery) });
   const resolving = looked.some((r) => r.isPending);
   const failed = looked.some((r) => r.isError); // a dangling "[#id]" mark: the AI would get no quote for it
@@ -122,8 +138,8 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     setRefs(id, attach(id, []).filter((x) => !r.some((y) => sameRef(x, y)))); // attach(id, []): the draft as it is now
   };
   const send = useMutation({
-    mutationFn: ({ line, refs }: Queued & { queued?: boolean }) => {
-      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: plan && edit, mcp } });
+    mutationFn: ({ line, refs, edit: e = plan && edit, mcp: m = mcp }: Queued & { queued?: boolean }) => {
+      if (!assist) return api<void>(`/tasks/${id}/message`, { method: "POST", json: { text: line, refs, edit: e, mcp: m } });
       // the AI reads attached messages as group messages, so only the session's group (its tag first)
       if (refs.some((r) => r.chat_id !== task.chat_id)) throw new ApiError(422, "assist_other_chat", null, null);
       return apiStart("/ai/draft", {
@@ -139,6 +155,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
       await qc.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
+  const again = splitAttachments(redo ?? "")[0].trim(); // the typed part: its attached messages are not sent again
   const submit = () => {
     if (ready && !running && !send.isPending) { setEdit(edit); send.mutate({ line, refs }, { onSuccess: sentOnly(text, refs) }); }
   };
@@ -149,7 +166,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
     queues.set(id, next);
     setQueueState(next);
   };
-  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
+  const enqueue = () => { if (ready) { if (send.isError) send.reset(); setQueue((q) => [...q, { line, refs, edit: plan && edit, mcp }]); sentOnly(text, refs)(); } }; // reset: a new prompt retries a paused queue
   /** A paste of message IDs / links only: attach them and leave a "[#id]" mark at the caret, so the sentence still reads. */
   const paste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const add = parseRefs(e.clipboardData.getData("text"), task.chat_id);
@@ -184,7 +201,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         ))}
       </ol>
     )}
-    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={assist ? 2000 : 8000} value={text} onChange={setText} onPaste={paste}
+    <AiPromptBox aria-label={t("Nhắn tiếp cho AI")} maxLength={assist ? 2000 : 8000} value={text} onChange={setText} onPaste={paste} mention={assist ? undefined : docTag}
       onSend={submit} onModEnter={enqueue} running={running} onStop={() => stop.mutate()} stopping={stop.isPending}
       stopHint={t("Dừng AI (giữ hội thoại, có thể nhắn tiếp)")}
       placeholder={running ? t("AI đang làm: {mod}+Enter để thêm vào hàng đợi", { mod: MOD }) : t("Nhắn tiếp cho AI, dán ID hoặc link tin Telegram để đính kèm (Enter gửi, {mod}+Enter vào hàng đợi)", { mod: MOD })}
@@ -194,9 +211,9 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
           {refs.map((r, i) => <AttachChip key={`${r.chat_id}:${r.message_id}`} r={r} q={looked[i]} other={r.chat_id !== task.chat_id}
             onRemove={() => setRefs(id, refs.filter((x) => !sameRef(x, r)))} />)}
         </ul>
-      ) : cut && !queue.length && !send.isPending && (
+      ) : cut && !queue.length && !send.isPending && (!assist || !!again) && (
         <Button size="xs" variant="outline" className="justify-self-start animate-in fade-in-0 duration-(--dur-short)"
-          onClick={() => send.mutate({ line: "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
+          onClick={() => send.mutate({ line: assist ? again : "Tiếp tục từ chỗ đã dừng.", refs: [] })}>
           <RotateCw /> {t("Chạy tiếp")}
         </Button>
       )}
@@ -209,7 +226,7 @@ export const TaskComposer = memo(function TaskComposer({ t: task, cut }: { t: Ta
         {plan && (
           <Hint text={t("Phiên đang ở chế độ chỉ đọc (plan). Bật để lượt nhắn tiếp được sửa file, ví dụ duyệt plan rồi bảo AI làm.")} side="bottom">
             <label className="flex items-center gap-1.5">
-              <Checkbox checked={edit} onCheckedChange={(v) => setEdit(!!v)} disabled={running} />
+              <Checkbox checked={edit} onCheckedChange={(v) => tick(!!v)} disabled={running} />
               {t("Cho sửa code")}
             </label>
           </Hint>

@@ -2,7 +2,7 @@
 
 import { Check, Grid2x2, ImagePlus, PencilLine, PenLine, Smile, Sparkles, X, type LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { picked } from "@/features/settings/components/parts";
+import { PickPill, picked } from "@/features/settings/components/parts";
 import { Picks, useAiPrefs } from "@/shared/components/ai";
 import { AiBot, AiPromptBox, AiThinking, Mascot } from "@/shared/components/ai/chat";
 import { type Effort } from "@/shared/components/ai/prefs";
@@ -47,6 +47,7 @@ export function MascotRow() {
         {opts.map(([v, name]) => (
           <Hint key={v === img && img ? "img" : v} side="bottom" text={name}>
             <button type="button" role="radio" aria-checked={m === v} aria-label={name} onClick={() => pick(v)} className={tile(m === v)}>
+              <PickPill id="set-mascot" on={m === v} className="rounded-xl" />
               <Mascot m={v} className="size-7" />
             </button>
           </Hint>
@@ -173,6 +174,7 @@ function MascotDraw({ onClose }: { onClose: () => void }) {
                   <Hint key={x.id} side="bottom" text={x.description}>
                     <button type="button" role="radio" aria-checked={x.id === shot.id} aria-label={x.description} onClick={() => setPick(x.id)}
                       className={cn("grid size-12 place-items-center rounded-xl border", picked(x.id === shot.id))}>
+                      <PickPill id="set-mascot-shot" on={x.id === shot.id} className="rounded-xl" />
                       <Mascot m={mascotUrl(x.svg)} className="size-8" />
                     </button>
                   </Hint>

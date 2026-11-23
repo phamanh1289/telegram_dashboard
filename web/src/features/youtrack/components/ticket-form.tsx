@@ -19,8 +19,9 @@ import { Textarea } from "@/shared/components/ui/textarea";
 import { api, errorText, type YouTrackIssue } from "@/shared/lib/api";
 import { getPref, setPref } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { resolveProject, yt, ytMeQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
-import { useMention } from "@/shared/components/mention";
+import { resolveProject, ytFieldsQuery, ytMeQuery, ytPeopleQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { ytPeople } from "@/features/youtrack/lib/mentions";
 import { type Key, useT } from "@/shared/lib/i18n";
 
@@ -198,6 +199,36 @@ function Drafting({ name }: { name: string }) {
   );
 }
 
+/** Project / Type / Priority / Assignee of the ticket being made, every list read from YouTrack (its cache is shared with
+ *  the form's own reads); a value no longer in the list stays shown. */
+function TicketAttrs({ project, onProject, meta, setField, assignee, meWait, meFailed, demo }: {
+  project: string; onProject: (p: string) => void; meta: Omit<TicketMeta, "assignee">; setField: (k: keyof TicketMeta) => (v: string) => void;
+  assignee: string; meWait: boolean; meFailed: boolean; demo?: boolean;
+}) {
+  const t = useT();
+  const projects = useQuery(ytProjectsQuery);
+  const fields = useQuery({ ...ytFieldsQuery(project), enabled: !!project && !demo }); // the form's own read: one request
+  const people = useQuery({ ...ytPeopleQuery(project), enabled: !!project });
+  return (
+    <fieldset className="grid gap-1.5">
+      <legend className={cn(LABEL, "mb-1.5")}>{t("Thuộc tính")}</legend>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
+        <Pick label="Project" value={project} onChange={onProject}
+          items={[...(project && !projects.data?.some((p) => p.shortName === project) ? [{ value: project, label: project }] : []),
+            ...(projects.data ?? []).map((p) => ({ value: p.shortName, label: p.shortName, hint: p.name !== p.shortName ? p.name : undefined }))]} />
+        <Pick label="Type" value={meta.type} empty={fields.isLoading ? t("Đang tải…") : t("Mặc định")} onChange={setField("type")} items={opts(fields.data?.Type, meta.type).map((v) => ({ value: v, label: v }))} />
+        <Pick label="Priority" value={meta.priority} empty={fields.isLoading ? t("Đang tải…") : t("Mặc định")} onChange={setField("priority")} items={opts(fields.data?.Priority, meta.priority).map((v) => ({ value: v, label: v }))} />
+        <Pick label="Assignee" value={assignee} empty={people.isLoading || meWait ? t("Đang tải…") : t("Chưa assign")} onChange={setField("assignee")}
+          items={[...(assignee && !people.data?.some((p) => p.login === assignee) ? [{ value: assignee, label: assignee }] : []),
+            ...(people.data ?? []).map((p) => ({ value: p.login, label: p.name, hint: p.login }))]} />
+      </div>
+      {fields.isError || projects.isError || meFailed ? <p className="text-xs text-warn">{t("Không tải được dữ liệu YouTrack, các ô còn lại để mặc định.")}</p>
+        : fields.isSuccess && !fields.data.Type?.length && !fields.data.Priority?.length
+          && <p className="text-xs text-ink-3">{t("Project {project} không có Type / Priority trên YouTrack.", { project })}</p>}
+    </fieldset>
+  );
+}
+
 export function TicketForm({ title, hint, project: startProject, initial, note: startNote = "", notePlaceholder, aiOn, aiKind, aiContext, aiDraft,
   onSubmit, addTo, extra, demo }: {
   title: ReactNode;
@@ -230,14 +261,13 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   useEffect(() => () => abort.current?.abort(), []);
 
   // Same defaults on both tabs: the project the YouTrack tab is on (VA, else the first), assigned to me.
-  const projects = useQuery(ytProjectsQuery);
   const fallback = useYtProject(startProject);
   const me = useQuery(ytMeQuery);
   const project = picked ?? fallback;
   const assignee = meta.assignee ?? me.data?.login ?? "";
-  const fields = useQuery({ queryKey: ["yt", "fields", project], queryFn: () => yt.fields(project), staleTime: Infinity, enabled: !!project && !demo });
-  const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000, enabled: !!project });
-  const { attach, ...mention } = useMention(ytPeople(project), desc, setDesc); // "@" in the description tags the team
+  const meWait = meta.assignee == null && me.isPending; // "assigned to me" not known yet: creating now would leave it unassigned
+  const fields = useQuery({ ...ytFieldsQuery(project), enabled: !!project && !demo });
+  const { attach, ...mention } = useJoin(useMention(ytPeople(project), desc, setDesc), useDocTag("youtrack", desc, setDesc)); // "@" tags the team, "#" links a document
   const q = useDeferredValue(summary.trim());
   const similar = useOpenSimilar(q, { project, enabled: q.length > 8 });
 
@@ -257,7 +287,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
     },
   });
   const create = useMutation({
-    mutationFn: () => onSubmit({ ...meta, assignee, project, summary: summary.trim(), markdown: format === "md", description: format === "md" ? desc : toPlain(desc) }),
+    mutationFn: () => onSubmit({ ...meta, assignee, project, summary: summary.trim(), markdown: format === "md", description: format === "md" ? mention.wire(desc) : toPlain(mention.wire(desc)) }), // "#" titles as links
   });
   const dup = useMutation({ mutationFn: (t: YouTrackIssue) => addTo!(t) });
 
@@ -266,7 +296,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const pickProject = (p: string) => { setPicked(p); setMeta(NO_META); };
   // With a message to read the note is optional; without one (YouTrack tab) the note is all the AI has.
   const canDraft = (!!aiContext || !!note.trim()) && !draft.isPending && !fields.isLoading;
-  const canCreate = !!summary.trim() && !create.isPending && !demo;
+  const canCreate = !!summary.trim() && !create.isPending && !demo && !meWait;
   const runDraft = () => { if (canDraft) draft.mutate(); };
   const primary = () => { if (mode === "ai") runDraft(); else if (canCreate) create.mutate(); };
   // the prompt box handles its own Enter (and marks it handled)
@@ -281,24 +311,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
   const slide = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: -8 }, transition: { duration: 0.18, ease: [0.2, 0, 0, 1] as const } };
   const setField = (k: keyof TicketMeta) => (v: string) => setMeta((m) => ({ ...m, [k]: v }));
   // Project / Type / Priority / Assignee, all read from YouTrack; the same row on both tabs.
-  const attrs = (
-    <fieldset className="grid gap-1.5">
-      <legend className={cn(LABEL, "mb-1.5")}>{t("Thuộc tính")}</legend>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[repeat(auto-fit,minmax(8.5rem,1fr))]">
-        <Pick label="Project" value={project} onChange={pickProject}
-          items={[...(project && !projects.data?.some((p) => p.shortName === project) ? [{ value: project, label: project }] : []),
-            ...(projects.data ?? []).map((p) => ({ value: p.shortName, label: p.shortName, hint: p.name !== p.shortName ? p.name : undefined }))]} />
-        <Pick label="Type" value={meta.type} empty={fields.isLoading ? t("Đang tải…") : t("Mặc định")} onChange={setField("type")} items={opts(fields.data?.Type, meta.type).map((v) => ({ value: v, label: v }))} />
-        <Pick label="Priority" value={meta.priority} empty={fields.isLoading ? t("Đang tải…") : t("Mặc định")} onChange={setField("priority")} items={opts(fields.data?.Priority, meta.priority).map((v) => ({ value: v, label: v }))} />
-        <Pick label="Assignee" value={assignee} empty={people.isLoading ? t("Đang tải…") : t("Chưa assign")} onChange={setField("assignee")}
-          items={[...(assignee && !people.data?.some((p) => p.login === assignee) ? [{ value: assignee, label: assignee }] : []),
-            ...(people.data ?? []).map((p) => ({ value: p.login, label: p.name, hint: p.login }))]} />
-      </div>
-      {fields.isError || projects.isError ? <p className="text-xs text-warn">{t("Không tải được dữ liệu YouTrack, các ô còn lại để mặc định.")}</p>
-        : fields.isSuccess && !fields.data.Type?.length && !fields.data.Priority?.length
-          && <p className="text-xs text-ink-3">{t("Project {project} không có Type / Priority trên YouTrack.", { project })}</p>}
-    </fieldset>
-  );
+  const attrs = <TicketAttrs project={project} onProject={pickProject} meta={meta} setField={setField} assignee={assignee} meWait={meWait} meFailed={me.isError} demo={demo} />;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" onKeyDown={onKey}>
@@ -357,6 +370,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
                   {view === "write" ? (
                     <motion.div key="write" className="relative flex min-h-0 flex-1 flex-col" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}>
                       {mention.popup}
+                      {mention.top}
                       <Textarea ref={attach} aria-label={t("Mô tả ticket")} maxLength={20000} value={desc}
                         onChange={(e) => { setDesc(e.target.value); mention.track(e); }} onSelect={mention.track} onKeyDown={mention.onKeyDown}
                         className={cn("min-h-24 flex-1 resize-none overflow-y-auto field-sizing-fixed", format === "md" && "font-mono text-sm md:text-sm")}
@@ -366,7 +380,7 @@ export function TicketForm({ title, hint, project: startProject, initial, note: 
                     <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }}
                       aria-label={t("Xem trước mô tả")} className="min-h-24 flex-1 overflow-y-auto rounded-md border border-rule bg-cotton px-3 py-2 text-md leading-relaxed">
                       {!desc.trim() ? <p className="text-ink-3">{t("Chưa có mô tả.")}</p>
-                        : format === "md" ? <Markdown text={desc} /> : <p className="whitespace-pre-wrap">{toPlain(desc)}</p>}
+                        : format === "md" ? <Markdown text={mention.wire(desc)} /> : <p className="whitespace-pre-wrap">{toPlain(desc)}</p>}
                     </motion.div>
                   )}
                 </AnimatePresence>

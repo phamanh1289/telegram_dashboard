@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ModelEffortPicker } from "@/shared/components/ai";
 import { AiBot, AiPromptBox, AiResultCard, AiThinking, UserBubble, useFollow } from "@/shared/components/ai/chat";
-import { ItemActions } from "@/features/telegram/components/digest-page";
+import { ItemActions, NextSteps } from "@/features/telegram/components/next-steps";
 import { ASK_BTN, AskPost, Markdown } from "@/shared/components/markdown";
 import { Button } from "@/shared/components/ui/button";
 import { Dialog, DIALOG_SHEET, DialogContent, DialogTitle } from "@/shared/components/ui/dialog";
@@ -16,10 +16,10 @@ import { type Brief, saveBrief } from "@/features/telegram/lib/briefs";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
 import { askInQa } from "@/features/telegram/lib/inbox";
 import { copyText } from "@/shared/lib/notifications";
-import { readIntro } from "@/shared/lib/prefs";
+import { aboutMe } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { briefingQuery, useSaveBriefing } from "@/features/telegram/components/briefing/run";
-import { EASE, FADE, NextSteps, tgText } from "@/features/telegram/components/briefing/todo";
+import { EASE, FADE, tgText } from "@/features/telegram/components/briefing/todo";
 
 // ---- the AI assistant: questions across every group's latest digest ------------------------------------------------
 
@@ -167,7 +167,7 @@ export function AiPane({ ready, brief, bare, onSave, saving, onClose, className 
     setQ("");
     setTurns((all) => [...all, { id, q: question, text: "", busy: true }]);
     try {
-      const r = await apiStream<{ text: string }>("/briefing/ask", { question, intro: readIntro() }, ctl.signal, (text) => set({ text }));
+      const r = await apiStream<{ text: string }>("/briefing/ask", { question, ...aboutMe() }, ctl.signal, (text) => set({ text }));
       set({ text: r.text, busy: false });
       // kept in AI Agent › Briefing, to read again later
       done.current.push({ q: question, a: r.text });

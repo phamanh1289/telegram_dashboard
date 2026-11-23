@@ -1,8 +1,10 @@
 "use client";
 
 import { ArrowLeft, BellOff, BellRing, CheckCheck, CircleCheck, Copy, RotateCcw, Trash2, X } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { AiResultCard, AiStop, AiThinking } from "@/shared/components/ai/chat";
+import { StoryAction, WaitMenu } from "@/features/telegram/components/briefing/waits";
 import { DeepAnswerAction } from "@/features/telegram/components/deep-think";
 import { Markdown } from "@/shared/components/markdown";
 import { AttachThread } from "@/features/telegram/components/message/attach";
@@ -12,11 +14,12 @@ import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { apiStream, errorText, type Message, type QaItem } from "@/shared/lib/api";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
-import { msgKey } from "@/features/telegram/lib/inbox";
+import { msgKey, ticketsIn } from "@/features/telegram/lib/inbox";
+import { ytProjectsQuery } from "@/features/youtrack/lib/yt";
 import { copyText } from "@/shared/lib/notifications";
-import { qaRemindLabel, readIntro } from "@/shared/lib/prefs";
+import { qaRemindLabel, readIntro, useRoleOrDev } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
-import { accepted, fresh, gist, type QaMark, type Seen, thread, transcript, untag, waiting, who } from "@/features/telegram/lib/qa";
+import { accepted, fresh, gist, nudges, type QaMark, type Seen, thread, transcript, untag, waiting, who } from "@/features/telegram/lib/qa";
 import { PILL, State } from "@/features/telegram/components/qa/bits";
 
 const sumErr = () => ({ ai_not_configured: tr("Chưa cài AI (Cài đặt › AI)."), ai_context_too_large: tr("Chuỗi quá dài để AI đọc."), message_not_found: tr("Không đọc được các tin của chuỗi.") });
@@ -35,9 +38,15 @@ export function Thread({ i, now, title, seenAt, target, onTarget, onClose, late,
   const [sure, setSure] = useState(false); // Xóa waits for a second click
   const all = thread(i);
   const news = new Set(fresh(i, seenAt).map((m) => m.message_id));
-  const nudged = i.answers.filter((a) => a.outgoing).length;
+  const nudged = nudges(i);
   const answer = accepted(i);
   const [sum, setSum] = useState<{ text: string; busy: boolean; error?: string } | null>(null);
+  // PO: the conclusion goes into the story of the ticket the thread names (the item's flow, as in Briefing)
+  const role = useRoleOrDev();
+  const po = role === "po";
+  const itemKey = `qa:${i.question.chat_id}:${i.code}`; // one item for Cập nhật story and Chờ…
+  const tickets = ticketsIn(all.map((m) => m.text).join("\n"), useQuery({ ...ytProjectsQuery, enabled: po }).data);
+  const concluded = !!sum && !sum.busy && !sum.error; // the "Kết luận (AI)" card is up, with its own Cập nhật story
   const stop = useRef<AbortController | null>(null);
   useEffect(() => () => stop.current?.abort(), []);
   async function summarize() {
@@ -87,6 +96,13 @@ export function Thread({ i, now, title, seenAt, target, onTarget, onClose, late,
         <div className="flex shrink-0 items-center gap-2 border-b bg-ok-wash px-3 py-2 text-xs text-ok @4xl/qa:px-5">
           <CheckCheck className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate text-ink-2"><b className="font-bold text-ok">{tx("Đã chốt · {who}:", { who: who(answer) })}</b> {gist(answer)}</span>
+          {/* PO: the settled answer goes into the story with no AI summary needed (same item as the AI card's, which
+              takes over while it is up: one Cập nhật story at a time) */}
+          {po && tickets.length > 0 && !concluded && <StoryAction chatId={i.question.chat_id} itemKey={itemKey}
+            it={{ text: answer.text ?? "", why: `Câu hỏi: ${i.question.text ?? ""}`, tickets, message_ids: [answer.message_id] }} />}
+          {/* settled, still waiting on a design / the BU (PO) or BE / PO (Dev): into Briefing › Chờ bổ sung */}
+          <WaitMenu chatId={i.question.chat_id} kind="qa" role={role} itemKey={itemKey}
+            it={{ text: answer.text ?? "", why: `Câu hỏi: ${i.question.text ?? ""}`, tickets, message_ids: [answer.message_id] }} />
           <DeepAnswerAction m={answer} q={i.question.message_id} />
           <Hint side="bottom" text={tx("Bỏ chốt: chuỗi quay lại trạng thái theo các trả lời")}>
             <Button size="xs" variant="ghost" onClick={() => onResolve(null)}>{tx("Bỏ chốt")}</Button>
@@ -122,6 +138,11 @@ export function Thread({ i, now, title, seenAt, target, onTarget, onClose, late,
               </div>
             ) : (
               <AiResultCard title={tx("Kết luận (AI)")} busy={sum.busy} actions={sum.busy ? <AiStop onClick={() => stop.current?.abort()} hint={tx("Dừng tóm tắt")} /> : <>
+                {po && tickets.length > 0 && <StoryAction chatId={i.question.chat_id} itemKey={itemKey}
+                  it={{ text: sum.text, why: "", tickets, message_ids: [(answer ?? i.question).message_id] }} />}
+                {/* no answer settled yet: the conclusion may still wait on someone (settled: the bar above has it) */}
+                {!answer && <WaitMenu chatId={i.question.chat_id} kind="qa" role={role} itemKey={itemKey}
+                  it={{ text: sum.text, why: `Câu hỏi: ${i.question.text ?? ""}`, tickets, message_ids: [i.question.message_id] }} />}
                 <Button size="xs" variant="ghost" onClick={() => void copyText(sum.text, tr("Đã chép kết luận"))}><Copy /> Copy</Button>
                 <Button size="xs" variant="ghost" onClick={() => setSum(null)}><X /> {tx("Đóng")}</Button>
               </>}>

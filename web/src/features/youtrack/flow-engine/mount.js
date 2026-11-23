@@ -324,9 +324,16 @@ function mount(host, flow, opts = {}, standalone = false) {
       : setFocus(sel ? sel.id : null, null, true, sel?.t === "item" ? `${sel.id}.${sel.item}` : null)),
     note: say,
     centre,
-    show: (id) => show(id, !reduced.matches),
   });
   cleanup.push(() => ed.destroy());
+  // a click only highlights a screen; a double click zooms onto it. On the view: the camera's pointer capture sends
+  // the click there, so the screen is the one under the pointer. A title, button or arrow label in Edit renames
+  // (the editor's preventDefault) and the camera stays
+  view.addEventListener("dblclick", (e) => {
+    const el = e.defaultPrevented ? null : document.elementFromPoint(e.clientX, e.clientY);
+    const f = el && !el.closest("button, a, [contenteditable]") && el.closest(".uf-screen");
+    if (f && layer.contains(f)) show(f.dataset.id, !reduced.matches);
+  });
   const memo = memos({ t, cam, view, root, get: () => cur, commit, say, editing: () => editing && shown === "map",
     button: () => bMemo });
   const setStart = (id) => { const f = structuredClone(cur); f.start = id; commit(f); seenStart = startOf(cur); };

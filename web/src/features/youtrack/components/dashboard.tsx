@@ -13,6 +13,7 @@ import { cn } from "@/shared/lib/utils";
 import { AI_MAX, byAs, bySp, DAY, fmt, PCOL, QUICK, rank, shortName, shortSp, stateColor, type Ticket, type Verdict, verdicts, yt } from "@/features/youtrack/lib/yt";
 import { AGE, dashStats, reportData, type Stats } from "@/features/youtrack/lib/yt-stats";
 import { AiAsk, Card, CardAi, MultiSelect, Person, StatePill } from "./bits";
+import { Columns, HBars, Stack } from "./charts";
 import { type Mode, useYt } from "./state";
 
 // The bento dashboard, laid out per role (LAYOUT): what needs that role first, then its figures. Every number opens its tickets.
@@ -95,7 +96,7 @@ export function DashboardPage() {
     </Card>,
     thru: (c) => <Card title={t("Ticket xong mỗi ngày")} className={c}
       meta={<Segmented id="yt-range" label={t("Khoảng thời gian biểu đồ")} value={y.range} onChange={y.setRange} items={[7, 14, 30].map((n) => ({ value: n, label: t("{n} ngày", { n }) }))} />}>
-      <Columns days={d.days} series={[{ v: d.thru, c: "var(--color-hl)", on: (k) => drill("thru", String(k)) }]} /><BulkNote d={d} />
+      <Columns days={d.days} series={[{ name: t("xong"), v: d.thru, c: "var(--color-hl)", on: (k) => drill("thru", String(k)) }]} /><BulkNote d={d} />
     </Card>,
     carry: (c) => <Card title={t("Ticket chuyển sprint nhiều lần")} meta={t("{n} ticket", { n: fmt(d.carry.length) })} onMeta={() => drill("carry")} className={c}><Carry d={d} /></Card>,
     bugsp: (c) => <Card title={t("Bug trong sprint")} className={c}>
@@ -108,7 +109,7 @@ export function DashboardPage() {
       </button>
     </Card>,
     bugflow: (c) => <Card title={t("Bug mới và đã sửa")} meta={<span className="flex gap-3"><Lg c="var(--color-error)">{t("mới")}</Lg><Lg c="var(--color-ink-3)">{t("đã sửa|bug")}</Lg></span>} className={c}>
-      <Columns days={d.days} series={[{ v: d.bugNew, c: "var(--color-error)", on: (k) => drill("bugnew", String(k)) }, { v: d.bugFix, c: "var(--color-ink-3)", on: (k) => drill("bugfix", String(k)) }]} />
+      <Columns days={d.days} series={[{ name: t("mới"), v: d.bugNew, c: "var(--color-error)", on: (k) => drill("bugnew", String(k)) }, { name: t("đã sửa|bug"), v: d.bugFix, c: "var(--color-ink-3)", on: (k) => drill("bugfix", String(k)) }]} />
     </Card>,
     bugusr: (c) => <Card title={t("Bug của user")} meta={<span className="flex gap-3"><Lg c="var(--color-error)">{t("mở")}</Lg><Lg c="var(--color-ink-3)">{t("xong")}</Lg></span>} className={c}>
       <Stack rows={d.bug.spUser.map(([n, [o, x]]) => ({ label: n === "Chưa assign" ? t("Chưa assign") : <Person name={n} />, parts: [[o, "var(--color-error)"], [x, "var(--color-ink-3)"]], text: `${o}${x ? ` / ${x}` : ""}`, on: () => drill("bugu", n) }))} empty={t("Sprint này chưa có bug.")} />
@@ -164,7 +165,7 @@ export function useQc() {
   const s = useMemo(() => {
     const as = byAs(f), sp = bySp(f);
     const byId = new Map(y.rows.filter((i) => as(i) && sp(i)).map((i) => [i.id, i]));
-    const all = verdicts(q.data ?? []);
+    const all = verdicts(q.data?.rows ?? []);
     const v = all.filter((x) => byId.has(x.id));
     // my own test results ignore the header filters: every pass / fail I made on a loaded ticket
     const rowOf = new Map(y.rows.map((i) => [i.id, i]));
@@ -214,6 +215,7 @@ function QcKpis() {
       {tiles.map(([l, v, suf, sub, on], k) => (
         <Tile key={l} label={l} icon={QC_ICON[k]} value={v} suffix={suf} bad={k >= 2 && !!v} onClick={on}><span className="text-xs text-ink-3">{sub}</span></Tile>
       ))}
+      {s.q.data.since != null && <p role="note" className="col-span-full text-xs text-warn">{t("Project có quá nhiều thay đổi trong {d} ngày: số liệu test chỉ tính từ {from}. Chọn khoảng ngày ngắn hơn để có đủ số liệu.", { d: y.range, from: fmtDay(s.q.data.since) })}</p>}
     </div>
   );
 }
@@ -226,8 +228,8 @@ function QcDays({ d }: { d: Stats }) {
   const day = (l: Verdict[]) => d.days.map((t) => l.filter((x) => x.at >= t && x.at < t + DAY));
   const p = day(s.pass), f = day(s.fail), dl = (k: number) => fmtDay(d.days[k]);
   return <Columns days={d.days} series={[
-    { v: p.map((x) => x.length), c: "var(--color-ok)", on: (k) => list(t("Pass ngày {d}", { d: dl(k) }), s.tickets(p[k])) },
-    { v: f.map((x) => x.length), c: "var(--color-error)", on: (k) => list(t("Trả lại ngày {d}", { d: dl(k) }), s.tickets(f[k])) },
+    { name: "Pass", v: p.map((x) => x.length), c: "var(--color-ok)", on: (k) => list(t("Pass ngày {d}", { d: dl(k) }), s.tickets(p[k])) },
+    { name: t("Bị trả lại"), v: f.map((x) => x.length), c: "var(--color-error)", on: (k) => list(t("Trả lại ngày {d}", { d: dl(k) }), s.tickets(f[k])) },
   ]} />;
 }
 
@@ -369,7 +371,8 @@ function Aging({ d }: { d: Stats }) {
       </div>
       <TicketRows rows={rows.slice(0, SHOW).map(({ i, d: age }) => ({ i, right: <Age days={age} /> }))} all={rows.map((r) => r.i)}
         more={rows.length > SHOW ? () => drill("aging") : undefined} moreN={rows.length - SHOW}
-        empty={t(need.length && y.sinceBusy ? "Đang tải thời gian đổi state…" : "Không có ticket nào ở state này quá ngưỡng.")} />
+        empty={need.length && y.sinceError ? t("Không đọc được thời gian đổi state: {e}", { e: y.sinceError.message })
+          : t(need.length && y.sinceBusy ? "Đang tải thời gian đổi state…" : "Không có ticket nào ở state này quá ngưỡng.")} />
     </div>
   );
 }
@@ -488,53 +491,6 @@ function Burn({ d }: { d: Stats }) {
   );
 }
 
-function Columns({ days, series }: { days: number[]; series: { v: number[]; c: string; on: (k: number) => void }[] }) {
-  const W = 600, H = 170, L = 6, B = 22, T = 16, max = Math.max(1, ...series.flatMap((s) => s.v)), gw = (W - L * 2) / days.length, bw = gw * 0.7 / series.length;
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} role="img" className="w-full text-xs">
-      <line x1={L} x2={W - L} y1={H - B} y2={H - B} stroke="var(--color-rule)" />
-      {days.map((t, k) => (
-        <g key={t}>
-          {series.map((s, si) => {
-            const v = s.v[k], h = (H - B - T) * v / max, xx = L + k * gw + gw * 0.15 + si * bw;
-            return v ? (
-              <g key={si} className="cursor-pointer" onClick={() => s.on(k)}>
-                <motion.rect x={xx} width={bw - 1} rx={2} fill={s.c} initial={{ y: H - B, height: 0 }} animate={{ y: H - B - h, height: h }} transition={{ duration: 0.4, delay: k * 0.01 }} className="hover:opacity-80" />
-                <text x={xx + bw / 2} y={H - B - h - 3} textAnchor="middle" fill="var(--color-ink-2)">{v}</text>
-              </g>
-            ) : null;
-          })}
-          <text x={L + k * gw + gw / 2} y={H - 6} textAnchor="middle" fill="var(--color-ink-3)">{new Date(t).getDate()}</text>
-        </g>
-      ))}
-    </svg>
-  );
-}
-
-type Bar = { label: React.ReactNode; v: number; c: string; on: () => void };
-function HBars({ rows, empty, max, label }: { rows: Bar[]; empty: string; max?: number; label?: string }) {
-  const m = max ?? Math.max(0, ...rows.map((r) => r.v));
-  return <Stack rows={rows.map((r) => ({ label: r.label, parts: [[r.v, r.c]], text: String(r.v), on: r.on }))} max={m} empty={empty} label={label} />;
-}
-/** `label`: the label column's widest (9rem). */
-function Stack({ rows, empty, max, label = "9rem" }: { rows: { label: React.ReactNode; parts: [number, string][]; text: string; on: () => void }[]; empty: string; max?: number; label?: string }) {
-  const m = Math.max(1, max ?? Math.max(0, ...rows.map((r) => r.parts.reduce((s, [n]) => s + n, 0))));
-  if (!rows.length) return empty ? <p className="text-sm text-ink-3">{empty}</p> : null;
-  return (
-    <div className="grid gap-1">
-      {rows.map((r, k) => (
-        <button key={k} type="button" onClick={r.on} style={{ gridTemplateColumns: `minmax(0,${label}) minmax(0,1fr) 2.5rem` }} className="grid items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-paper-2">
-          <span className="min-w-0 truncate">{r.label}</span>
-          <span className="flex h-2 overflow-hidden rounded-full bg-paper-3">
-            {r.parts.map(([n, c], j) => <motion.i key={j} className="h-full" style={{ background: c }} initial={{ width: 0 }} animate={{ width: `${n / m * 100}%` }} transition={{ duration: 0.45 }} />)}
-          </span>
-          <em className="text-right font-mono text-xs text-ink-2 not-italic tabular-nums">{r.text}</em>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 const ddays = (t: T, n: number | null) => (n == null ? "—" : n < 1 ? t("< 1 ngày") : t("{n} ngày", { n: n.toFixed(n < 10 ? 1 : 0) }));
 const KIND: Record<string, [Key, string]> = { bug: ["Bug", "var(--color-error)"], feat: ["Feature", "var(--st-dev)"], task: ["Task khác", "var(--color-ink-3)"] };
 function Lead({ d }: { d: Stats }) {
@@ -611,4 +567,4 @@ function Mix({ d }: { d: Stats }) {
   );
 }
 
-export { Attention, Aging, HBars, Kpis, Progress, Stack, Wip };
+export { Attention, Aging, Kpis, Progress, Wip };

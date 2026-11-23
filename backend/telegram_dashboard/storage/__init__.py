@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .common import _dt, fold, format_cursor, now_ts, parse_cursor
 from .data import Data
+from .docs import Docs
 from .flow import FlowJobs
 from .messages import Messages
 from .outbox import Outbox
@@ -24,7 +25,7 @@ __all__ = ["CHAIN_MAX", "MIGRATIONS", "Db", "Store", "_dt", "parse_cursor"]
 KEEP_CHANGES = 50_000  # change-log rows kept on startup; older cursors get a reset
 
 
-class Store(Messages, Outbox, Tasks, Data, FlowJobs):
+class Store(Messages, Outbox, Tasks, Data, FlowJobs, Docs):
     def __init__(self, path: Path):
         self.path = Path(path)
         self._local = threading.local()  # one connection per thread, reused (Db runs calls in a pool)

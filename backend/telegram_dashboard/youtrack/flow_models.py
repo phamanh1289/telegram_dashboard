@@ -11,6 +11,7 @@ class FlowRetryRequest(BaseModel):
     split: bool = False
     target: Literal["mobile", "web"] = "mobile"  # a job saved before platforms had frames: a phone's
     draw: list[str] | None = None  # = AiFlow.draw
+    reuse: bool = False  # = AiFlow.reuse: "Tiếp tục render" of a "Chỉ vẽ phần mới" run keeps the flow's links too
 
 
 class FlowLineDTO(BaseModel):  # a source line the code could not turn into a link, and why

@@ -10,16 +10,26 @@ import { ProjectPicker, useProjects } from "@/shared/components/project-picker";
 import { Hint } from "@/shared/components/ui/hint";
 import { useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
-import { getPref, setPref } from "@/shared/lib/prefs";
+import { setPref, usePrefValue } from "@/shared/lib/prefs";
 import { cn } from "@/shared/lib/utils";
 import { AI_MAX, type Ticket, yt } from "@/features/youtrack/lib/yt";
 import { AiBox, StatePill, useAi, YtPicks } from "./bits";
 import { type AiSession, useHistory } from "./history";
 import { type AiAuto, type AiStart, useYt } from "./state";
 import { type Builtin, builtin, fitsCount, PromptsDialog, shownFor, usePrompts } from "./prompts";
+import { StoryUpdate } from "./story-update";
 
 /** A ticket ID or a bare number (of the current project), several per text. */
 const TICKET_RE = /[A-Z][A-Z0-9_]*-\d+|\b\d+\b/gi;
+
+/** The call a built-in action makes for the session's tickets (`dir` / `sh`: the code folder and its shell, when on). */
+function builtinRun(k: Builtin["kind"], rows: Pick<Ticket, "id" | "type" | "summary">[], list: string[], scope: string, dir: string, sh: boolean) {
+  const many = (ids: string[], sc: string, kind: "summary" | "review" | "testcases") => (sig: AbortSignal) => yt.aiTickets(ids, sc, kind, sig, "", undefined, 0, [], dir, sh);
+  if (k === "notes") return (sig: AbortSignal) => yt.aiData("notes", rows.map((r) => ({ id: r.id, type: r.type, summary: r.summary })), sig);
+  if (k === "summary" || k === "review") return many(list, scope, k);
+  if (k === "testcases") return list.length === 1 ? many(list, list[0], k) : many(list.slice(0, 10), scope, k);
+  return (sig: AbortSignal) => yt.aiTicket(list[0], k, sig, dir, sh);
+}
 
 // Many tickets picked → AI: the tickets quoted, one prompt about them, follow-ups in the box. A folder: the AI also
 // reads that code (read-only). Every session stays in the YouTrack tab (its history), never in Telegram › AI Agent.
@@ -48,12 +58,13 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   const noted = !!notes.data?.[y.mode]?.trim(); // this role's team instructions go into every prompt
   const [prompt, setPrompt] = useState("");
   const [saved, setSaved] = useState(false); // the saved-prompts popup
+  const [story, setStory] = useState<{ text: string; base: string } | null>(null); // a rewritten description under review
   // "": no folder, the AI reads the tickets only; remembered per YouTrack project
-  const [project, setProjectState] = useState(() => getPref(`ytFolder:${y.project}`) ?? "");
-  const setProject = (p: string) => { setProjectState(p); setPref(`ytFolder:${y.project}`, p || null); };
+  const project = usePrefValue(`ytFolder:${y.project}`);
+  const setProject = (p: string) => setPref(`ytFolder:${y.project}`, p || null);
   // the AI may also run commands in that folder (build, test, gradle), sandboxed; off by default
-  const [shell, setShellState] = useState(() => getPref(`ytShell:${y.project}`) === "1");
-  const setShell = (on: boolean) => { setShellState(on); setPref(`ytShell:${y.project}`, on ? "1" : null); };
+  const shell = usePrefValue(`ytShell:${y.project}`) === "1";
+  const setShell = (on: boolean) => setPref(`ytShell:${y.project}`, on ? "1" : null);
   const [add, setAdd] = useState("");
   const [found, setFound] = useState<Record<string, Ticket>>({}); // added tickets outside the loaded scope, looked up
   const [looking, setLooking] = useState(false);
@@ -78,14 +89,8 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
   function runBuiltin(b: Builtin) {
     setRetry(undefined);
     unpick();
-    const k = b.kind;
-    const run = (sig: AbortSignal) =>
-      k === "notes" ? yt.aiData("notes", rows.map((r) => ({ id: r.id, type: r.type, summary: r.summary })), sig)
-      : k === "summary" || k === "review" ? yt.aiTickets(list, scope, k, sig, "", undefined, 0, [], dir, sh)
-      : k === "testcases" ? (one ? yt.aiTickets([one], one, "testcases", sig, "", undefined, 0, [], dir, sh) : yt.aiTickets(list.slice(0, 10), scope, "testcases", sig, "", undefined, 0, [], dir, sh))
-      : yt.aiTicket(one!, k, sig, dir, sh);
     setOpenList(false); // the answer gets the room
-    void ai.run({ label: `AI: ${t(b.name).toLowerCase()}`, run });
+    void ai.run({ label: `AI: ${t(b.name).toLowerCase()}`, run: builtinRun(b.kind, rows, list, scope, dir, sh) });
   }
   /** A built-in runs its job, a saved prompt is sent as the question. */
   function pick(name: string) {
@@ -216,7 +221,9 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
               : <>{t("Hỏi bất kỳ điều gì về {n} ticket ở trên, hoặc chọn một gợi ý bên dưới.", { n: list.length })}{dev && ` ${t("Chọn thư mục dự án để AI đọc code.")}`}</>}
           </p>
         )}
-        <AiBox ai={ai} stop={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined} />
+        <AiBox ai={ai} stop={false} onUse={one && !y.config?.mock ? (text) => y.setSheet({ kind: "ticket", id: one, nav: [], comment: text }) : undefined}
+          // a PO tool, as Cập nhật story (the story is their spec)
+          onDescribe={one && !y.config?.mock && y.mode === "po" ? (text, base) => setStory({ text, base }) : undefined} />
         {retry && ai.s.status !== "busy" && <>
           {retry.q && <UserBubble>{retry.q}</UserBubble>}
           <p className="flex flex-wrap items-center gap-2 text-sm text-ink-3">
@@ -267,6 +274,7 @@ export function WorkView({ title, ids: initial, auto, start, resume }: { title: 
         {folder && <p className="px-1 text-xs text-ink-2">{t(shell ? "Gợi ý và câu hỏi sẽ đọc code trong {name} (được chạy lệnh trong sandbox), trả lời ngay ở trên; chậm hơn, thường 1–3 phút, lâu hơn nếu build." : "Gợi ý và câu hỏi sẽ đọc code trong {name} (chỉ đọc), trả lời ngay ở trên; chậm hơn, thường 1–3 phút.", { name: folder.name })}</p>}
       </div>}
       <PromptsDialog open={saved} onOpenChange={setSaved} onPick={pick} role={y.mode} many={list.length > 1} />
+      {story && one && <StoryUpdate ids={[one]} note="" draft={story} onClose={() => setStory(null)} />}
     </div>
   );
 }

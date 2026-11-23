@@ -187,7 +187,7 @@ export function TicketsPage() {
           <table className="w-full border-collapse text-sm">
             <thead className="z-10 bg-cotton text-left text-xs text-ink-3 shadow-[inset_0_-1px_0_var(--color-rule)] md:sticky md:top-0">
               <tr>
-                <th className="w-9 py-2 pr-1 pl-3.5"><input type="checkbox" aria-label={t("Chọn tất cả ticket đang hiện")} checked={shown.every((i) => y.picked.has(i.id))}
+                <th className="w-9 py-2 pr-1 pl-3.5"><input type="checkbox" aria-label={t("Chọn tất cả ticket đang hiện")} checked={shown.length > 0 && shown.every((i) => y.picked.has(i.id))}
                   onChange={(e) => y.setPicked(e.target.checked ? new Set([...y.picked, ...shown.map((i) => i.id)]) : new Set([...y.picked].filter((id) => !shown.some((i) => i.id === id))))} /></th>
                 {tcols.map((k) => {
                   const sk: ColKey = k === "summary" ? "id" : k; // the title column sorts by ticket number
@@ -374,7 +374,7 @@ function HoverPreview({ el }: { el: HTMLTableSectionElement | null }) {
   return (
     <div role="tooltip" className="pointer-events-none fixed z-30 grid w-[360px] gap-1.5 rounded-lg bg-cotton p-3 text-xs shadow-pop animate-in fade-in-0 duration-(--dur-short)" style={{ left, top }}>
       <div className="text-sm font-medium"><span className="mr-1.5 font-mono text-ink-3">{tk.id}</span>{tk.summary}</div>
-      <div className="flex gap-3 text-ink-3"><span>{tk.state || "—"}</span><span>{tk.priority || "—"}</span><span>{tk.assignee || t("Chưa assign")}</span></div>
+      <div className="flex items-center gap-3 text-ink-3"><StatePill state={tk.state} /><Prio p={tk.priority} /><Person name={tk.assignee} empty={t("Chưa assign")} /></div>
       <div className="line-clamp-6 text-ink-2">{d.isPending ? t("Đang tải mô tả…") : d.data ? snippet(d.data.description) || <i>{t("Không có mô tả")}</i> : t("Không tải được mô tả.")}</div>
     </div>
   );

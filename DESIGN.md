@@ -55,13 +55,14 @@ In the Next app these map onto shadcn names in `globals.css` (`--background`, `-
 ## Components
 
 - **Button** — primary: `--color-board` fill (espresso ink), `--color-board-type` label, 36px (30px small), radius 8, lifts 1px on hover, presses 1px on active. Secondary: cotton with `--edge-stock`. Ghost: transparent, paper-3 on hover. Destructive: error text, error-wash on hover. All eight states: default, hover, focus-visible, active, disabled (opacity .5, no pointer), loading (spinner replaces icon, label stays), error, success.
-- **Segmented control** (2–4 options: scope, tabs inside a card): a groove (`--press-groove`, paper-2) with a cotton card riding in it to the chosen stop.
+- **Segmented control** (2–4 options: scope, tabs inside a card): a groove (`--press-groove`, paper-2) with the highlight pill (`bg-hl`, `Pill` / `PILL_SPRING`) sliding to the chosen stop; the full-width `card` variant uses the same pill.
 - **Tabs** (page-level): text tabs with a 2px ink underline on the current one; count in a mono pill.
 - **Input / select** — 36px, radius 8, 1px `--color-rule-2`, cotton fill; focus ring highlight.
 - **Chip / filter** — 28px, radius 8, rule-2 border; selected = highlight fill, white label. A count inside is mono.
 - **Card** — cotton, radius 10, `--edge-stock` + `--cast-stock`, 16px padding, head row 700 + quiet meta at right. Never a card inside a card (use a rule or a paper-2 well).
 - **Table** — sticky head in paper-2, heads ink-3 `--text-xs` 500 sentence case, rows 40px (compact 32px), hairline rules, hover paper-2, selected row hl-wash with a 3px highlight left mark. Numbers right-aligned mono.
 - **Badge / state** — text + a small square swatch of its category colour (not colour alone); `-wash` background only for error/warn/ok states.
+- **Grow button** (`GrowRow` / `useGrow` / `GrowLabel`, `shared/components/ui/grow.tsx`): an icon button whose label slides out under the pointer or on keyboard focus (a ticket's features: AI, UI flow, Cập nhật story; Tài liệu's Cập nhật / Thêm). In its row a label that is out stays out until the pointer leaves the row, so no icon moves away from under the pointer. Each feature keeps one colour (AI highlight, UI flow code, story ok): tinted at rest, filled on hover. Only for a short row of lead actions whose place explains them; a status that must be read without a hover stays a labelled button.
 - **Avatar** — 24px circle, initials on a hue derived from the name at fixed L/C.
 - **Popover / menu / dialog / drawer** — cotton, `--cast-pop`, radius 10; scrim `--scrim`; drawer slides with `transform`.
 - **Toast** — board fill, bottom centre, auto-dismiss 3s, one action max.

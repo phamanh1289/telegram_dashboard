@@ -1,48 +1,42 @@
 "use client";
 
-import { ArrowLeft, ArrowUp, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FileSearch, Link2, Loader2, MessageCircleQuestion, Plus, Send, Sparkles, Square, TicketPlus } from "lucide-react";
+import { ArrowUp, FileSearch, Loader2, Send, Sparkles, TicketPlus } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Fragment, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ModelEffortPicker, useAiPrefs } from "@/shared/components/ai";
-import { AiFetching } from "@/shared/components/ai/fetching";
-import { AiBotIcon, AiIdle, AiPromptBox, AiResultCard, AiSend, AiThinking, AiWriting, type AiSkill, useFollow, UserBubble } from "@/shared/components/ai/chat";
-import { Avatar } from "@/shared/components/avatar";
+import { AiBotIcon, AiIdle, AiPromptBox, AiSend, type AiSkill, useFollow } from "@/shared/components/ai/chat";
+import { AiOptions, AiTurns, type AskVars, askMissing, JOB_KEEP_MS, LEVELS, logTurns, readJob, RelatedTickets, TICKET_ID, TICKET_IDS, type Turn } from "@/features/telegram/components/composer-assist";
 import { IssueDialog, TaskPage } from "@/features/telegram/components/composer-dialogs";
+import { ReplyHead, TagCard } from "@/features/telegram/components/composer-head";
 import { ProjectPicker, useProjects } from "@/shared/components/project-picker";
 import { Dialog, DialogContent, DIALOG_SHEET } from "@/shared/components/ui/dialog";
 import { useOpenSimilar } from "@/features/youtrack/components/ticket-form";
-import { DeepBadge, DeepPick } from "@/features/telegram/components/deep-think";
 import { promiseChoice, RemindPick, remindAt } from "@/features/telegram/components/remind";
 import { WorkTrail } from "@/features/telegram/components/work-trail";
 import { Snippets } from "@/features/telegram/components/snippets";
-import { useMention } from "@/shared/components/mention";
+import { useJoin, useMention } from "@/shared/components/mention";
+import { useDocTag } from "@/features/docs/components/doc-tag";
 import { groupMembers } from "@/features/telegram/lib/mentions";
 import { ContextPanel } from "@/features/telegram/components/message/context-panel";
-import { inline, richText } from "@/features/telegram/components/message/rich-text";
-import { MessageActions } from "@/features/telegram/components/message/row-actions";
-import { ASK_BTN, Markdown } from "@/shared/components/markdown";
-import { SessionAsks, useTaskLog } from "@/features/telegram/components/tasks-feed";
-import type { TaskEvent } from "@/shared/components/ai/steps";
+import { useTaskLog } from "@/features/telegram/components/tasks-feed";
 import { Button } from "@/shared/components/ui/button";
 import { Hint } from "@/shared/components/ui/hint";
 import { Segmented } from "@/shared/components/ui/segmented";
 import { Textarea } from "@/shared/components/ui/textarea";
 import { onChanges } from "@/features/telegram/hooks/use-events";
-import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox, type Task } from "@/shared/lib/api";
-import { draftKey, msgKey, remind, saveDraft, telegramLink, ticketClick, useSessionOn } from "@/features/telegram/lib/inbox";
-import { copyText, toast } from "@/shared/lib/notifications";
-import { splitAttachments } from "@/features/telegram/lib/attach";
-import { timeLabel } from "@/shared/lib/time";
+import { api, ApiError, apiStream, errorText, type AiResult, type Message, type Outbox } from "@/shared/lib/api";
+import { draftKey, msgKey, remind, saveDraft, typing, useSessionOn } from "@/features/telegram/lib/inbox";
+import { fitsSend, SEND_ERRORS, SEND_MAX, sendLost, sendLostText } from "@/features/telegram/lib/send";
+import { toast } from "@/shared/lib/notifications";
 import { getPref, put, readIntro, setPref, readPlatform, readReplyCode, saveReplyCode, useRole, usesCode, type YtRole } from "@/shared/lib/prefs";
 import { cn, MOD } from "@/shared/lib/utils";
-import { type Key, t as tNow, useT } from "@/shared/lib/i18n";
+import { type Key, useT } from "@/shared/lib/i18n";
 
-const MAX = 4096; // UTF-16 code units == JS string length
-// What "Tóm tắt" brings out and an example ask, per role (Cài đặt chung › Vai trò); the prompt side is ai.py ROLE_FOCUS.
-const ROLE_AI: Record<YtRole, [string, Key]> = {
-  dev: ["góc nhìn kỹ thuật", "trả lời lịch sự, hẹn chiều nay"],
-  qa: ["góc nhìn QA: bước tái hiện, môi trường, mức độ, phạm vi test", "hỏi thêm build và thiết bị để tái hiện"],
-  po: ["góc nhìn PO: ảnh hưởng người dùng, ưu tiên, việc cần bạn quyết", "chốt ưu tiên, hẹn trả lời trước thứ Sáu"],
+// An example ask per role (Cài đặt chung › Vai trò); what "Tóm tắt" brings out for it is the prompt's ROLE_FOCUS.
+const ROLE_ASK: Record<YtRole, Key> = {
+  dev: "trả lời lịch sự, hẹn chiều nay",
+  qa: "hỏi thêm build và thiết bị để tái hiện",
+  po: "chốt ưu tiên, hẹn trả lời trước thứ Sáu",
 };
 
 type Outcome =
@@ -52,19 +46,6 @@ type Outcome =
   | { kind: "error"; message: string; until?: number };
 
 export type DraftInjection = { result: AiResult; chatId: string; nonce: number };
-
-const SEND_ERROR_KEYS: Record<string, Key> = {
-  not_tracking: "Nhóm không còn được theo dõi.",
-  reply_not_found: "Tin đích không còn hoặc không thuộc nhóm này.",
-  not_connected: "Chưa kết nối Telegram. Bản nháp vẫn được giữ.",
-  forbidden: "Không có quyền gửi trong nhóm này.",
-  request_payload_mismatch: "Nội dung đã đổi so với yêu cầu đang chờ.",
-  retry_after: "Telegram yêu cầu chờ trước khi gửi tiếp.",
-};
-/** Send error texts, in the language at lookup time (for `errorText`). */
-export const SEND_ERRORS: Record<string, string> = new Proxy(SEND_ERROR_KEYS, {
-  get: (o, k) => (typeof k === "string" && k in o ? tNow(o[k]) : undefined),
-});
 
 export function Composer({
   chatId,
@@ -114,7 +95,7 @@ export function Composer({
     if (!remindSet && text.trim()) setRemindAfter(promiseChoice(text)); // eslint-disable-line react-hooks/set-state-in-effect -- follows the typed text
   }, [text, remindSet]);
   const [snips, setSnips] = useState(false);
-  const { attach, ...mention } = useMention(groupMembers(chatId), text, setText);
+  const { attach, ...mention } = useJoin(useMention(groupMembers(chatId), text, setText), useDocTag("telegram", text, setText)); // "@" tags, "#" a document's link
   const [pane, setPane] = useState<"reply" | "ai">("reply"); // narrow (split view, phones): one pane at a time
   const [outcome, setOutcome] = useState<Outcome>({ kind: "idle" });
   const [targetDeleted, setTargetDeleted] = useState(false);
@@ -144,7 +125,7 @@ export function Composer({
   }, [sessionQ.isSuccess, session, savedLog.isFetchedAfterMount, savedLog.data, replyTo]);
   const aiName = useAiPrefs().nameOf();
   const role = useRole();
-  const [, example] = ROLE_AI[role ?? "dev"];
+  const example = ROLE_ASK[role ?? "dev"];
   const missing = role === "qa" ? askMissing(analysis) : "";
   const [picked, setPicked] = useState(0); // which AI option is in the textarea
   const [taskOpen, setTaskOpen] = useState(false); // the AI Agent sheet
@@ -162,8 +143,6 @@ export function Composer({
     alive.current = true;
     return () => { alive.current = false; };
   }, []);
-  // Bring the tag into view whenever its card mounts (first paint, then again once the thread loads around it).
-  const toTag = useCallback((el: HTMLElement | null) => el?.scrollIntoView({ block: "start" }), []);
 
   // Adjust state while rendering when inputs change (no effect round-trip).
   if (draft && draft.chatId === chatId && draft.nonce !== seenDraft) {
@@ -205,15 +184,19 @@ export function Composer({
         },
       }),
     onSuccess: (rec) => handle(rec),
-    onError: (err) => {
-      // Only a 4xx with a known code is a rejection. A 5xx may come after Telegram took the message, so keep the request
-      // id: a retry then reuses it (retry_unknown) instead of sending twice.
-      if (err instanceof ApiError && err.status < 500 && err.code !== "http_error") {
+    onError: (err, v) => {
+      // A coded answer is a rejection. No answer (or one the server could not word) may come after Telegram took the
+      // message, so keep the request id: a retry then reuses it (retry_unknown) instead of sending twice.
+      if (err instanceof ApiError && !sendLost(err, v.retryUnknown)) {
         setRequestId(null); // rejected => certainly not sent
         unsure.current = false;
         saveDraft(replyTo, latest.current);
         const until = err.retryAfter ? Date.now() + err.retryAfter * 1000 : undefined;
-        setOutcome({ kind: "error", message: errorText(err, SEND_ERRORS, t("Gửi thất bại.")), until });
+        const message = errorText(err, SEND_ERRORS, t("Gửi thất bại."));
+        if (alive.current) setOutcome({ kind: "error", message, until });
+        else toast({ text: message }); // the panel closed meanwhile: the draft is kept, say why it is still there
+      } else if (!alive.current) {
+        toast({ text: sendLostText() }); // nobody is left to show "Kiểm tra": at least say it may be out
       } else {
         setOutcome({ kind: "unknown", reason: err instanceof ApiError ? t("Máy chủ local gặp lỗi khi gửi.") : t("Không liên lạc được máy chủ local.") });
       }
@@ -278,6 +261,7 @@ export function Composer({
   const check = useMutation({
     mutationFn: (id: string) => api<Outbox>(`/outbox/${id}`),
     onSuccess: (rec) => handle(rec),
+    onError: (e) => toast({ text: errorText(e, {}, t("Không kiểm tra được, thử lại.")) }),
   });
 
   function handle(rec: Outbox) {
@@ -292,7 +276,11 @@ export function Composer({
       unsure.current = false;
       saveDraft(replyTo, latest.current); // certainly not sent: keep the text, even when the panel already closed
     }
-    if (!alive.current) return;
+    if (!alive.current) { // the panel closed while it was sending: only a result that needs the user is said
+      if (rec.status === "failed") toast({ text: SEND_ERRORS[rec.error_code ?? ""] ?? t("Gửi thất bại.") });
+      else if (rec.status !== "sent") toast({ text: sendLostText() });
+      return;
+    }
     if (rec.status === "sent") {
       setRequestId(null);
       setText("");
@@ -315,14 +303,14 @@ export function Composer({
 
   const pending = requestId !== null && outcome.kind === "unknown";
   const waitLeft = outcome.kind === "error" && outcome.until ? Math.max(0, Math.ceil((outcome.until - now) / 1000)) : 0;
-  const fits = (body: string) => body.trim().length > 0 && body.length <= MAX;
   const ready = !send.isPending && !pending && waitLeft === 0 && !targetDeleted;
-  const canSend = fits(text) && ready;
+  const canSend = fitsSend(text) && ready;
 
   // Captured before the inbox's own Esc (which closes the reply): a send in flight holds it. A draft doesn't: it is saved.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     const step = e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp") ? (e.key === "ArrowDown" ? 1 : -1) : 0;
-    if ((e.key !== "Escape" && !step) || document.querySelector("[role=dialog], [role=menu], [role=listbox]")) return; // an open dialog / menu goes first
+    const jk = send.isPending && !typing(e) && "jk".includes(e.key.toLowerCase()); // the inbox's own next / previous tag
+    if ((e.key !== "Escape" && !step && !jk) || document.querySelector("[role=dialog], [role=menu], [role=listbox]")) return; // an open dialog / menu goes first
     if (send.isPending) {
       e.preventDefault();
       return;
@@ -346,7 +334,7 @@ export function Composer({
   }, []);
 
   function submit(body = text) {
-    if (!fits(body) || !ready) return;
+    if (!fitsSend(body) || !ready) return;
     const id = requestId ?? crypto.randomUUID();
     setRequestId(id);
     unsure.current = true;
@@ -355,7 +343,6 @@ export function Composer({
     send.mutate({ id, retryUnknown: false, text: mention.wire(body) });
   }
 
-  const link = telegramLink(replyTo);
   const name = replyTo.sender_name ?? `#${replyTo.message_id}`;
   const insert = (line: string) => setText((cur) => (cur.trim() ? `${cur}\n${line}` : line));
   const tools = (aiConfigured && usesCode(role)) || youtrackConfigured;
@@ -388,18 +375,16 @@ export function Composer({
   const answerMode = !!turns.at(-1)?.code; // the drafts on screen answer from code: "Ngắn gọn" / "Đầy đủ"
   // The textarea holds hand edits (not one of the drafts): a draft's own Gửi would overwrite them, so it waits.
   const edited = !!text.trim() && !options.includes(text);
-  const tag = (
-    <article ref={toTag} aria-label={t("Tin được tag")} className="my-1 grid scroll-mt-16 gap-1 rounded-[var(--radius-input)] border-l-[3px] border-hl bg-hl-wash py-2.5 pr-3 pl-3">
-      <span className="flex min-h-6 items-center gap-2 text-xs font-medium text-hl-2">
-        <span>{replyTo.outgoing ? t("Bạn") : name}</span><span className="font-normal">{t("tag bạn")}</span>
-        <DeepBadge m={replyTo} />
-        <DeepPick m={replyTo} className="ml-auto" />
-      </span>
-      <p className="whitespace-pre-wrap break-words text-md leading-[1.6] text-ink">
-        {replyTo.text ? richText(replyTo) : <i className="text-ink-3">{t("Tin không có chữ")}</i>}
-      </p>
-    </article>
-  );
+  const pickOption = (i: number) => {
+    // Edited by hand: add the new pick under it rather than overwrite the edits.
+    if (text.trim() && text !== options[picked]) {
+      insert(options[i]);
+      toast({ text: t("Đã chèn mẫu dưới nội dung bạn đã sửa") });
+    } else setText(options[i]);
+    setPicked(i);
+    if (options.length === LEVELS.length) put(relKey, String(i));
+  };
+  const tag = <TagCard m={replyTo} />;
 
   return (<>
     {/* A wide sheet over the reply, like Tạo ticket: the reply stays as it was underneath. */}
@@ -418,45 +403,8 @@ export function Composer({
         submit();
       }}
     >
-      {/* Back, who you answer, the actions on that tag. */}
-      <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b px-3 py-2 sm:px-5">
-        <Hint side="bottom" text={t("Quay lại danh sách (Esc)")}>
-          <Button type="button" size="icon-sm" variant="ghost" onClick={onClearReply} disabled={pending} aria-label={t("Quay lại danh sách (Esc)")}>
-            <ArrowLeft />
-          </Button>
-        </Hint>
-        {onStep && (
-          <span className="flex items-center">
-            <Hint side="bottom" text={t("Tag trước (k, Alt+↑)")}>
-              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(-1)} aria-label={t("Tag trước")}><ChevronUp /></Button>
-            </Hint>
-            {position && <span className="px-0.5 font-mono text-xs text-ink-3 tabular-nums" aria-label={t("Tag {i} trên {n} đang chờ", { i: position[0], n: position[1] })}>{position[0]}/{position[1]}</span>}
-            <Hint side="bottom" text={t("Tag tiếp theo (j, Alt+↓)")}>
-              <Button type="button" size="icon-sm" variant="ghost" disabled={pending || send.isPending} onClick={() => onStep(1)} aria-label={t("Tag tiếp theo")}><ChevronDown /></Button>
-            </Hint>
-          </span>
-        )}
-        <Avatar name={name} className="size-9 text-sm" />
-        <div className="grid min-w-0 flex-1 leading-tight">
-          <h2 className="truncate text-base font-bold">{name}</h2>
-          <span className="flex min-w-0 gap-2 text-xs text-ink-3">
-            {groupTitle && <span className="truncate">{groupTitle}</span>}
-            <time dateTime={replyTo.date} className="shrink-0 font-mono tabular-nums">{timeLabel(replyTo.date)}</time>
-          </span>
-        </div>
-        {/* Narrow: Mở Telegram stays on the name row, the actions take the next row whole. */}
-        {!replyTo.outgoing && (
-          <div className="order-last flex w-full flex-wrap items-center gap-0.5 sm:order-none sm:w-auto">
-            <MessageActions m={replyTo} showContext={showContext} onDone={onDone} onToggleContext={() => setShowContext((v) => !v)} />
-          </div>
-        )}
-        <Hint side="bottom" title={t("Mở Telegram")} text={link.exact ? t("Mở tin này trong app Telegram") : t("Mở nhóm trên Telegram Web (nhóm thường không có link tới từng tin)")}>
-          <a href={link.app} {...(!link.exact && { target: "_blank", rel: "noreferrer" })} aria-label={t("Mở Telegram")}
-            className="grid size-[30px] shrink-0 place-items-center rounded-[var(--radius-input)] text-ink-2 transition-colors duration-(--dur-micro) hover:bg-paper-3 hover:text-ink">
-            <ExternalLink className="size-4" aria-hidden />
-          </a>
-        </Hint>
-      </div>
+      <ReplyHead m={replyTo} groupTitle={groupTitle} held={pending || send.isPending} onBack={onClearReply} onStep={onStep} position={position}
+        showContext={showContext} onToggleContext={() => setShowContext((v) => !v)} onDone={onDone} />
 
       {/* Wide: conversation + reply box on the left, assistant on the right. Narrow: one scroll, reply box pinned at the bottom. */}
       <div className={cn("flex min-h-0 flex-col overflow-y-auto @3xl:grid @3xl:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] @3xl:grid-rows-[minmax(0,1fr)_auto] @3xl:overflow-hidden",
@@ -505,76 +453,15 @@ export function Composer({
             </div>
           )}
 
-          {!!related.data?.length && (
-            <section aria-label={t("Ticket có vẻ liên quan")} className="grid grid-cols-1 gap-1.5">
-              <h4 className="flex items-center gap-1.5 text-xs font-medium text-ink-3"><Link2 className="size-3.5" aria-hidden />{t("Ticket có vẻ liên quan")}</h4>
-              <ul className="grid grid-cols-1 gap-1">
-                {related.data.slice(0, 3).map((tk) => (
-                  <li key={tk.id} className="flex min-h-9 items-center gap-2 rounded-lg border border-rule bg-cotton py-0.5 pr-0.5 pl-2 text-xs transition-colors duration-(--dur-micro) hover:border-rule-2">
-                    <a href={`/youtrack/?ticket=${tk.id}`} onClick={ticketClick(tk.id)} title={tk.summary} className="flex min-w-0 flex-1 items-center gap-2 hover:[&>span:last-child]:underline">
-                      <span className="shrink-0 rounded-md bg-hl-wash px-1.5 py-0.5 font-mono text-2xs font-medium text-hl-2">{tk.id}</span>
-                      <span className="truncate text-ink">{tk.summary}</span>
-                    </a>
-                    <Hint side="bottom" text={t("Chèn link {id} vào trả lời", { id: tk.id })}>
-                      <Button type="button" size="icon-xs" variant="ghost" aria-label={t("Chèn link {id} vào trả lời", { id: tk.id })} onClick={() => insert(`${tk.id}: ${tk.url}`)}>
-                        <Plus />
-                      </Button>
-                    </Hint>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {!!related.data?.length && <RelatedTickets items={related.data} onInsert={insert} />}
 
           {aiConfigured && (
             <section aria-label={t("Trợ lý AI")} aria-busy={ask.isPending} className="grid grid-cols-[minmax(0,1fr)] gap-3">
               <AiTurns turns={turns} running={ask.isPending} partial={partial} missing={missing} onMissing={() => insert(missing)} session={session} />
 
               {options.length > 0 && !ask.isPending && (
-                <fieldset className="grid gap-2 animate-in fade-in-0 slide-in-from-bottom-2 duration-(--dur-short)">
-                  <legend className="mb-2 text-xs font-medium text-ink-3">{t("Mẫu AI")} <span className="font-normal">{t("(chọn để đưa vào ô soạn)")}</span></legend>
-                  {options.map((o, i) => (
-                    <label
-                      key={i}
-                      style={{ animationDelay: `${i * 60}ms` }}
-                      className={cn(
-                        "relative grid cursor-pointer gap-1 rounded-xl border px-3 py-2.5 text-sm leading-[1.55] transition-[border-color,background-color] duration-(--dur-micro) animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-backwards duration-(--dur-short) has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus",
-                        picked === i ? "border-hl bg-hl-wash" : "border-rule bg-cotton hover:border-rule-2",
-                      )}
-                    >
-                      <input
-                        type="radio"
-                        name="ai-option"
-                        className="absolute size-px opacity-0"
-                        checked={picked === i}
-                        onChange={() => {
-                          // Edited by hand: add the new pick under it rather than overwrite the edits.
-                          if (text.trim() && text !== options[picked]) {
-                            insert(o);
-                            toast({ text: t("Đã chèn mẫu dưới nội dung bạn đã sửa") });
-                          } else setText(o);
-                          setPicked(i);
-                          if (options.length === LEVELS.length) put(relKey, String(i));
-                        }}
-                      />
-                      <span className={cn("flex min-h-5 items-center gap-1.5 text-xs font-medium", picked === i ? "text-hl-2" : "text-ink-3")}>
-                        {picked === i && <Check className="size-3.5 animate-in zoom-in-50 duration-(--dur-short)" aria-hidden />}
-                        {answerMode && options.length === ANSWER_LEVELS.length ? t(ANSWER_LEVELS[i]) : options.length === LEVELS.length ? t(LEVELS[i]) : t.n("Mẫu {n}", { n: <span className="font-mono">{i + 1}</span> })}
-                        <span className="ml-auto flex">
-                          <Hint side="bottom" text={t("Copy bản nháp này")}>
-                            <button type="button" aria-label={t("Copy bản nháp này")} className={DRAFT_BTN}
-                              onClick={(e) => { e.preventDefault(); void copyText(o); }}><Copy className="size-3.5" aria-hidden /></button>
-                          </Hint>
-                          <Hint side="bottom" text={edited ? t("Ô soạn đang có nội dung bạn sửa: gửi từ ô soạn, hoặc xóa nó trước") : o.length > MAX ? t("Quá {n} ký tự, sửa trong ô soạn rồi gửi", { n: MAX }) : t("Gửi ngay bản nháp này, trả lời {name}", { name })}>
-                            <button type="button" aria-label={t("Gửi bản nháp này")} aria-disabled={edited || !fits(o) || !ready} className={DRAFT_BTN}
-                              onClick={(e) => { e.preventDefault(); if (edited || !fits(o) || !ready) return; setPicked(i); setText(o); submit(o); }}><Send className="size-3.5" aria-hidden /></button>
-                          </Hint>
-                        </span>
-                      </span>
-                      <span className="block min-w-0 whitespace-pre-wrap break-words text-ink">{o}</span>
-                    </label>
-                  ))}
-                </fieldset>
+                <AiOptions options={options} picked={picked} answerMode={answerMode} name={name} edited={edited} ready={ready}
+                  onPick={pickOption} onSend={(i) => { setPicked(i); setText(options[i]); submit(options[i]); }} />
               )}
             </section>
           )}
@@ -610,6 +497,7 @@ export function Composer({
           {/* One field: the text and the send row (the tag it answers is the highlighted card above). */}
           <div className="relative grid rounded-[var(--radius-card)] border border-rule-2 bg-cotton transition-[border-color] duration-(--dur-micro) hover:border-ink-3 has-[textarea:focus-visible]:border-hl">
             {mention.popup}
+            {mention.top}
             <Textarea
               ref={attach}
               aria-label={t("Nội dung trả lời")}
@@ -646,8 +534,8 @@ export function Composer({
                 {outcome.kind === "error" && <span className="text-error">{outcome.message}{waitLeft > 0 && ` ${t("Còn {n} giây.", { n: waitLeft })}`}</span>}
               </div>
               {text.length > 0 && (
-                <span className={cn("shrink-0 font-mono text-xs tabular-nums", text.length > MAX ? "font-medium text-error" : "text-ink-3")}>
-                  {text.length}/{MAX}
+                <span className={cn("shrink-0 font-mono text-xs tabular-nums", text.length > SEND_MAX ? "font-medium text-error" : "text-ink-3")}>
+                  {text.length}/{SEND_MAX}
                 </span>
               )}
               <Button type="submit" size="sm" aria-busy={send.isPending} disabled={!canSend} className="shrink-0 px-3">
@@ -668,6 +556,7 @@ export function Composer({
               <Button type="button" size="sm" variant="ghost"
                 onClick={() => {
                   setRequestId(null);
+                  unsure.current = false; // let go on purpose: the text is a draft again (saved, kept on Esc)
                   setOutcome({ kind: "idle" });
                 }}>
                 {t("Bỏ theo dõi yêu cầu")}
@@ -680,139 +569,4 @@ export function Composer({
         onCreated={(line) => { insert(line); setIssueOpen(false); }} />
     </form>
   </>);
-}
-
-// The AI summary's Markdown: headings, -/1. lists and **bold** on top of the message look (links, @mentions, `code`).
-// React nodes only, never HTML: the text comes from the model.
-function Md({ text }: { text: string }) {
-  const out: React.ReactNode[] = [];
-  let items: React.ReactNode[] = [];
-  let ordered = false;
-  const flush = (k: number) => {
-    if (!items.length) return;
-    out.push(ordered
-      ? <ol key={`l${k}`} className="grid list-decimal gap-1 pl-5 marker:text-ink-3">{items}</ol>
-      : <ul key={`l${k}`} className="grid list-disc gap-1 pl-5 marker:text-ink-3">{items}</ul>);
-    items = [];
-  };
-  text.split("\n").forEach((line, i) => {
-    const li = /^(\s*)(?:[-*+]|(\d+)[.)])\s+(.*)/.exec(line);
-    if (li) {
-      if (items.length && ordered !== !!li[2]) flush(i);
-      ordered = !!li[2];
-      items.push(<li key={i} className={li[1].length >= 2 ? "ml-4" : undefined}>{bold(li[3], i)}</li>);
-      return;
-    }
-    flush(i);
-    const h = /^#{1,6}\s+(.*)/.exec(line);
-    if (h) out.push(<p key={i} className="mt-1 font-bold text-ink first:mt-0">{bold(h[1], i)}</p>);
-    else if (line.trim()) out.push(<p key={i}>{bold(line, i)}</p>);
-  });
-  flush(-1);
-  return out;
-}
-
-function bold(s: string, key: number) {
-  return s.split(/\*\*(.+?)\*\*/g).map((t, i) =>
-    i % 2 ? <strong key={i} className="font-bold text-ink">{inline(t, key * 100 + i)}</strong> : inline(t, key * 100 + i));
-}
-
-const TICKET_ID = /\b[A-Z][A-Z0-9]+-\d+\b/;
-const TICKET_IDS = new RegExp(TICKET_ID.source, "g");
-
-/** QA: a reply asking for what the summary marked [cần bổ sung] ("**Môi trường:** [cần bổ sung]" → "Môi trường"). */
-export function askMissing(analysis: string) {
-  const lines = analysis.split("\n").filter((l) => /cần bổ sung/i.test(l));
-  if (!lines.length) return "";
-  const what = [...new Set(lines.map((l) => l.match(/\*\*([^*]+?):?\*\*/)?.[1]?.trim()).filter(Boolean))];
-  return `Bạn bổ sung giúp mình ${what.length ? what.join(", ").toLowerCase() : "các thông tin còn thiếu (build, thiết bị / OS, bước tái hiện)"} để mình tái hiện và test nhé.`;
-}
-
-// The AI drafts come in this order (prompt in ai.py): who the user is to the person they answer.
-const LEVELS: Key[] = ["Tôi là cấp trên", "Ngang cấp", "Trả lời cấp trên"];
-const ANSWER_LEVELS: Key[] = ["Ngắn gọn", "Đầy đủ"]; // ai.py ANSWER_TASK
-const DRAFT_BTN = cn(ASK_BTN, "aria-disabled:cursor-not-allowed aria-disabled:opacity-40"); // the AI Agent asks' copy / send look
-
-/** A "Trả lời từ code" run on the server, saved per tag (the panel may close and open again). */
-type SavedJob = { id: string; code: string; prompt: string; at: number };
-type AskVars = { instruction: string; job?: SavedJob; resume?: boolean };
-const JOB_KEEP_MS = 2 * 3600_000; // a run's start + ai.py JOB_KEEP (an ended run waits 1 h), with room for a long run
-const readJob = (key: string): SavedJob | null => {
-  try {
-    return JSON.parse(getPref(key) ?? "null");
-  } catch {
-    return null;
-  }
-};
-
-// error "": cancelled; code: the project read for it ("Trả lời từ code")
-type Turn = { prompt: string; at: number; analysis?: string; took?: number; error?: string; code?: string };
-
-const THINKING: Key[] = [
-  "Đang đọc tin nhắn…",
-  "Đang lục lại ngữ cảnh nhóm…",
-  "Đang hỏi ý kiến con Android…",
-  "Đang pha cà phê cho AI…",
-  "Đang gọt câu trả lời cho lịch sự…",
-  "Sắp xong rồi, đợi xíu nha…",
-];
-
-/** The panel's asks as a conversation: the ask in a bubble, then the AI thinking / writing, then the result card. */
-function AiTurns({ turns, running, partial, missing, onMissing, session }: {
-  turns: Turn[]; running: boolean; partial: string; missing: string; onMissing: () => void; session?: Task;
-}) {
-  const t = useT();
-  const live = partial.split(/\n\s*={3,}\s*(?:\n|$)/)[0]; // the summary part; the reply options come after "==="
-  const list = (
-    <ul aria-label={t("Hội thoại với AI")} className="grid grid-cols-[minmax(0,1fr)] gap-3">
-      {turns.map((turn, i) => {
-        const last = i === turns.length - 1;
-        return (
-          <Fragment key={turn.at}>
-            <li><UserBubble>{turn.prompt || (turn.code
-              ? <span className="inline-flex items-center gap-1.5"><FileSearch className="size-3.5 text-hl-2" aria-hidden /> {t("Trả lời từ code · {project}", { project: turn.code })}</span>
-              : <span className="inline-flex items-center gap-1.5"><Sparkles className="size-3.5 text-hl-2" aria-hidden /> {t("Tóm tắt & gợi ý")}</span>)}</UserBubble></li>
-            {last && running ? (
-              live.trim() ? <>
-                <li aria-label={t("AI đang viết")} className="grid gap-1.5 break-words px-0.5 text-sm leading-[1.6] text-ink animate-in fade-in-0 slide-in-from-bottom-1 duration-(--dur-short)">
-                  <Md text={live} />
-                </li>
-                <li><AiWriting /></li>
-              </> : turn.code ? <li><AiFetching kind="code" project={turn.code} className="min-h-0 py-2 [&_[role=status]]:w-auto" /></li>
-                : <li><AiThinking lines={THINKING.map((l) => t(l))} /></li>
-            ) : turn.analysis ? (
-              <li>
-                <AiResultCard aria-label={turn.code ? t("Trả lời từ code") : t("Tóm tắt và bước tiếp theo")} took={turn.took} dim={!last}
-                  actions={last && missing && <Button type="button" size="xs" variant="outline" className="mr-auto" onClick={onMissing}><MessageCircleQuestion /> {t("Hỏi thông tin còn thiếu")}</Button>}>
-                  <Markdown asks text={turn.analysis} className="text-sm leading-[1.6] text-ink" />
-                </AiResultCard>
-              </li>
-            ) : turn.error ? (
-              <li><AiResultCard error>{turn.error}</AiResultCard></li>
-            ) : turn.error === "" && (
-              <li role="status" className="flex items-center gap-1.5 px-0.5 text-xs text-ink-3 animate-in fade-in-0 duration-(--dur-short)">
-                <Square className="size-3 fill-current" aria-hidden /> {t("Đã hủy tóm tắt.")}
-              </li>
-            )}
-          </Fragment>
-        );
-      })}
-    </ul>
-  );
-  // its asks (Cần hỏi …) copy with the session's ID and post to the group, like any AI Agent session
-  return session ? <SessionAsks t={session}>{list}</SessionAsks> : list;
-}
-
-/** A saved Trợ lý AI session's answered (or failed) turns, from its log; an ask still running has no result yet. */
-function logTurns(items: TaskEvent[]): Turn[] {
-  const out: Turn[] = [];
-  let ask: Turn | null = null;
-  for (const e of items) {
-    if (e.kind === "user") ask = { prompt: splitAttachments(e.text)[0], at: (e.at ?? 0) * 1000, code: e.code?.split("/").pop() };
-    else if (e.kind === "result" && ask) {
-      out.push(e.error ? { ...ask, error: e.text } : { ...ask, analysis: e.text, took: e.at && ask.at ? e.at - ask.at / 1000 : undefined });
-      ask = null;
-    }
-  }
-  return out;
 }

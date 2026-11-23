@@ -4,7 +4,7 @@
     "tab": "settings",
     "area": "Settings › Search settings",
     "title": "Find a setting",
-    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
+    "what": "Type a setting's name (accents optional) to jump straight to it: the page opens the right section, the right YouTrack subgroup, and highlights the card holding the setting. Rarely used cards (Always ignore, Priority and automation, Tags when AI Agent asks, Prompt library, Workflow, Release report) are folded with an \"Advanced\" label; click the card title to open it, and searching to it opens it by itself.",
     "how": [
       {
         "t": "Click the \"Search settings\" box under the Settings heading (or press /)",
@@ -20,7 +20,7 @@
     "tab": "settings",
     "area": "Settings › Data",
     "title": "See disk usage and clean up data on this machine",
-    "what": "Shows how much the app takes on this machine (a bar split by part: Database, AI sessions, Downloaded tag photos, AI run history, Server log, Telegram sign-in, Configuration), the database by table and by group. Clear one part at a time: handled messages older than 30 days, Briefing summaries, the old send log, finished AI sessions, downloaded photos, AI run history, the server log, one group's data, reply drafts in this browser. Each clear asks first and says what is lost and what is kept; the database is compacted afterwards. On startup the app removes photos older than 30 days, AI runs older than 90 days and trims a log over 5 MB. The \"Change folder\" button (bottom of the Disk usage card, next to the path) moves all the data to another folder: type an absolute path, the app restarts, switches to the new place only once the move is done, then deletes the old copy; on failure it keeps using the old folder. If that folder already holds Radar data (a disk used with another install), the dialog asks \"Use the data there\": the app switches to that data and the data in use stays where it was, not deleted. Not available while the AI Agent is running; cloud-synced folders (iCloud, Dropbox, OneDrive, Google Drive) are refused because they corrupt the database. If the new folder is on an external disk, the disk must be plugged in when the app opens.",
+    "what": "Shows how much the app takes on this machine (a bar split by part: Database, AI sessions, Downloaded tag photos, AI run history, Server log, Telegram sign-in, Configuration), the database by table and by group. Clear one part at a time: handled messages older than 30 days, Briefing summaries, the old send log, finished AI sessions, downloaded photos, AI run history, the server log, one group's data, the Documents library (downloaded Knowledge Base articles, the index and summaries; a sync fetches them again), reply drafts in this browser. Each clear asks first and says what is lost and what is kept; the database is compacted afterwards. On startup the app removes photos older than 30 days, AI runs older than 90 days and trims a log over 5 MB. The \"Change folder\" button (bottom of the Disk usage card, next to the path) moves all the data to another folder: type an absolute path, the app restarts, switches to the new place only once the move is done, then deletes the old copy; on failure it keeps using the old folder. If that folder already holds Radar data (a disk used with another install), the dialog asks \"Use the data there\": the app switches to that data and the data in use stays where it was, not deleted. Not available while the AI Agent is running; cloud-synced folders (iCloud, Dropbox, OneDrive, Google Drive) are refused because they corrupt the database. If the new folder is on an external disk, the disk must be plugged in when the app opens.",
     "how": [
       {
         "t": "Open Settings › Data",
@@ -36,7 +36,7 @@
         "at": "css:[role=dialog] [data-slot=\"dialog-footer\"] > :first-child"
       }
     ],
-    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean change folder move data location path disk"
+    "keys": "du lieu dung luong database db sqlite mb disk storage don dep xoa tin cu anh log lich su phien ai nhap clear clean change folder move data location path disk documents docs library"
   },
   {
     "id": "settings-role",
@@ -240,7 +240,7 @@
     "tab": "settings",
     "area": "Settings › General › About you, for the AI",
     "title": "Summary platform",
-    "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Mobile in general, No limit).",
+    "what": "Choose the platform the AI focuses on when summarizing (Android, iOS, Web, Mobile (Android + iOS), All): it applies to Summarize & suggest, tickets from messages, Briefing, a group's Summary page, the Briefing assistant and AI Agent. A dev picks the platform they code: Briefing leaves out topics that only concern other platforms (Android / iOS drop web, Web drops the apps) and has no Impact entries for that team. QA/QC and PO/PM pick Mobile or All: the AI reports each platform's status (QC: bugs, fixed, still to retest; PO: done, in progress, not started, blocked) and flags a platform lagging behind. The self-introduction box shows a template for your role (app dev, web dev, QC, PO) with what the AI needs to know: platforms, environments, devices, what you decide, what to skip.",
     "how": [
       {
         "t": "Choose the \"General\" section",
@@ -251,7 +251,7 @@
         "at": "css:[aria-label=\"Tóm tắt theo nền tảng\"]"
       }
     ],
-    "keys": "summary platform android ios mobile reply default"
+    "keys": "summary platform android ios mobile reply default briefing web qc po all intro template"
   },
   {
     "id": "settings-briefing-model",

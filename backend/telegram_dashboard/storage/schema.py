@@ -121,6 +121,13 @@ CREATE TABLE IF NOT EXISTS qa_marks (  -- a Q&A thread (live from Telegram, neve
   at INTEGER NOT NULL,
   PRIMARY KEY (chat_id, code)
 );
+CREATE TABLE IF NOT EXISTS qa_answers (  -- "Chốt": the reply you marked as a Q&A thread's answer
+  chat_id TEXT NOT NULL,
+  code TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (chat_id, code)
+);
 CREATE TABLE IF NOT EXISTS loop_back (  -- "Báo lại": my ticket reached Fixed / Done, a stored message asked about it
   ticket TEXT NOT NULL,
   chat_id TEXT NOT NULL,
@@ -277,8 +284,72 @@ CREATE TABLE IF NOT EXISTS flow_job_events (
             c.execute(statement)
 
 
+def _docs(c):
+    c.execute("""CREATE TABLE IF NOT EXISTS docs (
+ id INTEGER PRIMARY KEY, source TEXT NOT NULL, ref TEXT NOT NULL, title TEXT NOT NULL, path TEXT NOT NULL,
+ hash TEXT NOT NULL, chars INTEGER NOT NULL, size INTEGER NOT NULL DEFAULT 0, updated_at INTEGER,
+ fetched_at INTEGER NOT NULL, tickets TEXT NOT NULL DEFAULT '[]', summary TEXT, summary_hash TEXT,
+ UNIQUE(source, ref))""")
+    # heading/body: fold() text that is matched; title/text: the original heading/body shown back
+    c.execute("CREATE VIRTUAL TABLE IF NOT EXISTS doc_parts USING fts5("
+              "heading, body, doc_id UNINDEXED, part UNINDEXED, line UNINDEXED, text UNINDEXED, title UNINDEXED)")
+
+
+def _doc_parts_by_doc(c):
+    """Parts move to a plain table keyed `doc_id << 20 | part` (a doc's parts are one id range: reading / dropping a doc
+    no longer scans every part) and the match index becomes contentless (the folded copy is no longer stored)."""
+    if c.execute("SELECT 1 FROM sqlite_master WHERE name='doc_fts'").fetchone():
+        return  # moved already (the steps from an older version run again)
+    c.execute("ALTER TABLE doc_parts RENAME TO doc_parts_old")
+    c.execute("CREATE TABLE doc_parts (id INTEGER PRIMARY KEY, doc_id INTEGER NOT NULL, part INTEGER NOT NULL, "
+              "line INTEGER NOT NULL, heading TEXT NOT NULL, body TEXT NOT NULL)")  # original text, shown back
+    # fold() text, matched only (contentless_delete: SQLite >= 3.43, CPython 3.14 bundles newer)
+    c.execute("CREATE VIRTUAL TABLE doc_fts USING fts5(heading, body, content='', contentless_delete=1)")
+    c.execute("INSERT INTO doc_parts SELECT (doc_id<<20)|part, doc_id, part, line, title, text FROM doc_parts_old")
+    c.execute("INSERT INTO doc_fts(rowid, heading, body) SELECT (doc_id<<20)|part, heading, body FROM doc_parts_old")
+    c.execute("DROP TABLE doc_parts_old")
+
+
+def _doc_parent(c):
+    """An article's parent article (Knowledge Base articles nest): a chosen article is the root of a branch."""
+    _add_cols(c, "docs", {"parent": "TEXT"})
+    c.execute("CREATE INDEX IF NOT EXISTS docs_parent ON docs(parent)")
+
+
+def _doc_revs(c):
+    """What each update of a document changed (Tài liệu: hover its update date): `changes` as docs.parts.changes,
+    `at` YouTrack's `updated` / the file's mtime (ms), `by` YouTrack's updatedBy."""
+    c.execute("CREATE TABLE IF NOT EXISTS doc_revs (id INTEGER PRIMARY KEY, doc_id INTEGER NOT NULL, "
+              "at INTEGER NOT NULL, by TEXT, changes TEXT NOT NULL)")
+    c.execute("CREATE INDEX IF NOT EXISTS doc_revs_doc ON doc_revs(doc_id, id)")
+
+
+def _doc_added(c):
+    """When a document came into the library (Tài liệu: its change history counts from there); NULL for the ones
+    stored before this column."""
+    _add_cols(c, "docs", {"added_at": "INTEGER"})
+
+
+def _doc_ai(c):
+    """Tài liệu's AI history: each Hỏi answer and each Tóm tắt the AI wrote (not a summary given back from the cache),
+    by `session` (one conversation of the AI popup). `doc_hash`: docs.hash then, so an answer on a document changed
+    since reads as old; `qkey`: the question folded, to give a saved answer back for the same question on the same
+    version."""
+    c.execute("CREATE TABLE IF NOT EXISTS doc_ai (id INTEGER PRIMARY KEY, session TEXT NOT NULL, kind TEXT NOT NULL, "
+              "doc_id INTEGER, doc_hash TEXT, doc_title TEXT NOT NULL DEFAULT '', question TEXT NOT NULL, "
+              "qkey TEXT NOT NULL, text TEXT NOT NULL, cites TEXT NOT NULL DEFAULT '[]', at INTEGER NOT NULL)")
+    c.execute("CREATE INDEX IF NOT EXISTS doc_ai_session ON doc_ai(session, id)")
+    c.execute("CREATE INDEX IF NOT EXISTS doc_ai_doc ON doc_ai(doc_id, qkey)")
+
+
+def _message_file(c):
+    """A document's name / size / MIME as JSON (models.FileInfo): Việc cần xử lý checks it against Tài liệu."""
+    _add_cols(c, "messages", {"file": "TEXT"})
+
+
 MIGRATIONS = [
     _add_missing_columns, _task_kind, _task_ai, _task_done, _chat_purged, _pending_indexes, _drop_grants,
     _handled_by, _outbox_quote, _priority, _deep_anchor, _task_git_base, _task_ref_qa, _snooze_on,
-    _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs,
+    _task_ref_ask, _rule_extra, _flag_indexes, _text_fold, _flow_jobs, _docs,
+    _doc_parts_by_doc, _doc_parent, _doc_revs, _doc_ai, _doc_added, _message_file,
 ]  # fmt: skip

@@ -186,14 +186,15 @@ def unclear_notes(ambiguous, left, draw):
     return out
 
 
-def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None):
+def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None, links=True):
     """The whole source, never trimmed: the user picks the model and is warned (`risks`) before a costly run.
     `previous`: the flow on screen (a re-render): its screens / links join the skeleton, so the AI writes only what
     is new or changed instead of the whole flow again (output is most of a render's cost).
     `target` ("mobile" / "web"): the other platform's screens, links and design leave the prompt, decided here from
     the same reads for the pre-check and the render (so the count and the render match), never by the page from a
     count it may not have finished (a render pressed mid-count drew web screens into a mobile flow). Their unclear
-    lines go with them; their size group stays in the risks (the platform picker counts both)."""
+    lines go with them; their size group stays in the risks (the platform picker counts both).
+    `links=False` ("Chỉ màn hình"): no link is drawn, so nothing is said about the unclear flow lines."""
     raw, unavailable = sources_from_blocks(ticket, stories)
     used, omitted, seen = [], [], set()
     for item in raw:
@@ -230,7 +231,7 @@ def build(ticket, stories, note, shots, *, previous=None, draw=None, target=None
                              "tách ticket theo sub-ticket trước khi vẽ")
     parts = {"ticket": estimate(own), "story": estimate(other), "zeplin": estimate(data_json(design)),
              "note": estimate(note), "rules": estimate(flow_merge.AI_FLOW_PATCH) + ENVELOPE_RESERVE}
-    warnings = unclear_notes(ambiguous, left, draw)
+    warnings = unclear_notes(ambiguous, left, draw) if links else []
     if unavailable:
         warnings.append("Một số story không đọc được; kiểm tra phần nguồn trước khi cập nhật.")
     manifest = {"measurement": "estimated", "estimated_input_tokens": tokens,
@@ -254,27 +255,41 @@ def without(base, gone):
 
 
 def reuse(base, previous):
-    """The previous flow folded into the skeleton (in place): its screens still in the design (by id) keep their
-    kind / parent / AC / buttons, its own screens (no Zeplin) come back, and its links between screens that still
-    exist stay. A screen whose design left the ticket goes, with its links. Returns how many links were carried."""
+    """The previous flow folded into the skeleton (in place): its screens still in the design (by id, else by their
+    Zeplin URL: a screen added by hand and then given a design, an older id scheme) keep their kind / parent / AC /
+    buttons, its own screens (no Zeplin) come back, and its links between screens that still exist stay. A screen
+    whose design left the ticket goes, with its links. Returns how many links were carried."""
     known = {s["id"]: s for s in base["screens"]}
-    urls = {s.get("zeplin") for s in base["screens"] if s.get("zeplin")}
+    by_url = {s["zeplin"]: s for s in base["screens"] if s.get("zeplin")}
+    # old screen id -> the skeleton's screen of that design; (old screen, old button) -> that screen's own button
+    moved, renamed = {}, {}
     for old in previous.get("screens", []):
         items = [{"id": i["id"], "label": i["label"]} for i in old.get("items", [])]
-        if (cur := known.get(old["id"])) is not None:
+        same = known.get(old["id"])
+        if (cur := same or by_url.get(old.get("zeplin"))) is not None:
             cur.update({k: old[k] for k in ("kind", "parent", "ac") if old.get(k)})
-            have = {i["id"] for i in cur["items"]}
+            have, labels = {i["id"] for i in cur["items"]}, {i["label"]: i["id"] for i in cur["items"]}
+            if same is None:  # one design, two ids: the skeleton's screen is the one kept, not a second empty copy
+                moved[old["id"]] = cur["id"]
+                renamed.update({(old["id"], i["id"]): labels[i["label"]] for i in items if i["label"] in labels})
+                items = [i for i in items if i["label"] not in labels]
             cur["items"] += [i for i in items if i["id"] not in have]
-        elif not old.get("zeplin") or old["zeplin"] in urls:  # a screen of the AI's own (popup, sheet…)
+        elif not old.get("zeplin"):  # a screen of the AI's own (popup, sheet…)
             known[old["id"]] = {"id": old["id"], "title": old["title"], "kind": old.get("kind", "screen"),
                                 "parent": old.get("parent"), "zeplin": "", "ac": old.get("ac", ""), "items": items}
             base["screens"].append(known[old["id"]])
+    for s in base["screens"] if moved else []:
+        parent = moved.get(s.get("parent"), s.get("parent"))
+        s["parent"] = None if parent == s["id"] else parent
     carried = 0
     for link in previous.get("links", []):
         screen, _, item = link["src"].partition(".")
-        ok = (screen in known and link["to"] in known
+        item, to = renamed.get((screen, item), item), moved.get(link["to"], link["to"])
+        screen = moved.get(screen, screen)
+        ok = (screen in known and to in known
               and (not item or any(i["id"] == item for i in known[screen]["items"])))
-        edge = {k: link[k] for k in ("src", "to", "act", "when", "ac") if link.get(k)}
+        edge = {"src": f"{screen}.{item}" if item else screen, "to": to,
+                **{k: link[k] for k in ("act", "when", "ac") if link.get(k)}}
         if ok and edge not in base["links"]:
             base["links"].append(edge)
             carried += 1

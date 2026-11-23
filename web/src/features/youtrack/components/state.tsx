@@ -7,7 +7,7 @@ import { toast } from "@/shared/lib/notifications";
 import { getPref, put, readJson, saveYtRole, setPref, useRole, type YtRole } from "@/shared/lib/prefs";
 import type { AiRun } from "./bits";
 import type { AiSession } from "./history";
-import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytMeQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
+import { type AiReq, type ColKey, type Filters, type Group, GROUPS, isColKey, type Person, resolveProject, selfEdits, type Sprint, type Ticket, QUICK, UNASSIGNED, yt, ytMeQuery, ytPeopleQuery, ytProjectsQuery } from "@/features/youtrack/lib/yt";
 
 // One context for the YouTrack page: project, data, filters (URL + localStorage, same keys as /yt/), mode, view prefs,
 // the side sheet, and when each ticket entered its state.
@@ -24,28 +24,23 @@ export type Sheet =
   | { kind: "list"; title: string; rows: Ticket[] }
   | { kind: "work"; title: string; ids: string[]; auto?: AiAuto; start?: AiStart; resume?: AiSession };
 
-export { selfEdits };
 
 export type TicketPatch = Partial<Ticket> & { id: string };
 /** The newest save per ticket (`id`) and per field (`id:key`): an older answer or rollback never lands over a newer edit. */
 const newest = new Map<string, number>();
 let saves = 0;
-/** Tickets with a save in flight (count per id): their cached values are not YouTrack's yet, the watch must not act on them. */
-export const saving = new Map<string, number>();
-const unsave = (id: string) => { const c = (saving.get(id) ?? 1) - 1; if (c > 0) saving.set(id, c); else saving.delete(id); };
-/** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error.
+/** Show an edit at once, settle on the server's answer; on error put the old values back (and say why). False on error;
+ *  `quiet`: the error is thrown instead of toasted (a bulk edit gathers them into one toast).
  *  The newest save on a ticket takes YouTrack's whole answer (a State change can resolve it); an older one only its own fields.
  *  ponytail: a newest answer read before an older save landed can still hide that save until its own answer arrives. */
-export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ticket, local: Partial<Ticket>, call: () => Promise<Ticket>) {
+export async function saveTicket(patch: (t: TicketPatch) => Promise<void>, t: Ticket, local: Partial<Ticket>, call: () => Promise<Ticket>, { quiet = false } = {}) {
   const n = ++saves, keys = Object.keys(local) as (keyof Ticket)[];
   for (const k of [t.id, ...keys.map((k) => `${t.id}:${k}`)]) newest.set(k, n);
   const own = (from: Partial<Ticket>) => ({ id: t.id, ...Object.fromEntries(keys.filter((k) => newest.get(`${t.id}:${k}`) === n).map((k) => [k, from[k] ?? null])) });
   const back = Object.fromEntries(keys.map((k) => [k, t[k] ?? null])) as Partial<Ticket>;
-  saving.set(t.id, (saving.get(t.id) ?? 0) + 1);
   let r: Ticket;
   try { await patch({ id: t.id, ...local }); r = await call(); }
-  catch (e) { unsave(t.id); await patch(own(back)); toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
-  unsave(t.id);
+  catch (e) { await patch(own(back)); if (quiet) throw e; toast({ text: tNow("{id}: không đổi được — {msg}", { id: t.id, msg: (e as Error).message }) }); return false; }
   await patch(newest.get(t.id) === n ? r : own(r));
   return true;
 }
@@ -121,7 +116,7 @@ function useYtState(embed?: string) { // embed: one ticket's sheet over another 
   }, []);
   const [newTicket, setNewTicket] = useState<string | null>(null); // the create dialog, open with this starting note
 
-  const people = useQuery({ queryKey: ["yt", "people", project], queryFn: () => yt.people(project), staleTime: 10 * 60_000 });
+  const people = useQuery(ytPeopleQuery(project));
   const sprintsQ = useQuery({ queryKey: ["yt", "sprints", project], queryFn: () => yt.sprints(project), staleTime: 10 * 60_000 });
   const sprints = useMemo(() => new Map((sprintsQ.data ?? []).map((s) => [s.name, s] as [string, Sprint])), [sprintsQ.data]);
   const loginOf = useMemo(() => new Map((people.data ?? []).map((p) => [p.name, p.login])), [people.data]);
@@ -281,9 +276,12 @@ function useYtState(embed?: string) { // embed: one ticket's sheet over another 
     qc.setQueryData<Ticket>(["yt", "detail", t.id], (old) => old && { ...old, ...t });
     await qc.cancelQueries({ queryKey: ["yt", "issues", project] }); // a list fetched before the edit would put the old value back
     qc.setQueriesData<Ticket[]>({ queryKey: ["yt", "issues", project] }, (old) => old?.map((i) => (i.id === t.id ? { ...i, ...t } : i)));
+    // a list cancelled on its first fetch has nothing to show and no refetch due before its interval: read it again
+    void qc.refetchQueries({ queryKey: ["yt", "issues", project], type: "active", predicate: (q) => q.state.data === undefined });
   }, [qc, project]);
   const refresh = () => {
     setSinceError(null);
+    void qc.refetchQueries({ queryKey: ["yt"], type: "active", predicate: (q) => q.state.status === "error" }); // config / me / projects that failed: "Thử lại" reads them too
     void qc.invalidateQueries({ queryKey: ["yt", "issues", project] });
     void qc.invalidateQueries({ queryKey: ["yt", "sprints", project] });
     qc.removeQueries({ queryKey: ["yt", "detail"] });

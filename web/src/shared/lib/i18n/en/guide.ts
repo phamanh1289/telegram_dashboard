@@ -8,7 +8,7 @@ export default {
   "Hỏi bất cứ điều gì về app: tính năng, rule, vì sao một nút ẩn / hiện (F1).": "Ask anything about the app: features, rules, why a button is shown or hidden (F1).",
   "Hướng dẫn": "Guide",
   "Hướng dẫn sử dụng": "User guide",
-  "Duyệt mọi tính năng Telegram / YouTrack / Cài đặt: cách dùng từng bước, hoặc để app chỉ trực tiếp trên màn hình.": "Browse every Telegram / YouTrack / Settings feature: step-by-step how-to, or let the app show you on screen.",
+  "Duyệt mọi tính năng Telegram / YouTrack / Tài liệu / Cài đặt: cách dùng từng bước, hoặc để app chỉ trực tiếp trên màn hình.": "Browse every Telegram / YouTrack / Documents / Settings feature: step-by-step how-to, or let the app show you on screen.",
   "Tìm tính năng": "Search features",
   "Tìm tính năng: tóm tắt nhóm, tạo ticket…": "Search features: summarize a group, create a ticket…",
   "Khu vực": "Area",

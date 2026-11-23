@@ -1,10 +1,14 @@
 import asyncio
+import json
 import re
 from datetime import datetime
 from types import SimpleNamespace as NS
 
-from telegram_dashboard.links import INLINE_CHARS, MAX_CHARS, delete_links, expand, link_block, links_dir
+from telegram_dashboard.docs.library import Library
+from telegram_dashboard.docs.parts import MAX_CHARS
+from telegram_dashboard.links import INLINE_CHARS, delete_links, expand, link_block, links_dir
 from telegram_dashboard.models import StoredMessage
+from telegram_dashboard.storage import Db, Store
 
 URLS = (
     "xem https://works.citics.vn/articles/VA-A-134 và https://t.me/c/1234/273/39671 https://other.host/articles/X-A-1"
@@ -16,12 +20,16 @@ async def _no_ai(*_, **__):
 
 
 def state(tmp_path, content: str, tracked: bool = True, summary=None):
+    calls = {"yt": 0}
+    ask = summary or _no_ai
+
     async def yt(path, **_):
         assert path == "/api/articles/VA-A-134"
-        return {"idReadable": "VA-A-134", "summary": "Quy trình", "content": content}
+        calls["yt"] += 1
+        return {"idReadable": "VA-A-134", "summary": "Quy trình", "content": content, "updated": 1}
 
-    async def read(fn, *a):
-        return fn(*a)
+    async def read(fn, *a, **kw):
+        return fn(*a, **kw)
 
     async def fetch_ids(chat_id, ids):
         assert (chat_id, ids) == ("-1001234", [39671])
@@ -31,12 +39,24 @@ def state(tmp_path, content: str, tracked: bool = True, summary=None):
     async def flow_outline(detail):  # the ticket's saved UI flow, when it has one
         return "UI flow: Đăng nhập → OTP" if detail.get("attachments") else None
 
+    settings = NS(data_dir=tmp_path / "data")
+    ai = NS(require_read=lambda: None, ask=ask)
+    store = Store(tmp_path / "db.sqlite3")
+    db = Db(store, NS(notify=lambda: None))
     return NS(
-        settings=NS(data_dir=tmp_path / "data"),
+        settings=settings,
         yt=NS(base="https://works.citics.vn", token="t", yt=yt, flow_outline=flow_outline),
-        ai=NS(require_read=lambda: None, ask=summary or _no_ai),
+        ai=ai,
+        docs=Library(settings, db, ai),
+        calls=calls,
         db=NS(read=read),
-        store=NS(get_messages_by_ids=lambda chat, ids: ([], ""), is_tracking=lambda chat: tracked),
+        store=NS(
+            get_messages_by_ids=lambda chat, ids: ([], ""),
+            is_tracking=lambda chat: tracked,
+            doc_find=store.doc_find,
+            doc_get=store.doc_get,
+            doc_list=store.doc_list,
+        ),
         bridge=NS(fetch_ids=fetch_ids),
     )
 
@@ -102,7 +122,7 @@ async def test_long_text_without_headings_gets_summary(tmp_path):
     s = state(tmp_path, "z " * 20000, summary=ask)
     out = await expand(s, URLS, "t1")
     assert "Tóm tắt (AI" in out and "- ý chính" in out and len(asked) == 1
-    assert "<untrusted_link_content>" in asked[0][0] and asked[0][1]["feature"] == "links"
+    assert "<untrusted_link_content>" in asked[0][0] and asked[0][1]["feature"] == "docs"
     await expand(s, URLS, "t2", summarize=False)
     assert len(asked) == 1
 
@@ -174,3 +194,65 @@ async def test_session_reads_tickets_named_by_id_and_their_documents(tmp_path):
     assert "dashboard không đọc được" not in out
     assert await link_block(s, text, None) == ""  # YouTrack AI: links only
     delete_links(s.settings, "t3")
+
+
+async def test_session_gets_library_docs_naming_its_ticket_and_typed_doc_refs(tmp_path):
+    s = state(tmp_path, "")
+    folder = tmp_path / "kb"
+    folder.mkdir()
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "docs.json").write_text(json.dumps({"folders": [str(folder)]}))
+    spec, other = folder / "dac-ta.md", folder / "khac.md"
+    spec.write_text("Đặc tả VA-12: trả key theo vai trò")
+    other.write_text("Ghi chú nội bộ")
+    ids = [await s.docs.index("file", str(f), f.name, f.read_text(), path=f, size=1, updated_at=None)
+           for f in (spec, other)]  # fmt: skip
+
+    async def cached(key, fn):
+        return [{"shortName": "VA"}] if key == "projects" else await fn()
+
+    async def detail(i):
+        return {"id": i, "summary": "Trả key", "links": [], "comments": [], "description": "không link tài liệu"}
+
+    s.yt.cached, s.yt.detail = cached, detail
+    out = await expand(s, "làm VA-12", "t4")
+    assert f"## #DOC{ids[0]}" in out and "Tài liệu: dac-ta.md" in out and "trả key theo vai trò" in out
+    assert "Ghi chú nội bộ" not in out  # names no ticket of the session
+    typed = await expand(s, f"đọc #DOC{ids[1]}", "t4")
+    assert "Ghi chú nội bộ" in typed
+    quoted = await expand(s, f"xem tin\n\n<tg-ab12>\n#DOC{ids[1]}\n</tg-ab12>", "t4")
+    assert "Ghi chú nội bộ" not in quoted  # someone else's message can't pull a local file in
+    assert await link_block(s, f"#DOC{ids[1]}", None) == ""  # YouTrack AI: ticket text is not the user's ask
+    other.unlink()
+    (tmp_path / "data" / "docs.json").write_text(json.dumps({"folders": []}))
+    gone = await expand(s, f"đọc #DOC{ids[0]}", "t4")
+    assert "trả key theo vai trò" not in gone and "dashboard không đọc được" in gone  # out of the sources: unread
+    delete_links(s.settings, "t4")
+
+
+async def test_two_sessions_share_one_download_and_one_summary(tmp_path):
+    asked = []
+
+    async def ask(prompt, **kw):
+        asked.append(prompt)
+        return "- ý chính"
+
+    s = state(tmp_path, "z " * 20000, summary=ask)  # > SUMMARY_FROM, no headings
+    a = await expand(s, URLS, "a")
+    b = await expand(s, URLS, "b")
+    assert s.calls["yt"] == 3 and len(asked) == 1  # first: updated-check + download; second: updated-check only
+    assert "- ý chính" in a and "- ý chính" in b
+    files = [next(links_dir(s.settings, k).iterdir()).read_text() for k in "ab"]
+    assert files[0] == files[1]
+
+
+async def test_summary_prompt_no_longer_carries_the_task(tmp_path):
+    asked = []
+
+    async def ask(prompt, **kw):
+        asked.append(prompt)
+        return "- ok"
+
+    s = state(tmp_path, "z " * 20000, summary=ask)
+    await expand(s, "BÍ_MẬT_TASK " + URLS, "a")
+    assert asked and all("BÍ_MẬT_TASK" not in p for p in asked)

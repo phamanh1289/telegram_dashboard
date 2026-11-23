@@ -15,6 +15,7 @@ import { api, ApiError, type DataStats, errorText } from "@/shared/lib/api";
 import { fmtBytes, fmtDay, fmtNum, type Key, useT } from "@/shared/lib/i18n";
 import { toast } from "@/shared/lib/notifications";
 import { cn } from "@/shared/lib/utils";
+import { useLinger } from "@/shared/hooks/use-linger";
 
 type DataItem = DataStats["items"][number];
 /** The parts of data/ on disk (local_data.DataPart ids): name and categorical colour. The rest of data/ is "Khác". */
@@ -24,6 +25,7 @@ const PARTS: Record<string, [Key, string]> = {
   media: ["Ảnh tag đã tải", "var(--cat-6)"],
   runs: ["Lịch sử chạy AI", "var(--cat-3)"],
   logs: ["Log server", "var(--cat-5)"],
+  docs: ["Tài liệu", "var(--color-ink-2)"],
   login: ["Đăng nhập Telegram", "var(--cat-1)"],
   config: ["Cấu hình", "var(--color-ink-3)"],
 };
@@ -64,6 +66,11 @@ const CLEARS: Record<string, Clear> = {
     name: "Log server", desc: "Nhật ký dò lỗi của bản chạy từ git. Quá 5 MB tự chuyển thành server.log.1 khi khởi động.", unit: "{n} tệp", ask: "Xóa log server?",
     lose: "Nhật ký các lỗi đã xảy ra.", keep: "App chạy bình thường; log mới vẫn ghi tiếp.",
   },
+  docs: {
+    name: "Tài liệu", desc: "Bài Knowledge Base đã tải về và chỉ mục tài liệu, kèm bản tóm tắt.", unit: "{n} tài liệu", ask: "Xóa kho tài liệu?",
+    lose: "Bản lưu và chỉ mục các tài liệu; phiên AI sau phải tải và tóm tắt lại.",
+    keep: "Bài trên YouTrack và tệp trong thư mục bạn chọn; nguồn tài liệu đã cài.", safe: true,
+  },
 };
 /** What each table of dashboard.sqlite3 holds. */
 const TABLES: Record<string, Key> = {
@@ -83,6 +90,7 @@ export function DataGroup() {
   const q = useQuery(dataQuery);
   const [asking, setAsking] = useState<DataItem | null>(null);
   const [purging, setPurging] = useState<{ chat_id: string; title: string } | null>(null);
+  const purgeShown = useLinger(purging); // the group asked about, until its dialog has closed
   const d = q.data;
   const drafts = (
     <Card title="Dữ liệu trên trình duyệt này">
@@ -121,7 +129,7 @@ export function DataGroup() {
     </DataSection>
 
     <DataSection title="Dọn tệp trên máy" lead={t("Tệp trong thư mục dữ liệu, ngoài database.")}>
-      {tiles(["sessions", "media", "runs", "logs"])}
+      {tiles(["sessions", "media", "runs", "logs", "docs"])}
     </DataSection>
 
     <Card title="Tin theo nhóm" info="Dung lượng ước tính từ nội dung tin. Xóa ở đây giống ⋯ › Xóa dữ liệu nhóm trên trang nhóm.">
@@ -135,7 +143,7 @@ export function DataGroup() {
     {drafts}
 
     {asking && <ClearData it={asking} keep={d.keep_days} onClose={() => setAsking(null)} />}
-    {purging && <PurgeChat chatId={purging.chat_id} title={purging.title} onClose={() => setPurging(null)} />}
+    {purgeShown && <PurgeChat open={!!purging} chatId={purgeShown.chat_id} title={purgeShown.title} onClose={() => setPurging(null)} />}
   </>;
 }
 

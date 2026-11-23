@@ -29,8 +29,15 @@ FIELDS = (
     "idReadable,summary,created,updated,resolved,reporter(login,fullName),"
     "customFields(name,value(name,login,fullName,minutes,presentation))"
 )
-ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+$")
+# every read of comments asks `deleted`: YouTrack keeps a deleted comment in the list (it can be restored)
+COMMENTS = "comments(id,text,created,deleted,author(fullName,login))"
+ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]*-\d+\Z")
 FLOW_COMMENT_GRACE_MS = 120_000  # a save comments right after the file: that update is not "the ticket changed"
+
+
+def live(comments: list[dict] | None) -> list[dict]:
+    """The comments still there. A deleted one is nobody's word any more: not AI data, not an ask, not the latest."""
+    return [c for c in comments or [] if not c.get("deleted")]
 
 
 def is_html(a: dict) -> bool:
@@ -50,8 +57,10 @@ class YtError(Exception):
 class YtUnreachable(YtError):
     """No answer from YouTrack (network / timeout): a write may or may not have happened."""
 
-    def __init__(self):
-        super().__init__(502, "Không kết nối được YouTrack")
+    def __init__(self, sent: bool = False):
+        """`sent`: a write got past connecting, so YouTrack may have applied it (a retry could repeat it)."""
+        msg = "Không rõ YouTrack đã ghi chưa — mở lại ticket để kiểm tra trước khi làm lại"
+        super().__init__(502, msg if sent else "Không kết nối được YouTrack")
 
 
 def _label(v):
@@ -130,13 +139,15 @@ class YtClient:
         self._auth = 0  # bumped by set_auth: answers fetched with an older token are not cached
         self._cache: dict[str, tuple[float, object]] = {}
         self._inflight: dict[str, asyncio.Future] = {}
+        self._forgot: dict[str, int] = {}  # key -> times forget() dropped it: a read begun before does not cache
         self.shots = zeplin.Shots(
             scope=self.flow_scope, path=lambda: (d := getattr(settings, "data_dir", None)) and d / "zeplin_shots.json"
         )
         self._flow_cache: OrderedDict[tuple, uiflow.Flow | None | Literal[False]] = OrderedDict()
         self._flow_seed: dict[tuple, tuple[int, uiflow.Flow]] = {}
         self._since: dict[str, int] = {}
-        self._trans_until: dict[str, int] = {}  # "p:days" -> ms the last read covers (0: cut at TRANS_PAGES)
+        self._trans_until: dict[str, int] = {}  # "p:days" -> ms the last read covers
+        self.trans_cut: dict[str, int] = {}  # "p:days" -> a read cut at TRANS_PAGES: ms of the oldest change it holds
 
     def flow_scope(self):
         url = urlsplit(self.base)
@@ -159,6 +170,7 @@ class YtClient:
         self._inflight.clear()
         self._since.clear()
         self._trans_until.clear()
+        self.trans_cut.clear()
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -173,8 +185,11 @@ class YtClient:
         """One REST call; network and HTTP errors become a YtError the UI can show."""
         try:
             r = await self._http().request(method, path, **kw)
-        except httpx.HTTPError:
-            raise YtUnreachable from None
+        except httpx.HTTPError as e:
+            sent = method != "GET" and not isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout))
+            if sent:  # the write may be on YouTrack: no cached ticket is trusted, the UI says "look before retrying"
+                self.stale(every=True)
+            raise YtUnreachable(sent) from None
         if r.status_code >= 400:
             msg = {
                 401: "Token YouTrack hết hạn hoặc sai — dán token mới trong Cài đặt",
@@ -286,15 +301,23 @@ class YtClient:
         if self.mock:
             raise YtError(503, "Chưa có token YouTrack — dán token trong Cài đặt")
 
-    def stale(self, issue: str | None = None) -> None:
-        """After a write: ticket lists (and that ticket) are stale; sprints, people, fields stay cached.
-        The bump keeps a list fetch already in flight from caching what it saw before the write."""
+    def forget(self, issue: str) -> None:
+        """Drop one ticket's cached detail when no write happened (amend reads it fresh): the next read refetches."""
+        key = f"issue:{issue}"
+        self._cache.pop(key, None)
+        self._inflight.pop(key, None)  # a read begun earlier is not reused, nor cached when it lands
+        self._forgot[key] = self._forgot.get(key, 0) + 1
+
+    def stale(self, issue: str | None = None, *, every: bool = False) -> None:
+        """After a write: ticket lists (and that ticket; `every`: all tickets, a write of unknown outcome) are stale;
+        sprints, people, fields stay cached. The bump keeps a list fetch already in flight from caching what it saw
+        before the write."""
         self._auth += 1
         if issue:
             self.touched[issue] = time.monotonic()
 
         def drop(k: str) -> bool:
-            return k.startswith("issues:") or k == f"issue:{issue}"
+            return k.startswith("issues:") or k == f"issue:{issue}" or (every and k.startswith("issue:"))
 
         self._cache = {k: e for k, e in self._cache.items() if not drop(k)}
         for k in [k for k in self._inflight if drop(k)]:
@@ -308,7 +331,7 @@ class YtClient:
     async def cached(self, key: str, fn):
         if (hit := self.fresh(key)) is not None:
             return hit
-        auth = self._auth
+        auth, forgot = self._auth, self._forgot.get(key, 0)
         task = self._inflight.get(key)  # concurrent identical requests share one YouTrack call
         if task is None:
             task = self._inflight[key] = asyncio.ensure_future(fn())
@@ -316,8 +339,8 @@ class YtClient:
                 lambda t: self._inflight.get(key) is t and self._inflight.pop(key)
             )
         value = await asyncio.shield(task)
-        if auth != self._auth:
-            return value  # token changed meanwhile: don't cache what the old one saw
+        if auth != self._auth or forgot != self._forgot.get(key, 0):
+            return value  # token changed / a write or forget() meanwhile: don't cache what was seen before
         if len(self._cache) > 200:
             now = time.monotonic()
             self._cache = {k: e for k, e in self._cache.items() if now - e[0] < TTL}
@@ -354,16 +377,29 @@ class YtClient:
         return r.content
 
 
+LIST_PAGE = 100  # rows a page of `pages`
+
+
+async def pages(yt, path: str, **params) -> list[dict]:
+    """Every row of a YouTrack list, page by page ($skip), not just its first $top: a big organisation's projects,
+    boards or articles are not cut off. Only `yt.yt` is used, so a test double of the client works too."""
+    out, skip, size = [], 0, LIST_PAGE
+    while True:
+        page = await yt.yt(path, **params, **{"$top": size, "$skip": skip})
+        out += page
+        if len(page) < size:
+            return out
+        skip += size
+
+
 async def _projects(svc: YtClient):
-    a = await svc.yt("/api/admin/projects", fields="id,shortName,name,archived", **{"$top": 200})
+    a = await pages(svc, "/api/admin/projects", fields="id,shortName,name,archived")
     return [p for p in a if not p.get("archived")]
 
 
 async def _fields(svc: YtClient, project: str) -> dict[str, list[str]]:
-    a = await svc.yt(
-        f"/api/admin/projects/{project}/customFields",
-        fields="field(name),bundle(values(name,archived))", **{"$top": 100},
-    )  # fmt: skip
+    fields = "field(name),bundle(values(name,archived))"
+    a = await pages(svc, f"/api/admin/projects/{project}/customFields", fields=fields)
     return {
         f["field"]["name"]: [v["name"] for v in f["bundle"]["values"] if not v.get("archived")]
         for f in a

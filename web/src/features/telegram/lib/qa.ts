@@ -2,7 +2,7 @@
 
 import { useIsFetching, useQueries, useQueryClient, type QueryClient, type UseQueryResult } from "@tanstack/react-query";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
-import { api, errorText, type Member, type Message, type QaItem } from "@/shared/lib/api";
+import { api, errorText, type Member, type Message, type QaItem, type QaList } from "@/shared/lib/api";
 import { t as tr } from "@/shared/lib/i18n";
 import { msgKey, openQa, QA_CODE, qaAskKey } from "@/features/telegram/lib/inbox";
 import { useNow } from "@/shared/hooks/use-now";
@@ -16,9 +16,13 @@ import { timeLabel } from "@/shared/lib/time";
 
 export const qaQuery = (chatId: string, days: number) => ({
   queryKey: ["qa", chatId, days],
-  queryFn: ({ signal }: { signal: AbortSignal }) => api<QaItem[]>(`/qa?chat_id=${encodeURIComponent(chatId)}&days=${days}`, { signal }),
+  queryFn: ({ signal }: { signal: AbortSignal }) => api<QaList>(`/qa?chat_id=${encodeURIComponent(chatId)}&days=${days}`, { signal }),
   staleTime: 60_000,
 });
+
+/** Change the threads of a group in every cached range (a mark shown before the list is read again). */
+const setQa = (qc: QueryClient, chatId: string, f: (items: QaItem[]) => QaItem[]) =>
+  qc.setQueriesData<QaList>({ queryKey: ["qa", chatId] }, (d) => d && { ...d, items: f(d.items) });
 
 // This browser only: groups you posted Q&A to (they lead the sidebar and are watched for answers), and per thread
 // code the newest message id you have seen (later replies are "Mới").
@@ -40,17 +44,39 @@ export const latest = (i: QaItem) => i.answers.at(-1) ?? i.question;
 export const atOf = (i: QaItem) => new Date(latest(i).date).getTime();
 /** Others' messages after the newest one seen in this thread (all of them in a thread never opened here). */
 export const fresh = (i: QaItem, seen: Seen) => thread(i).filter((m) => !m.outgoing && Number(m.message_id) > (seen[i.code] ?? 0));
-// "Chốt": the reply you marked as a thread's answer, code → message id (this browser).
-// ponytail: ids only in localStorage, like qa-seen; a backend table if it must follow you to another browser.
-const RESOLVED = "qa-resolved";
-export const resolvedIds = () => parsePref<Record<string, string>>(getPref(RESOLVED), {});
-export function resolve(code: string, id: string | null) {
-  const r = resolvedIds();
-  if (id) r[code] = id;
-  else delete r[code];
-  setPref(RESOLVED, JSON.stringify(r));
+// "Chốt": the reply you marked as a thread's answer, kept on the server (QaItem.accepted: the same on every browser).
+// OLD: the marks from when they lived in this browser only, still read until the Q&A page moves them (moveOldAnswers).
+const OLD = "qa-resolved";
+const oldIds = () => parsePref<Record<string, string>>(getPref(OLD), {});
+function dropOld(code: string) {
+  const r = oldIds();
+  if (!(code in r)) return;
+  delete r[code];
+  setPref(OLD, Object.keys(r).length ? JSON.stringify(r) : null);
 }
-export const accepted = (i: QaItem) => { const id = resolvedIds()[i.code]; return id ? i.answers.find((a) => a.message_id === id) : undefined; };
+export const acceptedId = (i: QaItem) => i.accepted ?? oldIds()[i.code] ?? null;
+export const accepted = (i: QaItem) => { const id = acceptedId(i); return id ? i.answers.find((a) => a.message_id === id) : undefined; };
+/** Marks `id` as the thread's answer (null: none): on screen at once, then saved; a failed save puts the old mark back
+ *  and says why (false). */
+export async function resolve(qc: QueryClient, i: QaItem, id: string | null) {
+  const chatId = i.question.chat_id, was = i.accepted ?? null;
+  const show = (v: string | null) => setQa(qc, chatId, (d) => d.map((x) => (x.code === i.code ? { ...x, accepted: v } : x)));
+  show(id);
+  try {
+    await api("/qa/accept", { method: "PUT", json: { chat_id: chatId, code: i.code, message_id: id } });
+    dropOld(i.code);
+    return true;
+  } catch (e) {
+    show(was);
+    toast({ text: errorText(e, {}, tr("Không lưu được câu trả lời đã chốt, thử lại")) });
+    return false;
+  }
+}
+/** The marks this browser kept before they were saved on the server: sent once, for the threads on screen. */
+export function moveOldAnswers(qc: QueryClient, items: QaItem[]) {
+  const old = oldIds();
+  for (const i of items) if (!i.accepted && old[i.code]) void resolve(qc, i, old[i.code]);
+}
 
 // Xong / Xóa: backend `qa_marks` (follows you to any browser). Xong closes the thread whatever its answers: no nudge,
 // not waiting. Xóa drops it from the dashboard's Q&A only (Telegram keeps the messages). null undoes either.
@@ -58,7 +84,7 @@ export type QaMark = "done" | "deleted" | null;
 async function markQa(qc: QueryClient, i: QaItem, state: QaMark) {
   const chatId = i.question.chat_id;
   await api("/qa/mark", { method: "PUT", json: { chat_id: chatId, code: i.code, state } });
-  qc.setQueriesData<QaItem[]>({ queryKey: ["qa", chatId] }, (d) => d && (state === "deleted"
+  setQa(qc, chatId, (d) => (state === "deleted"
     ? d.filter((x) => x.code !== i.code) : d.map((x) => (x.code === i.code ? { ...x, done: state === "done" } : x))));
   void qc.invalidateQueries({ queryKey: ["qa", chatId] }); // undoing a Xóa brings the thread back
   if (state !== "deleted") void qc.invalidateQueries({ queryKey: ["tasks"] }); // Xong moves the thread's tags: their sessions follow
@@ -69,7 +95,7 @@ export async function markWithUndo(qc: QueryClient, i: QaItem, state: QaMark) {
   try {
     await markQa(qc, i, state);
     toast({ text: state === "deleted" ? tr("Đã xóa {code} khỏi Q&A", { code: i.code }) : state ? tr("Đã đánh dấu xong {code}", { code: i.code }) : tr("Đã mở lại {code}", { code: i.code }),
-      undo: () => void markQa(qc, i, was) });
+      undo: () => void markQa(qc, i, was).catch((e) => toast({ text: errorText(e, {}, tr("Không khôi phục được, thử lại")) })) });
   } catch (e) {
     toast({ text: errorText(e, {}, tr("Không lưu được, thử lại")) });
   }
@@ -93,11 +119,12 @@ export const waiting = (i: QaItem) => !i.done && !answered(i);
 const TAG = /(?<![\w.])@(\w{5,32})/g;
 export const hasTag = (s: string) => new RegExp(TAG.source).test(s) || s.includes("](tg://user?id="); // or tagged by name (@ popup)
 /** Answered: you marked an answer, or someone other than the asker replied (the asker's own "up" / thanks is no
- *  answer); by default (Cài đặt › "Người được tag") only a reply from someone the question tagged (@username or a
- *  name mention) counts, when it tagged anyone. Reads its prefs live: pages re-render on a prefs change (`useNow`). */
+ *  answer, nor is a "got it, will report back": backend `holding`); by default (Cài đặt › "Người được tag") only a
+ *  reply from someone the question tagged (@username or a name mention) counts, when it tagged anyone. Reads its prefs
+ *  live: pages re-render on a prefs change (`useNow`). */
 export function answered(i: QaItem) {
   if (accepted(i)) return true;
-  const others = i.answers.filter((a) => a.sender_id !== i.question.sender_id);
+  const others = i.answers.filter((a) => a.sender_id !== i.question.sender_id && !i.holding.includes(a.message_id));
   if (readQaAnswerBy() !== "tagged") return others.length > 0;
   const q = i.question;
   const names = new Set([...q.text.matchAll(TAG)].map((x) => x[1].toLowerCase()));
@@ -132,13 +159,19 @@ export function mute(code: string, off: boolean) {
 export const lastOwn = (i: QaItem) => thread(i).findLast((m) => m.outgoing)?.date ?? i.question.date;
 export const isLate = (i: QaItem, mins: number, now: number, muted: readonly string[]) =>
   mins > 0 && i.question.outgoing && waiting(i) && !muted.includes(i.code) && now - new Date(lastOwn(i)).getTime() >= mins * 60_000;
+/** Your nudges in the thread (it is only nudged while nothing in it counts as an answer: `answered`). */
+export const nudges = (i: QaItem) => i.answers.filter((a) => a.outgoing).length;
+/** A nudge left untouched in the box (the draft outlives a reload): the next nudge replaces it. */
+export const isNudge = (s: string) => /^Nhờ .+ xem giúp phần này nha\.( \(lần \d+\))?$/.test(s);
 /** The nudge put in the box (polite, peer to peer, short): the people the question tagged, else everyone (a reply to
- *  the question, so it is quoted). Vietnamese whatever the UI language: it goes to the group. */
+ *  the question, so it is quoted); from the 2nd nudge with no reply it says which one. Vietnamese whatever the UI
+ *  language: it goes to the group. */
 export function nudgeText(i: QaItem, members: readonly Member[] = []) { // members: a name tag goes as its @username when it has one
   const q = i.question;
   const named = Object.entries(nameTags(q)).map(([at, id]) => { const u = members.find((m) => m.user_id === id)?.username; return u ? `@${u}` : at; });
   const ats = [...new Set([...[...q.text.matchAll(TAG)].map((x) => `@${x[1]}`), ...named])].join(" ");
-  return `Nhờ ${ats || "mọi người"} xem giúp phần này nha.`;
+  const n = nudges(i) + 1;
+  return `Nhờ ${ats || "mọi người"} xem giúp phần này nha.${n > 1 ? ` (lần ${n})` : ""}`;
 }
 /** The members a message tagged by name (no @username: a mention entity), "@Name" → user id: a box answering it
  *  sends those "@Name" as tags again (useMention `known`). */
@@ -163,7 +196,7 @@ function notifyLate(items: QaItem[], preview: boolean) {
   }
 }
 
-const dataOf = (rs: UseQueryResult<QaItem[]>[]) => ({ datas: rs.map((r) => r.data), errors: rs.map((r) => r.error) }); // structurally shared: stable until results change
+const dataOf = (rs: UseQueryResult<QaList>[]) => ({ datas: rs.map((r) => r.data?.items), errors: rs.map((r) => r.error) }); // structurally shared: stable until results change
 
 /** The groups you asked lately (newest 8): their new replies (`by` group, `total`), your questions waiting for a nudge
  *  (`late` group, `lateTotal`) and `codes`, msgKey → "#QA…" of every message in their threads (tags show the badge).

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import secrets
 import sqlite3
 from datetime import datetime
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from .. import ai
 from ..errors import ApiError
-from ..models import GroupInfo, LinkSpan, Member, SentMessage, StoredMessage
+from ..models import FileInfo, GroupInfo, LinkSpan, Member, SentMessage, StoredMessage
 from .bridge import LoginRequired, PartialBackfill, SendRejected, TelegramBridge, split_format
 
 log = logging.getLogger("telegram_dashboard.telegram")
@@ -22,6 +23,14 @@ def _media_kind(msg) -> str | None:
         if getattr(msg, attr, None):
             return attr
     return "media"
+
+
+def _file(msg) -> FileInfo | None:
+    """A document's name / size / MIME (not photos, voice, stickers…: those are not documents to read)."""
+    f = getattr(msg, "file", None) if _media_kind(msg) == "document" else None
+    if f is None:
+        return None
+    return FileInfo(name=(f.name or "")[:255], size=f.size or 0, mime=(f.mime_type or "")[:100])
 
 
 def _reply_fields(reply_to) -> tuple[int | None, int | None]:
@@ -53,8 +62,17 @@ def raw_to_stored(msg, chat_id: str, sender_name: str | None = None) -> StoredMe
         topic_id=topic,
         outgoing=bool(getattr(msg, "out", False)),
         media_kind=_media_kind(msg),
+        file=_file(msg),
         links=[s for e in getattr(msg, "entities", None) or [] if (s := _span(e))],
     )
+
+
+def tags_me(msg, me: str) -> bool:
+    """Telegram flags @username, name mentions and replies to us. A bot that sends its own entities leaves "@me" as
+    plain text, unflagged: that is a tag too (only an @username can be matched, not a display name)."""
+    if msg.mentioned:
+        return True
+    return me.startswith("@") and re.search(rf"(?<![\w@]){re.escape(me)}(?!\w)", msg.message or "", re.I) is not None
 
 
 def _span(e) -> LinkSpan | None:
@@ -144,7 +162,7 @@ class TelethonTransport:
                 # Editing an old reply only updates it: it never re-closes a tag the user reopened.
                 await (b.on_message(m) if edit else b.on_my_reply(m))
             return
-        if msg.mentioned:  # @username, text mention or a reply to us (Telegram flags all three)
+        if tags_me(msg, b.me):
             chat = await event.get_chat()
             title = getattr(chat, "title", None) or chat_id
             kind = "supergroup" if event.is_channel else "group"
@@ -329,6 +347,24 @@ class TelethonTransport:
         finally:
             tmp.unlink(missing_ok=True)
 
+    async def download_file(self, chat_id: str, message_id: int, dest: Path, max_bytes: int) -> FileInfo | None:
+        """A message's document saved at `dest` (temp name, then rename); None: no such message / not a document.
+        ValueError("too_big") past `max_bytes`, checked before anything is downloaded."""
+        msg = await self.client.get_messages(int(chat_id), ids=message_id)
+        info = _file(msg) if msg is not None else None
+        if info is None:
+            return None
+        if info.size > max_bytes:
+            raise ValueError("too_big")
+        tmp = dest.with_name(f".{dest.name}.{secrets.token_hex(4)}")
+        try:
+            if await self.client.download_media(msg, file=str(tmp)) is None:
+                return None
+            os.replace(tmp, dest)
+            return info
+        finally:
+            tmp.unlink(missing_ok=True)
+
     async def members(self, chat_id: str) -> list[Member]:
         from telethon import errors, utils
 
@@ -415,6 +451,9 @@ class TelethonTransport:
                 continue
             if uid == "pre":
                 out.append(types.MessageEntityPre(off, length, ""))
+                continue
+            if isinstance(uid, str):  # a link under its text (split_format)
+                out.append(types.MessageEntityTextUrl(off, length, uid))
                 continue
             try:  # known from the members list (session cache); unknown: the name goes as plain text
                 user = utils.get_input_user(await self.client.get_input_entity(uid))

@@ -2,10 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Check, ChevronRight, CircleCheckBig, CornerDownRight, GitCompareArrows, Hourglass, ListTodo, type LucideIcon, MessageCircleQuestion, MessageSquareReply, RotateCw } from "lucide-react";
-import { DeepBulkAction, DeepTopicAction, isStale, type TopicVerdict, useVerdicts, VerdictChip, VerdictTally } from "@/features/telegram/components/deep-think";
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
-import { autoDone, beRepliesQuery, Evidence, isAnswered, ItemActions, ItemFlags, repliesTo, setDone, Tickets, todoKey } from "@/features/telegram/components/digest-page";
+import { closedBy, DeepBulkAction, DeepTopicAction, isStale, type TopicVerdict, useVerdicts, VerdictChip, VerdictTally } from "@/features/telegram/components/deep-think";
+import { useState } from "react";
+import { Evidence, ItemFlags, Tickets } from "@/features/telegram/components/digest-page";
+import { beRepliesQuery, isAnswered, repliesTo, todoKey, useAutoDone } from "@/features/telegram/lib/digest";
+import { ItemActions } from "@/features/telegram/components/next-steps";
+import { Fold } from "@/shared/components/ui/fold";
 import { Hint } from "@/shared/components/ui/hint";
 import type { BeReply, DigestItem, DigestResult, DigestTopic } from "@/shared/lib/api";
 import { type Key, t as tr, useT } from "@/shared/lib/i18n";
@@ -96,19 +98,7 @@ export function BeTopics({ chatId, title, r, open, onToggle, onJump, lit }: {
   const hits = replies.data?.[chatId];
   // Topics the last check found adapted (✅) and nothing new since, or whose check session was marked Done (its tags
   // and Q&A close with it): their items close (once per check and reason, undoable).
-  const adapted = topics.flatMap((t) => {
-    const tv = verdictOf(verdicts, t);
-    const keys = () => t.lines.map(({ kind, it }) => todoKey(chatId, kind, it));
-    return tv?.done ? [{ mark: `${tv.task}:${t.id}:done`, keys: keys(), why: "phiên đối chiếu đã Done" as Key }]
-      : tv?.v === "ok" && !isStale(tv, seenIds(t, hits)) ? [{ mark: `${tv.task}:${t.id}`, keys: keys(), why: "code đã adapt" as Key }] : [];
-  });
-  const sig = adapted.map((a) => a.mark).join("|");
-  useEffect(() => {
-    const ran = adapted.filter((a) => autoDone(a.mark, a.keys));
-    const keys = ran.flatMap((a) => a.keys);
-    const why = [...new Set(ran.map((a) => tr(a.why)))].join(" / ");
-    if (keys.length) toast({ text: tr("Đóng {n} mục: {why}", { n: keys.length, why }), action: { label: tr("Hoàn tác"), run: () => setDone(keys, false) } });
-  }, [sig]); // eslint-disable-line react-hooks/exhaustive-deps -- `adapted` is new each render; `sig` names it
+  useAutoDone(topics.flatMap((t) => closedBy(verdictOf(verdicts, t), seenIds(t, hits), t.id, t.lines.map(({ kind, it }) => todoKey(chatId, kind, it)))));
   if (!topics.length) return null;
   const answered = topics.filter((t) => t.lines.some(({ kind, it }) => kind === "confirmations" && isAnswered(it, hits))).length;
   const checked = topics.map((t) => verdictOf(verdicts, t)).filter((x): x is TopicVerdict => !!x);
@@ -180,7 +170,7 @@ function Card({ chatId, t, tv, hits, onToggle, onJump, lit }: {
             <li key={key} className="group/line flex gap-2 text-sm leading-relaxed">
               {pair ? <MessageCircleQuestion className="mt-1 size-3.5 shrink-0 text-info" aria-label={tx("Hỏi")} />
                 : <Icon className={cn("mt-1 size-3.5 shrink-0", tone)} aria-label={tx(label)} />}
-              <div className="grid min-w-0 flex-1 gap-1">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
                 {pair ? <>
                   <p className="min-w-0">
                     <span className="text-ink">{it.question || it.text}</span>
@@ -222,20 +212,18 @@ function Card({ chatId, t, tv, hits, onToggle, onJump, lit }: {
                         #{id}
                       </button>
                     ))}
-                    {(kind === "confirmations" || kind === "actions") && <ItemActions chatId={chatId} ids={ids} text={it.text} />}
+                    {(kind === "confirmations" || kind === "actions") && <ItemActions chatId={chatId} ids={ids} text={it.text} agent={kind === "actions"} />}
                   </div>
                 ) : null}
-                <AnimatePresence initial={false}>
-                  {src === key && (
-                    <motion.div key="src" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }} className="overflow-hidden">
-                      <div className="mt-0.5 rounded-lg border border-rule bg-paper-2/40 p-2.5"><Evidence chatId={chatId} ids={ids} asker={it.asker ?? ""} /></div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                {/* -mt-1 cancels the gap while shut (a flex column: a grid gap would stay) */}
+                {!onJump && ids.length > 0 && (
+                  <Fold open={src === key} className="-mt-1">
+                    <div className="mt-1.5 rounded-lg border border-rule bg-paper-2/40 p-2.5"><Evidence chatId={chatId} ids={ids} asker={it.asker ?? ""} /></div>
+                  </Fold>
+                )}
               </div>
               {onToggle && (
-                <Hint side="bottom" text={tx("Đánh dấu đã xử lý (chỉ trên máy này): mục này rời khỏi Với BE")}>
+                <Hint side="bottom" text={tx("Đánh dấu đã xử lý: mục này rời khỏi Với BE")}>
                   <button type="button" aria-label={tx("Đánh dấu đã xử lý")}
                     onClick={() => { onToggle(kind, it); toast({ text: tr("Đã đánh dấu xử lý"), action: { label: tr("Hoàn tác"), run: () => onToggle(kind, it) } }); }}
                     className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border-[1.5px] border-rule-2 text-transparent transition-colors duration-(--dur-short) hover:border-ok hover:bg-ok-wash hover:text-ok">

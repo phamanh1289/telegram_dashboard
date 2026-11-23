@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -31,7 +32,7 @@ def dg(env, tmp_path):
     settings = Settings(root=tmp_path, **AI)
     ai = AiService(settings, env.store, env.db)
     ai.ask = provider
-    svc = DigestService(settings, env.store, env.db, env.bridge, ai)
+    svc = DigestService(settings, env.store, env.db, env.bridge, ai, live=asyncio.Semaphore(4))
     return env, svc, provider
 
 
@@ -345,6 +346,15 @@ def test_briefing_lists_tracked_groups(settings):
         assert a["saved"]["last_message_id"] == "1" and a["latest_id"] == "8"  # 8 > 1: new messages
         assert b["consent"] is False and b["saved"] is None
         assert b["latest_id"] is None  # no consent: Telegram is not even asked
+        assert a["unread"] is False
+
+        async def down(_chat):
+            raise ConnectionError
+
+        fake.latest_id = down  # a group Telegram would not read: said on its row, not shown as "no news"
+        app.state.live_reads._latest.invalidate(lambda _k: True)
+        assert {i["chat_id"]: i for i in c.get("/api/briefing").json()}[A] | {"saved": 0} == a | {
+            "latest_id": None, "unread": True, "saved": 0}
         app.state.bridge.state = "degraded"
         assert c.get("/api/briefing").json()[0]["latest_id"] is None  # offline: still lists
 
@@ -496,6 +506,13 @@ def test_briefing_saved_sends_to_me(settings):
         assert c.post("/api/briefing/saved", json={"text": "**Briefing**"}).status_code == 204
         assert fake.saved == ["**Briefing**"]
 
+        async def lost(text):
+            raise ConnectionError
+
+        fake.send_saved = lost  # it may have landed: "check before sending again", never a plain failure
+        r = c.post("/api/briefing/saved", json={"text": "hi"})
+        assert (r.status_code, r.json()["error"]["code"]) == (504, "delivery_unknown")
+
 
 def test_qa_threads_and_post(settings):
     fake = FakeTransport()
@@ -507,7 +524,9 @@ def test_qa_threads_and_post(settings):
 
     fake.history[A] = [msg(1, "staging lỗi?\n#QA11", 5), msg(2, "không nhé", 4, reply=1, sender="8"),
                        msg(3, "chắc chưa?", 3.5, reply=2), msg(4, "chắc", 3, reply=3, sender="8"),
-                       msg(5, "Deploy?\n#QA22", 2), msg(6, "ok", 1), msg(9, "cũ\n#QA9", 24 * 9)]  # fmt: skip
+                       msg(5, "Deploy?\n#QA22", 2), msg(6, "ok", 1),
+                       msg(8, "đã ghi nhận, có kết quả báo lại", 1.5, reply=5, sender="8"),
+                       msg(9, "cũ\n#QA9", 24 * 9)]  # fmt: skip
     app = create_app(settings, transport=fake)
     with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         app.state.store.set_tracking(A, True, title="Orders", kind="supergroup")
@@ -515,20 +534,31 @@ def test_qa_threads_and_post(settings):
         assert c.get("/api/qa", params={"chat_id": A}).status_code == 503  # offline is an error, not "no Q&A"
         app.state.bridge.state = "connected"
         app.state.store.apply_message(fake.history[A][1])  # a kept tag keeps its tag actions
-        items = c.get("/api/qa", params={"chat_id": A}).json()
+        items = c.get("/api/qa", params={"chat_id": A}).json()["items"]
         got = [(i["code"], [a["message_id"] for a in i["answers"]]) for i in items]
-        assert got == [("#QA22", []), ("#QA11", ["2", "3", "4"])]  # the whole reply chain, latest activity first
+        assert got == [("#QA22", ["8"]), ("#QA11", ["2", "3", "4"])]  # the whole reply chain, latest activity first
+        assert [i["holding"] for i in items] == [["8"], []]  # "got it, will report back": the page keeps it waiting
         assert items[1]["chat_title"] == "Orders" and items[1]["answers"][0]["kept"]
-        assert len(c.get("/api/qa", params={"chat_id": A, "days": 10}).json()) == 3
+        assert len(c.get("/api/qa", params={"chat_id": A, "days": 10}).json()["items"]) == 3
 
         # Xong / removed: stored per group, read back on every list; null undoes.
         mark = lambda code, state: c.put("/api/qa/mark", json={"chat_id": A, "code": code, "state": state})  # noqa: E731
         assert mark("#QA11", "done").status_code == 204 and mark("#QA22", "deleted").status_code == 204
-        assert [(i["code"], i["done"]) for i in c.get("/api/qa", params={"chat_id": A}).json()] == [("#QA11", True)]
+        got = c.get("/api/qa", params={"chat_id": A}).json()
+        assert [(i["code"], i["done"]) for i in got["items"]] == [("#QA11", True)] and got["truncated"] is False
         assert mark("#QA11", None).status_code == 204 and mark("#QA22", None).status_code == 204
-        assert [i["done"] for i in c.get("/api/qa", params={"chat_id": A}).json()] == [False, False]
+        assert [i["done"] for i in c.get("/api/qa", params={"chat_id": A}).json()["items"]] == [False, False]
         assert mark("QA1", "done").status_code == 422 and mark("#QA1", "x").status_code == 422
         assert c.put("/api/qa/mark", json={"chat_id": "-999", "code": "#QA1", "state": "done"}).status_code == 404
+
+        # Chốt: the reply marked as the answer, kept here (every browser reads it back); null takes it off.
+        accept = lambda code, mid: c.put("/api/qa/accept", json={"chat_id": A, "code": code, "message_id": mid})  # noqa: E731
+        assert accept("#QA11", "4").status_code == 204
+        assert [i["accepted"] for i in c.get("/api/qa", params={"chat_id": A}).json()["items"]] == [None, "4"]
+        assert accept("#QA11", None).status_code == 204
+        assert [i["accepted"] for i in c.get("/api/qa", params={"chat_id": A}).json()["items"]] == [None, None]
+        assert accept("#QA11", "x").status_code == 422
+        assert c.put("/api/qa/accept", json={"chat_id": "-999", "code": "#QA1", "message_id": "1"}).status_code == 404
 
         r = c.post("/api/qa", json={"chat_id": A, "text": " @minh_be có ai biết? "})
         assert r.status_code == 201 and r.json()["code"].startswith("#QA")
@@ -550,7 +580,7 @@ def test_qa_threads_and_post(settings):
         assert app.state.store.get_message(A, 20).handled  # answered from Q&A: the tag is done
         fake.history[A].append(msg(21, f"@user_nine ở đây\n{r['code']}", 0.1, reply=20, sender="1"))
         got = {i["code"]: [i["question"]["message_id"]] + [a["message_id"] for a in i["answers"]]
-               for i in c.get("/api/qa", params={"chat_id": A}).json()}  # fmt: skip
+               for i in c.get("/api/qa", params={"chat_id": A}).json()["items"]}  # fmt: skip
         assert got[r["code"]] == ["20", "21"] and not r["joined"]
 
         # A reply deep in #QA11's chain (4 → 3 → 2 → 1), answered with Q&A: into #QA11, as typed, no second code.
@@ -652,6 +682,22 @@ async def test_briefing_ask_serializes_dates(dg):
     assert await svc.ask("hôm nay làm gì?") == "ok"
 
 
+async def test_platform_narrows_digest_and_ask(dg):
+    env, svc, provider = dg
+    consent(env)
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"], platform="android", role="qa"))
+    provider.reply = "ok"
+    await svc.ask("gì?", platform="android")
+    run, ask = (str(c) for c in provider.calls[-2:])
+    assert "mainly the Android platform" in run and "QA/QC tester" in run and "mainly the Android" in ask
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"], platform="any", role="po"))  # a PO over all three
+    last = str(provider.calls[-1])
+    assert "leave out" not in last and "Android / iOS / Web" in last and "lagging" in last
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1"], platform="web"))  # a web dev: the apps left out
+    last = str(provider.calls[-1])
+    assert "the Android / iOS apps" in last and "several platforms" not in last
+
+
 async def test_items_i_closed_are_not_carried(dg):
     env, svc, provider = dg
     consent(env)
@@ -676,3 +722,23 @@ def test_people_fills_only_missing_be_names():
     plain = {"be": False, "message_ids": ["5"]}
     _people(plain, names)
     assert "asker" not in plain  # only BE items
+
+
+async def test_decisions_naming_a_ticket_stay_until_in_the_story(dg):
+    """A decision / change naming a ticket is kept across digests until it is put in the story or ticked (QC tests the
+    story); one with no ticket is not; the AI never sees them as open items to settle."""
+    env, svc, provider = dg
+    consent(env)
+    provider.reply = ('{"decisions": [{"text": "Bỏ OTP", "tickets": ["VA-1"], "message_ids": ["1"]},'
+                      ' {"text": "Họp thứ 2", "message_ids": ["2"]}],'
+                      ' "changes": [{"text": "Thêm màn B", "tickets": ["VA-2"], "message_ids": ["3"]}]}')
+    await svc.run(DigestRequest(chat_id=A, message_ids=["1", "2", "3"]))
+    env.fake.history[A].append(at(A, 4, "chuyện khác", 20))
+    provider.reply = "{}"
+    r = await svc.run(req(after_id=3))
+    assert [(d.text, d.carried) for d in r.decisions] == [("Bỏ OTP", True)]
+    assert [c.text for c in r.changes] == ["Thêm màn B"]
+    assert "Bỏ OTP" not in provider.calls[-1]  # not in <open>
+    env.fake.history[A].append(at(A, 5, "ok", 30))
+    r = await svc.run(req(after_id=4, closed=["1"]))  # put in the story (ticked)
+    assert r.decisions == [] and [c.text for c in r.changes] == ["Thêm màn B"]

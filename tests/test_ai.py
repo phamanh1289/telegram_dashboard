@@ -263,7 +263,8 @@ def test_session_rules_one_frame_for_every_session():
     r = session_rules("plan", None, "android", "")
     assert "⚠ Giả định" in r and "Nền tảng: Android" in r and "Cần hỏi lại" in r and ASK_MSG in r
     r = session_rules("edit", "qa", "any", "Tôi test app")
-    assert "Vai trò: QA/QC" in r and "Nền tảng" not in r and "Tôi test app" in r and "Giả định" not in r
+    # "any" is now "Tất cả": a QC / PO over every platform says so, rather than leaving the platform unknown
+    assert "Vai trò: QA/QC" in r and "Nền tảng: Tất cả" in r and "Tôi test app" in r and "Giả định" not in r
     assert "Đã sửa" in r and "`**Tóm tắt**`" in r  # one Markdown shape: bold labels on their own line
 
 
@@ -384,3 +385,13 @@ async def test_a_zeplin_ask_run_gets_the_servers_token_in_its_env_only(tmp_path)
     other.chmod(0o755)
     s = Settings(root=tmp_path, ai_agent_command=shlex.quote(str(other)), ai_model="", ai_effort="")
     assert await AiService(s, None, None).ask("hi", zeplin=zep) == "none"
+
+
+async def test_a_pos_draft_lays_out_the_options_from_the_kb(ai):
+    """PO: Tóm tắt & gợi ý ends with the options and the one to pick, grounded in the KB parts given as data."""
+    _env, svc, provider = ai
+    await svc.run("draft", A, ["1"], role="po", kb='[{"doc": "VA-A-1 Giải ngân", "text": "điều kiện A"}]')
+    p = provider.calls[-1]
+    assert "**Phương án:**" in p and "**Nên chọn:**" in p and "<kb>" in p and "VA-A-1" in p
+    await svc.run("draft", A, ["1"], role="dev")
+    assert "**Phương án:**" not in provider.calls[-1] and "<kb>" not in provider.calls[-1]

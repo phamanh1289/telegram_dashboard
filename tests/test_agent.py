@@ -64,6 +64,7 @@ async def test_failed_spawn_and_corrupt_log(tmp_path):
     with pytest.raises(ApiError) as e:
         await r.start("t1", str(tmp_path / "moved"), "hi", "plan", "s1", False)
     assert e.value.code == "task_launch_failed" and not r.running("t1")
+    assert r.read("t1")[0][-1]["text"].startswith("AI lỗi (task_launch_failed)")  # the page shows why
     r.log_path("t2").write_text('{"kind":"user","text":"a"}\n{broken\n{"kind":"res')
     assert r.read("t2") == ([{"kind": "user", "text": "a"}], 2)  # half-written tail not counted
 
@@ -115,7 +116,8 @@ async def test_stop_while_starting_cancels_the_launch(tmp_path):
     with pytest.raises(ApiError) as e:
         await asyncio.wait_for(start, 5)
     assert e.value.code == "task_cancelled" and not r.running("t1") and r.procs == {}
-    assert not r.log_path("t1").exists()
+    # a new session's page follows it from its id alone (tasks.start_task): its log says it was stopped
+    assert [(i["kind"], i["error"], i["text"]) for i in r.read("t1")[0]] == [("result", True, "Đã dừng.")]
 
 
 async def test_running_while_the_prompt_is_made(tmp_path):
