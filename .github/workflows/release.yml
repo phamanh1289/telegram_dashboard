@@ -131,18 +131,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # npm --provenance
+      id-token: write  # trusted publishing (OIDC) and --provenance: no npm token anywhere
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
-          node-version-file: .node-version
+          node-version-file: .node-version  # Node 24: npm >= 11.5.1, which trusted publishing needs
           registry-url: https://registry.npmjs.org
+      # npmjs.com › telegram-dashboard › Settings › Trusted Publisher names this repo and release.yml; npm swaps the
+      # job's OIDC token for a one-time publish token (2FA-bypass tokens can no longer publish).
       - name: Publish the npm launcher
         working-directory: packaging/npm
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          [ -n "$NODE_AUTH_TOKEN" ] || { echo "::error::Secret NPM_TOKEN is missing (see .claude/skills/release/SKILL.md)"; exit 1; }
           npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
           npm publish --provenance --access public

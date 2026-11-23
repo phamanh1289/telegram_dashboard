@@ -18,7 +18,7 @@ Tag `vX.Y.Z` được push → `.github/workflows/release.yml` build trên `wind
 
 Sau khi Release xong, job `npm` publish `packaging/npm` lên npm với version = tag: gói `telegram-dashboard`
 (launcher, chỉ chạy lại `install-macos.sh` / `install-windows.ps1` được copy vào lúc `prepack`). Không build gì thêm
-cho npm; không tự `npm publish` từ máy (version, provenance và secret do CI giữ).
+cho npm; không tự `npm publish` từ máy (version và provenance do CI giữ; CI publish bằng Trusted Publishing, không token).
 
 App đã cài đọc `releases` của repo `phamanh1289/telegram_dashboard` (`backend/telegram_dashboard/updater.py`,
 `REPO`): Cài đặt › Cập nhật hiện "Có N bản mới trên GitHub Releases" → bấm Cập nhật (hoặc bật tự động).
@@ -38,12 +38,22 @@ gh secret set RELEASE_SIGNING_KEY < ~/.config/telegram-dashboard/release_signing
 Mất khóa riêng → tạo cặp mới, commit `release_key.pem` mới, set lại secret; bản đã cài với khóa cũ phải cài lại
 bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa khác).
 
-## Một lần duy nhất: secret npm (`npx telegram-dashboard`)
+## Một lần duy nhất: Trusted Publishing npm (`npx telegram-dashboard`)
 
 Job `npm` (sau `release`) publish launcher `packaging/npm` lên npm với version = tag. Nó chỉ chạy lại
-`install.sh` / `install.ps1`, nên không cần build gì thêm. **User tự tạo** token loại *Automation* (hoặc *Granular*,
-quyền publish `telegram-dashboard`) trên npmjs.com rồi chạy `gh secret set NPM_TOKEN`. Thiếu secret → riêng job `npm` fail,
-GitHub Release vẫn đã phát hành; set secret rồi bấm *Re-run failed jobs*.
+`install.sh` / `install.ps1`, nên không cần build gì thêm. CI **không dùng token**: npm đổi OIDC token của job
+(`id-token: write`) lấy quyền publish một lần. Token bỏ qua 2FA không còn publish được (lỗi `EOTP`; npm siết từ
+07/2026), nên không quay lại `NPM_TOKEN`.
+
+**User tự làm** (agent không làm: cần đăng nhập + 2FA của user):
+1. Package chưa có trên npm (`npm view telegram-dashboard` ra E404) → publish lần đầu từ máy:
+   `npm login`, rồi `cd packaging/npm && npm version X.Y.Z --no-git-tag-version && npm publish --access public`;
+   xong trả `packaging/npm/package.json` về `0.0.0` (không commit version đó).
+2. npmjs.com › `telegram-dashboard` › Settings › **Trusted Publisher** › GitHub Actions: owner `phamanh1289`,
+   repo `telegram_dashboard`, workflow `release.yml` (sai một chữ → `ENEEDAUTH` / 404 khi publish).
+3. Xoá secret cũ nếu còn: `gh secret delete NPM_TOKEN`.
+
+Chưa làm bước 2 → riêng job `npm` fail, GitHub Release vẫn đã phát hành; làm xong bấm *Re-run failed jobs*.
 
 ## Các bước
 
@@ -65,7 +75,8 @@ GitHub Release vẫn đã phát hành; set secret rồi bấm *Re-run failed job
    ```
    E2E trên bản copy: `E2E_PORT=<cổng trống> E2E_CONTROL=<cổng trống> npx playwright test …` trong `$S/web`
    (8766 / 8796 / 8798 / 8799 hay bị phiên khác chiếm: `lsof -iTCP -sTCP:LISTEN -nP | grep <cổng>`).
-   Kiểm tra secret đã có: `gh secret list | grep -E 'RELEASE_SIGNING_KEY|NPM_TOKEN'` (chưa có → xem mục "Một lần duy nhất").
+   Kiểm tra secret ký gói đã có: `gh secret list | grep RELEASE_SIGNING_KEY` (chưa có → xem mục "Một lần duy nhất");
+   npm không cần secret (Trusted Publishing).
 3. **Tính version mới**:
    ```bash
    git fetch --tags
@@ -103,8 +114,8 @@ GitHub Release vẫn đã phát hành; set secret rồi bấm *Re-run failed job
 
 - Sửa code → commit → **tag mới** (tăng patch tiếp). Không force-push/di chuyển tag đã push: máy người dùng
   có thể đã tải bản đó.
-- Chỉ job `npm` đỏ (thiếu / hết hạn `NPM_TOKEN`, npm lỗi): **không** tag mới. Sửa secret rồi
-  `gh run rerun <id> --failed`. Version npm đã publish không xóa / đè được: lỗi trong launcher thì sửa rồi ra tag mới.
+- Chỉ job `npm` đỏ (`ENEEDAUTH` / `E404` = Trusted Publisher chưa cấu hình hoặc sai repo / workflow; npm lỗi):
+  **không** tag mới. Sửa cấu hình trên npmjs.com rồi `gh run rerun <id> --failed`. Version npm đã publish không xóa / đè được: lỗi trong launcher thì sửa rồi ra tag mới.
 - Release hỏng đã tạo: hỏi user rồi `gh release edit vX.Y.Z --draft` (updater bỏ qua draft/prerelease) rồi phát hành bản sau.
 
 ## Thử gói trên máy (không bắt buộc)
