@@ -143,5 +143,8 @@ jobs:
       - name: Publish the npm launcher
         working-directory: packaging/npm
         run: |
+          # trusted publishing needs npm >= 11.5.1: an older one fails later with a puzzling ENEEDAUTH
+          node -e 'const [a, b, c] = process.argv[1].split(".").map(Number); process.exit(a > 11 || (a === 11 && (b > 5 || (b === 5 && c >= 1))) ? 0 : 1)' "$(npm -v)" ||
+            { echo "::error::npm $(npm -v) is too old for trusted publishing (needs >= 11.5.1): raise .node-version"; exit 1; }
           npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
           npm publish --provenance --access public

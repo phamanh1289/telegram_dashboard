@@ -15,8 +15,11 @@ if [ -n "${2:-}" ]; then summary=$(cat "$2"); else summary=$(git for-each-ref "r
 if [ -n "$summary" ]; then
   # Vietnamese first, then English: anything else reads half and half, and the app can't pick its language's half
   heads=$(grep -E '^## ' <<<"$summary" | sed -E 's/[[:space:]]+$//' | paste -sd '|' - || true)
-  [ "$heads" = "## Tiếng Việt|## English" ] ||
-    echo "warning: $tag's summary should have exactly '## Tiếng Việt' then '## English' as its ## headings" >&2
+  if [ "$heads" != "## Tiếng Việt|## English" ]; then
+    msg="$tag's summary should have exactly '## Tiếng Việt' then '## English' as its ## headings"
+    echo "warning: $msg" >&2
+    if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::$msg" >&2; fi  # on the run page, not only in its log
+  fi
   printf '%s\n\n' "$summary"
 fi
 

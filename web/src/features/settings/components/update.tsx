@@ -178,7 +178,7 @@ function WaitTips() {
 function notesIn(md: string, lang: Lang): string {
   const vi = md.search(/^## Tiếng Việt[ \t]*$/m), en = md.search(/^## English[ \t]*$/m);
   if (vi < 0 || en < vi) return md;
-  return (lang === "vi" ? md.slice(vi, en) : md.slice(en)).replace(/^## [^\n]*\n+/, "").trim();
+  return (lang === "vi" ? md.slice(vi, en) : md.slice(en)).replace(/^## [^\n]*\n*/, "").trim(); // an empty half: ""
 }
 
 /** Hero first: GitHub → robot → app (at rest), versions, what's new folded; once confirmed the same hero runs (AI pulls
