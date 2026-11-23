@@ -55,7 +55,7 @@ bằng lệnh cài nhanh (updater của chúng từ chối gói ký bằng khóa
    uv lock
    git add pyproject.toml uv.lock
    git commit -m "chore(release): vX.Y.Z"
-   git tag -a vX.Y.Z -F "$TMPDIR/tag-msg.md"
+   git tag -a vX.Y.Z --cleanup=verbatim -F "${TMPDIR:-/tmp}/tag-msg.md"
    ```
    **Release note**: CI lấy làm nội dung GitHub Release (`scripts/release-notes.sh`): phần thân message của tag,
    rồi danh sách commit từ tag trước (nhóm Tính năng / Sửa lỗi / Khác). Trước khi tag, đọc
