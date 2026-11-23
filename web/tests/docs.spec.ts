@@ -333,8 +333,9 @@ test("rê lên ngày cập nhật hiện các dòng đã đổi ở lần cập 
     await page.getByRole("button", { name: /^cập nhật/ }).hover();
     const card = page.getByRole("tooltip");
     await expect(card).toContainText("Điều kiện giải ngân"); // the section it changed in
-    await expect(card.getByText("Khoản vay chỉ được giải ngân khi hồ sơ đủ chữ ký và CCCD, xem VA-12.")).toBeVisible();
-    await expect(card.getByText("Khoản vay chỉ được giải ngân khi hồ sơ đủ chữ ký, xem VA-12.")).toBeVisible();
+    // the old line and its edit read as one row, only the changed words marked (DiffRows)
+    await expect(card.getByRole("button", { name: "Khoản vay chỉ được giải ngân khi hồ sơ đủ chữ ký và CCCD, xem VA-12." })).toBeVisible();
+    await expect(card.getByRole("insertion")).toHaveText("và CCCD");
   } finally {
     await ctl("/docs", { files: { "quy-trinh.md": doc } });
   }
